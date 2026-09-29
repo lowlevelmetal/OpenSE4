@@ -1,0 +1,59 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                  := Spark Drive
+Description           := Moves ships.
+Pic Num               := 3
+Tonnage Space Taken   := 10
+Tonnage Structure     := 10
+Cost Minerals         := 20
+Cost Organics         := 0
+Cost Radioactives     := 10
+Vehicle Type          := Ship\Base\Drone
+Supply Amount Used    := 1
+Restrictions          := None
+General Group         := Engines
+Family                := 77
+Roman Numeral         := 1
+Custom Group          := 0
+Number of Tech Req    := 1
+Tech Area Req 1       := Drive Systems
+Tech Level Req 1      := 1
+Number of Abilities   := 1
+Ability 1 Type        := Movement Standard
+Ability 1 Descr       := Adds thrust.
+Ability 1 Val 1       := 1
+Ability 1 Val 2       :=
+Weapon Type           := None
+
+Name                  := Needle Beam
+Description           := A short ranged weapon.
+Pic Num               := 9
+Tonnage Space Taken   := 20
+Tonnage Structure     := 15
+Cost Minerals         := 40
+Cost Organics         := 0
+Cost Radioactives     := 5
+Vehicle Type          := Ship\Base\Sat
+Supply Amount Used    := 2
+Restrictions          := Two Per Vehicle
+General Group         := Weapons
+Family                := 78
+Roman Numeral         := 0
+Custom Group          := 0
+Number of Tech Req    := 0
+Number of Abilities   := 0
+Weapon Type           := Direct Fire
+Weapon Target         := Ships\Planets
+Weapon Damage At Rng  := 12 12 8 0 0
+Weapon Damage Type    := Normal
+Weapon Reload Rate    := 1
+Weapon Display Type   := Beam
+Weapon Display        := 4
+Weapon Modifier       := 0
+Weapon Sound          := zap.wav
+Weapon Family         := 5
+Weapon Seeker Speed   := 0
+Weapon Seeker Dmg Res := 0
+*END*

@@ -1,0 +1,24 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name               := Night Eyes
+Description        := Sees in the dark.
+Pic Num            := 1
+General Type       := Advanced
+Cost               := 500
+Trait Type         := Luck
+Value 1            := 5
+Required Trait 1   := None
+Restricted Trait 1 := Day Eyes
+
+Name               := Day Eyes
+Description        := Sees in bright light.
+Pic Num            := 2
+General Type       := Advanced
+Cost               := 400
+Trait Type         := Luck
+Value 1            := 3
+Required Trait 1   := None
+Restricted Trait 1 := Night Eyes
+*END*

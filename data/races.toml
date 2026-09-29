@@ -1,0 +1,71 @@
+# Playable races.
+#   surface          native planet surface: rock, ice, gas
+#   breathes         atmosphere: none, oxygen, hydrogen, carbon_dioxide, methane
+#   colony_component component used wherever a design lists "{colony_module}"
+#   bonus_techs      extra starting tech levels on top of rules.toml [start].techs
+
+[[race]]
+key = "human"
+name = "Human"
+empire_name = "Solar Concord"
+description = "Adaptable, stubborn and endlessly curious."
+color = "#4a90e2"
+surface = "rock"
+breathes = "oxygen"
+colony_component = "colony_module_rock"
+bonus_techs = { colonization = 1 }
+
+[[race]]
+key = "vashk"
+name = "Vashk"
+empire_name = "Vashk Dominion"
+description = "Reptilian militarists from a volcanic world choked with carbon dioxide."
+color = "#d9453b"
+surface = "rock"
+breathes = "carbon_dioxide"
+colony_component = "colony_module_rock"
+bonus_techs = { colonization = 1, energy_weapons = 2 }
+
+[[race]]
+key = "seren"
+name = "Seren"
+empire_name = "Seren Hegemony"
+description = "Crystalline thinkers who thrive in the cold dark of ice worlds."
+color = "#9b59d0"
+surface = "ice"
+breathes = "hydrogen"
+colony_component = "colony_module_ice"
+bonus_techs = { ice_colonization = 1, physics = 2 }
+
+[[race]]
+key = "oru"
+name = "Oru"
+empire_name = "Oru Synod"
+description = "Vast drifting beings from the cloud decks of a gas giant."
+color = "#e8a33d"
+surface = "gas"
+breathes = "hydrogen"
+colony_component = "colony_module_gas"
+bonus_techs = { gas_colonization = 1, physics = 3 }
+
+[[race]]
+key = "ilthari"
+name = "Ilthari"
+empire_name = "Ilthari Collective"
+description = "A hive of burrowers from a frozen methane moon."
+color = "#3fbf6f"
+surface = "ice"
+breathes = "methane"
+colony_component = "colony_module_ice"
+bonus_techs = { ice_colonization = 1, physics = 2 }
+
+[[race]]
+key = "kethra"
+name = "Kethra"
+empire_name = "Kethra Mercantile Union"
+description = "Traders and engineers from a lush oxygen world."
+color = "#e0d24a"
+surface = "rock"
+breathes = "oxygen"
+colony_component = "colony_module_rock"
+bonus_techs = { colonization = 1, industry = 1 }

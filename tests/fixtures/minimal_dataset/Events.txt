@@ -1,0 +1,15 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Type                  := Test Flare
+Severity              := Low
+Effect Amount         := 10
+Message To            := Owner
+Num Messages          := 1
+Message Title 1       := Flare
+Message 1             := The star flared.
+Picture               := Flare
+Time Till Completion  := 0
+Num Start Messages    := 0
+*END*

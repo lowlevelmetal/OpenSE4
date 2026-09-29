@@ -1,0 +1,13 @@
+/build/
+/out/
+.cache/
+compile_commands.json
+*.png
+!assets/**/*.png
+imgui.ini
+.vscode/
+.idea/
+
+# Local-only reference material captured from the player's own copy of the
+# original game (screenshots etc.). Never commit: it is not ours to distribute.
+/reference/

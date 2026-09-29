@@ -1,0 +1,11 @@
+# Reviewed cleanroom_check.py matches that consist only of functional identifiers
+# (enum values, field and setting names needed for interoperability). One
+# lowercase snippet per line; any match containing a snippet is accepted.
+ship base fighter satellite mine troop
+ship base sat
+defending units per population
+nearest farthest largest smallest
+optimal firing range don't get hurt
+weapon type none direct fire seeking
+planet population anger change
+prepare for attack attack secure holdings

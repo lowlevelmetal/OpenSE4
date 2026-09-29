@@ -1,0 +1,74 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Physical Type        := Planet
+Picture Num          := 0
+Description          := A test world.
+Planet Size          := Medium
+Planet Physical Type := Rock
+Planet Atmosphere    := None
+
+Physical Type        := Star
+Picture Num          := 1
+Description          := A test star.
+Star Size            := Medium
+Star Age             := Average
+Star Color           := Yellow
+Star Luminosity      := Average
+
+Physical Type        := Planet
+Picture Num          := 2
+Description          := A cold test world.
+Planet Size          := Small
+Planet Physical Type := Ice
+Planet Atmosphere    := Methane
+
+Physical Type        := Planet
+Picture Num          := 3
+Description          := A banded test giant.
+Planet Size          := Large
+Planet Physical Type := Gas Giant
+Planet Atmosphere    := Hydrogen
+
+Physical Type        := Planet
+Picture Num          := 4
+Description          := A green test world.
+Planet Size          := Large
+Planet Physical Type := Rock
+Planet Atmosphere    := Oxygen
+
+Physical Type        := Planet
+Picture Num          := 5
+Description          := Built, never generated.
+Planet Size          := Ringworld
+Planet Physical Type := Rock
+Planet Atmosphere    := Oxygen
+
+Physical Type        := Asteroids
+Picture Num          := 6
+Description          := Tumbling rocks.
+Planet Size          := Small
+Planet Physical Type := Rock
+Planet Atmosphere    := None
+
+Physical Type        := Storm
+Picture Num          := 7
+Description          := Swirling ions.
+Storm Size           := Medium
+Combat Tile          := Ion Storm
+
+Physical Type        := Warp Point
+Picture Num          := 8
+Description          := A stable fold.
+Warp Point Size      := Large
+Warp Point One-Way   := False
+Unusual              := False
+
+Physical Type        := Warp Point
+Picture Num          := 9
+Description          := A strange fold.
+Warp Point Size      := Small
+Warp Point One-Way   := True
+Unusual              := True
+*END*

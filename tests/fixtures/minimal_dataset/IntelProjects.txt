@@ -1,0 +1,21 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                  := Test Spy
+Description           := Snoop.
+Group                 := Espionage
+Cost                  := 5000
+Type                  := Steal Tech
+Effect Amount         := 1
+Num Source Messages   := 1
+Source Message 1      := We learned something.
+Num Target Messages   := 1
+Target Message Title 1 := Spies!
+Target Message 1      := Something was stolen.
+Source Picture        := Spy
+Target Picture        := Spy
+Number of Tech Req    := 1
+Tech Area Req 1       := Applied Physics
+Tech Level Req 1      := 1
+*END*

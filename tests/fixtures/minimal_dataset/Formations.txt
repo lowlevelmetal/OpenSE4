@@ -1,0 +1,17 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                  := Test Line
+Description           := Two abreast.
+Leader Position Xpos  := 0
+Leader Position Ypos  := 0
+Leader Design Type    := Any
+Number of Positions   := 2
+Position 1 Xpos       := -1
+Position 1 Ypos       := 0
+Position 1 Type       := Any
+Position 2 Xpos       := 1
+Position 2 Ypos       := 0
+Position 2 Type       := Any
+*END*

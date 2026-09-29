@@ -1,0 +1,76 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                    := Test Medium
+Physical Type           := Planet
+Stellar Size            := Medium
+Max Facilities          := 10
+Max Population          := 2000
+Max Cargo Spaces        := 500
+Max Facilities Domed    := 2
+Max Population Domed    := 200
+Max Cargo Spaces Domed  := 100
+Constructed             := False
+Special Ability ID      := 0
+
+Name                    := Small
+Physical Type           := Planet
+Stellar Size            := Small
+Max Facilities          := 6
+Max Population          := 1200
+Max Cargo Spaces        := 300
+Max Facilities Domed    := 1
+Max Population Domed    := 120
+Max Cargo Spaces Domed  := 60
+Constructed             := False
+Special Ability ID      := 0
+
+Name                    := Medium
+Physical Type           := Planet
+Stellar Size            := Medium
+Max Facilities          := 10
+Max Population          := 2000
+Max Cargo Spaces        := 500
+Max Facilities Domed    := 2
+Max Population Domed    := 200
+Max Cargo Spaces Domed  := 100
+Constructed             := False
+Special Ability ID      := 0
+
+Name                    := Large
+Physical Type           := Planet
+Stellar Size            := Large
+Max Facilities          := 14
+Max Population          := 2800
+Max Cargo Spaces        := 700
+Max Facilities Domed    := 3
+Max Population Domed    := 280
+Max Cargo Spaces Domed  := 140
+Constructed             := False
+Special Ability ID      := 0
+
+Name                    := Ringworld
+Physical Type           := Planet
+Stellar Size            := Huge
+Max Facilities          := 100
+Max Population          := 20000
+Max Cargo Spaces        := 5000
+Max Facilities Domed    := 25
+Max Population Domed    := 2000
+Max Cargo Spaces Domed  := 1000
+Constructed             := True
+Special Ability ID      := 1
+
+Name                    := Small
+Physical Type           := Asteroids
+Stellar Size            := Small
+Max Facilities          := 4
+Max Population          := 800
+Max Cargo Spaces        := 200
+Max Facilities Domed    := 1
+Max Population Domed    := 80
+Max Cargo Spaces Domed  := 40
+Constructed             := False
+Special Ability ID      := 0
+*END*

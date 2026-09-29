@@ -1,0 +1,17 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name          := Steady
+Description   := Balanced.
+Production    := 5
+Research      := 0
+Intelligence  := 0
+Trade         := 0
+Space Combat  := 0
+Ground Combat := -5
+Happiness     := 0
+Maintenance   := 0
+SY Rate       := 0
+Repair        := 10
+*END*

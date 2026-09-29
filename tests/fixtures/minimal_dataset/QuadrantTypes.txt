@@ -1,0 +1,26 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                     := Test Quadrant
+Description              := For tests.
+Min Dist Between Systems := 2
+System Placement         := Random
+Max Warp Points per Sys  := 4
+Min Angle Between WP     := 30
+Number of System Types   := 2
+Type 1 Name              := Test Single Star
+Type 1 Chance            := 600
+Type 2 Name              := Test Busy System
+Type 2 Chance            := 400
+
+Name                     := Test Spiral
+Description              := Arms.
+Min Dist Between Systems := 1
+System Placement         := Spiral
+Max Warp Points per Sys  := 3
+Min Angle Between WP     := 45
+Number of System Types   := 1
+Type 1 Name              := Test Single Star
+Type 1 Chance            := 1000
+*END*

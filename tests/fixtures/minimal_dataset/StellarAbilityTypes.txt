@@ -1,0 +1,36 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                     := Quiet Space
+Number of Poss Abilities := 1
+Ability 1 Chance         := 50
+Ability 1 Type           := Sector - Sensor Interference
+Ability 1 Descr          := Sensors struggle here.
+Ability 1 Val 1          := 10
+Ability 1 Val 2          :=
+
+Name                     := Always Stormy
+Number of Poss Abilities := 1
+Ability 1 Chance         := 1000
+Ability 1 Type           := Sector - Damage
+Ability 1 Descr          := Hurts.
+Ability 1 Val 1          := 5
+Ability 1 Val 2          :=
+
+Name                     := Old Ruins
+Number of Poss Abilities := 1
+Ability 1 Chance         := 1000
+Ability 1 Type           := Ancient Ruins
+Ability 1 Descr          := Something was here.
+Ability 1 Val 1          := 1
+Ability 1 Val 2          :=
+
+Name                     := Rough Passage
+Number of Poss Abilities := 1
+Ability 1 Chance         := 1000
+Ability 1 Type           := Warp Point - Turbulence
+Ability 1 Descr          := Bumpy.
+Ability 1 Val 1          := 10
+Ability 1 Val 2          :=
+*END*

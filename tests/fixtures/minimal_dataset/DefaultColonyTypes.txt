@@ -1,0 +1,8 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name := Mining
+
+Name := Research
+*END*

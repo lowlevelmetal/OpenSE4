@@ -1,0 +1,19 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Long Name                 := Heavy Test Mount
+Short Name                := Heavy
+Description               := Bigger gun.
+Code                      := HM
+Cost Percent              := 150
+Tonnage Percent           := 200
+Tonnage Structure Percent := 200
+Damage Percent            := 150
+Supply Percent            := 100
+Range Modifier            := 0
+Weapon To Hit Modifier    := 0
+Vehicle Size Minimum      := 200
+Weapon Type Requirement   := Direct Fire
+Vehicle Type              := Ship
+*END*

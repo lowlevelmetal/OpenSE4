@@ -1,0 +1,21 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name               := Ore Digger
+Description        := Produces minerals.
+Facility Group     := Resource Extraction
+Facility Family    := 12
+Roman Numeral      := 1
+Restrictions       := None
+Pic Num            := 4
+Cost Minerals      := 500
+Cost Organics      := 0
+Cost Radioactives  := 0
+Number of Tech Req := 0
+Number of Abilities := 1
+Ability 1 Type     := Resource Generation - Minerals
+Ability 1 Descr    := Mines.
+Ability 1 Val 1    := 800
+Ability 1 Val 2    := 0
+*END*

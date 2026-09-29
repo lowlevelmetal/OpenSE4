@@ -1,0 +1,8 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                       := Test Cautious
+Primary Movement Strategy  := Optimal Range
+Fighters Launch Group Amount := 5
+*END*

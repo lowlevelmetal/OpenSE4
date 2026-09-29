@@ -1,0 +1,98 @@
+# Technology areas. Each area is researched level by level.
+# Cost of level N = base_cost * N research points.
+# `requires` maps tech keys to the minimum level needed before this area can be researched.
+
+[[tech]]
+key = "physics"
+name = "Physics"
+category = "Theory"
+description = "Fundamental understanding of matter and energy. Prerequisite for most applied sciences."
+max_level = 10
+base_cost = 400
+
+[[tech]]
+key = "propulsion"
+name = "Propulsion"
+category = "Ship Systems"
+description = "Engines that move ships between sectors and through warp points."
+max_level = 8
+base_cost = 350
+requires = { physics = 1 }
+
+[[tech]]
+key = "ship_construction"
+name = "Ship Construction"
+category = "Ship Systems"
+description = "Larger and sturdier hulls, and the orbital yards that build them."
+max_level = 8
+base_cost = 400
+
+[[tech]]
+key = "colonization"
+name = "Rock Planet Colonization"
+category = "Colonization"
+description = "Colony modules able to settle rocky worlds."
+max_level = 1
+base_cost = 300
+
+[[tech]]
+key = "ice_colonization"
+name = "Ice Planet Colonization"
+category = "Colonization"
+description = "Colony modules able to settle frozen worlds."
+max_level = 1
+base_cost = 600
+requires = { physics = 2 }
+
+[[tech]]
+key = "gas_colonization"
+name = "Gas Giant Colonization"
+category = "Colonization"
+description = "Floating habitats able to settle gas giants."
+max_level = 1
+base_cost = 800
+requires = { physics = 3 }
+
+[[tech]]
+key = "armor"
+name = "Armor"
+category = "Ship Systems"
+description = "Protective plating that absorbs weapon fire."
+max_level = 6
+base_cost = 300
+
+[[tech]]
+key = "energy_weapons"
+name = "Energy Weapons"
+category = "Weapons"
+description = "Directed-energy weapons: lasers, then particle beams."
+max_level = 8
+base_cost = 400
+requires = { physics = 1 }
+
+[[tech]]
+key = "shields"
+name = "Shields"
+category = "Ship Systems"
+description = "Energy barriers that absorb damage before it reaches the hull. They recharge every turn."
+max_level = 6
+base_cost = 500
+requires = { physics = 2 }
+
+[[tech]]
+key = "industry"
+name = "Industrial Engineering"
+category = "Economy"
+description = "Better extraction and manufacturing facilities."
+max_level = 6
+base_cost = 500
+requires = { physics = 1 }
+
+[[tech]]
+key = "sensors"
+name = "Sensors"
+category = "Ship Systems"
+description = "Long-range detection arrays."
+max_level = 5
+base_cost = 300
+requires = { physics = 1 }

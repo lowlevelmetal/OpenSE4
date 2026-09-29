@@ -1,0 +1,11 @@
+=====
+UNIT TEST FIXTURE - original content written for opense4 tests.
+=====
+*BEGIN*
+Name                       := Test Mood
+Description                := For tests.
+Max Positive Anger Change  := 5
+Max Negative Anger Change  := -5
+Any Ship Lost              := 2
+Any Planet Colonized       := -3
+*END*

@@ -1,0 +1,57 @@
+# Planetary facilities. Each occupies one facility slot on a colony.
+# Production abilities are scaled by the planet's resource value (%) and by how
+# populated the colony is (50% output when empty, 100% at maximum population).
+#   types: produce_minerals, produce_organics, produce_radioactives,
+#          produce_research, space_yard (construction rate per resource per turn)
+
+[[facility]]
+key = "space_yard"
+name = "Space Yard"
+description = "Orbital shipyard. Required to build ships; greatly speeds up construction."
+cost = { minerals = 300, radioactives = 50 }
+abilities = [{ type = "space_yard", amount = 500 }]
+requires = { ship_construction = 1 }
+
+[[facility]]
+key = "mineral_miner"
+name = "Mineral Miner"
+description = "Extracts minerals from the planet's crust."
+cost = { minerals = 100 }
+abilities = [{ type = "produce_minerals", amount = 400 }]
+
+[[facility]]
+key = "organics_farm"
+name = "Organics Farm"
+description = "Cultivates organic materials."
+cost = { minerals = 100 }
+abilities = [{ type = "produce_organics", amount = 300 }]
+
+[[facility]]
+key = "radioactives_extractor"
+name = "Radioactives Extractor"
+description = "Refines radioactive elements."
+cost = { minerals = 120 }
+abilities = [{ type = "produce_radioactives", amount = 200 }]
+
+[[facility]]
+key = "research_lab"
+name = "Research Lab"
+description = "Generates research points."
+cost = { minerals = 150, radioactives = 20 }
+abilities = [{ type = "produce_research", amount = 200 }]
+
+[[facility]]
+key = "advanced_mineral_miner"
+name = "Advanced Mineral Miner"
+description = "Deep-core mining rig."
+cost = { minerals = 250, radioactives = 30 }
+abilities = [{ type = "produce_minerals", amount = 700 }]
+requires = { industry = 2 }
+
+[[facility]]
+key = "research_complex"
+name = "Research Complex"
+description = "A campus of laboratories."
+cost = { minerals = 350, radioactives = 60 }
+abilities = [{ type = "produce_research", amount = 400 }]
+requires = { physics = 3 }
