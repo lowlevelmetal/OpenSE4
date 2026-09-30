@@ -58,7 +58,14 @@ FetchContent_Declare(stb
     URL https://github.com/nothings/stb/archive/2c980bb59875b0d32144a71867fbdebb2f77cd20.tar.gz
     URL_HASH SHA256=9a955b1b49a4410088a2e0ee2a9c057c3c907d0c1d75454144cb980aca0ba515
     SOURCE_SUBDIR _no_cmake)
-FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb)
+# dr_mp3 (public domain / MIT-0): decodes the classic game's MP3 music at runtime.
+FetchContent_Declare(drlibs
+    URL https://github.com/mackron/dr_libs/archive/dfe8377631000664666519fdb83da193fd8037f4.tar.gz
+    URL_HASH SHA256=4654acb029f4f2a43ac2edb60c4cb09f40615b4b5bee9709954f910cb979e5fd
+    SOURCE_SUBDIR _no_cmake)
+FetchContent_MakeAvailable(imgui volk vma tomlplusplus stb drlibs)
+add_library(drlibs INTERFACE)
+target_include_directories(drlibs SYSTEM INTERFACE "${drlibs_SOURCE_DIR}")
 
 if(OPENSE4_BUILD_TESTS)
     FetchContent_Declare(doctest

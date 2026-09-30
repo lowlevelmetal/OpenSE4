@@ -20,6 +20,7 @@ struct AppOptions {
     Renderer renderer = Renderer::Auto;
     bool validation = false;
     bool vsync = true;
+    bool noAudio = false;
     bool fullscreen = false;
     int width = 1600;
     int height = 900;

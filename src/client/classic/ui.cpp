@@ -1,5 +1,7 @@
 #include "client/classic/ui.hpp"
 
+#include "client/audio.hpp"
+
 #include <format>
 
 namespace opense4::client::classic {
@@ -138,6 +140,7 @@ bool Dialog::button(const char* label, bool enabled, bool active) {
     const bool clicked = ImGui::Button(label, ImVec2(-FLT_MIN, ui_.px(26)));
     ImGui::EndDisabled();
     if (active) ImGui::PopStyleColor(2);
+    if (clicked) audio().play("button");
     return clicked;
 }
 
@@ -149,7 +152,10 @@ bool Dialog::close() {
     if (ImGui::GetCursorPosY() < y) ImGui::SetCursorPosY(y);
     const bool clicked = ImGui::Button("Close", ImVec2(-FLT_MIN, h));
     const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-    if (clicked || escape) keep_ = false;
+    if (clicked || escape) {
+        keep_ = false;
+        audio().play("close");
+    }
     return clicked || escape;
 }
 

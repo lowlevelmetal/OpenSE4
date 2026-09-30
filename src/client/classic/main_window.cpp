@@ -1,5 +1,6 @@
 #include "client/classic/main_window.hpp"
 
+#include "client/audio.hpp"
 #include "client/classic/settings.hpp"
 
 #include "game/design.hpp"
@@ -534,8 +535,12 @@ void MainWindow::commandPanel(UiContext& ui) {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", b.tooltip);
         ImGui::PopID();
         if (clicked) {
-            if (b.screen) ui.open(*b.screen);
-            else ui.requests.endTurn = true;
+            if (b.screen) {
+                audio().play("cmdbtn");
+                ui.open(*b.screen);
+            } else {
+                ui.requests.endTurn = true;
+            }
         }
     }
 
@@ -575,7 +580,10 @@ void MainWindow::commandPanel(UiContext& ui) {
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", b.tooltip);
         ImGui::PopID();
-        if (clicked && b.action) b.action();
+        if (clicked && b.action) {
+            audio().play("ordbtn");
+            b.action();
+        }
     }
     if (pages > 1) {
         ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(stripX), origin.y + ui.px(4)));

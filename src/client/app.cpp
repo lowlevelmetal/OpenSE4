@@ -1,5 +1,7 @@
 #include "client/app.hpp"
 
+#include "client/audio.hpp"
+
 #include "client/classic/classic_mode.hpp"
 #include "client/prototype_mode.hpp"
 #include "client/ui/theme.hpp"
@@ -81,6 +83,8 @@ int App::run(const AppOptions& options) {
         shutdown();
         return 1;
     }
+    // Sound needs a real session: not with --no-audio, and not for screenshots.
+    if (!options.noAudio && options.screenshotPath.empty()) audio().open();
 
     SDL_ShowWindow(window_);
     lastTicks_ = SDL_GetTicksNS();
@@ -167,6 +171,7 @@ void App::updateUiScale() {
 
 bool App::frame() {
     bool running = true;
+    audio().update();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL3_ProcessEvent(&event);
@@ -225,6 +230,7 @@ bool App::frame() {
 void App::shutdown() {
     if (device_) device_->waitIdle();
     mode_.reset();
+    audio().close();
     if (imguiReady_) {
         imguiRenderer_.reset();
         ImGui_ImplSDL3_Shutdown();

@@ -79,6 +79,19 @@ opense4 --classic --renderer=opengl       # if Vulkan misbehaves on your machine
 `opense4 --help` lists every option. For multiplayer, see
 [MULTIPLAYER.md](MULTIPLAYER.md).
 
+## Sound and music
+
+OpenSE4 plays the game's own sound effects and music from `Sounds/` and `Music/`, and
+uses the playlists defined in the game's settings file. If the install includes the
+remastered sounds in `Sounds/New/`, those are used by default.
+
+You can control sound in Empire Status → Empire Options:
+- effects and music can each be switched off;
+- both volumes can be set;
+- the classic sound set can be chosen instead of the remastered one.
+
+`--no-audio` starts without sound.
+
 ## Mods
 
 Classic mods are replacement data files, and sometimes replacement art. To play one,

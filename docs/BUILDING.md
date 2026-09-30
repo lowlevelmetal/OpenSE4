@@ -25,7 +25,7 @@ What gets built:
 
 CMake fetches the remaining dependencies at pinned versions with verified hashes:
 
-- Dear ImGui, volk, VMA, toml++, stb and doctest;
+- Dear ImGui, volk, VMA, toml++, stb, dr_mp3 (music) and doctest;
 - miniupnpc, for automatic router port forwarding.
 
 The first configure therefore needs network access. Later builds do not.
@@ -121,7 +121,7 @@ cmake --preset debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
 ```
 
 The dependency names are `IMGUI`, `VOLK`, `VMA`, `VULKANHEADERS`, `TOMLPLUSPLUS`,
-`STB`, `DOCTEST` and `MINIUPNPC`. The sources for each dependency are also under
+`STB`, `DRLIBS`, `DOCTEST` and `MINIUPNPC`. The sources for each dependency are also under
 `build/<preset>/_deps/<name>-src` after any online configure. You can reuse them for other build directories or worktrees
 with `FETCHCONTENT_SOURCE_DIR_<NAME>`.
 

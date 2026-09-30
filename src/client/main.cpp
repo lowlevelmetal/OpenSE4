@@ -25,6 +25,7 @@ Rendering:
   --no-vsync                      Disable vertical sync
   --fullscreen                    Start in fullscreen (Alt+Enter toggles)
   --size=WxH                      Window size (default 1600x900)
+  --no-audio                      No sound or music
 
 New game:
   --seed=N                        Galaxy seed (default: random)
@@ -111,6 +112,8 @@ int main(int argc, char** argv) {
             options.setup.playerRace = std::string(value);
         } else if (key == "--classic") {
             options.classic = true;
+        } else if (key == "--no-audio") {
+            options.noAudio = true;
         } else if (key == "--prototype") {
             prototype = true;
         } else if (key == "--classic-dir") {

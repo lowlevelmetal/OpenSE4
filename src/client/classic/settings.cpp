@@ -21,7 +21,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 19> kBoolOptions{{
+constexpr std::array<BoolOption, 22> kBoolOptions{{
     {"General", "show_log_at_turn_start", "Open the log when a turn starts", &S::showLogAtTurnStart},
     {"General", "confirm_end_turn", "Ask before ending the turn", &S::confirmEndTurn},
     {"General", "confirm_scrap", "Ask before scrapping", &S::confirmScrap},
@@ -41,6 +41,9 @@ constexpr std::array<BoolOption, 19> kBoolOptions{{
     {"System Display", "show_movement_lines", "Show movement lines", &S::showMovementLines},
     {"System Display", "show_waypoint_markers", "Show waypoint markers", &S::showWaypointMarkers},
     {"System Display", "show_colonization_markers", "Show colonization markers on planets", &S::showColonizationMarkers},
+    {"Sound", "sound_on", "Play sound effects", &S::soundOn},
+    {"Sound", "music_on", "Play music", &S::musicOn},
+    {"Sound", "remastered_sounds", "Use the remastered sound set when the game has it", &S::remasteredSounds},
 }};
 
 constexpr std::array<MinisterCategory, 24> kMinisters{{
@@ -102,10 +105,14 @@ std::string settingsToToml(const ClassicSettings& s) {
     minister.insert("race_style", s.raceMinisterStyle);
     toml::table replay;
     replay.insert("speed", double(s.replaySpeed));
+    toml::table sound;
+    sound.insert("effects_volume", double(s.soundVolume));
+    sound.insert("music_volume", double(s.musicVolume));
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("ministers", std::move(minister));
     root.insert("replay", std::move(replay));
+    root.insert("sound", std::move(sound));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
     return out.str();
@@ -131,6 +138,8 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
         s.raceMinisterStyle = (*m)["race_style"].value_or(s.raceMinisterStyle);
     }
     if (auto speed = root["replay"]["speed"].value<double>()) s.replaySpeed = std::clamp(float(*speed), 0.25f, 8.0f);
+    if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
+    if (auto v = root["sound"]["music_volume"].value<double>()) s.musicVolume = std::clamp(float(*v), 0.0f, 1.0f);
     return s;
 }
 

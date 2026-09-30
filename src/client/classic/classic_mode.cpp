@@ -1,5 +1,6 @@
 #include "client/classic/classic_mode.hpp"
 
+#include "client/audio.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/settings.hpp"
 #include "game/setup.hpp"
@@ -38,6 +39,8 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->art_ = std::make_unique<Art>(*platform.device, assets::InstallFiles(gameRoot));
     log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
               mode->rules_->racePresets().size());
+    audio().setInstall(&mode->art_->files());
+    mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
 
     if (auto front = frontScreenByName(options.openWindow)) {
@@ -109,11 +112,24 @@ void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
 
 void ClassicMode::endTurn() {
     if (!session_ || session_->waitingForOthers()) return;
+    audio().play("endturn");
     screens_.clear();
     session_->endTurn();
 }
 
+void ClassicMode::updateAudio() {
+    const ClassicSettings& prefs = settings();
+    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, prefs.musicVolume, prefs.remasteredSounds});
+    // Intro music in the front end, battle music while a replay is open, background music otherwise.
+    bool combat = false;
+    for (const auto& [id, screen] : screens_) combat = combat || id == ScreenId::CombatReplay;
+    const std::vector<std::string>& list = !session_ ? playlists_.intro : combat ? playlists_.combat : playlists_.background;
+    if (prefs.musicOn && !list.empty()) audio().playMusic(list);
+    else audio().stopMusic();
+}
+
 bool ClassicMode::update(const FrameState& fs) {
+    updateAudio();
     const float fw = float(fs.frame.width), fh = float(fs.frame.height);
     mapping_.scale = std::min(fw / kFrameW, fh / kFrameH);
     mapping_.offset = {(fw - kFrameW * mapping_.scale) * 0.5f, (fh - kFrameH * mapping_.scale) * 0.5f};

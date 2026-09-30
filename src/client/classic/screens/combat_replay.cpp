@@ -2,6 +2,7 @@
 // of the last processed turn on a tactical-style map. Playback state lives in
 // CombatPlayback (replay.hpp); this file draws it.
 
+#include "client/audio.hpp"
 #include "client/classic/replay.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -59,7 +60,9 @@ public:
         if (index_ < 0 || index_ >= int(combats.size()) || loadedTurn_ != ui.state().turn) {
             load(ui, wanted_ >= 0 && wanted_ < int(combats.size()) ? wanted_ : int(combats.size()) - 1, combats);
         }
+        const size_t before = playback_.cursor();
         playback_.advance(ui.dt);
+        playSounds(ui, before, playback_.cursor());
 
         Dialog d(ui, "Combat Replay", DialogSize::Full);
         if (!d.open()) return d.keepOpen();
@@ -548,6 +551,18 @@ private:
                 dl->AddCircle(c, v.cell * (0.2f + 0.6f * t), IM_COL32(200, 230, 255, int(255 * (1 - t))), 0, ui.px(2));
                 break;
             }
+        }
+    }
+
+    // Weapon and explosion sounds for the events played this frame (a few at most).
+    void playSounds(UiContext& ui, size_t from, size_t to) {
+        if (to <= from || to - from > 8) return;  // skipping around is silent
+        for (size_t i = from; i < to; ++i) {
+            const game::CombatEvent& e = playback_.event(i);
+            if (e.kind == game::CombatEvent::Kind::Fire && e.component < ui.rules().data().components.size())
+                audio().play(ui.rules().component(e.component).weapon.sound);
+            else if (e.kind == game::CombatEvent::Kind::Destroyed)
+                audio().play(std::array<std::string_view, 3>{"boom1", "boom2", "boom3"}[i % 3]);
         }
     }
 

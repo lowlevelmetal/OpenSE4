@@ -214,11 +214,18 @@ public:
             }
             changed |= lampToggle(ui, o.label, &(s.*o.member));
         }
+        ImGui::Spacing();
+        ImGui::SetNextItemWidth(ui.px(260));
+        changed |= ImGui::SliderFloat("Effects volume", &s.soundVolume, 0.0f, 1.0f, "%.2f");
+        ImGui::SetNextItemWidth(ui.px(260));
+        changed |= ImGui::SliderFloat("Music volume", &s.musicVolume, 0.0f, 1.0f, "%.2f");
         ImGui::EndChild();
         d.beginButtons();
         if (d.button("Defaults")) {
             const ClassicSettings defaults;
             for (const BoolOption& o : boolOptions()) s.*o.member = defaults.*o.member;
+            s.soundVolume = defaults.soundVolume;
+            s.musicVolume = defaults.musicVolume;
             changed = true;
         }
         if (changed) saveSettings();

@@ -103,7 +103,8 @@ questions are what the observation sessions still have to settle.
       the original hotkeys.
 - [x] Every window in the inventory, except the tactical combat screens and the combat
       simulator.
-- [ ] Sounds and music playlists, `.fon` fonts, cursors, the 800×600 layout.
+- [x] Sounds (UI, weapons, explosions; remastered set) and the three music playlists.
+- [ ] `.fon` fonts, cursors.
 - [ ] Screenshot comparisons against the original through the harness.
 
 ### M8: Persistence and multiplayer (done)
@@ -129,5 +130,4 @@ questions are what the observation sessions still have to settle.
    - growth and the mood numbers;
    - AI thresholds.
 2. The tactical combat screen.
-3. Sound and music.
-4. Encrypted connections, and per-player views for PBEM.
+3. Encrypted connections, and per-player views for PBEM.

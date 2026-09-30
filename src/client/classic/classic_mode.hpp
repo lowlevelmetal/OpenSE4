@@ -4,6 +4,7 @@
 // installed classic data set and art, presented in the classic main-window
 // layout (a fixed 1024×768 frame, scaled to fit). See docs/spec/06.
 
+#include "client/audio.hpp"
 #include "client/classic/frontend.hpp"
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
@@ -40,12 +41,14 @@ private:
     void startGame(std::unique_ptr<classic::ClassicSession> session);
     void openScreen(classic::ScreenId id, classic::ScreenArgs args);
     void endTurn();
+    void updateAudio();
 
     Platform platform_;
     ClassicOptions options_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<classic::Art> art_;
     classic::FrameMapping mapping_;
+    Playlists playlists_;
 
     // Before a game: the front end.
     std::unique_ptr<classic::FrontScreen> front_;

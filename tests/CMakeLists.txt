@@ -2,6 +2,7 @@ add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
     test_ai.cpp
+    test_audio.cpp
     test_classic_colony_logic.cpp
     test_client_logic.cpp
     test_combat.cpp
@@ -33,6 +34,7 @@ add_executable(opense4_tests
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp

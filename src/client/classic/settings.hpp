@@ -44,6 +44,13 @@ struct ClassicSettings {
     bool ministersForNewVehicles = false;
     bool raceMinisterStyle = false;
 
+    // Sound and music (docs/spec/06 §5.5).
+    bool soundOn = true;
+    bool musicOn = true;
+    bool remasteredSounds = true;
+    float soundVolume = 0.8f;
+    float musicVolume = 0.5f;
+
     // Combat Replay playback speed (1 = normal).
     float replaySpeed = 1.0f;
 
