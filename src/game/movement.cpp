@@ -345,6 +345,7 @@ private:
         if (a.pinned && !inPlace(a, o)) return;  // waits until the member acts alone
         const Exec e = execute(a, o);
         prune(a);
+        afterAction(a);
         if (a.stopped && e != Exec::Fail) return;
         switch (e) {
             case Exec::Moved:
@@ -362,6 +363,20 @@ private:
             case Exec::Removed: removeFront(a); break;
             case Exec::Fail: clearOrders(a); break;
             case Exec::Gone: break;
+        }
+    }
+
+    // After every daily action: the depot check (§7), and a cloak drops at 0
+    // supply or when it can no longer work (§8).
+    void afterAction(Actor& a) {
+        if (a.planet.valid() || a.members.empty()) return;
+        for (VehicleId id : a.members) {
+            Vehicle* v = s_.vehicle(id);
+            if (!v || !alive(*v)) continue;
+            if (resupplyDepotAt(r_, s_, v->owner, v->location)) refillSupply(r_, s_, *v);
+            if (v->status == VehicleStatus::Cloaked &&
+                ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v)))
+                v->status = VehicleStatus::Normal;
         }
     }
 

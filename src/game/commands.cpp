@@ -107,7 +107,8 @@ struct Applier {
     // An own space yard in the sector: a planet facility, or a ship's Space
     // Yard component while that ship is not cloaked (spec 03 §14, §15).
     bool yardAt(Location where) const {
-        if (const Colony* c = ownColonyAt(s, e, where); c && colonyHasSpaceYard(r, *c)) return true;
+        for (ObjectId o : planetsAt(s, where))
+            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasSpaceYard(r, *c)) return true;
         for (const Vehicle& v : s.vehicles)
             if (v.count > 0 && v.owner == e && v.location == where && v.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(r, s, v))
                 return true;
