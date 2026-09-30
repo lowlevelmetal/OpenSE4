@@ -305,7 +305,8 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
             if (item.kind == QueueItem::Kind::Vehicle) inUse.insert(item.design);
     };
     for (const Vehicle& v : s.vehicles) {
-        if (alive(v)) inUse.insert(v.design);
+        if (alive(v))
+            for (const UnitStack& st : groupStacks(v)) inUse.insert(st.design);   // every design of a unit group
         cargo(v.cargo);
         queue(v.queue);
     }

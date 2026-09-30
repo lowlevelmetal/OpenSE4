@@ -405,6 +405,7 @@ int64_t vehicleAbilityTotal(const Rules& r, const GameState& s, const Vehicle& v
 // ---- Unit groups ------------------------------------------------------------------------------
 
 std::vector<UnitStack> groupStacks(const Vehicle& v) {
+    if (v.count <= 0) return {};   // gone
     if (!v.mixed.empty()) return v.mixed;
     return {UnitStack{v.design, v.count}};
 }

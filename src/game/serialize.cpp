@@ -237,7 +237,7 @@ std::string validateState(const GameState& s, const Rules* rules) {
             return std::format("vehicle {} has damage for {} parts; its design has {}", v.id.value, v.damage.size(),
                                s.designs[v.design.index()].entries.size());
         if (!ordersOk(v.orders) || !cargoOk(v.cargo) || !queueOk(v.queue)) return std::format("vehicle {} refers to missing things", v.id.value);
-        if (!v.mixed.empty()) {
+        if (!v.mixed.empty() && v.count > 0) {
             // A group that mixes designs: two stacks or more, the first is `design`, the counts add up to `count`.
             int64_t total = 0;
             for (const UnitStack& st : v.mixed) {

@@ -1087,16 +1087,24 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         int64_t capacity = 0;
         for (VehicleId id : group) {
             const Vehicle& v = *s.vehicle(id);
-            if (v.status != VehicleStatus::Cloaked) capacity += componentSum(r, s, v, AbilityKind::MineSweeping) * v.count;
+            if (v.status == VehicleStatus::Cloaked) continue;
+            // A unit group sweeps with every unit of each of its designs.
+            if (isUnitType(typeOf(r, s, v)))
+                for (const UnitStack& st : groupStacks(v)) capacity += componentSum(r, s, stackProbe(s, v, st), AbilityKind::MineSweeping) * st.count;
+            else
+                capacity += componentSum(r, s, v, AbilityKind::MineSweeping);
         }
         std::map<uint32_t, int> sweptBy;   // minefield owner -> mines lost
         for (VehicleId mid : fields) {
             if (capacity <= 0) break;
             Vehicle* m = s.vehicle(mid);
-            const int n = static_cast<int>(std::min<int64_t>(capacity, m->count));
-            m->count -= n;
-            capacity -= n;
-            sweptBy[m->owner.value] += n;
+            // A minefield that mixes designs loses its mines in the order they were laid (inferred).
+            for (const UnitStack& st : groupStacks(*m)) {
+                if (capacity <= 0) break;
+                const int n = removeGroupUnits(s, *m, st.design, static_cast<int>(std::min<int64_t>(capacity, st.count)));
+                capacity -= n;
+                sweptBy[m->owner.value] += n;
+            }
         }
         int sweptTotal = 0;
         for (const auto& [owner, n] : sweptBy) {
@@ -1115,9 +1123,11 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         std::map<uint32_t, int> struck, lost;   // victim vehicle -> mines, units lost
         for (VehicleId mid : fields) {
             int used = 0, kills = 0;
-            int64_t tonnage = 0;
             while (s.vehicle(mid)->count > 0) {
+                // The minefield's mines go off in the order they were laid: the front
+                // design first (a minefield that mixes designs, inferred).
                 const Vehicle& mine = *s.vehicle(mid);
+                const DesignId mineDesign = mine.design;
                 std::vector<VehicleId> targets;
                 for (VehicleId id : group) {
                     const Vehicle& v = *s.vehicle(id);
@@ -1126,8 +1136,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                 if (targets.empty()) break;
                 Vehicle& victim = *s.vehicle(targets[rng.below(targets.size())]);
                 const std::vector<size_t> warheads = mineWarheads(r, s, mine, victim);
-                const Design& md = s.design(mine.design);
-                const Design& vd = s.design(victim.design);
+                const Design& md = s.design(mineDesign);
                 for (size_t w : warheads) {
                     if (victim.count <= 0) break;
                     const DamageType t = parseDamageType(r.component(md.entries[w].component).weapon.damageType);
@@ -1140,21 +1149,29 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     const int64_t left = destroyComponents(r, s, victim, dmg, t, rng);
                     if (hull) pool = left;
                     if (vehicleDestroyed(r, s, victim)) {
-                        --victim.count;
+                        // The unit at the front of a group (of its first design) dies; the next one is whole.
+                        const DesignId dead = victim.design;
                         ++kills;
-                        tonnage += designTonnage(r, vd);
                         ++lost[victim.id.value];
-                        if (victim.count > 0) victim.damage.assign(vd.entries.size(), 0);   // the next unit of the group
+                        ++s.design(dead).lost;
+                        Design& killer = s.design(mineDesign);
+                        ++killer.kills;
+                        killer.enemyTonnageDestroyed += designTonnage(r, s.design(dead));
+                        if (victim.count > 1 && isUnitType(typeOf(r, s, victim))) {
+                            removeGroupUnits(s, victim, dead, 1);
+                            victim.damage.assign(s.design(victim.design).entries.size(), 0);
+                        } else {
+                            victim.count = 0;
+                            victim.mixed.clear();
+                        }
                     }
                 }
                 ++struck[victim.id.value];
-                --s.vehicle(mid)->count;   // the mine is used up
+                removeGroupUnits(s, *s.vehicle(mid), mineDesign, 1);   // the mine is used up
                 ++used;
             }
             if (used > 0) {
                 const Vehicle& m = *s.vehicle(mid);
-                s.design(m.design).kills += kills;
-                s.design(m.design).enemyTonnageDestroyed += tonnage;
                 ctx.log(m.owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
                         std::format("{} of our mines struck {} enemy vehicles{}.", used, struck.size(),
                                     kills > 0 ? std::format(", destroying {}", kills) : std::string{}),
@@ -1164,7 +1181,6 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         for (const auto& [id, strikes] : struck) {
             const Vehicle& v = *s.vehicle(VehicleId{id});
             const int unitsLost = lost[id];
-            s.design(v.design).lost += unitsLost;
             ctx.log(v.owner, LogCategory::Combat, std::format("Mines at {}", sectorName(s, where)),
                     std::format("{} was struck by {} enemy mines{}.", v.name, strikes, v.count <= 0 ? " and destroyed" : ""), where);
             if (unitsLost > 0 && !isUnitType(typeOf(r, s, v))) {

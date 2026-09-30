@@ -403,7 +403,8 @@ void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
     v->minister = false;
     v->targetVehicle = {};
     v->targetObject = {};
-    if (s.design(v->design).owner != to) learnDesign(s, s.empire(to), v->design);
+    for (const UnitStack& st : groupStacks(*v))   // every design of a unit group
+        if (s.design(st.design).owner != to) learnDesign(s, s.empire(to), st.design);
     explore(s, to, v->location.system);
 }
 

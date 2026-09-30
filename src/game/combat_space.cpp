@@ -2597,6 +2597,7 @@ void Battle::finish() {
         if (!v) continue;
         if (!p.alive) {
             v->count = 0;
+            v->mixed.clear();
             continue;
         }
         if (p.kind == Kind::Vehicle) detail::restoreRegeneratingArmor(r_, s_, p.unit, kRegenerationCap);   // (history 1.79)
