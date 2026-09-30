@@ -153,7 +153,8 @@ public:
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
             newDay();
-            const std::vector<VehicleId> order = vehiclesInObjectOrder(s_);
+            objectOrder_ = vehiclesInObjectOrder(s_);
+            const std::vector<VehicleId> order = objectOrder_;
             // Colonized planets with orders act on day 1, where their slots are:
             // before every vehicle (inferred, Vehicle::slot).
             if (day == 1)
@@ -197,7 +198,9 @@ public:
             if (c && c->owner == m.empire && !c->orders.empty() && inSystem(s_.galaxy, c->planet) && (all || has(m.planets, c->planet)))
                 liveActor(ActorRef{{}, c->planet});
         std::set<FleetId> fleetsDone;
-        for (VehicleId id : vehiclesInObjectOrder(s_)) {
+        objectOrder_ = vehiclesInObjectOrder(s_);
+        const std::vector<VehicleId> order = objectOrder_;
+        for (VehicleId id : order) {
             const Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v) || v->owner != m.empire) continue;
             if (followsFleetOrders(s_, *v)) {
@@ -343,7 +346,7 @@ private:
             return g;
         }
         if (computerPlayer(s_, v->owner)) {
-            for (VehicleId id : vehiclesInObjectOrder(s_)) {
+            for (VehicleId id : objectOrder_) {
                 const Vehicle* w = s_.vehicle(id);
                 if (!w || !joins(*w)) continue;
                 if (followsFleetOrders(s_, *w)) {
@@ -354,7 +357,7 @@ private:
                 }
             }
         } else if (!fleetOrders && !v->fleet.valid() && vehicleType(r_, s_, *v) == VehicleType::Drone) {
-            for (VehicleId id : vehiclesInObjectOrder(s_)) {
+            for (VehicleId id : objectOrder_) {
                 const Vehicle* w = s_.vehicle(id);
                 if (w && joins(*w) && !w->fleet.valid() && vehicleType(r_, s_, *w) == VehicleType::Drone && !w->orders.empty() &&
                     w->orders.front() == head)
@@ -1554,6 +1557,7 @@ private:
     std::map<VehicleId, int> actionMovement_;           // simultaneous: movement points before the action
     std::set<VehicleId> participants_;                  // who took part in the action
     std::map<RouteKey, Route> routes_;
+    std::vector<VehicleId> objectOrder_;                // the vehicles in object order (refreshed each day)
     std::vector<Location> touched_;                     // sectors where something acted today
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase

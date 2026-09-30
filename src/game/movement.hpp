@@ -11,7 +11,7 @@
 //             11 repair                 repairEmpire
 //             13 supply                 supplyEmpire
 //             15 training               trainEmpire
-//   step 7  design cleanup (new year)   purgeObsoleteDesigns
+//   step 7  design cleanup (10th turn)  purgeObsoleteDesigns
 //   step 9  event step, first           runStellarHazards
 
 #include "game/rules.hpp"
@@ -162,12 +162,15 @@ void runColonization(TurnContext& ctx);
 struct LiveMove {
     EmpireId empire;
     // Only these groups act: vehicles on their own orders, fleets, planets.
-    // With all three empty, every group of the empire that has orders.
+    // With all three empty, every group of the empire that has orders. A
+    // human player's vehicles listed together move as one group when their
+    // head orders are identical (spec 03 §8).
     std::vector<VehicleId> vehicles;
     std::vector<FleetId> fleets;
     std::vector<ObjectId> planets;
-    // A human player's groups stop before a sector with visible enemy forces
-    // and ask (the player's own orders; computer players decide themselves).
+    // A human player's groups stop before an in-system step into a sector
+    // with enemy objects they see, and ask (orders carried over included;
+    // computer players decide themselves).
     bool ask = false;
     // An answered question: that group enters that sector without asking.
     std::optional<EntryQuestion> allowed;
@@ -181,8 +184,8 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 
 // Turn-based games: the groups carry out their orders at once, spending
 // movement points, action after action until each has no movement left,
-// waits, fails or runs out of orders (a repeating list that goes round
-// without a step waits for the next turn). A group that steps into a sector
+// waits, fails or runs out of orders; orders that complete chain into the
+// next, up to 21 executions an action. A group that steps into a sector
 // where combat is possible fights there at once (mines strike first) and its
 // order fails; the Attack order's target sector is fought by the order
 // itself, after decloaking, and the order stays. An order carried out in a
@@ -201,17 +204,21 @@ void runColonization(TurnContext& ctx, EmpireId empire);
 
 // Repair (spec 03 §13): each (empire, sector) pool restores destroyed components.
 void repairEmpire(TurnContext& ctx, EmpireId e);
-// Supply (spec 03 §7, §12): unit and cloak upkeep, depot refills, fleet
-// pooling, solar collectors, then drones at 0 are lost and cloaks at 0 drop.
+// Supply (spec 03 §7, §12): unit and cloak upkeep (a cloak at 0 drops at
+// once), depot refills, fleet pooling, then drones at 0 are lost.
 void supplyEmpire(TurnContext& ctx, EmpireId e);
-// Ship and fleet training (spec 03 §3.3): every own source in turn.
+// The training step (spec 03 §3.3, §7, §9): every own object in object order
+// trains its sector and runs its solar collectors; then the system-wide
+// training abilities, one source per explored system.
 void trainEmpire(TurnContext& ctx, EmpireId e);
-// Obsolete designs with no vehicles, no queue entries and no living foreign
-// empire that knows them are removed (spec 03 §4.1). Runs when a year starts.
+// Obsolete designs with no vehicles, no queue entries and no sighting by a
+// living foreign empire less than 50 turns old are removed (spec 03 §4.1).
+// Runs every 10th turn.
 void purgeObsoleteDesigns(TurnContext& ctx);
 
 // The event step's hazards (spec 01 §7): black-hole pull, random drift toward
-// one target sector shared by all systems, then centre damage. Moves every
+// one target sector shared by all systems (drawn every turn), then centre
+// damage through the combat damage routine. Moves every
 // ship, base and unit group; spends no movement or supply; starts no combat.
 void runStellarHazards(TurnContext& ctx);
 
