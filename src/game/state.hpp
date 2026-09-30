@@ -243,6 +243,12 @@ struct Empire {
     // AI_Settings each turn (spec 05 §7.5).
     bool avoidTaggedMinefields = true;
     bool avoidRestrictedSystems = true;
+    // "Choose the colony type on colonization" (spec 03 §8, on for a new
+    // empire): a human player's colony founded in a turn-based game waits in
+    // colonyTypeChoices for the player to pick its type in a dialog
+    // (cmd::SetColonyType); until then it has the type the computer would pick.
+    bool chooseColonyType = true;
+    std::vector<ObjectId> colonyTypeChoices;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }

@@ -269,12 +269,14 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         }
     }
     const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
+    const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
     // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty() || asking || battleAsking);
+    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value());
     drawNetwork(ui);
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
+    if (choosing) drawColonyTypeChoice(ui, *choosing);
 
     // Windows, oldest first; the newest draws on top.
     for (size_t i = 0; i < screens_.size();) {
@@ -437,6 +439,38 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     if (ImGui::Button("Attack", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) session_->answer(true);
     ImGui::SameLine();
     if (ImGui::Button("Stay Back", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) session_->answer(false);
+    ImGui::End();
+    ImGui::PopFont();
+}
+
+std::optional<game::ObjectId> ClassicMode::colonyTypeChoice(const UiContext& ui) const {
+    const game::GameState& s = ui.state();
+    if (s.options.simultaneous || !session_->myTurn()) return std::nullopt;
+    const game::EmpireId me = session_->player();
+    if (!me.valid() || me.index() >= s.empires.size()) return std::nullopt;
+    for (game::ObjectId p : s.empire(me).colonyTypeChoices)
+        if (const game::Colony* c = s.colony(p); c && c->owner == me) return p;
+    return std::nullopt;
+}
+
+// Turn-based games: a colony was just founded; the player picks its type
+// (spec 03 §8, the empire's "choose the colony type" option).
+void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
+    const game::GameState& s = ui.state();
+    const game::Empire& me = s.empire(session_->player());
+    const game::Colony& c = *s.colony(planet);
+    std::vector<std::string> types = me.colonyTypes;
+    if (std::find(types.begin(), types.end(), c.colonyType) == types.end()) types.insert(types.begin(), c.colonyType);
+    const float h = 110.0f + 30.0f * float(types.size());
+    ImGui::SetNextWindowPos(ui.at({362, 384 - h * 0.5f}));
+    ImGui::SetNextWindowSize(ui.size({300, h}));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::TextWrapped("%s", std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name).c_str());
+    ImGui::Spacing();
+    for (const std::string& t : types)
+        if (ImGui::Button(std::format("{}{}", t, t == c.colonyType ? " (suggested)" : "").c_str(), ui.size({280, 26})))
+            session_->issue(game::cmd::SetColonyType{planet, t});
     ImGui::End();
     ImGui::PopFont();
 }

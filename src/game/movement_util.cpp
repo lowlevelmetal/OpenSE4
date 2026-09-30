@@ -572,10 +572,12 @@ int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
         else it->count += n;
         return int64_t{n};
     };
+    auto ofKindHere = [&](const Vehicle& g) {
+        return alive(g) && g.id != into.vehicle && g.owner == h.owner && g.location == h.where && vehicleType(r, s, g) == type;
+    };
     // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
     auto recoverable = [&](const Vehicle& g) {
-        return alive(g) && g.id != into.vehicle && g.owner == h.owner && g.location == h.where && vehicleType(r, s, g) == type &&
-               (s.options.simultaneous || type != VehicleType::Fighter || g.movement >= turnMovement(r, s, g));
+        return ofKindHere(g) && (s.options.simultaneous || type != VehicleType::Fighter || g.movement >= turnMovement(r, s, g));
     };
     if (o.vehicle.valid()) {
         // The Launch/Recover window names one group and one design of it (OpenSE4's
@@ -591,12 +593,13 @@ int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
     // one unit (spec 03 §8, confirmed: binary).
     for (VehicleId id : vehiclesInObjectOrder(s)) {
         Vehicle* g = s.vehicle(id);
-        if (!g || !recoverable(*g)) continue;
+        if (!g || !ofKindHere(*g)) continue;
         int64_t gave = 0;
-        for (const UnitStack& st : groupStacks(*g)) {
-            if (!alive(*g)) break;
-            gave += take(*g, st.design, st.count);
-        }
+        if (recoverable(*g))
+            for (const UnitStack& st : groupStacks(*g)) {
+                if (!alive(*g)) break;
+                gave += take(*g, st.design, st.count);
+            }
         moved += gave;
         if (gave <= 0) break;
     }

@@ -310,3 +310,41 @@ TEST_CASE("combat: units launched in a battle that stay in space join the sector
     CHECK(g.supply == vehicleSupplyCapacity(r, s, g));   // joining refills the group
     CHECK(validateState(s, &r).empty());
 }
+
+TEST_CASE("unit groups: Recover Units takes every design of each group of the kind, group by group") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const Location here = at(a, 5, 5);
+    const DesignId wasp = w.design(kA, "Wasp", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Tank"});
+    const DesignId hornet = w.design(kA, "Hornet", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId first = w.spawn(wasp, here);
+    addGroupUnits(w.s, w.v(first), hornet, 2);
+    const VehicleId second = w.spawn(hornet, here);
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 3, {"Mv Fighter Bay", "Mv Fighter Bay"}), here);
+    // Room for 20 units of 20 kT: both groups, every design (spec 03 §8).
+    w.order(carrier, recoverOf(wasp));
+    w.move();
+    CHECK(w.s.vehicle(first) == nullptr);
+    CHECK(w.s.vehicle(second) == nullptr);
+    CHECK(w.v(carrier).cargo.unitCount(wasp) == 1);
+    CHECK(w.v(carrier).cargo.unitCount(hornet) == 3);
+
+    // Turn-based: a fighter group without its full movement gives nothing, and
+    // the order moves on to the next group only while the previous one gave some.
+    World t;
+    const SystemId ta = t.system("A");
+    t.s.options.simultaneous = false;
+    const DesignId dart = t.design(kA, "Dart", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId tired = t.spawn(dart, at(ta, 5, 5));
+    const VehicleId fresh = t.spawn(dart, at(ta, 5, 5));
+    const VehicleId deck = t.spawn(t.ship(kA, "Deck", 3, {"Mv Fighter Bay"}), at(ta, 5, 5));
+    TurnContext ctx{r, t.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    t.v(tired).movement = 1;  // it has moved this turn
+    t.order(deck, recoverOf(dart));
+    movement::runLive(ctx, movement::LiveMove{kA, {deck}});
+    CHECK(t.v(deck).cargo.unitCount(dart) == 0);
+    CHECK(t.s.vehicle(tired));
+    CHECK(t.s.vehicle(fresh));
+}

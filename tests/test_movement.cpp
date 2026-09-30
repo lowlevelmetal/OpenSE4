@@ -4,7 +4,9 @@
 #include "movement_fixture.hpp"
 
 #include "game/ai.hpp"
+#include "game/combat_detail.hpp"
 #include "game/commands.hpp"
+#include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/xmath.hpp"
 
@@ -2536,8 +2538,11 @@ TEST_CASE("movement: obsolete designs go when nothing uses or knows them") {
     for (DesignId d : {used, queued, seen, gone}) w.s.design(d).obsolete = true;
     w.spawn(used, at(a, 1, 1));
     w.colony(w.planet(a, {2, 2}), kA, 100).queue.items.push_back(QueueItem{QueueItem::Kind::Vehicle, queued});
-    seeDesign(w.s.empire(kB).knowledge, seen, 5);
-    w.s.turn = 9;  // the cleanup runs when a new year starts
+    seeDesign(w.s.empire(kB).knowledge, seen, 59 - 49);  // less than 50 turns ago: protected
+    const DesignId stale = w.ship(kA, "Stale", 1);
+    w.s.design(stale).obsolete = true;
+    seeDesign(w.s.empire(kB).knowledge, stale, 59 - 50);  // exactly 50 turns old: no protection (spec 03 §4.1)
+    w.s.turn = 59;  // the cleanup runs every 10th turn
     w.upkeep();
     const auto& list = w.s.empire(kA).designs;
     auto has = [&](DesignId d) { return std::find(list.begin(), list.end(), d) != list.end(); };
@@ -2546,6 +2551,7 @@ TEST_CASE("movement: obsolete designs go when nothing uses or knows them") {
     CHECK(has(seen));
     CHECK(has(kept));
     CHECK_FALSE(has(gone));
+    CHECK_FALSE(has(stale));
     (void)r;
 }
 
@@ -2592,6 +2598,279 @@ TEST_CASE("movement: damage outside combat cuts supply and cargo back at once") 
         CHECK(v.supply <= vehicleSupplyCapacity(r, w.s, v));
         CHECK(cargoSpaceUsed(r, w.s, v.cargo) <= vehicleCargoCapacity(r, w.s, v));
     }
+}
+
+TEST_CASE("movement: objects act in object order; a new vehicle takes the first slot a removed one freed") {
+    World w;
+    const SystemId a = w.system("A");
+    const DesignId d = w.ship(kA, "Hull", 2);
+    const VehicleId first = w.spawn(d, at(a, 0, 0));
+    const VehicleId second = w.spawn(d, at(a, 0, 0));
+    const VehicleId third = w.spawn(d, at(a, 0, 0));
+    CHECK(w.v(first).slot < w.v(second).slot);
+    CHECK(w.v(second).slot < w.v(third).slot);
+    const uint32_t freed = w.v(second).slot;
+    w.v(second).count = 0;
+    w.s.removeDeadVehicles();
+    const VehicleId fourth = w.spawn(d, at(a, 0, 0));
+    CHECK(w.v(fourth).slot == freed);  // before `third` in object order, though created after it
+    CHECK(fourth > third);
+
+    // Planets with orders act on day 1 before every vehicle: the colony's launch
+    // comes first, so a base acting on day 1 recovers the group at once.
+    const ObjectId home = w.planet(a, {5, 5});
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    w.colony(home, kA, 100).cargo.units.push_back({fighter, 3});
+    w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
+    const VehicleId dock = w.spawn(w.design(kA, "Dock", "Test Station", {"Test Bridge", "Mv Fighter Bay"}), at(a, 5, 5));
+    w.order(dock, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1));
+    w.move();
+    CHECK(w.v(dock).cargo.unitCount(fighter) == 3);
+    CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 0);
+}
+
+TEST_CASE("movement: the Attack Sector question: seen enemies on in-system steps, not for cloaked or drone groups, not on warp jumps") {
+    // Turn-based games, a human player moving (spec 03 §6.2, confirmed: binary).
+    auto asked = [](auto&& setup) {
+        World w;
+        w.s.options.simultaneous = false;
+        const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+        w.link(a, {2, 6}, b, {0, 6});
+        w.exploreAll(kA);
+        w.setTreaty(kA, kB, Treaty::War);
+        const VehicleId mover = setup(w, a, b);
+        TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+        movement::startTurn(ctx, kA);
+        movement::LiveMove m{kA};
+        m.ask = true;
+        CombatSpy spy;
+        const auto qs = movement::runLive(ctx, m, spy.hooks());
+        return std::pair{qs.size(), w.v(mover).location};
+    };
+    // A visible enemy ship in the next sector: asked, the group waits.
+    auto plain = [](World& w, SystemId a, SystemId) {
+        w.spawn(w.ship(kB, "Picket", 1), at(a, 2, 5));
+        const VehicleId v = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 5));
+        fuel(w, v);
+        w.order(v, moveTo(a, 2, 5));
+        return v;
+    };
+    CHECK(asked(plain).first == 1);
+    CHECK(asked(plain).second == at(SystemId{0u}, 1, 5));
+    // A colony the owner sees counts too.
+    CHECK(asked([](World& w, SystemId a, SystemId) {
+              w.colony(w.planet(a, {2, 5}), kB, 100);
+              const VehicleId v = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 5));
+              fuel(w, v);
+              w.order(v, moveTo(a, 2, 5));
+              return v;
+          }).first == 1);
+    // Every member cloaked: no question, the group goes in.
+    const auto cloaked = asked([](World& w, SystemId a, SystemId) {
+        w.spawn(w.ship(kB, "Picket", 1), at(a, 2, 5));
+        const VehicleId v = w.spawn(w.ship(kA, "Shade", 3, {"Mv Cloak"}), at(a, 0, 5));
+        fuel(w, v);
+        w.v(v).status = VehicleStatus::Cloaked;
+        w.order(v, moveTo(a, 2, 5));
+        return v;
+    });
+    CHECK(cloaked.first == 0);
+    CHECK(cloaked.second == at(SystemId{0u}, 2, 5));
+    // A group made only of drones: no question.
+    CHECK(asked([](World& w, SystemId a, SystemId) {
+              w.spawn(w.ship(kB, "Picket", 1), at(a, 2, 5));
+              const VehicleId v = w.spawn(w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Mv Drone Tank"}), at(a, 0, 5));
+              w.order(v, moveTo(a, 2, 5));
+              return v;
+          }).first == 0);
+    // A warp jump never asks, even onto an enemy.
+    const auto jumped = asked([](World& w, SystemId a, SystemId b) {
+        w.spawn(w.ship(kB, "Picket", 1), at(b, 0, 6));
+        const VehicleId v = w.spawn(w.ship(kA, "Jumper", 3), at(a, 2, 6));
+        fuel(w, v);
+        w.order(v, mk(OrderKind::Warp, {}, w.s.galaxy.system(a).objects[0]));
+        return v;
+    });
+    CHECK(jumped.first == 0);
+    CHECK(jumped.second == at(SystemId{1u}, 0, 6));
+}
+
+TEST_CASE("movement: a warp arrival makes no storm roll") {
+    for (uint64_t seed = 1; seed <= 16; ++seed) {
+        World w;
+        const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+        const auto [wa, wb] = w.link(a, {6, 6}, b, {0, 6});
+        const ObjectId storm = w.object(b, ObjectKind::Storm, {0, 6});
+        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 30));
+        w.exploreAll(kA);
+        const VehicleId ship = w.spawn(w.ship(kA, "Jumper", 2, {"Mv Armor"}), at(a, 6, 6));
+        fuel(w, ship);
+        w.order(ship, mk(OrderKind::Warp, {}, wa));
+        w.s.rng.reseed(seed);
+        w.move();
+        CHECK(w.v(ship).location == at(b, 0, 6));
+        CHECK(totalDamage(w.v(ship)) == 0);
+        (void)wb;
+    }
+}
+
+TEST_CASE("movement: around a destructive centre steps follow its cost map and keep out of the zone") {
+    // The cost map (spec 03 §6.2, confirmed: binary): the target costs 1;
+    // entering a square costs 1 + (30 - round(distance to the centre)) + 1000
+    // within the zone.
+    const auto map = movement::detail::centreCostMap(Sector{12, 6}, 2);
+    CHECK(map[6 * kSystemSize + 12] == 1);
+    CHECK(map[6 * kSystemSize + 11] == 1 + 1 + (30 - 5));        // (5, 0) from the centre
+    CHECK(map[6 * kSystemSize + 8] > 1000);                        // inside the zone: reached, never spread
+    CHECK(map[6 * kSystemSize + 7] == -1);                        // behind the zone: nothing spreads there
+    // The cheapest of the nine squares, the lowest sector number on a tie.
+    CHECK(movement::detail::centreStep(map, Sector{11, 6}) == Sector{12, 6});
+    CHECK_FALSE(movement::detail::centreStep(map, Sector{6, 6}).has_value());
+
+    World w;
+    const SystemId a = w.system("A");
+    w.s.galaxy.system(a).abilities.push_back(ab(AbilityKind::SystemDestructiveCenter, 100));
+    w.s.galaxy.system(a).abilities.push_back(ab(AbilityKind::SystemMovementTowardsCenter, 2));
+    w.exploreAll(kA);
+    // The route estimate follows the map as well: around the zone, never through it.
+    const auto path = movement::findPath(w.rules(), w.s, kA, at(a, 0, 6), at(a, 12, 6));
+    REQUIRE(path);
+    for (const Location& l : path->steps) CHECK(std::max(std::abs(l.sector.x - 6), std::abs(l.sector.y - 6)) > 2);
+    CHECK(path->steps.back() == at(a, 12, 6));
+    const VehicleId ship = w.spawn(w.ship(kA, "Careful", 10), at(a, 0, 6));
+    fuel(w, ship);
+    w.order(ship, moveTo(a, 12, 6));
+    CombatSpy spy;
+    spy.fight = [](const GameState&, Location) { return false; };
+    for (int turn = 0; turn < 3 && !w.v(ship).orders.empty(); ++turn) w.move(spy.hooks());
+    CHECK(w.v(ship).location == at(a, 12, 6));
+    for (const Location& l : spy.asked) CHECK(std::max(std::abs(l.sector.x - 6), std::abs(l.sector.y - 6)) > 2);
+}
+
+TEST_CASE("movement: training caps: ships land on V2, fleets and system sources keep their fraction, 50 at most") {
+    ruleset::Ruleset rs = buildRuleset();
+    for (auto [name, kind, v1, v2] : {std::tuple{"Mv Drill", AbilityKind::FleetTraining, 1, 10}, std::tuple{"Mv Gym", AbilityKind::ShipTraining, 3, 10},
+                                      std::tuple{"Mv Great Hall", AbilityKind::ShipTrainingSystem, 100, 90}}) {
+        ruleset::Facility f;
+        f.name = name;
+        f.abilities = {ab(kind, v1, v2)};
+        rs.facilities.push_back(f);
+    }
+    rs.reindex();
+    const Rules r{std::move(rs)};
+    World w(r);
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    w.s.empire(kA).knowledge.explored[b.index()] = 1;
+    w.colony(w.planet(a, {3, 3}), kA, 0, {"Mv Drill", "Mv Gym"});  // no population needed
+    const VehicleId m1 = w.spawn(w.ship(kA, "M1", 1), at(a, 3, 3));
+    const VehicleId m2 = w.spawn(w.ship(kA, "M2", 1), at(a, 3, 3));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Drill", {m1, m2}}).ok);
+    Fleet& f = w.s.fleets.back();
+    f.experience = 9;
+    f.experienceTenths = 5;
+    w.v(m1).experience = 8;
+    w.v(m1).experienceTenths = 5;
+    w.upkeep();
+    // A fleet at 9.5 with V1 1 and V2 10: + (10 - truncate(9.5)) = 10.5.
+    CHECK(w.s.fleets.back().experience == 10);
+    CHECK(w.s.fleets.back().experienceTenths == 5);
+    // A ship at 8.5 with V1 3 and V2 10 lands on 10 exactly.
+    CHECK(w.v(m1).experience == 10);
+    CHECK(w.v(m1).experienceTenths == 0);
+    // The system-wide source: V2 - truncate(experience), and never above 50 for a ship.
+    w.colony(w.planet(b, {1, 1}), kA, 0, {"Mv Great Hall"});
+    const VehicleId vet = w.spawn(w.ship(kA, "Vet", 1), at(b, 5, 5));
+    w.v(vet).experience = 40;
+    w.v(vet).experienceTenths = 5;
+    w.upkeep();
+    CHECK(w.v(vet).experience == 50);
+    CHECK(w.v(vet).experienceTenths == 0);
+}
+
+TEST_CASE("movement: the supply step: a cloak at 0 drops before the depot; solar collectors after drones are lost") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.colony(w.planet(a, {2, 2}), kA, 0, {"Test Depot"});
+    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 2, {"Mv Cloak"}), at(a, 2, 2));
+    w.v(shade).status = VehicleStatus::Cloaked;
+    w.v(shade).supply = 10;  // less than the cloak's 20
+    w.upkeep();
+    CHECK(w.v(shade).status == VehicleStatus::Normal);  // decloaked at 0, before the refill
+    CHECK(w.v(shade).supply == 100);
+
+    // A drone at 0 after its upkeep is lost before its collector could help.
+    const VehicleId drone = w.spawn(w.design(kA, "Sunny", "Test Drone Hull", {"Mv Engine", "Mv Drone Tank", "Mv Drone Panel"}), at(a, 8, 8));
+    w.v(drone).supply = 200;
+    w.object(a, ObjectKind::Star, {6, 6});
+    w.upkeep();
+    CHECK(w.s.vehicle(drone) == nullptr);
+    // A ship's collector fills it in the training step.
+    const VehicleId panel = w.spawn(w.ship(kA, "Panel", 2, {"Test Solar Panel"}), at(a, 9, 9));
+    w.v(panel).supply = 10;
+    w.upkeep();
+    CHECK(w.v(panel).supply == 60);
+    (void)r;
+}
+
+TEST_CASE("movement: the drift target is drawn every turn; hazards hit unit groups whole, 20 draws at most") {
+    World w;
+    const SystemId a = w.system("A");
+    Rng expected = w.s.rng;
+    expected.below(145);
+    w.hazards();  // no system drifts
+    CHECK(w.s.rng.next() == expected.next());
+
+    // 20 draws of whole units; the leftover is lost (spec 03 §6.2, spec 04 §9.4).
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    const VehicleId swarm = w.spawn(fighter, at(a, 4, 4));
+    w.v(swarm).count = 30;
+    const int64_t hp = combat::detail::unitHitPoints(w.rules(), w.s.design(fighter), combat::DamageType::Normal);
+    const int lostBefore = w.s.design(fighter).lost;
+    movement::damageUnitGroup(w.rules(), w.s, w.v(swarm), hp * 25 + hp / 2, w.s.rng);
+    CHECK(w.v(swarm).count == 10);  // one unit per draw, 20 draws
+    CHECK(w.s.design(fighter).lost == lostBefore + 20);
+    movement::damageUnitGroup(w.rules(), w.s, w.v(swarm), hp - 1, w.s.rng);
+    CHECK(w.v(swarm).count == 10);  // too little for a unit: lost
+}
+
+TEST_CASE("movement: repair counts unpopulated colonies and unit groups") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.colony(w.planet(a, {3, 3}), kA, 0, {"Test Repair Yard"});
+    const int64_t colony = movement::repairPoolAt(r, w.s, kA, at(a, 3, 3));
+    CHECK(colony > 0);
+    const DesignId sat = w.design(kA, "Mender", "Test Satellite Hull", {"Mv Repair Drone Bay"});
+    const VehicleId group = w.spawn(sat, at(a, 3, 3));
+    w.v(group).count = 3;
+    CHECK(movement::repairPoolAt(r, w.s, kA, at(a, 3, 3)) == colony + 3 * 2);
+}
+
+TEST_CASE("movement: a human colonizing in a turn-based game picks the colony type") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId target = w.planet(a, {4, 4});
+    w.s.options.simultaneous = false;
+    const VehicleId ship = w.spawn(w.ship(kA, "Settler", 2, {"Test Rock Pod"}), at(a, 4, 4));
+    w.v(ship).cargo.population.push_back({kA, 1});
+    w.order(ship, mk(OrderKind::Colonize, {}, target));
+    w.colonize();
+    REQUIRE(w.s.colony(target));
+    REQUIRE(w.s.empire(kA).colonyTypeChoices == std::vector<ObjectId>{target});
+    REQUIRE(apply(r, w.s, kA, cmd::SetColonyType{target, "Mining"}).ok);
+    CHECK(w.s.colony(target)->colonyType == "Mining");
+    CHECK(w.s.empire(kA).colonyTypeChoices.empty());
+    // With the option off (or in a simultaneous game) the type is chosen automatically.
+    REQUIRE(apply(r, w.s, kA, cmd::SetEmpireOptions{.chooseColonyType = false}).ok);
+    const ObjectId other = w.planet(a, {6, 6});
+    const VehicleId second = w.spawn(w.ship(kA, "Settler", 2, {"Test Rock Pod"}), at(a, 6, 6));
+    w.v(second).cargo.population.push_back({kA, 1});
+    w.order(second, mk(OrderKind::Colonize, {}, other));
+    w.colonize();
+    REQUIRE(w.s.colony(other));
+    CHECK(w.s.empire(kA).colonyTypeChoices.empty());
 }
 
 // ---- Determinism --------------------------------------------------------------------------------------

@@ -104,7 +104,11 @@ struct SetStrategy { int32_t index = -1; ruleset::CombatStrategy strategy; bool 
 struct SetRepairPriorities { std::vector<std::string> priorities; };
 struct SetDesignTypes { std::vector<std::string> designTypes; };
 struct SetColonyTypes { std::vector<std::string> colonyTypes; };
-struct SetEmpireOptions { std::optional<bool> aiMinimalChanges; std::optional<std::string> passwordHash; };
+struct SetEmpireOptions {
+    std::optional<bool> aiMinimalChanges;
+    std::optional<std::string> passwordHash;
+    std::optional<bool> chooseColonyType;  // Empire::chooseColonyType (spec 03 §8)
+};
 
 // ---- Ministers (spec 02 §10, spec 05 §7.1) -----------------------------------------------------
 // The Ministers window's settings; fields left empty are not changed.

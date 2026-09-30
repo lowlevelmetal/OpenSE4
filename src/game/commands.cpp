@@ -491,6 +491,7 @@ struct Applier {
         if (!col) return R::fail("Not your planet");
         if (col->homeworld) return R::fail("A homeworld's colony type is fixed");
         col->colonyType = c.colonyType;
+        std::erase(emp().colonyTypeChoices, c.planet);  // the colonization dialog is answered (spec 03 §8)
         return {};
     }
 
@@ -803,6 +804,7 @@ struct Applier {
     R operator()(const cmd::SetEmpireOptions& c) {
         if (c.aiMinimalChanges) emp().aiMinimalChanges = *c.aiMinimalChanges;
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
+        if (c.chooseColonyType) emp().chooseColonyType = *c.chooseColonyType;
         return {};
     }
 

@@ -78,9 +78,15 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     Colony c;
     c.planet = planet;
     c.owner = owner;
-    // Every empire's new colony gets the computer's pick (spec 05 §7.5 "at
-    // colonization"; OpenSE4 never asks the player).
+    // The colony type is chosen as a computer player chooses it (spec 05 §7.5
+    // "at colonization"), unless a human player colonizes in a turn-based game
+    // with the empire's option on: then the player picks it in a dialog
+    // (Empire::colonyTypeChoices), and this pick stands until then (spec 03 §8,
+    // confirmed: binary).
     c.colonyType = ai::colonyTypeAtColonization(r, s, owner, planet);
+    if (Empire& e = s.empire(owner); !s.options.simultaneous && e.kind == PlayerKind::Human && e.chooseColonyType &&
+                                     std::find(e.colonyTypeChoices.begin(), e.colonyTypeChoices.end(), planet) == e.colonyTypeChoices.end())
+        e.colonyTypeChoices.push_back(planet);
     c.foundedTurn = s.turn;
     c.population = v.cargo.population;
     const int64_t bonus = r.setting("Automatic Colonization Population", 0);

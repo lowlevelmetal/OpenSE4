@@ -266,6 +266,9 @@ const Rules& designRules() {
         comp("Dt Clumsy", 5, {dtAb(AbilityKind::CombatToHitOffenseMinus, 4)}, 902);
         comp("Dt Limited", 5, {}, 950).maxPerVehicle = 2;
         comp("Dt Limited II", 5, {}, 950);
+        auto& longGun = comp("Dt Long Gun", 10, {});
+        longGun.weapon.kind = ruleset::WeaponKind::DirectFire;
+        longGun.weapon.damageAtRange.assign(20, 5);  // damage out to range 20
 
         auto mount = [&](std::string name, std::string req) -> ruleset::WeaponMount& {
             ruleset::WeaponMount m;
@@ -440,6 +443,12 @@ TEST_CASE("design rules: mounts round their values and apply by weapon type and 
     CHECK(weaponDamageAtRange(r, {laser, big}, 5) == 100);
     CHECK(weaponMaxRange(r, {laser, big}) == 8);
     CHECK(weaponDamageAtRange(r, {laser, -1}, 21) == 0);
+    // A mounted weapon with damage at range 20 fires further, but its maximum
+    // range for strategies and reports is 20 (spec 03 §19 Q42, confirmed: binary).
+    const uint32_t longGun = componentIndex(r, "Dt Long Gun");
+    CHECK(weaponDamageAtRange(r, {longGun, big}, 22) > 0);
+    CHECK(weaponMaxRange(r, {longGun, big}) == 20);
+    CHECK(weaponMaxRange(r, {longGun, -1}) == 20);
     // A mount that does not apply changes nothing: here the family list or the weapon type.
     const auto family = static_cast<int32_t>(mountIndex(r, "Dt Disruptors Only"));
     CHECK_FALSE(mounted(r, {laser, family}).mountApplies);
@@ -509,4 +518,58 @@ TEST_CASE("design rules: to-hit modifiers add the best of each family, and the h
     const Vehicle& v = addTestVehicle(s, r, d, {SystemId{0u}, Sector{1, 1}});
     CHECK(vehicleToHitOffense(r, s, v) == 15 + 7 - 4);
     CHECK(vehicleToHitDefense(r, s, v) == 0);
+}
+
+TEST_CASE("design rules: Edit changes an own prototype in place; built or queued designs are copied or upgraded") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 2, 6);
+    const EmpireId me{0u}, them{1u};
+    Design d;
+    d.name = "Proto";
+    d.hull = hullIndex(r, "Test Frigate");
+    for (auto c : {"Test Bridge", "Test Life Support", "Test Crew Quarters"}) d.entries.push_back({componentIndex(r, c), -1});
+    REQUIRE(apply(r, s, me, cmd::CreateDesign{d}).ok);
+    const DesignId id = s.designs.back().id;
+    CHECK(designIsPrototype(s.design(id)));
+    // Changed in place: the same design, which may keep its name or take a new one.
+    Design changed = d;
+    changed.entries.push_back({componentIndex(r, "Test Laser"), -1});
+    const size_t count = s.designs.size();
+    REQUIRE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    CHECK(s.designs.size() == count);
+    CHECK(s.design(id).entries.size() == 4);
+    CHECK(s.design(id).name == "Proto");
+    changed.name = "Proto Mk";
+    REQUIRE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    CHECK(s.design(id).name == "Proto Mk");
+    // An edited design starts with no sightings and empty statistics.
+    seeDesign(s.empire(them).knowledge, id, s.turn);
+    s.design(id).lost = 3;
+    REQUIRE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    CHECK_FALSE(knowsDesign(s.empire(them).knowledge, id));
+    CHECK(s.design(id).lost == 0);
+    // Not another empire's, not one in a queue, not one that was built or retrofitted to.
+    CHECK_FALSE(apply(r, s, them, cmd::EditDesign{id, changed}).ok);
+    ObjectId home;
+    for (size_t i = 0; i < s.colonies.size(); ++i)
+        if (s.colonies[i] && s.colonies[i]->owner == me) home = ObjectId{static_cast<uint32_t>(i)};
+    REQUIRE(home.valid());
+    QueueItem item;
+    item.design = id;
+    s.colony(home)->queue.items.push_back(item);
+    CHECK(designInQueue(s, me, id));
+    CHECK_FALSE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    s.colony(home)->queue.items.clear();
+    s.design(id).retrofitted = true;
+    CHECK_FALSE(designIsPrototype(s.design(id)));
+    CHECK_FALSE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    s.design(id).retrofitted = false;
+    s.design(id).built = 1;
+    CHECK_FALSE(apply(r, s, me, cmd::EditDesign{id, changed}).ok);
+    // Copy and Upgrade make new designs (cmd::CreateDesign).
+    Design copy = changed;
+    copy.name = "Proto Copy";
+    REQUIRE(apply(r, s, me, cmd::CreateDesign{copy}).ok);
+    CHECK(s.designs.size() == count + 1);
+    CHECK(designIsPrototype(s.designs.back()));
 }
