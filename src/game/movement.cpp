@@ -757,7 +757,8 @@ private:
     // Repair: to the nearest own repair source, immobile ones (planets, bases)
     // first; repair ships only when there is none (§8, confirmed: binary).
     Exec repair(Actor& a, Order& o) {
-        if (repairCapacityAt(r_, s_, a.owner, where(a)) > 0) return Exec::Acted;
+        // Chosen once, as the original expands the order when it is given.
+        if (!validLocation(s_, o.location) && repairCapacityAt(r_, s_, a.owner, where(a)) > 0) return Exec::Acted;
         if (!validLocation(s_, o.location) || repairCapacityAt(r_, s_, a.owner, o.location) <= 0) {
             std::vector<Location> fixed, ships;
             for (const auto& c : s_.colonies)
@@ -1015,14 +1016,26 @@ private:
         std::vector<std::tuple<FleetId, std::vector<Order>, bool>> fleets;
     };
 
-    // Everything owned in the sector already fought there this turn.
+    // Everything in the sector that could fight already fought there this turn
+    // (spec 03 §6.3). Counted (inferred): vehicles other than mines and
+    // colonies whose owner is hostile to, or faced by, another owner present;
+    // a cloaked vehicle that did not fight is taken as unseen.
     bool everyoneFought(Location where) const {
+        std::vector<EmpireId> owners;
         for (const Vehicle& v : s_.vehicles)
-            if (alive(v) && v.location == where && v.owner.valid() && vehicleType(r_, s_, v) != VehicleType::Mine &&
-                !foughtVehicles_.contains({v.id, where}))
-                return false;
+            if (alive(v) && v.location == where && v.owner.valid()) owners.push_back(v.owner);
         for (ObjectId o : planetsAt(s_, where))
-            if (const Colony* c = s_.colony(o); c && c->owner.valid() && !foughtPlanets_.contains({o, where})) return false;
+            if (const Colony* c = s_.colony(o); c && c->owner.valid()) owners.push_back(c->owner);
+        auto contested = [&](EmpireId e) {
+            return std::any_of(owners.begin(), owners.end(), [&](EmpireId o) { return o != e && (hostile(s_, e, o) || hostile(s_, o, e)); });
+        };
+        for (const Vehicle& v : s_.vehicles) {
+            if (!alive(v) || v.location != where || !v.owner.valid() || vehicleType(r_, s_, v) == VehicleType::Mine) continue;
+            if (foughtVehicles_.contains({v.id, where}) || v.status == VehicleStatus::Cloaked || !contested(v.owner)) continue;
+            return false;
+        }
+        for (ObjectId o : planetsAt(s_, where))
+            if (const Colony* c = s_.colony(o); c && c->owner.valid() && contested(c->owner) && !foughtPlanets_.contains({o, where})) return false;
         return true;
     }
 

@@ -1430,6 +1430,8 @@ TEST_CASE("movement: training facilities raise ship and fleet experience up to t
     const ObjectId camp = w.planet(a, {6, 6});
     w.colony(camp, kA, 1000, {"Mv Trainer", "Mv Fleet Trainer"});
     const VehicleId cadet = w.spawn(w.ship(kA, "Cadet", 1), at(a, 6, 6));
+    w.colony(w.planet(a, {9, 9}), kA, 100, {"Mv Camp", "Mv Broken Camp"});
+    const VehicleId rookie = w.spawn(w.ship(kA, "Rookie", 1), at(a, 9, 9));
     const VehicleId away = w.spawn(w.ship(kA, "Away", 1), at(a, 1, 1));
     const VehicleId m1 = w.spawn(w.ship(kA, "M1", 1), at(a, 6, 6));
     const VehicleId m2 = w.spawn(w.ship(kA, "M2", 1), at(a, 6, 6));
@@ -1695,6 +1697,341 @@ TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
     CHECK_FALSE(entryIntact(r, w.s, w.v(builder), 8));  // and the girders
     CHECK_FALSE(entryIntact(r, w.s, w.v(hauler), 7));
     CHECK(w.logged(kA, "Planet constructed"));
+}
+
+// ---- Orders, groups and logistics (spec 03 §8, §9, §12) ---------------------------------------------
+
+TEST_CASE("movement: a failed order clears every fleet member's list and switches Repeat off") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    const VehicleId one = w.spawn(w.ship(kA, "One", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
+    const VehicleId two = w.spawn(w.ship(kA, "Two", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {one, two}}).ok);
+    Fleet& f = w.s.fleets.back();
+    f.orders = {moveTo(a, 1, 0), moveTo(b, 3, 3), moveTo(a, 2, 0)};  // B is not linked: the second order fails
+    f.repeatOrders = true;
+    w.v(one).orders = {moveTo(a, 5, 5)};  // a member's own list goes too
+    w.v(one).repeatOrders = true;
+    w.move();
+    CHECK(w.s.fleets.back().orders.empty());
+    CHECK_FALSE(w.s.fleets.back().repeatOrders);
+    CHECK(w.v(one).orders.empty());
+    CHECK_FALSE(w.v(one).repeatOrders);
+    CHECK(w.v(one).location == at(a, 1, 0));
+    CHECK(w.logged(kA, "No known route"));
+
+    // A done order stays at the end with Repeat on (the list cycles).
+    const VehicleId solo = w.spawn(w.ship(kA, "Solo", 2, {"Test Quantum Reactor"}), at(a, 6, 6));
+    w.order(solo, moveTo(a, 7, 6), true);
+    w.order(solo, mk(OrderKind::Sentry), true);
+    w.move();
+    REQUIRE(w.v(solo).orders.size() == 2);
+    CHECK(w.v(solo).orders.front().kind == OrderKind::Sentry);  // Sentry waits: the move went to the end
+    CHECK(w.v(solo).orders.back() == moveTo(a, 7, 6));
+}
+
+TEST_CASE("movement: one order execution per action; a ship with no movement acts once, on day 1") {
+    World w;
+    const SystemId a = w.system("A");
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    // A base (speed 0) with two in-place orders carries out one per turn.
+    const VehicleId base = w.spawn(w.design(kA, "Hangar", "Test Station", {"Test Bridge", "Mv Fighter Bay"}), at(a, 4, 4));
+    w.v(base).cargo.units.push_back({fighter, 2});
+    w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
+    w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
+    w.move();
+    CHECK(w.v(base).orders.size() == 1);
+    CHECK(w.v(base).cargo.unitCount(fighter) == 1);
+    w.move();
+    CHECK(w.v(base).orders.empty());
+    CHECK(w.v(base).cargo.unitCount(fighter) == 0);
+}
+
+TEST_CASE("movement: planets launch and recover units by order, with no bay") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {5, 5});
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    const DesignId mine = w.design(kA, "Mine", "Mv Mine Hull", {"Test Warhead"});
+    w.colony(home, kA, 1000).cargo.units = {{fighter, 1200}, {mine, 30}};
+    auto inSpace = [&](DesignId d) {
+        int n = 0;
+        for (const Vehicle& v : w.s.vehicles)
+            if (v.design == d && v.count > 0 && v.location == at(a, 5, 5)) n += v.count;
+        return n;
+    };
+    // Only launch and recover orders, and only for own planets.
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetOrders{{}, {}, {moveTo(a, 1, 1)}, false, home}).ok);
+    CHECK_FALSE(apply(r, w.s, kB, cmd::SetOrders{{}, {}, {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)}, false, home}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, {}, {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)}, false, home}).ok);
+    w.move();
+    CHECK(inSpace(fighter) == 1000);  // 1000 of each kind a turn
+    CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 200);
+    CHECK(w.s.colony(home)->orders.empty());
+    CHECK(w.logged(kA, "launched 1000"));
+    // The units-in-space cap (1000) is reached: the next launch is refused.
+    w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
+    w.move();
+    CHECK(inSpace(fighter) == 1000);
+    // Mines count against the cap too; below it, a launch may go past it.
+    w.s.options.maxUnitsPerPlayer = 1001;
+    w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, mine, -1)};
+    w.move();
+    CHECK(inSpace(mine) == 30);
+    // Recovery into the planet is limited only by its free cargo space.
+    w.s.colony(home)->cargo.units.clear();
+    w.s.colony(home)->orders = {mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1)};
+    w.move();
+    CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 500 / 20);
+    CHECK(inSpace(fighter) == 1000 - 25);
+}
+
+TEST_CASE("movement: the units-in-space cap is checked at launch, not when building") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 1, {"Mv Fighter Bay"}), at(a, 5, 5));
+    w.v(carrier).cargo.units.push_back({fighter, 9});
+    w.s.options.maxUnitsPerPlayer = 5;
+    const VehicleId group = w.spawn(fighter, at(a, 5, 5));
+    w.v(group).count = 4;
+    w.order(carrier, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1));
+    w.move();
+    CHECK(w.v(group).count == 4 + 3);  // below the cap before the stack: not cut to fit
+    w.order(carrier, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1));
+    w.move();
+    CHECK(w.v(group).count == 7);
+    CHECK(movement::unitsInSpace(r, w.s, kA) == 7);
+    CHECK(unitCount(r, w.s, kA) == 7 + 6);  // cargo is not in space
+}
+
+TEST_CASE("movement: a ship whose space yard is building cannot move") {
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId yard = w.spawn(w.ship(kA, "Yard", 2, {"Test Yard Module"}), at(a, 2, 2));
+    w.v(yard).queue.items.push_back(QueueItem{});
+    w.order(yard, moveTo(a, 5, 5));
+    w.move();
+    CHECK(w.v(yard).location == at(a, 2, 2));
+    CHECK(w.v(yard).orders.empty());
+    CHECK(w.logged(kA, "space yard"));
+    w.v(yard).queue.items.clear();
+    w.order(yard, moveTo(a, 3, 3));
+    w.move();
+    CHECK(w.v(yard).location == at(a, 3, 3));
+}
+
+TEST_CASE("movement: a sector is not fought over again once everything there has fought this turn") {
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId guard = w.spawn(w.ship(kB, "Guard", 1), at(a, 3, 6));
+    const VehicleId raider = w.spawn(w.ship(kA, "Raider", 3, {"Mv Sweeper"}), at(a, 2, 6));
+    fuel(w, raider);
+    w.order(raider, moveTo(a, 3, 6));
+    w.order(raider, mk(OrderKind::SweepMines));  // acts in place: the sector is checked again
+    w.order(raider, mk(OrderKind::SweepMines));
+    CombatSpy spy;
+    spy.fight = hostilesMeet;
+    w.move(spy.hooks());
+    CHECK(spy.fought.size() == 1);
+    CHECK(std::count(spy.asked.begin(), spy.asked.end(), at(a, 3, 6)) == 3);
+    // A newcomer brings a new battle.
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 1), at(a, 3, 5));
+    fuel(w, second);
+    w.order(second, moveTo(a, 3, 6));
+    CombatSpy again;
+    again.fight = hostilesMeet;
+    w.move(again.hooks());
+    CHECK(again.fought.size() == 1);
+    (void)guard;
+}
+
+TEST_CASE("movement: warp links work both ways; only the first 10 warp points of a system are used; neutrals never warp") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A"), b = w.system("B", 5, 0);
+    const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+    w.s.galaxy.object(ab).oneWay = true;  // the flag is never read (spec 01 §8)
+    w.exploreAll(kA);
+    CHECK(movement::findPath(r, w.s, kA, at(a, 6, 6), at(b, 6, 6)));
+    CHECK(movement::findPath(r, w.s, kA, at(b, 6, 6), at(a, 6, 6)));
+
+    World m;
+    const SystemId hub = m.system("Hub");
+    std::vector<SystemId> spokes;
+    for (int i = 0; i < 11; ++i) {
+        spokes.push_back(m.system("S" + std::to_string(i), 10 + i, 10));
+        m.link(hub, {i, 0}, spokes.back(), {6, 6});
+    }
+    m.exploreAll(kA);
+    CHECK(movement::findPath(r, m.s, kA, at(hub, 6, 6), at(spokes[9], 5, 5)));
+    CHECK_FALSE(movement::findPath(r, m.s, kA, at(hub, 6, 6), at(spokes[10], 5, 5)));
+
+    w.s.empire(kB).kind = PlayerKind::Neutral;
+    const VehicleId drifter = w.spawn(w.ship(kB, "Stay Home", 2), at(a, 12, 6));
+    w.order(drifter, mk(OrderKind::Warp, {}, ab));
+    w.move();
+    CHECK(w.v(drifter).location == at(a, 12, 6));
+    CHECK(w.logged(kB, "Neutral empires cannot use warp points"));
+    (void)ba;
+}
+
+TEST_CASE("movement: resupply skips guarded depots; repair prefers planets and bases to ships") {
+    World w;
+    const SystemId a = w.system("A");
+    w.exploreAll(kA);
+    const ObjectId near = w.planet(a, {2, 6});
+    const ObjectId far = w.planet(a, {8, 6});
+    w.colony(near, kA, 100, {"Test Depot"});
+    w.colony(far, kA, 100, {"Test Depot"});
+    w.spawn(w.ship(kB, "Picket", 1, {"Test Laser"}), at(a, 2, 6));
+    const VehicleId tanker = w.spawn(w.ship(kA, "Tanker", 3), at(a, 1, 6));
+    fuel(w, tanker);
+    w.order(tanker, mk(OrderKind::Resupply));
+    w.move();
+    w.move();
+    w.move();
+    CHECK(w.v(tanker).location == at(a, 8, 6));
+    CHECK(w.v(tanker).orders.empty());
+
+    World p;
+    const SystemId pa = p.system("A");
+    p.exploreAll(kA);
+    p.spawn(p.design(kA, "Tender", "Test Frigate", {"Test Bridge", "Test Repair Bay"}), at(pa, 2, 2));
+    p.spawn(p.design(kA, "Dock", "Test Station", {"Test Bridge", "Test Repair Bay"}), at(pa, 9, 9));
+    const VehicleId wreck = p.spawn(p.ship(kA, "Wreck", 3), at(pa, 1, 1));
+    fuel(p, wreck);
+    p.order(wreck, mk(OrderKind::Repair));
+    for (int i = 0; i < 4; ++i) p.move();
+    CHECK(p.v(wreck).location == at(pa, 9, 9));  // the base, though the ship is closer
+}
+
+TEST_CASE("movement: colonizing fails with a cloaked member; the last suitable member colonizes") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId target = w.planet(a, {5, 5});
+    const VehicleId first = w.spawn(w.ship(kA, "First", 3, {"Test Rock Pod"}), at(a, 5, 5));
+    const VehicleId last = w.spawn(w.ship(kA, "Last", 3, {"Test Rock Pod"}), at(a, 5, 5));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Settlers", {first, last}}).ok);
+    w.s.fleets.back().orders = {mk(OrderKind::Colonize, {}, target)};
+    w.colonize();
+    REQUIRE(w.s.colony(target));
+    CHECK(w.s.vehicle(last) == nullptr);
+    CHECK(w.s.vehicle(first) != nullptr);
+
+    const ObjectId other = w.planet(a, {6, 6});
+    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 3, {"Test Rock Pod", "Mv Cloak"}), at(a, 6, 6));
+    w.v(shade).status = VehicleStatus::Cloaked;
+    w.order(shade, mk(OrderKind::Colonize, {}, other));
+    w.move();
+    CHECK(w.v(shade).orders.empty());
+    CHECK(w.logged(kA, "cloaked ship cannot colonize"));
+    CHECK_FALSE(w.s.colony(other));
+}
+
+TEST_CASE("movement: training sources stack; a cap of 0 trains nobody; fleets stop at 50") {
+    ruleset::Ruleset rs = buildRuleset();
+    ruleset::Facility camp;
+    camp.name = "Mv Camp";
+    camp.abilities = {ab(AbilityKind::ShipTraining, 4, 20)};
+    rs.facilities.push_back(camp);
+    ruleset::Facility broken;
+    broken.name = "Mv Broken Camp";
+    broken.abilities = {ab(AbilityKind::ShipTraining, 50, 0)};
+    rs.facilities.push_back(broken);
+    ruleset::Facility academy;
+    academy.name = "Mv Academy";
+    academy.abilities = {ab(AbilityKind::FleetTrainingSystem, 30, 100)};
+    rs.facilities.push_back(academy);
+    rs.reindex();
+    const Rules r{std::move(rs)};
+    World w(r);
+    const SystemId a = w.system("A");
+    w.colony(w.planet(a, {6, 6}), kA, 100, {"Mv Camp"});
+    w.colony(w.planet(a, {6, 6}), kA, 100, {"Mv Camp"});
+    w.colony(w.planet(a, {6, 6}), kA, 100, {"Mv Broken Camp"});
+    w.colony(w.planet(a, {1, 1}), kA, 100, {"Mv Academy"});
+    const VehicleId cadet = w.spawn(w.ship(kA, "Cadet", 1), at(a, 6, 6));
+    w.colony(w.planet(a, {9, 9}), kA, 100, {"Mv Camp", "Mv Broken Camp"});
+    const VehicleId rookie = w.spawn(w.ship(kA, "Rookie", 1), at(a, 9, 9));
+    const VehicleId m1 = w.spawn(w.ship(kA, "M1", 1), at(a, 3, 3));
+    const VehicleId m2 = w.spawn(w.ship(kA, "M2", 1), at(a, 3, 3));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Drill", {m1, m2}}).ok);
+    w.upkeep();
+    CHECK(w.v(cadet).experience == 8);  // two sources of 4; the one with cap 0 gives nothing
+    CHECK(w.v(rookie).experience == 20);  // one object is one source: its largest V1 (50) and V2 (20)
+    w.upkeep();
+    w.upkeep();
+    CHECK(w.v(cadet).experience == 20);  // 16, then the smaller of 4 and (20 - 16), twice
+    CHECK(w.s.fleets.back().experience == 50);  // 30, then 60 capped at 50
+}
+
+TEST_CASE("movement: repair needs known technology; emergency parts need an own yard") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.spawn(w.design(kA, "Tender", "Test Frigate", {"Test Bridge", "Test Repair Bay"}), at(a, 2, 2));
+    const VehicleId hurt = w.spawn(w.ship(kA, "Hurt", 1, {"Mv Energy Cell", "Test Planet Maker"}), at(a, 2, 2));
+    for (int& d : w.v(hurt).damage) d = 5;
+    w.upkeep();
+    const Vehicle& h = w.v(hurt);
+    CHECK(h.damage[5] == 5);  // the energy cell waits for a yard
+    CHECK(h.damage[6] == 5);  // Physics 5 is not known
+    CHECK(totalDamage(h) == 10);
+    w.spawn(w.design(kA, "Yard", "Test Station", {"Test Bridge", "Test Yard Module"}), at(a, 2, 2));
+    w.upkeep();
+    CHECK(w.v(hurt).damage[5] == 0);
+    CHECK(w.v(hurt).damage[6] == 5);
+    (void)r;
+}
+
+TEST_CASE("movement: obsolete designs go when nothing uses or knows them") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId used = w.ship(kA, "Used", 1);
+    const DesignId queued = w.ship(kA, "Queued", 1);
+    const DesignId seen = w.ship(kA, "Seen", 1);
+    const DesignId gone = w.ship(kA, "Gone", 1);
+    const DesignId kept = w.ship(kA, "Kept", 1);
+    for (DesignId d : {used, queued, seen, gone}) w.s.design(d).obsolete = true;
+    w.spawn(used, at(a, 1, 1));
+    w.colony(w.planet(a, {2, 2}), kA, 100).queue.items.push_back(QueueItem{QueueItem::Kind::Vehicle, queued});
+    w.s.empire(kB).knowledge.seenDesigns = {seen};
+    w.s.turn = 9;  // the cleanup runs when a new year starts
+    w.upkeep();
+    const auto& list = w.s.empire(kA).designs;
+    auto has = [&](DesignId d) { return std::find(list.begin(), list.end(), d) != list.end(); };
+    CHECK(has(used));
+    CHECK(has(queued));
+    CHECK(has(seen));
+    CHECK(has(kept));
+    CHECK_FALSE(has(gone));
+    (void)r;
+}
+
+TEST_CASE("movement: cargo that no longer fits goes population first, then from the first unit stack") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId mine = w.design(kA, "Mine", "Mv Mine Hull", {"Test Warhead"});
+    const DesignId mine2 = w.design(kA, "Mine B", "Mv Mine Hull", {"Test Warhead"});
+    const VehicleId hauler = w.spawn(w.ship(kA, "Hauler", 1, {"Test Cargo Bay", "Test Cargo Bay"}), at(a, 1, 1));  // 100 kT
+    Vehicle& v = w.v(hauler);
+    v.cargo.population = {{kA, 4}, {kB, 4}};  // 40 kT
+    v.cargo.units = {{mine, 3}, {mine2, 3}};  // 60 kT
+    v.damage[6] = 1000;                       // one bay gone: 50 kT left
+    w.upkeep();
+    // 50 kT over: 8M of people (40 kT), then one mine of the first stack.
+    CHECK(w.v(hauler).cargo.population.empty());
+    REQUIRE(w.v(hauler).cargo.units.size() == 2);
+    CHECK(w.v(hauler).cargo.units[0] == UnitStack{mine, 2});
+    CHECK(w.v(hauler).cargo.units[1] == UnitStack{mine2, 3});
+    CHECK(cargoSpaceUsed(r, w.s, w.v(hauler).cargo) <= vehicleCargoCapacity(r, w.s, w.v(hauler)));
 }
 
 // ---- Determinism --------------------------------------------------------------------------------------
