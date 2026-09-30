@@ -1,6 +1,9 @@
 // Quadrant generation and empire placement (docs/spec/01 §2.2, §3-§5).
 
+#include "engine_fixture.hpp"
+
 #include "game/generate.hpp"
+#include "game/query.hpp"
 
 #include <doctest/doctest.h>
 
@@ -711,6 +714,149 @@ TEST_CASE("homeworld placement: jump distance tiers and sizes") {
     CHECK(made->front().index() >= g.objects.size());
     CHECK(small.object(made->front()).atmosphere == "None");
     CHECK(stellarSizeOf(rs, small.object(made->front())) == 3);
+}
+
+// ---- Starting planets (spec 01 §3.6, spec 02 §9) ------------------------------------------------------------
+
+namespace {
+
+game::GameState startGame(const game::Rules& r, int planets, int systems, uint64_t seed, bool withNeutral) {
+    game::GameSetup setup;
+    setup.seed = seed;
+    setup.options.systemCount = systems;
+    setup.options.startingPlanets = planets;
+    for (int i = 0; i < 2; ++i) {
+        game::EmpireSetup e;
+        e.name = "Empire " + std::to_string(i + 1);
+        setup.empires.push_back(e);
+    }
+    if (withNeutral) {
+        game::EmpireSetup n;
+        n.name = "Neutral";
+        n.kind = game::PlayerKind::Neutral;
+        setup.empires.push_back(n);
+    }
+    auto g = game::createGame(r, setup);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    return std::move(*g);
+}
+
+std::vector<const game::Colony*> coloniesOf(const game::GameState& s, game::EmpireId e) {
+    std::vector<const game::Colony*> out;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e) out.push_back(&*c);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("setup: every starting planet gets the homeworld setup") {
+    // Planets of the starting systems always carry ruins here, to see them removed.
+    ruleset::Ruleset data = test::buildEngineRuleset();
+    for (auto& t : data.systemTypes)
+        for (auto& o : t.objects)
+            if (o.physicalType == "Planet") o.stellarAbilityType = "Old Ruins";
+    const game::Rules r{std::move(data)};
+    const int base = static_cast<int>(r.setting("Plr Planet Value Medium Percent", 100));
+    for (uint64_t seed : {3ull, 8ull}) {
+        game::GameState s = startGame(r, 3, 12, seed, true);
+        for (const game::Empire& e : s.empires) {
+            INFO(e.name << " seed " << seed);
+            const auto colonies = coloniesOf(s, e.id);
+            // A neutral empire always gets one starting planet.
+            REQUIRE(colonies.size() == (e.kind == game::PlayerKind::Neutral ? 1u : 3u));
+            const game::ObjectId home = test::homeworld(s, e.id).planet;
+            const auto jumps = warpJumps(s.galaxy, s.galaxy.object(home).system);
+            int capitals = 0;
+            for (const game::Colony* c : colonies) {
+                const game::SpaceObject& p = s.galaxy.object(c->planet);
+                capitals += c->homeworld ? 1 : 0;
+                CHECK(p.kind == game::ObjectKind::Planet);
+                CHECK(p.atmosphere == e.race.atmosphere);
+                CHECK(p.surface == e.race.nativeSurface);
+                CHECK(c->totalPopulation() == game::maxPopulation(r, s, *c));
+                CHECK(static_cast<int>(c->facilities.size()) == game::facilitySlots(r, s, *c));
+                for (int v : p.value) {
+                    CHECK(v >= base - 4);
+                    CHECK(v <= base + 5);
+                }
+                CHECK(p.abilities.empty());  // ruins removed
+                CHECK(e.hasExplored(p.system));
+                // 12 systems are not over 60 % of 64: one warp jump at most.
+                const int d = jumps[p.system.index()];
+                CHECK(d >= 0);
+                CHECK(d <= 1);
+            }
+            CHECK(capitals == 1);
+        }
+        // Planets that are nobody's starting planet keep their ruins.
+        bool ruinsLeft = false;
+        for (const game::SpaceObject& p : s.galaxy.objects)
+            if (p.kind == game::ObjectKind::Planet && !s.colony(p.id) && !p.abilities.empty()) ruinsLeft = true;
+        CHECK(ruinsLeft);
+    }
+    // Ten planets per empire are more than the neighbourhood holds: the rest are created,
+    // on the inner 11 x 11 area. The quadrant alone (as createGame makes it) tells which.
+    const game::GameState crowded = startGame(r, 10, 12, 5, false);
+    Rng seeded(5);
+    Rng galaxyRng = seeded.fork();
+    QuadrantOptions qo;
+    qo.systemCount = 12;
+    const auto natural = generateQuadrant(r.data(), qo, galaxyRng);
+    REQUIRE(natural.has_value());
+    int created = 0;
+    for (const game::Empire& e : crowded.empires) {
+        const auto colonies = coloniesOf(crowded, e.id);
+        CHECK(colonies.size() == 10u);
+        for (const game::Colony* c : colonies) {
+            if (c->homeworld || c->planet.index() < natural->galaxy.objects.size()) continue;
+            ++created;
+            const game::SpaceObject& p = crowded.galaxy.object(c->planet);
+            CHECK(p.sector.x >= 1);
+            CHECK(p.sector.x <= 11);
+            CHECK(p.sector.y >= 1);
+            CHECK(p.sector.y <= 11);
+            CHECK(p.name.starts_with(crowded.galaxy.system(p.system).name + " "));
+        }
+    }
+    CHECK(created > 0);
+}
+
+TEST_CASE("setup: starting facilities come in the original's order") {
+    const game::Rules& r = test::engineRules();
+    game::GameState s = startGame(r, 1, 12, 7, false);
+    const game::Colony& home = test::homeworld(s, game::EmpireId{0u});
+    // Rock/Oxygen homeworlds are Large in the test data: 14 slots.
+    REQUIRE(game::facilitySlots(r, s, home) == 14);
+    std::vector<std::string> names;
+    for (uint32_t f : home.facilities) names.push_back(r.facility(f).name);
+    const std::vector<std::string> expected{"Test Spaceport", "Test Space Yard", "Test Depot", "Test Mine", "Test Refinery",
+                                            "Test Farm", "Test Lab", "Test Mine", "Test Lab", "Test Mine",
+                                            "Test Lab", "Test Mine", "Test Lab", "Test Mine"};
+    CHECK(names == expected);
+
+    // No Spaceports: the space yard comes first.
+    ruleset::Ruleset data = test::buildEngineRuleset();
+    ruleset::RacialTrait free;
+    free.name = "Test Free Trade";
+    free.traitType = "No Spaceports";
+    data.racialTraits.push_back(free);
+    const game::Rules noPorts{std::move(data)};
+    game::GameSetup setup;
+    setup.seed = 7;
+    setup.options.systemCount = 12;
+    game::EmpireSetup e;
+    e.name = "Traders";
+    game::Race race;
+    race.traits.push_back(static_cast<uint32_t>(noPorts.data().racialTraits.size() - 1));
+    e.customRace = race;
+    setup.empires.push_back(e);
+    auto g = game::createGame(noPorts, setup);
+    REQUIRE(g.has_value());
+    const game::Colony& traders = test::homeworld(*g, game::EmpireId{0u});
+    REQUIRE_FALSE(traders.facilities.empty());
+    CHECK(noPorts.facility(traders.facilities.front()).name == "Test Space Yard");
+    for (uint32_t f : traders.facilities) CHECK(noPorts.facility(f).name != "Test Spaceport");
 }
 
 TEST_CASE("installed data set: every quadrant type generates cleanly (opt-in)") {
