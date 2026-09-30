@@ -23,21 +23,24 @@ constexpr std::array<std::string_view, kAiStates> kStateNames{
     "Defend (Short Term)", "Defend (Long Term)", "Not Connected",
 };
 
-// Spec 05 §7.7: the design types the AI tables and ministers work with.
+// Spec 05 §7.7: the design types the AI tables and ministers work with (sorted).
 constexpr std::array<std::string_view, 39> kAiDesignTypes{
-    "Attack Ship",       "Defense Ship",        "Attack Base",       "Defense Base",      "Base Space Yard",
-    "Cargo Transport",   "Population Transport", "Troop Transport",  "Carrier",           "Colony (Rock)",
-    "Colony (Ice)",      "Colony (Gas)",        "Mine Layer",        "Mine Sweeper",      "Boarding Ship",
-    "Open Warp Point",   "Close Warp Point",    "Create Planet",     "Destroy Planet",    "Create Star",
-    "Destroy Star",      "Create Storm",        "Destroy Storm",     "Space Yard Ship",   "Mine",
-    "Satellite",         "Weapon Platform",     "Troop",             "Fighter",           "Create Black Hole",
-    "Destroy Black Hole", "Create Nebulae",     "Destroy Nebulae",   "Satellite Layer",   "Kamikaze Attack Ship",
-    "Recon Satellite",   "Anti-Ship Drone",     "Anti-Planet Drone", "Drone Carrier",
+    "Anti-Planet Drone", "Anti-Ship Drone", "Attack Base", "Attack Ship",
+    "Base Space Yard", "Boarding Ship", "Cargo Transport", "Carrier",
+    "Close Warp Point", "Colony (Gas)", "Colony (Ice)", "Colony (Rock)",
+    "Create Black Hole", "Create Nebulae", "Create Planet", "Create Star",
+    "Create Storm", "Defense Base", "Defense Ship", "Destroy Black Hole",
+    "Destroy Nebulae", "Destroy Planet", "Destroy Star", "Destroy Storm",
+    "Drone Carrier", "Fighter", "Kamikaze Attack Ship", "Mine",
+    "Mine Layer", "Mine Sweeper", "Open Warp Point", "Population Transport",
+    "Recon Satellite", "Satellite", "Satellite Layer", "Space Yard Ship",
+    "Troop", "Troop Transport", "Weapon Platform",
 };
 
+// In ColonyType order.
 constexpr std::array<std::string_view, static_cast<size_t>(ColonyType::Count)> kColonyTypes{
-    "Homeworld",         "Mining Colony",         "Farming Colony",    "Refining Colony",       "Resupply Base",
-    "Research Compound", "Intelligence Compound", "Construction Yard", "Military Installation",
+    "Construction Yard", "Farming Colony", "Homeworld", "Intelligence Compound", "Military Installation",
+    "Mining Colony",     "Refining Colony", "Research Compound", "Resupply Base",
 };
 
 std::string lowerAscii(std::string s) {

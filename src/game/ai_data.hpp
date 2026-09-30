@@ -50,8 +50,8 @@ bool isAiDesignType(std::string_view name);
 
 // The nine colony types the ministers know (spec 05 §7.5).
 enum class ColonyType : uint8_t {
-    Homeworld, Mining, Farming, Refining, ResupplyBase, ResearchCompound, IntelligenceCompound, ConstructionYard,
-    MilitaryInstallation, Count
+    ConstructionYard, Farming, Homeworld, IntelligenceCompound, MilitaryInstallation, Mining, Refining, ResearchCompound,
+    ResupplyBase, Count
 };
 std::string_view displayName(ColonyType t);
 // "Imperial Center" is Homeworld; any other label is ColonyType::Count.

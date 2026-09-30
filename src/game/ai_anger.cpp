@@ -560,12 +560,12 @@ void updateAnger(TurnContext& ctx) {
     for (Empire& e : s.empires)
         if (e.aiDifficulty < 0 && e.kind != PlayerKind::Human) e.aiDifficulty = s.turn == 0 ? difficultyOf(s, e.id) : rebels;
 
-    // This turn's decisions, then the counters.
+    // The counters (the queues are forgotten every 10 turns), then this turn's decisions.
     for (Empire& e : s.empires) {
         if (!e.alive) continue;
+        keepCounters(s, s.empire(e.id));
         Rng rng = stepRng(s, e.id);
         recordDecisions(ctx, e.id, rng);
-        keepCounters(s, s.empire(e.id));
     }
 
     // Territory: computer players claim theirs anew each turn; the systems
