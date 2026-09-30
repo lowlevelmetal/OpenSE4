@@ -288,14 +288,14 @@ private:
     Planner& p_;
     Resources budget_;
 
-    void vehicles(const VehicleQueue& list) {
-        const VehicleQueue* table = &list;
+    // The vehicle list of the AI state (spec 05 §7.5).
+    void vehicles(const VehicleQueue& table) {
         const bool soft = p_.overCap(0), hard = p_.overCap(20);
         const int64_t colonies = p_.colonyCount();
         int placed = 0;
         size_t i = 0;
-        while (i < table->entries.size() && placed < 1000 && positive()) {
-            const VehicleEntry& entry = table->entries[i];
+        while (i < table.entries.size() && placed < 1000 && positive()) {
+            const VehicleEntry& entry = table.entries[i];
             const bool colonizer = keysEqual(entry.type, "Colonizer");
             const bool open = keysEqual(entry.type, "Open Warp Point");
             const bool colonyShip = colonizer || colonyShipType(entry.type);

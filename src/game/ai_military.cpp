@@ -593,54 +593,11 @@ Order launchOrder(DesignId unit, int64_t amount) {
     return o;
 }
 
-void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& planets, std::map<ObjectId, std::vector<Order>>& orders,
-                  std::map<std::pair<ObjectId, DesignId>, int64_t>& left);
-
-// Spec 05 §7.5: satellites and drones in planet cargo above the kept shares
-// are launched, as planet orders (spec 03 §12). Drones go half after ships and
-// half after planets of empires at War with us, each half capped at targets x
-// drones per target.
-void launchFromPlanets(Planner& p, bool roomForUnits) {
-    std::vector<ObjectId> planets;
-    for (const auto& c : p.st.colonies)
-        if (c && !c->cargo.units.empty() && p.controlsColony(*c, Minister::MinesSatellitesDrones)) planets.push_back(c->planet);
-    if (planets.empty() || !roomForUnits) return;
-    const SettingsTable& set = p.prof.settings;
-    std::map<ObjectId, std::vector<Order>> orders;
-    std::map<std::pair<ObjectId, DesignId>, int64_t> left;  // units still in each planet's cargo
-    for (ObjectId planet : planets)
-        for (const UnitStack& u : p.st.colony(planet)->cargo.units) left[{planet, u.design}] += u.count;
-
-    // Satellites, planet by planet, where each planet is (up to the sector cap).
-    int64_t satellites = launchQuota(unitTotals(p, VehicleType::Satellite), set.satellitesKeptPercent);
-    const int64_t perSector = p.r.setting("Maximum Satellites Per Player Per Sector", 100);
-    for (ObjectId planet : planets) {
-        if (satellites <= 0) break;
-        const Location at = locationOf(p.st.galaxy, planet);
-        int64_t room = perSector;
-        for (const Vehicle& v : p.st.vehicles)
-            if (v.owner == p.id && v.location == at && v.count > 0 && p.info(v.design).stats.vehicleType == VehicleType::Satellite) room -= v.count;
-        for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
-            if (satellites <= 0 || room <= 0) break;
-            if (u.count <= 0 || p.info(u.design).stats.vehicleType != VehicleType::Satellite) continue;
-            const int64_t n = std::min({int64_t{u.count}, satellites, room});
-            orders[planet].push_back(launchOrder(u.design, n));
-            left[{planet, u.design}] -= n;
-            satellites -= n;
-            room -= n;
-        }
-    }
-
-    // Drones: the quota split in two halves (the odd one goes after ships; inferred).
-    if (const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent); drones > 0)
-        launchDrones(p, drones, planets, orders, left);
-
-    for (auto& [planet, list] : orders) {
-        if (list.empty() || p.st.colony(planet)->orders == list) continue;
-        p.emit(cmd::SetOrders{.orders = std::move(list), .planet = planet});
-    }
-}
-
+// The drones of the planet launch: half after ships, half after planets of
+// empires at War with us, each half capped at targets x drones per target.
+// Each target in turn gets its share from the nearest planets within range,
+// the half's own drone type first (inferred). `left` is what each planet
+// still holds.
 void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& planets, std::map<ObjectId, std::vector<Order>>& orders,
                   std::map<std::pair<ObjectId, DesignId>, int64_t>& left) {
     const SettingsTable& set = p.prof.settings;
@@ -693,6 +650,49 @@ void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& plane
     };
     sendHalf(shipTargets, (drones + 1) / 2, set.antiShipDronesPerTarget, set.antiShipDroneRange, "Anti-Ship Drone");
     sendHalf(planetTargets, drones / 2, set.antiPlanetDronesPerTarget, set.antiPlanetDroneRange, "Anti-Planet Drone");
+}
+
+// Spec 05 §7.5: satellites and drones in planet cargo above the kept shares
+// are launched, as planet orders (spec 03 §12).
+void launchFromPlanets(Planner& p, bool roomForUnits) {
+    std::vector<ObjectId> planets;
+    for (const auto& c : p.st.colonies)
+        if (c && !c->cargo.units.empty() && p.controlsColony(*c, Minister::MinesSatellitesDrones)) planets.push_back(c->planet);
+    if (planets.empty() || !roomForUnits) return;
+    const SettingsTable& set = p.prof.settings;
+    std::map<ObjectId, std::vector<Order>> orders;
+    std::map<std::pair<ObjectId, DesignId>, int64_t> left;  // units still in each planet's cargo
+    for (ObjectId planet : planets)
+        for (const UnitStack& u : p.st.colony(planet)->cargo.units) left[{planet, u.design}] += u.count;
+
+    // Satellites, planet by planet, where each planet is (up to the sector cap).
+    int64_t satellites = launchQuota(unitTotals(p, VehicleType::Satellite), set.satellitesKeptPercent);
+    const int64_t perSector = p.r.setting("Maximum Satellites Per Player Per Sector", 100);
+    for (ObjectId planet : planets) {
+        if (satellites <= 0) break;
+        const Location at = locationOf(p.st.galaxy, planet);
+        int64_t room = perSector;
+        for (const Vehicle& v : p.st.vehicles)
+            if (v.owner == p.id && v.location == at && v.count > 0 && p.info(v.design).stats.vehicleType == VehicleType::Satellite) room -= v.count;
+        for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
+            if (satellites <= 0 || room <= 0) break;
+            if (u.count <= 0 || p.info(u.design).stats.vehicleType != VehicleType::Satellite) continue;
+            const int64_t n = std::min({int64_t{u.count}, satellites, room});
+            orders[planet].push_back(launchOrder(u.design, n));
+            left[{planet, u.design}] -= n;
+            satellites -= n;
+            room -= n;
+        }
+    }
+
+    // Drones: the quota split in two halves (the odd one goes after ships; inferred).
+    if (const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent); drones > 0)
+        launchDrones(p, drones, planets, orders, left);
+
+    for (auto& [planet, list] : orders) {
+        if (list.empty() || p.st.colony(planet)->orders == list) continue;
+        p.emit(cmd::SetOrders{.orders = std::move(list), .planet = planet});
+    }
 }
 
 } // namespace

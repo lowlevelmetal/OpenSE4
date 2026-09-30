@@ -136,8 +136,10 @@ std::string_view ministerStyleOf(const Empire& e);
 // returns the player's own settings; restoreMinisters() puts them back after
 // the turn. In between, the AI state update, the political step and the
 // ministers treat the empire like a computer player (Empire::ministerAll).
-// The minimal-changes option (Empire::aiMinimalChanges) is the caller's to
-// honour: the stand-in then plans nothing.
+// Plan such an empire once (planTurn, or planOrders and planEconomyStep), not
+// again through ministerCommands. The minimal-changes option
+// (Empire::aiMinimalChanges) is the caller's to honour: the stand-in then
+// plans nothing, but its bookkeeping (AI state, anger) still runs.
 struct MinisterSettings {
     bool all = false;
     uint32_t areas = 0;
