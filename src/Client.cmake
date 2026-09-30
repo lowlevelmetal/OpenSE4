@@ -23,6 +23,7 @@ add_executable(opense4
     client/classic/frontend.cpp
     client/classic/main_window.cpp
     client/classic/reports.cpp
+    client/classic/screens/cargo_transfer.cpp
     client/classic/screens/combat_replay.cpp
     client/classic/screens/design_tools.cpp
     client/classic/screens/communicate.cpp
@@ -31,22 +32,29 @@ add_executable(opense4
     client/classic/screens/empire_logic.cpp
     client/classic/screens/empire_widgets.cpp
     client/classic/screens/empires.cpp
+    client/classic/screens/fleet_transfer.cpp
     client/classic/screens/galaxy_map.cpp
     client/classic/screens/game_menu.cpp
     client/classic/screens/help.cpp
     client/classic/screens/item_reports.cpp
     client/classic/screens/intelligence.cpp
+    client/classic/screens/launch_recover.cpp
     client/classic/screens/log.cpp
     client/classic/screens/multiplayer.cpp
     client/classic/screens/planets.cpp
     client/classic/screens/queues.cpp
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
+    client/classic/screens/scrap.cpp
     client/classic/screens/setup.cpp
     client/classic/screens/setup_empire.cpp
     client/classic/screens/setup_model.cpp
     client/classic/screens/setup_widgets.cpp
     client/classic/screens/ships.cpp
+    client/classic/screens/ships_common.cpp
+    client/classic/screens/ships_logic.cpp
+    client/classic/screens/stellar.cpp
+    client/classic/screens/vehicle_orders.cpp
     client/classic/session.cpp
     client/classic/ui.cpp
     client/game_session.cpp

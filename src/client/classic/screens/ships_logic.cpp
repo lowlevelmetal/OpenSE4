@@ -1,0 +1,430 @@
+#include "client/classic/screens/ships_logic.hpp"
+
+#include "datafile/datafile.hpp"
+#include "game/design.hpp"
+#include "game/query.hpp"
+
+#include <algorithm>
+#include <array>
+#include <format>
+
+namespace opense4::client::classic::shipui {
+
+using game::AbilityKind;
+using game::ObjectKind;
+using game::StellarAction;
+
+// ---- Orders ---------------------------------------------------------------------------------
+
+OrderOwner orderOwner(const game::GameState& s, game::VehicleId id) {
+    OrderOwner o;
+    const game::Vehicle* v = s.vehicle(id);
+    if (!v) return o;
+    if (v->fleet.valid() && s.fleet(v->fleet)) o.fleet = v->fleet;
+    else o.vehicle = id;
+    return o;
+}
+
+const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o) {
+    if (o.fleet.valid()) {
+        const game::Fleet* f = s.fleet(o.fleet);
+        return f ? &f->orders : nullptr;
+    }
+    const game::Vehicle* v = s.vehicle(o.vehicle);
+    return v ? &v->orders : nullptr;
+}
+
+bool repeatOf(const game::GameState& s, OrderOwner o) {
+    if (o.fleet.valid()) {
+        const game::Fleet* f = s.fleet(o.fleet);
+        return f && f->repeatOrders;
+    }
+    const game::Vehicle* v = s.vehicle(o.vehicle);
+    return v && v->repeatOrders;
+}
+
+game::cmd::SetOrders setOrders(OrderOwner o, std::vector<game::Order> orders, bool repeat) {
+    game::cmd::SetOrders c;
+    if (o.fleet.valid()) c.fleet = o.fleet;
+    else c.vehicle = o.vehicle;
+    c.orders = std::move(orders);
+    c.repeat = repeat;
+    return c;
+}
+
+game::cmd::SetOrders withAppended(const game::GameState& s, OrderOwner o, const game::Order& order) {
+    std::vector<game::Order> orders;
+    if (const auto* cur = ordersOf(s, o)) orders = *cur;
+    orders.push_back(order);
+    return setOrders(o, std::move(orders), repeatOf(s, o));
+}
+
+bool immediateKind(game::OrderKind k) {
+    using game::OrderKind;
+    return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::StellarManipulation || k == OrderKind::UseComponent;
+}
+
+void insertImmediate(std::vector<game::Order>& orders, const game::Order& order, game::Location here) {
+    auto it = std::find_if(orders.begin(), orders.end(), [&](const game::Order& o) {
+        const bool atHere = !o.location.system.valid() || o.location == here ||
+                            (o.kind == game::OrderKind::StellarManipulation && o.amount == static_cast<int>(game::StellarAction::OpenWarpPoint));
+        return !immediateKind(o.kind) || !atHere;
+    });
+    orders.insert(it, order);
+}
+
+std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner o) {
+    game::VehicleId id = o.vehicle;
+    if (const game::Fleet* f = s.fleet(o.fleet)) id = f->leader.valid() ? f->leader : f->members.empty() ? game::VehicleId{} : f->members.front();
+    if (const game::Vehicle* v = s.vehicle(id)) return v->location;
+    return std::nullopt;
+}
+
+game::cmd::SetOrders withImmediate(const game::GameState& s, OrderOwner o, const game::Order& order) {
+    std::vector<game::Order> orders;
+    if (const auto* cur = ordersOf(s, o)) orders = *cur;
+    insertImmediate(orders, order, ownerLocation(s, o).value_or(order.location));
+    return setOrders(o, std::move(orders), repeatOf(s, o));
+}
+
+size_t moveOrder(std::vector<game::Order>& orders, size_t index, int delta) {
+    if (index >= orders.size()) return index;
+    const auto target = static_cast<int64_t>(index) + delta;
+    const size_t to = static_cast<size_t>(std::clamp<int64_t>(target, 0, static_cast<int64_t>(orders.size()) - 1));
+    if (to == index) return index;
+    const game::Order o = orders[index];
+    orders.erase(orders.begin() + static_cast<std::ptrdiff_t>(index));
+    orders.insert(orders.begin() + static_cast<std::ptrdiff_t>(to), o);
+    return to;
+}
+
+// ---- Steps ----------------------------------------------------------------------------------
+
+int64_t stepAmount(Step step, int64_t available) {
+    if (available <= 0) return 0;
+    switch (step) {
+        case Step::One: return 1;
+        case Step::Five: return std::min<int64_t>(5, available);
+        case Step::Ten: return std::min<int64_t>(10, available);
+        case Step::All: return available;
+    }
+    return 0;
+}
+
+const char* stepLabel(Step step) {
+    switch (step) {
+        case Step::One: return "Move One";
+        case Step::Five: return "Move Five";
+        case Step::Ten: return "Move Ten";
+        case Step::All: return "Move All";
+    }
+    return "";
+}
+
+// ---- Units --------------------------------------------------------------------------------
+
+bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    return game::isUnitType(game::vehicleType(r, s, v));
+}
+
+bool isUnitDesign(const game::Rules& r, const game::GameState& s, game::DesignId d) {
+    if (!d.valid() || d.index() >= s.designs.size()) return false;
+    return game::isUnitType(r.hull(s.design(d).hull).type);
+}
+
+LaunchRates launchRates(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const auto abilities = game::vehicleAbilities(r, s, v);
+    LaunchRates out;
+    auto rate = [&](AbilityKind k) {
+        if (!game::hasAbility(abilities, k)) return -1;
+        int64_t n = 0;
+        for (const auto& a : abilities)
+            if (a.kind == k) n += a.value2;
+        return static_cast<int>(n);
+    };
+    out.fighters = rate(AbilityKind::LaunchRecoverFighters);
+    out.satellites = rate(AbilityKind::LaunchRecoverSatellites);
+    out.mines = rate(AbilityKind::LayMines);
+    out.drones = rate(AbilityKind::LaunchDrones);
+    return out;
+}
+
+bool canLaunch(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, game::DesignId unit) {
+    if (!isUnitDesign(r, s, unit)) return false;
+    const LaunchRates rates = launchRates(r, s, v);
+    switch (r.hull(s.design(unit).hull).type) {
+        case ruleset::VehicleType::Fighter: return rates.fighters >= 0;
+        case ruleset::VehicleType::Satellite: return rates.satellites >= 0;
+        case ruleset::VehicleType::Mine: return rates.mines >= 0;
+        case ruleset::VehicleType::Drone: return rates.drones >= 0;
+        default: return false;
+    }
+}
+
+// ---- Scrap window ---------------------------------------------------------------------------
+
+game::Resources scrapValue(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const bool unit = isUnitVehicle(r, s, v);
+    int64_t pct = r.setting(unit ? "Scrap Unit Percent Returned" : "Scrap Ship Percent Returned", 30);
+    if (v.owner.valid()) pct = std::max<int64_t>(pct, game::reclamationPercentAt(r, s, v.owner, v.location));
+    const game::Resources each = game::computeDesignStats(r, nullptr, s.design(v.design)).cost.percent(pct);
+    game::Resources total;
+    for (int i = 0; i < std::max(1, v.count); ++i) total += each;
+    return total;
+}
+
+game::Resources unmothballCost(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    return game::computeDesignStats(r, nullptr, s.design(v.design)).cost.percent(r.setting("UnMothball Ship Percent Cost", 20));
+}
+
+game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& s, const game::Colony& c, size_t slot) {
+    if (slot >= c.facilities.size()) return {};
+    int64_t pct = r.setting("Scrap Facility Percent Returned", 30);
+    pct = std::max<int64_t>(pct, game::reclamationPercentAt(r, s, c.owner, game::locationOf(s.galaxy, c.planet)));
+    return game::Resources::from(r.facility(c.facilities[slot]).cost).percent(pct);
+}
+
+std::optional<size_t> selfDestructEntry(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const game::Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::SelfDestruct))
+            return i;
+    return std::nullopt;
+}
+
+bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    if (v.status == game::VehicleStatus::Mothballed) return false;
+    const game::Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (r.component(d.entries[i].component).isWeapon() && game::entryIntact(r, s, v, i)) return true;
+    return false;
+}
+
+bool canBeFiredOn(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::vector<game::VehicleId>& selection) {
+    for (const game::Vehicle& other : s.vehicles) {
+        if (other.id == v.id || other.owner != v.owner || other.location != v.location) continue;
+        if (std::find(selection.begin(), selection.end(), other.id) != selection.end()) continue;
+        if (vehicleArmed(r, s, other)) return true;
+    }
+    return false;
+}
+
+ResearchPotential researchPotential(const game::Rules& r, const game::GameState& s, const game::Empire& e,
+                                    const std::vector<const game::Vehicle*>& vehicles) {
+    ResearchPotential p;
+    for (const game::Vehicle* v : vehicles) {
+        if (!v) continue;
+        for (const game::DesignEntry& en : s.design(v->design).entries) {
+            ++p.total;
+            if (!r.componentAvailable(e, en.component)) ++p.unknown;
+        }
+    }
+    return p;
+}
+
+const char* researchPotentialLabel(ResearchPotential p) {
+    if (p.unknown == 0 || p.total == 0) return "None";
+    const int pct = p.unknown * 100 / p.total;
+    return pct >= 50 ? "High" : pct >= 20 ? "Moderate" : "Low";
+}
+
+game::Resources vehicleMaintenance(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    if (v.status == game::VehicleStatus::Mothballed || !v.owner.valid()) return {};
+    const game::Empire& e = s.empire(v.owner);
+    int64_t pct = r.setting("Empire Starting Percent Maint Cost", 25) - (e.race.characteristic(game::Characteristic::MaintenanceAptitude) - 100);
+    if (const ruleset::Culture* c = r.culture(e.race)) pct -= c->maintenance;
+    pct = std::max<int64_t>(5, pct);
+    // Design modifier and the best system reduction from own colonies in the system.
+    const int64_t designMod = game::sumValue1(game::vehicleAbilities(r, s, v), AbilityKind::ModifiedMaintenanceCost);
+    int64_t systemCut = 0;
+    for (game::ObjectId id : s.galaxy.system(v.location.system).objects)
+        if (const game::Colony* c = s.colony(id); c && c->owner == v.owner)
+            systemCut = std::max(systemCut, game::bestValue1(game::colonyAbilities(r, s, *c), AbilityKind::ReducedMaintenanceSystem));
+    const int64_t factor = std::max<int64_t>(0, 100 - systemCut - designMod);
+    const game::Resources cost = game::computeDesignStats(r, nullptr, s.design(v.design)).cost;
+    game::Resources out;
+    for (size_t i = 0; i < 3; ++i) out.v[i] = cost.v[i] * pct * factor / 10000;
+    if (game::vehicleType(r, s, v) == ruleset::VehicleType::Base)
+        for (auto& x : out.v) x /= 2;
+    for (auto& x : out.v) x *= std::max(1, v.count);
+    return out;
+}
+
+DryRun dryRun(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Command& c) {
+    game::GameState copy = s;
+    DryRun out;
+    out.result = game::apply(r, copy, e, c);
+    if (out.result.ok) out.cost = s.empire(e).stockpile - copy.empire(e).stockpile;
+    return out;
+}
+
+// ---- Stellar manipulation -------------------------------------------------------------------
+
+namespace {
+
+constexpr std::array<StellarInfo, static_cast<size_t>(StellarAction::Count)> kStellar{{
+    {StellarAction::CreatePlanet, "Create Planet", AbilityKind::CreatePlanetSize, "PlanetCreate", 20},
+    {StellarAction::DestroyPlanet, "Destroy Planet", AbilityKind::DestroyPlanetSize, "PlanetDestroy", 20},
+    {StellarAction::CreateStar, "Create Star", AbilityKind::CreateStar, "StarCreate", 20},
+    {StellarAction::DestroyStar, "Destroy Star", AbilityKind::DestroyStar, "StarDestroy", 20},
+    {StellarAction::OpenWarpPoint, "Open Warp Point", AbilityKind::OpenWarpPointDistance, "WPOpen", 20},
+    {StellarAction::CloseWarpPoint, "Close Warp Point", AbilityKind::CloseWarpPoint, "WpClose", 20},
+    {StellarAction::CreateStorm, "Create Storm", AbilityKind::CreateStorm, "StormCreate", 20},
+    {StellarAction::DestroyStorm, "Destroy Storm", AbilityKind::DestroyStorm, "StormDestroy", 20},
+    {StellarAction::CreateNebulae, "Create Nebulae", AbilityKind::CreateNebulae, "NebulaeCreate", 20},
+    {StellarAction::DestroyNebulae, "Destroy Nebulae", AbilityKind::DestroyNebulae, "NebulaeDestroy", 20},
+    {StellarAction::CreateBlackHole, "Create Black Hole", AbilityKind::CreateBlackHole, "BlackHoleCreate", 20},
+    {StellarAction::DestroyBlackHole, "Destroy Black Hole", AbilityKind::DestroyBlackHole, "BlackHoleDestroy", 20},
+    {StellarAction::CreateConstructedPlanet, "Construct", AbilityKind::CreateConstructedPlanet, "Ring", 16},
+}};
+
+std::optional<game::ObjectId> objectOfKind(const game::GameState& s, game::Location where, ObjectKind kind) {
+    for (game::ObjectId id : s.galaxy.system(where.system).objects) {
+        const game::SpaceObject& o = s.galaxy.object(id);
+        if (o.sector == where.sector && o.kind == kind) return id;
+    }
+    return std::nullopt;
+}
+
+// A facility with `blocker` on any colony of the system (docs/spec/01 §9).
+bool blockedIn(const game::Rules& r, const game::GameState& s, game::SystemId sys, AbilityKind blocker) {
+    for (game::ObjectId id : s.galaxy.system(sys).objects)
+        if (const game::Colony* c = s.colony(id))
+            for (uint32_t f : c->facilities)
+                if (game::hasAbility(r.facilityAbilities(f), blocker)) return true;
+    return false;
+}
+
+} // namespace
+
+const StellarInfo& stellarInfo(StellarAction a) {
+    const auto i = static_cast<size_t>(a);
+    return kStellar[i < kStellar.size() ? i : 0];
+}
+
+StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, StellarAction a) {
+    StellarCheck c;
+    const StellarInfo& info = stellarInfo(a);
+    const auto abilities = game::vehicleAbilities(r, s, v);
+    c.hasAbility = game::hasAbility(abilities, info.ability);
+    if (!c.hasAbility) {
+        c.reason = std::format("This vehicle has no working component with {}.", game::identifier(info.ability));
+        return c;
+    }
+    const game::Location here = v.location;
+    const game::StarSystem& sys = s.galaxy.system(here.system);
+    auto need = [&](ObjectKind kind, const char* what) {
+        if (auto id = objectOfKind(s, here, kind)) {
+            c.target = *id;
+            return true;
+        }
+        c.reason = std::format("Needs {} in this sector.", what);
+        return false;
+    };
+    auto blocked = [&](AbilityKind blocker, const char* what) {
+        if (!blockedIn(r, s, here.system, blocker)) return false;
+        c.reason = std::format("A facility in this system prevents {}.", what);
+        return true;
+    };
+    const bool nebula = datafile::keysEqual(sys.physicalType, "Nebulae");
+    const bool blackHole = datafile::keysEqual(sys.physicalType, "Black Hole");
+    switch (a) {
+        case StellarAction::CreatePlanet:
+            if (!need(ObjectKind::Asteroids, "an asteroid field")) return c;
+            c.reason = "The asteroid field becomes a planet.";
+            break;
+        case StellarAction::DestroyPlanet:
+            if (!need(ObjectKind::Planet, "a planet")) return c;
+            if (blocked(AbilityKind::StopPlanetDestroyer, "destroying planets")) return c;
+            c.reason = "The planet becomes an asteroid field.";
+            break;
+        case StellarAction::CreateStar:
+            if (nebula || blackHole) {
+                c.reason = "Stars cannot be created in a nebula or black hole system.";
+                return c;
+            }
+            c.reason = "A new star forms in this sector.";
+            break;
+        case StellarAction::DestroyStar:
+            if (!need(ObjectKind::Star, "a star")) return c;
+            if (blocked(AbilityKind::StopStarDestroyer, "destroying stars")) return c;
+            c.destroysSystem = true;
+            c.reason = "The shockwave destroys everything in the system except warp points, this ship included.";
+            break;
+        case StellarAction::OpenWarpPoint:
+            if (blocked(AbilityKind::StopOpenWarpPoint, "opening warp points")) return c;
+            c.needsDestination = true;
+            c.reason = "Pick a sector of the destination system on the map.";
+            break;
+        case StellarAction::CloseWarpPoint:
+            if (!need(ObjectKind::WarpPoint, "a warp point")) return c;
+            if (blocked(AbilityKind::StopCloseWarpPoint, "closing warp points")) return c;
+            c.reason = "Both ends of the warp point disappear.";
+            break;
+        case StellarAction::CreateStorm: c.reason = "A storm forms in this sector (needs movement left)."; break;
+        case StellarAction::DestroyStorm:
+            if (!need(ObjectKind::Storm, "a storm")) return c;
+            c.reason = "The storm is dispersed.";
+            break;
+        case StellarAction::CreateNebulae:
+            if (!need(ObjectKind::Star, "a star")) return c;
+            if (blocked(AbilityKind::StopNebulaeCreator, "creating nebulae")) return c;
+            c.destroysSystem = true;
+            c.reason = "The star becomes a nebula; everything in the system is destroyed, this ship included.";
+            break;
+        case StellarAction::DestroyNebulae:
+            if (!nebula) {
+                c.reason = "Only works in a nebula system.";
+                return c;
+            }
+            c.reason = "The nebula is cleared from the system.";
+            break;
+        case StellarAction::CreateBlackHole:
+            if (!need(ObjectKind::Star, "a star")) return c;
+            if (blocked(AbilityKind::StopBlackHoleCreator, "creating black holes")) return c;
+            c.destroysSystem = true;
+            c.reason = "The star collapses; everything in the system is destroyed, this ship included.";
+            break;
+        case StellarAction::DestroyBlackHole:
+            if (!blackHole) {
+                c.reason = "Only works in a black hole system.";
+                return c;
+            }
+            c.reason = "The black hole is removed from the system.";
+            break;
+        case StellarAction::CreateConstructedPlanet: {
+            if (!need(ObjectKind::Star, "a star")) return c;
+            // Every material requirement: Val 2 kT of components of custom group Val 1 in this sector.
+            for (const auto& req : abilities) {
+                if (req.kind != AbilityKind::ConstructedPlanetRequirements) continue;
+                int64_t tons = 0;
+                for (const game::Vehicle& other : s.vehicles) {
+                    if (other.owner != v.owner || other.location != here) continue;
+                    const game::Design& d = s.design(other.design);
+                    for (size_t i = 0; i < d.entries.size(); ++i) {
+                        const ruleset::Component& comp = r.component(d.entries[i].component);
+                        if (comp.customGroup == req.value1 && game::entryIntact(r, s, other, i)) tons += comp.tonnage * std::max(1, other.count);
+                    }
+                }
+                if (tons < req.value2) {
+                    c.reason = std::format("Needs {} kT more construction material in this sector.", req.value2 - tons);
+                    return c;
+                }
+            }
+            c.reason = "A world is built around the star.";
+            break;
+        }
+        case StellarAction::Count: return c;
+    }
+    c.possible = true;
+    return c;
+}
+
+game::Order stellarOrder(const game::Vehicle& v, StellarAction a, game::ObjectId target) {
+    game::Order o{game::OrderKind::StellarManipulation, v.location};
+    o.object = target;
+    o.amount = static_cast<int>(a);
+    return o;
+}
+
+} // namespace opense4::client::classic::shipui
