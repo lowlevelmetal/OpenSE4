@@ -78,6 +78,17 @@ constexpr int movesByDay(int speed, int day) {
     return exact < day ? exact : day;
 }
 
+// The day counter gains speed/30 a day; the vehicle acts when it reaches 1
+// (spec 03 §6.3, confirmed: binary). The original keeps it in floating point,
+// stored as a 64-bit double each day, which can lose a speed's last step
+// depending on the x87 precision at run time. That is open (spec 03 §19 Q8),
+// so the engine counts exactly, as the spec recommends; `Double` reproduces
+// the stored double with extended-precision arithmetic (xmath::Ext).
+enum class DayCounterMode : uint8_t { Exact, Double };
+inline constexpr DayCounterMode kDayCounterMode = DayCounterMode::Exact;  // (inferred) until observed
+// The days (1..30) a vehicle of this speed acts on under a counter mode.
+std::vector<int> actionDays(int speed, DayCounterMode mode = kDayCounterMode);
+
 // Movement points of the slowest member of a fleet (its speed).
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f);
 

@@ -17,6 +17,7 @@
 #include "game/query.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -36,8 +37,58 @@ namespace {
 
 using ruleset::VehicleType;
 
-// A day counter of 1 (spec 03 §6.3) in the units the engine keeps it in.
-constexpr int kCounterUnit = kDaysPerTurn;
+// The day counter of spec 03 §6.3 (see DayCounterMode).
+class DayCounter {
+public:
+    // Before anyone acts, each day adds speed / 30.
+    void newDay(int speed) {
+        if constexpr (kDayCounterMode == DayCounterMode::Exact) exact_ += speed;
+        else value_ = (value_ + xmath::Ext(speed) / xmath::Ext(kDaysPerTurn)).roundedTo(xmath::kDoubleBits);
+    }
+    // At 1 or more the vehicle acts, and 1 is taken off.
+    bool take() {
+        if constexpr (kDayCounterMode == DayCounterMode::Exact) {
+            if (exact_ < kDaysPerTurn) return false;
+            exact_ -= kDaysPerTurn;
+        } else {
+            if (value_ < xmath::Ext(1)) return false;
+            value_ = (value_ - xmath::Ext(1)).roundedTo(xmath::kDoubleBits);
+        }
+        return true;
+    }
+    // Emergency energy adds whole actions (spec 03 §8).
+    void add(int actions) {
+        if constexpr (kDayCounterMode == DayCounterMode::Exact) exact_ += actions * kDaysPerTurn;
+        else value_ = (value_ + xmath::Ext(actions)).roundedTo(xmath::kDoubleBits);
+    }
+
+private:
+    int exact_ = 0;       // in thirtieths
+    xmath::Ext value_;    // DayCounterMode::Double
+};
+
+template <DayCounterMode Mode>
+std::vector<int> daysActed(int speed) {
+    std::vector<int> days;
+    int exact = 0;
+    xmath::Ext value;
+    for (int day = 1; day <= kDaysPerTurn; ++day) {
+        if constexpr (Mode == DayCounterMode::Exact) {
+            exact += speed;
+            if (exact >= kDaysPerTurn) {
+                exact -= kDaysPerTurn;
+                days.push_back(day);
+            }
+        } else {
+            value = (value + xmath::Ext(speed) / xmath::Ext(kDaysPerTurn)).roundedTo(xmath::kDoubleBits);
+            if (value >= xmath::Ext(1)) {
+                value = (value - xmath::Ext(1)).roundedTo(xmath::kDoubleBits);
+                days.push_back(day);
+            }
+        }
+    }
+    return days;
+}
 
 enum class Exec {
     Done,       // completed without acting here: removed (kept at the end with Repeat)
@@ -102,7 +153,7 @@ struct Actor {
     VehicleId lead;
     uint64_t created = 0;            // object creation order (the order actors act in)
     int speed = 0;                   // movement points at the start of the turn
-    int counter = 0;                 // day counter, in thirtieths
+    DayCounter counter;
     bool actedOnce = false;          // speed 0: one action on day 1
     int used = 0;                    // steps made this turn
     bool stopped = false;            // gone, or stopped for the turn by a hazard
@@ -122,15 +173,14 @@ public:
         buildActors();
         for (int day = 1; day <= kDaysPerTurn; ++day) {
             for (Actor& a : actors_)
-                if (!a.stopped) a.counter += a.speed;
+                if (!a.stopped) a.counter.newDay(a.speed);
             for (size_t i = 0; i < actors_.size(); ++i) {
                 Actor& a = actors_[i];
                 if (a.stopped) continue;
                 prune(a);
                 if (a.stopped) continue;
                 if (a.speed > 0) {
-                    if (a.counter < kCounterUnit) continue;
-                    a.counter -= kCounterUnit;
+                    if (!a.counter.take()) continue;
                 } else {
                     // A vehicle with no movement that has orders acts once, on day 1 (confirmed: binary).
                     if (day != 1 || a.actedOnce) continue;
@@ -926,7 +976,7 @@ private:
             }
         }
         if (gained < 0) return fail(a, o, "No usable component.");
-        a.counter += gained * kCounterUnit;
+        a.counter.add(gained);
         return Exec::Acted;
     }
 
@@ -1098,6 +1148,10 @@ Sector stepToward(Sector at, Sector target, int64_t steps) {
 }
 
 } // namespace
+
+std::vector<int> actionDays(int speed, DayCounterMode mode) {
+    return mode == DayCounterMode::Exact ? daysActed<DayCounterMode::Exact>(speed) : daysActed<DayCounterMode::Double>(speed);
+}
 
 void startTurn(TurnContext& ctx) {
     const Rules& r = ctx.rules;

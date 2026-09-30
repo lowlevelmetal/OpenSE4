@@ -78,6 +78,24 @@ TEST_CASE("movement: the 30-day schedule moves the k-th step on day ceil(k*30/sp
     CHECK(movement::movesByDay(0, 30) == 0);
 }
 
+TEST_CASE("movement: the day counter, exact and as the original's stored double") {
+    using movement::DayCounterMode;
+    CHECK(movement::actionDays(5, DayCounterMode::Exact) == std::vector<int>{6, 12, 18, 24, 30});
+    CHECK(movement::actionDays(1, DayCounterMode::Exact) == std::vector<int>{30});
+    CHECK(movement::actionDays(30, DayCounterMode::Exact).size() == 30);
+    for (int speed = 0; speed <= 30; ++speed) {
+        const auto days = movement::actionDays(speed, DayCounterMode::Exact);
+        CHECK(static_cast<int>(days.size()) == speed);
+        for (size_t k = 0; k < days.size(); ++k) CHECK(movement::movesByDay(speed, days[k]) == static_cast<int>(k) + 1);
+    }
+    // Kept as a double with the x87's extended precision, as spec 03 §6.3
+    // describes: speed 1 never moves and speed 5 moves on days 7, 13, 19, 25.
+    CHECK(movement::actionDays(1, DayCounterMode::Double).empty());
+    CHECK(movement::actionDays(5, DayCounterMode::Double) == std::vector<int>{7, 13, 19, 25});
+    CHECK(movement::actionDays(30, DayCounterMode::Double).size() == 30);
+    CHECK(movement::kDayCounterMode == DayCounterMode::Exact);  // the spec's recommendation until observed
+}
+
 TEST_CASE("movement: paths inside a system use king moves") {
     World w;
     const Rules& r = w.rules();
