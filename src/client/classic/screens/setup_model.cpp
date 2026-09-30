@@ -1,6 +1,7 @@
 #include "client/classic/screens/setup_model.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/ai.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -68,47 +69,10 @@ std::string lowerAscii(std::string_view s) {
     return out;
 }
 
-// Picks a race preset for a random player (spec 05 §7.1): a personality group
-// weighted by `Random Player Personality Group N Percent`, then a race of that
-// group; races already in the game are avoided while others remain.
+// Picks a race preset for a random player (spec 05 §7.1): the personality
+// group furthest below its target share, then an unused race of it.
 const ruleset::RacePreset* pickRandomPreset(const game::Rules& r, Rng& rng, bool neutral, const std::vector<std::string>& usedStyles) {
-    std::vector<const ruleset::RacePreset*> fresh, all;
-    for (const auto& p : r.racePresets()) {
-        if (p.neutral != neutral) continue;
-        all.push_back(&p);
-        if (!nameTaken(usedStyles, p.folder)) fresh.push_back(&p);
-    }
-    const auto& pool = fresh.empty() ? all : fresh;
-    if (pool.empty()) return nullptr;
-    if (!neutral) {
-        const int groups = static_cast<int>(r.setting("Random Player Personality Groups", 0));
-        std::vector<std::pair<int, int>> weights;  // (group, percent) for groups with a candidate
-        int total = 0;
-        for (int g = 1; g <= groups; ++g) {
-            const int pct = static_cast<int>(r.setting(std::format("Random Player Personality Group {} Percent", g), 0));
-            const bool any = std::any_of(pool.begin(), pool.end(), [&](const ruleset::RacePreset* p) { return p->personalityGroup == g; });
-            if (pct > 0 && any) {
-                weights.emplace_back(g, pct);
-                total += pct;
-            }
-        }
-        if (total > 0) {
-            int roll = static_cast<int>(rng.below(static_cast<uint64_t>(total)));
-            int group = weights.back().first;
-            for (const auto& [g, pct] : weights) {
-                if (roll < pct) {
-                    group = g;
-                    break;
-                }
-                roll -= pct;
-            }
-            std::vector<const ruleset::RacePreset*> inGroup;
-            for (const ruleset::RacePreset* p : pool)
-                if (p->personalityGroup == group) inGroup.push_back(p);
-            return inGroup[rng.below(inGroup.size())];
-        }
-    }
-    return pool[rng.below(pool.size())];
+    return game::ai::pickRandomRace(r, rng, neutral, usedStyles);
 }
 
 // Names the preset tier when the race is unmodified, keeps the custom race otherwise.
@@ -254,9 +218,12 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
             if (!p) break;
             game::EmpireSetup e;
             e.preset = p->folder;
-            // Computer races are built with the preset tier the racial points allow (inferred).
-            e.presetTier = bestTierWithin(r, *p, o.racialPoints);
+            // The preset's Race Opt set of the racial-point level (spec 05 §7.1).
+            e.customRace = game::ai::randomPlayerRace(r, *p, o.racialPoints);
             e.kind = neutral ? game::PlayerKind::Neutral : game::PlayerKind::Computer;
+            // Only random players get the chosen Computer Player Difficulty.
+            o.randomAiPlayers.resize(g.empires.size() + 1, 0);
+            o.randomAiPlayers[g.empires.size()] = 1;
             std::string name = effectiveName(r, e);
             for (int n = 2; nameTaken(names, name); ++n) name = std::format("{} {}", effectiveName(r, e), n);
             e.name = name;
