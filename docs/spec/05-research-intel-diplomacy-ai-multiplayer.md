@@ -513,6 +513,20 @@ any other empire) [D].
 The transitions between states are hard-coded. `Turns to Wait until next attack` is one
 known input [I].
 
+**Placeholder transitions [I]**, evaluated once per turn in phase 12:
+
+1. Armed hostile ships in one of our colony systems: Defend (Short Term), becoming Defend
+   (Long Term) after 10 turns. When they are gone, Prepare for Defense for 5 turns.
+2. No warp route to any other empire's colony: Not Connected.
+3. At war: Prepare for Attack when our warships outweigh the enemy's visible ones (by a
+   difficulty-dependent margin), else Prepare for Defense. Prepare for Attack becomes
+   Attack after 3 turns; Attack becomes Secure Holdings after 15 turns, or after 5 once we
+   are no longer stronger; Secure Holdings waits `Turns to Wait until next attack`, then
+   goes back to Prepare for Attack, or to Incursion when weaker. A weaker empire with at
+   least 3 warships raids (Incursion).
+4. At peace: Exploration during the first 30 turns while unexplored neighbours remain,
+   otherwise Infrastructure. Neutral empires never explore.
+
 ### 7.3 Anger (`AI_Anger`)
 
 Each AI keeps a scalar anger toward every other empire. The Empires window shows it as the
@@ -862,7 +876,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - the AI-state transitions;
     - the MEE baseline;
     - what Difficulty and Bonus do;
-    - the value of trade items.
+    - the value of trade items;
+    - what the `Spaces Per One` densities of `AI_DesignCreation` count. We read N as one
+      component per N kT of hull, rounded up, so 10000 means "one";
+    - how the three value thresholds of `AI_Planet_Types` compare. We read them as ratios
+      against the resource with the highest threshold;
+    - whether the computer builds scouts, which no table names. We keep two while there is
+      unexplored space;
+    - how much the computer commits to its queues at once, and when it sends gifts,
+      tributes and demands on its own;
+    - whether race folders may override the global tables (`Construction_*`,
+      `Planet_Types`, `Speech`, `Strategies`). We always read those from `Ai/`.
 13. **Contact loss**: does losing contact reset the treaty to None? Is trade % kept after
     re-contact?
 14. **Simultaneous timing**: the day schedule for speeds that do not divide 30, how

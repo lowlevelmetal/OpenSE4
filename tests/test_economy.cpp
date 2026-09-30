@@ -1132,7 +1132,9 @@ TEST_CASE("economy: installed data set reproduces the observed Quick Start homew
     CHECK(economy::maintenancePercent(*r, s.empire(kMe)) == 10);
 
     std::vector<EmpireOrders> none;
-    processTurn(*r, s, none);
+    TurnOptions idle;
+    idle.aiForMissing = false;  // nobody spends anything this turn
+    processTurn(*r, s, none, idle);
     const EconomyReport& rep = s.empire(kMe).economy;
     CHECK(rep.colonies == Resources{6000, 1097, 1142});
     CHECK(s.empire(kMe).stockpile == Resources{20000, 20000, 20000} + rep.colonies - rep.maintenance);
