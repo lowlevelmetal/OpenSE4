@@ -378,14 +378,23 @@ private:
 
     // Existing vehicles of a type (units one by one) plus items in all queues.
     int64_t have(std::string_view type, bool colonyShips) {
-        auto match = [&](DesignId d) {
+        // The type tests do not change during the count: done once, and once per design.
+        const bool aiType = !colonyShips && isAiDesignType(type);
+        const std::string want = colonyShips || aiType ? std::string{} : datafile::normalizeKey(type);
+        std::vector<int8_t> known(p_.st.designs.size(), -1);
+        auto test = [&](DesignId d) {
             const DesignInfo& di = p_.info(d);
             if (colonyShips) return di.role == Role::Colonizer;
-            if (isAiDesignType(type)) return keysEqual(di.aiType, type);
+            if (aiType) return keysEqual(di.aiType, type);
             const Design& design = p_.st.design(d);
-            const std::string want = datafile::normalizeKey(type);
             return datafile::normalizeKey(design.name).find(want) != std::string::npos ||
                    datafile::normalizeKey(design.designType).find(want) != std::string::npos;
+        };
+        auto match = [&](DesignId d) {
+            if (d.index() >= known.size()) return test(d);
+            int8_t& m = known[d.index()];
+            if (m < 0) m = test(d) ? 1 : 0;
+            return m == 1;
         };
         int64_t n = 0;
         for (const Vehicle& v : p_.st.vehicles) {
