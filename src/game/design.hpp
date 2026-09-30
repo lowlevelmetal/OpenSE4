@@ -119,8 +119,8 @@ int64_t vehicleAbilityTotal(const Rules& r, const GameState& s, const Vehicle& v
 // Units in space are held in groups, one per (owner, unit kind, sector) and
 // mixing designs; every drone is its own group (confirmed: binary). A group
 // that holds one design keeps it in Vehicle::design and count; one that mixes
-// designs lists them in Vehicle::mixed. Units are whole or dead: a group
-// carries no partial damage.
+// designs lists them in Vehicle::mixed. Units are whole or dead in battles
+// and hazards; only a mine strike leaves the front unit's damage (spec 04 §19.1).
 
 // The designs of a vehicle and how many of each, in the order they joined: a
 // mixed group's stacks, otherwise {design, count}.

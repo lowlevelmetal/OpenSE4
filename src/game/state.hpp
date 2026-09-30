@@ -401,7 +401,7 @@ struct Vehicle {
     // Read and change it through the group helpers of design.hpp
     // (groupStacks, addGroupUnits, removeGroupUnits, setGroupStacks).
     std::vector<UnitStack> mixed;
-    std::vector<int> damage;        // per entry of `design`; destroyed when >= structure (unit groups: always 0)
+    std::vector<int> damage;        // per entry of `design`; destroyed when >= structure (a unit group: its front unit's, from mines)
     int64_t supply = 0;
     int movement = 0;               // movement points left this turn
     std::vector<Order> orders;
