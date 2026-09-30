@@ -1378,11 +1378,15 @@ All rules in this section are (confirmed: binary).
     merges drones. New groups start full and launching refills the whole group. When launched units
     first move was not determined (§12) (confirmed: binary).
 28. **Hazard damage outside combat:** storms, destructive centres and turbulence hit armor first,
-    then other components, with no shields. A unit group takes it once for all its members.
-    **Answer (partial):** storm damage happens only to a group stepping into the storm sector, with
-    a 50 % chance, and stops it; turbulence is 50 % per transit; neither uses shields. Destructive
-    centres hit everything on the centre square at the end of the turn (§6.2) (confirmed: binary).
-    How the damage is spread over components was not checked here.
+    then other components, with no shields. **Answer (partial):** storm damage happens only to a
+    group stepping into the storm sector, with a 50 % chance, and stops it; turbulence is 50 % per
+    transit; neither uses shields. Destructive centres hit everything on the centre square at the
+    end of the turn (§6.2) (confirmed: binary). How the damage is spread over components was not
+    checked here. The engine hits a ship's armor first, then its other components; a unit group
+    loses whole units instead, as a group does in combat (spec 04 §9.4) but without shields and
+    without a pool: while the damage covers a unit's structure, a unit of one of the group's
+    designs, drawn at random, dies; what is left over is lost, so a group never carries partial
+    damage. (inferred)
 29. **Cargo lost to damage:** the engine drops the last unit stack first, then population.
     **Answer:** wrong way round: the original drops population first (1M at a time), then units
     from the first stack (§11) (confirmed: binary).
@@ -1443,9 +1447,22 @@ All rules in this section are (confirmed: binary).
     whose range-20 damage is above 0 would reach any distance. The engine's maximum range stops
     at the last damaging range plus the range modifier. How far does the original let such a
     weapon fire? (inferred)
-43. **Groups of several designs:** the engine keeps one record per design inside an (owner, unit
-    kind, sector) group. They share the per-sector caps and launch refills, but move and fight as
-    separate records. (inferred representation)
+43. **Groups of several designs:** one group per (owner, unit kind, sector) holds every design
+    (§1, §12) and moves, pays supply and fights as one. Where the spec is silent the engine
+    chooses (inferred):
+    - launched units join the first group of their kind in the sector (in object order),
+      whatever its orders or fleet; groups that move into a sector where another group of their
+      kind waits stay apart, since only launching is known to merge;
+    - Recover Units takes the units of one design out of the group (the Launch \ Recover
+      window offers the whole group, one order per design); the supply left stays with the
+      group, up to what the rest can hold;
+    - a minefield that mixes designs loses its mines, to sweepers and when they strike, in the
+      order its designs joined, and each mine strikes with its own design's warheads;
+    - a group's cloak and sensor levels are the best of its designs' (its ability list holds
+      every design's abilities, §12), and every design of a group that is seen counts as seen;
+    - the Combat Simulator puts the units of one side and kind into one group; units launched
+      in a battle that no carrier recovers join the sector's group of their kind (drones stay
+      alone) (spec 04 §19.1).
 44. **Training sources:** the engine takes the owner's populated colonies first, then vehicles, as
     sources, and facilities need population. What order and population rule does the original
     use? (inferred)

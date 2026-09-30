@@ -730,3 +730,16 @@ name/date/summary, can be shown from our own saves.
     client: up to four), how items are removed, and what Fleets for Plr does exactly
     (our client puts the selected ships in their side's fleet, with a formation and a
     strategy). (inferred)
+23. **Strategic Combat and Ground Combat details.** Which battles the Strategic Combat
+    window shows in a turn-based game, and what its forces list counts. Our client shows
+    the battles the player's own orders started and those in which the player answered
+    Strategic (not those fought in the Tactical Combat window), one after another; in a
+    simultaneous game, when `Simultaneous Games Show Strategic Combat` is on, every
+    battle of the processed turn the player fought in; and a simulation whose sides are
+    all computer-controlled. The window plays the battle back from its record (Begin,
+    Pause, Skip to End), so the results are already in the game when it opens. The forces
+    list counts ships and bases per hull, unit groups in units under their first design's
+    hull, and planets as one. Ground Combat is fought at once by the engine, so Begin
+    there shows the outcome; the window opens after the landing has played in the
+    Tactical Combat window and when the Strategic Combat playback reaches it, and from a
+    button in the Strategic Combat and Combat Replay windows. (inferred)

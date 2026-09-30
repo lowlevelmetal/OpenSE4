@@ -980,6 +980,11 @@ checking in the running game.
     the empire whose design they fly? Where is the mock battle fought, and do the system's
     abilities apply? Do the ships start with experience? How many virtual empires can
     there be? (inferred)
+55. **Saving during a battle.** Can a turn-based game be saved while a battle is being
+    fought, and does loading it resume the battle? (inferred)
+56. **Groups of several designs in a battle.** Which design gets the kill of a group that
+    mixes designs, whose armor specials act, and do launched units that no carrier
+    recovers join the sector's group of their kind? (inferred)
 
 ### 19.1 What the engine does until the remaining questions are answered
 
@@ -1014,6 +1019,16 @@ confirmed rules above take precedence over any older engine behaviour.
 - **Unit groups (Q38).** Shields Only damage cancels up to one unit's shield part in the
   next kill. After a non-hull hit the pool keeps at most its old value. Emissive armor of
   the unit design acts as on a ship. Space unit groups have no partial damage.
+- **Groups of several designs (Q56).** A group that mixes designs is one piece. Each of the
+  §9.4 tries draws one of its designs that still has units, at random; the unit's hit
+  points are its design's. Emissive armor is the best of its designs'. A fighter group's
+  identical weapons (same part and mount) fire together whichever designs carry them; a
+  satellite or drone group fires each weapon of each unit of each design. Offense and
+  defense are the best design's (§7), speed the slowest design's (spec 03 §12), and the
+  target budget counts every unit. A kill goes to the design whose weapon (or seeker) made
+  it. Each loss of units is recorded (a `UnitsLost` event, for the Strategic Combat window
+  and the replay). Launched units that no carrier recovers join the owner's group of their
+  kind in the sector, which is refilled as a launch would; drones stay groups of their own.
 - **Planets (Q39, Q40).** The pool is emptied when the population is hit; facilities are
   removed at random. Only Weapons hits the weapon platforms (as a non-hull hit); the other
   types listed in Q40 do nothing to planets. Planets regenerate shields from facilities
@@ -1050,8 +1065,10 @@ confirmed rules above take precedence over any older engine behaviour.
   its strategy now; Resolve Combat hands the side to its strategies for the rest of the
   battle. The battle ends only when a phase ends, as after a computer phase; OpenSE4's
   client ends a player's phase by itself when no enemy is left (an option). The client
-  ends the launch step at once when the phase starts, so a player's launches come after
-  the side's drones and seekers move.
+  stops at the launch step while a piece of the side can launch (an option, on by
+  default): the player launches first, then Begin Phase (or any other order) lets the
+  side's drones and seekers move, as for a computer side; with nothing to launch the step
+  ends at once.
 - **Tactical groups (Q50).** Set Group Leader makes the piece lead group 0 to 9 (a
   leader keeps its members); a piece that led that group before hands its members over
   and follows the new leader too. A member keeps the place it has when it joins,
@@ -1069,6 +1086,12 @@ confirmed rules above take precedence over any older engine behaviour.
 - **Who is asked (Q53).** Only human empires hostile to another empire in the battle,
   in turn-based games without "No Tactical Combat". Network games are simultaneous, so
   they never ask.
+- **Saving during a battle (Q55).** A battle is never saved in progress. While a
+  battle asks Tactical or Strategic, or is fought in the Tactical Combat window, the
+  windows that save are out of reach and no autosave falls; the battle's order (or End
+  Turn) is under way and the game is kept as it was before it. Quitting then drops that
+  order: the game loads as before it was given. Once the battle is over, the game saves
+  with its results.
 - **Combat simulator (Q54).** Each virtual empire is a copy of the player's empire (race,
   culture, technology and strategies) under the side's name, at war with the other
   sides. The mock battle is in the middle of a new, empty system of the home system's

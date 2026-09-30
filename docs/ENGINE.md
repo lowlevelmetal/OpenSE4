@@ -181,6 +181,20 @@ battle begins. The client fights it in its window (or answers Strategic) and mak
 same call again with the answer; the call replays deterministically to the battle and
 fights it with the script, so the game gets exactly the battle the player saw.
 
+A battle's record (`CombatRecord`) holds its pieces, the events the replays play back
+(moves, shots, hits, losses of units, launches, captures) and the ground combats fought
+when troops landed (`GroundCombat`, for the Ground Combat window). The client shows a
+battle fought by the strategies in the watch-only Strategic Combat window, played back
+from that record.
+
+Units in space are held in one group per (owner, unit kind, sector) that mixes designs
+(spec 03 §12): a `Vehicle` whose `mixed` list names each design and its count (empty when
+it holds one design, which is then `design` × `count`). The group helpers of
+`design.hpp` (`groupStacks`, `addGroupUnits`, `removeGroupUnits`, `setGroupStacks`)
+keep `design` (the first stack's) and `count` (the total) in step, and
+`vehicleAbilityTotal` sums an ability over every unit. In a battle the group is one piece
+whose weapons refer to its design stacks.
+
 The combat simulator (`simulator.hpp`) builds a sandbox copy of the game: one virtual
 empire per side (a copy of the player's, at war with the others), the chosen designs,
 seen enemy designs and sample planets in an empty new system, cargo, fleets, strategies,
@@ -220,12 +234,12 @@ scaled to the window, drawn with the art from the player's install.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers; it lists the battles to watch in the Strategic Combat window |
 | `art.*` | Pictures from the install, cached as textures |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
 | `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay and Tactical Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `simulator.cpp` the Combat Simulator |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
 | `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
 
 ## Tests
