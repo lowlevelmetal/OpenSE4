@@ -129,6 +129,11 @@ CommandResult apply(const Rules& r, GameState& s, EmpireId empire, const Command
 // Short label for logs and debugging ("QueueAdd", ...).
 std::string_view commandName(const Command& c);
 
+// Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
+// per resource; a fighter or satellite group returns that per unit.
+Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v);
+Resources unmothballCharge(const Rules& r, const GameState& s, const Vehicle& v);
+
 // Queue helpers shared with the economy and the UI.
 ConstructionQueue* findQueue(GameState& s, EmpireId empire, const cmd::QueueTarget& t);
 // Why an item cannot go in this queue (empty = it can).

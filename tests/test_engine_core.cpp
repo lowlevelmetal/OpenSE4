@@ -4,9 +4,9 @@
 
 #include "game/commands.hpp"
 #include "game/design.hpp"
-#include "game/xmath.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
 

@@ -146,6 +146,7 @@ std::string cargoSummary(const UiContext& ui, const game::Cargo& c) {
 }
 
 std::string ownerName(const UiContext& ui, OrderOwner o) {
+    if (o.planet.valid() && o.planet.index() < ui.state().galaxy.objects.size()) return ui.state().galaxy.object(o.planet).name;
     if (const game::Fleet* f = ui.state().fleet(o.fleet)) return f->name;
     if (const game::Vehicle* v = ui.state().vehicle(o.vehicle)) return v->name;
     return "-";

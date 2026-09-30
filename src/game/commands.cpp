@@ -269,17 +269,8 @@ struct Applier {
             if (!yardAt(v->location)) return R::fail("Scrapping needs a space yard in the sector");
             const auto type = vehicleType(r, s, *v);
             if (type == ruleset::VehicleType::Drone || type == ruleset::VehicleType::Mine) return R::fail("Drones and minefields cannot be scrapped");
-            // Per resource, round(design cost × P %); damage does not matter and cargo is lost (spec 03 §15).
-            const Resources cost = computeDesignStats(r, nullptr, s.design(v->design)).cost;
-            Resources value;
-            if (isUnitType(type)) {
-                const int64_t pct = r.setting("Scrap Unit Percent Returned", 30);
-                for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct) * v->count;
-            } else {
-                const int64_t pct = std::max<int64_t>(r.setting("Scrap Ship Percent Returned", 30), reclamationPercentAt(r, s, e, v->location));
-                for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct);
-            }
-            emp().stockpile += value;
+            // Damage does not lower the value and cargo is lost (spec 03 §15).
+            emp().stockpile += scrapRefund(r, s, *v);
             addLog(s, e, LogCategory::Construction, std::format("{} scrapped", v->name), {}, v->location);
             v->count = 0;
             s.removeDeadVehicles();
@@ -320,10 +311,8 @@ struct Applier {
             v->movement = 0;
         } else {
             if (v->status != VehicleStatus::Mothballed) return R::fail("Not mothballed");
-            // round(design cost × percent) per resource, every resource in stock.
-            const Resources design = computeDesignStats(r, nullptr, s.design(v->design)).cost;
-            Resources cost;
-            for (Resource res : kResources) cost[res] = xmath::pctRound(design[res], r.setting("UnMothball Ship Percent Cost", 20));
+            // Every resource must be in stock.
+            const Resources cost = unmothballCharge(r, s, *v);
             if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources to unmothball");
             emp().stockpile -= cost;
             v->status = VehicleStatus::Normal;
@@ -825,6 +814,29 @@ CommandResult apply(const Rules& r, GameState& s, EmpireId empire, const Command
 
 std::string_view commandName(const Command& c) {
     return std::visit([](const auto& x) { return NameOf<std::decay_t<decltype(x)>>::value; }, c);
+}
+
+Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {
+    const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
+    Resources value;
+    if (isUnitType(vehicleType(r, s, v))) {
+        // A fighter or satellite group: the unit percentage, per unit.
+        const int64_t pct = r.setting("Scrap Unit Percent Returned", 30);
+        for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct) * std::max(1, v.count);
+        return value;
+    }
+    // Ships and bases: the larger of the setting and the owner's best Resource Reclamation here.
+    int64_t pct = r.setting("Scrap Ship Percent Returned", 30);
+    if (v.owner.valid()) pct = std::max<int64_t>(pct, reclamationPercentAt(r, s, v.owner, v.location));
+    for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct);
+    return value;
+}
+
+Resources unmothballCharge(const Rules& r, const GameState& s, const Vehicle& v) {
+    const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
+    Resources out;
+    for (Resource res : kResources) out[res] = xmath::pctRound(cost[res], r.setting("UnMothball Ship Percent Cost", 20));
+    return out;
 }
 
 ConstructionQueue* findQueue(GameState& s, EmpireId empire, const cmd::QueueTarget& t) {

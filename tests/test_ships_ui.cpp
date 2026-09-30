@@ -7,6 +7,7 @@
 #include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
+#include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
 
@@ -95,8 +96,12 @@ TEST_CASE("ship windows: scrap window values") {
     const DesignId armed = frigate(s, r, me, "Armed", {"Test Laser", "Test Self Destruct"});
     const VehicleId a = addTestVehicle(s, r, plain, where).id;
     const Resources cost = computeDesignStats(r, nullptr, s.design(plain)).cost;
-    CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == cost.percent(30));
-    CHECK(shipui::unmothballCost(r, s, *s.vehicle(a)) == cost.percent(20));
+    // round(cost × P %) per resource, in floating point (spec 03 §15).
+    auto rounded = [&](int64_t pct) {
+        return Resources{xmath::pctRound(cost.v[0], pct), xmath::pctRound(cost.v[1], pct), xmath::pctRound(cost.v[2], pct)};
+    };
+    CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == rounded(30));
+    CHECK(shipui::unmothballCost(r, s, *s.vehicle(a)) == rounded(20));
     CHECK_FALSE(shipui::selfDestructEntry(r, s, *s.vehicle(a)).has_value());
     CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a}));
 
@@ -109,7 +114,7 @@ TEST_CASE("ship windows: scrap window values") {
 
     // A recycler in the sector raises the refund.
     home.facilities.push_back(facilityIndex(r, "Test Recycler"));
-    CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == cost.percent(60));
+    CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == rounded(60));
     const size_t slot = home.facilities.size() - 1;
     CHECK(shipui::facilityScrapValue(r, s, home, slot) == Resources::from(r.facility(home.facilities[slot]).cost).percent(60));
 
