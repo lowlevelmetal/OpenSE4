@@ -17,16 +17,44 @@ ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::G
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {
     ended_.assign(state_.empires.size(), 0);
     if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
+    if (turnBased() && kind_ == SessionKind::NetworkClient) waiting_ = !myTurn();
+}
+
+bool ClassicSession::myTurn() const {
+    return turnBased() && !state_.gameOver && state_.playerTurn.started && state_.playerTurn.empire == player_;
+}
+
+const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
+    static const std::vector<game::EntryQuestion> none;
+    return myTurn() ? state_.playerTurn.questions : none;
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
     if (waiting_) return game::CommandResult::fail("Waiting for the other players");
-    if (turnBased() && kind_ != SessionKind::NetworkClient) {
+    if (turnBased() && kind_ == SessionKind::NetworkClient) {
+        // The host carries the command out; our copy shows it at once and is
+        // replaced by the host's result when that arrives.
+        if (!myTurn()) return game::CommandResult::fail("It is not your turn.");
+        game::CommandResult r = game::apply(*rules_, state_, player_, c);
+        // As the engine does: an answer (even a refused one), or new orders, drop the group's question.
+        auto drop = [&](game::VehicleId v, game::FleetId f) {
+            std::erase_if(state_.playerTurn.questions, [&](const game::EntryQuestion& q) {
+                return f.valid() ? q.fleet == f : !q.fleet.valid() && q.vehicle == v;
+            });
+            ++revision_;
+        };
+        if (const auto* a = std::get_if<game::cmd::EnterSector>(&c)) drop(a->vehicle, a->fleet);
+        if (!r.ok) return r;
+        if (const auto* o = std::get_if<game::cmd::SetOrders>(&c); o && !o->planet.valid()) drop(o->vehicle, o->fleet);
+        if (transport_) transport_->playCommand(c);
+        orders_.push_back(std::move(c));
+        ++revision_;
+        return r;
+    }
+    if (turnBased()) {
         const size_t battles = state_.combats.size();
         const game::TurnResult res = game::applyLive(*rules_, state_, player_, c);
         ++revision_;
-        for (const game::EntryQuestion& q : res.questions)
-            if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
         for (size_t i = battles; i < state_.combats.size() && !newBattle_; ++i) {
             const auto& who = state_.combats[i].participants;
             if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
@@ -44,9 +72,8 @@ game::CommandResult ClassicSession::issue(game::Command c) {
 }
 
 void ClassicSession::answer(bool enter) {
-    if (questions_.empty()) return;
-    const game::EntryQuestion q = questions_.front();
-    questions_.erase(questions_.begin());
+    if (questions().empty()) return;
+    const game::EntryQuestion q = questions().front();  // the answer drops it (applyLive, or issue() on a network copy)
     issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter});
 }
 
@@ -60,7 +87,6 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
     notices_.clear();
     for (const auto& [empire, text] : result.rejected)
         if (empire == player_) notices_.push_back(text);
-    questions_ = result.questions;
 }
 
 void ClassicSession::resumeTurnBased() {
@@ -72,7 +98,13 @@ void ClassicSession::resumeTurnBased() {
 
 void ClassicSession::endTurn() {
     if (waiting_) return;
-    if (turnBased() && kind_ != SessionKind::NetworkClient) {
+    if (turnBased() && kind_ == SessionKind::NetworkClient) {
+        if (!myTurn()) return;
+        if (transport_) transport_->endPlayerTurn();
+        waiting_ = true;
+        return;
+    }
+    if (turnBased()) {
         // The player's end-of-turn processing; the computer players' turns;
         // then the next human's turn starts.
         const game::TurnResult result = game::endPlayerTurn(*rules_, state_, player_);
@@ -135,10 +167,28 @@ std::optional<std::filesystem::path> ClassicSession::autosave() {
 
 void ClassicSession::poll() {
     if (!transport_) return;
-    if (auto s = transport_->pollState()) {
+    auto s = transport_->pollState();
+    if (!s) return;
+    if (!game::turnBased(*s)) {
         state_ = std::move(*s);
         beginTurn();
+        return;
     }
+    // Turn-based: the host's state after our commands, a battle we fought in
+    // another player's turn, or the turn passing on.
+    const bool wasMine = myTurn();
+    const uint32_t oldTurn = state_.turn;
+    const size_t oldBattles = state_.combats.size();
+    state_ = std::move(*s);
+    ++revision_;
+    if (state_.turn == oldTurn)
+        for (size_t i = oldBattles; i < state_.combats.size() && !newBattle_; ++i) {
+            const auto& who = state_.combats[i].participants;
+            if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
+        }
+    const bool mine = myTurn();
+    if (mine && (!wasMine || state_.turn != oldTurn)) beginTurn();  // our turn starts
+    waiting_ = !mine;
 }
 
 void ClassicSession::beginTurn() {
@@ -156,7 +206,6 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
-    questions_.clear();
     newBattle_.reset();
     if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     beginTurn();

@@ -9,11 +9,14 @@
 // validated and applied to the local state at once (so every window shows
 // it immediately) and recorded for the turn.
 //
-// Turn-based games (GameOptions::simultaneous off; local and hotseat only)
-// play one player after another: issue() carries each order out at once
-// (game::applyLive: ships move, battles are fought, messages take effect),
-// End Turn runs the player's end-of-turn processing and the computer
-// players' turns, and the turn passes to the next human.
+// Turn-based games (GameOptions::simultaneous off) play one player after
+// another: issue() carries each order out at once (game::applyLive: ships
+// move, battles are fought, messages take effect), End Turn runs the
+// player's end-of-turn processing and the computer players' turns, and the
+// turn passes to the next human. In a network game the host does this: in
+// the player's turn issue() checks the command on the local copy and sends
+// it to the host (TurnTransport::playCommand), whose new state replaces the
+// copy when it arrives.
 
 #include "game/commands.hpp"
 #include "game/rules.hpp"
@@ -36,7 +39,12 @@ class TurnTransport {
 public:
     virtual ~TurnTransport() = default;
     virtual void submitOrders(const game::EmpireOrders& orders) = 0;
-    // Returns a newly processed state when one has arrived.
+    // Turn-based games: one command for the host to carry out now, and the
+    // end of our turn.
+    virtual void playCommand(const game::Command& c) { (void)c; }
+    virtual void endPlayerTurn() {}
+    // Returns a newly processed state when one has arrived (turn-based games:
+    // also within a turn).
     virtual std::optional<game::GameState> pollState() = 0;
     virtual std::string status() const = 0;
 };
@@ -64,10 +72,12 @@ public:
     const std::vector<game::Command>& ordersThisTurn() const { return orders_; }
 
     bool turnBased() const { return game::turnBased(state_); }
+    // Turn-based games: the local player's turn is in progress.
+    bool myTurn() const;
     // Turn-based games: moves of the player's ships that stopped before a
     // sector with enemies, oldest first; answer() gives the Attack Sector
     // answer to the first (spec 03 §6.2).
-    const std::vector<game::EntryQuestion>& questions() const { return questions_; }
+    const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
     // Turn-based games: the first battle the player's last order started, to
     // show at once (an index into GameState::combats), then forgotten.
@@ -125,7 +135,6 @@ private:
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
     std::string autosaveNote_;
-    std::vector<game::EntryQuestion> questions_;
     std::optional<size_t> newBattle_;
 };
 

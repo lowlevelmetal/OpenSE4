@@ -38,6 +38,8 @@ public:
     ~HostTransport() override;
 
     void submitOrders(const game::EmpireOrders& orders) override;
+    void playCommand(const game::Command& c) override;
+    void endPlayerTurn() override;
     std::optional<game::GameState> pollState() override;
     std::string status() const override;
     NetLog& log() override { return log_; }
@@ -50,6 +52,7 @@ private:
     std::shared_ptr<const game::Rules> rules_;  // outlives host_
     std::unique_ptr<net::HostSession> host_;
     NetLog log_;
+    bool fresh_ = false;  // turn-based: our view changed since the last pollState()
 };
 
 class ClientTransport final : public NetTransport {
@@ -58,6 +61,8 @@ public:
     ~ClientTransport() override;
 
     void submitOrders(const game::EmpireOrders& orders) override;
+    void playCommand(const game::Command& c) override;
+    void endPlayerTurn() override;
     std::optional<game::GameState> pollState() override;
     std::string status() const override;
     NetLog& log() override { return log_; }
@@ -70,10 +75,12 @@ private:
     std::unique_ptr<net::ClientSession> client_;
     NetLog log_;
     bool rejected_ = false;
+    uint32_t handedTurn_ = 0;  // the turn of the last state pollState() returned
     std::chrono::steady_clock::time_point lastAttempt_{};
 };
 
-// "Waiting for: Alice, Bob" (empty when nobody is awaited).
-std::string waitingFor(const net::TurnStatus& t);
+// "Waiting for: Alice, Bob" (empty when nobody is awaited). Turn-based
+// games: whose turn it is (empty when it is `me`'s).
+std::string waitingFor(const net::TurnStatus& t, game::EmpireId me = {});
 
 } // namespace opense4::client::classic

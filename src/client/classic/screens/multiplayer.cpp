@@ -78,8 +78,8 @@ private:
     // ---- Pages ------------------------------------------------------------------------------
 
     void chooser(MenuContext& ctx) {
-        ImGui::TextWrapped("Play a simultaneous-turn game with other people over the network. One player hosts; the others "
-                           "join with the host's address. The host's computer processes every turn.");
+        ImGui::TextWrapped("Play with other people over the network, with simultaneous turns or one player after another. One "
+                           "player hosts; the others join with the host's address. The host's computer runs the game.");
         ImGui::Spacing();
         if (ImGui::Button("Host a Game", ctx.size({200, 40}))) mode_ = Mode::Host;
         ImGui::SameLine();
@@ -132,6 +132,11 @@ private:
         static constexpr std::array<const char*, 3> kSizes{"Small", "Medium", "Large"};
         ImGui::Combo("Quadrant size", &quadrantSize_, kSizes.data(), static_cast<int>(kSizes.size()));
         quadrantSize_ = std::clamp(quadrantSize_, 0, 2);
+        ImGui::SetNextItemWidth(w);
+        // Turn style (spec 01 §2.2, spec 05 §8): simultaneous is OpenSE4's default (inferred).
+        static constexpr std::array<const char*, 2> kStyles{"Simultaneous", "Turn-based (one player after another)"};
+        ImGui::Combo("Turn style", &turnStyle_, kStyles.data(), static_cast<int>(kStyles.size()));
+        turnStyle_ = std::clamp(turnStyle_, 0, 1);
         ImGui::SetNextItemWidth(w);
         ImGui::SliderInt("Turn time limit (s, 0 = none)", &timeout_, 0, 3600);
         textField("Join password (optional)", joinPassword_, w, ImGuiInputTextFlags_Password);
@@ -225,6 +230,7 @@ private:
         cfg.setup.seed = ctx.seed;
         cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
         cfg.setup.options.quadrantSize = quadrantSize_;
+        cfg.setup.options.simultaneous = turnStyle_ == 0;
         cfg.joinPasswordHash = net::hashPassword(joinPassword_);
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
@@ -455,6 +461,7 @@ private:
     int computers_ = 2;
     int quadrantSize_ = 1;  // Medium, the default
     int timeout_ = 0;
+    int turnStyle_ = 0;     // 0 simultaneous, 1 turn-based
     bool upnp_ = true;
     std::string chat_;
     std::string error_;

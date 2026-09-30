@@ -136,12 +136,14 @@ void settle(LiveContext& lc, Effects& fx) {
 void applyEach(LiveContext& lc, EmpireId e, std::span<const Command> commands, bool ask) {
     for (const Command& c : commands) {
         const CommandResult res = apply(lc.ctx.rules, lc.ctx.state, e, c);
+        // An answer settles its question, even one the rules refuse.
+        const auto* answer = std::get_if<cmd::EnterSector>(&c);
+        if (answer) dropQuestions(lc.ctx.state, answer->vehicle, answer->fleet);
         if (!res.ok) {
             lc.ctx.rejected.emplace_back(e, std::format("{}: {}", commandName(c), res.error));
             continue;
         }
-        if (const auto* answer = std::get_if<cmd::EnterSector>(&c)) {
-            dropQuestions(lc.ctx.state, answer->vehicle, answer->fleet);
+        if (answer) {
             if (!answer->enter) continue;
             Effects fx;
             fx.move.empire = e;
