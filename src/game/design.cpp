@@ -165,14 +165,12 @@ int weaponDamageAtRange(const Rules& r, const DesignEntry& e, int range) {
 }
 
 int weaponMaxRange(const Rules& r, const DesignEntry& e) {
-    const ruleset::Component& c = r.component(e.component);
-    if (!c.isWeapon()) return 0;
+    // The largest range from 1 to 20 with damage, so at most 20, even when a
+    // mounted weapon does damage further out (spec 03 §19 Q42, confirmed: binary).
     int last = 0;
-    for (int i = 1; i <= kDamageTableSize; ++i)
-        if (tableDamage(c, i) > 0) last = i;
-    if (last == 0) return 0;
-    const MountedComponent m = mounted(r, e);
-    return m.mountApplies ? std::max(1, last + m.rangeModifier) : last;
+    for (int range = 1; range <= kDamageTableSize; ++range)
+        if (weaponDamageAtRange(r, e, range) > 0) last = range;
+    return last;
 }
 
 // ---- Designs --------------------------------------------------------------------------------------
@@ -336,6 +334,19 @@ std::string uniqueDesignName(const GameState& s, std::string_view wanted) {
 void resetDesignStatistics(Design& d) {
     d.built = d.lost = d.kills = 0;
     d.enemyTonnageDestroyed = 0;
+}
+
+bool designIsPrototype(const Design& d) { return d.built == 0 && !d.retrofitted; }
+
+bool designInQueue(const GameState& s, EmpireId empire, DesignId design) {
+    auto holds = [&](const ConstructionQueue& q) {
+        return std::any_of(q.items.begin(), q.items.end(), [&](const QueueItem& it) { return it.kind == QueueItem::Kind::Vehicle && it.design == design; });
+    };
+    for (const auto& c : s.colonies)
+        if (c && c->owner == empire && holds(c->queue)) return true;
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.owner == empire && holds(v.queue)) return true;
+    return false;
 }
 
 int64_t designTonnage(const Rules& r, const Design& d) {

@@ -41,13 +41,20 @@ struct Path {
 };
 
 struct RouteOptions {
-    bool allowWarp = true;      // fighters cannot use warp points
-    bool sweeper = false;       // led by a mine sweeper: tagged minefields are no obstacle (leadsSweeperGroup)
+    bool allowWarp = true;      // neutral empires never warp (estimates also leave warps out for fighters)
+    bool sweeper = false;       // a mine sweeper group: warp links at tagged minefields are no obstacle (leadsSweeperGroup)
+    bool operator==(const RouteOptions&) const = default;
 };
 
-// A group led by this vehicle ignores the owner's tagged minefields: its
-// design has the mine sweeper design type (spec 03 §6.2; the type is inferred).
-bool leadsSweeperGroup(const GameState& s, const Vehicle& lead);
+// A group whose first member is this vehicle may use warp links at the
+// owner's tagged minefields: its design has the design type named `Mine
+// Sweeper` (spec 03 §6.2, confirmed: binary). For a fleet the first member is
+// the first one at the fleet's location in object order (sweeperOf).
+bool leadsSweeperGroup(const GameState& s, const Vehicle& first);
+// The member a group's Mine Sweeper exemption is tested on: for a vehicle
+// that follows its fleet's orders, the fleet's first member at its location
+// in object order; otherwise the vehicle itself.
+const Vehicle& sweeperOf(const GameState& s, const Vehicle& v);
 
 // Shortest route using only what empire `e` knows: systems it explored and
 // warp links it traversed (an invalid empire routes omnisciently). Only the
@@ -56,9 +63,12 @@ bool leadsSweeperGroup(const GameState& s, const Vehicle& lead);
 // - avoid restricted systems: its systems to avoid are never crossed (except
 //   the start and destination systems); when no other route exists there is
 //   none;
-// - avoid tagged minefields (not for a sweeper group): tagged sectors are never
-//   entered unless they are the destination, and a warp link with a tagged
-//   sector on either side is not used.
+// - avoid tagged minefields: tagged sectors are never entered in a system
+//   unless they are the destination, and a warp link whose warp-point sector
+//   on either side is tagged is not used, even at the start or the goal
+//   (a sweeper group may use such links).
+// In a system with a destructive centre the steps follow its cost map
+// (detail::centreCostMap), as the moving groups do.
 std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Location from, Location to);
 
 // Route to the nearest of several goals; `goal` is the index of the one reached
@@ -71,14 +81,16 @@ std::optional<NearestPath> findPathToNearest(const Rules& r, const GameState& s,
                                              std::span<const Location> goals, RouteOptions options = {});
 
 // Estimated turns to reach `to` at the vehicle's current speed (its fleet's,
-// if it is in one); 0 when already there, -1 = unreachable or immobile.
+// if it is in one) and the moves that speed makes in a turn (movesPerTurn);
+// 0 when already there, -1 = unreachable or immobile.
 int etaTurns(const Rules& r, const GameState& s, const Vehicle& v, Location to);
 
 // ---- The simultaneous turn (spec 03 §6.3) -------------------------------------------------------
 
 inline constexpr int kDaysPerTurn = 30;
 // Actions a vehicle of speed `speed` has made by the end of `day` (1..30) with
-// the exact day counter: the k-th on day ceil(k * 30 / speed), at most one a day.
+// an exact day counter: the k-th on day ceil(k * 30 / speed), at most one a
+// day. The original's counter differs (actionDays).
 constexpr int movesByDay(int speed, int day) {
     if (speed <= 0) return 0;
     const int exact = speed * day / kDaysPerTurn;
@@ -86,15 +98,19 @@ constexpr int movesByDay(int speed, int day) {
 }
 
 // The day counter gains speed/30 a day; the vehicle acts when it reaches 1
-// (spec 03 §6.3, confirmed: binary). The original keeps it in floating point,
-// stored as a 64-bit double each day, which can lose a speed's last step
-// depending on the x87 precision at run time. That is open (spec 03 §19 Q8),
-// so the engine counts exactly, as the spec recommends; `Double` reproduces
-// the stored double with extended-precision arithmetic (xmath::Ext).
+// (spec 03 §6.3, confirmed: binary). The original keeps it as a 64-bit double:
+// each day speed / 30 and the addition are done in x87 extended precision and
+// the sum is stored back as a double, so many speeds lose their day-30 step
+// (speed 1 never moves) and some steps come a day later (confirmed: binary;
+// the stored counter was observed bit for bit). `Double` reproduces it with
+// xmath::Ext; `Exact` counts in thirtieths (kept for comparison).
 enum class DayCounterMode : uint8_t { Exact, Double };
-inline constexpr DayCounterMode kDayCounterMode = DayCounterMode::Exact;  // (inferred) until observed
-// The days (1..30) a vehicle of this speed acts on under a counter mode.
+inline constexpr DayCounterMode kDayCounterMode = DayCounterMode::Double;
+// The days (1..30) a vehicle of this constant speed acts on under a counter mode.
 std::vector<int> actionDays(int speed, DayCounterMode mode = kDayCounterMode);
+// Actions a vehicle of this speed makes in one turn: in a simultaneous game
+// the days of actionDays, in a turn-based game its movement points.
+int movesPerTurn(const GameState& s, int speed);
 
 // Movement points of the slowest member of a fleet (its speed).
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f);
@@ -113,14 +129,23 @@ struct CombatHooks {
 };
 CombatHooks defaultCombatHooks();
 
-// The 30-day movement phase (spec 03 §6.3). Each vehicle (fleet, planet with
-// orders) keeps a day counter that gains speed/30 a day; when it reaches 1 the
-// vehicle carries out one order execution. After each day every sector where
-// something acted is offered to combat, unless everything there already
-// fought there this turn. Each step records where the vehicle came from
-// (Vehicle::cameFrom, cameFromTurn: combat's attackers and start boxes, spec 04
-// §3). Combat neither stops movement nor clears orders; a Sentry order at the
-// head of a participant's list is removed.
+// The 30-day movement phase (spec 03 §6.3, confirmed: binary). Every ship,
+// base and unit group keeps a day counter that gains its current movement
+// points / 30 each day (a fleet member: the lowest among the members in the
+// fleet's sector); at 1 or more it acts and loses 1. Objects act in object
+// order; colonized planets, minefields, satellite groups and vehicles without
+// movement act on day 1 only. A fleet acts when its first member is due and
+// carries its members along; ad-hoc groups form at every order execution
+// (spec 03 §8). An action runs the order list with exactly 1 movement point:
+// orders that complete chain into the next, up to 21 executions, until one
+// waits or fails. Movement points are not spent: they come back after the
+// action, unless the maximum fell below them during it. After each day every
+// sector where something acted is offered to combat, unless the latest battle
+// there this turn left every object in the sector as an undamaged survivor;
+// pursuits of targets that are gone end. Each step records where the vehicle
+// came from (Vehicle::cameFrom, cameFromTurn: combat's attackers and start
+// boxes, spec 04 §3). Combat neither stops movement nor clears orders; a
+// Sentry order at the head of a participant's list is removed.
 void runMovementAndCombat(TurnContext& ctx);
 void runMovementAndCombat(TurnContext& ctx, const CombatHooks& hooks);
 
@@ -229,7 +254,8 @@ std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v
 // Supply Generation, its own or of an empire it has a Military Alliance or
 // Partnership with. No population needed (spec 03 §7).
 bool resupplyDepotAt(const Rules& r, const GameState& s, EmpireId empire, Location where);
-// Σ Component Repair of the empire's own ships, bases and populated colonies in the sector.
+// Σ Component Repair of the empire's own ships, bases, unit groups and
+// colonized planets in the sector; no population needed (spec 03 §13, confirmed: binary).
 int64_t repairPoolAt(const Rules& r, const GameState& s, EmpireId empire, Location where);
 // The empire's repair modifier R: racial Repair + (Repair Aptitude − 100) + culture Repair.
 int64_t repairModifier(const Rules& r, const GameState& s, EmpireId empire);
@@ -239,17 +265,27 @@ int repairCapacityAt(const Rules& r, const GameState& s, EmpireId empire, Locati
 int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v);
 // An empire's units in space (not in cargo): what the units-per-player cap counts (§12).
 int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner);
-// Applies `amount` normal damage outside combat (no shields): armor first, then
-// other components, picked at random. A unit group loses whole units instead
-// (damageUnitGroup, which records them in the design statistics). Returns true
-// when the vehicle was destroyed (count set to 0). A survivor's supply and
-// cargo are cut back at once (fitToCapacity).
+// Applies `amount` Normal damage outside combat through the combat damage
+// routine, with no shields, special armor, modifier or carried pool (spec 03
+// §6.2, confirmed: binary): a ship or base loses whole components in the
+// random, structure-weighted order with all armor first until the damage
+// cannot cover the next one (spec 04 §9.1a); a unit group loses whole units
+// (damageUnitGroup, which records them in the design statistics). The
+// leftover is lost. Returns true when the vehicle was destroyed (count set to
+// 0). A survivor's supply and cargo are cut back at once (fitToCapacity).
 bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount);
-// Damage outside combat to a unit group: whole units die while the damage
-// covers their structure, each drawn from one of the group's designs at random
-// (spec 04 §9.4 without shields); what is left over is lost (inferred). Each
-// unit killed counts as lost for its design. Returns the damage used.
+// Damage outside combat to a unit group (spec 04 §9.4 with the pools at 0,
+// confirmed: binary): up to 20 times one of the group's designs is drawn, all
+// equally likely (one with no units left wastes the draw), and a unit of it
+// dies when the damage left covers its hit points (structure plus shields,
+// counted twice for fighters). The leftover is lost. Each unit killed counts
+// as lost for its design. Returns the damage used.
 int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng);
+// Whether this vehicle can self-destruct (spec 03 §12, §15, confirmed:
+// binary): a ship or base with Self-Destruct in its ability list (the hull
+// counts; a mothballed vehicle has none); satellite groups, minefields and
+// drone groups always; fighter groups never.
+bool canSelfDestruct(const Rules& r, const GameState& s, const Vehicle& v);
 // After damage: supply clamped to the capacity that is left (spec 03 §7) and
 // cargo that no longer fits removed (§11). Unlimited supply is left alone
 // (a vehicle that lost its reactor drops back when it next moves).

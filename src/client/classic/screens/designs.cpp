@@ -7,8 +7,10 @@
 //   ScreenArgs::text   "new", "new-unit", "copy", "edit" or "upgrade"
 //   ScreenArgs::design the template for copy / edit / upgrade
 //   ScreenArgs::index  the hull of a new design (optional)
-// Editing never changes a design in place: like the classic game, the result
-// is saved as a new design and the original stays as it was.
+// Edit is offered only for an own design that is still a prototype (nothing
+// built or retrofitted to it) and in no construction queue, and changes that
+// design in place (cmd::EditDesign); Copy and Upgrade save a new design
+// (spec 03 §4.1).
 
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
@@ -349,7 +351,8 @@ private:
             note_.clear();
         }
         if (d.button("Copy", own != nullptr)) openDesigner("copy");
-        if (d.button("Edit", own != nullptr)) openDesigner("edit");
+        const bool editable = own && game::designIsPrototype(*own) && !game::designInQueue(ui.state(), ui.me().id, own->id);
+        if (d.button("Edit", editable)) openDesigner("edit");
         if (d.button("Upgrade", own != nullptr)) {
             std::vector<game::DesignEntry> entries = own->entries;
             if (upgradeEntries(ui.rules(), ui.me(), entries)) {
@@ -459,7 +462,8 @@ private:
                 origin_ = std::format("Upgrade of {}", t.name);
             } else if (args_.text == "edit") {
                 setName(t.name);
-                origin_ = std::format("Editing {}: saved as a new design", t.name);
+                origin_ = std::format("Editing {}", t.name);
+                editing_ = t.id;
             } else {
                 setName(suggestName(ui));
                 origin_ = std::format("Copy of {}", t.name);
@@ -779,7 +783,7 @@ private:
             error_.clear();
         }
         d.spacer();
-        if (d.button("Create Design")) create(ui);
+        if (d.button(editing_.valid() ? "Save Design" : "Create Design")) create(ui);
     }
 
     void cancel(UiContext& ui, Dialog& d) {
@@ -798,7 +802,8 @@ private:
         d.hull = hull_;
         d.entries = entries_;
         d.strategy = strategy_;
-        const game::CommandResult res = ui.session.issue(game::cmd::CreateDesign{std::move(d)});
+        const game::CommandResult res =
+            editing_.valid() ? ui.session.issue(game::cmd::EditDesign{editing_, std::move(d)}) : ui.session.issue(game::cmd::CreateDesign{std::move(d)});
         if (res.ok) done_ = true;
         else error_ = res.error;
     }
@@ -806,6 +811,7 @@ private:
     ScreenArgs args_;
     bool initialized_ = false;
     bool done_ = false;
+    game::DesignId editing_;  // Edit: the prototype changed in place
     uint32_t hull_ = 0;
     std::string designType_;
     bool designTypeChosen_ = false;

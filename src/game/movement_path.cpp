@@ -3,9 +3,11 @@
 // Routes are found on a small graph: the start, the goals and every usable
 // warp point are nodes. Walking between two sectors of one system costs the
 // king-move (Chebyshev) distance; systems with obstacles (tagged minefields)
-// or known hazards are searched sector by sector instead. A warp jump costs
-// one step. Costs are compared as (steps, hazard sectors entered,
-// straightness), so hazards and zig-zags only ever break ties.
+// or known hazards are searched sector by sector instead, and in a system
+// with a destructive centre a leg follows the centre's cost map as moving
+// groups do (spec 03 §6.2). A warp jump costs one step. Costs are compared as
+// (steps, hazard sectors entered, straightness), so hazards and zig-zags only
+// ever break ties.
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
@@ -25,6 +27,7 @@ namespace {
 
 using detail::inSystem;
 using detail::rawBest;
+using detail::rawSum;
 
 constexpr int64_t kStep = 1'000'000'000'000;  // one movement point
 constexpr int64_t kHazard = 1'000'000;        // entering a known hazard sector
@@ -59,13 +62,26 @@ struct Grid {
     std::array<int16_t, kCells> prev{};
 };
 
+// The steps of a group from `a` to `b` in a system with a destructive centre:
+// the cost map's choice each step, the greedy step toward `b` when no square
+// around the group was reached (spec 03 §6.2). Empty when a == b.
+std::vector<Sector> centreLeg(const detail::CentreCostMap& map, Sector a, Sector b) {
+    std::vector<Sector> out;
+    for (int guard = 0; a != b && guard < kCells; ++guard) {
+        const auto next = detail::centreStep(map, a);
+        a = next && *next != a ? *next : Sector{a.x + (b.x > a.x) - (b.x < a.x), a.y + (b.y > a.y) - (b.y < a.y)};
+        out.push_back(a);
+    }
+    return out;
+}
+
 class Router {
 public:
     Router(const GameState& s, EmpireId e, RouteOptions options) : s_(s), e_(e), options_(options) {
         if (knowing()) {
             // The empire's Ship Movement options decide what is avoided (spec 03 §6.2).
             const Empire& emp = s.empire(e);
-            if (emp.avoidTaggedMinefields && !options.sweeper) {
+            if (emp.avoidTaggedMinefields) {
                 tagged_ = emp.taggedMinefields;
                 std::sort(tagged_.begin(), tagged_.end());
             }
@@ -139,8 +155,29 @@ private:
         return !knowing() || sight::knowsWarpLink(s_, e_, w);
     }
 
-    bool obstacle(Location l) const {
-        return !tagged_.empty() && std::binary_search(tagged_.begin(), tagged_.end(), l) && !isGoal(l) && l != from_;
+    bool tagged(Location l) const { return !tagged_.empty() && std::binary_search(tagged_.begin(), tagged_.end(), l); }
+    // In a system, tagged sectors are not entered unless they are the goal
+    // (the greedy step takes its target square untested).
+    bool obstacle(Location l) const { return tagged(l) && !isGoal(l) && l != from_; }
+    // A warp link whose warp-point sector on either side is tagged is not used,
+    // even at the start or the goal, unless a Mine Sweeper leads (spec 03 §6.2, confirmed: binary).
+    bool blockedLink(Location l) const { return tagged(l) && !options_.sweeper; }
+
+    // Systems with a destructive centre: legs follow its cost map, which
+    // ignores tagged minefields, storms and hostiles (spec 03 §6.2).
+    bool centred(SystemId sys) {
+        auto it = centred_.find(sys);
+        if (it == centred_.end()) it = centred_.emplace(sys, detail::destructiveCentre(s_, sys) > 0).first;
+        return it->second;
+    }
+    const std::vector<Sector>& centreSteps(SystemId sys, Sector a, Sector b) {
+        const auto key = std::make_tuple(sys, cell(a), cell(b));
+        auto it = centreLegs_.find(key);
+        if (it != centreLegs_.end()) return it->second;
+        const auto mapKey = std::make_pair(sys, cell(b));
+        auto m = centreMaps_.find(mapKey);
+        if (m == centreMaps_.end()) m = centreMaps_.emplace(mapKey, detail::centreCostMap(b, detail::centreZone(s_, sys))).first;
+        return centreLegs_.emplace(key, centreLeg(m->second, a, b)).first->second;
     }
 
     // Known hazard sectors of a system (only explored systems are known).
@@ -154,7 +191,6 @@ private:
                 const SpaceObject& obj = s_.galaxy.object(o);
                 if (rawBest(obj.abilities, AbilityKind::SectorDamage) > 0) out.push_back(obj.sector);
             }
-            if (rawBest(st.abilities, AbilityKind::SystemDestructiveCenter) > 0) out.push_back(Sector{kSystemCenter, kSystemCenter});
             std::sort(out.begin(), out.end());
             out.erase(std::unique(out.begin(), out.end()), out.end());
         }
@@ -204,12 +240,17 @@ private:
 
     int64_t legCost(SystemId sys, Sector a, Sector b) {
         if (a == b) return 0;
+        if (centred(sys)) return static_cast<int64_t>(centreSteps(sys, a, b).size()) * kStep;
         if (plain(sys)) return chebyshevCost(a, b);
         return grid(sys, a).cost[static_cast<size_t>(cell(b))];
     }
 
     void appendLeg(std::vector<Location>& out, SystemId sys, Sector a, Sector b) {
         if (a == b) return;
+        if (centred(sys)) {
+            for (Sector step : centreSteps(sys, a, b)) out.push_back({sys, step});
+            return;
+        }
         if (plain(sys)) {
             straightWalk(out, sys, a, b);
             return;
@@ -266,7 +307,7 @@ private:
             if (avoided(far.system)) continue;
             const Location arrival{far.system, far.sector};
             // A link with a tagged minefield on either side is not used (spec 03 §6.2).
-            if (obstacle(at) || obstacle(arrival)) continue;
+            if (blockedLink(at) || blockedLink(arrival)) continue;
             relax(u, arrival, kStep + (hazard(arrival) ? kHazard : 0), w, open);
         }
     }
@@ -306,14 +347,99 @@ private:
     std::vector<ObjectId> via_;
     std::map<SystemId, std::vector<Sector>> hazards_;
     std::map<std::pair<SystemId, int>, Grid> grids_;
+    std::map<SystemId, bool> centred_;
+    std::map<std::pair<SystemId, int>, detail::CentreCostMap> centreMaps_;
+    std::map<std::tuple<SystemId, int, int>, std::vector<Sector>> centreLegs_;
 };
 
 } // namespace
 
-bool leadsSweeperGroup(const GameState& s, const Vehicle& lead) {
-    if (!lead.design.valid() || lead.design.index() >= s.designs.size()) return false;
-    return datafile::keysEqual(s.design(lead.design).designType, "Mine Sweeper");
+bool leadsSweeperGroup(const GameState& s, const Vehicle& first) {
+    if (!first.design.valid() || first.design.index() >= s.designs.size()) return false;
+    return datafile::keysEqual(s.design(first.design).designType, "Mine Sweeper");
 }
+
+const Vehicle& sweeperOf(const GameState& s, const Vehicle& v) {
+    if (!detail::followsFleetOrders(s, v)) return v;
+    const Fleet* f = s.fleet(v.fleet);
+    const Vehicle* first = &v;
+    for (VehicleId id : f->members)
+        if (const Vehicle* m = s.vehicle(id); m && detail::alive(*m) && m->location == v.location &&
+                                               std::pair(m->slot, m->id) < std::pair(first->slot, first->id))
+            first = m;
+    return *first;
+}
+
+namespace detail {
+
+int64_t destructiveCentre(const GameState& s, SystemId sys) {
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return 0;
+    return rawSum(s.galaxy.system(sys).abilities, AbilityKind::SystemDestructiveCenter);
+}
+
+int64_t centreZone(const GameState& s, SystemId sys) {
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return 0;
+    return rawSum(s.galaxy.system(sys).abilities, AbilityKind::SystemMovementTowardsCenter);
+}
+
+CentreCostMap centreCostMap(Sector target, int64_t zone) {
+    // round(√n) to nearest; √n is never exactly halfway between integers.
+    auto roundRoot = [](int n) {
+        int k = 0;
+        while ((k + 1) * (k + 1) <= n) ++k;
+        return n > k * k + k ? k + 1 : k;
+    };
+    auto enter = [&](Sector q) {
+        const int dx = q.x - kSystemCenter, dy = q.y - kSystemCenter;
+        const bool inZone = zone > 0 && std::max(std::abs(dx), std::abs(dy)) <= zone;
+        return int64_t{1} + (30 - roundRoot(dx * dx + dy * dy)) + (inZone ? 1000 : 0);
+    };
+    constexpr int64_t kSpread = 500;
+    CentreCostMap cost;
+    cost.fill(-1);
+    using Cell = std::pair<int64_t, int>;
+    std::priority_queue<Cell, std::vector<Cell>, std::greater<>> open;
+    cost[static_cast<size_t>(cell(target))] = 1;
+    open.push({1, cell(target)});
+    while (!open.empty()) {
+        const auto [d, c] = open.top();
+        open.pop();
+        if (d != cost[static_cast<size_t>(c)] || d > kSpread) continue;  // only squares costing at most 500 spread
+        const Sector at = sectorOf(c);
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                const Sector next{at.x + dx, at.y + dy};
+                if ((dx == 0 && dy == 0) || !next.valid()) continue;
+                const int64_t nd = d + enter(next);
+                const size_t nc = static_cast<size_t>(cell(next));
+                if (cost[nc] < 0 || nd < cost[nc]) {
+                    cost[nc] = nd;
+                    open.push({nd, cell(next)});
+                }
+            }
+    }
+    return cost;
+}
+
+std::optional<Sector> centreStep(const CentreCostMap& map, Sector at) {
+    std::optional<Sector> best;
+    int64_t bestCost = 0;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            const Sector q{at.x + dx, at.y + dy};
+            if (!q.valid()) continue;
+            const int64_t c = map[static_cast<size_t>(cell(q))];
+            if (c < 0) continue;
+            // The cheapest; on a tie the lowest sector number (y × 13 + x).
+            if (!best || c < bestCost || (c == bestCost && cell(q) < cell(*best))) {
+                best = q;
+                bestCost = c;
+            }
+        }
+    return best;
+}
+
+} // namespace detail
 
 std::optional<NearestPath> findPathToNearest(const Rules&, const GameState& s, EmpireId e, Location from,
                                              std::span<const Location> goals, RouteOptions options) {
@@ -357,18 +483,17 @@ int etaTurns(const Rules& r, const GameState& s, const Vehicle& v, Location to) 
                     if (detail::heldInPlace(s, *m)) held = std::max(held, static_cast<int>(m->immobileUntil - s.turn));
                 }
         }
-    if (speed <= 0) return -1;
+    // The moves that speed makes in a turn (a simultaneous game's day counter
+    // loses some, spec 03 §6.3).
+    const int moves = movesPerTurn(s, speed);
+    if (moves <= 0) return -1;
     RouteOptions options;
     options.allowWarp = vehicleType(r, s, v) != ruleset::VehicleType::Fighter;
-    const Vehicle* lead = &v;
-    if (detail::followsFleetOrders(s, v))
-        if (const Fleet* f = s.fleet(v.fleet))
-            if (const Vehicle* l = detail::fleetLeader(s, *f)) lead = l;
-    options.sweeper = leadsSweeperGroup(s, *lead);
+    options.sweeper = leadsSweeperGroup(s, sweeperOf(s, v));
     const Location goals[] = {to};
     const auto p = findPathToNearest(r, s, v.owner, v.location, goals, options);
     if (!p) return -1;
-    return held + (p->path.length + speed - 1) / speed;
+    return held + (p->path.length + moves - 1) / moves;
 }
 
 } // namespace opense4::game::movement

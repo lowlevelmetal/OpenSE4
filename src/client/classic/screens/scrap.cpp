@@ -131,7 +131,7 @@ private:
             } else {
                 ++normal;
             }
-            if (selfDestructEntry(r, s, *v)) ++destructible;
+            if (canSelfDestruct(r, s, *v)) ++destructible;
             if (canBeFiredOn(r, s, *v, selected_)) ++fireable;
         }
         const int n = static_cast<int>(sel.size());
@@ -172,7 +172,7 @@ private:
         });
         const bool anyNormal = std::any_of(sel.begin(), sel.end(), [](const game::Vehicle* v) { return v->status != game::VehicleStatus::Mothballed; });
         const bool anyMothballed = std::any_of(sel.begin(), sel.end(), [](const game::Vehicle* v) { return v->status == game::VehicleStatus::Mothballed; });
-        const bool anyDestruct = std::any_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) { return selfDestructEntry(r, s, *v).has_value(); });
+        const bool anyDestruct = std::any_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) { return canSelfDestruct(r, s, *v); });
 
         if (d.button("Scrap", yard && any)) {
             game::Resources value;
@@ -305,11 +305,9 @@ private:
                     for (game::VehicleId id : std::vector<game::VehicleId>(selected_)) {
                         const game::Vehicle* v = ownVehicle(ui, id);
                         if (!v) continue;
-                        const auto entry = selfDestructEntry(ui.rules(), s, *v);
-                        if (!entry) continue;
+                        if (!canSelfDestruct(ui.rules(), s, *v)) continue;
                         // A per-vehicle action: the order goes to the vehicle even inside a fleet.
-                        game::Order o{game::OrderKind::UseComponent, v->location};
-                        o.amount = static_cast<int>(*entry);
+                        game::Order o{game::OrderKind::SelfDestruct, v->location};
                         OrderOwner owner;
                         owner.vehicle = id;
                         if (status_.issue(ui, withImmediate(s, owner, o))) ++done;

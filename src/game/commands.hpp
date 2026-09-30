@@ -81,6 +81,9 @@ struct TransferCargo {       // immediate transfer between own holders in the sa
 
 // ---- Designs --------------------------------------------------------------------------------
 struct CreateDesign { Design design; };   // id/owner are assigned by the engine
+// Changes an own prototype design in place (spec 03 §4.1): refused for a
+// design that was built or retrofitted to, or that is in a construction queue.
+struct EditDesign { DesignId design; Design with; };
 struct SetDesignObsolete { DesignId design; bool obsolete = true; };
 struct DeleteDesign { DesignId design; };  // only never-built designs
 
@@ -135,7 +138,7 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector>;
+    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

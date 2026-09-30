@@ -22,6 +22,7 @@ std::string_view displayName(OrderKind k) {
         case OrderKind::UseComponent: return "Use Component";
         case OrderKind::StellarManipulation: return "Stellar Manipulation";
         case OrderKind::MoveToWaypoint: return "Move To Waypoint";
+        case OrderKind::SelfDestruct: return "Self-Destruct";
         case OrderKind::Count: break;
     }
     return "?";
@@ -114,6 +115,17 @@ std::vector<DesignId> seenDesignIds(const Knowledge& k) {
 
 Vehicle& GameState::addVehicle(Vehicle v) {
     v.id = VehicleId{nextVehicleId++};
+    // The first object slot a removed vehicle freed, else a new one at the end (spec 03 §6.3).
+    std::vector<uint32_t> used;
+    used.reserve(vehicles.size());
+    for (const Vehicle& other : vehicles) used.push_back(other.slot);
+    std::sort(used.begin(), used.end());
+    uint32_t slot = 0;
+    for (uint32_t u : used) {
+        if (u > slot) break;
+        if (u == slot) ++slot;
+    }
+    v.slot = slot;
     // "Automatically use Individual Ministers for newly built vehicles": every
     // new vehicle and launched unit group starts under minister control (spec 02 §10).
     if (v.owner.valid() && v.owner.index() < empires.size() && empires[v.owner.index()].ministersForNewVehicles) v.minister = true;

@@ -390,15 +390,15 @@ template <class Ar> void io(Ar& ar, DesignEntry& d) { fields(ar, d.component, d.
 
 template <class Ar>
 void io(Ar& ar, Design& d) {
-    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills,
-           d.enemyTonnageDestroyed);
+    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
+           d.kills, d.enemyTonnageDestroyed);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
 
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
-    fields(ar, v.id, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
+    fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn);
 }
@@ -521,6 +521,7 @@ void io(Ar& ar, cmd::TransferCargo& c) {
 }
 
 template <class Ar> void io(Ar& ar, cmd::CreateDesign& c) { fields(ar, c.design); }
+template <class Ar> void io(Ar& ar, cmd::EditDesign& c) { fields(ar, c.design, c.with); }
 template <class Ar> void io(Ar& ar, cmd::SetDesignObsolete& c) { fields(ar, c.design, c.obsolete); }
 template <class Ar> void io(Ar& ar, cmd::DeleteDesign& c) { fields(ar, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c.evenly, c.repeat); }

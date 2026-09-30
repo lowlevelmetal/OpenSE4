@@ -491,7 +491,11 @@ void Battle::place() {
     for (size_t i = 0; i < n; ++i)
         if (pieces_[i].kind == Kind::Planet || pieces_[i].kind == Kind::Obstacle) putRandom(i);
 
-    // Then fleet leaders; their members take formation slots (spec 03 §10).
+    // Then fleet leaders; their armed members take formation slots (spec 03 §9,
+    // §10, confirmed: binary): the fleet leader anchors the group, armed or not;
+    // without it the first armed member in piece order does. The other armed
+    // members get positions in piece order; nothing breaks formation at
+    // placement, and unarmed members are placed at random.
     std::vector<FleetId> fleets;
     for (const Piece& p : pieces_)
         if (p.kind != Kind::Planet && p.kind != Kind::Obstacle && p.unit.fleet.valid() &&
@@ -501,20 +505,22 @@ void Battle::place() {
         const Fleet* fleet = s_.fleet(fid);
         if (!fleet) continue;
         std::vector<size_t> members;
-        for (VehicleId m : fleet->members)
-            for (size_t i = 0; i < n; ++i)
-                if (pieces_[i].source == m && pieces_[i].owner == fleet->owner && !placed[i]) members.push_back(i);
-        if (members.empty()) continue;
-        size_t leader = members.front();
-        for (size_t m : members)
-            if (pieces_[m].source == fleet->leader) leader = m;
+        std::optional<size_t> chosen;
+        for (size_t i = 0; i < n; ++i) {
+            if (placed[i] || pieces_[i].owner != fleet->owner || !pieces_[i].source.valid() ||
+                std::find(fleet->members.begin(), fleet->members.end(), pieces_[i].source) == fleet->members.end())
+                continue;
+            if (pieces_[i].source == fleet->leader) chosen = i;
+            if (pieces_[i].armed && !pieces_[i].mothballed) members.push_back(i);
+        }
+        if (!chosen && members.empty()) continue;
+        const size_t leader = chosen.value_or(members.front());
         putRandom(leader);
-        const Strategy& S = strategy(fleet->owner, fleet->strategy);
         const ruleset::Formation* formation =
             fleet->formation < r_.data().formations.size() ? &r_.data().formations[fleet->formation] : nullptr;
         size_t slot = 0;
         for (size_t m : members) {
-            if (m == leader || S.breakFormation[static_cast<size_t>(pieces_[m].category)]) continue;
+            if (m == leader) continue;
             // The slot's offset from the leader position, turned to the leader's facing.
             int dx = 0, dy = 0;
             if (formation) {
@@ -726,6 +732,9 @@ void Battle::afterDamage(int i) {
     else if (p.kind == Kind::Planet) planetShields(p, false);
     p.mp = std::min(p.mp, computeMp(i));
     refreshStats(i);
+    // The group dissolves when the leader of an automated side is left with 0
+    // movement by damage (spec 03 §10, confirmed: binary).
+    if (p.isLeader && computeMp(i) <= 0 && !isPlayer(p.owner)) dissolve(i);
 }
 
 void Battle::startRound() {
@@ -2000,7 +2009,10 @@ int Battle::desiredRange(int i, int t, MoveStrategy m) const {
     int range = 1;
     int maxRange = 0;
     for (const Weapon& w : pieces_[i].weapons)
-        if (w.kind() != WeaponKind::PointDefense && (w.targets & maskOf(t)) && instances(i, w) > 0) maxRange = std::max(maxRange, w.reach);
+        // The maximum range the strategies use is at most 20, even for a weapon that
+        // can fire further (spec 03 §19 Q42, confirmed: binary; weaponMaxRange).
+        if (w.kind() != WeaponKind::PointDefense && (w.targets & maskOf(t)) && instances(i, w) > 0)
+            maxRange = std::max(maxRange, std::min(w.reach, weaponMaxRange(r_, w.de)));
     maxRange = std::clamp(maxRange, 1, kRangeTable);
     switch (m) {
         case MoveStrategy::MaximumRange: range = maxRange; break;
@@ -2689,6 +2701,11 @@ void Battle::finish() {
                 const Piece& u = pieces_[k];
                 if (u.kind != Kind::UnitGroup || !u.launched || u.carrier != static_cast<int>(c) || left[k] <= 0 || u.owner != h.owner) continue;
                 if (u.vtype != VehicleType::Fighter && u.vtype != VehicleType::Satellite) continue;
+                // A ship or base needs a working bay of that kind still; a planet none (spec 03 §12, confirmed: binary).
+                if (h.kind == Kind::Vehicle &&
+                    !hasAbility(vehicleAbilities(r_, s_, *s_.vehicle(h.source)),
+                                u.vtype == VehicleType::Fighter ? AbilityKind::LaunchRecoverFighters : AbilityKind::LaunchRecoverSatellites))
+                    continue;
                 const int64_t tonnage = std::max(1, r_.hull(s_.design(u.unit.design).hull).tonnage);
                 const int n = static_cast<int>(std::min<int64_t>(left[k], std::max<int64_t>(0, room) / tonnage));
                 if (n <= 0) continue;

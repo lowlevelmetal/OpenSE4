@@ -102,11 +102,11 @@ TEST_CASE("ship windows: scrap window values") {
     };
     CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == rounded(30));
     CHECK(shipui::unmothballCost(r, s, *s.vehicle(a)) == rounded(20));
-    CHECK_FALSE(shipui::selfDestructEntry(r, s, *s.vehicle(a)).has_value());
+    CHECK_FALSE(shipui::canSelfDestruct(r, s, *s.vehicle(a)));
     CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a}));
 
     const VehicleId b = addTestVehicle(s, r, armed, where).id;
-    CHECK(shipui::selfDestructEntry(r, s, *s.vehicle(b)) == kHullBasics.size() + 1);
+    CHECK(shipui::canSelfDestruct(r, s, *s.vehicle(b)));
     CHECK(shipui::vehicleArmed(r, s, *s.vehicle(b)));
     CHECK(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a}));
     CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a, b}));  // the gunship is selected too

@@ -66,7 +66,8 @@ game::cmd::SetOrders withAppended(const game::GameState& s, OrderOwner o, const 
 
 bool immediateKind(game::OrderKind k) {
     using game::OrderKind;
-    return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::StellarManipulation || k == OrderKind::UseComponent;
+    return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::StellarManipulation || k == OrderKind::UseComponent ||
+           k == OrderKind::SelfDestruct;
 }
 
 void insertImmediate(std::vector<game::Order>& orders, const game::Order& order, game::Location here) {
@@ -183,13 +184,7 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
     return game::Resources::from(r.facility(c.facilities[slot]).cost).percentRounded(pct);  // round(cost × %), spec 02 §6.6
 }
 
-std::optional<size_t> selfDestructEntry(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
-    const game::Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::SelfDestruct))
-            return i;
-    return std::nullopt;
-}
+bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) { return game::movement::canSelfDestruct(r, s, v); }
 
 bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     if (v.status == game::VehicleStatus::Mothballed) return false;

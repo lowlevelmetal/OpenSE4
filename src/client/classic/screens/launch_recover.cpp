@@ -75,7 +75,9 @@ public:
         if (auto pick = remote_.draw(ui); pick && ownVehicle(ui, remoteVehicle_)) {
             game::Order o{remoteKind_};
             o.design = pick->design;
-            o.amount = pick->amount;
+            // Recover Units Remotely names a unit kind (the picked design stands
+            // for it) and takes what the cargo room allows (spec 03 §8).
+            o.amount = remoteKind_ == game::OrderKind::RecoverUnits ? -1 : pick->amount;
             pickLocationForOrder(ui, orderOwner(ui.state(), remoteVehicle_), o, std::format("{}: pick where", game::displayName(remoteKind_)));
             return false;  // the main window takes the pick
         }
@@ -309,14 +311,25 @@ private:
         const game::GameState& s = ui.state();
         remoteKind_ = kind;
         remoteVehicle_ = carrier.id;
-        std::vector<game::DesignId> designs;
-        for (const auto& u : carrier.cargo.units) designs.push_back(u.design);
-        for (game::DesignId id : ui.me().designs)
-            if (isUnitDesign(ui.rules(), s, id) && !s.design(id).obsolete && std::find(designs.begin(), designs.end(), id) == designs.end())
-                designs.push_back(id);
-        std::vector<TypeAmountPicker::Choice> choices;
-        for (game::DesignId id : designs) choices.push_back({s.design(id).name, id, designMini(ui, id)});
         const bool launching = kind == game::OrderKind::LaunchUnits;
+        std::vector<game::DesignId> designs;
+        std::vector<TypeAmountPicker::Choice> choices;
+        if (launching) {
+            for (const auto& u : carrier.cargo.units) designs.push_back(u.design);
+            for (game::DesignId id : ui.me().designs)
+                if (isUnitDesign(ui.rules(), s, id) && !s.design(id).obsolete && std::find(designs.begin(), designs.end(), id) == designs.end())
+                    designs.push_back(id);
+            for (game::DesignId id : designs) choices.push_back({s.design(id).name, id, designMini(ui, id)});
+        } else {
+            // Recovery names a unit kind: fighters or satellites (spec 03 §8), each
+            // stood for by one of the empire's designs of that kind.
+            for (const ruleset::VehicleType t : {ruleset::VehicleType::Fighter, ruleset::VehicleType::Satellite})
+                for (game::DesignId id : ui.me().designs)
+                    if (ui.rules().hull(s.design(id).hull).type == t) {
+                        choices.push_back({t == ruleset::VehicleType::Fighter ? "Fighters" : "Satellites", id, designMini(ui, id)});
+                        break;
+                    }
+        }
         remote_.open(launching ? "Launch Units Remotely" : "Recover Units Remotely",
                      std::format("{} {}: choose the unit type, then pick the sector on the map.", ownerName(ui, orderOwner(s, carrier.id)),
                                  launching ? "launches units at another sector" : "recovers units at another sector"),

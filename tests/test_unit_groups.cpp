@@ -121,16 +121,25 @@ TEST_CASE("unit groups: the per-sector caps count every design") {
     CHECK(groupsAt(r, w.s, kA, here, VehicleType::Mine).size() == 1);
     CHECK(w.v(layer).cargo.unitCount(mineB) == 7);
 
-    // Sweepers clear a minefield that mixes designs in the order its mines were laid.
+    // A Sweep Mines order clears a minefield that mixes designs in the order its
+    // mines were laid (duds here, so that no mine strikes afterwards).
+    const DesignId dudA = w.design(kA, "Dud A", "Mv Mine Hull", {});
+    const DesignId dudB = w.design(kA, "Dud B", "Mv Mine Hull", {});
+    const Location there = at(a, 2, 2);
+    const VehicleId duds = w.spawn(dudA, there);
+    w.v(duds).count = 91;
+    addGroupUnits(w.s, w.v(duds), dudB, 3);
     const DesignId sweeper = w.ship(kB, "Sweeper", 3, {"Mv Sweeper", "Mv Sweeper"});
     w.setTreaty(kA, kB, Treaty::War);
-    const VehicleId sw = w.spawn(sweeper, here);
-    TurnContext ctx{r, w.s, {}, {}, {}};
-    movement::detail::sweepMines(ctx, sw);
-    CHECK(w.v(field).count == 94);
-    CHECK(groupUnits(w.v(field), mineA) == 91);
-    CHECK(groupUnits(w.v(field), mineB) == 3);
-    CHECK(w.s.design(mineA).lost == 6);
+    w.setTreaty(kB, kA, Treaty::War);
+    const VehicleId sw = w.spawn(sweeper, there);
+    w.order(sw, Order{OrderKind::SweepMines});
+    w.move();
+    CHECK(w.v(duds).count == 88);
+    CHECK(groupUnits(w.v(duds), dudA) == 85);
+    CHECK(groupUnits(w.v(duds), dudB) == 3);
+    CHECK(w.s.design(dudA).lost == 6);
+    CHECK(w.v(sw).orders.empty());   // always done
 }
 
 TEST_CASE("unit groups: damage outside combat kills whole units; the save keeps the designs") {
