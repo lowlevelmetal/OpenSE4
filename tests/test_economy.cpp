@@ -1061,6 +1061,19 @@ TEST_CASE("economy: growth rate from race, mood, conditions and resistance") {
     CHECK(economy::reproductionPercent(*r, s, home) == 0);
 }
 
+TEST_CASE("economy: Planet Storage Space raises population, facility slots and cargo") {
+    auto r = tweakedRules([](ruleset::Ruleset& rs) { addTrait(rs, "Roomy", "Planet Storage Space", 25); });
+    GameState s = newGame(*r);
+    Colony& home = plainHome(*r, s, {});
+    const int64_t pop = maxPopulation(*r, s, home);
+    const int slots = facilitySlots(*r, s, home);
+    const int64_t cargo = colonyCargoCapacity(*r, s, home);
+    giveTrait(*r, s, kMe, "Roomy");
+    CHECK(maxPopulation(*r, s, home) == pctTrunc(pop, 125));
+    CHECK(facilitySlots(*r, s, home) == pctTrunc(slots, 125));
+    CHECK(colonyCargoCapacity(*r, s, home) == pctTrunc(cargo, 125));
+}
+
 TEST_CASE("economy: growth is rounded per race, earlier races first, never negative") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

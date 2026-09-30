@@ -66,7 +66,7 @@ struct SpaceObject {
     std::string size;           // PlanetSize name: "Tiny".."Huge" or a constructed size
     std::string surface;        // "Rock", "Ice", "Gas Giant"
     std::string atmosphere;     // "None", "Oxygen", ...
-    int conditions = 50;        // percent, higher is better (band names: see spec 02)
+    int conditions = 50;        // hundredths of the 0-1.5 scale (100 = 1.0), higher is better (spec 02 §2)
     std::array<int, 3> value{}; // per resource: percent, or remaining stock in finite games
 
     // Stars.

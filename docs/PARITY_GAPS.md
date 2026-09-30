@@ -19,23 +19,14 @@ outcomes, **L** is an edge case.
 
 ## Economy and population (spec 02)
 
+Every row of this section was implemented on 2026-09-29 except the ones below. The
+economy's end-of-turn work is now one function per step of spec 02 §12 (`economy.hpp`),
+ready for the turn-order change; open engine choices are spec 02 §13 items 37–48.
+
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| `types.hpp:85`, `events.cpp:922,929` | Mood in tenths, riot at 750 | Whole percent 0–100; riot ≥ 90, angry ≥ 60, unhappy ≥ 45, indifferent ≥ 30, happy ≥ 15 (§4) | H |
-| `economy_population.cpp:297-384` | Drift always calms; presence counted once per colony; conditions add anger; no capital cap | Drift pulls toward Indifferent; presence per ship, allies count as ours; no conditions term; capitals capped at 80; Emotionless fixed at 35; happiness facilities and characteristic as in §4 | H |
-| `economy_population.cpp:167-240` | Rebellion after 10 riot turns | No such rule; rebellion only through an event or an intelligence operation (§4) | H |
-| `economy_queue.cpp:331-375` | Partial payment, leftover rate flows on, several completions per turn | A queue pays a whole turn or nothing; at most one completion per turn; leftover lost (§6) | H |
-| `ai.cpp:494-497`, `economy.cpp:305`, `economy_queue.cpp:64` | Computer bonus adds 10 points per level | Income × 1/2/3/5 (rounded); construction rate × 1/1.5/2/3 (truncated) (§5, §6, spec 05 §7.1) | H |
-| `economy.cpp:141-176,203-212` | 20-point condition bands, resistance scaling, no clamp | Conditions are a 0–1.5 scale with six bands; growth rate formula, clamp and zero-rate cases in §3 | H |
-| `economy.cpp:302-323` | One additive modifier sum, floor division, system modifier per colony | Separate rounded steps; the system modifier applies to the system total (§5.1) | M |
-| `economy.cpp:539-545` | Income topped up to the minimum | The minimum only replaces a total of exactly 0 (§5) | M |
-| `economy.cpp:372-381, 552-576` | Units pay maintenance; ceil victim count from all payers | Units pay nothing; victims = unpaid ÷ amount + 1, out-of-supply ships first, destroyed whole (§7) | M |
-| `economy_population.cpp:139-163` | Plague kills 1 % per level | Fixed loss per level, plus up to 20 % at random (§3) | M |
-| `economy_population.cpp:83-126` | Floor, times frequency; negative rates shrink; room shared proportionally | Rounded; frequency only gates; no shrinking; earlier races fill free room first (§3) | M |
-| `economy_queue.cpp:64-94, 142-149, 195-232` | Yard-less planets get aptitude and culture; queues by id; units overflow anywhere | Population modifier only; spaceport, resource and supply items go first; overflow into the same sector, one unit at a time (§6) | M |
-| `economy.cpp:585-617` | Value changes take the best; conditions change additively | Values sum; conditions change multiplicatively, every 10th turn; negative changes ignored (§2) | M |
-| `setup.cpp:122-138` | Characteristic cost c × P/100 beyond the threshold | P per point, N refunded (§8.1) | M |
-| Low | spaceport needs population, and the blockade counts units (`economy.cpp:180-201`); storage and maintenance traits ignored (`:341-361`); remote mining (`:426-460`); above the last bracket (`:97-112`); upgrade truncation (`economy_queue.cpp:107-126`); emergency lasts max + 1 turns (`:387-402`); atmosphere conversion takes Val1 + 1 turns (`economy_population.cpp:244-263`) | see spec 02 | L |
+| `setup.cpp:122-138` | Characteristic cost c × P/100 beyond the threshold | P per point, N refunded (§8.1). `economy::characteristicPointCost` implements the rule; `racialPointCost` still has to use it (setup is outside the economy's files) | M |
+| `generate.cpp:353`, `movement_stellar.cpp:178`, `events.cpp:875-877`, `combat_space.cpp:2046-2049`, `ai.cpp:359` | Conditions rolled and changed on a 0–100 scale | The economy reads `SpaceObject::conditions` as hundredths of the 0–1.5 scale (100 = 1.0, 150 = Optimal). Natural planets must roll 50 + 10 × R[0,10] and asteroids half of that (spec 01 §5.6); events, combat and the AI's planet rating must use the same scale, or most planets count as Harsh or Deadly | H |
 
 ## Vehicles, movement and logistics (spec 03)
 

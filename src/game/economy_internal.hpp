@@ -43,8 +43,11 @@ SystemId homeSystem(const GameState& s, EmpireId e);
 // Number of stars in a system (solar generation).
 int starCount(const GameState& s, SystemId sys);
 
-// Resource index helpers.
-inline size_t idx(Resource res) { return static_cast<size_t>(res); }
+// A living empire id.
+inline bool livingEmpire(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
+
+// A planet value after a change, clamped to the Settings range; never negative (spec 02 §1.2).
+int clampedValue(const Rules& r, const GameState& s, int64_t v);
 
 // Adds to a treasury or pool, never beyond kTreasuryLimit.
 inline int64_t addCapped(int64_t pool, int64_t amount) { return std::min(pool + amount, std::max(pool, kTreasuryLimit)); }

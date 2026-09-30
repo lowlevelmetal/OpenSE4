@@ -108,6 +108,13 @@ int starCount(const GameState& s, SystemId sys) {
     return n;
 }
 
+int clampedValue(const Rules& r, const GameState& s, int64_t v) {
+    const bool finite = s.options.finiteResources;
+    const int64_t lo = r.setting(finite ? "Minimum Planet Resource Value" : "Minimum Planet Percent Value", 0);
+    const int64_t hi = r.setting(finite ? "Maximum Planet Resource Value" : "Maximum Planet Percent Value", finite ? 999'000'000 : 250);
+    return static_cast<int>(std::max<int64_t>(0, std::clamp(v, lo, std::max(lo, hi))));
+}
+
 } // namespace detail
 
 uint32_t processingTurn(const GameState& s) { return s.turn + 1; }
@@ -540,14 +547,6 @@ constexpr std::array<AbilityKind, 3> kRemoteGen{AbilityKind::RemoteResourceGenMi
 constexpr std::array<AbilityKind, 3> kGeneratePoints{AbilityKind::GeneratePointsMinerals, AbilityKind::GeneratePointsOrganics,
                                                      AbilityKind::GeneratePointsRadioactives};
 
-// A planet value after a change, clamped to the Settings range; never negative (spec 02 §1.2).
-int clampedValue(const Rules& r, const GameState& s, int64_t v) {
-    const bool finite = s.options.finiteResources;
-    const int64_t lo = r.setting(finite ? "Minimum Planet Resource Value" : "Minimum Planet Percent Value", 0);
-    const int64_t hi = r.setting(finite ? "Maximum Planet Resource Value" : "Maximum Planet Percent Value", finite ? 999'000'000 : 250);
-    return static_cast<int>(std::max<int64_t>(0, std::clamp(v, lo, std::max(lo, hi))));
-}
-
 // One remote-mining extraction this turn (spec 02 §5.3).
 struct Extraction {
     ObjectId source;
@@ -693,8 +692,6 @@ void deposit(Resources& bank, const Resources& amount) {
     for (size_t k = 0; k < 3; ++k) bank.v[k] = addCapped(bank.v[k], amount.v[k]);
 }
 
-bool living(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
-
 // Unpaid maintenance: `unpaid div Maintenance Cost Amt Per Dead + 1` vehicles
 // are abandoned, picked at random, ships out of supply first (spec 02 §7).
 void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
@@ -733,7 +730,7 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
 void collectIncome(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     const Income inc = computeIncome(r, s, e);
     for (const auto& [planet, used] : inc.drawn) {
         SpaceObject& p = s.galaxy.object(planet);
@@ -749,7 +746,7 @@ void collectIncome(TurnContext& ctx, EmpireId e) {
 
 void collectTrade(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     const TradeIncome t = computeTrade(ctx.rules, s, e);
     Empire& emp = s.empire(e);
     deposit(emp.stockpile, t.trade + t.tariffsIn);
@@ -761,7 +758,7 @@ void collectTrade(TurnContext& ctx, EmpireId e) {
 
 void payMaintenance(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     const Resources charge = maintenanceCost(ctx.rules, s, e);
     Resources& bank = s.empire(e).stockpile;
     int64_t unpaid = 0;  // summed over the three resources (confirmed: binary)
@@ -779,7 +776,7 @@ void payMaintenance(TurnContext& ctx, EmpireId e) {
 
 void applyStorageCap(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     Empire& emp = s.empire(e);
     emp.economy.storageCap = storageCapacity(ctx.rules, s, e);
     emp.economy.lostToStorage = max(emp.stockpile - emp.economy.storageCap, Resources{});

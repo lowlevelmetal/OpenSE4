@@ -1265,9 +1265,9 @@ section named.
     (§9).
 23. **Experience and race age.** What gameplay effect, if any, do they have?
 
-The engine (`src/game/economy*.cpp`) still implements the guesses below; each is marked
-"(inferred)" in the code. Items 24–36 are now settled by the executable and must be
-brought in line with the sections named.
+Items 24–36 were the engine's earlier guesses. They are settled by the executable, and
+`src/game/economy*.cpp` follows the sections named. Items 37 onward are the engine's
+remaining guesses; each is marked "(inferred)" in the code.
 
 24. **Mood and reproduction.** *Settled* (confirmed: binary, §3): Angry −5, Unhappy −2,
     Indifferent 0, Happy +2, Jubilant +5, and no growth at all while rioting. The rate is
@@ -1301,4 +1301,28 @@ brought in line with the sections named.
 36. **Maintenance victims.** *Settled* (confirmed: binary, §7): `unpaid div amount + 1`
     whole vehicles or unit groups, preferring ships out of supply.
 37. **Opening research pool.** We add the starting minerals setting once, on the first
-    turn (spec 05 §1.1).
+    turn (spec 05 §1.1). The computer bonus does not multiply it.
+38. **No room at completion.** When a finished facility finds no free slot, we keep the item
+    at the top of the queue with its progress cleared, as the original does for a ship at the
+    ship limit. Does the original drop the facility item instead?
+39. **Units without room.** Units that find no cargo space are lost and the item leaves the
+    queue. Does it stay when none of its units could be placed?
+40. **Upgrade count.** The original fixes the count when the item is queued; our queue items
+    do not record it yet, so we count the older facilities each time the item is priced.
+41. **Atmosphere counter.** Our counter runs only while a converter works and resets
+    otherwise. Does the original count turns without a converter too?
+42. **Replicant shares.** We give each race round(Val1 × its population ÷ total), ties to
+    even, in list order, each capped by the room left; an empty colony gets nothing. The
+    original's order of operations for the share was not traced.
+43. **Minimum income.** We give the Settings amount only to an empire that still holds a
+    colony.
+44. **Abandoned ships.** We log `Any Ship Lost` and `Ship Lost in System` for each ship
+    abandoned for unpaid maintenance. Does the original log a ship loss there?
+45. **Troops and strangers.** Troop units of a hostile empire in a colony's cargo count as
+    enemy troops on the planet; ships without an owner count as enemy ships.
+46. **Conditions in the engine.** We keep conditions in hundredths (1.0 = 100). A
+    multiplicative change is rounded to the nearest hundredth and moves a growing value by at
+    least 0.01, so that 1 % changes do not stall where a rounded hundredth would.
+47. **Bonus above High.** A computer bonus setting above High counts as High.
+48. **Turn number.** "Every 10th turn" and `Reproduction Check Frequency` test the turn
+    number after the date has advanced (spec 05 §8): the first processed turn is turn 1.

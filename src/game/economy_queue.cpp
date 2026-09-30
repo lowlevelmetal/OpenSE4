@@ -435,7 +435,7 @@ void advanceQueueMode(ConstructionQueue& q, int maxTurns) {
 
 void runConstruction(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
-    if (!e.valid() || e.index() >= s.empires.size() || !s.empire(e).alive) return;
+    if (!livingEmpire(s, e)) return;
     Resources spent;
     for (const QueueRef& q : empireQueues(ctx.rules, s, e)) spent += runQueue(ctx, e, q);
     s.empire(e).economy.construction = spent;

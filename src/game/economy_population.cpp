@@ -24,8 +24,6 @@ using xmath::pctTrunc;
 
 namespace {
 
-bool living(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
-
 // The empire's colonies in object order (stable), as planet ids: steps may remove colonies.
 std::vector<ObjectId> coloniesOf(const GameState& s, EmpireId e) {
     std::vector<ObjectId> out;
@@ -98,14 +96,6 @@ void overcrowding(const Rules& r, GameState& s, Colony& c) {
 }
 
 // ---- Planet value and conditions (spec 02 §1.5, §2) ------------------------------------------------------
-
-// A planet value after a change, clamped to the Settings range; never negative.
-int clampedValue(const Rules& r, const GameState& s, int64_t v) {
-    const bool finite = s.options.finiteResources;
-    const int64_t lo = r.setting(finite ? "Minimum Planet Resource Value" : "Minimum Planet Percent Value", 0);
-    const int64_t hi = r.setting(finite ? "Maximum Planet Resource Value" : "Maximum Planet Percent Value", finite ? 999'000'000 : 250);
-    return static_cast<int>(std::max<int64_t>(0, std::clamp(v, lo, std::max(lo, hi))));
-}
 
 // Multiplies a planet's conditions by pct %. Our conditions are hundredths of
 // the original's real number, so the product is rounded to a hundredth, and a
@@ -425,7 +415,7 @@ EmpireId foundRebelEmpire(TurnContext& ctx, ObjectId planet) {
 void processPlanets(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     const auto freq = static_cast<uint32_t>(std::max<int64_t>(1, r.setting("Reproduction Check Frequency", 1)));
     const bool reproduce = processingTurn(s) % freq == 0;  // the amount is not scaled by the frequency
     const bool yearly = processingTurn(s) % 10 == 0;
@@ -449,7 +439,7 @@ void updateHappiness(TurnContext& ctx, EmpireId e) {
         events.push_back(std::move(ev));
         return true;
     });
-    if (!living(s, e) || emotionless(r, s, e)) return;  // Emotionless: the whole update is skipped
+    if (!livingEmpire(s, e) || emotionless(r, s, e)) return;  // Emotionless: the whole update is skipped
 
     // The empire-wide part: events that hit every colony, and the race's calm.
     const Race& race = s.empire(e).race;
@@ -466,7 +456,7 @@ void updateHappiness(TurnContext& ctx, EmpireId e) {
 void applySystemAbilities(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (!living(s, e)) return;
+    if (!livingEmpire(s, e)) return;
     const bool yearly = processingTurn(s) % 10 == 0;
     for (ObjectId planet : coloniesOf(s, e)) {
         Colony& c = *s.colony(planet);
