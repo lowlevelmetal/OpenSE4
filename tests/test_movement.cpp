@@ -1339,6 +1339,14 @@ TEST_CASE("movement: drones move only by orders; an Attack order pursues its tar
     CHECK(w.v(drone).supply < before);
     CHECK(w.v(drone).orders.size() == 1);
 
+    // Out of supply after a step, a drone is destroyed at once (spec 03 §12).
+    const VehicleId thirsty = w.spawn(droneDesign, at(a, 0, 9));
+    w.v(thirsty).supply = movement::moveSupplyCost(w.rules(), w.s, w.v(thirsty));
+    w.order(thirsty, moveTo(a, 5, 9));
+    w.move(spy.hooks());
+    CHECK(w.s.vehicle(thirsty) == nullptr);
+    CHECK(w.logged(kA, "Ran out of supplies"));
+
     // A drone given a warp point as target gets Move To plus Warp (spec 03 §8).
     World g;
     const SystemId ga = g.system("A"), gb = g.system("B", 10, 0);

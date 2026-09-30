@@ -884,6 +884,12 @@ private:
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
         entered_.push_back(Entry{g.members, g.owner, next, name(g)});
+        // A drone out of supply is destroyed after each step or warp (§12, confirmed: binary).
+        for (VehicleId id : g.members)
+            if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->supply <= 0 && vehicleType(r_, s_, *v) == VehicleType::Drone)
+                vehicleLost(ctx_, *v, "Ran out of supplies.");
+        prune(g);
+        if (g.members.empty()) return;
         // A sweeper group entering a tagged minefield where mines act decloaks first (§12).
         decloakSweepers(r_, s_, next, g.members);
         if (via.valid()) {
@@ -1452,6 +1458,7 @@ private:
     }
 
     void liveActor(ActorRef ref) {
+        int idle = 0;  // orders done by acting in a row, without a step
         for (int n = 0; n < kLiveActionLimit; ++n) {
             const size_t steps = entered_.size();
             Group g;
@@ -1463,8 +1470,11 @@ private:
             entered_.clear();
             touched_.clear();
             if (fought || g.stopped) return;
-            // A step, or an order done by acting, goes on; anything else ends the run.
-            if (*e != Exec::Moved && *e != Exec::MovedDone && *e != Exec::Acted) return;
+            // A step, or an order done by acting, goes on; anything else ends the
+            // run. A repeating list that goes round without a step stops after
+            // the chain's 21 executions (spec 03 §8).
+            if (*e == Exec::Moved || *e == Exec::MovedDone) idle = 0;
+            else if (*e != Exec::Acted || ++idle >= kChainLimit) return;
         }
     }
 
