@@ -96,6 +96,16 @@ PlanReport planTurnReport(const Rules& r, const GameState& s, EmpireId e, bool m
 // computer players and humans with active ministers, and the political step
 // (territory and anger, §7.3) for empires whose Politics minister is on.
 void updateAnger(TurnContext& ctx);
+// The parts of updateAnger, in its order, for a turn order that runs them apart:
+// after the AI's commands were applied (difficulty, counters, war declarations and
+// accepted demands);
+void recordAiDecisions(TurnContext& ctx);
+// before the ministers act (territory and the state machine of §7.2);
+void updateAiStates(TurnContext& ctx);
+// then the political step (anger, §7.3) before Politics decides;
+void politicalStep(TurnContext& ctx);
+// and once per turn after combat (combat counts, traced spies, mine fields met).
+void rememberAiEvents(TurnContext& ctx);
 
 // ---- Helpers shared with the UI and other modules ---------------------------------------
 

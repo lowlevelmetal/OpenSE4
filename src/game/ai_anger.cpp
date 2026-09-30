@@ -550,16 +550,17 @@ AiState nextState(const Rules& r, const GameState& s, EmpireId id) {
     return decide(s, id, assess(r, s, id, prof), prof).next;
 }
 
-void updateAnger(TurnContext& ctx) {
-    const Rules& r = ctx.rules;
+void recordAiDecisions(TurnContext& ctx) {
     GameState& s = ctx.state;
-
     // Difficulty (spec 05 §7.1): set once. An empire that appears after the
-    // first turn was founded by a revolt.
+    // first turn, other than a random player, was founded by a revolt.
     const int rebels = rebelDifficulty(s);
-    for (Empire& e : s.empires)
-        if (e.aiDifficulty < 0 && e.kind != PlayerKind::Human) e.aiDifficulty = s.turn == 0 ? difficultyOf(s, e.id) : rebels;
-
+    for (Empire& e : s.empires) {
+        if (e.aiDifficulty >= 0 || e.kind == PlayerKind::Human) continue;
+        const auto& random = s.options.randomAiPlayers;
+        const bool randomPlayer = e.id.index() < random.size() && random[e.id.index()] != 0;
+        e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, e.id) : rebels;
+    }
     // The counters (the queues are forgotten every 10 turns), then this turn's decisions.
     for (Empire& e : s.empires) {
         if (!e.alive) continue;
@@ -567,25 +568,19 @@ void updateAnger(TurnContext& ctx) {
         Rng rng = stepRng(s, e.id);
         recordDecisions(ctx, e.id, rng);
     }
+}
 
+void updateAiStates(TurnContext& ctx) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
     // Territory: computer players claim theirs anew each turn; the systems
     // they agreed to leave are their systems to avoid.
-    AngerInputs in;
-    in.scores = politicalScores(r, s);
     for (Empire& e : s.empires) {
         if (!e.alive || e.kind == PlayerKind::Human) continue;
         e.claimedSystems = computeTerritory(s, e.id);
         e.systemsToAvoid = e.aiMemory.avoid;
         std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
     }
-    in.territory.resize(s.empires.size());
-    in.mee.resize(s.empires.size());
-    for (const Empire& e : s.empires) {
-        in.territory[e.id.index()] = computeTerritory(s, e.id);
-        in.mee[e.id.index()] = megaEvilEmpire(r, in.scores, s, e.id);
-    }
-
-    // The state machine, before the political step (spec 05 §7.1).
     for (Empire& e : s.empires) {
         if (!e.alive) continue;
         const AiProfile& prof = profileFor(r, e);
@@ -599,8 +594,20 @@ void updateAnger(TurnContext& ctx) {
             me.aiTurnsInState = std::min(me.aiTurnsInState + 1, kCounterCap);
         }
     }
+}
 
-    // The political step: anger toward every living empire in contact.
+void politicalStep(TurnContext& ctx) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    AngerInputs in;
+    in.scores = politicalScores(r, s);
+    in.territory.resize(s.empires.size());
+    in.mee.resize(s.empires.size());
+    for (const Empire& e : s.empires) {
+        in.territory[e.id.index()] = computeTerritory(s, e.id);
+        in.mee[e.id.index()] = megaEvilEmpire(r, in.scores, s, e.id);
+    }
+    // Anger toward every living empire in contact, for empires whose Politics minister is on.
     for (Empire& e : s.empires) {
         if (!politicsOn(e)) continue;
         const AiProfile& prof = profileFor(r, e);
@@ -609,14 +616,23 @@ void updateAnger(TurnContext& ctx) {
             updateAngerToward(r, s, e, x, in, prof);
         }
     }
-
     // An eliminated empire is forgotten: anger toward it is 0.
     for (Empire& e : s.empires)
         for (const Empire& x : s.empires)
             if (!x.alive && x.id != e.id && x.id.index() < e.relations.size()) e.relation(x.id).anger = 0;
+}
 
+void rememberAiEvents(TurnContext& ctx) {
+    GameState& s = ctx.state;
     for (Empire& e : s.empires)
-        if (e.alive) rememberEvents(s, e, in.territory[e.id.index()]);
+        if (e.alive) rememberEvents(s, e, computeTerritory(s, e.id));
+}
+
+void updateAnger(TurnContext& ctx) {
+    recordAiDecisions(ctx);
+    updateAiStates(ctx);  // the state machine comes before the political step (spec 05 §7.1)
+    politicalStep(ctx);
+    rememberAiEvents(ctx);
 }
 
 } // namespace opense4::game::ai
