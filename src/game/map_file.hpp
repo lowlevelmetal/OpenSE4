@@ -47,9 +47,13 @@ std::expected<LoadedMap, std::string> mapFromText(const ruleset::Ruleset& rs, st
 std::expected<void, std::string> saveMapFile(const std::filesystem::path& file, const ruleset::Ruleset& rs, const QuadrantMap& map);
 std::expected<LoadedMap, std::string> loadMapFile(const std::filesystem::path& file, const ruleset::Ruleset& rs);
 
-// Save Map during a game: the current quadrant, with every living empire's
-// capital as that player's specific starting point (inferred: so the map can
-// be played again from the same homes).
+// Save Map during a game (offered only with GameOptions::playersCanSaveMap):
+// the current quadrant (systems and stellar objects; the galaxy holds no
+// ships, units or empire knowledge) with the starting points the game still
+// holds (GameState::startingPoints): a game started from a map keeps all its
+// specific points and the common points no player took; a generated game has
+// none. The empires' capitals are not written (spec 01 §12, §14 Q37,
+// confirmed: binary).
 QuadrantMap mapOfGame(const GameState& s, std::string name);
 
 // A file name for a map name: letters, digits, spaces, '-' and '_' kept.

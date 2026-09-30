@@ -209,6 +209,7 @@ public:
         s.fleets.clear();
         s.colonies.clear();
         for (Empire& e : s.empires) {
+            e.homeSystem = {};
             e.claimedSystems.clear();
             e.knowledge = Knowledge{};
         }

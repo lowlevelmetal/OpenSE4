@@ -202,6 +202,12 @@ struct Empire {
     std::vector<Relation> relations;        // per EmpireId
     Knowledge knowledge;
 
+    // The home system: recorded when the game is created and never moved,
+    // even when the homeworld is lost (spec 02 §2). Every starting planet is a
+    // capital (Colony::homeworld), so the flag alone does not tell which one
+    // is home. Invalid for an empire founded later (a rebel empire): its
+    // capital's system is used then.
+    SystemId homeSystem;
     std::vector<SystemId> claimedSystems;
     std::vector<SystemId> systemsToAvoid;
     std::vector<Location> taggedMinefields;
@@ -352,7 +358,7 @@ struct Colony {
     int plagueLevel = 0;
     int atmosphereTurns = 0;          // turns spent with an atmosphere the majority cannot breathe (spec 02 §2)
     bool minister = false;
-    bool homeworld = false;           // also the capital flag: anger never above 80 (spec 02 §2)
+    bool homeworld = false;           // the capital flag: anger never above 80; every starting planet has it (spec 02 §2, §9)
     uint32_t foundedTurn = 0;
     int militia = -1;                 // ground combat: militia left to raise; -1 = no invasion (spec 04 §13)
     // Planet orders (simultaneous games, spec 05 §9.2): Launch Units and
@@ -625,15 +631,15 @@ struct GameOptions {
     int aiDifficulty = kDifficultyMedium;  // Computer Player Difficulty: the level random AI players get
     int aiBonus = 0;
     VictoryConditions victory;
-    bool playersCanSaveMap = false;      // "Players can save map during a game" (spec 01 §2.2; off by default, inferred)
+    bool playersCanSaveMap = false;      // "Players can save map during a game": off by default; Save Map is disabled without it (spec 01 §2.2, §12, confirmed: binary)
     // Mechanics.
     int autosaveTurns = 0;               // Autosave: 0 None (the default), else every 1, 2, 3, 5 or 10 turns (spec 01 §2.2, §14 Q18)
     // Multiplayer. Turn style (spec 01 §2.2, spec 05 §8): simultaneous (every
     // player gives orders, then one turn processing carries them all out) or
     // turn-based (one player after another; orders execute as they are given,
-    // turn_based in turn.hpp). The spec names no default; OpenSE4 starts
-    // simultaneous (inferred, spec 01 open question 39).
-    bool simultaneous = true;
+    // turn_based in turn.hpp). A new game, Quick Start included, is
+    // turn-based (spec 01 §2.2, §14 Q39, confirmed: binary).
+    bool simultaneous = false;
     // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".
     // Only they get the chosen aiDifficulty (spec 05 §7.1).
     std::vector<uint8_t> randomAiPlayers;
@@ -710,6 +716,11 @@ struct GameState {
     EmpireId winner;
     Rng rng;
     PlayerTurn playerTurn;                        // turn-based games only
+    // The starting points the game still holds, for Save Map during the game
+    // (spec 01 §12, confirmed: binary): a game started from a map keeps all of
+    // the map's specific points and the common points no player took; a
+    // generated game has none.
+    std::vector<StartingPoint> startingPoints;
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

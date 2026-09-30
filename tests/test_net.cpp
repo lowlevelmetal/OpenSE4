@@ -645,6 +645,7 @@ TEST_CASE("net: PBEM turn processing from .plr files") {
     game::GameSetup setup;
     setup.seed = 3;
     setup.options.systemCount = 8;
+    setup.options.simultaneous = true;  // a simultaneous PBEM game (turn-based ones are tested below)
     for (int i = 0; i < 3; ++i) {
         game::EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);

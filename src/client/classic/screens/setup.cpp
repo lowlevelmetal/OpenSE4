@@ -989,8 +989,9 @@ private:
                         : "One human player against the computer. Network games are set up from Multiplayer on the main menu.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Turn Style");
-        int style = o.simultaneous ? 0 : 1;
-        if (lampChoice(ctx, "##turns", style, {"Simultaneous", "One player after another"})) o.simultaneous = style == 0;
+        // Turn-Based first: it is the default (spec 01 §2.2, confirmed: binary).
+        int style = o.simultaneous ? 1 : 0;
+        if (lampChoice(ctx, "##turns", style, {"One player after another", "Simultaneous"})) o.simultaneous = style == 1;
         note(o.simultaneous ? "Everyone gives orders, then all of them are carried out together."
                             : "Players move one after another. Orders are carried out as soon as they are given, and a ship "
                               "that meets the enemy fights at once. Network games are always simultaneous.");
@@ -1013,7 +1014,9 @@ private:
             }
             if (lampChoice(ctx, "##autosave", current, std::span<const std::string>(choices)))
                 o.autosaveTurns = kAutosaveTurns[static_cast<size_t>(std::clamp(current, 0, static_cast<int>(kAutosaveTurns.size()) - 1))];
-            note("Saves the game after the turns are processed, rotating through ten slots named Autosave 1 to Autosave 10.");
+            note("Saves the game after a turn is processed when the number of turns since 2400.0 is a multiple of the choice. "
+                 "The file is named after that number's last digit (Autosave 0 to Autosave 9), so every 2 turns keeps five "
+                 "files, every 5 turns two and every 10 turns one.");
         }
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "This Game");

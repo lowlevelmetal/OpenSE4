@@ -99,6 +99,11 @@ Sector warpEdgeSector(int bearing, std::span<const PlacedWarpPoint> existing);
 Sector warpInwardSector(int bearing, int inward);
 
 enum class ObjectKind : uint8_t { Star, Planet, Asteroids, Storm, WarpPoint, DestroyedStar, Comet, Count };
+// Once generated, a destroyed star is a star for every rule: the star
+// manipulations, the one-star limit of Create Star, the star Create Planet
+// needs, and the per-star solar supply and solar resource generation
+// (spec 01 §5.1, §5.4, confirmed: binary).
+constexpr bool isStarKind(ObjectKind k) { return k == ObjectKind::Star || k == ObjectKind::DestroyedStar; }
 std::string_view displayName(ObjectKind k);
 std::optional<ObjectKind> parseObjectKind(std::string_view physicalType);  // accepts "Sun", "Star", ...
 

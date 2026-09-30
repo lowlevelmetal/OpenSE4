@@ -13,7 +13,9 @@
 #include "core/rng.hpp"
 #include "game/galaxy.hpp"
 
+#include <array>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -71,23 +73,27 @@ struct PlacementOptions {
 };
 
 // Picks each empire's homeworld (spec 01 §3.6). A map's starting points come
-// first: each empire, in player order, takes its own specific point, else a
-// random remaining common point. A planet there whose atmosphere is not the
-// empire's becomes a random Planet record of the empire's atmosphere and planet
-// type at the same size; with no planet there, one is created. The empires
-// left are then placed at random in player order: a natural planet of the
-// empire's atmosphere and planet type, of the home size, in a start-eligible
-// system, spread out by warp jumps; a planet is created when none fits. The
+// first: each empire, in player order, takes its own specific point (the last
+// one listed for it), else a random remaining common point. A planet there
+// whose atmosphere is not the empire's becomes a random Planet record of the
+// empire's atmosphere and planet type at the same size; with no planet there,
+// one is created. The empires left are then placed at random in player order:
+// a natural planet of the empire's atmosphere and planet type, of the home
+// size, in a start-eligible system, spread out by warp jumps; a planet is
+// created when none fits, on any sector of the system without a planet. The
 // planet itself is not otherwise changed (setup gives it its values and colony).
+// `heldPoints` receives the starting points the game keeps (spec 01 §12): every
+// specific point of the map and the common points no empire took.
 std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy, const ruleset::Ruleset& rs,
                                                                   std::span<const EmpireStart> empires,
-                                                                  const PlacementOptions& options, Rng& rng);
+                                                                  const PlacementOptions& options, Rng& rng,
+                                                                  std::vector<StartingPoint>* heldPoints = nullptr);
 
 // A planet created for an empire start (spec 01 §3.6): a random natural Planet
 // record with this planet type and atmosphere (and stellar size `size`, 0 =
 // any), values and conditions as for a natural planet, named after the system
-// with the numeral one above the number of occupied sectors. Appends to the
-// galaxy's objects.
+// with the numeral one above the number of sectors that hold a planet (asteroid
+// fields do not count). Appends to the galaxy's objects.
 ObjectId createStartingPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sys, Sector where, std::string_view surface,
                               std::string_view atmosphere, int size, bool finiteResources, Rng& rng);
 
@@ -116,8 +122,11 @@ void rollNaturalValues(const ruleset::Ruleset& rs, SpaceObject& obj, bool finite
 std::vector<Sector> emptySectors(const Galaxy& g, SystemId sys);
 // "System IV" style numerals.
 std::string romanNumeral(int n);
-// The numeral a planet made in this system during play takes: one above the
-// highest numeral its planets and asteroid fields carry (inferred, spec 01 §9).
+// The first planet (not asteroid field) of each sector, by sector number y·13 + x.
+std::array<std::optional<ObjectId>, kSystemSize * kSystemSize> firstPlanetPerSector(const Galaxy& g, SystemId sys);
+// The numeral a planet made by Create Planet or Construct takes: one above the
+// highest numeral I..XXX that ends the name of the first planet of a sector;
+// asteroid fields do not count (spec 01 §5.6, confirmed: binary).
 int nextPlanetNumeral(const Galaxy& g, SystemId sys);
 // Existing warp points of a system with the bearing toward their destination.
 std::vector<PlacedWarpPoint> placedWarpPoints(const Galaxy& g, SystemId sys);

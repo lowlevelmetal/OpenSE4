@@ -97,33 +97,38 @@ int64_t bestRaw(const std::vector<ruleset::Ability>& list, AbilityKind k) {
 // storms or warp points (spec 01 §5.3, confirmed: binary).
 bool hideable(ObjectKind k) { return k == ObjectKind::Planet || k == ObjectKind::Asteroids || k == ObjectKind::Comet; }
 
-// The obscuration a ship or base spreads over its sector (unit groups do not, inferred).
+// The obscuration a ship or base spreads over its sector; unit groups never
+// obscure a sector (spec 01 §6.2, confirmed: binary).
 int64_t vehicleObscuring(const Rules& r, const GameState& s, const Vehicle& v) {
     if (!alive(v) || isUnitType(vehicleType(r, s, v))) return 0;
     return vehicleBest(r, s, v, AbilityKind::SectorSightObscuration);
 }
 
-// The system-wide value and the stellar objects and colonies of a sector.
-int64_t placeObscuration(const Rules& r, const GameState& s, Location where) {
+// Stellar objects that obscure their sector with their own rolled abilities:
+// storms, planets and asteroid fields. Stars, warp points and comets never do,
+// whatever abilities they carry (spec 01 §6.2, §14 Q32, confirmed: binary).
+bool obscuresSector(ObjectKind k) { return k == ObjectKind::Storm || k == ObjectKind::Planet || k == ObjectKind::Asteroids; }
+
+// The system-wide value and the storms, planets and asteroid fields of a
+// sector, by their own rolled abilities; a colony's facilities do not count.
+int64_t placeObscuration(const GameState& s, Location where) {
     const StarSystem& sys = s.galaxy.system(where.system);
     int64_t level = std::max<int64_t>(1, bestRaw(sys.abilities, AbilityKind::SectorSightObscuration));
     for (ObjectId o : sys.objects) {
         const SpaceObject& obj = s.galaxy.object(o);
-        if (obj.sector != where.sector) continue;
+        if (obj.sector != where.sector || !obscuresSector(obj.kind)) continue;
         level = std::max(level, bestRaw(obj.abilities, AbilityKind::SectorSightObscuration));
-        if (const Colony* c = s.colony(o))
-            for (uint32_t f : c->facilities) level = std::max(level, bestValue1(r.facilityAbilities(f), AbilityKind::SectorSightObscuration));
     }
     return level;
 }
 
 // The environment's obscuration at a place: the largest `Sector - Sight
-// Obscuration` among the storms, planets and ships in the sector, and the
-// system-wide value; at least 1. A planet's colony facilities count as the
-// planet's (inferred).
+// Obscuration` among the storms, planets, asteroid fields, ships and bases in
+// the sector, and the system-wide value; at least 1 (spec 01 §6.2, confirmed:
+// binary).
 int environmentObscuration(const Rules& r, const GameState& s, Location where) {
     if (!validSystem(s, where.system)) return 1;
-    int64_t level = placeObscuration(r, s, where);
+    int64_t level = placeObscuration(s, where);
     for (const Vehicle& v : s.vehicles)
         if (v.location == where) level = std::max(level, vehicleObscuring(r, s, v));
     return static_cast<int>(level);
@@ -138,7 +143,7 @@ std::map<Location, int> environmentByPlace(const Rules& r, const GameState& s) {
             level = std::max(level, vehicleObscuring(r, s, v));
         }
     std::map<Location, int> out;
-    for (const auto& [where, level] : ships) out[where] = static_cast<int>(std::max(level, placeObscuration(r, s, where)));
+    for (const auto& [where, level] : ships) out[where] = static_cast<int>(std::max(level, placeObscuration(s, where)));
     return out;
 }
 
@@ -158,11 +163,12 @@ std::optional<SightVector> vehicleSensors(const Rules& r, const GameState& s, co
     return out;
 }
 
-// Every owned planet is a sensor source; its facilities add their sensor
-// levels only while it is populated (inferred, spec 01 §14 Q26).
+// Every owned planet is a sensor source; its facilities (and the planet's own
+// abilities) add their sensor levels whether or not anyone lives there
+// (spec 01 §6.1, §14 Q26, confirmed: binary).
 SightVector colonySensors(const Rules& r, const GameState& s, const Colony& c) {
     SightVector out = baseline();
-    if (c.totalPopulation() > 0) addLevels(out, colonyAbilities(r, s, c), AbilityKind::SensorLevel);
+    addLevels(out, colonyAbilities(r, s, c), AbilityKind::SensorLevel);
     return out;
 }
 

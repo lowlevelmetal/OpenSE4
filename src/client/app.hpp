@@ -36,7 +36,7 @@ struct AppOptions {
     bool classicQuickStart = false;  // skip the intro and start a quick game
     std::string classicRace;         // race preset for the quick game
     std::string classicWindow;       // window to open at start
-    bool classicTurnBased = false;   // a quick game in the turn-based style (spec 05 §8)
+    bool classicTurnBased = true;    // a quick game's turn style: turn-based, as a new game (spec 01 §2.2, §14 Q39; spec 05 §8)
     // Play by e-mail: open this game file and play the turn (docs/MULTIPLAYER.md).
     std::string pbemFile;
     int pbemEmpire = 0;              // 1-based; 0 = the only empire that can play now

@@ -65,7 +65,7 @@ Classic rules (the default when an install is found; see docs/PARITY_PLAN.md):
   --classic-dir=DIR               Game directory of the installed classic game (default: auto-detect)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --turn-style=simultaneous|turn-based
-                                  Turn style of a quick game (default: simultaneous)
+                                  Turn style of a quick game (default: turn-based)
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],

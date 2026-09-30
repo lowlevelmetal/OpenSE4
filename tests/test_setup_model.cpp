@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <set>
 
 using namespace opense4;
 using namespace opense4::client::classic;
@@ -168,6 +169,9 @@ TEST_CASE("setup model: defaults start one human empire from the first Quick Sta
     CHECK(s.options.startingPlanets == 1);
     CHECK(s.options.startTechLevel == 0);
     CHECK(s.options.eventFrequency == 1);  // Low
+    CHECK_FALSE(s.options.simultaneous);   // Turn-Based (spec 01 §14 Q39)
+    CHECK_FALSE(s.options.playersCanSaveMap);
+    CHECK(s.options.autosaveTurns == 0);
     CHECK(setup::kStartingResources == std::array<int64_t, 3>{5000, 20000, 100000});
     CHECK(setup::kRacialPoints == std::array<int, 4>{0, 2000, 3000, 5000});
     CHECK(setup::kStartingPlanets == std::array<int, 4>{1, 3, 5, 10});
@@ -574,20 +578,33 @@ TEST_CASE("setup model: installed data set: defaults, presets and empire files (
     }
 }
 
-TEST_CASE("setup model: autosave every N turns rotates through ten slots") {
+TEST_CASE("setup model: autosave every N turns, named after the last digit of the turn count") {
     // None (the default) never saves (spec 01 §2.2).
     CHECK(game::GameOptions{}.autosaveTurns == 0);
     CHECK_FALSE(setup::autosaveName(0, 1).has_value());
     CHECK_FALSE(setup::autosaveName(0, 30).has_value());
     CHECK(setup::kAutosaveTurns == std::array<int, 6>{0, 1, 2, 3, 5, 10});
-    // Every turn: slots 1..10, then round again.
+    // After a turn is processed, when the turns since 2400.0 are a multiple of N;
+    // the file is that number's last digit (spec 01 §14 Q38, confirmed: binary).
     CHECK(setup::autosaveName(1, 1) == "Autosave 1");
-    CHECK(setup::autosaveName(1, 10) == "Autosave 10");
+    CHECK(setup::autosaveName(1, 10) == "Autosave 0");
     CHECK(setup::autosaveName(1, 11) == "Autosave 1");
-    // Every 5 turns: only turns 5, 10, ... and the eleventh save reuses slot 1.
+    CHECK(setup::autosaveName(1, 127) == "Autosave 7");
     CHECK_FALSE(setup::autosaveName(5, 4).has_value());
-    CHECK(setup::autosaveName(5, 5) == "Autosave 1");
-    CHECK(setup::autosaveName(5, 15) == "Autosave 3");
-    CHECK(setup::autosaveName(5, 55) == "Autosave 1");
+    CHECK(setup::autosaveName(5, 5) == "Autosave 5");
+    CHECK(setup::autosaveName(5, 15) == "Autosave 5");
+    CHECK(setup::autosaveName(3, 12) == "Autosave 2");
     CHECK_FALSE(setup::autosaveName(3, 0).has_value());
+    // Every 2 turns keeps five files, every 5 two and every 10 one; any N at most ten.
+    auto files = [](int every) {
+        std::set<std::string> names;
+        for (uint32_t turn = 1; turn <= 300; ++turn)
+            if (auto n = setup::autosaveName(every, turn)) names.insert(*n);
+        return names.size();
+    };
+    CHECK(files(1) == 10);
+    CHECK(files(2) == 5);
+    CHECK(files(3) == 10);
+    CHECK(files(5) == 2);
+    CHECK(files(10) == 1);
 }

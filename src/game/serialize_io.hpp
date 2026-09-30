@@ -299,6 +299,7 @@ void io(Ar& ar, StarSystem& s) {
 }
 
 template <class Ar> void io(Ar& ar, Galaxy& g) { fields(ar, g.width, g.height, g.quadrantType, g.systems, g.objects); }
+template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }
 
 // ---- Empires -------------------------------------------------------------------------------
 
@@ -359,7 +360,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
     fields(ar, e.intel, e.intelEvenly, e.repeatIntel, e.intelPool);
     fields(ar, e.relations, e.knowledge);
-    fields(ar, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
+    fields(ar, e.homeSystem, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
@@ -489,7 +490,7 @@ template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
            s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng,
-           s.playerTurn);
+           s.playerTurn, s.startingPoints);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
@@ -556,7 +557,6 @@ void io(Ar& ar, EmpireSetup& e) {
            e.ministerStyle, e.useRaceMinisterStyle);
 }
 
-template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }
 template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires, g.map); }
 

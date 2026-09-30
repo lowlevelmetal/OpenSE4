@@ -36,6 +36,7 @@ add_executable(opense4_tests
     test_setup_model.cpp
     test_ships_ui.cpp
     test_sight.cpp
+    test_stellar.cpp
     test_turn.cpp
     test_turn_based.cpp
     test_turn_order.cpp

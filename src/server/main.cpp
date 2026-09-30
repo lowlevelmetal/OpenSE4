@@ -278,6 +278,7 @@ int runServer(std::span<char*> args) {
     cfg.setup.options.systemCount = static_cast<int>(*systems);
     cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
     cfg.setup.options.quadrantType = o.get("quadrant");
+    cfg.setup.options.simultaneous = true;  // a network host runs simultaneous turns unless --turn-based (docs/MULTIPLAYER.md)
     std::vector<game::EmpireSetup> computers(static_cast<size_t>(*ai));
 
     if (o.has("setup")) {

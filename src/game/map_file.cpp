@@ -347,18 +347,12 @@ std::expected<LoadedMap, std::string> loadMapFile(const std::filesystem::path& f
 }
 
 QuadrantMap mapOfGame(const GameState& s, std::string name) {
+    // The systems and their stellar objects, and the starting points the game
+    // still holds; no capitals (spec 01 §12, §14 Q37, confirmed: binary).
     QuadrantMap m;
     m.name = std::move(name);
     m.galaxy = s.galaxy;
-    for (const Empire& e : s.empires) {
-        if (!e.alive) continue;
-        for (const auto& c : s.colonies)
-            if (c && c->owner == e.id && c->homeworld && c->planet.index() < s.galaxy.objects.size()) {
-                const SpaceObject& planet = s.galaxy.object(c->planet);
-                m.startingPoints.push_back({planet.system, planet.sector, static_cast<int>(e.id.index())});
-                break;
-            }
-    }
+    m.startingPoints = s.startingPoints;
     return m;
 }
 

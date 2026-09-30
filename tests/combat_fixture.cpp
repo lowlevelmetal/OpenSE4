@@ -166,6 +166,7 @@ Arena makeArena(const Rules& rules, uint64_t seed, int empires) {
     GameSetup setup;
     setup.seed = seed;
     setup.options.systemCount = 12;
+    setup.options.simultaneous = true;  // written for simultaneous turns; turn-based tests set it off
     for (int i = 0; i < empires; ++i) {
         EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);

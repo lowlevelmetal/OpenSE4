@@ -275,7 +275,7 @@ TEST_CASE("quadrant generation follows the data set") {
     const int d2 = (objs[3]->sector.x - 6) * (objs[3]->sector.x - 6) + (objs[3]->sector.y - 6) * (objs[3]->sector.y - 6);
     CHECK(d2 >= 16);  // Circle Radius 4: the distance, truncated, is 4
     CHECK(d2 < 25);
-    CHECK(objs[3]->name == sys.name + " Asteroid Belt II");
+    CHECK(objs[3]->name == sys.name + " Asteroid Belt I");  // asteroid fields have their own count
     CHECK(objs[3]->value[0] >= 100);  // asteroid value range
     CHECK(objs[4]->kind == ObjectKind::Storm);
     CHECK(chebyshev(objs[4]->sector, Sector{}) == 4);  // Ring 5
@@ -283,7 +283,7 @@ TEST_CASE("quadrant generation follows the data set") {
     CHECK(objs[4]->name == "Storm");
     // "Huge Rock Oxygen" doesn't exist: constraints were relaxed (never to the constructed Ringworld).
     CHECK(objs[5]->size != "Ringworld");
-    CHECK(objs[5]->name == sys.name + " III");
+    CHECK(objs[5]->name == sys.name + " II");
     CHECK_FALSE(gen.warnings.empty());
     for (const SpaceObject& o : g.objects)
         if (o.kind == ObjectKind::Planet) {
@@ -564,7 +564,7 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
     const int d2 = (o[5]->sector.x - 6) * (o[5]->sector.x - 6) + (o[5]->sector.y - 6) * (o[5]->sector.y - 6);
     CHECK(d2 >= 36);  // trunc(distance) == 6
     CHECK(d2 < 49);
-    CHECK(o[5]->name == sys.name + " Asteroid Belt III");
+    CHECK(o[5]->name == sys.name + " Asteroid Belt I");  // its own count, beside "II"
     CHECK(o[6]->sector == Sector(12, 12));
     CHECK(o[6]->surface == "Gas Giant");
     CHECK(o[8]->sector == Sector(6, 6));
@@ -764,12 +764,13 @@ TEST_CASE("setup: every starting planet gets the homeworld setup") {
             const auto colonies = coloniesOf(s, e.id);
             // A neutral empire always gets one starting planet.
             REQUIRE(colonies.size() == (e.kind == game::PlayerKind::Neutral ? 1u : 3u));
-            const game::ObjectId home = test::homeworld(s, e.id).planet;
-            const auto jumps = warpJumps(s.galaxy, s.galaxy.object(home).system);
+            const auto jumps = warpJumps(s.galaxy, e.homeSystem);
             int capitals = 0;
             for (const game::Colony* c : colonies) {
                 const game::SpaceObject& p = s.galaxy.object(c->planet);
                 capitals += c->homeworld ? 1 : 0;
+                CHECK(c->colonyType == "Homeworld");
+                CHECK(c->maxAnger() == 80);
                 CHECK(p.kind == game::ObjectKind::Planet);
                 CHECK(p.atmosphere == e.race.atmosphere);
                 CHECK(p.surface == e.race.nativeSurface);
@@ -786,7 +787,8 @@ TEST_CASE("setup: every starting planet gets the homeworld setup") {
                 CHECK(d >= 0);
                 CHECK(d <= 1);
             }
-            CHECK(capitals == 1);
+            // Every starting planet is a capital of type Homeworld (spec 01 §3.6, spec 02 §9).
+            CHECK(capitals == static_cast<int>(colonies.size()));
         }
         // Planets that are nobody's starting planet keep their ruins.
         bool ruinsLeft = false;
@@ -803,22 +805,21 @@ TEST_CASE("setup: every starting planet gets the homeworld setup") {
     qo.systemCount = 12;
     const auto natural = generateQuadrant(r.data(), qo, galaxyRng);
     REQUIRE(natural.has_value());
-    int created = 0;
+    int created = 0, outside = 0;
     for (const game::Empire& e : crowded.empires) {
         const auto colonies = coloniesOf(crowded, e.id);
         CHECK(colonies.size() == 10u);
         for (const game::Colony* c : colonies) {
-            if (c->homeworld || c->planet.index() < natural->galaxy.objects.size()) continue;
+            if (c->planet.index() < natural->galaxy.objects.size()) continue;
             ++created;
             const game::SpaceObject& p = crowded.galaxy.object(c->planet);
-            CHECK(p.sector.x >= 1);
-            CHECK(p.sector.x <= 11);
-            CHECK(p.sector.y >= 1);
-            CHECK(p.sector.y <= 11);
+            // Only a created homeworld may lie outside the inner area.
+            outside += p.sector.x < 1 || p.sector.x > 11 || p.sector.y < 1 || p.sector.y > 11 ? 1 : 0;
             CHECK(p.name.starts_with(crowded.galaxy.system(p.system).name + " "));
         }
     }
-    CHECK(created > 0);
+    CHECK(created > 2);
+    CHECK(outside <= 2);
 }
 
 TEST_CASE("setup: starting facilities come in the original's order") {
@@ -856,6 +857,237 @@ TEST_CASE("setup: starting facilities come in the original's order") {
     REQUIRE_FALSE(traders.facilities.empty());
     CHECK(noPorts.facility(traders.facilities.front()).name == "Test Space Yard");
     for (uint32_t f : traders.facilities) CHECK(noPorts.facility(f).name != "Test Spaceport");
+}
+
+// ---- Handcrafted quadrants: starting planets and numerals (spec 01 §3.6, §5.6) ---------------------------
+
+namespace {
+
+// SectType records of the fixture data set (the engine test rules keep them).
+constexpr uint32_t kIceMethaneSmallType = 2, kRockOxygenLargeType = 4, kAsteroidType = 6, kStormType = 7, kPlainWarpType = 8;
+
+// A quadrant built by hand: systems of the fixture's start-eligible or
+// ineligible type, objects on chosen sectors, and warp links made in call order.
+struct Quadrant {
+    const ruleset::Ruleset& rs;
+    Galaxy g;
+
+    explicit Quadrant(const ruleset::Ruleset& data) : rs(data) {
+        g.width = kQuadrantWidth;
+        g.height = kQuadrantHeight;
+    }
+    SystemId system(std::string name, bool eligible = true) {
+        StarSystem sys;
+        sys.id = SystemId{g.systems.size()};
+        sys.name = std::move(name);
+        sys.position = {static_cast<int>(g.systems.size()) * 6, 10 + static_cast<int>(g.systems.size() % 3) * 7};
+        sys.type = *rs.findSystemType(eligible ? "Test Single Star" : "Test Busy System");
+        sys.physicalType = "Normal";
+        g.systems.push_back(sys);
+        return sys.id;
+    }
+    ObjectId add(SystemId sys, ObjectKind kind, uint32_t type, Sector at, std::string name = {}) {
+        SpaceObject o;
+        o.id = ObjectId{g.objects.size()};
+        o.kind = kind;
+        o.system = sys;
+        o.sector = at;
+        applySectorType(rs, o, type);
+        o.name = name.empty() ? std::format("{} {}", g.system(sys).name, o.id.value) : std::move(name);
+        g.system(sys).objects.push_back(o.id);
+        g.objects.push_back(std::move(o));
+        return g.objects.back().id;
+    }
+    // A warp point in each system (on its next edge square), leading to the other.
+    void link(SystemId a, SystemId b) {
+        auto edge = [&](SystemId s) { return Sector{12, static_cast<int>(g.warpPoints(s).size())}; };
+        const ObjectId wa = add(a, ObjectKind::WarpPoint, kPlainWarpType, edge(a), "Warp Point");
+        const ObjectId wb = add(b, ObjectKind::WarpPoint, kPlainWarpType, edge(b), "Warp Point");
+        g.object(wa).destination = wb;
+        g.object(wb).destination = wa;
+    }
+};
+
+int planetSectors(const Galaxy& g, SystemId sys) {
+    int n = 0;
+    for (const auto& p : firstPlanetPerSector(g, sys)) n += p ? 1 : 0;
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("setup: extra starting planets come from the home system, then its neighbours in warp point order") {
+    const game::Rules& r = test::engineRules();
+    Quadrant q(r.data());
+    const SystemId home = q.system("Home"), near = q.system("Near"), next = q.system("Next"), rival = q.system("Rival"),
+                   hole = q.system("Hole", false), far = q.system("Far"), quiet = q.system("Quiet");
+    const ObjectId homeworld = q.add(home, ObjectKind::Planet, kRockOxygenLargeType, {3, 3}, "Home I");
+    const ObjectId nearPlanet = q.add(near, ObjectKind::Planet, kRockOxygenLargeType, {2, 2}, "Near I");
+    q.add(next, ObjectKind::Planet, kIceMethaneSmallType, {5, 5}, "Next I");                            // heads sector 70
+    const ObjectId moon = q.add(next, ObjectKind::Planet, kRockOxygenLargeType, {5, 5}, "Next I A");     // never looked at
+    const ObjectId nextPlanet = q.add(next, ObjectKind::Planet, kRockOxygenLargeType, {1, 1}, "Next II");  // sector 14
+    q.add(rival, ObjectKind::Planet, kRockOxygenLargeType, {4, 4}, "Rival I");
+    const ObjectId holePlanet = q.add(hole, ObjectKind::Planet, kRockOxygenLargeType, {3, 3}, "Hole I");
+    const ObjectId farPlanet = q.add(far, ObjectKind::Planet, kRockOxygenLargeType, {3, 3}, "Far I");
+    // Home's warp points in this order: Next, Near, Rival, Hole, Quiet. Far is two jumps away.
+    q.link(home, next);
+    q.link(home, near);
+    q.link(home, rival);
+    q.link(home, hole);
+    q.link(home, quiet);
+    q.link(near, far);
+    const size_t natural = q.g.objects.size();
+
+    auto play = [&](const game::Rules& rules, int planets, bool shareSystems) {
+        game::GameSetup setup;
+        setup.seed = 17;
+        setup.options.startingPlanets = planets;
+        setup.options.sameSystemAllowed = shareSystems;
+        setup.map = QuadrantMap{"Handmade", q.g, {{home, {3, 3}, 0}, {rival, {4, 4}, 1}}};
+        for (const char* name : {"Settlers", "Rivals"}) {
+            game::EmpireSetup e;
+            e.name = name;
+            setup.empires.push_back(e);
+        }
+        auto s = game::createGame(rules, setup);
+        REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
+        return std::move(*s);
+    };
+    auto owned = [](const game::GameState& s, game::EmpireId e) {
+        std::vector<ObjectId> out;
+        for (const auto& c : s.colonies)
+            if (c && c->owner == e) out.push_back(c->planet);
+        return out;
+    };
+    const game::EmpireId settlers{0u}, rivals{1u};
+
+    // One extra planet: the first neighbour by warp point (Next), not the lowest system number (Near).
+    CHECK(owned(play(r, 2, false), settlers) == std::vector<ObjectId>{homeworld, nextPlanet});
+
+    // Two: Next's first planet by sector number, then Near's. The moon under Next's Ice planet is never considered.
+    const game::GameState s = play(r, 3, false);
+    CHECK(owned(s, settlers) == std::vector<ObjectId>{homeworld, nearPlanet, nextPlanet});
+    CHECK(s.empire(settlers).homeSystem == home);
+    CHECK(s.empire(rivals).homeSystem == rival);
+    for (const auto& c : s.colonies)
+        if (c) {
+            CHECK(c->homeworld);  // every starting planet is a capital of type Homeworld
+            CHECK(c->colonyType == "Homeworld");
+        }
+    // Every candidate system starts explored, Quiet too, which receives nothing. Another
+    // player's home system, one where empires cannot start and one two jumps away are not candidates.
+    const game::Empire& settler = s.empire(settlers);
+    for (SystemId sys : {home, next, near, quiet}) CHECK(settler.hasExplored(sys));
+    for (SystemId sys : {rival, hole, far}) CHECK_FALSE(settler.hasExplored(sys));
+    CHECK(s.colony(holePlanet) == nullptr);
+    CHECK(s.colony(farPlanet) == nullptr);
+
+    // The rival's only candidate is its home system (Home is another player's), so both of
+    // its extra planets are created there: on free sectors of the inner 11 x 11 area,
+    // named one above the number of sectors holding a planet.
+    std::vector<std::string> names;
+    for (ObjectId p : owned(s, rivals)) {
+        if (p.index() < natural) continue;
+        const SpaceObject& made = s.galaxy.object(p);
+        CHECK(made.system == rival);
+        CHECK(made.sector.x >= 1);
+        CHECK(made.sector.x <= 11);
+        CHECK(made.sector.y >= 1);
+        CHECK(made.sector.y <= 11);
+        for (ObjectId o : s.galaxy.system(rival).objects)
+            if (o != p) CHECK(s.galaxy.object(o).sector != made.sector);
+        names.push_back(made.name);
+    }
+    CHECK(names == std::vector<std::string>{"Rival II", "Rival III"});
+    CHECK_FALSE(s.empire(rivals).hasExplored(home));
+
+    // Three extra planets: nothing else fits in the candidate systems, so one is created in one of them.
+    const game::GameState crowded = play(r, 4, false);
+    const auto mine = owned(crowded, settlers);
+    REQUIRE(mine.size() == 4);
+    CHECK(crowded.colony(moon) == nullptr);
+    const SpaceObject& created = crowded.galaxy.object(mine.back());
+    REQUIRE(created.id.index() >= natural);
+    CHECK(std::set<SystemId>{home, next, near, quiet}.contains(created.system));
+    CHECK(created.name == std::format("{} {}", crowded.galaxy.system(created.system).name, romanNumeral(planetSectors(q.g, created.system) + 1)));
+
+    // With shared systems allowed, another player's home system is a candidate as well.
+    CHECK(play(r, 3, true).empire(settlers).hasExplored(rival));
+
+    // Two rounds when the quadrant holds more than 60 % of Maximum Number Of Systems
+    // (7 of 10 here): Far, beyond Near, joins the candidates.
+    ruleset::Ruleset data = test::buildEngineRuleset();
+    data.settings.set("Maximum Number Of Systems", "10");
+    const game::Rules small{std::move(data)};
+    const game::GameState wide = play(small, 4, false);
+    CHECK(owned(wide, settlers) == std::vector<ObjectId>{homeworld, nearPlanet, nextPlanet, farPlanet});
+    CHECK(wide.empire(settlers).hasExplored(far));
+}
+
+TEST_CASE("homeworld placement: a created homeworld takes a sector without a planet and counts planet sectors") {
+    const auto& rs = fixture();
+    // Every sector of the only start-eligible system holds an Ice planet, except (7, 7),
+    // which holds an asteroid field and a storm.
+    Quadrant q(rs);
+    const SystemId crowd = q.system("Crowd");
+    q.system("Void", false);
+    for (int n = 0; n < kSystemSize * kSystemSize; ++n) {
+        const Sector where{n % kSystemSize, n / kSystemSize};
+        if (where == Sector{7, 7}) {
+            q.add(crowd, ObjectKind::Asteroids, kAsteroidType, where);
+            q.add(crowd, ObjectKind::Storm, kStormType, where);
+        } else {
+            q.add(crowd, ObjectKind::Planet, kIceMethaneSmallType, where);
+        }
+    }
+    const std::vector<EmpireStart> rock{{"Rock Folk", "Rock", "Oxygen"}};
+    for (uint64_t seed = 1; seed <= 3; ++seed) {
+        Galaxy copy = q.g;
+        Rng rng(seed);
+        auto homes = placeHomeworlds(copy, rs, rock, PlacementOptions{}, rng);
+        REQUIRE(homes.has_value());
+        const SpaceObject& made = copy.object(homes->front());
+        CHECK(made.id.index() == q.g.objects.size());
+        CHECK(made.system == crowd);
+        CHECK(made.sector == Sector{7, 7});                // other objects may share it
+        CHECK(made.name == "Crowd " + romanNumeral(169));  // 168 sectors hold a planet
+    }
+
+    // At a map point without a planet the homeworld is created there, named the same way:
+    // two sectors hold planets (one with a moon); the asteroid field and the storm do not count.
+    Quadrant m(rs);
+    const SystemId pointed = m.system("Pointed");
+    m.add(pointed, ObjectKind::Planet, kIceMethaneSmallType, {1, 1});
+    m.add(pointed, ObjectKind::Planet, kIceMethaneSmallType, {1, 1});
+    m.add(pointed, ObjectKind::Planet, kIceMethaneSmallType, {2, 2});
+    m.add(pointed, ObjectKind::Asteroids, kAsteroidType, {3, 3});
+    m.add(pointed, ObjectKind::Storm, kStormType, {4, 4});
+    PlacementOptions po;
+    po.startingPoints = {{pointed, {5, 5}, 0}};
+    Rng rng(9);
+    std::vector<StartingPoint> held;
+    auto homes = placeHomeworlds(m.g, rs, rock, po, rng, &held);
+    REQUIRE(homes.has_value());
+    CHECK(m.g.object(homes->front()).sector == Sector{5, 5});
+    CHECK(m.g.object(homes->front()).name == "Pointed III");
+    CHECK(held == po.startingPoints);  // a specific point stays with the game
+}
+
+TEST_CASE("made planets take the numeral after the highest I to XXX of each sector's first planet") {
+    const auto& rs = fixture();
+    Quadrant q(rs);
+    const SystemId sys = q.system("Xyz");
+    CHECK(nextPlanetNumeral(q.g, sys) == 1);
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {1, 1}, "Xyz II");
+    CHECK(nextPlanetNumeral(q.g, sys) == 3);
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {1, 1}, "Xyz VII");                // second planet of its sector
+    q.add(sys, ObjectKind::Asteroids, kAsteroidType, {2, 2}, "Xyz Asteroid Belt IX");      // asteroid fields do not count
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {3, 3}, "Xyz XXXI");               // beyond XXX
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {4, 4}, "New Terra");              // renamed
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {5, 5}, "Xyz Star A");             // a moon of a star
+    CHECK(nextPlanetNumeral(q.g, sys) == 3);
+    q.add(sys, ObjectKind::Planet, kIceMethaneSmallType, {6, 6}, "Xyz XXX");
+    CHECK(nextPlanetNumeral(q.g, sys) == 31);
 }
 
 TEST_CASE("installed data set: every quadrant type generates cleanly (opt-in)") {

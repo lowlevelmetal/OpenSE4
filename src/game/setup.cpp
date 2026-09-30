@@ -102,16 +102,24 @@ bool surfaceMatches(std::string_view a, std::string_view b) {
     return keysEqual(norm(a), norm(b));
 }
 
-// The planets beyond the homeworld (spec 01 §3.6, confirmed: binary): from the
-// home system and the systems up to one warp jump away (two when the quadrant
-// holds more than 60 % of Maximum Number Of Systems), skipping systems that are
-// not start-eligible (the home system always counts) and, unless empires may
-// share systems, systems where another empire is present. Sectors are scanned
-// in order for free planets of the empire's atmosphere and type (and the home
-// size when every player planet has the same size) that are no one's
-// homeworld; the rest are created in random candidate systems, on an empty
-// sector of the inner 11 × 11 area. Systems are taken nearest first, then in
-// system order (inferred).
+// The planets beyond the homeworld (spec 01 §3.6, confirmed: binary).
+//  1. Candidate systems: the home system, then one or two rounds (two when the
+//     quadrant holds more than 60 % of Maximum Number Of Systems, compared
+//     exactly) that go through the list as it stands and append, system by
+//     system, the destinations of its warp points in the order of those warp
+//     points, skipping systems already listed.
+//  2. Systems that are not start-eligible are dropped, and unless empires may
+//     share systems, so are systems where another empire has a colony and
+//     other players' home systems (placed already, even when set up later).
+//     The home system always stays (inferred for the second filter: it only
+//     matters when a map puts two empires in one system, spec 01 §14 Q41).
+//     Every system left is explored for the empire.
+//  3. Sectors 0..168 of each candidate system in order; in each only the first
+//     planet counts. It is taken when it has no colony, the empire's
+//     atmosphere and planet type (and the home size when every player planet
+//     has the same size) and is nobody's homeworld.
+//  4. The rest are created in random candidate systems, on a sector of the
+//     inner 11 × 11 area that holds no object.
 std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const Empire& e, std::span<const ObjectId> homes, int count) {
     std::vector<ObjectId> out;
     if (count <= 0) return out;
@@ -119,46 +127,53 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
     const ObjectId home = homes[e.id.index()];
     const SystemId homeSys = s.galaxy.object(home).system;
     const int homeSize = homePlanetSize(rs, homeValueOf(s.options), e.race.nativeSurface, e.race.atmosphere);
-    // "More than 60 %", compared exactly (inferred: the original's floating-point comparison).
-    const int reach = static_cast<int64_t>(s.galaxy.systems.size()) * 10 > int64_t{6} * maxSystemCount(rs) ? 2 : 1;
-    const std::vector<int> jumps = warpJumps(s.galaxy, homeSys);
-    auto othersPresent = [&](SystemId sys) {
+    const int rounds = static_cast<int64_t>(s.galaxy.systems.size()) * 10 > int64_t{6} * maxSystemCount(rs) ? 2 : 1;
+
+    std::vector<SystemId> systems{homeSys};
+    auto listed = [&](SystemId sys) { return std::find(systems.begin(), systems.end(), sys) != systems.end(); };
+    for (int round = 0; round < rounds; ++round) {
+        const size_t asItStands = systems.size();
+        for (size_t i = 0; i < asItStands; ++i)
+            for (SystemId next : s.galaxy.neighbors(systems[i]))  // warp points in creation order
+                if (!listed(next)) systems.push_back(next);
+    }
+
+    auto otherColony = [&](SystemId sys) {
         for (ObjectId o : s.galaxy.system(sys).objects)
             if (const Colony* c = s.colony(o); c && c->owner != e.id) return true;
         return false;
     };
-    std::vector<SystemId> systems;
-    for (int d = 0; d <= reach; ++d)
-        for (const StarSystem& sys : s.galaxy.systems) {
-            if (jumps[sys.id.index()] != d) continue;
-            const bool eligible = sys.type.index() < rs.systemTypes.size() && rs.systemTypes[sys.type.index()].empiresCanStartIn;
-            if (sys.id != homeSys && !eligible) continue;
-            if (!s.options.sameSystemAllowed && othersPresent(sys.id)) continue;
-            systems.push_back(sys.id);
-        }
+    auto otherHome = [&](SystemId sys) {
+        for (size_t i = 0; i < homes.size(); ++i)
+            if (i != e.id.index() && homes[i].valid() && s.galaxy.object(homes[i]).system == sys) return true;
+        return false;
+    };
+    std::erase_if(systems, [&](SystemId sys) {
+        if (sys == homeSys) return false;
+        const ruleset::SystemTypeId type = s.galaxy.system(sys).type;
+        const bool eligible = type.index() < rs.systemTypes.size() && rs.systemTypes[type.index()].empiresCanStartIn;
+        return !eligible || (!s.options.sameSystemAllowed && (otherColony(sys) || otherHome(sys)));
+    });
+    for (SystemId sys : systems) sight::markExplored(s, e.id, sys);
+
     auto taken = [&](ObjectId o) {
         return std::find(homes.begin(), homes.end(), o) != homes.end() || std::find(out.begin(), out.end(), o) != out.end();
     };
-    for (SystemId sysId : systems) {
-        std::vector<ObjectId> objects = s.galaxy.system(sysId).objects;
-        std::stable_sort(objects.begin(), objects.end(), [&](ObjectId a, ObjectId b) {
-            const Sector sa = s.galaxy.object(a).sector, sb = s.galaxy.object(b).sector;
-            return sa.y * kSystemSize + sa.x < sb.y * kSystemSize + sb.x;
-        });
-        for (ObjectId o : objects) {
+    for (SystemId sysId : systems)
+        for (const auto& planet : firstPlanetPerSector(s.galaxy, sysId)) {
             if (static_cast<int>(out.size()) >= count) return out;
-            const SpaceObject& obj = s.galaxy.object(o);
-            if (obj.kind != ObjectKind::Planet || s.colony(o) || taken(o)) continue;
+            if (!planet || s.colony(*planet) || taken(*planet)) continue;
+            const SpaceObject& obj = s.galaxy.object(*planet);
             if (!keysEqual(obj.atmosphere, e.race.atmosphere) || !surfaceMatches(obj.surface, e.race.nativeSurface)) continue;
             if (s.options.allPlanetsSameSize && stellarSizeOf(rs, obj) != homeSize) continue;
-            out.push_back(o);
+            out.push_back(*planet);
         }
-    }
     while (static_cast<int>(out.size()) < count) {
-        const SystemId target = systems.empty() ? homeSys : systems[s.rng.below(systems.size())];
+        const SystemId target = systems[s.rng.below(systems.size())];
         std::vector<Sector> inner;
         for (Sector sct : emptySectors(s.galaxy, target))
             if (sct.x >= 1 && sct.x <= 11 && sct.y >= 1 && sct.y <= 11) inner.push_back(sct);
+        // The original redraws without limit; with the inner area full we take any inner sector (OpenSE4 choice).
         const Sector where = inner.empty() ? Sector{s.rng.rangeInt(1, 11), s.rng.rangeInt(1, 11)} : inner[s.rng.below(inner.size())];
         out.push_back(createStartingPlanet(s.galaxy, rs, target, where, e.race.nativeSurface, e.race.atmosphere,
                                            s.options.allPlanetsSameSize ? homeSize : 0, s.options.finiteResources, s.rng));
@@ -167,11 +182,13 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
     return out;
 }
 
-// Every starting planet is set up like the homeworld (spec 02 §9, confirmed:
-// binary): its system explored, ruins removed, the Home Planet Value (plus
-// R[1,10] − 5 per resource in a normal game), conditions unchanged, a colony of
-// the empire's race at maximum population, and the starting facilities.
-void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId planet, bool capital) {
+// Every starting planet, the homeworld and the extra ones alike, is set up the
+// same way (spec 02 §9, confirmed: binary): its system explored, ruins
+// removed, the Home Planet Value (plus R[1,10] − 5 per resource in a normal
+// game), conditions unchanged, and a colony of the empire's race at maximum
+// population that is a capital (anger at most 80) of colony type "Homeworld",
+// with the starting facilities.
+void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId planet) {
     SpaceObject& obj = s.galaxy.object(planet);
     sight::markExplored(s, e.id, obj.system);
     std::erase_if(obj.abilities, [](const ruleset::Ability& a) {
@@ -188,8 +205,8 @@ void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId plane
     Colony c;
     c.planet = planet;
     c.owner = e.id;
-    c.homeworld = capital;
-    c.colonyType = capital ? "Homeworld" : "Balanced";
+    c.homeworld = true;
+    c.colonyType = "Homeworld";
     c.foundedTurn = 0;
     c.population.push_back({e.id, 0});
     s.colonies[planet.index()] = std::move(c);
@@ -388,9 +405,11 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     po.finiteResources = s.options.finiteResources;
     po.allPlanetsSameSize = s.options.allPlanetsSameSize;
     if (setup.map) po.startingPoints = setup.map->startingPoints;
-    auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng);
+    auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng, &s.startingPoints);
     if (!homes) return std::unexpected(homes.error());
     objectsGrown(s);  // placement may have created planets
+    // The home systems are recorded now and never move (spec 02 §2).
+    for (size_t i = 0; i < n; ++i) s.empires[i].homeSystem = s.galaxy.object((*homes)[i]).system;
 
     // ---- Each empire's starting planets, in player order (step 8, spec 02 §9).
     for (size_t i = 0; i < n; ++i) {
@@ -400,7 +419,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         const int extras = e.kind == PlayerKind::Neutral ? 0 : std::max(0, s.options.startingPlanets - 1);
         std::vector<ObjectId> planets{home};
         for (ObjectId o : extraStartingPlanets(r, s, e, *homes, extras)) planets.push_back(o);
-        for (size_t k = 0; k < planets.size(); ++k) setUpStartingPlanet(r, s, e, planets[k], k == 0);
+        for (ObjectId p : planets) setUpStartingPlanet(r, s, e, p);
         e.claimedSystems.push_back(s.galaxy.object(home).system);
     }
 

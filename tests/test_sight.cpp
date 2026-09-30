@@ -195,6 +195,75 @@ TEST_CASE("sight: a ship or planet carrying sight obscuration hides its sector")
     CHECK(sight::planetObscuration(r, w.s, rock) == sight::SightVector{3, 3, 3, 3, 3});
 }
 
+TEST_CASE("sight: only storms, planets, asteroid fields, ships and bases obscure a sector") {
+    // Spec 01 §6.2, §14 Q32 (confirmed: binary): stars, warp points, comets, unit groups
+    // and colony facilities never obscure a sector, whatever abilities they carry.
+    ruleset::Ruleset data = buildRuleset();
+    ruleset::Facility fog;
+    fog.name = "Mv Fog Screen";
+    fog.group = "Test";
+    fog.cost = {100, 0, 0};
+    fog.abilities = {ab(AbilityKind::SectorSightObscuration, 3)};
+    data.facilities.push_back(fog);
+    ruleset::Component smoke = data.components[test::componentIndex(rules(), "Mv Fighter Tank")];
+    smoke.name = "Mv Fighter Smoke";
+    smoke.abilities = {ab(AbilityKind::SectorSightObscuration, 3)};
+    data.components.push_back(smoke);
+    data.reindex();
+    const Rules r{std::move(data)};
+    World w(r, 3);
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A");
+    w.spawn(w.ship(kA, "Watcher", 1), at(a, 0, 0));
+    const VehicleId target = w.spawn(w.ship(kB, "Target", 1), at(a, 5, 5));
+    auto obscure = [&](ObjectKind kind) {
+        const ObjectId o = w.object(a, kind, {5, 5});
+        w.s.galaxy.object(o).abilities.push_back(ab(AbilityKind::SectorSightObscuration, 3));
+        return o;
+    };
+    for (ObjectKind kind : {ObjectKind::Star, ObjectKind::WarpPoint, ObjectKind::Comet, ObjectKind::DestroyedStar}) obscure(kind);
+    w.spawn(w.design(kC, "Smoker", "Test Fighter Hull", {"Test Fighter Engine", "Mv Fighter Smoke"}), at(a, 5, 5));
+    const ObjectId rock = w.planet(a, {5, 5});
+    w.colony(rock, kC, 1000, {"Mv Fog Screen"});
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    CHECK(sight::obscuration(r, w.s, w.v(target)) == sight::SightVector{1, 1, 1, 1, 1});
+    CHECK(sight::canSeePlanet(r, w.s, kA, rock));
+
+    // An asteroid field's own rolled ability does obscure it (so do storms and planets).
+    const ObjectId field = obscure(ObjectKind::Asteroids);
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    CHECK(sight::planetObscuration(r, w.s, rock) == sight::SightVector{3, 3, 3, 3, 3});
+    w.s.galaxy.object(field).abilities.clear();
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    sight::updateKnowledge(r, w.s);
+    CHECK(std::find(w.s.empire(kA).knowledge.visibleVehicles.begin(), w.s.empire(kA).knowledge.visibleVehicles.end(), target) !=
+          w.s.empire(kA).knowledge.visibleVehicles.end());
+}
+
+TEST_CASE("sight: an owned planet's facilities give their sensor levels whether or not anyone lives there") {
+    ruleset::Ruleset data = buildRuleset();
+    ruleset::Facility eye;
+    eye.name = "Mv Psychic Array";
+    eye.group = "Test";
+    eye.cost = {100, 0, 0};
+    eye.abilities = {abText(AbilityKind::SensorLevel, "Psychic", 3)};
+    data.facilities.push_back(eye);
+    data.reindex();
+    const Rules r{std::move(data)};
+    World w(r);
+    const SystemId a = w.system("A");
+    const ObjectId outpost = w.planet(a, {2, 2});
+    w.colony(outpost, kA, 0, {"Mv Psychic Array"});  // nobody lives there (spec 01 §6.1, §14 Q26)
+    const VehicleId cloaked = w.spawn(w.ship(kB, "Sneak", 1, {"Mv Cloak"}), at(a, 8, 8));
+    w.v(cloaked).status = VehicleStatus::Cloaked;
+    const auto sensors = sight::sensorLevels(r, w.s, kA, a);
+    CHECK(sensors[static_cast<size_t>(SightType::Psychic)] == 3);
+    CHECK(sensors[static_cast<size_t>(SightType::EMActive)] == 1);
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(cloaked)));  // a level-3 cloak, seen by Psychic 3
+    sight::updateKnowledge(r, w.s);
+    CHECK(visibleIn(w.s, kA, cloaked));
+}
+
 TEST_CASE("sight: omnipresence gives presence everywhere but does not reveal cloaks") {
     World w;
     const Rules& r = w.rules();
