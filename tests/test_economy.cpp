@@ -481,9 +481,22 @@ TEST_CASE("economy: output reaches the treasury only through a spaceport") {
     CHECK(out.connected);
     CHECK(out.deliveryPercent == 100);
 
+    // The home system is recorded at game creation and never moves: after the
+    // homeworld is lost its other colonies there keep the quarter, and a
+    // capital elsewhere never gets it (spec 02 §2, §5.5).
+    CHECK(s.empire(kMe).homeSystem == homeSys);
+    far.facilities = {facilityIndex(*r, "Test Mine")};
+    far.population = {{kMe, 1000}};
+    far.homeworld = true;
+    Colony& moon = addColony(s, kMe, freePlanet(s, homeSys, true), 1000);
+    moon.facilities = {facilityIndex(*r, "Test Mine")};
+    s.colonies[home.planet.index()].reset();
+    CHECK(economy::colonyOutput(*r, s, moon).deliveryPercent == 25);
+    CHECK(economy::colonyOutput(*r, s, far).deliveryPercent == 0);
+
     // The No Spaceports trait connects every system.
     giveTrait(*r, s, kMe, "Free Traders");
-    CHECK(economy::colonyOutput(*r, s, home).deliveryPercent == 100);
+    CHECK(economy::colonyOutput(*r, s, far).deliveryPercent == 100);
 }
 
 TEST_CASE("economy: visible enemy ships and bases in the sector blockade a planet") {
@@ -1391,6 +1404,34 @@ TEST_CASE("economy: plague kills a fixed amount by level until prevented or cure
     CHECK(home.population[1].millions == 100);
 }
 
+TEST_CASE("economy: cargo above the capacity stays until the planet loses population to plague") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {});
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId troop = addTestDesign(s, r, kMe, "Marines", "Test Troop Hull", {"Test Troop Rifle"});
+    const int64_t capacity = colonyCargoCapacity(r, s, home);
+    const int64_t size = r.hull(s.design(fighter).hull).tonnage;
+    const int64_t mass = r.setting("Population Mass", 5);
+    // Two fighters too many, plus 2M of people.
+    home.cargo.units = {{fighter, static_cast<int>(capacity / size + 2)}, {troop, 1}};
+    home.cargo.population = {{kThem, 1}, {kMe, 1}};
+    populationTurn(r, s);  // no damage, no plague: nothing is removed
+    const int64_t over = cargoSpaceUsed(r, s, home.cargo);
+    CHECK(over > capacity);
+
+    // The plague strikes: people first, 1M at a time from the first group,
+    // then units one at a time from the first stack (spec 02 §2, §13 Q49).
+    home.plagueLevel = 1;
+    populationTurn(r, s);
+    CHECK(home.cargo.population.empty());
+    CHECK(cargoSpaceUsed(r, s, home.cargo) <= capacity);
+    CHECK(home.cargo.unitCount(troop) == 1);
+    CHECK(home.cargo.unitCount(fighter) * size + r.hull(s.design(troop).hull).tonnage <= capacity);
+    CHECK(cargoSpaceUsed(r, s, home.cargo) + size > capacity);  // no more than needed
+    CHECK(over - 2 * mass > capacity);
+}
+
 TEST_CASE("economy: a colony whose people all die is removed and its planet loses value") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
@@ -1725,6 +1766,7 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     const Colony& rebel = *s.colony(farId);
     CHECK(rebel.owner == id);
     CHECK(rebel.homeworld);
+    CHECK(s.empire(id).homeSystem == s.galaxy.object(farId).system);  // its capital's system
     CHECK(rebel.anger == 80);
     CHECK(rebel.population[0].race == id);
     CHECK(s.empire(id).kind == PlayerKind::Computer);

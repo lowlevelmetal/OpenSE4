@@ -402,6 +402,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         for (ObjectId o : extraStartingPlanets(r, s, e, *homes, extras)) planets.push_back(o);
         for (size_t k = 0; k < planets.size(); ++k) setUpStartingPlanet(r, s, e, planets[k], k == 0);
         e.claimedSystems.push_back(s.galaxy.object(home).system);
+        e.homeSystem = s.galaxy.object(home).system;  // never moves (spec 02 §2)
     }
 
     // ---- The starting stockpile (spec 02 §9, confirmed: binary): Starting

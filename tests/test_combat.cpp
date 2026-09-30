@@ -1090,6 +1090,27 @@ TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
     CHECK(s.colony(home.planet)->totalPopulation() == 1000);
 }
 
+TEST_CASE("combat: a planet that takes damage sheds cargo above its capacity") {
+    // Spec 02 §2, §13 Q49: the population held as cargo goes first, 1M at a time.
+    const Rules& r = combatRules();
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& home = homeworld(s, ar.b);
+    home.population = {{ar.b, 1000}};
+    const int64_t capacity = colonyCargoCapacity(r, s, home);
+    const int64_t mass = r.setting("Population Mass", 5);
+    home.cargo.units.clear();
+    home.cargo.population = {{ar.b, capacity / mass + 3}};
+    REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
+    spawn(s, frigate(s, ar.a, "Bomber", 3, {"CT Neutron Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+    REQUIRE(s.colony(home.planet) != nullptr);
+    REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
+    REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
+    CHECK(s.colony(home.planet)->cargo.population[0].millions == capacity / mass);
+}
+
 TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the map") {
     Arena ar = makeArena();
     GameState& s = ar.s;

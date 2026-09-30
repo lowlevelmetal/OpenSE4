@@ -697,6 +697,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.colonyTypes = old.colonyTypes;
     e.repairPriorities = old.repairPriorities;
     e.claimedSystems.push_back(system);
+    e.homeSystem = system;  // the capital's system, never moved (spec 02 §2)
     e.knowledge.explored.assign(s.galaxy.systems.size(), seen);
     e.knowledge.present.assign(s.galaxy.systems.size(), 0);
     e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);

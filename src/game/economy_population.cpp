@@ -160,6 +160,7 @@ bool plague(TurnContext& ctx, Colony& c) {
         g.millions -= n;
         left -= n;
     }
+    trimCargoToCapacity(r, s, c);  // cargo above the capacity goes now (spec 02 §2)
     ctx.log(c.owner, LogCategory::Events, std::format("Plague on {}", name), std::format("{}M died of the plague this turn.", dead),
             locationOf(s.galaxy, c.planet));
     return true;
@@ -311,6 +312,23 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
 }
 
 } // namespace
+
+// ---- Cargo over capacity ------------------------------------------------------------------------
+
+void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c) {
+    const int64_t capacity = colonyCargoCapacity(r, s, c);
+    while (cargoSpaceUsed(r, s, c.cargo) > capacity) {
+        // Population first, 1M at a time, from the first group (inferred: the spec names no group).
+        if (auto g = std::find_if(c.cargo.population.begin(), c.cargo.population.end(), [](const PopulationGroup& p) { return p.millions > 0; });
+            g != c.cargo.population.end()) {
+            if (--g->millions <= 0) c.cargo.population.erase(g);
+            continue;
+        }
+        auto u = std::find_if(c.cargo.units.begin(), c.cargo.units.end(), [](const UnitStack& x) { return x.count > 0; });
+        if (u == c.cargo.units.end()) break;
+        if (--u->count <= 0) c.cargo.units.erase(u);
+    }
+}
 
 // ---- Colonies ending ------------------------------------------------------------------------------
 

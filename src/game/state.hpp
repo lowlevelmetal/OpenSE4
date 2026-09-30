@@ -202,6 +202,10 @@ struct Empire {
     std::vector<Relation> relations;        // per EmpireId
     Knowledge knowledge;
 
+    // The empire's home system (spec 02 §2, §5.5): recorded when the game is
+    // created (a rebel empire: its capital's system when it is founded) and
+    // never moved, even after the homeworld is lost.
+    SystemId homeSystem;
     std::vector<SystemId> claimedSystems;
     std::vector<SystemId> systemsToAvoid;
     std::vector<Location> taggedMinefields;

@@ -2646,6 +2646,7 @@ void Battle::finish() {
         std::erase_if(p.population, [](const PopulationGroup& g) { return g.millions <= 0; });
         c->population = p.population;
         c->facilities = p.facilities;
+        if (p.damaged) economy::trimCargoToCapacity(r_, s_, *c);  // cargo above the capacity goes when the planet takes damage (spec 02 §2)
         c->militia = p.militia;
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);

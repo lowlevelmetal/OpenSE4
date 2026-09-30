@@ -97,11 +97,7 @@ Resources designCost(const Rules& r, const Design& d) {
 
 bool isShipOrBase(ruleset::VehicleType t) { return t == ruleset::VehicleType::Ship || t == ruleset::VehicleType::Base; }
 
-SystemId homeSystem(const GameState& s, EmpireId e) {
-    for (const auto& c : s.colonies)
-        if (c && c->owner == e && c->homeworld) return s.galaxy.object(c->planet).system;
-    return {};
-}
+SystemId homeSystem(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() ? s.empire(e).homeSystem : SystemId{}; }
 
 int starCount(const GameState& s, SystemId sys) {
     int n = 0;
