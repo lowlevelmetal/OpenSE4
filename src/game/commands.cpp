@@ -1,6 +1,7 @@
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
@@ -359,6 +360,9 @@ struct Applier {
             QueueItem item = c.item;
             item.spent = {};
             item.count = std::max(1, item.count);
+            // An upgrade's count is every lower-level facility of the target's
+            // family there now, fixed from here on (spec 02 §6.6, confirmed: binary).
+            if (item.kind == QueueItem::Kind::Upgrade) item = economy::upgradeItem(r, *s.colony(c.target.planet), item.facility);
             if (c.position < 0 || static_cast<size_t>(c.position) >= q.items.size()) q.items.push_back(item);
             else q.items.insert(q.items.begin() + c.position, item);
             return R{};
@@ -387,6 +391,7 @@ struct Applier {
         return queueEdit(c.target, [&](ConstructionQueue& q) {
             if (c.index >= q.items.size()) return R::fail("No such item");
             if (c.count < 1) return R::fail("Count must be positive");
+            if (q.items[c.index].kind == QueueItem::Kind::Upgrade) return R::fail("An upgrade converts every older facility; its count is fixed");
             q.items[c.index].count = c.count;
             return R{};
         });
@@ -397,8 +402,9 @@ struct Applier {
             if (c.autoWaypoint < -1 || c.autoWaypoint >= static_cast<int>(emp().waypoints.size())) return R::fail("Invalid waypoint");
             q.onHold = c.onHold;
             q.repeat = c.repeat;
-            // Leaving emergency mode starts slow mode (spec 02 §6.4).
-            if (q.emergency && !c.emergency) q.slowTurns = std::max(1, q.emergencyTurns);
+            // Leaving emergency mode leaves the counter as it is: slow mode lasts
+            // as many turns as the emergency ran, none when no turn passed (spec 02 §6.4).
+            if (q.emergency && !c.emergency) q.slowTurns = q.emergencyTurns;
             if (!q.emergency && c.emergency && q.slowTurns > 0) return R::fail("The yard is recovering from emergency construction");
             if (!q.emergency && c.emergency) q.emergencyTurns = 0;
             q.emergency = c.emergency;
@@ -998,15 +1004,17 @@ std::string queueItemProblem(const Rules& r, const GameState& s, EmpireId empire
             return {};
         }
         case QueueItem::Kind::Upgrade: {
+            // `facility` is the target (spec 02 §6.6). The Upgrades tab offers only
+            // researched targets; we check that here too, since commands can come
+            // from anywhere.
             if (!col) return "Only planets upgrade facilities";
             if (item.facility >= r.data().facilities.size()) return "Unknown facility";
-            const int family = r.facility(item.facility).family;
-            const auto latest = r.latestFacilityOfFamily(emp, family);
-            if (!latest) return "Nothing to upgrade to";
-            const int newest = r.facility(*latest).romanNumeral;
-            for (uint32_t f : col->facilities)
-                if (r.facility(f).family == family && r.facility(f).romanNumeral < newest) return {};
-            return "No older facilities of that kind here";
+            if (!r.facilityAvailable(emp, item.facility)) return "Facility not yet researched";
+            if (economy::upgradeCount(r, *col, item.facility) == 0) return "Nothing to upgrade here";
+            // A queue refuses a second upgrade to the same target (confirmed: binary).
+            for (const auto& q : col->queue.items)
+                if (q.kind == QueueItem::Kind::Upgrade && q.facility == item.facility) return "That upgrade is already queued here";
+            return {};
         }
     }
     return "Unknown item";

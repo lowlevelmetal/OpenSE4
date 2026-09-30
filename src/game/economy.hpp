@@ -184,12 +184,36 @@ int reproductionPercent(const Rules& r, const GameState& s, const Colony& c);
 // Per-turn construction rate of a queue (spec 02 §6.2), with the computer
 // bonus and emergency or slow mode.
 Resources constructionRate(const Rules& r, const GameState& s, EmpireId e, const cmd::QueueTarget& t);
-// Full cost of a queue item (vehicle design cost × count, facility, upgrade).
+// Full cost of a queue item: design cost × count, facility cost × count, or
+// for an upgrade trunc(target cost × Upgrade Facility Cost Percent / 100) ×
+// its stored count (spec 02 §6.6, confirmed: binary).
 Resources itemCost(const Rules& r, const GameState& s, EmpireId e, const cmd::QueueTarget& t, const QueueItem& item);
 // Turns to finish `remaining` at `rate` (max over resources, ceil); -1 = never.
 int turnsToComplete(const Resources& remaining, const Resources& rate);
-// Facilities of `facility`'s family on a colony below the newest level the empire has.
-int upgradeableCount(const Rules& r, const GameState& s, EmpireId e, const Colony& c, uint32_t facility);
+// Facilities of `target`'s family on the colony whose level (Roman Numeral) is
+// below the target's: what an upgrade to `target` converts (spec 02 §6.6).
+int upgradeCount(const Rules& r, const Colony& c, uint32_t target);
+// An upgrade item to `target` as the queue stores it: the target and the
+// count, both fixed when it is queued (cmd::QueueAdd sets them the same way).
+QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target);
+// Whether the queue can no longer build this item: a ship or base once the
+// queue has no space yard, a facility or upgrade in a ship's queue, an
+// upgrade with nothing left to upgrade (spec 02 §6.1). Such items are removed
+// at the start of the queue's turn.
+bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t, const QueueItem& item);
+
+// ---- Empire experience (spec 02 §9) -------------------------------------------------------------------
+
+// The largest experience total (confirmed: binary).
+inline constexpr int kMaxEmpireExperience = 500'000'000;
+// Adds to an empire's experience, never beyond kMaxEmpireExperience. Gained
+// from kills in combat (tonnage div 10), finished facility items (their count)
+// and ships built (hull tonnage div 10); it has no effect on play.
+void gainExperience(Empire& e, int64_t amount);
+// The race age shown for an experience total: Newborn up to 5,000, then
+// Infantile, Young, Moderate, Old, Ancient, God-like, Stellar Ancients and
+// First Ones (confirmed: binary).
+std::string_view raceAge(int64_t experience);
 
 // ---- Treasury (spec 02 §5.6, §7) ------------------------------------------------------------------
 

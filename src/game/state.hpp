@@ -325,8 +325,8 @@ struct QueueItem {
     enum class Kind : uint8_t { Vehicle, Facility, Upgrade };
     Kind kind = Kind::Vehicle;
     DesignId design;          // Vehicle
-    uint32_t facility = 0;    // Facility: Facility.txt index; Upgrade: family representative
-    int count = 1;            // units built as a batch
+    uint32_t facility = 0;    // Facility: Facility.txt index; Upgrade: the target facility, fixed when queued
+    int count = 1;            // built as a batch; Upgrade: facilities to convert, fixed when queued (spec 02 §6.6)
     Resources spent;          // progress on the current item
 };
 

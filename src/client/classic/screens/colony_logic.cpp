@@ -358,22 +358,22 @@ game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game:
 }
 
 std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c) {
+    // One item per family, to the newest level researched, with the count the
+    // queue will store: every lower-level facility of the family here. A queue
+    // refuses a second upgrade to the same target (spec 02 §6.6).
     const game::Empire& emp = s.empire(e);
-    std::set<int> queued;
+    std::set<uint32_t> queued;
     for (const game::QueueItem& q : c.queue.items)
-        if (q.kind == game::QueueItem::Kind::Upgrade && q.facility < r.data().facilities.size()) queued.insert(r.facility(q.facility).family);
+        if (q.kind == game::QueueItem::Kind::Upgrade) queued.insert(q.facility);
     std::vector<game::QueueItem> out;
     std::set<int> seen;
     for (uint32_t f : c.facilities) {
         const int family = r.facility(f).family;
-        if (queued.contains(family) || seen.contains(family)) continue;
+        if (seen.contains(family)) continue;
         const auto latest = r.latestFacilityOfFamily(emp, family);
-        if (!latest || r.facility(*latest).romanNumeral <= r.facility(f).romanNumeral) continue;
+        if (!latest || r.facility(*latest).romanNumeral <= r.facility(f).romanNumeral || queued.contains(*latest)) continue;
         seen.insert(family);
-        game::QueueItem item;
-        item.kind = game::QueueItem::Kind::Upgrade;
-        item.facility = *latest;
-        out.push_back(item);
+        out.push_back(game::economy::upgradeItem(r, c, *latest));
     }
     return out;
 }

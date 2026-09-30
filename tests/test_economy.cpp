@@ -885,6 +885,12 @@ TEST_CASE("economy: hold, riots, emergency and slow build") {
     CHECK(turn() == 500);
     CHECK(turn() == 500);
     CHECK(turn() == 2000);
+
+    // Switched off before a turn has passed, it costs nothing (spec 02 §6.4).
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, false, true, -1}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, false, false, -1}).ok);
+    CHECK(home.queue.slowTurns == 0);
+    CHECK(turn() == 2000);
 }
 
 TEST_CASE("economy: repeat build keeps the top item while it can be built") {
@@ -975,23 +981,37 @@ TEST_CASE("economy: units go into cargo, one at a time, in the same sector only"
     const VehicleId h = addTestVehicle(s, r, hauler, homeLoc).id;
     const VehicleId elsewhere = addTestVehicle(s, r, hauler, Location{homeLoc.system, Sector{homeLoc.sector.x == 0 ? 1 : 0, 0}}).id;
     REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    s.empire(kMe).log.clear();
     economyTurn(r, s);
     CHECK(s.vehicle(h)->cargo.unitCount(fighter) == 2);  // 50 kT holds two 20 kT fighters
     CHECK(s.vehicle(elsewhere)->cargo.unitCount(fighter) == 0);
     CHECK(s.design(fighter).built == 5);  // the third found no room and was not built
-    CHECK(home.queue.items.empty());
-    CHECK(logged(s, kMe, "No Storage Available"));
+    // The last unit found no room: the item stays at the top with its full
+    // count and no progress; one message per unit lost (spec 02 §6.5, Q39).
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].count == 3);
+    CHECK(home.queue.items[0].spent.isZero());
+    const auto noRoom = [&] {
+        return std::count_if(s.empire(kMe).log.begin(), s.empire(kMe).log.end(),
+                             [](const LogEntry& l) { return l.title.starts_with("No Storage Available"); });
+    };
+    CHECK(noRoom() == 1);
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);  // paid again; now nothing fits: three messages
+    CHECK(s.design(fighter).built == 5);
+    CHECK(noRoom() == 3);
+    REQUIRE(home.queue.items.size() == 1);
 
     // Unit caps are checked at launch, not here.
     s.options.maxUnitsPerPlayer = 0;
     home.cargo.population.clear();
     REQUIRE(economy::itemCost(r, s, kMe, q, item) == Resources{120, 0, 15});
-    home.queue.items.push_back(item);
     economyTurn(r, s);
     CHECK(s.design(fighter).built == 8);
+    CHECK(home.queue.items.empty());
 }
 
-TEST_CASE("economy: facilities need a free slot; upgrades replace older levels") {
+TEST_CASE("economy: facilities need a free slot; with one the whole count is built") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     dropVehicles(s, kMe);
@@ -999,45 +1019,169 @@ TEST_CASE("economy: facilities need a free slot; upgrades replace older levels")
     const int slots = facilitySlots(r, s, home);
     home.facilities.assign(static_cast<size_t>(slots - 1), facilityIndex(r, "Test Farm"));
     home.queue.items = {facilityItem(r, "Test Mine"), facilityItem(r, "Test Mine")};  // the second overfills
+    home.queue.items[0].count = 3;
     s.empire(kMe).stockpile = {40000, 40000, 40000};
-    economyTurn(r, s);
-    CHECK(static_cast<int>(home.facilities.size()) == slots);
+    s.empire(kMe).experience = 0;
+    auto moods = economyTurn(r, s);
+    // One slot was free: all three are added, past the slots (spec 02 §6.5, Q38).
+    CHECK(static_cast<int>(home.facilities.size()) == slots + 2);
+    CHECK(countMood(moods, "Facility Constructed") == 3);
+    CHECK(s.empire(kMe).experience == 3);  // a finished facility item adds its count
     REQUIRE(home.queue.items.size() == 1);
     CHECK(home.queue.items[0].spent.isZero());
-    economyTurn(r, s);  // paid for, but no slot: the progress is lost
-    CHECK(static_cast<int>(home.facilities.size()) == slots);
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);  // paid for, but no slot: the progress is lost and nothing is said
+    CHECK(static_cast<int>(home.facilities.size()) == slots + 2);
     REQUIRE(home.queue.items.size() == 1);
     CHECK(home.queue.items[0].spent.isZero());
     CHECK(s.empire(kMe).economy.construction == Resources{300, 0, 0});
-    CHECK(logged(s, kMe, "No facility slot"));
+    CHECK_FALSE(logged(s, kMe, "Test Mine"));
+    CHECK(s.empire(kMe).experience == 3);
 
-    // Upgrades: every older mine on the planet becomes the newest level.
-    home.queue.items.clear();
-    home.facilities = {facilityIndex(r, "Test Mine"), facilityIndex(r, "Test Mine"), facilityIndex(r, "Test Farm")};
-    s.empire(kMe).techLevels[techArea(r, "Test Economics").index()] = 3;
-    QueueItem up;
-    up.kind = QueueItem::Kind::Upgrade;
-    up.facility = facilityIndex(r, "Test Mine");
-    const cmd::QueueTarget q{home.planet, {}};
-    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, up}).ok);
-    CHECK(economy::upgradeableCount(r, s, kMe, home, up.facility) == 2);
-    CHECK(economy::itemCost(r, s, kMe, q, home.queue.items[0]) == Resources{400, 0, 0});  // trunc(50 % of 400), twice
+    // A second space yard is not checked for again at completion.
+    home.facilities = {facilityIndex(r, "Test Space Yard")};
+    home.queue.items = {facilityItem(r, "Test Space Yard")};
     economyTurn(r, s);
-    CHECK(home.facilities[0] == facilityIndex(r, "Test Mine II"));
-    CHECK(home.facilities[1] == facilityIndex(r, "Test Mine II"));
-    CHECK(home.facilities[2] == facilityIndex(r, "Test Farm"));
+    CHECK(std::count(home.facilities.begin(), home.facilities.end(), facilityIndex(r, "Test Space Yard")) == 2);
+}
+
+namespace {
+
+// Test rules with a third mine level, researched from the start.
+std::unique_ptr<Rules> upgradeRules(int upgradePercent = 50) {
+    return tweakedRules([&](ruleset::Ruleset& rs) {
+        ruleset::Facility f = rs.facilities[facilityIndex(engineRules(), "Test Mine II")];
+        f.name = "Test Mine III";
+        f.romanNumeral = 3;
+        f.cost = {600, 20, 0};
+        f.requirements.clear();
+        rs.facilities.push_back(std::move(f));
+        setKey(rs, "Upgrade Facility Cost Percent", upgradePercent);
+    });
+}
+
+QueueItem upgradeTo(const Rules& r, std::string_view target) {
+    QueueItem it;
+    it.kind = QueueItem::Kind::Upgrade;
+    it.facility = facilityIndex(r, target);
+    return it;
+}
+
+} // namespace
+
+TEST_CASE("economy: an upgrade stores its target and count when queued") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t mine = facilityIndex(*r, "Test Mine"), mine2 = facilityIndex(*r, "Test Mine II"), mine3 = facilityIndex(*r, "Test Mine III");
+    const uint32_t farm = facilityIndex(*r, "Test Farm");
+    Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine II", "Test Farm", "Test Mine"});
+    s.empire(kMe).techLevels[techArea(*r, "Test Economics").index()] = 3;
+    const cmd::QueueTarget q{home.planet, {}};
+    CHECK(economy::upgradeCount(*r, home, mine3) == 3);
+    CHECK(economy::upgradeCount(*r, home, mine2) == 2);
+
+    // The count is every lower level of the family, whatever the client sends.
+    QueueItem up = upgradeTo(*r, "Test Mine III");
+    up.count = 1;
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, up}).ok);
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].facility == mine3);
+    CHECK(home.queue.items[0].count == 3);
+    // trunc(target cost × 50 %) × the stored count (spec 02 §6.6).
+    CHECK(economy::itemCost(*r, s, kMe, q, home.queue.items[0]) == Resources{300 * 3, 10 * 3, 0});
+    // The count cannot be changed, and a second upgrade to the same target is refused.
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueSetCount{q, 0, 1}).ok);
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine II")}).ok);  // another target is fine
+    CHECK(home.queue.items[1].count == 2);
+    home.queue.items.pop_back();
+    // Nothing to upgrade: refused.
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Farm")}).ok);
+
+    // A mine built since does not change the price or the count: the stored
+    // count converts facility types in their stored order (the order each type
+    // first appears), not lowest level first.
+    home.facilities.push_back(mine);
+    CHECK(economy::itemCost(*r, s, kMe, q, home.queue.items[0]) == Resources{900, 30, 0});
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine2, farm, mine3, mine3});
     CHECK(home.queue.items.empty());
+    CHECK(logged(s, kMe, "3 facilities are now Test Mine III"));
+
+    // Upgrades never repeat.
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, true, false, -1}).ok);
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine3, farm, mine3, mine3});
+    CHECK(home.queue.items.empty());
+}
+
+TEST_CASE("economy: an upgrade with fewer facilities left converts those, at the full price") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t mine = facilityIndex(*r, "Test Mine"), mine3 = facilityIndex(*r, "Test Mine III");
+    Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine", "Test Mine"});
+    const cmd::QueueTarget q{home.planet, {}};
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(home.queue.items[0].count == 3);
+    home.facilities.pop_back();  // one mine is lost before the upgrade finishes
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine3});
+    CHECK(s.empire(kMe).economy.construction == Resources{900, 30, 0});
+
+    // At the start of a queue's turn an upgrade with nothing left is removed,
+    // even from under the top item (spec 02 §6.1).
+    home.facilities = {mine, mine};
+    home.queue.items = {facilityItem(*r, "Test Farm")};
+    home.queue.items[0].count = 1;
+    home.queue.items.push_back(economy::upgradeItem(*r, home, mine3));
+    REQUIRE(home.queue.items.back().count == 2);
+    home.facilities = {mine3, mine3};
+    home.queue.onHold = true;  // also on hold (inferred, spec 02 §13 Q53)
+    economyTurn(*r, s);
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].kind == QueueItem::Kind::Facility);
 }
 
 TEST_CASE("economy: upgrade prices truncate per facility") {
     auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Upgrade Facility Cost Percent", 33); });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine", "Test Mine"});
-    s.empire(kMe).techLevels[techArea(*r, "Test Economics").index()] = 3;
-    QueueItem up;
-    up.kind = QueueItem::Kind::Upgrade;
-    up.facility = facilityIndex(*r, "Test Mine");
+    const QueueItem up = economy::upgradeItem(*r, home, facilityIndex(*r, "Test Mine II"));
+    CHECK(up.count == 3);
     CHECK(economy::itemCost(*r, s, kMe, cmd::QueueTarget{home.planet, {}}, up) == Resources{pctTrunc(400, 33) * 3, 0, 0});
+}
+
+TEST_CASE("economy: ships leave a queue that has lost its yard at the start of its turn") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {"Test Space Yard"});
+    const cmd::QueueTarget q{home.planet, {}};
+    const DesignId ship = frigate(s, r, kMe);
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    QueueItem warship;
+    warship.design = ship;
+    QueueItem wasps;
+    wasps.design = fighter;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, wasps}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    home.facilities.clear();  // the yard is gone (lost in battle, say)
+    CHECK(economy::itemObsolete(r, s, q, home.queue.items[0]));
+    CHECK_FALSE(economy::itemObsolete(r, s, q, home.queue.items[1]));
+    const size_t before = s.vehicles.size();
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(r, s);
+    // Both ships are gone before anything is paid; the units are built instead.
+    CHECK(s.vehicles.size() == before);
+    CHECK(home.queue.items.empty());
+    CHECK(home.cargo.unitCount(fighter) == 1);
+    CHECK_FALSE(logged(s, kMe, "cannot build"));
 }
 
 TEST_CASE("economy: space yard ships build where they are, but not while cloaked") {

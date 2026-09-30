@@ -186,7 +186,10 @@ TEST_CASE("classic ui: facility upgrades and choices") {
     const auto everything = facilityChoices(r, s.empire(kMe), false);
     CHECK(std::find(everything.begin(), everything.end(), mine) != everything.end());
 
-    // Once queued, the family is no longer offered.
+    // Each item carries the count the queue stores: every older mine here.
+    for (const QueueItem& item : upgrades)
+        if (item.facility == mine2) CHECK(item.count == std::count(home.facilities.begin(), home.facilities.end(), mine));
+    // Once queued, that upgrade is no longer offered.
     for (const QueueItem& item : upgrades) {
         CHECK(queueItemProblem(r, s, kMe, cmd::QueueTarget{home.planet, {}}, item).empty());
         CHECK(apply(r, s, kMe, cmd::QueueAdd{{home.planet, {}}, item, -1}).ok);

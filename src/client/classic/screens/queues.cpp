@@ -975,9 +975,7 @@ private:
         } else if (item->facility < r.data().facilities.size()) {
             const ruleset::Facility& f = r.facility(item->facility);
             if (item->kind == game::QueueItem::Kind::Upgrade) {
-                int older = 0;
-                if (const game::Colony* c = s.colony(target_.planet))
-                    for (uint32_t x : c->facilities) older += r.facility(x).family == f.family && r.facility(x).romanNumeral < f.romanNumeral;
+                const int older = item->count;  // fixed when queued (spec 02 §6.6)
                 ImGui::TextColored(kTextGood, "Upgrades %d older facilit%s of this kind here.", older, older == 1 ? "y" : "ies");
             }
             ImGui::TextColored(kTextDim, "%s", f.description.c_str());

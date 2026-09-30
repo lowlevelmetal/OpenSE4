@@ -174,6 +174,28 @@ int characteristicPointCost(const Rules& r, Characteristic c, int value) {
     return static_cast<int>(points);
 }
 
+// ---- Empire experience ----------------------------------------------------------------------------
+
+void gainExperience(Empire& e, int64_t amount) {
+    if (amount <= 0) return;
+    e.experience = static_cast<int>(std::min<int64_t>(int64_t{e.experience} + amount, kMaxEmpireExperience));
+}
+
+std::string_view raceAge(int64_t experience) {
+    // Each label covers experience up to its limit (confirmed: binary).
+    static constexpr std::array<std::pair<int64_t, std::string_view>, 8> kAges{{{5'000, "Newborn"},
+                                                                                {10'000, "Infantile"},
+                                                                                {50'000, "Young"},
+                                                                                {200'000, "Moderate"},
+                                                                                {1'000'000, "Old"},
+                                                                                {10'000'000, "Ancient"},
+                                                                                {100'000'000, "God-like"},
+                                                                                {400'000'000, "Stellar Ancients"}}};
+    for (const auto& [limit, name] : kAges)
+        if (experience <= limit) return name;
+    return "First Ones";
+}
+
 // ---- Modifier tables -------------------------------------------------------------------------------
 
 PopulationModifier populationModifier(const Rules& r, int64_t population) {
