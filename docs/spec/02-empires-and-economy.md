@@ -458,11 +458,15 @@ out    = base × value%_r / 100 × (100 + mod) / 100   // value% omitted for res
 - `culture_r` is culture Production, Research or Intelligence.
 
 **Open points**
-- Whether the terms add or multiply is unconfirmed. We default to adding, because the
-  Planet Report's Ability tab lists the population, mood and racial terms as separate
-  percentage abilities.
-- `Population Required to Operate One Facility` may limit active facilities to
-  `floor(pop / 50)` (§13).
+- The population, mood, aptitude and culture terms **add**: the observed Quick Start
+  homeworld matches the formula exactly (07-observations, Calibration). The facility
+  modifiers are assumed to add the same way (§13 Q1).
+- Truncation happens after the value step and after the modifier step, per planet.
+- `Population Required to Operate One Facility` is **not** applied to output: the stock
+  tutorial expects a new colony of a few million to produce (§13 Q3).
+- A rioting planet makes nothing, including solar output.
+- **Finite games** [I]: value % is not applied; each resource's output is capped by the
+  stock left and drawn from it.
 
 Solar output (`Val1 × stars`) and `Generate Points` are added afterwards, without
 modifiers [H].
@@ -739,7 +743,8 @@ Quick Start picks from the Settings style list and hands out premade designs [H]
 
 **Homeworld**
 - A homeworld's colony type is fixed [H].
-- Its starting population, facilities and stock are unknown (§13).
+- A medium homeworld has been observed with full population, 15 facilities and 20000 of
+  each resource (07-observations, Calibration); other setups are open (§13 Q21).
 
 ---
 
@@ -845,13 +850,13 @@ Each step iterates in stable ID order.
 
 ## 13. Open questions to verify in the running game
 
-1. **Modifier combination.** Are the population, mood, aptitude, culture and facility
-   percentages added (the §5.1 default) or multiplied? Is rounding done per planet or per
-   facility?
-2. **Mood multipliers.** Settings gives 80–120; the Happiness.txt header gives 60–140.
-   Does Settings win?
-3. **Facility staffing.** Is `Population Required to Operate One Facility` enforced? For
-   example, does a 10M colony with 3 miners produce anything?
+1. **Modifier combination.** *Answered for population, mood, aptitude and culture: they
+   add* (07-observations, Calibration). Still open: do the planet and system facility
+   modifiers add too, and is rounding per planet (our choice) or per facility?
+2. **Mood multipliers.** *Answered: Settings wins* (Happy = 110 %, 07-observations).
+3. **Facility staffing.** What does `Population Required to Operate One Facility` do? The
+   tutorial expects a 4M colony with miners to produce, so it does not limit output; it
+   may govern facility loss when bombardment kills population (§3). Not implemented.
 4. **Queue rate.**
    - Does a planet with no yard use 2000 per resource?
    - Do population SY, Construction Aptitude, culture SY Rate and Hardy Industrialists add
@@ -876,18 +881,24 @@ Each step iterates in stable ID order.
 10. **Rebellion.** How long must a planet riot before it can rebel, and with what chance?
     Who gets the planet?
 11. **Income floor.** Does `Minimum Empire X Generation` apply to gross or net income? Does
-    it apply to an empire with no planets?
+    it apply to an empire with no planets? (Current choice: gross, and only for empires
+    that hold a planet.)
 12. **Home system.** Does the home system deliver 25 % of its output without a spaceport?
+    (Current choice: yes, while the empire holds its homeworld.)
 13. **Storage timing.** Is the cap applied before or after spending? Are scrap refunds
-    capped?
+    capped? (Current choice: after construction; refunds made with the turn's orders are
+    capped by that step.)
 14. **Maintenance.**
     - Is the shortfall computed per resource or summed?
     - How are the scuttled vehicles chosen?
-    - Do units stored in cargo pay?
-    - What is the sign convention of `Modified Maintenance Cost`?
-    - How does culture Maintenance combine with the aptitude?
+    - Do units stored in cargo pay? (Current choice: no; unit groups in space pay per
+      unit.)
+    - What is the sign convention of `Modified Maintenance Cost`? (Current choice: the
+      factor is `100 + Val1`, so −50 halves it, as the stock bases need.)
+    - How does culture Maintenance combine with the aptitude? (Current choice: both are
+      subtracted from the base rate, §7.)
 15. **Storage trait.** Does `Planet Storage Space` (+20 %) apply to cargo, resource storage,
-    or both?
+    or both? (Current choice: cargo only.)
 16. **Finite games.**
     - How much stock is used per turn, and does value % still apply?
     - What does `Planet Value Percent Loss After Owner Death` do?
@@ -898,8 +909,50 @@ Each step iterates in stable ID order.
     anywhere?
 20. **Plague.** How much population does each plague level kill per turn, and how does a
     plague progress?
-21. **Homeworld start.** What population, facilities, stock and value does a homeworld
-    start with for each setup choice?
+21. **Homeworld start.** *Partly answered for a medium homeworld at default settings*
+    (07-observations, Calibration): full population, 15 facilities, 20000 of each
+    resource, values within a couple of points of 100 %. Still open: the other sizes and
+    setup choices, and whether the 15th facility is really a resupply depot.
 22. **Setup ranges.** What are the actual racial-point options (likely 2000, 3000 and
     5000) and starting-resource options?
 23. **Experience and race age.** What gameplay effect, if any, do they have?
+
+The engine (`src/game/economy*.cpp`) implements these guesses until they are checked; each
+is marked "(inferred)" in the code.
+
+24. **Mood and reproduction.** Only the range (−5 to +5) is known. We use Rioting −5,
+    Angry −4, Unhappy −2, Indifferent 0, Happy +2, Jubilant +5. A race with a negative
+    rate shrinks, but never below 1M; a race with a positive rate grows at least 1M.
+25. **Conditions bands.** We use five 20-point bands (Pleasant ≥ 80, Mild, Unpleasant,
+    Harsh, Deadly < 20). Reproduction penalty 0/1/2/3/5 points and anger 0/5/10/15/25
+    tenths per turn, both scaled by `(200 − Environmental Resistance) %`. Unpleasant must
+    cost as much reproduction as Happy gives (the calibration shows 10 %).
+26. **Mixed races.** The owner's happiness model and characteristics set the planet's
+    mood and output; natural drift is the population-weighted mix of `Natural Decrease`
+    and `… for Other Races`. Is anger really per planet?
+27. **Presence.** Our ships (ships and bases) and enemy vehicles count once per colony,
+    and the sector trigger replaces the system one. Troops count per unit. Is that right?
+28. **Happiness facilities.** Val1 is taken as percent (×10 tenths) of calming per turn;
+    the planet and system versions do not stack (the best counts).
+29. **Queue leftovers and repeat.** What a finished item does not use goes to the next
+    item in the same turn; a repeated item is built at most once per turn.
+30. **Unit overflow.** Units that do not fit in the builder go to other colonies (by
+    planet id), then other ships and bases (by id), anywhere. If the whole batch does
+    not fit, it waits at the top of the queue with its progress.
+31. **Planet drift cadence.** Facility value and conditions changes are applied once a
+    year (every 10 turns), as the facility texts say; the data header says per turn.
+    In finite games a value change is a percentage of the stock.
+32. **Remote mining.** One extractor works per empire, sector and resource (the
+    strongest). In normal games it takes `Val1 × value %` and lowers the value by one
+    point per turn; in finite games it takes up to Val1 from the stock.
+33. **Overcrowding.** A colony over its maximum (a dome went up) loses the surplus at
+    once.
+34. **Rebellion.** After 10 turns of rioting, a 10 % chance per turn; the planet becomes
+    a new computer empire of its majority race, which starts Happy.
+35. **Plague.** Each level kills 1 % of every race per turn (at least 1M) until the
+    system's Plague Prevention or an own or allied Medical Bay in the sector reaches the
+    level, or the race has `No Plagues`.
+36. **Maintenance victims.** Unpaid amounts are summed over the resources; victims are
+    drawn at random among vehicles that pay maintenance (a unit group loses one unit).
+37. **Opening research pool.** We add the starting minerals setting once, on the first
+    turn (spec 05 §1.1).
