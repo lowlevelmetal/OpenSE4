@@ -39,6 +39,9 @@ add_executable(opense4
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
     client/classic/screens/setup.cpp
+    client/classic/screens/setup_empire.cpp
+    client/classic/screens/setup_model.cpp
+    client/classic/screens/setup_widgets.cpp
     client/classic/screens/ships.cpp
     client/classic/session.cpp
     client/classic/ui.cpp
@@ -50,6 +53,6 @@ add_executable(opense4
     client/views/galaxy_view.cpp
     client/views/starfield.cpp
     client/views/system_view.cpp)
-target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_assets opense4_gfx imgui opense4_warnings)
+target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_assets opense4_gfx imgui tomlplusplus opense4_warnings)
 target_compile_definitions(opense4 PRIVATE OPENSE4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 set_target_properties(opense4 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")

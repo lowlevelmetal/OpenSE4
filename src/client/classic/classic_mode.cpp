@@ -35,7 +35,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
               mode->rules_->racePresets().size());
     applyClassicStyle();
 
-    if (options.skipIntro) {
+    if (auto front = frontScreenByName(options.openWindow)) {
+        mode->front_ = std::move(front);  // automation: --open=<front-end screen>
+    } else if (options.skipIntro) {
         std::string race = options.race;
         if (race.empty())
             for (const auto& p : mode->rules_->racePresets())

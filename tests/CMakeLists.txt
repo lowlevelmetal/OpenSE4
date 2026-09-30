@@ -15,10 +15,13 @@ add_executable(opense4_tests
     test_research.cpp
     test_ruleset.cpp
     test_score.cpp
-    test_turn.cpp
-    # Client logic that needs no UI (classic windows).
-    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game doctest opense4_warnings)
+    test_setup_model.cpp
+    test_turn.cpp)
+# Classic client logic without UI dependencies, tested directly.
+target_sources(opense4_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp)
+target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game doctest tomlplusplus opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
