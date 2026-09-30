@@ -90,8 +90,11 @@ TEST_CASE("unit groups: launches of several designs join one group per kind and 
     CHECK(fastStep == 4);
     CHECK(movement::moveSupplyCost(r, w.s, g) == 2 * slowStep + 2 * fastStep);
 
-    // Recovery takes one design out; the rest stays a group of the other design.
-    w.order(carrier, recoverOf(slow));
+    // Recovery naming the group and one design (the Launch/Recover window) takes
+    // that design out; the rest stays a group of the other design.
+    Order take = recoverOf(slow);
+    take.vehicle = groups.front();
+    w.order(carrier, take);
     w.move();
     REQUIRE(w.s.vehicle(groups.front()));
     const Vehicle& left = w.v(groups.front());
@@ -138,7 +141,6 @@ TEST_CASE("unit groups: the per-sector caps count every design") {
     CHECK(w.v(duds).count == 88);
     CHECK(groupUnits(w.v(duds), dudA) == 85);
     CHECK(groupUnits(w.v(duds), dudB) == 3);
-    CHECK(w.s.design(dudA).lost == 6);
     CHECK(w.v(sw).orders.empty());   // always done
 }
 

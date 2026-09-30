@@ -450,7 +450,7 @@ TEST_CASE("turn-based: orders that need no movement run one after another; a rep
     CHECK(d.w.v(hauler).repeatOrders);
 }
 
-TEST_CASE("turn-based: an Attack order goes after its target without asking, fights it at once and stays") {
+TEST_CASE("turn-based: an Attack order's approach asks like any step; once in, it fights its target at once and stays") {
     Duel d;
     const VehicleId gunboat = d.w.spawn(d.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Armor", "Mv Armor"}), at(d.a, 0, 0));
     fuel(d.w, gunboat);
@@ -460,8 +460,13 @@ TEST_CASE("turn-based: an Attack order goes after its target without asking, fig
     attack.kind = OrderKind::Attack;
     attack.location = at(d.a, 2, 0);
     attack.vehicle = target;
+    // The step into the target's sector asks (spec 03 §6.2, confirmed: binary).
     const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(gunboat, {attack}));
-    CHECK(res.questions.empty());
+    REQUIRE(res.questions.size() == 1);
+    CHECK(res.questions[0].where == at(d.a, 2, 0));
+    CHECK(d.s().combats.empty());
+    const TurnResult in = applyLive(d.r(), d.s(), kA, cmd::EnterSector{gunboat, {}, at(d.a, 2, 0), true});
+    CHECK_FALSE(hasRejection(in));
     REQUIRE(d.s().combats.size() == 1);
     CHECK(d.s().combats[0].location == at(d.a, 2, 0));
     REQUIRE(d.s().vehicle(gunboat));

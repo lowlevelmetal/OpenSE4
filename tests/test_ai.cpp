@@ -2137,7 +2137,7 @@ TEST_CASE("ai: computer players copy the four movement flags of AI_Settings each
     ai::updateAiStates(ctx);
     CHECK(s.empire(EmpireId{0u}).clearOrdersOnEncounter == EncounterClear::Enemy);
     CHECK(s.empire(EmpireId{1u}).clearOrdersOnEncounter == EncounterClear::Any);
-    CHECK(s.empire(EmpireId{2u}).clearOrdersOnEncounter == EncounterClear::Never);  // a human sets their own
+    CHECK(s.empire(EmpireId{2u}).clearOrdersOnEncounter == EncounterClear::Enemy);  // a human sets their own (on for a new empire)
     // Absent keys: the movement flags are off (spec 05 §7.5), whatever the empire had.
     CHECK_FALSE(s.empire(EmpireId{0u}).avoidTaggedMinefields);
     CHECK_FALSE(s.empire(EmpireId{0u}).avoidRestrictedSystems);

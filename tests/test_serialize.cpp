@@ -350,6 +350,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetMinisters{kAllMinisters, std::string("Aggressive"), true, false, std::nullopt, true});
     c.push_back(cmd::SetEncounterOptions{EncounterClear::Any});
     c.push_back(cmd::EnterSector{VehicleId{31u}, FleetId{}, {SystemId{32u}, Sector{3, 4}}, false});
+    c.push_back(cmd::EditDesign{DesignId{3u}, design});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
