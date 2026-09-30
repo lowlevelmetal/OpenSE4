@@ -9,8 +9,9 @@ it contradicts the manual, the history wins** and we cite it as "(history 1.xx)"
 On 2026-09-29 most rules below were checked against the original executable. Rules
 marked **(confirmed: binary)** describe what the game really does, in our own words;
 where the binary disagreed with an earlier reading, the rule was rewritten. Rules still
-marked **(inferred)** are our own choices. Section 19 lists the open questions, with
-the answers found so far.
+marked **(inferred)** are our own choices. Section 19 lists the questions that were
+open; on 2026-09-30 the last of them were answered from the executable, and §19.1 keeps
+the engine's own choices and OpenSE4's extensions.
 
 Conventions:
 
@@ -43,62 +44,135 @@ Conventions:
 
 ## 2. When combat happens
 
-**Turn-based games.**
+**Turn-based games** (confirmed: binary unless marked).
 
-- Combat is checked when a group of vehicles moves into a sector or carries out an order
-  there. Mines strike first (§10.6), then the battle check runs (confirmed: binary).
-  Vehicles that merely sit in a sector do not start a new battle.
-- A battle starts when two hostile empires present in the sector can see each other.
+- Only three things run a battle check, at the group's sector: every movement step of a
+  group (a warp jump included), after mines have struck (§10.6); the Attack order; and a
+  Seek order whose group is already at its target. Sentry and every other order never
+  start a battle, and vehicles that merely sit in a sector do not either.
+- The Attack order spends 1 movement point and runs the check; it is then removed, and
+  without movement left it is removed doing nothing. A Seek order at its target decloaks
+  the group, attacks, and stays at the head of the list, so it attacks again (and may
+  start a new battle) every time the list runs: at the start of each of the owner's turns
+  and whenever orders are given.
+- **Who must see whom.** The check is one-directional: some empire of the moving group
+  must see an object in the sector belonging to an empire it is hostile to. If the whole
+  moving group is cloaked, another empire present there with an uncloaked object must
+  instead see one of the group's objects and be hostile to it. Mothballed ships,
+  planets and minefields all count as present; nothing is skipped for being mothballed,
+  so a hostile group moving in on a lone mothballed ship it can see starts a battle.
 - **Hostility** follows treaties: an empire is hostile to another when its treaty with
   it is below Non-Aggression, that is War, Non-Intercourse, "None" (met, no treaty) or
-  not yet met. Non-Aggression and anything better never fight (confirmed: binary).
+  not yet met. Non-Aggression and anything better never fight.
 - Once a battle starts, **every owned object in the sector** becomes a piece, including
   the vehicles and planets of empires that are hostile to nobody there, and every piece
-  is decloaked for the rest of the battle (confirmed: binary; history 1.28). Treaties
-  still apply inside the battle: no piece fires on or is fired on by a non-hostile
-  empire.
-- Undetected cloaked vehicles do not count when deciding whether a battle starts.
+  is decloaked for the rest of the battle (history 1.28). Treaties still apply inside
+  the battle: no piece fires on or is fired on by a non-hostile empire.
 - Mines are not combat pieces. They act when a vehicle group enters their sector (§10.6).
-- Combat does not clear orders or stop movement. Its only effect on orders is that a
-  Sentry order at the head of a participant's list is removed (spec 03 §6.3, confirmed:
-  binary). A ship that changes owner in the battle loses its orders (§12).
+- **Orders.** A group whose movement step or warp jump started a battle fails its order,
+  and every member's whole order list is cleared (spec 03 §6.4). An Attack order is used
+  up; a Seek order stays. Every other participant keeps its orders, except that a Sentry
+  order at the head of its list is removed (spec 03 §6.3), and a ship that changes owner
+  in the battle loses its orders (§12).
+- **Who sees the battle.** A battle is shown only when at least one human-controlled
+  empire has a piece in it, hostile or not; otherwise it is resolved unseen. In a game
+  played on one machine, one question per battle, answered at the machine, applies to
+  all human empires in it (§3 step 1). In a game played on different machines nobody is
+  asked: the battle is shown in the strategic window when the player whose turn it is is
+  human, and resolved unseen when it is a computer empire.
 
-**Simultaneous games.** Tactical combat is never offered, and the computer resolves every
-battle. The manual's older rule (combat only on every 5th day) was replaced (history 1.15,
-1.42). Movement now triggers combat, at most once per sector per movement phase, and only
-in sectors where a vehicle executed orders while hostile pieces were present. Results
-arrive as log entries. The Settings flag `Simultaneous Games Show Strategic Combat`
-decides whether the strategic view is shown.
+**Simultaneous games** (confirmed: binary). Tactical combat is never offered, and the
+computer resolves every battle. The manual's older rule (combat only on every 5th day)
+was replaced (history 1.15, 1.42). After each of the 30 daily steps of the movement phase,
+every sector where an object (a vehicle or a colony) carried out an order that day is
+checked, whatever the order: a Sentry that just waits counts too. The check passes when an
+empire with an uncloaked vehicle or unit group in the sector sees an object (not a
+minefield) of an empire it is hostile to; a colony alone never counts as the side that
+sees. A sector that already had a battle this game turn is skipped when every owned
+object now there took part in it, so a standing order can start one battle per game turn,
+and a second only when newcomers arrive. No order list is cleared. Results arrive as log
+entries. Battles are not shown unless the Settings flag `Simultaneous Games Show
+Strategic Combat` is set; then every battle is shown in the strategic window.
 
-**Game option "No Tactical Combat".** It removes the tactical choice, so every battle is
-strategic.
+**Game option "No Tactical Combat".** It is one of the game's general options. With it
+on, the combat window offers only the strategic view, so every battle is strategic
+(confirmed: binary).
 
 ## 3. Battle setup
 
-1. Each human participant chooses **Tactical** or **Strategic** resolution. The rules are
-   identical, and only control differs.
+1. **Tactical or Strategic** (confirmed: binary). In a game played on one machine, one
+   question per battle, answered at the machine, chooses **Tactical** or **Strategic**
+   for all human empires in it (hostile or not); when the player whose turn it is is a
+   computer empire, a notice naming the system and the empires comes first. With
+   Tactical, every human-controlled empire in the battle plays its phases by hand and
+   computer empires follow their strategies. With the "No Tactical Combat" option only
+   the strategic view is offered. Games on different machines, and simultaneous games,
+   never ask (§2). The rules are identical; only control differs.
 2. **Pieces.** Every owned object in the sector becomes a piece: ships and bases, planets
    with a colony, satellite, fighter and drone groups already in space. Minefields and
    storms never become pieces. Unowned stars, warp points, comets and uncolonised
    planets become neutral 4×4 obstacles (confirmed: binary).
 3. **Defenders and attackers.** Each vehicle remembers the sector it last left when it
    moved this game turn; a vehicle that has not moved since the last turn processing,
-   and every planet, counts as having been in its current sector. An empire is a
-   **defender** if one of its pieces was already in the battle sector, otherwise an
-   attacker (confirmed: binary).
+   and every planet and satellite group, counts as having been in its current sector.
+   An empire is a **defender** if one of its pieces was already in the battle sector,
+   otherwise an attacker (confirmed: binary). A vehicle that came through a warp point
+   left a sector of another system, so its empire is an attacker unless another of its
+   pieces was already there (confirmed: binary).
 4. **Placement** (confirmed: binary).
-   - The start area is a square box. Its side is 6 squares when the battle has at most
-     20 pieces, 12 for 21 to 40, 18 for 41 to 60, and 24 (doubled to 48 along the edge
-     it lies on) for more than 60.
-   - Pieces that came from one of the 8 neighbouring sectors start in a box against
-     the matching edge or corner of the map: from the north-west sector in the top-left
-     corner, from the north sector at the top centre, and so on. Pieces that were
-     already in the sector start in a box around the map centre (36, 31). When several
-     empires start in the centre, each gets its own box beside the centre.
-   - Planets and obstacles are placed first, then group leaders, then everything else.
-     A formation member goes to its formation slot relative to its leader. Any other
-     piece takes a random square inside its box. If that square is taken, the nearest
-     free square is used.
+   - **Box size.** Let S be 6 when the battle has at most 20 pieces, 12 for 21 to 40, 18
+     for 41 to 60 and 24 for more than 60. A box is given below by its top-left square
+     and its width and height; a piece's square is drawn with both ends included, so a
+     box of width S spans S + 1 columns. Let m be 2 in battles of more than 60 pieces and
+     1 otherwise.
+   - **Arrivals from a neighbouring sector** of the same system start against the
+     matching edge or corner of the map (north is the top of the map):
+
+     | Came from | Top-left square | Width × height | Facing |
+     |---|---|---|---|
+     | North-west | (0, 0) | mS × S | 2 |
+     | North | (36 − mS/2, 0) | mS × S | 2 |
+     | North-east | (71 − mS, 0) | mS × S | 2 |
+     | West | (0, 31 − mS/2) | S × mS | 1 |
+     | East | (71 − S, 31 − mS/2) | S × mS | 3 |
+     | South-west | (0, 62 − S) | mS × S | 0 |
+     | South | (36 − mS/2, 62 − S) | mS × S | 0 |
+     | South-east | (71 − mS, 62 − S) | mS × S | 0 |
+
+     So in battles of more than 60 pieces the corner boxes are 48 wide and 24 deep, like
+     the other boxes on the top and bottom edges. Facings are the numbers of spec 03 §10
+     (0 keeps the formation as drawn, 1 turns it a quarter turn clockwise, 2 a half
+     turn, 3 three quarters).
+   - **Arrivals through a warp point** (the sector they left is in another system) start
+     in a small box at the exact centre, whatever the battle size: top-left square
+     (34, 29), 4 × 4, so x 34 to 38 and y 29 to 33. They face 2.
+   - **Pieces already in the sector.** Planets and obstacles take a random top-left square
+     in x 33 to 39, y 28 to 34, whatever the battle size. Every other piece already in
+     the sector (satellite groups included) uses the centre box: top-left (36 − S/2,
+     31 − S/2), S × S. Each piece in the middle gets a random facing from 1 to 4 (never 0).
+   - **Several empires in the middle.** Count the empires (not neutral obstacles) that
+     have a piece already in the battle sector, and number them 1, 2, 3… in the order in
+     which the system lists their first object. If there are two or more, the owner of a
+     colonised planet in the sector keeps the centre box for all its pieces, and every
+     other such empire uses the box for its number, each S × S with the top-left square:
+     1 (36 − 2S, 31 − 2S) up-left; 2 (36 + 2S, 31 + 2S) down-right; 3 (36 + 2S, 31 − 2S)
+     up-right; 4 (36 − 2S, 31 + 2S) down-left; 5 (36 − S/2, 31 − 2S) up; 6 (36 − S/2,
+     31 + 2S) down; 7 (36 + 2S, 31 − S/2) right; 8 (36 − 2S, 31 − S/2) left. Numbers
+     above 8 use the centre box. The layout is not symmetric (the down and right boxes
+     lie farther out), and in bigger battles some of these boxes lie partly or wholly off
+     the map; a piece drawn off the map is moved as below. If the sector holds colonies
+     of two empires, only the one listed last keeps the centre. Warp arrivals are not
+     counted here. Their facing stays random (1 to 4).
+   - **Order and squares.** Planets and obstacles are placed first, then group leaders,
+     then everything else. A group leader in an edge box starts on the box's inner line
+     (the row or column nearest the map centre, for example row S for the top edge) at a
+     random point along it; elsewhere it takes a random square of its box. A formation
+     member goes to its formation slot relative to its leader (spec 03 §10). Any other
+     piece takes a random square inside its box. If that square is taken or off the map,
+     the piece first makes up to ten random hops of its own size in one of the four
+     straight directions, stopping on the first free square; failing that, it takes the
+     first free square in growing squares around the square first drawn (up to 100
+     squares away).
 5. **Combat groups.** Each fleet becomes one combat group: the fleet leader leads it and
    the fleet's formation applies.
 6. **Starting values** (confirmed: binary). Shields start at their maximum (§9.2),
@@ -106,7 +180,8 @@ strategic.
    weapon's reload counter is 0 (ready). Movement points are full.
 7. **Phase order** (confirmed: binary). The order in which empires act is drawn once,
    at setup, and kept for the whole battle: all defenders first in a random order, then
-   all attackers in a random order.
+   all attackers in a random order. An empire that has pieces both already in the sector
+   and arriving acts once per combat turn, in the defenders' part.
 8. Assign each piece a strategy. While a ship is in its fleet's combat group, it uses the
    fleet strategy. Once it leaves the group (broken formation, group dissolved), it
    uses its design's default strategy (history 1.84, the latest ruling).
@@ -129,10 +204,32 @@ per-turn launch counts and the list of targets engaged this turn.
 1. Its drones move and attack (drones are always computer-controlled).
 2. Its seekers move and may strike (§10.1).
 3. Its other pieces act: by hand for a human player, or through their strategies for
-   the computer (and for humans with **Auto** on). **Resolve Combat** is the same as
-   Auto for the rest of the battle.
+   the computer (§16.1).
 
-Point-defense may fire at any moment, including during other empires' phases (§10.2).
+Steps 1 and 2 run for human sides too, before the player gets control, so a player
+cannot launch before the side's drones and seekers move. Point-defense may fire at any
+moment, including during other empires' phases (§10.2).
+
+**The tactical window** (confirmed: binary).
+
+- A player's pieces act only by order: move, fire (§6), and the special orders Launch
+  Units, Launch Fighters in Groups, Drop Troops, Ram Ship, Capture Ship, Resolve Combat and
+  the four group orders (§5). Drones cannot be moved or fired by hand; drones a player
+  launches first act at the start of the side's next phase. Pieces the player leaves
+  idle do not fire by themselves when the phase ends.
+- **Auto** is one toggle for the whole battle and every empire. Pressing it does not
+  play the current phase; from the next phase on, every empire follows its strategies,
+  and play pauses after the phase of the last human empire in each combat turn (End Turn
+  goes on). Releasing it gives each empire back its normal control (in the simulator,
+  only side 1 goes back to hand control).
+- **Resolve Combat** asks for confirmation, then hands every empire to its strategies,
+  disables the window's buttons and runs the battle to its end.
+- The battle's end (§4 Length) is checked only after a phase, never in the middle of a
+  player's phase; in the strategic window only after a whole combat turn.
+- **No saving during a battle.** Both combat windows are modal and offer no way to save;
+  their options hold display settings only. Neither can be closed before the battle is
+  over (the simulator alone has Stop Combat), and a strategic battle runs to its end once
+  begun.
 
 ## 5. Movement in combat
 
@@ -150,16 +247,27 @@ Point-defense may fire at any moment, including during other empires' phases (§
 - **Occupancy.** A square holds one piece; big pieces fill their 4×4 footprint. Seekers
   may share squares.
 - **Launched units** (fighters, drones) get their full movement in the turn they launch
-  (confirmed: binary; history 1.55, 1.71). A seeker cannot move in the turn it is
+  (confirmed: binary; history 1.55, 1.71), except that a player's hand-launched drones
+  first act at the side's next phase (§4). A seeker cannot move in the turn it is
   launched (§10.1).
-- **Combat groups.** When the leader moves, each member moves toward its formation slot
-  relative to the new leader position, spending its own movement points
-  **(inferred)**. The group dissolves when the leader is destroyed, removed from the
-  group, or blocked in its movement (history 1.03). In tactical mode, groups are set
-  with Set Group Leader, Set Group Member, Clear Group Assignment and Clear All Group
-  Assignments. Hotkeys give 10 groups (0–9). Members of an AI side leave formation
-  according to the strategy's `Break Formation` flags (§16) or when the leader is
-  surrounded (history 1.21).
+- **Combat groups** (confirmed: binary unless marked). When a leader moves, by hand or
+  by strategy, each member moves toward its formation slot around the leader's new
+  square (spec 03 §10, turned by the leader's facing), spending its own movement points.
+  The move itself never dissolves a group: a blocked leader keeps it. In the tactical
+  window groups are numbered, and the player picks the number from a list:
+  - **Set Group Leader** is refused if another piece of that player already leads that
+    number, or if the piece belongs to a group. The player then picks a formation;
+    cancelling sets no group.
+  - **Set Group Member** needs an existing leader with that number and is refused for a
+    piece that already leads or belongs to a group. The member takes the next position
+    of the leader's formation, not the square where it stands.
+  - **Clear Group Assignment** clears only that piece. Members of a cleared leader keep
+    their number and follow whichever piece leads that number later. **Clear All Group
+    Assignments** clears every piece of the side.
+  - Moving a member by hand keeps it in the group.
+  Hotkeys give 10 groups (0–9). A computer piece leaves formation when its strategy in
+  effect or its category's `Break Formation` flag says so (§16.1); the manual's
+  "leader surrounded" case (history 1.21) was not found as a separate rule.
 - **Point-defense on the move** (confirmed: binary). After every step of a fighter or
   drone group, hostile point-defense in range may fire at it. After every step of any
   other piece, that piece's own point-defense may fire at a hostile target now in
@@ -181,6 +289,13 @@ binary):
    (confirmed: binary).
 3. The target is hostile, and its category is in the weapon's target set (§18.1).
 4. The weapon's damage at the range distance is greater than 0 (§8).
+
+**Firing by hand** (confirmed: binary). In the tactical window a player fires the weapons
+ticked in the piece's weapon list by clicking an enemy. Firing at a non-hostile piece or a
+neutral obstacle is refused. Each ticked weapon takes the target within the target budget
+(below); weapons that did not fire lose it again. The conditions above apply as for the
+computer, but the damage type is not checked (the computer never assigns a weapon whose
+type cannot affect the target, §16), and point-defense may be fired this way.
 
 **Supply use.** Each shot uses the component's `Supply Amount Used`, scaled by the
 mount's `Supply Percent` (Round), times the number of weapons fired together (confirmed:
@@ -273,7 +388,12 @@ same things add their values too.
 `Damage Modifier - System` and `Shield Modifier - System` are totals over the system:
 the system's own value, plus, for every colony and vehicle the empire owns anywhere in
 the system, the best single value among that colony's facilities or that vehicle's
-components. Several colonies with such facilities therefore add up.
+components. Several colonies with such facilities therefore add up. These totals, and
+the sector's interference and shield disruption, are worked out once, when the battle
+is set up, and never recomputed during it: losing parts or facilities, or a piece
+changing sides, does not change them (a piece that changes sides uses its new owner's
+totals). The combat simulator never works out the empire totals, so they are 0 there;
+the location's interference and disruption do apply (§17).
 
 Worked example: a destroyer (hull +20 defense) with ECM I (+20) whose top-left square is
 5 squares away, fired on by a ship with Combat Sensors I (+25) and no other modifiers:
@@ -312,19 +432,27 @@ Worked example: a destroyer (hull +20 defense) with ECM I (+20) whose top-left s
 Let D be the hit's damage after §8.
 
 1. **Damage Modifier - System** (§8).
-2. **Damage pool.** Every ship, planet, unit group and seeker keeps a pool of damage
-   that was too small to destroy anything. For the *hull-damaging types* (Normal, Skips
-   Normal Shields, Skips Armor, Skips Shields And Armor, Skips All Shields, Quad/Double/
-   Half/Quarter Damage To Shields), the pool is added to D and emptied.
+2. **Damage pool.** Every ship, base and seeker keeps a pool of damage that was too
+   small to destroy anything. For the *hull-damaging types* (Normal, Skips Normal
+   Shields, Skips Armor, Skips Shields And Armor, Skips All Shields, Quad/Double/
+   Half/Quarter Damage To Shields), the pool is added to D and emptied. A unit group, and
+   the units stored on a planet, keep their own pools (§9.4); a planet piece itself keeps
+   none. No pool outlives the battle: a ship's pool belongs to its piece, and the pools
+   of unit groups and stored units go back to 0 at the end of every battle (and after
+   storm, warp-turbulence, mine and stellar damage), when the units killed are removed.
+   Pools are never saved.
 3. **Push, pull and teleport** move the target now (§9.5) and the hit then continues.
 4. If the weapon cannot target this kind of piece, D becomes 0.
 5. **Crew Conversion**, **Increase Reload Time** and **Disrupt Reload Time** take effect
    now (§9.5) and set D to 0. Shields do not stop them.
-6. **Shields** (§9.2), unless the type skips them. Unit groups have no piece-level
-   shields; their units' shields count as hit points (§9.4).
+6. **Shields** (§9.2), unless the type skips them. Unit groups and seekers have no
+   piece-level shields (their pool counts as 0); a unit's shields count as hit points
+   instead (§9.4). The Quad/Double/Half/Quarter scaling still happens against a pool of 0
+   (§9.5).
 7. **Crystalline armor** (§9.3), for Normal, Skips Normal Shields, Skips All Shields and
    Quad/Double/Half/Quarter only.
-8. **Emissive armor** (§9.3), for the same types.
+8. **Emissive armor** (§9.3), for the same types. Only ships and bases have it: unit
+   groups and planets never use emissive armor.
 9. If D is still above 0 (and the type is not Shields Only), the damage goes to the
    target: components of a ship (§9.1a), units of a group (§9.4), cargo and population
    of a planet (§11), or a seeker (§10.1).
@@ -376,11 +504,12 @@ built-in bypasses.
   `Only Weapons`, `Only Shield Generators` and `Only Master Computers` ignore shields.
   Every other type (including `Only Engines`, the other "Only" types, the planet types
   and push/pull/teleport) is absorbed by shields first.
-- **Shield Regeneration**: at the start of each combat turn after the first, a piece
-  regains the total `Shield Regeneration` of its intact parts, up to its maximum, while it
-  has supplies.
+- **Shield Regeneration**: at the start of each combat turn after the first, a ship or
+  base regains the total `Shield Regeneration` of its intact parts, up to its maximum,
+  while it has supplies. Planets and unit groups never regenerate shields in combat.
 - When a generator is destroyed, the maximum drops and current shields are capped at the
-  new maximum.
+  new maximum. The system shield total used then is the one taken at setup (§7) for the
+  piece's current owner.
 - Shields refill at the start of the next battle.
 
 ### 9.3 Armor specials (confirmed: binary)
@@ -390,16 +519,21 @@ built-in bypasses.
   hit is E or less, nothing reaches the hull (shields were still drained) and the pool
   keeps its old value. Otherwise E is subtracted from what got past the shields.
   Emissive does not act against Skips Armor, Skips Shields And Armor or the "Only"
-  types.
+  types. Only ships and bases use it; unit groups and planets never do.
 - **Organic** (`Armor Regeneration`, total V). At the start of each combat turn after the
   first, while it has supplies, the ship adds V to a regeneration pool (at most 10000).
   Destroyed components with `Armor Regeneration` are then restored whole, in design order,
-  each one costing its structure from the pool. When no such component is destroyed,
-  the pool empties, so nothing is saved up before the first loss (history 1.80). At the
-  end of the battle, up to 10000 points' worth are restored at once (history 1.79).
+  each one costing its structure (with the mount) from the pool. A destroyed component
+  that costs more than what is left is skipped, and cheaper ones later in the order are
+  still restored. When no such component was destroyed at the start of this step, the
+  pool empties, so nothing is saved up before the first loss (history 1.80); when some
+  were, whatever is left after restoring stays in the pool. At the end of the battle, up
+  to 10000 points' worth are restored at once (history 1.79). A restored component takes
+  effect at the piece's next recalculation, that is after the next hit on it.
 - **Crystalline** (`Shield Generation From Damage`, total V). From each hit that gets
   past the shields, the piece gains min(V, damage) shield points, up to its shield
-  maximum (only if the maximum is above 0). The damage itself is **not** reduced.
+  maximum (only if the maximum is above 0). The damage itself is **not** reduced. It has
+  no effect on unit groups, whose piece-level shields never absorb anything.
 - **Stealth and scattering armor** add a defense bonus that stacks with ECM (§7), plus
   cloaking or scanner-jamming effects covered in the sight spec.
 
@@ -409,17 +543,31 @@ built-in bypasses.
   self-destruct triggered by boarding (§12).
 - **Crippled** (the vehicle survives but is impaired): lost command gives 1 speed on the
   system map and so 1 combat movement; lost engines reduce movement; lost weapons cannot
-  fire; lost shield generators cut shields. Lost cargo components destroy the cargo they
-  held. Which items are lost when capacity only partly drops is open.
-- **Unit groups** (confirmed: binary). A group has a damage pool. A hit adds its damage to
-  the pool (for the "Only" types and other non-hull types only for that hit). Then, up
-  to 20 times, one of the group's unit designs is picked at random; if the pool is at
-  least one unit's hit points, one unit of that design dies and its hit points leave the
-  pool. A unit's hit points are its design's structure plus its shields; for fighters,
-  troops and weapon platforms the shields are counted twice (once less when the damage
-  type skips shields). The rest stays in the pool for later hits. The group dies with
-  its last unit. `Shields Only` damage fills a separate shield pool that makes later
-  kills easier.
+  fire; lost shield generators cut shields. When a part with `Cargo Storage` is
+  destroyed, the cargo is cut to the new capacity at once, during the battle: population
+  first, 1M at a time from the first population group, then units one at a time from
+  the first stack (spec 03 §11). Restoring the part (organic armor, repair) does not
+  bring the cargo back. The same happens when mines, storms or any other damage destroy
+  the part (confirmed: binary).
+- **Unit groups** (confirmed: binary). A group (and the units stored on a planet) has a
+  damage pool P and a shield pool Q, both starting at 0.
+  - A `Shields Only` hit adds D to Q and kills nothing.
+  - A hull-damaging hit adds D to P (P at most 50000). Any other type is judged on its
+    own D alone: P is set aside for that hit and comes back unchanged afterwards, and
+    what that hit leaves is lost.
+  - Then, up to 20 times, one of the group's design entries is drawn at random, all
+    equally likely; an entry whose units are all dead wastes the draw. A unit's hit
+    points H are its design's structure plus its shields X, where fighters, troops and
+    weapon platforms count X twice (their structure already includes X once). If the
+    damage type skips the unit's shields, a unit of that entry dies when P reaches H − X,
+    and Q does not help. Otherwise it dies when P + Q reaches H.
+  - After a kill: if Q is 0, H leaves P; otherwise H − X leaves P and X leaves Q, neither
+    going below 0. The rest stays for later hits. The group dies with its last unit.
+  - Killed units stay in the group's records until the battle ends, and the group's
+    abilities (to-hit values, tracking and the like) are still totalled over all its
+    units, killed ones included. At the end of the battle the killed units are removed and
+    P and Q go back to 0.
+  - Unit groups have no piece-level shields and no emissive armor (§9.1).
 
 ### 9.5 Damage types (`Weapon Damage Type`) (confirmed: binary unless marked)
 
@@ -427,7 +575,7 @@ built-in bypasses.
 |---|---|
 | `Normal` | §9.1. |
 | `Shields Only` | Drains shields only. Harmless once shields are 0. Against a unit group it fills the group's shield pool. |
-| `Quad/Double/Half/Quarter Damage To Shields` | Against shields, D is first multiplied by 4 or 2, or divided by 2 or 4 (truncated). What is left after the shields is converted back (divided by 4 or 2, truncated, or multiplied by 2 or 4) and continues as Normal. |
+| `Quad/Double/Half/Quarter Damage To Shields` | D is first multiplied by 4 or 2, or divided by 2 or 4 (truncated), and drains the shields. What is left is converted back (divided by 4 or 2, truncated, or multiplied by 2 or 4) and continues as Normal. This happens on every hit with D above 0, even when the shields are 0 and on pieces without shields (unit groups, seekers): Quad and Double then come back unchanged, while Half loses an odd remainder and Quarter a remainder below 4, so Half with 1 damage or Quarter with 3 does nothing. |
 | `Skips Normal Shields` | Ignores the shield pool unless it is phased, then Normal. |
 | `Skips All Shields` | Ignores shields, then Normal. |
 | `Skips Armor` | Shields first, then only non-armor components; armor only when nothing else is left. |
@@ -440,22 +588,36 @@ built-in bypasses.
 | `Crew Conversion` | A roll ≤ D converts a ship to the attacker. Always fails if the ship has a Master Computer, intact or destroyed, in its design (history 1.81). Not stopped by shields. See §12. |
 | `Pushes Target` / `Pulls Target` | Moves the target up to D squares directly away from / toward the firer, one square at a time; it stops at the first taken square, at the map edge, or (pull) next to the firer. If the two share a square, a push follows the firer's facing. Planets cannot be moved, unit groups cannot push or pull, and a ship can push or pull another ship only if its hull `Tonnage` is at least the target hull's. After moving, D still counts as damage against shields and components. |
 | `Random Target Movement` | Moves the target to a random free square at least 3 squares from the top and left edges (up to 100 tries). D is ignored for the move; size limits do not apply; planets cannot be moved. D then still counts as damage. |
-| `Plague Level 1..5` | Planets only, after shields. Sets that plague level unless the owner's race is immune. |
-| `Only Planet Population` | After shields, kills D ÷ `Damage Points To Kill One Population` million population (truncated, at least 1). |
-| `Only Planet Conditions` | After shields, lowers the planet's conditions by D × 0.1. |
-| `Only Resupply Depots`, `Only Spaceports` | After shields, destroys one facility with `Supply Generation` / `Spaceport` (the first one found). |
+| `Plague Level 1..5` | Planets only, after shields. Raises the plague to that level (never lowers it) unless the owner's race is immune. |
+| `Only Planet Population` | After shields, kills D ÷ `Damage Points To Kill One Population` million population (truncated, at least 1), from the first population group on. |
+| `Only Planet Conditions` | After shields, lowers the planet's conditions (the 0–1.5 scale of spec 02) by D × 0.1, never below 0. D is after the damage modifier and shields, so a stock 20-damage weapon that gets through wipes a planet's conditions to 0. |
+| `Only Resupply Depots`, `Only Spaceports` | After shields, destroys one facility with `Supply Generation` / `Spaceport`: one intact facility of the first such stack in the planet's list. Like every facility lost in combat, it keeps working until the battle ends (§11). |
 
-Drones apply special types too (history 1.86). A mine does not detonate against a target
-its damage type cannot affect (history 1.70).
+**Against planets** (confirmed: binary): `Only Engines`, `Only Boarding Parties`, `Only
+Security Stations`, `Only Planet Destroyers`, `Pushes Target`, `Pulls Target` and `Random
+Target Movement` drain the planet's shields and then do nothing (planets never move).
+`Only Weapons`, `Only Shield Generators` and `Only Master Computers` skip shields and do
+nothing at all; in particular `Only Weapons` does not hit weapon platforms. `Increase
+Reload Time` and `Disrupt Reload Time` add D to every planet weapon's reload counter (at
+most 250; a planet has no Master Computer). A `Crew Conversion` weapon able to target
+planets (no stock weapon is) that succeeds makes the planet's piece fight for the
+converting empire for the rest of the battle, without changing the colony's owner.
+
+Drones apply special types too (history 1.86). A mine's warhead whose damage type cannot
+affect the vehicle it picked is skipped (history 1.70), but the mine is used up all the
+same (§10.6).
 
 ## 10. Special weapons and units
 
 ### 10.1 Seekers (confirmed: binary)
 
 - Firing a `Seeking` weapon uses supply and reload as usual and creates a seeker piece on
-  the launcher's square (for a planet, one of its central squares), aimed at the
-  weapon's target. If a seeker of the same empire, weapon and target already sits on
-  that square, the new one joins it instead: a seeker group counts its members.
+  the launcher's square (for a planet, one of its four central squares, at random),
+  aimed at the weapon's target. If a seeker of the same empire, component and target
+  already sits on that square, the new one joins it instead: a seeker group counts its
+  members. That is so even if the seeker there has already moved or was launched by
+  another piece; the group keeps its travelled count and its first launcher (who gets
+  the kill credit). Mounts are not compared.
 - A seeker has 0 movement in the turn it is launched. From the next combat turn it
   moves up to `Weapon Seeker Speed` squares in its owner's phase, before the owner's
   other pieces act. Each step moves one square toward the target's centre square (its
@@ -467,10 +629,12 @@ its damage type cannot affect (history 1.70).
   table[travelled] × (members in the group) as one hit of the weapon's damage type, with
   the launching empire's damage modifier. No roll. The launcher gets the kill credit
   (history 1.87).
-- **Durability.** A seeker has `Weapon Seeker Dmg Res` hit points and defense +40 (§7).
-  A hit whose damage (plus the seeker's pool) reaches its remaining hit points destroys
-  one member of the group; smaller hits go into the pool. Point-defense may fire after
-  every seeker step.
+- **Durability.** A seeker has `Weapon Seeker Dmg Res` hit points R (the mount does
+  not change it) and defense +40 (§7). Its remaining hit points are R minus its pool P, for one member
+  whatever the group's size. A hull-damaging hit already carries P (§9.1 step 2), so it
+  destroys one member when D + 2 × P reaches R; otherwise the pool becomes P + D. Another
+  type destroys one member when D reaches R − P; otherwise D joins the pool.
+  Point-defense may fire after every seeker step.
 - Example: a speed-5 missile with 60 damage out to 8 squares launched at a target 8
   squares away waits one turn, then needs two more turns to arrive.
 
@@ -488,7 +652,15 @@ its damage type cannot affect (history 1.70).
 
 - **Ram order:** the rammer must have movement left, the target must be adjacent and
   hostile. Strategies with Ram movement (Kamikaze, Drone Attack) do this automatically.
-- Let R = the rammer's remaining hit points and T = the target's remaining hit points.
+- Let R = the rammer's remaining hit points and T = the target's remaining hit points,
+  taken when the ram happens (after the rammer's move). Shields never count:
+  - ship or base: the structure of its intact components (with mounts) minus its damage
+    pool, never below 0;
+  - unit group: the structure of its living units, with the shields counted once for
+    fighters, troops and weapon platforms and not at all for other units; the group's
+    pools are not subtracted;
+  - seeker: one member's `Weapon Seeker Dmg Res` minus its pool, whatever the group's size;
+  - planet: its hit points (§11), though as a target it takes B = 500000 anyway.
   - A = R × `Ram Ship Source Modifier Percent` / 100, truncated.
   - B = T × `Ram Ship Target Modifier Percent` / 100, truncated.
   - Against a planet or obstacle: A is divided by 4 (truncated) and B is 500000.
@@ -502,7 +674,13 @@ its damage type cannot affect (history 1.70).
   survives) with A as a Normal hit.
 - The rammer takes B + W as a Skips All Shields hit.
 - Warhead components are not used up by themselves; they go with the rammer.
-- Kills by ramming give experience and count in design statistics (history 1.22).
+- Kills by ramming give experience and count in design statistics (history 1.22), and
+  count twice (confirmed: binary): the blow on the target credits the rammer as usual
+  (§15), and when the target is destroyed the rammer's design is credited with a ship
+  target's hull `Tonnage` once more, and a surviving rammer's crew gains another +1.0 (so
+  +2.0 for a ship, +1.1 for a unit group). The recoil hit on the rammer has no attacker:
+  no `Damage Modifier - System` applies to it, and if the rammer dies nobody is credited
+  and nobody gains experience.
 
 ### 10.4 Fighters (confirmed: binary unless marked)
 
@@ -510,23 +688,36 @@ its damage type cannot affect (history 1.70).
   Recover Fighters` Value1 of its intact bays. A planet may launch up to 100 of each kind
   of unit it holds per combat turn. The per-player unit cap does not apply in combat
   (history 1.46).
-- **Grouping.** Launched fighters form groups of the strategy's `Fighters Launch Group
-  Amount` (stock 10), or the tactical "Launch Fighters in Groups" choice. The Settings
-  `Combat Fighter Group Amount`, `Combat Mine Group Amount` and `Combat Satellite Group
-  Amount` are loaded but never used.
+- **Grouping** (confirmed: binary). The computer launches a carrier's fighters in
+  batches of the strategy's `Fighters Launch Group Amount` (stock 10): each batch is a new
+  group taken from one cargo stack, so it holds a single design; an amount of 0 puts all
+  of them in one group. The tactical "Launch Fighters in Groups" order does the same with
+  a size the player picks from 5, 8, 10, 15, 20, 30, 40 and 50; it launches fighters
+  only. The tactical "Launch Units" window launches 1, 5, 10 or all units of a stack at a
+  time; while the window stays open, units of the same kind launched from that piece join
+  the group made earlier in the same window, whatever their design, so a group can mix
+  designs; opening the window again starts new groups. Every launch stays within the
+  per-turn launch rate. The Settings `Combat Fighter Group Amount`, `Combat Mine Group
+  Amount` and `Combat Satellite Group Amount` are loaded but never used.
 - A fighter group has a target budget of 1 and fires its identical weapons as one
   combined hit (§6).
 - Supplies are per fighter and never pooled with the fleet (history 1.68). With zero
   supplies a fighter group cannot fire and has no shields.
 - **After combat** each carrier or planet recovers the fighter and satellite groups that
-  it launched in this battle (ships first, then planets). Groups whose carrier is gone
-  stay in space.
+  it launched in this battle (ships first, then planets), if it still has the same owner
+  and room for them. Groups nobody recovers, and all drones, stay in space as the
+  separate groups they are; they are not merged into other groups in the sector
+  (confirmed: binary).
 
 ### 10.5 Satellites and weapon platforms
 
 - Satellites are stationary pieces in groups. Their target budget is covered in §6. They
   are launched with `Launch/Recover Satellites` (Value1 per combat turn). A player may
-  have at most `Maximum Satellites Per Player Per Sector` (100) in one sector.
+  have at most `Maximum Satellites Per Player Per Sector` (100) in one sector; the cap
+  holds in combat too, as does the mine cap: at the cap a launch is refused, below it the
+  launch is cut to what is left (confirmed: binary).
+- The computer never launches satellites (or mines) in combat; only a player does, with
+  the "Launch Units" window, which groups them as in §10.4 (confirmed: binary).
 - Weapon platforms are never pieces. They are the planet's guns (§11): every weapon of
   every platform is a separate weapon of the planet (confirmed: binary).
 
@@ -539,22 +730,32 @@ its damage type cannot affect (history 1.70).
   of an empire at Non-Aggression or better with the owner.
 - First, the entering group's own uncloaked sweepers remove up to their total `Mine
   Sweeping` in mines from hostile minefields.
-- Then each mine picks a random vehicle of the group. Fighters and drones are skipped
-  (and another is picked) unless Settings `Fighters Can Be Hit By Mines` / `Drones Can Be
-  Hit By Mines` allow them. The mine's warheads strike it one after another, skipping
-  those whose damage type cannot affect it, until it is destroyed. The mine is used up.
-- Mine damage goes **straight to the components** (§9.1a): shields, emissive and
-  crystalline armor do not act against mines. Leftover damage is shared by the whole mine
-  strike and joins the next warhead, whichever vehicle it hits (history 1.70, 1.78).
+- Then each mine picks a random vehicle of the group. Fighter and drone groups are
+  skipped (and another is picked, without using the mine) unless Settings `Fighters Can
+  Be Hit By Mines` / `Drones Can Be Hit By Mines` allow them. The mine's warheads strike
+  it one after another, skipping those whose damage type cannot affect it, until it is
+  destroyed. The mine is used up, even when none of its warheads applied. A unit group
+  counts as affected by every damage type, and a warhead's `Weapon Target` set is never
+  checked.
+- Mine damage on a ship goes **straight to the components** (§9.1a): shields, emissive
+  and crystalline armor do not act against mines. On a unit group it goes to the units
+  by the §9.4 rule, so the units' shields count as hit points and one warhead can kill
+  several units. Leftover damage of hull-damaging warheads is shared by the whole mine
+  strike and joins the next warhead, whichever vehicle it hits (history 1.70, 1.78); a
+  warhead of another type that strikes a unit group wipes that shared leftover.
 - A player may have at most `Maximum Mines Per Player Per Sector` (100) in one sector.
 
 ### 10.7 Drones
 
 - Drones are launched by `Launch Drones` components (Value1 per combat turn; a planet 100)
   and have full movement immediately (confirmed: binary).
-- Drones launch in groups whose size is the strategy's "Drones Per Target" option
-  (default 3). That option is set in the strategies window and stored with the game; it
-  is not a key of DefaultStrategies.txt (confirmed: binary).
+- Every drone launched in combat is a group of its own (confirmed: binary). The
+  computer launches drones in batches of the strategy's "Drones Per Target" option
+  (default 3), and in all at most "Drones Per Target" × (hostile ships and bases in the
+  battle) − (the side's drones already alive in the battle), within the per-turn launch
+  rate; an option of 0 launches all of them. That option is set in the strategies window
+  and stored with the game; it is not a key of DefaultStrategies.txt (confirmed: binary).
+  A player launches drones with the "Launch Units" window, still one per group.
 - A drone picks its own targets among ships, planets and satellites, never fighters,
   seekers, mines or other drones (history 1.53, 1.65). If its target is absent or gone,
   it picks temporary targets until the battle ends (history 1.58). Drones aimed at a
@@ -570,17 +771,32 @@ its damage type cannot affect (history 1.70).
   footprint (history 1.72). It can launch fighters, satellites and drones from cargo.
 - **Defense.** −200 (§7). Its shields are §9.2.
 - **Planet hit points** = population (millions) × `Damage Points To Kill One Population`
-  + the hit points of the units in its cargo − its damage pool.
+  + the hit points of the units in its cargo − the stored units' damage pool. The planet
+  piece itself keeps no pool; its stored units keep one, as a unit group does (§9.4),
+  which is cleared when the battle ends.
 - **Damage order for a hull-damaging hit** (after shields):
   1. If the cargo holds weapon platforms, the hit goes to the platforms only (as a unit
-     group, §9.4).
-  2. Otherwise, other units in cargo take it (as a unit group).
-  3. If, after this, no units in cargo are left, the population loses D ÷ `Damage
-     Points To Kill One Population` million (truncated, at least 1), using the whole
-     hit D.
-  4. Then, with a 1-in-3 chance, facilities are destroyed so that the number of
-     facilities is at most (current planet hit points) ÷ (starting hit points ÷ total
-     facilities), both divisions truncated.
+     group, §9.4). If that kills the last platform and other units remain, those units
+     then take the same full hit again.
+  2. Otherwise, the units in cargo take it (as a unit group).
+  3. Only when no stored unit of any kind is left does the population lose D ÷ `Damage
+     Points To Kill One Population` million (truncated, at least 1), from the first
+     population group on. D is the whole hit after shields, however much the units
+     took; the population has no pool, so every such hit kills at least 1M.
+  4. Then the facilities: let n be the number of facilities at the battle's start and H0
+     the planet's hit points then; per = H0 ÷ n and allowed = (current hit points) ÷ per,
+     both truncated, with allowed = 0 when per is 0. A roll of 1 to 3 is always made;
+     on a 1, max(0, intact facilities − allowed) facilities are destroyed, one at a time.
+     Each is taken from a facility stack drawn at random, weighted by the stack's size
+     (destroyed ones included); a stack with none intact is drawn again.
+- **Lost facilities** keep working (abilities, shields, cargo space) until the battle
+  ends, and are removed from the planet then (confirmed: binary). The original never
+  clears a stack's count of destroyed facilities after removing them, so every later
+  battle at that planet removes the same number from that stack again, and the stale
+  count also lowers the intact count used by later facility steps. This is a defect of
+  the original; see §19.1 for the engine's choice.
+- Planets never regenerate shields in combat, and a planet's shield maximum does not
+  drop when a shield facility is destroyed (the facility keeps working until the end).
 - A colony whose population reaches 0 is lost; the planet stays on the map as an
   unowned obstacle for the rest of the battle.
 - **Drop Troops.** A ship carrying troops may drop all of them onto an **adjacent**
@@ -614,10 +830,19 @@ its damage type cannot affect (history 1.70).
 
 ## 13. Ground combat (confirmed: binary unless marked)
 
-- **Triggers:** troops dropped during a space battle (fought at once), or hostile troops
-  on a planet during turn processing.
+- **Triggers:** troops dropped during a space battle (fought at once), or troops still
+  landed on a colony at turn processing. The latter is fought in the **colony owner's**
+  end-of-turn processing, at its ground-combat step (spec 05 §8), for each of the owner's
+  colonies that has landed troops, without asking anyone (strategic). If by then the
+  colony's owner is the landed empire, or is at Non-Aggression or better with it, there
+  is no fight: the landed troops join the colony's cargo, where they serve the owner,
+  and the invasion ends (confirmed: binary).
 - **Sides.** The attacker has its landed troops. The defender has the units in the
-  planet's cargo plus militia.
+  planet's cargo plus militia. Units in cargo have no owner of their own: a ship drops
+  every troop unit aboard, of whatever design, for the empire that owns the ship at that
+  moment (so a captured or converted ship's troops fight for the captor), and the units
+  stored on a planet always serve the planet's owner. If the invasion wins, the
+  surviving invaders join the planet's cargo (confirmed: binary).
 - **Militia.** When the first invading troops land on a colony, the colony gets a militia
   pool: for each population group, its population in millions ÷ `Defending Units Per
   Population` (20), truncated, summed. There is no minimum, so a colony below 20M has no
@@ -627,27 +852,36 @@ its damage type cannot affect (history 1.70).
   Defender Hit Points` (30). Militia losses cost no population.
 - **Length.** At most Settings `Number Of Ground Combat Turns` (10) rounds per ground
   combat, ending early when either side has no troops or militia left. If both survive,
-  the fight resumes next game turn. It stops at once on peace or surrender (history 1.03,
-  1.20).
+  the fight resumes at the colony owner's next end-of-turn processing (above). It stops
+  on peace or surrender, when the troops change sides as described above (history 1.03,
+  1.20; confirmed: binary).
 - **Round.**
-  1. Each side's offense and defense are (total `Combat To Hit Offense/Defense Plus` −
-     `Minus` over all its units' abilities, family-best as in §7) ÷ 2, truncated.
-  2. Every troop and militia unit rolls: it hits if roll ≤ (its side's offense + 50 −
-     the other side's defense). There is no clamp.
+  1. Each side's offense and defense are (`Combat To Hit Offense/Defense Plus` −
+     `Minus`) ÷ 2, truncated, counted over the side's troop designs only (militia and
+     other stored units add nothing): the single best hull value among them, plus the
+     best value of each component `Family`, the families added up (§7). They are
+     recomputed every round.
+  2. Every unit rolls: it hits if roll ≤ (its side's offense + 50 − the other side's
+     defense). There is no clamp.
   3. A hit adds the unit's attack: militia use the setting; a troop unit uses the sum,
      over its weapons, of each weapon's largest table entry (with mount). Units without
-     weapons do not attack.
+     weapons, and stored units other than troops and militia, add nothing.
   4. Each side's total, plus damage carried from the previous round, is multiplied by
      `Ground Combat Damage Modifier Percent` (30) / 100 and truncated.
-  5. The defender adds Round(total × the planet's `Planet - Change Ground Defense` /
-     100). Each side adds Round(total × its racial ground modifier / 100), where the
-     racial ground modifier is the culture's `Ground Combat` value plus (Physical
-     Strength − 100) plus matching racial traits.
-  6. Each total is applied to the other side's stacks in cargo order: troops and militia
-     first, then any other units. In each stack, whole units die while the damage covers
-     their hit points (structure plus shields for troops, the setting for militia); the
-     rest moves on to the next stack. What remains at the end is carried to the next
-     round (divided back by the percentage, truncated).
+  5. The modifiers are chained. The defender first adds Round(total × the planet's
+     `Planet - Change Ground Defense` / 100), then Round(new total × its racial ground
+     modifier / 100). The attacker adds only Round(total × its racial ground modifier /
+     100). The racial ground modifier is the culture's `Ground Combat` value plus
+     (Physical Strength − 100) plus matching racial traits.
+  6. Each total is applied to the other side's stacks in two passes: first the units
+     that attack (troops with weapons, in cargo order, then the militia, which are added
+     at the end of the cargo list), then everything left, in cargo order (troops without
+     weapons, then fighters, satellites, platforms, mines and drones in storage). In each
+     stack, whole units die while the damage covers their hit points (structure plus
+     shields for troops, fighters and platforms; structure alone for other stored units;
+     the setting for militia); the rest moves on to the next stack. What remains at the
+     end is carried to the next round (divided back by the percentage, truncated).
+     Stored units other than troops absorb damage but do not stop a capture.
 - **Victory.** When the defender has no troops or militia left and the attacker still
   has troops, the attacker takes the planet with its surviving facilities, stored units
   and population. When the attackers are gone, the fight ends. No facilities are lost in
@@ -660,7 +894,7 @@ its damage type cannot affect (history 1.70).
 Stock SE4 has no retreat order and no way to leave the map (confirmed: binary: no such
 command exists). The only ways to disengage are:
 
-- a `Don't Get Hurt` strategy, which keeps the piece out of enemy range;
+- a `Don't Get Hurt` strategy, which runs from the mass of enemy pieces each turn (§16.1);
 - surviving until the turn limit, then moving away on the system map next game turn;
 - cloaking, which does not help inside a battle, because every piece is decloaked.
 
@@ -680,10 +914,39 @@ command exists). The only ways to disengage are:
     (§7). Unit groups and planets gain no experience.
   - A ship with a Neural Combat Net uses the §7 rule. A fleet's bonus is lost if the
     fleet breaks up.
-- **Design statistics:** kills and enemy tonnage destroyed are credited to the killer's
-  design(s); losses to the victim's.
-- **Log.** One battle report per participant, listing losses and ships "Taken". If
-  Settings `Create Combat Replay` is on, also record a replay stream (§17).
+  - Ramming counts a kill twice (§10.3). A capture or a Crew Conversion gives the captor
+    no experience; a boarded ship's crew drops to 0, a converted ship keeps its
+    experience (§12). The combat simulator gives no experience.
+  - **Level names** (confirmed: binary). Crew and fleet experience use one scale: 5 or
+    less Novice, up to 10 Experienced, up to 20 Veteran, up to 30 Elite, above 30
+    Legendary. The label shows the level name followed by the truncated experience as a
+    percentage bonus, for example "Veteran (+14%)".
+- **Design statistics** (confirmed: binary). A design keeps four counters: Number
+  Constructed, Number Lost, Number Scrapped and Enemy Tonnage Destroyed (In Service is
+  constructed − lost − scrapped). There is no kill counter. A vehicle that self-destructs
+  counts as scrapped, not lost. Units killed count as lost for their design as they die.
+  Enemy tonnage destroyed, credited when a piece is destroyed:
+  - the value is the victim's hull `Tonnage` for a ship or base; for a unit group, hull
+    `Tonnage` × every unit it had in the battle (killed ones included), credited only when
+    the whole group dies (units killed from a group that survives credit nothing); 0 for a
+    planet or a seeker;
+  - it goes, in full, to every design in the killing object: a ship's design, each design
+    in a unit group, the launcher's design(s) for a seeker; a planet credits nobody;
+  - a mine credits its own design with the victim's value;
+  - in ground combat, each time units die, a randomly drawn stack of the killing side
+    gets the dead units' hull `Tonnage` (a truncated proportional share for part of a
+    stack), and nothing when the drawn stack is militia;
+  - nothing is credited in the combat simulator.
+  A capture or conversion changes no design statistic: the victim's design records no
+  loss, and the captured ship keeps its design, so it still counts as in service. Only
+  the owning empire sees its designs' statistics (in the Designs window with statistics
+  shown); the enemy design lists never show them.
+- **Log.** One battle report per participant, listing losses and ships "Taken". A piece
+  is reported "Taken" when it is missing from its owner's list at the end but its name is
+  in another empire's list: captures, conversions and planets taken by troops during the
+  battle alike (confirmed: binary). A human player also gets a message box on a capture.
+  If Settings `Create Combat Replay` is on, also record a replay stream (§17); a boarding
+  capture is recorded in it, a conversion is not.
 - Each participant learns the designs it fought.
 - Happiness events (battle won or lost in a system, ships lost) are covered in the
   happiness spec.
@@ -698,12 +961,12 @@ Point Blank and Drone Attack.
 
 | Field | Semantics |
 |---|---|
-| `Primary Movement Strategy`, `Secondary Movement Strategy` | One of: Don't Get Hurt (stay where no enemy can fire on you); Drop Troops (close on a planet and land troops); Maximum Weapons Range (sit at your longest range from the target); Optimal Weapons Range (the square giving the best ratio of damage dealt to damage taken); Short Weapons Range (1–3 squares, least exposure); Point Blank (as close as possible); Board Enemy Ships (close to adjacent and capture); Ram. Use the secondary strategy when the primary is impossible, for example Drop Troops with no troops or no planet. |
+| `Primary Movement Strategy`, `Secondary Movement Strategy` | One of eight: the three range strategies (Optimal, Short and Maximum Weapons Range), Point Blank, Ram, Board Enemy Ships, Drop Troops and Don't Get Hurt. What each does is §16.1. Use the secondary strategy when the primary is impossible, for example Drop Troops with no troops. |
 | `Targeting Priority 1..4` | Sort keys for choosing a target, applied in order: Nearest, Farthest, Largest, Smallest, Most Damaged, Least Damaged, Fastest, Slowest, Strongest, Weakest, Has Weapons, Does Not Have Weapons. The first key filters or sorts, and later keys break ties. |
 | `Use Type Priority First`, `Type Priority <Cat>` | Rank per category (1 = engage first) over 14 categories: Planets, Fighters, Seekers(On Us), Seekers(On Others), Mines, Carriers, Colony Ships, Transports, Bases(No Weapons), Ships(No Weapons), Bases, Ships, Satellites, Drones. The flag decides whether category rank is applied before the targeting keys. The UI also offers turning type priority off. |
 | `Dont Fire On <Cat>` | Never engage that category. |
-| `Fighters Launch Group Amount` | Fighter group size at launch. |
-| "Drones Per Target" | Drone group size at launch (default 3). Not a DefaultStrategies.txt key (§10.7). |
+| `Fighters Launch Group Amount` | Fighter group size at launch; 0 puts all of a carrier's fighters in one group (§10.4). |
+| "Drones Per Target" | Drone launch batch and limit (default 3); each drone is still its own group (§10.7). Not a DefaultStrategies.txt key. |
 | `Break Formation <Cat>` | Whether own pieces of that category leave the formation in combat. |
 | `Damage Percent Per Ship / Planet / Fighter Group / Satellite Group` | (confirmed: binary) While choosing targets, a ship, planet, fighter group or satellite group already damaged by more than this percentage is skipped, unless `Damage Until All Weapons Gone` is set and it still has weapons. Drones and seekers are never skipped this way. If no target is left, the choice is made again without this filter. |
 | `Damage Until All Weapons Gone` | See the row above. |
@@ -713,10 +976,102 @@ type can affect it (confirmed: binary). It stops assigning direct fire to a ship
 planet once the damage already assigned to it this turn reaches 1.5 × (its shields + hit
 points), and to a unit group or seeker once it reaches 1 × that; seekers in flight are
 counted separately against the same limits, so enough seekers aimed at one target move
-new launches to the next (confirmed: binary; history 1.82, 1.86). The AI fires before
-moving only when its move takes it farther from its target; otherwise it moves first
-and then fires. It dodges enemy seekers and closes one extra square on planets
-(history 1.60).
+new launches to the next (confirmed: binary; history 1.82, 1.86).
+
+**Holding fire for an invasion** (confirmed: binary). While a side has in the battle at
+least one ship carrying troops whose strategy in effect is Drop Troops (§16.1), none of
+its pieces targets an enemy planet that has no intact weapon other than point-defense
+and warheads. This is checked afresh every time targets are chosen, for moving and for
+firing. Separately, and always, the computer never targets a planet on which its own
+troops, or those of an empire it is not hostile to, are fighting a ground combat that
+is not over.
+
+### 16.1 How the computer moves (confirmed: binary)
+
+**Order.** In a computer side's phase the pieces act one at a time: group leaders first,
+then the others, in piece order. Only ships, fighter groups and drone groups move;
+planets only launch. Each piece: chooses a destination square; fires first if that
+square is farther (aim distance, §1) from the target of its first ready weapon (design
+order, not point-defense) that has a target than its current square is; moves; then
+drops troops, rams or boards; then fires again with whatever is still ready. After all
+have moved, every piece of the side that has not acted fires.
+
+**Strategy in effect.** The primary strategy is used unless it is impossible: Drop Troops
+needs a ship carrying troops; the four range strategies (Maximum, Optimal, Short, Point
+Blank) need an intact weapon other than point-defense and warheads; Board needs a ship
+with `Boarding Attack`; Ram, for a drone group, needs a drone target. Otherwise the
+secondary is tested the same way, and if it is impossible too, Don't Get Hurt applies (a
+secondary Ram never falls back). An Optimal ship with no weapons at all rams. A piece
+whose strategy in effect is Don't Get Hurt, Drop Troops, Board or Ram leaves its
+formation, as does one whose category has `Break Formation` set; a member that keeps its
+formation slot heads for that slot.
+
+**Danger map.** Built once at the start of the side's movement, not updated as pieces
+move. For every hostile piece (neutral obstacles count as hostile here), with M its full
+movement allowance: each ready intact weapon other than point-defense (direct fire,
+seeking and warheads alike; an enemy ship's weapons that cannot target ships are left
+out) adds, to each square at distance d from the enemy's top-left square, the weapon's
+damage at range max(1, d − M), out to its longest range + M; the enemy's own square gets
+the damage at range 1. An enemy ship with total `Boarding Attack` B adds B ÷ 2 + 1
+(truncated) to every square within M. Each hostile piece's own square adds 30. Because
+of the way the rings are cut at the map's border, squares on the border are counted
+again for every larger ring, so danger is overstated along the edges. **Dodging
+seekers:** for the piece being moved, each enemy seeker group aimed at it adds its
+weapon's damage at range d to every square at distance d from the seeker, out to the
+last non-zero entry (range 1 on the seeker's own square), once per group whatever its
+size, without regard to the distance already travelled.
+
+**Attack map.** For each of the mover's ready weapons that has a target it can hit, the
+damage it would deal from each square, measured from the target's top-left square. It
+counts in full, but a fifth for Shields Only, Only Engines and Only Master Computers, and
+not at all for push, pull and teleport. Against a ship whose shields are no more than
+its shield regeneration, values below its emissive armor count 0 (unless the mover is
+a fighter or satellite group).
+
+**Choosing the square.** Squares with a piece on them are never chosen by the range
+strategies, and neither are the map's border rows and columns. Full ties are broken by
+replacing the choice with a 1-in-10 chance as the scan goes on.
+
+- **Optimal Weapons Range:** a square with no danger where it can deal damage, the most
+  such damage, nearest its target. Failing that, the lowest 1000 × danger ÷ damage
+  (truncated), nearest its target. Failing that (it can deal damage nowhere): stay put
+  if there is danger within 10 squares and it has no target, otherwise the least-danger
+  square, the one farthest from its target (without a target, the one nearest to
+  itself).
+- **Short Weapons Range:** the square with the most damage, ties to less danger. If it
+  can deal damage nowhere, as Optimal. There is no 1-to-3-squares limit.
+- **Maximum Weapons Range:** without a target, stay put if there is danger within 10
+  squares, otherwise Don't Get Hurt. With no ready weapon, or when it can already hit
+  from where it stands, it heads for the ring at distance (the target's longest weapon
+  range + the target's movement + 2) from the target's top-left square: the least-danger
+  square of that ring within its own movement, else the nearest square of the ring, else
+  Don't Get Hurt. Otherwise, among squares where it can deal damage: within its
+  movement, the one farthest from the target; else the farthest overall (ties nearer to
+  itself, then a coin flip).
+- **Point Blank:** the square next to the target's top-left square, one step toward the
+  mover. Without a target, as Optimal.
+- **Drop Troops:** its planet is a hostile colony named by one of the ship's own Attack or
+  Seek orders, else the most populous hostile colony. While that planet still has a
+  weapon other than point-defense and warheads and the side has an armed escort (a piece
+  with such a weapon and a range strategy in effect), the carrier waits (Don't Get Hurt);
+  otherwise it goes to the planet's Point Blank square and lands.
+- **Don't Get Hurt:** it looks only at where pieces stand, not at weapons, ranges or the
+  danger map. Every square within its remaining movement on both axes is a candidate,
+  taken or not. A candidate's score adds, for each square holding hostile pieces
+  (obstacles and hostile seekers included), 10 × their number × the straight-line
+  (Euclidean) distance, truncated; and for each square holding only own pieces (the
+  mover itself and own seekers included), 3 × their number × the straight-line distance,
+  truncated. The highest score wins, ties to the smallest column, then the smallest row.
+  So it runs from the mass of enemies while spreading away from its friends, and always
+  uses its full move. (When the scan reaches a square holding hostile pieces, that
+  square's own score so far is reset to 0.) It is also the fallback of Drop Troops,
+  Maximum Weapons Range, Board and Ram as described above.
+
+All of this planning is centred on the target's top-left square, so ships end up to 3
+squares closer to a planet on its right and lower sides, and a Point Blank or landing
+square next to a planet approached from the right or from below lies inside the planet
+(the step rules then stop short). There is no other rule for planets (history 1.60
+describes this effect).
 
 ## 17. Combat tooling
 
@@ -727,7 +1082,25 @@ and then fires. It dodges enemy seekers and closes one extra square on planets
   carriers, platforms on planets), form fleets, edit strategies, and choose which virtual
   empires the computer controls. Run it tactically or strategically. Minefields cannot
   be added. Obsolete designs can be hidden. It must never change real game state
-  (history 1.46).
+  (history 1.46). Details (confirmed: binary):
+  - There are up to 10 virtual empires (sides 1 to 10). The first design or planet added
+    to a side makes that side a copy of the real empire that owns it (race, culture,
+    technology), so a side whose first item is an enemy design is a copy of that enemy.
+  - The battle is fought in the player's home system, in the home planet's sector. The
+    sector's and system's real `Sector - Sensor Interference` and `Sector - Shield
+    Disruption` apply; the empires' system modifier totals (§7) are never worked out, so
+    they are 0.
+  - Ships are new vehicles built from the designs, fully supplied, with no experience. A
+    sample planet is a copy of the real colony, owned by its side and moved to the battle
+    sector.
+  - Start positions go by side number, as if each side had arrived from a neighbouring
+    sector (§3): 1 from the north, 2 south, 3 west, 4 east, 5 north-west, 6 south-west, 7
+    north-east, 8 south-east; sides 9 and 10, and any side that owns a planet or a base,
+    start in the middle.
+  - Side 1 is played by hand and the others by the computer unless changed with Computer
+    Control. Tactical or Strategic is chosen in the simulator window; Stop Combat (in the
+    tactical window's options) exists only here. No experience or design statistics are
+    gained (§15).
 - **Combat replay.** A view-only playback from the log, advanced one combat turn at a
   time with Next. It records only piece movement, including forced moves, and weapon
   firings. It holds no damage or reload state. Hovering a piece shows its design, not
@@ -839,8 +1212,9 @@ component `Family` and adds the families (§7).
 
 ## 19. Open questions
 
-Answers found in the executable are given in place. The remaining questions still need
-checking in the running game.
+Answers found in the executable are given in place. Since 2026-09-30 every question below
+is answered from the executable; §19.1 keeps the engine's own choices where the original
+has no rule, and OpenSE4's extensions.
 
 1. **Grid.** Answered (confirmed: binary): 72 × 63 squares; start boxes by arrival
    direction (§3). Stars, warp points, comets and uncolonised planets are 4×4 obstacles
@@ -890,213 +1264,168 @@ checking in the running game.
     each unit kind per turn.
 17. **Ground combat.** Answered (confirmed: binary): §13. No facilities are lost in
     ground combat.
-18. **Repeat battles.** Partly answered (confirmed: binary): battles are checked only when
-    a vehicle group moves or carries out an order in the sector. Still open: whether any
-    order other than movement (for example Sentry or Attack) restarts a battle every game
-    turn.
-19. **Experience.** Answered (confirmed: binary): §15. The level names shown in the UI are
-    not covered here.
-20. **Cargo loss.** Which stored items are lost first when cargo components are
-    destroyed? Open.
+18. **Repeat battles.** Answered (confirmed: binary): in turn-based games only movement
+    steps, the Attack order and a Seek order at its target run a check; a Seek at its
+    target attacks again every time the list runs, Sentry never does. In simultaneous
+    games any order carried out that day (a waiting Sentry included) makes its sector a
+    candidate, at most one battle per sector per game turn unless newcomers arrive (§2).
+19. **Experience.** Answered (confirmed: binary): §15, including the level names (Novice
+    up to 5, Experienced up to 10, Veteran up to 20, Elite up to 30, then Legendary).
+20. **Cargo loss.** Answered (confirmed: binary): at once, during the battle, when the
+    part is destroyed: population first, 1M at a time from the first group, then units
+    one at a time from the first stack; restoring the part does not bring it back (§9.4,
+    spec 03 §11).
 21. **Treaty "None".** Answered (confirmed: binary): yes, "None" and "not yet met" fight.
 22. **Designs without supply storage.** Answered (confirmed: binary): bases always have
     unlimited supplies; ships without supply storage have none, so they cannot fire and
     have no shields; satellites, drones, weapon platforms and planets never need supplies
     in combat.
-23. **Mothballed ships.** Partly answered (confirmed: binary): a mothballed ship in a
-    battle sector becomes a piece with no abilities, no shields, no movement and no
-    offense or defense. Whether its presence alone can start a battle is open.
+23. **Mothballed ships.** Answered (confirmed: binary): a mothballed ship in a battle
+    sector becomes a piece with no abilities, no shields, no movement and no offense or
+    defense. It never starts a check itself (it neither moves nor carries out an order),
+    but it is never skipped either: a hostile group that moves in and sees it starts a
+    battle (§2).
 24. **Mine timing.** Answered (confirmed: binary): only the group that just moved in
     (§10.6).
-25. **Don't Get Hurt.** How far ahead does it look? Open.
-26. **Holding fire for an invasion.** The AI skips some planets when choosing targets;
-    the exact condition is open.
-27. **Captures in the statistics.** Open.
+25. **Don't Get Hurt.** Answered (confirmed: binary): it does not look ahead at all. It
+    ignores weapons and ranges and picks, within its remaining movement, the square
+    farthest (by weighted straight-line distance) from the hostile pieces and, less
+    strongly, from its own (§16.1). Seekers are dodged by the range strategies through the
+    danger map, not by Don't Get Hurt.
+26. **Holding fire for an invasion.** Answered (confirmed: binary): while a side has a
+    troop ship whose strategy in effect is Drop Troops, it does not target enemy planets
+    that have no weapon other than point-defense and warheads; and it never targets a
+    planet where its own or a friendly empire's troops are still fighting (§16).
+27. **Captures in the statistics.** Answered (confirmed: binary): a capture or conversion
+    changes no design statistic and gives no experience; the battle report shows the ship
+    as "Taken" (§15).
 28. **Conversion and self-destruct.** Answered (confirmed: binary): no, a conversion never
     sets off a self-destruct device.
-29. **Captured troops.** Whose side are troop units on after the ship carrying them is
-    captured? Open.
-30. **Drone launches.** Answered (confirmed: binary): in groups of the strategy's "Drones
-    Per Target" (default 3), §10.7.
+29. **Captured troops.** Answered (confirmed: binary): units in cargo have no owner of
+    their own; a ship drops all its troops for whoever owns it at that moment, so a
+    captured ship's troops fight for the captor (§13).
+30. **Drone launches.** Answered (confirmed: binary; corrected on 2026-09-30): every drone
+    is its own group; "Drones Per Target" is the computer's launch batch and, times the
+    hostile ships and bases, its limit (§10.7).
 31. **Militia losses.** Answered (confirmed: binary): militia deaths do not reduce
     population; the colony's militia pool shrinks instead (§13).
-32. **Damage pool between battles.** Does a ship's damage pool (§9.1) survive the end of a
-    battle? Open.
-33. **Shield-multiplier types against empty shields.** Are Quad/Double/Half/Quarter Damage
-    To Shields scaled when the shield pool is already 0? Open.
-34. **Hit points in a ram.** Which "remaining hit points" do R and T use (§10.3): intact
-    structure only, or also shields and the damage pool? Open.
-35. **Warp arrivals.** Where does a vehicle start that entered the sector through a warp
-    point, since the sector it left is not a neighbour? Open.
-36. **Several empires in the middle.** How are the boxes beside the centre laid out, in
-    which order do empires get them, and which way do their pieces face? Open. The same
-    for corner boxes when a battle has more than 60 pieces.
-37. **Satellites launched in combat.** How many satellites form one group? Open.
-38. **Unit groups.** How does the Shields Only pool make later kills easier, and what
-    exactly happens to the pool after a hit of a non-hull type (§9.4)? Does emissive
-    armor act on a unit group? Open.
-39. **Planet pool and facilities.** Is a planet's damage pool emptied when the population
-    takes a hit (§11 step 3)? Which facilities are destroyed in step 4? Open.
-40. **Other types against planets.** What do the "Only" types other than Only Weapons,
-    push, pull, teleport and the reload types do to a planet? Open.
-41. **Ground combat details.** Are militia hit before or after the defender's troops? Do
-    stored units other than troops count toward a side's offense and defense? Are the
-    planet's and the races' ground modifiers both taken from the same total (§13 step 5)?
-    Open.
-42. **Organic armor.** When the pool cannot pay for the next destroyed component in design
-    order, does restoration stop, or skip to a cheaper one? Open.
-43. **System modifiers during a battle.** Are the combat, damage and shield modifier totals
-    taken once when the battle starts, or recomputed as parts are destroyed? Open.
-44. **Planet conditions.** `Only Planet Conditions` lowers conditions by D × 0.1 on the
-    0–1.5 scale: confirm the scale of D against a known weapon. Open.
-45. **Mines against unit groups.** How do mine warheads damage a group of units in space?
-    Does a mine check the warhead's target set as well as its damage type? Open.
-46. **Seeker merging.** Does a new seeker join one on the launch square that has already
-    moved? Open.
-47. **Enemy tonnage destroyed.** Which tonnage does the design statistic add: the victim's
-    hull `Tonnage`, or the tonnage its components fill? Do captured ships and destroyed
-    planets add anything? Who sees another empire's statistics? Open.
-48. **Orders after combat in turn-based games.** §2 says combat neither clears orders nor
-    stops movement, while spec 03 §6.4 says that in turn-based games combat on entry stops
-    the move and clears the list. OpenSE4 fails the entering group's order (spec 03) and
-    otherwise only removes a Sentry at the head of a participant's list. Which groups lose
-    their orders in the original? (inferred)
-49. **A player's phase.** May a player launch units before the side's drones and seekers
-    move (a computer side launches first, so its new drones act with the others)? Does
-    Auto hand the rest of this phase to the strategies, or every phase from then on (as
-    Resolve Combat does)? Does the battle end in the middle of a player's phase when the
-    last enemy dies, or when the phase ends? (inferred)
-50. **Tactical groups.** Where does a ship take its place when it joins a group: where it
-    stands, or in a formation slot? What happens to a group when its number is given to a
-    new leader? Does a player's leader that is blocked on its way dissolve its group, as
-    a computer leader's does? (inferred)
-51. **Launch Fighters in Groups.** Does the chosen group size apply to drones too, and how
-    many satellites form one group when a player launches them? (inferred; see Q37)
-52. **Firing by hand.** May a player fire a weapon whose damage type cannot affect the
-    target (the computer never does), and fire point-defense by order? (inferred)
-53. **Who is asked.** Is a human empire that is present in a battle but hostile to nobody
-    there asked Tactical or Strategic? (inferred)
-54. **Combat simulator.** Which race do the virtual empires have: the player's, or that of
-    the empire whose design they fly? Where is the mock battle fought, and do the system's
-    abilities apply? Do the ships start with experience? How many virtual empires can
-    there be? (inferred)
-55. **Saving during a battle.** Can a turn-based game be saved while a battle is being
-    fought, and does loading it resume the battle? (inferred)
-56. **Groups of several designs in a battle.** Which design gets the kill of a group that
-    mixes designs, whose armor specials act, and do launched units that no carrier
-    recovers join the sector's group of their kind? (inferred)
+32. **Damage pool between battles.** Answered (confirmed: binary): no. A ship's pool
+    belongs to its battle piece; unit groups and a planet's stored units clear theirs at
+    the end of every battle; pools are never saved (§9.1).
+33. **Shield-multiplier types against empty shields.** Answered (confirmed: binary): yes,
+    they are scaled and scaled back on every hit, so with no shields Half and Quarter
+    lose their remainders (§9.5).
+34. **Hit points in a ram.** Answered (confirmed: binary): never shields; a ship's intact
+    structure minus its pool; a unit group's living units without its pools; one
+    seeker member's resistance minus its pool (§10.3).
+35. **Warp arrivals.** Answered (confirmed: binary): in a fixed 4 × 4 box at the exact
+    centre (top-left squares x 34 to 38, y 29 to 33), facing 2, whatever the battle size;
+    its empire is an attacker unless it also has a piece that was already in the sector
+    (§3).
+36. **Several empires in the middle.** Answered (confirmed: binary): the empires are
+    numbered in the order the system lists their first object; with two or more, a
+    colony's owner keeps the centre box and the others take fixed boxes two box sizes out
+    (up-left, down-right, up-right, down-left, up, down, right, left, by number). Pieces
+    in the middle face a random direction from 1 to 4. Pieces from an edge face 2 (top
+    row, corners included), 1 (left), 3 (right) or 0 (bottom row). With more than 60
+    pieces a corner box is 48 wide and 24 deep (§3).
+37. **Satellites launched in combat.** Answered (confirmed: binary): the computer never
+    launches them; a player's satellites launched from one piece in one "Launch Units"
+    window form one group, and the per-sector cap holds (§10.4, §10.5).
+38. **Unit groups.** Answered (confirmed: binary): the shield pool pays the shield part of
+    a unit's hit points; a non-hull hit is judged on its own damage and leaves the pool
+    as it was; emissive armor never acts on unit groups (§9.4).
+39. **Planet pool and facilities.** Answered (confirmed: binary): the planet itself keeps
+    no pool (only its stored units do), so every population hit kills at least 1M; lost
+    facilities are drawn from random stacks weighted by size, keep working until the
+    battle ends and are removed then (§11).
+40. **Other types against planets.** Answered (confirmed: binary): the shield-absorbed
+    "Only" types and push, pull and teleport drain shields and do nothing else; Only
+    Weapons, Only Shield Generators and Only Master Computers do nothing at all; the
+    reload types lengthen the planet's reloads (§9.5).
+41. **Ground combat details.** Answered (confirmed: binary): armed troops are hit first,
+    then militia, then everything else; only troop designs count for offense and defense
+    (the best single hull plus family-best components); the planet's and the race's
+    modifiers are chained (§13).
+42. **Organic armor.** Answered (confirmed: binary): a part the pool cannot pay for is
+    skipped and cheaper ones later in design order are still restored (§9.3).
+43. **System modifiers during a battle.** Answered (confirmed: binary): taken once, at
+    setup, never recomputed (§7).
+44. **Planet conditions.** Answered (confirmed: binary): conditions on the 0–1.5 scale drop
+    by 0.1 × D (after shields), never below 0; a 20-damage hit wipes them (§9.5).
+45. **Mines against unit groups.** Answered (confirmed: binary): the units take the damage
+    by the §9.4 rule (their shields count as hit points, several may die per warhead); a
+    unit group counts as affected by every damage type, and the warhead's target set is
+    never checked (§10.6).
+46. **Seeker merging.** Answered (confirmed: binary): yes; any seeker of the same empire,
+    component and target on the launch square takes the new one in, and keeps its
+    travelled count and first launcher (§10.1).
+47. **Enemy tonnage destroyed.** Answered (confirmed: binary): the victim's hull
+    `Tonnage` (a unit group's for all its units, when the whole group dies); planets,
+    seekers and captures add nothing; every design in the killing object gets it; no
+    empire sees another's design statistics (§15).
+48. **Orders after combat in turn-based games.** Answered (confirmed: binary): the group
+    whose movement step or warp jump started the battle has its whole order list cleared
+    (spec 03 §6.4); an Attack order is used up, a Seek order stays; other participants
+    only lose a Sentry at the head of their list; simultaneous games clear nothing (§2).
+49. **A player's phase.** Answered (confirmed: binary): the side's drones and seekers always
+    move first, so a player launches afterwards, and hand-launched drones first act at
+    the next phase; Auto is one toggle for all empires from the next phase on; Resolve
+    Combat hands every empire to its strategies until the end; the end is checked only
+    after a phase (§4).
+50. **Tactical groups.** Answered (confirmed: binary): a member takes the next slot of the
+    leader's formation; a number that already has a leader cannot be given to another;
+    no leader, blocked or not, dissolves its group by moving (§5).
+51. **Launch Fighters in Groups.** Answered (confirmed: binary): it launches fighters only,
+    in single-design groups of 5 to 50; drones are always one per group, and satellites
+    are grouped per "Launch Units" window (§10.4).
+52. **Firing by hand.** Answered (confirmed: binary): yes to both; the damage type is not
+    checked and point-defense may be fired by order (§6).
+53. **Who is asked.** Answered (confirmed: binary): on one machine, one question per battle
+    for all human empires in it, hostile or not; on different machines and in
+    simultaneous games, nobody (§2, §3).
+54. **Combat simulator.** Answered (confirmed: binary): up to 10 sides, each a copy of the
+    real empire owning its first item; fought in the player's home sector with that
+    sector's interference and disruption but no system modifier totals; new ships without
+    experience; start positions by side number (§17).
+55. **Saving during a battle.** Answered (confirmed: binary): impossible; the combat windows
+    are modal, cannot save and cannot be closed before the battle ends (§4).
+56. **Groups of several designs in a battle.** Answered (confirmed: binary): a kill by a
+    mixed group credits every design in it; no armor special of the units acts (§9.4);
+    launched units that no carrier recovers stay separate groups (§10.4). How the engine
+    handles the rest of such a group is §19.1.
 
-### 19.1 What the engine does until the remaining questions are answered
+### 19.1 The engine's own choices and OpenSE4 extensions
 
 The engine (`src/game/combat*.cpp`) marks each of these choices "(inferred)". The
-confirmed rules above take precedence over any older engine behaviour.
+confirmed rules above take precedence over any older engine behaviour; where the engine
+still differs from them, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it.
 
-- **Cargo loss (Q20).** Stored items are removed only when a vehicle is destroyed.
-- **Repeat battles (Q18).** Combat is checked wherever movement asks for it.
-- **Mothballs (Q23).** A mothballed ship alone can start a battle.
-- **Don't Get Hurt (Q25).** Assumes each enemy can move twice its speed before we act
-  again. Among safe squares it prefers room to keep evading. A piece that has neither
-  weapons nor another task falls back to it.
-- **Holding fire for an invasion (Q26).** An invading empire holds fire on a planet only
-  once its guns are gone.
-- **Captures in the statistics (Q27).** A capture counts as a loss for the design and a
-  kill for the captor.
-- **Enemy tonnage destroyed (Q47).** Each destroyed ship, base or unit adds its hull's
-  `Tonnage` to the killer's design (a seeker's launcher; mines their own design).
-  Captures and planets add none. A new design starts at 0, and no empire sees the
-  statistics of another empire's designs.
-- **Captured troops (Q29).** A troop unit fights for the empire that owns its design.
-- **Damage pool (Q32).** It lasts for one battle and is not saved.
-- **Shield multipliers (Q33).** With the shields at 0 the hit is not scaled.
-- **Ram hit points (Q34).** A ship's intact structure; a unit group's units' hit points
-  minus its pool; a planet's hit points (§11).
-- **Warp arrivals (Q35).** They start in the middle, but their empire is an attacker.
-- **The middle (Q36).** A single empire in the middle gets the box around (36, 31). With
-  several, empires in id order get boxes west, east, north and south of the centre, then
-  the diagonals, and face the centre. Pieces arriving from an edge face away from it. A
-  corner box stays square (24) in battles with more than 60 pieces.
-- **Satellites (Q37).** All satellites a carrier launches in one combat turn form one group.
-- **Unit groups (Q38).** Shields Only damage cancels up to one unit's shield part in the
-  next kill. After a non-hull hit the pool keeps at most its old value. Emissive armor of
-  the unit design acts as on a ship. Space unit groups have no partial damage.
 - **Groups of several designs (Q56).** A group that mixes designs is one piece. Each of the
   §9.4 tries draws one of its designs that still has units, at random; the unit's hit
-  points are its design's. Emissive armor is the best of its designs'. A fighter group's
-  identical weapons (same part and mount) fire together whichever designs carry them; a
-  satellite or drone group fires each weapon of each unit of each design. Offense and
-  defense are the best design's (§7), speed the slowest design's (spec 03 §12), and the
-  target budget counts every unit. A kill goes to the design whose weapon (or seeker) made
-  it. Each loss of units is recorded (a `UnitsLost` event, for the Strategic Combat window
-  and the replay). Launched units that no carrier recovers join the owner's group of their
-  kind in the sector, which is refilled as a launch would; drones stay groups of their own.
-- **Planets (Q39, Q40).** The pool is emptied when the population is hit; facilities are
-  removed at random. Only Weapons hits the weapon platforms (as a non-hull hit); the other
-  types listed in Q40 do nothing to planets. Planets regenerate shields from facilities
-  with `Shield Regeneration`.
-- **Ground combat (Q41).** Damage reaches the defender's troops in cargo order, then the
-  militia, then the other stored units, which never attack and do not count toward
-  offense or defense. Each troop design's hull values count once. Both modifiers of step 5
-  are taken from the step 4 total. An invasion that ends resets the militia pool.
-- **Organic armor (Q42).** Restoration stops at the first component the pool cannot pay.
-- **System modifiers (Q43).** Taken once, when the battle starts.
-- **Conditions (Q44).** `SpaceObject::conditions` holds hundredths of the 0–1.5 scale
-  (spec 02 §2), so a hit lowers it by D × 10, never below 0.
-- **Mines (Q45).** A warhead strikes the components of the group's front unit; a unit
-  destroyed is removed and the next warhead hits the next unit. Only the damage type is
-  checked. Without a record of the entering group (a battle outside the movement phase),
-  every vehicle in the sector counts as entering, one group per empire.
-- **Seekers (Q46).** Only a seeker that has not moved yet takes new members in.
-- **Captures and experience.** A capture or conversion gives no experience.
-- **Dodging seekers.** Among equally good squares, the computer takes the one farthest from
-  the nearest seeker aimed at the piece.
-- **Satellite cap.** The per-sector satellite cap (spec 03 §12) also limits launches in
-  combat.
-- **A player's phase (Q49).** The engine plays a player's phase in the same order as a
-  computer side's: first a launch step, in which the player may launch units (and switch
-  weapons) before anything else happens; the first other order ends it, the side's
-  drones act (with those just launched) and its seekers move, then the order is carried
-  out. Units launched after that step get their full movement at once, and launched
-  drones act at once. Any number of orders follow, in any order; a piece moves while it
-  has movement points and fires each weapon whose reload counter is 0. At the end of the
-  phase unused movement points are lost, and every piece of the side counts as having
-  acted: a ship that changes sides later in the combat turn does not act again. Auto
-  hands the rest of this phase to the strategies (what the side may still launch, then
-  every piece whose strategy has not acted yet); Auto with a piece has that piece act by
-  its strategy now; Resolve Combat hands the side to its strategies for the rest of the
-  battle. The battle ends only when a phase ends, as after a computer phase; OpenSE4's
-  client ends a player's phase by itself when no enemy is left (an option). The client
-  stops at the launch step while a piece of the side can launch (an option, on by
-  default): the player launches first, then Begin Phase (or any other order) lets the
-  side's drones and seekers move, as for a computer side; with nothing to launch the step
-  ends at once.
-- **Tactical groups (Q50).** Set Group Leader makes the piece lead group 0 to 9 (a
-  leader keeps its members); a piece that led that group before hands its members over
-  and follows the new leader too. A member keeps the place it has when it joins,
-  relative to its leader, and does not turn with it. When the player moves a leader,
-  each member moves toward its place with its own movement points; moving a member by
-  hand keeps it in the group, and a player's leader blocked on its way keeps its group.
-  A group a player formed is not a fleet group: its pieces use their design's strategy
-  when Auto plays them.
-- **Launch groups (Q51).** The chosen group size applies to fighters and drones; the
-  satellites of one launch order form one group.
-- **Firing by hand (Q52).** A weapon may fire at any hostile piece of its target set that
-  it reaches (a seeker: within its travel of the target's centre square), with its
-  reload, the piece's supplies and the target budget checked, as the computer's fire
-  is; the damage type is not checked, and point-defense may be fired by order.
-- **Who is asked (Q53).** Only human empires hostile to another empire in the battle,
-  in turn-based games without "No Tactical Combat". Network games are simultaneous, so
-  they never ask.
-- **Saving during a battle (Q55).** A battle is never saved in progress. While a
-  battle asks Tactical or Strategic, or is fought in the Tactical Combat window, the
-  windows that save are out of reach and no autosave falls; the battle's order (or End
-  Turn) is under way and the game is kept as it was before it. Quitting then drops that
-  order: the game loads as before it was given. Once the battle is over, the game saves
-  with its results.
-- **Combat simulator (Q54).** Each virtual empire is a copy of the player's empire (race,
-  culture, technology and strategies) under the side's name, at war with the other
-  sides. The mock battle is in the middle of a new, empty system of the home system's
-  type, without system abilities; every side starts beside the centre. Each design used
-  is copied for its side with the chosen strategy; ships start undamaged, with full
-  supplies and no experience. A sample planet is a copy of the colony (population,
-  facilities, stored units) moved into the battle sector. The window offers up to four
-  sides.
+  points are its design's. A fighter group's identical weapons (same part and mount) fire
+  together whichever designs carry them; a satellite or drone group fires each weapon of
+  each unit of each design. Offense and defense are the best design's (§7), speed the
+  slowest design's (spec 03 §12), and the target budget counts every unit. Each loss of
+  units is recorded (a `UnitsLost` event, for the Strategic Combat window and the
+  replay). Where this differs from the confirmed rules (the draw, kill credit, emissive
+  armor, unrecovered units), PARITY_GAPS lists it.
+- **Facility losses (Q39).** OpenSE4 does not copy the original's stale count of
+  destroyed facilities (§11): each destroyed facility is removed once. (The engine
+  still removes them at once instead of at the battle's end; see PARITY_GAPS.)
+- **Mines outside the movement phase.** Without a record of the entering group (a
+  battle outside the movement phase), every vehicle in the sector counts as entering,
+  one group per empire. In the original, mines only ever strike a group as it moves in.
+- **Tactical groups (Q50).** A group a player formed is not a fleet group: its pieces use
+  their design's strategy when the computer plays them. The rest of the engine's group
+  handling is to follow §5 (PARITY_GAPS).
+- **OpenSE4 extensions in the tactical window (Q49); engine choice stands.** Auto can be
+  given to a single piece, which then acts by its strategy at once. The client can end a
+  player's phase by itself when no enemy is left (an option); the battle still ends only
+  when a phase ends, as in the original. How the engine orders a player's phase, Auto and
+  Resolve Combat is to follow §4 (PARITY_GAPS).
+- **Quitting during a battle (Q55); OpenSE4 detail.** As in the original, a battle is
+  never saved in progress. If the program is quit while a battle asks Tactical or
+  Strategic, or is being fought, the order that started it (or End Turn) is dropped: the
+  game loads as it was before that order. Once the battle is over, the game saves with
+  its results.
