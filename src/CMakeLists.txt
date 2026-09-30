@@ -22,6 +22,8 @@ add_library(opense4_game STATIC
     game/abilities.cpp
     game/ai.cpp
     game/combat.cpp
+    game/combat_ground.cpp
+    game/combat_space.cpp
     game/commands.cpp
     game/design.cpp
     game/diplomacy.cpp

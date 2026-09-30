@@ -10,3 +10,7 @@ weapon type none direct fire seeking
 planet population anger change
 prepare for attack attack secure holdings
 physical strength intelligence cunning environmental resistance
+skips shields and armor quad damage to shields
+half damage to shields quarter damage to shields
+plague level 1 plague level 2
+movement strategy drop troops if carrying

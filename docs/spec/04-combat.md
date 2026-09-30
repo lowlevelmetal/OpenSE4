@@ -737,3 +737,79 @@ value (the component text says only one per ship counts):
 20. **Cargo loss.** Which stored items (troops, fighters, population) are lost first when
     cargo components are destroyed?
 21. **Treaty "None".** Do empires with no treaty fight on contact?
+22. **Designs without supply storage.** Can a vehicle that has no supply storage at all
+    (many bases, satellites and small craft) fire and raise shields, or is it always
+    "out of supplies"?
+23. **Mothballed ships.** Can they be attacked, and does their presence start a battle?
+24. **Mine timing.** Do mines strike only the vehicle that just entered, or every hostile
+    vehicle in the sector whenever combat is checked there?
+25. **Don't Get Hurt.** How far ahead does it look: enemy weapon range only, or range
+    plus how far the enemy can move first?
+26. **Holding fire for an invasion.** When an empire brings troops, does it stop firing on
+    the target planet entirely, or only once the planet's guns are silenced?
+27. **Captures in the statistics.** Does a captured ship count as lost for its design and
+    as a kill for the captor?
+28. **Conversion and self-destruct.** Does a successful Crew Conversion set off a
+    Self-Destruct Device the way a boarding does?
+29. **Captured troops.** Whose side are troop units on after the ship carrying them is
+    captured?
+30. **Drone launches.** Are drones launched one at a time or in groups?
+31. **Militia losses.** Does killing militia in ground combat also kill population?
+
+### 19.1 What the engine does until these are answered
+
+The engine (`src/game/combat*.cpp`) marks each of these choices "(inferred)".
+
+- **Map and setup (Q1-Q3).** A 32×32 grid. Planets take the centre and their owners
+  (the defenders, who always act first) gather around them. Other empires start 12
+  squares out, one per compass direction, facing the centre, with each fleet in its
+  formation. Seekers move at the end of their owner's phase.
+- **To-hit (Q4).** `roll(1..100) ≤ chance`. Culture Space Combat and (characteristic −
+  100) add straight to the points. Crew and fleet experience are to-hit points too. The
+  system combat bonus helps defense as well. Only the best ECM-type part counts.
+- **Damage (Q5-Q9).** Range shift as in §8. The next component to be hit is picked
+  uniformly among intact ones. Armor-skipping damage with only armor left is lost.
+  Normal damage drains normal shields, then phased. Current shields are capped when
+  a generator dies. Emissive armor ignores hits no larger than its best value, after
+  shields. Crystalline points are capped at the normal-shield maximum. Organic armor
+  regenerates per component.
+- **Units (Q10, Q30).** One to-hit roll per group weapon. Each member's weapon then hits
+  separately, and damage carries over from one member to the next. Drones launch one
+  at a time. Fighters group by the strategy's launch amount, capped by `Combat Fighter
+  Group Amount`, satellites by `Combat Satellite Group Amount`. `Combat Mine Group
+  Amount` is unused.
+- **Point defense (Q11).** Fires once per reload, outside the target budget, whenever a
+  valid target is in range: after each step of a moving seeker, fighter or drone, and in
+  its own phase.
+- **Ramming (Q12).** Target damage = the rammer's remaining structure × `Ram Ship Target
+  Modifier Percent` + matching warheads. Rammer damage = the target's remaining
+  structure × `Ram Ship Source Modifier Percent`. Shields absorb both, warheads are used
+  up, and a drone is always spent by its ram.
+- **Boarding and conversion (Q13, Q14, Q27, Q28).** Boarding is a strict comparison with
+  no roll, and the self-destruct part must be intact. The conversion table value is the
+  percent chance. A converted ship gets the reload penalty, loses its experience and can
+  self-destruct. A capture counts as a loss for the design and a kill for the captor.
+- **Push, pull, teleport (Q15).** Pushes stop at the map edge or an occupied square. A
+  teleport lands on a random free square, and its table value is ignored.
+- **Planets (Q16, Q26).** Shields also stop the planet-only damage types. Platform shield
+  parts do not add to planet shields. The same share of facilities as of population is
+  destroyed. A colony whose population reaches 0 is lost. A planet launches one group of
+  each unit kind per combat turn and never runs out of supply. An invading empire holds
+  fire on a planet only once its guns are gone.
+- **Ground combat (Q17, Q31).** One militia unit per `Defending Units Per Population` M,
+  at least one while anyone lives there. The hit chance is that of an unmodified shot at
+  one square (90%). Damage is entry 1 × `Ground Combat Damage Modifier Percent`, adjusted
+  by culture Ground Combat, Physical Strength and the planet's ground defense, and is at
+  least 1. Militia losses cost no population. Troop damage is not kept between game
+  turns.
+- **Repeat battles (Q18, Q24).** Combat is checked wherever movement asks for it.
+  Mines strike every hostile vehicle present at that moment.
+- **Experience (Q19).** +1 for firing in a battle, +5 per ship, base or planet destroyed
+  or captured, +1 per unit. Capped at 50. A fleet gains its best member's gain.
+- **Supply and mothballs (Q22, Q23).** Designs without supply storage never run dry.
+  Mothballed ships are helpless targets and can start a battle.
+- **Don't Get Hurt (Q25).** Assumes each enemy can move twice its speed before we act
+  again, because the phase order is reshuffled every turn. Among safe squares it
+  prefers room to keep evading. A piece that has neither weapons nor another task falls
+  back to it.
+- **Captured troops (Q29).** A troop unit fights for the empire that owns its design.
