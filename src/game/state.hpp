@@ -110,6 +110,18 @@ struct LogEntry {
     std::string picture;  // Events/ picture name, if any
 };
 
+// One dated line of an empire's long record, the History window (spec 05
+// §3.4): the log keeps only the last turn, this record keeps every turn.
+// Entries are listed per empire they concern, plus a General list, and may
+// carry a map position. Which events are recorded is OpenSE4's choice
+// (addHistory's callers, spec 05 open question 30, inferred).
+struct HistoryEntry {
+    uint32_t turn = 0;
+    EmpireId empire;                    // the empire it concerns (us or another); invalid: General
+    std::string text;
+    std::optional<Location> location;   // where it happened, if anywhere
+};
+
 struct TurnStats {
     uint32_t turn = 0;
     int64_t score = 0;
@@ -135,6 +147,15 @@ struct EconomyReport {
     int64_t intelligence = 0;
 };
 
+// A foreign design an empire knows and the turn it last saw it. Knowledge of
+// a design not seen for more than kDesignMemoryTurns is forgotten in the
+// empire's end-of-turn processing (spec 05 §8 step 12).
+struct SeenDesign {
+    DesignId design;
+    uint32_t turn = 0;
+};
+inline constexpr uint32_t kDesignMemoryTurns = 50;
+
 // What an empire knows about the galaxy (spec 01 §6).
 struct Knowledge {
     std::vector<uint8_t> explored;        // per SystemId: stellar bodies known
@@ -142,7 +163,7 @@ struct Knowledge {
     std::vector<uint8_t> knownWarpLink;   // per ObjectId (warp points): destination known
     std::vector<uint32_t> lastSeen;       // per SystemId: turn last seen with presence
     std::vector<VehicleId> visibleVehicles;  // foreign vehicles visible this turn (sorted)
-    std::vector<DesignId> seenDesigns;       // foreign designs learned (sorted)
+    std::vector<SeenDesign> seenDesigns;     // foreign designs learned (sorted by design), with the turn last seen
     std::vector<std::string> notes;          // per SystemId, player notes
 };
 
@@ -191,8 +212,9 @@ struct Empire {
     std::vector<std::string> repairPriorities;
     std::vector<DesignId> designs;          // own designs
 
-    std::vector<LogEntry> log;
-    std::vector<TurnStats> history;
+    std::vector<LogEntry> log;              // this turn's messages (pruned at the end of each turn, spec 05 §3.4)
+    std::vector<HistoryEntry> historyEvents;  // the History window's long record, oldest first
+    std::vector<TurnStats> history;         // statistics per turn (Scores, Comparisons)
     int experience = 0;
 
     // Computer player state (spec 05 §7).
@@ -636,5 +658,19 @@ struct GameState {
 // Appends to an empire's log for the current turn.
 void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
             std::optional<Location> where = std::nullopt, std::string picture = {});
+
+// Appends a line dated the current turn to an empire's history record.
+// `about` is the empire the event concerns (invalid: the General list).
+void addHistory(GameState& s, EmpireId empire, EmpireId about, std::string text, std::optional<Location> where = std::nullopt);
+
+// Foreign designs an empire has seen (Knowledge::seenDesigns).
+bool knowsDesign(const Knowledge& k, DesignId d);
+// When `d` was last seen; nullopt when it is not known.
+std::optional<uint32_t> designSeenTurn(const Knowledge& k, DesignId d);
+// Records that the design was seen at `turn`; a design already known keeps
+// the later of the two turns.
+void seeDesign(Knowledge& k, DesignId d, uint32_t turn);
+// The designs of the list, in order.
+std::vector<DesignId> seenDesignIds(const Knowledge& k);
 
 } // namespace opense4::game

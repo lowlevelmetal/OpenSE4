@@ -66,6 +66,7 @@ void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     const EmpireId owner = c->owner;
     const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet));
+    addHistory(s, owner, owner, std::format("Lost the colony on {}. {}", s.galaxy.object(planet).name, cause), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Lost", sys, planet);
     if (c->homeworld) ctx.mood(owner, "Homeworld Lost", sys, planet);
     s.colonies[planet.index()].reset();
@@ -455,7 +456,10 @@ private:
         return a;
     }
 
-    void announce(std::string title) { ctx_.log(owner_, LogCategory::Events, std::move(title), std::format("By {}.", name_), here_); }
+    void announce(std::string title) {
+        addHistory(s_, owner_, owner_, std::format("{} (by {})", title, name_), here_);
+        ctx_.log(owner_, LogCategory::Events, std::move(title), std::format("By {}.", name_), here_);
+    }
 
     std::string planetName(SystemId sys) const { return std::format("{} {}", s_.galaxy.system(sys).name, romanNumeral(nextPlanetNumeral(s_.galaxy, sys))); }
 

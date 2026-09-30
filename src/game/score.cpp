@@ -124,7 +124,10 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     s.removeDeadVehicles();
     const std::string text = std::format("The {} has been destroyed.", effects::empireFullName(s.empire(id)));
     for (const Empire& x : s.empires)
-        if (x.id == id || (x.alive && x.relation(id).contact)) ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text);
+        if (x.id == id || (x.alive && x.relation(id).contact)) {
+            ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text);
+            addHistory(s, x.id, id, std::format("The {} was destroyed", effects::empireFullName(s.empire(id))));
+        }
     // Intelligence projects aimed at it go; every treaty with it returns to "no contact".
     for (Empire& x : s.empires) std::erase_if(x.intel, [&](const IntelProjectOrder& o) { return o.target == id; });
     diplomacy::forgetEmpire(s, id);
@@ -134,8 +137,10 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     std::vector<EmpireId> left;
     for (const Empire& x : s.empires)
         if (x.alive && x.kind != PlayerKind::Neutral) left.push_back(x.id);
-    if (left.size() == 1)
+    if (left.size() == 1) {
         ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on.");
+        addHistory(s, left.front(), {}, "Every other empire has been destroyed");
+    }
 }
 
 void recordStatistics(TurnContext& ctx, EmpireId e) {
@@ -214,9 +219,11 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
             s.winner = id;
             best = sc;
         }
-    for (const Empire& e : s.empires)
+    for (const Empire& e : s.empires) {
         ctx.log(e.id, LogCategory::Misc, "Game Over",
                 std::format("This is the last turn: {}. The Scores window shows the final ranking.", reason));
+        addHistory(s, e.id, {}, std::format("The game ended: {}", reason));
+    }
 }
 
 } // namespace opense4::game::score

@@ -528,13 +528,13 @@ TEST_CASE("diplomacy: partnership shares maps and designs; masters see subject d
     diplomacy::setTreaty(ctx, kA, kC, Treaty::Subjugation, true);
     const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
     const DesignId cDesign = s.empire(kC).designs.front();
-    s.empire(kB).knowledge.seenDesigns = {cDesign};
+    seeDesign(s.empire(kB).knowledge, cDesign, s.turn);
     const DesignId fresh = addTestDesign(s, r, kC, "Fresh Hull", "Test Frigate", {"Test Bridge"});
     diplomacy::treatyStep(ctx, kA);
     CHECK(s.empire(kA).hasExplored(homeB));
     CHECK(hasLog(s, kA, "New System Maps Available"));
-    CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), cDesign));
-    CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), fresh));
+    CHECK(knowsDesign(s.empire(kA).knowledge, cDesign));
+    CHECK(knowsDesign(s.empire(kA).knowledge, fresh));
     CHECK_FALSE(s.empire(kC).hasExplored(homeB));
 }
 

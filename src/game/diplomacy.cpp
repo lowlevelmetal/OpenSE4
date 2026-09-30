@@ -43,10 +43,18 @@ bool answerable(MessageType t) {
     }
 }
 
-void learnDesign(Empire& e, DesignId d) {
-    auto& seen = e.knowledge.seenDesigns;
-    auto it = std::lower_bound(seen.begin(), seen.end(), d);
-    if (it == seen.end() || *it != d) seen.insert(it, d);
+// The empire sees design `d` now (spec 05 §8 step 12 counts from this turn).
+void learnDesign(const GameState& s, Empire& e, DesignId d) { seeDesign(e.knowledge, d, s.turn); }
+
+// Designs another empire has seen pass on with the turn that empire last
+// saw them (a design we already know keeps the later date), so shared
+// knowledge ages from the real sighting and two partners cannot keep a
+// design alive by teaching it back and forth (inferred, spec 05 open
+// question 31).
+void shareSeenDesigns(GameState& s, EmpireId from, EmpireId to) {
+    const std::vector<SeenDesign> seen = s.empire(from).knowledge.seenDesigns;
+    for (const SeenDesign& x : seen)
+        if (x.design.index() < s.designs.size() && s.design(x.design).owner != to) seeDesign(s.empire(to).knowledge, x.design, x.turn);
 }
 
 void explore(GameState& s, EmpireId e, SystemId sys) {
@@ -171,6 +179,8 @@ void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
             std::format("We have withdrawn from {} so that the {} may settle it.", planet, nameOf(s, m.to)));
     ctx.log(m.to, LogCategory::Politics, "Independence Granted",
             std::format("The {} has abandoned {} for us to settle.", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet));
+    addHistory(s, m.from, m.to, std::format("Granted {} its independence for the {}", planet, nameOf(s, m.to)), locationOf(s.galaxy, m.planet));
+    addHistory(s, m.to, m.from, std::format("The {} granted {} its independence", nameOf(s, m.from), planet), locationOf(s.galaxy, m.planet));
 }
 
 void receive(TurnContext& ctx, DiplomaticMessage& stored) {
@@ -292,6 +302,15 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     auto role = [&](bool dom) { return !dominance ? std::string{} : dom ? std::string(" We are the dominant partner.") : std::string(" We are the subordinate partner."); };
     ctx.log(a, LogCategory::Politics, "New Treaty", std::format("Our treaty with the {} is now {}.{}", nameOf(s, b), displayName(t), role(aDom)));
     ctx.log(b, LogCategory::Politics, "New Treaty", std::format("Our treaty with the {} is now {}.{}", nameOf(s, a), displayName(t), role(bDom)));
+    // The History window lists every treaty change under the other empire.
+    auto history = [&](EmpireId other, bool dom) {
+        const std::string them = nameOf(s, other);
+        if (t == Treaty::War) return std::format("War with the {}", them);
+        if (t == Treaty::None) return old == Treaty::War ? std::format("Peace with the {}", them) : std::format("Treaty with the {} ended", them);
+        return std::format("{} with the {}{}", displayName(t), them, !dominance ? "" : dom ? " (we are the master)" : " (we are the subject)");
+    };
+    addHistory(s, a, b, history(b, aDom));
+    addHistory(s, b, a, history(a, bDom));
 
     // A subject may hold no other treaty (spec 05 §3.2).
     if (t == Treaty::Subjugation) {
@@ -319,6 +338,8 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
     s.empire(b).relation(a).contact = true;
     ctx.log(a, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, b)));
     ctx.log(b, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, a)));
+    addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
+    addHistory(s, b, a, std::format("First contact with the {}", nameOf(s, a)));
 }
 
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
@@ -382,7 +403,7 @@ void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
     v->minister = false;
     v->targetVehicle = {};
     v->targetObject = {};
-    if (s.design(v->design).owner != to) learnDesign(s.empire(to), v->design);
+    if (s.design(v->design).owner != to) learnDesign(s, s.empire(to), v->design);
     explore(s, to, v->location.system);
 }
 
@@ -500,9 +521,8 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     Empire& loser = s.empire(from);
     s.empire(to).stockpile += max(loser.stockpile, Resources{});
     loser.stockpile = {};
-    for (DesignId d : loser.designs) learnDesign(s.empire(to), d);
-    for (DesignId d : loser.knowledge.seenDesigns)
-        if (s.design(d).owner != to) learnDesign(s.empire(to), d);
+    for (DesignId d : loser.designs) learnDesign(s, s.empire(to), d);
+    shareSeenDesigns(s, from, to);
     shareMap(s, from, to);
     // The surrendered empire's knowledge passes on as well (inferred).
     for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
@@ -516,7 +536,10 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     for (Empire& e : s.empires) std::erase_if(e.intel, [&](const IntelProjectOrder& o) { return o.target == from; });
     const std::string text = std::format("The {} has surrendered to the {}.", nameOf(s, from), nameOf(s, to));
     for (const Empire& e : s.empires)
-        if (e.alive || e.id == from) ctx.log(e.id, LogCategory::Politics, "Surrender", text);
+        if (e.alive || e.id == from) {
+            ctx.log(e.id, LogCategory::Politics, "Surrender", text);
+            addHistory(s, e.id, e.id == from ? to : from, std::format("The {} surrendered to the {}", nameOf(s, from), nameOf(s, to)));
+        }
     forgetEmpire(s, from);
 }
 
@@ -602,7 +625,7 @@ void treatyStep(TurnContext& ctx, EmpireId id) {
         const Relation& rel = s.empire(id).relation(other);
         if (rel.treaty != Treaty::Subjugation || !rel.dominant) return;
         const std::vector<DesignId> own = s.empire(other).designs;
-        for (DesignId d : own) learnDesign(s.empire(id), d);
+        for (DesignId d : own) learnDesign(s, s.empire(id), d);
     });
     // 3. Trade income from every partner, at the trade percentage the counters
     // give before they grow (spec 05 §3.3).
@@ -612,9 +635,7 @@ void treatyStep(TurnContext& ctx, EmpireId id) {
         if (s.empire(id).relation(other).treaty != Treaty::Partnership) return;
         if (shareMap(s, other, id) > 0)
             ctx.log(id, LogCategory::Misc, "New System Maps Available", std::format("The {} has shared its star charts with us.", nameOf(s, other)));
-        const std::vector<DesignId> seenByPartner = s.empire(other).knowledge.seenDesigns;
-        for (DesignId d : seenByPartner)
-            if (d.index() < s.designs.size() && s.design(d).owner != id) learnDesign(s.empire(id), d);
+        shareSeenDesigns(s, other, id);
     });
     // 5. The trade counter grows toward every other living empire, whatever the treaty.
     others([&](EmpireId other) { ++s.empire(id).relation(other).tradeTurns; });

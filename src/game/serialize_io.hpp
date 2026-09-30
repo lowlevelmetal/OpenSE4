@@ -330,6 +330,10 @@ void io(Ar& ar, AiMemory& m) {
 
 template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture); }
 
+template <class Ar> void io(Ar& ar, HistoryEntry& h) { fields(ar, h.turn, h.empire, h.text, h.location); }
+
+template <class Ar> void io(Ar& ar, SeenDesign& d) { fields(ar, d.design, d.turn); }
+
 template <class Ar>
 void io(Ar& ar, TurnStats& t) {
     fields(ar, t.turn, t.score, t.production, t.research, t.intelligence, t.techLevels, t.systems, t.planets, t.population, t.units,
@@ -357,7 +361,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.relations, e.knowledge);
     fields(ar, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
-    fields(ar, e.log, e.history, e.experience);
+    fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter);
 }

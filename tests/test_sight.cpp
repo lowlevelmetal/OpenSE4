@@ -16,10 +16,7 @@ bool visibleIn(const GameState& s, EmpireId e, VehicleId id) {
     const auto& list = s.empire(e).knowledge.visibleVehicles;
     return std::find(list.begin(), list.end(), id) != list.end();
 }
-bool seen(const GameState& s, EmpireId e, DesignId d) {
-    const auto& list = s.empire(e).knowledge.seenDesigns;
-    return std::binary_search(list.begin(), list.end(), d);
-}
+bool seen(const GameState& s, EmpireId e, DesignId d) { return knowsDesign(s.empire(e).knowledge, d); }
 
 } // namespace
 
@@ -269,6 +266,11 @@ TEST_CASE("sight: long range scanners reveal designs; jammers block them") {
     CHECK(seen(w.s, kA, farD));
     CHECK_FALSE(seen(w.s, kA, jamD));
     CHECK_FALSE(seen(w.s, kB, nearD));  // never one's own designs
+    // Each scan dates the sighting anew (spec 05 §8 step 12 counts from it).
+    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
+    w.s.turn += 7;
+    sight::updateKnowledge(r, w.s);
+    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
     (void)b;
 }
 

@@ -815,7 +815,7 @@ TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the 
         CHECK(std::any_of(log.begin(), log.end(),
                           [](const LogEntry& l) { return l.category == LogCategory::Combat && l.title.starts_with("Battle at"); }));
     }
-    CHECK(std::binary_search(s.empire(ar.b).knowledge.seenDesigns.begin(), s.empire(ar.b).knowledge.seenDesigns.end(), hunterDesign));
+    CHECK(designSeenTurn(s.empire(ar.b).knowledge, hunterDesign) == s.turn);  // seen in this battle
 
     // The replay record.
     REQUIRE(s.combats.size() == 1);
@@ -1650,6 +1650,13 @@ TEST_CASE("combat: ground combat captures a planet") {
     CHECK(moodCount(ctx, ar.b, "Any Planet Lost") == 1);
     CHECK(moodCount(ctx, ar.a, "Any Enemy Planet Captured") == 1);
     CHECK(std::any_of(s.empire(ar.a).log.begin(), s.empire(ar.a).log.end(), [](const LogEntry& l) { return l.category == LogCategory::Combat; }));
+    // Both histories list the capture under the other empire, at the planet.
+    for (auto [owner, other] : {std::pair{ar.a, ar.b}, std::pair{ar.b, ar.a}}) {
+        const auto& record = s.empire(owner).historyEvents;
+        REQUIRE(record.size() == 1);
+        CHECK(record[0].empire == other);
+        CHECK(record[0].location == std::optional<Location>(locationOf(s.galaxy, planet)));
+    }
 }
 
 TEST_CASE("combat: ground rounds carry damage and multiply by the ground percentage") {

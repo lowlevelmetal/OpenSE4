@@ -242,6 +242,39 @@ TEST_CASE("client logic: statistics series and timeline") {
     CHECK_FALSE(mentions("system"));
 }
 
+TEST_CASE("client logic: History window lists") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 3, 12);
+    const EmpireId me{0u}, met{1u}, gone{2u};
+    s.turn = 9;
+    s.empire(me).relation(met).contact = s.empire(met).relation(me).contact = true;
+    s.empire(gone).alive = false;  // destroyed, but our record mentions it
+    addHistory(s, me, gone, "Treaty with the Gone ended");
+    s.turn = 12;
+    addHistory(s, me, EmpireId{}, "A comet passed", Location{SystemId{0u}, Sector{3, 4}});
+    addHistory(s, me, me, "Colonized Somewhere");
+    addHistory(s, me, EmpireId{}, "A storm formed");
+    addHistory(s, met, EmpireId{}, "Not ours");
+
+    CHECK(historyEmpires(s, me) == std::vector<EmpireId>{me, met, gone});
+    CHECK(historyEmpires(s, met) == std::vector<EmpireId>{me, met});
+
+    const auto general = historyLines(r, s, me, EmpireId{}, false);
+    REQUIRE(general.size() == 2);
+    CHECK(general[0].text == "A storm formed");  // newest first, also within a turn
+    CHECK(general[1].text == "A comet passed");
+    CHECK(general[1].where == std::optional<Location>(Location{SystemId{0u}, Sector{3, 4}}));
+
+    const auto ours = historyLines(r, s, me, me, false);
+    REQUIRE(ours.size() == 2);
+    CHECK(ours[0].text == "Colonized Somewhere");
+    CHECK(ours[1].turn == 0);  // the founding comes last
+    const auto theirs = historyLines(r, s, me, gone, false);
+    REQUIRE(theirs.size() == 2);
+    CHECK(theirs[0].text == "Treaty with the Gone ended");
+    CHECK(theirs[0].turn == 9);
+}
+
 TEST_CASE("client logic: reordering a list") {
     std::vector<int> v{1, 2, 3, 4};
     CHECK(moveEntry(v, 3, 0));

@@ -36,7 +36,10 @@ void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
     }
     const bool unique = std::any_of(obj.abilities.begin(), obj.abilities.end(),
                                     [](const auto& a) { return parseAbilityKind(a.type) == AbilityKind::AncientRuinsUnique; });
-    if (advances > 0 || unique) ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet));
+    if (advances > 0 || unique) {
+        ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet));
+        addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
+    }
     // The ruins are used up (inferred).
     std::erase_if(obj.abilities, [](const ruleset::Ability& a) {
         const auto k = parseAbilityKind(a.type);
@@ -85,6 +88,7 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     const SystemId sys = s.galaxy.object(planet).system;
     ctx.log(owner, LogCategory::Misc, std::format("{} colonized", s.galaxy.object(planet).name), std::format("{} founded the colony.", v.name),
             locationOf(s.galaxy, planet));
+    addHistory(s, owner, owner, std::format("Colonized {}", s.galaxy.object(planet).name), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Colonized", sys, planet);
     s.vehicle(id)->count = 0;  // the colony ship is consumed
     grantRuins(ctx, owner, planet);
@@ -307,8 +311,7 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
         std::erase_if(owner.designs, [&](DesignId id) {
             if (id.index() >= s.designs.size() || !s.design(id).obsolete || inUse.contains(id)) return false;
             for (const Empire& other : s.empires)
-                if (other.id != owner.id && other.alive &&
-                    std::binary_search(other.knowledge.seenDesigns.begin(), other.knowledge.seenDesigns.end(), id))
+                if (other.id != owner.id && other.alive && knowsDesign(other.knowledge, id))
                     return false;
             return true;
         });

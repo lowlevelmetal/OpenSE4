@@ -61,6 +61,11 @@ constexpr bool detects(const SightVector& sensors, const SightVector& obsc) {
 // mine fields (and troops) do not.
 bool isSensorSource(ruleset::VehicleType t);
 
+// End-of-turn step 12 (spec 05 §8, confirmed: binary): the empire forgets the
+// foreign designs it last saw more than kDesignMemoryTurns turns ago.
+// Returns how many were forgotten.
+size_t forgetOldDesigns(GameState& s, EmpireId e);
+
 // Knowledge updates used by movement (arrival, warp transit).
 void markExplored(GameState& s, EmpireId e, SystemId sys);
 void learnWarpLink(GameState& s, EmpireId e, ObjectId warpPoint);

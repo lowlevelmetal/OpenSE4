@@ -201,8 +201,9 @@ Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& 
 
 // A colony whose population died out is removed: each planet value drops by
 // `Planet Value Percent Loss After Owner Death`, and the owner gets `Homeworld
-// Lost` (first default colony type) or `Any Planet Lost` (spec 02 §2).
-void colonyDiesOut(TurnContext& ctx, ObjectId planet);
+// Lost` (first default colony type) or `Any Planet Lost` (spec 02 §2). The
+// owner's history record notes the loss, with `cause` when given.
+void colonyDiesOut(TurnContext& ctx, ObjectId planet, std::string_view cause = {});
 // A planet that rebels founds a new computer empire and becomes its capital
 // (spec 02 §4): effects::breakAway (events.hpp) does it.
 

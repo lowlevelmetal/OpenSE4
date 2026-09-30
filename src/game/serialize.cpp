@@ -202,6 +202,11 @@ std::string validateState(const GameState& s, const Rules* rules) {
         if (e.relations.size() != nEmp) return std::format("empire {} has {} relations for {} empires", i, e.relations.size(), nEmp);
         for (DesignId d : e.designs)
             if (!d.valid() || d.index() >= nDes) return std::format("empire {} lists a missing design", i);
+        for (const SeenDesign& d : e.knowledge.seenDesigns)
+            if (!d.design.valid() || d.design.index() >= nDes) return std::format("empire {} has seen a missing design", i);
+        for (const HistoryEntry& h : e.historyEvents)
+            if (!empireOk(h.empire) || (h.location && !placeOk(*h.location)))
+                return std::format("empire {} has a history entry about a missing empire or place", i);
         for (const Waypoint& w : e.waypoints)
             if (w.set && !placeOk(w.location)) return std::format("empire {} has a waypoint outside the galaxy", i);
         if (rules) {

@@ -1361,6 +1361,10 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK(w.s.vehicle(ship) == nullptr);
     CHECK(hasMood(w.lastMoods, kA, "Any Planet Colonized"));
     CHECK(w.logged(kA, "colonized"));
+    REQUIRE_FALSE(w.s.empire(kA).historyEvents.empty());
+    CHECK(w.s.empire(kA).historyEvents.back().text == std::format("Colonized {}", w.s.galaxy.object(target).name));
+    CHECK(w.s.empire(kA).historyEvents.back().empire == kA);
+    CHECK(w.s.empire(kA).historyEvents.back().location == std::optional<Location>(locationOf(w.s.galaxy, target)));
 
     // Game options and planet types.
     const ObjectId ice = w.planet(a, {7, 7}, "Ice", "Oxygen");
@@ -2145,7 +2149,7 @@ TEST_CASE("movement: obsolete designs go when nothing uses or knows them") {
     for (DesignId d : {used, queued, seen, gone}) w.s.design(d).obsolete = true;
     w.spawn(used, at(a, 1, 1));
     w.colony(w.planet(a, {2, 2}), kA, 100).queue.items.push_back(QueueItem{QueueItem::Kind::Vehicle, queued});
-    w.s.empire(kB).knowledge.seenDesigns = {seen};
+    seeDesign(w.s.empire(kB).knowledge, seen, 5);
     w.s.turn = 9;  // the cleanup runs when a new year starts
     w.upkeep();
     const auto& list = w.s.empire(kA).designs;

@@ -79,15 +79,17 @@ empires are skipped.
       `economy::collectTrade`);
    7. maintenance, 8. planets, 9. happiness, 10. construction (`economy::payMaintenance`,
       `processPlanets`, `updateHappiness`, `runConstruction`);
-   11. repair, 13. supply (`movement::repairEmpire`, `supplyEmpire`);
+   11. repair (`movement::repairEmpire`);
+   12. foreign designs last seen more than 50 turns ago are forgotten
+      (`sight::forgetOldDesigns`);
+   13. supply (`movement::supplyEmpire`);
    14. the storage cap, 15. system-wide abilities and training (`economy::applyStorageCap`,
       `applySystemAbilities`, `movement::trainEmpire`);
    17. ground combat where the empire's troops invade (`combat::runGroundCombat`);
-   18. the log keeps only this turn's entries.
+   18. the log keeps only this turn's entries; the long record of the History window is
+      `Empire::historyEvents`, which is never pruned (`addHistory`).
 
-   Step 12 (forgetting foreign designs seen more than 50 turns ago) does nothing: the
-   engine does not record when a design was seen. Step 16's per-object upkeep is part of
-   the supply step.
+   Step 16's per-object upkeep is part of the supply step.
 7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`).
 8. **Victory check** (`score::checkVictory`).
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due

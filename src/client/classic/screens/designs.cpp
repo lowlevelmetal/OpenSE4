@@ -126,7 +126,7 @@ private:
     std::vector<game::DesignId> listFor(const UiContext& ui, DesignTab tab) const {
         const game::GameState& s = ui.state();
         std::vector<game::DesignId> out;
-        const auto& source = enemyTab(tab) ? ui.me().knowledge.seenDesigns : ui.me().designs;
+        const std::vector<game::DesignId> source = enemyTab(tab) ? game::seenDesignIds(ui.me().knowledge) : ui.me().designs;
         for (game::DesignId id : source) {
             if (id.index() >= s.designs.size()) continue;
             const game::Design& d = s.design(id);

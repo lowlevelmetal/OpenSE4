@@ -65,7 +65,8 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 // One empire's end-of-turn processing (spec 05 §8), in this order: its
 // ministers' end-of-turn actions when `ministers` (planEconomyStep), its
 // statistics, intelligence, research, income, treaties and trade,
-// maintenance, planets, happiness, construction, repair, supply, storage
+// maintenance, planets, happiness, construction, repair, foreign designs
+// last seen more than 50 turns ago forgotten (step 12), supply, storage
 // cap, system-wide abilities and training, ground combat where its troops
 // invade, and the log pruned to this turn's entries. The destruction check
 // is the caller's: processTurn runs it right after. (A turn-based game would

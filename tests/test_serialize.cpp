@@ -95,6 +95,8 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(IntelProjectOrder);
     CHECK_ALL_FIELDS(Relation);
     CHECK_ALL_FIELDS(LogEntry);
+    CHECK_ALL_FIELDS(HistoryEntry);
+    CHECK_ALL_FIELDS(SeenDesign);
     CHECK_ALL_FIELDS(TurnStats);
     CHECK_ALL_FIELDS(EconomyReport);
     CHECK_ALL_FIELDS(Knowledge);
@@ -561,8 +563,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x7d2b99b0dd2ceeafull;
-    constexpr size_t kGoldenSize = 1593;
+    constexpr uint64_t kGoldenChecksum = 0x3b6f3aec70651a6full;
+    constexpr size_t kGoldenSize = 1597;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

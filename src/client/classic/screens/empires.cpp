@@ -686,43 +686,24 @@ public:
         Dialog d(ui, "History", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         const game::GameState& s = ui.state();
-        const auto all = usAndKnown(ui);
-        if (!validEmpire(s, empire_) || std::find(all.begin(), all.end(), empire_) == all.end()) empire_ = ui.session.player();
-
-        struct Event {
-            uint32_t turn;
-            std::string text;
-            std::optional<game::Location> where;
-        };
-        std::vector<Event> events;
-        const game::Empire& e = s.empire(empire_);
-        events.push_back({0, std::format("The {} {} is founded", e.name, e.empireType), std::nullopt});
-        if (statsVisible(ui, empire_))
-            for (auto& h : statsEvents(statsSeries(ui.rules(), s, empire_))) events.push_back({h.turn, std::move(h.text), std::nullopt});
-        if (empire_ == ui.session.player()) {
-            for (const game::LogEntry& l : e.log)
-                if (l.category != game::LogCategory::Construction) events.push_back({l.turn, l.title, l.location});
-            for (EmpireId k : knownEmpires(ui)) {
-                const game::Relation& rel = e.relation(k);
-                if (rel.treaty != Treaty::None)
-                    events.push_back({rel.treatyTurn, std::format("{} with the {}", game::displayName(rel.treaty), s.empire(k).name), std::nullopt});
-            }
-        } else {
-            const game::Relation& rel = ui.me().relation(empire_);
-            if (rel.treaty != Treaty::None)
-                events.push_back({rel.treatyTurn, std::format("{} with us", game::displayName(rel.treaty)), std::nullopt});
-            if (rel.lastWarTurn >= 0) events.push_back({uint32_t(rel.lastWarTurn), "Last at war with us", std::nullopt});
-        }
-        std::stable_sort(events.begin(), events.end(), [](const Event& a, const Event& b) { return a.turn > b.turn; });
+        const EmpireId me = ui.session.player();
+        // One list per empire plus the General list (spec 05 §3.4); the lines
+        // come from our long record, which outlives the log.
+        const auto all = historyEmpires(s, me);
+        if (!general_ && (!validEmpire(s, empire_) || std::find(all.begin(), all.end(), empire_) == all.end())) empire_ = me;
+        const EmpireId list = general_ ? EmpireId{} : empire_;
+        const auto events = historyLines(ui.rules(), s, me, list, !general_ && statsVisible(ui, empire_));
 
         d.beginContent();
-        empireLabel(ui, empire_, true);
+        if (general_) ImGui::TextUnformatted("General");
+        else empireLabel(ui, empire_, true);
         ImGui::SameLine();
         ImGui::TextColored(kTextDim, "Timeline, newest first. Select an event to see where it happened.");
         const float mapSize = ui.px(330);
         ImGui::BeginChild("##events", ImVec2(ImGui::GetContentRegionAvail().x - mapSize - ImGui::GetStyle().ItemSpacing.x, 0),
                           ImGuiChildFlags_Borders);
-        if (ImGui::BeginTable("##timeline", 2, ImGuiTableFlags_RowBg)) {
+        if (events.empty()) ImGui::TextColored(kTextDim, "Nothing recorded yet.");
+        else if (ImGui::BeginTable("##timeline", 2, ImGuiTableFlags_RowBg)) {
             ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, ui.px(60));
             ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch);
             for (size_t i = 0; i < events.size(); ++i) {
@@ -744,23 +725,29 @@ public:
         ImGui::BeginGroup();
         MiniMapStyle style;
         style.owners = false;
-        for (const auto& c : s.colonies)
-            if (c && c->owner == empire_ && (empire_ == ui.session.player() || ui.me().hasExplored(s.galaxy.object(c->planet).system)))
-                style.fills.push_back({s.galaxy.object(c->planet).system, empireColor(s, empire_)});
+        if (!general_)
+            for (const auto& c : s.colonies)
+                if (c && c->owner == empire_ && (empire_ == me || ui.me().hasExplored(s.galaxy.object(c->planet).system)))
+                    style.fills.push_back({s.galaxy.object(c->planet).system, empireColor(s, empire_)});
         if (selected_ >= 0 && size_t(selected_) < events.size() && events[size_t(selected_)].where)
             style.highlight.push_back(events[size_t(selected_)].where->system);
         miniMap(ui, "##historyMap", {330, 330}, style);
-        ImGui::TextColored(kTextDim, "Known colonies in the empire's colour.");
+        ImGui::TextColored(kTextDim, general_ ? "The selected event's system is highlighted." : "Known colonies in the empire's colour.");
         ImGui::EndGroup();
 
         d.beginButtons();
         for (EmpireId k : all) {
             ImGui::PushID(int(k.index()));
-            if (d.tab(k == ui.session.player() ? "Our Empire" : s.empire(k).name.c_str(), k == empire_)) {
+            if (d.tab(k == me ? "Our Empire" : s.empire(k).name.c_str(), !general_ && k == empire_)) {
                 empire_ = k;
+                general_ = false;
                 selected_ = -1;
             }
             ImGui::PopID();
+        }
+        if (d.tab("General", general_)) {
+            general_ = true;
+            selected_ = -1;
         }
         d.close();
         return d.keepOpen();
@@ -768,6 +755,7 @@ public:
 
 private:
     EmpireId empire_;
+    bool general_ = false;
     int selected_ = -1;
 };
 

@@ -26,8 +26,7 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     s.design(theirs).kills = 4;
     s.design(theirs).enemyTonnageDestroyed = 750;
     s.design(ours).enemyTonnageDestroyed = 120;
-    s.empire(me).knowledge.seenDesigns.push_back(theirs);
-    std::sort(s.empire(me).knowledge.seenDesigns.begin(), s.empire(me).knowledge.seenDesigns.end());
+    seeDesign(s.empire(me).knowledge, theirs, s.turn);
 
     const GameState v = redactForEmpire(s, me);
     CHECK(v.design(theirs).name == s.design(theirs).name);  // seen: the design itself is known

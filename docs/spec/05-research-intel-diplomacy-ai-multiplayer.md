@@ -448,6 +448,10 @@ up the trade chain [M].
     reply) applies the counter.
   - Messages are kept 10 turns after sending, then dropped, together with any message
     whose sender or recipient is gone.
+  - The history record: each empire keeps its own dated list, whose lines concern itself,
+    another empire or nobody (the General list), each with an optional map position. It is
+    kept for the whole game, saved with it, and shown only to its owner. Which events
+    it holds is open question 30.
 
 ## 4. Random events
 
@@ -1654,6 +1658,11 @@ rounded.
 - In simultaneous games messages take effect before movement, research and intelligence;
   in turn-based games they take effect when sent (§3.4).
 
+**Step 12 in OpenSE4** [I]: each foreign design an empire knows carries the turn it was
+last seen, and step 12 drops those seen more than 50 turns before the current turn (seen
+at turn T: still known at T + 50, forgotten at T + 51). How a design's date is set is open
+question 31.
+
 **OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for every game, and
 `empireEndOfTurn` is one empire's end-of-turn processing. Every step has a stable iteration
 order and draws its randomness from `GameState::rng`. The turn-based style is not
@@ -2062,3 +2071,31 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     number from the nearest planets within the target distance, taking drones of the
     half's own type (`Anti-Ship Drone` or `Anti-Planet Drone`) first. Is "total" counted
     per planet or for the empire, and how are drones matched to targets?
+30. **What the History window records** (§3.4, §5). OpenSE4 (inferred) records these
+    lines, each dated with the turn it happened in:
+    - under the other empire: first contact; every treaty change (the new treaty, with
+      who is master in a Subjugation or Protectorate, "War", "Peace" when a war ends,
+      "ended" for a fall to None); a surrender; an empire's destruction (our own under our
+      empire); a planet captured
+      by ground combat (with its place); independence granted (with the planet's place);
+    - under our own empire: a colony founded, abandoned or lost (it died out in battle,
+      of plague or of an event, or went to a stellar manipulation), ancient ruins found,
+      and our own stellar manipulations, each with its place;
+    - in the General list: every random event we are told of (title and text, at the
+      event's place), "every other empire has been destroyed", and the end of the game.
+
+    Each empire's list also shows its founding and the changes its statistics show
+    (planets, systems, tech levels, ships and bases lost) when its score is visible to
+    us. Battles, research, construction and intelligence stay in the log only. What does
+    the original record, in which list, and does it limit the record's length? The
+    `<game>_events.txt` and `<game>_stats.txt` files are not written: their layout is
+    unknown (spec 06, question 12), and OpenSE4 keeps the same data in the save.
+31. **When a foreign design was "seen"** (§8 step 12, §3.2). OpenSE4 (inferred) dates a
+    design with the turn of its latest sighting: every long-range scan and every battle
+    it takes part in renews it, and so do stealing its blueprints, receiving a ship of it
+    in a trade and, each turn, a master's view of its subject's designs. A surrendered
+    empire's own designs are dated with the turn of the surrender. Designs learned from a
+    Partnership, or from a surrendered empire's own knowledge, keep the date the sharing
+    empire has; a design already known keeps the later of the two dates. So two partners
+    forget a design together unless one of them sees it again. Does the original date
+    shared designs the same way, and does anything else renew a date?

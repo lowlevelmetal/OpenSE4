@@ -138,12 +138,6 @@ void setObjectTokens(Tokens& t, const GameState& s, ObjectId o) {
     setLocationTokens(t, s, locationOf(s.galaxy, o));
 }
 
-void learnDesign(Empire& e, DesignId d) {
-    auto& seen = e.knowledge.seenDesigns;
-    auto it = std::lower_bound(seen.begin(), seen.end(), d);
-    if (it == seen.end() || *it != d) seen.insert(it, d);
-}
-
 void explore(GameState& s, EmpireId e, SystemId sys) {
     if (!validEmpire(s, e) || !validSystem(s, sys)) return;
     auto& explored = s.empire(e).knowledge.explored;
@@ -919,13 +913,13 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             if (!living(s, t.source)) return out;
             if (!victim) return out;
             const std::vector<DesignId> all = designsOfClass(r, s, t.empire, e == Effect::UnitDesignsSteal);
-            const auto& seen = s.empire(t.source).knowledge.seenDesigns;
+            const Knowledge& known = s.empire(t.source).knowledge;
             std::vector<DesignId> fresh;
             for (DesignId d : all)
-                if (!std::binary_search(seen.begin(), seen.end(), d)) fresh.push_back(d);
+                if (!knowsDesign(known, d)) fresh.push_back(d);
             auto pick = choose(fresh.empty() ? all : fresh, rng);
             if (!pick) return out;
-            learnDesign(s.empire(t.source), *pick);
+            seeDesign(s.empire(t.source).knowledge, *pick, s.turn);
             // The blueprints become one of our own designs (inferred); building
             // it still needs the technology.
             Design copy = s.design(*pick);
@@ -1419,7 +1413,12 @@ void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<cons
                 break;
             }
     }
-    for (EmpireId e : recipients(ctx.state, ev, t, where)) ctx.log(e, LogCategory::Events, title, text, where, ev.picture);
+    // Random events go to the General list of the History window (inferred).
+    const std::string line = text.empty() ? title : title.empty() ? text : std::format("{}: {}", title, text);
+    for (EmpireId e : recipients(ctx.state, ev, t, where)) {
+        ctx.log(e, LogCategory::Events, title, text, where, ev.picture);
+        addHistory(ctx.state, e, {}, line, where);
+    }
 }
 
 effects::Tokens baseTokens(const GameState& s, const Target& t, const effects::Tokens& fromEffect) {
