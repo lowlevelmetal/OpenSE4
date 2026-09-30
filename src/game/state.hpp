@@ -70,6 +70,7 @@ struct Relation {
     int32_t lastWarTurn = -1;
     int anger = 0;              // computer players: anger toward that empire (0..~100+)
     bool messageSentThisTurn = false;
+    uint32_t messagesBlockedUntil = 0;  // messages sent while turn < this are lost (intel, spec 05 §2.3)
 };
 
 struct LogEntry {
@@ -333,6 +334,7 @@ struct Vehicle {
     VehicleId targetVehicle;        // drones
     ObjectId targetObject;
     uint32_t builtTurn = 0;
+    uint32_t immobileUntil = 0;     // no movement while turn < this (sabotage/events, spec 05 §2.3)
 };
 
 struct Fleet {

@@ -70,6 +70,26 @@ if(OPENSE4_BUILD_TESTS)
     target_include_directories(doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}")
 endif()
 
+# --- miniupnpc (BSD-3-Clause): UPnP port mapping for hosts of network games -----
+# Only its static library is built. For offline builds, point
+# FETCHCONTENT_SOURCE_DIR_MINIUPNPC at an unpacked copy of the same release.
+option(OPENSE4_ENABLE_UPNP "Forward the host port on the router with UPnP (miniupnpc)" ON)
+if(OPENSE4_ENABLE_UPNP)
+    set(UPNPC_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(UPNPC_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+    set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(miniupnpc
+        URL https://github.com/miniupnp/miniupnp/archive/refs/tags/miniupnpc_2_3_3.tar.gz
+        URL_HASH SHA256=8cf2c833b3e76fc4893ff29c2a376e3394962449e5970e373c0a91421724d222
+        SOURCE_SUBDIR miniupnpc
+        SYSTEM)
+    FetchContent_MakeAvailable(miniupnpc)
+    # Third-party code: don't apply or show warnings.
+    target_compile_options(libminiupnpc-static PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/w,-w>)
+endif()
+
 # Dear ImGui core + SDL3 platform backend. Rendering goes through our own RHI.
 add_library(imgui STATIC
     "${imgui_SOURCE_DIR}/imgui.cpp"

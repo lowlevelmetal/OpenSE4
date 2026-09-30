@@ -42,6 +42,36 @@ add_library(opense4_game STATIC
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE opense4_warnings)
 
+# --- net: multiplayer (TCP host/client sessions, UPnP port mapping, PBEM files) -----
+find_package(Threads REQUIRED)
+add_library(opense4_net STATIC
+    net/auth.cpp
+    net/client.cpp
+    net/connection.cpp
+    net/host.cpp
+    net/pbem.cpp
+    net/protocol.cpp
+    net/socket.cpp
+    net/upnp.cpp)
+target_link_libraries(opense4_net PUBLIC opense4_game PRIVATE Threads::Threads opense4_warnings)
+target_compile_definitions(opense4_net PRIVATE OPENSE4_VERSION="${PROJECT_VERSION}")
+if(OPENSE4_ENABLE_UPNP)
+    target_sources(opense4_net PRIVATE net/upnp_miniupnpc.cpp)
+    target_link_libraries(opense4_net PRIVATE miniupnpc::miniupnpc)
+else()
+    target_sources(opense4_net PRIVATE net/upnp_disabled.cpp)
+endif()
+if(WIN32)
+    target_link_libraries(opense4_net PRIVATE ws2_32)
+endif()
+
+# --- the dedicated server (network games and play-by-e-mail) ------------------------
+add_executable(opense4-server
+    server/main.cpp
+    server/setup_file.cpp)
+target_link_libraries(opense4-server PRIVATE opense4_net opense4_game tomlplusplus opense4_warnings)
+set_target_properties(opense4-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
 # --- assets: runtime access to the player's installed classic art ------------------
 add_library(opense4_assets STATIC
     assets/assets.cpp)
