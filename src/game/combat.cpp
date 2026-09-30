@@ -1061,7 +1061,8 @@ std::vector<VehicleId> activeMinefields(const Rules& r, const GameState& s, Loca
         if (m.location != where || m.count <= 0 || !m.owner.valid() || typeOf(r, s, m) != VehicleType::Mine) continue;
         bool friendly = false;
         for (VehicleId id : group)
-            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !enemies(s, m.owner, v->owner))) friendly = true;
+            // The mine owner's side of the treaty (spec 03 §12, confirmed: binary).
+            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !hostile(s, m.owner, v->owner))) friendly = true;
         if (!friendly) out.push_back(m.id);
     }
     return out;
