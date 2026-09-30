@@ -108,11 +108,8 @@ bool allied(const GameState& s, EmpireId a, EmpireId b) {
     return treatyAllowsResupply(s.empire(a).relation(b).treaty);
 }
 
-bool isUnitType(ruleset::VehicleType t) {
-    using ruleset::VehicleType;
-    return t == VehicleType::Fighter || t == VehicleType::Satellite || t == VehicleType::Mine || t == VehicleType::Troop ||
-           t == VehicleType::Drone;
-}
+// Everything except ships and bases is a unit (spec 03 §1).
+bool isUnitType(ruleset::VehicleType t) { return t != ruleset::VehicleType::Ship && t != ruleset::VehicleType::Base; }
 
 int shipCount(const Rules& r, const GameState& s, EmpireId e) {
     int n = 0;
