@@ -1,5 +1,6 @@
 #include "client/app.hpp"
 #include "core/log.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <charconv>
 #include <ctime>
@@ -14,8 +15,9 @@ constexpr const char* kUsage = R"(OpenSE4 - an open-source engine reimplementati
 
 Usage: opense4 [options]
 
-Without --classic, runs the prototype game (our own simplified rules and content)
-until the classic engine is playable end to end.
+By default, plays the classic game on your installed copy of Space Empires IV
+Deluxe (see docs/SETUP.md). Without an install, or with --prototype, runs the
+prototype game (our own simplified rules and content).
 
 Rendering:
   --renderer=auto|vulkan|opengl   Graphics backend (default: auto = Vulkan, fall back to OpenGL)
@@ -31,8 +33,9 @@ New game:
   --shape=spiral|elliptical|ring|clusters
   --race=KEY                      Your race (see data/races.toml; default human)
 
-Classic rules (work in progress, see docs/PARITY_PLAN.md):
-  --classic                       Run the classic-rules engine on your installed classic data set
+Classic rules (the default when an install is found; see docs/PARITY_PLAN.md):
+  --classic                       Require the classic engine (fail if no install is found)
+  --prototype                     Run the prototype game instead
   --classic-dir=DIR               Game directory of the installed classic game (default: auto-detect)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
@@ -62,6 +65,7 @@ bool parseInt(std::string_view s, auto& out) {
 } // namespace
 
 int main(int argc, char** argv) {
+    bool prototype = false;  // --prototype, or a prototype-only option was given
     using namespace opense4;
     client::AppOptions options;
     options.setup.galaxy.seed = 0;
@@ -98,13 +102,17 @@ int main(int argc, char** argv) {
         } else if (key == "--empires") {
             ok = parseInt(value, options.setup.empireCount);
         } else if (key == "--shape") {
+            prototype = true;
             const auto shape = sim::parseGalaxyShape(value);
             ok = shape.has_value();
             if (shape) options.setup.galaxy.shape = *shape;
         } else if (key == "--race") {
+            prototype = true;
             options.setup.playerRace = std::string(value);
         } else if (key == "--classic") {
             options.classic = true;
+        } else if (key == "--prototype") {
+            prototype = true;
         } else if (key == "--classic-dir") {
             options.classicDir = std::string(value);
             options.classic = true;
@@ -119,6 +127,7 @@ int main(int argc, char** argv) {
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);
         } else if (key == "--data") {
+            prototype = true;
             options.dataDir = std::string(value);
         } else if (key == "--assets") {
             options.assetsDir = std::string(value);
@@ -127,6 +136,7 @@ int main(int argc, char** argv) {
         } else if (key == "--frames") {
             ok = parseInt(value, options.screenshotFrames);
         } else if (key == "--view") {
+            prototype = true;
             options.startInSystemView = value == "system";
             ok = value == "system" || value == "galaxy";
         } else if (key == "--turns") {
@@ -142,6 +152,11 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Classic mode is the default when the player's classic install can be found.
+    if (!options.classic && !prototype) {
+        if (ruleset::findInstalledDataDir(options.classicDir)) options.classic = true;
+        else log::info("No installed classic game found (see docs/SETUP.md); starting the prototype.");
+    }
     if (options.setup.galaxy.seed == 0) options.setup.galaxy.seed = static_cast<uint64_t>(std::time(nullptr));
     return client::App().run(options);
 }

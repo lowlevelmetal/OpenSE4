@@ -3,9 +3,10 @@
 OpenSE4 is an open-source engine reimplementation for Space Empires IV Deluxe. It
 is a clean-room, faithful rewrite in C++23, with Vulkan 1.3 rendering and an
 OpenGL 3.3 fallback, and runs on the player's own installed copy of the game's data
-and art. It is not affiliated with the game's publishers. Until the classic engine
-is playable, a prototype with our own simplified rules is the default mode. See
-README.md, docs/PARITY_PLAN.md and docs/spec/.
+and art. It is not affiliated with the game's publishers. `opense4` plays the
+classic game when an install is found; `--prototype` (or no install) runs a
+prototype with our own simplified rules. See README.md, docs/ENGINE.md,
+docs/PARITY_PLAN.md and docs/spec/.
 
 ## Clean-room rules (read docs/CLEANROOM.md before touching the original game)
 
@@ -26,8 +27,9 @@ cmake --preset debug && cmake --build --preset debug
 ./build/debug/tests/opense4_tests                                   # unit tests (our fixtures)
 OPENSE4_CLASSIC_DATA=auto ./build/debug/tests/opense4_tests             # + opt-in tests on the installed data set
 ./build/debug/opense4-datacheck                                     # load and validate the installed data set
-SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --classic --seed=7 --screenshot=/tmp/c.png
-SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --renderer=opengl --seed=42 --turns=40 --screenshot=/tmp/p.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --seed=7 --turns=20 --open=research --screenshot=/tmp/c.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --prototype --renderer=opengl --seed=42 --turns=40 --screenshot=/tmp/p.png
+./build/debug/opense4-server --port=46721 --no-upnp --players=2 --ai=1  # dedicated host (see docs/MULTIPLAYER.md)
 steam steam://rungameid/1610 ; DISPLAY=:0 ./build/debug/opense4-observe list   # observe the original
 ```
 
@@ -42,8 +44,13 @@ steam steam://rungameid/1610 ; DISPLAY=:0 ./build/debug/opense4-observe list   #
   wall-clock time or floats in turn resolution, and all randomness goes through
   `GameState::rng`. All state changes go through `sim::applyCommand`. The same
   principles apply to `src/game`.
+- `src/game/serialize_io.hpp`: every state field must be listed in its struct's
+  `io()`; a test fails otherwise.
+- `src/net`, `src/server`: multiplayer (host/client sessions, UPnP, PBEM) and
+  `opense4-server`.
 - `src/client`: the app shell (`app.cpp`) plus modes: `PrototypeMode` and
-  `ClassicMode` (`client/classic/`).
+  `ClassicMode` (`client/classic/`: session, main window, one file per group of
+  windows in `screens/`).
 - Both render backends must look the same. Shaders live once in `shaders/`.
 - Stay warning-free under `-Wall -Wextra -Wpedantic -Wshadow -Wconversion`.
 - Tests use only our own fixtures (`tests/fixtures/`). Anything that touches the

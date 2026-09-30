@@ -12,13 +12,23 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
 - **Clean-room.** The rules are reimplemented from the manual, the game's documented
   data formats and observation of the running game. The original executable is never
   decompiled or disassembled. See [docs/CLEANROOM.md](docs/CLEANROOM.md).
-- **Work in progress.** `opense4 --classic` currently generates and browses quadrants
-  from your data set. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md) tracks the road to
-  full parity.
+- **Playable.** Every part of the classic rules is implemented:
+  - economy and population;
+  - ships and movement;
+  - combat, with replays;
+  - research, intelligence, diplomacy and events;
+  - computer players.
 
-Until the engine is playable end to end, `opense4` without `--classic` runs a
-**prototype game** with our own simplified rules and content: explore, colonize,
-research, build and fight against computer empires. See [docs/DESIGN.md](docs/DESIGN.md).
+  The game has the classic windows, runs hotseat, network (with UPnP) and PBEM
+  multiplayer, and includes a dedicated server. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md)
+  tracks what remains for full parity:
+  - tactical combat;
+  - sound;
+  - open rule questions to settle against the original.
+
+`opense4` starts the classic game when it finds your install. Without one, or with
+`--prototype`, it runs a **prototype game** with our own simplified rules and content.
+See [docs/DESIGN.md](docs/DESIGN.md) and [docs/ENGINE.md](docs/ENGINE.md).
 
 ## Building
 
@@ -71,21 +81,26 @@ Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
 ### Classic mode (needs the original game installed)
 
 ```sh
-./build/debug/opense4 --classic                  # auto-detects a Steam install
-./build/debug/opense4 --classic-dir=/path/to/se4 --quadrant="Spiral Arm" --systems=80
+./build/debug/opense4                                # auto-detects a Steam install
+./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
+./build/debug/opense4 --quick-start=Terran           # skip the intro
 ./build/debug/opense4-datacheck                      # validate an installed or modded data set
+./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
 ```
 
-Classic mode currently covers milestone 1: it generates a quadrant from your data set
-and lets you browse it in the classic main-window layout.
+The intro offers Quick Start, New Game (the full game and empire setup), Load Game and
+Multiplayer. In the game, the classic hotkeys work: F1–F12 open the windows and End
+Turn, and letter keys give orders. See [docs/SETUP.md](docs/SETUP.md) and
+[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 Headless screenshots, used for testing, work with SDL's offscreen driver:
 
 ```sh
-SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --seed=42 --turns=40 --screenshot=shot.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=30 --open=colonies --screenshot=shot.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --prototype --seed=42 --turns=40 --screenshot=proto.png
 ```
 
-### Controls
+### Prototype controls
 
 | Input | Action |
 |---|---|
