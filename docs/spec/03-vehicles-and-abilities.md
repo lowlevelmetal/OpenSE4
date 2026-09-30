@@ -1419,3 +1419,45 @@ All rules in this section are (confirmed: binary).
     target sector, needs the part's supply, and for Open Warp Point refuses existing links, systems
     with 10 warp points and blocked systems (§8) (confirmed: binary). The created-object details
     were not checked.
+36. **End-of-turn supply order:** the engine runs, per empire, unit and cloak upkeep, then depot
+    refills, fleet pooling and solar collectors, then the limits (a drone at 0 is lost, a cloak at
+    0 supply drops). The text above fixes only that solar collectors come after depots and
+    pooling. Is the rest in that order, and is the upkeep of units part of this step or of the
+    per-object upkeep that follows? (inferred)
+37. **Storms on a warp arrival:** does a group that arrives through a warp point in a sector with
+    `Sector - Damage` roll for storm damage as if it had stepped in? The engine says yes.
+    (inferred)
+38. **Emergency Energy in simultaneous games:** it adds V1 to the day counter. Does it also add
+    V1 to the movement points left, so the extra actions can be steps? The engine adds both.
+    (inferred)
+39. **Acting order within a day:** vehicles act in object creation order. Where do planets with
+    launch or recover orders and fleets fit in? The engine puts planets first (they were created
+    before any vehicle), a fleet at its leader's place, and a fleet member's own in-place orders
+    right after its fleet. (inferred)
+40. **Sentry "present":** the engine ends a Sentry when a hostile empire has a colony in the
+    system or a vehicle there that the owner can see. Do unseen (cloaked) vehicles count, and do
+    colonies? (inferred)
+41. **Recovery into a ship:** does a ship need the matching launch ability (bay) to recover units,
+    as the engine requires? Planets need none. (inferred)
+42. **Mounted damage far out:** with a mount the table index is clamped to 1..20, so a weapon
+    whose range-20 damage is above 0 would reach any distance. The engine's maximum range stops
+    at the last damaging range plus the range modifier. How far does the original let such a
+    weapon fire? (inferred)
+43. **Groups of several designs:** the engine keeps one record per design inside an (owner, unit
+    kind, sector) group. They share the per-sector caps and launch refills, but move and fight as
+    separate records. (inferred representation)
+44. **Training sources:** the engine takes the owner's populated colonies first, then vehicles, as
+    sources, and facilities need population. What order and population rule does the original
+    use? (inferred)
+45. **Obsolete design purge:** "seen in the last 50 turns" is read as "still in the empire's list
+    of seen designs"; the list itself is kept by the intelligence rules. (inferred)
+46. **Attack on a planet:** the engine ends it when the colony is gone or has become the
+    attacker's. When does the original end it? (inferred)
+47. **Repeat battles within a turn:** "every object present already fought here" — the engine
+    counts vehicles (not mines) and colonies whose owner is hostile to, or faced by, another owner
+    present, and takes a cloaked vehicle that did not fight as unseen. (inferred)
+48. **Drift target:** the engine draws the shared random target only in turns when some system
+    drifts. Does the original draw it every turn? This changes only the random sequence.
+    (inferred)
+49. **Sentry with Repeat on:** when a Sentry ends, the engine removes it even with Repeat on,
+    instead of keeping it at the end of the list. (inferred)
