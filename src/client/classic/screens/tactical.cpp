@@ -430,7 +430,7 @@ private:
             const ImVec2 c = paint.piecePos(v, uint32_t(i));
             const float h = v.cell * float(p.size) * 0.5f;
             if (int(i) == u.selected) dl->AddRect({c.x - h - 1, c.y - h - 1}, {c.x + h + 1, c.y + h + 1}, IM_COL32(255, 230, 80, 255), 0.0f, ui.px(2));
-            if ((p.isLeader || p.leader >= 0) && b.isPlayer(p.owner)) {
+            if ((p.isLeader || p.leader >= 0 || p.group >= 0) && b.isPlayer(p.owner)) {
                 const ImU32 badge = p.isLeader ? IM_COL32(70, 120, 255, 255) : IM_COL32(230, 60, 60, 255);
                 const float r = std::max(3.0f, v.cell * 0.18f);
                 dl->AddRectFilled({c.x + h - 2 * r, c.y - h}, {c.x + h, c.y - h + 2 * r}, badge);
@@ -616,7 +616,8 @@ private:
             dimText(p.kind == PieceKind::Planet ? "Planet" : p.kind == PieceKind::Seeker ? "Seeker" : "Obstacle");
         }
         if (p.isLeader) ImGui::TextColored(ImVec4(0.4f, 0.55f, 1, 1), "%s", p.group >= 0 ? std::format("Leader of group {}", p.group).c_str() : "Fleet leader");
-        else if (p.leader >= 0) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", p.group >= 0 ? std::format("Member of group {}", p.group).c_str() : "In formation");
+        else if (p.leader >= 0 || p.group >= 0)
+            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", p.group >= 0 ? std::format("Member of group {}{}", p.group, p.leader < 0 ? " (no leader)" : "").c_str() : "In formation");
         if (!p.alive) ImGui::TextColored(ImVec4(1, 0.4f, 0.35f, 1), "Destroyed");
         ImGui::EndGroup();
         // Shields and damage bars.
@@ -899,6 +900,12 @@ private:
                     for (const game::UnitStack& st : p.cargo)
                         cargo += std::format("{}{} x{}", cargo.empty() ? "" : ", ", st.design.index() < s.designs.size() ? s.design(st.design).name : "?", st.count);
                     labelValue(ui, "Cargo", cargo, 90);
+                }
+                if (!p.landed.empty()) {
+                    // Troops landed by another empire, fighting on the ground (spec 04 §13).
+                    int troops = 0;
+                    for (const game::UnitStack& st : p.landed) troops += st.count;
+                    labelValue(ui, "Invaders", std::format("{} troops of the {}", troops, paint.empireName(p.invader)), 90);
                 }
             }
             labelValue(ui, "Square", std::format("{}, {}", p.x, p.y), 90);

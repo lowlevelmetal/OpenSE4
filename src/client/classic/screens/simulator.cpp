@@ -133,10 +133,11 @@ private:
 
     // The owner picker: which virtual empire new items go to.
     void sideTabs(UiContext& ui) {
+        // Up to ten sides: five tabs a row.
         for (size_t k = 0; k < setup_.sides.size(); ++k) {
-            if (k > 0) ImGui::SameLine(0, ui.px(6));
+            if (k % 5 != 0) ImGui::SameLine(0, ui.px(6));
             const std::string label = std::format("{}{}", setup_.sides[k].name, setup_.sides[k].computer ? "" : " (you)");
-            if (classicButton(ui, label.c_str(), {128, 22}, 1, current_ == int(k))) current_ = int(k);
+            if (classicButton(ui, label.c_str(), {122, 22}, 1, current_ == int(k))) current_ = int(k);
         }
     }
 

@@ -2998,7 +2998,6 @@ void Battle::dropTroops(int i, int t) {
     after.landed.clear();
     after.invader = {};
     if (after.isLeader) dissolve(t);
-    buildPlanetWeapons(pieces_[t]);
     planetShields(pieces_[t], false);
     refreshStats(t);
     event(Ev::Captured, t, i, static_cast<int>(attacker.value));
