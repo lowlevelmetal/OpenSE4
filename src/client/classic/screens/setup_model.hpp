@@ -13,6 +13,7 @@
 #include <array>
 #include <expected>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -49,6 +50,12 @@ NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed);
 inline constexpr std::array<int64_t, 3> kStartingResources{5'000, 20'000, 100'000};  // Low, Medium (default), High
 inline constexpr std::array<int, 4> kRacialPoints{0, 2'000, 3'000, 5'000};           // None, Low (default), Medium, High
 inline constexpr std::array<int, 4> kStartingPlanets{1, 3, 5, 10};                   // 1 is the default
+inline constexpr std::array<int, 6> kAutosaveTurns{0, 1, 2, 3, 5, 10};               // 0 None (the default), or every N turns
+
+// Autosave (spec 01 §2.2): the save written after turn `turn` has been
+// processed, "Autosave N" with N the slot 1-10 (the ten slots are used in
+// rotation), or nothing when `everyTurns` is 0 or this turn is not saved.
+std::optional<std::string> autosaveName(int everyTurns, uint32_t turn);
 
 // ---- Quadrant -----------------------------------------------------------------------------
 

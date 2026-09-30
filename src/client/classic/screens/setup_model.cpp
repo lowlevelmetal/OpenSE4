@@ -135,6 +135,12 @@ NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed) {
     return s;
 }
 
+std::optional<std::string> autosaveName(int everyTurns, uint32_t turn) {
+    if (everyTurns <= 0 || turn == 0 || turn % static_cast<uint32_t>(everyTurns) != 0) return std::nullopt;
+    const uint32_t slot = (turn / static_cast<uint32_t>(everyTurns) - 1) % 10 + 1;
+    return std::format("Autosave {}", slot);
+}
+
 int maxSystems(const game::Rules& r) { return game::maxSystemCount(r.data()); }
 
 std::pair<int, int> quadrantSizeRange(const game::Rules& r, int quadrantSize) {

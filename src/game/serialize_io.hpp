@@ -457,6 +457,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.simultaneous);
     fields(ar, o.randomAiPlayers);
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
+    fields(ar, o.playersCanSaveMap, o.autosaveTurns);
 }
 
 // ---- The game -----------------------------------------------------------------------------------------

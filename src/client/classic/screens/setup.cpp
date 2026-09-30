@@ -850,6 +850,9 @@ private:
         lamp(ctx, "Only planets of the home planet type", o.onlyHomeType);
         lamp(ctx, "No ancient ruins", o.noRuins);
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
+        heading(ctx, "Maps");
+        lamp(ctx, "Players can save the map during the game", o.playersCanSaveMap);
+        ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Limits");
         rowLabel(ctx, "Ships per player", 190);
         ImGui::SetNextItemWidth(ctx.px(160));
@@ -883,6 +886,20 @@ private:
         int combat = o.noTacticalCombat ? 1 : 0;
         if (lampChoice(ctx, "##combat", combat, {"Tactical combat", "Strategic combat only"})) o.noTacticalCombat = combat == 1;
         note("Strategic combat is resolved automatically; tactical combat lets players steer their ships in battle.");
+        ImGui::Dummy(ImVec2(0, ctx.px(8)));
+        heading(ctx, "Autosave");
+        {
+            std::vector<std::string> choices;
+            int current = 0;
+            for (size_t i = 0; i < kAutosaveTurns.size(); ++i) {
+                const int n = kAutosaveTurns[i];
+                choices.push_back(n == 0 ? std::string("None") : n == 1 ? std::string("Every turn") : std::format("Every {} turns", n));
+                if (n == o.autosaveTurns) current = static_cast<int>(i);
+            }
+            if (lampChoice(ctx, "##autosave", current, std::span<const std::string>(choices)))
+                o.autosaveTurns = kAutosaveTurns[static_cast<size_t>(std::clamp(current, 0, static_cast<int>(kAutosaveTurns.size()) - 1))];
+            note("Saves the game after the turns are processed, rotating through ten slots named Autosave 1 to Autosave 10.");
+        }
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "This Game");
         labelValue(ctx, "Seed", std::to_string(s_.seed));

@@ -544,6 +544,9 @@ struct GameOptions {
     int aiDifficulty = kDifficultyMedium;  // Computer Player Difficulty: the level random AI players get
     int aiBonus = 0;
     VictoryConditions victory;
+    bool playersCanSaveMap = false;      // "Players can save map during a game" (spec 01 §2.2; off by default, inferred)
+    // Mechanics.
+    int autosaveTurns = 0;               // Autosave: 0 None (the default), else every 1, 2, 3, 5 or 10 turns (spec 01 §2.2, §14 Q18)
     // Multiplayer.
     bool simultaneous = true;
     // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".

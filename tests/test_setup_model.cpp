@@ -516,3 +516,21 @@ TEST_CASE("setup model: installed data set: defaults, presets and empire files (
         }
     }
 }
+
+TEST_CASE("setup model: autosave every N turns rotates through ten slots") {
+    // None (the default) never saves (spec 01 §2.2).
+    CHECK(game::GameOptions{}.autosaveTurns == 0);
+    CHECK_FALSE(setup::autosaveName(0, 1).has_value());
+    CHECK_FALSE(setup::autosaveName(0, 30).has_value());
+    CHECK(setup::kAutosaveTurns == std::array<int, 6>{0, 1, 2, 3, 5, 10});
+    // Every turn: slots 1..10, then round again.
+    CHECK(setup::autosaveName(1, 1) == "Autosave 1");
+    CHECK(setup::autosaveName(1, 10) == "Autosave 10");
+    CHECK(setup::autosaveName(1, 11) == "Autosave 1");
+    // Every 5 turns: only turns 5, 10, ... and the eleventh save reuses slot 1.
+    CHECK_FALSE(setup::autosaveName(5, 4).has_value());
+    CHECK(setup::autosaveName(5, 5) == "Autosave 1");
+    CHECK(setup::autosaveName(5, 15) == "Autosave 3");
+    CHECK(setup::autosaveName(5, 55) == "Autosave 1");
+    CHECK_FALSE(setup::autosaveName(3, 0).has_value());
+}
