@@ -32,9 +32,9 @@ TEST_CASE("sight: presence comes from vehicles and colonies; baseline sensors se
     const VehicleId theirsThere = w.spawn(w.ship(kB, "There", 1), at(b, 2, 2));
     w.colony(w.planet(c, {4, 4}), kA, 0);  // even an empty colony gives presence
 
-    CHECK(sight::hasPresence(w.s, kA, a));
-    CHECK_FALSE(sight::hasPresence(w.s, kA, b));
-    CHECK(sight::hasPresence(w.s, kA, c));
+    CHECK(sight::hasPresence(r, w.s, kA, a));
+    CHECK_FALSE(sight::hasPresence(r, w.s, kA, b));
+    CHECK(sight::hasPresence(r, w.s, kA, c));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(mine)));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(theirsHere)));
     CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(theirsThere)));
@@ -80,27 +80,55 @@ TEST_CASE("sight: cloaks hide ships until some sight type reaches the cloak leve
     (void)watcher;
 }
 
-TEST_CASE("sight: hull cloaks are always on; mothballed ships have no abilities") {
+TEST_CASE("sight: unit cloaks are always on, a ship's only while cloaked; mines give no presence") {
     World w;
     const Rules& r = w.rules();
-    const SystemId a = w.system("A");
+    const SystemId a = w.system("A"), b = w.system("B", 5, 0);
     w.spawn(w.ship(kA, "Watcher", 1, {"Mv Sensor 3"}), at(a, 0, 0));
     const VehicleId mines = w.spawn(w.design(kB, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(a, 3, 3));
     CHECK(sight::obscuration(r, w.s, w.v(mines))[0] == 5);
     CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(mines)));
     CHECK(sight::canSeeVehicle(r, w.s, kB, w.v(mines)));
 
+    // Mine fields are no sensor source: laying them gives neither presence nor sight.
+    w.spawn(w.design(kA, "Own Mine", "Mv Mine Hull", {"Test Warhead"}), at(b, 1, 1));
+    const VehicleId visitor = w.spawn(w.ship(kB, "Visitor", 1), at(b, 2, 2));
+    w.s.empire(kA).knowledge.explored[b.index()] = 1;
+    CHECK_FALSE(sight::hasPresence(r, w.s, kA, b));
+    CHECK(sight::sensorLevels(r, w.s, kA, b) == sight::SightVector{});
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(visitor)));
+    sight::updateKnowledge(r, w.s);
+    CHECK_FALSE(w.s.empire(kA).knowledge.present[b.index()]);
+
+    // A ship's cloak works only while the ship is cloaked, hull included.
+    ruleset::Ruleset data = buildRuleset();
+    ruleset::VehicleSize shade = data.vehicleSizes[test::hullIndex(r, "Test Frigate")];
+    shade.name = "Mv Shade Hull";
+    shade.abilities = allTypes(AbilityKind::CloakLevel, 4);
+    data.vehicleSizes.push_back(shade);
+    const Rules cloaked{std::move(data)};
+    World v(cloaked);
+    const SystemId c = v.system("C");
+    v.spawn(v.ship(kA, "Watcher", 1), at(c, 0, 0));
+    const VehicleId ghost = v.spawn(v.design(kB, "Shade", "Mv Shade Hull", {"Test Bridge", "Test Life Support", "Test Crew Quarters"}), at(c, 4, 4));
+    CHECK(sight::obscuration(cloaked, v.s, v.v(ghost)) == sight::SightVector{1, 1, 1, 1, 1});
+    CHECK(sight::canSeeVehicle(cloaked, v.s, kA, v.v(ghost)));
+    v.v(ghost).status = VehicleStatus::Cloaked;
+    CHECK(sight::obscuration(cloaked, v.s, v.v(ghost)) == sight::SightVector{4, 4, 4, 4, 4});
+    CHECK_FALSE(sight::canSeeVehicle(cloaked, v.s, kA, v.v(ghost)));
+
+    // Mothballed ships have no working abilities.
     const VehicleId sleeper = w.spawn(w.ship(kA, "Sleeper", 1, {"Mv Sensor 3"}), at(a, 8, 8));
     w.v(sleeper).status = VehicleStatus::Mothballed;
-    const VehicleId ghost = w.spawn(w.ship(kB, "Ghost", 1, {"Mv Cloak"}), at(a, 8, 8));
-    w.v(ghost).status = VehicleStatus::Cloaked;
-    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(ghost)));  // the watcher's sensor, not the sleeper's
-    for (Vehicle& v : w.s.vehicles)
-        if (v.owner == kA && v.id != sleeper) v.count = 0;
-    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(ghost)));
+    const VehicleId hider = w.spawn(w.ship(kB, "Ghost", 1, {"Mv Cloak"}), at(a, 8, 8));
+    w.v(hider).status = VehicleStatus::Cloaked;
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(hider)));  // the watcher's sensor, not the sleeper's
+    for (Vehicle& x : w.s.vehicles)
+        if (x.owner == kA && x.id != sleeper) x.count = 0;
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(hider)));
 }
 
-TEST_CASE("sight: storms and nebulae hide ships and planets but not units or stars") {
+TEST_CASE("sight: storms and nebulae hide ships, units and planets but not stars, storms or warp points") {
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A"), n = w.system("N", 5, 0);
@@ -112,16 +140,22 @@ TEST_CASE("sight: storms and nebulae hide ships and planets but not units or sta
     const VehicleId fighters = w.spawn(w.design(kB, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Mv Fighter Tank"}), at(a, 3, 3));
     CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(hidden)));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(outside)));
-    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(fighters)));  // units do not benefit
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(fighters)));  // unit groups are hidden too (spec 01 §6.2)
+    CHECK(sight::obscuration(r, w.s, w.v(fighters)) == sight::SightVector{2, 2, 2, 2, 2});
     w.spawn(w.ship(kA, "Eye", 1, {"Test Sensor"}), at(a, 0, 1));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(hidden)));
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(fighters)));
+    // The storm itself and a warp point in it are never hidden.
+    CHECK(sight::planetObscuration(r, w.s, storm) == sight::SightVector{1, 1, 1, 1, 1});
+    const ObjectId gate = w.object(a, ObjectKind::WarpPoint, {3, 3});
+    CHECK(sight::planetObscuration(r, w.s, gate) == sight::SightVector{1, 1, 1, 1, 1});
 
     // A nebula covers the whole system, planets included; stars stay visible.
     w.s.galaxy.system(n).abilities.push_back(ab(AbilityKind::SectorSightObscuration, 2));
     const ObjectId star = w.object(n, ObjectKind::Star, {6, 6});
     const ObjectId planet = w.planet(n, {2, 2});
     w.s.empire(kA).knowledge.explored[n.index()] = 1;
-    CHECK(sight::planetObscuration(w.s, star) == sight::SightVector{1, 1, 1, 1, 1});
+    CHECK(sight::planetObscuration(r, w.s, star) == sight::SightVector{1, 1, 1, 1, 1});
     CHECK(sight::canSeePlanet(r, w.s, kA, star));
     CHECK_FALSE(sight::canSeePlanet(r, w.s, kA, planet));
     const VehicleId inNebula = w.spawn(w.ship(kA, "Diver", 1), at(n, 0, 0));
@@ -138,6 +172,32 @@ TEST_CASE("sight: storms and nebulae hide ships and planets but not units or sta
     CHECK_FALSE(sight::canSeePlanet(r, w.s, kA, farPlanet));
 }
 
+TEST_CASE("sight: a ship or planet carrying sight obscuration hides its sector") {
+    ruleset::Ruleset data = buildRuleset();
+    ruleset::Component smoke = data.components[test::componentIndex(rules(), "Mv Armor")];
+    smoke.name = "Mv Smoke";
+    smoke.abilities = {ab(AbilityKind::SectorSightObscuration, 3)};
+    data.components.push_back(smoke);
+    const Rules r{std::move(data)};
+    World w(r, 3);
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A");
+    w.spawn(w.ship(kA, "Watcher", 1), at(a, 0, 0));
+    const VehicleId target = w.spawn(w.ship(kB, "Target", 1), at(a, 5, 5));
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    // A third empire's ship with the ability in the same sector hides everything there, itself included.
+    const VehicleId screen = w.spawn(w.ship(kC, "Screen", 1, {"Mv Smoke"}), at(a, 5, 5));
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(screen)));
+    w.v(screen).location = at(a, 7, 7);
+    CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    // A planet's own ability does the same.
+    const ObjectId rock = w.planet(a, {5, 5});
+    w.s.galaxy.object(rock).abilities.push_back(ab(AbilityKind::SectorSightObscuration, 3));
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    CHECK(sight::planetObscuration(r, w.s, rock) == sight::SightVector{3, 3, 3, 3, 3});
+}
+
 TEST_CASE("sight: omnipresence gives presence everywhere but does not reveal cloaks") {
     World w;
     const Rules& r = w.rules();
@@ -146,7 +206,7 @@ TEST_CASE("sight: omnipresence gives presence everywhere but does not reveal clo
     const VehicleId ghost = w.spawn(w.ship(kB, "Ghost", 1, {"Mv Cloak"}), at(b, 2, 2));
     w.v(ghost).status = VehicleStatus::Cloaked;
     w.s.options.omnipresent = true;
-    CHECK(sight::hasPresence(w.s, kA, b));
+    CHECK(sight::hasPresence(r, w.s, kA, b));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(plain)));
     CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(ghost)));
     sight::updateKnowledge(r, w.s);
@@ -212,7 +272,7 @@ TEST_CASE("sight: long range scanners reveal designs; jammers block them") {
     (void)b;
 }
 
-TEST_CASE("sight: partnerships share the live view, also through chains") {
+TEST_CASE("sight: partnerships share sensors one way, also through chains") {
     World w(rules(), 4);
     const Rules& r = w.rules();
     const EmpireId kC{2u}, kD{3u};
@@ -223,32 +283,58 @@ TEST_CASE("sight: partnerships share the live view, also through chains") {
     const VehicleId target = w.spawn(stranger, at(c, 1, 1));
     const VehicleId partnerShip = w.spawn(w.ship(kB, "Partner", 1), at(a, 3, 3));
     w.s.empire(kC).knowledge.knownWarpLink[ca.index()] = 1;
-    w.setTreaty(kA, kB, Treaty::Partnership);
-    w.setTreaty(kB, kC, Treaty::Partnership);
+    // A holds a Partnership with B, and B with C; C's treaty with B is not one.
+    w.s.empire(kA).relation(kB).treaty = Treaty::Partnership;
+    w.s.empire(kB).relation(kA).treaty = Treaty::Partnership;
+    w.s.empire(kB).relation(kC).treaty = Treaty::Partnership;
+    w.s.empire(kC).relation(kB).treaty = Treaty::TradeAlliance;
     w.setTreaty(kA, kC, Treaty::War);
 
     CHECK(sight::sightGroup(w.s, kA) == std::vector<EmpireId>{kA, kB, kC});
-    CHECK(sight::hasPresence(w.s, kA, c));
+    CHECK(sight::sightGroup(w.s, kB) == std::vector<EmpireId>{kA, kB, kC});
+    CHECK(sight::sightGroup(w.s, kC) == std::vector<EmpireId>{kC});  // one-way: C gets no one's sensors
+    CHECK(sight::hasPresence(r, w.s, kA, c));
+    CHECK(sight::sensorLevels(r, w.s, kA, c)[0] == 1);
+    // Sensors reach A, but A has not explored C, and partners' ships get no exception.
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
+    CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(partnerShip)));
+    sight::updateKnowledge(r, w.s);
+    CHECK_FALSE(w.s.empire(kA).hasExplored(c));
+    CHECK(w.s.empire(kA).knowledge.present[c.index()]);
+    CHECK_FALSE(visibleIn(w.s, kA, target));
+    CHECK(seen(w.s, kC, stranger));
+    CHECK_FALSE(visibleIn(w.s, kC, partnerShip));  // C gets nothing from B
+    // Once A has explored both systems, B's and C's sensors show A what is there.
+    w.s.empire(kA).knowledge.explored[a.index()] = 1;
+    w.s.empire(kA).knowledge.explored[c.index()] = 1;
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
     CHECK(sight::canSeeVehicle(r, w.s, kA, w.v(partnerShip)));
     sight::updateKnowledge(r, w.s);
-    CHECK(w.s.empire(kA).hasExplored(c));  // seen live, as if present
-    CHECK(w.s.empire(kA).knowledge.present[c.index()]);
     CHECK(visibleIn(w.s, kA, target));
-    CHECK(seen(w.s, kC, stranger));
     // Maps and scanned designs pass between partners in diplomacy::updateContacts.
     CHECK_FALSE(sight::knowsWarpLink(w.s, kA, ca));
     CHECK_FALSE(seen(w.s, kA, stranger));
     CHECK_FALSE(seen(w.s, kD, stranger));
 
     // Without the chain, the view is gone (exploration stays).
-    w.setTreaty(kB, kC, Treaty::None);
-    CHECK_FALSE(sight::hasPresence(w.s, kA, c));
+    w.s.empire(kB).relation(kC).treaty = Treaty::None;
+    CHECK_FALSE(sight::hasPresence(r, w.s, kA, c));
     CHECK_FALSE(sight::canSeeVehicle(r, w.s, kA, w.v(target)));
     sight::updateKnowledge(r, w.s);
     CHECK(w.s.empire(kA).hasExplored(c));
     CHECK_FALSE(w.s.empire(kA).knowledge.present[c.index()]);
     (void)ac;
+}
+
+TEST_CASE("sight: warp point names show explored destinations") {
+    World w;
+    const SystemId a = w.system("Alpha"), b = w.system("Beta", 5, 0);
+    const auto [ab_, ba] = w.link(a, {12, 6}, b, {0, 6});
+    CHECK(sight::warpPointName(w.s, kA, ab_) == "Warp Point");
+    w.s.empire(kA).knowledge.explored[b.index()] = 1;
+    CHECK(sight::warpPointName(w.s, kA, ab_) == "Warp Point Beta");
+    CHECK(sight::warpPointName(w.s, kA, ba) == "Warp Point");
+    (void)ba;
 }
 
 TEST_CASE("sight: the Galaxy Seen trait and the all-systems-seen option reveal the map") {
