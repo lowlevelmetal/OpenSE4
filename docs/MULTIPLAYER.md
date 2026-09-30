@@ -1,6 +1,6 @@
 # Multiplayer
 
-OpenSE4 plays simultaneous-turn games with several people in two ways:
+OpenSE4 plays games with several people in two ways:
 
 - **Network games.** One machine hosts. Players connect over TCP, set up their
   empires in a lobby, and send their orders each turn. The host processes the turn
@@ -9,13 +9,15 @@ OpenSE4 plays simultaneous-turn games with several people in two ways:
   sends in an orders file by any means (e-mail, a shared folder, a chat upload), and
   the host processes the turn from whatever arrived.
 
-Both follow the classic game's simultaneous mode (spec 05 §9): players only give
-orders, the host resolves everyone's turn at once, and the computer plays any empire
-whose orders are missing. The host is authoritative.
+Both play either turn style of the classic game (spec 05 §8, §9):
 
-Turn-based games (one player after another, spec 05 §8) are played on one computer
-only, alone against the computer or hotseat. A host or `opense4-server` refuses a
-turn-based setup or saved game, and so does PBEM processing (docs/PARITY_GAPS.md).
+- **Simultaneous** (the default): players only give orders, the host resolves
+  everyone's turn at once, and the computer plays any empire whose orders are
+  missing.
+- **Turn-based**: players take their turns one after another, and every order is
+  carried out as it is given. See [Turn-based games](#turn-based-games).
+
+The host is authoritative in both.
 
 Everything here is implemented by `src/net` (the `opense4_net` library),
 `src/game/serialize.*` (the save format) and `src/server` (`opense4-server`).
@@ -49,8 +51,8 @@ It finds the installed classic data set on its own (or takes `--data=DIR`), open
 port 6720, forwards it on the router with UPnP, and waits. The game starts
 automatically once every player slot is taken and every player has marked ready.
 From then on the server processes a turn as soon as every human player's orders are
-in. It saves after every turn (`--autosave=N` changes that) and logs to standard
-output. Stop it with Ctrl+C: it saves, says goodbye to the players and removes the
+in. It saves after every turn (`--autosave=N` changes that; a turn-based game is also
+saved as each player's turn begins) and logs to standard output. Stop it with Ctrl+C: it saves, says goodbye to the players and removes the
 port forwarding.
 
 | Option | Meaning |
@@ -63,10 +65,11 @@ port forwarding.
 | `--ai=N` | computer empires (default 0) |
 | `--seed=N`, `--quadrant-size=N`, `--systems=N`, `--quadrant=NAME` | galaxy settings (by default the number of systems is rolled from the quadrant size) |
 | `--setup=FILE.toml` | name, seed, options and computer empires from a [setup file](#setup-files) |
+| `--turn-based` | a [turn-based game](#turn-based-games) (the setup file's `simultaneous = false` does the same) |
 | `--name=NAME` | game name (also the save file's name) |
 | `--password=PW` | master password (see below) |
 | `--join-password=PW` | a password every player needs to join |
-| `--turn-timeout=SEC` | process the turn after SEC seconds even if orders are missing |
+| `--turn-timeout=SEC` | process the turn after SEC seconds even if orders are missing (turn-based: end a player's turn after SEC seconds) |
 | `--load=GAME.gam` | continue a saved game |
 | `--save-dir=DIR`, `--autosave=N` | where and how often to save |
 | `--max-turns=N` | stop once the game reaches turn N (for tests) |
@@ -83,8 +86,9 @@ game in its current turn, under the name stored in the file. Players reconnect w
 the same name and password. If the game has a master password, pass it again with
 `--password`. A game saved with a different data set is refused.
 
-`tools/server_smoke.sh` runs a complete game: a server with one human slot and one
-computer empire, and the server's scripted `bot` client, which plays two turns.
+`tools/server_smoke.sh` runs complete games: a server with one human slot and one
+computer empire, and the server's scripted `bot` client, which plays two turns; a
+turn-based game with two bots and a computer empire; and a turn-based PBEM game.
 
 ## Joining
 
@@ -135,7 +139,87 @@ the empire is handed to the computer.
 When a turn is processed without some human empire's orders, the computer plays
 that empire for the turn. An empire can set the option "the computer should only
 keep things running" (`cmd::SetEmpireOptions::aiMinimalChanges`), and then the
-computer makes only minimal changes in its place.
+computer makes only minimal changes in its place. In a turn-based game the same
+holds for the rest of the turn of a player who is not there (see below).
+
+## Turn-based games
+
+In a turn-based game (spec 05 §8) the empires take their turns in empire order. During
+a player's turn every order is carried out at once: ships move and spend their movement
+points, a battle is fought the moment a group enters a sector with enemies, and
+messages take effect when they are sent. When the player ends the turn, that empire's
+end-of-turn processing runs and the next empire's turn begins. After the last empire,
+the date advances and the once-per-turn steps (design cleanup, victory check, events)
+run.
+
+The classic game offers its network connection for simultaneous games only; there, a
+turn-based game on different machines passes the save file from player to player
+(spec 05 §9.1). OpenSE4 plays turn-based games over the network too, and by e-mail it
+keeps the host in charge of the game file. Choices the spec leaves open are marked
+(inferred) below and listed in spec 05's open question 33.
+
+### Over the network
+
+The host runs the game. Choose "Turn-based" as the turn style in the host form, start
+`opense4-server` with `--turn-based`, or set `simultaneous = false` in a setup file.
+
+- **Only the player whose turn it is can act.** Everyone sees whose turn it is. The host
+  refuses commands and End Turn from anyone else, including a client that ignores the
+  turn order.
+- **Each command is carried out on the host at once.** The client sends it, the host
+  carries it out with the game rules, and the player gets their new view of the game at
+  once, then the result: which commands were refused and why.
+- **Attack Sector questions.** When a move stops before a sector with enemy forces, the
+  player is asked whether to enter it (spec 03 §6.2). The question is part of the game
+  state. It survives a reconnect, a saved game and a host restart, and the other players
+  never see it (inferred).
+- **Other players** get their view of the game each time the turn passes to the next
+  player. A player who took part in a battle fought in someone else's turn gets their
+  view at once, and can watch the battle (inferred). The others see nothing of the turn
+  in progress.
+- **End Turn** runs the player's end-of-turn processing. The computer players then take
+  their turns on the host, and the next human's turn starts.
+- **A player who is away is waited for**, as in a simultaneous game. The host stops
+  waiting when:
+  - the turn time limit runs out (in a turn-based game it counts for each player's
+    turn);
+  - the host forces the turn on;
+  - the empire is handed to the computer or kicked.
+
+  The computer then plays the rest of that player's turn the way it plays a missing
+  player's turn in a simultaneous game: all ministers on for that turn, or only
+  bookkeeping if the empire chose minimal changes (inferred). An empire handed to the
+  computer is played by the computer every turn until it is handed back. When every
+  human is handed to the computer, the host plays one game turn each time the turn is
+  forced on or the time limit runs out.
+- **Reconnecting** in the middle of a turn resumes the game where it is. A player
+  whose turn it is goes on with it, including the questions still open.
+- **Saving** is possible in the middle of any player's turn, and `--load` continues the
+  game at that player's turn.
+
+### By e-mail
+
+The game file goes from player to player through the host:
+
+1. `pbem new` with `simultaneous = false` in the setup file creates the game. The
+   computer players before the first human take their turns, and the command names the
+   empire to send the game to.
+2. That player opens the `.gam` and plays their turn on it. Every command is carried
+   out at once on the player's copy. At End Turn the game writes a `.plr` holding every
+   command in the order it was given (Attack Sector answers included), and checksums
+   of the game before the first command and after the last one
+   (`net::pbem::writePlayerTurn`). `opense4-server pbem orders` writes a turn without
+   commands.
+3. `pbem process` checks the `.plr` like any other: game, turn, empire and password. It
+   also checks that the file is for the player whose turn it is and that it was made
+   from the current game file. It then replays the commands, ends the player's turn (the
+   computer players move) and writes the new `.gam`. It names the empire whose turn is
+   next, and it warns if the replay differs from the player's own game. Files for another
+   player, or made from an older copy of the game, are reported and kept.
+4. If no file for the player whose turn it is has arrived, `pbem process` has the
+   computer play that turn, as for missing orders (inferred).
+
+`pbem info` says whose turn it is.
 
 ## UPnP and port forwarding
 
@@ -262,7 +346,7 @@ score_display = 1              # 0 own, 1 own and Non-Aggression or better, 2 al
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
 # evenly_distributed, no_tactical_combat, allow_gifts, allow_tech_trades,
 # allow_intel, no_ruins, only_breathable, only_home_type, team_mode,
-# simultaneous
+# simultaneous (the default; false plays a turn-based game)
 
 [options.victory]              # each key switches that condition on
 score = 50000
@@ -307,7 +391,8 @@ Setup files hold passwords in plain text. To avoid that, a player can run
   replay it to log in as that player. For games where that matters, play over a VPN.
   Encryption (for example TLS or a Noise handshake) is future work.
 - **The host is authoritative.** It checks every order list against the game rules
-  and applies only the sender's own empire's orders. Clients never change the host's
+  and applies only the sender's own empire's orders. In a turn-based game it takes
+  commands only from the player whose turn it is. Clients never change the host's
   game. The host also refuses oversized messages (64 KiB before the handshake,
   16 MiB after), malformed messages, unknown message types and anything before a
   valid greeting. Connections that go silent are dropped.
@@ -324,13 +409,16 @@ Setup files hold passwords in plain text. To avoid that, a player can run
       enemy tonnage destroyed);
     - other empires' messages;
     - battles the player was not in;
+    - in a turn-based game, what the player whose turn it is has done in that turn (the
+      moves of its ships, its launches and its open questions), for everyone else;
     - the random-number state.
   - Kept: what diplomacy and the score screens show.
   - Shared: a Partnership gives its partner the maps and tech levels, as in the rules.
 
-  The host's own player sees the same view. A PBEM `.gam`, however, is the complete
-  game, because every player processes it with the same program. Play PBEM with
-  people you trust not to peek.
+  The host's own player sees the same view. In a turn-based game the other players get
+  that view when the turn passes on, not after every command. A PBEM `.gam`, however,
+  is the complete game, because every player processes it with the same program. Play
+  PBEM with people you trust not to peek.
 - **The host itself must be trusted.** It sees and decides everything.
 - **Files are checked before use.** Save, orders and `.plr` files start with a type
   tag, a format version and a checksum. Loading rejects wrong types, newer or
@@ -344,7 +432,10 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 - Per-player views for PBEM (a `.gam` per empire).
 - Encrypted connections.
 - IPv6 hosting.
-- Sending only the changes between turns instead of the whole game.
+- Sending only the changes between turns instead of the whole game. A turn-based game
+  sends the player's whole view after every command.
+- Opening a PBEM game in the client, and writing the `.plr` at End Turn (the library
+  functions exist: `net::pbem::writePlayerOrders`, `writePlayerTurn`).
 - Processing the turn on a background thread, so an in-game host's interface stays
   responsive during long turns.
 - Movement and combat replays for players (the classic `.trn` and `.cmb` files).
@@ -367,6 +458,8 @@ host.addComputerEmpire(setup); host.kick(slot, "reason"); host.setLocalReady(tru
 host.startGame(/*force*/ false);
 host.submitOrders(orders);                   // any empire; normally the host's own
 host.processTurnNow(); host.setTurnTimeout(120); host.setAiControl(empire, true);
+host.playCommands(empire, {cmd});            // turn-based: the empire whose turn it is
+host.endPlayerTurn(empire); host.activeEmpire(); host.turnBased();
 host.save(path);
 for (const net::Event& e : host.poll(0)) { /* e.type, e.text, e.player, e.slot, e.empire, e.turn */ }
 host.lobby();  host.turnStatus();  host.state();  host.portMapping();
@@ -376,6 +469,8 @@ net::ClientSession client(cc);
 client.connect();
 client.submitSetup(setup); client.setReady(true);
 client.submitOrders(orders); client.chat("hi");
+client.play(cmd); client.endTurn();          // turn-based: in our turn (client.myTurn())
+client.questions(); client.pendingRequests(); client.activeEmpire();
 client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ordersAccepted();
 ```
 
@@ -401,12 +496,20 @@ u8 message type, then the payload, which is encoded with the save-format archive
    `EmpireOrders` for the current turn. A later submission replaces an earlier one.
    The host answers `OrdersAck` and sends everyone a `TurnStatus` saying who has
    sent orders.
+   In a turn-based game (`TurnStatus` says so, and names the empire whose turn it is)
+   the player whose turn it is sends `PlayCommands` instead: a request number and an
+   `EmpireOrders` blob of commands, which the host carries out one after another. The
+   host answers with the player's new `State`, then a `PlayResult` with the same
+   request number and the refused commands. `EndTurn` ends the turn. The host answers
+   with a `PlayResult`, then sends everyone their `State` and the new `TurnStatus` once
+   the turn has passed to the next player. Anything from a player whose turn it is not
+   gets a `PlayResult` saying so.
 6. `Ping`/`Pong` keep idle connections alive (every 5 s). A peer that sends nothing
    for 60 s (host side) or 90 s (client side) is disconnected. `Bye` ends a session
    politely and carries a reason, for example a kick or a shutdown.
 
 `net::kProtocolVersion` must change whenever the messages or the save format
-change.
+change. It is 2 since turn-based games.
 
 ### Save format
 

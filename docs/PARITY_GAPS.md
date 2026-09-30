@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played on one computer only (local and hotseat): network hosts, `opense4-server pbem` and PBEM turn processing refuse a turn-based game with a message. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles are strategic, so the Tactical or Strategic question never comes up | Spec 05 §9.1: on different machines the save file passes from player to player; spec 04 §3 step 1; spec 06 §2.7 | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player sends the commands of their turn (`.plr`), and the host replays them and sends the game on to the next player. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The client cannot open PBEM games yet: players write their `.plr` with the library or `opense4-server pbem orders`. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles are strategic, so the Tactical or Strategic question never comes up | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §3 step 1; spec 06 §2.7 | M |
 
 ## Economy and population (spec 02)
 

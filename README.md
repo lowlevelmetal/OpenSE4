@@ -65,8 +65,9 @@ Classic mode reads your installed copy of Space Empires IV Deluxe in place.
 
 Games are hosted from the client or with the dedicated `opense4-server`.
 
-- **TCP:** direct play over the network. The default port is 6720, and the router is
-  forwarded automatically over UPnP when the router allows it.
+- **TCP:** direct play over the network, with simultaneous turns or one player after
+  another. The default port is 6720, and the router is forwarded automatically over
+  UPnP when the router allows it.
 - **Hotseat:** several players on one machine.
 - **PBEM:** turn files passed by mail or a shared folder.
 

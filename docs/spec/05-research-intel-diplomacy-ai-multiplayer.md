@@ -1671,8 +1671,8 @@ order as it is given (`movement::runLive`), `endPlayerTurn` runs `empireEndOfTur
 passes the turn on, and after the last player the date, design cleanup, victory check and
 event step run. Every step has a stable iteration order and draws its randomness from
 `GameState::rng`. The engine's choices where this section is silent are open questions 24
-(both styles) and 32 (turn-based games). Turn-based games are not offered over the network
-or by e-mail.
+(both styles) and 32 (turn-based games). Network and play-by-e-mail hosts run the same
+calls (§9.5).
 
 ## 9. Multiplayer
 
@@ -1788,6 +1788,19 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 - The host is authoritative, clients validate only against their own knowledge, and a
   missing empire falls back to the AI. This matches DESIGN.md's rule of sending state
   rather than a seed.
+- **Turn-based games on different machines.** The original passes the save file from
+  player to player (§9.1), and offers TCP/IP only for simultaneous games. OpenSE4 keeps a
+  host in charge of the game in both network and e-mail play (inferred, open question 33):
+  - **Network (an OpenSE4 extension).** The host runs `resumeTurnBased`, `applyLive` and
+    `endPlayerTurn`. Only the player whose turn it is may send commands; each one is
+    carried out on the host at once. The computer players' turns run on the host. A
+    player who is away is waited for until the turn time limit, a forced turn or a
+    hand-over to the computer. The computer then plays the rest of that turn as it plays
+    a missing player in a simultaneous game (§7.1: all ministers on, or bookkeeping only).
+  - **E-mail.** The player plays their turn on their copy of the `.gam`, and the `.plr`
+    carries that player's commands in the order given, with checksums of the game before
+    and after. The host replays them with `applyLive`, runs `endPlayerTurn` and sends the
+    new `.gam` on to the next player. A missing `.plr` means the computer plays that turn.
 
 ## 10. `Settings.txt` keys in scope [D]
 
@@ -2131,6 +2144,31 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - counts a vehicle that moved during the game turn, in anyone's player turn, as having
       come from the sector it left (spec 04 §3 attackers and start boxes);
     - plays a human without orders in `processTurn` by the computer, as in a simultaneous
-      turn, and carries out orders given in advance without the Attack Sector question.
+      turn, and carries out orders given in advance without the Attack Sector question;
+    - keeps an Attack Sector question that is still open in the game, so a saved or
+      network game asks it again. The question goes when it is answered (even by an
+      answer the rules refuse), when its group gets new orders or has none left, or when
+      the player's turn ends.
 
     Which of these does the original do? (inferred)
+33. **Turn-based games on different machines** (§9.1, §9.5). The original passes the save
+    file from player to player. OpenSE4 keeps a host in charge (inferred), in network and
+    e-mail play alike:
+    - a player whose turn it is may be played by the computer. This happens when the
+      turn time limit (counted per player turn) runs out, when the host forces the turn
+      on, or when the player is handed to the computer or kicked (network), or when no
+      `.plr` for that player came in (e-mail). The computer plays the rest of the turn as a
+      stand-in for a missing player (§7.1): all ministers on for the turn, or only
+      bookkeeping with the minimal-changes option. It first plans once more, then runs the
+      end-of-turn processing with them. A player handed to the computer stays with it
+      until handed back. With every human handed over, the host plays one game turn each
+      time it is forced on;
+    - the other players see the game when the turn passes on, and a player who fought a
+      battle in someone else's turn sees it at once. The moves, launches and open questions
+      of the turn in progress are only in the view of the player whose turn it is;
+    - an e-mail turn is checked against the game file it was made from (a checksum), and
+      a replay that ends differently from the player's own game is reported, with the
+      host's result counting.
+
+    How does the original handle a player who does not pass the save file on, and does it
+    check that the file a player loads is the latest one?

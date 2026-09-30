@@ -139,8 +139,11 @@ In a turn-based game the end-of-turn processing sees the unadvanced date
 game turn: each player's `EmpireOrders` are carried out at its turn, and a human without
 orders is played by the computer as in a simultaneous turn. The per-turn records a live
 move needs across commands (steps made, emergency movement, units launched) are in
-`GameState::playerTurn`, so a game saved in the middle of a turn goes on the same.
-Network and play-by-e-mail games are simultaneous only (docs/PARITY_GAPS.md).
+`GameState::playerTurn`, so a game saved in the middle of a turn goes on the same. So
+are the Attack Sector questions still open. `LiveOptions::computerPlays` has the computer
+play a human's turn, or the rest of it, as a stand-in; network and e-mail hosts use it
+for players who are away. Network and play-by-e-mail games run the same calls on the
+host (MULTIPLAYER.md).
 
 ## Determinism
 
@@ -160,6 +163,9 @@ Network and play-by-e-mail games are simultaneous only (docs/PARITY_GAPS.md).
   update at once, and send them at End Turn.
 - The host processes the turn when every human's orders have arrived, or on timeout,
   with the AI playing for anyone missing. It then sends everyone the new state.
+- In a turn-based game the host carries out each command of the player whose turn it is
+  as it arrives and sends that player its new view. Everyone gets their view when the
+  turn passes on.
 - `src/net` carries this over TCP with UPnP port mapping. `opense4-server` hosts
   headless or processes PBEM turn files.
 
@@ -172,7 +178,7 @@ scaled to the window, drawn with the art from the player's install.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, keeping the Attack Sector questions and the battle to show), and it runs the End Turn flow for local, hotseat and network games |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games |
 | `art.*` | Pictures from the install, cached as textures |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
 | `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |

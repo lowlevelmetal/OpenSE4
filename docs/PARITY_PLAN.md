@@ -123,6 +123,7 @@ questions are what the observation sessions still have to settle.
   - reconnect and chat;
   - the computer taking over empires that are missing.
 - [x] Dedicated server `opense4-server`, and PBEM (`pbem new|process|orders|info`).
+- [x] Turn-based games over the network and by e-mail.
 - [x] Fog of war in network games: each player receives only their empire's view.
 - [ ] Scenarios and the tutorial script format.
 
