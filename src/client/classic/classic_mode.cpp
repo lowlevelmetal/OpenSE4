@@ -244,7 +244,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
-    if (openLogOnTurn_) {
+    if (openLogOnTurn_ && !battleAsking && !session_->tactical()) {
         openLogOnTurn_ = false;
         if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
@@ -350,14 +350,21 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     for (size_t i = 0; i < q.participants.size(); ++i)
         sides += (i == 0 ? "" : i + 1 == q.participants.size() ? " and " : ", ") + s.empire(q.participants[i]).name;
     const float h = 150.0f + (q.humans.size() > 1 ? 30.0f * float(q.humans.size()) : 0.0f);
+    // A modal prompt: nothing else takes input until the battle is answered.
+    constexpr const char* kPopup = "Combat##battlequestion";
+    if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
     ImGui::SetNextWindowPos(ui.at({302, 384 - h * 0.5f}));
     ImGui::SetNextWindowSize(ui.size({420, h}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Combat", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::PopFont();
+        return;
+    }
     ImGui::TextWrapped("%s", std::format("Battle at {} between {}.", sectorName(s, q.where, session_->player()), sides).c_str());
     ImGui::TextDisabled("Tactical: you give the orders. Strategic: the ships follow their strategies.");
     ImGui::Spacing();
     auto fight = [&](std::vector<game::EmpireId> tactical) {
+        ImGui::CloseCurrentPopup();
         if (tactical.empty()) {
             session_->answerBattle(game::BattleAnswer{});
             return;
@@ -402,7 +409,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
             fight(std::move(tactical));
         }
     }
-    ImGui::End();
+    ImGui::EndPopup();
     ImGui::PopFont();
 }
 

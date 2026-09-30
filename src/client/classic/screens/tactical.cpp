@@ -57,8 +57,13 @@ struct TacticalUi {
     int groupNumber = 1;         // for Set Group Leader / Member
     std::string message;         // the last refusal or hint
     float cx = 36, cy = 31;      // squares at the map's centre
-    float cellFrame = 26;        // zoom: frame pixels per square
+    float cellFrame = 30;        // zoom: frame pixels per square
     bool placed = false;         // the view has been centred on the player's pieces
+    // Orders given while a window draws, carried out when it has drawn (they
+    // change the pieces the window is drawing), and whether to work out the
+    // results then.
+    std::vector<TacticalOrder> queue;
+    bool finishNow = false;
 };
 
 TacticalUi& state() {
@@ -76,10 +81,19 @@ TacticalUi& stateFor(const TacticalFight* fight) {
     return u;
 }
 
-bool submit(TacticalFight& f, TacticalOrder o) {
-    const std::string why = f.battle->submit(o);
-    state().message = why;
-    return why.empty();
+void submit(TacticalFight&, TacticalOrder o) { state().queue.push_back(std::move(o)); }
+
+// Carries out the orders given this frame, in order.
+void flush(TacticalFight& f) {
+    TacticalUi& u = state();
+    std::vector<TacticalOrder> queue = std::move(u.queue);
+    u.queue.clear();
+    for (const TacticalOrder& o : queue) {
+        const std::string why = f.battle->submit(o);
+        if (!why.empty() || o.kind != OK::Begin) u.message = why;
+    }
+    if (u.finishNow && f.battle->finished() && !f.battle->applied()) f.battle->finish();
+    u.finishNow = false;
 }
 
 bool isDrone(const TacticalPiece& p) { return p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Drone; }
@@ -134,6 +148,7 @@ public:
         TacticalBattle& b = *f->battle;
         sync(ui, b);
         automatic(ui, *f);
+        // Drawing reads the battle; orders wait for flush() at the end of the frame.
 
         Dialog d(ui, f->title.c_str(), DialogSize::Full, 0);
         if (!d.open()) return d.keepOpen();
@@ -157,8 +172,15 @@ public:
             ImGui::PopTextWrapPos();
         }
         reportPopup(ui, b, paint);
+        flush(*f);
         // No Close: a battle is fought to its end (Resolve Combat hands it to the strategies).
-        return !closed_;
+        if (done_) {
+            // Last, as it ends the battle this frame drew: a game battle's orders
+            // answer its question and the game carries on.
+            ui.session.endTactical();
+            return false;
+        }
+        return true;
     }
 
 private:
@@ -167,7 +189,7 @@ private:
     void sync(UiContext& ui, TacticalBattle& b) {
         const game::CombatRecord& rec = b.record();
         if (&rec != record_ || rec.events.size() != events_ || rec.pieces.size() != pieces_) {
-            const size_t cursor = record_ ? playback_.cursor() : 0;
+            const size_t cursor = record_ ? playback_.cursor() : std::min(ui.session.tactical()->seen, rec.events.size());
             playback_ = CombatPlayback(rec);
             playback_.setSpeed(settings().tacticalSpeed);
             playback_.seekEvent(std::min(cursor, playback_.eventCount()));
@@ -190,6 +212,9 @@ private:
     void automatic(UiContext& ui, TacticalFight& f) {
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
+        // Once the last phase has played out, the results are worked out (on the
+        // battle's copy of the game) for the result panel.
+        if (b.finished() && !b.applied() && !animating()) u.finishNow = true;
         if (!b.awaitingOrders() || animating()) return;
         const game::EmpireId side = b.phaseEmpire();
         if (b.launchStep()) {
@@ -203,11 +228,21 @@ private:
             u.message = any ? "No enemy is left to fight." : std::string{};
             return;
         }
-        // Keep a piece of the side in phase selected.
+        // Keep a piece of the side in phase selected, and an enemy in the target panel.
         if (u.selected < 0 || size_t(u.selected) >= b.pieces().size() || !commandable(b.pieces()[size_t(u.selected)], side)) {
             u.selected = cycle(b, -1, 1, [&](const TacticalPiece& p) { return canMove(p, side); });
             if (u.selected < 0) u.selected = cycle(b, -1, 1, [&](const TacticalPiece& p) { return commandable(p, side); });
             centreOn(b, u.selected);
+        }
+        if (u.selected >= 0 && (u.target < 0 || size_t(u.target) >= b.pieces().size() || !b.pieces()[size_t(u.target)].alive ||
+                                !b.hostile(side, b.pieces()[size_t(u.target)].owner))) {
+            int best = -1;
+            for (size_t j = 0; j < b.pieces().size(); ++j) {
+                const TacticalPiece& q = b.pieces()[j];
+                if (!q.alive || q.kind == PieceKind::Seeker || q.kind == PieceKind::Obstacle || !b.hostile(side, q.owner)) continue;
+                if (best < 0 || b.distance(u.selected, int(j)) < b.distance(u.selected, best)) best = int(j);
+            }
+            u.target = best;
         }
         (void)ui;
     }
@@ -458,7 +493,10 @@ private:
         if (u.aim != Aim::None) {
             const OK kind = u.aim == Aim::Ram ? OK::Ram : u.aim == Aim::Capture ? OK::Capture : OK::DropTroops;
             u.aim = Aim::None;
-            if (over && submit(f, TacticalOrder{kind, side, u.selected, piece})) audio().play("button");
+            if (over) {
+                submit(f, TacticalOrder{kind, side, u.selected, piece});
+                audio().play("button");
+            }
             return;
         }
         if (over && commandable(*over, side)) {
@@ -494,29 +532,15 @@ private:
         ImGui::BeginChild("##result", ImVec2(w, h), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         heading(ui, "The battle is over");
         ImGui::PushTextWrapPos(0.0f);
-        const auto& summary = b.record().summary;
-        if (b.applied()) {
-            // The outcome lines come last (after the turn notes).
-            for (const std::string& line : summary)
-                if (!line.starts_with("Turn ")) ImGui::TextUnformatted(line.c_str());
-        } else {
-            ImGui::TextUnformatted(f.kind == TacticalFight::Kind::Game ? "Done applies the results to the game."
-                                                                       : "Done shows the results of the simulation.");
-        }
+        // The outcome lines (the turn notes are in the replay).
+        for (const std::string& line : b.record().summary)
+            if (!line.starts_with("Turn ")) ImGui::TextUnformatted(line.c_str());
+        if (f.kind == TacticalFight::Kind::Simulation) dimText("A simulation: nothing in the game has changed.");
         ImGui::PopTextWrapPos();
         ImGui::SetCursorPosY(h - ui.px(40));
         if (classicButton(ui, animating() ? "Skip" : "Done", {120, 26})) {
-            if (animating()) {
-                skipAnimation();
-            } else if (f.kind == TacticalFight::Kind::Game) {
-                ui.session.endTactical();   // answers the battle; the game carries on
-                closed_ = true;
-            } else if (!b.applied()) {
-                b.finish();
-            } else {
-                ui.session.endTactical();
-                closed_ = true;
-            }
+            if (animating() || !b.applied()) skipAnimation();
+            else done_ = true;
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -861,7 +885,7 @@ private:
     CombatView view_;
     ImVec2 viewSize_{0, 0};
     int report_ = -1;
-    bool closed_ = false;
+    bool done_ = false;
 };
 
 // ---- Tactical Combat Orders ---------------------------------------------------------------------------------
@@ -883,13 +907,15 @@ public:
         const TacticalPiece* p = u.selected >= 0 && size_t(u.selected) < b.pieces().size() ? &b.pieces()[size_t(u.selected)] : nullptr;
         const bool ours = p && side.valid() && commandable(*p, side);
         heading(ui, ours ? std::format("Orders for {}", p->name).c_str() : "Select one of your pieces first");
+        launchable_ = false;
 
         // Launch Units: the units it carries, how many it may still launch this turn.
         ImGui::Spacing();
         heading(ui, "Launch Units");
         const std::array<const char*, 3> kinds{"fighters", "satellites", "drones"};
         if (ours) {
-            dimText(std::format("It may launch {} fighters, {} satellites and {} drones more this turn.", p->launchLeft[0], p->launchLeft[1], p->launchLeft[2]).c_str());
+            wrappedDim(std::format("It may launch {} fighters, {} satellites and {} drones more this turn.", p->launchLeft[0], p->launchLeft[1],
+                                   p->launchLeft[2]));
             bool any = false;
             for (const game::UnitStack& st : p->cargo) {
                 if (st.design.index() >= s.designs.size()) continue;
@@ -908,7 +934,8 @@ public:
                 if (classicButton(ui, std::format("Launch {}", n).c_str(), {110, 22}, 0, false, n > 0 && b.check(o).empty())) submit(*f, o);
                 ImGui::PopID();
             }
-            if (!any) dimText(std::format("It carries no {}, {} or {}.", kinds[0], kinds[1], kinds[2]).c_str());
+            if (!any) wrappedDim(std::format("It carries no {}, {} or {}.", kinds[0], kinds[1], kinds[2]));
+            launchable_ = any;
         }
         ImGui::Spacing();
         heading(ui, "Launch Fighters in Groups");
@@ -918,12 +945,12 @@ public:
         heading(ui, "Combat Groups");
         ImGui::SetNextItemWidth(ui.px(120));
         ImGui::SliderInt("group number", &u.groupNumber, 0, 9);
-        dimText("Members follow their leader when it moves. Alt+number: leader; Ctrl+number: member.");
+        wrappedDim("Members follow their leader when it moves. On the map, Alt+number makes the selected piece a leader, Ctrl+number a member.");
         if (!u.message.empty()) ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", u.message.c_str());
 
         d.beginButtons();
         const bool can = ours && b.awaitingOrders();
-        if (d.button("Launch Units", can)) {
+        if (d.button("Launch Units", can && launchable_)) {
             // Everything it may launch, in groups of the chosen size.
             for (const game::UnitStack& st : std::vector<game::UnitStack>(p->cargo)) {
                 TacticalOrder o{OK::Launch, side, u.selected};
@@ -941,9 +968,9 @@ public:
         leader.group = u.groupNumber;
         TacticalOrder member{OK::SetMember, side, u.selected};
         member.group = u.groupNumber;
-        if (d.button(std::format("Set Group Leader {}", u.groupNumber).c_str(), can && b.check(leader).empty())) submit(*f, leader);
-        if (d.button(std::format("Set Group Member {}", u.groupNumber).c_str(), can && b.check(member).empty())) submit(*f, member);
-        if (d.button("Clear Group Assignment", can && b.check(TacticalOrder{OK::ClearGroup, side, u.selected}).empty()))
+        if (d.button(std::format("Group {} Leader", u.groupNumber).c_str(), can && b.check(leader).empty())) submit(*f, leader);
+        if (d.button(std::format("Group {} Member", u.groupNumber).c_str(), can && b.check(member).empty())) submit(*f, member);
+        if (d.button("Clear Group", can && b.check(TacticalOrder{OK::ClearGroup, side, u.selected}).empty()))
             submit(*f, TacticalOrder{OK::ClearGroup, side, u.selected});
         if (d.button("Clear All Groups", side.valid() && b.awaitingOrders())) submit(*f, TacticalOrder{OK::ClearAllGroups, side});
         d.spacer();
@@ -953,6 +980,7 @@ public:
             d.requestClose();
         }
         d.close();
+        flush(*f);
         return d.keepOpen();
     }
 
@@ -961,6 +989,8 @@ private:
         u.aim = a;
         d.requestClose();
     }
+
+    bool launchable_ = false;
 };
 
 // ---- Tactical Combat Options ----------------------------------------------------------------------------------
@@ -978,7 +1008,7 @@ public:
         heading(ui, "Display");
         changed |= lampToggle(ui, "Animate moves and shots", &prefs.tacticalAnimate);
         changed |= lampToggle(ui, "Show the square grid", &prefs.tacticalGrid);
-        changed |= lampToggle(ui, "Show movement and weapon reach of the selected piece", &prefs.tacticalRanges);
+        changed |= lampToggle(ui, "Show the selected piece's reach", &prefs.tacticalRanges);
         changed |= lampToggle(ui, "Show piece names", &prefs.tacticalNames);
         heading(ui, "Turns");
         changed |= lampToggle(ui, "End my phase when no enemy is left", &prefs.tacticalAutoEnd);

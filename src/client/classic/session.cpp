@@ -65,6 +65,7 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     callCommand_ = std::move(command);
     callBattles_ = state_.combats.size();
     answers_.clear();
+    fought_.clear();
     battle_.reset();
     runCall();
 }
@@ -82,10 +83,22 @@ void ClassicSession::runCall() {
     if (res.battle) {
         // The call stopped before a battle with human sides; the game is as it was.
         battle_ = std::move(res.battle);
+        log::info("A battle at system {} ({}, {}) asks {} human side(s) for Tactical or Strategic", battle_->where.system.value,
+                  battle_->where.sector.x, battle_->where.sector.y, battle_->humans.size());
         return;
     }
     const Call call = std::exchange(call_, Call::None);
     const bool tactical = std::any_of(answers_.begin(), answers_.end(), [](const game::BattleAnswer& a) { return !a.tactical.empty(); });
+    // The battles fought in the Tactical Combat window must have come out the same here.
+    for (const game::CombatRecord& fought : fought_) {
+        const auto same = [&](const game::CombatRecord& r) {
+            return r.location == fought.location && r.turn == fought.turn && r.summary == fought.summary && r.pieces.size() == fought.pieces.size() &&
+                   r.events.size() == fought.events.size();
+        };
+        if (std::none_of(state_.combats.begin() + std::ptrdiff_t(std::min(callBattles_, state_.combats.size())), state_.combats.end(), same))
+            log::warn("The tactical battle at system {} came out differently in the game", fought.location.system.value);
+    }
+    fought_.clear();
     const bool answered = !answers_.empty();
     answers_.clear();
     auto nextHuman = [&] {
@@ -142,6 +155,7 @@ void ClassicSession::endTactical() {
     if (fight->kind != TacticalFight::Kind::Game || !fight->battle) return;
     // Phases left are played by the strategies, as a script that runs out does.
     fight->battle->finish();
+    fought_.push_back(fight->battle->record());
     answerBattle(game::BattleAnswer{fight->players, fight->battle->script()});
 }
 

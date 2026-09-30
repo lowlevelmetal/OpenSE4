@@ -61,7 +61,8 @@ struct TacticalFight {
     Kind kind = Kind::Game;
     std::unique_ptr<game::combat::TacticalBattle> battle;
     std::vector<game::EmpireId> players;   // the sides the player drives
-    std::string title;                     // "Battle at ...", "Combat Simulator"
+    std::string title;                     // "Tactical Combat", "Combat Simulator"
+    size_t seen = 0;                       // events of the record already shown (the window plays the rest)
 };
 
 class ClassicSession {
@@ -175,6 +176,9 @@ private:
     game::CommandResult issued_;              // the result of the last Issue call that finished
     std::optional<game::BattleQuestion> battle_;
     std::unique_ptr<TacticalFight> tactical_;
+    // Tactical battles answered in this call, as fought in the window: the
+    // game's copy must come out the same (a check on determinism, logged).
+    std::vector<game::CombatRecord> fought_;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

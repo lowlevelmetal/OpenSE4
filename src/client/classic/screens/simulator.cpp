@@ -351,7 +351,13 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args) { return std
 bool startDemoSimulation(UiContext& ui, bool tactical) {
     const SimulatorSetup setup = demoSetup(ui.rules(), ui.state(), ui.session.player(), tactical);
     std::string message;
-    return begin(ui, setup, message);
+    if (!begin(ui, setup, message)) return false;
+    // A couple of turns in, played by the strategies, so there is something to see.
+    TacticalFight* f = ui.session.tactical();
+    for (int phase = 0; phase < 2 && f->battle->awaitingOrders(); ++phase)
+        f->battle->submit(game::combat::TacticalOrder{game::combat::TacticalOrder::Kind::Auto, f->battle->phaseEmpire()});
+    f->seen = f->battle->record().events.size();
+    return true;
 }
 
 } // namespace opense4::client::classic
