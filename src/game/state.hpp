@@ -58,6 +58,7 @@ struct IntelProjectOrder {
     ObjectId targetPlanet;      // optional specific target ("Any" when invalid)
     VehicleId targetVehicle;
     EmpireId thirdEmpire;       // political operations
+    ruleset::TechAreaId targetTech;  // Research - Steal: the area ("Any" when invalid)
     int64_t progress = 0;
 };
 
@@ -66,12 +67,11 @@ struct Relation {
     bool contact = false;
     Treaty treaty = Treaty::None;
     bool dominant = false;      // Subjugation/Protectorate: true if *we* are the master
-    int tradePercent = 0;
+    int tradeTurns = 0;         // trade counter (spec 05 §3.3); the trade % is min(this, the maximum)
     uint32_t treatyTurn = 0;    // when the current treaty took effect
     int32_t lastWarTurn = -1;
     int anger = 0;              // computer players: anger toward that empire (0..~100+)
     bool messageSentThisTurn = false;
-    uint32_t messagesBlockedUntil = 0;  // messages sent while turn < this are lost (intel, spec 05 §2.3)
 };
 
 struct LogEntry {
@@ -141,11 +141,15 @@ struct Empire {
     bool researchEvenly = true;
     bool repeatResearch = false;
     std::vector<int> uniqueAreasUnlocked;   // Unique Area ids granted by ruins
+    // Points for this turn's research step: produced at the end of the
+    // previous turn, spent at the end of this one, then emptied (spec 05 §1.1).
+    int64_t researchPool = 0;
 
     // Intelligence (spec 05 §2).
     std::vector<IntelProjectOrder> intel;
     bool intelEvenly = true;
     bool repeatIntel = false;
+    int64_t intelPool = 0;                  // like researchPool (spec 05 §2.1)
 
     std::vector<Relation> relations;        // per EmpireId
     Knowledge knowledge;
@@ -467,7 +471,7 @@ struct GameOptions {
     int eventFrequency = 2;              // 0 none, 1 low, 2 medium, 3 high
     int maxEventSeverity = 2;            // 0 low .. 3 catastrophic
     // Technology.
-    int techCostGrowth = 100;            // % growth per level (spec 05 §1.3)
+    int techCost = 1;                    // Technology Cost: 0 low, 1 medium (the default), 2 high (spec 05 §1.3)
     int startTechLevel = 0;              // 0 low, 1 medium, 2 high
     std::vector<uint8_t> techAreasAllowed;  // per tech area; empty = all
     // Players.
@@ -486,7 +490,7 @@ struct GameOptions {
     bool onlyBreathable = false;
     bool onlyHomeType = false;
     bool teamMode = false;
-    bool showAllScores = false;
+    int scoreDisplay = 1;                // Score Display: 0 own, 1 own and Non-Aggression or better (the default), 2 all (spec 05 §5)
     int maxShipsPerPlayer = 200;
     int maxUnitsPerPlayer = 1000;
     int aiDifficulty = 1;

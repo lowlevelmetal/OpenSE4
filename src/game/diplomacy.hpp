@@ -25,11 +25,19 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // gifts and tributes, plus the immediate messages (break treaty, declare war,
 // surrender, grant independence). Expired messages are removed.
 void deliverMessages(TurnContext& ctx);
-// Turn phase 11: first contact where empires see each other's vehicles or
-// colonies, contact loss when no warp path links their planets, and the
-// knowledge Partnership and Subjugation share.
+// Turn phase 11 (after sight): first contact between every pair of living
+// empires that have not met and that each detect the other in one system
+// (spec 05 §3.1, confirmed: binary). Contact is never lost; only the
+// destruction of an empire (forgetEmpire) ends it.
 void updateContacts(TurnContext& ctx);
-// Turn phase 11: trade percentage growth toward `Maximum Trade Percentage`.
+// One empire's treaty step (spec 05 §8 end-of-turn step 6, §3.2–§3.3): the
+// consistency check (two sides that record different treaties both fall to
+// None), a master's view of its subject's designs, Partnership maps and
+// designs, and the trade counters (+1 toward every other living empire). The
+// trade income itself is paid by the economy (tradeIncome and friends) before
+// the counters grow.
+void treatyStep(TurnContext& ctx, EmpireId e);
+// Turn phase 11: treatyStep for every living empire in order.
 void advanceTrade(TurnContext& ctx);
 
 // ---- Treaties and contact ----------------------------------------------------------------------
@@ -44,6 +52,12 @@ std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
 // Establishes contact both ways; logs first contact.
 void makeContact(TurnContext& ctx, EmpireId a, EmpireId b);
+// Declare War (spec 05 §3.4): both sides are at War whatever the treaty was,
+// and both are told. Also used by `Politics - Fake Messages` (§2.3).
+void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);
+// A destroyed empire (spec 05 §6): every relation with it returns to "no
+// contact" (no contact, treaty None, trade counter 0) on both sides.
+void forgetEmpire(GameState& s, EmpireId gone);
 // The empire that `e` pays tariffs to (Subjugation/Protectorate), if any.
 EmpireId masterOf(const GameState& s, EmpireId e);
 // Whether `viewer` may see the treaty between `a` and `b` in the treaty grid:
@@ -64,17 +78,24 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to);
 
 // ---- Trade and tariffs (the economy calls these in phase 5) -------------------------------------
 
-// What an empire generates this turn and trade is based on: the output of
-// its colonies that reaches the treasury (economy::colonyOutput) (inferred).
+// An empire's production of the five kinds this turn: the base of trade,
+// tariffs and the score (spec 05 §3.3, §5). The output of its colonies whose
+// system reaches the treasury (economy::colonyOutput) (inferred).
 struct Generated {
     Resources resources;
     int64_t research = 0;
     int64_t intelligence = 0;
 };
 Generated generated(const Rules& r, const GameState& s, EmpireId e);
-// One partner's contribution: base × tradePercent / 100, scaled by Political
-// Savvy and the culture's Trade percentage (both additive, inferred).
-int64_t tradeShare(int64_t partnerBase, int tradePercent, int politicalSavvy, int cultureTrade);
+// The trade percentage between two empires (spec 05 §3.3): with Trade
+// Alliance or better, min(trade counter, `Maximum Trade Percentage`), else 0.
+int tradePercent(const Rules& r, const GameState& s, EmpireId e, EmpireId partner);
+// The receiver's trade factor F = 100 + (Political Savvy − 100) + its race's
+// `Trade` trait values + its culture's Trade value (spec 05 §3.3).
+int64_t tradeFactor(const Rules& r, const Empire& receiver);
+// One partner's contribution (confirmed: binary):
+// trunc(round(base × tradePercent / 100) × F / 100), never below 0.
+int64_t tradeShare(int64_t partnerBase, int tradePercent, int64_t factor);
 
 // Resources `e` receives this turn from resource trade plus the tariffs of
 // its subjects and protectorates.
@@ -85,9 +106,13 @@ Resources tariffsReceived(const Rules& r, const GameState& s, EmpireId e);
 int64_t researchTradeIncome(const Rules& r, const GameState& s, EmpireId e);
 // Intelligence points from Partnerships (the economy adds them to its IP).
 int64_t intelTradeIncome(const Rules& r, const GameState& s, EmpireId e);
-// What `e` owes its master this turn (`Treaty Subjugated/Protectorate
-// Resource Percentage` of its generated resources); the economy caps it at
-// what the payer holds.
+// What `e` owes its master this turn on each of its five incomes (spec 05
+// §3.3, confirmed: binary): round(income × pct / 100), never more than the
+// income, with pct the treaty's `Treaty Subjugated/Protectorate Resource
+// Percentage`. The master receives the resources; the research and
+// intelligence parts are simply lost.
+Generated tariffDue(const Rules& r, const GameState& s, EmpireId e);
+// The resource part of tariffDue; the economy caps it at what the payer holds.
 Resources tariffsPaid(const Rules& r, const GameState& s, EmpireId e);
 
 } // namespace opense4::game::diplomacy

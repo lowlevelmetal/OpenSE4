@@ -89,7 +89,7 @@ private:
         ImGui::AlignTextToFramePadding();
         heading(ui, "Intelligence Points");
         ImGui::SameLine();
-        ImGui::Text("%s per turn", formatNumber(e.economy.intelligence).c_str());
+        ImGui::Text("%s available, %s per turn", formatNumber(e.intelPool).c_str(), formatNumber(e.economy.intelligence).c_str());
         ImGui::SameLine(ui.px(330));
         ImGui::TextColored(kTextBlue, "Defense");
         ImGui::SameLine();

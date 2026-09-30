@@ -6,6 +6,7 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
+#include "game/setup.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -84,6 +85,31 @@ template <class T>
 std::optional<T> choose(const std::vector<T>& options, Rng& rng) {
     if (options.empty()) return std::nullopt;
     return options[rng.below(options.size())];
+}
+
+// The original's way of picking a target (spec 05 §2.1, §4, confirmed:
+// binary): up to kTargetDraws uniform draws among the candidates; one that
+// fails `check` is removed from the draw.
+template <class T, class Check>
+std::optional<T> drawCandidate(std::vector<T> candidates, Rng& rng, Check&& check) {
+    for (int draw = 0; draw < kTargetDraws && !candidates.empty(); ++draw) {
+        const size_t i = rng.below(candidates.size());
+        if (check(candidates[i])) return candidates[i];
+        candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(i));
+    }
+    return std::nullopt;
+}
+
+bool validArea(const Rules& r, ruleset::TechAreaId a) { return a.valid() && a.index() < r.data().techAreas.size(); }
+
+// An object that is still part of its system (closed warp points and objects
+// swept away by a shockwave are not).
+bool inSystem(const GameState& s, ObjectId o) {
+    if (!validObject(s, o)) return false;
+    const SpaceObject& obj = s.galaxy.object(o);
+    if (!validSystem(s, obj.system)) return false;
+    const auto& objs = s.galaxy.system(obj.system).objects;
+    return std::find(objs.begin(), objs.end(), o) != objs.end();
 }
 
 void setLocationTokens(Tokens& t, const GameState& s, Location where) {
@@ -235,15 +261,12 @@ std::vector<DesignId> designsOfClass(const Rules& r, const GameState& s, EmpireI
     return out;
 }
 
-std::vector<ruleset::TechAreaId> stealableAreas(const Rules& r, const GameState& s, EmpireId source, EmpireId target) {
-    std::vector<ruleset::TechAreaId> out;
-    const Empire& src = s.empire(source);
-    const Empire& tgt = s.empire(target);
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
-        const ruleset::TechAreaId a{i};
-        if (tgt.techLevel(a) > src.techLevel(a) && src.techLevel(a) < r.tech(a).maxLevel && r.techVisible(s, src, a)) out.push_back(a);
-    }
-    return out;
+// Research - Steal works on an area where the target is ahead of the thief
+// and that is neither racial nor unique (spec 05 §2.3, confirmed: binary).
+bool stealable(const Rules& r, const GameState& s, EmpireId source, EmpireId target, ruleset::TechAreaId a) {
+    if (!validArea(r, a)) return false;
+    const ruleset::TechArea& t = r.tech(a);
+    return s.empire(target).techLevel(a) > s.empire(source).techLevel(a) && t.racialArea <= 0 && t.uniqueArea <= 0;
 }
 
 // Candidate third empires for a political operation against `target`.
@@ -254,7 +277,7 @@ std::vector<EmpireId> politicalPartners(const GameState& s, Effect e, const Targ
         if (!o.alive || o.id == t.empire || o.id == t.source) continue;
         const Relation& rel = tgt.relation(o.id);
         if (!rel.contact) continue;
-        if (e == Effect::PoliticsDisruptTrade && !(treatyTradesResources(rel.treaty) && rel.tradePercent > 0)) continue;
+        if (e == Effect::PoliticsDisruptTrade && !treatyTradesResources(rel.treaty)) continue;
         out.push_back(o.id);
     }
     return out;
@@ -278,6 +301,8 @@ std::vector<SystemId> unlinkedSystems(const GameState& s, SystemId from) {
 bool shipCandidate(const Rules& r, const GameState& s, Effect e, EmpireId owner, const Vehicle& v) {
     if (v.owner != owner || !isShip(r, s, v)) return false;
     if (e == Effect::ShipCargoDamage && v.cargo.empty()) return false;
+    // Mothballed ships are immune to new orders (spec 05 §2.3, confirmed: binary).
+    if (e == Effect::ShipOrdersChange && v.status == VehicleStatus::Mothballed) return false;
     return true;
 }
 
@@ -457,6 +482,9 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
     Target t = request;
     const EmpireId owner = request.empire;
     const Empire& emp = s.empire(owner);
+    // An "Any" candidate in a system may be rejected by `Change Bad
+    // Intelligence Chance - System` (spec 05 §2.4).
+    auto badIntel = [&](SystemId sys) { return chanceRejects(unownedChanceValue(s, sys, AbilityKind::ChangeBadIntelChanceSystem), rng); };
 
     switch (e) {
         case Effect::ShipDamage:
@@ -472,10 +500,13 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                 if (!v || !shipCandidate(r, s, e, owner, *v)) return std::nullopt;
                 return t;
             }
-            std::vector<VehicleId> options;
+            std::vector<VehicleId> ships;
             for (const Vehicle& v : s.vehicles)
-                if (shipCandidate(r, s, e, owner, v)) options.push_back(v.id);
-            auto pick = choose(options, rng);
+                if (v.owner == owner && isShip(r, s, v)) ships.push_back(v.id);
+            auto pick = drawCandidate(ships, rng, [&](VehicleId id) {
+                const Vehicle* v = s.vehicle(id);
+                return v && shipCandidate(r, s, e, owner, *v) && !badIntel(v->location.system);
+            });
             if (!pick) return std::nullopt;
             t.vehicle = *pick;
             return t;
@@ -499,10 +530,13 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                     return std::nullopt;
                 return t;
             }
-            std::vector<ObjectId> options;
+            std::vector<ObjectId> planets;
             for (const auto& c : s.colonies)
-                if (c && colonyCandidate(r, s, e, owner, *c, true)) options.push_back(c->planet);
-            auto pick = choose(options, rng);
+                if (c && c->owner == owner) planets.push_back(c->planet);
+            auto pick = drawCandidate(planets, rng, [&](ObjectId o) {
+                const Colony* c = s.colony(o);
+                return c && colonyCandidate(r, s, e, owner, *c, true) && !badIntel(s.galaxy.object(o).system);
+            });
             if (!pick) return std::nullopt;
             t.object = *pick;
             return t;
@@ -522,9 +556,19 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
             if (designsOfClass(r, s, owner, e == Effect::UnitDesignsSteal).empty()) return std::nullopt;
             return t;
 
-        case Effect::ResearchSteal:
-            if (stealableAreas(r, s, request.source, owner).empty()) return std::nullopt;
+        case Effect::ResearchSteal: {
+            if (request.tech.valid()) return validArea(r, request.tech) ? std::optional<Target>(t) : std::nullopt;
+            // "Any" (confirmed: binary): the operatives keep only areas where
+            // the thief is already ahead of the target, so the steal that
+            // follows always fails. Reproduced on purpose.
+            std::vector<ruleset::TechAreaId> areas;
+            for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) areas.push_back(ruleset::TechAreaId{i});
+            const Empire& thief = s.empire(request.source);
+            auto pick = drawCandidate(areas, rng, [&](ruleset::TechAreaId a) { return thief.techLevel(a) > emp.techLevel(a); });
+            if (!pick) return std::nullopt;
+            t.tech = *pick;
             return t;
+        }
         case Effect::ResearchDeleteProject:
             if (emp.research.empty()) return std::nullopt;
             return t;
@@ -541,7 +585,10 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                 if (!politicalPartnerValid(s, e, t, request.other)) return std::nullopt;
                 return t;
             }
-            auto pick = choose(politicalPartners(s, e, t), rng);
+            std::vector<EmpireId> others;
+            for (const Empire& o : s.empires)
+                if (o.alive && o.id != owner && o.id != request.source) others.push_back(o.id);
+            auto pick = drawCandidate(others, rng, [&](EmpireId o) { return politicalPartnerValid(s, e, t, o); });
             if (!pick) return std::nullopt;
             t.other = *pick;
             return t;
@@ -552,11 +599,13 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                 if (!validSystem(s, request.system) || !emp.hasExplored(request.system)) return std::nullopt;
                 return t;
             }
+            // Prefers a system the target knows and we do not (inferred).
             const Empire& src = s.empire(request.source);
             std::vector<SystemId> unknown, known;
             for (const StarSystem& sys : s.galaxy.systems)
                 if (emp.hasExplored(sys.id)) (src.hasExplored(sys.id) ? known : unknown).push_back(sys.id);
-            auto pick = choose(unknown.empty() ? known : unknown, rng);
+            auto pick = drawCandidate(unknown, rng, [&](SystemId sys) { return !badIntel(sys); });
+            if (!pick) pick = drawCandidate(known, rng, [&](SystemId sys) { return !badIntel(sys); });
             if (!pick) return std::nullopt;
             t.system = *pick;
             return t;
@@ -579,16 +628,13 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                 }
             };
             if (request.object.valid()) {
-                if (!validObject(s, request.object) || !fits(request.object)) return std::nullopt;
-                const auto& objs = s.galaxy.system(s.galaxy.object(request.object).system).objects;
-                if (std::find(objs.begin(), objs.end(), request.object) == objs.end()) return std::nullopt;
+                if (!inSystem(s, request.object) || !fits(request.object)) return std::nullopt;
                 return t;
             }
             std::vector<ObjectId> options;
             for (SystemId sys : colonySystems(s, owner))
-                for (ObjectId o : s.galaxy.system(sys).objects)
-                    if (fits(o)) options.push_back(o);
-            auto pick = choose(options, rng);
+                for (ObjectId o : s.galaxy.system(sys).objects) options.push_back(o);
+            auto pick = drawCandidate(options, rng, [&](ObjectId o) { return fits(o) && !badIntel(s.galaxy.object(o).system); });
             if (!pick) return std::nullopt;
             t.object = *pick;
             return t;
@@ -604,10 +650,7 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
                 if (!validSystem(s, request.system) || !fits(request.system)) return std::nullopt;
                 return t;
             }
-            std::vector<SystemId> options;
-            for (SystemId sys : colonySystems(s, owner))
-                if (fits(sys)) options.push_back(sys);
-            auto pick = choose(options, rng);
+            auto pick = drawCandidate(colonySystems(s, owner), rng, [&](SystemId sys) { return fits(sys) && !badIntel(sys); });
             if (!pick) return std::nullopt;
             t.system = *pick;
             return t;
@@ -627,18 +670,71 @@ std::optional<Location> targetLocation(const GameState& s, const Target& t) {
     return std::nullopt;
 }
 
-int64_t systemChanceModifier(const Rules& r, const GameState& s, EmpireId empire, SystemId sys, AbilityKind k) {
+int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k) {
     if (!validSystem(s, sys)) return 0;
-    int64_t total = 0;
-    for (const auto& a : s.galaxy.system(sys).abilities)
-        if (const ParsedAbility p = parseAbility(a); p.kind == k) total += p.value1;
-    std::optional<int64_t> best;
-    for (const auto& c : s.colonies) {
-        if (!c || c->owner != empire || s.galaxy.object(c->planet).system != sys) continue;
-        for (const ParsedAbility& a : colonyAbilities(r, s, *c))
-            if (a.kind == k && (!best || a.value1 < *best)) best = a.value1;
-    }
-    return total + best.value_or(0);
+    int64_t best = 0;
+    auto consider = [&](const ruleset::Ability& a) {
+        if (const ParsedAbility p = parseAbility(a); p.kind == k && p.value1 > best) best = p.value1;
+    };
+    for (const auto& a : s.galaxy.system(sys).abilities) consider(a);
+    // Stellar abilities of the objects in the system; a colony's facilities
+    // belong to its empire and never count.
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        for (const auto& a : s.galaxy.object(o).abilities) consider(a);
+    return best;
+}
+
+bool chanceRejects(int64_t v, Rng& rng) {
+    if (v <= 0 || v == 100) return false;
+    return rng.range(1, 100) <= v;
+}
+
+EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
+    GameState& s = ctx.state;
+    const Colony* col = s.colony(planet);
+    if (!col || !living(s, col->owner) || s.empires.size() >= kMaxEmpires) return {};
+    const EmpireId former = col->owner;
+    const bool home = col->homeworld;
+    // The race of the colony's largest population group (inferred).
+    EmpireId raceOf = former;
+    int64_t most = -1;
+    for (const PopulationGroup& p : col->population)
+        if (validEmpire(s, p.race) && p.millions > most) {
+            most = p.millions;
+            raceOf = p.race;
+        }
+
+    const EmpireId id{s.empires.size()};
+    const Empire& old = s.empire(former);
+    Empire e;
+    e.id = id;
+    e.name = std::format("Free {}", s.galaxy.object(planet).name);
+    e.empireType = "Republic";
+    e.leaderTitle = "Governor";
+    e.race = s.empire(raceOf).race;
+    e.color = defaultEmpireColor(id.index());
+    e.kind = PlayerKind::Computer;
+    e.techLevels = old.techLevels;
+    e.uniqueAreasUnlocked = old.uniqueAreasUnlocked;
+    e.strategies = old.strategies;
+    e.designTypes = old.designTypes;
+    e.colonyTypes = old.colonyTypes;
+    e.repairPriorities = old.repairPriorities;
+    e.knowledge.explored.assign(s.galaxy.systems.size(), 0);
+    e.knowledge.present.assign(s.galaxy.systems.size(), 0);
+    e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
+    e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 0);
+    e.knowledge.notes.assign(s.galaxy.systems.size(), {});
+    s.empires.push_back(std::move(e));
+    for (Empire& x : s.empires) x.relations.resize(s.empires.size());
+
+    ctx.mood(former, "Any Planet Lost");
+    if (home) ctx.mood(former, "Homeworld Lost");
+    diplomacy::transferColony(s, planet, id);
+    s.colony(planet)->homeworld = true;  // the new empire's capital (inferred)
+    diplomacy::makeContact(ctx, former, id);
+    diplomacy::declareWar(ctx, id, former);
+    return id;
 }
 
 // ---- Damage helpers ------------------------------------------------------------------------------------
@@ -704,11 +800,13 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Outcome out;
-    if (!living(s, t.empire)) return out;
-    Empire& victim = s.empire(t.empire);
+    // The affected empire; events on objects nobody owns have none. Effects on
+    // an empire's stock, queues or relations need one.
+    Empire* victim = living(s, t.empire) ? &s.empire(t.empire) : nullptr;
 
     // Ship effects.
     Vehicle* v = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr;
+    if (v && v->count <= 0) v = nullptr;
     if (v) setVehicleTokens(out.tokens, r, s, *v);
     // Planet effects.
     Colony* col = validObject(s, t.object) ? s.colony(t.object) : nullptr;
@@ -723,14 +821,16 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             if (vehicleDestroyed(r, s, *v)) destroyVehicle(ctx, *v);
             break;
         case Effect::ShipLoseMovement:
+            // Movement points of the current turn only, never below 0 (confirmed:
+            // binary). They are refilled when movement starts, so after the
+            // movement phases this changes nothing.
             if (!v) return out;
-            out.actual = std::max(1, amount);
-            v->immobileUntil = std::max(v->immobileUntil, s.turn + 1 + static_cast<uint32_t>(out.actual));
-            v->movement = 0;
+            out.actual = std::clamp<int64_t>(amount, 0, std::max(0, v->movement));
+            v->movement -= static_cast<int>(out.actual);
             break;
         case Effect::ShipLoseSupply:
             if (!v) return out;
-            out.actual = amount <= 0 ? v->supply : std::min<int64_t>(v->supply, amount);
+            out.actual = std::clamp<int64_t>(amount, 0, std::max<int64_t>(0, v->supply));
             v->supply -= out.actual;
             break;
         case Effect::ShipRebel:
@@ -751,47 +851,32 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             out.actual = damageCargo(r, s, v->cargo, amount, rng);
             break;
         case Effect::ShipOrdersChange: {
-            if (!v) return out;
+            // One order to move to a random system of the quadrant (confirmed:
+            // binary; the sector is random, inferred). Mothballed ships are immune.
+            if (!v || v->status == VehicleStatus::Mothballed || s.galaxy.systems.empty()) return out;
             detachFromFleet(s, *v);
             Order o;
             o.kind = OrderKind::MoveTo;
-            o.location = {v->location.system, Sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))}};
+            const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
+            o.location = {dest, Sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))}};
             v->orders = {o};
             v->repeatOrders = false;
             out.actual = 1;
             break;
         }
         case Effect::ShipMoved: {
-            if (!v) return out;
-            // Breadth-first over warp links up to `amount` jumps (inferred reading
-            // of the stock record: the ship lands in another system).
-            const int jumps = std::max(1, amount);
-            std::vector<int> dist(s.galaxy.systems.size(), -1);
-            std::vector<SystemId> frontier{v->location.system};
-            dist[v->location.system.index()] = 0;
-            std::vector<SystemId> reached;
-            for (size_t f = 0; f < frontier.size(); ++f) {
-                const SystemId cur = frontier[f];
-                if (dist[cur.index()] >= jumps) continue;
-                for (SystemId nb : s.galaxy.neighbors(cur))
-                    if (dist[nb.index()] < 0) {
-                        dist[nb.index()] = dist[cur.index()] + 1;
-                        frontier.push_back(nb);
-                        reached.push_back(nb);
-                    }
-            }
-            std::sort(reached.begin(), reached.end());
-            if (reached.empty())
-                for (const StarSystem& sys : s.galaxy.systems)
-                    if (sys.id != v->location.system) reached.push_back(sys.id);
-            const SystemId dest = reached.empty() ? v->location.system : reached[rng.below(reached.size())];
+            // To a random system of the quadrant, at a random sector, orders
+            // cleared; Amount is not used (confirmed: binary).
+            if (!v || s.galaxy.systems.empty()) return out;
+            const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
+            const Sector sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))};
             detachFromFleet(s, *v);
-            v->location = {dest, Sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))}};
+            v->location = {dest, sector};
             v->orders.clear();
             v->repeatOrders = false;
             explore(s, v->owner, dest);
             setLocationTokens(out.tokens, s, v->location);
-            out.actual = dist[dest.index()] > 0 ? dist[dest.index()] : 1;
+            out.actual = 1;
             break;
         }
 
@@ -843,6 +928,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         case Effect::ShipDesignsSteal:
         case Effect::UnitDesignsSteal: {
             if (!living(s, t.source)) return out;
+            if (!victim) return out;
             const std::vector<DesignId> all = designsOfClass(r, s, t.empire, e == Effect::UnitDesignsSteal);
             const auto& seen = s.empire(t.source).knowledge.seenDesigns;
             std::vector<DesignId> fresh;
@@ -861,7 +947,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             copy.obsolete = false;
             copy.strategy = 0;
             for (DesignId own : s.empire(t.source).designs)
-                if (s.design(own).name == copy.name) copy.name = std::format("{} ({})", original, empireFullName(victim));
+                if (s.design(own).name == copy.name) copy.name = std::format("{} ({})", original, empireFullName(*victim));
             addDesign(s, std::move(copy));
             out.tokens.designName = original;
             out.report.push_back(std::format("The {} {} design is now in our design list.", original, designClassName(e == Effect::UnitDesignsSteal)));
@@ -878,20 +964,23 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PlanetValueChange: {
-            if (!col) return out;
+            // Each of the three values changes by Amount; in finite-resource
+            // games by Amount × 1,000 when that stays within ±500,000 (spec 05
+            // §2.3; otherwise by Amount, inferred). The result stays within the
+            // `Minimum/Maximum Planet Percent/Resource Value` settings (spec 01
+            // §2.3; a value already outside is not pulled in, inferred).
+            if (!validObject(s, t.object)) return out;
             SpaceObject& obj = s.galaxy.object(t.object);
-            const bool asteroids = obj.kind == ObjectKind::Asteroids;
-            const int64_t lo = r.setting(asteroids ? "Asteroids Value Low Percent" : "Planet Value Low Percent", asteroids ? 50 : 0);
-            const int64_t hi = r.setting(asteroids ? "Asteroids Value High Percent" : "Planet Value High Percent", asteroids ? 300 : 150);
+            if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return out;
+            const bool finite = s.options.finiteResources;
+            const int64_t change = finite && std::abs(int64_t{amount} * 1000) <= 500'000 ? int64_t{amount} * 1000 : int64_t{amount};
+            const int64_t lo = r.setting(finite ? "Minimum Planet Resource Value" : "Minimum Planet Percent Value", 0);
+            const int64_t hi = r.setting(finite ? "Maximum Planet Resource Value" : "Maximum Planet Percent Value", finite ? 999'000'000 : 250);
             int64_t delta = 0;
             for (int& value : obj.value) {
                 const int before = value;
-                if (s.options.finiteResources) {
-                    value = static_cast<int>(std::max<int64_t>(0, int64_t{value} * (100 + amount) / 100));
-                } else {
-                    const int64_t lowest = std::min<int64_t>(lo, value), highest = std::max<int64_t>(hi, value);
-                    value = static_cast<int>(std::clamp<int64_t>(int64_t{value} + amount, lowest, highest));
-                }
+                const int64_t lowest = std::min<int64_t>(lo, value), highest = std::max<int64_t>(hi, value);
+                value = static_cast<int>(std::clamp<int64_t>(int64_t{value} + change, lowest, highest));
                 delta += value - before;
             }
             out.actual = delta / static_cast<int64_t>(obj.value.size());
@@ -931,17 +1020,24 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PlanetPopulationRebel: {
+            // As an event the colony breaks away as a new empire (below 20
+            // empires). As an intelligence project: a roll of 1–4 equal to 1
+            // breaks it away, else a second such roll makes it join the
+            // source, else nothing happens: 25 / 18.75 / 56.25 % (confirmed:
+            // binary). `victim` is not used past this point: a new empire
+            // invalidates references into GameState::empires.
             if (!col) return out;
             const EmpireId owner = col->owner;
             const bool home = col->homeworld;
-            if (living(s, t.source)) {
-                // The planet joins the operation's source.
+            const bool intel = living(s, t.source);
+            if (!intel || rng.range(1, 4) == 1) {
+                if (!breakAway(ctx, t.object).valid()) return out;
+            } else if (rng.range(1, 4) == 1) {
                 diplomacy::transferColony(s, t.object, t.source);
                 ctx.mood(owner, "Any Planet Lost");
                 if (home) ctx.mood(owner, "Homeworld Lost");
             } else {
-                // No one to join: the planet breaks away and is lost (inferred).
-                loseColony(ctx, t.object);
+                return out;
             }
             out.actual = 1;
             break;
@@ -1040,16 +1136,28 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::StarDestroyed: {
-            if (!validObject(s, t.object) || s.galaxy.object(t.object).kind != ObjectKind::Star) return out;
+            // The result of the Destroy Star manipulation (spec 05 §4, spec 01
+            // §9, confirmed: binary): the shockwave. Every planet and asteroid
+            // field becomes a new asteroid field (a random Asteroids record of
+            // any size) that keeps its name, values and conditions, and its
+            // colony is lost; every other object but warp points (stars,
+            // storms, comets) is gone, and so is every vehicle in the system.
+            // No destroyed star remains.
+            if (!inSystem(s, t.object) || s.galaxy.object(t.object).kind != ObjectKind::Star) return out;
             const SystemId sys = s.galaxy.object(t.object).system;
-            SpaceObject& star = s.galaxy.object(t.object);
-            star.kind = ObjectKind::DestroyedStar;
-            if (auto st = pickSectorType(r, "Destroyed Star", {}, rng)) applySectorType(r, star, *st);
-            // The shockwave leaves only warp points and rubble (spec 01 §9): planets
-            // become asteroid fields and every vehicle in the system is lost (inferred).
             const std::vector<ObjectId> objects = s.galaxy.system(sys).objects;
-            for (ObjectId o : objects)
-                if (s.galaxy.object(o).kind == ObjectKind::Planet) shatterPlanet(ctx, o, rng);
+            for (ObjectId o : objects) {
+                SpaceObject& obj = s.galaxy.object(o);
+                if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
+                    loseColony(ctx, o);
+                    SpaceObject& rock = s.galaxy.object(o);
+                    rock.kind = ObjectKind::Asteroids;
+                    rock.atmosphere = "None";
+                    if (auto st = pickSectorType(r, "Asteroids", {}, rng)) applySectorType(r, rock, *st);
+                } else if (obj.kind != ObjectKind::WarpPoint) {
+                    std::erase(s.galaxy.system(sys).objects, o);
+                }
+            }
             for (Vehicle& x : s.vehicles)
                 if (x.location.system == sys) destroyVehicle(ctx, x);
             out.actual = 1;
@@ -1096,19 +1204,22 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
 
         case Effect::PointsChange:
+            // Each of the three resources changes by Amount, never below 0.
+            // Research and intelligence points are not touched.
+            if (!victim) return out;
             for (Resource res : kResources) {
-                const int64_t before = victim.stockpile[res];
-                victim.stockpile[res] = std::max<int64_t>(0, before + amount);
-                out.actual += before > victim.stockpile[res] ? before - victim.stockpile[res] : victim.stockpile[res] - before;
+                const int64_t before = victim->stockpile[res];
+                victim->stockpile[res] = std::max<int64_t>(0, before + amount);
+                out.actual += before > victim->stockpile[res] ? before - victim->stockpile[res] : victim->stockpile[res] - before;
             }
             break;
         case Effect::PointsSteal: {
-            if (!living(s, t.source)) return out;
+            if (!victim || !living(s, t.source)) return out;
             Empire& thief = s.empire(t.source);
             const int64_t want = amount < 0 ? -int64_t{amount} : int64_t{amount};
             for (Resource res : kResources) {
-                const int64_t take = std::clamp<int64_t>(victim.stockpile[res], 0, want);
-                victim.stockpile[res] -= take;
+                const int64_t take = std::clamp<int64_t>(victim->stockpile[res], 0, want);
+                victim->stockpile[res] -= take;
                 thief.stockpile[res] += take;
                 out.actual += take;
             }
@@ -1116,92 +1227,108 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
 
         case Effect::ResearchSteal: {
-            if (!living(s, t.source)) return out;
-            auto area = choose(stealableAreas(r, s, t.source, t.empire), rng);
-            if (!area) return out;
-            out.tokens.techName = r.tech(*area).name;
-            // One level beyond ours (spec 05 open question 6, inferred).
-            research::grantLevel(ctx, t.source, *area, s.empire(t.source).techLevel(*area) + 1, "espionage");
-            out.actual = s.empire(t.source).techLevel(*area);
+            // The area must be one where the target is ahead of us and that is
+            // neither racial nor unique; we gain exactly one level (confirmed:
+            // binary).
+            if (!victim || !living(s, t.source) || !validArea(r, t.tech)) return out;
+            out.tokens.techName = r.tech(t.tech).name;
+            if (!stealable(r, s, t.source, t.empire, t.tech)) return out;
+            const int before = s.empire(t.source).techLevel(t.tech);
+            research::grantLevel(ctx, t.source, t.tech, before + 1, "espionage");
+            if (s.empire(t.source).techLevel(t.tech) == before) return out;
+            out.actual = s.empire(t.source).techLevel(t.tech);
             break;
         }
         case Effect::ResearchDeleteProject: {
-            if (victim.research.empty()) return out;
-            const size_t idx = rng.below(victim.research.size());
-            out.tokens.techName = r.tech(victim.research[idx].area).name;
-            out.actual = victim.research[idx].progress;
-            victim.research.erase(victim.research.begin() + static_cast<std::ptrdiff_t>(idx));
+            if (!victim || victim->research.empty()) return out;
+            const size_t idx = rng.below(victim->research.size());
+            out.tokens.techName = r.tech(victim->research[idx].area).name;
+            out.actual = victim->research[idx].progress;
+            victim->research.erase(victim->research.begin() + static_cast<std::ptrdiff_t>(idx));
             break;
         }
         case Effect::IntelDeleteProject: {
-            if (victim.intel.empty()) return out;
-            const size_t idx = rng.below(victim.intel.size());
-            out.actual = victim.intel[idx].progress;
-            victim.intel.erase(victim.intel.begin() + static_cast<std::ptrdiff_t>(idx));
+            // Can remove a defense project too.
+            if (!victim || victim->intel.empty()) return out;
+            const size_t idx = rng.below(victim->intel.size());
+            out.actual = victim->intel[idx].progress;
+            victim->intel.erase(victim->intel.begin() + static_cast<std::ptrdiff_t>(idx));
             break;
         }
 
         case Effect::PoliticsDisruptTrade: {
-            if (!living(s, t.other)) return out;
-            Relation& a = victim.relation(t.other);
+            // Running trade between the two restarts its counter at 0 (confirmed: binary).
+            if (!victim || !living(s, t.other) || !treatyTradesResources(victim->relation(t.other).treaty)) return out;
+            Relation& a = victim->relation(t.other);
             Relation& b = s.empire(t.other).relation(t.empire);
-            out.actual = a.tradePercent;
-            // The trade percentage starts over (spec 05 open question 6, inferred).
-            a.tradePercent = b.tradePercent = 0;
+            out.actual = diplomacy::tradePercent(r, s, t.empire, t.other);
+            a.tradeTurns = b.tradeTurns = 0;
             break;
         }
         case Effect::PoliticsInterceptMessages: {
-            if (!living(s, t.other)) return out;
+            // The latest political message between the two from the last two
+            // turns (confirmed: binary).
+            if (!victim || !living(s, t.other)) return out;
+            const DiplomaticMessage* latest = nullptr;
             for (const DiplomaticMessage& m : s.messages) {
                 const bool between = (m.from == t.empire && m.to == t.other) || (m.from == t.other && m.to == t.empire);
-                if (!between || !m.delivered) continue;
-                out.report.push_back(std::format("{} from the {} to the {}{}{}", displayName(m.type), empireFullName(s.empire(m.from)),
-                                                 empireFullName(s.empire(m.to)), m.text.empty() ? "" : ": ", m.text));
-                ++out.actual;
+                if (!between || m.sentTurn + 1 < s.turn) continue;
+                if (!latest || m.sentTurn > latest->sentTurn || (m.sentTurn == latest->sentTurn && m.id > latest->id)) latest = &m;
             }
-            if (out.report.empty()) out.report.push_back("No recent messages passed between them.");
+            if (latest) {
+                out.report.push_back(std::format("{} from the {} to the {}{}{}", displayName(latest->type), empireFullName(s.empire(latest->from)),
+                                                 empireFullName(s.empire(latest->to)), latest->text.empty() ? "" : ": ", latest->text));
+                out.actual = 1;
+            } else {
+                out.report.push_back("No recent messages passed between them.");
+            }
             break;
         }
         case Effect::PoliticsFakeMessages: {
-            if (!living(s, t.other)) return out;
-            // A forged demand that seems to come from the target (inferred message type).
+            // A declaration of war sent in the target's name, and it takes
+            // effect: the two are at War (confirmed: binary).
+            if (!victim || !living(s, t.other)) return out;
             DiplomaticMessage m;
             m.id = MessageId{s.nextMessageId++};
             m.from = t.empire;
             m.to = t.other;
             m.sentTurn = s.turn;
-            m.type = MessageType::DemandTribute;
+            m.type = MessageType::DeclareWar;
             m.tone = 2;
-            m.delivered = true;
+            m.delivered = m.answered = true;
             s.messages.push_back(m);
-            ctx.log(t.other, LogCategory::Politics, std::string(displayName(m.type)), std::format("From the {}.", empireFullName(victim)));
+            diplomacy::declareWar(ctx, t.empire, t.other);
             out.actual = 1;
             break;
         }
         case Effect::PoliticsPreventMessages: {
-            if (!living(s, t.other)) return out;
-            const uint32_t until = s.turn + 1 + static_cast<uint32_t>(std::max(1, amount));
-            Relation& a = victim.relation(t.other);
-            Relation& b = s.empire(t.other).relation(t.empire);
-            a.messagesBlockedUntil = b.messagesBlockedUntil = std::max(a.messagesBlockedUntil, until);
-            out.actual = std::max(1, amount);
+            // The political messages of the last two turns between the two are
+            // deleted, so they are never answered; nothing is blocked afterwards
+            // (confirmed: binary).
+            if (!victim || !living(s, t.other)) return out;
+            const size_t before = s.messages.size();
+            std::erase_if(s.messages, [&](const DiplomaticMessage& m) {
+                const bool between = (m.from == t.empire && m.to == t.other) || (m.from == t.other && m.to == t.empire);
+                return between && m.sentTurn + 1 >= s.turn;
+            });
+            out.actual = static_cast<int64_t>(before - s.messages.size());
             break;
         }
         case Effect::PoliticsTreatyInfo: {
-            if (!living(s, t.other)) return out;
-            const Relation& rel = victim.relation(t.other);
+            if (!victim || !living(s, t.other)) return out;
+            const Relation& rel = victim->relation(t.other);
             out.tokens.treatyName = std::string(displayName(rel.treaty));
-            out.report.push_back(std::format("The {} and the {}: {}", empireFullName(victim), empireFullName(s.empire(t.other)),
+            out.report.push_back(std::format("The {} and the {}: {}", empireFullName(*victim), empireFullName(s.empire(t.other)),
                                              displayName(rel.treaty)));
             out.actual = 1;
             break;
         }
         case Effect::SystemInfo: {
-            if (!validSystem(s, t.system) || !living(s, t.source)) return out;
+            if (!victim || !validSystem(s, t.system) || !living(s, t.source)) return out;
             explore(s, t.source, t.system);
             Empire& src = s.empire(t.source);
             for (ObjectId wp : s.galaxy.warpPoints(t.system))
-                if (wp.index() < victim.knowledge.knownWarpLink.size() && victim.knowledge.knownWarpLink[wp.index()] &&
+                if (wp.index() < victim->knowledge.knownWarpLink.size() && victim->knowledge.knownWarpLink[wp.index()] &&
                     wp.index() < src.knowledge.knownWarpLink.size())
                     src.knowledge.knownWarpLink[wp.index()] = 1;
             setLocationTokens(out.tokens, s, Location{t.system, Sector{kSystemCenter, kSystemCenter}});
@@ -1209,9 +1336,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::EmpireInfo: {
+            if (!victim) return out;
             const TurnStats st = score::currentStats(r, s, t.empire);
-            out.report.push_back(std::format("Stored resources: {} minerals, {} organics, {} radioactives", victim.stockpile[Resource::Minerals],
-                                             victim.stockpile[Resource::Organics], victim.stockpile[Resource::Radioactives]));
+            out.report.push_back(std::format("Stored resources: {} minerals, {} organics, {} radioactives", victim->stockpile[Resource::Minerals],
+                                             victim->stockpile[Resource::Organics], victim->stockpile[Resource::Radioactives]));
             out.report.push_back(std::format("Production per turn: {} minerals, {} organics, {} radioactives", st.production[Resource::Minerals],
                                              st.production[Resource::Organics], st.production[Resource::Radioactives]));
             out.report.push_back(std::format("Research {} and intelligence {} per turn", st.research, st.intelligence));
@@ -1222,12 +1350,13 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::TechLevelInfo: {
+            if (!victim) return out;
             for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
-                const int level = victim.techLevel(ruleset::TechAreaId{i});
+                const int level = victim->techLevel(ruleset::TechAreaId{i});
                 if (level > 0) out.report.push_back(std::format("{}: level {}", r.data().techAreas[i].name, level));
             }
             if (out.report.empty()) out.report.push_back("They know no technology.");
-            out.actual = research::totalLevels(victim);
+            out.actual = research::totalLevels(r, *victim);
             break;
         }
 
@@ -1259,12 +1388,31 @@ namespace {
 using effects::Effect;
 using effects::Target;
 
+bool validEmpire(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size(); }
+bool living(const GameState& s, EmpireId e) { return validEmpire(s, e) && s.empire(e).alive; }
+
+// An object that is still part of its system.
+bool inSystem(const GameState& s, ObjectId o) {
+    if (!o.valid() || o.index() >= s.galaxy.objects.size()) return false;
+    const SpaceObject& obj = s.galaxy.object(o);
+    if (!obj.system.valid() || obj.system.index() >= s.galaxy.systems.size()) return false;
+    const auto& objs = s.galaxy.system(obj.system).objects;
+    return std::find(objs.begin(), objs.end(), o) != objs.end();
+}
+
+bool planetLike(ObjectKind k) { return k == ObjectKind::Planet || k == ObjectKind::Asteroids; }
+
+bool homeworldInSystem(const GameState& s, SystemId sys) {
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (const Colony* c = s.colony(o); c && c->homeworld) return true;
+    return false;
+}
+
 // Empires that hear about an event under its `Message To` setting.
 std::vector<EmpireId> recipients(const GameState& s, const ruleset::EventType& ev, const Target& t, std::optional<Location> where) {
     std::vector<EmpireId> out;
     auto add = [&](EmpireId e) {
-        if (e.valid() && e.index() < s.empires.size() && s.empire(e).alive && std::find(out.begin(), out.end(), e) == out.end())
-            out.push_back(e);
+        if (living(s, e) && std::find(out.begin(), out.end(), e) == out.end()) out.push_back(e);
     };
     const std::string& to = ev.messageTo;
     if (datafile::keysEqual(to, "None")) return out;
@@ -1279,7 +1427,7 @@ std::vector<EmpireId> recipients(const GameState& s, const ruleset::EventType& e
     if (!sector && !system) return out;
     auto here = [&](Location l) { return l.system == where->system && (!sector || l.sector == where->sector); };
     for (const Vehicle& v : s.vehicles)
-        if (here(v.location)) add(v.owner);
+        if (v.count > 0 && here(v.location)) add(v.owner);
     for (const auto& c : s.colonies)
         if (c && here(locationOf(s.galaxy, c->planet))) add(c->owner);
     std::sort(out.begin(), out.end());
@@ -1312,8 +1460,8 @@ effects::Tokens baseTokens(const GameState& s, const Target& t, const effects::T
     return tokens;
 }
 
-void fire(TurnContext& ctx, uint32_t eventType, const Target& t, Rng& rng) {
-    const ruleset::EventType& ev = ctx.rules.data().eventTypes[eventType];
+void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
+    const ruleset::EventType& ev = ctx.rules.data().eventTypes[record];
     const auto effect = effects::parseEffect(ev.type);
     if (!effect) return;
     const std::optional<Location> where = effects::targetLocation(ctx.state, t);
@@ -1322,6 +1470,55 @@ void fire(TurnContext& ctx, uint32_t eventType, const Target& t, Rng& rng) {
     effects::Tokens tokens = baseTokens(ctx.state, t, out.tokens);
     tokens.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);
+}
+
+// The luck roll for an owned target (spec 05 §4, confirmed: binary): a roll
+// of 1–100 must be below 100 + the owner's Luck trait values; a total of 0
+// or less skips the roll.
+bool luckHolds(const Rules& r, const GameState& s, EmpireId owner, Rng& rng) {
+    if (!living(s, owner)) return true;
+    const int64_t total = 100 + r.traitValue(s.empire(owner).race, "Luck");
+    if (total <= 0) return true;
+    return rng.range(1, 100) < total;
+}
+
+// For star events every empire present in the system rolls; a total of
+// exactly 100 skips the roll (confirmed: binary). Present: a vehicle or a
+// colony there (inferred).
+bool starLuckHolds(const Rules& r, const GameState& s, SystemId sys, Rng& rng) {
+    std::vector<uint8_t> present(s.empires.size(), 0);
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.location.system == sys && validEmpire(s, v.owner)) present[v.owner.index()] = 1;
+    for (const auto& c : s.colonies)
+        if (c && validEmpire(s, c->owner) && s.galaxy.object(c->planet).system == sys) present[c->owner.index()] = 1;
+    for (size_t i = 0; i < present.size(); ++i) {
+        if (!present[i] || !s.empires[i].alive) continue;
+        const int64_t total = 100 + r.traitValue(s.empires[i].race, "Luck");
+        if (total == 100) continue;
+        if (rng.range(1, 100) >= total) return false;
+    }
+    return true;
+}
+
+// The target of an event, rebuilt from its object (the owner may have changed).
+Target eventTarget(const GameState& s, TargetKind kind, uint32_t index) {
+    Target t;
+    switch (kind) {
+        case TargetKind::Ship: {
+            t.vehicle = VehicleId{index};
+            if (const Vehicle* v = s.vehicle(t.vehicle)) t.empire = v->owner;
+            break;
+        }
+        case TargetKind::Planet:
+        case TargetKind::Star:
+        case TargetKind::WarpPoint:
+            t.object = ObjectId{index};
+            if (const Colony* c = s.colony(t.object)) t.empire = c->owner;
+            break;
+        case TargetKind::Empire: t.empire = EmpireId{index}; break;
+        case TargetKind::None: break;
+    }
+    return t;
 }
 
 } // namespace
@@ -1342,66 +1539,171 @@ int eventChance(const Rules& r, const GameState& s) {
     }
 }
 
-std::vector<uint32_t> eligibleEvents(const Rules& r, const GameState& s) {
-    std::vector<uint32_t> out;
-    const auto& types = r.data().eventTypes;
-    for (uint32_t i = 0; i < types.size(); ++i) {
-        const auto effect = effects::parseEffect(types[i].type);
-        if (!effect || effects::needsSource(*effect) || *effect == Effect::IntelligenceDefense) continue;
-        if (static_cast<int>(parseSeverity(types[i].severity)) > s.options.maxEventSeverity) continue;
-        out.push_back(i);
-    }
-    return out;
+uint32_t allowedRecordCount(const Rules& r, const GameState& s) {
+    uint32_t n = 0;
+    for (const auto& ev : r.data().eventTypes)
+        if (static_cast<int>(parseSeverity(ev.severity)) <= s.options.maxEventSeverity) ++n;
+    return n;
 }
 
-bool trigger(TurnContext& ctx, uint32_t eventType, const Target& target, Rng& rng) {
-    GameState& s = ctx.state;
-    if (eventType >= ctx.rules.data().eventTypes.size()) return false;
-    const ruleset::EventType& ev = ctx.rules.data().eventTypes[eventType];
+std::optional<uint32_t> pickRecord(const Rules& r, const GameState& s, Rng& rng) {
+    // A quirk of the original: the severity filter only counts the records;
+    // the pick is uniform among the first N records of the file.
+    const uint32_t n = allowedRecordCount(r, s);
+    if (n == 0) return std::nullopt;
+    return static_cast<uint32_t>(rng.below(n));
+}
+
+TargetKind targetKind(Effect e) {
+    switch (e) {
+        case Effect::ShipDamage:
+        case Effect::ShipLoseMovement:
+        case Effect::ShipLoseSupply:
+        case Effect::ShipRebel:
+        case Effect::ShipExperienceChange:
+        case Effect::ShipCargoDamage:
+        case Effect::ShipOrdersChange:
+        case Effect::ShipMoved: return TargetKind::Ship;
+        case Effect::PlanetConditionsChange:
+        case Effect::PlanetValueChange:
+        case Effect::PlanetPopulationChange:
+        case Effect::PlanetPopulationAngerChange:
+        case Effect::PlanetPopulationRiot:
+        case Effect::PlanetPopulationRebel:
+        case Effect::PlanetCargoDamage:
+        case Effect::PlanetFacilityDamage:
+        case Effect::PlanetDestroyed:
+        case Effect::PlanetPlague:
+        case Effect::PlanetPlagueCured: return TargetKind::Planet;
+        case Effect::PoliticsDisruptTrade:
+        case Effect::PoliticsInterceptMessages:
+        case Effect::PoliticsFakeMessages:
+        case Effect::PoliticsPreventMessages:
+        case Effect::PoliticsTreatyInfo: return TargetKind::Empire;
+        case Effect::StarDestroyed: return TargetKind::Star;
+        case Effect::WarpPointClosed: return TargetKind::WarpPoint;
+        // No target list (confirmed: binary for Points - Change, Planet -
+        // Created, Warp Point - Opened; inferred for the delete-project and
+        // espionage types): such a record never fires.
+        default: return TargetKind::None;
+    }
+}
+
+bool targetExists(const Rules& r, const GameState& s, const Target& t) {
+    if (t.vehicle.valid()) {
+        const Vehicle* v = s.vehicle(t.vehicle);
+        return v && v->count > 0 && !isUnitType(vehicleType(r, s, *v));
+    }
+    if (t.object.valid()) return inSystem(s, t.object);
+    if (t.system.valid()) return t.system.index() < s.galaxy.systems.size();
+    return living(s, t.empire);
+}
+
+std::optional<Target> pickEventTarget(const Rules& r, const GameState& s, uint32_t record, Rng& rng) {
+    if (record >= r.data().eventTypes.size()) return std::nullopt;
+    const ruleset::EventType& ev = r.data().eventTypes[record];
     const auto effect = effects::parseEffect(ev.type);
-    if (!effect) return false;
-    const auto t = effects::pickTarget(ctx.rules, s, *effect, target, rng);
-    if (!t) return false;
+    if (!effect) return std::nullopt;
+    const TargetKind kind = targetKind(*effect);
+    const Severity severity = parseSeverity(ev.severity);
+    const bool spareHomes = severity >= Severity::High && (kind == TargetKind::Planet || kind == TargetKind::Star);
+
+    // Candidates of the right kind from the whole galaxy, in id order.
+    std::vector<uint32_t> candidates;
+    switch (kind) {
+        case TargetKind::Ship:
+            for (const Vehicle& v : s.vehicles)
+                if (v.count > 0 && !isUnitType(vehicleType(r, s, v))) candidates.push_back(v.id.value);
+            break;
+        case TargetKind::Planet:
+        case TargetKind::Star:
+        case TargetKind::WarpPoint:
+            for (const StarSystem& sys : s.galaxy.systems)
+                for (ObjectId o : sys.objects) {
+                    const ObjectKind k = s.galaxy.object(o).kind;
+                    if ((kind == TargetKind::Planet && planetLike(k)) || (kind == TargetKind::Star && k == ObjectKind::Star) ||
+                        (kind == TargetKind::WarpPoint && k == ObjectKind::WarpPoint))
+                        candidates.push_back(o.value);
+                }
+            std::sort(candidates.begin(), candidates.end());
+            break;
+        case TargetKind::Empire:
+            for (const Empire& e : s.empires)
+                if (e.alive) candidates.push_back(e.id.value);
+            break;
+        case TargetKind::None: return std::nullopt;
+    }
+
+    // Up to 1,000 draws; a candidate that fails a check is removed.
+    for (int draw = 0; draw < effects::kTargetDraws && !candidates.empty(); ++draw) {
+        const size_t i = rng.below(candidates.size());
+        const Target t = eventTarget(s, kind, candidates[i]);
+        bool ok = targetExists(r, s, t);
+        std::optional<SystemId> sys;
+        if (ok) {
+            if (const auto where = effects::targetLocation(s, t)) sys = where->system;
+            // Homeworlds are safe from High and Catastrophic planet and star events.
+            if (spareHomes && kind == TargetKind::Planet) {
+                const Colony* c = s.colony(t.object);
+                ok = !(c && c->homeworld);
+            } else if (spareHomes && kind == TargetKind::Star) {
+                ok = !homeworldInSystem(s, *sys);
+            }
+        }
+        // Luck, good events and bad alike.
+        if (ok) ok = kind == TargetKind::Star ? starLuckHolds(r, s, *sys, rng) : luckHolds(r, s, t.empire, rng);
+        if (ok && sys) ok = !effects::chanceRejects(effects::unownedChanceValue(s, *sys, AbilityKind::ChangeBadEventChanceSystem), rng);
+        if (ok) return t;
+        candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(i));
+    }
+    return std::nullopt;
+}
+
+bool trigger(TurnContext& ctx, uint32_t record, const Target& target, Rng& rng) {
+    GameState& s = ctx.state;
+    if (record >= ctx.rules.data().eventTypes.size()) return false;
+    const ruleset::EventType& ev = ctx.rules.data().eventTypes[record];
+    if (!effects::parseEffect(ev.type) || !targetExists(ctx.rules, s, target)) return false;
     if (ev.turnsToComplete <= 0) {
-        fire(ctx, eventType, *t, rng);
+        fire(ctx, record, target, rng);
         return true;
     }
-    // Timed: warn now, strike later (the realized amount is unknown yet).
-    const std::optional<Location> where = effects::targetLocation(s, *t);
+    // Timed: the start message now, the strike later (its amount is unknown yet).
+    const std::optional<Location> where = effects::targetLocation(s, target);
     effects::Tokens tokens;
-    if (t->vehicle.valid())
-        if (const Vehicle* v = s.vehicle(t->vehicle)) {
+    if (target.vehicle.valid())
+        if (const Vehicle* v = s.vehicle(target.vehicle)) {
             tokens.vehicleName = v->name;
             tokens.designName = s.design(v->design).name;
             tokens.vehicleSize = ctx.rules.hull(s.design(v->design).hull).name;
         }
-    if (t->object.valid() && t->object.index() < s.galaxy.objects.size()) {
-        const SpaceObject& obj = s.galaxy.object(t->object);
+    if (target.object.valid() && target.object.index() < s.galaxy.objects.size()) {
+        const SpaceObject& obj = s.galaxy.object(target.object);
         (obj.kind == ObjectKind::Star ? tokens.starName : obj.kind == ObjectKind::WarpPoint ? tokens.warpPointName : tokens.planetName) = obj.name;
     }
     if (where) {
         tokens.systemName = s.galaxy.system(where->system).name;
         tokens.sectorName = std::format("({}, {})", where->sector.x, where->sector.y);
     }
-    tokens = baseTokens(s, *t, tokens);
-    if (!ev.startMessages.empty()) sendMessages(ctx, ev, ev.startMessages, *t, tokens, where, rng);
+    tokens = baseTokens(s, target, tokens);
+    if (!ev.startMessages.empty()) sendMessages(ctx, ev, ev.startMessages, target, tokens, where, rng);
     PendingEvent pe;
-    pe.eventType = eventType;
-    pe.empire = t->empire;
-    pe.object = t->object;
-    pe.vehicle = t->vehicle;
-    pe.system = t->system;
+    pe.eventType = record;
+    pe.empire = target.empire;
+    pe.object = target.object;
+    pe.vehicle = target.vehicle;
+    pe.system = target.system;
     pe.fireTurn = s.turn + static_cast<uint32_t>(ev.turnsToComplete);
     s.pendingEvents.push_back(pe);
     return true;
 }
 
-void runEvents(TurnContext& ctx) {
+void fireDueEvents(TurnContext& ctx, Rng& rng) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    Rng rng = s.rng.fork();
-
-    // Timed events that are due, in the order they were started.
+    // In the order they were started. A timed event strikes exactly its
+    // `Time Till Completion` turns later if its target still exists, and is
+    // dropped silently otherwise (confirmed: binary).
     for (size_t i = 0; i < s.pendingEvents.size();) {
         if (s.pendingEvents[i].fireTurn > s.turn) {
             ++i;
@@ -1410,44 +1712,40 @@ void runEvents(TurnContext& ctx) {
         const PendingEvent pe = s.pendingEvents[i];
         s.pendingEvents.erase(s.pendingEvents.begin() + static_cast<std::ptrdiff_t>(i));
         if (pe.eventType >= r.data().eventTypes.size()) continue;
-        const auto effect = effects::parseEffect(r.data().eventTypes[pe.eventType].type);
-        if (!effect) continue;
-        Target request;
-        request.empire = pe.empire;
-        request.object = pe.object;
-        request.vehicle = pe.vehicle;
-        request.system = pe.system;
-        // The target must still be valid (a destroyed ship or lost colony ends the event).
-        if (auto t = effects::pickTarget(r, s, *effect, request, rng)) fire(ctx, pe.eventType, *t, rng);
+        Target t;
+        t.object = pe.object;
+        t.vehicle = pe.vehicle;
+        t.system = pe.system;
+        t.empire = pe.empire;
+        // The object's current owner is the one affected now.
+        if (const Vehicle* v = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr) t.empire = v->owner;
+        else if (t.object.valid()) t.empire = s.colony(t.object) ? s.colony(t.object)->owner : EmpireId{};
+        if (!targetExists(r, s, t)) continue;
+        fire(ctx, pe.eventType, t, rng);
     }
+}
 
-    // New events: one roll per empire (inferred), then a uniform pick among
-    // the eligible records and a random valid target of the affected empire.
+void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    // One roll for the whole galaxy (None never rolls), and no new events
+    // before 2402.0 (confirmed: binary).
     const int chance = eventChance(r, s);
-    const std::vector<uint32_t> eligible = eligibleEvents(r, s);
-    if (chance > 0 && !eligible.empty()) {
-        for (size_t ei = 0; ei < s.empires.size(); ++ei) {
-            if (!s.empires[ei].alive) continue;
-            if (!rng.percent(chance)) continue;
-            const EmpireId id = s.empires[ei].id;
-            const uint32_t idx = eligible[rng.below(eligible.size())];
-            const ruleset::EventType& ev = r.data().eventTypes[idx];
-            const Effect effect = *effects::parseEffect(ev.type);
-            Target request;
-            request.empire = id;
-            const auto t = effects::pickTarget(r, s, effect, request, rng);
-            if (!t) continue;
-            if (effects::isBad(effect, ev.effectAmount)) {
-                // Luck (e.g. -50 halves the chance) and "Change Bad Event Chance - System".
-                const int64_t luck = r.traitValue(s.empire(id).race, "Luck");
-                const auto where = effects::targetLocation(s, *t);
-                const int64_t sys = where ? effects::systemChanceModifier(r, s, id, where->system, AbilityKind::ChangeBadEventChanceSystem) : 0;
-                const int64_t keep = std::max<int64_t>(0, 100 + luck) * std::max<int64_t>(0, 100 + sys) / 100;
-                if (keep < 100 && !rng.percent(static_cast<int>(keep))) continue;
-            }
-            trigger(ctx, idx, *t, rng);
-        }
-    }
+    if (s.options.eventFrequency <= 0 || chance <= 0 || date < kFirstEventDate) return;
+    if (rng.range(1, 100) > chance) return;
+    const auto record = pickRecord(r, s, rng);
+    if (!record) return;
+    const auto target = pickEventTarget(r, s, *record, rng);
+    if (!target) return;
+    trigger(ctx, *record, *target, rng);
+}
+
+void runEvents(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    Rng rng = s.rng.fork();
+    fireDueEvents(ctx, rng);
+    // turn.cpp advances the date after this phase.
+    rollNewEvent(ctx, s.turn + 1, rng);
     s.removeDeadVehicles();
 }
 

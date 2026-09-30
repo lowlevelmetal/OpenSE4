@@ -122,6 +122,8 @@ inline ruleset::Ruleset buildPoliticsRuleset() {
     set("Event Percent Chance Medium", "10");
     set("Event Percent Chance High", "100");
     set("Intelligence Defense Modifier Percent", "120");
+    set("Minimum Planet Percent Value", "10");
+    set("Maximum Planet Percent Value", "150");
     rs.reindex();
     return rs;
 }

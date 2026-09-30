@@ -5,11 +5,10 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
-#include <iterator>
-#include <numeric>
 
 namespace opense4::game::diplomacy {
 
@@ -44,11 +43,6 @@ bool answerable(MessageType t) {
     }
 }
 
-// Acts that take effect whatever happens to the message channel.
-bool unilateral(MessageType t) {
-    return t == MessageType::DeclareWar || t == MessageType::BreakTreaty || t == MessageType::Surrender;
-}
-
 void learnDesign(Empire& e, DesignId d) {
     auto& seen = e.knowledge.seenDesigns;
     auto it = std::lower_bound(seen.begin(), seen.end(), d);
@@ -63,13 +57,20 @@ void explore(GameState& s, EmpireId e, SystemId sys) {
 }
 
 // Everything `from` knows about the galaxy becomes known to `to` too.
-void shareMap(GameState& s, EmpireId from, EmpireId to) {
+// Returns the number of systems that became explored for `to`.
+int shareMap(GameState& s, EmpireId from, EmpireId to) {
     const Knowledge& a = s.empire(from).knowledge;
     Knowledge& b = s.empire(to).knowledge;
+    int added = 0;
     if (b.explored.size() < a.explored.size()) b.explored.resize(a.explored.size(), 0);
-    for (size_t i = 0; i < a.explored.size(); ++i) b.explored[i] |= a.explored[i];
+    for (size_t i = 0; i < a.explored.size(); ++i)
+        if (a.explored[i] && !b.explored[i]) {
+            b.explored[i] = 1;
+            ++added;
+        }
     if (b.knownWarpLink.size() < a.knownWarpLink.size()) b.knownWarpLink.resize(a.knownWarpLink.size(), 0);
     for (size_t i = 0; i < a.knownWarpLink.size(); ++i) b.knownWarpLink[i] |= a.knownWarpLink[i];
+    return added;
 }
 
 std::string describe(const GameState& s, const Rules& r, const PackageItem& item) {
@@ -229,41 +230,12 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
             if (current != Treaty::War && current != Treaty::None) setTreaty(ctx, m.from, m.to, Treaty::None);
             break;
         }
-        case MessageType::DeclareWar:
-            if (s.empire(m.from).relation(m.to).treaty != Treaty::War) {
-                setTreaty(ctx, m.from, m.to, Treaty::War);
-                ctx.log(m.from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, m.to)));
-                ctx.log(m.to, LogCategory::Politics, "War Declared", std::format("The {} has declared war on us.", sender));
-            }
-            break;
+        case MessageType::DeclareWar: declareWar(ctx, m.from, m.to); break;
         case MessageType::Surrender: surrender(ctx, m.from, m.to); break;
         case MessageType::GrantIndependence: grantIndependence(ctx, m); break;
         default: break;
     }
 }
-
-// Union-find over systems joined by warp points (either direction).
-struct Components {
-    std::vector<uint32_t> parent;
-    explicit Components(const Galaxy& g) : parent(g.systems.size()) {
-        std::iota(parent.begin(), parent.end(), 0u);
-        for (const SpaceObject& o : g.objects)
-            if (o.kind == ObjectKind::WarpPoint && o.destination.valid() && o.destination.index() < g.objects.size()) {
-                const auto& sysObjs = g.system(o.system).objects;
-                if (std::find(sysObjs.begin(), sysObjs.end(), o.id) == sysObjs.end()) continue;  // closed
-                join(o.system.value, g.object(o.destination).system.value);
-            }
-    }
-    uint32_t find(uint32_t x) {
-        while (parent[x] != x) x = parent[x] = parent[parent[x]];
-        return x;
-    }
-    void join(uint32_t a, uint32_t b) {
-        a = find(a);
-        b = find(b);
-        if (a != b) parent[std::max(a, b)] = std::min(a, b);
-    }
-};
 
 } // namespace
 
@@ -311,8 +283,9 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     rb.dominant = bDom;
     ra.treatyTurn = rb.treatyTurn = s.turn;
     if (t == Treaty::War) ra.lastWarTurn = rb.lastWarTurn = static_cast<int32_t>(s.turn);
-    // Trade continues only between two trade-level treaties (spec 05 §3.3).
-    if (!(treatyTradesResources(old) && treatyTradesResources(t))) ra.tradePercent = rb.tradePercent = 0;
+    // The trade counter restarts unless the old and the new treaty both
+    // trade (spec 05 §3.3, confirmed: binary).
+    if (!(treatyTradesResources(old) && treatyTradesResources(t))) ra.tradeTurns = rb.tradeTurns = 0;
 
     ctx.mood(a, std::string(treatyTrigger(t, aDom)));
     ctx.mood(b, std::string(treatyTrigger(t, bDom)));
@@ -346,6 +319,27 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
     s.empire(b).relation(a).contact = true;
     ctx.log(a, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, b)));
     ctx.log(b, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, a)));
+}
+
+void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
+    GameState& s = ctx.state;
+    if (!living(s, from) || !living(s, to) || from == to || s.empire(from).relation(to).treaty == Treaty::War) return;
+    setTreaty(ctx, from, to, Treaty::War);
+    ctx.log(from, LogCategory::Politics, "War Declared", std::format("We are now at war with the {}.", nameOf(s, to)));
+    ctx.log(to, LogCategory::Politics, "War Declared", std::format("The {} has declared war on us.", nameOf(s, from)));
+}
+
+void forgetEmpire(GameState& s, EmpireId gone) {
+    if (!validEmpire(s, gone)) return;
+    for (Empire& e : s.empires) {
+        if (e.id == gone) continue;
+        for (Relation* rel : {&e.relation(gone), &s.empire(gone).relation(e.id)}) {
+            rel->contact = false;
+            rel->treaty = Treaty::None;
+            rel->dominant = false;
+            rel->tradeTurns = 0;
+        }
+    }
 }
 
 EmpireId masterOf(const GameState& s, EmpireId e) {
@@ -517,9 +511,13 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     gone.alive = false;
     gone.research.clear();
     gone.intel.clear();
+    gone.researchPool = gone.intelPool = 0;
+    // Everyone else's intelligence projects aimed at it go (spec 05 §6, inferred for surrender).
+    for (Empire& e : s.empires) std::erase_if(e.intel, [&](const IntelProjectOrder& o) { return o.target == from; });
     const std::string text = std::format("The {} has surrendered to the {}.", nameOf(s, from), nameOf(s, to));
     for (const Empire& e : s.empires)
         if (e.alive || e.id == from) ctx.log(e.id, LogCategory::Politics, "Surrender", text);
+    forgetEmpire(s, from);
 }
 
 // ---- Turn phases ------------------------------------------------------------------------------------
@@ -536,11 +534,6 @@ void deliverMessages(TurnContext& ctx) {
             lost.push_back(m.id);
             continue;
         }
-        // A channel cut by `Politics - Prevent Messages` swallows the message.
-        if (!unilateral(m.type) && s.turn < s.empire(m.from).relation(m.to).messagesBlockedUntil) {
-            lost.push_back(m.id);
-            continue;
-        }
         if (!answerable(m.type)) s.messages[i].answered = true;
         receive(ctx, s.messages[i]);
     }
@@ -554,83 +547,77 @@ void deliverMessages(TurnContext& ctx) {
 void updateContacts(TurnContext& ctx) {
     GameState& s = ctx.state;
     const size_t n = s.empires.size();
-    // Who sees whom this turn: a visible vehicle, or presence where they have a colony.
-    std::vector<uint8_t> sees(n * n, 0);
+    // What each empire detects this turn, as (system, owner) pairs: foreign
+    // vehicles it sees, and colonies in systems where it has presence.
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> detects(n);
     for (const Empire& e : s.empires) {
         if (!e.alive) continue;
+        auto& list = detects[e.id.index()];
         for (VehicleId id : e.knowledge.visibleVehicles)
-            if (const Vehicle* v = s.vehicle(id); v && validEmpire(s, v->owner) && v->owner != e.id)
-                sees[e.id.index() * n + v->owner.index()] = 1;
+            if (const Vehicle* v = s.vehicle(id); v && living(s, v->owner) && v->owner != e.id)
+                list.emplace_back(v->location.system.value, v->owner.value);
     }
     for (const auto& c : s.colonies) {
-        if (!c || !validEmpire(s, c->owner)) continue;
+        if (!c || !living(s, c->owner)) continue;
         const SystemId sys = s.galaxy.object(c->planet).system;
         for (const Empire& e : s.empires)
             if (e.alive && e.id != c->owner && sys.index() < e.knowledge.present.size() && e.knowledge.present[sys.index()])
-                sees[e.id.index() * n + c->owner.index()] = 1;
+                detects[e.id.index()].emplace_back(sys.value, c->owner.value);
     }
-    auto seen = [&](size_t a, size_t b) { return sees[a * n + b] || sees[b * n + a]; };
+    for (auto& list : detects) {
+        std::sort(list.begin(), list.end());
+        list.erase(std::unique(list.begin(), list.end()), list.end());
+    }
+    // Contact needs mutual detection in one system (spec 05 §3.1, confirmed: binary).
+    auto mutual = [&](size_t a, size_t b) {
+        for (const auto& [sys, owner] : detects[a])
+            if (owner == b && std::binary_search(detects[b].begin(), detects[b].end(), std::pair{sys, static_cast<uint32_t>(a)})) return true;
+        return false;
+    };
     for (size_t a = 0; a < n; ++a)
         for (size_t b = a + 1; b < n; ++b)
-            if (s.empires[a].alive && s.empires[b].alive && seen(a, b)) makeContact(ctx, EmpireId{a}, EmpireId{b});
+            if (s.empires[a].alive && s.empires[b].alive && !s.empires[a].relations[b].contact && mutual(a, b))
+                makeContact(ctx, EmpireId{a}, EmpireId{b});
+}
 
-    // Contact is lost when no warp path links any of our planets to any of
-    // theirs (spec 05 §3.1); the treaty falls back to None (inferred).
-    if (!s.options.noWarpPoints && !s.galaxy.systems.empty()) {
-        Components comp(s.galaxy);
-        std::vector<std::vector<uint32_t>> regions(n);
-        for (const auto& c : s.colonies)
-            if (c && validEmpire(s, c->owner)) regions[c->owner.index()].push_back(comp.find(s.galaxy.object(c->planet).system.value));
-        for (auto& list : regions) {
-            std::sort(list.begin(), list.end());
-            list.erase(std::unique(list.begin(), list.end()), list.end());
+void treatyStep(TurnContext& ctx, EmpireId id) {
+    GameState& s = ctx.state;
+    if (!living(s, id)) return;
+    const size_t n = s.empires.size();
+    for (size_t i = 0; i < n; ++i) {
+        const EmpireId other{i};
+        if (other == id || !s.empire(other).alive) continue;
+        // Consistency check (confirmed: binary): mismatched records fall to None.
+        Relation& ours = s.empire(id).relation(other);
+        Relation& theirs = s.empire(other).relation(id);
+        if (ours.treaty != theirs.treaty) {
+            ours.treaty = theirs.treaty = Treaty::None;
+            ours.dominant = theirs.dominant = false;
+            ours.tradeTurns = theirs.tradeTurns = 0;
         }
-        for (size_t a = 0; a < n; ++a)
-            for (size_t b = a + 1; b < n; ++b) {
-                if (!s.empires[a].alive || !s.empires[b].alive || !s.empires[a].relations[b].contact || seen(a, b)) continue;
-                if (regions[a].empty() || regions[b].empty()) continue;
-                std::vector<uint32_t> shared;
-                std::set_intersection(regions[a].begin(), regions[a].end(), regions[b].begin(), regions[b].end(), std::back_inserter(shared));
-                if (!shared.empty()) continue;
-                const EmpireId ea{a}, eb{b};
-                if (s.empires[a].relations[b].treaty != Treaty::None) setTreaty(ctx, ea, eb, Treaty::None);
-                s.empires[a].relations[b].contact = s.empires[b].relations[a].contact = false;
-                ctx.log(ea, LogCategory::Politics, "Contact Lost", std::format("We have lost contact with the {}.", nameOf(s, eb)));
-                ctx.log(eb, LogCategory::Politics, "Contact Lost", std::format("We have lost contact with the {}.", nameOf(s, ea)));
-            }
+        // A master sees every design of its subject.
+        if (ours.treaty == Treaty::Subjugation && ours.dominant) {
+            const std::vector<DesignId> own = s.empire(other).designs;
+            for (DesignId d : own) learnDesign(s.empire(id), d);
+        }
+        // Partnership: the partner's explored systems and seen designs.
+        if (ours.treaty == Treaty::Partnership) {
+            if (shareMap(s, other, id) > 0)
+                ctx.log(id, LogCategory::Misc, "New System Maps Available",
+                        std::format("The {} has shared its star charts with us.", nameOf(s, other)));
+            const std::vector<DesignId> seenByPartner = s.empire(other).knowledge.seenDesigns;
+            for (DesignId d : seenByPartner)
+                if (d.index() < s.designs.size() && s.design(d).owner != id) learnDesign(s.empire(id), d);
+        }
+        // The trade counter grows toward every other living empire, whatever the treaty.
+        ++s.empire(id).relation(other).tradeTurns;
     }
-
-    // Partnership shares explored space and scanned designs; a master sees
-    // its subject's designs (spec 05 §3.2).
-    for (size_t a = 0; a < n; ++a)
-        for (size_t b = 0; b < n; ++b) {
-            if (a == b || !s.empires[a].alive || !s.empires[b].alive) continue;
-            const Relation& rel = s.empires[a].relations[b];
-            if (rel.treaty == Treaty::Partnership) {
-                shareMap(s, EmpireId{a}, EmpireId{b});
-                const std::vector<DesignId> seenByA = s.empires[a].knowledge.seenDesigns;
-                for (DesignId d : seenByA)
-                    if (d.index() < s.designs.size() && s.design(d).owner != EmpireId{b}) learnDesign(s.empires[b], d);
-            }
-            if (rel.treaty == Treaty::Subjugation && rel.dominant) {
-                const std::vector<DesignId> own = s.empires[b].designs;
-                for (DesignId d : own) learnDesign(s.empires[a], d);
-            }
-        }
 }
 
 void advanceTrade(TurnContext& ctx) {
     GameState& s = ctx.state;
-    const int maxPct = static_cast<int>(ctx.rules.setting("Maximum Trade Percentage", 20));
-    for (size_t a = 0; a < s.empires.size(); ++a)
-        for (size_t b = a + 1; b < s.empires.size(); ++b) {
-            Relation& ra = s.empires[a].relations[b];
-            Relation& rb = s.empires[b].relations[a];
-            if (s.empires[a].alive && s.empires[b].alive && ra.contact && treatyTradesResources(ra.treaty))
-                ra.tradePercent = rb.tradePercent = std::min(maxPct, std::max(ra.tradePercent, rb.tradePercent) + 1);
-            else
-                ra.tradePercent = rb.tradePercent = 0;
-        }
+    for (size_t i = 0; i < s.empires.size(); ++i)
+        if (s.empires[i].alive) treatyStep(ctx, EmpireId{i});
 }
 
 // ---- Trade and tariffs ------------------------------------------------------------------------------
@@ -648,30 +635,39 @@ Generated generated(const Rules& r, const GameState& s, EmpireId e) {
     return g;
 }
 
-int64_t tradeShare(int64_t partnerBase, int tradePercent, int politicalSavvy, int cultureTrade) {
-    if (partnerBase <= 0 || tradePercent <= 0) return 0;
-    const int64_t multiplier = std::max<int64_t>(0, int64_t{100} + (politicalSavvy - 100) + cultureTrade);
-    return partnerBase * tradePercent * multiplier / 10000;
+int tradePercent(const Rules& r, const GameState& s, EmpireId e, EmpireId partner) {
+    if (!validEmpire(s, e) || !validEmpire(s, partner) || e == partner) return 0;
+    const Relation& rel = s.empire(e).relation(partner);
+    if (!treatyTradesResources(rel.treaty)) return 0;
+    return static_cast<int>(std::clamp<int64_t>(rel.tradeTurns, 0, r.setting("Maximum Trade Percentage", 20)));
+}
+
+int64_t tradeFactor(const Rules& r, const Empire& receiver) {
+    const ruleset::Culture* c = r.culture(receiver.race);
+    return int64_t{100} + (receiver.race.characteristic(Characteristic::PoliticalSavvy) - 100) + r.traitValue(receiver.race, "Trade") +
+           (c ? c->trade : 0);
+}
+
+int64_t tradeShare(int64_t partnerBase, int tradePercent, int64_t factor) {
+    if (partnerBase <= 0 || tradePercent <= 0 || factor <= 0) return 0;
+    return std::max<int64_t>(0, xmath::pctTrunc(xmath::pctRound(partnerBase, tradePercent), factor));
 }
 
 namespace {
 
-template <class Pick>
-void forTradePartners(const GameState& s, EmpireId e, bool (*qualifies)(Treaty), Pick&& fn) {
+// Trade partners of `e` whose treaty `qualifies`, with the trade percentage.
+template <class Fn>
+void forTradePartners(const Rules& r, const GameState& s, EmpireId e, bool (*qualifies)(Treaty), Fn&& fn) {
     if (!living(s, e)) return;
     const Empire& emp = s.empire(e);
     for (size_t i = 0; i < s.empires.size() && i < emp.relations.size(); ++i) {
-        const Relation& rel = emp.relations[i];
-        if (i == e.index() || !s.empires[i].alive || !rel.contact || !qualifies(rel.treaty) || rel.tradePercent <= 0) continue;
-        fn(EmpireId{i}, rel.tradePercent);
+        const EmpireId partner{i};
+        if (partner == e || !s.empires[i].alive || !qualifies(emp.relations[i].treaty)) continue;
+        const int pct = tradePercent(r, s, e, partner);
+        if (pct > 0) fn(partner, pct);
     }
 }
 
-int savvy(const Empire& e) { return e.race.characteristic(Characteristic::PoliticalSavvy); }
-int cultureTrade(const Rules& r, const Empire& e) {
-    const ruleset::Culture* c = r.culture(e.race);
-    return c ? c->trade : 0;
-}
 bool partnership(Treaty t) { return t == Treaty::Partnership; }
 bool tradesResources(Treaty t) { return treatyTradesResources(t); }
 bool tradesResearch(Treaty t) { return treatyTradesResearch(t); }
@@ -681,10 +677,10 @@ bool tradesResearch(Treaty t) { return treatyTradesResearch(t); }
 Resources tradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     Resources total = tariffsReceived(r, s, e);
     if (!living(s, e)) return total;
-    const Empire& emp = s.empire(e);
-    forTradePartners(s, e, tradesResources, [&](EmpireId partner, int pct) {
+    const int64_t f = tradeFactor(r, s.empire(e));
+    forTradePartners(r, s, e, tradesResources, [&](EmpireId partner, int pct) {
         const Generated g = generated(r, s, partner);
-        for (Resource res : kResources) total[res] += tradeShare(g.resources[res], pct, savvy(emp), cultureTrade(r, emp));
+        for (Resource res : kResources) total[res] += tradeShare(g.resources[res], pct, f);
     });
     return total;
 }
@@ -700,29 +696,34 @@ Resources tariffsReceived(const Rules& r, const GameState& s, EmpireId e) {
 int64_t researchTradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     int64_t total = 0;
     if (!living(s, e)) return total;
-    const Empire& emp = s.empire(e);
-    forTradePartners(s, e, tradesResearch,
-                     [&](EmpireId partner, int pct) { total += tradeShare(generated(r, s, partner).research, pct, savvy(emp), cultureTrade(r, emp)); });
+    const int64_t f = tradeFactor(r, s.empire(e));
+    forTradePartners(r, s, e, tradesResearch, [&](EmpireId partner, int pct) { total += tradeShare(generated(r, s, partner).research, pct, f); });
     return total;
 }
 
 int64_t intelTradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     int64_t total = 0;
     if (!living(s, e)) return total;
-    const Empire& emp = s.empire(e);
-    forTradePartners(s, e, partnership, [&](EmpireId partner, int pct) {
-        total += tradeShare(generated(r, s, partner).intelligence, pct, savvy(emp), cultureTrade(r, emp));
-    });
+    const int64_t f = tradeFactor(r, s.empire(e));
+    forTradePartners(r, s, e, partnership, [&](EmpireId partner, int pct) { total += tradeShare(generated(r, s, partner).intelligence, pct, f); });
     return total;
 }
 
-Resources tariffsPaid(const Rules& r, const GameState& s, EmpireId e) {
+Generated tariffDue(const Rules& r, const GameState& s, EmpireId e) {
+    Generated due;
     const EmpireId master = masterOf(s, e);
-    if (!master.valid() || !s.empire(master).alive) return {};
+    if (!master.valid() || !s.empire(master).alive) return due;
     const Treaty t = s.empire(e).relation(master).treaty;
     const int64_t pct = t == Treaty::Subjugation ? r.setting("Treaty Subjugated Resource Percentage", 40)
                                                  : r.setting("Treaty Protectorate Resource Percentage", 20);
-    return max(generated(r, s, e).resources, Resources{}).percent(pct);
+    auto cut = [&](int64_t income) { return income <= 0 ? int64_t{0} : std::clamp<int64_t>(xmath::pctRound(income, pct), 0, income); };
+    const Generated g = generated(r, s, e);
+    for (Resource res : kResources) due.resources[res] = cut(g.resources[res]);
+    due.research = cut(g.research);
+    due.intelligence = cut(g.intelligence);
+    return due;
 }
+
+Resources tariffsPaid(const Rules& r, const GameState& s, EmpireId e) { return tariffDue(r, s, e).resources; }
 
 } // namespace opense4::game::diplomacy

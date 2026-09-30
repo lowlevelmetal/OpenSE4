@@ -64,7 +64,8 @@ public:
         // The original's layout: points in the title strip, the full-width list of
         // areas, then the current projects in four boxes side by side.
         d.titleText(170, ImGui::GetColorU32(kTextBlue), "Research Points Available:");
-        const std::string points = std::to_string(e.economy.research);
+        // Produced at the end of last turn, spent at the end of this one (spec 05 §1.1).
+        const std::string points = std::to_string(game::research::availablePoints(ui.state(), e));
         d.titleText(356, IM_COL32_WHITE, points);
         d.titleIcon(360 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), ui.art.icon16(Icon::Research));
         d.beginContent();

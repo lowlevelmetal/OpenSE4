@@ -160,7 +160,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
     s.options.eventFrequency = 3;
     s.options.maxEventSeverity = 1;
     s.options.startTechLevel = 1;
-    s.options.techCostGrowth = 150;
+    s.options.techCost = 2;
     s.options.racialPoints = 3000;
     s.options.homePlanetValue = 2;
     s.options.victory.score = true;
@@ -170,7 +170,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
     s.options.allowIntel = false;
     s.options.aiDifficulty = 2;
     s.options.aiBonus = 1;
-    s.options.showAllScores = true;
+    s.options.scoreDisplay = 2;
     s.computers = {true, 1};
     s.neutrals = {true, 0};
 
@@ -182,7 +182,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
         CHECK(g->options.eventFrequency == 3);
         CHECK(g->options.maxEventSeverity == 1);
         CHECK(g->options.startTechLevel == 1);
-        CHECK(g->options.techCostGrowth == 150);
+        CHECK(g->options.techCost == 2);
         CHECK(g->options.racialPoints == 3000);
         CHECK(g->options.homePlanetValue == 2);
         CHECK(g->options.victory.score);
@@ -191,7 +191,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
         CHECK_FALSE(g->options.allowIntel);
         CHECK(g->options.aiDifficulty == 2);
         CHECK(g->options.aiBonus == 1);
-        CHECK(g->options.showAllScores);
+        CHECK(g->options.scoreDisplay == 2);
         CHECK(g->options.techAreasAllowed.empty());
     }
 

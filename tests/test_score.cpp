@@ -1,4 +1,5 @@
-// Scores, statistics history, eliminations and victory (docs/spec/05 §5-6).
+// Scores, statistics history, destruction and victory (docs/spec/05 §5–§6,
+// spec 01 §11).
 
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
@@ -31,97 +32,134 @@ void wipeOut(GameState& s, EmpireId e) {
     s.removeDeadVehicles();
 }
 
-// Makes `e` the clear leader by a large production figure.
-void boost(GameState& s, EmpireId e, int64_t production) { s.empire(e).economy.colonies = {production, 0, 0}; }
+// Adds `n` bases of 500 kT at the empire's home: +5,000 score each.
+void boost(GameState& s, EmpireId e, int n) {
+    const Rules& r = politicsRules();
+    const DesignId keep = addTestDesign(s, r, e, "Keep", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters"});
+    for (int i = 0; i < n; ++i) addTestVehicle(s, r, keep, locationOf(s.galaxy, homeworld(s, e).planet));
+}
+
+// Every empire at peace with every other: contact and Non-Aggression.
+void makePeace(GameState& s) {
+    TurnContext ctx = context(s);
+    for (size_t a = 0; a < s.empires.size(); ++a)
+        for (size_t b = a + 1; b < s.empires.size(); ++b) {
+            setContact(s, EmpireId{a}, EmpireId{b});
+            diplomacy::setTreaty(ctx, EmpireId{a}, EmpireId{b}, Treaty::NonAggression);
+        }
+}
 
 } // namespace
 
-TEST_CASE("score: a weighted sum of the statistics") {
-    TurnStats t;
-    t.production = {1000, 500, 500};
-    t.research = 1000;
-    t.intelligence = 500;
-    t.techLevels = 20;
-    t.systems = 2;
-    t.planets = 3;
-    t.population = 2500;
-    t.units = 10;
-    t.ships = 4;
-    t.bases = 1;
-    const score::Weights w;
-    CHECK(score::scoreOf(t, w) == 200 + 100 + 50 + 2000 + 200 + 600 + 2500 + 50 + 200 + 50);
-    t.research = -100;  // nonsense input never lowers a score
-    CHECK(score::scoreOf(t, w) == 200 + 50 + 2000 + 200 + 600 + 2500 + 50 + 200 + 50);
-
-    ruleset::Ruleset rs = buildPoliticsRuleset();
-    rs.settings.set("Score Weight Planets", "1000000");
-    const Rules custom{std::move(rs)};
-    CHECK(score::weights(custom).planets == 1000000);
-    CHECK(score::weights(custom).ships == w.ships);
+TEST_CASE("score: 10 × tonnage + production + 200 × tech levels + 50,000 for everything") {
+    score::ScoreParts p;
+    p.tonnage = 1200;
+    p.production = 3456;
+    p.techLevels = 20;
+    CHECK(score::scoreOf(p) == 12000 + 3456 + 4000);
+    p.everything = true;
+    CHECK(score::scoreOf(p) == 12000 + 3456 + 4000 + 50000);
 }
 
-TEST_CASE("score: current statistics") {
+TEST_CASE("score: the parts come from the empire") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
-    Empire& a = s.empire(kA);
-    a.economy.colonies = {1000, 2000, 3000};
-    a.economy.trade = {10, 0, 0};
-    a.economy.tariffsIn = {0, 20, 0};
-    a.economy.remoteMining = {};
-    a.economy.otherIncome = {};
-    a.economy.research = 700;
-    a.economy.intelligence = 300;
+    const Empire& a = s.empire(kA);
     Colony& home = homeworld(s, kA);
     const Location here = locationOf(s.galaxy, home.planet);
     const DesignId station = addTestDesign(s, r, kA, "Keep", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters"});
     addTestVehicle(s, r, station, here);
     const DesignId wasp = addTestDesign(s, r, kA, "Wasp", "Test Fighter Hull", {"Test Fighter Gun", "Test Fighter Engine"});
     home.cargo.units.push_back({wasp, 5});
+    addTestVehicle(s, r, wasp, here);  // a unit group in space: no tonnage
+    VehicleId mothballed;
     for (Vehicle& v : s.vehicles)
-        if (v.owner == kA) {
-            v.status = VehicleStatus::Mothballed;  // not counted as a ship
+        if (v.owner == kA && vehicleType(r, s, v) == ruleset::VehicleType::Ship) {
+            v.status = VehicleStatus::Mothballed;  // not counted
+            mothballed = v.id;
             break;
         }
+    REQUIRE(mothballed.valid());
 
+    int64_t tonnage = 0;
+    int ships = 0;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA && v.status != VehicleStatus::Mothballed && !isUnitType(vehicleType(r, s, v))) {
+            tonnage += r.hull(s.design(v.design).hull).tonnage;
+            ++ships;
+        }
+    const score::ScoreParts p = score::scoreParts(r, s, kA);
+    CHECK(p.tonnage == tonnage);
+    const diplomacy::Generated g = diplomacy::generated(r, s, kA);
+    CHECK(p.production == g.resources.total() + g.research + g.intelligence);
+    CHECK(p.production > 0);
+    CHECK(p.techLevels == research::totalLevels(r, a));
+    CHECK_FALSE(p.everything);
+    CHECK(score::empireScore(r, s, kA) == score::scoreOf(p));
+
+    // Systems, planets, population and units are statistics, not score.
     const TurnStats t = score::currentStats(r, s, kA);
     CHECK(t.turn == s.turn);
-    CHECK(t.production == Resources{1010, 2020, 3000});
-    CHECK(t.research == 700);
-    CHECK(t.intelligence == 300);
-    CHECK(t.techLevels == research::totalLevels(a));
+    CHECK(t.production == g.resources);
+    CHECK(t.research == g.research);
+    CHECK(t.intelligence == g.intelligence);
+    CHECK(t.techLevels == research::totalLevels(r, a));
     CHECK(t.planets == 1);
     CHECK(t.systems == 1);
     CHECK(t.population == home.totalPopulation());
-    CHECK(t.ships == 2);
+    CHECK(t.ships + t.bases == ships);
     CHECK(t.bases == 1);
-    CHECK(t.units == 5);
-    CHECK(t.score == score::scoreOf(t, score::weights(r)));
-    CHECK(score::empireScore(r, s, kA) == t.score);
+    CHECK(t.units == 6);
+    CHECK(t.score == score::scoreOf(p));
+
+    // Everything researched: the capped level sum reaches the maxima of the
+    // areas allowed in the game that the race can see.
+    Empire& e = s.empire(kA);
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
+        if (r.data().techAreas[i].racialArea == 0 && r.data().techAreas[i].uniqueArea == 0) e.techLevels[i] = r.data().techAreas[i].maxLevel;
+    CHECK(score::scoreParts(r, s, kA).everything);
+    e.techLevels[techArea(r, "Test Beams").index()] = 50;  // levels are capped at the maximum
+    CHECK(score::scoreParts(r, s, kA).techLevels == research::maxLevels(r, s, e));
 }
 
-TEST_CASE("score: ranking and score visibility") {
+TEST_CASE("score: ranking and the Score Display option") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
-    boost(s, kB, 1000000);
-    boost(s, kC, 500000);
+    boost(s, kB, 20);
+    boost(s, kC, 10);
     CHECK(score::ranking(r, s) == std::vector<EmpireId>{kB, kC, kA});
-    s.empire(kB).alive = false;
-    CHECK(score::ranking(r, s) == std::vector<EmpireId>{kC, kA});
 
+    // Default: own score plus the empires at Non-Aggression or better.
+    CHECK(s.options.scoreDisplay == 1);
     CHECK(score::scoreVisible(s, kA, kA));
     CHECK_FALSE(score::scoreVisible(s, kA, kC));
     setContact(s, kA, kC);
     TurnContext ctx = context(s);
-    diplomacy::setTreaty(ctx, kA, kC, Treaty::MilitaryAlliance);
+    CHECK_FALSE(score::scoreVisible(s, kA, kC));  // no treaty
+    diplomacy::setTreaty(ctx, kA, kC, Treaty::NonAggression);
     CHECK(score::scoreVisible(s, kA, kC));
-    s.options.showAllScores = true;
+    diplomacy::setTreaty(ctx, kA, kC, Treaty::Subjugation, true);
+    CHECK(score::scoreVisible(s, kA, kC));
+    s.options.scoreDisplay = 0;
+    CHECK(score::scoreVisible(s, kA, kA));
+    CHECK_FALSE(score::scoreVisible(s, kA, kC));
+    s.options.scoreDisplay = 2;
     CHECK(score::scoreVisible(s, kA, kB));
+    // Once the game is over every score is visible; the destroyed are never shown.
+    s.options.scoreDisplay = 0;
+    s.gameOver = true;
+    CHECK(score::scoreVisible(s, kA, kB));
+    s.empire(kB).alive = false;
+    CHECK_FALSE(score::scoreVisible(s, kA, kB));
+    CHECK(score::ranking(r, s) == std::vector<EmpireId>{kC, kA});
 }
 
-TEST_CASE("score: end of turn records history and eliminates beaten empires") {
+TEST_CASE("score: history and the destruction of beaten empires") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
+    setContact(s, kA, kC);
     TurnContext ctx = context(s);
+    diplomacy::setTreaty(ctx, kA, kC, Treaty::TradeAlliance);
     score::endOfTurn(ctx);
     for (const Empire& e : s.empires) {
         REQUIRE(e.history.size() == 1);
@@ -137,46 +175,50 @@ TEST_CASE("score: end of turn records history and eliminates beaten empires") {
         if (v.owner == kC) v.count = 0;
     s.removeDeadVehicles();
     addTestVehicle(s, r, wasp, locationOf(s.galaxy, homeC.planet));
+    s.empire(kB).intel.push_back({});
+    s.empire(kB).intel.back().target = kC;
     CHECK(score::defeated(r, s, kC));
     CHECK_FALSE(score::defeated(r, s, kA));
     const ObjectId planetC = homeC.planet;
     s.turn = 1;
     score::endOfTurn(ctx);
     CHECK_FALSE(s.empire(kC).alive);
-    CHECK(s.empire(kC).history.size() == 2);  // its last turn is still recorded...
+    CHECK(s.empire(kC).history.size() == 1);  // nothing recorded after its death
     CHECK(s.colony(planetC) == nullptr);
     for (const Vehicle& v : s.vehicles) CHECK(v.owner != kC);
-    CHECK(hasLog(s, kA, "Empire Destroyed"));
+    CHECK(hasLog(s, kA, "Empire Destroyed"));  // in contact
+    CHECK_FALSE(hasLog(s, kB, "Empire Destroyed"));  // never met it
     CHECK(hasLog(s, kC, "Empire Destroyed"));
-    CHECK_FALSE(s.gameOver);  // two empires remain
+    CHECK(s.empire(kB).intel.empty());  // projects aimed at it are removed
+    CHECK_FALSE(s.empire(kA).relation(kC).contact);  // back to "no contact"
+    CHECK(s.empire(kA).relation(kC).treaty == Treaty::None);
+    CHECK_FALSE(s.gameOver);
     s.turn = 2;
     score::endOfTurn(ctx);
-    CHECK(s.empire(kC).history.size() == 2);  // ...but nothing after its death
     CHECK(s.empire(kA).history.size() == 3);
 }
 
-TEST_CASE("score: the last empire standing wins") {
+TEST_CASE("score: no victory for the last empire standing, and none when nothing is enabled") {
     GameState s = newPoliticsGame();
     TurnContext ctx = context(s);
     wipeOut(s, kB);
     wipeOut(s, kC);
     score::endOfTurn(ctx);
-    CHECK(s.gameOver);
-    CHECK(s.winner == kA);
-    CHECK(hasLog(s, kA, "Game Over"));
-
-    // A game that started with one empire does not end by itself.
-    GameState solo = newPoliticsGame(5, 1, 6);
-    TurnContext soloCtx = context(solo);
-    score::endOfTurn(soloCtx);
-    CHECK_FALSE(solo.gameOver);
+    CHECK_FALSE(s.empire(kB).alive);
+    CHECK_FALSE(s.gameOver);
+    CHECK(hasLog(s, kA, "Last Empire Standing"));
+    for (uint32_t t = 1; t < 300; ++t) {
+        s.turn = t;
+        score::endOfTurn(ctx);
+    }
+    CHECK_FALSE(s.gameOver);
 }
 
-TEST_CASE("score: victory conditions") {
+TEST_CASE("score: victory conditions end the game without naming a winner") {
     const Rules& r = politicsRules();
     auto fresh = [] {
         GameState s = newPoliticsGame();
-        boost(s, kB, 1000000);
+        boost(s, kB, 20);
         return s;
     };
     auto end = [](GameState& s) {
@@ -190,32 +232,55 @@ TEST_CASE("score: victory conditions") {
         s.options.victory.scoreValue = score::empireScore(r, s, kB) + 1;
         end(s);
         CHECK_FALSE(s.gameOver);
-        boost(s, kB, 2000000);
+        boost(s, kB, 1);
         end(s);
         CHECK(s.gameOver);
-        CHECK(s.winner == kB);
+        CHECK(s.winner == kB);  // the best score, for the game-over screen
+        const LogEntry* over = findLog(s, kA, "Game Over");
+        REQUIRE(over);
+        CHECK(over->text.find("Realm 2") == std::string::npos);  // no winner named
+        CHECK(over->text.find("Scores") != std::string::npos);
     }
-    SUBCASE("percent of the second place") {
+    SUBCASE("percent of every other empire's score") {
         GameState s = fresh();
         s.options.victory.percentOfSecond = true;
         s.options.victory.percentOfSecondValue = 200;
-        boost(s, kC, 900000);
+        boost(s, kC, 18);
         end(s);
         CHECK_FALSE(s.gameOver);
-        boost(s, kC, 0);
+        wipeOut(s, kC);
+        s.empire(kC).alive = false;
         end(s);
         CHECK(s.gameOver);
         CHECK(s.winner == kB);
     }
-    SUBCASE("technology percentage") {
+    SUBCASE("percent of second place overrides the score and years tests") {
+        GameState s = fresh();
+        s.options.victory.percentOfSecond = true;
+        s.options.victory.percentOfSecondValue = 1000;
+        s.options.victory.score = true;
+        s.options.victory.scoreValue = 1;
+        s.options.victory.years = true;
+        s.options.victory.yearsValue = 1;
+        s.turn = 30;
+        end(s);
+        CHECK_FALSE(s.gameOver);  // score and years are met, but the lead is not
+        s.options.victory.percentOfSecond = false;
+        end(s);
+        CHECK(s.gameOver);
+    }
+    SUBCASE("technology share, counting levels") {
         GameState s = fresh();
         s.options.victory.techPercent = true;
         s.options.victory.techPercentValue = 75;
         end(s);
         CHECK_FALSE(s.gameOver);
-        for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) s.empire(kC).techLevels[i] = r.data().techAreas[i].maxLevel;
+        Empire& c = s.empire(kC);
+        const int total = research::maxLevels(r, s, c);
+        for (uint32_t i = 0; i < r.data().techAreas.size() && research::totalLevels(r, c) * 100 < 75 * total; ++i)
+            if (research::canGainLevel(r, s, c, ruleset::TechAreaId{i})) c.techLevels[i] = r.data().techAreas[i].maxLevel;
         end(s);
-        CHECK(s.winner == kC);
+        CHECK(s.gameOver);
     }
     SUBCASE("years elapsed") {
         GameState s = fresh();
@@ -224,31 +289,33 @@ TEST_CASE("score: victory conditions") {
         s.turn = 18;
         end(s);
         CHECK_FALSE(s.gameOver);
-        s.turn = 19;  // the 20th turn: two years
+        s.turn = 19;  // the date reaches 2402.0 at the end of this turn
         end(s);
         CHECK(s.gameOver);
         CHECK(s.winner == kB);
     }
-    SUBCASE("peace") {
+    SUBCASE("peace needs Non-Aggression or better between every pair") {
         GameState s = fresh();
         s.options.victory.peace = true;
         s.options.victory.peaceYears = 1;
-        setContact(s, kA, kC);
-        TurnContext ctx = context(s);
-        diplomacy::setTreaty(ctx, kA, kC, Treaty::War);
         for (int i = 0; i < 12; ++i) end(s);
-        CHECK(s.peacefulTurns == 0);
-        CHECK_FALSE(s.gameOver);
+        CHECK(s.peacefulTurns == 0);  // no contact breaks the peace
+        makePeace(s);
+        TurnContext ctx = context(s);
         diplomacy::setTreaty(ctx, kA, kC, Treaty::None);
+        for (int i = 0; i < 12; ++i) end(s);
+        CHECK(s.peacefulTurns == 0);  // no treaty breaks it too
+        CHECK_FALSE(s.gameOver);
+        diplomacy::setTreaty(ctx, kA, kC, Treaty::TradeAlliance);
         for (int i = 0; i < 9; ++i) end(s);
         CHECK(s.peacefulTurns == 9);
         CHECK_FALSE(s.gameOver);
         end(s);
         CHECK(s.gameOver);
-        CHECK(s.winner == kB);
     }
-    SUBCASE("delay suppresses the checks") {
+    SUBCASE("before the After-X-years date nothing is checked and peace does not count") {
         GameState s = fresh();
+        makePeace(s);
         s.options.victory.score = true;
         s.options.victory.scoreValue = 1;
         s.options.victory.delay = true;
@@ -256,10 +323,11 @@ TEST_CASE("score: victory conditions") {
         s.turn = 8;
         end(s);
         CHECK_FALSE(s.gameOver);
+        CHECK(s.peacefulTurns == 0);
         s.turn = 9;
         end(s);
         CHECK(s.gameOver);
-        CHECK(s.winner == kB);
+        CHECK(s.peacefulTurns == 1);
     }
 }
 

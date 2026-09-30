@@ -262,7 +262,7 @@ void techDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     if (!t.group.empty()) row(ui, "Group", t.group, st);
     row(ui, "Level", std::format("{} of {}", level, t.maxLevel), st);
     if (level < t.maxLevel)
-        row(ui, "Next Level", std::format("{} points", formatNumber(r.techLevelCost(id, level + 1, ui.state().options.techCostGrowth))), st);
+        row(ui, "Next Level", std::format("{} points", formatNumber(r.techLevelCost(id, level + 1, ui.state().options.techCost))), st);
     else row(ui, "Next Level", "Fully researched", st);
     row(ui, "Requires", requirementsText(r, t.requirements), st);
     if (!t.description.empty()) {

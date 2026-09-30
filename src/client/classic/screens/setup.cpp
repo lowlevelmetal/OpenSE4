@@ -462,16 +462,15 @@ private:
         note(kStartNotes[static_cast<size_t>(std::clamp(o.startTechLevel, 0, 2))]);
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
-        heading(ctx, "Research Cost Growth");
-        static constexpr std::array<int, 5> kGrowth{0, 50, 100, 150, 200};
-        int g = 2;
-        for (size_t i = 0; i < kGrowth.size(); ++i)
-            if (kGrowth[i] == o.techCostGrowth) g = static_cast<int>(i);
-        if (lampChoice(ctx, "##growth", g, {"Flat", "Low", "Normal", "High", "Very High"})) o.techCostGrowth = kGrowth[static_cast<size_t>(g)];
-        const std::string growthNote = std::format(
-            "Each level costs more than the one before: level 5 of an area costs {}x its first level (+{}% per level).",
-            (100 + 4 * o.techCostGrowth) / 100.0, o.techCostGrowth);
-        note(growthNote.c_str());
+        heading(ctx, "Technology Cost");
+        o.techCost = std::clamp(o.techCost, 0, 2);
+        lampChoice(ctx, "##techcost", o.techCost, {"Low", "Medium", "High"});
+        static constexpr std::array<const char*, 3> kCostNotes{
+            "Level L of an area costs L times its level cost: level 5 costs 5x.",
+            "Level L costs the larger of L and L squared / 2 times the level cost: level 5 costs 12.5x.",
+            "Level L costs L squared times its level cost: level 5 costs 25x.",
+        };
+        note(kCostNotes[static_cast<size_t>(o.techCost)]);
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         const auto& areas = rules().data().techAreas;
@@ -578,8 +577,8 @@ private:
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         heading(ctx, "Score Display");
-        int scores = o.showAllScores ? 1 : 0;
-        if (lampChoice(ctx, "##scores", scores, {"Own and allies' scores", "Every empire's score"})) o.showAllScores = scores == 1;
+        o.scoreDisplay = std::clamp(o.scoreDisplay, 0, 2);
+        lampChoice(ctx, "##scores", o.scoreDisplay, {"Own score only", "Own and Non-Aggression or better", "Every empire's score"});
     }
 
     // ---- Players ------------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 #include "game/score.hpp"
 
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/events.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
@@ -15,58 +16,32 @@ namespace {
 
 bool validEmpire(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size(); }
 
-// Empires that take part in victory (neutral empires do not, inferred).
-bool contender(const Empire& e) { return e.alive && e.kind != PlayerKind::Neutral; }
+bool shipOrBase(ruleset::VehicleType t) { return t == ruleset::VehicleType::Ship || t == ruleset::VehicleType::Base; }
 
-void announce(TurnContext& ctx, const std::string& title, const std::string& text) {
-    for (const Empire& e : ctx.state.empires) ctx.log(e.id, LogCategory::Misc, title, text);
-}
-
-void declareWinner(TurnContext& ctx, EmpireId winner, std::string_view reason) {
-    GameState& s = ctx.state;
-    s.gameOver = true;
-    s.winner = winner;
-    if (validEmpire(s, winner))
-        announce(ctx, "Game Over", std::format("The {} has won the game: {}.", effects::empireFullName(s.empire(winner)), reason));
-    else
-        announce(ctx, "Game Over", std::format("The game has ended without a winner: {}.", reason));
-}
-
-// Best score among contenders; ties go to the lower empire id.
-EmpireId leader(const std::vector<std::pair<EmpireId, int64_t>>& scores) {
-    EmpireId best;
-    int64_t bestScore = 0;
-    for (const auto& [id, sc] : scores)
-        if (!best.valid() || sc > bestScore) {
-            best = id;
-            bestScore = sc;
-        }
-    return best;
+// Two empires at Non-Aggression or better (having no contact is worse).
+bool atPeace(const GameState& s, EmpireId a, EmpireId b) {
+    const Relation& rel = s.empire(a).relation(b);
+    return rel.contact && rel.treaty >= Treaty::NonAggression;
 }
 
 } // namespace
 
-Weights weights(const Rules& r) {
-    Weights w;
-    w.resources = r.setting("Score Weight Resources", w.resources);
-    w.research = r.setting("Score Weight Research", w.research);
-    w.intelligence = r.setting("Score Weight Intelligence", w.intelligence);
-    w.techLevels = r.setting("Score Weight Tech Levels", w.techLevels);
-    w.systems = r.setting("Score Weight Systems", w.systems);
-    w.planets = r.setting("Score Weight Planets", w.planets);
-    w.population = r.setting("Score Weight Population", w.population);
-    w.units = r.setting("Score Weight Units", w.units);
-    w.ships = r.setting("Score Weight Ships", w.ships);
-    w.bases = r.setting("Score Weight Bases", w.bases);
-    return w;
+int64_t scoreOf(const ScoreParts& p) {
+    return kTonnageWeight * p.tonnage + p.production + kTechLevelWeight * p.techLevels + (p.everything ? kEverythingBonus : 0);
 }
 
-int64_t scoreOf(const TurnStats& t, const Weights& w) {
-    const int64_t sum = std::max<int64_t>(0, t.production.total()) * w.resources + std::max<int64_t>(0, t.research) * w.research +
-                        std::max<int64_t>(0, t.intelligence) * w.intelligence + int64_t{t.techLevels} * w.techLevels +
-                        int64_t{t.systems} * w.systems + int64_t{t.planets} * w.planets + t.population * w.population +
-                        int64_t{t.units} * w.units + int64_t{t.ships} * w.ships + int64_t{t.bases} * w.bases;
-    return sum / 1000;
+ScoreParts scoreParts(const Rules& r, const GameState& s, EmpireId e) {
+    ScoreParts p;
+    if (!validEmpire(s, e)) return p;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == e && v.count > 0 && v.status != VehicleStatus::Mothballed && shipOrBase(vehicleType(r, s, v)))
+            p.tonnage += r.hull(s.design(v.design).hull).tonnage;
+    const diplomacy::Generated g = diplomacy::generated(r, s, e);
+    p.production = g.resources.total() + g.research + g.intelligence;
+    const Empire& emp = s.empire(e);
+    p.techLevels = research::totalLevels(r, emp);
+    p.everything = research::researchedEverything(r, s, emp);
+    return p;
 }
 
 TurnStats currentStats(const Rules& r, const GameState& s, EmpireId e) {
@@ -74,11 +49,11 @@ TurnStats currentStats(const Rules& r, const GameState& s, EmpireId e) {
     t.turn = s.turn;
     if (!validEmpire(s, e)) return t;
     const Empire& emp = s.empire(e);
-    const EconomyReport& eco = emp.economy;
-    t.production = eco.colonies + eco.trade + eco.tariffsIn + eco.remoteMining + eco.otherIncome;
-    t.research = eco.research;
-    t.intelligence = eco.intelligence;
-    t.techLevels = research::totalLevels(emp);
+    const diplomacy::Generated g = diplomacy::generated(r, s, e);
+    t.production = g.resources;
+    t.research = g.research;
+    t.intelligence = g.intelligence;
+    t.techLevels = research::totalLevels(r, emp);
     std::vector<SystemId> systems;
     for (const auto& c : s.colonies) {
         if (!c || c->owner != e) continue;
@@ -88,18 +63,19 @@ TurnStats currentStats(const Rules& r, const GameState& s, EmpireId e) {
     }
     std::sort(systems.begin(), systems.end());
     t.systems = static_cast<int>(std::unique(systems.begin(), systems.end()) - systems.begin());
+    // Ships and bases, mothballed ones excluded (spec 05 §5).
     for (const Vehicle& v : s.vehicles) {
-        if (v.owner != e) continue;
+        if (v.owner != e || v.count <= 0 || v.status == VehicleStatus::Mothballed) continue;
         const ruleset::VehicleType type = vehicleType(r, s, v);
         if (type == ruleset::VehicleType::Base) ++t.bases;
-        else if (type == ruleset::VehicleType::Ship && v.status != VehicleStatus::Mothballed) ++t.ships;
+        else if (type == ruleset::VehicleType::Ship) ++t.ships;
     }
     t.units = unitCount(r, s, e);
-    t.score = scoreOf(t, weights(r));
+    t.score = empireScore(r, s, e);
     return t;
 }
 
-int64_t empireScore(const Rules& r, const GameState& s, EmpireId e) { return currentStats(r, s, e).score; }
+int64_t empireScore(const Rules& r, const GameState& s, EmpireId e) { return scoreOf(scoreParts(r, s, e)); }
 
 std::vector<EmpireId> ranking(const Rules& r, const GameState& s) {
     std::vector<std::pair<EmpireId, int64_t>> rows;
@@ -112,8 +88,15 @@ std::vector<EmpireId> ranking(const Rules& r, const GameState& s) {
 }
 
 bool scoreVisible(const GameState& s, EmpireId viewer, EmpireId other) {
-    if (viewer == other || s.options.showAllScores) return true;
-    return allied(s, viewer, other);
+    if (!validEmpire(s, other)) return false;
+    if (viewer == other) return true;
+    if (!s.empire(other).alive) return false;
+    if (s.gameOver) return true;
+    switch (s.options.scoreDisplay) {
+        case 0: return false;
+        case 1: return validEmpire(s, viewer) && atPeace(s, viewer, other);
+        default: return true;
+    }
 }
 
 bool defeated(const Rules& r, const GameState& s, EmpireId e) {
@@ -124,91 +107,125 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e) {
     return true;
 }
 
-void endOfTurn(TurnContext& ctx) {
+void checkDestruction(TurnContext& ctx, EmpireId id) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-
-    // ---- Statistics and history.
-    for (Empire& e : s.empires)
-        if (e.alive) e.history.push_back(currentStats(r, s, e.id));
-
-    // ---- Eliminations: no populated colony and no ship or base left
-    // (spec 02 §2, inferred). Leftovers (empty colonies, units) go with it.
-    for (Empire& e : s.empires) {
-        if (!e.alive || !defeated(r, s, e.id)) continue;
-        e.alive = false;
-        e.research.clear();
-        e.intel.clear();
-        for (auto& c : s.colonies)
-            if (c && c->owner == e.id) c.reset();
-        for (Vehicle& v : s.vehicles)
-            if (v.owner == e.id) v.count = 0;
-        announce(ctx, "Empire Destroyed", std::format("The {} has been eliminated.", effects::empireFullName(e)));
-    }
+    if (!validEmpire(s, id) || !s.empire(id).alive || !defeated(r, s, id)) return;
+    Empire& e = s.empire(id);
+    e.alive = false;
+    e.research.clear();
+    e.intel.clear();
+    e.researchPool = e.intelPool = 0;
+    // Its remaining objects (empty colonies, units) go.
+    for (auto& c : s.colonies)
+        if (c && c->owner == id) c.reset();
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == id) v.count = 0;
     s.removeDeadVehicles();
+    const std::string text = std::format("The {} has been destroyed.", effects::empireFullName(s.empire(id)));
+    for (const Empire& x : s.empires)
+        if (x.id == id || (x.alive && x.relation(id).contact)) ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text);
+    // Intelligence projects aimed at it go; every treaty with it returns to "no contact".
+    for (Empire& x : s.empires) std::erase_if(x.intel, [&](const IntelProjectOrder& o) { return o.target == id; });
+    diplomacy::forgetEmpire(s, id);
 
-    // ---- Peace: consecutive turns without a war between living empires.
-    bool war = false;
+    // No victory for the last empire standing; it is told and plays on (spec 05 §6).
+    std::vector<EmpireId> left;
+    for (const Empire& x : s.empires)
+        if (x.alive) left.push_back(x.id);
+    if (left.size() == 1)
+        ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on.");
+}
+
+void recordStatistics(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    for (size_t i = 0; i < s.empires.size(); ++i)
+        if (s.empires[i].alive) {
+            TurnStats t = currentStats(ctx.rules, s, EmpireId{i});
+            s.empires[i].history.push_back(std::move(t));
+        }
+}
+
+bool galaxyAtPeace(const GameState& s) {
     for (const Empire& a : s.empires)
         for (const Empire& b : s.empires)
-            if (a.id < b.id && a.alive && b.alive && a.relation(b.id).treaty == Treaty::War) war = true;
-    s.peacefulTurns = war ? 0 : s.peacefulTurns + 1;
+            if (a.id < b.id && a.alive && b.alive && !atPeace(s, a.id, b.id)) return false;
+    return true;
+}
 
+void checkVictory(TurnContext& ctx, uint32_t date) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
     if (s.gameOver) return;
+    const VictoryConditions& v = s.options.victory;
+    const int64_t now = date;
+    // "After X years": nothing is checked before then, and the peace counter stands still.
+    if (v.delay && now < int64_t{v.delayYears} * 10) return;
 
-    // ---- Victory. This turn is the (turn + 1)-th one played.
+    // The peace counter rises each turn and restarts whenever two living
+    // empires hold a treaty worse than Non-Aggression (no contact included).
+    s.peacefulTurns = galaxyAtPeace(s) ? s.peacefulTurns + 1 : 0;
+
     std::vector<std::pair<EmpireId, int64_t>> scores;
     for (const Empire& e : s.empires)
-        if (contender(e)) scores.emplace_back(e.id, empireScore(r, s, e.id));
-    size_t everyone = 0;
-    for (const Empire& e : s.empires)
-        if (e.kind != PlayerKind::Neutral) ++everyone;
-
-    // Last empire standing ends any game that started with several.
-    if (everyone >= 2 && scores.size() <= 1) {
-        declareWinner(ctx, scores.empty() ? EmpireId{} : scores.front().first,
-                      scores.empty() ? "no empire survived" : "it is the last empire standing");
-        return;
-    }
-    const VictoryConditions& v = s.options.victory;
-    const int64_t played = int64_t{s.turn} + 1;
-    if (v.delay && played < int64_t{v.delayYears} * 10) return;
+        if (e.alive) scores.emplace_back(e.id, empireScore(r, s, e.id));
     if (scores.empty()) return;
 
-    if (v.score) {
-        std::vector<std::pair<EmpireId, int64_t>> reached;
-        for (const auto& row : scores)
-            if (row.second >= v.scoreValue) reached.push_back(row);
-        if (!reached.empty()) {
-            declareWinner(ctx, leader(reached), std::format("its score reached {}", v.scoreValue));
-            return;
+    std::string reason;
+    bool scoreMet = false, yearsMet = false, secondMet = false, techMet = false, peaceMet = false;
+    if (v.score)
+        scoreMet = std::any_of(scores.begin(), scores.end(), [&](const auto& row) { return row.second >= v.scoreValue; });
+    if (v.years) yearsMet = now >= int64_t{v.yearsValue} * 10;
+    if (v.percentOfSecond) {
+        // Some living empire has at least X % of every other living empire's
+        // score (exact integer comparison, inferred).
+        for (const auto& [id, sc] : scores) {
+            const bool leads = std::all_of(scores.begin(), scores.end(), [&](const auto& other) {
+                return other.first == id || sc * 100 >= int64_t{v.percentOfSecondValue} * other.second;
+            });
+            if (leads) secondMet = true;
         }
     }
-    if (v.percentOfSecond && scores.size() >= 2) {
-        std::vector<std::pair<EmpireId, int64_t>> sorted = scores;
-        std::stable_sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-        const int64_t pct = std::max<int64_t>(100, v.percentOfSecondValue);
-        if (sorted[0].second > 0 && sorted[0].second * 100 >= pct * sorted[1].second) {
-            declareWinner(ctx, sorted[0].first, std::format("its score is {}% of the runner-up's", pct));
-            return;
+    if (v.techPercent)
+        for (const auto& [id, sc] : scores) {
+            const Empire& e = s.empire(id);
+            if (int64_t{research::totalLevels(r, e)} * 100 >= int64_t{v.techPercentValue} * research::maxLevels(r, s, e)) techMet = true;
         }
-    }
-    if (v.techPercent) {
-        for (const auto& row : scores)
-            if (research::techPercent(r, s, s.empire(row.first)) >= v.techPercentValue) {
-                declareWinner(ctx, row.first, std::format("it has discovered {}% of all technology", v.techPercentValue));
-                return;
-            }
-    }
-    if (v.peace && s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10) {
-        // Who wins a peace victory is open (spec 05 §11): the best score (inferred).
-        declareWinner(ctx, leader(scores), std::format("the galaxy has been at peace for {} years", v.peaceYears));
-        return;
-    }
-    if (v.years && played >= int64_t{v.yearsValue} * 10) {
-        declareWinner(ctx, leader(scores), std::format("it had the best score after {} years", v.yearsValue));
-        return;
-    }
+    if (v.peace) peaceMet = s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10;
+
+    // Quirk (confirmed: binary): with "% of second place" on, its result
+    // replaces those of the Score and Years tests.
+    bool over = v.percentOfSecond ? secondMet : (scoreMet || yearsMet);
+    over = over || techMet || peaceMet;
+    if (!over) return;
+    if (v.percentOfSecond && secondMet) reason = std::format("an empire has {}% of every other empire's score", v.percentOfSecondValue);
+    else if (scoreMet) reason = std::format("an empire's score has reached {}", v.scoreValue);
+    else if (yearsMet) reason = std::format("{} years have passed", v.yearsValue);
+    else if (techMet) reason = std::format("an empire has researched {}% of its technology", v.techPercentValue);
+    else reason = std::format("the quadrant has been at peace for {} years", v.peaceYears);
+
+    // The game ends; the original names no winner. The best score (neutral
+    // empires aside, ties to the lower number) is kept for the game-over
+    // screen (OpenSE4 choice, inferred).
+    s.gameOver = true;
+    s.winner = {};
+    int64_t best = 0;
+    for (const auto& [id, sc] : scores)
+        if (s.empire(id).kind != PlayerKind::Neutral && (!s.winner.valid() || sc > best)) {
+            s.winner = id;
+            best = sc;
+        }
+    for (const Empire& e : s.empires)
+        ctx.log(e.id, LogCategory::Misc, "Game Over",
+                std::format("This is the last turn: {}. The Scores window shows the final ranking.", reason));
+}
+
+void endOfTurn(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    for (size_t i = 0; i < s.empires.size(); ++i) checkDestruction(ctx, EmpireId{i});
+    recordStatistics(ctx);
+    // turn.cpp advances the date after this phase.
+    checkVictory(ctx, s.turn + 1);
 }
 
 } // namespace opense4::game::score

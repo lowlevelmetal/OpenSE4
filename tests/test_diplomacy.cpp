@@ -9,6 +9,7 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
 
@@ -23,6 +24,8 @@ namespace {
 const EmpireId kA{0u}, kB{1u}, kC{2u};
 
 TurnContext context(GameState& s) { return turnContext(politicsRules(), s); }
+
+int tradePct(const GameState& s, EmpireId a, EmpireId b) { return diplomacy::tradePercent(politicsRules(), s, a, b); }
 
 void nextTurn(GameState& s) {
     ++s.turn;
@@ -110,12 +113,13 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
     CHECK(hasLog(s, kA, "Accept Treaty"));
 
     // Trade starts at 1 % after the signing turn and grows to the maximum.
-    CHECK(s.empire(kA).relation(kB).tradePercent == 0);
+    CHECK(tradePct(s, kA, kB) == 0);
     diplomacy::advanceTrade(ctx);
-    CHECK(s.empire(kA).relation(kB).tradePercent == 1);
+    CHECK(tradePct(s, kA, kB) == 1);
     for (int i = 0; i < 30; ++i) diplomacy::advanceTrade(ctx);
-    CHECK(s.empire(kA).relation(kB).tradePercent == 20);
-    CHECK(s.empire(kB).relation(kA).tradePercent == 20);
+    CHECK(tradePct(s, kA, kB) == 20);
+    CHECK(tradePct(s, kB, kA) == 20);
+    CHECK(s.empire(kA).relation(kB).tradeTurns == 31);  // the counter itself is not capped
 }
 
 TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
@@ -248,18 +252,24 @@ TEST_CASE("diplomacy: trade percentage across treaty changes") {
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
     TurnContext ctx = context(s);
-    diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);
-    for (int i = 0; i < 5; ++i) diplomacy::advanceTrade(ctx);
-    CHECK(s.empire(kA).relation(kB).tradePercent == 5);
-    diplomacy::setTreaty(ctx, kA, kB, Treaty::Partnership);  // both trade level: kept
-    CHECK(s.empire(kA).relation(kB).tradePercent == 5);
-    diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);  // below trade level: reset
-    CHECK(s.empire(kA).relation(kB).tradePercent == 0);
+    // The counter grows toward every other living empire, whatever the treaty.
     diplomacy::advanceTrade(ctx);
-    CHECK(s.empire(kA).relation(kB).tradePercent == 0);
+    CHECK(s.empire(kA).relation(kC).tradeTurns == 1);
+    CHECK(tradePct(s, kA, kC) == 0);  // no trade treaty
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);  // from None: the counter restarts
+    CHECK(s.empire(kA).relation(kB).tradeTurns == 0);
+    for (int i = 0; i < 5; ++i) diplomacy::advanceTrade(ctx);
+    CHECK(tradePct(s, kA, kB) == 5);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::Partnership);  // both trade level: kept
+    CHECK(tradePct(s, kA, kB) == 5);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);  // below trade level: reset
+    CHECK(tradePct(s, kA, kB) == 0);
+    diplomacy::advanceTrade(ctx);
+    CHECK(s.empire(kA).relation(kB).tradeTurns == 1);
+    CHECK(tradePct(s, kA, kB) == 0);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeResearchAlliance);
     diplomacy::advanceTrade(ctx);
-    CHECK(s.empire(kB).relation(kA).tradePercent == 1);
+    CHECK(tradePct(s, kB, kA) == 1);
 
     // Setting the same treaty again changes nothing and logs nothing.
     const size_t logs = s.empire(kA).log.size();
@@ -269,11 +279,16 @@ TEST_CASE("diplomacy: trade percentage across treaty changes") {
 
 TEST_CASE("diplomacy: trade income, research and intelligence trade, tariffs") {
     const Rules& r = politicsRules();
-    CHECK(diplomacy::tradeShare(10000, 10, 100, 0) == 1000);
-    CHECK(diplomacy::tradeShare(10000, 10, 120, 10) == 1300);
-    CHECK(diplomacy::tradeShare(10000, 20, 50, -60) == 0);
-    CHECK(diplomacy::tradeShare(-5, 20, 100, 0) == 0);
-    CHECK(diplomacy::tradeShare(10000, 0, 100, 0) == 0);
+    // trunc(round(base × pct / 100) × F / 100) (spec 05 §3.3).
+    CHECK(diplomacy::tradeShare(10000, 10, 100) == 1000);
+    CHECK(diplomacy::tradeShare(10000, 10, 130) == 1300);
+    CHECK(diplomacy::tradeShare(1234, 7, 130) == 111);   // round(86.38) = 86; trunc(111.8)
+    CHECK(diplomacy::tradeShare(50, 5, 100) == 2);       // round(2.5) goes to the even 2
+    CHECK(diplomacy::tradeShare(70, 5, 100) == 4);       // round(3.5) goes to the even 4
+    CHECK(diplomacy::tradeShare(10000, 1, 53) == 52);    // trunc(100 × 53 %) in extended precision
+    CHECK(diplomacy::tradeShare(10000, 20, -10) == 0);
+    CHECK(diplomacy::tradeShare(-5, 20, 100) == 0);
+    CHECK(diplomacy::tradeShare(10000, 0, 100) == 0);
 
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
@@ -284,20 +299,30 @@ TEST_CASE("diplomacy: trade income, research and intelligence trade, tariffs") {
     for (int i = 0; i < 7; ++i) diplomacy::advanceTrade(ctx);
     s.empire(kA).race.characteristics[static_cast<size_t>(Characteristic::PoliticalSavvy)] = 130;
 
+    // F adds Political Savvy, the race's Trade traits and the culture's Trade value.
+    const int64_t f = diplomacy::tradeFactor(r, s.empire(kA));
+    const ruleset::Culture* culture = r.culture(s.empire(kA).race);
+    CHECK(f == 130 + (culture ? culture->trade : 0));
+
     // Whatever the economy produces, the income follows the formula.
     const auto genB = diplomacy::generated(r, s, kB);
     const auto genC = diplomacy::generated(r, s, kC);
-    const Resources tariff = max(genC.resources, Resources{}).percent(40);
+    REQUIRE(genC.research > 0);
+    // Tariffs: round(income × 40 %) on each of the five incomes.
+    Resources tariff;
+    for (Resource res : kResources) tariff[res] = xmath::pctRound(genC.resources[res], 40);
     CHECK(diplomacy::tariffsPaid(r, s, kC) == tariff);
+    CHECK(diplomacy::tariffDue(r, s, kC).research == xmath::pctRound(genC.research, 40));
+    CHECK(diplomacy::tariffDue(r, s, kC).intelligence == xmath::pctRound(genC.intelligence, 40));
     CHECK(diplomacy::tariffsPaid(r, s, kA) == Resources{});
     CHECK(diplomacy::tariffsReceived(r, s, kA) == tariff);
     Resources expected = tariff;
-    for (Resource res : kResources) expected[res] += diplomacy::tradeShare(genB.resources[res], 7, 130, 0);
+    for (Resource res : kResources) expected[res] += diplomacy::tradeShare(genB.resources[res], 7, f);
     CHECK(diplomacy::tradeIncome(r, s, kA) == expected);
     CHECK(diplomacy::researchTradeIncome(r, s, kA) == 0);  // Trade Alliance trades no research
     diplomacy::setTreaty(ctx, kA, kB, Treaty::Partnership);
-    CHECK(diplomacy::researchTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.research, 7, 130, 0));
-    CHECK(diplomacy::intelTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.intelligence, 7, 130, 0));
+    CHECK(diplomacy::researchTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.research, 7, f));
+    CHECK(diplomacy::intelTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.intelligence, 7, f));
     CHECK(diplomacy::intelTradeIncome(r, s, kC) == 0);
 }
 
@@ -419,39 +444,71 @@ TEST_CASE("diplomacy: surrender and independence") {
     CHECK(hasLog(s, kC, "Independence Granted"));
 }
 
-TEST_CASE("diplomacy: first contact and contact loss") {
+TEST_CASE("diplomacy: first contact needs mutual detection in one system and is never lost") {
+    const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     TurnContext ctx = context(s);
-    // A sees one of B's ships; A is present where C has a colony.
-    for (const Vehicle& v : s.vehicles)
-        if (v.owner == kB) {
-            s.empire(kA).knowledge.visibleVehicles = {v.id};
-            break;
-        }
+    const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
     const SystemId homeC = s.galaxy.object(homeworld(s, kC).planet).system;
-    s.empire(kA).knowledge.present[homeC.index()] = 1;
+    VehicleId shipOfA;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA) shipOfA = v.id;
+
+    // A has presence at B's home and sees B's colony, but B does not see A: no contact.
+    s.empire(kA).knowledge.present[homeB.index()] = 1;
+    diplomacy::updateContacts(ctx);
+    CHECK_FALSE(diplomacy::inContact(s, kA, kB));
+
+    // B sees A's ship, but in another system: still none.
+    s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kC).planet);
+    s.empire(kB).knowledge.visibleVehicles = {shipOfA};
+    diplomacy::updateContacts(ctx);
+    CHECK_FALSE(diplomacy::inContact(s, kA, kB));
+
+    // Both detect each other in B's home system: contact.
+    s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kB).planet);
     diplomacy::updateContacts(ctx);
     CHECK(diplomacy::inContact(s, kA, kB));
     CHECK(diplomacy::inContact(s, kB, kA));
-    CHECK(diplomacy::inContact(s, kA, kC));
-    CHECK_FALSE(diplomacy::inContact(s, kB, kC));
+    CHECK_FALSE(diplomacy::inContact(s, kA, kC));
+    CHECK(hasLog(s, kA, "First Contact"));
     CHECK(hasLog(s, kB, "First Contact"));
-    CHECK(hasLog(s, kC, "First Contact"));
+    (void)homeC;
 
-    // Nobody sees anybody and the warp network falls apart: contact is lost.
+    // Nobody sees anybody and the warp network falls apart: contact stays.
     diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
     for (Empire& e : s.empires) {
         e.knowledge.visibleVehicles.clear();
         std::fill(e.knowledge.present.begin(), e.knowledge.present.end(), uint8_t{0});
     }
-    diplomacy::updateContacts(ctx);
-    CHECK(diplomacy::inContact(s, kA, kB));  // still linked by warp points
     for (SpaceObject& o : s.galaxy.objects)
         if (o.kind == ObjectKind::WarpPoint) o.destination = ObjectId{};
     diplomacy::updateContacts(ctx);
+    CHECK(diplomacy::inContact(s, kA, kB));
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
+
+    // Only the destruction of an empire ends contact.
+    diplomacy::forgetEmpire(s, kB);
     CHECK_FALSE(diplomacy::inContact(s, kA, kB));
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
-    CHECK(hasLog(s, kA, "Contact Lost"));
+    (void)r;
+}
+
+TEST_CASE("diplomacy: the treaty step resets mismatched treaties and declaring war ignores the treaty") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);
+    s.empire(kB).relation(kA).treaty = Treaty::Partnership;  // the two records disagree
+    diplomacy::treatyStep(ctx, kA);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
+    CHECK(s.empire(kB).relation(kA).treaty == Treaty::None);
+
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::Partnership);
+    diplomacy::declareWar(ctx, kB, kA);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::War);
+    CHECK(s.empire(kB).relation(kA).treaty == Treaty::War);
+    CHECK(hasLog(s, kA, "War Declared"));
 }
 
 TEST_CASE("diplomacy: partnership shares maps and designs; masters see subject designs") {
@@ -466,8 +523,9 @@ TEST_CASE("diplomacy: partnership shares maps and designs; masters see subject d
     const DesignId cDesign = s.empire(kC).designs.front();
     s.empire(kB).knowledge.seenDesigns = {cDesign};
     const DesignId fresh = addTestDesign(s, r, kC, "Fresh Hull", "Test Frigate", {"Test Bridge"});
-    diplomacy::updateContacts(ctx);
+    diplomacy::treatyStep(ctx, kA);
     CHECK(s.empire(kA).hasExplored(homeB));
+    CHECK(hasLog(s, kA, "New System Maps Available"));
     CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), cDesign));
     CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), fresh));
     CHECK_FALSE(s.empire(kC).hasExplored(homeB));
@@ -534,8 +592,8 @@ TEST_CASE("diplomacy: research, intelligence, messages and events through the tu
         std::vector<std::string> trace;
         for (const Empire& e : s.empires) {
             for (const LogEntry& l : e.log) trace.push_back(std::format("{}:{}:{}", l.turn, l.title, l.text));
-            for (const Relation& rel : e.relations) trace.push_back(std::format("{}/{}", static_cast<int>(rel.treaty), rel.tradePercent));
-            trace.push_back(std::format("{} {} {}", e.stockpile[Resource::Minerals], research::totalLevels(e), e.history.size()));
+            for (const Relation& rel : e.relations) trace.push_back(std::format("{}/{}", static_cast<int>(rel.treaty), rel.tradeTurns));
+            trace.push_back(std::format("{} {} {}", e.stockpile[Resource::Minerals], research::totalLevels(r, e), e.history.size()));
         }
         return std::pair{trace, s.rng};
     };

@@ -106,20 +106,21 @@ std::string_view identifier(Effect e);
 std::optional<Effect> parseEffect(std::string_view type);
 
 // Effects that need an acting empire (theft, defection, espionage reports,
-// political operations). Events cannot use them.
+// political operations). As events they achieve nothing.
 bool needsSource(Effect e);
 // Sabotage (harms the target) as opposed to espionage (only learns things);
 // the AI's "stop sabotage" / "stop espionage" demands use this split.
 bool isSabotage(Effect e);
-// A harmful outcome for the affected empire (the Luck trait and bad-event
-// abilities only reduce these). Signed effects are harmful when `amount` < 0.
+// A harmful outcome for the affected empire. Signed effects are harmful when
+// `amount` < 0. (The event luck roll applies to every event, good or bad.)
 bool isBad(Effect e, int amount);
 
 // ---- Targets and application -----------------------------------------------------------------
 
-// What an effect acts on. `empire` is the affected (victim) empire; the other
-// fields are filled by pickTarget. Callers may preset `vehicle`, `object`,
-// `system` or `other` to request a specific target ("Any" when invalid).
+// What an effect acts on. `empire` is the affected (victim) empire, invalid
+// for an event on an object nobody owns; the other fields are filled by
+// pickTarget. Callers may preset `vehicle`, `object`, `system`, `other` or
+// `tech` to request a specific target ("Any" when invalid).
 struct Target {
     EmpireId empire;
     EmpireId source;    // the acting empire (intelligence), invalid for events
@@ -127,10 +128,18 @@ struct Target {
     VehicleId vehicle;
     ObjectId object;    // planet, asteroid field, star or warp point
     SystemId system;
+    ruleset::TechAreaId tech;  // Research - Steal
 };
 
-// Validates a requested target, or chooses one at random among the valid
-// candidates ("Any"). nullopt: nothing to act on.
+// Draws for an "Any" target and for an event target (spec 05 §2.1, §4).
+inline constexpr int kTargetDraws = 1000;
+// Empires the galaxy can hold; a rebel colony becomes a new empire only below it.
+inline constexpr size_t kMaxEmpires = 20;
+
+// An intelligence project's target (spec 05 §2.1): a requested target is
+// validated; "Any" draws candidates of the right kind at random, up to
+// kTargetDraws times, removing each one that fails the checks (including
+// `Change Bad Intelligence Chance - System`, below). nullopt: nothing to act on.
 std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, const Target& request, Rng& rng);
 // Where the target is, for logs and location-based modifiers.
 std::optional<Location> targetLocation(const GameState& s, const Target& t);
@@ -145,9 +154,20 @@ struct Outcome {
 // Applies an effect with its data `amount` to a target from pickTarget.
 Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng);
 
-// Sum of a "- System" chance ability in a system for an empire: system-wide
-// abilities plus the best (lowest) value among the empire's colonies there.
-int64_t systemChanceModifier(const Rules& r, const GameState& s, EmpireId empire, SystemId sys, AbilityKind k);
+// `Change Bad Intelligence/Event Chance - System` (spec 05 §2.4, confirmed:
+// binary): only abilities of things that belong to no empire count (the
+// system's own abilities and the stellar abilities of its objects), and only
+// a positive value V (the largest, inferred). 0 when there is none.
+int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k);
+// A candidate is rejected when V is set, is not 100, and a roll of 1–100 is
+// at most V. So it never matters in the stock data.
+bool chanceRejects(int64_t v, Rng& rng);
+
+// A colony breaks away as a new independent empire (spec 05 §2.3): a
+// computer player with the owner's race, technology and data lists, at War
+// with its former owner (inferred). Invalid when kMaxEmpires are reached.
+// Adding an empire invalidates references into GameState::empires.
+EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 
 // Damage to a vehicle in the standard order: armor first (design order),
 // then the other intact components at random. Returns the damage applied.
@@ -166,19 +186,48 @@ enum class Severity : uint8_t { Low, Medium, High, Catastrophic };
 // Unknown or blank severities count as Low (inferred).
 Severity parseSeverity(std::string_view text);
 
-// The chance (percent) that an empire has an event this turn, from the
-// Event Frequency option and `Event Percent Chance Low/Medium/High`.
+// No new events before the date 2402.0, counted in turns since 2400.0
+// (spec 05 §4, confirmed: binary).
+inline constexpr uint32_t kFirstEventDate = 20;
+
+// The chance (percent) of a new event this turn for the whole galaxy, from
+// the Event Frequency option and `Event Percent Chance Low/Medium/High`.
 int eventChance(const Rules& r, const GameState& s);
-// Events.txt records eligible under the Maximum Event Severity option and
-// with an effect type we implement, in data order.
-std::vector<uint32_t> eligibleEvents(const Rules& r, const GameState& s);
+// N: the number of Events.txt records whose Severity is at most the Maximum
+// Event Severity option.
+uint32_t allowedRecordCount(const Rules& r, const GameState& s);
+// The original's record pick (spec 05 §4, confirmed: binary): uniform among
+// the first N records of the file, whatever their severity (N as above).
+std::optional<uint32_t> pickRecord(const Rules& r, const GameState& s, Rng& rng);
 
-// Starts (or, for immediate events, fires) event record `eventType` against
-// `target`. Returns false when the target was not valid.
-bool trigger(TurnContext& ctx, uint32_t eventType, const effects::Target& target, Rng& rng);
+// The kind of target an event type takes from the whole galaxy (spec 05 §4).
+// None: the type has no target list, so such a record never fires.
+enum class TargetKind : uint8_t { None, Ship, Planet, Empire, Star, WarpPoint };
+TargetKind targetKind(effects::Effect e);
+// Draws the target of event record `record` from the whole galaxy: up to
+// kTargetDraws draws, removing candidates that no longer exist, homeworlds
+// (and stars in their systems) for High and Catastrophic planet and star
+// events, candidates whose owner fails the luck roll, and candidates rejected
+// by `Change Bad Event Chance - System`. nullopt: no event.
+std::optional<effects::Target> pickEventTarget(const Rules& r, const GameState& s, uint32_t record, Rng& rng);
+// Whether an event's target still exists (a timed event whose target is gone
+// is dropped silently).
+bool targetExists(const Rules& r, const GameState& s, const effects::Target& t);
 
-// Turn phase 9: fires timed events that are due, then rolls new events (one
-// roll per empire per turn, inferred).
+// Starts event record `record` against `target`: with `Time Till Completion`
+// 0 the effect applies at once and a random message goes out; otherwise the
+// start message goes out and the event strikes exactly that many turns later.
+// Returns false when the record is unknown or the target does not exist.
+bool trigger(TurnContext& ctx, uint32_t record, const effects::Target& target, Rng& rng);
+
+// Event step parts (spec 05 §8 step 9): the timed events that are due strike,
+// then the single galaxy-wide roll for a new event. `date` is the game date
+// in turns since 2400.0, already advanced for this turn.
+void fireDueEvents(TurnContext& ctx, Rng& rng);
+void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng);
+
+// Aggregate phase for turn.cpp: fireDueEvents, then rollNewEvent with the
+// date after this turn (turn.cpp advances the date after this phase).
 void runEvents(TurnContext& ctx);
 
 } // namespace opense4::game::events

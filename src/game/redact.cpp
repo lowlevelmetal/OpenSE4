@@ -1,5 +1,7 @@
 #include "game/redact.hpp"
 
+#include "game/score.hpp"
+
 #include <algorithm>
 
 namespace opense4::game {
@@ -26,6 +28,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         const bool partner = treatySharesMaps(s, viewer, e.id);
         e.stockpile = {};
         e.economy = {};
+        e.researchPool = e.intelPool = 0;
         e.research.clear();
         e.intel.clear();
         e.log.clear();
@@ -45,7 +48,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
             // Tech levels are only known to partners (the Race Report hides them otherwise).
             std::fill(e.techLevels.begin(), e.techLevels.end(), 0);
         }
-        if (!s.options.showAllScores && !partner) e.history.clear();
+        if (!score::scoreVisible(s, viewer, e.id) && !partner) e.history.clear();
         // Treaties stay (the treaty grid decides what to show); a computer
         // player's anger is visible only toward us (its mood in Empires).
         for (size_t k = 0; k < e.relations.size(); ++k)

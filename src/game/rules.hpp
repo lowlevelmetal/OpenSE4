@@ -16,6 +16,9 @@
 
 namespace opense4::game {
 
+// The cap on the cost of one tech level (spec 05 §1.3, confirmed: binary).
+inline constexpr int64_t kMaxTechLevelCost = 2'000'000'000;
+
 class Rules {
 public:
     Rules() = default;
@@ -49,8 +52,13 @@ public:
     bool mountAvailable(const Empire& e, uint32_t m) const;
     // A tech area this empire may research at all (allowed, racial/unique checks, requirements).
     bool techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const;
-    // Research points to go from `level - 1` to `level` (spec 05 §1.3).
-    int64_t techLevelCost(ruleset::TechAreaId a, int level, int growthPercent) const;
+    // The same without the requirements: allowed in this game and passing the
+    // racial and unique checks (spec 05 §1.2).
+    bool techAreaOpen(const GameState& s, const Empire& e, ruleset::TechAreaId a) const;
+    // Research points to go from `level - 1` to `level` under the Technology
+    // Cost option (GameOptions::techCost: 0 low, 1 medium, 2 high), capped at
+    // kMaxTechLevelCost (spec 05 §1.3).
+    int64_t techLevelCost(ruleset::TechAreaId a, int level, int techCost) const;
 
     // Newest available facility/component of a family (highest Roman Numeral).
     std::optional<uint32_t> latestFacilityOfFamily(const Empire& e, int family) const;

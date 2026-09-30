@@ -2,6 +2,8 @@
 
 #include "datafile/datafile.hpp"
 
+#include <algorithm>
+
 namespace opense4::game {
 
 Rules::Rules(ruleset::Ruleset data, std::filesystem::path gameRoot) : data_(std::move(data)), gameRoot_(std::move(gameRoot)) {
@@ -21,6 +23,10 @@ bool Rules::meets(const Empire& e, std::span<const ruleset::TechRequirement> req
 bool Rules::mountAvailable(const Empire&, uint32_t m) const { return m < data_.weaponMounts.size(); }
 
 bool Rules::techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const {
+    return techAreaOpen(s, e, a) && meets(e, tech(a).requirements);
+}
+
+bool Rules::techAreaOpen(const GameState& s, const Empire& e, ruleset::TechAreaId a) const {
     const ruleset::TechArea& t = tech(a);
     if (!s.options.techAreasAllowed.empty() && a.index() < s.options.techAreasAllowed.size() && !s.options.techAreasAllowed[a.index()])
         return false;
@@ -38,12 +44,22 @@ bool Rules::techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId
     if (t.uniqueArea > 0 &&
         std::find(e.uniqueAreasUnlocked.begin(), e.uniqueAreasUnlocked.end(), t.uniqueArea) == e.uniqueAreasUnlocked.end())
         return false;
-    return meets(e, t.requirements);
+    return true;
 }
 
-int64_t Rules::techLevelCost(ruleset::TechAreaId a, int level, int growthPercent) const {
-    const int64_t base = tech(a).levelCost;
-    return base * (100 + static_cast<int64_t>(level - 1) * growthPercent) / 100;
+int64_t Rules::techLevelCost(ruleset::TechAreaId a, int level, int techCost) const {
+    // Spec 05 §1.3 (confirmed: binary), with LC the area's Level Cost and L
+    // the level being researched: Low LC × L, Medium max(LC × L, trunc(LC ×
+    // L² / 2)), High LC × L². Every cost is capped.
+    const int64_t lc = tech(a).levelCost;
+    const int64_t l = level;
+    int64_t cost = 0;
+    switch (techCost) {
+        case 0: cost = lc * l; break;
+        case 2: cost = lc * l * l; break;
+        default: cost = std::max(lc * l, lc * l * l / 2); break;
+    }
+    return std::min(cost, kMaxTechLevelCost);
 }
 
 std::optional<uint32_t> Rules::latestFacilityOfFamily(const Empire& e, int family) const {

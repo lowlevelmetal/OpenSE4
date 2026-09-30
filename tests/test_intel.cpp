@@ -11,6 +11,7 @@
 #include "game/intel.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
 
@@ -40,6 +41,20 @@ uint32_t defenseProject(int level) {
     return 0;
 }
 
+IntelProjectOrder defense(int level, int64_t progress) {
+    IntelProjectOrder o;
+    o.project = defenseProject(level);
+    o.progress = progress;
+    return o;
+}
+
+effects::Target target(EmpireId empire, EmpireId source) {
+    effects::Target t;
+    t.empire = empire;
+    t.source = source;
+    return t;
+}
+
 int totalDamage(const GameState& s, EmpireId owner) {
     int n = 0;
     for (const Vehicle& v : s.vehicles)
@@ -57,6 +72,13 @@ effects::Outcome run(GameState& s, Effect e, effects::Target request, int amount
     return effects::apply(ctx, e, *t, amount, rng);
 }
 
+// Funds and runs one empire's intelligence step with `points` in its pool.
+void step(GameState& s, EmpireId e, int64_t points) {
+    s.empire(e).intelPool = points;
+    TurnContext ctx = context(s);
+    intel::intelStep(ctx, e);
+}
+
 } // namespace
 
 TEST_CASE("intel: every stock-style type identifier round-trips") {
@@ -72,20 +94,39 @@ TEST_CASE("intel: every stock-style type identifier round-trips") {
     CHECK_FALSE(effects::needsSource(Effect::PlanetPopulationRebel));
 }
 
-TEST_CASE("intel: defense points and attack strength") {
+TEST_CASE("intel: defense points") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     Empire& b = s.empire(kB);
-    b.intel.push_back({defenseProject(2), {}, {}, {}, {}, 1000});
+    b.intel.push_back(defense(2, 1000));
     b.intel.push_back(order(Effect::ShipDamage, kA));
     b.intel.back().progress = 999;
-    CHECK(intel::defensePoints(r, s, kB) == 1000 * 2 * 120 / 100);
+    // trunc(Amount × progress × `Intelligence Defense Modifier Percent` / 100).
+    CHECK(intel::defensePoints(r, s, kB) == xmath::pctTrunc(2 * 1000, 120));
     CHECK(intel::isDefense(r, defenseProject(1)));
     CHECK_FALSE(intel::isDefense(r, projectFor(Effect::ShipDamage)));
-    IntelProjectOrder o = order(Effect::ShipDamage, kB);
-    CHECK(intel::attackStrength(r, o) == 1000 * 125 / 100);  // "Any" target
-    o.targetVehicle = s.vehicles.front().id;
-    CHECK(intel::attackStrength(r, o) == 1000);
+    CHECK(intel::requirementLevel(r, projectFor(Effect::ShipDamage)) == 0);
+}
+
+TEST_CASE("intel: the pool is spent at the step and emptied") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    Empire& a = s.empire(kA);
+    a.intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB)};
+    a.intelEvenly = false;
+    s.empire(kA).economy.intelligence = 700;
+    s.empire(kA).intelPool = 400;
+    TurnContext ctx = context(s);
+    intel::runIntel(ctx);
+    // Last turn's 400 points were spent; this turn's 700 wait for the next step.
+    CHECK(a.intel[0].progress == 400);
+    CHECK(a.intelPool == 700);
+    // A master's tariff takes its part of the income, which nobody receives.
+    diplomacy::setTreaty(ctx, kB, kA, Treaty::Subjugation, true);
+    a.intelPool = 0;
+    intel::runIntel(ctx);
+    CHECK(a.intelPool == 700 - diplomacy::tariffDue(r, s, kA).intelligence);
 }
 
 TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") {
@@ -93,10 +134,9 @@ TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") 
     setContact(s, kA, kB);
     Empire& a = s.empire(kA);
     a.intel = {order(Effect::ShipDamage, kB)};
-    a.economy.intelligence = 1000;
-    TurnContext ctx = context(s);
-    intel::runIntel(ctx);
+    step(s, kA, 1000);
     CHECK(a.intel.empty());
+    CHECK(a.intelPool == 0);
     CHECK(totalDamage(s, kB) == 1);
     const LogEntry* src = findLog(s, kA, politicsRules().data().intelProjects[projectFor(Effect::ShipDamage)].name);
     REQUIRE(src);
@@ -110,74 +150,179 @@ TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") 
     CHECK(tgt->text.find("[%") == std::string::npos);
 }
 
-TEST_CASE("intel: even funding, repeat and invalid targets") {
+TEST_CASE("intel: there is no success roll, and the source is named one time in five") {
+    int named = 0, runs = 0;
+    const GameState base = newPoliticsGame(5);
+    for (uint64_t seed = 1; seed <= 300; ++seed) {
+        GameState s = base;
+        s.rng.reseed(seed);
+        setContact(s, kA, kB);
+        s.empire(kA).intel = {order(Effect::PointsChange, kB)};
+        s.empire(kB).stockpile = {5000, 5000, 5000};
+        step(s, kA, 1000);
+        REQUIRE(s.empire(kB).stockpile == Resources{5001, 5001, 5001});  // always succeeds
+        const LogEntry* hit = findLog(s, kB, "Probe Hit");
+        REQUIRE(hit);
+        ++runs;
+        if (hit->text.find("Evidence points to the Realm 1 Union") != std::string::npos) ++named;
+    }
+    CHECK(named > runs * 12 / 100);
+    CHECK(named < runs * 28 / 100);
+}
+
+TEST_CASE("intel: even funding rounds the pool share and does not cap it") {
     GameState s = newPoliticsGame();
     Empire& a = s.empire(kA);
-    TurnContext ctx = context(s);
+    setContact(s, kA, kB);
 
     // Two projects share the points evenly: nothing finishes yet.
-    setContact(s, kA, kB);
     a.intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB)};
     a.intelEvenly = true;
-    a.economy.intelligence = 1000;
-    intel::runIntel(ctx);
+    step(s, kA, 1001);  // round(500.5) = 500, ties to even
     REQUIRE(a.intel.size() == 2);
     CHECK(a.intel[0].progress == 500);
     CHECK(a.intel[1].progress == 500);
+    step(s, kA, 1003);  // round(501.5) = 502
+    CHECK(a.intel.empty());  // both reached their Cost of 1000 and ran
 
     // Repeat: the finished project stays and starts over.
     a.repeatIntel = true;
     a.intel = {order(Effect::ShipDamage, kB)};
-    intel::runIntel(ctx);
+    const int before = totalDamage(s, kB);
+    step(s, kA, 1000);
     REQUIRE(a.intel.size() == 1);
     CHECK(a.intel[0].progress == 0);
-    CHECK(totalDamage(s, kB) == 1);
+    CHECK(totalDamage(s, kB) == before + 1);
 
-    // Without contact the operation cannot proceed; it is used up.
+    // Without contact with the target the operation fails; it is used up.
     a.repeatIntel = false;
     a.intel = {order(Effect::ShipDamage, kC)};
     s.empire(kA).log.clear();
-    intel::runIntel(ctx);
+    step(s, kA, 1000);
     CHECK(a.intel.empty());
     REQUIRE_FALSE(s.empire(kA).log.empty());
     CHECK(s.empire(kA).log.back().text.find("contact") != std::string::npos);
     CHECK(totalDamage(s, kC) == 0);
 }
 
-TEST_CASE("intel: counter-intelligence defeats attacks and is drained") {
+TEST_CASE("intel: an empire in contact with nobody loses its queue; projects against the dead go") {
+    GameState s = newPoliticsGame();
+    Empire& a = s.empire(kA);
+    a.intel = {order(Effect::ShipDamage, kB), defense(1, 10)};
+    step(s, kA, 0);
+    CHECK(a.intel.empty());
+
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    a.intel = {order(Effect::ShipDamage, kB), order(Effect::ShipDamage, kC)};
+    s.empire(kC).alive = false;
+    step(s, kA, 0);
+    REQUIRE(a.intel.size() == 1);
+    CHECK(a.intel[0].target == kB);
+}
+
+TEST_CASE("intel: counter-intelligence drains defenses bottom-up and defeats attacks") {
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
     Empire& b = s.empire(kB);
-    b.intel = {{defenseProject(3), {}, {}, {}, {}, 10000000}};
     Empire& a = s.empire(kA);
+
+    // One strong defense: the attack is defeated, the defense keeps the surplus.
+    b.intel = {defense(3, 10000000)};
     a.intel = {order(Effect::ShipDamage, kB)};
-    a.economy.intelligence = 1000;
-    TurnContext ctx = context(s);
-    intel::runIntel(ctx);
+    step(s, kA, 1000);
     CHECK(a.intel.empty());
     CHECK(totalDamage(s, kB) == 0);
-    CHECK(b.intel[0].progress == 10000000 - 1250);
+    // D = trunc(3 × 10,000,000 × 1.2) = 36,000,000; keeps trunc((D − 1000) / 3 / 1.2).
+    CHECK(b.intel[0].progress == (xmath::Ext(36000000 - 1000) / xmath::Ext(3) / xmath::percent(120)).trunc());
+    CHECK(b.intel[0].progress == 9999722);
     const LogEntry* defended = findLog(s, kB, "Shield Level 3");
     REQUIRE(defended);
     CHECK(defended->text == "Intelligence Minister: Stopped the Realm 1 Union.");
     const LogEntry* stopped = findLog(s, kA, "Probe Stopped");
     REQUIRE(stopped);
     CHECK(stopped->text == "Intelligence Minister: Our probe against the Realm 2 Union was stopped.");
+
+    // Taken from the bottom of the queue upwards: the last defense is drained
+    // first, and the walk stops once the attack is beaten.
+    b.intel = {defense(1, 500), defense(1, 300), defense(1, 400)};
+    CHECK(intel::counterIntelligence(politicsRules(), s, kB, 700) == 1);
+    CHECK(b.intel[2].progress == 0);    // 480 counted, all used
+    CHECK(b.intel[1].progress == 116);  // 480 + 360 = 840 ≥ 700: keeps trunc(140 / 1 / 1.2)
+    CHECK(b.intel[0].progress == 500);  // never reached
+    // The surplus converted back: trunc((360 − 1) / 3 / 1.2) = 99.
+    b.intel = {defense(3, 100)};
+    CHECK(intel::counterIntelligence(politicsRules(), s, kB, 1) == 0);
+    CHECK(b.intel[0].progress == 99);
 }
 
-TEST_CASE("intel: the bad-intelligence ability of the target system foils operations") {
+TEST_CASE("intel: an attack that beats every defense goes ahead, draining them all") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    Empire& b = s.empire(kB);
+    b.intel = {defense(1, 100), order(Effect::ShipDamage, kA), defense(2, 200)};
+    CHECK(intel::counterIntelligence(politicsRules(), s, kB, 1000000) == -1);
+    CHECK(b.intel[0].progress == 0);
+    CHECK(b.intel[2].progress == 0);
+
+    s.empire(kA).intel = {order(Effect::ShipDamage, kB)};
+    b.intel = {defense(1, 100)};
+    step(s, kA, 1000);
+    CHECK(totalDamage(s, kB) == 1);
+    CHECK(b.intel[0].progress == 0);
+}
+
+TEST_CASE("intel: a finished defense deletes one hostile project within its level") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
-    homeworld(s, kB).facilities.push_back(facilityIndex(r, "Test Security Center"));  // -100 %
-    Empire& a = s.empire(kA);
-    a.intel = {order(Effect::ShipDamage, kB)};
-    a.economy.intelligence = 1000;
-    TurnContext ctx = context(s);
-    intel::runIntel(ctx);
-    CHECK(totalDamage(s, kB) == 0);
-    CHECK(hasLog(s, kB, "Operation Foiled"));
-    CHECK(a.intel.empty());
+    setContact(s, kB, kC);
+    s.empire(kA).intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB)};
+    s.empire(kC).intel = {order(Effect::ShipDamage, kB)};
+    const IntelProjectOrder shield = defense(1, r.data().intelProjects[defenseProject(1)].cost);
+    s.empire(kB).intel = {shield};
+    step(s, kB, 0);
+    CHECK(s.empire(kB).intel.empty());  // it ran and left the queue
+    const size_t left = s.empire(kA).intel.size() + s.empire(kC).intel.size();
+    CHECK(left == 2);  // exactly one hostile project was deleted
+
+    // Repeat keeps it in place, starting over.
+    s.empire(kB).repeatIntel = true;
+    s.empire(kB).intel = {shield};
+    step(s, kB, 0);
+    REQUIRE(s.empire(kB).intel.size() == 1);
+    CHECK(s.empire(kB).intel[0].progress == 0);
+    CHECK(s.empire(kA).intel.size() + s.empire(kC).intel.size() == 1);
+}
+
+TEST_CASE("intel: the bad-intelligence ability counts only unowned objects and positive values") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    // A colony facility with -100: it belongs to an empire, so it never counts.
+    homeworld(s, kB).facilities.push_back(facilityIndex(r, "Test Security Center"));
+    const SystemId home = s.galaxy.object(homeworld(s, kB).planet).system;
+    CHECK(effects::unownedChanceValue(s, home, AbilityKind::ChangeBadIntelChanceSystem) == 0);
+    s.empire(kA).intel = {order(Effect::ShipDamage, kB)};
+    step(s, kA, 1000);
+    CHECK(totalDamage(s, kB) == 1);
+
+    // A system ability of 100 changes nothing; a positive value rejects
+    // candidates with that chance.
+    ruleset::Ability a;
+    a.type = std::string(identifier(AbilityKind::ChangeBadIntelChanceSystem));
+    a.value1 = "100";
+    s.galaxy.system(home).abilities.push_back(a);
+    CHECK(effects::unownedChanceValue(s, home, AbilityKind::ChangeBadIntelChanceSystem) == 100);
+    Rng rng(9);
+    int rejected = 0;
+    for (int i = 0; i < 1000; ++i) rejected += effects::chanceRejects(100, rng) ? 1 : 0;
+    CHECK(rejected == 0);
+    for (int i = 0; i < 1000; ++i) rejected += effects::chanceRejects(30, rng) ? 1 : 0;
+    CHECK(rejected > 230);
+    CHECK(rejected < 370);
+    CHECK_FALSE(effects::chanceRejects(-100, rng));
+    CHECK_FALSE(effects::chanceRejects(0, rng));
 }
 
 TEST_CASE("intel: disabled by the game option") {
@@ -185,11 +330,10 @@ TEST_CASE("intel: disabled by the game option") {
     s.options.allowIntel = false;
     setContact(s, kA, kB);
     s.empire(kA).intel = {order(Effect::ShipDamage, kB)};
-    s.empire(kA).economy.intelligence = 1000;
-    TurnContext ctx = context(s);
-    intel::runIntel(ctx);
+    step(s, kA, 1000);
     CHECK(s.empire(kA).intel.size() == 1);
     CHECK(s.empire(kA).intel[0].progress == 0);
+    CHECK(s.empire(kA).intelPool == 1000);  // the step is skipped entirely
     CHECK_FALSE(intel::orderProblem(politicsRules(), s, kA, s.empire(kA).intel[0]).empty());
 }
 
@@ -197,17 +341,32 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     const auto beams = techArea(r, "Test Beams");
+    const auto armor = techArea(r, "Test Armor");
 
-    // Research - Steal: one level beyond ours in an area where they lead.
+    // Research - Steal on a chosen area where they lead: exactly one level.
     s.empire(kB).techLevels = s.empire(kA).techLevels;
     s.empire(kB).techLevels[beams.index()] = 6;
-    auto out = run(s, Effect::ResearchSteal, {});
+    effects::Target request = target(kB, kA);
+    request.tech = beams;
+    auto out = run(s, Effect::ResearchSteal, request);
     CHECK(out.applied);
     CHECK(s.empire(kA).techLevel(beams) == 2);
     CHECK(out.tokens.techName == "Test Beams");
-    s.empire(kB).techLevels = s.empire(kA).techLevels;
+    // An area where they do not lead: nothing.
+    request.tech = armor;
+    out = run(s, Effect::ResearchSteal, request);
+    CHECK_FALSE(out.applied);
+
+    // "Any": the operatives pick an area where we already lead, so the steal
+    // always fails (a quirk of the original, kept on purpose).
+    s.empire(kA).techLevels[armor.index()] = 3;
+    out = run(s, Effect::ResearchSteal, target(kB, kA));
+    CHECK_FALSE(out.applied);
+    CHECK(s.empire(kA).techLevel(armor) == 3);
+    CHECK(s.empire(kA).techLevel(beams) == 2);
+    s.empire(kA).techLevels = s.empire(kB).techLevels;
     Rng rng(1);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::ResearchSteal, {kB, kA, {}, {}, {}, {}}, rng).has_value());
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::ResearchSteal, target(kB, kA), rng).has_value());
 
     // Points - Steal: up to the amount of each resource.
     s.empire(kB).stockpile = {500, 20000, 0};
@@ -228,14 +387,14 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     CHECK_FALSE(s.empire(kA).knowledge.seenDesigns.empty());
 
     // Unit Designs - Steal needs a unit design.
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::UnitDesignsSteal, {kB, kA, {}, {}, {}, {}}, rng).has_value());
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::UnitDesignsSteal, target(kB, kA), rng).has_value());
     addTestDesign(s, r, kB, "Wasp", "Test Fighter Hull", {"Test Fighter Gun", "Test Fighter Engine"});
     out = run(s, Effect::UnitDesignsSteal, {});
     CHECK(out.applied);
     CHECK(out.tokens.designName == "Wasp");
 }
 
-TEST_CASE("intel: ships and planets defect to the source") {
+TEST_CASE("intel: ships defect to the source") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     std::vector<VehicleId> theirs;
@@ -244,10 +403,10 @@ TEST_CASE("intel: ships and planets defect to the source") {
     REQUIRE(theirs.size() >= 2);
     REQUIRE(apply(r, s, kB, cmd::CreateFleet{"Pair", theirs}).ok);
 
-    effects::Target t;
-    t.vehicle = theirs[0];
     Rng rng(1);
-    auto picked = effects::pickTarget(r, s, Effect::ShipRebel, {kB, kA, {}, theirs[0], {}, {}}, rng);
+    effects::Target request = target(kB, kA);
+    request.vehicle = theirs[0];
+    auto picked = effects::pickTarget(r, s, Effect::ShipRebel, request, rng);
     REQUIRE(picked);
     TurnContext ctx = context(s);
     auto out = effects::apply(ctx, Effect::ShipRebel, *picked, 1, rng);
@@ -260,19 +419,87 @@ TEST_CASE("intel: ships and planets defect to the source") {
     CHECK(std::find(s.fleets[0].members.begin(), s.fleets[0].members.end(), theirs[0]) == s.fleets[0].members.end());
     CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), v->design));
     CHECK(hasMood(ctx, kB, "Any Ship Lost"));
+}
 
-    // Population Rebel: the homeworld is never picked as "Any"...
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPopulationRebel, {kB, kA, {}, {}, {}, {}}, rng).has_value());
-    // ...but can be targeted on purpose.
-    const ObjectId home = homeworld(s, kB).planet;
-    picked = effects::pickTarget(r, s, Effect::PlanetPopulationRebel, {kB, kA, {}, {}, home, {}}, rng);
-    REQUIRE(picked);
-    out = effects::apply(ctx, Effect::PlanetPopulationRebel, *picked, 1, rng);
-    CHECK(out.applied);
-    CHECK(s.colony(home)->owner == kA);
-    CHECK_FALSE(s.colony(home)->homeworld);
-    CHECK(hasMood(ctx, kB, "Homeworld Lost"));
-    CHECK(s.empire(kA).hasExplored(s.galaxy.object(home).system));
+TEST_CASE("intel: a rebel planet breaks away 25 %, joins the source 18.75 %, stays 56.25 %") {
+    const Rules& r = politicsRules();
+    int independent = 0, joined = 0, stayed = 0;
+    constexpr int kRuns = 800;
+    const GameState base = newPoliticsGame(5);
+    for (int k = 0; k < kRuns; ++k) {
+        GameState s = base;
+        const ObjectId home = homeworld(s, kB).planet;
+        effects::Target request = target(kB, kA);
+        request.object = home;
+        Rng rng(static_cast<uint64_t>(k) * 7919 + 1);
+        auto picked = effects::pickTarget(r, s, Effect::PlanetPopulationRebel, request, rng);
+        REQUIRE(picked);
+        TurnContext ctx = context(s);
+        const auto out = effects::apply(ctx, Effect::PlanetPopulationRebel, *picked, 1, rng);
+        const EmpireId owner = s.colony(home)->owner;
+        if (owner == kB) {
+            ++stayed;
+            CHECK_FALSE(out.applied);
+        } else if (owner == kA) {
+            ++joined;
+            CHECK(out.applied);
+            CHECK_FALSE(s.colony(home)->homeworld);
+            CHECK(hasMood(ctx, kB, "Homeworld Lost"));
+            CHECK(s.empire(kA).hasExplored(s.galaxy.object(home).system));
+        } else {
+            ++independent;
+            CHECK(out.applied);
+            REQUIRE(s.empires.size() == 4);
+            CHECK(owner == EmpireId{3u});
+            CHECK(s.empire(owner).kind == PlayerKind::Computer);
+            CHECK(s.empire(owner).relation(kB).treaty == Treaty::War);
+            CHECK(s.empire(kB).relation(owner).contact);
+            for (const Empire& e : s.empires) CHECK(e.relations.size() == 4);
+        }
+    }
+    CHECK(independent > kRuns * 20 / 100);
+    CHECK(independent < kRuns * 30 / 100);
+    CHECK(joined > kRuns * 14 / 100);
+    CHECK(joined < kRuns * 24 / 100);
+    CHECK(stayed > kRuns * 50 / 100);
+    CHECK(stayed < kRuns * 62 / 100);
+
+    // The homeworld is never picked as "Any".
+    GameState s = newPoliticsGame(5);
+    Rng rng(1);
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPopulationRebel, target(kB, kA), rng).has_value());
+}
+
+TEST_CASE("intel: ship sabotage takes supply and this turn's movement only") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    Vehicle* ship = nullptr;
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == kB) ship = &v;
+    REQUIRE(ship);
+    const VehicleId id = ship->id;
+    ship->movement = 4;
+    ship->supply = 300;
+    effects::Target request = target(kB, kA);
+    request.vehicle = id;
+    auto out = run(s, Effect::ShipLoseMovement, request, 3);
+    CHECK(out.actual == 3);
+    CHECK(s.vehicle(id)->movement == 1);
+    CHECK(s.vehicle(id)->immobileUntil <= s.turn);
+    out = run(s, Effect::ShipLoseMovement, request, 3);
+    CHECK(s.vehicle(id)->movement == 0);  // never below 0
+    out = run(s, Effect::ShipLoseSupply, request, 120);
+    CHECK(s.vehicle(id)->supply == 180);
+    out = run(s, Effect::ShipLoseSupply, request, 1000);
+    CHECK(s.vehicle(id)->supply == 0);
+
+    // Orders Change: one move order to a random system; mothballed ships are immune.
+    out = run(s, Effect::ShipOrdersChange, request);
+    REQUIRE(s.vehicle(id)->orders.size() == 1);
+    CHECK(s.vehicle(id)->orders[0].kind == OrderKind::MoveTo);
+    s.vehicle(id)->status = VehicleStatus::Mothballed;
+    Rng rng(4);
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::ShipOrdersChange, request, rng).has_value());
 }
 
 TEST_CASE("intel: political operations") {
@@ -282,59 +509,60 @@ TEST_CASE("intel: political operations") {
     setContact(s, kB, kC);
     setContact(s, kA, kC);
     TurnContext ctx = context(s);
+    auto third = [&](EmpireId other) {
+        effects::Target t = target(kB, kA);
+        t.other = other;
+        return t;
+    };
 
-    // Disrupt Trade needs real trade between the target and a third empire.
+    // Disrupt Trade needs trade between the target and a third empire; its counter restarts.
     Rng rng(2);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, {kB, kA, {}, {}, {}, {}}, rng).has_value());
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, target(kB, kA), rng).has_value());
     diplomacy::setTreaty(ctx, kB, kC, Treaty::TradeAlliance);
-    s.empire(kB).relation(kC).tradePercent = s.empire(kC).relation(kB).tradePercent = 12;
+    s.empire(kB).relation(kC).tradeTurns = s.empire(kC).relation(kB).tradeTurns = 12;
     auto out = run(s, Effect::PoliticsDisruptTrade, {});
     CHECK(out.applied);
     CHECK(out.actual == 12);
-    CHECK(s.empire(kB).relation(kC).tradePercent == 0);
-    CHECK(s.empire(kC).relation(kB).tradePercent == 0);
+    CHECK(s.empire(kB).relation(kC).tradeTurns == 0);
+    CHECK(s.empire(kC).relation(kB).tradeTurns == 0);
 
     // Treaty Info names the treaty.
-    out = run(s, Effect::PoliticsTreatyInfo, {kB, kA, kC, {}, {}, {}});
+    out = run(s, Effect::PoliticsTreatyInfo, third(kC));
     CHECK(out.tokens.treatyName == "Trade Alliance");
     REQUIRE_FALSE(out.report.empty());
 
-    // Intercept Messages reports what passed between them.
+    // Intercept Messages reports the latest message between them.
     DiplomaticMessage m;
     m.type = MessageType::General;
-    m.text = "Secret plans";
+    m.text = "Old plans";
     m.to = kC;
     REQUIRE(apply(r, s, kB, cmd::SendMessage{m}).ok);
     diplomacy::deliverMessages(ctx);
-    out = run(s, Effect::PoliticsInterceptMessages, {kB, kA, kC, {}, {}, {}});
-    REQUIRE(out.report.size() == 1);
-    CHECK(out.report[0].find("Secret plans") != std::string::npos);
-
-    // Fake Messages: a forged demand from the target reaches the third empire.
-    const size_t messages = s.messages.size();
-    out = run(s, Effect::PoliticsFakeMessages, {kB, kA, kC, {}, {}, {}});
-    REQUIRE(s.messages.size() == messages + 1);
-    CHECK(s.messages.back().from == kB);
-    CHECK(s.messages.back().to == kC);
-    CHECK(s.messages.back().delivered);
-    CHECK(hasLog(s, kC, std::string(displayName(MessageType::DemandTribute))));
-
-    // Prevent Messages: the next turn's messages between them are lost, but
-    // a declaration of war still goes through.
-    out = run(s, Effect::PoliticsPreventMessages, {kB, kA, kC, {}, {}, {}}, 1);
-    CHECK(s.empire(kB).relation(kC).messagesBlockedUntil == s.turn + 2);
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
     ++s.turn;
-    m.text = "Hello?";
+    m.text = "Secret plans";
     REQUIRE(apply(r, s, kB, cmd::SendMessage{m}).ok);
-    DiplomaticMessage war;
-    war.type = MessageType::DeclareWar;
-    war.to = kB;
-    REQUIRE(apply(r, s, kC, cmd::SendMessage{war}).ok);
-    diplomacy::deliverMessages(ctx);
-    CHECK(std::none_of(s.messages.begin(), s.messages.end(), [](const DiplomaticMessage& x) { return x.text == "Hello?"; }));
+    out = run(s, Effect::PoliticsInterceptMessages, third(kC));
+    REQUIRE(out.report.size() == 1);
+    CHECK(out.report[0].find("Secret plans") != std::string::npos);
+
+    // Prevent Messages: the messages of the last two turns between them are
+    // deleted, so they are never answered; later messages go through.
+    out = run(s, Effect::PoliticsPreventMessages, third(kC));
+    CHECK(out.actual == 2);
+    CHECK(std::none_of(s.messages.begin(), s.messages.end(), [](const DiplomaticMessage& x) { return x.from == kB && x.to == kC; }));
+
+    // Fake Messages: a real declaration of war in the target's name.
+    out = run(s, Effect::PoliticsFakeMessages, third(kC));
+    CHECK(out.applied);
     CHECK(s.empire(kB).relation(kC).treaty == Treaty::War);
+    CHECK(s.empire(kC).relation(kB).treaty == Treaty::War);
+    REQUIRE_FALSE(s.messages.empty());
+    CHECK(s.messages.back().type == MessageType::DeclareWar);
+    CHECK(s.messages.back().from == kB);
+    CHECK(s.messages.back().to == kC);
+    CHECK(hasLog(s, kC, "War Declared"));
 }
 
 TEST_CASE("intel: espionage reports") {
@@ -347,7 +575,9 @@ TEST_CASE("intel: espionage reports") {
     CHECK(out.actual == 1);
     CHECK(s.empire(kA).hasExplored(theirHome));
 
-    out = run(s, Effect::PlanetInfo, {kB, kA, {}, {}, homeworld(s, kB).planet, {}});
+    effects::Target request = target(kB, kA);
+    request.object = homeworld(s, kB).planet;
+    out = run(s, Effect::PlanetInfo, request);
     CHECK(out.report.size() >= 4);
     CHECK(out.tokens.planetName == s.galaxy.object(homeworld(s, kB).planet).name);
 
@@ -367,16 +597,16 @@ TEST_CASE("intel: espionage reports") {
     (void)r;
 }
 
-TEST_CASE("intel: effects that need a source cannot be events") {
+TEST_CASE("intel: effects that need a source achieve nothing without one") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     Rng rng(1);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PointsSteal, {kB, {}, {}, {}, {}, {}}, rng).has_value());
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::ResearchSteal, {kB, kB, {}, {}, {}, {}}, rng).has_value());  // not self
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::IntelligenceDefense, {kB, kA, {}, {}, {}, {}}, rng).has_value());
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::PointsSteal, target(kB, {}), rng).has_value());
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::ResearchSteal, target(kB, kB), rng).has_value());  // not self
+    CHECK_FALSE(effects::pickTarget(r, s, Effect::IntelligenceDefense, target(kB, kA), rng).has_value());
     for (size_t i = 0; i < static_cast<size_t>(Effect::Count); ++i) {
         const auto e = static_cast<Effect>(i);
-        if (effects::needsSource(e)) CHECK_FALSE(effects::pickTarget(r, s, e, {kB, {}, {}, {}, {}, {}}, rng).has_value());
+        if (effects::needsSource(e)) CHECK_FALSE(effects::pickTarget(r, s, e, target(kB, {}), rng).has_value());
     }
 }
 
@@ -390,7 +620,7 @@ TEST_CASE("intel: turns are deterministic") {
             for (Empire& e : s.empires) e.economy.intelligence = 1500;
             s.empire(kA).intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB), order(Effect::PlanetFacilityDamage, kB)};
             s.empire(kC).intel = {order(Effect::ShipExperienceChange, kB)};
-            s.empire(kB).intel = {{defenseProject(1), {}, {}, {}, {}, 500}};
+            s.empire(kB).intel = {defense(1, 500)};
             TurnContext ctx = context(s);
             intel::runIntel(ctx);
             ++s.turn;
@@ -401,6 +631,7 @@ TEST_CASE("intel: turns are deterministic") {
     };
     const auto a = play();
     const auto b = play();
+    CHECK_FALSE(a.first.empty());
     CHECK(a.first == b.first);
     CHECK(a.second == b.second);
 }

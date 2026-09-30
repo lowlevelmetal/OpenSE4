@@ -1,6 +1,14 @@
 #pragma once
 
-// Scores, statistics history and victory (docs/spec/05 §5-6).
+// Scores, statistics history and victory (docs/spec/05 §5–§6, spec 01 §11).
+//
+// Entry points for the spec 05 §8 turn order:
+// - checkDestruction(ctx, e): after each empire's end-of-turn processing.
+// - recordStatistics(ctx): the per-turn statistics of every living empire.
+// - checkVictory(ctx, date): once per game turn, after every empire's
+//   end-of-turn processing and before the event step, with the date already
+//   advanced for this turn.
+// endOfTurn() is the aggregate phase turn.cpp calls until then.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -13,37 +21,58 @@ struct TurnContext;
 
 namespace opense4::game::score {
 
-// The score is a weighted sum of the statistics columns. The original's
-// weights are undocumented (spec 05 open question 7); ours can be changed in
-// Settings.txt with these keys (weights per 1000 of the statistic, inferred).
-struct Weights {
-    int64_t resources = 100;     // per 1000 resources produced per turn
-    int64_t research = 100;      // per 1000 RP per turn
-    int64_t intelligence = 100;  // per 1000 IP per turn
-    int64_t techLevels = 100000; // per 1000 tech levels
-    int64_t systems = 100000;
-    int64_t planets = 200000;
-    int64_t population = 1000;   // per 1000 M
-    int64_t units = 5000;
-    int64_t ships = 50000;
-    int64_t bases = 50000;
+// Score terms (spec 05 §5, confirmed: binary).
+inline constexpr int64_t kTonnageWeight = 10;
+inline constexpr int64_t kTechLevelWeight = 200;
+inline constexpr int64_t kEverythingBonus = 50'000;
+
+// The parts the score is made of.
+struct ScoreParts {
+    int64_t tonnage = 0;      // hull Tonnage of every ship and base, mothballed ones excluded
+    int64_t production = 0;   // minerals + organics + radioactives + research + intelligence produced this turn
+    int64_t techLevels = 0;   // tech levels, each capped at its area's maximum
+    bool everything = false;  // every area allowed and visible to the empire at its maximum
 };
-Weights weights(const Rules& r);
-int64_t scoreOf(const TurnStats& t, const Weights& w);
+// 10 × tonnage + production + 200 × tech levels + 50,000 when everything is researched.
+int64_t scoreOf(const ScoreParts& p);
+ScoreParts scoreParts(const Rules& r, const GameState& s, EmpireId e);
 
 int64_t empireScore(const Rules& r, const GameState& s, EmpireId e);
+// The statistics columns of the Scores window (spec 05 §5) and the score.
 TurnStats currentStats(const Rules& r, const GameState& s, EmpireId e);
-// Living empires, best score first (ties: lower id first).
+// Living empires, best score first (ties: lower empire number first).
 std::vector<EmpireId> ranking(const Rules& r, const GameState& s);
-// Whether `viewer` may see `other`'s score: self and allies, or everyone
-// with the Score Display option.
+// Whether `viewer` may see `other`'s score under the Score Display option
+// (spec 05 §5): own only; own plus the empires we hold Non-Aggression or
+// better with; everyone. Once the game is over every score is visible.
+// Destroyed empires are not shown.
 bool scoreVisible(const GameState& s, EmpireId viewer, EmpireId other);
-// True if the empire has nothing left: no populated colony and no ship or base.
+// True if the empire has nothing left: no populated planet and no ship or
+// base; units do not count (spec 05 §6).
 bool defeated(const Rules& r, const GameState& s, EmpireId e);
 
-// Turn phase 13 (before the turn counter advances): statistics and history
-// for every living empire, eliminations, peace tracking, then the victory
-// checks (sets GameState::gameOver / winner).
+// The destruction check of one empire (spec 05 §6, confirmed: binary): a
+// defeated empire is destroyed; every empire in contact with it is told, all
+// treaties with it return to "no contact", intelligence projects aimed at it
+// are removed and its remaining objects (empty colonies, units) go.
+void checkDestruction(TurnContext& ctx, EmpireId e);
+// Appends this turn's statistics to every living empire's history.
+void recordStatistics(TurnContext& ctx);
+// Whether the peace condition's pairs all hold: every two living empires have
+// contact and a treaty of Non-Aggression or better.
+bool galaxyAtPeace(const GameState& s);
+// The victory check (spec 05 §6, confirmed: binary). `date` is in turns
+// since 2400.0, already advanced for this turn. Before the "After X years"
+// qualifier's date nothing is checked and the peace counter stands still.
+// Meeting a condition ends the game (GameState::gameOver) without naming a
+// winner; GameState::winner is set to the best score (ties to the lower
+// empire number, neutral empires excluded) for the game-over screen
+// (OpenSE4 choice, inferred).
+void checkVictory(TurnContext& ctx, uint32_t date);
+
+// Aggregate phase for turn.cpp, before the date advances: statistics, the
+// destruction check of every empire, then the victory check with the date of
+// the next turn.
 void endOfTurn(TurnContext& ctx);
 
 } // namespace opense4::game::score

@@ -357,17 +357,9 @@ std::vector<ruleset::TechAreaId> dependentAreas(const game::Rules& r, ruleset::T
 }
 
 std::pair<int, int> techProgress(const game::Rules& r, const game::GameState& s, const game::Empire& e) {
-    int owned = 0, total = 0;
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
-        const ruleset::TechAreaId a{i};
-        const ruleset::TechArea& t = r.tech(a);
-        if (!areaAllowed(s, a)) continue;
-        // Racial and unique areas count only for empires that have them (inferred).
-        if ((t.racialArea > 0 || t.uniqueArea > 0) && e.techLevel(a) == 0) continue;
-        owned += std::min(e.techLevel(a), t.maxLevel);
-        total += t.maxLevel;
-    }
-    return {owned, total};
+    // The measure of the research-share victory (spec 05 §6): every level,
+    // each capped, against the areas allowed in the game that the race can see.
+    return {game::research::totalLevels(r, e), game::research::maxLevels(r, s, e)};
 }
 
 std::string etaText(int turns) {
@@ -404,7 +396,7 @@ std::string techLevelsExport(const game::Rules& r, const game::GameState& s, con
         out += std::format("{} (level {} of {})\n", t.name, e.techLevel(a), t.maxLevel);
         for (int level = 1; level <= t.maxLevel; ++level) {
             const auto unlocks = techUnlocks(r, a, level);
-            out += std::format("  Level {:>2}  {:>9} RP", level, grouped(r.techLevelCost(a, level, s.options.techCostGrowth)));
+            out += std::format("  Level {:>2}  {:>9} RP", level, grouped(r.techLevelCost(a, level, s.options.techCost)));
             if (unlocks.empty()) {
                 out += "\n";
                 continue;

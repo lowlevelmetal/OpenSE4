@@ -176,7 +176,7 @@ EmpireOrders busyOrders(const Rules& r, const GameState& s, EmpireId me, int rou
     o.commands.push_back(cmd::QueueAdd{home, lab, 0});
     o.commands.push_back(cmd::QueueFlags{home, false, round % 2 == 1, false, -1});
     o.commands.push_back(cmd::SetResearch{{{techArea(r, "Test Beams"), 0}, {techArea(r, "Test Construction"), 0}}, round % 2 == 0, false});
-    o.commands.push_back(cmd::SetIntel{{IntelProjectOrder{0, other, {}, {}, {}, 0}}, true, false});
+    o.commands.push_back(cmd::SetIntel{{IntelProjectOrder{0, other, {}, {}, {}, {}, 0}}, true, false});
 
     DiplomaticMessage m;
     m.to = other;
@@ -323,7 +323,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetDesignObsolete{DesignId{25u}, false});
     c.push_back(cmd::DeleteDesign{DesignId{26u}});
     c.push_back(cmd::SetResearch{{{ruleset::TechAreaId{1u}, 50}, {ruleset::TechAreaId{2u}, 0}}, false, true});
-    c.push_back(cmd::SetIntel{{{2, EmpireId{0u}, ObjectId{3u}, VehicleId{4u}, EmpireId{2u}, 99}}, false, true});
+    c.push_back(cmd::SetIntel{{{2, EmpireId{0u}, ObjectId{3u}, VehicleId{4u}, EmpireId{2u}, ruleset::TechAreaId{5u}, 99}}, false, true});
     c.push_back(cmd::SendMessage{message});
     c.push_back(cmd::AnswerMessage{MessageId{27u}, true, "Agreed."});
     c.push_back(cmd::SetWaypoint{3, Waypoint{"Alpha", {SystemId{1u}, Sector{0, 12}}, true}});
@@ -556,8 +556,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xfab62acc0331b81full;
-    constexpr size_t kGoldenSize = 1464;
+    constexpr uint64_t kGoldenChecksum = 0x736b9295f093437dull;
+    constexpr size_t kGoldenSize = 1479;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

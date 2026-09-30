@@ -47,11 +47,9 @@ std::string treatyText(const game::Relation& rel) {
 
 bool validEmpire(const game::GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size(); }
 
-// Scores and statistics of other empires are shown for allies, or for
-// everyone when the game says so (spec 05 §5).
-bool statsVisible(const UiContext& ui, EmpireId e) {
-    return e == ui.session.player() || ui.state().options.showAllScores || game::allied(ui.state(), ui.session.player(), e);
-}
+// Scores and statistics of other empires follow the Score Display option
+// (spec 05 §5).
+bool statsVisible(const UiContext& ui, EmpireId e) { return game::score::scoreVisible(ui.state(), ui.session.player(), e); }
 
 // Per-page tab buttons over a list: "Empires 1-10", "Empires 11-20", ...
 void pageButtons(Dialog& d, int& page, size_t count, int perPage) {
@@ -278,13 +276,14 @@ private:
             }
             case Tab::Trade: {
                 const int maxPct = int(ui.rules().setting("Maximum Trade Percentage", 20));
-                statLine(ui, "Trade", std::format("{}% of {}%", rel.tradePercent, maxPct));
+                const int tradePct = game::diplomacy::tradePercent(ui.rules(), ui.state(), ui.session.player(), them.id);
+                statLine(ui, "Trade", std::format("{}% of {}%", tradePct, maxPct));
                 std::string what;
                 if (game::treatyTradesResources(rel.treaty)) what = "Resources";
                 if (game::treatyTradesResearch(rel.treaty)) what += ", research";
                 if (rel.treaty == Treaty::Partnership) what += ", intelligence";
                 statLine(ui, "Shares", what.empty() ? "Nothing" : what, what.empty() ? kTextDim : kTextGood);
-                if (game::treatyTradesResources(rel.treaty) && rel.tradePercent < maxPct) statLine(ui, "Growth", "+1% per turn", kTextDim);
+                if (game::treatyTradesResources(rel.treaty) && tradePct < maxPct) statLine(ui, "Growth", "+1% per turn", kTextDim);
                 if (game::treatySharesSight(rel.treaty)) statLine(ui, "Sight", "Shared", kTextGood);
                 if (game::treatyAllowsResupply(rel.treaty)) statLine(ui, "Supply", "Our ships may resupply", kTextGood);
                 break;
@@ -478,8 +477,10 @@ public:
         d.beginContent();
         heading(ui, "Scores");
         ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "%s", s.options.showAllScores ? "Every empire's statistics are public in this game."
-                                                                   : "Statistics are shown for us and our allies.");
+        static constexpr std::array<const char*, 3> kDisplay{"Only our own statistics are shown in this game.",
+                                                             "Statistics are shown for us and empires at Non-Aggression or better.",
+                                                             "Every empire's statistics are public in this game."};
+        ImGui::TextColored(kTextDim, "%s", s.gameOver ? "The game is over: every score is shown." : kDisplay[size_t(std::clamp(s.options.scoreDisplay, 0, 2))]);
 
         // Rank among every living empire.
         std::vector<std::pair<int64_t, EmpireId>> ranking;
@@ -492,7 +493,7 @@ public:
             return 0;
         };
         std::vector<EmpireId> rows;
-        if (s.options.showAllScores) {
+        if (s.options.scoreDisplay == 2 || s.gameOver) {
             for (const auto& [score, e] : ranking) rows.push_back(e);
         } else {
             rows = usAndKnown(ui);
@@ -923,14 +924,14 @@ public:
         ImGui::SameLine();
         const bool any = v.score || v.years || v.percentOfSecond || v.techPercent || v.peace;
         ImGui::TextColored(kTextDim, "%s", any ? "Checked at the end of every turn; the first condition met ends the game."
-                                             : "None set: the game goes on until one empire is left.");
+                                             : "None set: nothing ends the game automatically.");
         if (s.gameOver) {
+            ImGui::TextColored(kTextWarn, "The game is over; the Scores window shows the final ranking.");
             if (validEmpire(s, s.winner)) {
-                ImGui::TextColored(kTextWarn, "The game is over. Winner:");
+                ImGui::SameLine();
+                ImGui::TextColored(kTextWarn, "Best score:");
                 ImGui::SameLine();
                 empireLabel(ui, s.winner);
-            } else {
-                ImGui::TextColored(kTextWarn, "The game is over.");
             }
         }
 

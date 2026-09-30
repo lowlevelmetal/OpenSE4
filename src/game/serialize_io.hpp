@@ -313,13 +313,12 @@ template <class Ar> void io(Ar& ar, ResearchProject& p) { fields(ar, p.area, p.p
 
 template <class Ar>
 void io(Ar& ar, IntelProjectOrder& p) {
-    fields(ar, p.project, p.target, p.targetPlanet, p.targetVehicle, p.thirdEmpire, p.progress);
+    fields(ar, p.project, p.target, p.targetPlanet, p.targetVehicle, p.thirdEmpire, p.targetTech, p.progress);
 }
 
 template <class Ar>
 void io(Ar& ar, Relation& r) {
-    fields(ar, r.contact, r.treaty, r.dominant, r.tradePercent, r.treatyTurn, r.lastWarTurn, r.anger, r.messageSentThisTurn,
-           r.messagesBlockedUntil);
+    fields(ar, r.contact, r.treaty, r.dominant, r.tradeTurns, r.treatyTurn, r.lastWarTurn, r.anger, r.messageSentThisTurn);
 }
 
 template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture); }
@@ -346,8 +345,8 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.alive, e.passwordHash,
            e.racialPointsSpent);
     fields(ar, e.stockpile, e.economy);
-    fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked);
-    fields(ar, e.intel, e.intelEvenly, e.repeatIntel);
+    fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
+    fields(ar, e.intel, e.intelEvenly, e.repeatIntel, e.intelPool);
     fields(ar, e.relations, e.knowledge);
     fields(ar, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
@@ -441,10 +440,10 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.quadrantType, o.systemCount, o.allWarpPointsConnected, o.noWarpPoints, o.warpPointsAnywhere, o.allSystemsSeen,
            o.omnipresent, o.finiteResources);
     fields(ar, o.eventFrequency, o.maxEventSeverity);
-    fields(ar, o.techCostGrowth, o.startTechLevel, o.techAreasAllowed);
+    fields(ar, o.techCost, o.startTechLevel, o.techAreasAllowed);
     fields(ar, o.startingResources, o.racialPoints, o.homePlanetValue, o.startingPlanets, o.sameSystemAllowed, o.evenlyDistributed);
     fields(ar, o.noTacticalCombat, o.allowGifts, o.allowTechTrades, o.allowIntel, o.noRuins, o.onlyBreathable, o.onlyHomeType,
-           o.teamMode, o.showAllScores, o.maxShipsPerPlayer, o.maxUnitsPerPlayer, o.aiDifficulty, o.aiBonus, o.victory);
+           o.teamMode, o.scoreDisplay, o.maxShipsPerPlayer, o.maxUnitsPerPlayer, o.aiDifficulty, o.aiBonus, o.victory);
     fields(ar, o.simultaneous);
 }
 

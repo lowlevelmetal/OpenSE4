@@ -1,10 +1,12 @@
-// Research: costs, allocation, completion, unlocks, tech gifts (docs/spec/05 §1).
+// Research: costs, the pool, shares, completion, unlocks, ruins and tech
+// gains (docs/spec/05 §1).
 
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
+#include "game/economy.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
 
@@ -25,28 +27,58 @@ int logCount(const GameState& s, EmpireId e, std::string_view title) {
     return n;
 }
 
+// One research step with `points` in the pool.
+void step(const Rules& r, GameState& s, EmpireId e, int64_t points) {
+    s.empire(e).researchPool = points;
+    TurnContext ctx = context(r, s);
+    research::researchStep(ctx, e);
+}
+
 } // namespace
 
-TEST_CASE("research: level cost follows the tech cost growth option") {
+TEST_CASE("research: the three technology cost settings, capped") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const auto physics = techArea(r, "Test Physics");  // Level Cost 1000
+    CHECK(s.options.techCost == 1);                     // Medium is the default
+    // Medium: max(LC × L, trunc(LC × L² / 2)).
     CHECK(research::levelCost(r, s, physics, 1) == 1000);
     CHECK(research::levelCost(r, s, physics, 2) == 2000);
+    CHECK(research::levelCost(r, s, physics, 3) == 4500);
+    CHECK(research::levelCost(r, s, physics, 5) == 12500);
+    CHECK(research::levelCost(r, s, physics, 10) == 50000);
+    s.options.techCost = 0;  // Low: LC × L
+    CHECK(research::levelCost(r, s, physics, 2) == 2000);
     CHECK(research::levelCost(r, s, physics, 5) == 5000);
-    s.options.techCostGrowth = 50;
-    CHECK(research::levelCost(r, s, physics, 3) == 2000);
-    s.options.techCostGrowth = 0;
-    CHECK(research::levelCost(r, s, physics, 7) == 1000);
+    s.options.techCost = 2;  // High: LC × L²
+    CHECK(research::levelCost(r, s, physics, 2) == 4000);
+    CHECK(research::levelCost(r, s, physics, 10) == 100000);
+    CHECK(research::levelCost(r, s, physics, 100000) == kMaxTechLevelCost);
+
+    // The spec's worked table for Level Cost 5,000 (levels 2, 3, 5, 10).
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.techAreas[physics.index()].levelCost = 5000;
+    const Rules five{std::move(rs)};
+    const std::array<std::array<int64_t, 4>, 3> table{{
+        {10000, 15000, 25000, 50000},
+        {10000, 22500, 62500, 250000},
+        {20000, 45000, 125000, 500000},
+    }};
+    const std::array<int, 4> levels{2, 3, 5, 10};
+    for (int setting = 0; setting < 3; ++setting)
+        for (size_t i = 0; i < levels.size(); ++i) CHECK(five.techLevelCost(physics, levels[i], setting) == table[size_t(setting)][i]);
 }
 
-TEST_CASE("research: allocation evenly and in order, without carry-over") {
+TEST_CASE("research: shares, evenly rounded and uncapped, or in order") {
     const std::vector<int64_t> three{4000, 4000, 4000};
     CHECK(research::allocate(10000, three, false) == std::vector<int64_t>{4000, 4000, 2000});
     CHECK(research::allocate(10000, three, true) == std::vector<int64_t>{3333, 3333, 3333});
-    // A project needing less than its share takes only what it needs; the rest is lost.
+    CHECK(research::allocate(10001, std::vector<int64_t>{1, 1}, true) == std::vector<int64_t>{5000, 5000});  // 5000.5: ties to even
+    CHECK(research::allocate(10003, std::vector<int64_t>{1, 1}, true) == std::vector<int64_t>{5002, 5002});  // 5001.5
+    CHECK(research::allocate(5, std::vector<int64_t>{9, 9, 9}, true) == std::vector<int64_t>{2, 2, 2});      // more than the pool
+    // Even shares are not capped by what a project needs.
     const std::vector<int64_t> small{100, 5000};
-    CHECK(research::allocate(1000, small, true) == std::vector<int64_t>{100, 500});
+    CHECK(research::allocate(1000, small, true) == std::vector<int64_t>{500, 500});
     CHECK(research::allocate(1000, small, false) == std::vector<int64_t>{100, 900});
     CHECK(research::allocate(0, small, true) == std::vector<int64_t>{0, 0});
     CHECK(research::allocate(-5, small, false) == std::vector<int64_t>{0, 0});
@@ -70,6 +102,9 @@ TEST_CASE("research: researchable areas respect requirements, racial and unique 
     CHECK(has("Test Missiles"));
     e.uniqueAreasUnlocked.push_back(7);
     CHECK(has("Test Relics"));
+    // Gaining a level checks only the game's allowed areas and the racial and unique checks.
+    CHECK(research::canGainLevel(r, s, e, techArea(r, "Test Cloaking")));  // requirements not met
+    CHECK_FALSE(research::canGainLevel(r, s, e, techArea(r, "Test Psionics")));
 }
 
 TEST_CASE("research: a finished level logs the level, the discoveries and the empty queue") {
@@ -80,11 +115,10 @@ TEST_CASE("research: a finished level logs the level, the discoveries and the em
     const auto beams = techArea(r, "Test Beams");
     REQUIRE(e.techLevel(beams) == 1);
     REQUIRE(apply(r, s, me, cmd::SetResearch{{{beams, 0}}, true, false}).ok);
-    e.economy.research = 2000 + 700;  // level 2 costs 2000; the rest is lost
-    TurnContext ctx = context(r, s);
-    research::runResearch(ctx);
+    step(r, s, me, 2000 + 700);  // level 2 costs 2000; the rest is lost
     CHECK(e.techLevel(beams) == 2);
     CHECK(e.research.empty());
+    CHECK(e.researchPool == 0);
     CHECK(hasLog(s, me, "New Tech Level"));
     CHECK(hasLog(s, me, "Test Disruptor Discovered"));  // needs Beams 2
     CHECK_FALSE(hasLog(s, me, "Test Laser II Discovered"));  // needs Beams 3
@@ -96,80 +130,138 @@ TEST_CASE("research: a finished level logs the level, the discoveries and the em
 
     // No carry-over: a new project starts from zero next turn.
     REQUIRE(apply(r, s, me, cmd::SetResearch{{{beams, 0}}, true, false}).ok);
-    e.economy.research = 1000;
-    research::runResearch(ctx);
+    step(r, s, me, 1000);
     CHECK(e.techLevel(beams) == 2);
     REQUIRE(e.research.size() == 1);
     CHECK(e.research[0].progress == 1000);
+
+    // An empty queue loses the pool too.
+    e.research.clear();
+    step(r, s, me, 5000);
+    CHECK(e.researchPool == 0);
 }
 
-TEST_CASE("research: even split, in-order funding and partial progress") {
+TEST_CASE("research: even split, in-order funding, one level at most, partial progress") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const EmpireId me{0u};
     Empire& e = s.empire(me);
     const auto beams = techArea(r, "Test Beams"), armor = techArea(r, "Test Armor"), econ = techArea(r, "Test Economics");
-    TurnContext ctx = context(r, s);
 
     e.research = {{beams, 0}, {armor, 0}, {econ, 0}};  // each needs 2000 for level 2
     e.researchEvenly = true;
-    e.economy.research = 3000;
-    research::runResearch(ctx);
+    step(r, s, me, 3000);
     for (const auto& p : e.research) CHECK(p.progress == 1000);
 
     e.research = {{beams, 0}, {armor, 0}, {econ, 0}};
     e.researchEvenly = false;
-    e.economy.research = 5000;
-    research::runResearch(ctx);
+    step(r, s, me, 5000);
     CHECK(e.techLevel(beams) == 2);
     CHECK(e.techLevel(armor) == 2);
     REQUIRE(e.research.size() == 1);
     CHECK(e.research[0].area == econ);
     CHECK(e.research[0].progress == 1000);
+
+    // A huge pool still completes one level per project per turn.
+    e.research = {{econ, 0}};
+    step(r, s, me, 1000000);
+    CHECK(e.techLevel(econ) == 2);
 }
 
-TEST_CASE("research: repeat re-queues the next level until the maximum") {
+TEST_CASE("research: an area is queued once; areas at their maximum leave first") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    Empire& e = s.empire(me);
+    const auto physics = techArea(r, "Test Physics");  // max 5, level 1
+    const auto rock = techArea(r, "Test Rock Colonies");  // max 1, at its maximum
+    e.research = {{rock, 0}, {physics, 100}, {physics, 900}, {physics, 0}};
+    e.researchEvenly = false;
+    step(r, s, me, 500);
+    REQUIRE(e.research.size() == 1);
+    CHECK(e.research[0].area == physics);
+    CHECK(e.research[0].progress == 600);  // the first entry keeps its progress
+}
+
+TEST_CASE("research: repeat re-queues the area at the end until the maximum") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     const EmpireId me{0u};
     Empire& e = s.empire(me);
     const auto espionage = techArea(r, "Test Espionage");  // max 5, start 1
-    e.research = {{espionage, 0}};
+    const auto econ = techArea(r, "Test Economics");
+    e.research = {{espionage, 0}, {econ, 0}};
     e.repeatResearch = true;
-    e.economy.research = 1000000;
-    TurnContext ctx = context(r, s);
-    for (int turn = 0; turn < 10; ++turn) research::runResearch(ctx);
+    e.researchEvenly = false;
+    step(r, s, me, 2000);  // espionage 2 costs 2000: done, requeued behind economics
+    REQUIRE(e.research.size() == 2);
+    CHECK(e.research[0].area == econ);
+    CHECK(e.research[1].area == espionage);
+    CHECK(e.research[1].progress == 0);
+    e.research = {{espionage, 0}};
+    for (int turn = 0; turn < 10; ++turn) step(r, s, me, 1000000);
     CHECK(e.techLevel(espionage) == 5);
     CHECK(e.research.empty());
     CHECK(logCount(s, me, "New Tech Level") == 4);  // one level per turn
     CHECK(logCount(s, me, "All Projects Completed") == 1);
 }
 
-TEST_CASE("research: repeated entries of one area are successive levels") {
+TEST_CASE("research: points are spent the turn after they are produced") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
-    Empire& e = s.empires[0];
-    const auto physics = techArea(r, "Test Physics");  // max 5, level 1
-    e.research = {{physics, 0}, {physics, 0}, {physics, 0}, {physics, 0}, {physics, 0}};
-    CHECK(research::targetLevels(e) == std::vector<int>{2, 3, 4, 5, 6});
-    // The entry for the impossible level 6 is dropped; 3500 each completes levels 2 and 3.
-    e.economy.research = 4 * 3500;
-    e.researchEvenly = true;
+    const EmpireId me{0u};
+    const auto beams = techArea(r, "Test Beams");
+    s.empire(me).research = {{beams, 0}};
     TurnContext ctx = context(r, s);
+
+    // The first step spends the opening pool: the economy's first-turn
+    // income, which holds the Starting Resources plus one turn of production.
+    REQUIRE(s.turn == 0);
+    s.empire(me).economy.research = 700 + economy::openingResearchPool(s);
+    CHECK(research::availablePoints(s, s.empire(me)) == 700 + economy::openingResearchPool(s));
     research::runResearch(ctx);
-    CHECK(e.techLevel(physics) == 3);
-    REQUIRE(e.research.size() == 2);
-    CHECK(research::targetLevels(e) == std::vector<int>{4, 5});
-    CHECK(e.research[0].progress == 3500);
-    CHECK(e.research[1].progress == 3500);
+    CHECK(s.empire(me).techLevel(beams) == 2);
+    CHECK(s.empire(me).researchPool == 700);  // this turn's production waits for the next step
+
+    ++s.turn;
+    s.empire(me).research = {{beams, 0}};
+    s.empire(me).economy.research = 300;
+    CHECK(research::availablePoints(s, s.empire(me)) == 700);
+    research::runResearch(ctx);
+    CHECK(s.empire(me).research[0].progress == 700);
+    CHECK(s.empire(me).researchPool == 300);
+
+    // Pools are capped.
+    research::addToPools(s.empire(me), research::kPoolCap, research::kPoolCap);
+    CHECK(s.empire(me).researchPool == research::kPoolCap);
+    CHECK(s.empire(me).intelPool == research::kPoolCap);
+}
+
+TEST_CASE("research: a master's tariff takes part of the research income, and nobody gets it") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    const EmpireId master{0u}, subject{1u};
+    TurnContext ctx = context(r, s);
+    setContact(s, master, subject);
+    diplomacy::setTreaty(ctx, master, subject, Treaty::Subjugation, true);
+    const int64_t due = diplomacy::tariffDue(r, s, subject).research;
+    REQUIRE(due > 0);
+    ++s.turn;
+    s.empire(subject).economy.research = 5000;
+    s.empire(master).economy.research = 5000;
+    research::runResearch(ctx);
+    CHECK(s.empire(subject).researchPool == 5000 - due);
+    CHECK(s.empire(master).researchPool == 5000);
 }
 
 TEST_CASE("research: ETA simulates the queue") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
+    ++s.turn;
     Empire& e = s.empires[0];
     const auto beams = techArea(r, "Test Beams"), armor = techArea(r, "Test Armor");
     e.research = {{beams, 500}, {armor, 0}};  // need 1500 and 2000
+    e.researchPool = 500;
     e.economy.research = 500;
     e.researchEvenly = false;
     CHECK(research::etaTurns(r, s, e, 0) == 3);
@@ -178,7 +270,11 @@ TEST_CASE("research: ETA simulates the queue") {
     CHECK(research::etaTurns(r, s, e, 0) == 6);  // 250 per turn
     CHECK(research::etaTurns(r, s, e, 1) == 7);  // 250/turn until turn 6 (1500), then 500
     CHECK(research::etaTurns(r, s, e, 2) == -1);
+    e.researchPool = 1500;  // this turn's pool differs from next turns' production
+    e.researchEvenly = false;
+    CHECK(research::etaTurns(r, s, e, 0) == 1);
     e.economy.research = 0;
+    e.researchPool = 0;
     CHECK(research::etaTurns(r, s, e, 0) == -1);
 }
 
@@ -194,7 +290,7 @@ TEST_CASE("research: unlockedBy and availableItems") {
     CHECK(std::find(have.begin(), have.end(), "Test Laser II") == have.end());
 }
 
-TEST_CASE("research: grantLevel ignores lower levels, caps at the maximum, and feeds the master") {
+TEST_CASE("research: grantLevel ignores lower levels, caps at the maximum and never feeds a master") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     const EmpireId master{0u}, subject{1u};
@@ -206,44 +302,54 @@ TEST_CASE("research: grantLevel ignores lower levels, caps at the maximum, and f
 
     research::grantLevel(ctx, subject, beams, 4, "test");
     CHECK(s.empire(subject).techLevel(beams) == 4);
-    CHECK(s.empire(master).techLevel(beams) == 4);  // the subject's discoveries pass up
+    CHECK(s.empire(master).techLevel(beams) == 1);  // no technology passes to the master
     research::grantLevel(ctx, subject, beams, 2, "test");
     CHECK(s.empire(subject).techLevel(beams) == 4);
     research::grantLevel(ctx, master, beams, 99, "test");
     CHECK(s.empire(master).techLevel(beams) == 10);
-    CHECK(s.empire(subject).techLevel(beams) == 4);  // not downward
 
-    // A protectorate does not pass technology.
-    const EmpireId third{2u};
-    setContact(s, master, third);
-    diplomacy::setTreaty(ctx, master, third, Treaty::Protectorate, true);
-    research::grantLevel(ctx, third, techArea(r, "Test Armor"), 5, "test");
-    CHECK(s.empire(master).techLevel(techArea(r, "Test Armor")) == 1);
+    // An area the race cannot see gains nothing; one short of its requirements can.
+    research::grantLevel(ctx, master, techArea(r, "Test Psionics"), 2, "test");
+    CHECK(s.empire(master).techLevel(techArea(r, "Test Psionics")) == 0);
+    research::grantLevel(ctx, master, techArea(r, "Test Cloaking"), 1, "test");
+    CHECK(s.empire(master).techLevel(techArea(r, "Test Cloaking")) == 1);
 }
 
-TEST_CASE("research: random advances and the tech percentage") {
+TEST_CASE("research: ruins give levels in random researchable areas; totals and the tech share") {
     const Rules& r = engineRules();
     GameState a = newEngineGame(9);
     GameState b = newEngineGame(9);
     Rng ra(4), rb(4);
     TurnContext ca = context(r, a), cb = context(r, b);
-    const int before = research::totalLevels(a.empires[0]);
+    const int before = research::totalLevels(r, a.empires[0]);
     research::grantRandomAdvances(ca, EmpireId{0u}, 3, ra, "ruins");
     research::grantRandomAdvances(cb, EmpireId{0u}, 3, rb, "ruins");
-    CHECK(research::totalLevels(a.empires[0]) == before + 3);
+    CHECK(research::totalLevels(r, a.empires[0]) == before + 3);
     CHECK(a.empires[0].techLevels == b.empires[0].techLevels);
+    // Only researchable areas: nothing beyond a maximum, nothing unseen.
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) CHECK(a.empires[0].techLevels[i] <= r.data().techAreas[i].maxLevel);
+    CHECK(a.empires[0].techLevel(techArea(r, "Test Psionics")) == 0);
 
     GameState s = newEngineGame();
     Empire& e = s.empires[0];
-    int total = 0;
-    for (const auto& t : r.data().techAreas)
-        if (t.racialArea == 0 && t.uniqueArea == 0) total += t.maxLevel;
-    int owned = 0;
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
-        if (r.data().techAreas[i].racialArea == 0 && r.data().techAreas[i].uniqueArea == 0) owned += e.techLevels[i];
+    int total = 0, owned = 0;
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
+        const auto& t = r.data().techAreas[i];
+        owned += std::min(e.techLevels[i], t.maxLevel);
+        if (t.racialArea == 0 && t.uniqueArea == 0) total += t.maxLevel;  // the areas this race can see
+    }
+    CHECK(research::totalLevels(r, e) == owned);
+    CHECK(research::maxLevels(r, s, e) == total);
     CHECK(research::techPercent(r, s, e) == owned * 100 / total);
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) e.techLevels[i] = r.data().techAreas[i].maxLevel;
+    CHECK_FALSE(research::researchedEverything(r, s, e));
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
+        if (r.data().techAreas[i].racialArea == 0 && r.data().techAreas[i].uniqueArea == 0) e.techLevels[i] = r.data().techAreas[i].maxLevel;
     CHECK(research::techPercent(r, s, e) == 100);
+    CHECK(research::researchedEverything(r, s, e));
+    // An area excluded from the game leaves the measure.
+    s.options.techAreasAllowed.assign(r.data().techAreas.size(), 1);
+    s.options.techAreasAllowed[techArea(r, "Test Physics").index()] = 0;
+    CHECK(research::maxLevels(r, s, e) == total - 5);
 }
 
 TEST_CASE("research: turns are deterministic") {
@@ -259,6 +365,7 @@ TEST_CASE("research: turns are deterministic") {
             for (Empire& e : s.empires) e.economy.research = 1500;
             TurnContext ctx = context(r, s);
             research::runResearch(ctx);
+            ++s.turn;
             levels.push_back(s.empires[0].techLevels);
         }
         return levels;

@@ -245,18 +245,19 @@ starting_resources = [20000, 20000, 20000]
 racial_points = 2000
 events = 2                     # 0 none .. 3 high
 max_event_severity = 2
-tech_cost_growth = 100
+tech_cost = 1                  # 0 low, 1 medium, 2 high
 home_planet_value = 1
 starting_planets = 1
 max_ships = 200
 max_units = 1000
 ai_difficulty = 1
 ai_bonus = 0
+score_display = 1              # 0 own, 1 own and Non-Aggression or better, 2 all
 # true/false: all_warp_points_connected, no_warp_points, warp_points_anywhere,
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
 # evenly_distributed, no_tactical_combat, allow_gifts, allow_tech_trades,
 # allow_intel, no_ruins, only_breathable, only_home_type, team_mode,
-# show_all_scores, simultaneous
+# simultaneous
 
 [options.victory]              # each key switches that condition on
 score = 50000

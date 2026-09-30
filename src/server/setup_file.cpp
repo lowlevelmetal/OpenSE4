@@ -34,7 +34,7 @@ constexpr std::array kIntOptions{
     IntOption{"systems", &O::systemCount, 1, 500},
     IntOption{"events", &O::eventFrequency, 0, 3},
     IntOption{"max_event_severity", &O::maxEventSeverity, 0, 3},
-    IntOption{"tech_cost_growth", &O::techCostGrowth, 0, 1000},
+    IntOption{"tech_cost", &O::techCost, 0, 2},
     IntOption{"start_tech", &O::startTechLevel, 0, 2},
     IntOption{"racial_points", &O::racialPoints, 0, 100000},
     IntOption{"home_planet_value", &O::homePlanetValue, 0, 2},
@@ -43,6 +43,7 @@ constexpr std::array kIntOptions{
     IntOption{"max_units", &O::maxUnitsPerPlayer, 1, 1000000},
     IntOption{"ai_difficulty", &O::aiDifficulty, 0, 5},
     IntOption{"ai_bonus", &O::aiBonus, 0, 5},
+    IntOption{"score_display", &O::scoreDisplay, 0, 2},
 };
 
 constexpr std::array kBoolOptions{
@@ -62,7 +63,6 @@ constexpr std::array kBoolOptions{
     BoolOption{"only_breathable", &O::onlyBreathable},
     BoolOption{"only_home_type", &O::onlyHomeType},
     BoolOption{"team_mode", &O::teamMode},
-    BoolOption{"show_all_scores", &O::showAllScores},
     BoolOption{"simultaneous", &O::simultaneous},
 };
 
