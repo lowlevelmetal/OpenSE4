@@ -375,7 +375,8 @@ TEST_CASE("economy: planet modifier multiplies on its own; the system modifier w
     });
     GameState s = newGame(*r);
     dropVehicles(s, kMe);
-    Colony& home = plainHome(*r, s, {"Test Spaceport", "Test Mine", "Booster", "Weak Booster", "Test Lab", "Think Tank", "Solar Plant", "Test Depot"});
+    Colony& home =
+        plainHome(*r, s, {"Test Spaceport", "Test Mine", "Booster", "Weak Booster", "Test Lab", "Think Tank", "Solar Plant", "Test Depot"});
     const SystemId sys = s.galaxy.object(home.planet).system;
     const int stars = [&] {
         int n = 0;

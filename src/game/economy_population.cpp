@@ -8,6 +8,7 @@
 #include "game/turn.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <optional>
 
@@ -326,7 +327,8 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     // Whole percent (truncated), plus the colony's own happiness facilities (positive angers).
     int64_t change = total / 10 + sumValue1(workingAbilities(r, s, c), AbilityKind::PlanetChangePopulationHappiness);
     if (model) {
-        if (change < 0) change = std::max<int64_t>(change, model->maxNegativeChange / 10);
+        // The data gives the negative limit as a negative number; a positive one is read the same (inferred).
+        if (change < 0) change = std::max<int64_t>(change, -std::abs(model->maxNegativeChange) / 10);
         else change = std::min<int64_t>(change, model->maxPositiveChange / 10);
     }
     setAnger(r, s, c, static_cast<int>(std::clamp<int64_t>(c.anger + change, -kMaxAnger, 2 * kMaxAnger)));
@@ -434,11 +436,9 @@ void updateHappiness(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
     // This empire's events since the last update; they are used up here.
     std::vector<MoodEvent> events;
-    std::erase_if(ctx.moodEvents, [&](MoodEvent& ev) {
-        if (ev.empire != e) return false;
-        events.push_back(std::move(ev));
-        return true;
-    });
+    for (const MoodEvent& ev : ctx.moodEvents)
+        if (ev.empire == e) events.push_back(ev);
+    std::erase_if(ctx.moodEvents, [&](const MoodEvent& ev) { return ev.empire == e; });
     if (!livingEmpire(s, e) || emotionless(r, s, e)) return;  // Emotionless: the whole update is skipped
 
     // The empire-wide part: events that hit every colony, and the race's calm.
