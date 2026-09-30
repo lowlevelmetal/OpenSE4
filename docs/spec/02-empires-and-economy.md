@@ -1300,8 +1300,10 @@ remaining guesses; each is marked "(inferred)" in the code.
 35. **Plague.** *Settled* (confirmed: binary, §3): see answer 20.
 36. **Maintenance victims.** *Settled* (confirmed: binary, §7): `unpaid div amount + 1`
     whole vehicles or unit groups, preferring ships out of supply.
-37. **Opening research pool.** We add the starting minerals setting once, on the first
-    turn (spec 05 §1.1). The computer bonus does not multiply it.
+37. **Opening research pool.** *Settled* (confirmed: binary, spec 05 §1.1): the game's
+    creation sets the research pool to Starting Resources plus one turn of research, and
+    the intelligence pool to 0. The one turn of research is the income step's figure, with
+    the computer bonus; Starting Resources are not multiplied (inferred).
 38. **No room at completion.** When a finished facility finds no free slot, we keep the item
     at the top of the queue with its progress cleared, as the original does for a ship at the
     ship limit. Does the original drop the facility item instead?
