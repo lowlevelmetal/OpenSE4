@@ -21,6 +21,14 @@ target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVA
 add_library(opense4_game STATIC
     game/abilities.cpp
     game/ai.cpp
+    game/ai_anger.cpp
+    game/ai_data.cpp
+    game/ai_design.cpp
+    game/ai_diplomacy.cpp
+    game/ai_economy.cpp
+    game/ai_explore.cpp
+    game/ai_military.cpp
+    game/ai_research.cpp
     game/combat.cpp
     game/combat_ground.cpp
     game/combat_space.cpp
