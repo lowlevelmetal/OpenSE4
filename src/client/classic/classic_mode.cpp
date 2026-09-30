@@ -1,11 +1,13 @@
 #include "client/classic/classic_mode.hpp"
 
 #include "client/classic/settings.hpp"
+#include "game/setup.hpp"
 
 #include "core/log.hpp"
 
 #include <imgui.h>
 
+#include <cstdio>
 #include <format>
 
 namespace opense4::client {
@@ -87,6 +89,8 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     session_->onNewTurn = [this] { openLogOnTurn_ = true; };
     main_ = MainWindow{};
     main_.reset(*ui_);
+    handoffPlayer_ = {};
+    handoff_ = false;
     front_.reset();
 }
 
@@ -131,6 +135,20 @@ bool ClassicMode::update(const FrameState& fs) {
     ui.time = fs.time;
     ui.dt = fs.dt;
     session_->poll();
+
+    // Hotseat: when the turn passes to another human, hide the map until that
+    // player starts their turn (with their password, if they set one).
+    if (session_->kind() == SessionKind::Hotseat && session_->player() != handoffPlayer_) {
+        handoffPlayer_ = session_->player();
+        handoff_ = true;
+        handoffPassword_.clear();
+        handoffError_.clear();
+        screens_.clear();
+    }
+    if (handoff_) {
+        drawHandoff(ui);
+        return !ui.requests.quitGame;
+    }
 
     // Classic windows are modal: while one is open the main window takes no input.
     main_.update(ui, !screens_.empty());
@@ -195,12 +213,51 @@ bool ClassicMode::update(const FrameState& fs) {
     return !ui.requests.quitGame;
 }
 
+void ClassicMode::drawHandoff(UiContext& ui) {
+    const game::Empire& e = ui.me();
+    ImGui::SetNextWindowPos(ui.at({312, 250}));
+    ImGui::SetNextWindowSize(ui.size({400, 230}));
+    ImGui::PushFont(platform_.fonts->regular, 15.0f * ui.k());
+    ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    image(ui, art_->flag(e.race.style), {39, 27});
+    ImGui::SameLine();
+    ImGui::TextUnformatted(std::format("{} {}", e.name, e.empireType).c_str());
+    ImGui::TextDisabled("Game date %s. Other players, please look away.", formatDate(ui.state().turn).c_str());
+    ImGui::Spacing();
+    const bool needsPassword = !e.passwordHash.empty();
+    bool begin = false;
+    if (needsPassword) {
+        ImGui::TextUnformatted("Password");
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        char buffer[128] = {};
+        std::snprintf(buffer, sizeof buffer, "%s", handoffPassword_.c_str());
+        if (ImGui::InputText("##password", buffer, sizeof buffer, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue))
+            begin = true;
+        handoffPassword_ = buffer;
+    }
+    if (ImGui::Button("Begin Turn", ui.size({140, 30}))) begin = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
+    if (begin) {
+        if (!needsPassword || game::hashPassword(handoffPassword_) == e.passwordHash) {
+            handoff_ = false;
+            handoffPassword_.clear();
+        } else {
+            handoffError_ = "Wrong password.";
+            handoffPassword_.clear();
+        }
+    }
+    if (!handoffError_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", handoffError_.c_str());
+    ImGui::End();
+    ImGui::PopFont();
+}
+
 void ClassicMode::render(gfx::Renderer2D& r, const FrameState& fs) {
     const float fw = float(fs.frame.width), fh = float(fs.frame.height);
     const Vec2 topLeft = mapping_.fromFb({0, 0});
     const Vec2 bottomRight = mapping_.fromFb({fw, fh});
     r.begin(Mat4::ortho2D(topLeft.x, bottomRight.x, topLeft.y, bottomRight.y), fs.frame, mapping_.scale);
-    if (session_ && ui_) main_.render(r, *ui_);
+    if (session_ && ui_ && !handoff_) main_.render(r, *ui_);
     else r.rect(Rect{{0, 0}, {kFrameW, kFrameH}}, Color::hex(0x000000));
     r.flush();
 }

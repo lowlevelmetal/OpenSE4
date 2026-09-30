@@ -61,6 +61,13 @@ private:
     std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
     bool openLogOnTurn_ = false;
     bool confirmEndTurn_ = false;
+
+    // Hotseat hand-over between human players.
+    void drawHandoff(classic::UiContext& ui);
+    game::EmpireId handoffPlayer_;
+    bool handoff_ = false;
+    std::string handoffPassword_;
+    std::string handoffError_;
 };
 
 } // namespace opense4::client
