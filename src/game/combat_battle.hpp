@@ -114,6 +114,7 @@ struct Piece {
     // Bookkeeping.
     bool fired = false, damaged = false, captured = false, pushed = false;
     int unitsLost = 0, startCount = 1;
+    int64_t tonnageStart = 0;         // unit groups: the units' total hull tonnage at the start (empire experience)
 };
 
 struct MovePlan {

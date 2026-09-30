@@ -2,6 +2,7 @@
 
 #include "client/classic/screens/setup_widgets.hpp"
 #include "datafile/datafile.hpp"
+#include "game/economy.hpp"
 
 #include <algorithm>
 #include <array>
@@ -73,6 +74,7 @@ void EmpireEditor::choosePreset(size_t position) {
     next.setup.color = draft_.setup.color;
     next.setup.ministerStyle = draft_.setup.ministerStyle;
     next.setup.useRaceMinisterStyle = draft_.setup.useRaceMinisterStyle;
+    next.setup.experience = draft_.setup.experience;
     draft_ = std::move(next);
 }
 
@@ -219,24 +221,32 @@ void EmpireEditor::pageGeneral(MenuContext& ctx) {
     if (lampChoice(ctx, "##kind", kind, {"Human player", "Computer controlled"}))
         draft_.setup.kind = kind == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
     ImGui::Dummy(ImVec2(0, ctx.px(4)));
-    // Minister style (spec 02 §9, spec 05 §7.1): the personality the ministers,
-    // and a computer-controlled empire, play with. "Use Race Minister Style"
-    // disables the choice.
+    // Minister style (spec 02 §9, §10, spec 05 §7.1): the personality the
+    // ministers, and a computer-controlled empire, play with. "(the race's
+    // own)" is the empty style a new empire starts with; once a style is picked
+    // it cannot be emptied again. "Use Race Minister Style" disables the choice
+    // and stores an empty style.
     row("Minister Style");
     ImGui::BeginDisabled(draft_.setup.useRaceMinisterStyle);
     ImGui::SetNextItemWidth(ctx.px(200));
     const std::string style = draft_.setup.ministerStyle.empty() ? std::string("(the race's own)") : draft_.setup.ministerStyle;
     if (ImGui::BeginCombo("##mstyle", style.c_str())) {
-        if (ImGui::Selectable("(the race's own)", draft_.setup.ministerStyle.empty())) draft_.setup.ministerStyle.clear();
+        if (draft_.setup.ministerStyle.empty()) ImGui::Selectable("(the race's own)", true);
         for (const std::string& st : ministerStyles_)
-            if (ImGui::Selectable(st.c_str(), datafile::keysEqual(st, draft_.setup.ministerStyle))) draft_.setup.ministerStyle = st;
+            if (ImGui::Selectable(st.c_str(), datafile::keysEqual(st, draft_.setup.ministerStyle))) pickMinisterStyle(draft_.setup, st);
         ImGui::EndCombo();
     }
     ImGui::EndDisabled();
     ImGui::Dummy(ImVec2(0, 0));
     ImGui::SameLine(label);
     bool raceStyle = draft_.setup.useRaceMinisterStyle;
-    if (lamp(ctx, "Use Race Minister Style", raceStyle)) draft_.setup.useRaceMinisterStyle = raceStyle;
+    if (lamp(ctx, "Use Race Minister Style", raceStyle)) setUseRaceMinisterStyle(draft_.setup, raceStyle);
+    // Experience and the race age read off it, both read-only (spec 02 §9).
+    ImGui::Dummy(ImVec2(0, ctx.px(4)));
+    row("Experience");
+    ImGui::TextUnformatted(std::to_string(draft_.setup.experience).c_str());
+    row("Race Age");
+    ImGui::TextUnformatted(std::string(game::economy::raceAge(draft_.setup.experience)).c_str());
     ImGui::Dummy(ImVec2(0, ctx.px(4)));
     row("Password");
     inputText("##pw", password_, ctx.px(200), ImGuiInputTextFlags_Password);

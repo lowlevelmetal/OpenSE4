@@ -947,8 +947,10 @@ TEST_CASE("economy: ships appear at the yard, follow the queue's waypoint and re
     CHECK(economy::itemCost(r, s, kMe, q, home.queue.items[0]) == Resources{160, 20, 20});
 
     const size_t before = s.vehicles.size();
+    const int experience = s.empire(kMe).experience;
     const auto moods = economyTurn(r, s);
     REQUIRE(s.vehicles.size() == before + 1);
+    CHECK(s.empire(kMe).experience == experience + r.hull(s.design(ship).hull).tonnage / 10);  // spec 02 §9
     const Vehicle& built = s.vehicles.back();
     CHECK(built.design == ship);
     CHECK(built.location == homeLoc);
@@ -1219,6 +1221,28 @@ TEST_CASE("economy: space yard ships build where they are, but not while cloaked
     REQUIRE(s.vehicles.size() == before + 1);
     CHECK(s.vehicles.back().location == spot);
     CHECK(s.vehicle(yard)->queue.items.empty());
+}
+
+TEST_CASE("economy: empire experience is capped and gives the race age") {
+    // Spec 02 §9: each label covers experience up to its limit.
+    CHECK(economy::raceAge(0) == "Newborn");
+    CHECK(economy::raceAge(5'000) == "Newborn");
+    CHECK(economy::raceAge(5'001) == "Infantile");
+    CHECK(economy::raceAge(10'001) == "Young");
+    CHECK(economy::raceAge(50'001) == "Moderate");
+    CHECK(economy::raceAge(200'001) == "Old");
+    CHECK(economy::raceAge(1'000'001) == "Ancient");
+    CHECK(economy::raceAge(10'000'001) == "God-like");
+    CHECK(economy::raceAge(100'000'001) == "Stellar Ancients");
+    CHECK(economy::raceAge(400'000'000) == "Stellar Ancients");
+    CHECK(economy::raceAge(400'000'001) == "First Ones");
+    Empire e;
+    economy::gainExperience(e, 499'999'990);
+    economy::gainExperience(e, 100);
+    CHECK(e.experience == economy::kMaxEmpireExperience);
+    e.experience = 10;
+    economy::gainExperience(e, -5);
+    CHECK(e.experience == 10);
 }
 
 // ---- Population -------------------------------------------------------------------------------------

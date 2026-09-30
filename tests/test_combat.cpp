@@ -1111,6 +1111,23 @@ TEST_CASE("combat: a planet that takes damage sheds cargo above its capacity") {
     CHECK(s.colony(home.planet)->cargo.population[0].millions == capacity / mass);
 }
 
+TEST_CASE("combat: the empire that destroys a ship gains its hull tonnage div 10 as experience") {
+    // Spec 02 §9: empire experience, only shown.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const DesignId hunter = frigate(s, ar.a, "Hunter", 3, {"CT Big Gun", "CT Big Armor"});
+    const DesignId prey = frigate(s, ar.b, "Prey", 1, {});
+    spawn(s, hunter, ar.loc);
+    const VehicleId victim = spawn(s, prey, ar.loc);
+    s.empire(ar.a).experience = 7;
+    s.empire(ar.b).experience = 0;
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, ar.loc);
+    REQUIRE(s.vehicle(victim)->count == 0);
+    CHECK(s.empire(ar.a).experience == 7 + combatRules().hull(s.design(prey).hull).tonnage / 10);
+    CHECK(s.empire(ar.b).experience == 0);
+}
+
 TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the map") {
     Arena ar = makeArena();
     GameState& s = ar.s;

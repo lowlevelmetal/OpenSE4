@@ -6,6 +6,7 @@
 #include "client/classic/screens/screens.hpp"
 
 #include "game/diplomacy.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
 
@@ -812,6 +813,9 @@ private:
         const auto& happiness = ui.rules().data().happinessModels;
         if (e.race.happinessModel < happiness.size()) labelValue(ui, "Happiness", happiness[e.race.happinessModel].name);
         if (!e.race.demeanor.empty()) labelValue(ui, "Demeanor", e.race.demeanor);
+        // The race age for every race, the experience behind it only for our own (spec 02 §9, §11).
+        labelValue(ui, "Age", std::string(game::economy::raceAge(e.experience)));
+        if (e.id == ui.session.player()) labelValue(ui, "Experience", formatNumber(e.experience));
         labelValue(ui, "Player", e.kind == game::PlayerKind::Human ? "Human" : e.kind == game::PlayerKind::Computer ? "Computer" : "Neutral");
         if (e.id != ui.session.player()) {
             const game::Relation& rel = ui.me().relation(e.id);

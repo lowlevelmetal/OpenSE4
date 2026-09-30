@@ -246,6 +246,7 @@ void Battle::addVehiclePiece(const Vehicle& v) {
     if (p.kind == Kind::UnitGroup) {
         p.stacks = groupStacks(v);
         p.hpStart = groupHitPoints(p, DamageType::Normal, true);
+        for (const UnitStack& st : p.stacks) p.tonnageStart += designTonnage(r_, s_.design(st.design)) * st.count;
     }
     p.arrived = detail::arrivedThisTurn(s_, v);
     std::tie(p.boxDx, p.boxDy) = detail::arrivalDirection(s_, v);
@@ -1691,6 +1692,13 @@ void Battle::creditKill(int att, int victim) {
     const Piece& v = pieces_[victim];
     const bool big = v.kind == Kind::Vehicle || v.kind == Kind::Planet || v.colonyLost;
     if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(att, 1, designTonnage(r_, s_.design(v.unit.design)));
+    // Empire experience (spec 02 §9, confirmed: binary): the destroyer's empire gains
+    // the tonnage div 10 of a ship (its hull) or of a whole unit group (its units'
+    // total, inferred: as the group was at the start); a planet gives nothing.
+    if (const EmpireId gainer = pieces_[k].owner; gainer.valid() && gainer.index() < s_.empires.size()) {
+        if (v.kind == Kind::Vehicle && v.unit.design.valid()) economy::gainExperience(s_.empire(gainer), designTonnage(r_, s_.design(v.unit.design)) / 10);
+        else if (v.kind == Kind::UnitGroup) economy::gainExperience(s_.empire(gainer), v.tonnageStart / 10);
+    }
     Piece& killer = pieces_[k];
     if (killer.kind != Kind::Vehicle || !killer.alive) return;   // unit groups and planets gain no experience
     detail::addExperience(killer.unit.experience, killer.unit.experienceTenths, big ? kShipKillTenths : kUnitKillTenths);
@@ -1929,6 +1937,7 @@ bool Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strateg
     u.launched = true;
     u.designStrategy = strategyIndex;
     u.startCount = count;
+    u.tonnageStart = designTonnage(r_, d) * count;
     u.hpStart = groupHitPoints(u, DamageType::Normal, true);
     buildWeapons(u);
     const int idx = addPiece(std::move(u));

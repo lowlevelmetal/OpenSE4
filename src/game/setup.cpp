@@ -344,6 +344,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         // empire too, unless the race's style is used (spec 02 §9, spec 05 §7.1).
         e.ministerStyle = es.ministerStyle;
         e.useRaceMinisterStyle = es.useRaceMinisterStyle;
+        e.experience = std::clamp(es.experience, 0, economy::kMaxEmpireExperience);  // carried from the empire file (spec 02 §9)
         const ruleset::RacePreset* preset = es.preset.empty() ? nullptr : findPreset(r, es.preset);
         if (es.customRace) e.race = *es.customRace;
         else if (preset) e.race = raceFromPreset(r, *preset, es.presetTier);

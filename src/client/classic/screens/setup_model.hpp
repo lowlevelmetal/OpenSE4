@@ -149,6 +149,14 @@ EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e);
 // race otherwise.
 std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints);
 
+// The minister style controls of the General page (spec 02 §10). A new empire
+// starts with no style (the race's own AI files). Picking a style stores it;
+// picking nothing (an empty name) leaves the field as it was, so once chosen a
+// style cannot be emptied again. Ticking "Use Race Minister Style" stores an
+// empty style.
+void pickMinisterStyle(game::EmpireSetup& e, std::string_view style);
+void setUseRaceMinisterStyle(game::EmpireSetup& e, bool on);
+
 // Our own password digest (FNV-1a, hex); empty stays empty. Not security, only
 // keeps hotseat players out of each other's turns.
 std::string hashPassword(std::string_view password);
