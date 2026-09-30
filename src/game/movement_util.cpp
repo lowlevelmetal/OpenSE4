@@ -705,9 +705,18 @@ bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount) {
             left -= take;
         }
     }
-    if (!vehicleDestroyed(r, s, v)) return false;
+    if (!vehicleDestroyed(r, s, v)) {
+        fitToCapacity(r, s, v);
+        return false;
+    }
     v.count = 0;
     return true;
+}
+
+void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {
+    if (v.supply != kUnlimitedSupply && vehicleUsesSupply(r, s, v) && !vehicleHasUnlimitedSupply(r, s, v))
+        v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
+    detail::trimCargo(r, s, v);
 }
 
 Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId design, Location where, int autoWaypoint) {

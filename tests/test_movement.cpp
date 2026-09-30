@@ -2178,6 +2178,31 @@ TEST_CASE("movement: cargo that no longer fits goes population first, then from 
     CHECK(cargoSpaceUsed(r, w.s, w.v(hauler).cargo) <= vehicleCargoCapacity(r, w.s, w.v(hauler)));
 }
 
+TEST_CASE("movement: damage outside combat cuts supply and cargo back at once") {
+    // Hazards strike in the event step, after the owner's end of turn: the
+    // storage they wreck takes supply and cargo with it there and then (spec 03 §7, §11).
+    for (uint64_t seed = 1; seed <= 6; ++seed) {
+        World w;
+        w.s.rng = Rng(seed);
+        const Rules& r = w.rules();
+        const SystemId a = w.system("A");
+        const VehicleId id = w.spawn(w.ship(kA, "Hauler", 1, {"Test Cargo Bay"}), at(a, 1, 1));
+        Vehicle& v = w.v(id);
+        const Design& d = w.s.design(v.design);
+        REQUIRE(r.component(d.entries[3].component).name == "Mv Tank");
+        REQUIRE(r.component(d.entries[5].component).name == "Test Cargo Bay");
+        REQUIRE(entryStructure(r, d, 3) == entryStructure(r, d, 5));
+        for (size_t i : {0, 1, 2, 4}) v.damage[i] = entryStructure(r, d, i);  // only the tank and the bay are left
+        v.supply = vehicleSupplyCapacity(r, w.s, v);
+        v.cargo.population = {{kA, vehicleCargoCapacity(r, w.s, v) / r.setting("Population Mass", 5)}};
+        // One of the two is wrecked.
+        CHECK_FALSE(movement::damageVehicle(r, w.s, v, entryStructure(r, d, 3)));
+        CHECK(entryIntact(r, w.s, v, 3) != entryIntact(r, w.s, v, 5));
+        CHECK(v.supply <= vehicleSupplyCapacity(r, w.s, v));
+        CHECK(cargoSpaceUsed(r, w.s, v.cargo) <= vehicleCargoCapacity(r, w.s, v));
+    }
+}
+
 // ---- Determinism --------------------------------------------------------------------------------------
 
 namespace {
