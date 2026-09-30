@@ -9,3 +9,4 @@ optimal firing range don't get hurt
 weapon type none direct fire seeking
 planet population anger change
 prepare for attack attack secure holdings
+physical strength intelligence cunning environmental resistance

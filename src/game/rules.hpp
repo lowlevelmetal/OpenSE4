@@ -1,0 +1,73 @@
+#pragma once
+
+// Rules: the loaded data set plus derived, read-only caches the engine needs
+// every turn (pre-parsed abilities, family tables, settings with defaults).
+// Build once per game; never mutated during play.
+
+#include "game/abilities.hpp"
+#include "game/state.hpp"
+#include "ruleset/races.hpp"
+#include "ruleset/ruleset.hpp"
+
+#include <filesystem>
+#include <span>
+#include <string_view>
+#include <vector>
+
+namespace opense4::game {
+
+class Rules {
+public:
+    Rules() = default;
+    // gameRoot: directory holding Data/, Pictures/, Ai/ (empty for test data sets).
+    Rules(ruleset::Ruleset data, std::filesystem::path gameRoot = {});
+
+    const ruleset::Ruleset& data() const { return data_; }
+    const std::filesystem::path& gameRoot() const { return gameRoot_; }
+    const std::vector<ruleset::RacePreset>& racePresets() const { return races_; }
+
+    // Pre-parsed abilities.
+    std::span<const ParsedAbility> componentAbilities(uint32_t component) const { return components_[component]; }
+    std::span<const ParsedAbility> facilityAbilities(uint32_t facility) const { return facilities_[facility]; }
+    std::span<const ParsedAbility> hullAbilities(uint32_t hull) const { return hulls_[hull]; }
+    std::span<const ParsedAbility> systemAbilities(uint32_t systemType) const { return systemTypes_[systemType]; }
+
+    const ruleset::Component& component(uint32_t i) const { return data_.components[i]; }
+    const ruleset::Facility& facility(uint32_t i) const { return data_.facilities[i]; }
+    const ruleset::VehicleSize& hull(uint32_t i) const { return data_.vehicleSizes[i]; }
+    const ruleset::TechArea& tech(ruleset::TechAreaId a) const { return data_.techAreas[a.index()]; }
+
+    // Settings.txt with the documented stock defaults when a key is missing.
+    int64_t setting(std::string_view key, int64_t fallback) const { return data_.settings.integer(key, fallback); }
+    bool settingFlag(std::string_view key, bool fallback) const { return data_.settings.boolean(key, fallback); }
+
+    // Technology gates.
+    bool meets(const Empire& e, std::span<const ruleset::TechRequirement> reqs) const;
+    bool componentAvailable(const Empire& e, uint32_t c) const { return meets(e, data_.components[c].requirements); }
+    bool facilityAvailable(const Empire& e, uint32_t f) const { return meets(e, data_.facilities[f].requirements); }
+    bool hullAvailable(const Empire& e, uint32_t h) const { return meets(e, data_.vehicleSizes[h].requirements); }
+    bool mountAvailable(const Empire& e, uint32_t m) const;
+    // A tech area this empire may research at all (allowed, racial/unique checks, requirements).
+    bool techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const;
+    // Research points to go from `level - 1` to `level` (spec 05 §1.3).
+    int64_t techLevelCost(ruleset::TechAreaId a, int level, int growthPercent) const;
+
+    // Newest available facility/component of a family (highest Roman Numeral).
+    std::optional<uint32_t> latestFacilityOfFamily(const Empire& e, int family) const;
+    std::optional<uint32_t> latestComponentOfFamily(const Empire& e, int family) const;
+    // First facility (lowest numeral, available) that has ability `k`.
+    std::optional<uint32_t> bestFacilityWith(const Empire& e, AbilityKind k) const;
+
+    // Racial trait values: sum of Value 1 over the race's traits of this Trait Type.
+    int64_t traitValue(const Race& race, std::string_view traitType) const;
+    bool hasTrait(const Race& race, std::string_view traitType) const;
+    const ruleset::Culture* culture(const Race& race) const;
+
+private:
+    ruleset::Ruleset data_;
+    std::filesystem::path gameRoot_;
+    std::vector<ruleset::RacePreset> races_;
+    std::vector<std::vector<ParsedAbility>> components_, facilities_, hulls_, systemTypes_;
+};
+
+} // namespace opense4::game

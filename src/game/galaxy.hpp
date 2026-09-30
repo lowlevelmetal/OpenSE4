@@ -4,7 +4,7 @@
 // See docs/spec/01-galaxy-and-setup.md. Plain data; behavior lives in
 // free functions (generate.hpp, ...).
 
-#include "core/id.hpp"
+#include "game/types.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <array>
@@ -14,9 +14,6 @@
 #include <vector>
 
 namespace opense4::game {
-
-using SystemId = Id<struct SystemTag>;
-using ObjectId = Id<struct ObjectTag>;
 
 // Every system is a 13×13 sector grid, x to the right and y downward, with
 // the center at (6, 6) (confirmed by observation, docs/spec/07-observations.md).
@@ -38,6 +35,13 @@ constexpr int chebyshev(Sector a, Sector b) {
     return dx > dy ? dx : dy;
 }
 
+// A sector of a system: where ships, planets and everything else live.
+struct Location {
+    SystemId system;
+    Sector sector;
+    constexpr auto operator<=>(const Location&) const = default;
+};
+
 // Integer position on the quadrant map (one square ~ 10 light years).
 struct GalaxyPos {
     int x = 0;
@@ -48,8 +52,6 @@ struct GalaxyPos {
 enum class ObjectKind : uint8_t { Star, Planet, Asteroids, Storm, WarpPoint, DestroyedStar, Comet, Count };
 std::string_view displayName(ObjectKind k);
 std::optional<ObjectKind> parseObjectKind(std::string_view physicalType);  // accepts "Sun", "Star", ...
-
-enum class Resource : uint8_t { Minerals, Organics, Radioactives };
 
 struct SpaceObject {
     ObjectId id;

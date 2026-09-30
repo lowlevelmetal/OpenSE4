@@ -72,6 +72,14 @@ public:
     Rng fork() { return Rng(next()); }
 
     const uint64_t* rawState() const { return state_; }
+    void setRawState(const uint64_t (&state)[4]) {
+        for (int i = 0; i < 4; ++i) state_[i] = state[i];
+    }
+    bool operator==(const Rng& o) const {
+        for (int i = 0; i < 4; ++i)
+            if (state_[i] != o.state_[i]) return false;
+        return true;
+    }
 
 private:
     static uint64_t rotl(uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }

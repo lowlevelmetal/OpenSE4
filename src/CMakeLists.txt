@@ -13,12 +13,33 @@ target_link_libraries(opense4_datafile PRIVATE opense4_warnings)
 
 add_library(opense4_ruleset STATIC
     ruleset/load.cpp
+    ruleset/races.cpp
     ruleset/ruleset.cpp)
 target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVATE opense4_warnings)
 
 # --- game: the classic-compatible rules engine (replaces sim/ as it matures) --------
 add_library(opense4_game STATIC
-    game/generate.cpp)
+    game/abilities.cpp
+    game/ai.cpp
+    game/combat.cpp
+    game/commands.cpp
+    game/design.cpp
+    game/diplomacy.cpp
+    game/economy.cpp
+    game/events.cpp
+    game/generate.cpp
+    game/intel.cpp
+    game/movement.cpp
+    game/query.cpp
+    game/research.cpp
+    game/rules.cpp
+    game/score.cpp
+    game/serialize.cpp
+    game/setup.cpp
+    game/sight.cpp
+    game/state.cpp
+    game/turn.cpp
+    game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE opense4_warnings)
 
 # --- assets: runtime access to the player's installed classic art ------------------

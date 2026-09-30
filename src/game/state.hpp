@@ -1,0 +1,558 @@
+#pragma once
+
+// Complete state of one classic-rules game. Plain data: rules live in the
+// subsystem modules (economy, movement, combat, research, ...), all state
+// changes by players go through commands (commands.hpp), and all randomness
+// goes through GameState::rng. Everything here is serialized (serialize.hpp);
+// when adding a field, add it to the serializer too.
+
+#include "core/rng.hpp"
+#include "game/galaxy.hpp"
+#include "game/types.hpp"
+#include "ruleset/ruleset.hpp"
+
+#include <algorithm>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace opense4::game {
+
+// ---- Races and empires ------------------------------------------------------------
+
+struct Race {
+    std::string name;   // e.g. "Terran"
+    std::string style;  // art set: folder under Pictures/Races (or RaceGeneric)
+    std::string biology, society, history;
+    std::array<int, kCharacteristics> characteristics = [] {
+        std::array<int, kCharacteristics> a{};
+        a.fill(100);  // every characteristic defaults to 100 %
+        return a;
+    }();
+    std::vector<uint32_t> traits;    // RacialTraits.txt indices
+    uint32_t culture = 0;            // Cultures.txt index
+    uint32_t happinessModel = 0;     // Happiness.txt index
+    std::string nativeSurface = "Rock";   // "Rock", "Ice", "Gas Giant"
+    std::string atmosphere = "Oxygen";    // the gas this race breathes
+    std::string demeanor;
+    std::string designNameFile;
+
+    int characteristic(Characteristic c) const { return characteristics[static_cast<size_t>(c)]; }
+};
+
+struct Waypoint {
+    std::string name;
+    Location location;
+    bool set = false;
+};
+
+struct ResearchProject {
+    ruleset::TechAreaId area;
+    int64_t progress = 0;  // toward the next level of the area
+};
+
+struct IntelProjectOrder {
+    uint32_t project = 0;       // IntelProjects.txt index
+    EmpireId target;            // invalid for defense projects
+    ObjectId targetPlanet;      // optional specific target ("Any" when invalid)
+    VehicleId targetVehicle;
+    EmpireId thirdEmpire;       // political operations
+    int64_t progress = 0;
+};
+
+// One empire's standing with another (spec 05 §3).
+struct Relation {
+    bool contact = false;
+    Treaty treaty = Treaty::None;
+    bool dominant = false;      // Subjugation/Protectorate: true if *we* are the master
+    int tradePercent = 0;
+    uint32_t treatyTurn = 0;    // when the current treaty took effect
+    int32_t lastWarTurn = -1;
+    int anger = 0;              // computer players: anger toward that empire (0..~100+)
+    bool messageSentThisTurn = false;
+};
+
+struct LogEntry {
+    uint32_t turn = 0;
+    LogCategory category = LogCategory::Misc;
+    std::string title;
+    std::string text;
+    std::optional<Location> location;
+    std::string picture;  // Events/ picture name, if any
+};
+
+struct TurnStats {
+    uint32_t turn = 0;
+    int64_t score = 0;
+    Resources production;
+    int64_t research = 0;
+    int64_t intelligence = 0;
+    int techLevels = 0;
+    int systems = 0;
+    int planets = 0;
+    int64_t population = 0;
+    int units = 0;
+    int ships = 0;
+    int bases = 0;
+};
+
+// Income/expense breakdown of the last processed turn (Empire Status window).
+struct EconomyReport {
+    Resources colonies, trade, tariffsIn, remoteMining, otherIncome;
+    Resources tariffsOut, maintenance, construction;
+    Resources lostToStorage, undelivered;
+    Resources storageCap;
+    int64_t research = 0;
+    int64_t intelligence = 0;
+};
+
+// What an empire knows about the galaxy (spec 01 §6).
+struct Knowledge {
+    std::vector<uint8_t> explored;        // per SystemId: stellar bodies known
+    std::vector<uint8_t> present;         // per SystemId: has presence this turn (recomputed)
+    std::vector<uint8_t> knownWarpLink;   // per ObjectId (warp points): destination known
+    std::vector<uint32_t> lastSeen;       // per SystemId: turn last seen with presence
+    std::vector<VehicleId> visibleVehicles;  // foreign vehicles visible this turn (sorted)
+    std::vector<DesignId> seenDesigns;       // foreign designs learned (sorted)
+    std::vector<std::string> notes;          // per SystemId, player notes
+};
+
+struct Empire {
+    EmpireId id;
+    std::string name;          // e.g. "Terran"
+    std::string empireType;    // e.g. "Confederation"
+    std::string leaderTitle;
+    std::string leaderName;
+    Race race;
+    uint32_t color = 0xffffff;
+    PlayerKind kind = PlayerKind::Human;
+    bool alive = true;
+    std::string passwordHash;
+    int racialPointsSpent = 0;
+
+    Resources stockpile;
+    EconomyReport economy;
+
+    // Research (spec 05 §1).
+    std::vector<int> techLevels;            // per TechAreaId
+    std::vector<ResearchProject> research;  // queue, max 12
+    bool researchEvenly = true;
+    bool repeatResearch = false;
+    std::vector<int> uniqueAreasUnlocked;   // Unique Area ids granted by ruins
+
+    // Intelligence (spec 05 §2).
+    std::vector<IntelProjectOrder> intel;
+    bool intelEvenly = true;
+    bool repeatIntel = false;
+
+    std::vector<Relation> relations;        // per EmpireId
+    Knowledge knowledge;
+
+    std::vector<SystemId> claimedSystems;
+    std::vector<SystemId> systemsToAvoid;
+    std::vector<Location> taggedMinefields;
+    std::array<Waypoint, 10> waypoints{};
+    std::vector<std::string> designTypes;
+    std::vector<std::string> colonyTypes;
+    std::vector<ruleset::CombatStrategy> strategies;
+    std::vector<std::string> repairPriorities;
+    std::vector<DesignId> designs;          // own designs
+
+    std::vector<LogEntry> log;
+    std::vector<TurnStats> history;
+    int experience = 0;
+
+    // Computer player state.
+    int aiState = 0;
+    int aiTurnsInState = 0;
+    bool aiMinimalChanges = false;
+
+    bool ministerAll = false;               // full minister control
+
+    int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
+    const Relation& relation(EmpireId e) const { return relations[e.index()]; }
+    Relation& relation(EmpireId e) { return relations[e.index()]; }
+    bool hasExplored(SystemId s) const { return s.index() < knowledge.explored.size() && knowledge.explored[s.index()]; }
+};
+
+// ---- Cargo, queues, colonies ------------------------------------------------------------
+
+struct PopulationGroup {
+    EmpireId race;          // the empire whose race this population is
+    int64_t millions = 0;
+    bool operator==(const PopulationGroup&) const = default;
+};
+
+struct UnitStack {
+    DesignId design;
+    int count = 0;
+    bool operator==(const UnitStack&) const = default;
+};
+
+struct Cargo {
+    std::vector<PopulationGroup> population;
+    std::vector<UnitStack> units;
+
+    int64_t totalPopulation() const {
+        int64_t n = 0;
+        for (const auto& p : population) n += p.millions;
+        return n;
+    }
+    int unitCount(DesignId d) const {
+        for (const auto& u : units)
+            if (u.design == d) return u.count;
+        return 0;
+    }
+    bool empty() const { return population.empty() && units.empty(); }
+};
+
+struct QueueItem {
+    enum class Kind : uint8_t { Vehicle, Facility, Upgrade };
+    Kind kind = Kind::Vehicle;
+    DesignId design;          // Vehicle
+    uint32_t facility = 0;    // Facility: Facility.txt index; Upgrade: family representative
+    int count = 1;            // units built as a batch
+    Resources spent;          // progress on the current item
+};
+
+struct ConstructionQueue {
+    std::vector<QueueItem> items;
+    bool onHold = false;
+    bool repeat = false;
+    bool emergency = false;
+    int emergencyTurns = 0;   // consecutive emergency turns used
+    int slowTurns = 0;        // remaining slow-mode turns after an emergency
+    int autoWaypoint = -1;    // new vehicles get Move To this waypoint slot
+};
+
+struct Colony {
+    ObjectId planet;
+    EmpireId owner;
+    std::string colonyType;
+    std::vector<PopulationGroup> population;
+    int anger = 200;                  // tenths of a percent (spec 02 §1.8); starts Happy
+    std::vector<uint32_t> facilities; // Facility.txt indices
+    Cargo cargo;
+    ConstructionQueue queue;
+    int plagueLevel = 0;
+    int riotTurns = 0;
+    int atmosphereCountdown = -1;
+    bool minister = false;
+    bool homeworld = false;
+    uint32_t foundedTurn = 0;
+
+    int64_t totalPopulation() const {
+        int64_t n = 0;
+        for (const auto& p : population) n += p.millions;
+        return n;
+    }
+};
+
+// ---- Designs and vehicles ------------------------------------------------------------------
+
+struct DesignEntry {
+    uint32_t component = 0;  // Components.txt index
+    int32_t mount = -1;      // CompEnhancement.txt index, or -1
+    bool operator==(const DesignEntry&) const = default;
+};
+
+struct Design {
+    DesignId id;
+    EmpireId owner;
+    std::string name;
+    std::string designType;
+    uint32_t hull = 0;       // VehicleSize.txt index
+    std::vector<DesignEntry> entries;
+    uint32_t strategy = 0;   // index into the owner's strategies
+    bool obsolete = false;
+    uint32_t createdTurn = 0;
+    int built = 0;
+    int lost = 0;
+    int kills = 0;
+};
+
+enum class OrderKind : uint8_t {
+    MoveTo,         // location
+    Warp,           // object = warp point
+    Attack,         // vehicle or object target
+    Resupply,
+    Repair,
+    Explore,
+    Colonize,       // object = planet
+    Sentry,
+    LoadCargo,      // design (unit) or population (design invalid); amount (-1 = all that fit)
+    DropCargo,      // same
+    LaunchUnits,    // design, amount
+    RecoverUnits,   // design, amount
+    Cloak,
+    Decloak,
+    SweepMines,
+    UseComponent,   // amount = design entry index
+    StellarManipulation,  // amount = StellarAction, object/location = target
+    MoveToWaypoint, // amount = waypoint slot
+    Count
+};
+std::string_view displayName(OrderKind k);
+
+enum class StellarAction : uint8_t {
+    CreatePlanet, DestroyPlanet, CreateStar, DestroyStar, OpenWarpPoint, CloseWarpPoint,
+    CreateStorm, DestroyStorm, CreateNebulae, DestroyNebulae, CreateBlackHole, DestroyBlackHole,
+    CreateConstructedPlanet, Count
+};
+
+struct Order {
+    OrderKind kind = OrderKind::MoveTo;
+    Location location;
+    ObjectId object;
+    VehicleId vehicle;
+    DesignId design;
+    int amount = 0;
+    bool operator==(const Order&) const = default;
+};
+
+enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
+
+struct Vehicle {
+    VehicleId id;
+    EmpireId owner;
+    DesignId design;
+    std::string name;
+    Location location;
+    int count = 1;                  // unit groups in space hold several identical units
+    std::vector<int> damage;        // per design entry; destroyed when >= structure
+    int64_t supply = 0;
+    int movement = 0;               // movement points left this turn
+    std::vector<Order> orders;
+    bool repeatOrders = false;
+    FleetId fleet;
+    Cargo cargo;
+    int experience = 0;
+    VehicleStatus status = VehicleStatus::Normal;
+    bool minister = false;
+    ConstructionQueue queue;        // used when the design has a Space Yard
+    VehicleId targetVehicle;        // drones
+    ObjectId targetObject;
+    uint32_t builtTurn = 0;
+};
+
+struct Fleet {
+    FleetId id;
+    EmpireId owner;
+    std::string name;
+    std::vector<VehicleId> members;
+    VehicleId leader;
+    uint32_t formation = 0;         // Formations.txt index
+    uint32_t strategy = 0;          // owner's strategy index
+    int experience = 0;
+    std::vector<Order> orders;
+    bool repeatOrders = false;
+    bool minister = false;
+};
+
+// ---- Diplomacy ---------------------------------------------------------------------------
+
+enum class MessageType : uint8_t {
+    General,
+    ProposeTreaty, AcceptTreaty, RefuseTreaty, CounterTreaty, BreakTreaty, DeclareWar,
+    ProposeTrade, AcceptTrade, RefuseTrade, CounterTrade,
+    Gift, Tribute, AcceptGift, RefuseGift,
+    Surrender, GrantIndependence,
+    // Non-binding demands and requests (spec 05 §3.4).
+    DemandGift, DemandTribute, DemandSurrender, DemandRemoveShips, DemandRemoveColonies, DemandLeavePlanet,
+    RequestStopHostilities, RequestBreakTreaty, RequestDeclareWar, RequestMakePeace, RequestSupport,
+    RequestAttackEmpire, RequestAttackPlanet, DemandStopEspionage, DemandStopSabotage, DemandStopAttacks,
+    AcceptDemand, RefuseDemand,
+    Count
+};
+std::string_view displayName(MessageType t);
+
+struct PackageItem {
+    enum class Kind : uint8_t { Resources, Technology, Planet, Vehicle, StarChart, Treaty, CommChannel, System };
+    Kind kind = Kind::Resources;
+    Resources resources;
+    ruleset::TechAreaId tech;
+    ObjectId planet;
+    VehicleId vehicle;
+    SystemId system;
+    Treaty treaty = Treaty::None;
+    EmpireId empire;   // comm channel target
+};
+
+struct DiplomaticMessage {
+    MessageId id;
+    EmpireId from;
+    EmpireId to;
+    uint32_t sentTurn = 0;
+    MessageType type = MessageType::General;
+    int tone = 1;                        // 0 pleading, 1 neutral, 2 demanding
+    std::string text;
+    Treaty treaty = Treaty::None;        // treaty messages
+    std::vector<PackageItem> offer;      // trade/gift/tribute: what the sender gives
+    std::vector<PackageItem> request;    // what the sender asks for
+    EmpireId thirdEmpire;                // requests about another empire
+    SystemId system;
+    ObjectId planet;
+    MessageId inReplyTo;
+    bool delivered = false;
+    bool answered = false;
+};
+
+// ---- Combat records (replays and reports) ----------------------------------------------------
+
+struct CombatEvent {
+    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker };
+    Kind kind = Kind::Move;
+    uint8_t round = 0;
+    uint32_t piece = 0;       // index into CombatRecord::pieces
+    uint32_t target = 0;
+    int16_t x = 0, y = 0;
+    int32_t amount = 0;
+    uint32_t component = 0;
+};
+
+struct CombatPiece {
+    enum class Kind : uint8_t { Vehicle, Planet, UnitGroup, Seeker };
+    Kind kind = Kind::Vehicle;
+    EmpireId owner;
+    VehicleId vehicle;
+    ObjectId planet;
+    DesignId design;
+    std::string name;
+    int16_t startX = 0, startY = 0;
+};
+
+struct CombatRecord {
+    uint32_t turn = 0;
+    Location location;
+    std::vector<EmpireId> participants;
+    std::vector<CombatPiece> pieces;
+    std::vector<CombatEvent> events;
+    std::vector<std::string> summary;  // human-readable lines
+};
+
+// ---- Events and options ------------------------------------------------------------------------
+
+struct PendingEvent {
+    uint32_t eventType = 0;   // Events.txt index
+    EmpireId empire;
+    ObjectId object;
+    VehicleId vehicle;
+    SystemId system;
+    uint32_t fireTurn = 0;
+};
+
+struct VictoryConditions {
+    bool score = false;             int64_t scoreValue = 50000;
+    bool years = false;             int yearsValue = 100;
+    bool percentOfSecond = false;   int percentOfSecondValue = 200;
+    bool techPercent = false;       int techPercentValue = 75;
+    bool peace = false;             int peaceYears = 20;
+    bool delay = false;             int delayYears = 10;
+};
+
+struct GameOptions {
+    // Quadrant (spec 01 §2.2).
+    std::string quadrantType;
+    int systemCount = 40;
+    bool allWarpPointsConnected = true;
+    bool noWarpPoints = false;
+    bool warpPointsAnywhere = false;
+    bool allSystemsSeen = false;
+    bool omnipresent = false;
+    bool finiteResources = false;
+    // Events.
+    int eventFrequency = 2;              // 0 none, 1 low, 2 medium, 3 high
+    int maxEventSeverity = 2;            // 0 low .. 3 catastrophic
+    // Technology.
+    int techCostGrowth = 100;            // % growth per level (spec 05 §1.3)
+    int startTechLevel = 0;              // 0 low, 1 medium, 2 high
+    std::vector<uint8_t> techAreasAllowed;  // per tech area; empty = all
+    // Players.
+    Resources startingResources{20000, 20000, 20000};
+    int racialPoints = 2000;
+    int homePlanetValue = 1;             // 0 low, 1 medium, 2 high
+    int startingPlanets = 1;
+    bool sameSystemAllowed = false;
+    bool evenlyDistributed = true;
+    // Game settings.
+    bool noTacticalCombat = true;
+    bool allowGifts = true;
+    bool allowTechTrades = true;
+    bool allowIntel = true;
+    bool noRuins = false;
+    bool onlyBreathable = false;
+    bool onlyHomeType = false;
+    bool teamMode = false;
+    bool showAllScores = false;
+    int maxShipsPerPlayer = 200;
+    int maxUnitsPerPlayer = 1000;
+    int aiDifficulty = 1;
+    int aiBonus = 0;
+    VictoryConditions victory;
+    // Multiplayer.
+    bool simultaneous = true;
+};
+
+// ---- The game --------------------------------------------------------------------------------
+
+struct GameState {
+    uint32_t turn = 0;   // game date = 2400.0 + turn / 10
+    uint64_t seed = 0;
+    GameOptions options;
+    Galaxy galaxy;
+    std::vector<std::optional<Colony>> colonies;  // indexed by ObjectId (planets)
+    std::vector<Empire> empires;
+    std::vector<Design> designs;                  // indexed by DesignId
+    std::vector<Vehicle> vehicles;                // sorted by id
+    std::vector<Fleet> fleets;                    // sorted by id
+    std::vector<DiplomaticMessage> messages;      // not yet answered/expired
+    std::vector<PendingEvent> pendingEvents;
+    std::vector<CombatRecord> combats;            // battles of the last processed turn
+    uint32_t nextVehicleId = 0;
+    uint32_t nextFleetId = 0;
+    uint32_t nextMessageId = 0;
+    uint32_t peacefulTurns = 0;
+    bool gameOver = false;
+    EmpireId winner;
+    Rng rng;
+
+    // Accessors.
+    Empire& empire(EmpireId id) { return empires[id.index()]; }
+    const Empire& empire(EmpireId id) const { return empires[id.index()]; }
+    Design& design(DesignId id) { return designs[id.index()]; }
+    const Design& design(DesignId id) const { return designs[id.index()]; }
+
+    Colony* colony(ObjectId planet) {
+        return planet.index() < colonies.size() && colonies[planet.index()] ? &*colonies[planet.index()] : nullptr;
+    }
+    const Colony* colony(ObjectId planet) const { return const_cast<GameState*>(this)->colony(planet); }
+
+    Vehicle* vehicle(VehicleId id) {
+        auto it = std::lower_bound(vehicles.begin(), vehicles.end(), id, [](const Vehicle& v, VehicleId x) { return v.id < x; });
+        return it != vehicles.end() && it->id == id ? &*it : nullptr;
+    }
+    const Vehicle* vehicle(VehicleId id) const { return const_cast<GameState*>(this)->vehicle(id); }
+
+    Fleet* fleet(FleetId id) {
+        auto it = std::lower_bound(fleets.begin(), fleets.end(), id, [](const Fleet& f, FleetId x) { return f.id < x; });
+        return it != fleets.end() && it->id == id ? &*it : nullptr;
+    }
+    const Fleet* fleet(FleetId id) const { return const_cast<GameState*>(this)->fleet(id); }
+
+    // Game date as tenths of a year since 2400 (display: 2400 + turn/10).
+    int year() const { return 2400 + static_cast<int>(turn / 10); }
+
+    // Adds with a fresh id (keeps `vehicles`/`fleets` sorted). References are
+    // invalidated by the next add.
+    Vehicle& addVehicle(Vehicle v);
+    Fleet& addFleet(Fleet f);
+    // Drops vehicles with count <= 0, cleans fleet membership and empty fleets.
+    void removeDeadVehicles();
+    std::vector<const Vehicle*> vehiclesAt(Location where) const;
+};
+
+// Appends to an empire's log for the current turn.
+void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
+            std::optional<Location> where = std::nullopt, std::string picture = {});
+
+} // namespace opense4::game

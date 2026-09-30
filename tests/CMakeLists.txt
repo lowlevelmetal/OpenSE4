@@ -1,6 +1,9 @@
 add_executable(opense4_tests
     main.cpp
+    engine_fixture.cpp
     test_content.cpp
+    test_engine_core.cpp
+    test_engine_install.cpp
     test_galaxy.cpp
     test_generate.cpp
     test_pathfinding.cpp
