@@ -474,6 +474,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.randomAiPlayers);
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
     fields(ar, o.playersCanSaveMap, o.autosaveTurns);
+    fields(ar, o.allowSurrender);
 }
 
 // ---- Turn-based games ---------------------------------------------------------------------------------

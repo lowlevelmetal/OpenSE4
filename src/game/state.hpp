@@ -619,6 +619,9 @@ struct GameOptions {
     bool onlyBreathable = false;
     bool onlyHomeType = false;
     bool teamMode = false;
+    // "Allow Surrender" (spec 05 §3.4, §7.4, confirmed: binary): on by
+    // default; off, a Surrender message does nothing.
+    bool allowSurrender = true;
     int scoreDisplay = 1;                // Score Display: 0 own, 1 own and Non-Aggression or better (the default), 2 all (spec 05 §5)
     int maxShipsPerPlayer = 200;
     int maxUnitsPerPlayer = 1000;

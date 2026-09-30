@@ -607,6 +607,8 @@ struct Income {
     Resources remote, generated, floor, tariffsOut, bonus;
     int64_t research = 0;
     int64_t intelligence = 0;
+    // The whole non-trade income before tariffs and the bonus: the tariff base (spec 05 §3.3).
+    Production gross;
 
     // What reaches the treasury.
     Resources net() const { return produced.resources + floor + remote + generated - tariffsOut + bonus; }
@@ -656,7 +658,10 @@ Income computeIncome(const Rules& r, const GameState& s, EmpireId e) {
     const Resources gross = inc.produced.resources + inc.floor + inc.remote + inc.generated;
     const int64_t grossResearch = inc.produced.research + genResearch;
     const int64_t grossIntel = inc.produced.intelligence + genIntel;
-    const diplomacy::Generated due = diplomacy::tariffDue(r, s, e);
+    inc.gross.resources = gross;
+    inc.gross.research = grossResearch;
+    inc.gross.intelligence = grossIntel;
+    const diplomacy::Generated due = diplomacy::tariffOn(r, s, e, {gross, grossResearch, grossIntel});
     inc.tariffsOut = min(max(due.resources, Resources{}), max(gross, Resources{}));
     const int64_t researchTariff = std::clamp<int64_t>(due.research, 0, std::max<int64_t>(0, grossResearch));
     const int64_t intelTariff = std::clamp<int64_t>(due.intelligence, 0, std::max<int64_t>(0, grossIntel));
@@ -733,6 +738,11 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
 }
 
 } // namespace
+
+Production nonTradeIncome(const Rules& r, const GameState& s, EmpireId e) {
+    if (!livingEmpire(s, e)) return {};
+    return computeIncome(r, s, e).gross;
+}
 
 // ---- Per-empire steps ------------------------------------------------------------------------------------
 

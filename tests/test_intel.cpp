@@ -455,7 +455,8 @@ TEST_CASE("intel: ships defect to the source") {
     CHECK(v->orders.empty());
     CHECK(s.fleets.size() == 1);
     CHECK(std::find(s.fleets[0].members.begin(), s.fleets[0].members.end(), theirs[0]) == s.fleets[0].members.end());
-    CHECK(knowsDesign(s.empire(kA).knowledge, v->design));
+    // A defection is not one of the ways a design is learned (spec 05 §8).
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, v->design));
     CHECK(hasMood(ctx, kB, "Any Ship Lost"));
 }
 

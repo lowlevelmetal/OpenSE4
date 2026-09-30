@@ -114,7 +114,7 @@ TEST_CASE("turn order: a forgotten obsolete design can be purged at the new year
     CHECK(std::find(own.begin(), own.end(), fresh) != own.end());
 }
 
-TEST_CASE("history: shared designs keep the partner's date; a master sees its subject's designs this turn") {
+TEST_CASE("history: shared designs keep the partner's date; a master dates its subject's designs by their creation") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
@@ -126,11 +126,22 @@ TEST_CASE("history: shared designs keep the partner's date; a master sees its su
     s.turn = 40;
     seeDesign(s.empire(kB).knowledge, cDesign, 12);
     const DesignId cOther = spareDesign(s, r, kC, "Subject Hull");
+    s.design(cOther).createdTurn = 35;
+    const DesignId cBig = addTestDesign(s, r, kC, "Out Of Reach", "Test Cruiser", {"Test Bridge"});
+    s.empire(kC).techLevels[techArea(r, "Test Construction").index()] = 1;  // the cruiser hull needs level 2
     diplomacy::treatyStep(ctx, kA);
-    // From the partner: as old as the partner's own sighting, so partners cannot
-    // keep a design alive by passing it back and forth.
-    CHECK(designSeenTurn(s.empire(kA).knowledge, cDesign) == 40u);  // the master saw it itself
-    CHECK(designSeenTurn(s.empire(kA).knowledge, cOther) == 40u);
+    // A master learns the designs of its subject it does not know and the
+    // subject can build, dated with their creation (spec 05 §8). From the
+    // partner: as old as the partner's own sighting, so partners cannot keep a
+    // design alive by passing it back and forth; the later date wins.
+    CHECK(designSeenTurn(s.empire(kA).knowledge, cDesign) == 12u);
+    CHECK(designSeenTurn(s.empire(kA).knowledge, cOther) == 35u);
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, cBig));
+    // Created more than 50 turns ago: forgotten again at step 12 of the same processing.
+    GameState old = s;
+    old.turn = 90;
+    sight::forgetOldDesigns(old, kA);
+    CHECK_FALSE(knowsDesign(old.empire(kA).knowledge, cOther));
 
     // Without the subjugation, only the partner's date remains.
     GameState t = newPoliticsGame();
