@@ -23,99 +23,189 @@ bool canBePiece(ruleset::VehicleType t);
 // obscures it; otherwise the sight module decides (spec 04 §2).
 bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v);
 
-// Who fights in a sector (spec 04 §2): a vehicle takes part when a hostile
-// empire present there can see it (undetected cloaked vehicles sit out); an
-// empire takes part when it has such vehicles or a colony there and so does
-// an empire it is hostile to. Sorted by id.
+// Who is in a sector (spec 04 §2, §3). A battle starts when two hostile
+// empires present there see each other (undetected cloaked vehicles do not
+// count). Once it starts, every owned vehicle that can be a piece and every
+// colony there take part, including empires hostile to nobody present.
 struct Forces {
-    std::vector<EmpireId> empires;
-    std::vector<VehicleId> vehicles;
-    std::vector<ObjectId> colonies;
+    bool battle = false;               // two hostile empires see each other
+    std::vector<EmpireId> empires;     // every empire with a piece, by id
+    std::vector<VehicleId> vehicles;   // every vehicle that becomes a piece, by id
+    std::vector<ObjectId> colonies;    // every colony there, in object order
+    std::vector<ObjectId> obstacles;   // stars, warp points, comets, uncolonised planets
 };
 Forces battleForces(const Rules& r, const GameState& s, Location where);
+
+// Whether a vehicle moved into its sector this turn (spec 04 §3), and the
+// direction it came from: (dx, dy) in -1..1 each, (0, 0) when it was already
+// there or came from a sector that is not a neighbour (a warp jump).
+bool arrivedThisTurn(const GameState& s, const Vehicle& v);
+std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v);
 
 // ---- Component and hull ability lookups ----------------------------------------------------------
 
 int64_t componentSum(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);   // intact components
 int64_t componentBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);  // best single intact component
+// Spec 04 §7: the best intact component of each component Family, summed over the families.
+int64_t familyBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);
+// The same over a list of facilities (a planet's).
+int64_t facilityFamilyBest(const Rules& r, std::span<const uint32_t> facilities, AbilityKind k);
 bool hasIntactComponent(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);
 bool designHasComponent(const Rules& r, const Design& d, AbilityKind k);                   // destroyed or not
 int64_t hullSum(const Rules& r, const Design& d, AbilityKind k);
 bool vehicleArmed(const Rules& r, const GameState& s, const Vehicle& v);                   // any intact weapon
-// Designs without any supply storage never run dry (inferred), nor do vehicles with a Quantum Reactor.
-bool needsSupply(const Rules& r, const GameState& s, const Vehicle& v);
-int supplyPerShot(const Rules& r, const GameState& s, const Vehicle& v, const DesignEntry& e);
-int remainingStructure(const Rules& r, const GameState& s, const Vehicle& v);   // one unit
+
+// ---- Mounts (spec 04 §8, §18.2) ---------------------------------------------------------------------
+
+// Whether a design entry's mount applies to its component (weapon type requirement).
+bool mountApplies(const Rules& r, const DesignEntry& e);
+// A component's structure in combat: Tonnage Structure × the mount's structure
+// percent (rounded) when the mount applies.
+int combatStructure(const Rules& r, const DesignEntry& e);
+// Shield Generation or Phased Shield Generation of a part, scaled by the mount's shield percent (rounded).
+int64_t mountedShield(const Rules& r, const DesignEntry& e, AbilityKind k);
+
+// ---- Supply (spec 04 §6) --------------------------------------------------------------------------
+
+// Bases and vehicles with an intact Quantum Reactor never run out.
+bool unlimitedSupply(const Rules& r, const GameState& s, const Vehicle& v);
+// Satellites, drones, weapon platforms and planets never need supplies to fire.
+bool usesSupply(const Rules& r, const GameState& s, const Vehicle& v);
+// Whether the vehicle has supplies to fire and hold shields.
+bool hasSupplies(const Rules& r, const GameState& s, const Vehicle& v);
+// Supply used by one weapon's shot: Supply Amount Used × the mount's supply percent (rounded).
+int supplyPerShot(const Rules& r, const DesignEntry& e);
+
 ruleset::VehicleType typeOf(const Rules& r, const GameState& s, const Vehicle& v);
+int remainingStructure(const Rules& r, const GameState& s, const Vehicle& v);   // one unit, intact parts
+int designStructure(const Rules& r, const Design& d);                           // every part intact
 
 // ---- To-hit (spec 04 §7) -------------------------------------------------------------------------
 
 int clampChance(int chance);   // 1..99
-int toHitChance(const CombatSettings& cs, int distance, int offense, int defense, int interference);
+// Base + offense − defense − per-square × aim distance − interference, clamped once.
+int toHitChance(const CombatSettings& cs, int aimDistance, int offense, int defense, int interference);
 // Racial modifiers of an empire: culture Space Combat + (characteristic - 100).
 int racialOffense(const Rules& r, const Empire& e);
 int racialDefense(const Rules& r, const Empire& e);
-// Best `Combat Modifier - System` / `Damage Modifier - System` / `Shield
-// Modifier - System` among the empire's populated colonies in the system.
+// An empire's `Combat Modifier - System` / `Damage Modifier - System` / `Shield
+// Modifier - System` total in a system: the system's own value plus, for each
+// of its colonies and vehicles there, the best single facility or component.
 int systemModifier(const Rules& r, const GameState& s, EmpireId e, SystemId sys, AbilityKind k);
-// `Sensor Interference` and `Shield Disruption` at a sector (its objects and the system).
+// `Sector - Sensor Interference` and `Sector - Shield Disruption` at a sector
+// (the system's own abilities and the objects in the sector).
 int sensorInterference(const GameState& s, Location where);
 int shieldDisruption(const GameState& s, Location where);
-// Vehicle offense/defense before the weapon's own modifier, the system bonus,
-// and target-kind modifiers: best component + hull + experience + racial.
-int vehicleOffense(const Rules& r, const GameState& s, const Vehicle& v, bool unitGroup, int crewExperience);
-int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, bool unitGroup, int crewExperience);
+// A ship's or base's offense/defense (spec 04 §7) without the weapon's own
+// modifier and the system bonus: family-best components + hull + truncated
+// crew and fleet experience + racial. Mothballed: 0.
+int vehicleOffense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExperience);
+int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExperience);
+// A unit group's: the design's (plus − minus), never below 0, + racial.
+int unitOffense(const Rules& r, const GameState& s, const Vehicle& v);
+int unitDefense(const Rules& r, const GameState& s, const Vehicle& v);
 int fleetExperience(const GameState& s, const Vehicle& v);
 
 // ---- Damage (spec 04 §9) --------------------------------------------------------------------------
 
-enum class Layer : uint8_t {
-    Armor, Internal, Engines, Weapons, ShieldGenerators, MasterComputers, BoardingParties, SecurityStations, PlanetDestroyers
-};
+enum class Layer : uint8_t { Engines, Weapons, ShieldGenerators, MasterComputers, BoardingParties, SecurityStations, PlanetDestroyers };
 
 struct DamageRule {
-    enum class Shields : uint8_t { Both, PhasedOnly, None };
-    Shields shields = Shields::Both;
-    int shieldNum = 1, shieldDen = 1;   // damage counts × num/den against shields
-    bool shieldsOnly = false;           // the remainder is discarded
-    bool skipsArmor = false;            // internals only
-    std::optional<Layer> only;          // restricted to one kind of component
-    bool structural = true;             // false: special effect, no structure damage
+    enum class Shields : uint8_t { Absorb, PhasedOnly, Ignore };
+    Shields shields = Shields::Absorb;
+    int shieldMultiply = 1, shieldDivide = 1;   // Quad/Double/Half/Quarter Damage To Shields
+    bool shieldsOnly = false;                   // drains shields and nothing else
+    bool hullDamaging = true;                   // uses and feeds the damage pool
+    bool armorSpecials = true;                  // crystalline and emissive armor act
+    bool skipsArmor = false;                    // non-armor components while any are left
+    std::optional<Layer> only;                  // restricted to one kind of component
+    bool structural = true;                     // false: special effect or planet-only, never reaches components
 };
 DamageRule damageRule(DamageType t);
 
+// A piece's single shield pool (spec 04 §9.2).
 struct ShieldState {
-    int normal = 0, phased = 0;
-    int maxNormal = 0, maxPhased = 0;
-    int bonus = 0;   // system shield modifier minus shield disruption
+    enum class Kind : uint8_t { None, Normal, Phased };
+    int current = 0;
+    int max = 0;
+    Kind kind = Kind::None;   // Normal if any normal generator, Phased if all are phased
 };
-// Recomputes the maxima from intact generators; `fill` sets current to max,
-// otherwise current is capped at the new max (inferred, spec 04 §9.2).
-void refreshShields(const Rules& r, const GameState& s, const Vehicle& v, ShieldState& sh, bool fill);
-// Drains shields per the rule; returns the damage left over.
-int absorbShields(ShieldState& sh, int damage, const DamageRule& rule);
+// Maximum and kind from intact generators, the positive system modifier and
+// the sector's disruption. No shields without supplies or when mothballed.
+// `fill` sets current to the maximum; otherwise current is capped at it.
+void refreshShields(const Rules& r, const GameState& s, const Vehicle& v, int systemBonus, int disruption, ShieldState& sh, bool fill);
+// Whether a hit of this rule is stopped by these shields.
+bool shieldsApply(const DamageRule& rule, const ShieldState& sh);
+// Step 6 of spec 04 §9.1: drains the shields; returns what gets past them.
+int64_t absorbShields(ShieldState& sh, int64_t damage, const DamageRule& rule);
 
-// Applies `amount` damage to random intact components of the layer; returns the damage used.
-int damageLayer(const Rules& r, const GameState& s, Vehicle& v, Layer layer, int amount, Rng& rng);
+// Spec 04 §9.1a: destroys whole components of `v`, drawn at random weighted by
+// structure, armor first; returns the damage left over. Marks a destroyed
+// component with damage >= its structure.
+int64_t destroyComponents(const Rules& r, const GameState& s, Vehicle& v, int64_t damage, DamageType type, Rng& rng);
+void destroyEntry(const Rules& r, const Design& d, Vehicle& v, size_t entry);
 
-struct HitOutcome {
-    int shieldDamage = 0;
-    int structureDamage = 0;
-    int excess = 0;          // left over after the unit was destroyed
+// One hit through the component pipeline of a ship or base (spec 04 §9.1
+// steps 2 and 6-9): the pool, shields, crystalline and emissive armor, then
+// components. `damage` is after the system damage modifier. `pool` is the
+// ship's damage pool. Returns the damage that reached the components.
+struct HitResult {
+    int64_t shieldDamage = 0;
+    int64_t reached = 0;   // damage that went to the components
     bool destroyed = false;
 };
-// One structural hit on one unit (ship, base, or the front member of a unit group).
-HitOutcome hitUnit(const Rules& r, const GameState& s, Vehicle& unit, ShieldState& sh, int damage, DamageType type, Rng& rng);
+HitResult hitVehicle(const Rules& r, const GameState& s, Vehicle& v, ShieldState& sh, int64_t& pool, int64_t damage, DamageType type,
+                     Rng& rng);
 // Whether a hit of this type can change anything on this vehicle (mines and targeting skip it otherwise).
 bool canAffectVehicle(const Rules& r, const GameState& s, const Vehicle& v, const ShieldState& sh, DamageType type);
 
-// Fully restores components with Armor Regeneration (after a battle, history 1.79).
-void restoreRegeneratingArmor(const Rules& r, const GameState& s, Vehicle& v);
+// Unit hit points (spec 04 §9.4): structure plus shields; fighters, troops
+// and weapon platforms count their shields twice, once less when the type
+// skips shields. `shielded` = false leaves shields out (a fighter without supplies).
+int64_t unitHitPoints(const Rules& r, const Design& d, DamageType type, bool shielded = true);
+
+// Restores destroyed components with Armor Regeneration in design order, each
+// costing its structure, while `budget` lasts (spec 04 §9.3). Returns what was used.
+int64_t restoreRegeneratingArmor(const Rules& r, const GameState& s, Vehicle& v, int64_t budget);
+bool hasDestroyedRegeneratingArmor(const Rules& r, const GameState& s, const Vehicle& v);
+
+// ---- Ground combat (spec 04 §13) --------------------------------------------------------------------
+
+struct GroundFight {
+    EmpireId attacker, defender;
+    Cargo* cargo = nullptr;                               // the planet's cargo: invaders, defending troops, other units
+                                                          // (losses lower the counts; empty stacks are left in place)
+    const std::vector<PopulationGroup>* population = nullptr;
+    int* militia = nullptr;                               // the colony's militia pool (-1: raise it now)
+    int64_t groundDefensePercent = 0;                     // Planet - Change Ground Defense
+};
+struct GroundOutcome {
+    int rounds = 0;
+    int attackersLost = 0, defendersLost = 0, militiaLost = 0;
+    int attackersAtStart = 0;
+    bool captured = false;        // the defenders are gone and the attackers remain
+    bool attackersGone = false;
+};
+GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs, const GroundFight& f, Rng& rng);
+// The captor takes the colony with its facilities, stored units and population: logs and mood events.
+void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor);
+// Culture Ground Combat + (Physical Strength − 100).
+int groundModifier(const Rules& r, const Empire& e);
 
 // ---- Mines (spec 04 §10.6) -------------------------------------------------------------------------
 
-bool minesCanStrike(const Rules& r, const GameState& s, Location where);
-void resolveMines(TurnContext& ctx, Location where, Rng& rng);
+// The groups that entered a sector for the mines: the given vehicles as one
+// group, or (none given) the vehicles that moved in this turn, one group per
+// empire; when no vehicle anywhere is marked as moved this turn, every
+// vehicle there, by empire (inferred).
+std::vector<std::vector<VehicleId>> enteringGroups(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering);
+bool minesCanStrike(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering);
+void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> entering, Rng& rng);
+
+// ---- Experience (spec 04 §15) ----------------------------------------------------------------------
+
+// Adds `tenths` of a point to (whole, tenths), capped at kMaxCombatExperience.
+void addExperience(int& whole, int& tenths, int gainTenths);
 
 // ---- Record helpers -----------------------------------------------------------------------------------
 

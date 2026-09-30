@@ -369,7 +369,7 @@ void io(Ar& ar, ConstructionQueue& q) {
 template <class Ar>
 void io(Ar& ar, Colony& c) {
     fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
-           c.minister, c.homeworld, c.foundedTurn);
+           c.minister, c.homeworld, c.foundedTurn, c.militia);
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -386,12 +386,14 @@ template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.owner, v.design, v.name, v.location, v.count, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
-           v.cargo, v.experience, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn, v.immobileUntil);
+           v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
+           v.immobileUntil, v.cameFrom, v.cameFromTurn);
 }
 
 template <class Ar>
 void io(Ar& ar, Fleet& f) {
-    fields(ar, f.id, f.owner, f.name, f.members, f.leader, f.formation, f.strategy, f.experience, f.orders, f.repeatOrders, f.minister);
+    fields(ar, f.id, f.owner, f.name, f.members, f.leader, f.formation, f.strategy, f.experience, f.experienceTenths, f.orders,
+           f.repeatOrders, f.minister);
 }
 
 // ---- Diplomacy ------------------------------------------------------------------------------------

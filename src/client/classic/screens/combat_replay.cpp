@@ -198,6 +198,7 @@ private:
         const std::string& style = styleOf(ui, owner);
         switch (p.kind) {
             case game::CombatPiece::Kind::Planet:
+            case game::CombatPiece::Kind::Obstacle:
                 if (p.planet.valid() && p.planet.index() < ui.state().galaxy.objects.size()) return objectSprite(ui, ui.state().galaxy.object(p.planet));
                 return {};
             case game::CombatPiece::Kind::Seeker:
@@ -330,9 +331,12 @@ private:
         ImVec2 at(float sx, float sy) const { return {center.x + (sx - cx) * cell, center.y + (sy - cy) * cell}; }
     };
 
+    // Squares a piece covers on each side: planets and obstacles 4, everything else 1.
+    float pieceExtent(uint32_t i) const { return i < playback_.pieces().size() ? float(playback_.pieces()[i].size) : 1.0f; }
+
     ImVec2 pieceCenter(const View& v, uint32_t i, float x, float y) const {
-        const bool planet = i < record_.pieces.size() && record_.pieces[i].kind == game::CombatPiece::Kind::Planet;
-        return planet ? v.at(x + 1.0f, y + 1.0f) : v.at(x + 0.5f, y + 0.5f);
+        const float half = pieceExtent(i) * 0.5f;
+        return v.at(x + half, y + half);
     }
 
     // Where piece i is drawn now (moving pieces are between squares while animating).
@@ -408,7 +412,7 @@ private:
         for (uint32_t i = 0; i < pieces.size(); ++i) {
             const CombatPlayback::Piece& p = pieces[i];
             const game::CombatPiece& rp = record_.pieces[i];
-            const bool planet = rp.kind == game::CombatPiece::Kind::Planet;
+            const bool planet = rp.kind == game::CombatPiece::Kind::Planet || rp.kind == game::CombatPiece::Kind::Obstacle;
             if (!p.onMap) {
                 // Destroyed this round: a marker where it was.
                 if (diedThisRound[i]) {
@@ -420,11 +424,12 @@ private:
                 continue;
             }
             const ImVec2 c = piecePos(v, i);
-            const float extent = planet ? v.cell * 2.0f : v.cell;
+            const float extent = v.cell * pieceExtent(i);
             const float spriteSize = rp.kind == game::CombatPiece::Kind::Seeker ? v.cell * 0.6f : extent * 0.98f;
             const ImU32 owner = empireColor(s, p.owner);
-            dl->AddRect({c.x - extent * 0.5f + 1, c.y - extent * 0.5f + 1}, {c.x + extent * 0.5f - 1, c.y + extent * 0.5f - 1}, withAlpha(owner, 0.75f),
-                        0.0f, ui.px(1.2f));
+            if (!p.neutral)
+                dl->AddRect({c.x - extent * 0.5f + 1, c.y - extent * 0.5f + 1}, {c.x + extent * 0.5f - 1, c.y + extent * 0.5f - 1},
+                            withAlpha(owner, 0.75f), 0.0f, ui.px(1.2f));
             bool directional = false;
             const Sprite sprite = pieceSprite(ui, rp, p.owner, directional);
             if (sprite) {
@@ -446,8 +451,7 @@ private:
         if (hovered) {
             const uint32_t i = *hovered;
             const ImVec2 c = piecePos(v, i);
-            const bool planet = record_.pieces[i].kind == game::CombatPiece::Kind::Planet;
-            const float h = (planet ? v.cell * 2.0f : v.cell) * 0.5f;
+            const float h = v.cell * pieceExtent(i) * 0.5f;
             dl->AddRect({c.x - h, c.y - h}, {c.x + h, c.y + h}, IM_COL32(255, 255, 255, 220), 0.0f, ui.px(1.5f));
         }
         dl->PopClipRect();
@@ -464,7 +468,7 @@ private:
                 const ruleset::VehicleSize* hull = hullOf(ui, rp);
                 labelValue(ui, "Design", hull ? std::format("{} ({})", d.name, hull->name) : d.name, 80);
             }
-            labelValue(ui, "Owner", empireName(ui, p.owner), 80);
+            labelValue(ui, "Owner", p.neutral ? std::string("None") : empireName(ui, p.owner), 80);
             if (p.captured) labelValue(ui, "Captured from", empireName(ui, rp.owner), 80);
             labelValue(ui, "Square", std::format("{}, {}", p.x, p.y), 80);
             if (p.damage > 0) labelValue(ui, "Hits taken", std::format("{} damage so far", p.damage), 80);

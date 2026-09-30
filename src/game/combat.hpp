@@ -8,44 +8,59 @@
 // * Movement calls combatPossible() for a sector where a vehicle moved and,
 //   when it is true, resolveSpaceCombat() for that sector (at most once per
 //   sector per movement phase, spec 05 §9.3). resolveSpaceCombat() first lets
-//   hostile mines in the sector strike every vehicle there that they are
-//   hostile to (after the victims' sweepers clear what they can), then fights
-//   the battle if two hostile sides still see each other. combatPossible() is
-//   also true when only mines face a vehicle they can hurt, so the same call
-//   pair handles "a vehicle enters a mined sector" (spec 04 §10.6).
+//   hostile mines strike the group of vehicles that entered the sector (after
+//   that group's sweepers clear what they can, spec 04 §10.6), then fights the
+//   battle if two hostile empires present can see each other. The three-argument
+//   form names the entering group; the two-argument form takes the vehicles
+//   that moved into the sector this turn (Vehicle::cameFrom), one group per
+//   empire, or every vehicle there when none is marked (inferred fallback).
+//   combatPossible() is also true when only mines face a vehicle they can
+//   hurt, so the same call pair handles "a vehicle enters a mined sector".
 //   Destroyed vehicles get count = 0; the caller runs removeDeadVehicles().
-//   Every vehicle that fought loses its orders (spec 04 §2); its sector is
-//   appended to TurnContext::battleSites.
+//   Combat does not clear orders (spec 03 §6.3): only ships that change owner
+//   lose theirs. Removing a leading Sentry order is movement's job. The
+//   battle's sector is appended to TurnContext::battleSites.
+//
+// * Attackers and start boxes (spec 04 §3). A vehicle that moved into the
+//   battle sector this turn has Vehicle::cameFrom set to the sector it left
+//   and cameFromTurn == GameState::turn; movement records both on each step.
+//   Every other vehicle, and every planet, was already in the sector.
 //
 // * Troops on the ground (spec 04 §11, §13). Invading troops are stored as
 //   ordinary UnitStack entries in the target Colony::cargo.units. A troop
 //   stack belongs to the empire that owns its design (Design::owner); a troop
 //   stack whose design owner is hostile to the colony owner is an invader.
-//   Ground combat (runGroundCombat, turn phase 4) fights every colony that
-//   holds invaders. To land troops outside space combat (e.g. a Drop Cargo
-//   order onto an enemy planet), movement calls landTroops(), which moves the
-//   stack from the carrier's cargo into the colony's cargo. During a space
-//   battle, ships with a Drop Troops strategy land their troops the same way.
+//   Other units in a colony's cargo always serve the colony owner. Ground
+//   combat (runGroundCombat, turn phase 4) fights every colony that holds
+//   invaders. To land troops outside space combat (e.g. a Drop Cargo order
+//   onto an enemy planet), movement calls landTroops(), which moves the stack
+//   from the carrier's cargo into the colony's cargo. During a space battle,
+//   ships with a Drop Troops strategy land their troops the same way, and the
+//   ground combat is fought at once. Colony::militia holds the militia pool
+//   of an invaded colony (-1 when nobody invades it).
 //   Known limitation: a troop unit captured in a ship's cargo keeps the
 //   allegiance of its design owner.
 //
 // The replay record (GameState::combats)
 // --------------------------------------
 // CombatRecord::pieces lists every piece in creation order: planets and
-// vehicles at setup (startX/startY on a kCombatGridSize square grid; a planet
-// covers 2x2 squares from its start), then launched unit groups and seekers
-// as they appear. A seeker piece carries its launcher's design and the weapon
-// name. Events, in order, all with the combat turn (`round`, 1-based) and the
-// acting piece's square (x, y) at that moment:
+// vehicles at setup, neutral obstacles (stars, warp points, comets,
+// uncolonised planets; owner invalid, `planet` = the object), then launched
+// unit groups and seekers as they appear. startX/startY are the top-left
+// square on the kCombatMapWidth x kCombatMapHeight map; planets and obstacles
+// cover 4x4 squares. A seeker piece carries its launcher's design and the
+// weapon name. Events, in order, all with the combat turn (`round`, 1-based)
+// and the acting piece's top-left square (x, y) at that moment:
 //   Move       piece moved to (x, y): one square per event, except that a
 //              Random Target Movement hit jumps (seekers and forced moves too)
 //   Fire       piece fired at target; component = component index, amount =
 //              design entry index (rams and boarding attempts: 0)
 //   Hit        piece (a shooter, seeker or rammer) hit target; amount = damage
-//              dealt before shields, summed over a group's members
+//              of the hit after the system damage modifier, before shields
 //   Miss       piece missed target
 //   Destroyed  piece destroyed; target = the piece that did it (itself when a
-//              seeker expires)
+//              seeker expires). A planet whose colony dies stays on the map as
+//              an unowned obstacle.
 //   Captured   piece changed owner; target = the capturer; amount = new owner id
 //   Launch     piece = new unit group, target = its carrier, amount = units;
 //              or piece = a troop ship, target = the planet, amount = troops landed
@@ -81,9 +96,9 @@ struct CombatSettings {
     int ramSourcePercent = 60;
     int ramTargetPercent = 100;
     int capturedReload = 10;
-    int fighterGroup = 20;
-    int mineGroup = 20;
-    int satelliteGroup = 20;
+    int fighterGroup = 20;     // loaded, never used (spec 04 §10.4)
+    int mineGroup = 20;        // loaded, never used
+    int satelliteGroup = 20;   // loaded, never used
     bool fightersHitByMines = true;
     bool dronesHitByMines = true;
     int defendingUnitsPerPopulation = 20;
@@ -95,12 +110,15 @@ struct CombatSettings {
 };
 CombatSettings loadSettings(const Rules& r);
 
-// Largest damage one weapon deals per shot (history 1.14).
+// Largest damage one weapon deals per shot (history 1.14); applied to the table value with the mount.
 inline constexpr int kMaxShotDamage = 50000;
-// Combat experience (percentage points of to-hit) is capped here (inferred).
+// Crew and fleet experience are capped here (confirmed: binary, spec 04 §15).
 inline constexpr int kMaxCombatExperience = 50;
-// The combat map is a square grid of this size (inferred, spec 04 §19 Q1).
-inline constexpr int kCombatGridSize = 32;
+// The combat map (confirmed: binary, spec 04 §1): columns 0..71, rows 0..62.
+inline constexpr int kCombatMapWidth = 72;
+inline constexpr int kCombatMapHeight = 63;
+// Planets and neutral obstacles cover this many squares on each side.
+inline constexpr int kBigPieceSize = 4;
 
 // ---- Weapon damage types (spec 04 §9.5; every identifier the data format allows) ----------
 
@@ -143,7 +161,9 @@ std::string_view identifier(DamageType t);
 // Unknown identifiers (mods) read as Normal.
 DamageType parseDamageType(std::string_view text);
 bool isPlanetOnlyDamage(DamageType t);   // plague, population, conditions, facility killers
-bool isSpecialEffect(DamageType t);      // reload, conversion, push/pull/random: no structure damage
+bool isSpecialEffect(DamageType t);      // reload, conversion, push/pull/random: act before shields
+// The types that use and feed the damage pool (spec 04 §9.1 step 2).
+bool isHullDamaging(DamageType t);
 
 // ---- Weapon target sets (spec 04 §18.1) ----------------------------------------------------
 
@@ -188,6 +208,10 @@ struct Strategy {
     std::array<bool, kTargetCategories> dontFireOn{};
     std::array<bool, kTargetCategories> breakFormation{};
     int fighterLaunchGroup = 10;
+    // "Drones Per Target" (default 3): set in the strategies window and stored
+    // with the game, not a DefaultStrategies.txt key (spec 04 §10.7). Read from
+    // the empire's strategy record when it holds that key.
+    int dronesPerTarget = 3;
     int damagePercentShip = 100;
     int damagePercentPlanet = 100;
     int damagePercentFighters = 100;
@@ -202,20 +226,32 @@ Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 
 // ---- Turn phases -----------------------------------------------------------------------------
 
-// True when hostile empires that can see each other have combat pieces in the
-// sector, or hostile mines there can strike a vehicle (spec 04 §2, §10.6).
+// True when hostile empires that can see each other are present in the
+// sector, or hostile mines there can strike an entering vehicle (spec 04 §2, §10.6).
 bool combatPossible(const Rules& r, const GameState& s, Location where);
 // Mines first, then the battle: appends a CombatRecord, applies damage,
 // destruction, capture, experience, design statistics, mood events and logs.
 void resolveSpaceCombat(TurnContext& ctx, Location where);
+// The same with the group of vehicles that just moved in (the mines' victims).
+void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering);
 // Turn phase 4: invading troops against planets; capture of planets.
 void runGroundCombat(TurnContext& ctx);
 
 // ---- Queries and helpers ------------------------------------------------------------------------
 
-// Chance (percent) that a weapon of `attacker` hits `defender` at `range`
-// (spec 04 §7). Seekers and warheads never roll: 100. Non-weapons: 0.
-int toHitPercent(const Rules& r, const GameState& s, const Vehicle& attacker, size_t weaponEntry, const Vehicle& defender, int range);
+// Chance (percent) that a weapon of `attacker` hits `defender` whose top-left
+// square is `distance` squares away (spec 04 §7). Seekers and warheads never
+// roll: 100. Non-weapons: 0.
+int toHitPercent(const Rules& r, const GameState& s, const Vehicle& attacker, size_t weaponEntry, const Vehicle& defender, int distance);
+
+// Damage of a design entry's weapon at `range` squares (spec 04 §8): the
+// table entry (index shifted by a valid mount's range modifier and clamped to
+// 1..20), times the mount's damage percent (rounded), capped at kMaxShotDamage.
+int weaponDamage(const Rules& r, const DesignEntry& e, int range);
+// Warheads and troop weapons: the largest table entry, with the mount (spec 04 §8).
+int weaponLargestDamage(const Rules& r, const DesignEntry& e);
+// Longest range at which weaponDamage() is above 0 (0 = none; 20 when a mount clamps it).
+int weaponReach(const Rules& r, const DesignEntry& e);
 
 // Empires whose troops are invading this colony (hostile troop stacks in its cargo), by id.
 std::vector<EmpireId> invaders(const Rules& r, const GameState& s, const Colony& c);
@@ -223,11 +259,13 @@ bool isTroopDesign(const Rules& r, const GameState& s, DesignId d);
 // Moves up to `count` troop units of `design` from a carrier onto a hostile
 // colony in the carrier's sector (spec 04 §11 Drop Troops). Refused when the
 // colony is not hostile or is already contested by another invader (spec 04
-// §13). Returns the number landed.
+// §13). The first landing gives the colony its militia pool. Returns the number landed.
 int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet, DesignId design, int count);
 
-// Militia raised from a population (spec 04 §13, inferred: one per
-// `Defending Units Per Population` M, at least one while anyone lives there).
+// Militia raised by one population group of `populationMillions` (spec 04 §13):
+// one per `Defending Units Per Population` million, truncated, no minimum.
 int militiaCount(const CombatSettings& cs, int64_t populationMillions);
+// The militia of a whole colony: the sum over its population groups.
+int militiaCount(const CombatSettings& cs, std::span<const PopulationGroup> population);
 
 } // namespace opense4::game::combat

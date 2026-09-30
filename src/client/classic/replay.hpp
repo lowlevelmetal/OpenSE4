@@ -11,7 +11,8 @@
 //   Fire       `piece` fires weapon `component` (Components.txt index) at `target`.
 //   Hit        `piece`'s shot hits `target` for `amount` damage.
 //   Miss       `piece`'s shot misses `target`.
-//   Destroyed  `piece` is destroyed (and leaves the map).
+//   Destroyed  `piece` is destroyed (and leaves the map); a planet whose colony
+//              died stays on the map as an unowned obstacle.
 //   Captured   `piece` is captured; its new owner is the owner of piece `target`
 //              (when `target` names another piece).
 //   Launch     unit group `piece` is launched by carrier `target` and appears at
@@ -19,7 +20,8 @@
 //   Seeker     seeker piece `piece` flies to (x, y) toward `target`; it appears
 //              on its first event.
 // Pieces of kind Seeker, and pieces launched by a Launch event, start off the
-// map. Events are played in round order (stable for equal rounds).
+// map. Planets and obstacles cover 4x4 squares from their top-left square.
+// Events are played in round order (stable for equal rounds).
 
 #include "game/state.hpp"
 
@@ -34,6 +36,8 @@ public:
         bool onMap = true;
         bool destroyed = false;
         bool captured = false;
+        bool neutral = false;      // an obstacle, or a planet whose colony died
+        int size = 1;              // squares covered on each side (planets and obstacles: 4)
         game::EmpireId owner;
         int x = 0, y = 0;
         int fromX = 0, fromY = 0;  // square before the latest move (for animation)

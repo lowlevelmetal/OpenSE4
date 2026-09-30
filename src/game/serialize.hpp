@@ -39,7 +39,9 @@ class Rules;
 // Version 2: colony anger in whole percent (was tenths), no riot counter,
 // atmosphere counter counts up (spec 02 §2, §4); research and intelligence
 // pools, the trade counter, the Research - Steal target area, and the
-// Technology Cost and Score Display options (spec 05).
+// Technology Cost and Score Display options (spec 05); vehicle and fleet
+// experience tenths, the sector a vehicle came from, colony militia and
+// obstacle combat pieces (spec 04).
 inline constexpr uint32_t kSaveVersion = 2;
 inline constexpr uint32_t kMinSaveVersion = 2;
 
