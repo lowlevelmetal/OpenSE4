@@ -5,6 +5,7 @@
 // turn pipeline.
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "game/ai.hpp"
 #include "game/ai_data.hpp"
@@ -229,17 +230,11 @@ std::string runComputerGame(uint64_t seed, int turns, std::vector<std::string>* 
     return trace;
 }
 
+// A fake install in a scratch directory of its own (removed afterwards).
 struct TempTree {
+    test::TempDir dir;
     std::filesystem::path root;
-    explicit TempTree(std::string_view tag) {
-        root = std::filesystem::temp_directory_path() / std::format("opense4_ai_test_{}", tag);
-        std::filesystem::remove_all(root);
-        std::filesystem::create_directories(root);
-    }
-    ~TempTree() {
-        std::error_code ec;
-        std::filesystem::remove_all(root, ec);
-    }
+    explicit TempTree(std::string_view tag) : dir(std::format("ai_test_{}", tag)), root(dir.path()) {}
     void write(const std::filesystem::path& rel, std::string_view body) const {
         std::filesystem::create_directories((root / rel).parent_path());
         std::ofstream f(root / rel, std::ios::binary);

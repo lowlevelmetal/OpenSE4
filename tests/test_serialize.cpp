@@ -3,6 +3,7 @@
 // were added without being serialized.
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "core/rng.hpp"
 #include "game/commands.hpp"
@@ -588,23 +589,16 @@ TEST_CASE("serialize: checksums are stable") {
 
 namespace {
 
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() / ("opense4_test_" + std::to_string(Rng(reinterpret_cast<uintptr_t>(this)).next()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ec;
-        std::filesystem::remove_all(path, ec);
-    }
+struct ScratchDir {
+    test::TempDir dir{"serialize"};
+    std::filesystem::path path = dir.path();
 };
 
 } // namespace
 
 TEST_CASE("serialize: save files") {
     const Rules& r = engineRules();
-    TempDir dir;
+    ScratchDir dir;
     GameState s = busyGame();
     SaveInfo info;
     info.gameName = "Round Trip";

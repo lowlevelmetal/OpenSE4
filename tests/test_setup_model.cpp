@@ -3,6 +3,7 @@
 // Race presets are invented for these tests and written to a temporary folder.
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
 #include "datafile/datafile.hpp"
@@ -50,6 +51,7 @@ Design Name File       := Tests.txt
 }
 
 struct SetupRules {
+    std::unique_ptr<test::TempDir> dir;  // the fake install, removed when the tests end
     fs::path root;
     std::unique_ptr<game::Rules> rules;
 };
@@ -57,8 +59,8 @@ struct SetupRules {
 const game::Rules& setupRules() {
     static const SetupRules r = [] {
         SetupRules out;
-        out.root = fs::temp_directory_path() / "opense4_setup_model_test";
-        fs::remove_all(out.root);
+        out.dir = std::make_unique<test::TempDir>("setup_model_test");
+        out.root = out.dir->path();
         // Tier 1: Intelligence 110 (250 points); tier 2: + Night Eyes (750); tier 3: Intelligence 150,
         // Cunning 115, Night Eyes (5200).
         const std::string tiers = R"(Race Opt 1 Num Characteristics := 1
@@ -433,8 +435,8 @@ TEST_CASE("setup model: empire files round-trip through TOML") {
     CHECK(setup::sameRace(*back.customRace, d.race));
 
     // Files: save, list, load.
-    const fs::path dir = fs::temp_directory_path() / "opense4_setup_model_empires";
-    fs::remove_all(dir);
+    const test::TempDir tmp("setup_model_empires");
+    const fs::path dir = tmp / "empires";
     auto file = setup::saveEmpireFile(r, dir, *e);
     REQUIRE(file.has_value());
     const auto list = setup::listEmpireFiles(r, dir);
