@@ -593,15 +593,18 @@ private:
         while (std::find(marked.begin(), marked.end(), 0) != marked.end()) {
             for (uint32_t b = 0; b < n; ++b) {
                 if (marked[b]) continue;
+                // A system that gets no link is marked without one. The original marks it
+                // together with everything linked to it, looks for a partner only up to 68
+                // squares away and can loop forever; we mark the system alone, search any
+                // distance and always finish (OpenSE4 choice, spec 01 §3.5, §14 Q31).
                 if (full(b)) {
-                    marked[b] = 1;  // quirk: treated as marked without a new link
+                    marked[b] = 1;
                     continue;
                 }
                 std::optional<uint32_t> best;
                 for (uint32_t c = 0; c < n; ++c)
                     if (marked[c] && !full(c) && (!best || distance(b, c) <= distance(b, *best))) best = c;  // ties: highest number
                 if (!best) {
-                    // Every marked system is full: the original would search forever (OpenSE4 guard).
                     marked[b] = 1;
                     warn("A system could not be connected to the rest of the quadrant.");
                     continue;
@@ -897,7 +900,8 @@ private:
             wp.kind = ObjectKind::WarpPoint;
             wp.name = "Warp Point";  // the destination is added for viewers who explored it
             if (opt_.warpPointsAnywhere) {
-                // Up to 4 squares inward from the edge, redrawn until the sector is empty.
+                // Up to 4 squares inward from the edge, redrawn until the sector is empty;
+                // the original never stops redrawing, we stop after 1,000 draws (OpenSE4 choice).
                 wp.sector = warpInwardSector(a, rng_.rangeInt(0, 4));
                 for (int n = 0; n < 1000 && occupied(sys, wp.sector); ++n) wp.sector = warpInwardSector(a, rng_.rangeInt(0, 4));
             } else {

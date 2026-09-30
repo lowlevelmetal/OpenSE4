@@ -1115,3 +1115,39 @@ TEST_CASE("installed data set: every quadrant type generates cleanly (opt-in)") 
         }
     }
 }
+
+TEST_CASE("installed data set: games start with many starting planets on every quadrant size (opt-in)") {
+    const char* env = std::getenv("OPENSE4_CLASSIC_DATA");
+    if (!env) return;
+    const auto dir = ruleset::findInstalledDataDir(std::string_view(env) == "auto" ? std::filesystem::path{} : std::filesystem::path(env));
+    REQUIRE(dir);
+    auto loaded = ruleset::loadRuleset(*dir);
+    REQUIRE(loaded.ruleset);
+    const game::Rules r(std::move(*loaded.ruleset), dir->parent_path());
+    for (int size = 0; size <= 2; ++size)
+        for (int planets : {3, 10}) {
+            game::GameSetup setup;
+            setup.seed = static_cast<uint64_t>(31 * size + planets);
+            setup.options.quadrantSize = size;
+            setup.options.startingPlanets = planets;
+            for (size_t i = 0; i < 6; ++i) {
+                game::EmpireSetup e;
+                e.preset = r.racePresets()[i * 3 % r.racePresets().size()].folder;
+                e.kind = i == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
+                setup.empires.push_back(e);
+            }
+            INFO("size " << size << ", " << planets << " planets");
+            auto s = game::createGame(r, setup);
+            REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
+            for (const game::Empire& e : s->empires) {
+                CHECK(coloniesOf(*s, e.id).size() == static_cast<size_t>(planets));
+                CHECK(e.homeSystem.valid());
+                CHECK(e.hasExplored(e.homeSystem));
+                for (const game::Colony* c : coloniesOf(*s, e.id)) {
+                    CHECK(c->homeworld);
+                    CHECK(c->colonyType == "Homeworld");
+                    CHECK(e.hasExplored(s->galaxy.object(c->planet).system));
+                }
+            }
+        }
+}

@@ -15,10 +15,13 @@ into the game install. The file name is the map name followed by `.toml`.
 
 - **Save Map on Game Setup's Quadrant page** writes the quadrant shown there. That is
   either the generated preview (which has no starting points) or the map loaded before.
-- **Save Map in the Game Menu** (F2) writes the current quadrant of a game in progress.
-  It is available only when the game was set up with *Players can save the map during
-  the game* (Game Settings page). Each living empire's capital becomes a starting point
-  for that empire's player slot, so the map can be played again from the same homes.
+- **Save Map in the Game Menu** (F2) writes the current quadrant of a game in progress:
+  its systems and stellar objects, without ships, units or what the empires know. It is
+  available only when the game was set up with *Players can save the map during the
+  game* (Game Settings page, off by default). The file gets the starting points the game
+  still holds, as in the original (spec 01 §12): for a game started from a map, all of
+  that map's specific points and the common points no empire took; a generated game has
+  none. The empires' capitals are not written as starting points.
 - **Load Map on the Quadrant page** picks a map from the maps folder. The game then
   starts on it. The quadrant options on that page (type, size, warp point options) no
   longer apply. Loading a map replaces the previous map together with its starting
@@ -30,13 +33,16 @@ This follows spec 01 §3.6 and §12. Map starting points are used before random
 placement:
 
 1. For each empire in player order: it takes the starting point reserved for its
-   player slot. An empire without one takes a random common point from those left.
-   A point on a sector that an earlier empire already took is skipped.
+   player slot (the last one listed, when several are). An empire without one takes a
+   random common point from those left, which is then used up. A point on a sector that
+   an earlier empire already took is skipped (an OpenSE4 choice: the original does not
+   check, so two empires could share a homeworld).
 2. The planet in that sector becomes the empire's homeworld. If the planet's
    atmosphere is not the empire's, it is converted: it gets a random natural planet
    record with the empire's atmosphere and planet type at the same size, and keeps its
    name. If the sector holds no planet, one is created there, as random placement
-   would create it.
+   would create it: named after the system with the numeral one above the number of
+   sectors that hold a planet.
 3. Empires still without a homeworld are placed at random in player order, as for a
    generated quadrant. Homes placed from starting points count as homes placed before.
 

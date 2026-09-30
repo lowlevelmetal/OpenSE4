@@ -48,6 +48,11 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     CHECK(v.empire(other).stockpile.isZero());
     CHECK(v.empire(other).log.empty());
     CHECK(v.empire(other).passwordHash.empty());
+    // Where the others started: their home systems and the map's starting points.
+    CHECK_FALSE(v.empire(other).homeSystem.valid());
+    CHECK(v.empire(me).homeSystem == s.empire(me).homeSystem);
+    s.startingPoints.push_back({s.empire(other).homeSystem, Sector{1, 1}, 1});
+    CHECK(redactForEmpire(s, me).startingPoints.empty());
     // Foreign vehicles only when visible, and without their orders or cargo.
     for (const Vehicle& x : v.vehicles) {
         if (x.owner == me) continue;
