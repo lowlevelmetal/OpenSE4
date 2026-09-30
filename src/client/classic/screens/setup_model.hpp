@@ -7,6 +7,7 @@
 // here so the rules can be unit-tested (tests/test_setup_model.cpp).
 
 #include "game/generate.hpp"
+#include "game/map_file.hpp"
 #include "game/rules.hpp"
 #include "game/setup.hpp"
 
@@ -39,6 +40,9 @@ struct NewGameSettings {
     std::vector<game::EmpireSetup> players;  // the explicit empires, in order
     RandomPlayers computers{true, 1};
     RandomPlayers neutrals{false, 0};
+    // A loaded map (spec 01 §12): the game starts on it instead of a generated
+    // quadrant, and its starting points place the empires first.
+    std::optional<game::QuadrantMap> map;
 };
 
 // Defaults from the data set: one human empire (the first Quick Start style),
@@ -66,6 +70,28 @@ game::QuadrantOptions quadrantOptions(const game::GameOptions& o);
 // Generates the quadrant exactly as game::createGame will for this seed and
 // options, so the preview is the map the game starts with.
 std::expected<game::Generated, std::string> previewQuadrant(const game::Rules& r, uint64_t seed, const game::GameOptions& o);
+
+// ---- Maps (spec 01 §12; our format, docs/MAPS.md) -----------------------------------------------
+
+// Load Map: the game will start on `map`. Loading a map replaces the previous
+// one with its starting points, so no earlier starting point survives.
+void useMap(NewGameSettings& s, game::QuadrantMap map);
+// Generate Map Now: back to a generated quadrant (without starting points).
+void clearMap(NewGameSettings& s);
+// The quadrant Save Map writes from Game Setup: the loaded map, or the
+// generated preview (which has no starting points).
+game::QuadrantMap mapToSave(const NewGameSettings& s, const game::Galaxy& preview, std::string name);
+
+struct MapFileInfo {
+    std::filesystem::path path;
+    std::string name;
+    int systems = 0;
+    int startingPoints = 0;
+};
+// The map files in a folder (<user data>/maps), by name.
+std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir);
+// Where Save Map puts a map of this name in `dir`.
+std::filesystem::path mapFilePath(const std::filesystem::path& dir, std::string_view name);
 
 // ---- Players ------------------------------------------------------------------------------
 

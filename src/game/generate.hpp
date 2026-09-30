@@ -67,12 +67,18 @@ struct PlacementOptions {
     HomeValue homeValue = HomeValue::Medium;
     bool finiteResources = false;
     bool allPlanetsSameSize = true;  // "All player planets the same size"
+    std::vector<StartingPoint> startingPoints;  // a loaded map's (spec 01 §12)
 };
 
-// Picks each empire's homeworld in player order: a natural planet of the
+// Picks each empire's homeworld (spec 01 §3.6). A map's starting points come
+// first: each empire, in player order, takes its own specific point, else a
+// random remaining common point. A planet there whose atmosphere is not the
+// empire's becomes a random Planet record of the empire's atmosphere and planet
+// type at the same size; with no planet there, one is created. The empires
+// left are then placed at random in player order: a natural planet of the
 // empire's atmosphere and planet type, of the home size, in a start-eligible
 // system, spread out by warp jumps; a planet is created when none fits. The
-// planet itself is not changed (setup gives it its values and colony).
+// planet itself is not otherwise changed (setup gives it its values and colony).
 std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy, const ruleset::Ruleset& rs,
                                                                   std::span<const EmpireStart> empires,
                                                                   const PlacementOptions& options, Rng& rng);

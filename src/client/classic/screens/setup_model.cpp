@@ -168,6 +168,38 @@ std::expected<game::Generated, std::string> previewQuadrant(const game::Rules& r
     return game::generateQuadrant(r.data(), quadrantOptions(o), galaxyRng);
 }
 
+// ---- Maps --------------------------------------------------------------------------------
+
+void useMap(NewGameSettings& s, game::QuadrantMap map) { s.map = std::move(map); }
+
+void clearMap(NewGameSettings& s) { s.map.reset(); }
+
+game::QuadrantMap mapToSave(const NewGameSettings& s, const game::Galaxy& preview, std::string name) {
+    game::QuadrantMap m;
+    if (s.map) m = *s.map;
+    else m.galaxy = preview;
+    m.name = std::move(name);
+    return m;
+}
+
+std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesystem::path& dir) {
+    std::vector<MapFileInfo> out;
+    std::error_code ec;
+    for (const auto& f : std::filesystem::directory_iterator(dir, ec)) {
+        if (!f.is_regular_file(ec) || lowerAscii(f.path().extension().string()) != game::kMapExtension) continue;
+        auto loaded = game::loadMapFile(f.path(), r.data());
+        if (!loaded) continue;
+        out.push_back({f.path(), loaded->map.name, static_cast<int>(loaded->map.galaxy.systems.size()),
+                       static_cast<int>(loaded->map.startingPoints.size())});
+    }
+    std::sort(out.begin(), out.end(), [](const MapFileInfo& a, const MapFileInfo& b) { return lowerAscii(a.name) < lowerAscii(b.name); });
+    return out;
+}
+
+std::filesystem::path mapFilePath(const std::filesystem::path& dir, std::string_view name) {
+    return dir / (game::mapFileStem(name) + std::string(game::kMapExtension));
+}
+
 // ---- Players -----------------------------------------------------------------------------
 
 std::pair<int, int> randomPlayerRange(const game::Rules& r, bool neutral, int level) {
@@ -184,6 +216,7 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
     game::GameSetup g;
     g.seed = s.seed;
     g.options = s.options;
+    g.map = s.map;
     game::GameOptions& o = g.options;
     if (o.systemCount > 0) o.systemCount = std::min(o.systemCount, maxSystems(r));  // 0: rolled from the Quadrant Size
     o.quadrantSize = std::clamp(o.quadrantSize, 0, 2);

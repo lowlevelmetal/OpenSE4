@@ -935,6 +935,32 @@ ObjectId createPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sysId, Sec
     return g.objects.back().id;
 }
 
+// The homeworld at a map's starting point (spec 01 §3.6, §12, confirmed:
+// binary): the planet in that sector; one whose atmosphere is not the
+// empire's becomes a random natural Planet record of the empire's atmosphere
+// and planet type at the same size. Without a planet there, one is created
+// as for random placement.
+ObjectId homeAtPoint(Galaxy& g, const ruleset::Ruleset& rs, const StartingPoint& point, const EmpireStart& e, int homeSize,
+                     const PlacementOptions& options, Rng& rng) {
+    for (ObjectId id : g.system(point.system).objects) {
+        SpaceObject& obj = g.object(id);
+        if (obj.kind != ObjectKind::Planet || obj.sector != point.sector) continue;
+        if (!keysEqual(obj.atmosphere, e.atmosphere)) {
+            const std::string size = obj.size;
+            std::vector<uint32_t> types = naturalSectorTypes(rs, ObjectKind::Planet, stellarSizeOf(rs, obj), e.surface, e.atmosphere);
+            if (types.empty()) types = naturalSectorTypes(rs, ObjectKind::Planet, 0, e.surface, e.atmosphere);  // (OpenSE4 choice)
+            if (!types.empty()) applySectorType(rs, obj, types[static_cast<size_t>(draw(rng, static_cast<int>(types.size())))]);
+            // The size stays; the empire must be able to live there whatever the data offers.
+            obj.size = size;
+            obj.surface = e.surface;
+            obj.atmosphere = e.atmosphere;
+        }
+        return id;
+    }
+    return createPlanet(g, rs, point.system, point.sector, e.surface, e.atmosphere, options.allPlanetsSameSize ? homeSize : 0,
+                        options.finiteResources, rng);
+}
+
 } // namespace
 
 std::string_view displayName(ObjectKind k) {
@@ -992,13 +1018,48 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
     // lies just above 4/5, so these are exact.
     const std::array<int, 2> farEnough{4 * perPlayer / 5, perPlayer / 2};
 
-    std::vector<ObjectId> homes;
+    std::vector<ObjectId> homes(empires.size());  // invalid until placed
     std::vector<SystemId> homeSystems;
     std::vector<std::vector<int>> jumpsFrom;
     auto isHome = [&](ObjectId o) { return std::find(homes.begin(), homes.end(), o) != homes.end(); };
     auto isHomeSystem = [&](SystemId s) { return std::find(homeSystems.begin(), homeSystems.end(), s) != homeSystems.end(); };
+    auto settle = [&](size_t player, ObjectId home) {
+        homes[player] = home;
+        homeSystems.push_back(galaxy.object(home).system);
+        jumpsFrom.push_back(warpJumps(galaxy, homeSystems.back()));
+    };
 
-    for (const EmpireStart& e : empires) {
+    // A map's starting points come first (confirmed: binary): each empire, in
+    // player order, takes its specific point, else a random remaining common
+    // point. A point on a sector another empire already took is skipped (inferred).
+    auto onMap = [&](const StartingPoint& p) { return p.system.valid() && p.system.index() < galaxy.systems.size() && p.sector.valid(); };
+    std::vector<std::optional<StartingPoint>> point(empires.size());
+    std::vector<StartingPoint> common;
+    for (const StartingPoint& p : options.startingPoints) {
+        if (!onMap(p)) continue;
+        if (p.player == kCommonStart) common.push_back(p);
+        else if (p.player >= 0 && static_cast<size_t>(p.player) < empires.size() && !point[static_cast<size_t>(p.player)])
+            point[static_cast<size_t>(p.player)] = p;
+    }
+    std::vector<Location> taken;
+    auto unclaimed = [&](const StartingPoint& p) { return std::find(taken.begin(), taken.end(), Location{p.system, p.sector}) == taken.end(); };
+    for (size_t i = 0; i < empires.size(); ++i) {
+        if (point[i] && !unclaimed(*point[i])) point[i].reset();
+        std::erase_if(common, [&](const StartingPoint& p) { return !unclaimed(p); });
+        if (!point[i] && !common.empty()) {
+            const size_t k = static_cast<size_t>(draw(rng, static_cast<int>(common.size())));
+            point[i] = common[k];
+            common.erase(common.begin() + static_cast<std::ptrdiff_t>(k));
+        }
+        if (!point[i]) continue;
+        taken.push_back({point[i]->system, point[i]->sector});
+        const EmpireStart& e = empires[i];
+        settle(i, homeAtPoint(galaxy, rs, *point[i], e, homePlanetSize(rs, options.homeValue, e.surface, e.atmosphere), options, rng));
+    }
+
+    for (size_t player = 0; player < empires.size(); ++player) {
+        if (homes[player].valid()) continue;
+        const EmpireStart& e = empires[player];
         const int homeSize = homePlanetSize(rs, options.homeValue, e.surface, e.atmosphere);
         std::vector<ObjectId> pool;
         for (int attempt = 1; attempt <= 3 && pool.empty(); ++attempt) {
@@ -1039,9 +1100,7 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
             home = createPlanet(galaxy, rs, *target, where, e.surface, e.atmosphere, options.allPlanetsSameSize ? homeSize : 0,
                                 options.finiteResources, rng);
         }
-        homes.push_back(home);
-        homeSystems.push_back(galaxy.object(home).system);
-        jumpsFrom.push_back(warpJumps(galaxy, homeSystems.back()));
+        settle(player, home);
     }
     return homes;
 }

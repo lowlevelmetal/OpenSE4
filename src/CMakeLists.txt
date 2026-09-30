@@ -41,6 +41,7 @@ add_library(opense4_game STATIC
     game/events.cpp
     game/generate.cpp
     game/intel.cpp
+    game/map_file.cpp
     game/movement.cpp
     game/movement_path.cpp
     game/movement_stellar.cpp
@@ -57,7 +58,7 @@ add_library(opense4_game STATIC
     game/state.cpp
     game/turn.cpp
     game/types.cpp)
-target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE opense4_warnings)
+target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
 
 # --- net: multiplayer (TCP host/client sessions, UPnP port mapping, PBEM files) -----
 find_package(Threads REQUIRED)

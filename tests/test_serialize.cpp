@@ -87,6 +87,8 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(SpaceObject);
     CHECK_ALL_FIELDS(StarSystem);
     CHECK_ALL_FIELDS(Galaxy);
+    CHECK_ALL_FIELDS(StartingPoint);
+    CHECK_ALL_FIELDS(QuadrantMap);
     CHECK_ALL_FIELDS(Race);
     CHECK_ALL_FIELDS(Waypoint);
     CHECK_ALL_FIELDS(ResearchProject);

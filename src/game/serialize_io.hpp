@@ -522,7 +522,9 @@ void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash);
 }
 
-template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires); }
+template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }
+template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }
+template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires, g.map); }
 
 // ---- Save file header (serialize.hpp) ------------------------------------------------------------------
 

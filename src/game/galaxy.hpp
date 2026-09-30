@@ -136,6 +136,17 @@ struct StarSystem {
     std::vector<ObjectId> objects;            // in creation order
 };
 
+// A starting point of a map (spec 01 §12, §3.6): the sector where an empire's
+// homeworld goes. `player` is the player slot (EmpireId index) the point is
+// reserved for, or kCommonStart for a point any player may take.
+inline constexpr int kCommonStart = -1;
+struct StartingPoint {
+    SystemId system;
+    Sector sector;
+    int player = kCommonStart;
+    constexpr bool operator==(const StartingPoint&) const = default;
+};
+
 struct Galaxy {
     int width = 0;   // quadrant grid size in squares (kQuadrantWidth × kQuadrantHeight when generated)
     int height = 0;

@@ -1461,3 +1461,8 @@ All rules in this section are (confirmed: binary).
     (inferred)
 49. **Sentry with Repeat on:** when a Sentry ends, the engine removes it even with Repeat on,
     instead of keeping it at the end of the list. (inferred)
+50. **Names taken meanwhile:** a design created with a name that another design took since
+    the order was given (two players in one turn, a computer player's name list) gets the
+    first free Roman numeral ("Scout II") instead of being refused. Premade starting
+    designs keep their plain name when it is free, else get the empire's name in front.
+    (inferred)
