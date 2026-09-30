@@ -48,6 +48,11 @@ struct Rename {              // vehicle, fleet, design or planet
 struct Scrap { VehicleId vehicle; ObjectId facilityPlanet; int32_t facilitySlot = -1; };
 struct Mothball { VehicleId vehicle; bool mothball = true; };
 struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; };
+// Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
+// A move of the vehicle (or fleet) stopped before a sector with enemies;
+// `enter` carries it on into that sector and its battle, otherwise the move
+// stops and its order fails (the list is cleared).
+struct EnterSector { VehicleId vehicle; FleetId fleet; Location where; bool enter = true; };
 
 // ---- Construction queues ------------------------------------------------------------------
 struct QueueTarget {         // a planet queue, or a vehicle with a Space Yard
@@ -121,7 +126,7 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters>;
+    cmd::SetMinisters, cmd::EnterSector>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

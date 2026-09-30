@@ -314,16 +314,21 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
         });
 }
 
-void runColonization(TurnContext& ctx) {
+namespace {
+
+// Every empire's colony ships, or one empire's that have movement left (turn-based games).
+void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     // Fleets: the first member able to colonize founds the colony.
     for (size_t fi = 0; fi < s.fleets.size(); ++fi) {
         Fleet& f = s.fleets[fi];
         if (f.orders.empty() || f.orders.front().kind != OrderKind::Colonize) continue;
+        if (only && f.owner != *only) continue;
         const Vehicle* lead = fleetLeader(s, f);
         const Order o = f.orders.front();
         if (!lead || !colonizeAt(s, o, lead->location)) continue;
+        if (only && lead->movement <= 0) continue;
         // The colonizer is the last suitable member in group order; a cloaked member stops it (§8, confirmed: binary).
         VehicleId colonizer;
         std::string why;
@@ -353,6 +358,7 @@ void runColonization(TurnContext& ctx) {
     for (size_t i = 0; i < s.vehicles.size(); ++i) {
         Vehicle& v = s.vehicles[i];
         if (!alive(v) || v.orders.empty() || followsFleetOrders(s, v)) continue;
+        if (only && (v.owner != *only || v.movement <= 0)) continue;
         const Order o = v.orders.front();
         if (!colonizeAt(s, o, v.location)) continue;
         std::string why = colonizeProblem(r, s, v, o.object);
@@ -368,5 +374,11 @@ void runColonization(TurnContext& ctx) {
     }
     s.removeDeadVehicles();
 }
+
+} // namespace
+
+void runColonization(TurnContext& ctx) { colonizeWaiting(ctx, std::nullopt); }
+
+void runColonization(TurnContext& ctx, EmpireId empire) { colonizeWaiting(ctx, empire); }
 
 } // namespace opense4::game::movement

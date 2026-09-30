@@ -10,6 +10,7 @@
 #include "game/research.hpp"
 #include "game/score.hpp"
 #include "game/sight.hpp"
+#include "game/turn_internal.hpp"
 
 #include <algorithm>
 #include <format>
@@ -17,19 +18,8 @@
 
 namespace opense4::game {
 
-namespace {
+namespace detail {
 
-// How an empire is played this turn (spec 05 §7.1, §9.2).
-enum class Control : uint8_t {
-    Player,    // a human who sent orders (or whose missing orders nobody covers)
-    Computer,  // a computer or neutral empire: every minister acts
-    StandIn,   // a human whose orders are missing: all ministers on for the turn
-    Absent,    // the same, but the player forbade AI changes: bookkeeping only
-};
-
-// Whether the empire's ministers plan orders this turn: always for a
-// computer player, for a human only while some minister is at work (a
-// stand-in has them all switched on).
 bool ministersPlan(const GameState& s, EmpireId e, Control c) {
     switch (c) {
         case Control::Computer: return true;
@@ -47,7 +37,12 @@ void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands) 
 
 bool living(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
 
-} // namespace
+} // namespace detail
+
+using detail::applyCommands;
+using detail::Control;
+using detail::living;
+using detail::ministersPlan;
 
 void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::vector<std::pair<EmpireId, std::string>>& rejected) {
     for (const Command& c : orders.commands) {
@@ -109,6 +104,7 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
 
 TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options) {
     if (s.gameOver) return {};
+    if (!s.options.simultaneous) return detail::playTurnBasedTurn(r, s, orders, options);
     TurnContext ctx{r, s, {}, {}, {}};
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
@@ -226,7 +222,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     ++s.turn;
     economy::updateReports(r, s);
 
-    return TurnResult{std::move(ctx.rejected)};
+    return TurnResult{std::move(ctx.rejected), {}};
 }
 
 } // namespace opense4::game

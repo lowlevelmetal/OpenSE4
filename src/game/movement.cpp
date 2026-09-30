@@ -105,7 +105,9 @@ enum class Exec {
 // Arrived: already there (no step). Reached: a step that arrived. The composite
 // orders (Warp, Colonize, cargo...) are a Move To plus an action in the
 // original (§8): their action comes on the next action after Reached.
-enum class Travel { Arrived, Moved, Reached, Wait, Unreachable, Immobile, Busy, Stopped };
+// Asked: turn-based games only, the group stopped before a sector with
+// enemies for the player's answer (spec 03 §6.2); the order waits.
+enum class Travel { Arrived, Moved, Reached, Wait, Unreachable, Immobile, Busy, Stopped, Asked };
 
 bool validLocation(const GameState& s, Location l) {
     return l.system.valid() && l.system.index() < s.galaxy.systems.size() && l.sector.valid();
@@ -192,6 +194,27 @@ public:
             resolveCombat();
         }
     }
+
+    // Turn-based games (spec 03 §6.3 "Turn-based", spec 04 §2): the selected
+    // groups of one empire carry out their orders now, action after action,
+    // until each has spent its movement, waits, fails or has nothing left.
+    // A group that steps into a sector where combat is possible fights there
+    // at once and its order fails; one that carries out an order in a sector
+    // offers it to combat without failing. The per-turn records (steps,
+    // emergency movement, launches) live in GameState::playerTurn.
+    void runLive(const LiveMove& m) {
+        live_ = &m;
+        loadPlayerTurn();
+        buildActors();
+        std::erase_if(actors_, [&](const Actor& a) { return a.owner != m.empire || !selected(a); });
+        for (size_t i = 0; i < actors_.size(); ++i) {
+            current_ = i;
+            liveActor(actors_[i]);
+        }
+        savePlayerTurn();
+    }
+
+    std::vector<EntryQuestion> questions() const { return questions_; }
 
 private:
     // ---- Actors ----------------------------------------------------------------------------------
@@ -334,19 +357,20 @@ private:
 
     // ---- The order loop ----------------------------------------------------------------------------
 
-    void act(Actor& a) {
+    // One action; what it did, or nothing when the actor had nothing to do.
+    std::optional<Exec> act(Actor& a) {
         std::vector<Order>* list = orders(a);
-        if (!list) return;
+        if (!list) return std::nullopt;
         if (list->empty()) {
-            if (!a.planet.valid() && a.members.size() == 1 && autoDrone(*s_.vehicle(a.lead))) droneStep(a);
-            return;
+            if (!a.planet.valid() && a.members.size() == 1 && autoDrone(*s_.vehicle(a.lead))) return droneStep(a);
+            return std::nullopt;
         }
         Order o = list->front();
-        if (a.pinned && !inPlace(a, o)) return;  // waits until the member acts alone
+        if (a.pinned && !inPlace(a, o)) return std::nullopt;  // waits until the member acts alone
         const Exec e = execute(a, o);
         prune(a);
         afterAction(a);
-        if (a.stopped && e != Exec::Fail) return;
+        if (a.stopped && e != Exec::Fail) return e;
         switch (e) {
             case Exec::Moved:
             case Exec::Wait: writeBack(a, o); break;
@@ -364,6 +388,7 @@ private:
             case Exec::Fail: clearOrders(a); break;
             case Exec::Gone: break;
         }
+        return e;
     }
 
     // After every daily action: the depot check (§7), and a cloak drops at 0
@@ -462,6 +487,7 @@ private:
             case Travel::Immobile: return fail(a, o, "It cannot move.");
             case Travel::Busy: return fail(a, o, "Its space yard is building; it cannot move.");
             case Travel::Stopped: return fail(a, o, "Movement stopped by a hazard.");
+            case Travel::Asked: return Exec::Wait;
             case Travel::Arrived: break;
         }
         return Exec::Done;
@@ -505,7 +531,12 @@ private:
         if (where(a) == goal) return Travel::Arrived;
         if (auto t = readyToStep(a)) return *t;
         if (!ensureRoute(a, goal)) return Travel::Unreachable;
-        if (!step(a) && (!ensureRoute(a, goal) || !step(a))) return Travel::Unreachable;
+        if (asks(a, a.route[a.routePos])) return Travel::Asked;
+        if (!step(a)) {
+            if (!ensureRoute(a, goal)) return Travel::Unreachable;
+            if (asks(a, a.route[a.routePos])) return Travel::Asked;
+            if (!step(a)) return Travel::Unreachable;
+        }
         if (a.stopped) return Travel::Stopped;
         return !a.members.empty() && where(a) == goal ? Travel::Reached : Travel::Moved;
     }
@@ -545,6 +576,7 @@ private:
         const SpaceObject& wp = s_.galaxy.object(w);
         if (!wp.destination.valid() || !inSystem(s_.galaxy, wp.destination)) return Travel::Unreachable;
         if (auto t = readyToStep(a)) return *t;
+        if (asks(a, locationOf(s_.galaxy, wp.destination))) return Travel::Asked;
         a.routeValid = false;
         moveMembers(a, locationOf(s_.galaxy, wp.destination), w);
         return a.stopped ? Travel::Stopped : Travel::Moved;
@@ -578,6 +610,7 @@ private:
             v->cameFromTurn = s_.turn;
             v->location = next;
             v->movement = std::max(0, v->movement - 1);
+            if (live_) ++steps_[id];
             // The depot check runs before the step's cost is taken (§7).
             if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
@@ -623,10 +656,13 @@ private:
         Vehicle* v = s_.vehicle(id);
         if (!v || !alive(*v)) return;
         const int max = turnMovement(r_, s_, *v) + (heldInPlace(s_, *v) ? 0 : bonus(id));
-        v->movement = std::min(v->movement, std::max(0, max - a.used));
+        // Turn-based games count the vehicle's own steps over the whole player turn.
+        const int used = live_ ? stepsOf(id) : a.used;
+        v->movement = std::min(v->movement, std::max(0, max - used));
     }
 
-    void droneStep(Actor& a) {
+    // Moved: a step toward the target; ActedStay: at the target; Wait: nothing to do.
+    Exec droneStep(Actor& a) {
         Vehicle* d = s_.vehicle(a.lead);
         std::optional<Location> goal;
         if (const Vehicle* t = s_.vehicle(d->targetVehicle); t && alive(*t) && sight::canSeeVehicle(r_, s_, d->owner, *t)) goal = t->location;
@@ -634,9 +670,14 @@ private:
         if (!goal) {
             d->targetVehicle = {};  // the target is lost; the drone waits for a new one (inferred)
             d->targetObject = {};
-            return;
+            return Exec::Wait;
         }
-        if (travel(a, *goal) == Travel::Arrived) touched_.push_back(*goal);
+        const Travel t = travel(a, *goal);
+        if (t == Travel::Arrived) {
+            touched_.push_back(*goal);
+            return Exec::ActedStay;
+        }
+        return t == Travel::Moved || t == Travel::Reached ? Exec::Moved : Exec::Wait;
     }
 
     // ---- Orders ---------------------------------------------------------------------------------------
@@ -1138,10 +1179,176 @@ private:
         }
     }
 
+    // ---- Turn-based games ------------------------------------------------------------------------
+
+    // Actions one group may take in one run: movement bounds every loop but a
+    // repeating list of orders that give movement back (inferred safeguard).
+    static constexpr int kLiveActionLimit = 1000;
+
+    bool selected(const Actor& a) const {
+        const LiveMove& m = *live_;
+        if (m.vehicles.empty() && m.fleets.empty() && m.planets.empty()) return true;
+        auto has = [](const auto& list, auto id) { return std::find(list.begin(), list.end(), id) != list.end(); };
+        if (a.planet.valid()) return has(m.planets, a.planet);
+        if (a.fleet.valid()) return has(m.fleets, a.fleet);
+        return has(m.vehicles, a.lead);
+    }
+
+    void loadPlayerTurn() {
+        for (const TurnMoves& m : s_.playerTurn.moves) {
+            if (m.steps != 0) steps_[m.vehicle] = m.steps;
+            if (m.bonus != 0) bonus_[m.vehicle] = m.bonus;
+        }
+        for (const TurnLaunches& l : s_.playerTurn.launched)
+            budget_.launched[{l.vehicle, l.planet, static_cast<AbilityKind>(l.kind)}] = l.count;
+    }
+
+    void savePlayerTurn() {
+        std::map<VehicleId, TurnMoves> moves;
+        for (const auto& [id, n] : steps_) moves[id].steps = n;
+        for (const auto& [id, n] : bonus_) moves[id].bonus = n;
+        s_.playerTurn.moves.clear();
+        for (auto& [id, m] : moves)
+            if (s_.vehicle(id)) {
+                m.vehicle = id;
+                s_.playerTurn.moves.push_back(m);
+            }
+        s_.playerTurn.launched.clear();
+        for (const auto& [key, n] : budget_.launched) {
+            const auto& [vehicle, planet, kind] = key;
+            s_.playerTurn.launched.push_back({vehicle, planet, static_cast<uint16_t>(kind), n});
+        }
+    }
+
+    int stepsOf(VehicleId id) const {
+        const auto it = steps_.find(id);
+        return it == steps_.end() ? 0 : it->second;
+    }
+
+    size_t listLength(const Actor& a) {
+        const std::vector<Order>* list = orders(a);
+        return list ? list->size() : 0;
+    }
+
+    void liveActor(Actor& a) {
+        size_t idle = 0;  // actions in a row that took no step
+        for (int n = 0; n < kLiveActionLimit; ++n) {
+            prune(a);
+            if (a.stopped) return;
+            const size_t steps = entered_.size();
+            const std::optional<Exec> e = act(a);
+            if (!e) return;
+            bool fought = false;
+            if (entered_.size() > steps) fought = entryCombat(a);
+            else if (*e == Exec::Acted || *e == Exec::ActedStay) placeCombat(a);
+            entered_.clear();
+            touched_.clear();
+            if (fought || a.stopped) return;
+            switch (*e) {
+                case Exec::Moved:
+                case Exec::MovedDone: idle = 0; break;
+                case Exec::Done:
+                case Exec::Acted:
+                case Exec::Removed:
+                    // A repeating list that goes round without a step waits for the next turn.
+                    if (++idle > listLength(a) + 1) return;
+                    break;
+                case Exec::ActedStay:
+                case Exec::Wait:
+                case Exec::Fail:
+                case Exec::Gone: return;
+            }
+        }
+    }
+
+    // Where the group's Attack order at the head of its list means to fight.
+    std::optional<Location> attackGoal(const Actor& a) {
+        const std::vector<Order>* list = orders(a);
+        if (!list || list->empty() || list->front().kind != OrderKind::Attack) return std::nullopt;
+        const Order& o = list->front();
+        if (o.vehicle.valid()) {
+            if (const Vehicle* t = s_.vehicle(o.vehicle); t && alive(*t)) return t->location;
+            return std::nullopt;
+        }
+        if (o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object))
+            return locationOf(s_.galaxy, o.object);
+        return std::nullopt;
+    }
+
+    // Fights the battle of `where` now (mines strike `entering` first).
+    void fight(Location where, const std::vector<VehicleId>& entering) {
+        const auto before = marks(where);
+        const size_t records = s_.combats.size();
+        hooks_.resolve(ctx_, where, entering);
+        afterBattle(where, records, before);
+        s_.removeDeadVehicles();
+    }
+
+    bool combatHere(Location where) const { return hooks_.possible && hooks_.resolve && hooks_.possible(r_, s_, where); }
+
+    // A step into a sector where combat is possible: the battle is fought at
+    // once and the order fails (spec 03 §6.2, §6.4; spec 04 §2). The sector of
+    // an Attack order's target is fought by the order itself, after decloaking.
+    bool entryCombat(Actor& a) {
+        const Location here = where(a);
+        if (attackGoal(a) == here || !combatHere(here)) return false;
+        fight(here, entering(here));
+        prune(a);
+        if (!a.stopped)
+            if (const std::vector<Order>* list = orders(a); list && !list->empty()) {
+                fail(a, list->front(), "Combat on entering the sector.");
+                clearOrders(a);
+            }
+        a.stopped = true;
+        return true;
+    }
+
+    // An order carried out in a sector offers it to combat (spec 04 §2).
+    void placeCombat(Actor& a) {
+        prune(a);
+        if (a.stopped) return;
+        const Location here = where(a);
+        if (combatHere(here)) fight(here, {});
+    }
+
+    bool onlyDrones(const Actor& a) const {
+        for (VehicleId id : a.members)
+            if (const Vehicle* v = s_.vehicle(id); v && alive(*v) && vehicleType(r_, s_, *v) != VehicleType::Drone) return false;
+        return true;
+    }
+
+    // Visible enemy forces in a sector: vehicles other than mines, or colonies,
+    // of an empire we are hostile to (inferred reading of "enemy ships").
+    bool enemiesAt(EmpireId e, Location l) const {
+        for (const Vehicle& v : s_.vehicles) {
+            if (!alive(v) || v.location != l || v.owner == e || !hostile(s_, e, v.owner)) continue;
+            if (vehicleType(r_, s_, v) == VehicleType::Mine) continue;
+            if (sight::canSeeVehicle(r_, s_, e, v)) return true;
+        }
+        for (ObjectId o : planetsAt(s_, l))
+            if (const Colony* c = s_.colony(o); c && c->owner != e && hostile(s_, e, c->owner)) return true;
+        return false;
+    }
+
+    // Turn-based games: a human player's group stops before a sector with
+    // enemy forces, and the player is asked (spec 03 §6.2). Groups of drones
+    // always enter, and so does an Attack order into its target's sector.
+    bool asks(Actor& a, Location next) {
+        if (!live_ || !live_->ask || a.planet.valid() || onlyDrones(a)) return false;
+        const EntryQuestion q{a.fleet.valid() ? VehicleId{} : a.lead, a.fleet, next};
+        if (live_->allowed && *live_->allowed == q) return false;
+        if (attackGoal(a) == next || !enemiesAt(a.owner, next)) return false;
+        if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
+        return true;
+    }
+
     TurnContext& ctx_;
     const Rules& r_;
     GameState& s_;
     const CombatHooks& hooks_;
+    const LiveMove* live_ = nullptr;                    // turn-based: the move being carried out
+    std::map<VehicleId, int> steps_;                    // turn-based: steps made this player turn
+    std::vector<EntryQuestion> questions_;
     std::vector<Actor> actors_;
     size_t current_ = 0;                                // the actor acting now
     std::vector<Location> touched_;                     // sectors where something acted today
@@ -1169,13 +1376,17 @@ std::vector<int> actionDays(int speed, DayCounterMode mode) {
     return mode == DayCounterMode::Exact ? daysActed<DayCounterMode::Exact>(speed) : daysActed<DayCounterMode::Double>(speed);
 }
 
-void startTurn(TurnContext& ctx) {
+namespace {
+
+// Movement points back to the maximum: every vehicle, or one empire's.
+void refillMovement(TurnContext& ctx, std::optional<EmpireId> only) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     for (Vehicle& v : s.vehicles)
-        if (alive(v)) v.movement = turnMovement(r, s, v);  // 0 while held by sabotage or an event
+        if (alive(v) && (!only || v.owner == *only)) v.movement = turnMovement(r, s, v);  // 0 while held by sabotage or an event
     // Fleet members in the fleet's sector get the lowest maximum among them (§6.3).
     for (const Fleet& f : s.fleets) {
+        if (only && f.owner != *only) continue;
         const Vehicle* lead = fleetLeader(s, f);
         if (!lead) continue;
         const Location here = lead->location;
@@ -1185,6 +1396,24 @@ void startTurn(TurnContext& ctx) {
         for (VehicleId id : f.members)
             if (Vehicle* v = s.vehicle(id); v && alive(*v) && v->location == here) v->movement = lowest;
     }
+}
+
+} // namespace
+
+void startTurn(TurnContext& ctx) { refillMovement(ctx, std::nullopt); }
+
+void startTurn(TurnContext& ctx, EmpireId empire) {
+    refillMovement(ctx, empire);
+    ctx.state.playerTurn.moves.clear();
+    ctx.state.playerTurn.launched.clear();
+}
+
+std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move) { return runLive(ctx, move, defaultCombatHooks()); }
+
+std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move, const CombatHooks& hooks) {
+    Mover mover(ctx, hooks);
+    mover.runLive(move);
+    return mover.questions();
 }
 
 void runMovementAndCombat(TurnContext& ctx) { runMovementAndCombat(ctx, defaultCombatHooks()); }

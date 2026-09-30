@@ -464,12 +464,19 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
 }
 
+// ---- Turn-based games ---------------------------------------------------------------------------------
+
+template <class Ar> void io(Ar& ar, TurnMoves& m) { fields(ar, m.vehicle, m.steps, m.bonus); }
+template <class Ar> void io(Ar& ar, TurnLaunches& l) { fields(ar, l.vehicle, l.planet, l.kind, l.count); }
+template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.started, t.moves, t.launched); }
+
 // ---- The game -----------------------------------------------------------------------------------------
 
 template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
-           s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng);
+           s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng,
+           s.playerTurn);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
@@ -520,6 +527,8 @@ template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
     fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
 }
+
+template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

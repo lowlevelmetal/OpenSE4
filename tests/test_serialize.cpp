@@ -117,6 +117,9 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(MoodEvent);
     CHECK_ALL_FIELDS(VictoryConditions);
     CHECK_ALL_FIELDS(GameOptions);
+    CHECK_ALL_FIELDS(TurnMoves);
+    CHECK_ALL_FIELDS(TurnLaunches);
+    CHECK_ALL_FIELDS(PlayerTurn);
     CHECK_ALL_FIELDS(GameState);
     CHECK_ALL_FIELDS(EmpireOrders);
     CHECK_ALL_FIELDS(EmpireSetup);
@@ -339,6 +342,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetEmpireOptions{true, std::string("verifier")});
     c.push_back(cmd::SetEmpireOptions{std::nullopt, std::nullopt});
     c.push_back(cmd::SetMinisters{kAllMinisters, std::string("Aggressive"), true, false, std::nullopt, true});
+    c.push_back(cmd::EnterSector{VehicleId{31u}, FleetId{}, {SystemId{32u}, Sector{3, 4}}, false});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
@@ -558,8 +562,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x95dbf2b12796b269ull;
-    constexpr size_t kGoldenSize = 1580;
+    constexpr uint64_t kGoldenChecksum = 0x21b778d94b19edcfull;
+    constexpr size_t kGoldenSize = 1593;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

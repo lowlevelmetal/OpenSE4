@@ -56,6 +56,7 @@ add_library(opense4_game STATIC
     game/sight.cpp
     game/state.cpp
     game/turn.cpp
+    game/turn_based.cpp
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE opense4_warnings)
 

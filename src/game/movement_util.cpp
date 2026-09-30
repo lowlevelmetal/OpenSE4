@@ -532,6 +532,8 @@ int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
         if (n <= 0) break;
         if (!alive(g) || g.id == into.vehicle || g.owner != h.owner || g.design != unit || g.location != h.where) continue;
         if (o.vehicle.valid() && g.id != o.vehicle) continue;  // a named group only
+        // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
+        if (!s.options.simultaneous && type == VehicleType::Fighter && g.movement < turnMovement(r, s, g)) continue;
         const int64_t take = std::min<int64_t>(n, g.count);
         g.count -= static_cast<int>(take);
         if (g.count > 0) g.supply = std::min(g.supply, vehicleSupplyCapacity(r, s, g));

@@ -565,11 +565,46 @@ struct GameOptions {
     int aiDifficulty = kDifficultyMedium;  // Computer Player Difficulty: the level random AI players get
     int aiBonus = 0;
     VictoryConditions victory;
-    // Multiplayer.
+    // Multiplayer. Turn style (spec 01 §2.2, spec 05 §8): simultaneous (every
+    // player gives orders, then one turn processing carries them all out) or
+    // turn-based (one player after another; orders execute as they are given,
+    // turn_based in turn.hpp). The spec names no default; OpenSE4 starts
+    // simultaneous (inferred, spec 01 open question 36).
     bool simultaneous = true;
     // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".
     // Only they get the chosen aiDifficulty (spec 05 §7.1).
     std::vector<uint8_t> randomAiPlayers;
+};
+
+// ---- Turn-based games ----------------------------------------------------------------------
+
+// What a vehicle did during the player turn in progress (turn-based games):
+// the steps it made and the movement Emergency Energy gave it. Its remaining
+// movement is capped at its maximum plus that bonus, less the steps, when the
+// maximum drops (spec 03 §6.1, §6.4, §8).
+struct TurnMoves {
+    VehicleId vehicle;
+    int steps = 0;
+    int bonus = 0;
+};
+
+// Units launched during the player turn in progress, per launcher and unit
+// kind: the per-game-turn launch budget (spec 03 §12). `kind` is the
+// launcher's AbilityKind.
+struct TurnLaunches {
+    VehicleId vehicle;
+    ObjectId planet;
+    uint16_t kind = 0;
+    int64_t count = 0;
+};
+
+// The player turn in progress in a turn-based game (spec 05 §8 "Turn-based
+// game"). Unused in simultaneous games.
+struct PlayerTurn {
+    EmpireId empire;                    // whose turn it is; invalid: the next round has not started
+    bool started = false;               // its start of turn has run (movement, continued orders, ministers)
+    std::vector<TurnMoves> moves;       // sorted by vehicle
+    std::vector<TurnLaunches> launched;
 };
 
 // ---- The game --------------------------------------------------------------------------------
@@ -587,7 +622,9 @@ struct GameState {
     std::vector<DiplomaticMessage> messages;      // not yet answered/expired
     std::vector<PendingEvent> pendingEvents;
     std::vector<MoodEvent> pendingMood;           // raised after an empire's happiness update, for its next one
-    std::vector<CombatRecord> combats;            // battles of the last processed turn
+    // Battles of the last processed turn. Turn-based games keep those of the
+    // game turn in progress and of the one before (CombatRecord::turn).
+    std::vector<CombatRecord> combats;
     uint32_t nextVehicleId = 0;
     uint32_t nextFleetId = 0;
     uint32_t nextMessageId = 0;
@@ -595,6 +632,7 @@ struct GameState {
     bool gameOver = false;
     EmpireId winner;
     Rng rng;
+    PlayerTurn playerTurn;                        // turn-based games only
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

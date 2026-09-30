@@ -119,6 +119,57 @@ void runMovementAndCombat(TurnContext& ctx, const CombatHooks& hooks);
 // colonize (the Colonize order waits at the planet during the 30 days).
 void runColonization(TurnContext& ctx);
 
+// ---- The turn-based move (spec 03 §6.3 "Turn-based", spec 04 §2) --------------------------------
+
+// A human player's group stopped before a sector with enemy forces: the
+// player is asked whether to enter it (spec 03 §6.2) and answers with
+// cmd::EnterSector. `vehicle` is invalid when a fleet moves together.
+struct EntryQuestion {
+    VehicleId vehicle;
+    FleetId fleet;
+    Location where;
+    bool operator==(const EntryQuestion&) const = default;
+};
+
+// What runLive carries out.
+struct LiveMove {
+    EmpireId empire;
+    // Only these groups act: vehicles on their own orders, fleets, planets.
+    // With all three empty, every group of the empire that has orders.
+    std::vector<VehicleId> vehicles;
+    std::vector<FleetId> fleets;
+    std::vector<ObjectId> planets;
+    // A human player's groups stop before a sector with visible enemy forces
+    // and ask (the player's own orders; computer players decide themselves).
+    bool ask = false;
+    // An answered question: that group enters that sector without asking.
+    std::optional<EntryQuestion> allowed;
+};
+
+// A turn-based player's turn starts: the empire's vehicles regain their
+// movement (fleet members in the fleet's sector the fleet's lowest maximum),
+// and the turn's records of steps, emergency movement and launches
+// (GameState::playerTurn) start afresh.
+void startTurn(TurnContext& ctx, EmpireId empire);
+
+// Turn-based games: the groups carry out their orders at once, spending
+// movement points, action after action until each has no movement left,
+// waits, fails or runs out of orders (a repeating list that goes round
+// without a step waits for the next turn). A group that steps into a sector
+// where combat is possible fights there at once (mines strike first) and its
+// order fails; the Attack order's target sector is fought by the order
+// itself, after decloaking, and the order stays. An order carried out in a
+// sector (cargo, launches, an attack) offers the sector to combat without
+// failing. Groups that merely sit start no battle (spec 04 §2). Returns the
+// questions of the groups that stopped before a sector with enemies.
+std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move);
+std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move, const CombatHooks& hooks);
+
+// Turn-based games: the empire's colony ships waiting at their planet with
+// movement left found their colonies now (spec 03 §8 Colonize); one with no
+// movement left waits for its next turn.
+void runColonization(TurnContext& ctx, EmpireId empire);
+
 // ---- End of turn -------------------------------------------------------------------------------
 
 // Repair (spec 03 §13): each (empire, sector) pool restores destroyed components.
