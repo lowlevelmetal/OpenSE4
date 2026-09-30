@@ -195,6 +195,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         handoffPassword_.clear();
         handoffError_.clear();
         screens_.clear();
+        // Battles the previous player was to watch stay theirs (the Log's Combat Replay keeps them).
+        strategicQueue_.clear();
     }
     if (handoff_) {
         drawHandoff(ui);

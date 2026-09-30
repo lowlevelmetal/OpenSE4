@@ -66,6 +66,8 @@ struct TacticalUi {
     // results then.
     std::vector<TacticalOrder> queue;
     bool finishNow = false;
+    int launchRound = -1;        // the launch step the window last stopped at
+    game::EmpireId launchSide;
 };
 
 TacticalUi& state() {
@@ -270,9 +272,14 @@ private:
                 submit(f, TacticalOrder{OK::Begin, side});
                 return;
             }
-            if (!canLaunchNow(b, u.selected, side)) {
-                u.selected = launcher;
-                centreOn(b, launcher);
+            // On entering the step, a piece that can launch is selected (once, so the player may look around).
+            if (u.launchRound != b.round() || u.launchSide != side) {
+                u.launchRound = b.round();
+                u.launchSide = side;
+                if (!canLaunchNow(b, u.selected, side)) {
+                    u.selected = launcher;
+                    centreOn(b, launcher);
+                }
             }
             if (u.message.empty()) u.message = kLaunchHint;
             return;

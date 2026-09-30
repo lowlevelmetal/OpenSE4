@@ -102,13 +102,14 @@ public:
     // answer to the first (spec 03 §6.2).
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
-    // Battles to watch in the Strategic Combat window (spec 06 §1.6, spec 04
-    // §2), as indices into GameState::combats, oldest first, then forgotten:
-    // turn-based games, those the player's orders started and those in which
-    // the player answered Strategic (never one fought in the Tactical Combat
-    // window); simultaneous games, when the Settings flag `Simultaneous Games
-    // Show Strategic Combat` is on, every battle of the processed turn the
-    // player fought in.
+    // Battles for the local player to watch in the Strategic Combat window
+    // (spec 06 §1.6, spec 04 §2), as indices into GameState::combats, oldest
+    // first, then forgotten: turn-based games, those the player's orders
+    // started and those in which the player answered Strategic (never one
+    // fought in the Tactical Combat window); simultaneous games, when the
+    // Settings flag `Simultaneous Games Show Strategic Combat` is on, every
+    // battle of the processed turn the player fought in. Hotseat: battles
+    // listed for another player than the one now playing are dropped.
     std::vector<size_t> takeStrategicBattles();
 
     // Tactical combat (see the file comment). The battle that waits for its
@@ -185,7 +186,7 @@ private:
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
     std::string autosaveNote_;
-    std::vector<size_t> strategic_;           // battles to watch (takeStrategicBattles)
+    std::vector<std::pair<game::EmpireId, size_t>> strategic_;   // battles to watch, and for whom (takeStrategicBattles)
     std::vector<game::Location> answeredStrategic_, answeredTactical_;   // this call's answers of the local player
     Call call_ = Call::None;
     std::optional<game::Command> callCommand_;

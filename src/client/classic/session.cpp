@@ -72,13 +72,18 @@ void ClassicSession::answer(bool enter) {
     issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter});
 }
 
-std::vector<size_t> ClassicSession::takeStrategicBattles() { return std::exchange(strategic_, {}); }
+std::vector<size_t> ClassicSession::takeStrategicBattles() {
+    std::vector<size_t> out;
+    for (const auto& [who, index] : std::exchange(strategic_, {}))
+        if (who == player_) out.push_back(index);
+    return out;
+}
 
 void ClassicSession::queueTurnBattles() {
     if (turnBased() || !rules_->settingFlag("Simultaneous Games Show Strategic Combat", false)) return;
     for (size_t i = 0; i < state_.combats.size(); ++i) {
         const auto& who = state_.combats[i].participants;
-        if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.push_back(i);
+        if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.emplace_back(player_, i);
     }
 }
 
@@ -143,7 +148,7 @@ void ClassicSession::runCall() {
         const game::CombatRecord& rec = state_.combats[i];
         if (std::find(rec.participants.begin(), rec.participants.end(), player_) == rec.participants.end()) continue;
         if (listed(answeredTactical_, rec.location)) continue;
-        if (call == Call::Issue || listed(answeredStrategic_, rec.location)) strategic_.push_back(i);
+        if (call == Call::Issue || listed(answeredStrategic_, rec.location)) strategic_.emplace_back(player_, i);
     }
     answeredStrategic_.clear();
     answeredTactical_.clear();
@@ -290,7 +295,7 @@ void ClassicSession::poll() {
     if (state_.turn == oldTurn)
         for (size_t i = oldBattles; i < state_.combats.size(); ++i) {
             const auto& who = state_.combats[i].participants;
-            if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.push_back(i);
+            if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.emplace_back(player_, i);
         }
     const bool mine = myTurn();
     if (mine && (!wasMine || state_.turn != oldTurn)) beginTurn();  // our turn starts
