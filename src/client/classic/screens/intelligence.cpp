@@ -4,6 +4,7 @@
 #include "client/classic/screens/screens.hpp"
 
 #include "game/design.hpp"
+#include "game/events.hpp"
 #include "game/intel.hpp"
 #include "game/query.hpp"
 
@@ -190,6 +191,35 @@ private:
         return out;
     }
 
+    // Research - Steal may name the area to steal (spec 05 §2.3). "Any" keeps
+    // the original's pick, which only finds areas where we already lead.
+    bool techTarget(UiContext& ui, game::IntelProjectOrder& o) {
+        if (game::effects::parseEffect(project(ui, o.project).type) != game::effects::Effect::ResearchSteal) return false;
+        const auto& areas = ui.rules().data().techAreas;
+        bool changed = false;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const bool named = o.targetTech.valid() && o.targetTech.index() < areas.size();
+        const std::string label = named ? areas[o.targetTech.index()].name : std::string("Any technology");
+        if (ImGui::BeginCombo("##tech", label.c_str())) {
+            if (ImGui::Selectable("Any technology", !named)) {
+                changed = named;
+                o.targetTech = {};
+            }
+            ImGui::SetItemTooltip("Our agents choose, and they only pick areas where we already lead: the theft fails.");
+            for (uint32_t i = 0; i < areas.size(); ++i) {
+                if (areas[i].racialArea > 0 || areas[i].uniqueArea > 0) continue;  // never stolen
+                const ruleset::TechAreaId a{i};
+                if (ImGui::Selectable(areas[i].name.c_str(), a == o.targetTech) && a != o.targetTech) {
+                    o.targetTech = a;
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        return changed;
+    }
+
     // Target pickers for one queued project; returns true when the order changed.
     bool targets(UiContext& ui, game::IntelProjectOrder& o) {
         const game::GameState& s = ui.state();
@@ -214,7 +244,7 @@ private:
                 }
             ImGui::EndCombo();
         }
-        if (kind == IntelTarget::Empire) return changed;
+        if (kind == IntelTarget::Empire) return techTarget(ui, o) || changed;
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (kind == IntelTarget::Planet) {

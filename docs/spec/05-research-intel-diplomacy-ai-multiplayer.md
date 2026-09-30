@@ -153,8 +153,9 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
 - **Reorder** [M]: a separate window moves projects up, down, to the top or to the bottom.
 - **Completion messages** [T]: finishing a level logs "New Tech Level", then "<item>
   Discovered" for each newly available item. An empty queue logs "All Projects Completed".
-- **OpenSE4 choice** [I]: the ETA simulates the queue with this turn's points, so projects
-  waiting behind others in in-order mode get a real estimate.
+- **OpenSE4 choice** [I]: the ETA simulates the queue with the pool for this turn and the
+  current production for the turns after, so projects waiting behind others in in-order
+  mode get a real estimate.
 
 ### 1.5 Unlocking and other tech sources
 
@@ -575,8 +576,9 @@ window, where the ranking shows the result.
   return to "no contact", intel projects aimed at it are removed, and its remaining objects
   (empty colonies, units) are removed.
 - **OpenSE4 choices** [I]: the game-over screen names the best score as the winner, with
-  ties going to the lower empire number. Neutral empires neither win nor count toward the
-  last empire standing.
+  ties going to the lower empire number, while the game-over message names none. Neutral
+  empires neither win nor count toward the last empire standing. When one empire is left
+  in any game it is told so and plays on.
 
 ## 7. Computer player
 
@@ -1851,3 +1853,40 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     before movement; research and intelligence run after movement, in each empire's
     end-of-turn processing (§8). Still open: the day schedule for speeds that do not divide
     30 and how same-phase ties resolve.
+15. **Tariff base** (§3.3): OpenSE4 cuts the tariff from the production of the subject's
+    colonies (the trade base). Does it also apply to remote mining and to flat `Generate
+    Points` income? And is the race's trade bonus a trait of Type `Trade` (none exists in
+    the stock data)? (inferred)
+16. **Rebel colonies** (§2.3): OpenSE4 makes the new independent empire a computer player
+    with the former owner's race (of the planet's largest population group), technology,
+    strategies and name lists, the planet as its capital, in contact and at War with the
+    former owner, and named after the planet. Which of these does the original do? Does the
+    20-empire limit count destroyed empires, and does it also stop the intelligence
+    variant? (inferred)
+17. **Intelligence details** (§2.1–§2.4): OpenSE4 reads the defense sum as
+    trunc(Amount × progress × modifier / 100) with the percentage applied last; a finished
+    defense deletes the first qualifying project in the other empire's queue order; the
+    candidate checks of an "Any" pick are the ones a specified target must pass (for
+    example, a homeworld is never drawn for `Planet - Population Rebel`); `Change Bad
+    Intelligence/Event Chance - System` takes the largest positive value among the
+    system's own abilities and the stellar abilities of its objects. `Ship - Orders Change`
+    picks a random sector of the random system, and `Ship - Moved` may pick the ship's own
+    system. With no message in the last two turns, `Politics - Intercept Messages` reports
+    that nothing passed. In finite-resource games `Planet - Value Change` uses the plain
+    Amount when Amount × 1,000 is beyond ±500,000, and every change stays within `Minimum/
+    Maximum Planet Percent/Resource Value` (a value already outside is not pulled in).
+    All (inferred).
+18. **Event targets** (§4): which types count as political, and do `Research - Delete
+    Project` and `Intel - Delete Project` have a target list? OpenSE4 gives the `Politics -`
+    types the empire list and treats the delete-project types as having none, so they never
+    fire. "Every planet" includes asteroid fields; an event on a planet without a colony
+    changes only the planet itself (value) and otherwise achieves nothing and sends no
+    message. "Every ship" includes bases. For star events an empire is present when it has
+    a vehicle or a colony in the system, and the High/Catastrophic protection spares every
+    star in a system that holds a home planet. The luck roll of an empire target uses that
+    empire's Luck. All (inferred).
+19. **Victory arithmetic** (§6): OpenSE4 compares "X % of every other score" and the
+    tech share exactly in integers; with one living empire the second-place test passes.
+    The peace counter moves (after the qualifier's date) whether or not the peace condition
+    is on. A surrender clears the surrendered empire's relations and the intel projects
+    aimed at it like a destruction. (inferred)

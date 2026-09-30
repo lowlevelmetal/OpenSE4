@@ -72,15 +72,13 @@ outcomes, **L** is an edge case.
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 
-| Where | Engine now | Original | Impact |
+The rules of this section follow the spec. What is left depends on other parts of the engine:
+
+| Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| `rules.cpp:44-47`, `state.hpp:470` | Linear tech cost | Default Medium: max(LC × L, LC × L² ÷ 2) (§1.3) | H |
-| `intel.cpp:57-171`, `intel.hpp:20-22` | Random block and success rolls; defenses never finish; attacker named 50 % | No rolls: a fixed defense sum drains the defenses it counts; defenses finish and delete one project; 20 % naming (§2) | H |
-| `events.cpp:1424-1450` | One roll per empire, uniform pick, own targets | One galaxy roll per turn, none before 2402.0, the original's record pick, galaxy-wide targets with a luck roll (§4) | H |
-| `score.cpp:49-70` | Invented weights | 10 × hull tonnage + this turn's production + 200 × tech levels + 50,000 when all is known (§5) | H |
-| `events.cpp:725-790, 933-947, 1165-1188` | Fake Messages is a tribute demand; Rebel always joins the spy; Lose Movement; Ship Moved; Prevent Messages | A real war declaration; 25 / 18.75 / 56.25 %; current-turn points only; a random system anywhere; deletes two turns of messages (§2.3) | M |
-| `diplomacy.cpp:559-602, 651-655, 719-725` | Contact can be lost; one-way sight; tariffs on resources only | Contact is never lost, and needs mutual detection; trade and tariff rounding as in §3.3 | M |
-| `research.cpp:47-109, 192-223`, `score.cpp:114-211` | Master gets the subject's tech; queue duplicates; even split capped; peace broken by war only; winners named | No tech sharing; one entry per area; round(pool ÷ N) uncapped; peace needs Non-Aggression or better; the game ends with no winner named (§1, §6) | M |
+| `turn.cpp` phases | Research runs before intelligence, both after the economy; the first research step takes its opening pool from the economy's first-turn income (`economy::openingResearchPool`) | Intelligence, then research, first in each empire's end-of-turn processing; the pools are filled when the game is created and by the income step (§1.1, §8). The per-empire steps exist: `intel::intelStep`, `research::researchStep`, `research::addToPools`, `research::openingPools`, `diplomacy::treatyStep`, `score::checkDestruction`, `score::checkVictory`, `events::fireDueEvents`, `events::rollNewEvent` | L |
+| `commands.cpp` `SetResearch` | Accepts an area twice | Adding an area that is already queued does nothing; the research step now drops the repeat | L |
+| `events.cpp` | `Planet - Destroyed` maps Tiny and Huge planets to asteroid sizes; conditions, anger and riot handlers use the engine's current scales; the event step does not apply hazard damage | The Destroy Planet result of spec 01 §9; the spec 02 scales; hazards first in the event step (spec 01 §7) | L |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
