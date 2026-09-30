@@ -288,8 +288,7 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::
 
 game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents) {
     game::GameSetup setup;
-    setup.seed = seed;
-    setup.options.systemCount = 40;
+    setup.seed = seed;  // every other setting keeps its default (a rolled Medium quadrant)
     game::EmpireSetup me;
     me.preset = std::string(playerPreset);
     me.kind = game::PlayerKind::Human;

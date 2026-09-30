@@ -54,13 +54,15 @@ struct PreviewKey {
     uint64_t seed = 0;
     std::string quadrantType;
     int systemCount = 0;
+    int quadrantSize = 1;
     bool connected = false, noWarps = false, anywhere = false, noRuins = false, finite = false;
     bool operator==(const PreviewKey&) const = default;
 };
 
 PreviewKey previewKey(const NewGameSettings& s) {
     const game::GameOptions& o = s.options;
-    return {s.seed, o.quadrantType, o.systemCount, o.allWarpPointsConnected, o.noWarpPoints, o.warpPointsAnywhere, o.noRuins, o.finiteResources};
+    return {s.seed, o.quadrantType, o.systemCount, o.quadrantSize, o.allWarpPointsConnected, o.noWarpPoints, o.warpPointsAnywhere, o.noRuins,
+            o.finiteResources};
 }
 
 ImU32 starColor(std::string_view color) {
@@ -154,7 +156,12 @@ private:
             text += lo == hi ? std::format(", {} random {} player{}", lo, neutral ? "neutral" : "computer", lo == 1 ? "" : "s")
                              : std::format(", {}-{} random {} players", lo, hi, neutral ? "neutral" : "computer");
         }
-        text += std::format("; {} systems.", s_.options.systemCount);
+        if (s_.options.systemCount > 0) {
+            text += std::format("; {} systems.", s_.options.systemCount);
+        } else {
+            const auto [lo, hi] = quadrantSizeRange(rules(), s_.options.quadrantSize);
+            text += std::format("; {} to {} systems.", lo, hi);
+        }
         if (humans > 1) text += " Humans take turns on this computer (hotseat).";
         return text;
     }
@@ -348,9 +355,18 @@ private:
                                chosen->maxWarpPointsPerSystem);
         }
         ImGui::Dummy(ImVec2(0, ctx.px(6)));
-        heading(ctx, "Number of Systems");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::SliderInt("##systems", &o.systemCount, 1, maxSystems(rules()), "%d systems", ImGuiSliderFlags_AlwaysClamp);
+        heading(ctx, "Quadrant Size");
+        {
+            std::vector<std::string> sizes;
+            static constexpr std::array<const char*, 3> kSizes{"Small", "Medium", "Large"};
+            for (int i = 0; i < 3; ++i) {
+                const auto [lo, hi] = quadrantSizeRange(rules(), i);
+                sizes.push_back(std::format("{} ({}-{})", kSizes[static_cast<size_t>(i)], lo, hi));
+            }
+            if (lampChoice(ctx, "##qsize", o.quadrantSize, std::span<const std::string>(sizes))) o.systemCount = 0;
+            if (o.systemCount > 0) note(std::format("Exactly {} systems (set on the command line).", o.systemCount).c_str());
+            else note("The number of systems is rolled in this range when the map is made.");
+        }
         ImGui::Dummy(ImVec2(0, ctx.px(6)));
         heading(ctx, "Warp Points");
         lamp(ctx, "All warp points connected", o.allWarpPointsConnected, !o.noWarpPoints);
@@ -361,6 +377,7 @@ private:
         lamp(ctx, "All systems seen by all players", o.allSystemsSeen);
         lamp(ctx, "Omnipresent view of all systems", o.omnipresent);
         lamp(ctx, "Finite planet resources", o.finiteResources);
+        lamp(ctx, "All player planets the same size", o.allPlanetsSameSize);
         ImGui::EndChild();
 
         ImGui::SameLine(0, ctx.px(14));
@@ -527,49 +544,55 @@ private:
 
     void pagePlayerSettings(MenuContext& ctx) {
         game::GameOptions& o = s_.options;
-        constexpr float col = 190;
         heading(ctx, "Starting Resources");
-        static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
-        for (size_t i = 0; i < 3; ++i) {
-            ImGui::PushID(static_cast<int>(i));
-            sprite(ctx.art.icon16(kIcons[i]), ctx.size({16, 16}));
-            ImGui::SameLine();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(kLabelBlue, "%s", std::string(game::displayName(game::kResources[i])).c_str());
-            ImGui::SameLine(ctx.px(col));
-            ImGui::SetNextItemWidth(ctx.px(200));
-            const int64_t step = 1000, fast = 10000;
-            ImGui::InputScalar("##res", ImGuiDataType_S64, &o.startingResources.v[i], &step, &fast, "%lld");
-            o.startingResources.v[i] = std::clamp<int64_t>(o.startingResources.v[i], 0, 100'000'000);
-            ImGui::PopID();
+        {
+            int level = 1;
+            for (size_t i = 0; i < kStartingResources.size(); ++i)
+                if (o.startingResources.v[0] == kStartingResources[i]) level = static_cast<int>(i);
+            const std::vector<std::string> labels{std::format("Low ({})", kStartingResources[0]), std::format("Medium ({})", kStartingResources[1]),
+                                                  std::format("High ({})", kStartingResources[2])};
+            if (lampChoice(ctx, "##res", level, std::span<const std::string>(labels))) {
+                const int64_t v = kStartingResources[static_cast<size_t>(level)];
+                o.startingResources = {v, v, v};
+            }
+            note("Each empire starts with this much of every resource, plus one turn of its income.");
         }
-        if (ImGui::SmallButton("Same for all three")) o.startingResources = {o.startingResources.v[0], o.startingResources.v[0], o.startingResources.v[0]};
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         heading(ctx, "Racial Points");
-        rowLabel(ctx, "Points per empire", col);
-        ImGui::SetNextItemWidth(ctx.px(200));
-        if (ImGui::InputInt("##rp", &o.racialPoints, 500, 1000)) o.racialPoints = std::clamp(o.racialPoints, 0, 1'000'000);
-        note("What each empire may spend on characteristics and advanced traits when it is created.");
+        {
+            int level = 1;
+            for (size_t i = 0; i < kRacialPoints.size(); ++i)
+                if (o.racialPoints == kRacialPoints[i]) level = static_cast<int>(i);
+            const std::vector<std::string> labels{"None (0)", std::format("Low ({})", kRacialPoints[1]), std::format("Medium ({})", kRacialPoints[2]),
+                                                  std::format("High ({})", kRacialPoints[3])};
+            if (lampChoice(ctx, "##rp", level, std::span<const std::string>(labels))) o.racialPoints = kRacialPoints[static_cast<size_t>(level)];
+            note("What each empire may spend on characteristics and advanced traits when it is created.");
+        }
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         heading(ctx, "Home Planet Value");
         std::vector<std::string> values;
-        for (const char* level : {"Low", "Medium", "High"}) {
-            const int64_t v = o.finiteResources ? rules().setting(std::format("Plr Planet Value {} Resources", level), 0)
-                                                : rules().setting(std::format("Plr Planet Value {} Percent", level), 0);
-            values.push_back(v > 0 ? std::format("{} ({}{})", level, v, o.finiteResources ? "" : "%") : std::string(level));
+        static constexpr std::array<const char*, 3> kValueNames{"Bad", "Average", "Good"};
+        static constexpr std::array<const char*, 3> kValueKeys{"Low", "Medium", "High"};
+        for (size_t i = 0; i < 3; ++i) {
+            const int64_t v = o.finiteResources ? rules().setting(std::format("Plr Planet Value {} Resources", kValueKeys[i]), 0)
+                                                : rules().setting(std::format("Plr Planet Value {} Percent", kValueKeys[i]), 0);
+            values.push_back(v > 0 ? std::format("{} ({}{})", kValueNames[i], v, o.finiteResources ? "" : "%") : std::string(kValueNames[i]));
         }
         lampChoice(ctx, "##home", o.homePlanetValue, std::span<const std::string>(values));
-        note(o.finiteResources ? "The stock of resources on each homeworld (finite resources are on)."
-                               : "The resource value of each homeworld.");
+        note(o.finiteResources ? "The stock of resources on each starting planet, and the homeworld's size: Small, Medium or Large."
+                               : "The resource value of each starting planet, and the homeworld's size: Small, Medium or Large.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         heading(ctx, "Starting Planets");
-        rowLabel(ctx, "Planets per empire", col);
-        ImGui::SetNextItemWidth(ctx.px(200));
-        ImGui::SliderInt("##planets", &o.startingPlanets, 1, 5, "%d", ImGuiSliderFlags_AlwaysClamp);
-        note("Planets beyond the homeworld are the nearest free ones of the race's home planet type.");
+        {
+            int choice = 0;
+            for (size_t i = 0; i < kStartingPlanets.size(); ++i)
+                if (o.startingPlanets == kStartingPlanets[i]) choice = static_cast<int>(i);
+            if (lampChoice(ctx, "##planets", choice, {"1", "3", "5", "10"})) o.startingPlanets = kStartingPlanets[static_cast<size_t>(choice)];
+            note("Planets beyond the homeworld come from its system and systems a jump or two away; neutral empires get one.");
+        }
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
 
         heading(ctx, "Empire Placement");

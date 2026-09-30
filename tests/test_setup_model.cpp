@@ -151,12 +151,34 @@ TEST_CASE("setup model: defaults start one human empire from the first Quick Sta
     CHECK_FALSE(s.players[0].customRace.has_value());
     CHECK(s.players[0].presetTier == 1);  // the costliest tier within the default 2000 points
     CHECK(setup::maxSystems(r) == 60);
+    // The original's defaults (spec 01 §2.2, spec 02 §9).
+    CHECK(s.options.systemCount == 0);  // rolled from the Quadrant Size
+    CHECK(s.options.quadrantSize == 1);  // Medium
+    CHECK(s.options.allWarpPointsConnected);
+    CHECK(s.options.allPlanetsSameSize);
+    CHECK_FALSE(s.options.sameSystemAllowed);
+    CHECK(s.options.evenlyDistributed);
+    CHECK(s.options.startingResources == game::Resources{20000, 20000, 20000});
+    CHECK(s.options.racialPoints == 2000);
+    CHECK(s.options.homePlanetValue == 1);
+    CHECK(s.options.startingPlanets == 1);
+    CHECK(s.options.startTechLevel == 0);
+    CHECK(s.options.eventFrequency == 1);  // Low
+    CHECK(setup::kStartingResources == std::array<int64_t, 3>{5000, 20000, 100000});
+    CHECK(setup::kRacialPoints == std::array<int, 4>{0, 2000, 3000, 5000});
+    CHECK(setup::kStartingPlanets == std::array<int, 4>{1, 3, 5, 10});
+    // Maximum Number Of Systems 60: q = 12.
+    CHECK(setup::quadrantSizeRange(r, 0) == std::pair{12, 23});
+    CHECK(setup::quadrantSizeRange(r, 1) == std::pair{24, 47});
+    CHECK(setup::quadrantSizeRange(r, 2) == std::pair{48, 59});
 }
 
 TEST_CASE("setup model: options, seed and players map into the game setup") {
     const game::Rules& r = setupRules();
     setup::NewGameSettings s = setup::defaultSettings(r, 7);
     s.options.systemCount = 20;
+    s.options.quadrantSize = 2;
+    s.options.allPlanetsSameSize = false;
     s.options.eventFrequency = 3;
     s.options.maxEventSeverity = 1;
     s.options.startTechLevel = 1;
@@ -179,6 +201,8 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
         REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
         CHECK(g->seed == 7);
         CHECK(g->options.systemCount == 20);
+        CHECK(g->options.quadrantSize == 2);
+        CHECK_FALSE(g->options.allPlanetsSameSize);
         CHECK(g->options.eventFrequency == 3);
         CHECK(g->options.maxEventSeverity == 1);
         CHECK(g->options.startTechLevel == 1);
@@ -275,7 +299,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
 TEST_CASE("setup model: the preview is the map the game starts with") {
     const game::Rules& r = setupRules();
     setup::NewGameSettings s = setup::defaultSettings(r, 99);
-    s.options.systemCount = 14;
+    s.options.quadrantSize = 0;  // Small: 12 to 23 systems
     s.computers.enabled = false;
     auto preview = setup::previewQuadrant(r, s.seed, s.options);
     REQUIRE_MESSAGE(preview.has_value(), (preview ? std::string{} : preview.error()));
@@ -284,6 +308,8 @@ TEST_CASE("setup model: the preview is the map the game starts with") {
     auto state = game::createGame(r, *g);
     REQUIRE(state.has_value());
     REQUIRE(state->galaxy.systems.size() == preview->galaxy.systems.size());
+    CHECK(preview->galaxy.systems.size() >= 12);
+    CHECK(preview->galaxy.systems.size() <= 23);
     for (size_t i = 0; i < preview->galaxy.systems.size(); ++i) {
         CHECK(state->galaxy.systems[i].name == preview->galaxy.systems[i].name);
         CHECK(state->galaxy.systems[i].position == preview->galaxy.systems[i].position);

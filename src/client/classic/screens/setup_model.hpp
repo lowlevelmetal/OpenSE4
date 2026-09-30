@@ -10,6 +10,7 @@
 #include "game/rules.hpp"
 #include "game/setup.hpp"
 
+#include <array>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -43,9 +44,17 @@ struct NewGameSettings {
 // medium random computer players, caps from Settings.
 NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed);
 
+// ---- Option lists (spec 01 §2.2, spec 02 §9; confirmed: binary) ----------------------------
+
+inline constexpr std::array<int64_t, 3> kStartingResources{5'000, 20'000, 100'000};  // Low, Medium (default), High
+inline constexpr std::array<int, 4> kRacialPoints{0, 2'000, 3'000, 5'000};           // None, Low (default), Medium, High
+inline constexpr std::array<int, 4> kStartingPlanets{1, 3, 5, 10};                   // 1 is the default
+
 // ---- Quadrant -----------------------------------------------------------------------------
 
 int maxSystems(const game::Rules& r);  // Settings `Maximum Number Of Systems` (at most 255)
+// The system counts a Quadrant Size (0 small, 1 medium, 2 large) rolls from.
+std::pair<int, int> quadrantSizeRange(const game::Rules& r, int quadrantSize);
 game::QuadrantOptions quadrantOptions(const game::GameOptions& o);
 // Generates the quadrant exactly as game::createGame will for this seed and
 // options, so the preview is the map the game starts with.
