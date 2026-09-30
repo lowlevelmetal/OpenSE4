@@ -11,6 +11,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
+#include "game/combat.hpp"
 #include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -573,6 +574,13 @@ TEST_CASE("economy: generated points, the minimum income and the opening researc
     economyTurn(*r, s);
     CHECK(s.empire(kMe).economy.colonies[Resource::Minerals] == pctTrunc(pctRound(800, 10), 105));
     CHECK(s.empire(kMe).stockpile == Resources{84, 200, 200});
+
+    // Every living empire gets it, also one left with ships only (spec 02 §5.6).
+    for (auto& c : s.colonies)
+        if (c && c->owner == kMe) c.reset();
+    s.empire(kMe).stockpile = {};
+    economyTurn(*r, s);
+    CHECK(s.empire(kMe).stockpile == Resources{200, 200, 200});
 }
 
 TEST_CASE("economy: the computer player bonus multiplies income and construction") {
@@ -664,7 +672,8 @@ TEST_CASE("economy: unpaid maintenance abandons whole vehicles, ships out of sup
     const auto moods = economyTurn(*r, s);
     CHECK(vehiclesOf(s, kMe) == 4);  // 500 unpaid: 500 div 100 + 1 = 6 abandoned
     CHECK(s.design(ship).lost == 6);
-    CHECK(countMood(moods, "Any Ship Lost") == 6);
+    CHECK(countMood(moods, "Any Ship Lost") == 0);  // no happiness event for abandoned ships
+    CHECK(countMood(moods, "Ship Lost in System") == 0);
     CHECK(logged(s, kMe, "abandoned"));
     CHECK(s.empire(kMe).stockpile.isZero());
 
@@ -1155,8 +1164,29 @@ TEST_CASE("economy: growth runs every Reproduction Check Frequency turns, unscal
     CHECK(home.totalPopulation() == 1010);
 }
 
+TEST_CASE("economy: growth and every 10th turn test the date in tenths of a year") {
+    // 24000 is not a multiple of 7: the date decides, not the turn number (spec 02 §13 Q48).
+    auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Reproduction Check Frequency", 7); });
+    GameState s = newGame(*r);
+    Colony& home = plainHome(*r, s, {});
+    CHECK(economy::processingDate(s) == 24001);  // a simultaneous turn is processed at the advanced date
+    s.turn = 6;  // processed as turn 7, date 24007: not a multiple of 7
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 1000);
+    s.turn = 2;  // date 24003 = 7 × 3429
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 1010);
+    // A turn-based game processes its first round at 24000 (spec 05 §8).
+    s.options.simultaneous = false;
+    s.turn = 0;
+    CHECK(economy::processingDate(s) == 24000);
+}
+
 TEST_CASE("economy: replicants add population in proportion to the races present") {
-    auto r = tweakedRules([](ruleset::Ruleset& rs) { addFacility(rs, "Cloning Vat", {ability(AbilityKind::ChangePopulationSystem, 10)}); });
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        addFacility(rs, "Cloning Vat", {ability(AbilityKind::ChangePopulationSystem, 10)});
+        addFacility(rs, "Big Vat", {ability(AbilityKind::ChangePopulationSystem, 25)});
+    });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Cloning Vat"});
     home.population = {{kMe, 300}, {kThem, 100}};
@@ -1164,6 +1194,25 @@ TEST_CASE("economy: replicants add population in proportion to the races present
     populationTurn(*r, s);
     CHECK(home.population[0].millions == 308);  // 7.5 rounds to 8
     CHECK(home.population[1].millions == 102);  // 2.5 rounds to 2
+
+    // The share is round(P × q) with q = pop ÷ total stored as a double first
+    // (spec 02 §3): the doubles nearest 0.1 and 0.9 lie above them, so 2.5 and
+    // 22.5 come out a hair above the half and round up.
+    home.facilities = {facilityIndex(*r, "Big Vat")};
+    home.population = {{kMe, 1}, {kThem, 9}};
+    populationTurn(*r, s);
+    CHECK(home.population[0].millions == 1 + 3);
+    CHECK(home.population[1].millions == 9 + 23);
+
+    // Each share is capped by the room left: earlier races first, nothing when full.
+    const int64_t cap = maxPopulation(*r, s, home);
+    home.population = {{kMe, cap - 20}, {kThem, 10}};
+    populationTurn(*r, s);
+    CHECK(home.population[0].millions == cap - 10);
+    CHECK(home.population[1].millions == 10);
+    home.population = {{kMe, cap + 50}};
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == cap + 50);  // above the maximum: nothing added, nothing removed
 }
 
 TEST_CASE("economy: plague kills a fixed amount by level until prevented or cured") {
@@ -1226,19 +1275,30 @@ TEST_CASE("economy: a colony whose people all die is removed and its planet lose
 }
 
 TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
-    auto r = tweakedRules([](ruleset::Ruleset& rs) { addFacility(rs, "Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 3)}); });
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        addFacility(rs, "Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 3)});
+        addFacility(rs, "Slow Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 250)});
+    });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Air Plant"});
     SpaceObject& planet = s.galaxy.object(home.planet);
     planet.atmosphere = "Methane";
     CHECK_FALSE(breathable(s, home));
     const int64_t domed = maxPopulation(*r, s, home);
+    REQUIRE(domed < 5000);
     home.population = {{kMe, 5000}};
     populationTurn(*r, s);
-    CHECK(home.totalPopulation() == domed);  // the surplus has no room under the dome
-    CHECK(logged(s, kMe, "overcrowded"));
+    // Nothing removes population above the maximum; it only has no room to grow (spec 02 §2, Q33).
+    CHECK(home.totalPopulation() == 5000);
     CHECK(home.atmosphereTurns == 1);
     populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 5000);
+    // Turns without the converter keep the count, which resumes later (spec 02 §2, Q41).
+    home.facilities.clear();
+    populationTurn(*r, s);
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 2);
+    home.facilities = {facilityIndex(*r, "Air Plant")};
     populationTurn(*r, s);
     CHECK(planet.atmosphere == "Methane");
     CHECK(home.atmosphereTurns == 3);
@@ -1246,6 +1306,19 @@ TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
     CHECK(planet.atmosphere == s.empire(kMe).race.atmosphere);
     CHECK(home.atmosphereTurns == 0);
     CHECK(breathable(s, home));
+    // The right atmosphere leaves the counter as it is too.
+    home.atmosphereTurns = 2;
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 2);
+
+    // The counter stops at 200, so a converter needing more never finishes.
+    planet.atmosphere = "Methane";
+    home.facilities = {facilityIndex(*r, "Slow Air Plant")};
+    home.atmosphereTurns = 199;
+    populationTurn(*r, s);
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 200);
+    CHECK(planet.atmosphere == "Methane");
 }
 
 // ---- Happiness ---------------------------------------------------------------------------------------
@@ -1270,6 +1343,7 @@ std::unique_ptr<Rules> moodRules() {
                       {"Enemy Ship in Sector", 40},
                       {"Enemy Ship in System", 20},
                       {"Our Troops on Planet", -10},
+                      {"Enemy Troops on Planet", 70},
                       {"Planet Plagued", 50},
                       {"New Treaty War", 500}};
         addTrait(rs, "Stoic", "Population Emotionless", 0);
@@ -1398,6 +1472,13 @@ TEST_CASE("economy: ships present count per ship; allies count as ours") {
     populationTurn(r, s);
     CHECK(w.far->anger == 50 + (-10 - 20) / 10);  // the ally's ship counts as ours
 
+    // Ships without an owner never count.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == kThem) v.owner = {};
+    w.far->anger = 40;
+    populationTurn(r, s);
+    CHECK(w.far->anger == 40);
+
     // Units never count.
     const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
     for (Vehicle& v : s.vehicles) v.status = VehicleStatus::Mothballed;
@@ -1416,6 +1497,24 @@ TEST_CASE("economy: troops and plague on the planet") {
     populationTurn(r, w.s);
     CHECK(w.home->anger == 40 - 3);
     CHECK(w.moon->anger == 40 + 5);
+
+    // Every troop unit in the cargo counts as ours, whoever owns it (spec 02 §4).
+    const DesignId theirs = addTestDesign(w.s, r, kThem, "Legion", "Test Troop Hull", {"Test Troop Rifle"});
+    w.s.empire(kMe).relation(kThem).treaty = Treaty::NonAggression;
+    w.s.empire(kThem).relation(kMe).treaty = Treaty::NonAggression;
+    w.home->cargo.units = {{troop, 1}, {theirs, 2}};
+    w.home->anger = 40;
+    w.moon->plagueLevel = 0;
+    populationTurn(r, w.s);
+    CHECK(w.home->anger == 40 - 3);
+    // Troops an enemy landed that still fight for the planet count once as
+    // enemies, and not as ours.
+    w.s.empire(kMe).relation(kThem).treaty = Treaty::War;
+    w.s.empire(kThem).relation(kMe).treaty = Treaty::War;
+    REQUIRE(combat::invaders(r, w.s, *w.home) == std::vector<EmpireId>{kThem});
+    w.home->anger = 40;
+    populationTurn(r, w.s);
+    CHECK(w.home->anger == 40 + (70 - 10) / 10);
 }
 
 TEST_CASE("economy: system happiness facilities calm every colony there after the update") {

@@ -65,6 +65,12 @@ namespace opense4::game::economy {
 // is turn + 1. A turn-based game advances it after the last player's
 // end-of-turn processing, so there it is the turn itself.
 uint32_t processingTurn(const GameState& s);
+// The game date in tenths of a year (2400.0 = 24000) that those rules test
+// during a turn: 24000 + processingTurn (spec 02 §13 Q48, confirmed: binary).
+// "Every 10th turn" is date mod 10 = 0; growth happens when date mod
+// `Reproduction Check Frequency` = 0.
+inline constexpr uint32_t kStartDate = 24000;
+uint32_t processingDate(const GameState& s);
 
 // ---- Racial effects (spec 02 §8.2) ----------------------------------------------------------------
 
@@ -86,9 +92,9 @@ enum class RacialEffect : uint8_t {
 int racialEffect(const Rules& r, const Race& race, RacialEffect e);
 
 // Racial points one characteristic at `value` costs, or refunds when negative
-// (spec 02 §8.1, confirmed: binary): the value clamped to Min/Max Pct, then c
-// per point up to the threshold, then P per point above it (N refunded per
-// point below it). setup's racialPointCost sums it over the characteristics.
+// (spec 02 §8.1, confirmed: binary): c per point up to the threshold, then P per
+// point above it (N refunded per point below it). The value is not clamped to
+// Min/Max Pct. setup's racialPointCost sums it over the characteristics.
 int characteristicPointCost(const Rules& r, Characteristic c, int value);
 
 // ---- Modifier tables (spec 02 §1.2, §5.2) ----------------------------------------------------

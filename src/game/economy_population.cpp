@@ -1,6 +1,7 @@
 #include "game/economy.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/economy_internal.hpp"
 #include "game/query.hpp"
@@ -41,26 +42,6 @@ int largestGroup(const Colony& c) {
     return best;
 }
 
-// Removes `amount` M in proportion to each race's size.
-void removePopulation(Colony& c, int64_t amount) {
-    const int64_t total = c.totalPopulation();
-    if (amount <= 0 || total <= 0) return;
-    amount = std::min(amount, total);
-    int64_t taken = 0;
-    for (PopulationGroup& g : c.population) {
-        const int64_t share = amount * g.millions / total;
-        g.millions -= share;
-        taken += share;
-    }
-    for (int64_t left = amount - taken; left > 0;) {
-        PopulationGroup& g = c.population[static_cast<size_t>(largestGroup(c))];
-        const int64_t n = std::min(left, g.millions);
-        if (n <= 0) break;
-        g.millions -= n;
-        left -= n;
-    }
-}
-
 EmpireId majorityRace(const Colony& c) {
     const int i = largestGroup(c);
     return i >= 0 && c.population[static_cast<size_t>(i)].millions > 0 ? c.population[static_cast<size_t>(i)].race : c.owner;
@@ -81,16 +62,6 @@ void growColony(const Rules& r, GameState& s, Colony& c) {
         grown = std::min(grown, room);
         g.millions += grown;
         room -= grown;
-    }
-}
-
-// A colony over its capacity (a dome went up) loses the surplus at once (inferred, spec 02 §13 Q33).
-void overcrowding(const Rules& r, GameState& s, Colony& c) {
-    const int64_t maxPop = maxPopulation(r, s, c);
-    if (const int64_t excess = c.totalPopulation() - maxPop; excess > 0 && maxPop >= 0) {
-        removePopulation(c, excess);
-        addLog(s, c.owner, LogCategory::Misc, std::format("{} is overcrowded", s.galaxy.object(c.planet).name),
-               std::format("{}M could not be housed and were lost.", excess), locationOf(s.galaxy, c.planet));
     }
 }
 
@@ -196,6 +167,9 @@ bool plague(TurnContext& ctx, Colony& c) {
 
 // ---- Atmosphere converters (spec 02 §2) ------------------------------------------------------------------
 
+// The atmosphere counter goes no higher (confirmed: binary).
+constexpr int kMaxAtmosphereTurns = 200;
+
 void convertAtmosphere(TurnContext& ctx, Colony& c) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
@@ -203,12 +177,11 @@ void convertAtmosphere(TurnContext& ctx, Colony& c) {
     const int64_t turns = bestOf(workingAbilities(r, s, c), AbilityKind::PlanetChangeAtmosphere, &converter);
     SpaceObject& planet = s.galaxy.object(c.planet);
     const std::string& target = s.empire(majorityRace(c)).race.atmosphere;
-    // The counter only runs while a converter works (inferred).
-    if (!converter || datafile::keysEqual(planet.atmosphere, target)) {
-        c.atmosphereTurns = 0;
-        return;
-    }
-    if (++c.atmosphereTurns <= turns) return;  // more than Val1 turns: Val1 + 1 in all (confirmed: binary)
+    // The counter moves only while a converter works on the wrong atmosphere; on
+    // other turns it keeps its value, and the count resumes later (confirmed: binary).
+    if (!converter || turns <= 0 || datafile::keysEqual(planet.atmosphere, target)) return;
+    c.atmosphereTurns = std::min(c.atmosphereTurns + 1, kMaxAtmosphereTurns);
+    if (c.atmosphereTurns <= turns) return;  // more than Val1 turns: Val1 + 1 in all (confirmed: binary)
     c.atmosphereTurns = 0;
     ctx.log(c.owner, LogCategory::Misc, std::format("{} now has a {} atmosphere", planet.name, target), {}, locationOf(s.galaxy, c.planet));
     planet.atmosphere = target;
@@ -250,8 +223,9 @@ Presence presenceAt(const Rules& r, const GameState& s, const Colony& c) {
     for (const Vehicle& v : s.vehicles) {
         if (v.location.system != where.system || v.count <= 0 || v.status != VehicleStatus::Normal) continue;
         if (!isShipOrBase(vehicleType(r, s, v))) continue;
-        // Non-Aggression or better counts as ours (confirmed: binary); ownerless vehicles as enemies (inferred).
-        const bool ours = v.owner == c.owner || (v.owner.valid() && !hostile(s, c.owner, v.owner));
+        // Ships without an owner never count; Non-Aggression or better counts as ours (confirmed: binary).
+        if (!v.owner.valid()) continue;
+        const bool ours = v.owner == c.owner || !hostile(s, c.owner, v.owner);
         const bool here = v.location.sector == where.sector;
         (ours ? p.ourSystem : p.enemySystem) += 1;
         if (here) (ours ? p.ourSector : p.enemySector) += 1;
@@ -306,17 +280,18 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     if (p.ourSector > 0) total += v("Our Ship in Sector") * p.ourSector;
     else total += v("Our Ship in System") * p.ourSystem;
 
-    // 5. Troops: ours per unit in the colony's cargo, enemies once.
+    // 5. Troops (confirmed: binary): troops another empire landed that still
+    //    fight for the planet count once as enemies; every other troop unit in
+    //    the colony's cargo counts as ours, whoever owns it. The original keeps
+    //    landed troops apart from the cargo; ours holds them too, and
+    //    combat::invaders tells them apart.
+    const std::vector<EmpireId> landed = combat::invaders(r, s, c);
     int64_t ourTroops = 0;
-    bool enemyTroops = false;
     for (const UnitStack& u : c.cargo.units) {
-        if (!u.design.valid() || u.design.index() >= s.designs.size() || u.count <= 0) continue;
-        const Design& d = s.design(u.design);
-        if (r.hull(d.hull).type != ruleset::VehicleType::Troop) continue;
-        if (d.owner == c.owner) ourTroops += u.count;
-        else if (hostile(s, c.owner, d.owner)) enemyTroops = true;
+        if (u.count <= 0 || !combat::isTroopDesign(r, s, u.design)) continue;
+        if (std::find(landed.begin(), landed.end(), s.design(u.design).owner) == landed.end()) ourTroops += u.count;
     }
-    if (enemyTroops) total += v("Enemy Troops on Planet");
+    if (!landed.empty()) total += v("Enemy Troops on Planet");
     total += v("Our Troops on Planet") * ourTroops;
 
     // 6. Plague.
@@ -365,13 +340,15 @@ void processPlanets(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!livingEmpire(s, e)) return;
+    // Both tests use the date in tenths of a year (spec 02 §13 Q48, confirmed: binary).
     const auto freq = static_cast<uint32_t>(std::max<int64_t>(1, r.setting("Reproduction Check Frequency", 1)));
-    const bool reproduce = processingTurn(s) % freq == 0;  // the amount is not scaled by the frequency
-    const bool yearly = processingTurn(s) % 10 == 0;
+    const bool reproduce = processingDate(s) % freq == 0;  // the amount is not scaled by the frequency
+    const bool yearly = processingDate(s) % 10 == 0;
     for (ObjectId planet : coloniesOf(s, e)) {
         Colony& c = *s.colony(planet);
+        // Population above the maximum (a dome went up, a capture) is never
+        // removed: such a colony just has no room to grow (spec 02 §2, §13 Q33).
         if (reproduce) growColony(r, s, c);
-        overcrowding(r, s, c);
         if (yearly) planetChanges(ctx, c);
         if (!plague(ctx, c)) continue;
         convertAtmosphere(ctx, c);
@@ -404,22 +381,25 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!livingEmpire(s, e)) return;
-    const bool yearly = processingTurn(s) % 10 == 0;
+    const bool yearly = processingDate(s) % 10 == 0;
     for (ObjectId planet : coloniesOf(s, e)) {
         Colony& c = *s.colony(planet);
         const SystemId sys = s.galaxy.object(planet).system;
         // Happiness facilities calm by whole percent, outside the per-turn clamp.
         if (const int64_t calm = bestInSystem(r, s, e, sys, AbilityKind::ChangePopulationHappinessSystem); calm > 0)
             setAnger(r, s, c, static_cast<int>(std::max<int64_t>(-kMaxAnger, c.anger - calm)));
-        // Replicants: each race gets its share, rounded, up to the colony's maximum (inferred rounding of the share).
+        // Replicants (confirmed: binary): each race in list order gets round(P × q),
+        // ties to even, where q = its population ÷ the colony's, stored as a
+        // double first; each share is capped by the room left at that moment.
         if (const int64_t added = bestInSystem(r, s, e, sys, AbilityKind::ChangePopulationSystem); added > 0) {
             const int64_t total = c.totalPopulation();
-            int64_t room = std::max<int64_t>(0, maxPopulation(r, s, c) - total);
+            const int64_t maxPop = maxPopulation(r, s, c);
             for (PopulationGroup& g : c.population) {
+                const int64_t room = maxPop - c.totalPopulation();
                 if (total <= 0 || room <= 0) break;
-                const int64_t share = std::min(room, xmath::divRoundHalfEven(added * g.millions, total));
+                const Ext q = (Ext(g.millions) / Ext(total)).roundedTo(xmath::kDoubleBits);
+                const int64_t share = std::min(room, std::max<int64_t>(0, (Ext(added) * q).round()));
                 g.millions += share;
-                room -= share;
             }
         }
         if (c.plagueLevel > 0 && bestInSystem(r, s, e, sys, AbilityKind::PlaguePreventionSystem) >= c.plagueLevel) cure(ctx, c);

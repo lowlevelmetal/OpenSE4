@@ -117,6 +117,13 @@ TEST_CASE("ruleset: problems are reported with file, line and record") {
                "Number of Tech Req := 1\nTech Area Req 1 := Warp Theory\nTech Level Req 1 := 1\n"
                "Weapon Type := Laser\nSpeeed := 9\n*END*\n";
     }
+    {
+        // General Type is Advantage, Disadvantage or Neither, or missing (spec 02 §1.6).
+        std::ofstream out(dir / "RacialTraits.txt", std::ios::trunc);
+        out << "*BEGIN*\nName := Odd Eyes\nGeneral Type := Advanced\nCost := 1\nTrait Type := Luck\n\n"
+               "Name := Plain Eyes\nCost := 1\nTrait Type := Luck\n\n"
+               "Name := Weak Eyes\nGeneral Type := disadvantage\nCost := -100\nTrait Type := Luck\n*END*\n";
+    }
     const auto result = ruleset::loadRuleset(dir);
     fs::remove_all(dir);
     const auto& errors = result.diagnostics.errors;
@@ -124,6 +131,9 @@ TEST_CASE("ruleset: problems are reported with file, line and record") {
     CHECK(mentions(errors, "unknown vehicle type 'Starbase'"));
     CHECK(mentions(errors, "Components.txt:2 [Broken Gun]: unknown tech area 'Warp Theory'"));
     CHECK(mentions(errors, "unknown weapon type 'Laser'"));
+    CHECK(mentions(errors, "RacialTraits.txt:2 [Odd Eyes]: 'General Type' must be Advantage, Disadvantage or Neither, not 'Advanced'"));
+    CHECK_FALSE(mentions(errors, "Plain Eyes"));
+    CHECK_FALSE(mentions(errors, "Weak Eyes"));
     CHECK(result.diagnostics.unreadFields.contains("Components.txt: Speeed"));
 }
 

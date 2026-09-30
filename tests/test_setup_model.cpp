@@ -341,7 +341,9 @@ TEST_CASE("setup model: racial point accounting") {
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 120) == 500);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 25 * 20 + 100 * 10);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 10 * 10));
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 30));  // clamped to Min Pct 50
+    // Costed as stored, even outside Min Pct 50 (spec 02 §8.1): only the race window keeps values in range.
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 40));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 160) == 25 * 20 + 100 * 40);
     // Cunning: 20 per point, beyond +10 at 200 per point; refunds 50 per point beyond -10.
     CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 200 * 5);
     CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 50 * 10));

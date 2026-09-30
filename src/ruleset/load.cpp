@@ -388,6 +388,10 @@ private:
         t.description = r.str("Description", Need::Optional);
         t.picture = r.int32("Pic Num", Need::Optional);
         t.generalType = r.str("General Type", Need::Optional);
+        // Only these three are valid; the game uses the value for nothing else (spec 02 §1.6).
+        if (r.has("General Type") && !datafile::keysEqual(t.generalType, "Advantage") && !datafile::keysEqual(t.generalType, "Disadvantage") &&
+            !datafile::keysEqual(t.generalType, "Neither"))
+            r.error(std::format("'General Type' must be Advantage, Disadvantage or Neither, not '{}'", t.generalType));
         t.cost = r.int32("Cost");
         t.traitType = r.str("Trait Type");
         for (int n = 1; r.has(RecordReader::key("Value {}", n)); ++n) t.values.push_back(r.str(RecordReader::key("Value {}", n)));
