@@ -252,6 +252,8 @@ struct Applier {
             f->name = c.name;
         } else if (c.design.valid()) {
             if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
+            // A design name differs from every design in the game, exactly (spec 03 §4.1).
+            if (s.design(c.design).name != c.name && designNameInUse(s, c.name)) return R::fail("A design with that name exists");
             s.design(c.design).name = c.name;
         } else if (c.planet.valid()) {
             if (!ownColony(s, e, c.planet)) return R::fail("Not your planet");

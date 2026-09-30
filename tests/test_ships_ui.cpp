@@ -315,3 +315,16 @@ TEST_CASE("ship windows: who can join a fleet") {
     CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, drone}).ok);
     CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, base}).ok);  // Bases Can Join Fleets is off
 }
+
+TEST_CASE("ship windows: a renamed design needs a name no empire uses") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u}, them{1u};
+    const DesignId mine = frigate(s, r, me, "Mine", {});
+    frigate(s, r, them, "Theirs", {});
+    CHECK_FALSE(apply(r, s, me, cmd::Rename{{}, {}, mine, {}, "Theirs"}).ok);
+    CHECK(apply(r, s, me, cmd::Rename{{}, {}, mine, {}, "theirs"}).ok);  // exact, case-sensitive comparison
+    CHECK(apply(r, s, me, cmd::Rename{{}, {}, mine, {}, "theirs"}).ok);  // keeping its own name is fine
+    CHECK(designNameInUse(s, "Theirs"));
+    CHECK_FALSE(designNameInUse(s, "Nobody's"));
+}
