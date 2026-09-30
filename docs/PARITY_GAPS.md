@@ -52,23 +52,14 @@ outcomes, **L** is an edge case.
 | `movement_path.cpp:312` | Route falls back through avoided systems | The order fails (§6.2) | M |
 | `movement_util.cpp:423-434,458`, `movement_upkeep.cpp:147-169,197-198` | Groups per design; recovery limit; fighter upkeep per group, race-scaled; best single training source | Groups per owner, kind and sector; limit on launch only; count × setting; training sources stack (§12) | M |
 | `commands.cpp:374-387, 778` | Two-sided retrofit cap, always charged; unit cap at build time | Cap limits increases only; charged only when something is added; no cargo; unit cap at launch, units in space only (§12, §14) | M |
-| `combat_space.cpp:1424-1428` | Planets launch 20 per combat turn | Up to 100 per kind (§12) | M |
 | Low | extra movement max per id (`design.cpp:33-56`); validity details (`:177-184`); unparsed fields (`ruleset.hpp:253-268`); 20-ability cap (`load.cpp:156`); cargo trim order; fleet pooling; actor order; depot population; Use Component; manipulation checks; scrap and unmothball rounding; design-name uniqueness and purge; fleet join rules; repair modifier order; build queue blocks movement; Attack and Sweep Mines cost | see spec 03 | L |
 
 ## Combat (spec 04)
 
-| Where | Engine now | Original | Impact |
+| Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| `combat_space.cpp:563` | Full speed in combat | Half the speed, rounded up, plus the best Combat Movement part (§5) | H |
-| `combat.cpp:623-685` | Partial damage to uniformly chosen parts | Parts destroyed whole, in random order weighted by structure, armor first; leftover damage goes to a per-ship pool (§9) | H |
-| `combat.hpp:103`, `combat_space.cpp:322,434-537` | 32×32 map, 2×2 planets, ring placement | 72×63 map, 4×4 planets and obstacles, a start box by piece count, entry edge or corner (§3) | M |
-| `combat_space.cpp:1881` | Fights the full setting's rounds | One fewer (§4) | M |
-| `combat_space.cpp:574-589`; `combat.cpp:561-602, 664-673` | System bonus on defense; planet racial defense; two shield pools; emissive and crystalline rules | Offense only; the setting alone for planets; one pool, phased only if all generators are; emissive and crystalline as in §9.2–9.3 | M |
-| `combat_space.cpp:1117-1161, 1377-1413, 1821-1822` | Unit groups roll once; seekers move on launch turn; ram settings swapped | Per-member rolls with one combined hit and a unit pool; seekers wait a phase and aim at the centre; ramming formula in §10.3 | M |
-| `combat.cpp:784-883` | Mines hit every hostile present, through shields | Only the group that moved in, ignoring shields, not if a friendly vehicle is with it (§10.6) | M |
-| `combat_ground.cpp:117-176`, `combat.cpp:950`, `combat_space.cpp:1848-1876` | Militia minimum 1, 90 % hit, per-unit damage; dropped troops wait | Model in §13; dropped troops fight at once, mid-battle | M |
-| `combat_space.cpp:1932-1941, 1163-1194, 2033-2038` | Experience scale; planet damage order and facility loss | §15 and §11 | M |
-| Low–medium | defender definition and per-turn phase reshuffle; Crew Conversion side effects; Crew Quarters in boarding; drone group size; satellite budget; Weapons Always Hit on PD; rounding of mounts and modifiers; shield-skipping types; supply-less designs; organic armor; push and pull; carrier recovery | see spec 04 | L |
+| `movement.cpp` (`moveMembers`, the combat hooks) | Movement does not record where a vehicle came from, nor which group entered a sector | Combat reads `Vehicle::cameFrom`/`cameFromTurn` for attackers and start boxes (§3) and takes the entering group for mines (§10.6, `resolveSpaceCombat(ctx, where, entering)`). Until movement records them, every vehicle counts as already present and mines strike every hostile empire's vehicles there | M |
+| Low | design statistics lack "enemy tonnage destroyed": it needs a `Design` field that the design commands, redaction and events also reset; mount `Comp Family Requirement` and `Shield Percent` are not read by the loader (combat applies them once they are) | see spec 04 §8, §15, §18.2 | L |
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 

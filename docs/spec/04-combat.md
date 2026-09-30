@@ -59,7 +59,9 @@ Conventions:
   empire.
 - Undetected cloaked vehicles do not count when deciding whether a battle starts.
 - Mines are not combat pieces. They act when a vehicle group enters their sector (§10.6).
-- A ship that fights loses its queued orders.
+- Combat does not clear orders or stop movement. Its only effect on orders is that a
+  Sentry order at the head of a participant's list is removed (spec 03 §6.3, confirmed:
+  binary). A ship that changes owner in the battle loses its orders (§12).
 
 **Simultaneous games.** Tactical combat is never offered, and the computer resolves every
 battle. The manual's older rule (combat only on every 5th day) was replaced (history 1.15,
@@ -918,6 +920,39 @@ checking in the running game.
     Per Target" (default 3), §10.7.
 31. **Militia losses.** Answered (confirmed: binary): militia deaths do not reduce
     population; the colony's militia pool shrinks instead (§13).
+32. **Damage pool between battles.** Does a ship's damage pool (§9.1) survive the end of a
+    battle? Open.
+33. **Shield-multiplier types against empty shields.** Are Quad/Double/Half/Quarter Damage
+    To Shields scaled when the shield pool is already 0? Open.
+34. **Hit points in a ram.** Which "remaining hit points" do R and T use (§10.3): intact
+    structure only, or also shields and the damage pool? Open.
+35. **Warp arrivals.** Where does a vehicle start that entered the sector through a warp
+    point, since the sector it left is not a neighbour? Open.
+36. **Several empires in the middle.** How are the boxes beside the centre laid out, in
+    which order do empires get them, and which way do their pieces face? Open. The same
+    for corner boxes when a battle has more than 60 pieces.
+37. **Satellites launched in combat.** How many satellites form one group? Open.
+38. **Unit groups.** How does the Shields Only pool make later kills easier, and what
+    exactly happens to the pool after a hit of a non-hull type (§9.4)? Does emissive
+    armor act on a unit group? Open.
+39. **Planet pool and facilities.** Is a planet's damage pool emptied when the population
+    takes a hit (§11 step 3)? Which facilities are destroyed in step 4? Open.
+40. **Other types against planets.** What do the "Only" types other than Only Weapons,
+    push, pull, teleport and the reload types do to a planet? Open.
+41. **Ground combat details.** Are militia hit before or after the defender's troops? Do
+    stored units other than troops count toward a side's offense and defense? Are the
+    planet's and the races' ground modifiers both taken from the same total (§13 step 5)?
+    Open.
+42. **Organic armor.** When the pool cannot pay for the next destroyed component in design
+    order, does restoration stop, or skip to a cheaper one? Open.
+43. **System modifiers during a battle.** Are the combat, damage and shield modifier totals
+    taken once when the battle starts, or recomputed as parts are destroyed? Open.
+44. **Planet conditions.** `Only Planet Conditions` lowers conditions by D × 0.1 on the
+    0–1.5 scale: confirm the scale of D against a known weapon. Open.
+45. **Mines against unit groups.** How do mine warheads damage a group of units in space?
+    Does a mine check the warhead's target set as well as its damage type? Open.
+46. **Seeker merging.** Does a new seeker join one on the launch square that has already
+    moved? Open.
 
 ### 19.1 What the engine does until the remaining questions are answered
 
@@ -935,3 +970,38 @@ confirmed rules above take precedence over any older engine behaviour.
 - **Captures in the statistics (Q27).** A capture counts as a loss for the design and a
   kill for the captor.
 - **Captured troops (Q29).** A troop unit fights for the empire that owns its design.
+- **Damage pool (Q32).** It lasts for one battle and is not saved.
+- **Shield multipliers (Q33).** With the shields at 0 the hit is not scaled.
+- **Ram hit points (Q34).** A ship's intact structure; a unit group's units' hit points
+  minus its pool; a planet's hit points (§11).
+- **Warp arrivals (Q35).** They start in the middle, but their empire is an attacker.
+- **The middle (Q36).** A single empire in the middle gets the box around (36, 31). With
+  several, empires in id order get boxes west, east, north and south of the centre, then
+  the diagonals, and face the centre. Pieces arriving from an edge face away from it. A
+  corner box stays square (24) in battles with more than 60 pieces.
+- **Satellites (Q37).** All satellites a carrier launches in one combat turn form one group.
+- **Unit groups (Q38).** Shields Only damage cancels up to one unit's shield part in the
+  next kill. After a non-hull hit the pool keeps at most its old value. Emissive armor of
+  the unit design acts as on a ship. Space unit groups have no partial damage.
+- **Planets (Q39, Q40).** The pool is emptied when the population is hit; facilities are
+  removed at random. Only Weapons hits the weapon platforms (as a non-hull hit); the other
+  types listed in Q40 do nothing to planets. Planets regenerate shields from facilities
+  with `Shield Regeneration`.
+- **Ground combat (Q41).** Damage reaches the defender's troops in cargo order, then the
+  militia, then the other stored units, which never attack and do not count toward
+  offense or defense. Each troop design's hull values count once. Both modifiers of step 5
+  are taken from the step 4 total. An invasion that ends resets the militia pool.
+- **Organic armor (Q42).** Restoration stops at the first component the pool cannot pay.
+- **System modifiers (Q43).** Taken once, when the battle starts.
+- **Conditions (Q44).** `SpaceObject::conditions` counts hundredths of the 0–1.5 scale, so
+  a hit lowers it by D × 10.
+- **Mines (Q45).** A warhead strikes the components of the group's front unit; a unit
+  destroyed is removed and the next warhead hits the next unit. Only the damage type is
+  checked. Without a record of the entering group (a battle outside the movement phase),
+  every vehicle in the sector counts as entering, one group per empire.
+- **Seekers (Q46).** Only a seeker that has not moved yet takes new members in.
+- **Captures and experience.** A capture or conversion gives no experience.
+- **Dodging seekers.** Among equally good squares, the computer takes the one farthest from
+  the nearest seeker aimed at the piece.
+- **Satellite cap.** The per-sector satellite cap (spec 03 §12) also limits launches in
+  combat.

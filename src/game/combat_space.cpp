@@ -244,6 +244,7 @@ private:
     int hitChance(int i, const Weapon& w, int t) const;
     int64_t exposureAt(int i, int x, int y, bool reach) const;
     int nearestThreat(int i, int x, int y) const;
+    int seekerDistance(int i, int x, int y) const;
     int64_t ourDamage(int i, int t, int d) const;
     bool hasTroops(int i) const;
     bool contestedBy(const Piece& planet, EmpireId e) const;
@@ -324,6 +325,7 @@ private:
     std::map<std::pair<uint32_t, int>, int64_t> assigned_;            // (empire, target) -> direct damage this turn
     std::vector<std::string> groundReports_;
     int round_ = 1;
+    int satelliteCap_ = 100;
     int interference_ = 0;
     int disruption_ = 0;
 };
@@ -476,6 +478,7 @@ bool Battle::setup() {
     if (!where_.system.valid() || where_.system.index() >= s_.galaxy.systems.size()) return false;
     interference_ = detail::sensorInterference(s_, where_);
     disruption_ = detail::shieldDisruption(s_, where_);
+    satelliteCap_ = static_cast<int>(r_.setting("Maximum Satellites Per Player Per Sector", 100));
 
     const detail::Forces forces = detail::battleForces(r_, s_, where_);
     if (!forces.battle) return false;
@@ -1119,6 +1122,13 @@ int64_t Battle::exposureAt(int i, int x, int y, bool reach) const {
         total += h.firepower[static_cast<size_t>(std::clamp(d, 1, kRangeTable))];
     }
     return total;
+}
+
+int Battle::seekerDistance(int i, int x, int y) const {
+    int best = kW * 2;
+    for (const Piece& sk : pieces_)
+        if (sk.alive && sk.kind == Kind::Seeker && sk.seekTarget == i) best = std::min(best, std::max(std::abs(sk.x - x), std::abs(sk.y - y)));
+    return best;
 }
 
 int Battle::nearestThreat(int i, int x, int y) const {
@@ -1916,10 +1926,16 @@ void Battle::launchUnits(EmpireId e) {
                     rate = &fighters;
                     group = std::max(1, S.fighterLaunchGroup);   // the strategy's group size (confirmed: binary)
                     break;
-                case VehicleType::Satellite:
+                case VehicleType::Satellite: {
                     rate = &satellites;
                     group = st.count;   // (inferred) one group per launch
+                    // The per-sector satellite cap limits launches (spec 03 §12; inferred to hold in combat).
+                    int present = 0;
+                    for (const Piece& q : pieces_)
+                        if (q.alive && q.owner == e && q.kind == Kind::UnitGroup && q.vtype == VehicleType::Satellite) present += q.unit.count;
+                    satellites = std::min(satellites, std::max(0, satelliteCap_ - present));
                     break;
+                }
                 case VehicleType::Drone:
                     rate = &drones;
                     group = std::max(1, S.dronesPerTarget);
@@ -2107,6 +2123,7 @@ std::vector<std::pair<int, int>> Battle::pathToward(int i, int t, int range, boo
         struct Option {
             int score;
             int64_t exposure;
+            int seekerGap;   // negated distance to the nearest seeker coming for us
             int order;
             int nx, ny;
         };
@@ -2117,11 +2134,12 @@ std::vector<std::pair<int, int>> Battle::pathToward(int i, int t, int range, boo
             const int score = std::abs(distAt(nx, ny, t) - range);
             const int64_t exp = avoidFire ? exposureAt(i, nx, ny, false) : 0;
             if (score > cur || (score == cur && exp >= curExp)) continue;   // no better than staying
-            options.push_back({score, exp, static_cast<int>(d), nx, ny});
+            options.push_back({score, exp, -seekerDistance(i, nx, ny), static_cast<int>(d), nx, ny});
         }
         if (options.empty()) break;
+        // Among equally good squares the computer keeps away from seekers aimed at it (history 1.60; inferred tie-break).
         std::sort(options.begin(), options.end(), [](const Option& a, const Option& b) {
-            return std::tie(a.score, a.exposure, a.order) < std::tie(b.score, b.exposure, b.order);
+            return std::tie(a.score, a.exposure, a.seekerGap, a.order) < std::tie(b.score, b.exposure, b.seekerGap, b.order);
         });
         bool moved = false;
         for (size_t o = 0; o < options.size() && o < 5; ++o) {
