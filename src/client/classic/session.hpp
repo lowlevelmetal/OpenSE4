@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,12 @@ public:
 
     // Saves and loads (the .gam equivalent).
     std::expected<void, std::string> save(const std::filesystem::path& file, const std::string& gameName) const;
+    // The game's Autosave choice (spec 01 §2.2), applied after a turn has been
+    // processed here (local and hotseat games): every N turns into one of ten
+    // rotating slots in the saves folder. Returns what was written, if anything.
+    std::optional<std::filesystem::path> autosave();
+    // Where the last autosave went, or why it failed (for the status line).
+    const std::string& autosaveNote() const { return autosaveNote_; }
     static std::expected<std::unique_ptr<ClassicSession>, std::string> load(std::shared_ptr<const game::Rules> rules,
                                                                             const std::filesystem::path& file);
 
@@ -95,6 +102,7 @@ private:
     bool waiting_ = false;
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
+    std::string autosaveNote_;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

@@ -85,6 +85,16 @@ int designMovement(const Rules& r, uint32_t hull, std::span<const DesignEntry> e
 // A design name must differ from every design of every empire, exactly
 // (case-sensitive) (spec 03 §4.1).
 bool designNameInUse(const GameState& s, std::string_view name);
+// A name no design in the game has yet: `wanted` itself when it is free, else
+// `wanted` followed by the first free Roman numeral from II on ("Scout II",
+// "Scout III", ...) (inferred numbering). Empty `wanted` gives "Design".
+std::string uniqueDesignName(const GameState& s, std::string_view wanted);
+// Zeroes a design's statistics: built, lost, kills and enemy tonnage destroyed
+// (a new, copied or redacted design starts without any).
+void resetDesignStatistics(Design& d);
+// What a destroyed vehicle of this design adds to its killer's "enemy tonnage
+// destroyed" per unit: its hull's Tonnage (inferred, spec 04 §19).
+int64_t designTonnage(const Rules& r, const Design& d);
 
 // ---- Vehicle instances (damage-aware) ------------------------------------------------------
 

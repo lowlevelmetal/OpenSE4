@@ -14,6 +14,7 @@
 #include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
+#include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -105,7 +106,7 @@ enum class Exec {
 // Arrived: already there (no step). Reached: a step that arrived. The composite
 // orders (Warp, Colonize, cargo...) are a Move To plus an action in the
 // original (§8): their action comes on the next action after Reached.
-enum class Travel { Arrived, Moved, Reached, Wait, Unreachable, Immobile, Busy, Stopped };
+enum class Travel { Arrived, Moved, Reached, Wait, Unreachable, Immobile, Busy, Stopped, Blocked, Encounter };
 
 bool validLocation(const GameState& s, Location l) {
     return l.system.valid() && l.system.index() < s.galaxy.systems.size() && l.sector.valid();
@@ -158,6 +159,8 @@ struct Actor {
     int used = 0;                    // steps made this turn
     bool stopped = false;            // gone, or stopped for the turn by a hazard
     bool pinned = false;             // a fleet member's own orders: in-place actions only
+    bool adhoc = false;              // ships outside fleets with identical head orders, each with its own list (§8)
+    bool encountered = false;        // the last warp arrived where the owner's options clear orders (§6.4)
     // Route cache.
     bool routeValid = false;
     Location routeGoal{}, routeAt{};
@@ -187,9 +190,10 @@ public:
                     a.actedOnce = true;
                 }
                 current_ = i;
-                act(a);
+                act(actors_[i]);
             }
             resolveCombat();
+            mergeSplitActors();
         }
     }
 
@@ -217,17 +221,35 @@ private:
             if (std::find(a.members.begin(), a.members.end(), a.lead) == a.members.end()) continue;
             actors_.push_back(std::move(a));
         }
+        // Ad-hoc groups (spec 03 §8): ships outside fleets in one sector whose head
+        // orders are identical act as one group, at the pace of the slowest. They
+        // form when movement starts and only lose members (inferred).
+        using GroupKey = std::tuple<EmpireId, Location, uint8_t, Location, ObjectId, VehicleId, DesignId, int>;
+        std::map<GroupKey, size_t> groups;
         for (const Vehicle& v : s_.vehicles) {
             if (!alive(v)) continue;
+            startSpeed_[v.id] = v.movement;
             if (v.orders.empty() && !autoDrone(v)) continue;
+            // A member moving with its fleet still carries out its own orders that act
+            // where it stands: self-destruct, launches, cloaking... (inferred)
+            const bool pinned = assigned.contains(v.id);
+            if (!pinned && !v.orders.empty() && vehicleType(r_, s_, v) == VehicleType::Ship) {
+                const Order& h = v.orders.front();
+                const GroupKey key{v.owner, v.location, static_cast<uint8_t>(h.kind), h.location, h.object, h.vehicle, h.design, h.amount};
+                if (const auto it = groups.find(key); it != groups.end()) {
+                    Actor& g = actors_[it->second];
+                    g.members.push_back(v.id);
+                    g.adhoc = true;
+                    continue;
+                }
+                groups.emplace(key, actors_.size());
+            }
             Actor a;
             a.members = {v.id};
             a.owner = v.owner;
             a.lead = v.id;
             a.created = kVehicleOrder + v.id.value * 2 + 1;
-            // A member moving with its fleet still carries out its own orders that act
-            // where it stands: self-destruct, launches, cloaking... (inferred)
-            a.pinned = assigned.contains(v.id);
+            a.pinned = pinned;
             actors_.push_back(std::move(a));
         }
         for (const auto& c : s_.colonies) {
@@ -310,6 +332,8 @@ private:
         return it == bonus_.end() ? 0 : it->second;
     }
 
+    // The list the actor executes: the planet's, the fleet's, or its lead's (an
+    // ad-hoc group's members hold identical head orders in their own lists).
     std::vector<Order>* orders(const Actor& a) {
         if (a.planet.valid()) {
             Colony* c = s_.colony(a.planet);
@@ -322,19 +346,71 @@ private:
         Vehicle* v = s_.vehicle(a.lead);
         return v ? &v->orders : nullptr;
     }
-    bool repeat(const Actor& a) const {
-        if (a.planet.valid()) return false;
-        if (a.fleet.valid()) {
-            const Fleet* f = s_.fleet(a.fleet);
-            return f && f->repeatOrders;
+    // Every list a change to the head applies to, with its Repeat flag.
+    template <class Fn>
+    void forEachList(const Actor& a, Fn&& fn) {
+        if (a.planet.valid()) {
+            if (Colony* c = s_.colony(a.planet)) fn(c->orders, false);
+            return;
         }
-        const Vehicle* v = s_.vehicle(a.lead);
-        return v && v->repeatOrders;
+        if (a.fleet.valid()) {
+            if (Fleet* f = s_.fleet(a.fleet)) fn(f->orders, f->repeatOrders);
+            return;
+        }
+        for (VehicleId id : a.adhoc ? a.members : std::vector<VehicleId>{a.lead})
+            if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders);
+    }
+
+    // An ad-hoc group keeps only the members whose head order is still the
+    // lead's; the others go on alone, or as groups of their own (inferred).
+    void regroup(Actor& a) {
+        if (!a.adhoc || a.stopped) return;
+        const Vehicle* lead = s_.vehicle(a.lead);
+        const std::optional<Order> head = lead && !lead->orders.empty() ? std::optional<Order>(lead->orders.front()) : std::nullopt;
+        std::vector<VehicleId> stay;
+        std::vector<std::pair<Order, std::vector<VehicleId>>> leaving;
+        for (VehicleId id : a.members) {
+            const Vehicle* v = s_.vehicle(id);
+            if (!v || v->orders.empty()) continue;
+            if (head && v->orders.front() == *head) {
+                stay.push_back(id);
+                continue;
+            }
+            auto it = std::find_if(leaving.begin(), leaving.end(), [&](const auto& g) { return g.first == v->orders.front(); });
+            if (it == leaving.end()) leaving.push_back({v->orders.front(), {id}});
+            else it->second.push_back(id);
+        }
+        for (auto& [order, ids] : leaving) {
+            Actor b;
+            b.members = ids;
+            b.owner = a.owner;
+            b.lead = ids.front();
+            b.created = kVehicleOrder + ids.front().value * 2 + 1;
+            b.adhoc = ids.size() > 1;
+            b.counter = a.counter;
+            b.used = a.used;
+            b.speed = INT_MAX;
+            for (VehicleId id : ids) b.speed = std::min(b.speed, startSpeed_[id]);
+            split_.push_back(std::move(b));
+        }
+        a.members = std::move(stay);
+        a.adhoc = a.members.size() > 1;
+        if (a.members.empty()) a.stopped = true;
+    }
+
+    // Actors that left an ad-hoc group act from the next day, in creation order.
+    void mergeSplitActors() {
+        if (split_.empty()) return;
+        for (Actor& b : split_) actors_.push_back(std::move(b));
+        split_.clear();
+        std::stable_sort(actors_.begin(), actors_.end(), [](const Actor& x, const Actor& y) { return x.created < y.created; });
     }
 
     // ---- The order loop ----------------------------------------------------------------------------
 
     void act(Actor& a) {
+        regroup(a);
+        if (a.stopped) return;
         std::vector<Order>* list = orders(a);
         if (!list) return;
         if (list->empty()) {
@@ -364,6 +440,7 @@ private:
             case Exec::Fail: clearOrders(a); break;
             case Exec::Gone: break;
         }
+        regroup(a);
     }
 
     // After every daily action: the depot check (§7), and a cloak drops at 0
@@ -398,34 +475,27 @@ private:
     }
 
     void writeBack(const Actor& a, const Order& o) {
-        if (std::vector<Order>* list = orders(a); list && !list->empty()) list->front() = o;
-    }
-
-    static Order fresh(Order o) {
-        // Choices made while executing are made again on the next pass of a repeating list.
-        switch (o.kind) {
-            case OrderKind::Explore: o.object = {}; o.location = {}; break;
-            case OrderKind::Resupply:
-            case OrderKind::Repair: o.location = {}; break;
-            case OrderKind::Colonize: o.amount = 0; break;
-            default: break;
-        }
-        return o;
+        forEachList(a, [&](std::vector<Order>& list, bool) {
+            if (!list.empty()) list.front() = o;
+        });
     }
 
     // Done: the order leaves the head; with Repeat on it goes to the end (§8).
     void complete(Actor& a) {
         a.routeValid = false;
-        std::vector<Order>* list = orders(a);
-        if (!list || list->empty()) return;
-        const Order done = list->front();
-        list->erase(list->begin());
-        if (repeat(a)) list->push_back(fresh(done));
+        forEachList(a, [&](std::vector<Order>& list, bool repeat) {
+            if (list.empty()) return;
+            const Order done = list.front();
+            list.erase(list.begin());
+            if (repeat) list.push_back(done);
+        });
     }
 
     void removeFront(Actor& a) {
         a.routeValid = false;
-        if (std::vector<Order>* list = orders(a); list && !list->empty()) list->erase(list->begin());
+        forEachList(a, [&](std::vector<Order>& list, bool) {
+            if (!list.empty()) list.erase(list.begin());
+        });
     }
 
     // Failed: the whole list is cleared and Repeat switched off, for every
@@ -462,6 +532,8 @@ private:
             case Travel::Immobile: return fail(a, o, "It cannot move.");
             case Travel::Busy: return fail(a, o, "Its space yard is building; it cannot move.");
             case Travel::Stopped: return fail(a, o, "Movement stopped by a hazard.");
+            case Travel::Blocked: return fail(a, o, "The way is blocked.");
+            case Travel::Encounter: return fail(a, o, "Another empire is in the system; the orders were cleared (empire options).");
             case Travel::Arrived: break;
         }
         return Exec::Done;
@@ -501,12 +573,17 @@ private:
 
     // One step toward `goal` (one action).
     Travel travel(Actor& a, Location goal) {
+        a.encountered = false;
         if (!validLocation(s_, goal)) return Travel::Unreachable;
         if (where(a) == goal) return Travel::Arrived;
         if (auto t = readyToStep(a)) return *t;
         if (!ensureRoute(a, goal)) return Travel::Unreachable;
-        if (!step(a) && (!ensureRoute(a, goal) || !step(a))) return Travel::Unreachable;
+        Step st = step(a);
+        if (st == Step::Stale) st = ensureRoute(a, goal) ? step(a) : Step::Stale;
+        if (st == Step::Stale) return Travel::Unreachable;
+        if (st == Step::Blocked) return Travel::Blocked;
         if (a.stopped) return Travel::Stopped;
+        if (a.encountered) return Travel::Encounter;
         return !a.members.empty() && where(a) == goal ? Travel::Reached : Travel::Moved;
     }
 
@@ -516,11 +593,55 @@ private:
         return t == Travel::Reached ? Exec::MovedDone : afterTravel(a, o, t);
     }
 
-    bool step(Actor& a) {
+    enum class Step { Moved, Stale, Blocked };
+
+    // A step onto `l` is re-chosen when it is not the square the group heads
+    // for and it is a tagged minefield, holds a storm with `Sector - Damage`
+    // or a visible hostile object (spec 03 §6.2, confirmed: binary). Counted
+    // (inferred): the damage of the sector's own objects, not a system-wide
+    // value no step could avoid; hostile vehicles the owner sees and hostile
+    // colonies.
+    bool avoidStep(const Actor& a, Location l) const {
+        const Empire& e = s_.empire(a.owner);
+        if (std::find(e.taggedMinefields.begin(), e.taggedMinefields.end(), l) != e.taggedMinefields.end()) return true;
+        for (ObjectId o : s_.galaxy.system(l.system).objects) {
+            const SpaceObject& obj = s_.galaxy.object(o);
+            if (obj.sector != l.sector) continue;
+            if (rawSum(obj.abilities, AbilityKind::SectorDamage) > 0) return true;
+            if (const Colony* c = s_.colony(o); c && hostile(s_, a.owner, c->owner)) return true;
+        }
+        for (const Vehicle& v : s_.vehicles)
+            if (alive(v) && v.location == l && hostile(s_, a.owner, v.owner) && sight::canSeeVehicle(r_, s_, a.owner, v)) return true;
+        return false;
+    }
+
+    // In-system steps are greedy: one square toward `target`, diagonal first.
+    // A step to avoid is re-chosen at random among the other steps that still
+    // approach the target: 1 of the 2 straight steps when moving diagonally, 1
+    // of the 3 forward squares when moving straight. After 10 failed tries the
+    // group does not move (spec 03 §6.2, confirmed: binary; which squares count
+    // as the 3 is inferred).
+    std::optional<Sector> greedyStep(const Actor& a, Location here, Sector target) {
+        const int x = here.sector.x, y = here.sector.y;
+        const int dx = (target.x > x) - (target.x < x), dy = (target.y > y) - (target.y < y);
+        auto usable = [&](Sector c) { return c.valid() && (c == target || !avoidStep(a, {here.system, c})); };
+        const Sector first{x + dx, y + dy};
+        if (usable(first)) return first;
+        for (int tries = 0; tries < 10; ++tries) {
+            Sector pick;
+            if (dx != 0 && dy != 0) pick = s_.rng.below(2) == 0 ? Sector{x + dx, y} : Sector{x, y + dy};
+            else if (dx != 0) pick = Sector{x + dx, y + static_cast<int>(s_.rng.below(3)) - 1};
+            else pick = Sector{x + static_cast<int>(s_.rng.below(3)) - 1, y + dy};
+            if (usable(pick)) return pick;
+        }
+        return std::nullopt;
+    }
+
+    Step step(Actor& a) {
         const Location here = where(a);
         const Location next = a.route[a.routePos];
-        ObjectId via;
         if (next.system != here.system) {
+            ObjectId via;
             for (ObjectId w : s_.galaxy.system(here.system).objects) {
                 const SpaceObject& wp = s_.galaxy.object(w);
                 if (wp.kind == ObjectKind::WarpPoint && wp.sector == here.sector && wp.destination.valid() &&
@@ -531,23 +652,59 @@ private:
             }
             if (!via.valid()) {
                 a.routeValid = false;  // the link is gone
-                return false;
+                return Step::Stale;
             }
+            ++a.routePos;
+            a.routeAt = next;
+            moveMembers(a, next, via);
+            return Step::Moved;
         }
-        ++a.routePos;
-        a.routeAt = next;
-        moveMembers(a, next, via);
-        return true;
+        // The route picks the warp points; inside a system the group heads for
+        // the last square of this system on it (a warp point or the goal).
+        size_t last = a.routePos;
+        while (last + 1 < a.route.size() && a.route[last + 1].system == here.system) ++last;
+        const auto chosen = greedyStep(a, here, a.route[last].sector);
+        if (!chosen) return Step::Blocked;
+        const Location to{here.system, *chosen};
+        if (to == next) {
+            ++a.routePos;
+            a.routeAt = to;
+        } else {
+            a.routeValid = false;  // off the planned squares: plan again from there
+        }
+        moveMembers(a, to, {});
+        return Step::Moved;
     }
 
-    // An explicit jump through a warp point, known link or not (Warp, Explore).
+    // An explicit jump through a warp point, known link or not (Warp).
     Travel jump(Actor& a, ObjectId w) {
+        a.encountered = false;
         const SpaceObject& wp = s_.galaxy.object(w);
         if (!wp.destination.valid() || !inSystem(s_.galaxy, wp.destination)) return Travel::Unreachable;
         if (auto t = readyToStep(a)) return *t;
         a.routeValid = false;
         moveMembers(a, locationOf(s_.galaxy, wp.destination), w);
-        return a.stopped ? Travel::Stopped : Travel::Moved;
+        if (a.stopped) return Travel::Stopped;
+        return a.encountered ? Travel::Encounter : Travel::Moved;
+    }
+
+    // The owner's Ship Orders options (spec 03 §6.4, confirmed: binary): after a
+    // warp into a system where an enemy empire (or, with the second option, any
+    // other empire) has objects, the order fails and the list is cleared.
+    // Counted (inferred): that empire's colonies there and its vehicles the
+    // owner sees.
+    bool encounterClearsOrders(EmpireId e, SystemId sys) const {
+        const EncounterClear option = s_.empire(e).clearOrdersOnEncounter;
+        if (option == EncounterClear::Never) return false;
+        auto applies = [&](EmpireId other) {
+            if (!other.valid() || other == e) return false;
+            return option == EncounterClear::Any || hostile(s_, e, other);
+        };
+        for (ObjectId o : s_.galaxy.system(sys).objects)
+            if (const Colony* c = s_.colony(o); c && applies(c->owner)) return true;
+        for (const Vehicle& v : s_.vehicles)
+            if (alive(v) && v.location.system == sys && applies(v.owner) && sight::canSeeVehicle(r_, s_, e, v)) return true;
+        return false;
     }
 
     // `Sector - Damage` a group stepping into `l` risks: the objects there plus
@@ -585,7 +742,6 @@ private:
         ++a.used;
         entered_.emplace_back(current_, next);
         if (via.valid()) {
-            knowledgeChanged(a.owner);
             for (size_t i = 0; i < a.members.size(); ++i) sight::learnWarpLink(s_, a.owner, via);
             // Turbulence: a 50 % chance per transit that every member takes the
             // total of the warp point it leaves; the group arrives but stops (confirmed: binary).
@@ -593,6 +749,7 @@ private:
             if (turbulence > 0 && s_.rng.percent(50)) hazardHit(a, turbulence, "Damaged by warp point turbulence.");
             prune(a);
             if (a.members.empty()) return;
+            if (encounterClearsOrders(a.owner, next.system)) a.encountered = true;
         }
         // A storm: a 50 % chance for a group stepping in; it stops (confirmed: binary).
         if (!a.stopped)
@@ -656,9 +813,9 @@ private:
             }
             case OrderKind::Warp: return warp(a, o);
             case OrderKind::Attack: return attack(a, o);
-            case OrderKind::Resupply: return resupply(a, o);
-            case OrderKind::Repair: return repair(a, o);
-            case OrderKind::Explore: return explore(a, o);
+            case OrderKind::Resupply:
+            case OrderKind::Repair:
+            case OrderKind::Explore: return expandHead(a, o);
             case OrderKind::Colonize: return colonize(a, o);
             case OrderKind::Sentry: return sentry(a);
             case OrderKind::LoadCargo:
@@ -731,167 +888,32 @@ private:
         return t == Travel::Reached ? Exec::Moved : Exec::ActedStay;
     }
 
-    // Picks the nearest of `goals` and stores it in the order.
-    bool chooseNearest(Actor& a, Order& o, const std::vector<Location>& goals) {
-        if (goals.empty()) return false;
-        const auto p = findPathToNearest(r_, s_, a.owner, where(a), goals, routeOptions(a));
-        if (!p) return false;
-        o.location = goals[p->goal];
-        return true;
-    }
-
-    // A visible, armed, non-mothballed hostile vehicle in the sector.
-    bool armedHostileAt(EmpireId e, Location l) const {
-        for (const Vehicle& v : s_.vehicles) {
-            if (!alive(v) || v.location != l || v.owner == e || !hostile(s_, e, v.owner) || v.status == VehicleStatus::Mothballed) continue;
-            if (!computeDesignStats(r_, nullptr, s_.design(v.design)).armed()) continue;
-            if (sight::canSeeVehicle(r_, s_, e, v)) return true;
+    // Explore, Resupply and Repair are expanded when they are given (orders.hpp);
+    // one that reached a list another way is expanded when it comes up, and the
+    // first of the orders it stands for runs at once. With nothing to go to it is
+    // removed.
+    Exec expandHead(Actor& a, Order& o) {
+        OrderContext ctx;
+        ctx.owner = a.owner;
+        ctx.members = a.members;
+        ctx.at = where(a);
+        ctx.carriesPopulation = any(a, [](const Vehicle& v) { return v.cargo.totalPopulation() > 0; });
+        std::vector<Order> expanded;
+        expandOrder(r_, s_, ctx, o, expanded);
+        if (expanded.empty()) {
+            const char* why = o.kind == OrderKind::Explore    ? "nothing left to explore"
+                              : o.kind == OrderKind::Resupply ? "no reachable resupply depot"
+                                                              : "no reachable repair facility";
+            ctx_.log(a.owner, LogCategory::Misc, std::format("{}: {}", name(a), why), {}, where(a));
+            return Exec::Removed;
         }
-        return false;
-    }
-
-    // Resupply: to the nearest depot in an explored system, skipping sectors
-    // with a visible armed hostile (§8, confirmed: binary).
-    Exec resupply(Actor& a, Order& o) {
-        if (!validLocation(s_, o.location) || !resupplyDepotAt(r_, s_, a.owner, o.location)) {
-            std::vector<Location> depots;
-            const Empire& e = s_.empire(a.owner);
-            for (const auto& c : s_.colonies) {
-                if (!c || !inSystem(s_.galaxy, c->planet)) continue;
-                const Location l = locationOf(s_.galaxy, c->planet);
-                if (!s_.options.omnipresent && !e.hasExplored(l.system)) continue;
-                if (resupplyDepotAt(r_, s_, a.owner, l) && !armedHostileAt(a.owner, l)) depots.push_back(l);
-            }
-            std::sort(depots.begin(), depots.end());
-            depots.erase(std::unique(depots.begin(), depots.end()), depots.end());
-            if (!chooseNearest(a, o, depots)) return fail(a, o, "No reachable resupply depot.");
-        }
-        // Expanded into a Move To the depot: done on arrival; the depot check refills.
-        const Travel t = travel(a, o.location);
-        if (t == Travel::Reached) return Exec::MovedDone;
-        if (t != Travel::Arrived) return afterTravel(a, o, t);
-        for (VehicleId id : a.members) refillSupply(r_, s_, *s_.vehicle(id));
-        return Exec::Acted;
-    }
-
-    // Repair: to the nearest own repair source, immobile ones (planets, bases)
-    // first; repair ships only when there is none (§8, confirmed: binary).
-    Exec repair(Actor& a, Order& o) {
-        // Chosen once, as the original expands the order when it is given.
-        if (!validLocation(s_, o.location) && repairCapacityAt(r_, s_, a.owner, where(a)) > 0) return Exec::Acted;
-        if (!validLocation(s_, o.location) || repairCapacityAt(r_, s_, a.owner, o.location) <= 0) {
-            std::vector<Location> fixed, ships;
-            for (const auto& c : s_.colonies)
-                if (c && c->owner == a.owner && inSystem(s_.galaxy, c->planet) && c->totalPopulation() > 0 &&
-                    abilitySum(colonyAbilities(r_, s_, *c), AbilityKind::ComponentRepair) > 0)
-                    fixed.push_back(locationOf(s_.galaxy, c->planet));
-            for (const Vehicle& v : s_.vehicles) {
-                if (!alive(v) || v.owner != a.owner || std::find(a.members.begin(), a.members.end(), v.id) != a.members.end()) continue;
-                const VehicleType t = vehicleType(r_, s_, v);
-                if (!isShipOrBase(t) || abilitySum(vehicleAbilities(r_, s_, v), AbilityKind::ComponentRepair) <= 0) continue;
-                (t == VehicleType::Base ? fixed : ships).push_back(v.location);
-            }
-            for (auto* list : {&fixed, &ships}) {
-                std::sort(list->begin(), list->end());
-                list->erase(std::unique(list->begin(), list->end()), list->end());
-            }
-            if (!chooseNearest(a, o, fixed) && !chooseNearest(a, o, ships)) return fail(a, o, "No reachable repair facility.");
-        }
-        // Expanded into a Move To the source: done on arrival.
-        const Travel t = travel(a, o.location);
-        if (t == Travel::Reached) return Exec::MovedDone;
-        return t == Travel::Arrived ? Exec::Acted : afterTravel(a, o, t);
-    }
-
-    // A warp point worth exploring: in a known system, leading somewhere unexplored or unknown.
-    bool explorable(EmpireId e, ObjectId w) const {
-        if (!w.valid() || w.index() >= s_.galaxy.objects.size()) return false;
-        const SpaceObject& wp = s_.galaxy.object(w);
-        if (wp.kind != ObjectKind::WarpPoint || !inSystem(s_.galaxy, w) || !wp.destination.valid() || !inSystem(s_.galaxy, wp.destination))
-            return false;
-        const SpaceObject& far = s_.galaxy.object(wp.destination);
-        const Empire& emp = s_.empire(e);
-        if (!s_.options.omnipresent && !emp.hasExplored(wp.system)) return false;
-        return !sight::knowsWarpLink(s_, e, w) || !emp.hasExplored(far.system);
-    }
-
-    // Explore targets of one empire: its explorable warp points and what its
-    // ships already head for. Rebuilt when the empire's map knowledge changes.
-    struct ExploreBoard {
-        uint64_t version = UINT64_MAX;
-        std::vector<ObjectId> candidates;
-        std::set<ObjectId> claimedWarps;
-        std::set<SystemId> claimedSystems;
-    };
-
-    void claim(ExploreBoard& b, EmpireId e, ObjectId w) {
-        b.claimedWarps.insert(w);
-        const ObjectId far = s_.galaxy.object(w).destination;
-        if (far.valid() && sight::knowsWarpLink(s_, e, w)) b.claimedSystems.insert(s_.galaxy.object(far).system);
-    }
-
-    ExploreBoard& board(EmpireId e) {
-        ExploreBoard& b = boards_[e];
-        if (b.version == version_[e]) return b;
-        b = ExploreBoard{};
-        b.version = version_[e];
-        auto head = [&](const std::vector<Order>& list) {
+        forEachList(a, [&](std::vector<Order>& list, bool) {
             if (list.empty()) return;
-            const Order& h = list.front();
-            if ((h.kind == OrderKind::Explore || h.kind == OrderKind::Warp) && h.object.valid() && h.object.index() < s_.galaxy.objects.size())
-                claim(b, e, h.object);
-            if (h.kind == OrderKind::MoveTo && h.location.system.valid()) b.claimedSystems.insert(h.location.system);
-        };
-        for (const Vehicle& v : s_.vehicles)
-            if (alive(v) && v.owner == e && !followsFleetOrders(s_, v)) head(v.orders);
-        for (const Fleet& f : s_.fleets)
-            if (f.owner == e) head(f.orders);
-        for (const StarSystem& sys : s_.galaxy.systems)
-            for (ObjectId w : sys.objects)
-                if (explorable(e, w)) b.candidates.push_back(w);
-        return b;
-    }
-
-    // The map changed for `e` (a jump), or for everyone (stellar manipulation).
-    void knowledgeChanged(EmpireId e) { ++version_[e]; }
-    void mapChanged() {
-        for (const Empire& e : s_.empires) knowledgeChanged(e.id);
-    }
-
-    Exec explore(Actor& a, Order& o) {
-        if (hasFighter(a)) return fail(a, o, "Fighters cannot use warp points.");
-        if (neutral(a)) return fail(a, o, "Neutral empires cannot use warp points.");
-        if (!explorable(a.owner, o.object)) {
-            o.object = {};
-            // Nothing was left the last time and nothing changed since: done at once.
-            if (auto it = exploreIdle_.find(a.lead); it != exploreIdle_.end() && it->second == version_[a.owner]) return Exec::Done;
-            ExploreBoard& b = board(a.owner);
-            // Warp points and systems other own ships are already heading for are skipped.
-            std::vector<ObjectId> candidates;
-            std::vector<Location> goals;
-            for (ObjectId w : b.candidates) {
-                if (b.claimedWarps.contains(w) || !explorable(a.owner, w)) continue;
-                const ObjectId far = s_.galaxy.object(w).destination;
-                if (sight::knowsWarpLink(s_, a.owner, w) && b.claimedSystems.contains(s_.galaxy.object(far).system)) continue;
-                candidates.push_back(w);
-                goals.push_back(locationOf(s_.galaxy, w));
-            }
-            const auto p = goals.empty() ? std::nullopt : findPathToNearest(r_, s_, a.owner, where(a), goals, routeOptions(a));
-            if (!p) {  // nothing left: the order completes (the original adds nothing, §8)
-                exploreIdle_[a.lead] = version_[a.owner];
-                if (exploreLogged_.insert(a.lead).second)
-                    ctx_.log(a.owner, LogCategory::Misc, std::format("{}: nothing left to explore", name(a)), {}, where(a));
-                return Exec::Done;
-            }
-            // Several warp points can share a sector: the first of them at the chosen goal.
-            o.object = candidates[p->goal];
-            o.location = goals[p->goal];
-            claim(b, a.owner, o.object);
-        }
-        const Travel t = travel(a, locationOf(s_.galaxy, o.object));
-        if (t != Travel::Arrived) return afterTravel(a, o, t);
-        const Travel j = jump(a, o.object);
-        return j == Travel::Moved ? Exec::MovedDone : afterTravel(a, o, j);
+            list.erase(list.begin());
+            list.insert(list.begin(), expanded.begin(), expanded.end());
+        });
+        o = expanded.front();
+        return execute(a, o);
     }
 
     // Colonize (§8): fails while a member is cloaked or when nobody can colonize
@@ -1024,7 +1046,6 @@ private:
         const std::string why = stellarManipulation(ctx_, a.members, o, consumed);
         if (!why.empty()) return fail(a, o, why);
         for (Actor& other : actors_) other.routeValid = false;  // the map may have changed
-        mapChanged();
         prune(a);
         return a.stopped ? Exec::Gone : Exec::Acted;
     }
@@ -1150,10 +1171,8 @@ private:
     std::set<std::pair<ObjectId, Location>> foughtPlanets_;
     std::map<VehicleId, int> bonus_;                    // emergency energy gained this turn
     UnitBudget budget_;
-    std::map<EmpireId, uint64_t> version_;              // bumped when an empire's map knowledge changes
-    std::map<EmpireId, ExploreBoard> boards_;
-    std::map<VehicleId, uint64_t> exploreIdle_;         // actor -> version at which nothing was left to explore
-    std::set<VehicleId> exploreLogged_;
+    std::map<VehicleId, int> startSpeed_;               // movement points when the phase began
+    std::vector<Actor> split_;                          // actors that left an ad-hoc group today
 };
 
 // King steps from `at` toward `target`, stopping there.

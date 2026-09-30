@@ -1,6 +1,7 @@
 #include "game/design.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/generate.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -323,6 +324,22 @@ bool designNameInUse(const GameState& s, std::string_view name) {
         for (DesignId id : e.designs)
             if (id.index() < s.designs.size() && s.design(id).name == name) return true;
     return false;
+}
+
+std::string uniqueDesignName(const GameState& s, std::string_view wanted) {
+    const std::string base = wanted.empty() ? std::string("Design") : std::string(wanted);
+    if (!designNameInUse(s, base)) return base;
+    for (int n = 2;; ++n)
+        if (std::string name = std::format("{} {}", base, romanNumeral(n)); !designNameInUse(s, name)) return name;
+}
+
+void resetDesignStatistics(Design& d) {
+    d.built = d.lost = d.kills = 0;
+    d.enemyTonnageDestroyed = 0;
+}
+
+int64_t designTonnage(const Rules& r, const Design& d) {
+    return d.hull < r.data().vehicleSizes.size() ? std::max(0, r.hull(d.hull).tonnage) : 0;
 }
 
 // ---- Vehicles -------------------------------------------------------------------------

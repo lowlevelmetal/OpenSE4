@@ -3,10 +3,12 @@
 // New game creation (docs/spec/01 §3, spec 02 §9): quadrant, empires with
 // their races, homeworlds, starting technology, designs and ships.
 
+#include "game/map_file.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
 #include <expected>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,9 @@ struct GameSetup {
     uint64_t seed = 1;
     GameOptions options;
     std::vector<EmpireSetup> empires;   // index = EmpireId
+    // A loaded map (spec 01 §12): the quadrant is taken from it instead of
+    // being generated, and its starting points place the empires first.
+    std::optional<QuadrantMap> map;
 };
 
 // Builds a race from a preset tier: characteristics, traits (by name), culture,

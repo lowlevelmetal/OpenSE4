@@ -1,5 +1,6 @@
 #include "client/classic/session.hpp"
 
+#include "client/classic/screens/setup_model.hpp"
 #include "core/log.hpp"
 #include "game/serialize.hpp"
 #include "game/turn.hpp"
@@ -59,7 +60,22 @@ void ClassicSession::endTurn() {
                 break;
             }
     }
+    autosave();
     beginTurn();
+}
+
+std::optional<std::filesystem::path> ClassicSession::autosave() {
+    if (kind_ == SessionKind::NetworkClient) return std::nullopt;  // the host keeps the game
+    const auto name = setup::autosaveName(state_.options.autosaveTurns, state_.turn);
+    if (!name) return std::nullopt;
+    const std::filesystem::path file = savesDir() / (*name + ".gam");
+    if (auto saved = save(file, *name); !saved) {
+        autosaveNote_ = std::format("Autosave failed: {}", saved.error());
+        log::warn("{}", autosaveNote_);
+        return std::nullopt;
+    }
+    autosaveNote_ = std::format("Saved as {}", *name);
+    return file;
 }
 
 void ClassicSession::poll() {

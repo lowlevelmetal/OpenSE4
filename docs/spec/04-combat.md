@@ -953,6 +953,9 @@ checking in the running game.
     Does a mine check the warhead's target set as well as its damage type? Open.
 46. **Seeker merging.** Does a new seeker join one on the launch square that has already
     moved? Open.
+47. **Enemy tonnage destroyed.** Which tonnage does the design statistic add: the victim's
+    hull `Tonnage`, or the tonnage its components fill? Do captured ships and destroyed
+    planets add anything? Who sees another empire's statistics? Open.
 
 ### 19.1 What the engine does until the remaining questions are answered
 
@@ -969,6 +972,10 @@ confirmed rules above take precedence over any older engine behaviour.
   once its guns are gone.
 - **Captures in the statistics (Q27).** A capture counts as a loss for the design and a
   kill for the captor.
+- **Enemy tonnage destroyed (Q47).** Each destroyed ship, base or unit adds its hull's
+  `Tonnage` to the killer's design (a seeker's launcher; mines their own design).
+  Captures and planets add none. A new design starts at 0, and no empire sees the
+  statistics of another empire's designs.
 - **Captured troops (Q29).** A troop unit fights for the empire that owns its design.
 - **Damage pool (Q32).** It lasts for one battle and is not saved.
 - **Shield multipliers (Q33).** With the shields at 0 the hit is not scaled.

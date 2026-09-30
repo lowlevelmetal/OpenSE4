@@ -109,6 +109,9 @@ struct SetMinisters {
     std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag, the new-vehicle option and ministerAll
 };
 
+// ---- Ship Orders options (spec 03 §6.4) ------------------------------------------------------------
+struct SetEncounterOptions { EncounterClear clearOrdersOnEncounter = EncounterClear::Never; };
+
 } // namespace cmd
 
 using Command = std::variant<
@@ -121,7 +124,7 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters>;
+    cmd::SetMinisters, cmd::SetEncounterOptions>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

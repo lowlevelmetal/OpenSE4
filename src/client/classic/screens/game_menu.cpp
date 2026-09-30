@@ -4,6 +4,7 @@
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
+#include "game/map_file.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -116,7 +117,12 @@ public:
                 ui.open(ScreenId::SaveGame);
                 keep = false;
             }
-            button("Save Map", false);
+            // Save Map: only when the game lets players save the map (spec 01 §2.2, §12).
+            if (button("Save Map", ui.state().options.playersCanSaveMap)) {
+                mapName_ = std::format("{} {}", ui.me().name, formatDate(ui.state().turn));
+                mapNote_.clear();
+                ImGui::OpenPopup("Save Map");
+            }
             button("Save Empire", false);
             if (button("Players")) ImGui::OpenPopup("Player Computer Control");
             if (button("Options")) {
@@ -141,12 +147,47 @@ public:
                 ui.requests.quitToIntro = true;
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
             playersPopup(ui);
+            saveMapPopup(ui);
         }
         ImGui::End();
         return keep;
     }
 
 private:
+    // Writes the current quadrant, with the empires' capitals as their starting
+    // points, to <user data>/maps (our map format, docs/MAPS.md).
+    void saveMapPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({380, 0}));
+        if (!ImGui::BeginPopupModal("Save Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        const std::filesystem::path dir = userDataDir() / "maps";
+        ImGui::TextColored(kLabelBlue, "Map name");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##mapname", mapName_, 60, ImGuiInputTextFlags_EnterReturnsTrue);
+        const std::filesystem::path file = dir / (game::mapFileStem(mapName_) + std::string(game::kMapExtension));
+        std::error_code ec;
+        if (std::filesystem::exists(file, ec)) wrappedDim(std::format("{} exists and will be replaced.", file.filename().string()).c_str());
+        if (!mapNote_.empty()) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextColored(mapSaved_ ? kGoodText : kErrorText, "%s", mapNote_.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Save", ImVec2(w, ui.px(26))) || enter) {
+            const auto saved = game::saveMapFile(file, ui.session.rules().data(), game::mapOfGame(ui.state(), mapName_));
+            mapSaved_ = saved.has_value();
+            mapNote_ = saved ? std::format("Saved to {}", file.string()) : saved.error();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    std::string mapName_;
+    std::string mapNote_;
+    bool mapSaved_ = false;
+
     void playersPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({420, 0}));
         if (!ImGui::BeginPopupModal("Player Computer Control", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;

@@ -2,6 +2,7 @@
 
 #include "game/design.hpp"
 #include "game/movement.hpp"
+#include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
 #include "game/xmath.hpp"
@@ -147,16 +148,18 @@ struct Applier {
             col->orders = c.orders;
             return {};
         }
+        // Explore, Resupply, Repair and the composite orders are expanded into
+        // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
-            f->orders = c.orders;
+            f->orders = expandGivenOrders(r, s, orderContextOf(s, *f), f->orders, c.orders);
             f->repeatOrders = c.repeat;
             return {};
         }
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
-        v->orders = c.orders;
+        v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
         v->repeatOrders = c.repeat;
         return {};
     }
@@ -286,7 +289,8 @@ struct Applier {
         const uint32_t f = col->facilities[static_cast<size_t>(c.facilitySlot)];
         int pct = static_cast<int>(r.setting("Scrap Facility Percent Returned", 30));
         pct = std::max(pct, reclamationPercentAt(r, s, e, locationOf(s.galaxy, col->planet)));
-        emp().stockpile += Resources::from(r.facility(f).cost).percent(pct);
+        // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
+        emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
         // Scrapping the space yard removes vehicles from the queue.
         if (hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard) && !colonyHasSpaceYard(r, *col))
@@ -572,13 +576,16 @@ struct Applier {
             if (en.component >= r.data().components.size()) return R::fail("Unknown component");
             if (en.mount >= static_cast<int32_t>(r.data().weaponMounts.size())) return R::fail("Unknown mount");
         }
-        for (DesignId id : emp().designs)
-            if (s.design(id).name == d.name) return R::fail("A design with that name exists");
         const DesignStats st = computeDesignStats(r, &emp(), d);
         if (!st.problems.empty()) return R::fail(st.problems.front());
+        // A design name differs from every design in the game (spec 03 §4.1). The
+        // designer offers only free names; a name another empire took since (two
+        // players' orders in one turn, a computer player's name list) gets the
+        // first free numeral instead of refusing the design (inferred).
+        d.name = uniqueDesignName(s, d.name);
         d.owner = e;
         d.createdTurn = s.turn;
-        d.built = d.lost = d.kills = 0;
+        resetDesignStatistics(d);
         d.obsolete = false;
         if (d.strategy >= std::max<size_t>(1, emp().strategies.size())) d.strategy = 0;
         addDesign(s, std::move(d));
@@ -802,6 +809,13 @@ struct Applier {
         if (c.individual) setIndividualMinisters(*c.individual);
         return {};
     }
+
+    // ---- Ship Orders options (spec 03 §6.4) ----------------------------------------------------------
+    R operator()(const cmd::SetEncounterOptions& c) {
+        if (c.clearOrdersOnEncounter > EncounterClear::Any) return R::fail("Unknown option");
+        emp().clearOrdersOnEncounter = c.clearOrdersOnEncounter;
+        return {};
+    }
 };
 
 template <class T>
@@ -846,6 +860,7 @@ OPENSE4_CMD_NAME(SetDesignTypes)
 OPENSE4_CMD_NAME(SetColonyTypes)
 OPENSE4_CMD_NAME(SetEmpireOptions)
 OPENSE4_CMD_NAME(SetMinisters)
+OPENSE4_CMD_NAME(SetEncounterOptions)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

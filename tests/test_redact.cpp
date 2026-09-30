@@ -18,8 +18,23 @@ TEST_CASE("redact: an empire's view hides what it does not know") {
     const EmpireId me{0u}, other{1u};
     s.empire(other).research.push_back({ruleset::TechAreaId{0u}, 10});
     s.empire(other).stockpile = {123, 456, 789};
+    // Design statistics belong to their owner (spec 04 §15; inferred): even a design we have seen shows none.
+    REQUIRE_FALSE(s.empire(other).designs.empty());
+    REQUIRE_FALSE(s.empire(me).designs.empty());
+    const DesignId theirs = s.empire(other).designs.front();
+    const DesignId ours = s.empire(me).designs.front();
+    s.design(theirs).kills = 4;
+    s.design(theirs).enemyTonnageDestroyed = 750;
+    s.design(ours).enemyTonnageDestroyed = 120;
+    s.empire(me).knowledge.seenDesigns.push_back(theirs);
+    std::sort(s.empire(me).knowledge.seenDesigns.begin(), s.empire(me).knowledge.seenDesigns.end());
 
     const GameState v = redactForEmpire(s, me);
+    CHECK(v.design(theirs).name == s.design(theirs).name);  // seen: the design itself is known
+    CHECK(v.design(theirs).kills == 0);
+    CHECK(v.design(theirs).enemyTonnageDestroyed == 0);
+    CHECK(v.design(theirs).built == 0);
+    CHECK(v.design(ours).enemyTonnageDestroyed == 120);
     CHECK(validateState(v, &r).empty());
     // Our own things are untouched.
     CHECK(v.empire(me).stockpile == s.empire(me).stockpile);

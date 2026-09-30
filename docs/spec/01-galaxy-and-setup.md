@@ -991,6 +991,8 @@ highlighted, and an X marks each empire that has met one.
     theirs has that planet converted to their atmosphere and planet type at the same size
     (confirmed: binary, §3.6).
   - Loading a map must clear the previous starting points.
+  - OpenSE4's map format is described in [docs/MAPS.md](../MAPS.md). Maps live in the
+    user's data folder, never in the install.
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
     the filename of a prepared savegame in the same folder.
@@ -1127,3 +1129,17 @@ highlighted, and an X marks each empire that has met one.
     Pct. Extra starting planets are ordinary colonies (not capitals) of colony type
     "Balanced". "More than 60 %" of Maximum Number Of Systems is compared exactly.
     **(inferred)**
+36. **Map starting points.** The engine gives every empire its map point first (its own
+    point, else a random remaining common one, in player order), then places the others at
+    random. A point on a sector an earlier empire took is skipped. A converted planet keeps
+    its name and size (when no record of the empire's atmosphere and type has that size,
+    another size's record is used). Only an atmosphere that differs triggers the
+    conversion, as the text says; a planet of the right atmosphere but another type stays
+    as it is. **(inferred)**
+37. **Save Map during a game.** The engine writes each living empire's capital as that
+    player's starting point. *Players can save map during a game* is off by default.
+    **(inferred)**
+38. **Autosave.** The engine names the ten slots "Autosave 1" to "Autosave 10" and uses
+    slot ((turn ÷ N) − 1) mod 10 + 1 after turn processing, in local and hotseat games;
+    network hosts have their own setting. Which files the original writes, and whether
+    the count restarts on loading, are open. **(inferred)**

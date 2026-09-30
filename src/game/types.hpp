@@ -3,6 +3,7 @@
 // Basic value types of the classic-rules engine. See docs/spec/ for rules.
 
 #include "core/id.hpp"
+#include "game/xmath.hpp"
 
 #include <array>
 #include <compare>
@@ -41,8 +42,15 @@ struct Resources {
     constexpr Resources operator-(const Resources& o) const { return {v[0] - o.v[0], v[1] - o.v[1], v[2] - o.v[2]}; }
     constexpr Resources& operator+=(const Resources& o) { return *this = *this + o; }
     constexpr Resources& operator-=(const Resources& o) { return *this = *this - o; }
-    // value * pct / 100 per resource, truncating.
-    constexpr Resources percent(int64_t pct) const { return {v[0] * pct / 100, v[1] * pct / 100, v[2] * pct / 100}; }
+    // truncate(value × pct %) per resource, in the original's floating point
+    // (xmath.hpp; spec 02 "Arithmetic").
+    constexpr Resources percent(int64_t pct) const {
+        return {xmath::pctTrunc(v[0], pct), xmath::pctTrunc(v[1], pct), xmath::pctTrunc(v[2], pct)};
+    }
+    // round(value × pct %) per resource, halves to even, in the same floating point.
+    constexpr Resources percentRounded(int64_t pct) const {
+        return {xmath::pctRound(v[0], pct), xmath::pctRound(v[1], pct), xmath::pctRound(v[2], pct)};
+    }
     constexpr bool covers(const Resources& c) const { return v[0] >= c.v[0] && v[1] >= c.v[1] && v[2] >= c.v[2]; }
     constexpr bool isZero() const { return v[0] == 0 && v[1] == 0 && v[2] == 0; }
     constexpr bool anyNegative() const { return v[0] < 0 || v[1] < 0 || v[2] < 0; }
@@ -128,6 +136,11 @@ std::string_view displayName(Characteristic c);  // as used in Settings keys: "P
 bool parseCharacteristic(std::string_view s, Characteristic& out);
 
 enum class PlayerKind : uint8_t { Human, Computer, Neutral };
+
+// An empire's Ship Orders option (spec 03 §6.4, §8): after a warp into a system
+// where an enemy empire (Enemy) or any other empire (Any) has objects, the
+// order fails and the list is cleared. Never is the default.
+enum class EncounterClear : uint8_t { Never, Enemy, Any };
 
 // The 25 ministers in the original's order (spec 05 §7.1, confirmed: binary):
 // the first 11 are global, the rest individual. Bit i of Empire::ministers.

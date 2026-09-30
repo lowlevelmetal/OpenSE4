@@ -6,6 +6,7 @@
 #include "client/classic/screens/setup_empire.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
+#include "client/classic/widgets.hpp"
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
@@ -156,7 +157,9 @@ private:
             text += lo == hi ? std::format(", {} random {} player{}", lo, neutral ? "neutral" : "computer", lo == 1 ? "" : "s")
                              : std::format(", {}-{} random {} players", lo, hi, neutral ? "neutral" : "computer");
         }
-        if (s_.options.systemCount > 0) {
+        if (s_.map) {
+            text += std::format("; the map {} ({} systems).", s_.map->name, s_.map->galaxy.systems.size());
+        } else if (s_.options.systemCount > 0) {
             text += std::format("; {} systems.", s_.options.systemCount);
         } else {
             const auto [lo, hi] = quadrantSizeRange(rules(), s_.options.quadrantSize);
@@ -243,6 +246,20 @@ private:
     // ---- Quadrant ---------------------------------------------------------------------------------
 
     void updatePreview() {
+        if (s_.map) {
+            // A loaded map is shown as it is.
+            if (!previewIsMap_) {
+                preview_ = game::Generated{s_.map->galaxy, mapWarnings_};
+                previewError_.clear();
+                previewIsMap_ = true;
+                previewKey_.reset();
+            }
+            return;
+        }
+        if (previewIsMap_) {
+            previewIsMap_ = false;
+            previewKey_.reset();
+        }
         const PreviewKey key = previewKey(s_);
         if (previewKey_ && *previewKey_ == key) return;
         if (ImGui::IsAnyItemActive() && preview_) return;  // wait until a slider is released
@@ -309,6 +326,16 @@ private:
                     hover = static_cast<int>(i);
                 }
             }
+            // A loaded map's starting points: numbered for their player, plain for common ones.
+            if (s_.map)
+                for (const game::StartingPoint& p : s_.map->startingPoints) {
+                    if (p.system.index() >= g.systems.size()) continue;
+                    const ImVec2 c = at(g.system(p.system).position);
+                    dl->AddCircle(c, radius + ctx.px(3), IM_COL32(120, 255, 140, 255), 0, ctx.px(1.5f));
+                    if (p.player != game::kCommonStart)
+                        dl->AddText(ImVec2(c.x + radius + ctx.px(3), c.y - radius - ctx.px(12)), IM_COL32(120, 255, 140, 255),
+                                    std::to_string(p.player + 1).c_str());
+                }
             if (hover >= 0) {
                 const game::StarSystem& sys = g.systems[static_cast<size_t>(hover)];
                 dl->AddCircle(at(sys.position), radius + ctx.px(4), IM_COL32(255, 230, 120, 255), 0, ctx.px(1.5f));
@@ -394,6 +421,27 @@ private:
         if (ImGui::Button("Generate Map Now", ImVec2(-FLT_MIN, 0))) {
             Rng next(s_.seed);
             s_.seed = next.next() % 1000000000ull + 1;
+            if (s_.map) setStatus("Back to a generated quadrant; the loaded map and its starting points are gone.", false);
+            clearMap(s_);
+        }
+        const ImVec2 half((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f, 0);
+        if (ImGui::Button("Load Map", half)) {
+            mapFiles_ = listMapFiles(rules(), mapsDir());
+            ImGui::OpenPopup("Load Map");
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!preview_);
+        if (ImGui::Button("Save Map", half)) {
+            if (mapName_.empty()) mapName_ = s_.map && !s_.map->name.empty() ? s_.map->name : std::format("Quadrant {}", s_.seed);
+            ImGui::OpenPopup("Save Map");
+        }
+        ImGui::EndDisabled();
+        loadMapPopup(ctx);
+        saveMapPopup(ctx);
+        if (s_.map) {
+            ImGui::TextColored(kGood, "Map: %s", s_.map->name.c_str());
+            ImGui::SameLine();
+            ImGui::TextColored(kDim, "(%zu starting points)", s_.map->startingPoints.size());
         }
         if (preview_) {
             size_t links = 0, starts = 0;
@@ -404,8 +452,72 @@ private:
             ImGui::TextColored(kDim, "%zu systems, %zu warp links, %zu where empires can start", preview_->galaxy.systems.size(), links / 2, starts);
             for (const auto& w : preview_->warnings) ImGui::TextColored(kBad, "%s", w.c_str());
         }
-        note("This is the map the game starts with. A new seed makes a new map.");
+        note(s_.map ? "The game starts on this loaded map; Generate Map Now returns to a generated quadrant."
+                    : "This is the map the game starts with. A new seed makes a new map.");
         ImGui::EndGroup();
+    }
+
+    static std::filesystem::path mapsDir() {
+        const std::filesystem::path dir = userDataDir() / "maps";
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        return dir;
+    }
+
+    void loadMapPopup(MenuContext& ctx) {
+        ImGui::SetNextWindowSize(ctx.size({520, 420}), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ctx.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (!ImGui::BeginPopupModal("Load Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
+        ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+        ImGui::TextWrapped("Map files in %s", mapsDir().string().c_str());
+        ImGui::PopStyleColor();
+        ImGui::BeginChild("##maps", ImVec2(0, -ctx.px(38)), ImGuiChildFlags_Borders);
+        if (mapFiles_.empty()) note("No saved maps yet. Save Map keeps the quadrant shown here for later games.");
+        for (size_t i = 0; i < mapFiles_.size(); ++i) {
+            const MapFileInfo& f = mapFiles_[i];
+            ImGui::PushID(static_cast<int>(i));
+            const std::string label = std::format("{}  ({} systems, {} starting points)", f.name, f.systems, f.startingPoints);
+            if (ImGui::Selectable(label.c_str())) {
+                auto loaded = game::loadMapFile(f.path, rules().data());
+                if (!loaded) {
+                    setStatus(loaded.error(), true);
+                } else {
+                    mapWarnings_ = loaded->warnings;
+                    useMap(s_, std::move(loaded->map));  // replaces the previous map and its starting points
+                    previewIsMap_ = false;
+                    std::string text = std::format("Map {} loaded.", s_.map->name);
+                    for (const auto& w : mapWarnings_) text += " " + w;
+                    setStatus(text, !mapWarnings_.empty());
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("Cancel", ctx.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    void saveMapPopup(MenuContext& ctx) {
+        ImGui::SetNextWindowSize(ctx.size({440, 150}), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ctx.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (!ImGui::BeginPopupModal("Save Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
+        ImGui::TextColored(kLabelBlue, "Map name");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##mapname", mapName_, 60, ImGuiInputTextFlags_EnterReturnsTrue);
+        const std::filesystem::path file = mapFilePath(mapsDir(), mapName_);
+        std::error_code ec;
+        if (std::filesystem::exists(file, ec)) ImGui::TextColored(kBad, "%s exists and will be replaced.", file.filename().string().c_str());
+        if ((ImGui::Button("Save", ctx.size({120, 28})) || enter) && preview_) {
+            auto saved = game::saveMapFile(file, rules().data(), mapToSave(s_, preview_->galaxy, mapName_));
+            if (saved) setStatus(std::format("Map saved to {}", file.string()), false);
+            else setStatus(saved.error(), true);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ctx.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     // ---- Events ----------------------------------------------------------------------------------
@@ -850,6 +962,9 @@ private:
         lamp(ctx, "Only planets of the home planet type", o.onlyHomeType);
         lamp(ctx, "No ancient ruins", o.noRuins);
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
+        heading(ctx, "Maps");
+        lamp(ctx, "Players can save the map during the game", o.playersCanSaveMap);
+        ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Limits");
         rowLabel(ctx, "Ships per player", 190);
         ImGui::SetNextItemWidth(ctx.px(160));
@@ -884,6 +999,20 @@ private:
         if (lampChoice(ctx, "##combat", combat, {"Tactical combat", "Strategic combat only"})) o.noTacticalCombat = combat == 1;
         note("Strategic combat is resolved automatically; tactical combat lets players steer their ships in battle.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
+        heading(ctx, "Autosave");
+        {
+            std::vector<std::string> choices;
+            int current = 0;
+            for (size_t i = 0; i < kAutosaveTurns.size(); ++i) {
+                const int n = kAutosaveTurns[i];
+                choices.push_back(n == 0 ? std::string("None") : n == 1 ? std::string("Every turn") : std::format("Every {} turns", n));
+                if (n == o.autosaveTurns) current = static_cast<int>(i);
+            }
+            if (lampChoice(ctx, "##autosave", current, std::span<const std::string>(choices)))
+                o.autosaveTurns = kAutosaveTurns[static_cast<size_t>(std::clamp(current, 0, static_cast<int>(kAutosaveTurns.size()) - 1))];
+            note("Saves the game after the turns are processed, rotating through ten slots named Autosave 1 to Autosave 10.");
+        }
+        ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "This Game");
         labelValue(ctx, "Seed", std::to_string(s_.seed));
         ImGui::PushTextWrapPos(0);
@@ -910,6 +1039,10 @@ private:
     std::optional<PreviewKey> previewKey_;
     std::optional<game::Generated> preview_;
     std::string previewError_;
+    bool previewIsMap_ = false;               // preview_ shows s_.map
+    std::vector<std::string> mapWarnings_;    // what the loaded map lacked in this data set
+    std::vector<MapFileInfo> mapFiles_;
+    std::string mapName_;
     std::string status_;
     bool statusError_ = false;
     std::vector<EmpireFileInfo> files_;

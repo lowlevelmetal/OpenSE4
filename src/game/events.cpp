@@ -932,11 +932,11 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             const std::string original = copy.name;
             copy.owner = t.source;
             copy.createdTurn = s.turn;
-            copy.built = copy.lost = copy.kills = 0;
+            resetDesignStatistics(copy);  // a new design starts without statistics (spec 04 §15)
             copy.obsolete = false;
             copy.strategy = 0;
-            for (DesignId own : s.empire(t.source).designs)
-                if (s.design(own).name == copy.name) copy.name = std::format("{} ({})", original, empireFullName(*victim));
+            // Design names are unique in the whole game (spec 03 §4.1), and the victim's still exists.
+            copy.name = uniqueDesignName(s, std::format("{} ({})", original, empireFullName(*victim)));
             addDesign(s, std::move(copy));
             out.tokens.designName = original;
             out.report.push_back(std::format("The {} {} design is now in our design list.", original, designClassName(e == Effect::UnitDesignsSteal)));

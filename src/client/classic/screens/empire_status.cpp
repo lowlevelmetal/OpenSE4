@@ -202,7 +202,7 @@ public:
         if (!d.open()) return d.keepOpen();
         ClassicSettings& s = settings();
         d.beginContent();
-        dimText("These switches are kept on this computer and apply to every game played here.");
+        dimText("These switches are kept on this computer and apply to every game played here; the Ship Orders ones belong to this game.");
         ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_None);
         const char* group = nullptr;
         bool changed = false;
@@ -214,6 +214,17 @@ public:
             }
             changed |= lampToggle(ui, o.label, &(s.*o.member));
         }
+        // Ship Orders: kept with the empire in the game (spec 03 §6.4), both off by default.
+        ImGui::Spacing();
+        heading(ui, "Ship Orders");
+        const game::EncounterClear clear = ui.me().clearOrdersOnEncounter;
+        bool onEnemy = clear != game::EncounterClear::Never;
+        bool onAny = clear == game::EncounterClear::Any;
+        if (lampToggle(ui, "Clear orders on warping into a system with enemies", &onEnemy))
+            status_.issue(ui, cmd::SetEncounterOptions{onEnemy ? game::EncounterClear::Enemy : game::EncounterClear::Never});
+        if (lampToggle(ui, "Clear orders on warping into a system with any other empire", &onAny))
+            status_.issue(ui, cmd::SetEncounterOptions{onAny ? game::EncounterClear::Any : game::EncounterClear::Enemy});
+        status_.draw();
         ImGui::Spacing();
         ImGui::SetNextItemWidth(ui.px(260));
         changed |= ImGui::SliderFloat("Effects volume", &s.soundVolume, 0.0f, 1.0f, "%.2f");
@@ -232,6 +243,9 @@ public:
         d.close();
         return d.keepOpen();
     }
+
+private:
+    CommandStatus status_;
 };
 
 // ---- Ministers -------------------------------------------------------------------------------

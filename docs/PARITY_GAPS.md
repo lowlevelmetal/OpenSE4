@@ -14,7 +14,6 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Arithmetic | Integer maths with floor division throughout | Percentages are applied in floating point, and each rule states whether its result is rounded (half to even) or truncated (spec 02 §1, spec 03 §2). Because of extended precision, an exact product can come out one lower, e.g. 100 × 53 % gives 52 | M |
 | Turn style (`turn.cpp`) | Every game is resolved as a simultaneous turn; the setup's "One player after another" choice changes nothing | Spec 05 §8 "Turn-based game": each player's movement, combat and diplomacy happen live in that player's turn, and `empireEndOfTurn` runs when the player ends it | M |
 | End-of-turn step 12 (`turn.cpp`) | Nothing is forgotten: the engine does not record when a foreign design was seen | Spec 05 §8 step 12: knowledge of foreign designs seen more than 50 turns ago is forgotten | L |
 
@@ -28,15 +27,21 @@ cost sums `economy::characteristicPointCost`.
 
 ## Vehicles, movement and logistics (spec 03)
 
+Design names are unique in the whole game (`uniqueDesignName`), composite orders are
+expanded when given (`orders.hpp`), ships with identical head orders move as ad-hoc groups,
+in-system steps are greedy with the random re-choice, and the empire option to clear
+orders on meeting empires is `Empire::clearOrdersOnEncounter`. The engine's choices where
+the spec is silent are spec 03 §19 Q50–Q54.
+
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| Low | Design names are unique per empire in `CreateDesign` (`commands.cpp`): starting designs (`setup.cpp`) and computer players' designs (`ai_design.cpp`) reuse names across empires, so a game-wide check would stop computer players from creating designs; `designNameInUse` exists, renaming a design already checks every empire, and the designer avoids every empire's names. Movement makes a stellar manipulation order wait when no capable member has movement left; the manipulation's own checks are in `movement_stellar.cpp` (spec 01 §9). Unit groups that mix designs are kept as one record per design (they share caps and launch refills, but move and fight as separate records). Not implemented: the empire options to clear orders on meeting empires, ad-hoc groups of ships with identical head orders, greedy in-system steps with the random re-choice, and composite orders being expanded when given | see spec 03 | L |
+| Low | Unit groups that mix designs are kept as one record per design: they share the per-sector caps and launch refills, but move, pay supply and fight as separate records (spec 03 §19 Q43). A single record would need a vehicle that holds several designs, which touches combat, movement, supply, cargo, the windows and the save layout | One group per (owner, unit kind, sector), mixing designs: its supply is pooled, its MP is the lowest design speed, and it fights as one group (spec 03 §1, §12) | L |
 
 ## Combat (spec 04)
 
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Low | design statistics lack "enemy tonnage destroyed": it needs a `Design` field that the design commands, redaction and events also reset | see spec 04 §15 | L |
+Every row of this section was implemented. Designs record the enemy tonnage their
+vehicles destroyed (`Design::enemyTonnageDestroyed`, spec 04 §15; the measure is open
+question 47).
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 
@@ -50,15 +55,14 @@ The rules of this section follow the spec. What is left depends on other parts o
 
 Generation, empire placement, starting planets and stockpile, the setup option lists,
 racial point costs, sight and stellar manipulation now follow the specs (`generate.cpp`,
-`setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). The engine's own choices where the spec is
-silent are listed in spec 01 §14 (Q27 onward). What is left needs code outside those files:
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Low | map starting points (no map files yet, spec 01 §12); autosave choices | see spec 01 | L |
+`setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). Maps are saved and loaded in our own
+format ([MAPS.md](MAPS.md), `map_file.hpp`) with starting points placed first, and the
+autosave choices are applied after each processed turn in local and hotseat games. The
+engine's own choices where the spec is silent are listed in spec 01 §14 (Q27 onward). No
+gap is left in this section.
 
 ## Computer player (spec 05 §7)
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| Low | Of the four AI_Settings movement flags only the clear-orders pair is copied (into `Empire::clearOrdersOnEncounter`), and movement does not read that option yet; empires have no minefield or avoided-system option, and routes always go around both. The empire setup (`EmpireSetup`, `setup.cpp`) has no minister style or "Use Race Minister Style", so every empire starts without a style; only the Ministers window sets one | The four flags become the computer empire's own movement options each turn (§7.5, spec 03 §6.2, §6.4). A style chosen at setup also applies to an empire marked Computer Controlled, unless it uses its race's style (§7.1, spec 02 §9) | L |
+| Low | Of the four AI_Settings movement flags only the clear-orders pair is copied (into `Empire::clearOrdersOnEncounter`, which movement reads); empires have no minefield or avoided-system option, and routes always go around both. The empire setup (`EmpireSetup`, `setup.cpp`) has no minister style or "Use Race Minister Style", so every empire starts without a style; only the Ministers window sets one | The four flags become the computer empire's own movement options each turn (§7.5, spec 03 §6.2, §6.4). A style chosen at setup also applies to an empire marked Computer Controlled, unless it uses its race's style (§7.1, spec 02 §9) | L |

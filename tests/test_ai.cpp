@@ -1970,6 +1970,33 @@ TEST_CASE("ai: the budget's revenue is what the income step banks, bonus include
     CHECK(s.empire(cpu).stockpile - before == revenue);
 }
 
+TEST_CASE("ai: a ship sent for supplies is not sent again while it is on its way") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    Location away = home;
+    away.sector = Sector{home.sector.x == 0 ? 1 : 0, home.sector.y};  // another sector of the home system
+    const DesignId tanker = addTestDesign(s, r, me, "Tanker", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod"});
+    const VehicleId ship = addTestVehicle(s, r, tanker, away).id;
+    s.vehicle(ship)->supply = 0;
+    auto resupplyOrders = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, false);
+        std::vector<cmd::SetOrders> out;
+        for (const Command& c : p.report().commands)
+            if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle == ship) out.push_back(*o);
+        return out;
+    };
+    const auto first = resupplyOrders(s);
+    REQUIRE(first.size() == 1);
+    REQUIRE(apply(r, s, me, first.front()).ok);
+    REQUIRE_FALSE(s.vehicle(ship)->orders.empty());
+    CHECK(s.vehicle(ship)->orders.front().kind == OrderKind::MoveTo);  // stored expanded (spec 03 §8)
+    CHECK(resupplyOrders(s).empty());  // already on its way: not sent again
+}
+
 TEST_CASE("ai: computer player bonus helpers") {
     GameState s = newEngineGame(3, 2, 8, false);
     s.options.aiBonus = 2;

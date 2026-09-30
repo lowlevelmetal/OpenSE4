@@ -389,10 +389,10 @@ private:
             case PackageItem::Kind::Vehicle: {
                 const Vehicle* v = s.vehicle(item.vehicle);
                 if (!v) return 0;
-                const int64_t cost = computeDesignStats(p_.r, nullptr, s.design(v->design)).cost.total();
-                if (isUnitType(vehicleType(p_.r, s, *v)))
-                    return xmath::pctTrunc(cost, p_.r.setting("Scrap Unit Percent Returned", 30)) * 100 * std::max(1, v->count);
-                return cost * 100;
+                // A unit group: its scrap value × 100 (spec 05 §7.4), each resource
+                // rounded per unit before summing (scrapRefund, spec 03 §15).
+                if (isUnitType(vehicleType(p_.r, s, *v))) return scrapRefund(p_.r, s, *v).total() * 100;
+                return computeDesignStats(p_.r, nullptr, s.design(v->design)).cost.total() * 100;
             }
             case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
             case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;

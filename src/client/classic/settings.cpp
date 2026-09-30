@@ -21,7 +21,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 22> kBoolOptions{{
+constexpr std::array<BoolOption, 20> kBoolOptions{{
     {"General", "show_log_at_turn_start", "Open the log when a turn starts", &S::showLogAtTurnStart},
     {"General", "confirm_end_turn", "Ask before ending the turn", &S::confirmEndTurn},
     {"General", "confirm_scrap", "Ask before scrapping", &S::confirmScrap},
@@ -33,8 +33,6 @@ constexpr std::array<BoolOption, 22> kBoolOptions{{
     {"Next \\ Previous", "cycle_once_per_location", "Stop only once per location", &S::cycleOncePerLocation},
     {"Ship Movement", "avoid_minefields", "Route around known minefields", &S::avoidMinefields},
     {"Ship Movement", "avoid_restricted_systems", "Route around systems marked to avoid", &S::avoidRestrictedSystems},
-    {"Ship Orders", "clear_orders_on_enemy_contact", "Clear orders on entering a system with enemies", &S::clearOrdersOnEnemyContact},
-    {"Ship Orders", "clear_orders_on_any_contact", "Clear orders on entering a system with any other empire", &S::clearOrdersOnAnyContact},
     {"System Display", "show_warp_point_names", "Show where known warp points lead", &S::showWarpPointNames},
     {"System Display", "show_planet_names", "Show planet names", &S::showPlanetNames},
     {"System Display", "show_facility_markers", "Show facility markers on colonies", &S::showFacilityMarkers},

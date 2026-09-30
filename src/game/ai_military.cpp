@@ -4,6 +4,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/xmath.hpp"
 
@@ -752,6 +753,27 @@ void planMinesSatellitesDrones(Planner& p) {
     }
 }
 
+namespace {
+
+// What a Repair or Resupply order given now stands for: orders are stored
+// expanded (orders.hpp), so one given earlier is a Move To its target. Empty
+// when there is nowhere to go (or the ship is already there).
+std::vector<Order> expansionOf(const Planner& p, OrderContext ctx, OrderKind k) {
+    std::vector<Order> out;
+    expandOrder(p.r, p.st, ctx, simpleOrder(k), out);
+    return out;
+}
+
+// The list already carries out that order: it starts with its expansion, or
+// still holds the order itself (given some other way, expanded when it comes up).
+bool headsFor(const std::vector<Order>& list, const std::vector<Order>& expansion, OrderKind k) {
+    if (list.empty()) return false;
+    if (list.front().kind == k) return true;
+    return !expansion.empty() && list.size() >= expansion.size() && std::equal(expansion.begin(), expansion.end(), list.begin());
+}
+
+} // namespace
+
 // Damaged ships and ships low on supplies go to the nearest repair or supply
 // point. The thresholds are open: 30 % structure lost, 20 % supply left (inferred).
 void planRepairAndResupply(Planner& p, bool repair) {
@@ -769,14 +791,17 @@ void planRepairAndResupply(Planner& p, bool repair) {
                 }
             }
         const OrderKind k = repair ? OrderKind::Repair : OrderKind::Resupply;
-        if (need && (f.orders.empty() || f.orders.front().kind != k)) p.setFleetOrders(f.id, {simpleOrder(k)});
+        if (!need) continue;
+        const std::vector<Order> expansion = expansionOf(p, orderContextOf(p.st, f), k);
+        if (expansion.empty() || headsFor(f.orders, expansion, k)) continue;
+        p.setFleetOrders(f.id, {simpleOrder(k)});
     }
     for (VehicleId id : p.ownVehicles(repair ? Minister::Repair : Minister::Resupply)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || v->fleet.valid() || v->status == VehicleStatus::Mothballed || p.info(v->design).stats.movement <= 0) continue;
         if (isUnitType(p.info(v->design).stats.vehicleType)) continue;
         const OrderKind k = repair ? OrderKind::Repair : OrderKind::Resupply;
-        if (!v->orders.empty() && (v->orders.front().kind == OrderKind::Repair || v->orders.front().kind == OrderKind::Resupply)) continue;
+        const OrderKind other = repair ? OrderKind::Resupply : OrderKind::Repair;
         bool need = false;
         if (repair) {
             const int structure = vehicleStructure(p.r, p.st, *v);
@@ -785,7 +810,12 @@ void planRepairAndResupply(Planner& p, bool repair) {
             const int64_t cap = vehicleSupplyCapacity(p.r, p.st, *v);
             need = cap > 0 && v->supply * 100 < cap * 20 && !vehicleHasQuantumReactor(p.r, p.st, *v);
         }
-        if (need) p.setOrders(id, {simpleOrder(k)});
+        if (!need) continue;
+        // Already on its way for a repair or for supplies (the expanded form of either order).
+        const OrderContext ctx = orderContextOf(p.st, *v);
+        const std::vector<Order> expansion = expansionOf(p, ctx, k);
+        if (expansion.empty() || headsFor(v->orders, expansion, k) || headsFor(v->orders, expansionOf(p, ctx, other), other)) continue;
+        p.setOrders(id, {simpleOrder(k)});
     }
 }
 

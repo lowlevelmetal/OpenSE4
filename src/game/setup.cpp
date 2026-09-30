@@ -319,9 +319,16 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     qo.noRuins = s.options.noRuins;
     qo.finiteResources = s.options.finiteResources;
     Rng galaxyRng = s.rng.fork();
-    auto generated = generateQuadrant(r.data(), qo, galaxyRng);
-    if (!generated) return std::unexpected(generated.error());
-    s.galaxy = std::move(generated->galaxy);
+    if (setup.map) {
+        // A loaded map replaces generation (spec 01 §12).
+        if (setup.map->galaxy.systems.empty()) return std::unexpected("The map has no systems.");
+        s.galaxy = setup.map->galaxy;
+        if (!s.galaxy.quadrantType.empty()) s.options.quadrantType = s.galaxy.quadrantType;
+    } else {
+        auto generated = generateQuadrant(r.data(), qo, galaxyRng);
+        if (!generated) return std::unexpected(generated.error());
+        s.galaxy = std::move(generated->galaxy);
+    }
     s.colonies.resize(s.galaxy.objects.size());
 
     // ---- Empires.
@@ -376,6 +383,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     po.homeValue = homeValueOf(s.options);
     po.finiteResources = s.options.finiteResources;
     po.allPlanetsSameSize = s.options.allPlanetsSameSize;
+    if (setup.map) po.startingPoints = setup.map->startingPoints;
     auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng);
     if (!homes) return std::unexpected(homes.error());
     objectsGrown(s);  // placement may have created planets
@@ -421,7 +429,10 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         for (const Start& st : roles) {
             auto d = autoDesign(r, s.empires[i], st.role);
             if (!d) continue;
-            d->name = st.name;
+            // Design names are unique in the whole game (spec 03 §4.1): the
+            // plain name when it is free, else prefixed with the empire's name,
+            // else numbered (inferred).
+            d->name = !designNameInUse(s, st.name) ? st.name : uniqueDesignName(s, std::format("{} {}", s.empires[i].name, st.name));
             d->designType = st.designType;
             d->owner = id;
             const DesignId did = addDesign(s, std::move(*d));

@@ -180,7 +180,7 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
     if (slot >= c.facilities.size()) return {};
     int64_t pct = r.setting("Scrap Facility Percent Returned", 30);
     pct = std::max<int64_t>(pct, game::reclamationPercentAt(r, s, c.owner, game::locationOf(s.galaxy, c.planet)));
-    return game::Resources::from(r.facility(c.facilities[slot]).cost).percent(pct);
+    return game::Resources::from(r.facility(c.facilities[slot]).cost).percentRounded(pct);  // round(cost × %), spec 02 §6.6
 }
 
 std::optional<size_t> selfDestructEntry(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {

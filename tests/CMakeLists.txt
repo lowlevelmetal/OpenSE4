@@ -20,6 +20,7 @@ add_executable(opense4_tests
     test_generate.cpp
     test_integration.cpp
     test_intel.cpp
+    test_maps.cpp
     test_movement.cpp
     test_net.cpp
     test_pathfinding.cpp

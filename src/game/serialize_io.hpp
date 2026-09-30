@@ -386,7 +386,8 @@ template <class Ar> void io(Ar& ar, DesignEntry& d) { fields(ar, d.component, d.
 
 template <class Ar>
 void io(Ar& ar, Design& d) {
-    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills);
+    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills,
+           d.enemyTonnageDestroyed);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
@@ -462,6 +463,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.simultaneous);
     fields(ar, o.randomAiPlayers);
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
+    fields(ar, o.playersCanSaveMap, o.autosaveTurns);
 }
 
 // ---- The game -----------------------------------------------------------------------------------------
@@ -520,6 +522,7 @@ template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
     fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
 }
+template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) { fields(ar, c.clearOrdersOnEncounter); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 
@@ -530,7 +533,9 @@ void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash);
 }
 
-template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires); }
+template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }
+template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }
+template <class Ar> void io(Ar& ar, GameSetup& g) { fields(ar, g.seed, g.options, g.empires, g.map); }
 
 // ---- Save file header (serialize.hpp) ------------------------------------------------------------------
 

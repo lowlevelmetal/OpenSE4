@@ -1111,6 +1111,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         std::map<uint32_t, int> struck, lost;   // victim vehicle -> mines, units lost
         for (VehicleId mid : fields) {
             int used = 0, kills = 0;
+            int64_t tonnage = 0;
             while (s.vehicle(mid)->count > 0) {
                 const Vehicle& mine = *s.vehicle(mid);
                 std::vector<VehicleId> targets;
@@ -1137,6 +1138,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     if (vehicleDestroyed(r, s, victim)) {
                         --victim.count;
                         ++kills;
+                        tonnage += designTonnage(r, vd);
                         ++lost[victim.id.value];
                         if (victim.count > 0) victim.damage.assign(vd.entries.size(), 0);   // the next unit of the group
                     }
@@ -1148,6 +1150,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
             if (used > 0) {
                 const Vehicle& m = *s.vehicle(mid);
                 s.design(m.design).kills += kills;
+                s.design(m.design).enemyTonnageDestroyed += tonnage;
                 ctx.log(m.owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
                         std::format("{} of our mines struck {} enemy vehicles{}.", used, struck.size(),
                                     kills > 0 ? std::format(", destroying {}", kills) : std::string{}),

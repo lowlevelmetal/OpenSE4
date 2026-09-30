@@ -150,9 +150,25 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     for (auto c : {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser", "Test Armor Plate"})
         d.entries.push_back({componentIndex(r, c), -1});
     REQUIRE(apply(r, s, me, cmd::CreateDesign{d}).ok);
-    CHECK_FALSE(apply(r, s, me, cmd::CreateDesign{d}).ok);  // duplicate name
     const DesignId warbird = s.empires[0].designs.back();
     CHECK(s.design(warbird).owner == me);
+    CHECK(s.design(warbird).name == "Warbird");
+    // Design names are unique in the whole game (spec 03 §4.1): a name taken
+    // since the order was given gets the first free numeral; renaming refuses.
+    REQUIRE(apply(r, s, them, cmd::CreateDesign{d}).ok);
+    CHECK(s.design(s.empires[1].designs.back()).name == "Warbird II");
+    CHECK(uniqueDesignName(s, "Warbird") == "Warbird III");
+    CHECK(uniqueDesignName(s, "Nightjar") == "Nightjar");
+    CHECK_FALSE(apply(r, s, me, cmd::Rename{{}, {}, warbird, {}, "Warbird II"}).ok);
+    // A new design starts without statistics.
+    Design used = d;
+    used.name = "Veteran";
+    used.built = 4;
+    used.kills = 2;
+    used.enemyTonnageDestroyed = 900;
+    REQUIRE(apply(r, s, me, cmd::CreateDesign{used}).ok);
+    CHECK(s.design(s.empires[0].designs.back()).enemyTonnageDestroyed == 0);
+    CHECK(s.design(s.empires[0].designs.back()).built == 0);
 
     const cmd::QueueTarget q{home.planet, {}};
     QueueItem item;
@@ -234,6 +250,40 @@ TEST_CASE("engine: scrap refunds and retrofit keeps damage") {
     const Resources cost = computeDesignStats(r, nullptr, s.design(b)).cost;
     const Resources refund{xmath::pctRound(cost.v[0], 30), xmath::pctRound(cost.v[1], 30), xmath::pctRound(cost.v[2], 30)};
     CHECK(s.empires[0].stockpile == pre + refund);
+}
+
+TEST_CASE("engine: a scrapped facility refunds round(cost × %) in floating point") {
+    // Spec 02 §6.6: round, not truncate: 109 × 30 % gives 33, where integer maths gave 32.
+    ruleset::Ruleset data = buildEngineRuleset();
+    for (auto& f : data.facilities)
+        if (f.name == "Test Lab") f.cost = {109, 5, 1};
+    const Rules r{std::move(data)};
+    GameSetup setup;
+    setup.seed = 7;
+    setup.options.systemCount = 12;
+    for (int i = 0; i < 2; ++i) {
+        EmpireSetup e;
+        e.name = std::format("Scrapper {}", i + 1);
+        setup.empires.push_back(e);
+    }
+    auto g = createGame(r, setup);
+    REQUIRE(g.has_value());
+    GameState& s = *g;
+    const EmpireId me{0u};
+    Colony& home = homeworld(s, me);
+    const uint32_t lab = facilityIndex(r, "Test Lab");
+    const auto slot = std::find(home.facilities.begin(), home.facilities.end(), lab) - home.facilities.begin();
+    REQUIRE(static_cast<size_t>(slot) < home.facilities.size());
+    const int64_t pct = std::max<int64_t>(30, reclamationPercentAt(r, s, me, locationOf(s.galaxy, home.planet)));
+    const Resources before = s.empires[0].stockpile;
+    REQUIRE(apply(r, s, me, cmd::Scrap{{}, home.planet, static_cast<int32_t>(slot)}).ok);
+    const Resources got = s.empires[0].stockpile - before;
+    CHECK(got == Resources{xmath::pctRound(109, pct), xmath::pctRound(5, pct), xmath::pctRound(1, pct)});
+    if (pct == 30) CHECK(got.v[0] == 33);
+    // The Resources helpers: percent truncates and percentRounded rounds, both in extended precision.
+    CHECK(Resources{300, 100, 90}.percent(21) == Resources{62, 21, 18});
+    CHECK(Resources{109, 5, 3}.percentRounded(30) == Resources{xmath::pctRound(109, 30), xmath::pctRound(5, 30), xmath::pctRound(3, 30)});
+    CHECK(Resources{109, 0, 0}.percentRounded(30).v[0] == 33);
 }
 
 TEST_CASE("engine: processTurn advances and rejects stale orders") {

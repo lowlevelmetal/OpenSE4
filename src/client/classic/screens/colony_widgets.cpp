@@ -344,7 +344,7 @@ void ScrapFacilitiesPopup::draw(UiContext& ui, StatusLine& status) {
         ImGui::TableHeadersRow();
         for (size_t i = 0; i < c->facilities.size(); ++i) {
             const ruleset::Facility& f = r.facility(c->facilities[i]);
-            const game::Resources back = game::Resources::from(f.cost).percent(pct);
+            const game::Resources back = game::Resources::from(f.cost).percentRounded(pct);
             const RowEvents ev = tableRow(ui, static_cast<int>(i), checked_[i] != 0);
             if (ev.clicked || ev.doubleClicked) checked_[i] = checked_[i] ? 0 : 1;
             cellImage(ui, ui.art.facility(f.picture));
@@ -413,7 +413,7 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
             TypeRow& t = types[f];
             t.count += n;
             ++t.colonies;
-            for (int k = 0; k < n; ++k) t.refund += game::Resources::from(r.facility(f).cost).percent(pct);
+            for (int k = 0; k < n; ++k) t.refund += game::Resources::from(r.facility(f).cost).percentRounded(pct);
         }
     }
     ImGui::TextColored(kTextDim, colonies_.empty() ? "Every facility of the chosen type on all %d colonies is scrapped."

@@ -146,10 +146,6 @@ struct Knowledge {
     std::vector<std::string> notes;          // per SystemId, player notes
 };
 
-// Which empires met after a warp clear a vehicle's orders (spec 03 §6.4):
-// none, an enemy empire, or any other empire.
-enum class EncounterClear : uint8_t { Never, Enemy, Any };
-
 struct Empire {
     EmpireId id;
     std::string name;          // e.g. "Terran"
@@ -212,9 +208,10 @@ struct Empire {
     bool useRaceMinisterStyle = false;      // "Use Race Minister Style": the race's files even with a style (spec 05 §7.1)
     bool ministersForNewVehicles = false;   // new vehicles and launched units start under minister control (spec 02 §10)
 
-    // Movement option (spec 03 §6.4): a Warp into a system holding such an
-    // empire's objects fails and clears the orders. Computer players copy it
-    // from their AI_Settings each turn (spec 05 §7.5).
+    // Ship Orders option (spec 03 §6.4): a Warp into a system holding such an
+    // empire's objects fails and clears the orders (movement reads it). Players
+    // set it with cmd::SetEncounterOptions; computer players copy it from their
+    // AI_Settings each turn (spec 05 §7.5).
     EncounterClear clearOrdersOnEncounter = EncounterClear::Never;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
@@ -360,9 +357,11 @@ struct Design {
     uint32_t strategy = 0;   // index into the owner's strategies
     bool obsolete = false;
     uint32_t createdTurn = 0;
+    // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     int built = 0;
     int lost = 0;
     int kills = 0;
+    int64_t enemyTonnageDestroyed = 0;  // hull tonnage of the enemy vehicles its vehicles destroyed
 };
 
 enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
@@ -565,6 +564,9 @@ struct GameOptions {
     int aiDifficulty = kDifficultyMedium;  // Computer Player Difficulty: the level random AI players get
     int aiBonus = 0;
     VictoryConditions victory;
+    bool playersCanSaveMap = false;      // "Players can save map during a game" (spec 01 §2.2; off by default, inferred)
+    // Mechanics.
+    int autosaveTurns = 0;               // Autosave: 0 None (the default), else every 1, 2, 3, 5 or 10 turns (spec 01 §2.2, §14 Q18)
     // Multiplayer.
     bool simultaneous = true;
     // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".

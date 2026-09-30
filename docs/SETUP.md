@@ -101,8 +101,9 @@ apply it to a **copy** of the game directory and pass that copy with
 
 ## Where OpenSE4 keeps its own files
 
-Saves, settings and logs go in your user data directory. OpenSE4 never writes to the
-game directory.
+Saves (`saves/`, including the rotating `Autosave 1` to `Autosave 10`), maps (`maps/`,
+see [MAPS.md](MAPS.md)), empire files (`empires/`), settings and logs go in your user
+data directory. OpenSE4 never writes to the game directory.
 
 | Platform | Location |
 |---|---|

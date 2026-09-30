@@ -274,6 +274,7 @@ private:
     void randomMove(int t);
     void kill(int t, int att);
     void creditKill(int att, int victim);
+    void creditDesignKills(int att, int kills, int64_t tonnage);
     void capture(int t, int capturer, bool boarding);
     void dissolve(int leader);
     void pdReact(int mover);
@@ -1561,9 +1562,7 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
     if (kills > 0) {
         b.unitsLost += kills;
         s_.design(b.unit.design).lost += kills;
-        int k = att;
-        if (k >= 0 && pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
-        if (k >= 0 && pieces_[k].kind != Kind::Planet && pieces_[k].unit.design.valid()) s_.design(pieces_[k].unit.design).kills += kills;
+        creditDesignKills(att, kills, kills * designTonnage(r_, d));
     }
     if (b.unit.count <= 0) kill(t, att);
     else if (kills > 0) afterDamage(t);
@@ -1661,6 +1660,7 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
 int64_t Battle::cargoHit(int att, int t, DamageType type, int64_t pool, bool platforms) {
     Piece& p = pieces_[t];
     int kills = 0;
+    int64_t tonnage = 0;
     for (int n = 0; n < 20; ++n) {
         std::vector<size_t> stacks;
         for (size_t k = 0; k < p.unit.cargo.units.size(); ++k) {
@@ -1676,10 +1676,9 @@ int64_t Battle::cargoHit(int att, int t, DamageType type, int64_t pool, bool pla
         --st.count;
         ++s_.design(st.design).lost;
         ++kills;
+        tonnage += designTonnage(r_, s_.design(st.design));
     }
-    int k = att;
-    if (k >= 0 && pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
-    if (kills > 0 && k >= 0 && pieces_[k].kind != Kind::Planet && pieces_[k].unit.design.valid()) s_.design(pieces_[k].unit.design).kills += kills;
+    creditDesignKills(att, kills, tonnage);
     return pool;
 }
 
@@ -1758,8 +1757,7 @@ void Battle::creditKill(int att, int victim) {
     if (k < 0) return;
     const Piece& v = pieces_[victim];
     const bool big = v.kind == Kind::Vehicle || v.kind == Kind::Planet || v.colonyLost;
-    if (big && pieces_[k].kind != Kind::Planet && pieces_[k].unit.design.valid() && v.kind == Kind::Vehicle)
-        ++s_.design(pieces_[k].unit.design).kills;
+    if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(k, 1, designTonnage(r_, s_.design(v.unit.design)));
     Piece& killer = pieces_[k];
     if (killer.kind != Kind::Vehicle || !killer.alive) return;   // unit groups and planets gain no experience
     detail::addExperience(killer.unit.experience, killer.unit.experienceTenths, big ? kShipKillTenths : kUnitKillTenths);
@@ -1769,6 +1767,18 @@ void Battle::creditKill(int att, int victim) {
     }
     for (size_t j = 0; j < pieces_.size(); ++j)
         if (pieces_[j].alive && pieces_[j].owner == killer.owner && pieces_[j].kind == Kind::Vehicle) refreshCombatValues(static_cast<int>(j));
+}
+
+// Design statistics (spec 04 §15): kills and enemy tonnage destroyed go to the
+// killer's design; a seeker's to its launcher's. Planets keep no statistics.
+void Battle::creditDesignKills(int att, int kills, int64_t tonnage) {
+    if (kills <= 0 || att < 0) return;
+    int k = att;
+    if (pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
+    if (k < 0 || pieces_[k].kind == Kind::Planet || !pieces_[k].unit.design.valid()) return;
+    Design& d = s_.design(pieces_[k].unit.design);
+    d.kills += kills;
+    d.enemyTonnageDestroyed += tonnage;
 }
 
 void Battle::kill(int t, int att) {
