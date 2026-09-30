@@ -1,5 +1,6 @@
 #include "client/classic/screens/empire_logic.hpp"
 
+#include "game/ai.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
@@ -70,14 +71,7 @@ std::string_view treatyCode(Treaty t) {
     return "??";
 }
 
-std::string_view moodWord(int anger) {
-    if (anger < 10) return "Friendly";
-    if (anger < 30) return "Calm";
-    if (anger < 50) return "Wary";
-    if (anger < 70) return "Annoyed";
-    if (anger < 90) return "Hostile";
-    return "Furious";
-}
+std::string_view moodWord(int anger) { return game::ai::moodLabel(anger); }  // spec 05 §7.3
 
 bool treatyVisibleTo(const game::GameState& s, game::EmpireId viewer, game::EmpireId a, game::EmpireId b) {
     if (a == viewer || b == viewer) return true;

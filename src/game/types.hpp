@@ -129,6 +129,25 @@ bool parseCharacteristic(std::string_view s, Characteristic& out);
 
 enum class PlayerKind : uint8_t { Human, Computer, Neutral };
 
+// The 25 ministers in the original's order (spec 05 §7.1, confirmed: binary):
+// the first 11 are global, the rest individual. Bit i of Empire::ministers.
+enum class Minister : uint8_t {
+    Design, ShipConstruction, Expenses, ProductionOutput, Research, Intelligence, Politics, Repair, Resupply, Scrap, Retrofit,
+    FacilityConstruction, Transports, Carriers, Colonization, Attack, Defense, Exploration, Patrol, MinesSatellitesDrones, Fleets,
+    StellarManipulation, ShipCloaking, SpaceYardShips, Troops,
+    Count
+};
+inline constexpr size_t kMinisters = static_cast<size_t>(Minister::Count);
+constexpr uint32_t ministerBit(Minister m) { return uint32_t{1} << static_cast<unsigned>(m); }
+inline constexpr uint32_t kAllMinisters = (uint32_t{1} << kMinisters) - 1;
+inline constexpr uint32_t kIndividualMinisters = kAllMinisters & ~(ministerBit(Minister::FacilityConstruction) - 1);
+constexpr bool isGlobalMinister(Minister m) { return m < Minister::FacilityConstruction; }
+
+// Computer Player Difficulty (spec 05 §7.1): stored per empire.
+inline constexpr int kDifficultyLow = 0;
+inline constexpr int kDifficultyMedium = 1;
+inline constexpr int kDifficultyHigh = 2;
+
 enum class LogCategory : uint8_t { Construction, Research, Intelligence, Events, Politics, Combat, Misc };
 std::string_view displayName(LogCategory c);
 

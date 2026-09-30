@@ -207,7 +207,11 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
             if (e.kind == game::PlayerKind::Computer) {
                 ++computers;
                 CHECK_FALSE(p->neutral);
-                CHECK(e.presetTier == 2);  // 3000 points buys the top tier
+                // The preset's Race Opt 2 for 3000 points (spec 05 §7.1), and the chosen difficulty.
+                REQUIRE(e.customRace.has_value());
+                CHECK(game::racialPointCost(r, *e.customRace) <= 3000);
+                REQUIRE(i < g->options.randomAiPlayers.size());
+                CHECK(g->options.randomAiPlayers[i] == 1);
             }
             if (e.kind == game::PlayerKind::Neutral) {
                 ++neutrals;

@@ -126,7 +126,7 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     effects::setEmpireTokens(full, s, source, target, picked->other);
     full.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     std::string suspicion;
-    if (rng.range(1, kSuspectRoll) == 1) suspicion = std::format(" Evidence points to the {}.", full.sourceEmpireName);
+    if (rng.range(1, kSuspectRoll) == 1) suspicion = suspectLine(full.sourceEmpireName);
     projectMessages(ctx, p, source, target, full, "The operation succeeded.", "A hostile intelligence operation struck us.", suspicion, where, rng);
     if (!out.report.empty()) {
         std::string text;
@@ -136,6 +136,13 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
 }
 
 } // namespace
+
+std::string suspectLine(std::string_view sourceFullName) { return std::format(" Evidence points to the {}.", sourceFullName); }
+
+bool namesCulprit(const GameState& s, const LogEntry& entry, EmpireId culprit) {
+    if (entry.category != LogCategory::Intelligence || !validEmpire(s, culprit)) return false;
+    return entry.text.find(suspectLine(effects::empireFullName(s.empire(culprit)))) != std::string::npos;
+}
 
 bool isDefense(const Rules& r, uint32_t project) { return effectOf(r, project) == Effect::IntelligenceDefense; }
 

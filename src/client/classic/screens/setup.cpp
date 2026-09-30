@@ -716,7 +716,9 @@ private:
         ImGui::Dummy(ImVec2(0, ctx.px(4)));
         heading(ctx, "Computer Players");
         rowLabel(ctx, "Difficulty", 120);
-        lampChoice(ctx, "##diff", s_.options.aiDifficulty, {"Easy", "Normal", "Hard", "Expert"});
+        s_.options.aiDifficulty = std::clamp(s_.options.aiDifficulty, 0, 2);
+        lampChoice(ctx, "##diff", s_.options.aiDifficulty, {"Low", "Medium", "High"});
+        note("The difficulty applies to the random computer players; the others play at Medium.");
         rowLabel(ctx, "Bonus", 120);
         lampChoice(ctx, "##bonus", s_.options.aiBonus, {"None", "Low", "Medium", "High"});
     }

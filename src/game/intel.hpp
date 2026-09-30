@@ -30,6 +30,15 @@ inline constexpr int kSuspectRoll = 5;
 // Cap on the running defense total D (spec 05 §2.4, confirmed: binary).
 inline constexpr int64_t kDefenseCap = 1'000'000'000;
 
+// The line added to the victim's message when the suspect roll names the
+// source (`sourceFullName`, effects::empireFullName) of a successful operation.
+std::string suspectLine(std::string_view sourceFullName);
+// Whether a log entry of `victim` tells it that `culprit` carried out an
+// operation against it: an Intelligence entry holding the suspect line. Blocked
+// attempts and counter-intelligence reports never do. The computer players'
+// anger and demands read this (spec 05 §7.3 term 3, §7.4).
+bool namesCulprit(const GameState& s, const LogEntry& entry, EmpireId culprit);
+
 // True for projects of Type `Intelligence Defense`.
 bool isDefense(const Rules& r, uint32_t project);
 // The technology a project needs: the highest level in its requirement block

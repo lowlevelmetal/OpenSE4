@@ -319,6 +319,13 @@ void io(Ar& ar, IntelProjectOrder& p) {
 template <class Ar>
 void io(Ar& ar, Relation& r) {
     fields(ar, r.contact, r.treaty, r.dominant, r.tradeTurns, r.treatyTurn, r.lastWarTurn, r.anger, r.messageSentThisTurn);
+    fields(ar, r.turnsSinceWar, r.treatyAge, r.agedTreaty, r.promise, r.queuedWar, r.queuedBreak, r.queuedPeace, r.attackedUs,
+           r.spiedOnUs, r.attackedIn, r.combatsThisTurn, r.combatsLastTurn);
+}
+
+template <class Ar>
+void io(Ar& ar, AiMemory& m) {
+    fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield);
 }
 
 template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture); }
@@ -351,7 +358,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.history, e.experience);
-    fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.ministerAll);
+    fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -447,6 +454,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.noTacticalCombat, o.allowGifts, o.allowTechTrades, o.allowIntel, o.noRuins, o.onlyBreathable, o.onlyHomeType,
            o.teamMode, o.scoreDisplay, o.maxShipsPerPlayer, o.maxUnitsPerPlayer, o.aiDifficulty, o.aiBonus, o.victory);
     fields(ar, o.simultaneous);
+    fields(ar, o.randomAiPlayers);
 }
 
 // ---- The game -----------------------------------------------------------------------------------------

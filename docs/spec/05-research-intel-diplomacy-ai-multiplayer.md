@@ -1847,6 +1847,36 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       - the Stellar Manipulation minister;
       - how each speech pool is tied to each reply;
       - which design text a non-type `Type` entry in `AI_Construction_Vehicles` matches.
+    - Choices OpenSE4 makes where the rules above leave a detail open (inferred, to
+      check):
+      - who "started" a combat for the anger terms: OpenSE4 does not record it and
+        counts a battle outside our territory as attacking, inside it as defending;
+      - the "combat bonus" in a ship's strength rating: the Combat To Hit Offense Plus
+        amount of its undamaged parts;
+      - a planet's defence in an attack candidate's value: the units in its cargo;
+      - the "colony value at stake" that orders the defend list: population plus 100 per
+        facility;
+      - the threat a defence commitment is measured against: the strength of the listed
+        enemies in that system;
+      - "our strength in every system within 4 jumps of each target" (Prepare for Attack
+        and Attack step 4): each system counts once, however many targets it is near;
+      - jumps for the staging system, the 4-jump test and Secure Holdings' neighbours are
+        counted over the warp links we know;
+      - a planet's worth in trades: 100,000 per facility plus 1,000 per million people;
+      - "the number of designs the designer has made so far" for design names: all of the
+        empire's designs;
+      - whether a Race Opt trait that does not fit the remaining points ends the list (we
+        stop there) or is skipped;
+      - designs whose Design Type is not one of the 39 AI types (premade ships): typed by
+        what they carry; an unarmed ship with nothing else to do explores;
+      - whether the systems an accepted demand marks to avoid are forgotten with the other
+        queues every 10 turns (we forget them);
+      - "within 2 jumps of X's territory" (the +10 attack-location term) counts jumps over
+        every warp link, known or not;
+      - where mine and satellite layers lay their units (where they are);
+      - "Allow Surrender" is not a game option in OpenSE4, so surrender demands are refused;
+      - which empires are "present" in a system for colonization danger: their colonies
+        in systems we explored and their vehicles we can see.
 13. **Contact loss**: answered (confirmed: binary). Contact is never lost, except when an
     empire is destroyed (§3.1).
 14. **Simultaneous timing**: partly answered (confirmed: binary). Messages are processed

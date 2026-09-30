@@ -252,7 +252,7 @@ TEST_CASE("serialize: state round trip is byte-identical after several turns") {
     CHECK(loaded->rng == s.rng);
     CHECK(loaded->empires[0].passwordHash == "0123456789abcdef");
     CHECK(loaded->vehicles.size() == s.vehicles.size());
-    CHECK(loaded->combats.front().summary.size() == 2);
+    CHECK(loaded->combats.back().summary.size() == 2);  // the battle added above
 
     // The envelope's checksum is stateChecksum.
     uint64_t sealed = 0;
@@ -556,8 +556,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xdecabeeb5147dde5ull;
-    constexpr size_t kGoldenSize = 1493;
+    constexpr uint64_t kGoldenChecksum = 0xa32cb3bec7f722adull;
+    constexpr size_t kGoldenSize = 1565;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

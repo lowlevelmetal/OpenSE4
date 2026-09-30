@@ -20,7 +20,9 @@ namespace opense4::client::classic {
 std::vector<game::EmpireId> contactedEmpires(const game::GameState& s, game::EmpireId me);
 // Two-letter code for the Treaty Grid ("TA" = Trade Alliance).
 std::string_view treatyCode(game::Treaty t);
-// A computer leader's anger toward us as a word (anger is roughly 0..100).
+// A computer leader's anger toward us (Relation::anger, 0..100) as one of the
+// nine labels of spec 05 §7.3. Not a colony's mood: that is its own scale and
+// bands (spec 02 §4, game::economy::moodName).
 std::string_view moodWord(int anger);
 // Whether `viewer` may see the treaty between two other empires (spec 05 §3.2:
 // only between empires the viewer is allied with).

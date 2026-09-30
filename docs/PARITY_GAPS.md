@@ -26,7 +26,7 @@ ready for the turn-order change; open engine choices are spec 02 §13 items 37�
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
 | `setup.cpp:122-138` | Characteristic cost c × P/100 beyond the threshold | P per point, N refunded (§8.1). `economy::characteristicPointCost` implements the rule; `racialPointCost` still has to use it (setup is outside the economy's files) | M |
-| `generate.cpp:353`, `movement_stellar.cpp:178`, `ai.cpp:359` | Conditions rolled and changed on a 0–100 scale | The economy reads `SpaceObject::conditions` as hundredths of the 0–1.5 scale (100 = 1.0, 150 = Optimal). Natural planets must roll 50 + 10 × R[0,10] and asteroids half of that (spec 01 §5.6); the AI's planet rating must use the same scale, or most planets count as Harsh or Deadly. The event handlers and combat already do | H |
+| `generate.cpp:353`, `movement_stellar.cpp:178` | Conditions rolled and changed on a 0–100 scale | The economy reads `SpaceObject::conditions` as hundredths of the 0–1.5 scale (100 = 1.0, 150 = Optimal). Natural planets must roll 50 + 10 × R[0,10] and asteroids half of that (spec 01 §5.6), or most planets count as Harsh or Deadly. The event handlers and combat already use the scale; the AI no longer reads conditions | H |
 
 ## Vehicles, movement and logistics (spec 03)
 
@@ -77,11 +77,8 @@ The rules of this section follow the spec. What is left depends on other parts o
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| `state.hpp:72`, `ai_anger.cpp` | Anger starts at 0, clamped 0–200 once | Starts at 50; 0–100, clamped after every term; the 11-step order and the terms in §7.3 | H |
-| `ai_anger.cpp:240-306` | Placeholder state machine | The state machine in §7.2 | H |
-| `ai_diplomacy.cpp` | Unprompted gifts and tributes; `Minimum Anger Chance` as a probability; no MEE politics | Never unprompted; a floor on a deterministic threshold; MEE terms in §7.4 and §7.6 | H |
-| `ai_design.cpp:378-400`, `ai_economy.cpp:285-492` | Tries every hull; budget of stockpile plus 6× income; colony types re-chosen every turn | Largest allowed hull; one turn of net income, queues under 5 turns; 9 fixed colony types chosen at colonization (§7.5) | H |
-| Difficulty (`state.hpp:492`, `ai.cpp:39`, …) | 4 levels on every AI, many invented effects | 3 levels on random AIs only; only noticing and commitment ratios change (§7.1) | M |
-| `ai_data.cpp` | Style-to-race fallback; some tables global only; whole-name state match, first wins | One lookup rule for all 12 tables; substring match, last wins (§7.2, §7.5) | M |
-| Scouts (`ai_design.cpp`, `ai_explore.cpp`, …) | Built and used | No scout type; idle attack ships explore (§7.5) | M |
-| Low–medium | personality pick; minimal-changes mode; when ministers run; MEE per AI and strict threshold; mood labels; mines, satellites and drones; defaults | see §7 | L |
+| `turn.cpp:39-104` | The AI plans both minister groups while orders are applied (`ai::planTurn`); anger and the state machine run at the end of the turn (`ai::updateAnger`) | Design, Research, Intelligence and the construction ministers run at the start of each empire's economy step (§7.1, §8). `ai::planOrders` and `ai::planEconomyStep` are the two groups, and `updateAnger`'s parts (`recordAiDecisions`, `updateAiStates`, `politicalStep`, `rememberAiEvents`) are separate, ready for the §8 turn order | M |
+| `movement_upkeep.cpp` (colonize) | A new colony gets the empire's first colony type; the AI retypes its own colonies on its next turn | Every empire's new colony gets `ai::colonyTypeAtColonization` at colonization, unless the player is asked (§7.5) | L |
+| Commands | No command sets `Empire::ministers` or `Empire::ministerStyle`; the Ministers window keeps its switches on this computer | The per-area minister switches and the minister style are part of the player's settings (§7.1) | L |
+| Commands | No command launches units from a planet's cargo | Satellites and drones above the kept percentages are launched from planets, drones half anti-ship and half anti-planet (§7.5) | L |
+| Low | Acknowledgement chatter replies; the Units file rows; the AI_Settings movement flags (no empire movement options yet); a missed human turn's political step; the Race Opt planet type and atmosphere check | see §7 | L |

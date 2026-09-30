@@ -708,7 +708,12 @@ TEST_CASE("events: stellar events") {
 }
 
 TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that plays on") {
-    auto r = rulesWith({event(Effect::PlanetPopulationRebel, 1, "Low", "Owner")});
+    ruleset::Ruleset rs = buildPoliticsRuleset();
+    rs.eventTypes = {event(Effect::PlanetPopulationRebel, 1, "Low", "Owner")};
+    // New colonies get people: a rebel whose only planet is an empty colony
+    // (the computer players colonize early) is destroyed at once (spec 05 §6).
+    rs.settings.set("Automatic Colonization Population", "10");
+    auto r = std::make_unique<Rules>(std::move(rs));
     GameState s = newPoliticsGame(12);
     s.options.eventFrequency = 3;
     s.turn = 19;
@@ -718,9 +723,13 @@ TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that pla
     const EmpireId rebel{3u};
     CHECK(s.empire(rebel).alive);
     CHECK(hasLog(s, rebel, "First Contact"));
+    const size_t recorded = s.empire(rebel).history.size();
+    CHECK(recorded >= 1);  // it took part in the turn it was founded
+    // The former owner is at war with it and may well crush it in the next
+    // turns (its warships are close by); the turns go on either way.
     for (int t = 0; t < 3; ++t) processTurn(*r, s, none);
     for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
-    CHECK(s.empire(rebel).history.size() >= 3);
+    if (s.empire(rebel).alive) CHECK(s.empire(rebel).history.size() >= recorded + 3);
 }
 
 TEST_CASE("events: rolling is deterministic") {

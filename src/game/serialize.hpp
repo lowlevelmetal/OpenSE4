@@ -41,7 +41,9 @@ class Rules;
 // pools, the trade counter, the Research - Steal target area, and the
 // Technology Cost and Score Display options (spec 05); vehicle and fleet
 // experience tenths, the sector a vehicle came from, colony militia and
-// obstacle combat pieces (spec 04).
+// obstacle combat pieces (spec 04); the computer players' memory, relation
+// counters and flags, difficulty, ministers, and the random-players option
+// (spec 05 §7).
 inline constexpr uint32_t kSaveVersion = 2;
 inline constexpr uint32_t kMinSaveVersion = 2;
 
