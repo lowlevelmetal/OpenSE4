@@ -42,6 +42,10 @@ add_library(opense4_game STATIC
     game/generate.cpp
     game/intel.cpp
     game/movement.cpp
+    game/movement_path.cpp
+    game/movement_stellar.cpp
+    game/movement_upkeep.cpp
+    game/movement_util.cpp
     game/query.cpp
     game/redact.cpp
     game/research.cpp

@@ -93,6 +93,18 @@ ruleset::Ruleset buildCombatRuleset() {
     part(rs, "CT Always Hit", 10, {ab(AbilityKind::WeaponsAlwaysHit)});
     part(rs, "CT Platform Core", 30, {});
     part(rs, "CT Drone Bay", 20, {ab(AbilityKind::LaunchDrones, 2), ab(AbilityKind::CargoStorage, 100)});
+    {
+        // A cloaking device: level 2 in every sight type while cloaked (spec 01 §6.3).
+        std::vector<ruleset::Ability> cloak;
+        for (const char* type : {"EM Active", "EM Passive", "Psychic", "Gravitic", "Temporal"}) {
+            ruleset::Ability a;
+            a.type = std::string(game::identifier(AbilityKind::CloakLevel));
+            a.value1 = type;
+            a.value2 = "2";
+            cloak.push_back(std::move(a));
+        }
+        part(rs, "CT Cloak", 10, std::move(cloak));
+    }
 
     ruleset::VehicleSize platform;
     platform.name = platform.shortName = "CT Platform Hull";
@@ -491,7 +503,7 @@ TEST_CASE("combat: combatPossible respects treaties, cloaking and mines") {
     Arena ar = makeArena();
     GameState& s = ar.s;
     const Rules& r = combatRules();
-    const VehicleId x = spawn(s, frigate(s, ar.a, "X", 1, {}), ar.loc);
+    const VehicleId x = spawn(s, frigate(s, ar.a, "X", 1, {"CT Cloak"}), ar.loc);
     CHECK_FALSE(combat::combatPossible(r, s, ar.loc));   // nobody to fight
     const VehicleId y = spawn(s, frigate(s, ar.b, "Y", 1, {}), ar.loc);
     CHECK(combat::combatPossible(r, s, ar.loc));   // unarmed ships still fight (spec 04 §2)

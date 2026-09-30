@@ -16,6 +16,7 @@ add_executable(opense4_tests
     test_galaxy.cpp
     test_generate.cpp
     test_intel.cpp
+    test_movement.cpp
     test_net.cpp
     test_pathfinding.cpp
     test_redact.cpp
@@ -25,6 +26,7 @@ add_executable(opense4_tests
     test_serialize.cpp
     test_setup_model.cpp
     test_ships_ui.cpp
+    test_sight.cpp
     test_turn.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.

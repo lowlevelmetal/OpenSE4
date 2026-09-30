@@ -939,3 +939,29 @@ Each action applies to the selected own vehicles in one sector.
     happens with more members than positions?
 24. **Stellar-manipulation "Stop ..." facilities:** do they cover the system or the whole empire?
     What are the units of `Open Warp Point Distance`?
+25. **Fleet orders:** the engine lets members in the leader's sector follow the fleet's orders
+    instead of their own; members elsewhere act alone. Is that how split fleets behave?
+26. **Combat interruption:** the engine stops every vehicle that fought for the rest of the turn
+    and clears its orders (and its fleet's); bystanders at peace with everyone, and ships that only
+    met mines, keep moving. Is that right?
+27. **Launch budgets:** the engine uses `Val 2` per game turn (`Val 1` when a record leaves
+    `Val 2` at 0) with separate budgets for launching and recovering. Launched units start with
+    full supply and move from the next turn; drones only join groups with the same target.
+28. **Hazard damage outside combat:** storms, destructive centres and turbulence hit armor first,
+    then other components, with no shields. A unit group takes it once for all its members.
+29. **Cargo lost to damage:** the engine drops the last unit stack first, then population.
+30. **Cloak cost:** the engine charges the cloak's `Supply Amount Used` once, when cloaking.
+31. **Explore with nothing left:** the order completes. Should it wait for a target instead?
+32. **Resupply and repair sources:** the engine requires a populated colony for depot and
+    facility repair, repairs for free, and lets allies' depots refuel from Military Alliance up.
+33. **Training:** the engine uses the single best source (sector or system facility) and treats a
+    `Val 2` of 0 as no cap.
+34. **Colonization:** population or units beyond the new colony's capacity are lost, the colony
+    type is the first of the empire's colony types, ruins are used up, and asteroids cannot be
+    colonized. When two ships reach a planet in the same turn the lower vehicle id wins.
+35. **Stellar manipulation:** the engine requires movement left but does not spend it. Destroy
+    Star leaves a Destroyed Star and removes every other body but warp points. Created nebulae
+    and black holes take the first system type of that physical type; removing them takes the
+    first normal type without abilities. Created storms get one random effect up to the
+    `Created Storm Maximum ...` caps. Opened links are two-way, and their far end goes on the
+    free edge sector facing the origin.

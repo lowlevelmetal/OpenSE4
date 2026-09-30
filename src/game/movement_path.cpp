@@ -1,0 +1,355 @@
+// Knowledge-aware pathfinding (spec 03 §6.2, spec 01 §8).
+//
+// Routes are found on a small graph: the start, the goals and every usable
+// warp point are nodes. Walking between two sectors of one system costs the
+// king-move (Chebyshev) distance; systems with obstacles (tagged minefields)
+// or known hazards are searched sector by sector instead. A warp jump costs
+// one step. Costs are compared as (steps, hazard sectors entered,
+// straightness), so hazards and zig-zags only ever break ties.
+
+#include "game/design.hpp"
+#include "game/movement_internal.hpp"
+#include "game/sight.hpp"
+
+#include <algorithm>
+#include <climits>
+#include <limits>
+#include <map>
+#include <queue>
+#include <tuple>
+
+namespace opense4::game::movement {
+
+namespace {
+
+using detail::inSystem;
+using detail::rawBest;
+
+constexpr int64_t kStep = 1'000'000'000'000;  // one movement point
+constexpr int64_t kHazard = 1'000'000;        // entering a known hazard sector
+constexpr int64_t kStraight = 10;
+constexpr int64_t kDiagonal = 14;
+constexpr int64_t kInf = std::numeric_limits<int64_t>::max();
+constexpr int kCells = kSystemSize * kSystemSize;
+
+int cell(Sector s) { return s.y * kSystemSize + s.x; }
+Sector sectorOf(int c) { return Sector{c % kSystemSize, c / kSystemSize}; }
+
+int64_t chebyshevCost(Sector a, Sector b) {
+    const int dx = std::abs(a.x - b.x);
+    const int dy = std::abs(a.y - b.y);
+    const int diag = std::min(dx, dy);
+    return int64_t{std::max(dx, dy)} * kStep + diag * kDiagonal + (std::max(dx, dy) - diag) * kStraight;
+}
+
+// Walks from a to b, diagonals first (the canonical obstacle-free path).
+void straightWalk(std::vector<Location>& out, SystemId sys, Sector a, Sector b) {
+    int x = a.x, y = a.y;
+    while (x != b.x || y != b.y) {
+        x += (b.x > x) - (b.x < x);
+        y += (b.y > y) - (b.y < y);
+        out.push_back({sys, Sector{x, y}});
+    }
+}
+
+struct Grid {
+    std::array<int64_t, kCells> cost{};
+    std::array<int16_t, kCells> prev{};
+};
+
+class Router {
+public:
+    Router(const GameState& s, EmpireId e, RouteOptions options, bool avoidSystems)
+        : s_(s), e_(e), options_(options), avoid_(avoidSystems) {
+        if (knowing()) {
+            const Empire& emp = s.empire(e);
+            tagged_ = emp.taggedMinefields;
+            std::sort(tagged_.begin(), tagged_.end());
+            avoided_ = emp.systemsToAvoid;
+            std::sort(avoided_.begin(), avoided_.end());
+        }
+    }
+
+    bool hasAvoidedSystems() const { return !avoided_.empty(); }
+
+    std::optional<NearestPath> run(Location from, std::span<const Location> goals) {
+        if (!valid(from)) return std::nullopt;
+        from_ = from;
+        goals_.assign(goals.begin(), goals.end());
+        goalIndex_.clear();
+        goalSystems_.clear();
+        for (size_t i = 0; i < goals_.size(); ++i) {
+            goalIndex_.emplace(goals_[i], i);  // the earlier goal wins ties
+            if (valid(goals_[i])) goalSystems_.push_back(goals_[i].system);
+        }
+        std::sort(goalSystems_.begin(), goalSystems_.end());
+        goalSystems_.erase(std::unique(goalSystems_.begin(), goalSystems_.end()), goalSystems_.end());
+
+        const int start = node(from);
+        dist_[static_cast<size_t>(start)] = 0;
+        std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
+        open.push({0, rank(from), start});
+        while (!open.empty()) {
+            const auto [d, unused, u] = open.top();
+            open.pop();
+            if (d != dist_[static_cast<size_t>(u)]) continue;
+            const Location at = locs_[static_cast<size_t>(u)];
+            if (const auto g = goalIndex(at)) return reconstruct(start, u, *g);
+            expand(u, at, open);
+        }
+        return std::nullopt;
+    }
+
+private:
+    // Equal costs: goals first, the earlier goal before later ones.
+    using Entry = std::tuple<int64_t, size_t, int>;
+    size_t rank(Location l) const { return goalIndex(l).value_or(goals_.size()); }
+
+    bool knowing() const { return e_.valid() && e_.index() < s_.empires.size(); }
+    bool valid(Location l) const { return l.system.valid() && l.system.index() < s_.galaxy.systems.size() && l.sector.valid(); }
+
+    // May the route pass through this system (its warp points are known)?
+    bool routable(SystemId sys) const {
+        if (!knowing() || s_.options.omnipresent || sys == from_.system) return true;
+        return s_.empire(e_).hasExplored(sys);
+    }
+    bool avoided(SystemId sys) const {
+        if (!avoid_ || sys == from_.system) return false;
+        if (std::binary_search(goalSystems_.begin(), goalSystems_.end(), sys)) return false;
+        return std::binary_search(avoided_.begin(), avoided_.end(), sys);
+    }
+    bool isGoal(Location l) const { return goalIndex_.contains(l); }
+    std::optional<size_t> goalIndex(Location l) const {
+        const auto it = goalIndex_.find(l);
+        if (it == goalIndex_.end()) return std::nullopt;
+        return it->second;
+    }
+
+    // A warp point the route may jump through: still in place, linked, the
+    // link known to the empire, and not the closed end of a one-way link.
+    bool usableWarp(ObjectId w) const {
+        const SpaceObject& wp = s_.galaxy.object(w);
+        if (wp.kind != ObjectKind::WarpPoint || !wp.destination.valid() || !inSystem(s_.galaxy, w)) return false;
+        if (!inSystem(s_.galaxy, wp.destination)) return false;
+        const SpaceObject& far = s_.galaxy.object(wp.destination);
+        if (!wp.oneWay && far.oneWay) return false;  // (inferred) the flagged end is the entrance
+        return !knowing() || sight::knowsWarpLink(s_, e_, w);
+    }
+
+    bool obstacle(Location l) const {
+        return !tagged_.empty() && std::binary_search(tagged_.begin(), tagged_.end(), l) && !isGoal(l) && l != from_;
+    }
+
+    // Known hazard sectors of a system (only explored systems are known).
+    const std::vector<Sector>& hazards(SystemId sys) {
+        auto it = hazards_.find(sys);
+        if (it != hazards_.end()) return it->second;
+        std::vector<Sector> out;
+        if (routable(sys)) {
+            const StarSystem& st = s_.galaxy.system(sys);
+            for (ObjectId o : st.objects) {
+                const SpaceObject& obj = s_.galaxy.object(o);
+                if (rawBest(obj.abilities, AbilityKind::SectorDamage) > 0) out.push_back(obj.sector);
+            }
+            if (rawBest(st.abilities, AbilityKind::SystemDestructiveCenter) > 0) out.push_back(Sector{kSystemCenter, kSystemCenter});
+            std::sort(out.begin(), out.end());
+            out.erase(std::unique(out.begin(), out.end()), out.end());
+        }
+        return hazards_.emplace(sys, std::move(out)).first->second;
+    }
+    bool hazard(Location l) {
+        const auto& h = hazards(l.system);
+        return std::binary_search(h.begin(), h.end(), l.sector);
+    }
+    bool plain(SystemId sys) {
+        if (!hazards(sys).empty()) return false;
+        return std::none_of(tagged_.begin(), tagged_.end(), [&](const Location& t) { return t.system == sys && obstacle(t); });
+    }
+
+    const Grid& grid(SystemId sys, Sector from) {
+        const auto key = std::make_pair(sys, cell(from));
+        auto it = grids_.find(key);
+        if (it != grids_.end()) return it->second;
+        Grid g;
+        g.cost.fill(kInf);
+        g.prev.fill(-1);
+        using Cell = std::pair<int64_t, int>;
+        std::priority_queue<Cell, std::vector<Cell>, std::greater<>> open;
+        g.cost[static_cast<size_t>(cell(from))] = 0;
+        open.push({0, cell(from)});
+        while (!open.empty()) {
+            const auto [d, c] = open.top();
+            open.pop();
+            if (d != g.cost[static_cast<size_t>(c)]) continue;
+            const Sector at = sectorOf(c);
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx) {
+                    if (dx == 0 && dy == 0) continue;
+                    const Sector next{at.x + dx, at.y + dy};
+                    if (!next.valid() || obstacle({sys, next})) continue;
+                    const int64_t nd = d + kStep + (dx != 0 && dy != 0 ? kDiagonal : kStraight) + (hazard({sys, next}) ? kHazard : 0);
+                    const int nc = cell(next);
+                    if (nd < g.cost[static_cast<size_t>(nc)]) {
+                        g.cost[static_cast<size_t>(nc)] = nd;
+                        g.prev[static_cast<size_t>(nc)] = static_cast<int16_t>(c);
+                        open.push({nd, nc});
+                    }
+                }
+        }
+        return grids_.emplace(key, g).first->second;
+    }
+
+    int64_t legCost(SystemId sys, Sector a, Sector b) {
+        if (a == b) return 0;
+        if (plain(sys)) return chebyshevCost(a, b);
+        return grid(sys, a).cost[static_cast<size_t>(cell(b))];
+    }
+
+    void appendLeg(std::vector<Location>& out, SystemId sys, Sector a, Sector b) {
+        if (a == b) return;
+        if (plain(sys)) {
+            straightWalk(out, sys, a, b);
+            return;
+        }
+        const Grid& g = grid(sys, a);
+        std::vector<Location> rev;
+        for (int c = cell(b); c != cell(a) && c >= 0; c = g.prev[static_cast<size_t>(c)]) rev.push_back({sys, sectorOf(c)});
+        out.insert(out.end(), rev.rbegin(), rev.rend());
+    }
+
+    int node(Location l) {
+        auto [it, inserted] = index_.emplace(l, static_cast<int>(locs_.size()));
+        if (inserted) {
+            locs_.push_back(l);
+            dist_.push_back(kInf);
+            prev_.push_back(-1);
+            via_.push_back(ObjectId{});
+        }
+        return it->second;
+    }
+
+    template <class Queue>
+    void relax(int u, Location to, int64_t cost, ObjectId via, Queue& open) {
+        if (cost == kInf) return;
+        const int64_t nd = dist_[static_cast<size_t>(u)] + cost;
+        const int v = node(to);
+        if (nd < dist_[static_cast<size_t>(v)]) {
+            dist_[static_cast<size_t>(v)] = nd;
+            prev_[static_cast<size_t>(v)] = u;
+            via_[static_cast<size_t>(v)] = via;
+            open.push({nd, rank(to), v});
+        }
+    }
+
+    template <class Queue>
+    void expand(int u, Location at, Queue& open) {
+        const SystemId sys = at.system;
+        for (auto it = goalIndex_.lower_bound(Location{sys, Sector{0, 0}}); it != goalIndex_.end() && it->first.system == sys; ++it)
+            if (valid(it->first)) relax(u, it->first, legCost(sys, at.sector, it->first.sector), {}, open);
+        if (!routable(sys)) return;
+        for (ObjectId w : s_.galaxy.system(sys).objects) {
+            if (!usableWarp(w)) continue;
+            const SpaceObject& wp = s_.galaxy.object(w);
+            if (wp.sector != at.sector) {
+                relax(u, {sys, wp.sector}, legCost(sys, at.sector, wp.sector), {}, open);
+                continue;
+            }
+            if (!options_.allowWarp) continue;
+            const SpaceObject& far = s_.galaxy.object(wp.destination);
+            if (avoided(far.system)) continue;
+            const Location arrival{far.system, far.sector};
+            relax(u, arrival, kStep + (hazard(arrival) ? kHazard : 0), w, open);
+        }
+    }
+
+    NearestPath reconstruct(int start, int goalNode, size_t goal) {
+        std::vector<int> chain;
+        for (int n = goalNode; n != -1; n = prev_[static_cast<size_t>(n)]) {
+            chain.push_back(n);
+            if (n == start) break;
+        }
+        std::reverse(chain.begin(), chain.end());
+        NearestPath out;
+        out.goal = goal;
+        for (size_t i = 1; i < chain.size(); ++i) {
+            const Location a = locs_[static_cast<size_t>(chain[i - 1])];
+            const Location b = locs_[static_cast<size_t>(chain[i])];
+            if (via_[static_cast<size_t>(chain[i])].valid()) out.path.steps.push_back(b);
+            else appendLeg(out.path.steps, a.system, a.sector, b.sector);
+        }
+        out.path.length = static_cast<int>(out.path.steps.size());
+        return out;
+    }
+
+    const GameState& s_;
+    EmpireId e_;
+    RouteOptions options_;
+    bool avoid_;
+    Location from_{};
+    std::vector<Location> goals_;
+    std::map<Location, size_t> goalIndex_;
+    std::vector<SystemId> goalSystems_;
+    std::vector<Location> tagged_;
+    std::vector<SystemId> avoided_;
+    std::map<Location, int> index_;
+    std::vector<Location> locs_;
+    std::vector<int64_t> dist_;
+    std::vector<int> prev_;
+    std::vector<ObjectId> via_;
+    std::map<SystemId, std::vector<Sector>> hazards_;
+    std::map<std::pair<SystemId, int>, Grid> grids_;
+};
+
+} // namespace
+
+std::optional<NearestPath> findPathToNearest(const Rules&, const GameState& s, EmpireId e, Location from,
+                                             std::span<const Location> goals, RouteOptions options) {
+    if (goals.empty()) return std::nullopt;
+    Router first(s, e, options, true);
+    if (auto p = first.run(from, goals)) return p;
+    // Systems to avoid are crossed only when no route around them exists (spec 03 §6.2, inferred).
+    if (!first.hasAvoidedSystems()) return std::nullopt;
+    Router second(s, e, options, false);
+    return second.run(from, goals);
+}
+
+std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Location from, Location to) {
+    const Location goals[] = {to};
+    auto p = findPathToNearest(r, s, e, from, goals);
+    if (!p) return std::nullopt;
+    return std::move(p->path);
+}
+
+int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f) {
+    int speed = -1;
+    for (VehicleId id : f.members)
+        if (const Vehicle* v = s.vehicle(id); v && detail::alive(*v)) {
+            const int mp = detail::turnMovement(r, s, *v);
+            speed = speed < 0 ? mp : std::min(speed, mp);
+        }
+    return std::max(0, speed);
+}
+
+int etaTurns(const Rules& r, const GameState& s, const Vehicle& v, Location to) {
+    if (v.location == to) return 0;
+    int speed = vehicleMaxMovement(r, s, v);
+    int held = detail::heldInPlace(s, v) ? static_cast<int>(v.immobileUntil - s.turn) : 0;
+    if (detail::followsFleetOrders(s, v))
+        if (const Fleet* f = s.fleet(v.fleet)) {
+            speed = INT_MAX;
+            for (VehicleId id : f->members)
+                if (const Vehicle* m = s.vehicle(id); m && detail::alive(*m) && m->location == v.location) {
+                    speed = std::min(speed, vehicleMaxMovement(r, s, *m));
+                    if (detail::heldInPlace(s, *m)) held = std::max(held, static_cast<int>(m->immobileUntil - s.turn));
+                }
+        }
+    if (speed <= 0) return -1;
+    RouteOptions options;
+    options.allowWarp = vehicleType(r, s, v) != ruleset::VehicleType::Fighter;
+    const Location goals[] = {to};
+    const auto p = findPathToNearest(r, s, v.owner, v.location, goals, options);
+    if (!p) return -1;
+    return held + (p->path.length + speed - 1) / speed;
+}
+
+} // namespace opense4::game::movement

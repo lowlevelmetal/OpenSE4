@@ -813,3 +813,12 @@ empire that has met one.
     opened links?
 22. **Warp cost.** Is a jump 1 movement point, and must the ship first stop on the warp
     point?
+23. **One-way links.** The engine lets ships leave through an unflagged end only when the far
+    end is not flagged either. Which end does the `One-Way` flag mark?
+24. **Learning links.** The engine treats a traversed link as known in both directions. Does
+    travelling A to B also reveal where B's end leads?
+25. **Hazard order.** The engine applies black-hole pull and random drift to ships, fighters and
+    drones after the 30 movement phases, stops drift at the grid edge, then applies centre
+    damage and summed sector damage. Ships displaced next to hostiles are offered to combat.
+26. **Sensors.** The engine counts sensor facilities only on populated colonies, while every
+    colony (even an empty one) and every vehicle, units included, gives presence.
