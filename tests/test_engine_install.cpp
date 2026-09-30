@@ -1,5 +1,5 @@
-// Engine checks against the player's installed classic data, when present.
-// Skipped (passes trivially) on machines without an install.
+// Engine checks against the player's installed classic data (opt-in: set
+// OPENSE4_CLASSIC_DATA=auto or to a data directory).
 
 #include "engine_fixture.hpp"
 
@@ -18,8 +18,9 @@ namespace {
 
 const Rules* installRules() {
     static const std::unique_ptr<Rules> rules = []() -> std::unique_ptr<Rules> {
-        const char* hint = std::getenv("OPENSE4_SE4_DIR");
-        auto dir = ruleset::findInstalledDataDir(hint ? hint : "");
+        const char* env = std::getenv("OPENSE4_CLASSIC_DATA");
+        if (!env) return nullptr;
+        auto dir = ruleset::findInstalledDataDir(std::string_view(env) == "auto" ? std::filesystem::path{} : std::filesystem::path(env));
         if (!dir) return nullptr;
         auto loaded = ruleset::loadRuleset(*dir);
         if (!loaded.ruleset) return nullptr;
@@ -30,7 +31,7 @@ const Rules* installRules() {
 
 } // namespace
 
-TEST_CASE("install: race presets, setup and starting designs") {
+TEST_CASE("installed data set: race presets, setup and starting designs (opt-in)") {
     const Rules* r = installRules();
     if (!r) return;
     CHECK(r->racePresets().size() >= 10);
