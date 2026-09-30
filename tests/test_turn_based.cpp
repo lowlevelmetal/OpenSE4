@@ -300,6 +300,13 @@ TEST_CASE("turn-based: the same seed and the same inputs give the same game") {
                 processTurn(r, s, {});  // every player, the human too, played by the computer
             } else {
                 resumeTurnBased(r, s);
+                // The human sends every idle ship exploring, one command at a time.
+                std::vector<VehicleId> idle;
+                for (const Vehicle& v : s.vehicles)
+                    if (v.owner == EmpireId{0u} && v.orders.empty() && !v.fleet.valid()) idle.push_back(v.id);
+                Order explore;
+                explore.kind = OrderKind::Explore;
+                for (VehicleId id : idle) applyLive(r, s, EmpireId{0u}, ordersFor(id, {explore}));
                 endPlayerTurn(r, s, EmpireId{0u});
             }
         }
@@ -309,7 +316,7 @@ TEST_CASE("turn-based: the same seed and the same inputs give the same game") {
         CAPTURE(viaProcessTurn);
         const GameState a = play(viaProcessTurn);
         const GameState b = play(viaProcessTurn);
-        CHECK(a.turn == 6 + (viaProcessTurn ? 0 : 0));
+        CHECK(a.turn == 6);
         CHECK(stateChecksum(a) == stateChecksum(b));
     }
 }
@@ -422,4 +429,25 @@ TEST_CASE("turn-based: orders that need no movement run one after another; a rep
     CHECK_FALSE(hasRejection(res));
     CHECK(d.w.v(hauler).orders.size() == 2);
     CHECK(d.w.v(hauler).repeatOrders);
+}
+
+TEST_CASE("turn-based: an Attack order goes after its target without asking, fights it at once and stays") {
+    Duel d;
+    const VehicleId gunboat = d.w.spawn(d.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Armor", "Mv Armor"}), at(d.a, 0, 0));
+    fuel(d.w, gunboat);
+    const VehicleId target = d.w.spawn(d.w.ship(kB, "Target", 1, {"Mv Armor", "Mv Armor", "Mv Armor", "Mv Armor"}), at(d.a, 2, 0));
+    resumeTurnBased(d.r(), d.s());
+    Order attack;
+    attack.kind = OrderKind::Attack;
+    attack.location = at(d.a, 2, 0);
+    attack.vehicle = target;
+    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(gunboat, {attack}));
+    CHECK(res.questions.empty());
+    REQUIRE(d.s().combats.size() == 1);
+    CHECK(d.s().combats[0].location == at(d.a, 2, 0));
+    REQUIRE(d.s().vehicle(gunboat));
+    CHECK(d.w.v(gunboat).location == at(d.a, 2, 0));
+    // The pursuit stays while the target lives and is seen.
+    if (d.s().vehicle(target)) CHECK(d.w.v(gunboat).orders.size() == 1);
+    else CHECK(d.w.v(gunboat).orders.size() <= 1);
 }
