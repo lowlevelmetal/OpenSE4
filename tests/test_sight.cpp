@@ -346,11 +346,18 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
     CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
 
-    // A system scanner on a populated colony covers the whole system.
-    w.colony(w.planet(a, {9, 9}), kA, 100, {"Mv System Scanner"});
+    // A system scanner covers every ship and base in the system, from any own
+    // object there, a colony without population included; not unit groups,
+    // which only a ranged scanner in reach inspects (spec 03 §3.3).
+    const VehicleId farSat = w.spawn(w.design(kB, "Far Sat", "Test Satellite Hull", {"Test Satellite Gun"}), at(a, 8, 8));
+    const VehicleId nearSat = w.spawn(w.design(kB, "Near Sat", "Test Satellite Hull", {"Test Satellite Gun"}), at(a, 2, 0));
+    w.colony(w.planet(a, {9, 9}), kA, 0, {"Mv System Scanner"});
     sight::updateKnowledge(r, w.s);
     CHECK(sight::scannerReaches(r, w.s, kA, w.v(farV)));
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
+    CHECK(visibleIn(w.s, kA, farSat));
+    CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(farSat)));
+    CHECK(sight::scannerReaches(r, w.s, kA, w.v(nearSat)));
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
     CHECK(seen(w.s, kA, farD));
     CHECK_FALSE(seen(w.s, kA, jamD));

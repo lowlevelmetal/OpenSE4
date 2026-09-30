@@ -65,11 +65,13 @@ constexpr bool detects(const SightVector& sensors, const SightVector& obsc) {
 // mine fields (and troops) do not.
 bool isSensorSource(ruleset::VehicleType t);
 
-// Long-range scanning (spec 01 §6.6, spec 05 §8 "Design knowledge",
-// confirmed: binary): the viewer sees the foreign vehicle, it carries no
-// Scanner Jammer, and one of the viewer's vehicles with a Long Range Scanner
-// is in its system within range, or a populated colony of the viewer with a
-// system-wide scanner is in its system.
+// Long-range scanning (spec 01 §6.6, spec 03 §3.3, spec 05 §8 "Design
+// knowledge", confirmed: binary): the viewer sees the foreign vehicle, it
+// carries no Scanner Jammer, and some object of the viewer in its system (a
+// vehicle, or a colony through its facilities, population or not) either has
+// a Long Range Scanner whose largest value reaches it, or has Long Range
+// Scanner - System and the target is a ship or base (unit groups are not
+// covered by it).
 bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target);
 // The designs a vehicle's report shows: every design of the group and of the
 // units in its cargo, sorted.

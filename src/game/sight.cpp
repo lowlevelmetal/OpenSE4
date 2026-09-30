@@ -442,14 +442,24 @@ bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const V
     if (!viewer.valid() || viewer.index() >= s.empires.size() || !alive(target) || target.owner == viewer) return false;
     const auto& visible = s.empire(viewer).knowledge.visibleVehicles;
     if (!std::binary_search(visible.begin(), visible.end(), target.id) || scannerJammed(r, s, target)) return false;
-    for (const Vehicle& scanner : s.vehicles) {
-        if (!alive(scanner) || scanner.owner != viewer || scanner.location.system != target.location.system) continue;
-        const int64_t range = bestValue1(vehicleAbilities(r, s, scanner), AbilityKind::LongRangeScanner);
-        if (range > 0 && chebyshev(target.location.sector, scanner.location.sector) <= range) return true;
-    }
-    for (ObjectId o : s.galaxy.system(target.location.system).objects)
-        if (const Colony* c = s.colony(o); c && c->owner == viewer && c->totalPopulation() > 0 &&
-                                           hasAbility(colonyAbilities(r, s, *c), AbilityKind::LongRangeScannerSystem))
+    // `Long Range Scanner - System` covers ships and bases only, never unit
+    // groups (spec 03 §3.3, confirmed: binary).
+    const bool shipOrBase = !isUnitType(vehicleType(r, s, target));
+    const SystemId sys = target.location.system;
+    // Every own object in the system: its own largest `Long Range Scanner`
+    // reaches that many sectors; a system-wide scanner reaches the whole
+    // system. Colonies count through their facilities, without population.
+    auto reaches = [&](const std::vector<ParsedAbility>& abilities, Sector from) {
+        if (shipOrBase && hasAbility(abilities, AbilityKind::LongRangeScannerSystem)) return true;
+        const int64_t range = bestValue1(abilities, AbilityKind::LongRangeScanner);
+        return range > 0 && chebyshev(target.location.sector, from) <= range;
+    };
+    for (const Vehicle& scanner : s.vehicles)
+        if (alive(scanner) && scanner.owner == viewer && scanner.location.system == sys &&
+            reaches(vehicleAbilities(r, s, scanner), scanner.location.sector))
+            return true;
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (const Colony* c = s.colony(o); c && c->owner == viewer && reaches(colonyAbilities(r, s, *c), s.galaxy.object(o).sector))
             return true;
     return false;
 }
