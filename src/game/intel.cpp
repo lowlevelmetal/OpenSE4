@@ -248,16 +248,4 @@ void intelStep(TurnContext& ctx, EmpireId id) {
     s.removeDeadVehicles();
 }
 
-void runIntel(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    for (size_t i = 0; i < s.empires.size(); ++i) {
-        const EmpireId id{i};
-        if (!s.empire(id).alive) continue;
-        intelStep(ctx, id);
-        if (!s.empire(id).alive) continue;
-        Empire& e = s.empire(id);
-        research::addToPools(e, 0, e.economy.intelligence);  // already net of a master's tariff (economy)
-    }
-}
-
 } // namespace opense4::game::intel

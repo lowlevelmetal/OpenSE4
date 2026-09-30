@@ -1628,7 +1628,7 @@ TEST_CASE("combat: ground combat captures a planet") {
     REQUIRE(combat::landTroops(r, s, transport, planet, trooper, 10) == 10);
 
     TurnContext ctx = context(s);
-    combat::runGroundCombat(ctx);
+    combat::runGroundCombat(ctx, ar.a);
     const Colony* after = s.colony(planet);
     REQUIRE(after != nullptr);
     CHECK(after->owner == ar.a);
@@ -1698,7 +1698,7 @@ TEST_CASE("combat: militia repel a small invasion") {
     const DesignId guard = design(s, ar.b, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
     target.cargo.units.push_back({guard, 1});
     TurnContext ctx = context(s);
-    combat::runGroundCombat(ctx);
+    combat::runGroundCombat(ctx, ar.a);
     const Colony* after = s.colony(planet);
     REQUIRE(after != nullptr);
     CHECK(after->owner == ar.b);
@@ -1711,7 +1711,7 @@ TEST_CASE("combat: militia repel a small invasion") {
     target.cargo.units.push_back({trooper, 2});
     setTreaty(s, ar.a, ar.b, Treaty::NonAggression);
     TurnContext calm = context(s);
-    combat::runGroundCombat(calm);
+    combat::runGroundCombat(calm, ar.a);
     CHECK(s.colony(planet)->cargo.unitCount(trooper) == 2);
 }
 

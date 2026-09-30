@@ -55,7 +55,7 @@ public:
         if (!where_) {
             ImGui::TextColored(kDim, "You have nothing that can carry cargo.");
         } else {
-            ImGui::TextColored(kDim, "Location: %s", sectorName(ui.state(), *where_).c_str());
+            ImGui::TextColored(kDim, "Location: %s", sectorName(ui.state(), *where_, ui.session.player()).c_str());
             const float spacing = ImGui::GetStyle().ItemSpacing.x;
             const float w = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
             const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 4.4f;

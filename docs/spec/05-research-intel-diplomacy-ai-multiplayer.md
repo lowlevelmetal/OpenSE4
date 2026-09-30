@@ -1650,8 +1650,10 @@ rounded.
 - In simultaneous games messages take effect before movement, research and intelligence;
   in turn-based games they take effect when sent (§3.4).
 
-**OpenSE4 mapping**: `processTurn` should follow this order in simultaneous mode. Every
-step needs a stable iteration order and draws its randomness from `GameState::rng`.
+**OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for every game, and
+`empireEndOfTurn` is one empire's end-of-turn processing. Every step has a stable iteration
+order and draws its randomness from `GameState::rng`. The turn-based style is not
+implemented. The engine's choices where this section is silent are open question 24.
 
 ## 9. Multiplayer
 
@@ -1975,3 +1977,26 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     order where it is, usually at the yard that built it, so it takes colonists aboard
     there before it leaves (spec 03 §8). Do the original's AI colonies start with the
     people the colony ship carried, as a player's do? (inferred)
+24. **Turn order details** (§8): where the order above leaves a detail open, OpenSE4:
+    - keeps the turn number the orders were given for until the end of the turn and hands
+      the advanced date to the steps that use it (bookkeeping only);
+    - lets colony ships waiting at their planet found their colonies when the 30 movement
+      phases end, then updates sight and first contact; both are updated again after the
+      event step;
+    - delivers a computer player's (or a minister's) messages right after that empire's
+      start-of-turn orders;
+    - counts, in each empire's political step at the start of a turn, the battles, reports
+      and messages of the turn processed before; what the AI remembers of a turn (battles,
+      traced spies, mine fields) is recorded after the event step;
+    - covers a player whose orders are missing by switching all of that empire's ministers
+      on for the turn, so they plan both groups of §7.1;
+    - writes every empire's statistics row at step 2 (the original writes the files for
+      human players only);
+    - has no queue refresh of its own at step 1, and does step 16's per-object upkeep in
+      the supply step (spec 03 open question 36);
+    - starts the end-of-turn processing of an empire founded during step 6 (a rebel colony)
+      in the next turn;
+    - lets a subject's tariff that reaches its master after the master's own storage cap
+      stand until the master's next cap (spec 02 §13 item 13).
+
+    Which of these does the original do? (inferred)

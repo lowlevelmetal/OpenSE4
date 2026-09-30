@@ -24,6 +24,19 @@ const EmpireId kA{0u}, kB{1u}, kC{2u};
 
 TurnContext context(GameState& s) { return turnContext(politicsRules(), s); }
 
+// The score parts of the turn as processTurn runs them: each empire's
+// statistics row (step 2 of its end-of-turn processing) and destruction check
+// (right after its processing), then the victory check (spec 05 §8).
+void scoreSteps(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        if (!s.empires[i].alive) continue;
+        score::recordStatistics(ctx, EmpireId{i});
+        score::checkDestruction(ctx, EmpireId{i});
+    }
+    score::checkVictory(ctx, s.turn + 1);
+}
+
 void wipeOut(GameState& s, EmpireId e) {
     for (auto& c : s.colonies)
         if (c && c->owner == e) c.reset();
@@ -160,7 +173,7 @@ TEST_CASE("score: history and the destruction of beaten empires") {
     setContact(s, kA, kC);
     TurnContext ctx = context(s);
     diplomacy::setTreaty(ctx, kA, kC, Treaty::TradeAlliance);
-    score::endOfTurn(ctx);
+    scoreSteps(ctx);
     for (const Empire& e : s.empires) {
         REQUIRE(e.history.size() == 1);
         CHECK(e.history[0].turn == 0);
@@ -181,9 +194,9 @@ TEST_CASE("score: history and the destruction of beaten empires") {
     CHECK_FALSE(score::defeated(r, s, kA));
     const ObjectId planetC = homeC.planet;
     s.turn = 1;
-    score::endOfTurn(ctx);
+    scoreSteps(ctx);
     CHECK_FALSE(s.empire(kC).alive);
-    CHECK(s.empire(kC).history.size() == 1);  // nothing recorded after its death
+    CHECK(s.empire(kC).history.size() == 2);  // its row is written before the destruction check
     CHECK(s.colony(planetC) == nullptr);
     for (const Vehicle& v : s.vehicles) CHECK(v.owner != kC);
     CHECK(hasLog(s, kA, "Empire Destroyed"));  // in contact
@@ -194,8 +207,9 @@ TEST_CASE("score: history and the destruction of beaten empires") {
     CHECK(s.empire(kA).relation(kC).treaty == Treaty::None);
     CHECK_FALSE(s.gameOver);
     s.turn = 2;
-    score::endOfTurn(ctx);
+    scoreSteps(ctx);
     CHECK(s.empire(kA).history.size() == 3);
+    CHECK(s.empire(kC).history.size() == 2);  // nothing recorded after its death
 }
 
 TEST_CASE("score: no victory for the last empire standing, and none when nothing is enabled") {
@@ -203,13 +217,13 @@ TEST_CASE("score: no victory for the last empire standing, and none when nothing
     TurnContext ctx = context(s);
     wipeOut(s, kB);
     wipeOut(s, kC);
-    score::endOfTurn(ctx);
+    scoreSteps(ctx);
     CHECK_FALSE(s.empire(kB).alive);
     CHECK_FALSE(s.gameOver);
     CHECK(hasLog(s, kA, "Last Empire Standing"));
     for (uint32_t t = 1; t < 300; ++t) {
         s.turn = t;
-        score::endOfTurn(ctx);
+        scoreSteps(ctx);
     }
     CHECK_FALSE(s.gameOver);
 }
@@ -223,7 +237,7 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
     };
     auto end = [](GameState& s) {
         TurnContext ctx = context(s);
-        score::endOfTurn(ctx);
+        scoreSteps(ctx);
     };
 
     SUBCASE("score threshold") {

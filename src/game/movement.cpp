@@ -911,7 +911,7 @@ private:
             o.amount = 1;
         }
         const Travel t = travel(a, locationOf(s_.galaxy, o.object));
-        return t == Travel::Arrived ? Exec::Wait : afterTravel(a, o, t);  // colonized in turn phase 4
+        return t == Travel::Arrived ? Exec::Wait : afterTravel(a, o, t);  // colonized when the movement phase ends (runColonization)
     }
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).

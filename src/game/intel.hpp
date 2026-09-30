@@ -2,13 +2,12 @@
 
 // Intelligence projects and counter-intelligence (docs/spec/05 §2).
 //
-// Entry points for the spec 05 §8 turn order:
+// Entry points for the spec 05 §8 turn order (turn.cpp):
 // - intelStep(ctx, e): step 3 of one empire's end-of-turn processing, before
 //   research::researchStep. Each empire funds and runs its own projects in
 //   turn, so a defender with a lower empire number has already added this
 //   turn's points to its defenses when a higher-numbered attacker strikes.
 // - research::addToPools(e, rp, ip): the income step refills the pool.
-// runIntel() is the aggregate phase turn.cpp calls until then.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -69,11 +68,5 @@ std::string orderProblem(const Rules& r, const GameState& s, EmpireId source, co
 // project); what ran leaves the queue unless Repeat is on (then it restarts
 // at 0 in place); the pool is emptied.
 void intelStep(TurnContext& ctx, EmpireId e);
-
-// Aggregate phase for turn.cpp (after research): for each living empire in
-// order, its intelligence step, then this turn's intelligence income (the
-// economy's Empire::economy.intelligence, already net of a master's tariff)
-// goes into the pool.
-void runIntel(TurnContext& ctx);
 
 } // namespace opense4::game::intel

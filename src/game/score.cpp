@@ -138,13 +138,11 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
         ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on.");
 }
 
-void recordStatistics(TurnContext& ctx) {
+void recordStatistics(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
-    for (size_t i = 0; i < s.empires.size(); ++i)
-        if (s.empires[i].alive) {
-            TurnStats t = currentStats(ctx.rules, s, EmpireId{i});
-            s.empires[i].history.push_back(std::move(t));
-        }
+    if (!validEmpire(s, e) || !s.empire(e).alive) return;
+    TurnStats t = currentStats(ctx.rules, s, e);
+    s.empire(e).history.push_back(std::move(t));
 }
 
 bool galaxyAtPeace(const GameState& s) {
@@ -219,14 +217,6 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
     for (const Empire& e : s.empires)
         ctx.log(e.id, LogCategory::Misc, "Game Over",
                 std::format("This is the last turn: {}. The Scores window shows the final ranking.", reason));
-}
-
-void endOfTurn(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    for (size_t i = 0; i < s.empires.size(); ++i) checkDestruction(ctx, EmpireId{i});
-    recordStatistics(ctx);
-    // turn.cpp advances the date after this phase.
-    checkVictory(ctx, s.turn + 1);
 }
 
 } // namespace opense4::game::score

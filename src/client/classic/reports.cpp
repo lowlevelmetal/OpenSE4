@@ -3,6 +3,7 @@
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <array>
@@ -133,23 +134,30 @@ Sprite vehiclePortrait(UiContext& ui, const game::Vehicle& v) {
 
 Sprite objectSprite(UiContext& ui, const game::SpaceObject& o) { return ui.art.planet(ui.rules().data().sectorObjectTypes[o.sectorType].picture); }
 
-std::string sectorName(const game::GameState& s, game::Location where) {
+std::string objectName(const game::GameState& s, game::ObjectId id, game::EmpireId viewer) {
+    if (!id.valid() || id.index() >= s.galaxy.objects.size()) return {};
+    const game::SpaceObject& o = s.galaxy.object(id);
+    if (o.kind == game::ObjectKind::WarpPoint && viewer.valid()) return game::sight::warpPointName(s, viewer, id);
+    return o.name;
+}
+
+std::string sectorName(const game::GameState& s, game::Location where, game::EmpireId viewer) {
     if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return "-";
     for (game::ObjectId id : s.galaxy.system(where.system).objects) {
         const game::SpaceObject& o = s.galaxy.object(id);
-        if (o.sector == where.sector && o.kind != game::ObjectKind::Star) return o.name;
+        if (o.sector == where.sector && o.kind != game::ObjectKind::Star) return objectName(s, id, viewer);
     }
     return std::format("{} ({}, {})", s.galaxy.system(where.system).name, where.sector.x, where.sector.y);
 }
 
-std::string orderText(const game::GameState& s, const game::Order& o) {
+std::string orderText(const game::GameState& s, const game::Order& o, game::EmpireId viewer) {
     using game::OrderKind;
     const std::string name(game::displayName(o.kind));
     switch (o.kind) {
-        case OrderKind::MoveTo: return std::format("{} {}", name, sectorName(s, o.location));
+        case OrderKind::MoveTo: return std::format("{} {}", name, sectorName(s, o.location, viewer));
         case OrderKind::Warp:
         case OrderKind::Colonize:
-            return o.object.valid() && o.object.index() < s.galaxy.objects.size() ? std::format("{} {}", name, s.galaxy.object(o.object).name)
+            return o.object.valid() && o.object.index() < s.galaxy.objects.size() ? std::format("{} {}", name, objectName(s, o.object, viewer))
                                                                                     : name;
         case OrderKind::Attack:
             if (const game::Vehicle* t = s.vehicle(o.vehicle)) return std::format("{} {}", name, t->name);
@@ -159,9 +167,9 @@ std::string orderText(const game::GameState& s, const game::Order& o) {
     }
 }
 
-std::string ordersSummary(const game::GameState& s, const game::Vehicle& v) {
+std::string ordersSummary(const game::GameState& s, const game::Vehicle& v, game::EmpireId viewer) {
     if (v.orders.empty()) return "No orders";
-    std::string out = orderText(s, v.orders.front());
+    std::string out = orderText(s, v.orders.front(), viewer);
     if (v.orders.size() > 1) out += std::format(" (+{})", v.orders.size() - 1);
     return out;
 }
@@ -237,10 +245,10 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
                                                : std::format("{} / {}", formatNumber(v.supply), formatNumber(game::vehicleSupplyCapacity(r, s, v))));
                 labelValue(ui, "Experience", std::format("{}%", v.experience));
                 if (const game::Fleet* f = s.fleet(v.fleet)) labelValue(ui, "Fleet", f->name);
-                labelValue(ui, "Location", sectorName(s, v.location));
+                labelValue(ui, "Location", sectorName(s, v.location, ui.session.player()));
                 heading(ui, "Orders");
                 if (v.orders.empty()) ImGui::TextColored(kDim, "None");
-                for (const auto& o : v.orders) ImGui::BulletText("%s", orderText(s, o).c_str());
+                for (const auto& o : v.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
                 if (v.repeatOrders) ImGui::TextColored(kDim, "(repeating)");
             }
             break;
@@ -300,7 +308,7 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
         }
     heading(ui, "Orders");
     if (f.orders.empty()) ImGui::TextColored(kDim, "None");
-    for (const auto& o : f.orders) ImGui::BulletText("%s", orderText(s, o).c_str());
+    for (const auto& o : f.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
 }
 
 void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
@@ -427,7 +435,7 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
 void objectReport(UiContext& ui, game::ObjectId id) {
     const game::GameState& s = ui.state();
     const game::SpaceObject& o = s.galaxy.object(id);
-    title(ui, o.name);
+    title(ui, objectName(s, id, ui.session.player()));
     image(ui, ui.art.planetPortrait(ui.rules().data().sectorObjectTypes[o.sectorType].picture), {96, 96});
     switch (o.kind) {
         case game::ObjectKind::Star:
@@ -437,9 +445,10 @@ void objectReport(UiContext& ui, game::ObjectId id) {
             labelValue(ui, "Luminosity", o.starLuminosity);
             break;
         case game::ObjectKind::WarpPoint: {
-            const bool known = o.id.index() < ui.me().knowledge.knownWarpLink.size() && ui.me().knowledge.knownWarpLink[o.id.index()];
-            labelValue(ui, "Destination",
-                       known && o.destination.valid() ? s.galaxy.system(s.galaxy.object(o.destination).system).name : std::string("Unknown"));
+            // The destination shows once the viewer has explored it (docs/spec/01 §5.4, §8).
+            const game::SystemId dest = o.destination.valid() ? s.galaxy.object(o.destination).system : game::SystemId{};
+            const bool known = dest.valid() && (s.options.omnipresent || ui.me().hasExplored(dest));
+            labelValue(ui, "Destination", known ? s.galaxy.system(dest).name : std::string("Unknown"));
             break;
         }
         default: labelValue(ui, "Kind", std::string(game::displayName(o.kind))); break;

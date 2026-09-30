@@ -397,7 +397,7 @@ public:
                 if (w.set) ImGui::TextUnformatted(waypointName(w, i).c_str());
                 else dimText("(not set)");
                 ImGui::TableSetColumnIndex(2);
-                if (w.set) ImGui::TextUnformatted(sectorName(s, w.location).c_str());
+                if (w.set) ImGui::TextUnformatted(sectorName(s, w.location, ui.session.player()).c_str());
             }
             ImGui::EndTable();
         }
@@ -454,7 +454,7 @@ public:
         if (sel.set) opt.highlight.push_back(sel.location.system);
         const ImVec2 avail = ImGui::GetContentRegionAvail();
         quadrantMap(ui, "##map", {avail.x / ui.k(), avail.y / ui.k() - 24}, opt);
-        if (sel.set) ImGui::Text("%s: %s", waypointName(sel, selected_).c_str(), sectorName(s, sel.location).c_str());
+        if (sel.set) ImGui::Text("%s: %s", waypointName(sel, selected_).c_str(), sectorName(s, sel.location, ui.session.player()).c_str());
         else dimText("Set places a waypoint on a sector you pick in the main window.");
         status_.draw();
         ImGui::EndGroup();

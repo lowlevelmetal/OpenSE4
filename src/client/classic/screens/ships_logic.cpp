@@ -1,7 +1,7 @@
 #include "client/classic/screens/ships_logic.hpp"
 
-#include "datafile/datafile.hpp"
 #include "game/design.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
@@ -11,7 +11,6 @@
 namespace opense4::client::classic::shipui {
 
 using game::AbilityKind;
-using game::ObjectKind;
 using game::StellarAction;
 
 // ---- Orders ---------------------------------------------------------------------------------
@@ -278,23 +277,6 @@ constexpr std::array<StellarInfo, static_cast<size_t>(StellarAction::Count)> kSt
     {StellarAction::CreateConstructedPlanet, "Construct", AbilityKind::CreateConstructedPlanet, "Ring", 16},
 }};
 
-std::optional<game::ObjectId> objectOfKind(const game::GameState& s, game::Location where, ObjectKind kind) {
-    for (game::ObjectId id : s.galaxy.system(where.system).objects) {
-        const game::SpaceObject& o = s.galaxy.object(id);
-        if (o.sector == where.sector && o.kind == kind) return id;
-    }
-    return std::nullopt;
-}
-
-// A facility with `blocker` on any colony of the system (docs/spec/01 §9).
-bool blockedIn(const game::Rules& r, const game::GameState& s, game::SystemId sys, AbilityKind blocker) {
-    for (game::ObjectId id : s.galaxy.system(sys).objects)
-        if (const game::Colony* c = s.colony(id))
-            for (uint32_t f : c->facilities)
-                if (game::hasAbility(r.facilityAbilities(f), blocker)) return true;
-    return false;
-}
-
 } // namespace
 
 const StellarInfo& stellarInfo(StellarAction a) {
@@ -305,115 +287,46 @@ const StellarInfo& stellarInfo(StellarAction a) {
 StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, StellarAction a) {
     StellarCheck c;
     const StellarInfo& info = stellarInfo(a);
-    const auto abilities = game::vehicleAbilities(r, s, v);
-    c.hasAbility = game::hasAbility(abilities, info.ability);
+    c.hasAbility = game::hasAbility(game::vehicleAbilities(r, s, v), info.ability);
     if (!c.hasAbility) {
         c.reason = std::format("This vehicle has no working component with {}.", game::identifier(info.ability));
         return c;
     }
-    const game::Location here = v.location;
-    const game::StarSystem& sys = s.galaxy.system(here.system);
-    auto need = [&](ObjectKind kind, const char* what) {
-        if (auto id = objectOfKind(s, here, kind)) {
-            c.target = *id;
-            return true;
-        }
-        c.reason = std::format("Needs {} in this sector.", what);
-        return false;
-    };
-    auto blocked = [&](AbilityKind blocker, const char* what) {
-        if (!blockedIn(r, s, here.system, blocker)) return false;
-        c.reason = std::format("A facility in this system prevents {}.", what);
-        return true;
-    };
-    const bool nebula = datafile::keysEqual(sys.physicalType, "Nebulae");
-    const bool blackHole = datafile::keysEqual(sys.physicalType, "Black Hole");
+    // The checks the turn makes when it carries out the order (docs/spec/01 §9):
+    // the button is enabled only when they pass now. Open Warp Point's
+    // destination is picked on the map afterwards.
+    game::Order o = stellarOrder(v, a, {});
+    if (a == StellarAction::OpenWarpPoint) o.location = {};
+    if (std::string why = game::movement::stellarProblem(r, s, v.id, o, &c.target); !why.empty()) {
+        c.reason = why + ".";
+        return c;
+    }
     switch (a) {
-        case StellarAction::CreatePlanet:
-            if (!need(ObjectKind::Asteroids, "an asteroid field")) return c;
-            c.reason = "The asteroid field becomes a planet.";
-            break;
-        case StellarAction::DestroyPlanet:
-            if (!need(ObjectKind::Planet, "a planet")) return c;
-            if (blocked(AbilityKind::StopPlanetDestroyer, "destroying planets")) return c;
-            c.reason = "The planet becomes an asteroid field.";
-            break;
-        case StellarAction::CreateStar:
-            if (nebula || blackHole) {
-                c.reason = "Stars cannot be created in a nebula or black hole system.";
-                return c;
-            }
-            c.reason = "A new star forms in this sector.";
-            break;
+        case StellarAction::CreatePlanet: c.reason = "The asteroid field becomes a planet."; break;
+        case StellarAction::DestroyPlanet: c.reason = "The planet becomes an asteroid field."; break;
+        case StellarAction::CreateStar: c.reason = "A new star forms in this sector."; break;
         case StellarAction::DestroyStar:
-            if (!need(ObjectKind::Star, "a star")) return c;
-            if (blocked(AbilityKind::StopStarDestroyer, "destroying stars")) return c;
             c.destroysSystem = true;
             c.reason = "The shockwave destroys everything in the system except warp points, this ship included.";
             break;
         case StellarAction::OpenWarpPoint:
-            if (blocked(AbilityKind::StopOpenWarpPoint, "opening warp points")) return c;
             c.needsDestination = true;
             c.reason = "Pick a sector of the destination system on the map.";
             break;
-        case StellarAction::CloseWarpPoint:
-            if (!need(ObjectKind::WarpPoint, "a warp point")) return c;
-            if (blocked(AbilityKind::StopCloseWarpPoint, "closing warp points")) return c;
-            c.reason = "Both ends of the warp point disappear.";
-            break;
-        case StellarAction::CreateStorm: c.reason = "A storm forms in this sector (needs movement left)."; break;
-        case StellarAction::DestroyStorm:
-            if (!need(ObjectKind::Storm, "a storm")) return c;
-            c.reason = "The storm is dispersed.";
-            break;
+        case StellarAction::CloseWarpPoint: c.reason = "Both ends of the warp point disappear."; break;
+        case StellarAction::CreateStorm: c.reason = "A storm forms in this sector."; break;
+        case StellarAction::DestroyStorm: c.reason = "The storm is dispersed."; break;
         case StellarAction::CreateNebulae:
-            if (!need(ObjectKind::Star, "a star")) return c;
-            if (blocked(AbilityKind::StopNebulaeCreator, "creating nebulae")) return c;
             c.destroysSystem = true;
             c.reason = "The star becomes a nebula; everything in the system is destroyed, this ship included.";
             break;
-        case StellarAction::DestroyNebulae:
-            if (!nebula) {
-                c.reason = "Only works in a nebula system.";
-                return c;
-            }
-            c.reason = "The nebula is cleared from the system.";
-            break;
+        case StellarAction::DestroyNebulae: c.reason = "The nebula is cleared from the system."; break;
         case StellarAction::CreateBlackHole:
-            if (!need(ObjectKind::Star, "a star")) return c;
-            if (blocked(AbilityKind::StopBlackHoleCreator, "creating black holes")) return c;
             c.destroysSystem = true;
             c.reason = "The star collapses; everything in the system is destroyed, this ship included.";
             break;
-        case StellarAction::DestroyBlackHole:
-            if (!blackHole) {
-                c.reason = "Only works in a black hole system.";
-                return c;
-            }
-            c.reason = "The black hole is removed from the system.";
-            break;
-        case StellarAction::CreateConstructedPlanet: {
-            if (!need(ObjectKind::Star, "a star")) return c;
-            // Every material requirement: Val 2 kT of components of custom group Val 1 in this sector.
-            for (const auto& req : abilities) {
-                if (req.kind != AbilityKind::ConstructedPlanetRequirements) continue;
-                int64_t tons = 0;
-                for (const game::Vehicle& other : s.vehicles) {
-                    if (other.owner != v.owner || other.location != here) continue;
-                    const game::Design& d = s.design(other.design);
-                    for (size_t i = 0; i < d.entries.size(); ++i) {
-                        const ruleset::Component& comp = r.component(d.entries[i].component);
-                        if (comp.customGroup == req.value1 && game::entryIntact(r, s, other, i)) tons += comp.tonnage * std::max(1, other.count);
-                    }
-                }
-                if (tons < req.value2) {
-                    c.reason = std::format("Needs {} kT more construction material in this sector.", req.value2 - tons);
-                    return c;
-                }
-            }
-            c.reason = "A world is built around the star.";
-            break;
-        }
+        case StellarAction::DestroyBlackHole: c.reason = "The black hole is removed from the system."; break;
+        case StellarAction::CreateConstructedPlanet: c.reason = "A world is built around the star."; break;
         case StellarAction::Count: return c;
     }
     c.possible = true;

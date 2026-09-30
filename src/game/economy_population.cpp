@@ -430,14 +430,4 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
     }
 }
 
-void runPopulation(TurnContext& ctx) {
-    for (size_t i = 0; i < ctx.state.empires.size(); ++i) {
-        const EmpireId id{i};
-        if (!ctx.state.empire(id).alive) continue;
-        processPlanets(ctx, id);
-        updateHappiness(ctx, id);
-        applySystemAbilities(ctx, id);
-    }
-}
-
 } // namespace opense4::game::economy

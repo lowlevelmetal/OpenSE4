@@ -2,13 +2,12 @@
 
 // Scores, statistics history and victory (docs/spec/05 §5–§6, spec 01 §11).
 //
-// Entry points for the spec 05 §8 turn order:
+// Entry points for the spec 05 §8 turn order (turn.cpp):
+// - recordStatistics(ctx, e): step 2 of each empire's end-of-turn processing.
 // - checkDestruction(ctx, e): after each empire's end-of-turn processing.
-// - recordStatistics(ctx): the per-turn statistics of every living empire.
 // - checkVictory(ctx, date): once per game turn, after every empire's
 //   end-of-turn processing and before the event step, with the date already
 //   advanced for this turn.
-// endOfTurn() is the aggregate phase turn.cpp calls until then.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -56,8 +55,9 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e);
 // treaties with it return to "no contact", intelligence projects aimed at it
 // are removed and its remaining objects (empty colonies, units) go.
 void checkDestruction(TurnContext& ctx, EmpireId e);
-// Appends this turn's statistics to every living empire's history.
-void recordStatistics(TurnContext& ctx);
+// Appends this turn's statistics to a living empire's history (spec 05 §5:
+// written at the start of the empire's end-of-turn processing).
+void recordStatistics(TurnContext& ctx, EmpireId e);
 // Whether the peace condition's pairs all hold: every two living empires have
 // contact and a treaty of Non-Aggression or better.
 bool galaxyAtPeace(const GameState& s);
@@ -69,10 +69,5 @@ bool galaxyAtPeace(const GameState& s);
 // empire number, neutral empires excluded) for the game-over screen
 // (OpenSE4 choice, inferred).
 void checkVictory(TurnContext& ctx, uint32_t date);
-
-// Aggregate phase for turn.cpp, before the date advances: statistics, the
-// destruction check of every empire, then the victory check with the date of
-// the next turn.
-void endOfTurn(TurnContext& ctx);
 
 } // namespace opense4::game::score

@@ -93,14 +93,12 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
     using K = game::OrderKind;
     const game::GameState& s = ui.state();
     const std::string name(game::displayName(o.kind));
-    const auto at = [&] { return o.location.system.valid() ? " at " + sectorName(s, o.location) : std::string(); };
+    const auto at = [&] { return o.location.system.valid() ? " at " + sectorName(s, o.location, ui.session.player()) : std::string(); };
     const auto amount = [&](const char* none) {
         const std::string item = o.design.valid() && o.design.index() < s.designs.size() ? s.design(o.design).name : std::string(none);
         return o.amount < 0 ? "all " + item : std::format("{} {}", o.amount, item);
     };
-    const auto objectName = [&]() -> std::string {
-        return o.object.valid() && o.object.index() < s.galaxy.objects.size() ? s.galaxy.object(o.object).name : std::string();
-    };
+    const auto targetName = [&]() { return objectName(s, o.object, ui.session.player()); };
     switch (o.kind) {
         case K::LoadCargo:
         case K::DropCargo: return std::format("{}: {}{}", name, amount("population"), at());
@@ -108,7 +106,7 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
         case K::RecoverUnits: return std::format("{}: {}{}", name, amount("units"), at());
         case K::Attack:
             if (const game::Vehicle* t = s.vehicle(o.vehicle)) return std::format("{} {}", name, t->name);
-            if (!objectName().empty()) return std::format("{} {}", name, objectName());
+            if (!targetName().empty()) return std::format("{} {}", name, targetName());
             return name;
         case K::UseComponent:
             if (design.valid() && design.index() < s.designs.size() && o.amount >= 0 &&
@@ -120,18 +118,18 @@ std::string describeOrder(const UiContext& ui, const game::Order& o, game::Desig
             std::string out = std::format("{}: {}", name, stellarInfo(action).name);
             if (action == game::StellarAction::OpenWarpPoint && o.location.system.valid())
                 out += " to " + s.galaxy.system(o.location.system).name;
-            else if (!objectName().empty()) out += " (" + objectName() + ")";
+            else if (!targetName().empty()) out += " (" + targetName() + ")";
             return out;
         }
         case K::MoveToWaypoint: {
             const auto& wps = ui.me().waypoints;
             if (o.amount >= 0 && static_cast<size_t>(o.amount) < wps.size() && wps[static_cast<size_t>(o.amount)].set) {
                 const game::Waypoint& w = wps[static_cast<size_t>(o.amount)];
-                return std::format("{} {} ({})", name, w.name, sectorName(s, w.location));
+                return std::format("{} {} ({})", name, w.name, sectorName(s, w.location, ui.session.player()));
             }
             return std::format("{} {}", name, o.amount);
         }
-        default: return orderText(s, o);
+        default: return orderText(s, o, ui.session.player());
     }
 }
 

@@ -1,8 +1,9 @@
-// Computer player: the AI step of the turn (spec 05 §7.1-§7.4, §7.6). It
-// runs with a mutable state once per turn (ai::updateAnger): what the
-// computer players decided this turn, the per-empire counters, the AI state
-// machine (§7.2), the political step (territory and anger, §7.3) and the
-// Mega Evil Empire (§7.6).
+// Computer player: the parts of the turn that change the AI's own memory
+// (spec 05 §7.1-§7.4, §7.6): what the computer players decided this turn and
+// the per-empire counters, the AI state machine (§7.2), the political step
+// (territory and anger, §7.3) with the Mega Evil Empire (§7.6), and what the
+// AI remembers of the turn's battles and spies. processTurn runs them at
+// their places in the spec 05 §8 order; ai::updateAnger runs them together.
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
@@ -341,17 +342,21 @@ struct AngerInputs {
     std::vector<int64_t> scores;
     std::vector<std::vector<SystemId>> territory;   // per empire, sorted
     std::vector<EmpireId> mee;                      // per viewer
+    // The turn whose reports and messages count (GameState::combats holds its
+    // battles); none before the first turn has been processed.
+    std::optional<uint32_t> eventsTurn;
+    bool counts(uint32_t turn) const { return eventsTurn && *eventsTurn == turn; }
 };
 
-// Was the empire in that system when something happened there this turn?
+// Was the empire in that system when something happened there in `turn`?
 // It is still there, or it logged something located there (inferred).
-bool presentIn(const GameState& s, const Empire& e, SystemId sys) {
+bool presentIn(const GameState& s, const Empire& e, SystemId sys, uint32_t turn) {
     for (const auto& c : s.colonies)
         if (c && c->owner == e.id && s.galaxy.object(c->planet).system == sys) return true;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == e.id && v.location.system == sys) return true;
     for (const LogEntry& l : e.log)
-        if (l.turn == s.turn && l.location && l.location->system == sys) return true;
+        if (l.turn == turn && l.location && l.location->system == sys) return true;
     return false;
 }
 
@@ -378,17 +383,17 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
         }
     // 2. Stellar manipulation reported to empires in that system.
     for (const LogEntry& l : x.log)
-        if (l.turn == s.turn && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
-            presentIn(s, e, l.location->system))
+        if (in.counts(l.turn) && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
+            presentIn(s, e, l.location->system, l.turn))
             add(int64_t{2} * t.defendingLost);
     // 3. Successful operations traced to them: the victim's log names the
     // culprit (intel::namesCulprit); blocked attempts and counter-intelligence never do.
     for (const LogEntry& l : e.log)
-        if (l.turn == s.turn && intel::namesCulprit(s, l, x.id)) add(t.intelligenceAgainstUs);
+        if (in.counts(l.turn) && intel::namesCulprit(s, l, x.id)) add(t.intelligenceAgainstUs);
     // 4. The earliest message from them that arrived this turn.
     const DiplomaticMessage* first = nullptr;
     for (const DiplomaticMessage& m : s.messages)
-        if (m.to == e.id && m.from == x.id && m.delivered && m.sentTurn == s.turn && (!first || m.id < first->id)) first = &m;
+        if (m.to == e.id && m.from == x.id && m.delivered && in.counts(m.sentTurn) && (!first || m.id < first->id)) first = &m;
     if (first) {
         int v = t.receive[static_cast<size_t>(first->type)];
         if (first->type == MessageType::AcceptGift || first->type == MessageType::RefuseGift)
@@ -563,35 +568,32 @@ void recordAiDecisions(TurnContext& ctx) {
     }
 }
 
-void updateAiStates(TurnContext& ctx) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
-    // Territory: computer players claim theirs anew each turn; the systems
-    // they agreed to leave are their systems to avoid.
-    for (Empire& e : s.empires) {
-        if (!e.alive || e.kind == PlayerKind::Human) continue;
-        e.claimedSystems = computeTerritory(s, e.id);
-        e.systemsToAvoid = e.aiMemory.avoid;
-        std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
-    }
-    for (Empire& e : s.empires) {
-        if (!e.alive) continue;
-        const AiProfile& prof = profileFor(r, e);
-        const Decision d = decide(s, e.id, assess(r, s, e.id, prof), prof);
-        Empire& me = s.empire(e.id);
-        me.aiMemory = d.memory;
-        if (static_cast<int>(d.next) != me.aiState) {
-            me.aiState = static_cast<int>(d.next);
-            me.aiTurnsInState = 0;
-        } else {
-            me.aiTurnsInState = std::min(me.aiTurnsInState + 1, kCounterCap);
-        }
+namespace {
+
+void decideState(const Rules& r, GameState& s, EmpireId id) {
+    const Empire& e = s.empire(id);
+    const AiProfile& prof = profileFor(r, e);
+    const Decision d = decide(s, id, assess(r, s, id, prof), prof);
+    Empire& me = s.empire(id);
+    me.aiMemory = d.memory;
+    if (static_cast<int>(d.next) != me.aiState) {
+        me.aiState = static_cast<int>(d.next);
+        me.aiTurnsInState = 0;
+    } else {
+        me.aiTurnsInState = std::min(me.aiTurnsInState + 1, kCounterCap);
     }
 }
 
-void politicalStep(TurnContext& ctx) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
+// Territory: computer players claim theirs anew; the systems they agreed to
+// leave are their systems to avoid.
+void claimTerritory(GameState& s, Empire& e) {
+    if (!e.alive || e.kind == PlayerKind::Human) return;
+    e.claimedSystems = computeTerritory(s, e.id);
+    e.systemsToAvoid = e.aiMemory.avoid;
+    std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
+}
+
+AngerInputs angerInputs(const Rules& r, const GameState& s, std::optional<uint32_t> eventsTurn) {
     AngerInputs in;
     in.scores = politicalScores(r, s);
     in.territory.resize(s.empires.size());
@@ -600,19 +602,51 @@ void politicalStep(TurnContext& ctx) {
         in.territory[e.id.index()] = computeTerritory(s, e.id);
         in.mee[e.id.index()] = megaEvilEmpire(r, in.scores, s, e.id);
     }
-    // Anger toward every living empire in contact, for empires whose Politics minister is on.
-    for (Empire& e : s.empires) {
-        if (!politicsOn(e)) continue;
+    in.eventsTurn = eventsTurn;
+    return in;
+}
+
+// Anger toward every living empire in contact, when the Politics minister is
+// on; anger toward an eliminated empire is 0.
+void angerOf(const Rules& r, GameState& s, Empire& e, const AngerInputs& in) {
+    if (politicsOn(e)) {
         const AiProfile& prof = profileFor(r, e);
         for (const Empire& x : s.empires) {
             if (x.id == e.id || !x.alive || x.id.index() >= e.relations.size() || !e.relation(x.id).contact) continue;
             updateAngerToward(r, s, e, x, in, prof);
         }
     }
-    // An eliminated empire is forgotten: anger toward it is 0.
-    for (Empire& e : s.empires)
-        for (const Empire& x : s.empires)
-            if (!x.alive && x.id != e.id && x.id.index() < e.relations.size()) e.relation(x.id).anger = 0;
+    for (const Empire& x : s.empires)
+        if (!x.alive && x.id != e.id && x.id.index() < e.relations.size()) e.relation(x.id).anger = 0;
+}
+
+} // namespace
+
+void updateAiStates(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    for (Empire& e : s.empires) claimTerritory(s, e);
+    for (const Empire& e : s.empires)
+        if (e.alive) decideState(ctx.rules, s, e.id);
+}
+
+void updateAiState(TurnContext& ctx, EmpireId id) {
+    GameState& s = ctx.state;
+    if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
+    claimTerritory(s, s.empire(id));
+    decideState(ctx.rules, s, id);
+}
+
+void politicalStep(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    const AngerInputs in = angerInputs(ctx.rules, s, s.turn);
+    for (Empire& e : s.empires) angerOf(ctx.rules, s, e, in);
+}
+
+void politicalStep(TurnContext& ctx, EmpireId id, std::optional<uint32_t> eventsTurn) {
+    GameState& s = ctx.state;
+    if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
+    const AngerInputs in = angerInputs(ctx.rules, s, eventsTurn);
+    angerOf(ctx.rules, s, s.empire(id), in);
 }
 
 void rememberAiEvents(TurnContext& ctx) {

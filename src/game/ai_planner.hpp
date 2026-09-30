@@ -10,8 +10,8 @@
 // order.
 //
 // The Situation is what the AI works out about the galaxy each turn (spec 05
-// §7.2: territory, strength, the lists). The planner and the AI step in
-// updateAnger compute it the same way, so the state machine and the
+// §7.2: territory, strength, the lists). The planner and the AI state update
+// (ai::updateAiState) compute it the same way, so the state machine and the
 // ministers agree.
 
 #include "core/rng.hpp"

@@ -6,14 +6,15 @@
 #include "game/diplomacy.hpp"
 #include "game/economy_internal.hpp"
 #include "game/query.hpp"
+#include "game/research.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
 #include <format>
 #include <map>
 
-// Planet output, income, trade, maintenance, storage and the aggregate phase
-// drivers (docs/spec/02 §5, §7, §12). Construction queues live in
+// Planet output, income, trade, maintenance and storage (docs/spec/02 §5,
+// §7, §12). Construction queues live in
 // economy_queue.cpp, population, happiness and plague in economy_population.cpp.
 //
 // Percentages that the original applies in floating point go through
@@ -537,11 +538,6 @@ Resources maintenanceCost(const Rules& r, const GameState& s, EmpireId e) {
     return total;
 }
 
-int64_t openingResearchPool(const GameState& s) {
-    // Turn 1 brings a one-off pool; we assume it equals the starting resources (inferred, spec 05 §1.1).
-    return s.turn == 0 ? std::max<int64_t>(0, s.options.startingResources[Resource::Minerals]) : 0;
-}
-
 // ---- Income ----------------------------------------------------------------------------------------------
 
 namespace {
@@ -666,7 +662,7 @@ Income computeIncome(const Rules& r, const GameState& s, EmpireId e) {
     const int64_t factor = ai::incomeBonusFactor(s, e);
     const Resources kept = gross - inc.tariffsOut;
     for (size_t k = 0; k < 3; ++k) inc.bonus.v[k] = kept.v[k] * (factor - 1);
-    inc.research = (grossResearch - researchTariff) * factor + openingResearchPool(s);
+    inc.research = (grossResearch - researchTariff) * factor;
     inc.intelligence = (grossIntel - intelTariff) * factor;
     return inc;
 }
@@ -749,8 +745,15 @@ void collectIncome(TurnContext& ctx, EmpireId e) {
         for (size_t k = 0; k < 3; ++k) p.value[k] = std::max(0, p.value[k] - static_cast<int>(used.v[k]));
     }
     applyRemoteDepletion(r, s, inc.mined);
+    // A master receives the minerals, organics and radioactives of the tariff
+    // at once, at its subject's income step (spec 05 §3.3, §8).
+    if (const EmpireId master = diplomacy::masterOf(s, e); livingEmpire(s, master) && master != e)
+        deposit(s.empire(master).stockpile, inc.tariffsOut);
     Empire& emp = s.empire(e);
     deposit(emp.stockpile, inc.net());
+    // Research and intelligence income fill the pools the next turn's
+    // research and intelligence steps spend (spec 05 §1.1, §8).
+    research::addToPools(emp, std::max<int64_t>(0, inc.research), std::max<int64_t>(0, inc.intelligence));
     emp.economy = reportFrom(inc);
     emp.economy.research = std::min(emp.economy.research, kTreasuryLimit);
     emp.economy.intelligence = std::min(emp.economy.intelligence, kTreasuryLimit);
@@ -759,11 +762,12 @@ void collectIncome(TurnContext& ctx, EmpireId e) {
 void collectTrade(TurnContext& ctx, EmpireId e) {
     GameState& s = ctx.state;
     if (!livingEmpire(s, e)) return;
+    // Trade only: the tariffs of our subjects arrived at their own income steps.
     const TradeIncome t = computeTrade(ctx.rules, s, e);
     Empire& emp = s.empire(e);
-    deposit(emp.stockpile, t.trade + t.tariffsIn);
+    deposit(emp.stockpile, t.trade);
+    research::addToPools(emp, t.research, t.intelligence);  // spent next turn (spec 05 §3.3)
     emp.economy.trade = t.trade;
-    emp.economy.tariffsIn = t.tariffsIn;
     emp.economy.research = addCapped(emp.economy.research, t.research);
     emp.economy.intelligence = addCapped(emp.economy.intelligence, t.intelligence);
 }
@@ -795,19 +799,7 @@ void applyStorageCap(TurnContext& ctx, EmpireId e) {
     emp.stockpile -= emp.economy.lostToStorage;
 }
 
-// ---- Aggregate phases ----------------------------------------------------------------------------------
-
-void runEconomy(TurnContext& ctx) {
-    for (size_t i = 0; i < ctx.state.empires.size(); ++i) {
-        const EmpireId id{i};
-        if (!ctx.state.empire(id).alive) continue;
-        collectIncome(ctx, id);
-        collectTrade(ctx, id);
-        payMaintenance(ctx, id);
-        runConstruction(ctx, id);
-        applyStorageCap(ctx, id);
-    }
-}
+// ---- Reports -------------------------------------------------------------------------------------------
 
 void updateReports(const Rules& r, GameState& s) {
     for (size_t i = 0; i < s.empires.size(); ++i) {

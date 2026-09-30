@@ -34,8 +34,8 @@
 //   stack belongs to the empire that owns its design (Design::owner); a troop
 //   stack whose design owner is hostile to the colony owner is an invader.
 //   Other units in a colony's cargo always serve the colony owner. Ground
-//   combat (runGroundCombat, turn phase 4) fights every colony that holds
-//   invaders. To land troops outside space combat (e.g. a Drop Cargo order
+//   combat (runGroundCombat, step 17 of each empire's end-of-turn processing)
+//   fights every colony that the empire's troops invade. To land troops outside space combat (e.g. a Drop Cargo order
 //   onto an enemy planet), movement calls landTroops(), which moves the stack
 //   from the carrier's cargo into the colony's cargo. During a space battle,
 //   ships with a Drop Troops strategy land their troops the same way, and the
@@ -237,8 +237,11 @@ bool combatPossible(const Rules& r, const GameState& s, Location where);
 void resolveSpaceCombat(TurnContext& ctx, Location where);
 // The same with the vehicles that just moved in (the mines' victims; none when empty).
 void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering);
-// Turn phase 4: invading troops against planets; capture of planets.
-void runGroundCombat(TurnContext& ctx);
+// Ground combat on planets where `attacker` has troops against an enemy
+// (spec 05 §8 end-of-turn step 17): its invading troops fight each such
+// colony, which it captures when the defense is gone. A colony that no
+// longer holds invaders loses its militia pool.
+void runGroundCombat(TurnContext& ctx, EmpireId attacker);
 
 // ---- Queries and helpers ------------------------------------------------------------------------
 

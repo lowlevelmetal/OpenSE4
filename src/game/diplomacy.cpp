@@ -584,40 +584,40 @@ void treatyStep(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!living(s, id)) return;
     const size_t n = s.empires.size();
-    for (size_t i = 0; i < n; ++i) {
-        const EmpireId other{i};
-        if (other == id || !s.empire(other).alive) continue;
-        // Consistency check (confirmed: binary): mismatched records fall to None.
+    auto others = [&](auto&& fn) {
+        for (size_t i = 0; i < n; ++i)
+            if (const EmpireId other{i}; other != id && s.empire(other).alive) fn(other);
+    };
+    // 1. Consistency check (confirmed: binary): mismatched records fall to None.
+    others([&](EmpireId other) {
         Relation& ours = s.empire(id).relation(other);
         Relation& theirs = s.empire(other).relation(id);
-        if (ours.treaty != theirs.treaty) {
-            ours.treaty = theirs.treaty = Treaty::None;
-            ours.dominant = theirs.dominant = false;
-            ours.tradeTurns = theirs.tradeTurns = 0;
-        }
-        // A master sees every design of its subject.
-        if (ours.treaty == Treaty::Subjugation && ours.dominant) {
-            const std::vector<DesignId> own = s.empire(other).designs;
-            for (DesignId d : own) learnDesign(s.empire(id), d);
-        }
-        // Partnership: the partner's explored systems and seen designs.
-        if (ours.treaty == Treaty::Partnership) {
-            if (shareMap(s, other, id) > 0)
-                ctx.log(id, LogCategory::Misc, "New System Maps Available",
-                        std::format("The {} has shared its star charts with us.", nameOf(s, other)));
-            const std::vector<DesignId> seenByPartner = s.empire(other).knowledge.seenDesigns;
-            for (DesignId d : seenByPartner)
-                if (d.index() < s.designs.size() && s.design(d).owner != id) learnDesign(s.empire(id), d);
-        }
-        // The trade counter grows toward every other living empire, whatever the treaty.
-        ++s.empire(id).relation(other).tradeTurns;
-    }
-}
-
-void advanceTrade(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    for (size_t i = 0; i < s.empires.size(); ++i)
-        if (s.empires[i].alive) treatyStep(ctx, EmpireId{i});
+        if (ours.treaty == theirs.treaty) return;
+        ours.treaty = theirs.treaty = Treaty::None;
+        ours.dominant = theirs.dominant = false;
+        ours.tradeTurns = theirs.tradeTurns = 0;
+    });
+    // 2. A master sees every design of its subject.
+    others([&](EmpireId other) {
+        const Relation& rel = s.empire(id).relation(other);
+        if (rel.treaty != Treaty::Subjugation || !rel.dominant) return;
+        const std::vector<DesignId> own = s.empire(other).designs;
+        for (DesignId d : own) learnDesign(s.empire(id), d);
+    });
+    // 3. Trade income from every partner, at the trade percentage the counters
+    // give before they grow (spec 05 §3.3).
+    economy::collectTrade(ctx, id);
+    // 4. Partnership: the partner's explored systems and seen designs.
+    others([&](EmpireId other) {
+        if (s.empire(id).relation(other).treaty != Treaty::Partnership) return;
+        if (shareMap(s, other, id) > 0)
+            ctx.log(id, LogCategory::Misc, "New System Maps Available", std::format("The {} has shared its star charts with us.", nameOf(s, other)));
+        const std::vector<DesignId> seenByPartner = s.empire(other).knowledge.seenDesigns;
+        for (DesignId d : seenByPartner)
+            if (d.index() < s.designs.size() && s.design(d).owner != id) learnDesign(s.empire(id), d);
+    });
+    // 5. The trade counter grows toward every other living empire, whatever the treaty.
+    others([&](EmpireId other) { ++s.empire(id).relation(other).tradeTurns; });
 }
 
 // ---- Trade and tariffs ------------------------------------------------------------------------------

@@ -5,6 +5,7 @@
 #include "game/economy.hpp"
 #include "game/generate.hpp"
 #include "game/query.hpp"
+#include "game/research.hpp"
 #include "game/sight.hpp"
 #include "core/hash.hpp"
 
@@ -392,9 +393,8 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     }
 
     // ---- The starting stockpile (spec 02 §9, confirmed: binary): Starting
-    // Resources plus one turn of the empire's income. (The research pool's
-    // opening amount is kept by the economy, see economy::openingResearchPool;
-    // the intelligence pool starts at 0.)
+    // Resources plus one turn of the empire's income. The research and
+    // intelligence pools are set at the end (research::openingPools).
     economy::updateReports(r, s);
     for (Empire& e : s.empires) {
         const EconomyReport& rep = e.economy;
@@ -435,6 +435,9 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
 
     sight::updateKnowledge(r, s);
     economy::updateReports(r, s);
+    // Research starts at Starting Resources plus one turn of research,
+    // intelligence at 0 (spec 05 §1.1, confirmed: binary).
+    research::openingPools(r, s);
     return s;
 }
 

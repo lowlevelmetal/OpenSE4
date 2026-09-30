@@ -252,7 +252,7 @@ private:
     void statusBar(UiContext& ui) {
         const game::GameState& s = ui.state();
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-        ImGui::Text("Battle at %s", sectorName(s, record_.location).c_str());
+        ImGui::Text("Battle at %s", sectorName(s, record_.location, ui.session.player()).c_str());
         ImGui::PopFont();
         ImGui::SameLine();
         dimText(std::format("  {}", formatDate(record_.turn)).c_str());
