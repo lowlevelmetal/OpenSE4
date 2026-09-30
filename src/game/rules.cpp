@@ -30,6 +30,15 @@ bool Rules::meets(const Empire& e, std::span<const ruleset::TechRequirement> req
 
 bool Rules::mountAvailable(const Empire& e, uint32_t m) const { return m < data_.weaponMounts.size() && meets(e, data_.weaponMounts[m].requirements); }
 
+bool Rules::designTechnology(const Empire& e, const Design& d) const {
+    if (d.hull >= data_.vehicleSizes.size() || !hullAvailable(e, d.hull)) return false;
+    for (const DesignEntry& entry : d.entries) {
+        if (entry.component >= data_.components.size() || !componentAvailable(e, entry.component)) return false;
+        if (entry.mount >= 0 && !mountAvailable(e, static_cast<uint32_t>(entry.mount))) return false;
+    }
+    return true;
+}
+
 bool Rules::techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const {
     return techAreaOpen(s, e, a) && meets(e, tech(a).requirements);
 }

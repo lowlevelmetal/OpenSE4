@@ -127,7 +127,11 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     full.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     std::string suspicion;
     if (rng.range(1, kSuspectRoll) == 1) suspicion = suspectLine(full.sourceEmpireName);
-    projectMessages(ctx, p, source, target, full, "The operation succeeded.", "A hostile intelligence operation struck us.", suspicion, where, rng);
+    // An effect that tells nobody (Planet - Conditions Change) leaves the
+    // victim unaware; the source still hears of its success (inferred, spec 05
+    // open question 38).
+    projectMessages(ctx, p, source, out.silent ? EmpireId{} : target, full, "The operation succeeded.", "A hostile intelligence operation struck us.",
+                    suspicion, where, rng);
     if (!out.report.empty()) {
         std::string text;
         for (const auto& line : out.report) text += (text.empty() ? "" : "\n") + line;
@@ -148,8 +152,9 @@ bool isDefense(const Rules& r, uint32_t project) { return effectOf(r, project) =
 
 int requirementLevel(const Rules& r, uint32_t project) {
     if (project >= r.data().intelProjects.size()) return 0;
+    // The sum of the levels of the project's tech block (spec 05 §2.4, confirmed: binary).
     int level = 0;
-    for (const auto& q : r.data().intelProjects[project].requirements) level = std::max(level, q.level);
+    for (const auto& q : r.data().intelProjects[project].requirements) level += q.level;
     return level;
 }
 

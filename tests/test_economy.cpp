@@ -1476,10 +1476,11 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     const Colony& rebel = *s.colony(farId);
     CHECK(rebel.owner == id);
     CHECK(rebel.homeworld);
-    CHECK(rebel.anger == 80);
+    CHECK(rebel.anger == effects::kRebelAnger);  // spec 05 §2.3
     CHECK(rebel.population[0].race == id);
     CHECK(s.empire(id).kind == PlayerKind::Computer);
-    CHECK(s.empire(id).relation(kMe).treaty == Treaty::War);
+    CHECK_FALSE(s.empire(id).relation(kMe).contact);  // it meets the empires that detect it
+    CHECK(s.empire(id).relation(kMe).treaty == Treaty::None);
     for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
     CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 1);
     std::vector<EmpireOrders> none;

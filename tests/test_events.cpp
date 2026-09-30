@@ -4,7 +4,10 @@
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "game/ai.hpp"
+#include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/events.hpp"
 #include "game/intel.hpp"
 #include "game/query.hpp"
@@ -215,21 +218,45 @@ TEST_CASE("events: one roll for the whole galaxy, none before 2402.0, types with
 }
 
 TEST_CASE("events: targets come from the whole galaxy") {
+    // Planet events draw every colony, of any empire, and nothing else (spec 05 §4).
     auto r = rulesWith({event(Effect::PlanetValueChange, 5)});
     GameState s = newPoliticsGame();
-    // Most planets belong to nobody, and they can be hit too.
-    std::map<bool, int> hits;
+    std::map<EmpireId, int> hits;
     Rng rng(4);
     for (int i = 0; i < 300; ++i) {
         const auto t = events::pickEventTarget(*r, s, 0, rng);
         REQUIRE(t);
         REQUIRE(t->object.valid());
-        ++hits[s.colony(t->object) != nullptr];
-        if (const Colony* c = s.colony(t->object)) CHECK(t->empire == c->owner);
-        else CHECK_FALSE(t->empire.valid());
+        const Colony* c = s.colony(t->object);
+        REQUIRE(c);
+        CHECK(t->empire == c->owner);
+        ++hits[c->owner];
     }
-    CHECK(hits[false] > 0);
-    CHECK(hits[true] > 0);
+    CHECK(hits.size() == 3);
+
+    // Ship events draw ships, bases and unit groups in space.
+    auto ships = rulesWith({event(Effect::ShipDamage, 5)});
+    const Rules& pr = politicsRules();
+    const DesignId sat = addTestDesign(s, pr, kB, "Sat", "Test Satellite Hull", {"Test Armor Plate"});
+    s.vehicles.clear();
+    const VehicleId group = addTestVehicle(s, pr, sat, locationOf(s.galaxy, homeworld(s, kB).planet)).id;
+    const auto t = events::pickEventTarget(*ships, s, 0, rng);
+    REQUIRE(t);
+    CHECK(t->vehicle == group);
+    CHECK(t->empire == kB);
+
+    // Political events draw every empire number, destroyed ones included.
+    auto politics = rulesWith({event(Effect::PoliticsTreatyInfo, 1)});
+    s.empire(kB).alive = false;
+    s.empire(kC).alive = false;
+    std::map<EmpireId, int> empires;
+    for (int i = 0; i < 300; ++i)
+        if (const auto e = events::pickEventTarget(*politics, s, 0, rng)) ++empires[e->empire];
+    CHECK(empires.size() == 3);
+    // ... but they run with no third empire, so they achieve nothing.
+    TurnContext ctx = context(*politics, s);
+    REQUIRE(events::trigger(ctx, 0, onEmpire(kA), rng));
+    CHECK_FALSE(hasLog(s, kA, "Omen"));
 }
 
 TEST_CASE("events: an immediate event changes the state and informs the owner") {
@@ -271,11 +298,14 @@ TEST_CASE("events: timed events warn first and strike exactly N turns later") {
     s.turn = 3;
     eventStep(ctx);
     CHECK(s.pendingEvents.empty());
-    CHECK(homeworld(s, kA).totalPopulation() == pop - 100);
+    // -100 with a spread of ± trunc(100 / 5).
+    const int64_t lost = pop - homeworld(s, kA).totalPopulation();
+    CHECK(lost >= 80);
+    CHECK(lost <= 120);
     CHECK(hasMood(ctx, kA, "1M Population Killed"));
     const LogEntry* done = findLog(s, kA, "Omen");
     REQUIRE(done);
-    CHECK(done->text.find(": 100 (") != std::string::npos);
+    CHECK(done->text.find(std::format(": {} (", lost)) != std::string::npos);
 
     // A timed event whose target no longer exists is dropped silently.
     auto shipRules = rulesWith({event(Effect::ShipDamage, 5, "Low", "Owner", 2)});
@@ -321,8 +351,7 @@ TEST_CASE("events: the luck roll applies to every event, good or bad") {
     const Rules& pr = politicsRules();
     auto r = rulesWith({event(Effect::PoliticsTreatyInfo, 1)});  // empire targets
     GameState s = newPoliticsGame();
-    s.empire(kB).alive = false;
-    s.empire(kC).alive = false;  // A is the only candidate
+    s.empires.resize(1);  // A is the only candidate (destroyed empires would be drawn too)
     auto passes = [&](uint64_t seed) {
         Rng rng(seed);
         int n = 0;
@@ -362,10 +391,17 @@ TEST_CASE("events: a star event rolls luck for every empire present, a total of 
     const int n = passes(2);
     CHECK(n > 430);
     CHECK(n < 550);
-    // High and Catastrophic star events spare the systems of home planets.
+    // A ship there does not make its owner present: only colonies do.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == kB) v.location = locationOf(s.galaxy, homeworld(s, kA).planet);
+    s.empire(kB).race.traits = {traitIndex(pr, "Test Half Luck")};
+    s.empire(kA).race.traits.clear();
+    CHECK(passes(3) == 1000);
+    // High and Catastrophic star events spare only the exact home planet
+    // locations, and a star practically never sits on one.
     auto high = rulesWith({event(Effect::StarDestroyed, 1, "High")});
     Rng rng(5);
-    CHECK_FALSE(events::pickEventTarget(*high, s, 0, rng).has_value());
+    CHECK(events::pickEventTarget(*high, s, 0, rng).has_value());
 }
 
 TEST_CASE("events: High and Catastrophic planet events spare homeworlds") {
@@ -412,11 +448,13 @@ TEST_CASE("events: immunities") {
     Rng rng(1);
     s.empire(kA).race.traits.push_back(traitIndex(r, "Test Machine Folk"));
     s.empire(kB).race.traits.push_back(traitIndex(r, "Test Stoics"));
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPlague, onEmpire(kA), rng).has_value());
-    CHECK(effects::pickTarget(r, s, Effect::PlanetPlague, onEmpire(kB), rng).has_value());
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPopulationRiot, onEmpire(kB), rng).has_value());
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPopulationAngerChange, onEmpire(kB), rng).has_value());
-    CHECK(effects::pickTarget(r, s, Effect::PlanetPopulationRiot, onEmpire(kC), rng).has_value());
+    // An "Any" pick does not look at immunities (spec 05 §2.3): the handler does.
+    CHECK(effects::pickTarget(r, s, Effect::PlanetPlague, onEmpire(kA), rng).has_value());
+    CHECK_FALSE(hit(s, Effect::PlanetPlague, onEmpire(kA), 4).applied);
+    CHECK(effects::pickTarget(r, s, Effect::PlanetPopulationRiot, onEmpire(kB), rng).has_value());
+    CHECK_FALSE(hit(s, Effect::PlanetPopulationRiot, onEmpire(kB), 1).applied);
+    CHECK_FALSE(hit(s, Effect::PlanetPopulationAngerChange, onEmpire(kB), 10).applied);
+    CHECK(hit(s, Effect::PlanetPopulationRiot, onEmpire(kC), 1).applied);
 
     // A clinic in the system prevents plagues up to its level.
     homeworld(s, kC).facilities.push_back(facilityIndex(r, "Test Clinic"));
@@ -459,9 +497,14 @@ TEST_CASE("events: ship effects") {
     CHECK(s.vehicle(id)->experience == 0);
     CHECK(out.actual == -30);
 
+    // Cargo Damage destroys the whole cargo; the message shows |Amount|.
+    out = hit(s, Effect::ShipCargoDamage, target(), -7);
+    CHECK_FALSE(out.applied);  // nothing aboard
     s.vehicle(id)->cargo.population = {{kA, 10}};
-    out = hit(s, Effect::ShipCargoDamage, target(), 1);  // "some": half
-    CHECK(s.vehicle(id)->cargo.totalPopulation() == 5);
+    out = hit(s, Effect::ShipCargoDamage, target(), -7);
+    CHECK(out.applied);
+    CHECK(out.actual == 7);
+    CHECK(s.vehicle(id)->cargo.empty());
 
     // Orders Change: one order to move to a random system of the quadrant.
     std::vector<uint8_t> destinations(s.galaxy.systems.size(), 0);
@@ -534,51 +577,105 @@ TEST_CASE("events: planet effects") {
     auto target = [&](ObjectId o) { return onObject(kA, o); };
 
     SpaceObject& planet = s.galaxy.object(home);
-    // Conditions are hundredths of the 0–1.5 scale (spec 02 §2).
-    planet.conditions = 5;
+    // Conditions (hundredths of the 0–1.5 scale, spec 02 §2) change by Amount
+    // tenths, within the scale (spec 05 §2.3).
+    planet.conditions = 50;
+    auto out = hit(s, Effect::PlanetConditionsChange, target(home), -3);
+    CHECK(planet.conditions == 20);
+    CHECK(out.actual == -30);
+    CHECK(out.silent);
     hit(s, Effect::PlanetConditionsChange, target(home), -8);
     CHECK(planet.conditions == 0);
     planet.conditions = 140;
-    hit(s, Effect::PlanetConditionsChange, target(home), 25);
+    hit(s, Effect::PlanetConditionsChange, target(home), 2);
     CHECK(planet.conditions == 150);
-    // Each value changes by the amount, within Minimum/Maximum Planet Percent
-    // Value (10 and 150 in the test settings).
+    {
+        // Any planet, colonized or not; the event tells nobody.
+        ObjectId free;
+        for (ObjectId o : s.galaxy.system(planet.system).objects)
+            if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) free = o;
+        REQUIRE(free.valid());
+        s.galaxy.object(free).conditions = 100;
+        auto rr = rulesWith({event(Effect::PlanetConditionsChange, 3)});
+        TurnContext ectx = context(*rr, s);
+        Rng erng(1);
+        effects::Target nobody;
+        nobody.object = free;
+        REQUIRE(events::trigger(ectx, 0, nobody, erng));
+        CHECK(s.galaxy.object(free).conditions == 130);
+        REQUIRE(events::trigger(ectx, 0, onObject(kA, home), erng));
+        CHECK_FALSE(hasLog(s, kA, "Omen"));
+    }
+    // Each value changes by the amount; a result below 0 becomes 0 and any
+    // other is pulled into Minimum/Maximum Planet Percent Value (10 and 150
+    // in the test settings), even one that was already outside.
     planet.value = {100, 145, 25};
-    auto out = hit(s, Effect::PlanetValueChange, target(home), -20);
+    out = hit(s, Effect::PlanetValueChange, target(home), -20);
     CHECK(planet.value == std::array<int, 3>{80, 125, 10});
     hit(s, Effect::PlanetValueChange, target(home), 30);
     CHECK(planet.value == std::array<int, 3>{110, 150, 40});
-    // Finite resources: the amount × 1,000 while that stays within ±500,000.
+    planet.value = {15, 200, 5};
+    hit(s, Effect::PlanetValueChange, target(home), -10);
+    CHECK(planet.value == std::array<int, 3>{10, 150, 0});
+    planet.value = {3, 200, 5};
+    hit(s, Effect::PlanetValueChange, target(home), 1);
+    CHECK(planet.value == std::array<int, 3>{10, 150, 10});
+    // Finite resources: the amount × 1,000 when that is strictly inside ±500,000.
     s.options.finiteResources = true;
     planet.value = {50000, 20000, 0};
     hit(s, Effect::PlanetValueChange, target(home), -10);
     CHECK(planet.value == std::array<int, 3>{40000, 10000, 0});
     hit(s, Effect::PlanetValueChange, target(home), 600);
     CHECK(planet.value == std::array<int, 3>{40600, 10600, 600});
+    hit(s, Effect::PlanetValueChange, target(home), 500);
+    CHECK(planet.value == std::array<int, 3>{41100, 11100, 1100});
+    hit(s, Effect::PlanetValueChange, target(home), 499);
+    CHECK(planet.value == std::array<int, 3>{540100, 510100, 500100});
     s.options.finiteResources = false;
 
+    // Population: Amount ± trunc(|Amount| / 5); a loss from the first group on.
     Colony& c = homeworld(s, kA);
-    c.population = {{kA, 300}, {kB, 100}};
-    TurnContext ctx = context(r, s);
-    Rng rng(5);
-    auto t = effects::pickTarget(r, s, Effect::PlanetPopulationChange, target(home), rng);
-    REQUIRE(t);
-    out = effects::apply(ctx, Effect::PlanetPopulationChange, *t, -100, rng);
-    CHECK(out.actual == 100);
-    CHECK(c.population == std::vector<PopulationGroup>{{kA, 225}, {kB, 75}});
-    CHECK(hasMood(ctx, kA, "1M Population Killed"));
-    CHECK(ctx.moodEvents.back().count == 100);
+    std::map<int64_t, int> losses;
+    for (uint64_t seed = 1; seed <= 200; ++seed) {
+        c.population = {{kA, 300}, {kB, 100}};
+        TurnContext ctx = context(r, s);
+        Rng rng(seed);
+        auto t = effects::pickTarget(r, s, Effect::PlanetPopulationChange, target(home), rng);
+        REQUIRE(t);
+        out = effects::apply(ctx, Effect::PlanetPopulationChange, *t, -100, rng);
+        CHECK(out.actual >= 80);
+        CHECK(out.actual <= 120);
+        CHECK(c.population == std::vector<PopulationGroup>{{kA, 300 - out.actual}, {kB, 100}});
+        CHECK(hasMood(ctx, kA, "1M Population Killed"));
+        CHECK(ctx.moodEvents.back().count == out.actual);
+        ++losses[out.actual];
+    }
+    CHECK(losses.begin()->first == 80);
+    CHECK(losses.rbegin()->first == 120);
+    c.population = {{kA, 30}, {kB, 100}};
+    out = hit(s, Effect::PlanetPopulationChange, target(home), -4);  // spread 0
+    CHECK(c.population == std::vector<PopulationGroup>{{kA, 26}, {kB, 100}});
+    out = hit(s, Effect::PlanetPopulationChange, target(home), -40);
+    CHECK(c.population[0].race == kB);
+    CHECK(c.totalPopulation() == 126 - out.actual);
+    // A gain goes only to a group of the owner's race: none here, so none is made.
+    out = hit(s, Effect::PlanetPopulationChange, target(home), 50);
+    CHECK(out.actual == 0);
+    CHECK(c.population.size() == 1);
+    c.population.insert(c.population.begin(), PopulationGroup{kA, 10});
     out = hit(s, Effect::PlanetPopulationChange, target(home), 1000000);
     CHECK(c.totalPopulation() == maxPopulation(r, s, c));
 
-    // The amount is in tenths; anger is a whole percent, and a homeworld is a
-    // capital, capped at 80 (spec 02 §4).
+    // Anger changes by Amount in whole percent; a homeworld is a capital,
+    // capped at 80 (spec 02 §4).
     c.anger = 40;
     hit(s, Effect::PlanetPopulationAngerChange, target(home), 25);
-    CHECK(c.anger == 42);
+    CHECK(c.anger == 65);
     c.anger = 70;
     hit(s, Effect::PlanetPopulationAngerChange, target(home), 200);
     CHECK(c.anger == 80);
+    hit(s, Effect::PlanetPopulationAngerChange, target(home), -500);
+    CHECK(c.anger == 0);
     c.anger = 10;
     hit(s, Effect::PlanetPopulationRiot, target(home), 1);
     CHECK(c.anger == 80);
@@ -587,34 +684,97 @@ TEST_CASE("events: planet effects") {
     CHECK(moodFromAnger(c.anger) == Mood::Rioting);
     c.homeworld = true;
 
+    // Facilities: min(Amount, facilities); nothing for an Amount of 0 or less.
     const size_t facilities = c.facilities.size();
     REQUIRE(facilities >= 2);
+    CHECK_FALSE(hit(s, Effect::PlanetFacilityDamage, target(home), 0).applied);
+    CHECK(c.facilities.size() == facilities);
     out = hit(s, Effect::PlanetFacilityDamage, target(home), 2);
     CHECK(out.actual == 2);
     CHECK(c.facilities.size() == facilities - 2);
     CHECK_FALSE(out.tokens.facilityName.empty());
+    out = hit(s, Effect::PlanetFacilityDamage, target(home), 1000);
+    CHECK(out.actual == static_cast<int64_t>(facilities - 2));
+    CHECK(c.facilities.empty());
 
-    c.cargo.population = {{kA, 8}};
-    hit(s, Effect::PlanetCargoDamage, target(home), 1000);
-    CHECK(c.cargo.empty());
+    // Cargo: Amount damage points, the people first (10 per million in the
+    // test settings), then a hull-damaging hit on the units.
+    CHECK_FALSE(hit(s, Effect::PlanetCargoDamage, target(home), 100).applied);  // nothing aboard
+    c.cargo.population = {{kA, 8}, {kB, 50}};
+    CHECK_FALSE(hit(s, Effect::PlanetCargoDamage, target(home), 0).applied);
+    out = hit(s, Effect::PlanetCargoDamage, target(home), 105);
+    CHECK(out.actual == 10);
+    CHECK(c.cargo.population == std::vector<PopulationGroup>{{kB, 48}});
+    const DesignId sat = addTestDesign(s, r, kA, "Guard Sat", "Test Satellite Hull", {"Test Armor Plate"});
+    const int64_t hp = combat::detail::unitHitPoints(r, s.design(sat), combat::DamageType::Normal);
+    c.cargo.units = {{sat, 3}};
+    out = hit(s, Effect::PlanetCargoDamage, target(home), static_cast<int>(480 + hp - 1));
+    CHECK(c.cargo.population.empty());  // 48 million absorb 480
+    CHECK(c.cargo.unitCount(sat) == 3);  // the rest is short of one unit
+    c.cargo.population = {{kA, 1}};
+    out = hit(s, Effect::PlanetCargoDamage, target(home), static_cast<int>(10 + 2 * hp));
+    CHECK(c.cargo.unitCount(sat) == 1);
+    CHECK(s.design(sat).lost == 2);
 
-    // As an event, a rebel colony breaks away as a new independent empire.
+    // As an event, a rebel colony breaks away as a new independent empire: a
+    // copy of the former owner, named after its system, in contact with nobody.
     const ObjectId other = secondColony(s, kA, 50);
+    s.colony(other)->population = {{kA, 30}, {kB, 20}};
+    s.colony(other)->facilities = homeworld(s, kA).facilities;
+    s.empire(kA).researchEvenly = false;
+    s.empire(kA).research = {{techArea(r, "Test Beams"), 200}};
+    const std::string systemName = s.galaxy.system(s.galaxy.object(other).system).name;
     out = hit(s, Effect::PlanetPopulationRebel, target(other), 1);
     CHECK(out.applied);
     REQUIRE(s.empires.size() == 4);
     const EmpireId rebel{3u};
+    const Empire& reb = s.empire(rebel);
     REQUIRE(s.colony(other));
-    CHECK(s.colony(other)->owner == rebel);
-    CHECK(s.colony(other)->homeworld);
-    CHECK(s.empire(rebel).alive);
-    CHECK(s.empire(rebel).kind == PlayerKind::Computer);
-    CHECK(s.empire(rebel).race.name == s.empire(kA).race.name);
-    CHECK(s.empire(rebel).techLevels == s.empire(kA).techLevels);
-    CHECK(s.empire(rebel).relation(kA).treaty == Treaty::War);
-    CHECK(s.empire(kA).relation(rebel).contact);
-    for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
-    CHECK(s.empire(rebel).knowledge.explored.size() == s.galaxy.systems.size());
+    const Colony& free = *s.colony(other);
+    CHECK(free.owner == rebel);
+    CHECK(free.homeworld);
+    CHECK(free.anger == effects::kRebelAnger);
+    CHECK(free.population == std::vector<PopulationGroup>{{rebel, 50}});
+    CHECK(reb.alive);
+    CHECK(reb.name == systemName);
+    CHECK(reb.kind == PlayerKind::Computer);
+    CHECK(reb.ministerAll);
+    CHECK(reb.race.name == s.empire(kA).race.name);
+    CHECK(reb.race.nativeSurface == s.galaxy.object(other).surface);
+    CHECK(reb.race.atmosphere == s.galaxy.object(other).atmosphere);
+    CHECK(reb.techLevels == s.empire(kA).techLevels);
+    CHECK(reb.research.size() == 1);
+    CHECK_FALSE(reb.researchEvenly);
+    CHECK(reb.designs.empty());
+    CHECK(reb.log.empty());
+    CHECK(reb.aiDifficulty == ai::rebelDifficulty(s));
+    for (const Empire& e : s.empires) {
+        CHECK(e.relations.size() == s.empires.size());
+        if (e.id == rebel) continue;
+        CHECK_FALSE(reb.relation(e.id).contact);
+        CHECK_FALSE(e.relation(rebel).contact);
+        CHECK(reb.relation(e.id).treaty == Treaty::None);
+    }
+    for (const StarSystem& sys : s.galaxy.systems) CHECK(reb.hasExplored(sys.id) == (sys.id == s.galaxy.object(other).system));
+    // Its stocks start at 4 × its production.
+    const diplomacy::Generated made = diplomacy::generated(r, s, rebel);
+    CHECK(reb.stockpile == Resources{made.resources[Resource::Minerals] * 4, made.resources[Resource::Organics] * 4,
+                                     made.resources[Resource::Radioactives] * 4});
+    CHECK(reb.researchPool == made.research * 4);
+    CHECK(reb.intelPool == made.intelligence * 4);
+    // Another rebellion in a system whose name is taken gets a name from the list.
+    {
+        ruleset::Ruleset rs = buildPoliticsRuleset();
+        rs.names.empireNames = {"Free Traders"};
+        const Rules named{std::move(rs)};
+        GameState copy = s;
+        const ObjectId again = secondColony(copy, kA, 20);
+        REQUIRE(copy.galaxy.object(again).system == copy.galaxy.object(other).system);
+        TurnContext nctx = context(named, copy);
+        const EmpireId id = effects::breakAway(nctx, again);
+        REQUIRE(id.valid());
+        CHECK(copy.empire(id).name == "Free Traders");
+    }
 
     // The new empire plays its turns like any other.
     std::vector<EmpireOrders> none;
