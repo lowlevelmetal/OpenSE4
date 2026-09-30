@@ -126,7 +126,7 @@ void recordDecisions(TurnContext& ctx, EmpireId id, Rng& rng) {
 
 // Turns since war, treaty age, and the queues forgotten every 10 turns.
 void keepCounters(GameState& s, Empire& e) {
-    const bool forget = s.turn % 10 == 0;
+    const bool forget = aiDate(s) % 10 == 0;  // "every 10 turns" reads the date the ministers see
     for (size_t i = 0; i < e.relations.size(); ++i) {
         if (i == e.id.index()) continue;
         Relation& rel = e.relations[i];
@@ -180,26 +180,6 @@ struct Decision {
     AiMemory memory;
 };
 
-std::vector<int> jumpsFromOver(const GameState& s, EmpireId id, SystemId from) {
-    std::vector<int> dist(s.galaxy.systems.size(), -1);
-    if (!from.valid() || from.index() >= dist.size()) return dist;
-    std::deque<SystemId> queue{from};
-    dist[from.index()] = 0;
-    while (!queue.empty()) {
-        const SystemId at = queue.front();
-        queue.pop_front();
-        for (ObjectId wp : s.galaxy.system(at).objects) {
-            const SpaceObject& o = s.galaxy.object(wp);
-            if (o.kind != ObjectKind::WarpPoint || !o.destination.valid() || !sight::knowsWarpLink(s, id, wp)) continue;
-            const SystemId to = s.galaxy.object(o.destination).system;
-            if (dist[to.index()] >= 0) continue;
-            dist[to.index()] = dist[at.index()] + 1;
-            queue.push_back(to);
-        }
-    }
-    return dist;
-}
-
 Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiProfile& prof) {
     const Empire& e = s.empire(id);
     Decision d{stateOf(e), e.aiMemory};
@@ -228,18 +208,17 @@ Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiP
             if (attacking) m.afterAttack = 1;
             return AiState::Infrastructure;
         }
-        if (inState >= 4) {  // from the 5th turn in this state
-            std::vector<uint8_t> near(s.galaxy.systems.size(), 0);
-            int64_t theirs = 0;
+        // Once 5 full turns have been spent in this state (from the 6th turn):
+        // our strength within 4 jumps of each target, counted per target, so a
+        // system near two targets counts twice (confirmed: binary).
+        if (inState >= 5) {
+            int64_t theirs = 0, mine = 0;
             for (SystemId t : m.targets) {
                 theirs += hostile(t);
-                const std::vector<int> j = jumpsFromOver(s, id, t);
+                const std::vector<int> j = jumpsOver(s, t);
                 for (size_t i = 0; i < j.size(); ++i)
-                    if (j[i] >= 0 && j[i] <= 4) near[i] = 1;
+                    if (j[i] <= 4) mine += sit.ours[i];
             }
-            int64_t mine = 0;
-            for (size_t i = 0; i < near.size(); ++i)
-                if (near[i]) mine += sit.ours[i];
             if (!(mine > 3 * theirs)) return AiState::Infrastructure;
         }
         return std::nullopt;
@@ -265,10 +244,12 @@ Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiP
             if (!targets.empty()) {
                 m.targets = targets;
                 m.staging = {};
-                const std::vector<int> j = jumpsFromOver(s, id, targets.front());
-                int best = -1;
+                // The staging system: of our territory, other than the first
+                // target, the fewest jumps to it over every link.
+                const std::vector<int> j = jumpsOver(s, targets.front());
+                int best = 0;
                 for (size_t i = 0; i < sit.territory.size(); ++i)
-                    if (sit.territory[i] && SystemId{i} != targets.front() && j[i] >= 0 && (best < 0 || j[i] < best)) {
+                    if (sit.territory[i] && SystemId{i} != targets.front() && (!m.staging.valid() || j[i] < best)) {
                         best = j[i];
                         m.staging = SystemId{i};
                     }
@@ -313,10 +294,10 @@ Decision decide(const GameState& s, EmpireId id, const Situation& sit, const AiP
                 break;
             }
             int64_t around = 0;
-            const std::vector<int> j = jumpsFromOver(s, id, m.secured);
+            const std::vector<int> j = jumpsOver(s, m.secured);
             for (size_t i = 0; i < j.size(); ++i)
                 if (j[i] == 1) around = std::max(around, sit.hostile[i]);
-            if (ours(m.secured) > std::max<int64_t>(10, around)) {
+            if (ours(m.secured) > std::max<int64_t>(10 * kStrengthScale, around)) {
                 m.afterAttack = 1;
                 next = AiState::Infrastructure;
             }
@@ -368,14 +349,15 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     const bool belowNonAggression = treatyIsHostile(rel.treaty);
     const std::vector<SystemId>& ours = in.territory[e.id.index()];
 
-    // 1. Combat. Attacking or defending is judged by where the battle was:
-    // outside our territory we are the attacker (inferred; the engine does not
-    // record who started a battle). Only the battles of the counted turn:
-    // turn-based games keep two turns' battles.
+    // 1. Combat. We are Attacking when we were the "current player" when the
+    // battle was fought, wherever it was (confirmed: binary): in a turn-based
+    // game the player whose turn it was, in a simultaneous one the highest
+    // player number. Only the battles of the counted turn: turn-based games
+    // keep two turns' battles.
     if (belowNonAggression)
         for (const CombatRecord& rec : s.combats) {
             if (!in.counts(rec.turn) || !involves(rec, e.id) || !involves(rec, x.id)) continue;
-            const bool attacking = !contains(ours, rec.location.system);
+            const bool attacking = rec.currentPlayer == e.id;  // a record from an old save names nobody (inferred)
             switch (outcomeFor(rec, e.id)) {
                 case Outcome::Won: add(attacking ? t.attackingWon : t.defendingWon); break;
                 case Outcome::Lost: add(attacking ? t.attackingLost : t.defendingLost); break;

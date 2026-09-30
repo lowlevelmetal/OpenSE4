@@ -2382,16 +2382,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     systems, 120 turns: organics and radioactives at their caps, minerals piling up once an
     empire stops expanding) comes from the same rules: the budget is one turn of net income,
     queues take items only while their backlog is under 5 turns, facilities go only into
-    empty colony queues, and every queue is bounded by its rates. OpenSE4 differs in the
-    backlog test (it lets more cheap items into a queue), in the date its ministers see, in
-    the upgrade budget and in the tariffs subtracted from the budget (PARITY_GAPS); none of
-    these is a missing way to spend. The emergent pace can only be compared by observing an
+    empty colony queues, and every queue is bounded by its rates. OpenSE4 once differed in
+    the backlog test, in the date its ministers see, in the upgrade budget and in the
+    tariffs subtracted from the budget; it follows the rules above since 2026-09-30. None of
+    these was a missing way to spend. The emergent pace can only be compared by observing an
     all-computer game on the stock data: each empire's stock of the three resources at
     turns 40, 80 and 100; its planets, ships, bases and yards at those turns; how many
     items its yard queues hold (never more than four items of several turns each in the
     original); how many turns it spends in Defend (Short Term); whether it scraps ships
     while it builds others; whether it ever spends more in a turn than one turn of net
-    income; and whether its colonies are ever founded empty.
+    income; and whether its colonies are ever founded empty. Since 2026-09-30 OpenSE4
+    follows these rules too.
 22. **Repair and resupply orders** (§7.5): answered (confirmed: binary). The original
     interrupts orders, Colonize included: a vehicle that needs repair loses all its orders
     and leaves its fleet every turn, even when there is no yard to send it to (it is then
@@ -2399,7 +2400,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     Destroy Star ships, and always finds a destination (a depot, else our nearest colony,
     else home). The thresholds are not percentages of damage or supply: §7.5 gives the
     repair tests by design type and the resupply test by supply distance. OpenSE4's
-    ministers differ (PARITY_GAPS).
+    ministers follow these rules since 2026-09-30.
 23. **Colonists on AI colony ships** (§7.5): answered (confirmed: binary). The Colonization
     minister orders Load Cargo (population) where the ship is when it has cargo space and
     carries no people, then Move To and Colonize, so an AI colony starts with the people
@@ -2407,9 +2408,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 24. **Turn order details** (§8): answered (confirmed: binary). Item by item:
     - The turn number: the original advances the date at step 3, and every later step sees
       the new date, the ministers included (§7.5 "The date"). OpenSE4 keeps the old number
-      until the end of the turn and hands the advanced date to the steps that use it, but
-      its computer players plan with the old number, so their "every N turns" rules are
-      one turn out of phase in simultaneous games (PARITY_GAPS).
+      until the end of the turn and hands the advanced date to the steps that use it; its
+      ministers read the date they would see (`ai::aiDate`: the advanced date in a
+      simultaneous game, the unadvanced one in a turn-based game).
     - Colony ships: the original carries out Colonize orders during the movement phases, on
       the ship's acting days (§8 step 5). OpenSE4 founds the colonies after the 30 phases
       (PARITY_GAPS).
@@ -2437,8 +2438,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     and Intelligence ministers match OpenSE4 in every rule that drives research: funding in
     queue order, no repeat, maxed areas dropped, the choosing gate, the first matching row,
     the share-total stop, the random fallback and the intelligence minister. Two small
-    differences (PARITY_GAPS): the gate tests the research pool rather than this turn's
-    production, and mine sweeping queues only the first tech requirement of the first
+    differences were fixed on 2026-09-30: the gate tests the research pool rather than this
+    turn's production, and mine sweeping queues only the first tech requirement of the first
     Mine Sweeping component, and only when the research file has rows. The pace (5 to 37
     levels by turn 120 in OpenSE4's games, a single project in most turns) follows from the
     stock rows of 100 % and the research points. To compare it, observe an all-computer
@@ -2455,16 +2456,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     file" gives the format (a reserve record, then `Colony Type` rows with `Entry N Type` and
     `Entry N Maximum in kT`, no AI state) and when it builds (after the vehicle list, one
     batch per colony with an empty queue and no free facility slot, from a fresh budget).
-    OpenSE4's reading differs (PARITY_GAPS); the stock install has no such file.
+    OpenSE4 reads it so since 2026-09-30; the stock install has no such file.
 28. **Allowed planet type and atmosphere** (§7.1, random race build): answered (confirmed:
     binary). Every pair except a Gas Giant with no atmosphere is allowed; a pair that is not
-    is redrawn from the five atmospheres and three types with no limit. OpenSE4 consults the
-    data set's planet records instead (PARITY_GAPS).
+    is redrawn from the five atmospheres and three types with no limit. OpenSE4 matches
+    since 2026-09-30.
 29. **Planet launches** (§7.5): answered (confirmed: binary). The kept share is counted for
     the whole empire (units in space and in every cargo); the excess is launched colony by
     colony in planet order, each colony launching its whole stock; drones go without a
     target, and idle drones in space are then sent after targets (§7.5 "Mines, satellites
-    and drones"). OpenSE4 differs (PARITY_GAPS).
+    and drones"). OpenSE4's ministers match since 2026-09-30; a drone launch without a
+    target is spec 03's movement matter (PARITY_GAPS, "Drones").
 30. **What the History window records** (§3.4, §5): closed as an OpenSE4 extension; engine
     choice stands. The original keeps a history file only for human players, extended each
     turn with the previous turn's accepted treaties, broken treaties, declarations of war,
@@ -2524,7 +2526,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 34. **Transports and mixed races** (§7.5): answered (confirmed: binary). The load takes
     every race the planet can spare, in list order, but the destination must let every
     carried race breathe, or already be domed and host one of them, so a delivery never
-    domes a colony. OpenSE4 checks only the first race (PARITY_GAPS).
+    domes a colony. OpenSE4 matches since 2026-09-30.
 35. **Colony ships whose target is gone** (§7.5): answered (confirmed: binary). The
     original does not re-target them: they keep flying, the Colonize order fails on
     arrival and clears the orders, and the ship is planned again later. OpenSE4 matches.
@@ -2537,3 +2539,43 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     and game code. Turn-based games have no `.plr` at all. OpenSE4's `.plr` is a command
     list with checksums, written next to the `.gam`, and its drafts folder, password rule
     and turn-based files have no counterpart.
+37. **Computer-player details the settled rules leave open** (§7.2–§7.5): open. OpenSE4
+    implements §7 as settled on 2026-09-30 and makes these choices where the text is
+    silent (each marked "(inferred)" in `ai*.cpp`); observing the original would settle
+    them:
+    - Which messages count for "the newest unanswered political message" and for "a
+      message from X is still waiting": those dated this turn or the turn before, as the
+      log the anger step reads (§7.3). Is an older message ever answered?
+    - A transport with nothing aboard never delivers; when its load step finds nothing it
+      tries the delivery only when it carries people.
+    - The reserve quirk of the units file: an empire whose Ship Construction minister acts
+      but that has no units file leaves the reserve as the previous empire's units step
+      left it. OpenSE4 cannot tell a missing player who forbade AI changes from one whose
+      ministers acted, and counts both as acting.
+    - "Lacks a part it needs to operate" (Repair minister, fleet fitness): no control (a
+      bridge, life support and crew quarters, or a Master Computer), or no working engine
+      on a hull that uses engines.
+    - The Repair minister skips mothballed vehicles; among yards at the same travel
+      distance the colonies come before the yard ships.
+    - A fleet is "on unlimited supply" when every member is.
+    - The Space Yard Ship's test "no own yard in its sector" ignores the yard ship itself,
+      so it can wait beside the vehicle it serves. "Movement left" is the movement the
+      ship still has when the ministers act.
+    - Open Warp Point: when 100 draws find no empty edge sector, the last one drawn is
+      used. Destroy Black Hole and Destroy Nebulae ships head for the sector (0, 0) of the
+      system.
+    - Close Warp Point: we "see" a hostile empire in a system where one of its vehicles is
+      visible to us or, in an explored system, where it has a colony.
+    - Mine and satellite layers: a warp point whose far system holds several other empires
+      takes the largest of their weights; the per-sector cap counts every unit group of
+      ours at that sector; "star-destroying designs" are known foreign designs with
+      `Destroy Star`; the "random star's sector" is a star of one of our colony systems.
+    - Design names: when every name of every round is taken OpenSE4, which refuses a
+      design without a name, uses "Design <counter + 1>".
+    - An accepted demand whose `Response … YES …` pool is empty sends no Accept Demand
+      message, and OpenSE4 then does not carry the demand out either. Does the original
+      carry out a demand it accepted without a reply?
+    - A request for a gift or tribute that is accepted but for which nothing can be given
+      (or gifts are off) gets no reply.
+    - Old saves: a battle recorded before `CombatRecord::currentPlayer` existed counts as
+      Defending for everyone.

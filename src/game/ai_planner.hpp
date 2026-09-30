@@ -37,12 +37,17 @@ enum class Role : uint8_t {
     SatelliteLayer, Sweeper, Boarding, Kamikaze, YardShip, Stellar, Unit
 };
 
+// Strength ratings (spec 05 §7.2) are kept in tenths of a point: the half
+// shields keep their fraction and a planet's shields count one fifth.
+inline constexpr int64_t kStrengthScale = 10;
+// Every AI jump count (spec 05 §7.2): an unreachable system is 999 jumps away.
+inline constexpr int kUnreachable = 999;
+
 struct DesignInfo {
     bool ready = false;
-    std::string aiType;     // one of the 39 AI design types, or empty
+    std::string aiType;     // one of the 39 AI design types (every design has one, spec 05 §7.5)
     Role role = Role::Other;
     DesignStats stats;
-    int64_t rating = 0;     // spec 05 §7.2 strength rating of an undamaged vehicle
 };
 
 struct Link {
@@ -65,8 +70,24 @@ struct Candidate {
     EmpireId owner;
     int jumps = 0;
     int anger = 0;
-    int64_t value = 0;     // strength at that spot plus the planet's defence
+    int64_t value = 0;     // tenths: the foreign ratings in its sector plus the planet's defence
 };
+
+// An enemy-in-territory entry of the defend list (spec 05 §7.2): one per
+// (system, sector, owner).
+struct DefendEntry {
+    Location where;
+    EmpireId owner;
+    int64_t threat = 0;        // tenths
+    int jumps = 0;             // from home
+    int64_t ourMaxPopulation = 0;  // our colonies' maximum population in the sector
+    bool planetSector = false; // the sector holds a planet (not an asteroid field)
+    Threat latest;             // the entry's latest object
+};
+// The entries' order (spec 05 §7.2): fewest jumps, our colonies' maximum
+// population, planet sectors first (the weaker threat first among them),
+// then the threat itself, strongest first unless `weakestFirst`.
+void sortDefendEntries(std::vector<DefendEntry>& entries, bool weakestFirst);
 
 // A planet the colonization minister could settle (spec 05 §7.5).
 struct ColonyTarget {
@@ -79,6 +100,7 @@ struct ColonyTarget {
     int size = 0;
     int64_t value = 0;
     bool settleable = false;   // we have the colony module for its surface
+    bool colonized = false;    // a hostile empire's colony without population
 };
 
 struct Situation {
@@ -86,12 +108,13 @@ struct Situation {
     std::vector<uint8_t> territory;       // per system
     std::vector<int64_t> ours;            // our strength per system
     std::vector<int64_t> hostile;         // strength of the hostile empires we have met, per system
-    std::vector<int> homeJumps;           // warp jumps from home over known links (-1 = unreachable)
+    std::vector<int> homeJumps;           // warp jumps from home over every link (kUnreachable = none)
     std::vector<Threat> enemyInTerritory;
     std::vector<Threat> enemyNearby;      // hostile mine fields in our territory
     std::vector<Candidate> candidates;    // attack candidates, best first
     std::vector<ObjectId> frontier;       // warp points into unexplored space
     std::vector<ObjectId> freeFrontier;   // ... that none of our ships is headed for
+    std::vector<DefendEntry> defendEntries;  // in the defend list's order (strongest threat first)
     std::vector<SystemId> defend;         // systems to defend, most urgent first
     std::vector<ColonyTarget> colonyTargets;  // in the colonization order
     bool contact = false;                 // we have met a living empire
@@ -113,8 +136,15 @@ std::vector<SystemId> computeTerritory(const GameState& s, EmpireId e);
 bool notices(const GameState& s, EmpireId e, uint64_t object);
 inline uint64_t vehicleKey(VehicleId v) { return (uint64_t{1} << 40) | v.value; }
 inline uint64_t planetKey(ObjectId o) { return (uint64_t{2} << 40) | o.value; }
-// Spec 05 §7.2 strength rating of one vehicle (damaged weapons do not count).
+// Spec 05 §7.2 strength rating of one vehicle, in tenths (kStrengthScale):
+// undamaged weapons and Boarding Attack, half the shields when either is
+// above 0, plus the fighters in its cargo; a unit group its number of units.
 int64_t vehicleRating(const Rules& r, const GameState& s, const Vehicle& v);
+// The summed best damage at any range over a design's weapon parts.
+int64_t designWeaponDamage(const Rules& r, const Design& d);
+// Warp jumps from `from` over every link of the map, known or not
+// (kUnreachable when there is no route), as every AI jump count (spec 05 §7.2).
+std::vector<int> jumpsOver(const GameState& s, SystemId from);
 // Military hostility (spec 05 §7.2): below Non-Aggression, or not met.
 bool hostileTo(const Empire& e, EmpireId other);
 // A home system: the homeworld's, else the first colony's, else invalid.
@@ -135,6 +165,7 @@ public:
     AiState state;
     int difficulty = kDifficultyMedium;
     Rng rng;
+    uint32_t date = 0;      // the date the ministers see (aiDate, spec 05 §7.5 "The date")
     bool neutral = false;
     std::vector<int64_t> scores;   // politicalScores
     Situation sit;
@@ -151,28 +182,29 @@ public:
     bool controlsVehicle(const Vehicle& v, Minister m) const;
     bool controlsFleet(const Fleet& f, Minister m) const;
 
-    // ---- Map knowledge (only what the empire knows).
+    // ---- The map.
     std::vector<std::vector<Link>> links;  // per system, warp points in creation order
     Location homeLocation;
     bool explored(SystemId s) const { return emp().hasExplored(s); }
-    bool knownLink(ObjectId warpPoint) const;
-    // Warp jumps from `from` over known links (-1 = no known route).
+    // Warp jumps from `from` over every link, known or not (kUnreachable = no route; spec 05 §7.2).
     std::vector<int> jumpsFrom(SystemId from) const;
     // Neutral empires never leave their home system (spec 05 §7.1).
     bool mayEnter(SystemId s) const { return !neutral || s == sit.home; }
 
     // ---- Designs.
     const DesignInfo& info(DesignId d);
-    // The newest valid, non-obsolete design of an AI design type (spec 05 §7.5).
-    std::optional<DesignId> newestDesign(std::string_view aiType);
-    // A table `Type` that is not a design type: the newest design whose name
-    // or design type contains the text (inferred, spec 05 open question).
-    std::optional<DesignId> newestDesignMatching(std::string_view text);
+    // The newest design of an AI design type the empire can build, by
+    // creation turn (the first listed on a tie). `anyMark`: obsolete designs
+    // count too, as in the vehicle list (spec 05 §7.5).
+    std::optional<DesignId> newestDesign(std::string_view aiType, bool anyMark = false);
+    // The newest buildable design the Design minister made from the
+    // AI_DesignCreation template named `name` (ignoring case), obsolete or not.
+    std::optional<DesignId> newestFromTemplate(std::string_view name);
 
     // ---- Situation.
     bool atWarWith(EmpireId o) const;
     int colonyCount() const;
-    int64_t strengthOf(const Vehicle& v);   // rating + 1, damage-aware
+    int64_t strengthOf(const Vehicle& v);   // rating + 1 (in tenths), damage-aware
     std::vector<VehicleId> ownVehicles(Minister m) const;  // controlled by that minister, sorted by id
     bool idle(const Vehicle& v) const;      // no orders, not in a fleet with orders, not busy this turn
 
@@ -217,8 +249,9 @@ void planRetrofit(Planner& p);
 void planStellarManipulation(Planner& p);
 
 // ---- Shared helpers ------------------------------------------------------------------------------
-// The AI design type of a design: its Design Type when that is one of the 39,
-// else a type inferred from what it can do (inferred), else empty.
+// The AI design type of a design (spec 05 §7.5 "Design types of other
+// designs", confirmed: binary): its type label when that is exactly one of the
+// 39, else the first of the fixed tests on what it carries. Never empty.
 std::string aiTypeOf(const Rules& r, const Design& d, const DesignStats& st);
 Role roleOf(std::string_view aiType, const DesignStats& st);
 // Roles that fight: attack and defence ships and the other combat types (spec 05 §7.5 fleets).
@@ -235,9 +268,14 @@ std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empi
 // Resolves an ability identifier from the AI tables to the newest researched facility.
 std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::string_view ability);
 bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability);
-// Speech line with the [%...] tokens filled in (empty when the pool is empty).
-std::string speechLine(Planner& p, std::string_view pool, EmpireId target, EmpireId other = {}, Treaty proposed = Treaty::None,
-                       SystemId system = {}, ObjectId planet = {});
+// A line drawn from a pool of the empire's AI_Speech with the [%...] tokens
+// filled in; nullopt when the pool is empty or missing, and then the message
+// is not sent at all (spec 05 §7.5 AI_Speech, confirmed: binary).
+std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireId target, EmpireId other = {}, Treaty proposed = Treaty::None,
+                                      SystemId system = {}, ObjectId planet = {});
+// What an item of a trade, gift or tribute is worth to the receiving side
+// (spec 05 §7.4 item values).
+int64_t tradeItemValue(const Planner& p, const PackageItem& item, EmpireId giver, EmpireId receiver);
 // Order helpers.
 Order moveOrder(Location where);
 Order simpleOrder(OrderKind k);

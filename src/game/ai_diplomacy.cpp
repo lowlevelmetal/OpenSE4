@@ -38,6 +38,90 @@ void replaceAll(std::string& text, std::string_view token, std::string_view valu
         text.replace(pos, token.size(), value);
 }
 
+} // namespace
+
+// A planet's worth (spec 05 §7.4, confirmed: binary): its three resource
+// values × 1000 (× 1 in finite-resource games), plus, when colonized, 100
+// × its population in millions, 1,000,000 per facility, 10,000 per unit
+// of cargo (each million people and each unit) and 1,000,000,000 for a
+// capital. A colony the giver no longer holds counts 0.
+static int64_t planetWorth(const Planner& p_, ObjectId planet, EmpireId giver) {
+    const GameState& s = p_.st;
+    if (!planet.valid() || planet.index() >= s.galaxy.objects.size()) return 0;
+    const SpaceObject& obj = s.galaxy.object(planet);
+    if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return 0;
+    const int64_t scale = s.options.finiteResources ? 1 : 1000;
+    int64_t worth = (int64_t{obj.value[0]} + obj.value[1] + obj.value[2]) * scale;
+    if (const Colony* c = s.colony(planet)) {
+        if (c->owner != giver) return 0;
+        worth += 100 * c->totalPopulation();
+        worth += 1'000'000 * static_cast<int64_t>(c->facilities.size());
+        int64_t cargo = c->cargo.totalPopulation();
+        for (const UnitStack& u : c->cargo.units) cargo += std::max(0, u.count);
+        worth += 10'000 * cargo;
+        if (c->homeworld) worth += 1'000'000'000;
+    }
+    return worth;
+}
+
+// Spec 05 §7.4 item values, for the receiving side (confirmed: binary).
+int64_t tradeItemValue(const Planner& p_, const PackageItem& item, EmpireId giver, EmpireId receiver) {
+    if (diplomacy::isPlaceholder(item)) return 0;
+    const GameState& s = p_.st;
+    switch (item.kind) {
+        case PackageItem::Kind::Resources: return std::max<int64_t>(0, item.resources.total()) / 1000;
+        case PackageItem::Kind::Technology: {
+            if (item.tech.index() >= p_.r.data().techAreas.size()) return 0;
+            const Empire& rcv = s.empire(receiver);
+            const int have = rcv.techLevel(item.tech);
+            if (s.empire(giver).techLevel(item.tech) <= have || !p_.r.techVisible(s, rcv, item.tech) ||
+                have >= p_.r.tech(item.tech).maxLevel)
+                return 0;
+            return int64_t{have + 1} * p_.r.tech(item.tech).levelCost;
+        }
+        case PackageItem::Kind::Planet: return planetWorth(p_, item.planet, giver) / 100000;
+        case PackageItem::Kind::Vehicle: {
+            // A ship: 100 × its scrap value (spec 03 §15, reclamation in its
+            // sector included), each resource / 4 without weapon parts; 0
+            // when mothballed or without an owner, a design or a position.
+            // A unit group: 100 × the units' scrap value at the ship percentage.
+            const Vehicle* v = s.vehicle(item.vehicle);
+            if (!v || v->count <= 0 || !v->owner.valid() || !v->design.valid() || v->design.index() >= s.designs.size() ||
+                !v->location.system.valid() || v->status == VehicleStatus::Mothballed)
+                return 0;
+            if (isUnitType(vehicleType(p_.r, s, *v))) {
+                const int64_t pctShip = p_.r.setting("Scrap Ship Percent Returned", 30);
+                int64_t total = 0;
+                for (const UnitStack& st : groupStacks(*v)) {
+                    const Resources cost = computeDesignStats(p_.r, nullptr, s.design(st.design)).cost;
+                    for (Resource k : kResources) total += xmath::pctRound(cost[k], pctShip) * std::max(0, st.count);
+                }
+                return total * 100;
+            }
+            const Resources scrap = scrapRefund(p_.r, s, *v);
+            if (computeDesignStats(p_.r, nullptr, s.design(v->design)).armed()) return scrap.total() * 100;
+            return (scrap[Resource::Minerals] / 4 + scrap[Resource::Organics] / 4 + scrap[Resource::Radioactives] / 4) * 100;
+        }
+        case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
+        case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;
+        case PackageItem::Kind::CommChannel: return 50000;
+        case PackageItem::Kind::System: {
+            // 100,000 per planet in it (asteroid fields excluded, colonized or
+            // not) the receiver could colonize, only when the giver claims it.
+            if (!item.system.valid() || item.system.index() >= s.galaxy.systems.size()) return 0;
+            const auto& claimed = s.empire(giver).claimedSystems;
+            if (std::find(claimed.begin(), claimed.end(), item.system) == claimed.end()) return 0;
+            int64_t planets = 0;
+            for (ObjectId o : s.galaxy.system(item.system).objects)
+                planets += canSettle(p_.r, s, s.empire(receiver), s.galaxy.object(o));
+            return planets * 100000;
+        }
+    }
+    return 0;
+}
+
+namespace {
+
 class Politician {
 public:
     explicit Politician(Planner& p)
@@ -102,7 +186,7 @@ private:
         T = std::max(T, pol_.acceptMinimumChance);
         T += pol_.accept.perOtherWars * wars();
         if (t >= Treaty::TradeResearchAlliance && rel(x).treatyAge < pol_.acceptMinimumTurnsSinceTreaty) T = -1;
-        if (p_.st.turn < 50) T += pol_.accept.first50Turns;
+        if (p_.date < 50) T += pol_.accept.first50Turns;  // the first 50 turns, by the date the ministers see
         T += strongerWeaker(pol_.accept, pol_.accept, p);
         if (mee_.valid()) T = x == mee_ ? -1 : T + 60;
         if (t == Treaty::Subjugation && p < pol_.acceptSubjugationPercent) T = -1;
@@ -110,7 +194,7 @@ private:
         return team(x, T);
     }
     int proposeThreshold(EmpireId x) const {
-        int T = pol_.propose.baseAnger + pol_.propose.perOtherWars * wars() + (p_.st.turn < 50 ? pol_.propose.first50Turns : 0) +
+        int T = pol_.propose.baseAnger + pol_.propose.perOtherWars * wars() + (p_.date < 50 ? pol_.propose.first50Turns : 0) +
                 strongerWeaker(pol_.propose, pol_.propose, pct(x));
         if (mee_.valid()) T = x == mee_ ? -1 : T + 70;
         return team(x, T);
@@ -164,17 +248,19 @@ private:
             initiative(x);
             return;
         }
-        if (answerNewest(x)) return;
-        // In a simultaneous game nothing is started while x's messages wait.
+        if (answerNewest(x)) return;  // it sent x something
+        // In a simultaneous game nothing is started while a message from x waits
+        // (dated this turn or the turn before, inferred).
         if (p_.st.options.simultaneous)
             for (const DiplomaticMessage& m : p_.st.messages)
-                if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type)) return;
+                if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && !m.answered && answerable(m.type)) return;
         initiative(x);
     }
 
     void initiative(EmpireId x) {
         if (wantsWar(x)) {
-            if (x == mee_ && p_.prof.speech.pool("Mega Evil Declarations")) send(x, MessageType::DeclareWar, "Mega Evil Declarations");
+            // Against the MEE the text is a `Mega Evil Declarations` line.
+            if (x == mee_) send(x, MessageType::DeclareWar, "Mega Evil Declarations");
             else sendNamed(x, MessageType::DeclareWar);
             return;
         }
@@ -266,20 +352,34 @@ private:
         // 6. Surrender, after more than one combat report in the last two turns. No flag needed.
         if (r.treaty == Treaty::War && p_.rng.percent(33) && r.combatsThisTurn + r.combatsLastTurn > 1)
             return sendDemand(MessageType::DemandSurrender);
-        // 7. Chatter.
+        // 7. Chatter, from `Send General Message` (the miscellaneous pools are never read).
         if (r.treaty >= Treaty::TradeAlliance && p_.rng.percent(10))
-            return send(x, MessageType::General, isFriend(x) ? "Send Friend Miscellaneous Msg" : "Send Enemy Miscellaneous Msg", Treaty::None, {}, {}, {}, {}, 1);
+            return send(x, MessageType::General, "Send General Message", Treaty::None, {}, {}, {}, {}, 1);
         return false;
     }
 
     // ---- Answers ---------------------------------------------------------------------------------
 
-    // The newest unanswered political message from x; true when a reply went out.
+    // Spec 05 §7.4 "Which messages get an answer" (confirmed: binary): each
+    // turn at most the newest unanswered political message from x, whatever
+    // its type. A message counts while it is dated this turn or the turn
+    // before, as the log the original reads (inferred). True when a reply
+    // went out.
+    bool repliedByUs(const DiplomaticMessage& m) const {
+        for (const DiplomaticMessage& o : p_.st.messages)
+            if (o.from == p_.id && o.inReplyTo == m.id) return true;
+        return false;
+    }
+    bool unanswered(const DiplomaticMessage& m) const {
+        if (answerable(m.type) && m.answered) return false;  // the rest are marked answered when delivered
+        return !repliedByUs(m);
+    }
     bool answerNewest(EmpireId x) {
         const DiplomaticMessage* newest = nullptr;
         for (const DiplomaticMessage& m : p_.st.messages)
-            if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type) && (!newest || m.id > newest->id)) newest = &m;
-        if (!newest) return acknowledge(x);
+            if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && unanswered(m) && (!newest || m.id > newest->id))
+                newest = &m;
+        if (!newest) return false;
         const DiplomaticMessage msg = *newest;  // copy: answering appends to the list
         switch (msg.type) {
             case MessageType::ProposeTreaty:
@@ -288,37 +388,37 @@ private:
             case MessageType::CounterTrade: return answerTrade(msg);
             case MessageType::Gift:
             case MessageType::Tribute: return answerGift(msg);
-            default: return answerDemand(msg);
+            case MessageType::DemandGift:
+            case MessageType::DemandTribute: return answerRequest(msg);
+            case MessageType::DemandSurrender: return answerSurrender(msg);
+            case MessageType::General: return false;  // no answer
+            default: return isDemand(msg.type) ? answerDemand(msg) : acknowledge(msg);
         }
     }
 
-    // Acknowledgement messages (an answer to one of ours, a declaration, a
-    // surrender...) get a chatter reply from the friend or enemy response pool
-    // (spec 05 §7.4): the newest one from x that arrived since the last turn
-    // and has no reply yet, when there is nothing to answer. The reply is a
-    // General message in reply to it, from `Response Friend <type>` or
-    // `Response Enemy <type>`; a broken treaty always uses the friend pool, a
-    // tribute's reply the Tribute pools. Plain chatter and the verdicts on our
-    // demands have no pool and get nothing, so two computers never chatter
-    // back and forth (inferred, open question 12).
-    bool acknowledge(EmpireId x) {
-        const DiplomaticMessage* newest = nullptr;
-        for (const DiplomaticMessage& m : p_.st.messages)
-            if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && !ackPool(m).empty() &&
-                (!newest || m.id > newest->id))
-                newest = &m;
-        if (!newest) return false;
-        for (const DiplomaticMessage& m : p_.st.messages)
-            if (m.from == p_.id && m.inReplyTo == newest->id) return false;  // already acknowledged
-        const DiplomaticMessage& msg = *newest;
-        const std::string pool = std::format("Response {} {}", msg.type == MessageType::BreakTreaty || isFriend(x) ? "Friend" : "Enemy", ackPool(msg));
+    // Friend or Enemy by the treaty at answer time: Non-Aggression or better is Friend.
+    std::string_view side(EmpireId x) const { return isFriend(x) ? "Friend" : "Enemy"; }
+
+    // A General message in reply to `msg`, from a response pool; nothing when the pool is empty.
+    bool generalReply(const DiplomaticMessage& msg, std::string_view pool) {
+        auto text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
+        if (!text) return false;
         DiplomaticMessage chat;
-        chat.to = x;
+        chat.to = msg.from;
         chat.type = MessageType::General;
         chat.inReplyTo = msg.id;
-        chat.text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
-        if (chat.text.empty()) return false;
+        chat.text = std::move(*text);
         return p_.emit(cmd::SendMessage{std::move(chat)});
+    }
+
+    // An acknowledgement (an answer to one of ours, a declaration, a surrender,
+    // a granted independence) gets a General message from the `Response
+    // Friend/Enemy <type>` pool; Accept and Refuse Demand have no such pool and
+    // get nothing, so two computer players never chatter back and forth.
+    bool acknowledge(const DiplomaticMessage& msg) {
+        const std::string_view type = ackPool(msg);
+        if (type.empty()) return false;
+        return generalReply(msg, std::format("Response {} {}", side(msg.from), type));
     }
     // The type part of an acknowledgement's response pool, empty for anything else.
     std::string_view ackPool(const DiplomaticMessage& m) const {
@@ -344,8 +444,9 @@ private:
     }
 
     bool reply(const DiplomaticMessage& msg, bool accept, std::string_view pool) {
-        std::string text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
-        return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(text)});
+        auto text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
+        if (!text) return false;  // an empty pool: the reply is not sent
+        return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(*text)});
     }
 
     bool answerTreaty(const DiplomaticMessage& msg) {
@@ -365,42 +466,7 @@ private:
         return true;
     }
 
-    // Spec 05 §7.4 item values, for the receiving side.
-    int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const {
-        if (diplomacy::isPlaceholder(item)) return 0;
-        const GameState& s = p_.st;
-        switch (item.kind) {
-            case PackageItem::Kind::Resources: return std::max<int64_t>(0, item.resources.total()) / 1000;
-            case PackageItem::Kind::Technology: {
-                if (item.tech.index() >= p_.r.data().techAreas.size()) return 0;
-                const Empire& rcv = s.empire(receiver);
-                const int have = rcv.techLevel(item.tech);
-                if (s.empire(giver).techLevel(item.tech) <= have || !p_.r.techVisible(s, rcv, item.tech) ||
-                    have >= p_.r.tech(item.tech).maxLevel)
-                    return 0;
-                return int64_t{have + 1} * p_.r.tech(item.tech).levelCost;
-            }
-            case PackageItem::Kind::Planet: {
-                // The planet's worth: 100000 per facility plus 1000 per million people (inferred, open).
-                const Colony* c = s.colony(item.planet);
-                if (!c) return 0;
-                return (static_cast<int64_t>(c->facilities.size()) * 100000 + c->totalPopulation() * 1000) / 100000;
-            }
-            case PackageItem::Kind::Vehicle: {
-                const Vehicle* v = s.vehicle(item.vehicle);
-                if (!v) return 0;
-                // A unit group: its scrap value × 100 (spec 05 §7.4), each resource
-                // rounded per unit before summing (scrapRefund, spec 03 §15).
-                if (isUnitType(vehicleType(p_.r, s, *v))) return scrapRefund(p_.r, s, *v).total() * 100;
-                return computeDesignStats(p_.r, nullptr, s.design(v->design)).cost.total() * 100;
-            }
-            case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
-            case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;
-            case PackageItem::Kind::CommChannel: return 50000;
-            case PackageItem::Kind::System: return 0;  // open
-        }
-        return 0;
-    }
+    int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const { return tradeItemValue(p_, item, giver, receiver); }
     int64_t packageValue(const std::vector<PackageItem>& items, EmpireId giver, EmpireId receiver) const {
         int64_t v = 0;
         for (const PackageItem& i : items) v += itemValue(i, giver, receiver);
@@ -529,31 +595,61 @@ private:
         return reply(msg, accept, gift ? (accept ? "Send Accept Gift" : "Send Refuse Gift") : (accept ? "Send Accept Tribute" : "Send Refuse Tribute"));
     }
 
+    // The 13 demands from "remove ships" to "stop attacks": Accept or Refuse
+    // Demand, the text from `Response Friend/Enemy YES/NO <demand>`.
     bool answerDemand(const DiplomaticMessage& msg) {
         const EmpireId x = msg.from;
+        const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
+        bool accept = false;
+        if (teamEnemy(x)) accept = false;
+        else if (teamMate(x)) accept = true;
+        else accept = pct(x) >= rule.acceptScorePercent && (isFriend(x) ? rule.acceptFromFriend : rule.acceptFromEnemy);
+        return reply(msg, accept, std::format("Response {} {} {}", side(x), accept ? "YES" : "NO", angerKeyName(msg.type)));
+    }
+
+    // A request for a gift or tribute: the gift or tribute itself when
+    // accepted, otherwise a General message from `Response Friend/Enemy Want
+    // a gift/tribute`.
+    bool answerRequest(const DiplomaticMessage& msg) {
+        const EmpireId x = msg.from;
         const bool friendly = isFriend(x);
+        const bool gift = msg.type == MessageType::DemandGift;
         const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
         const int64_t p = pct(x);
         bool accept = false;
         if (teamEnemy(x)) accept = false;
-        else if (msg.type == MessageType::DemandSurrender) accept = false;  // "Allow Surrender" is not a game option here: off (inferred)
         else if (teamMate(x)) accept = true;
-        else accept = p >= rule.acceptScorePercent && (friendly ? rule.acceptFromFriend : rule.acceptFromEnemy);
-        const bool gift = msg.type == MessageType::DemandGift;
-        if (accept && (gift || msg.type == MessageType::DemandTribute))
-            accept = anger(x) <= (gift ? (friendly ? pol_.giftMaxAngerFriend : pol_.giftMaxAngerEnemy)
+        else
+            accept = p >= rule.acceptScorePercent && (friendly ? rule.acceptFromFriend : rule.acceptFromEnemy) &&
+                     anger(x) <= (gift ? (friendly ? pol_.giftMaxAngerFriend : pol_.giftMaxAngerEnemy)
                                        : (friendly ? pol_.tributeMaxAngerFriend : pol_.tributeMaxAngerEnemy));
-        std::string pool = std::format("Response {} {} {}", friendly ? "Friend" : "Enemy", accept ? "YES" : "NO", angerKeyName(msg.type));
-        if (!p_.prof.speech.pool(pool)) pool = accept ? "Send Accept Demand/Request" : "Send Refuse Demand/Request";
-        if (!reply(msg, accept, pool)) return false;
-        if (accept && (gift || msg.type == MessageType::DemandTribute)) payUp(msg, friendly, p);
-        return true;
+        if (accept) return payUp(msg, friendly, p);
+        return generalReply(msg, std::format("Response {} {}", side(x), angerKeyName(msg.type)));
+    }
+
+    // A surrender demand, only with Allow Surrender (otherwise no answer at
+    // all): considered only by a computer-controlled empire (a human's
+    // ministers never surrender); Surrender when accepted, otherwise a General
+    // message from `Response Friend/Enemy Demand your surrender`.
+    bool answerSurrender(const DiplomaticMessage& msg) {
+        if (!p_.st.options.allowSurrender) return false;
+        const EmpireId x = msg.from;
+        const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
+        bool accept = false;
+        if (p_.emp().kind != PlayerKind::Human && !teamEnemy(x))
+            accept = teamMate(x) || (pct(x) >= rule.acceptScorePercent && (isFriend(x) ? rule.acceptFromFriend : rule.acceptFromEnemy));
+        if (accept) {
+            DiplomaticMessage m;
+            m.inReplyTo = msg.id;
+            return sendNamed(x, MessageType::Surrender, Treaty::None, {}, {}, {}, {}, &m);
+        }
+        return generalReply(msg, std::format("Response {} {}", side(x), angerKeyName(msg.type)));
     }
 
     // An accepted request for a gift or tribute: the requested items in order
     // (a random concrete one for each "any") until the package is worth V.
-    void payUp(const DiplomaticMessage& msg, bool friendly, int64_t p) {
-        if (!p_.st.options.allowGifts) return;
+    bool payUp(const DiplomaticMessage& msg, bool friendly, int64_t p) {
+        if (!p_.st.options.allowGifts) return false;
         const bool gift = msg.type == MessageType::DemandGift;
         const int64_t base = gift ? (friendly ? pol_.giftBaseFriend : pol_.giftBaseEnemy) : (friendly ? pol_.tributeBaseFriend : pol_.tributeBaseEnemy);
         const int64_t per = gift ? (friendly ? pol_.giftPerPercentFriend : pol_.giftPerPercentEnemy)
@@ -568,8 +664,10 @@ private:
             value += itemValue(*item, p_.id, msg.from);
             package.push_back(*item);
         }
-        if (package.empty()) return;
-        sendNamed(msg.from, gift ? MessageType::Gift : MessageType::Tribute, Treaty::None, {}, {}, std::move(package));
+        if (package.empty()) return false;
+        DiplomaticMessage m;
+        m.inReplyTo = msg.id;
+        return sendNamed(msg.from, gift ? MessageType::Gift : MessageType::Tribute, Treaty::None, {}, {}, std::move(package), {}, &m);
     }
 
     // ---- Sending -----------------------------------------------------------------------------
@@ -593,7 +691,9 @@ private:
         m.system = system;
         m.offer = std::move(offer);
         m.request = std::move(request);
-        m.text = speechLine(p_, pool, to, third, treaty, system);
+        auto text = speechLine(p_, pool, to, third, treaty, system);
+        if (!text) return false;  // a message whose pool is empty is not sent at all
+        m.text = std::move(*text);
         return p_.emit(cmd::SendMessage{std::move(m)});
     }
     bool sendNamed(EmpireId to, MessageType type, Treaty treaty = Treaty::None, EmpireId third = {}, SystemId system = {},
@@ -604,11 +704,10 @@ private:
 
 } // namespace
 
-std::string speechLine(Planner& p, std::string_view pool, EmpireId target, EmpireId other, Treaty proposed, SystemId system,
-                       ObjectId planet) {
+std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireId target, EmpireId other, Treaty proposed, SystemId system,
+                                      ObjectId planet) {
     const std::vector<std::string>* lines = p.prof.speech.pool(pool);
-    if (!lines) lines = builtinProfile().speech.pool(pool);
-    if (!lines) return {};
+    if (!lines) return std::nullopt;
     std::string text = (*lines)[static_cast<size_t>(p.rng.below(lines->size()))];
     const Empire& us = p.emp();
     auto who = [&](EmpireId e) -> const Empire* {

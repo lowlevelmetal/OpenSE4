@@ -392,6 +392,11 @@ struct Design {
     uint32_t strategy = 0;   // index into the owner's strategies
     bool obsolete = false;
     uint32_t createdTurn = 0;
+    // The AI_DesignCreation template the Design minister made it from, the
+    // template's `Name`; empty for hand-made and premade designs. The vehicle
+    // list's entries look designs up by it, and the Design minister's name
+    // counter counts such designs (spec 05 §7.5, confirmed: binary).
+    std::string templateName;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     int built = 0;
     int lost = 0;
@@ -549,6 +554,11 @@ struct GroundCombat {
 struct CombatRecord {
     uint32_t turn = 0;
     Location location;
+    // The "current player" when the battle was fought, who counts it as
+    // Attacking in the anger terms (spec 05 §7.3, confirmed: binary): the
+    // player whose turn it is in a turn-based game; in a simultaneous game the
+    // highest player number, left over from the start-of-turn loop.
+    EmpireId currentPlayer;
     std::vector<EmpireId> participants;
     std::vector<CombatPiece> pieces;
     std::vector<CombatEvent> events;
@@ -625,6 +635,10 @@ struct GameOptions {
     bool onlyBreathable = false;
     bool onlyHomeType = false;
     bool teamMode = false;
+    // "Allow Surrender" (spec 05 §7.4, confirmed: binary), on by default: with
+    // it off a computer player never considers a surrender demand and a
+    // Surrender message does nothing at all.
+    bool allowSurrender = true;
     int scoreDisplay = 1;                // Score Display: 0 own, 1 own and Non-Aggression or better (the default), 2 all (spec 05 §5)
     int maxShipsPerPlayer = 200;
     int maxUnitsPerPlayer = 1000;

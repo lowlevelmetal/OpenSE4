@@ -360,14 +360,48 @@ Speech defaultSpeech() {
     add("Send Stop attacks in system", {"Stop your attacks in [%SystemName]."});
     add("Send Stop espionage activities", {"Stop spying on [%OurEmpireName]."});
     add("Send Stop sabotage activities", {"Stop sabotaging [%OurEmpireName]."});
+    add("Send Propose Trade", {"[%OurEmpireName] proposes an exchange."});
+    add("Send Offer Counter Trade Proposal", {"[%OurEmpireName] could accept this exchange instead."});
+    add("Send Want a gift", {"[%OurEmpireName] would welcome a gift."});
+    add("Send Want a tribute", {"[%OurEmpireName] expects a tribute."});
+    add("Send Leave planet", {"Leave [%PlanetName]."});
+    add("Send Stop hostile actions against empire", {"Stop your hostile acts against [%OtherEmpireName]."});
+    add("Send Support us against another empire", {"Stand with [%OurEmpireName] against [%OtherEmpireName]."});
+    add("Send Attack planet", {"Strike at [%PlanetName]."});
+    add("Send Surrender", {"[%OurEmpireName] lays down its arms before [%TargetEmpireName]."});
+    add("Send Grant independence to colony", {"[%OurEmpireName] releases [%PlanetName]."});
     add("Mega Evil Declarations", {"[%TargetEmpireName] has grown too powerful. [%OurEmpireName] will oppose it."});
-    // Chatter replies to acknowledgements (spec 05 §7.4).
-    add("Response Friend Accept Treaty", {"[%OurEmpireName] welcomes the agreement."});
-    add("Response Enemy Accept Treaty", {"Let us see whether this agreement holds."});
-    add("Response Friend Refuse Treaty", {"[%OurEmpireName] regrets your answer."});
-    add("Response Enemy Refuse Treaty", {"As you wish."});
-    add("Response Friend Break Treaty", {"[%OurEmpireName] will remember this."});
-    add("Response Enemy Declare War", {"[%OurEmpireName] accepts your challenge."});
+    // The General messages that answer acknowledgements and refused
+    // requests (spec 05 §7.4 "Which messages get an answer", §7.5 AI_Speech).
+    const std::array<std::pair<std::string_view, std::pair<std::string_view, std::string_view>>, 15> responses{{
+        {"Accept Treaty", {"[%OurEmpireName] welcomes the agreement.", "Let us see whether this agreement holds."}},
+        {"Refuse Treaty", {"[%OurEmpireName] regrets your answer.", "As you wish."}},
+        {"Break Treaty", {"[%OurEmpireName] had hoped for better.", "[%OurEmpireName] will remember this."}},
+        {"Declare War", {"We did not expect this from [%TargetEmpireName].", "[%OurEmpireName] accepts your challenge."}},
+        {"Accept Trade", {"A good exchange for both of us.", "The exchange is noted."}},
+        {"Refuse Trade", {"Perhaps another time.", "So be it."}},
+        {"Accept Gift", {"[%OurEmpireName] is glad you liked it.", "Enjoy it."}},
+        {"Refuse Gift", {"[%OurEmpireName] is disappointed.", "Your loss."}},
+        {"Accept Tribute", {"[%OurEmpireName] is pleased.", "Remember who is generous."}},
+        {"Refuse Tribute", {"[%OurEmpireName] is surprised.", "As you wish."}},
+        {"Want a gift", {"[%OurEmpireName] has nothing to spare now.", "[%OurEmpireName] gives nothing."}},
+        {"Want a tribute", {"[%OurEmpireName] cannot pay now.", "[%OurEmpireName] pays no tribute."}},
+        {"Demand your surrender", {"That is no way to speak to a friend.", "[%OurEmpireName] will never surrender."}},
+        {"Surrender", {"[%OurEmpireName] accepts your surrender.", "[%OurEmpireName] accepts your surrender."}},
+        {"Grant independence to colony", {"[%OurEmpireName] thanks you.", "[%OurEmpireName] notes it."}},
+    }};
+    for (const auto& [type, lines] : responses) {
+        add(std::format("Response Friend {}", type), {std::string(lines.first)});
+        add(std::format("Response Enemy {}", type), {std::string(lines.second)});
+    }
+    // The verdicts on the thirteen demands, "remove ships" to "stop attacks".
+    for (size_t i = static_cast<size_t>(MessageType::DemandRemoveShips); i <= static_cast<size_t>(MessageType::DemandStopAttacks); ++i) {
+        const std::string_view type = angerKeyName(static_cast<MessageType>(i));
+        add(std::format("Response Friend YES {}", type), {"[%OurEmpireName] will do as you ask."});
+        add(std::format("Response Friend NO {}", type), {"[%OurEmpireName] cannot do that, friend."});
+        add(std::format("Response Enemy YES {}", type), {"[%OurEmpireName] agrees, this time."});
+        add(std::format("Response Enemy NO {}", type), {"[%OurEmpireName] will not do that."});
+    }
     return s;
 }
 
@@ -605,29 +639,27 @@ std::vector<VehicleQueue> parseVehicles(const datafile::DataFile& file) {
 }
 
 std::vector<UnitQueue> parseUnits(const datafile::DataFile& file) {
-    // A leading reserve key makes the whole file one record, so rows are split
-    // where `AI State` or `Colony Type` repeats (inferred format).
+    // A leading reserve key can make the whole file one record, so records
+    // are split where `Colony Type` repeats.
     std::vector<datafile::Record> rows(1);
     for (const auto& rec : file.records)
         for (const auto& fld : rec.fields) {
-            const bool opens = keysEqual(fld.key, "AI State") || keysEqual(fld.key, "Colony Type");
-            if (opens && rows.back().find(fld.key)) rows.emplace_back();
+            if (keysEqual(fld.key, "Colony Type") && rows.back().find(fld.key)) rows.emplace_back();
             rows.back().fields.push_back(fld);
         }
     std::vector<UnitQueue> out;
     for (const auto& rec : rows) {
         const Fields f(&rec);
         UnitQueue q;
-        if (f.has("AI State")) q.states = parseStateList(f.text("AI State"));
         q.colonyType = f.text("Colony Type");
         const int n = f.num("Num Queue Entries", 0);
         for (int i = 1; i <= n; ++i) {
             UnitEntry e;
             e.type = f.text(std::format("Entry {} Type", i));
-            e.amount = f.num(std::format("Entry {} Amount", i), 0);
+            e.maxKt = std::min(f.num(std::format("Entry {} Maximum in kT", i), 0), 65'000);
             if (!e.type.empty()) q.entries.push_back(std::move(e));
         }
-        if (!q.colonyType.empty()) out.push_back(std::move(q));
+        if (f.has("Colony Type")) out.push_back(std::move(q));
     }
     return out;
 }
@@ -846,10 +878,12 @@ const FacilityQueue* AiProfile::facilityQueue(AiState s, std::string_view queueT
     return last;
 }
 
-const UnitQueue* AiProfile::unitQueue(AiState s, std::string_view colonyType) const {
+const UnitQueue* AiProfile::unitQueue(std::string_view colonyType) const {
+    if (colonyType.empty()) return nullptr;
+    const std::string want = lowerAscii(std::string(colonyType));
     const UnitQueue* last = nullptr;
     for (const auto& q : units)
-        if ((q.states & maskOf(s)) && keysEqual(q.colonyType, colonyType)) last = &q;
+        if (lowerAscii(q.colonyType).find(want) != std::string::npos) last = &q;
     return last;
 }
 
@@ -878,9 +912,10 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
         if (!speech.pools.empty()) p.speech = std::move(speech);
     }
     if (auto f = readTable(where, "Strategies", p)) p.strategies = parseStrategies(*f);
-    // Not shipped with the stock install (spec 05 §7.5): the reserve for units
-    // (in the first record) and the rows (format inferred).
+    // Not shipped with the stock install (spec 05 §7.5 "Units file"): the
+    // reserve for units in the first record, then the rows.
     if (auto f = readTable(where, "Construction_Units", p)) {
+        p.unitsFile = true;
         p.unitReservePercent = Fields(&f->records.front()).num("Percentage of Resources To Reserve For Unit Construction", 0);
         p.units = parseUnits(*f);
     }

@@ -394,6 +394,7 @@ template <class Ar>
 void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills,
            d.enemyTonnageDestroyed);
+    fields(ar, d.templateName);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
@@ -445,6 +446,7 @@ void io(Ar& ar, GroundCombat& g) {
 template <class Ar>
 void io(Ar& ar, CombatRecord& c) {
     fields(ar, c.turn, c.location, c.participants, c.pieces, c.events, c.summary, c.grounds);
+    fields(ar, c.currentPlayer);
 }
 
 template <class Ar>
@@ -476,6 +478,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.randomAiPlayers);
     fields(ar, o.quadrantSize, o.allPlanetsSameSize);
     fields(ar, o.playersCanSaveMap, o.autosaveTurns);
+    fields(ar, o.allowSurrender);
 }
 
 // ---- Turn-based games ---------------------------------------------------------------------------------
