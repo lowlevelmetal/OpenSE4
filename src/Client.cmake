@@ -26,6 +26,8 @@ add_executable(opense4
     client/classic/replay.cpp
     client/classic/reports.cpp
     client/classic/screens/cargo_transfer.cpp
+    client/classic/screens/colony_logic.cpp
+    client/classic/screens/colony_widgets.cpp
     client/classic/screens/combat_replay.cpp
     client/classic/screens/design_tools.cpp
     client/classic/screens/communicate.cpp

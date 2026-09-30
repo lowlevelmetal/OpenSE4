@@ -1,6 +1,7 @@
 add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
+    test_classic_colony_logic.cpp
     test_client_logic.cpp
     test_combat_replay.cpp
     test_content.cpp
