@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -43,11 +44,59 @@ struct Location {
 };
 
 // Integer position on the quadrant map (one square ~ 10 light years).
+// The quadrant is 67 × 46 squares (spec 01 §3.2, confirmed: binary). The spec
+// numbers the squares from 1 (x 1..67, y 1..46, y growing down the map);
+// GalaxyPos counts from 0, so the spec's x is pos.x + 1. Distances and
+// bearings do not depend on that offset.
 struct GalaxyPos {
     int x = 0;
     int y = 0;
     constexpr auto operator<=>(const GalaxyPos&) const = default;
 };
+
+inline constexpr int kQuadrantWidth = 67;
+inline constexpr int kQuadrantHeight = 46;
+// A system holds at most this many warp points (spec 01 §3.5, §8; confirmed: binary).
+inline constexpr int kMaxWarpPoints = 10;
+
+// ---- Galaxy geometry (spec 01 §3.2 and §3.5, confirmed: binary) -------------------------------
+// The original computes these in floating point. We reproduce them exactly
+// without host floating point: square roots with integers, and the
+// arctangents with the extended-precision emulation of xmath.hpp.
+
+// round(√(dx² + dy²)), in squares.
+int galaxyDistance(GalaxyPos a, GalaxyPos b);
+// Whole degrees from `from` toward `to`: 0 points up the map (smaller y) and
+// the angle grows clockwise, so 90 points toward larger x. 0 when they coincide.
+int galaxyBearing(GalaxyPos from, GalaxyPos to);
+// |a − b|, measured across north when one bearing is above 270 and the other
+// below 90 (360 − the larger + the smaller). 260 and 10 differ by 250.
+int bearingDifference(int a, int b);
+
+// The square-outline function: maps a bearing (0..360) onto the outline of a
+// square of side 2r whose top-left corner is (0, 0). r = twiceR / 2, so warp
+// points (r = 6.5) pass 13.
+struct OutlinePoint {
+    int x = 0;
+    int y = 0;
+    constexpr bool operator==(const OutlinePoint&) const = default;
+};
+OutlinePoint squareOutline(int bearing, int twiceR);
+
+// A warp point already in a system: where it is and the bearing toward the
+// system it leads to.
+struct PlacedWarpPoint {
+    Sector sector;
+    int bearing = 0;
+};
+// Default (edge) placement of a warp point whose destination lies at `bearing`
+// (spec 01 §3.5): the outline point for r = 6.5, nudged half a square along the
+// edge and rounded half to even; the nudge is reversed when a warp point in
+// `existing` stands on that sector and `bearing` is smaller than its bearing.
+Sector warpEdgeSector(int bearing, std::span<const PlacedWarpPoint> existing);
+// With "warp points located anywhere": the outline point moved `inward`
+// (0..4) squares straight toward the inside of the system.
+Sector warpInwardSector(int bearing, int inward);
 
 enum class ObjectKind : uint8_t { Star, Planet, Asteroids, Storm, WarpPoint, DestroyedStar, Comet, Count };
 std::string_view displayName(ObjectKind k);
@@ -74,6 +123,9 @@ struct SpaceObject {
 
     // Warp points.
     ObjectId destination;  // the paired warp point
+    // The data's `Warp Point One-Way` flag is never used by the original: every
+    // link is two-way (spec 01 §3.5, confirmed: binary). Generation and stellar
+    // manipulation always leave this false; it is kept for the save layout.
     bool oneWay = false;
 };
 
@@ -88,7 +140,7 @@ struct StarSystem {
 };
 
 struct Galaxy {
-    int width = 0;   // quadrant grid size in squares
+    int width = 0;   // quadrant grid size in squares (kQuadrantWidth × kQuadrantHeight when generated)
     int height = 0;
     std::string quadrantType;
     std::vector<StarSystem> systems;

@@ -32,30 +32,46 @@ AbilityKind colonizeKind(std::string_view surface) {
     return AbilityKind::ColonizeRock;
 }
 
-// Facilities a homeworld starts with (spec 02 §9: the stock set is not
-// documented). Calibrated against the observed Quick Start homeworld, which
-// fills a medium planet's 15 slots (docs/spec/07, Calibration): a yard, a
-// spaceport, a depot, 5 mineral, 1 organic and 1 radioactive producer and 5
-// research facilities. Placed in this order until the slots run out, so
-// smaller homeworlds keep a balanced mix. Each entry is an ability and how
-// many facilities with it to place.
-constexpr std::array<std::pair<AbilityKind, int>, 15> kHomeFacilities{{
-    {AbilityKind::SpaceYard, 1},
-    {AbilityKind::Spaceport, 1},
-    {AbilityKind::SupplyGeneration, 1},
-    {AbilityKind::ResourceGenMinerals, 1},
-    {AbilityKind::ResourceGenOrganics, 1},
-    {AbilityKind::ResourceGenRadioactives, 1},
-    {AbilityKind::PointGenResearch, 1},
-    {AbilityKind::ResourceGenMinerals, 1},
-    {AbilityKind::PointGenResearch, 1},
-    {AbilityKind::ResourceGenMinerals, 1},
-    {AbilityKind::PointGenResearch, 1},
-    {AbilityKind::ResourceGenMinerals, 1},
-    {AbilityKind::PointGenResearch, 1},
-    {AbilityKind::ResourceGenMinerals, 1},
-    {AbilityKind::PointGenResearch, 1},
-}};
+// True when the empire has every technology it could research at its
+// maximum level (the starting-planet facility rule of spec 02 §9).
+bool knowsEverything(const Rules& r, const GameState& s, const Empire& e) {
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
+        const ruleset::TechAreaId a{i};
+        if (r.techVisible(s, e, a) && e.techLevel(a) < r.tech(a).maxLevel) return false;
+    }
+    return true;
+}
+
+// Facilities of a starting planet (spec 02 §9, confirmed: binary): the empire's
+// best facility for each role, while slots are free: a spaceport (unless the
+// race has No Spaceports), a space yard, a supply generator, one mineral, one
+// radioactives and one organics producer, one research facility (unless every
+// technology is known), then alternately a mineral producer and a research
+// facility, starting with minerals (only minerals once everything is known).
+void addStartingFacilities(const Rules& r, const GameState& s, const Empire& e, Colony& col) {
+    const int slots = facilitySlots(r, s, col);
+    auto add = [&](AbilityKind kind) {
+        if (static_cast<int>(col.facilities.size()) >= slots) return false;
+        const auto f = r.bestFacilityWith(e, kind);
+        if (f) col.facilities.push_back(*f);
+        return f.has_value();
+    };
+    if (!r.hasTrait(e.race, "No Spaceports")) add(AbilityKind::Spaceport);
+    add(AbilityKind::SpaceYard);
+    add(AbilityKind::SupplyGeneration);
+    add(AbilityKind::ResourceGenMinerals);
+    add(AbilityKind::ResourceGenRadioactives);
+    add(AbilityKind::ResourceGenOrganics);
+    const bool everything = knowsEverything(r, s, e);
+    if (!everything) add(AbilityKind::PointGenResearch);
+    const bool mines = r.bestFacilityWith(e, AbilityKind::ResourceGenMinerals).has_value();
+    const bool labs = !everything && r.bestFacilityWith(e, AbilityKind::PointGenResearch).has_value();
+    // A role the empire has no facility for is skipped (inferred).
+    for (bool mineral = true; static_cast<int>(col.facilities.size()) < slots && (mines || labs); mineral = !mineral) {
+        if (mineral ? !mines : !labs) continue;
+        add(mineral ? AbilityKind::ResourceGenMinerals : AbilityKind::PointGenResearch);
+    }
+}
 
 Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location where, int number) {
     Vehicle v;
@@ -67,6 +83,118 @@ Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location wher
     v.builtTurn = s.turn;
     v.supply = computeDesignStats(r, nullptr, d).supplyCapacity;
     return v;
+}
+
+
+HomeValue homeValueOf(const GameOptions& o) {
+    return o.homePlanetValue == 0 ? HomeValue::Low : o.homePlanetValue == 2 ? HomeValue::High : HomeValue::Medium;
+}
+
+// Keeps per-object vectors in step after planets were created.
+void objectsGrown(GameState& s) {
+    s.colonies.resize(s.galaxy.objects.size());
+    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
+}
+
+bool surfaceMatches(std::string_view a, std::string_view b) {
+    auto norm = [](std::string_view x) { return keysEqual(x, "Gas") ? std::string_view("Gas Giant") : x; };
+    return keysEqual(norm(a), norm(b));
+}
+
+// The planets beyond the homeworld (spec 01 §3.6, confirmed: binary): from the
+// home system and the systems up to one warp jump away (two when the quadrant
+// holds more than 60 % of Maximum Number Of Systems), skipping systems that are
+// not start-eligible (the home system always counts) and, unless empires may
+// share systems, systems where another empire is present. Sectors are scanned
+// in order for free planets of the empire's atmosphere and type (and the home
+// size when every player planet has the same size) that are no one's
+// homeworld; the rest are created in random candidate systems, on an empty
+// sector of the inner 11 × 11 area. Systems are taken nearest first, then in
+// system order (inferred).
+std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const Empire& e, std::span<const ObjectId> homes, int count) {
+    std::vector<ObjectId> out;
+    if (count <= 0) return out;
+    const auto& rs = r.data();
+    const ObjectId home = homes[e.id.index()];
+    const SystemId homeSys = s.galaxy.object(home).system;
+    const int homeSize = homePlanetSize(rs, homeValueOf(s.options), e.race.nativeSurface, e.race.atmosphere);
+    // "More than 60 %", compared exactly (inferred: the original's floating-point comparison).
+    const int reach = static_cast<int64_t>(s.galaxy.systems.size()) * 10 > int64_t{6} * maxSystemCount(rs) ? 2 : 1;
+    const std::vector<int> jumps = warpJumps(s.galaxy, homeSys);
+    auto othersPresent = [&](SystemId sys) {
+        for (ObjectId o : s.galaxy.system(sys).objects)
+            if (const Colony* c = s.colony(o); c && c->owner != e.id) return true;
+        return false;
+    };
+    std::vector<SystemId> systems;
+    for (int d = 0; d <= reach; ++d)
+        for (const StarSystem& sys : s.galaxy.systems) {
+            if (jumps[sys.id.index()] != d) continue;
+            const bool eligible = sys.type.index() < rs.systemTypes.size() && rs.systemTypes[sys.type.index()].empiresCanStartIn;
+            if (sys.id != homeSys && !eligible) continue;
+            if (!s.options.sameSystemAllowed && othersPresent(sys.id)) continue;
+            systems.push_back(sys.id);
+        }
+    auto taken = [&](ObjectId o) {
+        return std::find(homes.begin(), homes.end(), o) != homes.end() || std::find(out.begin(), out.end(), o) != out.end();
+    };
+    for (SystemId sysId : systems) {
+        std::vector<ObjectId> objects = s.galaxy.system(sysId).objects;
+        std::stable_sort(objects.begin(), objects.end(), [&](ObjectId a, ObjectId b) {
+            const Sector sa = s.galaxy.object(a).sector, sb = s.galaxy.object(b).sector;
+            return sa.y * kSystemSize + sa.x < sb.y * kSystemSize + sb.x;
+        });
+        for (ObjectId o : objects) {
+            if (static_cast<int>(out.size()) >= count) return out;
+            const SpaceObject& obj = s.galaxy.object(o);
+            if (obj.kind != ObjectKind::Planet || s.colony(o) || taken(o)) continue;
+            if (!keysEqual(obj.atmosphere, e.race.atmosphere) || !surfaceMatches(obj.surface, e.race.nativeSurface)) continue;
+            if (s.options.allPlanetsSameSize && stellarSizeOf(rs, obj) != homeSize) continue;
+            out.push_back(o);
+        }
+    }
+    while (static_cast<int>(out.size()) < count) {
+        const SystemId target = systems.empty() ? homeSys : systems[s.rng.below(systems.size())];
+        std::vector<Sector> inner;
+        for (Sector sct : emptySectors(s.galaxy, target))
+            if (sct.x >= 1 && sct.x <= 11 && sct.y >= 1 && sct.y <= 11) inner.push_back(sct);
+        const Sector where = inner.empty() ? Sector{s.rng.rangeInt(1, 11), s.rng.rangeInt(1, 11)} : inner[s.rng.below(inner.size())];
+        out.push_back(createStartingPlanet(s.galaxy, rs, target, where, e.race.nativeSurface, e.race.atmosphere,
+                                           s.options.allPlanetsSameSize ? homeSize : 0, s.options.finiteResources, s.rng));
+        objectsGrown(s);
+    }
+    return out;
+}
+
+// Every starting planet is set up like the homeworld (spec 02 §9, confirmed:
+// binary): its system explored, ruins removed, the Home Planet Value (plus
+// R[1,10] − 5 per resource in a normal game), conditions unchanged, a colony of
+// the empire's race at maximum population, and the starting facilities.
+void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId planet, bool capital) {
+    SpaceObject& obj = s.galaxy.object(planet);
+    sight::markExplored(s, e.id, obj.system);
+    std::erase_if(obj.abilities, [](const ruleset::Ability& a) {
+        return keysEqual(a.type, "Ancient Ruins") || keysEqual(a.type, "Ancient Ruins Unique");
+    });
+    const char* level = s.options.homePlanetValue == 0 ? "Low" : s.options.homePlanetValue == 2 ? "High" : "Medium";
+    if (s.options.finiteResources) {
+        const int v = static_cast<int>(r.setting(std::format("Plr Planet Value {} Resources", level), 20000));
+        obj.value = {v, v, v};
+    } else {
+        const int base = static_cast<int>(r.setting(std::format("Plr Planet Value {} Percent", level), 100));
+        for (int& v : obj.value) v = base + s.rng.rangeInt(1, 10) - 5;
+    }
+    Colony c;
+    c.planet = planet;
+    c.owner = e.id;
+    c.homeworld = capital;
+    c.colonyType = capital ? "Homeworld" : "Balanced";
+    c.foundedTurn = 0;
+    c.population.push_back({e.id, 0});
+    s.colonies[planet.index()] = std::move(c);
+    Colony& col = *s.colonies[planet.index()];
+    col.population.front().millions = maxPopulation(r, s, col);
+    addStartingFacilities(r, s, e, col);
 }
 
 } // namespace
@@ -121,16 +249,22 @@ Race raceFromPreset(const Rules& r, const ruleset::RacePreset& preset, int tier)
 }
 
 int racialPointCost(const Rules& r, const Race& race) {
+    // Spec 02 §8.1 (confirmed: binary): c per point up to the threshold T;
+    // beyond it every point costs P (or refunds N) racial points outright.
     int64_t total = 0;
     for (size_t i = 0; i < kCharacteristics; ++i) {
         const std::string name{displayName(static_cast<Characteristic>(i))};
         const int64_t c = r.setting(std::format("Characteristic {} Pct Cost", name), 0);
         const int64_t t = r.setting(std::format("Characteristic {} Threshold", name), 1000);
-        const int64_t pos = r.setting(std::format("Characteristic {} Threshhold Pct Cost Pos", name), 100);
-        const int64_t neg = r.setting(std::format("Characteristic {} Threshhold Pct Cost Neg", name), 100);
-        const int64_t d = race.characteristics[i] - 100;
-        if (d > 0) total += c * std::min(d, t) + c * pos / 100 * std::max<int64_t>(0, d - t);
-        if (d < 0) total -= c * std::min(-d, t) + c * neg / 100 * std::max<int64_t>(0, -d - t);
+        const int64_t pos = r.setting(std::format("Characteristic {} Threshhold Pct Cost Pos", name), 0);
+        const int64_t neg = r.setting(std::format("Characteristic {} Threshhold Pct Cost Neg", name), 0);
+        int64_t lo = r.setting(std::format("Characteristic {} Min Pct", name), 0);
+        int64_t hi = r.setting(std::format("Characteristic {} Max Pct", name), 1'000'000);
+        if (hi < lo) std::swap(lo, hi);
+        const int64_t d = std::clamp<int64_t>(race.characteristics[i], lo, hi) - 100;
+        if (t < 1 || (d <= t && -d <= t)) total += c * d;
+        else if (d > t) total += c * t + pos * (d - t);
+        else total -= c * t + neg * (-d - t);
     }
     for (uint32_t ti : race.traits)
         if (ti < r.data().racialTraits.size()) total += r.data().racialTraits[ti].cost;
@@ -185,10 +319,11 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     s.options = setup.options;
     s.rng.reseed(setup.seed);
 
-    // ---- Quadrant.
+    // ---- Quadrant (spec 01 §3.7 steps 1-6).
     QuadrantOptions qo;
     qo.quadrantType = s.options.quadrantType;
     qo.systemCount = s.options.systemCount;
+    qo.size = static_cast<QuadrantSize>(std::clamp(s.options.quadrantSize, 0, 2));
     qo.allWarpPointsConnected = s.options.allWarpPointsConnected;
     qo.noWarpPoints = s.options.noWarpPoints;
     qo.warpPointsAnywhere = s.options.warpPointsAnywhere;
@@ -229,7 +364,6 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         if (e.kind == PlayerKind::Human && es.customRace && e.racialPointsSpent > s.options.racialPoints)
             return std::unexpected(std::format("{} spends {} racial points; the limit is {}.", e.name, e.racialPointsSpent,
                                                s.options.racialPoints));
-        e.stockpile = s.options.startingResources;
         e.techLevels = startingTechLevels(r, s.options, e.race);
         e.relations.assign(n, Relation{});
         e.knowledge.explored.assign(s.galaxy.systems.size(), s.options.allSystemsSeen ? 1 : 0);
@@ -246,75 +380,38 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         starts.push_back({s.empires.back().name, s.empires.back().race.nativeSurface, s.empires.back().race.atmosphere});
     }
 
-    // ---- Homeworlds.
+    // ---- Homeworlds (spec 01 §3.6, step 7).
     PlacementOptions po;
     po.evenlyDistributed = s.options.evenlyDistributed;
     po.allowSameSystem = s.options.sameSystemAllowed;
-    po.homeValue = s.options.homePlanetValue == 0 ? HomeValue::Low : s.options.homePlanetValue == 2 ? HomeValue::High : HomeValue::Medium;
+    po.homeValue = homeValueOf(s.options);
     po.finiteResources = s.options.finiteResources;
+    po.allPlanetsSameSize = s.options.allPlanetsSameSize;
     auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng);
     if (!homes) return std::unexpected(homes.error());
-    // Placement may add a planet to a start system without one.
-    s.colonies.resize(s.galaxy.objects.size());
-    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
+    objectsGrown(s);  // placement may have created planets
 
+    // ---- Each empire's starting planets, in player order (step 8, spec 02 §9).
     for (size_t i = 0; i < n; ++i) {
         Empire& e = s.empires[i];
         const ObjectId home = (*homes)[i];
-        Colony c;
-        c.planet = home;
-        c.owner = e.id;
-        c.homeworld = true;
-        c.colonyType = "Homeworld";
-        c.foundedTurn = 0;
-        s.colonies[home.index()] = c;
-        Colony& col = *s.colonies[home.index()];
-        col.population.push_back({e.id, 0});
-        col.population.front().millions = maxPopulation(r, s, col);
-        // Starting facilities.
-        const int slots = facilitySlots(r, s, col);
-        for (const auto& [kind, count] : kHomeFacilities)
-            for (int k = 0; k < count && static_cast<int>(col.facilities.size()) < slots; ++k)
-                if (auto f = r.bestFacilityWith(e, kind)) col.facilities.push_back(*f);
-        const SystemId sys = s.galaxy.object(home).system;
-        e.knowledge.explored[sys.index()] = 1;
-        e.claimedSystems.push_back(sys);
+        // A neutral empire always gets one starting planet.
+        const int extras = e.kind == PlayerKind::Neutral ? 0 : std::max(0, s.options.startingPlanets - 1);
+        std::vector<ObjectId> planets{home};
+        for (ObjectId o : extraStartingPlanets(r, s, e, *homes, extras)) planets.push_back(o);
+        for (size_t k = 0; k < planets.size(); ++k) setUpStartingPlanet(r, s, e, planets[k], k == 0);
+        e.claimedSystems.push_back(s.galaxy.object(home).system);
     }
 
-    // Extra starting planets: nearest uncolonized planets of the native type (spec 01 §3.6).
-    for (int extra = 1; extra < s.options.startingPlanets; ++extra)
-        for (size_t i = 0; i < n; ++i) {
-            Empire& e = s.empires[i];
-            const SystemId homeSys = s.galaxy.object((*homes)[i]).system;
-            std::vector<SystemId> frontier{homeSys};
-            std::vector<uint8_t> seen(s.galaxy.systems.size(), 0);
-            seen[homeSys.index()] = 1;
-            std::optional<ObjectId> pick;
-            for (size_t f = 0; f < frontier.size() && !pick; ++f) {
-                for (ObjectId o : s.galaxy.system(frontier[f]).objects) {
-                    const SpaceObject& obj = s.galaxy.object(o);
-                    if (obj.kind == ObjectKind::Planet && !s.colony(o) && keysEqual(obj.surface, e.race.nativeSurface)) {
-                        pick = o;
-                        break;
-                    }
-                }
-                for (SystemId nb : s.galaxy.neighbors(frontier[f]))
-                    if (!seen[nb.index()]) {
-                        seen[nb.index()] = 1;
-                        frontier.push_back(nb);
-                    }
-            }
-            if (!pick) continue;
-            Colony c;
-            c.planet = *pick;
-            c.owner = e.id;
-            c.colonyType = "Balanced";
-            c.population.push_back({e.id, 0});
-            s.colonies[pick->index()] = c;
-            Colony& col = *s.colonies[pick->index()];
-            col.population.front().millions = std::max<int64_t>(1, maxPopulation(r, s, col) / 4);
-            e.knowledge.explored[s.galaxy.object(*pick).system.index()] = 1;
-        }
+    // ---- The starting stockpile (spec 02 §9, confirmed: binary): Starting
+    // Resources plus one turn of the empire's income. (The research pool's
+    // opening amount is kept by the economy, see economy::openingResearchPool;
+    // the intelligence pool starts at 0.)
+    economy::updateReports(r, s);
+    for (Empire& e : s.empires) {
+        const EconomyReport& rep = e.economy;
+        e.stockpile = s.options.startingResources + rep.colonies + rep.trade + rep.tariffsIn + rep.remoteMining + rep.otherIncome;
+    }
 
     // ---- Starting designs and ships.
     for (size_t i = 0; i < n; ++i) {

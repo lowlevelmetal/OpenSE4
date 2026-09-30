@@ -33,7 +33,10 @@ TEST_CASE("engine: setup creates homeworlds, tech, designs and ships") {
         CHECK(home.totalPopulation() == maxPopulation(r, s, home));
         CHECK_FALSE(home.facilities.empty());
         CHECK(colonyHasSpaceYard(r, home));
-        CHECK(e.stockpile == s.options.startingResources);
+        // Starting Resources plus one turn of income (spec 02 §9).
+        const EconomyReport& rep = e.economy;
+        CHECK(e.stockpile == s.options.startingResources + rep.colonies + rep.trade + rep.tariffsIn + rep.remoteMining + rep.otherIncome);
+        CHECK(e.stockpile[Resource::Minerals] > s.options.startingResources[Resource::Minerals]);
         CHECK(e.techLevel(techArea(r, "Test Construction")) == 1);
         CHECK(e.techLevel(techArea(r, "Test Rock Colonies")) == 1);  // home type colonization
         CHECK(e.techLevel(techArea(r, "Test Ice Colonies")) == 0);

@@ -1113,14 +1113,25 @@ TEST_CASE("economy: installed data set reproduces the observed Quick Start homew
     GameState& s = *game;
     Colony& home = homeworld(s, kMe);
     SpaceObject& planet = s.galaxy.object(home.planet);
-    planet.value = {100, 98, 102};  // as observed; our generator gives every homeworld 100 %
+    // The starting stockpile is Starting Resources plus one turn of income (spec 02 §9),
+    // and each homeworld value is the setting plus R[1,10] - 5.
+    const Resources start = s.empire(kMe).stockpile;
+    CHECK(start == Resources{20000, 20000, 20000} + economy::colonyOutput(*r, s, home).delivered());
+    for (int v : planet.value) {
+        CHECK(v >= r->setting("Plr Planet Value Medium Percent", 100) - 4);
+        CHECK(v <= r->setting("Plr Planet Value Medium Percent", 100) + 5);
+    }
+    // The second observed game: values 102 / 99 / 103 give 6120 / 1108 / 1153 and a
+    // first-turn treasury of 26120 / 21108 / 21153 (docs/spec/07, Calibration notes).
+    planet.value = {102, 99, 103};
+    CHECK(Resources{20000, 20000, 20000} + economy::colonyOutput(*r, s, home).delivered() == Resources{26120, 21108, 21153});
+    planet.value = {100, 98, 102};  // as observed in the first game
     planet.conditions = 50;         // "Unpleasant"
     CHECK(economy::conditionsName(economy::conditionsBand(planet.conditions)) == "Unpleasant");
 
     CHECK(home.totalPopulation() == 2000);
     CHECK(maxPopulation(*r, s, home) == 2000);
     CHECK(home.facilities.size() == 15);
-    CHECK(s.empire(kMe).stockpile == Resources{20000, 20000, 20000});
     const auto out = economy::colonyOutput(*r, s, home);
     CHECK(out.mood == Mood::Happy);
     CHECK(out.reproductionPercent == 10);
@@ -1137,7 +1148,7 @@ TEST_CASE("economy: installed data set reproduces the observed Quick Start homew
     processTurn(*r, s, none, idle);
     const EconomyReport& rep = s.empire(kMe).economy;
     CHECK(rep.colonies == Resources{6000, 1097, 1142});
-    CHECK(s.empire(kMe).stockpile == Resources{20000, 20000, 20000} + rep.colonies - rep.maintenance);
+    CHECK(s.empire(kMe).stockpile == start + rep.colonies - rep.maintenance);
 }
 
 TEST_CASE("economy: installed data set keeps the books straight over many turns (opt-in)") {

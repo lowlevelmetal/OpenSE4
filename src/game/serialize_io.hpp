@@ -446,6 +446,7 @@ void io(Ar& ar, GameOptions& o) {
     fields(ar, o.noTacticalCombat, o.allowGifts, o.allowTechTrades, o.allowIntel, o.noRuins, o.onlyBreathable, o.onlyHomeType,
            o.teamMode, o.showAllScores, o.maxShipsPerPlayer, o.maxUnitsPerPlayer, o.aiDifficulty, o.aiBonus, o.victory);
     fields(ar, o.simultaneous);
+    fields(ar, o.quadrantSize, o.allPlanetsSameSize);
 }
 
 // ---- The game -----------------------------------------------------------------------------------------

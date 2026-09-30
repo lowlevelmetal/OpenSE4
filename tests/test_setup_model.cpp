@@ -60,7 +60,7 @@ const game::Rules& setupRules() {
         out.root = fs::temp_directory_path() / "opense4_setup_model_test";
         fs::remove_all(out.root);
         // Tier 1: Intelligence 110 (250 points); tier 2: + Night Eyes (750); tier 3: Intelligence 150,
-        // Cunning 115, Night Eyes (2150).
+        // Cunning 115, Night Eyes (5200).
         const std::string tiers = R"(Race Opt 1 Num Characteristics := 1
 Race Opt 1 Characteristic 1 Type := Intelligence
 Race Opt 1 Characteristic 1 Amount := 110
@@ -207,7 +207,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
             if (e.kind == game::PlayerKind::Computer) {
                 ++computers;
                 CHECK_FALSE(p->neutral);
-                CHECK(e.presetTier == 2);  // 3000 points buys the top tier
+                CHECK(e.presetTier == 1);  // the top tier (5200 points) is beyond 3000
             }
             if (e.kind == game::PlayerKind::Neutral) {
                 ++neutrals;
@@ -300,20 +300,23 @@ TEST_CASE("setup model: the preview is the map the game starts with") {
 TEST_CASE("setup model: racial point accounting") {
     const game::Rules& r = setupRules();
     using game::Characteristic;
-    // Intelligence: 25 per point up to +20, then 25 * 100% beyond; refunds 25 per point to -20, then 10 % of that.
+    // Intelligence: 25 per point up to +20, then P = 100 points per point beyond;
+    // refunds 25 per point down to -20, then N = 10 per point (spec 02 §8.1).
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 100) == 0);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 110) == 250);
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 750);
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 25 * 10 / 100 * 10));
-    // Cunning: 20 per point, beyond +10 at 200 %.
-    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 40 * 5);
-    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 10 * 10));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 120) == 500);
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 25 * 20 + 100 * 10);
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 10 * 10));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 30));  // clamped to Min Pct 50
+    // Cunning: 20 per point, beyond +10 at 200 per point; refunds 50 per point beyond -10.
+    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 200 * 5);
+    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 50 * 10));
     const setup::CharacteristicLimits l = setup::characteristicLimits(r, Characteristic::Intelligence);
     CHECK(l.min == 50);
     CHECK(l.max == 150);
 
     const ruleset::RacePreset& alpha = *game::findPreset(r, "Alpha");
-    CHECK(setup::tierCosts(r, alpha) == std::vector<int>{250, 750, (25 * 20 + 25 * 30) + (20 * 10 + 40 * 5) + 500});
+    CHECK(setup::tierCosts(r, alpha) == std::vector<int>{250, 750, (25 * 20 + 100 * 30) + (20 * 10 + 200 * 5) + 500});
     CHECK(setup::bestTierWithin(r, alpha, 2000) == 1);
     CHECK(setup::bestTierWithin(r, alpha, 100) == 0);
 
