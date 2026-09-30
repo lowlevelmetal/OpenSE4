@@ -350,18 +350,24 @@ private:
             if (keysEqual(t_.defaultStrategy, "Ram"))
                 if (auto i = find("Kamikaze")) return *i;
         }
+        // Otherwise the first strategy whose primary movement suits the type
+        // (spec 05 §7.5 step 10, confirmed: binary): Don't Get Hurt for the
+        // colony, warp, stellar, space-yard, mine, transport and carrier types
+        // (a Satellite Layer counts with the carriers, inferred), Drop Troops
+        // for troop ships, Board Enemy Ships for boarding ships, Ram for
+        // drones, Optimal Weapons Range for all others. So transports, colony
+        // ships and the other unarmed types never get Optimal, with which an
+        // unarmed ship rams (spec 04 §16.1).
         const std::string_view type = t_.designType;
         std::string_view want = "Optimal Weapons Range";
-        static constexpr std::array<std::string_view, 14> kCareful{
-            "Colony", "Warp Point", "Planet", "Star", "Storm", "Nebulae", "Black Hole", "Space Yard", "Mine", "Transport", "Carrier", "Layer",
-            "Sweeper", "Satellite"};
+        static constexpr std::array<std::string_view, 12> kCareful{"Colony", "Warp Point", "Planet", "Star",      "Storm",   "Nebulae",
+                                                                   "Black Hole", "Space Yard", "Mine", "Transport", "Carrier", "Layer"};
         const std::string norm = datafile::normalizeKey(type);
         for (std::string_view k : kCareful)
             if (norm.find(datafile::normalizeKey(k)) != std::string::npos) want = "Don't Get Hurt";
         if (keysEqual(type, "Troop Transport") || keysEqual(type, "Troop")) want = "Drop Troops";
         if (keysEqual(type, "Boarding Ship")) want = "Board Enemy Ships";
         if (norm.find("drone") != std::string::npos && norm.find("carrier") == std::string::npos) want = "Ram";
-        if (keysEqual(type, "Kamikaze Attack Ship")) want = "Ram";
         const std::string wanted = datafile::normalizeKey(want);
         for (size_t i = 0; i < list.size(); ++i)
             for (const auto& [key, value] : list[i].settings)

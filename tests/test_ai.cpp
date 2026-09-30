@@ -980,6 +980,46 @@ TEST_CASE("ai: the designer takes the largest allowed hull and fills it by densi
     if (d) CHECK_FALSE(computeDesignStats(r, &e, *d).armed());
 }
 
+TEST_CASE("ai: a new design's strategy suits its type when the template's default is missing") {
+    // Spec 05 §7.5 step 10 (confirmed: binary): unarmed types get Don't Get
+    // Hurt, so they never ram through Optimal Weapons Range (spec 04 §16.1).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 1, 8, true);
+    Empire& e = s.empires[0];
+    researchEverything(r, e);
+    e.strategies.clear();
+    for (const char* movement : {"Optimal Weapons Range", "Don't Get Hurt", "Drop Troops", "Board Enemy Ships", "Ram"})
+        e.strategies.push_back({std::string("Test ") + movement, {{"Primary Movement Strategy", movement}}});
+    auto primaryOf = [&](uint32_t i) { return e.strategies.at(i).settings.front().second; };
+    auto expected = [](std::string_view type) -> std::string {
+        auto has = [&](std::string_view part) { return type.find(part) != std::string_view::npos; };
+        if (type == "Troop Transport" || type == "Troop") return "Drop Troops";
+        if (type == "Boarding Ship") return "Board Enemy Ships";
+        if (has("Drone") && !has("Carrier")) return "Ram";
+        for (std::string_view k : {"Colony", "Warp Point", "Planet", "Star", "Storm", "Nebulae", "Black Hole", "Space Yard", "Mine", "Transport",
+                                   "Carrier", "Layer"})
+            if (has(k)) return "Don't Get Hurt";
+        return "Optimal Weapons Range";
+    };
+    int checked = 0;
+    for (ai::DesignTemplate t : ai::builtinProfile().designs) {
+        t.defaultStrategy = "No Such Strategy";
+        const auto d = ai::detail::buildDesign(r, s, e, t);
+        if (!d) continue;
+        ++checked;
+        CHECK_MESSAGE(primaryOf(d->strategy) == expected(t.designType), t.designType);
+        if (t.designType == "Population Transport" || t.designType.starts_with("Colony")) CHECK(primaryOf(d->strategy) == "Don't Get Hurt");
+    }
+    CHECK(checked >= 10);
+    // A template default the empire has wins; "Ram" falls back to "Kamikaze".
+    e.strategies.push_back({"Kamikaze", {{"Primary Movement Strategy", "Ram"}}});
+    ai::DesignTemplate attack = *ai::builtinProfile().design("Attack Ship");
+    attack.defaultStrategy = "Ram";
+    const auto rammer = ai::detail::buildDesign(r, s, e, attack);
+    REQUIRE(rammer);
+    CHECK(e.strategies.at(rammer->strategy).name == "Kamikaze");
+}
+
 TEST_CASE("ai: new designs make every older design of their type obsolete") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 8, false);
