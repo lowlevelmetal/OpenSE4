@@ -2062,3 +2062,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     number from the nearest planets within the target distance, taking drones of the
     half's own type (`Anti-Ship Drone` or `Anti-Planet Drone`) first. Is "total" counted
     per planet or for the empire, and how are drones matched to targets?
+30. **Transports and mixed races** (§7.5). A Load Cargo order names no race, so a
+    transport takes every race the source planet can spare, the owner's first. The
+    minister then checks only the first carried race against the destination, and the
+    drop can bring a race that cannot breathe there, which domes the colony (seen in a
+    long all-computer game: a Huge homeworld fell from 25 to 5 facility slots). The
+    original minister loads "a race": does its load take one race only, or check every
+    carried race at the destination?
+31. **Colony ships whose target is gone** (§7.5). When a planet becomes an asteroid field
+    (a destroyed star) while colony ships fly to it, OpenSE4's Colonization minister leaves
+    them on their way; the Colonize order fails on arrival and the ship is then planned
+    again. Does the original re-target them at once? (inferred: OpenSE4 does not)
