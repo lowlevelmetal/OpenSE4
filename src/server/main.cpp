@@ -345,7 +345,9 @@ int runServer(std::span<char*> args) {
                 }
                 case net::EventType::StateUpdated:
                 case net::EventType::TurnProcessing:
+                case net::EventType::OrdersReceived:
                     // Turn-based games: every command and every player turn (the turn summary says whose turn it is).
+                    // Simultaneous games: each player's orders and each turn processed.
                     if (verbose || !host.turnBased()) say(net::describe(e));
                     break;
                 case net::EventType::TurnStatusChanged: {

@@ -99,13 +99,18 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
                                                       const fs::path& ordersDir) {
     ProcessReport rep;
     rep.turnBefore = state.turn;
+    auto refused = [&](const game::TurnResult& r) {
+        for (const auto& [empire, why] : r.rejected) {
+            const std::string who = empire.valid() && empire.index() < state.empires.size() ? state.empire(empire).name : std::string("?");
+            rep.rejectedCommands.push_back(std::format("{}: {}", who, why));
+        }
+    };
     const bool turnBased = game::turnBased(state);
     // A turn-based game file between player turns goes on to the next human
     // first; players make their .plr from that game.
     bool resumed = false;
     if (turnBased && !state.gameOver && !state.playerTurn.started) {
-        for (const auto& [empire, why] : game::resumeTurnBased(rules, state).rejected)
-            rep.rejectedCommands.push_back(std::format("{}: {}", state.empire(empire).name, why));
+        refused(game::resumeTurnBased(rules, state));
         resumed = true;
     }
     const game::EmpireId active = turnBased ? game::activePlayer(state) : game::EmpireId{};
@@ -190,15 +195,8 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
         // One player's turn: its commands one after another, as the player
         // gave them, then the end of its turn (spec 05 §8).
         if (playerTurn) {
-            const game::Empire& e = state.empire(active);
-            const std::string name = e.name;
+            const std::string name = state.empire(active).name;
             game::LiveOptions options;
-            auto refused = [&](const game::TurnResult& r) {
-                for (const auto& [empire, why] : r.rejected) {
-                    const std::string who = empire.valid() && empire.index() < state.empires.size() ? state.empire(empire).name : std::string("?");
-                    rep.rejectedCommands.push_back(std::format("{}: {}", who, why));
-                }
-            };
             if (const auto& chosen = best[active.index()]) {
                 rep.submitted.push_back(name);
                 rep.used.push_back(chosen->path);
@@ -213,8 +211,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             refused(game::endPlayerTurn(rules, state, active, options));
         } else if (!resumed && !state.gameOver) {
             // No human left to play: the computer players play one game turn.
-            game::TurnResult r = game::resumeTurnBased(rules, state);
-            for (const auto& [empire, why] : r.rejected) rep.rejectedCommands.push_back(std::format("{}: {}", state.empire(empire).name, why));
+            refused(game::resumeTurnBased(rules, state));
         }
         rep.turnAfter = state.turn;
         rep.nextEmpire = game::activePlayer(state);
@@ -234,11 +231,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             rep.playedByComputer.push_back(e.name);
         }
     }
-    const game::TurnResult result = game::processTurn(rules, state, orders);
-    for (const auto& [empire, why] : result.rejected) {
-        const std::string who = empire.valid() && empire.index() < state.empires.size() ? state.empire(empire).name : std::string("?");
-        rep.rejectedCommands.push_back(std::format("{}: {}", who, why));
-    }
+    refused(game::processTurn(rules, state, orders));
     rep.turnAfter = state.turn;
     return rep;
 }

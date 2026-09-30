@@ -281,9 +281,9 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
         }
     } else if (control != Control::Computer && ministersPlan(s, e, control)) {
         // Taking over a human's turn in progress: the ministers plan the rest
-        // of it now, as at a start of turn (inferred).
+        // of it now, as at a start of turn (inferred). The turn's counters and
+        // decisions were recorded when it started.
         applyBatch(lc, e, ai::planOrders(ctx.rules, s, e));
-        ai::recordAiDecisions(ctx, e);
     }
     s.playerTurn.questions.clear();
     finishPlayerTurn(lc, e, control);

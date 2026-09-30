@@ -92,6 +92,7 @@ std::optional<game::GameState> HostTransport::pollState() {
 }
 
 std::string HostTransport::status() const {
+    if (host_->phase() == net::HostPhase::GameOver) return "The game is over.";
     const auto& t = host_->turnStatus();
     if (t.processing && !t.turnBased) return "Processing the turn...";
     std::string s = waitingFor(t, host_->localEmpire());
@@ -157,6 +158,7 @@ std::optional<game::GameState> ClientTransport::pollState() {
 
 std::string ClientTransport::status() const {
     if (client_->phase() != net::ClientPhase::Playing) return "Not connected to the host";
+    if (client_->state() && client_->state()->gameOver) return "The game is over.";
     const auto& t = client_->turnStatus();
     if (t.processing && !t.turnBased) return "The host is processing the turn...";
     std::string s = waitingFor(t, client_->empire());
