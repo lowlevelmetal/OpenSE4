@@ -1250,8 +1250,9 @@ private:
                 case Exec::Done:
                 case Exec::Acted:
                 case Exec::Removed:
-                    // A repeating list that goes round without a step waits for the next turn.
-                    if (++idle > listLength(a) + 1) return;
+                    // A repeating list that goes round without a step waits for the next
+                    // turn (inferred); any other list gets shorter with each order.
+                    if (repeat(a) && ++idle > listLength(a) + 1) return;
                     break;
                 case Exec::ActedStay:
                 case Exec::Wait:

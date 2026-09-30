@@ -396,3 +396,30 @@ TEST_CASE("turn-based: a colony ship founds its colony when it reaches the plane
     REQUIRE(d.s().colony(far));
     CHECK(d.s().colony(far)->owner == kA);
 }
+
+TEST_CASE("turn-based: orders that need no movement run one after another; a repeating list that never moves waits") {
+    Duel d;
+    const ObjectId home = d.w.planet(d.a, {0, 6});
+    d.w.colony(home, kA, 1000);
+    const VehicleId hauler = d.w.spawn(d.w.ship(kA, "Hauler", 1, {"Test Cargo Bay"}), at(d.a, 0, 6));
+    fuel(d.w, hauler);
+    resumeTurnBased(d.r(), d.s());
+
+    // Load is always done, even when nothing more fits (spec 03 §8).
+    Order load;
+    load.kind = OrderKind::LoadCargo;
+    load.amount = -1;
+    // Four in-place orders, then a move: all carried out at once.
+    applyLive(d.r(), d.s(), kA, ordersFor(hauler, {load, load, load, load, moveTo(d.a, 1, 6)}));
+    CHECK(d.w.v(hauler).orders.empty());
+    CHECK(d.w.v(hauler).location == at(d.a, 1, 6));
+    CHECK(d.w.v(hauler).cargo.totalPopulation() > 0);
+
+    // Loading again and again at one place: the list goes round a little, then waits.
+    cmd::SetOrders loop = ordersFor(hauler, {load, load});
+    loop.repeat = true;
+    const TurnResult res = applyLive(d.r(), d.s(), kA, loop);
+    CHECK_FALSE(hasRejection(res));
+    CHECK(d.w.v(hauler).orders.size() == 2);
+    CHECK(d.w.v(hauler).repeatOrders);
+}
