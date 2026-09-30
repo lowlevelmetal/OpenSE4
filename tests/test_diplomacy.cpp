@@ -25,6 +25,13 @@ const EmpireId kA{0u}, kB{1u}, kC{2u};
 
 TurnContext context(GameState& s) { return turnContext(politicsRules(), s); }
 
+// Every living empire's treaty step, in empire order (spec 05 §8 step 6 of each
+// empire's end-of-turn processing).
+void treatySteps(TurnContext& ctx) {
+    for (size_t i = 0; i < ctx.state.empires.size(); ++i)
+        if (ctx.state.empires[i].alive) diplomacy::treatyStep(ctx, EmpireId{i});
+}
+
 int tradePct(const GameState& s, EmpireId a, EmpireId b) { return diplomacy::tradePercent(politicsRules(), s, a, b); }
 
 void nextTurn(GameState& s) {
@@ -114,9 +121,9 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
 
     // Trade starts at 1 % after the signing turn and grows to the maximum.
     CHECK(tradePct(s, kA, kB) == 0);
-    diplomacy::advanceTrade(ctx);
+    treatySteps(ctx);
     CHECK(tradePct(s, kA, kB) == 1);
-    for (int i = 0; i < 30; ++i) diplomacy::advanceTrade(ctx);
+    for (int i = 0; i < 30; ++i) treatySteps(ctx);
     CHECK(tradePct(s, kA, kB) == 20);
     CHECK(tradePct(s, kB, kA) == 20);
     CHECK(s.empire(kA).relation(kB).tradeTurns == 31);  // the counter itself is not capped
@@ -253,22 +260,22 @@ TEST_CASE("diplomacy: trade percentage across treaty changes") {
     setContact(s, kA, kB);
     TurnContext ctx = context(s);
     // The counter grows toward every other living empire, whatever the treaty.
-    diplomacy::advanceTrade(ctx);
+    treatySteps(ctx);
     CHECK(s.empire(kA).relation(kC).tradeTurns == 1);
     CHECK(tradePct(s, kA, kC) == 0);  // no trade treaty
     diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);  // from None: the counter restarts
     CHECK(s.empire(kA).relation(kB).tradeTurns == 0);
-    for (int i = 0; i < 5; ++i) diplomacy::advanceTrade(ctx);
+    for (int i = 0; i < 5; ++i) treatySteps(ctx);
     CHECK(tradePct(s, kA, kB) == 5);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::Partnership);  // both trade level: kept
     CHECK(tradePct(s, kA, kB) == 5);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);  // below trade level: reset
     CHECK(tradePct(s, kA, kB) == 0);
-    diplomacy::advanceTrade(ctx);
+    treatySteps(ctx);
     CHECK(s.empire(kA).relation(kB).tradeTurns == 1);
     CHECK(tradePct(s, kA, kB) == 0);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeResearchAlliance);
-    diplomacy::advanceTrade(ctx);
+    treatySteps(ctx);
     CHECK(tradePct(s, kB, kA) == 1);
 
     // Setting the same treaty again changes nothing and logs nothing.
@@ -296,7 +303,7 @@ TEST_CASE("diplomacy: trade income, research and intelligence trade, tariffs") {
     TurnContext ctx = context(s);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);
     diplomacy::setTreaty(ctx, kA, kC, Treaty::Subjugation, true);
-    for (int i = 0; i < 7; ++i) diplomacy::advanceTrade(ctx);
+    for (int i = 0; i < 7; ++i) treatySteps(ctx);
     s.empire(kA).race.characteristics[static_cast<size_t>(Characteristic::PoliticalSavvy)] = 130;
 
     // F adds Political Savvy, the race's Trade traits and the culture's Trade value.
@@ -562,6 +569,7 @@ TEST_CASE("diplomacy: research, intelligence, messages and events through the tu
             for (Empire& o : s.empires)
                 if (e.id != o.id) e.relation(o.id).contact = true;
         const uint32_t projects = static_cast<uint32_t>(r.data().intelProjects.size());
+        std::vector<std::string> trace;
         for (uint32_t t = 0; t < 30 && !s.gameOver; ++t) {
             std::vector<EmpireOrders> orders;
             for (const Empire& e : s.empires) {
@@ -583,17 +591,14 @@ TEST_CASE("diplomacy: research, intelligence, messages and events through the tu
                     if (msg.to == e.id && msg.delivered && !msg.answered) o.commands.push_back(cmd::AnswerMessage{msg.id, msg.id.value % 2 == 0, {}});
                 orders.push_back(std::move(o));
             }
-            for (Empire& e : s.empires) {
-                e.economy.research = 2500;
-                e.economy.intelligence = 1200;
-            }
+            for (Empire& e : s.empires) research::addToPools(e, 2500, 1200);
             processTurn(r, s, orders);
-        }
-        std::vector<std::string> trace;
-        for (const Empire& e : s.empires) {
-            for (const LogEntry& l : e.log) trace.push_back(std::format("{}:{}:{}", l.turn, l.title, l.text));
-            for (const Relation& rel : e.relations) trace.push_back(std::format("{}/{}", static_cast<int>(rel.treaty), rel.tradeTurns));
-            trace.push_back(std::format("{} {} {}", e.stockpile[Resource::Minerals], research::totalLevels(r, e), e.history.size()));
+            // Each log keeps one turn's entries (spec 05 §3.4): trace every turn.
+            for (const Empire& e : s.empires) {
+                for (const LogEntry& l : e.log) trace.push_back(std::format("{}:{}:{}", l.turn, l.title, l.text));
+                for (const Relation& rel : e.relations) trace.push_back(std::format("{}/{}", static_cast<int>(rel.treaty), rel.tradeTurns));
+                trace.push_back(std::format("{} {} {}", e.stockpile[Resource::Minerals], research::totalLevels(r, e), e.history.size()));
+            }
         }
         return std::pair{trace, s.rng};
     };

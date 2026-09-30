@@ -483,6 +483,17 @@ struct CombatRecord {
 
 // ---- Events and options ------------------------------------------------------------------------
 
+// Something that changes population mood (Happiness.txt triggers, spec 02 §4).
+// Each empire's happiness update uses up the events raised since its previous
+// update; those raised after it in the same turn wait for the next turn's.
+struct MoodEvent {
+    EmpireId empire;           // whose population reacts
+    std::string trigger;       // Happiness.txt trigger identifier
+    SystemId system;           // where it happened (invalid = empire-wide)
+    ObjectId planet;           // the planet it happened at (optional)
+    int count = 1;
+};
+
 struct PendingEvent {
     uint32_t eventType = 0;   // Events.txt index
     EmpireId empire;
@@ -563,6 +574,7 @@ struct GameState {
     std::vector<Fleet> fleets;                    // sorted by id
     std::vector<DiplomaticMessage> messages;      // not yet answered/expired
     std::vector<PendingEvent> pendingEvents;
+    std::vector<MoodEvent> pendingMood;           // raised after an empire's happiness update, for its next one
     std::vector<CombatRecord> combats;            // battles of the last processed turn
     uint32_t nextVehicleId = 0;
     uint32_t nextFleetId = 0;

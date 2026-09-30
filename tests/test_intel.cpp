@@ -10,6 +10,7 @@
 #include "game/events.hpp"
 #include "game/intel.hpp"
 #include "game/query.hpp"
+#include "game/research.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
 
@@ -114,19 +115,18 @@ TEST_CASE("intel: the pool is spent at the step and emptied") {
     Empire& a = s.empire(kA);
     a.intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB)};
     a.intelEvenly = false;
-    s.empire(kA).economy.intelligence = 700;
     s.empire(kA).intelPool = 400;
     TurnContext ctx = context(s);
-    intel::runIntel(ctx);
-    // Last turn's 400 points were spent; this turn's 700 wait for the next step.
+    intel::intelStep(ctx, kA);
+    // Last turn's 400 points were spent and the pool is empty; this turn's
+    // income (the economy's income step, research::addToPools) waits for the
+    // next step.
     CHECK(a.intel[0].progress == 400);
+    CHECK(a.intelPool == 0);
+    research::addToPools(a, 0, 700);
     CHECK(a.intelPool == 700);
-    // A master's tariff is taken once, by the economy's income step
-    // (economy::collectIncome): the pool gets the income as it is.
-    diplomacy::setTreaty(ctx, kB, kA, Treaty::Subjugation, true);
-    a.intelPool = 0;
-    intel::runIntel(ctx);
-    CHECK(a.intelPool == 700);
+    intel::intelStep(ctx, kA);
+    CHECK(a.intelPool == 0);
 }
 
 TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") {
@@ -617,12 +617,13 @@ TEST_CASE("intel: turns are deterministic") {
         setContact(s, kB, kC);
         std::vector<std::string> titles;
         for (int turn = 0; turn < 6; ++turn) {
-            for (Empire& e : s.empires) e.economy.intelligence = 1500;
+            for (Empire& e : s.empires) e.intelPool = 1500;
             s.empire(kA).intel = {order(Effect::ShipDamage, kB), order(Effect::PointsChange, kB), order(Effect::PlanetFacilityDamage, kB)};
             s.empire(kC).intel = {order(Effect::ShipExperienceChange, kB)};
             s.empire(kB).intel = {defense(1, 500)};
             TurnContext ctx = context(s);
-            intel::runIntel(ctx);
+            for (size_t i = 0; i < s.empires.size(); ++i)
+                if (s.empires[i].alive) intel::intelStep(ctx, EmpireId{i});
             ++s.turn;
         }
         for (const Empire& e : s.empires)

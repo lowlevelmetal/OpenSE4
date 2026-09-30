@@ -57,6 +57,29 @@ bool isStar(ObjectKind k) { return k == ObjectKind::Star || k == ObjectKind::Des
 
 bool matches(ObjectKind want, ObjectKind have) { return want == have || (isStar(want) && isStar(have)); }
 
+// A colony lost to a stellar manipulation or event: its owner is told why.
+void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
+    GameState& s = ctx.state;
+    Colony* c = s.colony(planet);
+    if (!c) return;
+    const EmpireId owner = c->owner;
+    const SystemId sys = s.galaxy.object(planet).system;
+    ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet));
+    ctx.mood(owner, "Any Planet Lost", sys, planet);
+    if (c->homeworld) ctx.mood(owner, "Homeworld Lost", sys, planet);
+    s.colonies[planet.index()].reset();
+}
+
+// A planet or asteroid field becomes a random natural asteroid field that
+// keeps its name, values and conditions (of `size`, 0 = any).
+void toAsteroids(const Rules& r, SpaceObject& obj, int size, Rng& rng) {
+    std::vector<uint32_t> types = naturalSectorTypes(r.data(), ObjectKind::Asteroids, size);
+    if (types.empty()) types = naturalSectorTypes(r.data(), ObjectKind::Asteroids);
+    obj.kind = ObjectKind::Asteroids;
+    obj.abilities.clear();
+    if (!types.empty()) applySectorType(r.data(), obj, types[rng.below(types.size())]);
+}
+
 struct Actor {
     VehicleId vehicle;
     size_t entry = 0;
@@ -216,27 +239,6 @@ private:
         if (obj.kind == ObjectKind::WarpPoint) obj.destination = {};
     }
 
-    void loseColony(ObjectId planet, std::string_view cause) {
-        Colony* c = s_.colony(planet);
-        if (!c) return;
-        const EmpireId owner = c->owner;
-        const SystemId sys = s_.galaxy.object(planet).system;
-        ctx_.log(owner, LogCategory::Events, std::format("{} lost", s_.galaxy.object(planet).name), std::string(cause), locationOf(s_.galaxy, planet));
-        ctx_.mood(owner, "Any Planet Lost", sys, planet);
-        if (c->homeworld) ctx_.mood(owner, "Homeworld Lost", sys, planet);
-        s_.colonies[planet.index()].reset();
-    }
-
-    // A planet or asteroid field becomes a random natural asteroid field that
-    // keeps its name, values and conditions (of `size`, 0 = any).
-    void toAsteroids(SpaceObject& obj, int size) {
-        std::vector<uint32_t> types = naturalSectorTypes(r_.data(), ObjectKind::Asteroids, size);
-        if (types.empty()) types = naturalSectorTypes(r_.data(), ObjectKind::Asteroids);
-        obj.kind = ObjectKind::Asteroids;
-        obj.abilities.clear();
-        if (!types.empty()) applySectorType(r_.data(), obj, pick(types));
-    }
-
     // The shockwave of a destroyed star: every planet and asteroid field
     // becomes a new asteroid field (colonies lost); everything else except
     // warp points is destroyed, ships and unit groups included.
@@ -248,8 +250,8 @@ private:
             SpaceObject& obj = s_.galaxy.object(o);
             if (obj.kind == ObjectKind::WarpPoint) continue;
             if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
-                loseColony(o, cause);
-                toAsteroids(obj, 0);
+                loseColony(ctx_, o, cause);
+                toAsteroids(r_, obj, 0, s_.rng);
             } else {
                 remove(o);
             }
@@ -297,7 +299,7 @@ private:
                 const int size = static_cast<int>(std::min<int64_t>(actor_.value, stellarSizeOf(rs, s_.galaxy.object(*field))));
                 const auto types = naturalSectorTypes(rs, ObjectKind::Planet, size);
                 if (types.empty()) return "No planet of that size can be made";
-                loseColony(*field, "The asteroid field became a planet.");
+                loseColony(ctx_, *field, "The asteroid field became a planet.");
                 const std::string name = planetName(sys.id);
                 SpaceObject& obj = s_.galaxy.object(*field);
                 obj.kind = ObjectKind::Planet;
@@ -314,8 +316,7 @@ private:
                 SpaceObject& obj = s_.galaxy.object(*planet);
                 if (sizeRecordNumber(obj) > actor_.value) return "The planet is too large";
                 if (blocked(sys.id, AbilityKind::StopPlanetDestroyer, obj.sector)) return "The planet is protected";
-                loseColony(*planet, "The planet was destroyed.");
-                toAsteroids(obj, stellarSizeOf(rs, obj));
+                destroyPlanet(ctx_, *planet, "The planet was destroyed.", s_.rng);
                 announce(std::format("{}{}", kPlanetDestroyed, obj.name));
                 return {};
             }
@@ -561,3 +562,15 @@ void objectsAppended(GameState& s) {
 }
 
 } // namespace opense4::game::movement::detail
+
+namespace opense4::game::movement {
+
+void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng) {
+    GameState& s = ctx.state;
+    if (!planet.valid() || planet.index() >= s.galaxy.objects.size() || s.galaxy.object(planet).kind != ObjectKind::Planet) return;
+    detail::loseColony(ctx, planet, cause);
+    SpaceObject& obj = s.galaxy.object(planet);
+    detail::toAsteroids(ctx.rules, obj, stellarSizeOf(ctx.rules.data(), obj), rng);
+}
+
+} // namespace opense4::game::movement

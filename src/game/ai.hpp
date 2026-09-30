@@ -8,31 +8,33 @@
 // entry points only read the state and return the orders an empire would
 // send; the turn pipeline applies them like anyone else's. The AI's memory
 // (Empire::aiState, aiTurnsInState, aiMemory, aiDifficulty and the AI fields
-// of Relation, including anger) is kept by updateAnger(), which runs with a
-// mutable state once per turn.
+// of Relation, including anger) is kept by the mutable steps below.
 //
-// Turn order (spec 05 §7.1, §8). The original runs the ministers in two
-// groups:
-//   1. while orders are given, before movement: the AI state update, then
-//      Politics, Troops, Transports, Colonization, Space Yard Ships,
-//      Carriers, Mines/Satellites/Drones, Fleets, Defense, Attack,
-//      Exploration, Patrol, Resupply, Repair, Scrap, Retrofit and Stellar
-//      Manipulation -> planOrders();
-//   2. at the start of the empire's economy step, before income: Design,
-//      Research, Intelligence, Facility Construction, Ship Construction and
-//      Facility Construction again (the first facility pass is skipped every
-//      fifth turn) -> planEconomyStep().
-// planTurn() runs both groups on one private copy (orders first), which is
-// what the turn pipeline calls today. The AI state update and the political
-// step (territory, anger) need a mutable state and run in updateAnger(); it
-// is called at the end of a turn, which is the same point in the cycle as
-// "before the ministers of the next turn".
+// Turn order (spec 05 §7.1, §8; processTurn). The original runs the
+// ministers in two groups:
+//   1. at the start of the turn, for each empire in turn, before movement:
+//      the AI state update (updateAiState), the political step
+//      (politicalStep: territory and anger), then Politics, Troops,
+//      Transports, Colonization, Space Yard Ships, Carriers,
+//      Mines/Satellites/Drones, Fleets, Defense, Attack, Exploration, Patrol,
+//      Resupply, Repair, Scrap, Retrofit and Stellar Manipulation
+//      -> planOrders();
+//   2. at the start of the empire's end-of-turn processing, before income:
+//      Design, Research, Intelligence, Facility Construction, Ship
+//      Construction and Facility Construction again (the first facility pass
+//      is skipped every fifth turn) -> planEconomyStep().
+// After group 1 of every empire, recordAiDecisions notes what was decided;
+// at the end of the turn rememberAiEvents keeps what the AI remembers of it.
+// planTurn() runs both groups on one private copy (orders first) and
+// updateAnger() runs the four mutable steps together at the end of a turn;
+// tests and tools use them.
 
 #include "core/rng.hpp"
 #include "game/commands.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -78,6 +80,10 @@ std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireI
 // individual ones act on the colonies and vehicles whose minister flag is on.
 // Everything is theirs with Empire::ministerAll. Empty for computer empires.
 std::vector<Command> ministerCommands(const Rules& r, const GameState& s, EmpireId e);
+// Whether a human empire has any minister at work: complete control, a
+// global minister switched on, or a colony, vehicle or fleet under minister
+// control. False for computer empires (they are all ministers).
+bool ministersActive(const GameState& s, EmpireId e);
 
 // The same plans with the planner's own bookkeeping, for tests and tools:
 // commands the planner considered but that the rules refused (it drops them).
@@ -89,22 +95,31 @@ PlanReport planTurnReport(const Rules& r, const GameState& s, EmpireId e, bool m
 
 // ---- Memory (mutable, once per turn) --------------------------------------------------------
 
-// The AI step of the turn (currently phase 12), for every living empire:
-// records what the computer players decided this turn (war declarations set
-// anger to 100, accepted demands are carried out half of the time), keeps
-// the per-empire counters, runs the AI state machine (spec 05 §7.2) for
-// computer players and humans with active ministers, and the political step
-// (territory and anger, §7.3) for empires whose Politics minister is on.
+// All of the AI's memory steps at once, for every living empire, as at the
+// end of a turn (tests and tools; processTurn runs the parts at their own
+// places): records what the computer players decided this turn (war
+// declarations set anger to 100, accepted demands are carried out half of
+// the time), keeps the per-empire counters, runs the AI state machine (spec
+// 05 §7.2), the political step (territory and anger, §7.3) for empires whose
+// Politics minister is on, counting this turn's battles, reports and
+// messages, and what the AI remembers of the turn.
 void updateAnger(TurnContext& ctx);
-// The parts of updateAnger, in its order, for a turn order that runs them apart:
+// The parts of updateAnger:
 // after the AI's commands were applied (difficulty, counters, war declarations and
 // accepted demands);
 void recordAiDecisions(TurnContext& ctx);
-// before the ministers act (territory and the state machine of §7.2);
+// before the ministers act (territory and the state machine of §7.2): every
+// empire, or one empire at the start of its turn;
 void updateAiStates(TurnContext& ctx);
-// then the political step (anger, §7.3) before Politics decides;
+void updateAiState(TurnContext& ctx, EmpireId e);
+// then the political step (anger, §7.3) before Politics decides: every
+// empire counting this turn's events, or one empire counting the events of
+// `eventsTurn` (the turn processed before; none on the first turn), whose
+// battles GameState::combats still holds;
 void politicalStep(TurnContext& ctx);
-// and once per turn after combat (combat counts, traced spies, mine fields met).
+void politicalStep(TurnContext& ctx, EmpireId e, std::optional<uint32_t> eventsTurn);
+// and once per turn after combat and every empire's end-of-turn processing
+// (combat counts, traced spies, mine fields met).
 void rememberAiEvents(TurnContext& ctx);
 
 // ---- Helpers shared with the UI and other modules ---------------------------------------

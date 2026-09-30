@@ -1,6 +1,5 @@
 #include "game/research.hpp"
 
-#include "game/economy.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
 
@@ -151,10 +150,7 @@ int etaTurns(const Rules& r, const GameState& s, const Empire& e, size_t queueIn
 
 // ---- Pools ----------------------------------------------------------------------------------------
 
-int64_t availablePoints(const GameState& s, const Empire& e) {
-    if (s.turn == 0 && e.researchPool == 0) return std::max<int64_t>(0, e.economy.research);
-    return std::max<int64_t>(0, e.researchPool);
-}
+int64_t availablePoints(const GameState&, const Empire& e) { return std::max<int64_t>(0, e.researchPool); }
 
 void addToPools(Empire& e, int64_t research, int64_t intelligence) {
     e.researchPool = addCapped(e.researchPool, research);
@@ -162,8 +158,10 @@ void addToPools(Empire& e, int64_t research, int64_t intelligence) {
 }
 
 void openingPools(const Rules&, GameState& s) {
+    // Starting Resources is one amount for every kind (spec 02 §9).
+    const int64_t starting = std::max<int64_t>(0, s.options.startingResources[Resource::Minerals]);
     for (Empire& e : s.empires) {
-        e.researchPool = std::min(std::max<int64_t>(0, e.economy.research), kPoolCap);
+        e.researchPool = std::min(starting + std::max<int64_t>(0, e.economy.research), kPoolCap);
         e.intelPool = 0;
     }
 }
@@ -296,24 +294,6 @@ void researchStep(TurnContext& ctx, EmpireId id) {
                 now.research.push_back({area, 0});
     if (!done.empty() && now.research.empty())
         ctx.log(id, LogCategory::Research, "All Projects Completed", "The research queue is empty.");
-}
-
-void runResearch(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    for (size_t i = 0; i < s.empires.size(); ++i) {
-        const EmpireId id{i};
-        if (!s.empire(id).alive) continue;
-        // Until createGame calls openingPools, the first step takes the
-        // economy's first-turn income, which includes the Starting Resources.
-        if (s.turn == 0 && s.empire(id).researchPool == 0) s.empire(id).researchPool = std::max<int64_t>(0, s.empire(id).economy.research);
-        researchStep(ctx, id);
-        // Income: this turn's research, less the Starting Resources the
-        // economy adds on the first turn. The economy has already taken a
-        // master's tariff (and added the computer bonus and trade).
-        Empire& e = s.empire(id);
-        const int64_t income = e.economy.research - economy::openingResearchPool(s);
-        addToPools(e, income, 0);
-    }
 }
 
 } // namespace opense4::game::research

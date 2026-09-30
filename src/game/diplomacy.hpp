@@ -20,25 +20,24 @@ inline constexpr uint32_t kMessageLifetime = 10;
 
 // ---- Turn phases -------------------------------------------------------------------------------
 
-// Turn phase 2: delivers the messages sent this turn (they appear in the
-// recipient's log next turn) and applies replies: treaty accepts, trades,
-// gifts and tributes, plus the immediate messages (break treaty, declare war,
-// surrender, grant independence). Expired messages are removed.
+// Delivers every message not yet delivered and applies replies: treaty
+// accepts, trades, gifts and tributes, plus the immediate messages (break
+// treaty, declare war, surrender, grant independence). Expired messages are
+// removed. The turn calls it for the players' messages (spec 05 §8 step 2)
+// and after each computer player's and minister's orders (step 4: their
+// messages take effect as they are sent).
 void deliverMessages(TurnContext& ctx);
-// Turn phase 11 (after sight): first contact between every pair of living
-// empires that have not met and that each detect the other in one system
-// (spec 05 §3.1, confirmed: binary). Contact is never lost; only the
-// destruction of an empire (forgetEmpire) ends it.
+// First contact between every pair of living empires that have not met and
+// that each detect the other in one system (spec 05 §3.1, confirmed: binary),
+// after sight::updateKnowledge. Contact is never lost; only the destruction
+// of an empire (forgetEmpire) ends it.
 void updateContacts(TurnContext& ctx);
-// One empire's treaty step (spec 05 §8 end-of-turn step 6, §3.2–§3.3): the
-// consistency check (two sides that record different treaties both fall to
-// None), a master's view of its subject's designs, Partnership maps and
-// designs, and the trade counters (+1 toward every other living empire). The
-// trade income itself is paid by the economy (tradeIncome and friends) before
-// the counters grow.
+// One empire's treaty step (spec 05 §8 end-of-turn step 6, §3.2–§3.3), in
+// this order: the consistency check (two sides that record different
+// treaties both fall to None), a master's view of its subject's designs, the
+// trade income from every partner (economy::collectTrade), Partnership maps
+// and designs, and the trade counters (+1 toward every other living empire).
 void treatyStep(TurnContext& ctx, EmpireId e);
-// Turn phase 11: treatyStep for every living empire in order.
-void advanceTrade(TurnContext& ctx);
 
 // ---- Treaties and contact ----------------------------------------------------------------------
 
@@ -76,7 +75,7 @@ bool isPlaceholder(const PackageItem& item);
 // The whole empire of `from` passes to `to`; `from` is eliminated.
 void surrender(TurnContext& ctx, EmpireId from, EmpireId to);
 
-// ---- Trade and tariffs (the economy calls these in phase 5) -------------------------------------
+// ---- Trade and tariffs (the economy's income and trade steps use these) ------------------------
 
 // An empire's production of the five kinds this turn: the base of trade,
 // tariffs and the score (spec 05 §3.3, §5). What its colonies deliver to the

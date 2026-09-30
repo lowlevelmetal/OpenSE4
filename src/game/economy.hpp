@@ -4,13 +4,15 @@
 // maintenance, construction queues, population growth, happiness and plague.
 //
 // Turn structure (spec 02 §12, spec 05 §8). The original runs a fixed list of
-// end-of-turn steps for each empire in turn. The economy's part of that list
-// is available as one function per step, to be called for one empire at a
-// time in this order:
+// end-of-turn steps for each empire in turn (turn.cpp). The economy's part of
+// that list is one function per step, called for one empire at a time in
+// this order:
 //
 //     collectIncome        income: production, remote mining, generated points,
-//                          the income floor, tariffs paid, the computer bonus
-//     collectTrade         trade and tariffs received from other empires
+//                          the income floor, tariffs paid (the master gets its
+//                          share at once), the computer bonus; research and
+//                          intelligence go into the pools
+//     collectTrade         trade from partners (inside diplomacy::treatyStep)
 //     payMaintenance       maintenance and the shortfall penalty
 //     processPlanets       growth, planet changes, plague, atmosphere converters
 //     updateHappiness      anger (skipped for an Emotionless race)
@@ -19,17 +21,19 @@
 //     applySystemAbilities system-wide happiness, population, plague prevention
 //                          and (every 10th turn) value and conditions changes
 //
-// (Repair, supply and the other non-economy steps sit between runConstruction
-// and applyStorageCap in the original.) runEconomy and runPopulation below are
-// aggregate wrappers that run these steps for every living empire, in empire
-// order, in the two places turn.cpp calls them today.
+// (Repair and supply sit between runConstruction and applyStorageCap.)
 //
 // Cross-module contracts (see also turn.hpp):
-// - collectIncome and collectTrade set Empire::economy, including `research`
-//   and `intelligence`, which the research and intelligence phases add to
-//   their pools. Both are net of a master's tariff and include the computer
-//   bonus: collectIncome takes diplomacy::tariffDue(e) on all five incomes,
-//   once, before the bonus (spec 05 §3.3, §8), and nothing else subtracts it.
+// - collectIncome takes diplomacy::tariffDue(e) on all five incomes, once,
+//   before the computer bonus (spec 05 §3.3, §8), and nothing else subtracts
+//   it. The master receives the resource part in the same call; the research
+//   and intelligence parts are lost. What is left of research and
+//   intelligence, times the bonus, goes into the pools with
+//   research::addToPools, to be spent by the next turn's research and
+//   intelligence steps. collectTrade adds traded points the same way.
+// - collectIncome and collectTrade also set Empire::economy for this turn;
+//   updateReports replaces it with the projection for the next turn at the
+//   end of the turn.
 // - diplomacy::tradeIncome(e) is everything e receives from trade *and*
 //   tariffs; diplomacy::tariffsPaid(e) is what e pays its master.
 // - Other modules report mood triggers with TurnContext::mood(); location
@@ -37,8 +41,8 @@
 //   triggers (our/enemy ships in the sector or system, troops on the planet,
 //   a plagued planet) are computed here and must not be reported by other
 //   modules. updateHappiness(e) consumes e's events from TurnContext::moodEvents;
-//   events reported later in the turn stay there (a caller that runs the steps
-//   per empire must carry them over to the next update).
+//   events reported later in the turn stay there, and processTurn carries them
+//   over to e's next update (GameState::pendingMood).
 
 #include "game/commands.hpp"
 #include "game/rules.hpp"
@@ -192,8 +196,6 @@ Resources maintenanceCost(const Rules& r, const GameState& s, EmpireId e);
 int maintenancePercent(const Rules& r, const Empire& e);
 // One ship's or base's maintenance per turn; 0 when mothballed and for units.
 Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& v);
-// Research points added once, on the first processed turn (spec 05 §1.1).
-int64_t openingResearchPool(const GameState& s);
 
 // ---- Colonies ending ------------------------------------------------------------------------------
 
@@ -215,17 +217,10 @@ void runConstruction(TurnContext& ctx, EmpireId e);
 void applyStorageCap(TurnContext& ctx, EmpireId e);
 void applySystemAbilities(TurnContext& ctx, EmpireId e);
 
-// ---- Aggregate phases (turn.cpp) --------------------------------------------------------------------
+// ---- Reports ---------------------------------------------------------------------------------------
 
 // Recomputes Empire::economy (projected income/expenses) without changing
 // anything else. Called after setup and at the end of each turn for the UI.
 void updateReports(const Rules& r, GameState& s);
-
-// For every living empire: collectIncome, collectTrade, payMaintenance,
-// runConstruction, applyStorageCap.
-void runEconomy(TurnContext& ctx);
-// For every living empire: processPlanets, updateHappiness (with every event
-// of the turn), applySystemAbilities.
-void runPopulation(TurnContext& ctx);
 
 } // namespace opense4::game::economy

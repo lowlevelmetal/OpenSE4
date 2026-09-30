@@ -4,6 +4,7 @@
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
@@ -203,19 +204,6 @@ void loseColony(TurnContext& ctx, ObjectId planet) {
     s.colonies[planet.index()].reset();
     ctx.mood(owner, "Any Planet Lost");
     if (home) ctx.mood(owner, "Homeworld Lost");
-}
-
-// Turns a planet into an asteroid field; its colony is lost (spec 01 §9).
-void shatterPlanet(TurnContext& ctx, ObjectId planet, Rng& rng) {
-    SpaceObject& obj = ctx.state.galaxy.object(planet);
-    if (obj.kind != ObjectKind::Planet) return;
-    loseColony(ctx, planet);
-    const std::string oldSize = obj.size;
-    obj.kind = ObjectKind::Asteroids;
-    obj.atmosphere = "None";
-    const std::string_view size = keysEqual(oldSize, "Tiny") ? "Small" : keysEqual(oldSize, "Huge") ? "Large" : std::string_view(oldSize);
-    obj.size = std::string(size);
-    if (auto st = pickSectorType(ctx.rules, "Asteroids", size, rng)) applySectorType(ctx.rules, obj, *st);
 }
 
 void destroyVehicle(TurnContext& ctx, Vehicle& v) {
@@ -1007,6 +995,8 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             if (amount < 0) {
                 out.actual = removePopulation(*col, -int64_t{amount});
                 if (out.actual > 0) ctx.mood(col->owner, "1M Population Killed", sys, t.object, static_cast<int>(out.actual));
+                // A colony whose people are all gone dies out (spec 02 §2).
+                if (out.actual > 0 && col->totalPopulation() <= 0) economy::colonyDiesOut(ctx, t.object);
             } else {
                 const int64_t room = std::max<int64_t>(0, maxPopulation(r, s, *col) - col->totalPopulation());
                 const int64_t add = std::min<int64_t>(amount, room);
@@ -1131,8 +1121,9 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PlanetDestroyed: {
+            // The result of the Destroy Planet manipulation (spec 05 §4, spec 01 §9).
             if (!validObject(s, t.object) || s.galaxy.object(t.object).kind != ObjectKind::Planet) return out;
-            shatterPlanet(ctx, t.object, rng);
+            movement::destroyPlanet(ctx, t.object, "The planet was destroyed.", rng);
             out.actual = 1;
             break;
         }
@@ -1753,15 +1744,6 @@ void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng) {
     const auto target = pickEventTarget(r, s, *record, rng);
     if (!target) return;
     trigger(ctx, *record, *target, rng);
-}
-
-void runEvents(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    Rng rng = s.rng.fork();
-    fireDueEvents(ctx, rng);
-    // turn.cpp advances the date after this phase.
-    rollNewEvent(ctx, s.turn + 1, rng);
-    s.removeDeadVehicles();
 }
 
 } // namespace opense4::game::events

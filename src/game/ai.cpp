@@ -744,17 +744,21 @@ std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireI
     return p.report().commands;
 }
 
-std::vector<Command> ministerCommands(const Rules& r, const GameState& s, EmpireId e) {
-    if (!planFor(s, e)) return {};
+bool ministersActive(const GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return false;
     const Empire& emp = s.empire(e);
-    if (emp.kind != PlayerKind::Human) return {};
+    if (emp.kind != PlayerKind::Human) return false;
     bool any = emp.ministerAll;
     for (size_t m = 0; m < kMinisters && !any; ++m)
         if (isGlobalMinister(static_cast<Minister>(m)) && (emp.ministers & ministerBit(static_cast<Minister>(m)))) any = true;
     for (const auto& c : s.colonies) any = any || (c && c->owner == e && c->minister);
     for (const Vehicle& v : s.vehicles) any = any || (v.owner == e && v.minister);
     for (const Fleet& f : s.fleets) any = any || (f.owner == e && f.minister);
-    if (!any) return {};
+    return any;
+}
+
+std::vector<Command> ministerCommands(const Rules& r, const GameState& s, EmpireId e) {
+    if (!ministersActive(s, e)) return {};
     detail::Planner p(r, s, e, detail::Mode::Minister, kSaltMinister);
     p.runOrders();
     p.runEconomy();

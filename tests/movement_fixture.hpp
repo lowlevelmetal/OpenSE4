@@ -323,9 +323,17 @@ public:
         lastMoods = ctx.moodEvents;
     }
 
+    // Each empire's repair, supply and training steps, then the design
+    // cleanup when a new year starts (spec 05 §8).
     void upkeep() {
         TurnContext ctx{r_, s, {}, {}, {}};
-        movement::runUpkeep(ctx);
+        for (const Empire& e : s.empires) {
+            if (!e.alive) continue;
+            movement::repairEmpire(ctx, e.id);
+            movement::supplyEmpire(ctx, e.id);
+            movement::trainEmpire(ctx, e.id);
+        }
+        if ((s.turn + 1) % 10 == 0) movement::purgeObsoleteDesigns(ctx);
         s.removeDeadVehicles();
     }
 

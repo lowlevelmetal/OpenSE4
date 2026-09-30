@@ -1,5 +1,6 @@
-// Turn phase 4 (colonization) and phase 10 (repair, training, supply):
-// spec 02 §2, spec 03 §7, §8, §13, spec 01 §5.3 (ruins).
+// Colonization at the end of the movement phase, and each empire's repair,
+// supply and training steps (spec 05 §8): spec 02 §2, spec 03 §7, §8, §13,
+// spec 01 §5.3 (ruins).
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
@@ -366,19 +367,6 @@ void runColonization(TurnContext& ctx) {
         colonize(ctx, v.id, o.object);
     }
     s.removeDeadVehicles();
-}
-
-void runUpkeep(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    for (const Empire& e : s.empires) {
-        if (!e.alive) continue;
-        repairEmpire(ctx, e.id);
-        supplyEmpire(ctx, e.id);
-        trainEmpire(ctx, e.id);
-    }
-    // Design cleanup when a new year starts (spec 05 §8 step 7): the date has
-    // already moved to the next turn at this point of the original's turn.
-    if ((s.turn + 1) % 10 == 0) purgeObsoleteDesigns(ctx);
 }
 
 } // namespace opense4::game::movement

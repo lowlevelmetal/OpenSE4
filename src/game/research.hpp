@@ -8,13 +8,13 @@
 // production. So the points shown during a turn were produced at the end of
 // the previous one and are spent at the end of this one.
 //
-// Entry points for the spec 05 §8 turn order:
+// Entry points for the spec 05 §8 turn order (turn.cpp):
 // - researchStep(ctx, e): step 4 of one empire's end-of-turn processing
 //   (after intel::intelStep).
-// - addToPools(e, rp, ip): the income step adds the turn's research and
-//   intelligence income (after tariffs) to the pools.
-// - openingPools(r, s): when the game is created.
-// runResearch() is the aggregate phase turn.cpp calls until then.
+// - addToPools(e, rp, ip): the income and trade steps (economy::collectIncome,
+//   collectTrade) add the turn's research and intelligence income, after
+//   tariffs, to the pools.
+// - openingPools(r, s): when the game is created (createGame).
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -60,17 +60,14 @@ std::vector<int64_t> allocate(int64_t pool, std::span<const int64_t> need, bool 
 
 // ---- Pools --------------------------------------------------------------------------------------
 
-// The research points this turn's research step will spend: the pool, or
-// before the first turn has been processed, the opening pool (Starting
-// Resources plus one turn of production, which the economy's first-turn
-// income holds while the game setup leaves the pool empty).
+// The research points this turn's research step will spend: the pool.
 int64_t availablePoints(const GameState& s, const Empire& e);
 // Adds income to the research and intelligence pools, capped at kPoolCap.
 void addToPools(Empire& e, int64_t research, int64_t intelligence);
-// The pools at game creation (spec 05 §1.1): research at Starting Resources
-// plus one turn of production (Empire::economy.research after the setup's
-// economy report), intelligence at 0. For createGame once the spec 05 §8
-// order lands; the first research step does the same meanwhile.
+// The pools at game creation (spec 05 §1.1, confirmed: binary): research at
+// Starting Resources plus one turn of the empire's research income
+// (Empire::economy.research after the setup's economy report), intelligence
+// at 0.
 void openingPools(const Rules& r, GameState& s);
 
 // ---- Levels ---------------------------------------------------------------------------------------
@@ -112,11 +109,5 @@ bool researchedEverything(const Rules& r, const GameState& s, const Empire& e);
 // re-queues a completed area below its maximum at the end; the pool is
 // emptied.
 void researchStep(TurnContext& ctx, EmpireId e);
-
-// Aggregate phase for turn.cpp (after the economy): for each living empire in
-// order, the research step, then this turn's research income (the economy's
-// Empire::economy.research, already net of a master's tariff) goes into the
-// pool.
-void runResearch(TurnContext& ctx);
 
 } // namespace opense4::game::research

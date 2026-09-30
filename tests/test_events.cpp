@@ -48,6 +48,16 @@ std::unique_ptr<Rules> rulesWith(std::vector<ruleset::EventType> events) {
 
 TurnContext context(const Rules& r, GameState& s) { return turnContext(r, s); }
 
+// The event step's timed events and new-event roll, with the date after this
+// turn, as processTurn runs them (spec 05 §8 step 9).
+void eventStep(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    Rng rng = s.rng.fork();
+    events::fireDueEvents(ctx, rng);
+    events::rollNewEvent(ctx, s.turn + 1, rng);
+    s.removeDeadVehicles();
+}
+
 effects::Target onEmpire(EmpireId e) {
     effects::Target t;
     t.empire = e;
@@ -190,7 +200,7 @@ TEST_CASE("events: one roll for the whole galaxy, none before 2402.0, types with
     for (uint32_t turn = 19; turn < 29; ++turn) {
         s.turn = turn;
         TurnContext ctx = context(*r, s);
-        events::runEvents(ctx);
+        eventStep(ctx);
     }
     CHECK(omens() == 10);  // one event a turn for the whole galaxy, not one per empire
 
@@ -199,7 +209,7 @@ TEST_CASE("events: one roll for the whole galaxy, none before 2402.0, types with
     for (uint32_t turn = 30; turn < 40; ++turn) {
         s.turn = turn;
         TurnContext ctx = context(*never, s);
-        events::runEvents(ctx);
+        eventStep(ctx);
     }
     CHECK(s.empire(kA).stockpile == Resources{5000, 5000, 5000});
 }
@@ -255,11 +265,11 @@ TEST_CASE("events: timed events warn first and strike exactly N turns later") {
 
     for (uint32_t turn = 0; turn < 3; ++turn) {
         s.turn = turn;
-        events::runEvents(ctx);
+        eventStep(ctx);
         CHECK(homeworld(s, kA).totalPopulation() == pop);
     }
     s.turn = 3;
-    events::runEvents(ctx);
+    eventStep(ctx);
     CHECK(s.pendingEvents.empty());
     CHECK(homeworld(s, kA).totalPopulation() == pop - 100);
     CHECK(hasMood(ctx, kA, "1M Population Killed"));
@@ -278,7 +288,7 @@ TEST_CASE("events: timed events warn first and strike exactly N turns later") {
     s.removeDeadVehicles();
     s.turn = 10;
     const size_t logs = s.empire(kA).log.size();
-    events::runEvents(sctx);
+    eventStep(sctx);
     CHECK(s.pendingEvents.empty());
     CHECK(s.empire(kA).log.size() == logs);
 }
@@ -723,8 +733,10 @@ TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that pla
     const EmpireId rebel{3u};
     CHECK(s.empire(rebel).alive);
     CHECK(hasLog(s, rebel, "First Contact"));
+    // Founded in the event step, after every empire's end-of-turn processing:
+    // its own processing starts next turn (spec 05 §8).
     const size_t recorded = s.empire(rebel).history.size();
-    CHECK(recorded >= 1);  // it took part in the turn it was founded
+    CHECK(recorded == 0);
     // The former owner is at war with it and may well crush it in the next
     // turns (its warships are close by); the turns go on either way.
     for (int t = 0; t < 3; ++t) processTurn(*r, s, none);
@@ -747,7 +759,7 @@ TEST_CASE("events: rolling is deterministic") {
         for (uint32_t turn = 0; turn < 100; ++turn) {
             s.turn = turn;
             TurnContext ctx = context(*r, s);
-            events::runEvents(ctx);
+            eventStep(ctx);
         }
         std::vector<std::string> out;
         for (const Empire& e : s.empires)
@@ -808,7 +820,7 @@ TEST_CASE("installed data set: every intelligence project and event type is impl
     for (int turn = 0; turn < 26; ++turn) {
         for (Empire& e : s.empires) {
             if (!e.alive) continue;
-            e.economy.intelligence = 1000000;
+            e.intelPool = 1000000;
             e.intel.clear();
             for (uint32_t p = 0; p < r->data().intelProjects.size() && e.intel.size() < 12; ++p) {
                 IntelProjectOrder o;
@@ -818,8 +830,9 @@ TEST_CASE("installed data set: every intelligence project and event type is impl
             }
         }
         TurnContext ctx = turnContext(*r, s);
-        intel::runIntel(ctx);
-        events::runEvents(ctx);
+        for (size_t i = 0; i < s.empires.size(); ++i)
+            if (s.empires[i].alive) intel::intelStep(ctx, EmpireId{i});
+        eventStep(ctx);
         ++s.turn;
     }
     CHECK(s.turn == 26);

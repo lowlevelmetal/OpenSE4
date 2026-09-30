@@ -226,22 +226,26 @@ TEST_CASE("research: points are spent the turn after they are produced") {
     s.empire(me).research = {{beams, 0}};
     TurnContext ctx = context(r, s);
 
-    // The first step spends the opening pool: the economy's first-turn
-    // income, which holds the Starting Resources plus one turn of production.
+    // The opening pools (createGame): Starting Resources plus one turn of
+    // research, and no intelligence (spec 05 §1.1).
     REQUIRE(s.turn == 0);
-    s.empire(me).economy.research = 700 + economy::openingResearchPool(s);
-    CHECK(research::availablePoints(s, s.empire(me)) == 700 + economy::openingResearchPool(s));
-    research::runResearch(ctx);
+    const int64_t opening = s.options.startingResources[Resource::Minerals] + s.empire(me).economy.research;
+    CHECK(s.empire(me).researchPool == opening);
+    CHECK(s.empire(me).intelPool == 0);
+    CHECK(research::availablePoints(s, s.empire(me)) == opening);
+    // The step spends the whole pool and empties it.
+    research::researchStep(ctx, me);
     CHECK(s.empire(me).techLevel(beams) == 2);
-    CHECK(s.empire(me).researchPool == 700);  // this turn's production waits for the next step
+    CHECK(s.empire(me).researchPool == 0);
+    // The income step fills it for the next turn's step.
+    research::addToPools(s.empire(me), 700, 0);
 
     ++s.turn;
     s.empire(me).research = {{beams, 0}};
-    s.empire(me).economy.research = 300;
     CHECK(research::availablePoints(s, s.empire(me)) == 700);
-    research::runResearch(ctx);
+    research::researchStep(ctx, me);
     CHECK(s.empire(me).research[0].progress == 700);
-    CHECK(s.empire(me).researchPool == 300);
+    CHECK(s.empire(me).researchPool == 0);
 
     // Pools are capped.
     research::addToPools(s.empire(me), research::kPoolCap, research::kPoolCap);
@@ -278,12 +282,25 @@ TEST_CASE("research: a master's tariff takes part of the research income, and no
     CHECK(receiving.research == freeMaster.research);  // nobody receives the research part
     CHECK(receiving.intelligence == freeMaster.intelligence);
 
-    // The research step adds that net income to the pool as it is.
-    s.empire(subject).researchPool = 0;
-    s.empire(master).researchPool = 0;
-    research::runResearch(ctx);
+    // The income step puts that net income into the pools as it is.
+    s.empire(subject).researchPool = s.empire(master).researchPool = 0;
+    s.empire(subject).intelPool = s.empire(master).intelPool = 0;
+    economy::collectIncome(ctx, subject);
+    economy::collectIncome(ctx, master);
     CHECK(s.empire(subject).researchPool == paying.research);
+    CHECK(s.empire(subject).intelPool == paying.intelligence);
     CHECK(s.empire(master).researchPool == receiving.research);
+
+    // The master receives the resource part at once, at its subject's
+    // income step, not at its own (spec 05 §3.3, §8).
+    REQUIRE(paying.tariffsOut.total() > 0);
+    const Resources before = s.empire(master).stockpile;
+    economy::collectIncome(ctx, subject);
+    CHECK(s.empire(master).stockpile == before + s.empire(subject).economy.tariffsOut);
+    // Its own trade step adds no tariffs a second time.
+    const Resources beforeTrade = s.empire(master).stockpile;
+    economy::collectTrade(ctx, master);
+    CHECK(s.empire(master).stockpile == beforeTrade + s.empire(master).economy.trade);
 }
 
 TEST_CASE("research: ETA simulates the queue") {
@@ -394,9 +411,9 @@ TEST_CASE("research: turns are deterministic") {
         }
         std::vector<std::vector<int>> levels;
         for (int t = 0; t < 8; ++t) {
-            for (Empire& e : s.empires) e.economy.research = 1500;
+            for (Empire& e : s.empires) e.researchPool = 1500;
             TurnContext ctx = context(r, s);
-            research::runResearch(ctx);
+            for (size_t i = 0; i < s.empires.size(); ++i) research::researchStep(ctx, EmpireId{i});
             ++s.turn;
             levels.push_back(s.empires[0].techLevels);
         }

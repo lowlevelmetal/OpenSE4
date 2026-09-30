@@ -107,6 +107,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         return std::find(c.participants.begin(), c.participants.end(), viewer) == c.participants.end();
     });
     std::erase_if(v.pendingEvents, [&](const PendingEvent& p) { return p.empire != viewer; });
+    std::erase_if(v.pendingMood, [&](const MoodEvent& m) { return m.empire != viewer; });
 
     // The random stream would let a client predict the next turn.
     v.rng = Rng(0);

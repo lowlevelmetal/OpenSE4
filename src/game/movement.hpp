@@ -4,18 +4,15 @@
 // spec 05 §9.3): pathfinding, the 30-day simultaneous move, fleets,
 // cargo/launch orders, colonization, stellar manipulation, supply and repair.
 //
-// Turn order (spec 05 §8). turn.cpp calls the aggregate entry points below.
-// The per-empire steps exist so that the planned turn-order change can run
-// them inside each empire's end-of-turn processing, in this order:
-//   step 5  movement and space combat   startTurn + runMovementAndCombat
-//   step 6  per empire, after its maintenance (step 7 of the list there):
+// Turn order (spec 05 §8, turn.cpp):
+//   step 5  movement and space combat   startTurn + runMovementAndCombat,
+//                                       then runColonization
+//   step 6  each empire's end-of-turn processing (the numbers of that list):
 //             11 repair                 repairEmpire
 //             13 supply                 supplyEmpire
 //             15 training               trainEmpire
 //   step 7  design cleanup (new year)   purgeObsoleteDesigns
 //   step 9  event step, first           runStellarHazards
-// runUpkeep runs repair, supply and training for every empire in empire order,
-// then the design cleanup when a new year starts.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -118,7 +115,8 @@ CombatHooks defaultCombatHooks();
 void runMovementAndCombat(TurnContext& ctx);
 void runMovementAndCombat(TurnContext& ctx, const CombatHooks& hooks);
 
-// Turn phase 4 (after ground combat): colony ships that reached their target colonize.
+// The end of the movement phase: colony ships that reached their target
+// colonize (the Colonize order waits at the planet during the 30 days).
 void runColonization(TurnContext& ctx);
 
 // ---- End of turn -------------------------------------------------------------------------------
@@ -133,13 +131,17 @@ void trainEmpire(TurnContext& ctx, EmpireId e);
 // Obsolete designs with no vehicles, no queue entries and no living foreign
 // empire that knows them are removed (spec 03 §4.1). Runs when a year starts.
 void purgeObsoleteDesigns(TurnContext& ctx);
-// Repair, supply and training for every empire, then the design cleanup at a new year.
-void runUpkeep(TurnContext& ctx);
 
 // The event step's hazards (spec 01 §7): black-hole pull, random drift toward
 // one target sector shared by all systems, then centre damage. Moves every
 // ship, base and unit group; spends no movement or supply; starts no combat.
 void runStellarHazards(TurnContext& ctx);
+
+// The Destroy Planet result (spec 01 §9, confirmed: binary): the colony is
+// lost (its owner is told `cause`) and the planet becomes a random natural
+// asteroid field of the same stellar size that keeps its name, values and
+// conditions. The `Planet - Destroyed` event has the same result (spec 05 §4).
+void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng);
 
 // ---- Shared helpers (AI, UI, other subsystems) --------------------------------------------------
 

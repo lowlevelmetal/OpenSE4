@@ -2,9 +2,9 @@
 //
 // Invading troops are troop stacks in a colony's cargo whose design owner is
 // hostile to the colony owner (see combat.hpp). The same fight runs at once
-// when troops drop during a space battle (combat_space.cpp) and in turn phase
-// 4 for every colony that still holds invaders: up to `Number Of Ground Combat
-// Turns` rounds of the invaders against the defender's troops, militia and
+// when troops drop during a space battle (combat_space.cpp) and in each
+// empire's end-of-turn processing (spec 05 §8 step 17) for every colony where
+// its troops still invade: up to `Number Of Ground Combat Turns` rounds of the invaders against the defender's troops, militia and
 // other stored units. When the defending troops and militia are gone the
 // planet changes hands with its facilities, stored units and population.
 
@@ -267,34 +267,35 @@ void logGround(TurnContext& ctx, const Colony& c, EmpireId attacker, EmpireId de
 
 } // namespace
 
-void runGroundCombat(TurnContext& ctx) {
+void runGroundCombat(TurnContext& ctx, EmpireId attacker) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
+    if (!attacker.valid() || attacker.index() >= s.empires.size() || !s.empire(attacker).alive) return;
     std::optional<CombatSettings> cs;
     std::optional<Rng> rng;   // forked only when a fight happens, so quiet turns leave GameState::rng alone
     for (size_t idx = 0; idx < s.colonies.size(); ++idx) {
-        if (!s.colonies[idx]) continue;
-        const std::vector<EmpireId> attackers = invaders(r, s, *s.colonies[idx]);
-        for (EmpireId e : attackers) {
-            Colony* c = s.colony(ObjectId{idx});
-            // Fighting stops at once on peace or surrender (history 1.03, 1.20).
-            if (!c || c->owner == e || !detail::enemies(s, e, c->owner)) continue;
-            if (!cs) cs = loadSettings(r);
-            if (!rng) rng = s.rng.fork();
-            const EmpireId defender = c->owner;
-            detail::GroundFight fight;
-            fight.attacker = e;
-            fight.defender = defender;
-            fight.cargo = &c->cargo;
-            fight.population = &c->population;
-            fight.militia = &c->militia;
-            fight.groundDefensePercent = sumValue1(colonyAbilities(r, s, *c), AbilityKind::PlanetChangeGroundDefense);
-            const detail::GroundOutcome o = detail::fightGround(r, s, *cs, fight, *rng);
-            std::erase_if(c->cargo.units, [](const UnitStack& u) { return u.count <= 0; });
-            logGround(ctx, *c, e, defender, o);
-            if (o.captured) detail::capturePlanet(ctx, *c, e);
-        }
-        if (Colony* c = s.colony(ObjectId{idx}); c && invaders(r, s, *c).empty()) c->militia = -1;
+        Colony* c = s.colony(ObjectId{idx});
+        if (!c) continue;
+        const std::vector<EmpireId> attackers = invaders(r, s, *c);
+        if (attackers.empty()) c->militia = -1;  // nobody invades it (any more)
+        if (std::find(attackers.begin(), attackers.end(), attacker) == attackers.end()) continue;
+        // Fighting stops at once on peace or surrender (history 1.03, 1.20).
+        if (c->owner == attacker || !detail::enemies(s, attacker, c->owner)) continue;
+        if (!cs) cs = loadSettings(r);
+        if (!rng) rng = s.rng.fork();
+        const EmpireId defender = c->owner;
+        detail::GroundFight fight;
+        fight.attacker = attacker;
+        fight.defender = defender;
+        fight.cargo = &c->cargo;
+        fight.population = &c->population;
+        fight.militia = &c->militia;
+        fight.groundDefensePercent = sumValue1(colonyAbilities(r, s, *c), AbilityKind::PlanetChangeGroundDefense);
+        const detail::GroundOutcome o = detail::fightGround(r, s, *cs, fight, *rng);
+        std::erase_if(c->cargo.units, [](const UnitStack& u) { return u.count <= 0; });
+        logGround(ctx, *c, attacker, defender, o);
+        if (o.captured) detail::capturePlanet(ctx, *c, attacker);
+        if (Colony* after = s.colony(ObjectId{idx}); after && invaders(r, s, *after).empty()) after->militia = -1;
     }
 }
 

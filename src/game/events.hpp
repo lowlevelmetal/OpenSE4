@@ -223,14 +223,11 @@ bool targetExists(const Rules& r, const GameState& s, const effects::Target& t);
 // Returns false when the record is unknown or the target does not exist.
 bool trigger(TurnContext& ctx, uint32_t record, const effects::Target& target, Rng& rng);
 
-// Event step parts (spec 05 §8 step 9): the timed events that are due strike,
-// then the single galaxy-wide roll for a new event. `date` is the game date
-// in turns since 2400.0, already advanced for this turn.
+// Event step parts (spec 05 §8 step 9, after movement::runStellarHazards):
+// the timed events that are due strike, then the single galaxy-wide roll for
+// a new event. `date` is the game date in turns since 2400.0, already
+// advanced for this turn.
 void fireDueEvents(TurnContext& ctx, Rng& rng);
 void rollNewEvent(TurnContext& ctx, uint32_t date, Rng& rng);
-
-// Aggregate phase for turn.cpp: fireDueEvents, then rollNewEvent with the
-// date after this turn (turn.cpp advances the date after this phase).
-void runEvents(TurnContext& ctx);
 
 } // namespace opense4::game::events

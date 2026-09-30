@@ -113,15 +113,34 @@ Colony& plainHome(const Rules& r, GameState& s, std::initializer_list<std::strin
 
 void dropVehicles(GameState& s, EmpireId e) { std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == e; }); }
 
+// The economy's money steps of every living empire's end-of-turn processing,
+// in their order (spec 02 §12): income, trade, maintenance, construction and
+// the storage cap.
 std::vector<MoodEvent> economyTurn(const Rules& r, GameState& s) {
     TurnContext ctx{r, s, {}, {}, {}};
-    economy::runEconomy(ctx);
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        const EmpireId id{i};
+        if (!s.empire(id).alive) continue;
+        economy::collectIncome(ctx, id);
+        economy::collectTrade(ctx, id);
+        economy::payMaintenance(ctx, id);
+        economy::runConstruction(ctx, id);
+        economy::applyStorageCap(ctx, id);
+    }
     return ctx.moodEvents;
 }
 
+// The population steps of every living empire: planets, happiness (with
+// `moods`), system-wide abilities.
 std::vector<MoodEvent> populationTurn(const Rules& r, GameState& s, std::vector<MoodEvent> moods = {}) {
     TurnContext ctx{r, s, std::move(moods), {}, {}};
-    economy::runPopulation(ctx);
+    for (size_t i = 0; i < s.empires.size(); ++i) {
+        const EmpireId id{i};
+        if (!s.empire(id).alive) continue;
+        economy::processPlanets(ctx, id);
+        economy::updateHappiness(ctx, id);
+        economy::applySystemAbilities(ctx, id);
+    }
     return ctx.moodEvents;
 }
 
@@ -521,15 +540,21 @@ TEST_CASE("economy: generated points, the minimum income and the opening researc
         addFacility(rs, "Mint", {ability(AbilityKind::GeneratePointsMinerals, 300), ability(AbilityKind::GeneratePointsResearch, 50)});
     });
     GameState s = newGame(*r);
+    // The opening pools are set when the game is created: Starting Resources
+    // plus one turn of research, no intelligence (spec 05 §1.1).
+    CHECK(s.empire(kMe).researchPool == s.options.startingResources[Resource::Minerals] + s.empire(kMe).economy.research);
+    CHECK(s.empire(kMe).intelPool == 0);
     dropVehicles(s, kMe);
     Colony& home = plainHome(*r, s, {"Mint"});  // no spaceport: flat points need none
     s.empire(kMe).stockpile = {};
+    s.empire(kMe).researchPool = 0;
     economyTurn(*r, s);
     const EconomyReport& rep = s.empire(kMe).economy;
     // The colonies deliver exactly 0 of everything, so each resource gets the Settings
     // minimum; generated points come on top.
     CHECK(rep.otherIncome == Resources{500, 200, 200});
-    CHECK(rep.research == 50 + s.options.startingResources[Resource::Minerals]);  // turn 1 pool (inferred size)
+    CHECK(rep.research == 50);  // the income holds no opening pool
+    CHECK(s.empire(kMe).researchPool == 50);  // the income step fills the pool
     CHECK(s.empire(kMe).stockpile == Resources{500, 200, 200});
     s.turn = 1;
     economyTurn(*r, s);

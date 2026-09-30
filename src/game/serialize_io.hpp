@@ -434,6 +434,11 @@ void io(Ar& ar, CombatRecord& c) {
 }
 
 template <class Ar>
+void io(Ar& ar, MoodEvent& m) {
+    fields(ar, m.empire, m.trigger, m.system, m.planet, m.count);
+}
+
+template <class Ar>
 void io(Ar& ar, PendingEvent& e) {
     fields(ar, e.eventType, e.empire, e.object, e.vehicle, e.system, e.fireTurn);
 }
@@ -463,7 +468,7 @@ void io(Ar& ar, GameOptions& o) {
 template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
-           s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng);
+           s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
