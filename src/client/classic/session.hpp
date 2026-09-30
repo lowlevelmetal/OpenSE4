@@ -17,7 +17,13 @@
 // the player's turn issue() checks the command on the local copy and sends
 // it to the host (TurnTransport::playCommand), whose new state replaces the
 // copy when it arrives.
+//
+// Play by e-mail (SessionKind::Pbem, pbem_play.hpp): the game file the host
+// sent, played by one empire. Orders are given as in a local game (turn-based:
+// carried out at once), and End Turn writes the orders file for the host
+// instead of processing the turn; the session then waits for good.
 
+#include "client/classic/pbem_play.hpp"
 #include "game/commands.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -29,6 +35,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -49,12 +56,17 @@ public:
     virtual std::string status() const = 0;
 };
 
-enum class SessionKind { Local, Hotseat, NetworkClient };
+enum class SessionKind { Local, Hotseat, NetworkClient, Pbem };
 
 class ClassicSession {
 public:
     ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player,
                    SessionKind kind = SessionKind::Local);
+    // Play by e-mail: `game` played by `turn.empire` (from beginPbemTurn).
+    // With `draftsDir`, a turn in progress saved there (savePbemDraft) is
+    // resumed: its commands are given again.
+    static std::unique_ptr<ClassicSession> pbem(std::shared_ptr<const game::Rules> rules, PbemGame game, PbemTurn turn,
+                                                std::filesystem::path draftsDir = {});
 
     const game::Rules& rules() const { return *rules_; }
     std::shared_ptr<const game::Rules> rulesPtr() const { return rules_; }
@@ -93,6 +105,23 @@ public:
     void setTransport(std::unique_ptr<TurnTransport> transport) { transport_ = std::move(transport); }
     const TurnTransport* transport() const { return transport_.get(); }
     TurnTransport* transport() { return transport_.get(); }
+
+    // Play by e-mail: the turn being played (nullptr in other games), the
+    // orders file End Turn wrote (empty until then), and why writing failed.
+    const PbemTurn* pbemTurn() const { return pbem_ ? &*pbem_ : nullptr; }
+    const std::filesystem::path& ordersFile() const { return ordersFile_; }
+    const std::string& pbemError() const { return pbemError_; }
+    // Play by e-mail: saves the turn so far to finish later (in the drafts
+    // folder given to pbem()); End Turn removes it. The commands a resumed
+    // draft gave again.
+    std::expected<std::filesystem::path, std::string> savePbemDraft() const;
+    size_t pbemResumed() const { return pbemResumed_; }
+
+    // The value cmd::SetEmpireOptions::passwordHash takes for a new password
+    // (empty: none). Local and hotseat games keep game::hashPassword();
+    // network and PBEM games keep the verifier the host checks logins and
+    // .plr files against (net::passwordVerifier of net::hashPassword).
+    std::string empirePasswordValue(std::string_view password) const;
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
@@ -136,6 +165,11 @@ private:
     std::vector<std::string> notices_;
     std::string autosaveNote_;
     std::optional<size_t> newBattle_;
+    std::optional<PbemTurn> pbem_;
+    std::filesystem::path ordersFile_;
+    std::string pbemError_;
+    std::filesystem::path pbemDrafts_;
+    size_t pbemResumed_ = 0;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

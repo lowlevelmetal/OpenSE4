@@ -178,7 +178,7 @@ private:
             if (password_ != repeat_) {
                 passwordError_ = "The two entries differ.";
             } else {
-                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = hashPassword(password_)});
+                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = ui.session.empirePasswordValue(password_)});
                 password_.clear();
                 repeat_.clear();
                 ImGui::CloseCurrentPopup();

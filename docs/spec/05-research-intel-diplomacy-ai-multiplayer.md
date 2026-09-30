@@ -1801,6 +1801,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     carries that player's commands in the order given, with checksums of the game before
     and after. The host replays them with `applyLive`, runs `endPlayerTurn` and sends the
     new `.gam` on to the next player. A missing `.plr` means the computer plays that turn.
+- **The player's side of an e-mail game** (both turn styles). The game client opens the
+  `.gam`, the player picks their empire and gives its password, which is checked against
+  the empire's verifier as the host will check the `.plr`. The turn is played as in a
+  local game of that style, and End Turn writes the `.plr` instead of processing the turn.
+  A turn in progress can be saved and finished later (step 3 of §9.2). The engine's choices
+  are open question 34 (inferred).
 
 ## 10. `Settings.txt` keys in scope [D]
 
@@ -2172,3 +2178,18 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
     How does the original handle a player who does not pass the save file on, and does it
     check that the file a player loads is the latest one?
+34. **The player's side of an e-mail game** (§9.2, §9.5). OpenSE4 (inferred):
+    - the `.plr` is written next to the `.gam` unless the player picks another folder;
+    - the client refuses a `.gam` made with another data set, or a finished game, as the
+      host does;
+    - a turn-based `.gam` saved between player turns is played on to the next human on the
+      player's machine, exactly as the host does before it reads the orders, so the
+      checksums match; only the player whose turn it is can play that file;
+    - a turn-based `.plr` holds every command given, refused ones too, since a refused
+      Attack Sector answer still settles its question;
+    - a password changed during the turn counts from the next turn: the `.plr` carries the
+      password the turn was opened with;
+    - saving mid-turn keeps the commands given so far in a separate drafts folder (never the
+      orders folder); opening the same turn again gives them again.
+
+    Where does the original put the `.plr`, and what does saving mid-turn keep?

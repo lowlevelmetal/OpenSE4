@@ -25,6 +25,13 @@ struct ClassicOptions {
     int autoTurns = 0;       // let the computer play every empire for N turns first
     std::string openWindow;  // open this window at start (automation, screenshots)
     bool turnBased = false;  // quick game in the turn-based style
+    // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
+    // 0: the only empire that can play now) and play its turn.
+    std::string pbemFile;
+    int pbemEmpire = 0;
+    std::string pbemPassword;
+    std::string pbemOrdersDir;
+    bool pbemEndTurn = false;  // automation: end the turn at once, writing the .plr
 };
 
 class ClassicMode final : public Mode {
@@ -70,6 +77,8 @@ private:
 
     // Network games: status strip and chat.
     void drawNetwork(classic::UiContext& ui);
+    // Play by e-mail: status strip (where End Turn saves the orders, or where it did).
+    void drawPbem(classic::UiContext& ui);
     bool chatOpen_ = false;
     std::string chatInput_;
 

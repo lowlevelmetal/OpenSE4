@@ -26,6 +26,7 @@ add_executable(opense4
     client/classic/frontend.cpp
     client/classic/main_window.cpp
     client/classic/net_transport.cpp
+    client/classic/pbem_play.cpp
     client/classic/quadrant_map.cpp
     client/classic/replay.cpp
     client/classic/reports.cpp
@@ -49,6 +50,7 @@ add_executable(opense4
     client/classic/screens/launch_recover.cpp
     client/classic/screens/log.cpp
     client/classic/screens/multiplayer.cpp
+    client/classic/screens/pbem.cpp
     client/classic/screens/planets.cpp
     client/classic/screens/queues.cpp
     client/classic/screens/registry.cpp

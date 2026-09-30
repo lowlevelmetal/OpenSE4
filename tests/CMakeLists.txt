@@ -25,6 +25,7 @@ add_executable(opense4_tests
     test_movement.cpp
     test_net.cpp
     test_pathfinding.cpp
+    test_pbem_client.cpp
     test_redact.cpp
     test_research.cpp
     test_ruleset.cpp
@@ -45,7 +46,9 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp

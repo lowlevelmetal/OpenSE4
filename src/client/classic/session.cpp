@@ -3,7 +3,9 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "core/log.hpp"
 #include "game/serialize.hpp"
+#include "game/setup.hpp"
 #include "game/turn.hpp"
+#include "net/auth.hpp"
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
@@ -16,8 +18,33 @@ namespace opense4::client::classic {
 ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player, SessionKind kind)
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {
     ended_.assign(state_.empires.size(), 0);
-    if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
+    // A PBEM game file already holds the player's turn (loadPbemGame).
+    if (turnBased() && kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem) resumeTurnBased();
     if (turnBased() && kind_ == SessionKind::NetworkClient) waiting_ = !myTurn();
+}
+
+std::unique_ptr<ClassicSession> ClassicSession::pbem(std::shared_ptr<const game::Rules> rules, PbemGame game, PbemTurn turn,
+                                                     std::filesystem::path draftsDir) {
+    const game::EmpireId player = turn.empire;
+    auto session = std::make_unique<ClassicSession>(std::move(rules), std::move(game.state), player, SessionKind::Pbem);
+    session->pbem_ = std::move(turn);
+    session->pbemDrafts_ = std::move(draftsDir);
+    session->waiting_ = session->turnBased() && !session->myTurn();
+    // A turn saved earlier: its commands again, in order (the game is the same, so they play the same).
+    if (!session->waiting_ && !session->pbemDrafts_.empty())
+        if (auto commands = readPbemDraft(*session->pbem_, session->pbemDrafts_)) {
+            for (game::Command& c : *commands) session->issue(std::move(c));
+            session->pbemResumed_ = commands->size();
+            session->newBattle_.reset();  // battles of the replayed commands were seen when they were given
+        }
+    return session;
+}
+
+std::expected<std::filesystem::path, std::string> ClassicSession::savePbemDraft() const {
+    if (!pbem_) return std::unexpected(std::string("This is not a play-by-e-mail game."));
+    if (!ordersFile_.empty()) return std::unexpected(std::string("The orders of this turn are already saved for the host."));
+    if (pbemDrafts_.empty()) return std::unexpected(std::string("No folder to save the turn in."));
+    return writePbemDraft(*pbem_, pbemDrafts_, state_, orders_);
 }
 
 bool ClassicSession::myTurn() const {
@@ -30,6 +57,8 @@ const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
+    if (waiting_ && kind_ == SessionKind::Pbem)
+        return game::CommandResult::fail(ordersFile_.empty() ? "It is not your turn." : "This turn's orders are saved; the turn is over here.");
     if (waiting_) return game::CommandResult::fail("Waiting for the other players");
     if (turnBased() && kind_ == SessionKind::NetworkClient) {
         // The host carries the command out; our copy shows it at once and is
@@ -52,6 +81,7 @@ game::CommandResult ClassicSession::issue(game::Command c) {
         return r;
     }
     if (turnBased()) {
+        if (kind_ == SessionKind::Pbem && !myTurn()) return game::CommandResult::fail("It is not your turn.");
         const size_t battles = state_.combats.size();
         const game::TurnResult res = game::applyLive(*rules_, state_, player_, c);
         ++revision_;
@@ -59,8 +89,11 @@ game::CommandResult ClassicSession::issue(game::Command c) {
             const auto& who = state_.combats[i].participants;
             if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
         }
+        // PBEM: the host replays every command given, refused ones too (a
+        // refused answer still settles its question), so all are kept.
+        if (kind_ == SessionKind::Pbem) orders_.push_back(c);
         if (!res.rejected.empty()) return game::CommandResult::fail(res.rejected.front().second);
-        orders_.push_back(std::move(c));
+        if (kind_ != SessionKind::Pbem) orders_.push_back(std::move(c));
         return {};
     }
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
@@ -69,6 +102,12 @@ game::CommandResult ClassicSession::issue(game::Command c) {
         ++revision_;
     }
     return r;
+}
+
+std::string ClassicSession::empirePasswordValue(std::string_view password) const {
+    if (password.empty()) return {};
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) return net::passwordVerifier(net::hashPassword(password));
+    return game::hashPassword(password);
 }
 
 void ClassicSession::answer(bool enter) {
@@ -98,6 +137,22 @@ void ClassicSession::resumeTurnBased() {
 
 void ClassicSession::endTurn() {
     if (waiting_) return;
+    if (kind_ == SessionKind::Pbem) {
+        // The host processes the turn: write the orders file for it and wait.
+        if (!pbem_ || (turnBased() && !myTurn())) return;
+        auto file = writePbemOrders(*pbem_, state_, orders_);
+        if (!file) {
+            pbemError_ = file.error();
+            log::warn("PBEM: {}", pbemError_);
+            return;
+        }
+        pbemError_.clear();
+        ordersFile_ = *file;
+        waiting_ = true;
+        if (!pbemDrafts_.empty()) removePbemDraft(*pbem_, pbemDrafts_);
+        ++revision_;
+        return;
+    }
     if (turnBased() && kind_ == SessionKind::NetworkClient) {
         if (!myTurn()) return;
         if (transport_) transport_->endPlayerTurn();
@@ -152,7 +207,7 @@ void ClassicSession::endTurn() {
 }
 
 std::optional<std::filesystem::path> ClassicSession::autosave() {
-    if (kind_ == SessionKind::NetworkClient) return std::nullopt;  // the host keeps the game
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) return std::nullopt;  // the host keeps the game
     const auto name = setup::autosaveName(state_.options.autosaveTurns, state_.turn);
     if (!name) return std::nullopt;
     const std::filesystem::path file = savesDir() / (*name + ".gam");
@@ -207,11 +262,12 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
     newBattle_.reset();
-    if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
+    if (turnBased() && kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem) resumeTurnBased();
     beginTurn();
 }
 
 void ClassicSession::simulateTurns(int n) {
+    if (kind_ == SessionKind::Pbem) return;  // only the host plays PBEM turns
     // A turn-based game plays whole game turns the same way (processTurn).
     for (int i = 0; i < n && !state_.gameOver; ++i) game::processTurn(*rules_, state_, {});
     if (n > 0 && turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();

@@ -15,7 +15,7 @@
 
 namespace opense4::client::classic {
 
-enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Settings };
+enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings };
 
 struct MenuContext {
     std::shared_ptr<const game::Rules> rules;
@@ -53,7 +53,8 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
 // Automation (--open=NAME): a front-end screen by name: intro, quickstart,
 // setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
 // (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer,
-// multiplayer:host, multiplayer:browse, multiplayer:join=ADDR[:PORT].
+// multiplayer:host, multiplayer:browse, multiplayer:join=ADDR[:PORT],
+// pbem[:GAME.gam] (Play by E-mail, with that game file opened).
 // Returns nullptr if NAME is not a front-end screen.
 std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 
@@ -70,5 +71,7 @@ std::unique_ptr<FrontScreen> makeGameSetupScreen(std::string_view startPage = {}
 // connects at once (",ready" appended: and says it is ready); the player is
 // named "Player" (for screenshots/tests).
 std::unique_ptr<FrontScreen> makeMultiplayerScreen(std::string_view automation);
+// Play by E-mail (screens/pbem.cpp): `file` non-empty opens that game file at once.
+std::unique_ptr<FrontScreen> makePbemScreen(std::string_view file = {});
 
 } // namespace opense4::client::classic
