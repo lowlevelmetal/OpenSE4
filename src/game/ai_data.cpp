@@ -23,6 +23,23 @@ constexpr std::array<std::string_view, kAiStates> kStateNames{
     "Defend (Short Term)", "Defend (Long Term)", "Not Connected",
 };
 
+// Spec 05 §7.7: the design types the AI tables and ministers work with.
+constexpr std::array<std::string_view, 39> kAiDesignTypes{
+    "Attack Ship",       "Defense Ship",        "Attack Base",       "Defense Base",      "Base Space Yard",
+    "Cargo Transport",   "Population Transport", "Troop Transport",  "Carrier",           "Colony (Rock)",
+    "Colony (Ice)",      "Colony (Gas)",        "Mine Layer",        "Mine Sweeper",      "Boarding Ship",
+    "Open Warp Point",   "Close Warp Point",    "Create Planet",     "Destroy Planet",    "Create Star",
+    "Destroy Star",      "Create Storm",        "Destroy Storm",     "Space Yard Ship",   "Mine",
+    "Satellite",         "Weapon Platform",     "Troop",             "Fighter",           "Create Black Hole",
+    "Destroy Black Hole", "Create Nebulae",     "Destroy Nebulae",   "Satellite Layer",   "Kamikaze Attack Ship",
+    "Recon Satellite",   "Anti-Ship Drone",     "Anti-Planet Drone", "Drone Carrier",
+};
+
+constexpr std::array<std::string_view, static_cast<size_t>(ColonyType::Count)> kColonyTypes{
+    "Homeworld",         "Mining Colony",         "Farming Colony",    "Refining Colony",       "Resupply Base",
+    "Research Compound", "Intelligence Compound", "Construction Yard", "Military Installation",
+};
+
 std::string lowerAscii(std::string s) {
     for (char& c : s)
         if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
@@ -91,39 +108,33 @@ std::filesystem::path findTable(const std::filesystem::path& dir, std::string_vi
 
 struct Locations {
     std::filesystem::path aiDir;       // <root>/Ai
-    std::filesystem::path raceDir;     // <root>/Pictures/Races/<style> or RaceNeutral/<style>
-    std::filesystem::path styleDir;    // <root>/Ai/<ministerStyle>
+    std::filesystem::path ownDir;      // Ai/<style>, or the race folder when there is no style
 };
 
 Locations locate(const std::filesystem::path& root, std::string_view raceStyle, std::string_view ministerStyle) {
     Locations l;
     l.aiDir = findChild(root, "Ai", true);
-    if (!raceStyle.empty()) {
+    if (!ministerStyle.empty()) {
+        l.ownDir = findChild(l.aiDir, ministerStyle, true);
+    } else if (!raceStyle.empty()) {
         const auto pictures = findChild(root, "Pictures", true);
-        for (std::string_view group : {"Races", "RaceNeutral"}) {
+        for (std::string_view group : {"Races", "RaceNeutral"})
             if (auto d = findChild(findChild(pictures, group, true), raceStyle, true); !d.empty()) {
-                l.raceDir = d;
+                l.ownDir = d;
                 break;
             }
-        }
     }
-    if (!ministerStyle.empty()) l.styleDir = findChild(l.aiDir, ministerStyle, true);
     return l;
 }
 
-enum class Scope { Race, Global, Style };
-
-// Per spec 05 §7.2: race files first, then Ai/Default_*; global files only in Ai/.
-std::filesystem::path lookup(const Locations& l, std::string_view table, Scope scope) {
-    if (scope == Scope::Style && !l.styleDir.empty())
-        if (auto f = findTable(l.styleDir, table); !f.empty()) return f;
-    if (scope != Scope::Global && !l.raceDir.empty())
-        if (auto f = findTable(l.raceDir, table); !f.empty()) return f;
+// Spec 05 §7.2: the style's (or race's) own file, else Ai/Default_AI_<Name>.txt.
+std::filesystem::path lookup(const Locations& l, std::string_view table) {
+    if (auto f = findTable(l.ownDir, table); !f.empty()) return f;
     return findTable(l.aiDir, table, "default_");
 }
 
-std::optional<datafile::DataFile> readTable(const Locations& l, std::string_view table, Scope scope, AiProfile& p) {
-    const auto path = lookup(l, table, scope);
+std::optional<datafile::DataFile> readTable(const Locations& l, std::string_view table, AiProfile& p) {
+    const auto path = lookup(l, table);
     if (path.empty()) return std::nullopt;
     auto file = datafile::load(path);
     if (!file || file->records.empty()) return std::nullopt;
@@ -166,23 +177,22 @@ std::array<int, kMessageTypes> defaultReceive() {
 
 PoliticsTable defaultPolitics() {
     PoliticsTable p;
-    p.proposeTypes = {{Treaty::Partnership, 20},
-                      {Treaty::MilitaryAlliance, 14},
-                      {Treaty::TradeResearchAlliance, 8},
-                      {Treaty::TradeAlliance, 3},
+    // File order; the last qualifying entry is sent (spec 05 §7.4).
+    p.proposeTypes = {{Treaty::Partnership, 30},
+                      {Treaty::MilitaryAlliance, 20},
+                      {Treaty::TradeResearchAlliance, 12},
+                      {Treaty::TradeAlliance, 6},
                       {Treaty::NonAggression, 0}};
     for (size_t i = 0; i < kMessageTypes; ++i) {
         const auto t = static_cast<MessageType>(i);
         if (!isDemand(t)) continue;
         DemandRule d;
-        d.sendScorePercent = 85;
         d.sendToFriend = d.sendToEnemy = true;
         d.acceptScorePercent = 140;
         d.acceptFromFriend = true;
         d.acceptFromEnemy = false;
         switch (t) {
             case MessageType::DemandSurrender:
-                d.sendScorePercent = 60;
                 d.acceptScorePercent = 900;
                 d.acceptFromFriend = false;
                 d.acceptFromEnemy = true;
@@ -191,7 +201,6 @@ PoliticsTable defaultPolitics() {
             case MessageType::DemandTribute: d.acceptScorePercent = 150; break;
             case MessageType::DemandStopEspionage:
             case MessageType::DemandStopSabotage: d.acceptScorePercent = 120; break;
-            case MessageType::RequestSupport: d.sendScorePercent = 110; break;
             default: break;
         }
         p.demands[i] = d;
@@ -201,18 +210,16 @@ PoliticsTable defaultPolitics() {
 
 std::vector<PlanetTypeRow> defaultPlanetTypes() {
     const StateMask war = maskOf(AiState::PrepareForAttack) | maskOf(AiState::Attack) | maskOf(AiState::SecureHoldings) |
-                          maskOf(AiState::Incursion) | maskOf(AiState::PrepareForDefense) | maskOf(AiState::DefendShortTerm) |
-                          maskOf(AiState::DefendLongTerm);
+                          maskOf(AiState::DefendShortTerm);
     return {
         {kAllStates, "Research Compound", 1, 20, "Small", {}, 0},
         {war, "Military Installation", 1, 10, "Large", {}, 0},
-        {kAllStates, "Mining Colony", 1, 30, "", {125, 100, 100}, 0},
-        {kAllStates, "Farming Colony", 1, 20, "", {100, 125, 100}, 0},
-        {kAllStates, "Refining Colony", 1, 20, "", {100, 100, 125}, 0},
+        {kAllStates, "Mining Colony", 0, 40, "", {120, 0, 0}, 0},
+        {kAllStates, "Farming Colony", 0, 20, "", {0, 120, 0}, 0},
+        {kAllStates, "Refining Colony", 0, 20, "", {0, 0, 120}, 0},
         {kAllStates, "Construction Yard", 1, 10, "Medium", {}, 3},
         {kAllStates, "Resupply Base", 1, 10, "", {}, 0},
         {kAllStates, "Intelligence Compound", 1, 5, "Small", {}, 2},
-        {kAllStates, "Mining Colony", 100, 100, "", {}, 0},
     };
 }
 
@@ -248,26 +255,33 @@ std::vector<FacilityQueue> defaultFacilities() {
 
 std::vector<VehicleQueue> defaultVehicles() {
     return {
-        {maskOf(AiState::Exploration), {{"Colonizer", 20, 2}, {"Attack Ship", 40, 1}, {"Defense Base", 0, 0}}},
-        {maskOf(AiState::Infrastructure) | maskOf(AiState::NotConnected),
-         {{"Colonizer", 25, 1}, {"Attack Ship", 15, 2}, {"Defense Base", 60, 1}, {"Weapon Platform", 10, 2},
+        {parseStateList("Exploration, Not Connected"),
+         {{"Colonizer", 20, 2}, {"Attack Ship", 40, 2}, {"Defense Base", 0, 0}}},
+        {parseStateList("Infrastructure"),
+         {{"Colonizer", 25, 1}, {"Attack Ship", 15, 3}, {"Defense Base", 60, 1}, {"Weapon Platform", 10, 2},
           {"Population Transport", 80, 0}}},
-        {maskOf(AiState::PrepareForAttack) | maskOf(AiState::Attack),
+        {parseStateList("Prepare for Attack, Attack"),
          {{"Attack Ship", 5, 4}, {"Colonizer", 60, 0}, {"Troop Transport", 50, 1}, {"Troop", 5, 4}, {"Defense Base", 100, 0}}},
-        {maskOf(AiState::SecureHoldings) | maskOf(AiState::Incursion),
+        {parseStateList("Secure Holdings After Attack, Incursion"),
          {{"Attack Ship", 8, 3}, {"Colonizer", 40, 1}, {"Defense Base", 60, 1}}},
-        {maskOf(AiState::PrepareForDefense) | maskOf(AiState::DefendShortTerm) | maskOf(AiState::DefendLongTerm),
+        {parseStateList("Prepare for Defense, Defend (Short Term), Defend (Long Term)"),
          {{"Defense Base", 15, 2}, {"Attack Ship", 8, 3}, {"Weapon Platform", 5, 4}, {"Satellite", 10, 0}}},
     };
 }
 
-DesignTemplate makeTemplate(std::string name, ruleset::VehicleType type, std::string strategy, std::vector<std::string> mustHave, int minSpeed,
-                            int desiredSpeed, DensityEntry majority, int shields, int armor, std::vector<DensityEntry> misc = {}) {
+// Our own weapon families (the Weapon Family numbers of our test content).
+constexpr std::array<int, 5> kBeamFamilies{200, 201, 202, 0, 0};
+
+DesignTemplate makeTemplate(std::string name, ruleset::VehicleType type, std::vector<std::string> mustHave, int minSpeed,
+                            int desiredSpeed, DensityEntry majority, int shields, int armor, std::vector<DensityEntry> misc = {},
+                            std::array<int, 5> families = kBeamFamilies) {
     DesignTemplate t;
+    t.majorityFamilies = families;
     t.name = name;
     t.designType = std::move(name);
     t.vehicleType = type;
-    t.defaultStrategy = std::move(strategy);
+    t.minTonnage = 1;
+    t.maxTonnage = 5000;
     t.mustHave = std::move(mustHave);
     t.minSpeed = minSpeed;
     t.desiredSpeed = desiredSpeed;
@@ -278,46 +292,38 @@ DesignTemplate makeTemplate(std::string name, ruleset::VehicleType type, std::st
     return t;
 }
 
-// The scout is not one of the classic AI design types; the computer keeps a
-// couple for exploration (inferred).
-DesignTemplate scoutTemplate() {
-    return makeTemplate("Scout", ruleset::VehicleType::Ship, "", {"Standard Ship Movement"}, 3, 8, {}, 0, 0,
-                        {{"Supply Storage", 150}, {"Sensor Level", 5000}});
-}
-
 std::vector<DesignTemplate> defaultDesigns() {
     using ruleset::VehicleType;
-    const DensityEntry weapons{"Weapon", 800};
+    const DensityEntry weapons{"Weapon", 100};
     std::vector<DesignTemplate> out;
-    out.push_back(makeTemplate("Attack Ship", VehicleType::Ship, "", {"Weapon"}, 3, 5, weapons, 300, 500,
-                               {{"Supply Storage", 600}, {"Point-Defense", 900}}));
-    out.push_back(makeTemplate("Defense Ship", VehicleType::Ship, "", {"Weapon"}, 2, 4, weapons, 250, 300, {{"Supply Storage", 700}}));
-    out.push_back(makeTemplate("Defense Base", VehicleType::Base, "", {"Weapon"}, 0, 0, weapons, 250, 300, {{"Point-Defense", 700}}));
+    out.push_back(makeTemplate("Attack Ship", VehicleType::Ship, {"Weapon"}, 2, 4, weapons, 300, 400,
+                               {{"Supply Storage", 500}, {"Point-Defense", 900}}));
+    out.push_back(makeTemplate("Defense Ship", VehicleType::Ship, {"Weapon"}, 2, 3, weapons, 250, 300, {{"Supply Storage", 700}}));
+    out.push_back(makeTemplate("Defense Base", VehicleType::Base, {"Weapon"}, 0, 0, weapons, 250, 300, {{"Point-Defense", 700}}));
     for (std::string_view surface : {"Rock", "Ice", "Gas"}) {
         const std::string ability = std::format("Colonize Planet - {}", surface);
-        out.push_back(makeTemplate(std::format("Colony ({})", surface), VehicleType::Ship, "", {ability}, 2, 4, {ability, 5000}, 0, 0,
-                                   {{"Supply Storage", 400}}));
+        out.push_back(makeTemplate(std::format("Colony ({})", surface), VehicleType::Ship, {ability}, 2, 3, {ability, 0}, 0, 0,
+                                   {{"Supply Storage", 10000}}));
     }
-    out.push_back(scoutTemplate());
-    out.push_back(makeTemplate("Population Transport", VehicleType::Ship, "", {"Cargo Storage"}, 2, 4, {"Cargo Storage", 100}, 0, 0,
-                               {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Troop Transport", VehicleType::Ship, "", {"Cargo Storage"}, 3, 4, {"Cargo Storage", 100}, 0, 400,
-                               {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Carrier", VehicleType::Ship, "", {"Launch/Recover Fighters"}, 2, 4, {"Launch/Recover Fighters", 100}, 300,
-                               600, {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Mine Layer", VehicleType::Ship, "", {"Lay Mines"}, 2, 4, {"Lay Mines", 100}, 0, 500, {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Satellite Layer", VehicleType::Ship, "", {"Launch/Recover Satellites"}, 2, 4,
-                               {"Launch/Recover Satellites", 100}, 0, 500, {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Mine Sweeper", VehicleType::Ship, "", {"Mine Sweeping"}, 3, 5, {"Mine Sweeping", 300}, 0, 400,
-                               {{"Supply Storage", 500}}));
-    out.push_back(makeTemplate("Base Space Yard", VehicleType::Base, "", {"Space Yard"}, 0, 0, {"Space Yard", 5000}, 0, 300));
-    out.push_back(makeTemplate("Space Yard Ship", VehicleType::Ship, "", {"Space Yard"}, 2, 3, {"Space Yard", 5000}, 0, 400,
-                               {{"Supply Storage", 400}}));
-    out.push_back(makeTemplate("Weapon Platform", VehicleType::WeaponPlatform, "", {"Weapon"}, 0, 0, weapons, 0, 200));
-    out.push_back(makeTemplate("Satellite", VehicleType::Satellite, "", {"Weapon"}, 0, 0, weapons, 0, 200));
-    out.push_back(makeTemplate("Fighter", VehicleType::Fighter, "", {"Weapon"}, 1, 4, weapons, 0, 0));
-    out.push_back(makeTemplate("Mine", VehicleType::Mine, "", {"Weapon"}, 0, 0, weapons, 0, 0));
-    out.push_back(makeTemplate("Troop", VehicleType::Troop, "", {"Weapon"}, 0, 0, weapons, 0, 200));
+    out.push_back(makeTemplate("Population Transport", VehicleType::Ship, {"Cargo Storage"}, 2, 3, {"Cargo Storage", 100}, 0, 0,
+                               {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Troop Transport", VehicleType::Ship, {"Cargo Storage"}, 2, 3, {"Cargo Storage", 100}, 0, 400,
+                               {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Carrier", VehicleType::Ship, {"Launch/Recover Fighters"}, 2, 3, {"Launch/Recover Fighters", 100}, 300,
+                               600, {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Mine Layer", VehicleType::Ship, {"Lay Mines"}, 2, 3, {"Lay Mines", 100}, 0, 500, {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Satellite Layer", VehicleType::Ship, {"Launch/Recover Satellites"}, 2, 3,
+                               {"Launch/Recover Satellites", 100}, 0, 500, {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Mine Sweeper", VehicleType::Ship, {"Mine Sweeping"}, 2, 4, {"Mine Sweeping", 300}, 0, 400,
+                               {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Base Space Yard", VehicleType::Base, {"Space Yard"}, 0, 0, {"Space Yard", 10000}, 0, 300));
+    out.push_back(makeTemplate("Space Yard Ship", VehicleType::Ship, {"Space Yard"}, 2, 3, {"Space Yard", 10000}, 0, 400,
+                               {{"Supply Storage", 10000}}));
+    out.push_back(makeTemplate("Weapon Platform", VehicleType::WeaponPlatform, {"Weapon"}, 0, 0, weapons, 0, 200));
+    out.push_back(makeTemplate("Satellite", VehicleType::Satellite, {"Weapon"}, 0, 0, weapons, 0, 200, {}, {207, 200, 0, 0, 0}));
+    out.push_back(makeTemplate("Fighter", VehicleType::Fighter, {"Weapon"}, 1, 4, weapons, 0, 0, {}, {204, 0, 0, 0, 0}));
+    out.push_back(makeTemplate("Mine", VehicleType::Mine, {"Weapon"}, 0, 0, weapons, 0, 0, {}, {205, 0, 0, 0, 0}));
+    out.push_back(makeTemplate("Troop", VehicleType::Troop, {"Weapon"}, 0, 0, weapons, 0, 200, {}, {206, 0, 0, 0, 0}));
     return out;
 }
 
@@ -326,13 +332,14 @@ Speech defaultSpeech() {
     auto add = [&](std::string_view pool, std::vector<std::string> lines) { s.pools[datafile::normalizeKey(pool)] = std::move(lines); };
     add("Send General Message", {"Greetings from [%OurEmpireName]."});
     add("Send Propose Treaty", {"[%OurEmpireName] offers [%TargetEmpireName] a [%ProposedTreatyName]."});
+    add("Send Offer Counter Treaty Proposal", {"[%OurEmpireName] could agree to a [%ProposedTreatyName] instead."});
     add("Send Accept Treaty", {"[%OurEmpireName] agrees to the [%ProposedTreatyName]."});
     add("Send Refuse Treaty", {"[%OurEmpireName] declines the [%ProposedTreatyName]."});
     add("Send Break Treaty", {"[%OurEmpireName] no longer honours its [%TreatyName] with you."});
     add("Send Declare War", {"[%OurEmpireName] is now at war with [%TargetEmpireName]."});
     add("Send Accept Trade", {"The exchange is acceptable."});
     add("Send Refuse Trade", {"The exchange is not acceptable."});
-    add("Send Give Gift", {"Please accept this token of goodwill from [%OurEmpireName]."});
+    add("Send Give Gift", {"Please accept this from [%OurEmpireName]."});
     add("Send Offer Tribute", {"[%OurEmpireName] offers this tribute to [%TargetEmpireName]."});
     add("Send Accept Gift", {"[%OurEmpireName] thanks you for the gift."});
     add("Send Refuse Gift", {"[%OurEmpireName] wants nothing from you."});
@@ -340,9 +347,16 @@ Speech defaultSpeech() {
     add("Send Refuse Tribute", {"Keep your tribute."});
     add("Send Accept Demand/Request", {"[%OurEmpireName] will do as you ask."});
     add("Send Refuse Demand/Request", {"[%OurEmpireName] will not do that."});
-    add("Send Want a gift", {"[%OurEmpireName] would welcome a gift from [%TargetEmpireName]."});
     add("Send Remove your ships from system", {"Withdraw your ships from [%SystemName]."});
+    add("Send Remove your colonies from system", {"Leave [%SystemName]."});
     add("Send Declare war on empire", {"Join [%OurEmpireName] against [%OtherEmpireName]."});
+    add("Send Break treaty with empire", {"End your treaty with [%OtherEmpireName]."});
+    add("Send Make peace with empire", {"Make peace with [%OtherEmpireName]."});
+    add("Send Attack empire in system", {"Strike [%OtherEmpireName] in [%SystemName]."});
+    add("Send Demand your surrender", {"[%OurEmpireName] demands your surrender."});
+    add("Send Stop attacks in system", {"Stop your attacks in [%SystemName]."});
+    add("Send Stop espionage activities", {"Stop spying on [%OurEmpireName]."});
+    add("Send Stop sabotage activities", {"Stop sabotaging [%OurEmpireName]."});
     add("Mega Evil Declarations", {"[%TargetEmpireName] has grown too powerful. [%OurEmpireName] will oppose it."});
     return s;
 }
@@ -432,7 +446,6 @@ void parsePolitics(const datafile::Record& rec, PoliticsTable& p) {
         if (!isDemand(type)) continue;
         const std::string_view n = angerKeyName(type);
         DemandRule& d = p.demands[i];
-        d.sendScorePercent = f.num(std::format("Score Percent to Send {}", n), d.sendScorePercent);
         d.sendToFriend = f.flag(std::format("Will Send To Friend {}", n), d.sendToFriend);
         d.sendToEnemy = f.flag(std::format("Will Send To Enemy {}", n), d.sendToEnemy);
         d.acceptScorePercent = f.num(std::format("Score Percent To Accept {}", n), d.acceptScorePercent);
@@ -456,52 +469,52 @@ void parsePolitics(const datafile::Record& rec, PoliticsTable& p) {
     p.acceptTradeEnemyPercent = f.num(tradeKey("Enemy"), p.acceptTradeEnemyPercent);
 }
 
+// Keys absent from the file take the spec's defaults (spec 05 §7.5), not the built-in ones.
 void parseSettings(const datafile::Record& rec, SettingsTable& s) {
     const Fields f(&rec);
+    const SettingsTable d;
     for (int i = 1; i <= 3; ++i) {
         auto& cap = s.tonnageCaps[static_cast<size_t>(i - 1)];
-        cap.first = f.num(std::format("Max Ship Size Tonnage From Start {} Amount", i), cap.first);
-        cap.second = f.num(std::format("Max Ship Size Tonnage From Start {} Num Turns", i), cap.second);
+        cap.first = f.num(std::format("Max Ship Size Tonnage From Start {} Amount", i), 0);
+        cap.second = f.num(std::format("Max Ship Size Tonnage From Start {} Num Turns", i), 0);
     }
-    s.turnsBetweenAttacks = f.num("Turns to Wait until next attack", s.turnsBetweenAttacks);
-    s.maxMaintenancePercent = f.num("Maximum Maintenance Percent of Revenue", s.maxMaintenancePercent);
-    s.maxResearchPoints = f.num64("Maximum Research Point Generation", s.maxResearchPoints);
-    s.maxIntelligencePoints = f.num64("Maximum Intelligence Point Generation", s.maxIntelligencePoints);
-    s.maxSystemsToDefend = f.num("Maximum Systems to Defend at a Time", s.maxSystemsToDefend);
-    s.angryOverAlliedPlanets = f.flag("Get Angry Over Allied Colonizable Planets", s.angryOverAlliedPlanets);
-    s.angryOverEnemyPlanets = f.flag("Get Angry Over Enemy Colonizable Planets", s.angryOverEnemyPlanets);
+    s.turnsBetweenAttacks = f.num("Turns to Wait until next attack", d.turnsBetweenAttacks);
+    s.maxMaintenancePercent = f.num("Maximum Maintenance Percent of Revenue", d.maxMaintenancePercent);
+    s.maxResearchPoints = f.num64("Maximum Research Point Generation", d.maxResearchPoints);
+    s.maxIntelligencePoints = f.num64("Maximum Intelligence Point Generation", d.maxIntelligencePoints);
+    s.maxSystemsToDefend = f.num("Maximum Systems to Defend at a Time", d.maxSystemsToDefend);
+    s.angryOverAlliedPlanets = f.flag("Get Angry Over Allied Colonizable Planets", d.angryOverAlliedPlanets);
+    s.angryOverEnemyPlanets = f.flag("Get Angry Over Enemy Colonizable Planets", d.angryOverEnemyPlanets);
     auto planetsKey = [](std::string_view side) { return std::format("Percentage of {} Planets to consider as Attack Locations for Anger", side); };
-    s.alliedPlanetsPercent = f.num(planetsKey("Allied"), s.alliedPlanetsPercent);
-    s.enemyPlanetsPercent = f.num(planetsKey("Enemy"), s.enemyPlanetsPercent);
-    s.personalityGroup = f.num("Personality Group", s.personalityGroup);
-    s.avoidMinefields = f.flag("Ships don't move through minefields", s.avoidMinefields);
-    s.avoidRestrictedSystems = f.flag("Ships don't move through restricted systems", s.avoidRestrictedSystems);
-    s.clearOrdersOnEnemy = f.flag("Clear orders on encounter enemy", s.clearOrdersOnEnemy);
-    s.clearOrdersOnAll = f.flag("Clear orders on encounter all", s.clearOrdersOnAll);
-    s.satellitesKeptPercent = f.num("Percentage of total satellites to keep as planetary cargo", s.satellitesKeptPercent);
-    s.dronesKeptPercent = f.num("Percentage of total drones to keep as planetary cargo", s.dronesKeptPercent);
-    s.antiShipDronesPerTarget = f.num("Number Of Anti-Ship Drones Per Target", s.antiShipDronesPerTarget);
-    s.antiPlanetDronesPerTarget = f.num("Number Of Anti-Planet Drones Per Target", s.antiPlanetDronesPerTarget);
-    s.antiShipDroneRange = f.num("Maximum Anti-Ship Drone Target System Distance", s.antiShipDroneRange);
-    s.antiPlanetDroneRange = f.num("Maximum Anti-Planet Drone Target System Distance", s.antiPlanetDroneRange);
+    s.alliedPlanetsPercent = f.num(planetsKey("Allied"), d.alliedPlanetsPercent);
+    s.enemyPlanetsPercent = f.num(planetsKey("Enemy"), d.enemyPlanetsPercent);
+    s.personalityGroup = f.num("Personality Group", d.personalityGroup);
+    s.avoidMinefields = f.flag("Ships don't move through minefields", d.avoidMinefields);
+    s.avoidRestrictedSystems = f.flag("Ships don't move through restricted systems", d.avoidRestrictedSystems);
+    s.clearOrdersOnEnemy = f.flag("Clear orders on encounter enemy", d.clearOrdersOnEnemy);
+    s.clearOrdersOnAll = f.flag("Clear orders on encounter all", d.clearOrdersOnAll);
+    s.satellitesKeptPercent = f.num("Percentage of total satellites to keep as planetary cargo", d.satellitesKeptPercent);
+    s.dronesKeptPercent = f.num("Percentage of total drones to keep as planetary cargo", d.dronesKeptPercent);
+    s.antiShipDronesPerTarget = f.num("Number Of Anti-Ship Drones Per Target", d.antiShipDronesPerTarget);
+    s.antiPlanetDronesPerTarget = f.num("Number Of Anti-Planet Drones Per Target", d.antiPlanetDronesPerTarget);
+    s.antiShipDroneRange = f.num("Maximum Anti-Ship Drone Target System Distance", d.antiShipDroneRange);
+    s.antiPlanetDroneRange = f.num("Maximum Anti-Planet Drone Target System Distance", d.antiPlanetDroneRange);
 }
 
 void parseFleets(const datafile::Record& rec, FleetsTable& t) {
     const Fields f(&rec);
-    if (f.has("Fleets Num Divisions")) {
-        std::vector<FleetDivision> divisions;
-        const int n = f.num("Fleets Num Divisions", 0);
-        for (int i = 1; i <= n; ++i)
-            divisions.push_back({f.num(std::format("Fleets Div {} Max Amount of Ships", i), 0),
-                                 f.num(std::format("Fleets Div {} Max Amount of Planets", i), 0),
-                                 f.num(std::format("Fleets Div {} Num Fleets", i), 0)});
-        if (!divisions.empty()) t.divisions = std::move(divisions);
-    }
-    t.percentInFleets = f.num("Fleets Percentage of Ships For Fleets", t.percentInFleets);
-    t.dontUseForTurns = f.num("Fleets Dont Use For Num Turns", t.dontUseForTurns);
-    t.defaultFormation = f.text("Fleets Default Formation", t.defaultFormation);
-    t.defaultStrategy = f.text("Fleets Default Strategy", t.defaultStrategy);
-    t.percentForDefense = f.num("Percentage of Fleets to use for defense", t.percentForDefense);
+    std::vector<FleetDivision> divisions;
+    const int n = f.num("Fleets Num Divisions", 0);
+    for (int i = 1; i <= n; ++i)
+        divisions.push_back({f.num(std::format("Fleets Div {} Max Amount of Ships", i), 0),
+                             f.num(std::format("Fleets Div {} Max Amount of Planets", i), 0),
+                             f.num(std::format("Fleets Div {} Num Fleets", i), 0)});
+    t.divisions = std::move(divisions);
+    t.percentInFleets = f.num("Fleets Percentage of Ships For Fleets", 0);
+    t.dontUseForTurns = f.num("Fleets Dont Use For Num Turns", 0);
+    t.defaultFormation = f.text("Fleets Default Formation");
+    t.defaultStrategy = f.text("Fleets Default Strategy");
+    t.percentForDefense = f.num("Percentage of Fleets to use for defense", 0);
 }
 
 void parseGeneral(const datafile::Record& rec, GeneralInfo& g) {
@@ -519,8 +532,8 @@ std::vector<ResearchRow> parseResearch(const datafile::DataFile& file) {
         ResearchRow row;
         row.states = parseStateList(f.text("AI State"));
         row.area = f.text("Tech Area Name");
-        row.level = f.num("Tech Area Level", 1);
-        row.minPercent = f.num("Tech Area Min Percent", 25);
+        row.level = f.num("Tech Area Level", 0);
+        row.minPercent = f.num("Tech Area Min Percent", 0);
         if (!row.area.empty()) out.push_back(std::move(row));
     }
     return out;
@@ -533,8 +546,8 @@ std::vector<PlanetTypeRow> parsePlanetTypes(const datafile::DataFile& file) {
         PlanetTypeRow row;
         row.states = parseStateList(f.text("AI State"));
         row.type = f.text("Planet Type");
-        row.maxPerSystem = f.num("Max Per System", 100);
-        row.percentOfColonies = f.num("Percent of Colonies", 100);
+        row.maxPerSystem = f.num("Max Per System", 0);
+        row.percentOfColonies = f.num("Percent of Colonies", 0);
         row.minimumSize = f.text("Minimum Planet Size for Type");
         row.values = {f.num("Mineral Value", 0), f.num("Organics Value", 0), f.num("Radioactives Value", 0)};
         row.maxInEmpire = f.num("Maximum Total in Empire", 0);
@@ -554,7 +567,7 @@ std::vector<FacilityQueue> parseFacilities(const datafile::DataFile& file) {
         for (int i = 1; i <= n; ++i) {
             FacilityEntry e;
             e.ability = f.text(std::format("Facility {} Ability", i));
-            e.amount = f.num(std::format("Facility {} Amount", i), 1);
+            e.amount = f.num(std::format("Facility {} Amount", i), 0);
             if (!e.ability.empty()) q.entries.push_back(std::move(e));
         }
         if (!q.queueType.empty()) out.push_back(std::move(q));
@@ -602,13 +615,14 @@ std::vector<DesignTemplate> parseDesigns(const datafile::DataFile& file) {
         t.designType = f.text("Design Type", t.name);
         if (!parseVehicleType(f.text("Vehicle Type", "Ship"), t.vehicleType)) t.vehicleType = ruleset::VehicleType::Ship;
         t.defaultStrategy = f.text("Default Strategy");
+        // A missing key is 0 (spec 05 §7.5): a template without a maximum never finds a hull.
         t.minTonnage = f.num("Size Minimum Tonnage", 0);
-        t.maxTonnage = f.num("Size Maximum Tonnage", 1'000'000);
+        t.maxTonnage = f.num("Size Maximum Tonnage", 0);
         const int must = f.num("Num Must Have At Least 1 Ability", 0);
         for (int i = 1; i <= must; ++i)
             if (auto a = f.text(std::format("Must Have Ability {}", i)); !a.empty()) t.mustHave.push_back(std::move(a));
         t.minSpeed = f.num("Minimum Speed", 0);
-        t.desiredSpeed = f.num("Desired Speed", t.minSpeed);
+        t.desiredSpeed = f.num("Desired Speed", 0);
         for (int i = 1; i <= 5; ++i) {
             t.majorityFamilies[static_cast<size_t>(i - 1)] = f.num(std::format("Majority Weapon Family Pick {}", i), 0);
             t.secondaryFamilies[static_cast<size_t>(i - 1)] = f.num(std::format("Secondary Weapon Family Pick {}", i), 0);
@@ -686,18 +700,27 @@ AiState stateOf(const Empire& e) {
 
 StateMask parseStateList(std::string_view text) {
     StateMask mask = 0;
-    while (!text.empty()) {
-        const size_t comma = text.find(',');
-        const std::string_view item = text.substr(0, comma);
-        AiState s;
-        if (parseAiState(item, s)) mask = static_cast<StateMask>(mask | maskOf(s));
-        if (comma == std::string_view::npos) break;
-        text.remove_prefix(comma + 1);
-    }
+    for (size_t i = 0; i < kAiStates; ++i)
+        if (text.find(kStateNames[i]) != std::string_view::npos) mask = static_cast<StateMask>(mask | (1u << i));
     return mask;
 }
 
 bool isDemand(MessageType t) { return t >= MessageType::DemandGift && t <= MessageType::DemandStopAttacks; }
+
+std::span<const std::string_view> aiDesignTypes() { return kAiDesignTypes; }
+
+bool isAiDesignType(std::string_view name) {
+    return std::any_of(kAiDesignTypes.begin(), kAiDesignTypes.end(), [&](std::string_view t) { return keysEqual(t, name); });
+}
+
+std::string_view displayName(ColonyType t) { return t < ColonyType::Count ? kColonyTypes[static_cast<size_t>(t)] : std::string_view{}; }
+
+ColonyType parseColonyType(std::string_view text) {
+    if (keysEqual(text, "Imperial Center")) return ColonyType::Homeworld;
+    for (size_t i = 0; i < kColonyTypes.size(); ++i)
+        if (keysEqual(text, kColonyTypes[i])) return static_cast<ColonyType>(i);
+    return ColonyType::Count;
+}
 
 std::string_view angerKeyName(MessageType t) {
     switch (t) {
@@ -772,19 +795,17 @@ const DesignTemplate* AiProfile::design(std::string_view aiType) const {
 }
 
 const VehicleQueue* AiProfile::vehicleQueue(AiState s) const {
+    const VehicleQueue* last = nullptr;
     for (const auto& q : vehicles)
-        if (q.states & maskOf(s)) return &q;
-    return nullptr;
+        if (q.states & maskOf(s)) last = &q;
+    return last;
 }
 
 const FacilityQueue* AiProfile::facilityQueue(AiState s, std::string_view queueType) const {
-    const FacilityQueue* any = nullptr;
-    for (const auto& q : facilities) {
-        if (!keysEqual(q.queueType, queueType)) continue;
-        if (q.states & maskOf(s)) return &q;
-        if (!any) any = &q;
-    }
-    return any;  // a queue type with no row for this state uses its first row (inferred)
+    const FacilityQueue* last = nullptr;
+    for (const auto& q : facilities)
+        if ((q.states & maskOf(s)) && keysEqual(q.queueType, queueType)) last = &q;
+    return last;
 }
 
 const AiProfile& builtinProfile() {
@@ -796,41 +817,25 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
     AiProfile p = builtinProfile();
     p.sources.clear();
     const Locations where = locate(gameRoot, raceStyle, ministerStyle);
-    const Scope personal = ministerStyle.empty() ? Scope::Race : Scope::Style;
 
-    if (auto f = readTable(where, "Anger", personal, p)) parseAnger(f->records.front(), p.anger);
-    if (auto f = readTable(where, "Politics", personal, p)) parsePolitics(f->records.front(), p.politics);
-    if (auto f = readTable(where, "Settings", personal, p)) parseSettings(f->records.front(), p.settings);
-    if (auto f = readTable(where, "General", personal, p)) parseGeneral(f->records.front(), p.general);
-    if (auto f = readTable(where, "Fleets", Scope::Race, p)) parseFleets(f->records.front(), p.fleets);
-    if (auto f = readTable(where, "Research", Scope::Race, p)) {
-        auto rows = parseResearch(*f);
-        if (!rows.empty()) p.research = std::move(rows);
-    }
-    if (auto f = readTable(where, "DesignCreation", Scope::Race, p)) {
-        auto designs = parseDesigns(*f);
-        if (!designs.empty()) {
-            p.designs = std::move(designs);
-            if (!p.design("Scout")) p.designs.push_back(scoutTemplate());
-        }
-    }
-    if (auto f = readTable(where, "Construction_Facilities", Scope::Global, p)) {
-        auto rows = parseFacilities(*f);
-        if (!rows.empty()) p.facilities = std::move(rows);
-    }
-    if (auto f = readTable(where, "Construction_Vehicles", Scope::Global, p)) {
-        auto rows = parseVehicles(*f);
-        if (!rows.empty()) p.vehicles = std::move(rows);
-    }
-    if (auto f = readTable(where, "Planet_Types", Scope::Global, p)) {
-        auto rows = parsePlanetTypes(*f);
-        if (!rows.empty()) p.planetTypes = std::move(rows);
-    }
-    if (auto f = readTable(where, "Speech", ministerStyle.empty() ? Scope::Global : Scope::Style, p)) {
+    if (auto f = readTable(where, "Anger", p)) parseAnger(f->records.front(), p.anger);
+    if (auto f = readTable(where, "Politics", p)) parsePolitics(f->records.front(), p.politics);
+    if (auto f = readTable(where, "Settings", p)) parseSettings(f->records.front(), p.settings);
+    if (auto f = readTable(where, "General", p)) parseGeneral(f->records.front(), p.general);
+    if (auto f = readTable(where, "Fleets", p)) parseFleets(f->records.front(), p.fleets);
+    if (auto f = readTable(where, "Research", p)) p.research = parseResearch(*f);
+    if (auto f = readTable(where, "DesignCreation", p)) p.designs = parseDesigns(*f);
+    if (auto f = readTable(where, "Construction_Facilities", p)) p.facilities = parseFacilities(*f);
+    if (auto f = readTable(where, "Construction_Vehicles", p)) p.vehicles = parseVehicles(*f);
+    if (auto f = readTable(where, "Planet_Types", p)) p.planetTypes = parsePlanetTypes(*f);
+    if (auto f = readTable(where, "Speech", p)) {
         auto speech = parseSpeech(*f);
         if (!speech.pools.empty()) p.speech = std::move(speech);
     }
-    if (auto f = readTable(where, "Strategies", Scope::Global, p)) p.strategies = parseStrategies(*f);
+    if (auto f = readTable(where, "Strategies", p)) p.strategies = parseStrategies(*f);
+    // Not shipped with the stock install; only its reserve is used (spec 05 §7.5, the rows are open).
+    if (auto f = readTable(where, "Construction_Units", p))
+        p.unitReservePercent = Fields(&f->records.front()).num("Percentage of Resources To Reserve For Unit Construction", 0);
     if (p.sources.empty()) p.sources.push_back("built-in");
     return p;
 }
@@ -848,6 +853,23 @@ const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::str
     return *it->second;
 }
 
-const AiProfile& profileFor(const Rules& r, const Empire& e) { return profileFor(r, e.race.style); }
+const AiProfile& profileFor(const Rules& r, const Empire& e) { return profileFor(r, e.race.style, e.ministerStyle); }
+
+const std::vector<std::string>& designNameList(const Rules& r, std::string_view file) {
+    static const std::vector<std::string> kNone;
+    if (r.gameRoot().empty() || file.empty()) return kNone;
+    static std::mutex mutex;
+    static std::map<std::string, std::unique_ptr<const std::vector<std::string>>> cache;
+    const std::string key = std::format("{}|{}", r.gameRoot().string(), datafile::normalizeKey(file));
+    std::lock_guard lock(mutex);
+    auto it = cache.find(key);
+    if (it == cache.end()) {
+        auto names = std::make_unique<std::vector<std::string>>();
+        if (auto path = findChild(findChild(r.gameRoot(), "Dsgnname", true), file, false); !path.empty())
+            if (auto loaded = datafile::load(path)) *names = loaded->entries;
+        it = cache.emplace(key, std::move(names)).first;
+    }
+    return *it->second;
+}
 
 } // namespace opense4::game::ai

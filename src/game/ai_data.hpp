@@ -3,12 +3,16 @@
 // The computer player's data tables (docs/spec/05 §7.2-§7.5): the classic
 // `<prefix>_AI_<Name>.txt` files, read at runtime from the player's install.
 //
-// Lookup (spec 05 §7.2): per-race files come from the race's own folder
-// (Pictures/Races/<Race>/ or Pictures/RaceNeutral/<Race>/) and fall back to
-// Ai/Default_AI_<Name>.txt; the global tables (construction, planet types,
-// speech, strategies) always come from Ai/. A minister style reads its
-// Anger/General/Politics/Settings/Speech from Ai/<Style>/. Anything missing
-// uses the built-in defaults below (our own numbers).
+// Lookup (spec 05 §7.2, confirmed: binary): one rule for all twelve tables.
+// An empire with a minister style reads Ai/<Style>/<Style>_AI_<Name>.txt, any
+// other empire its race's file (Pictures/Races/<Race>/ or
+// Pictures/RaceNeutral/<Race>/). When that file does not exist it reads
+// Ai/Default_AI_<Name>.txt. There is no fallback from a style folder to the
+// race folder. Without an install the built-in tables below (our own
+// numbers) are used.
+//
+// Missing keys take the defaults the spec lists (§7.5 AI_Settings; 0 for the
+// row tables and the design templates).
 
 #include "game/ai.hpp"
 #include "game/types.hpp"
@@ -16,6 +20,7 @@
 
 #include <array>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -27,23 +32,40 @@ namespace opense4::game::ai {
 using StateMask = uint16_t;
 inline constexpr StateMask kAllStates = static_cast<StateMask>((1u << kAiStates) - 1);
 constexpr StateMask maskOf(AiState s) { return static_cast<StateMask>(1u << static_cast<unsigned>(s)); }
-// "Exploration, Infrastructure, ..." -> mask. Unknown names are ignored.
+// The states a row's `AI State` text applies to (spec 05 §7.5, confirmed:
+// binary): a state matches when its name occurs anywhere in the text, case
+// sensitive. So "Attack" also matches "Prepare for Attack".
 StateMask parseStateList(std::string_view text);
 
 // Messages the anger and politics tables name. The demand/request types have
-// per-type politics rows (send/accept thresholds).
+// per-type politics rows (send/accept flags).
 inline constexpr size_t kMessageTypes = static_cast<size_t>(MessageType::Count);
 bool isDemand(MessageType t);  // DemandGift .. DemandStopAttacks
+
+// ---- Fixed lists built into the game ---------------------------------------------------------
+
+// The 39 AI design types (spec 05 §7.7). None of them is a scout.
+std::span<const std::string_view> aiDesignTypes();
+bool isAiDesignType(std::string_view name);
+
+// The nine colony types the ministers know (spec 05 §7.5).
+enum class ColonyType : uint8_t {
+    Homeworld, Mining, Farming, Refining, ResupplyBase, ResearchCompound, IntelligenceCompound, ConstructionYard,
+    MilitaryInstallation, Count
+};
+std::string_view displayName(ColonyType t);
+// "Imperial Center" is Homeworld; any other label is ColonyType::Count.
+ColonyType parseColonyType(std::string_view text);
 
 // ---- AI_Anger ------------------------------------------------------------------------------
 struct AngerTable {
     int perAttackLocation = 1;
     int perNoTreatyShip = 1;
-    int perAllyShip = 0;
+    int perAllyShip = 0;  // read but never used (spec 05 §7.3)
     int perEnemyShip = 2;
     int minimum = 0;
     int regularDecrease = -2;
-    int megaEvilEmpire = 40;
+    int megaEvilEmpire = 5;
     int attackingWon = 2, attackingLost = 8, attackingStalemate = 1;
     int defendingWon = 2, defendingLost = 12, defendingStalemate = 1;
     int intelligenceAgainstUs = 4;
@@ -53,7 +75,7 @@ struct AngerTable {
 };
 
 // ---- AI_Politics ----------------------------------------------------------------------------
-// One treaty rule's threshold modifiers (spec 05 §7.4).
+// One treaty rule's threshold terms (spec 05 §7.4).
 struct TreatyRule {
     int baseAnger = 0;
     int perOtherWars = 0;
@@ -62,8 +84,9 @@ struct TreatyRule {
     int weakerPercent = 0, weakerAmount = 0;
 };
 
+// Demands and requests. `Score Percent to Send` has no effect (spec 05 §7.4)
+// and is not kept.
 struct DemandRule {
-    int sendScorePercent = 0;       // send when P <= this
     bool sendToFriend = false, sendToEnemy = false;
     int acceptScorePercent = 1000;  // accept when P >= this
     bool acceptFromFriend = false, acceptFromEnemy = false;
@@ -75,72 +98,73 @@ struct PoliticsTable {
     Treaty highestAllowedTreaty = Treaty::Partnership;
     int turnsSinceWarBeforeFriendly = 12;
 
-    TreatyRule accept{35, 25, 8, 160, 40, 60, -25};
-    int acceptPerHigherLevel = -4;
-    int acceptMinimumChance = 3;
+    TreatyRule accept{55, -10, 5, 150, 10, 70, -10};
+    int acceptPerHigherLevel = -5;
+    int acceptMinimumChance = 5;          // a floor on the threshold, not a probability
     int acceptMinimumTurnsSinceTreaty = 8;
     int acceptSubjugationPercent = 700;
     int acceptProtectoratePercent = 500;
 
     int proposeChancePercent = 10;
-    TreatyRule propose{28, 25, 8, 180, 40, 60, -25};
-    std::vector<std::pair<Treaty, int>> proposeTypes;   // best first: treaty, anger below computed
+    TreatyRule propose{45, -10, 5, 150, 10, 70, -10};
+    std::vector<std::pair<Treaty, int>> proposeTypes;   // file order: treaty, "Anger Level Below Computed"
 
-    TreatyRule breakTreaty{65, 25, 0, 180, 40, 60, -25};
-    TreatyRule declareWar{85, 20, 0, 180, 45, 60, -25};
+    TreatyRule breakTreaty{85, 5, 0, 150, 10, 70, -10};
+    TreatyRule declareWar{95, 5, 0, 150, 10, 70, -10};
 
     int maxAngerAcceptGift = 85;
     int maxAngerAcceptTribute = 85;
     std::array<DemandRule, kMessageTypes> demands{};    // only isDemand() entries are used
 
-    int giftBaseFriend = 5000, giftBaseEnemy = 5000;
-    int tributeBaseFriend = 5000, tributeBaseEnemy = 5000;
-    int giftPerPercentFriend = 100, giftPerPercentEnemy = 50;
-    int tributePerPercentFriend = 100, tributePerPercentEnemy = 50;
-    int giftMaxAngerFriend = 70, giftMaxAngerEnemy = 70;
-    int tributeMaxAngerFriend = 70, tributeMaxAngerEnemy = 70;
+    int giftBaseFriend = 5, giftBaseEnemy = 5;
+    int tributeBaseFriend = 5, tributeBaseEnemy = 5;
+    int giftPerPercentFriend = 1, giftPerPercentEnemy = 1;
+    int tributePerPercentFriend = 1, tributePerPercentEnemy = 1;
+    int giftMaxAngerFriend = 60, giftMaxAngerEnemy = 40;
+    int tributeMaxAngerFriend = 60, tributeMaxAngerEnemy = 40;
     int acceptTradeFriendPercent = 95;
     int acceptTradeEnemyPercent = 120;
 };
 
 // ---- AI_Settings --------------------------------------------------------------------------------
+// Defaults are the spec's defaults for absent keys (spec 05 §7.5).
 struct SettingsTable {
-    std::array<std::pair<int, int>, 3> tonnageCaps{{{400, 15}, {700, 35}, {0, 0}}};  // (max tonnage, until turn)
-    int turnsBetweenAttacks = 8;
-    int maxMaintenancePercent = 75;
-    int64_t maxResearchPoints = 1'000'000'000;
-    int64_t maxIntelligencePoints = 1'000'000'000;
-    int maxSystemsToDefend = 2;
+    std::array<std::pair<int, int>, 3> tonnageCaps{};  // (max tonnage, turns); each applies when Amount > 0
+    int turnsBetweenAttacks = 0;
+    int maxMaintenancePercent = 80;
+    int64_t maxResearchPoints = 300'000;
+    int64_t maxIntelligencePoints = 300'000;
+    int maxSystemsToDefend = 3;
     bool angryOverAlliedPlanets = true;
-    bool angryOverEnemyPlanets = true;
-    int alliedPlanetsPercent = 8;
-    int enemyPlanetsPercent = 6;
+    bool angryOverEnemyPlanets = false;
+    int alliedPlanetsPercent = 5;
+    int enemyPlanetsPercent = 5;
     int personalityGroup = 0;
     bool avoidMinefields = false;
     bool avoidRestrictedSystems = false;
     bool clearOrdersOnEnemy = false;
     bool clearOrdersOnAll = false;
-    int satellitesKeptPercent = 50;
-    int dronesKeptPercent = 50;
-    int antiShipDronesPerTarget = 2;
-    int antiPlanetDronesPerTarget = 2;
-    int antiShipDroneRange = 4;
-    int antiPlanetDroneRange = 4;
+    int satellitesKeptPercent = 40;
+    int dronesKeptPercent = 40;
+    int antiShipDronesPerTarget = 3;
+    int antiPlanetDronesPerTarget = 3;
+    int antiShipDroneRange = 5;
+    int antiPlanetDroneRange = 5;
 };
 
 // ---- AI_Fleets ------------------------------------------------------------------------------------
 struct FleetDivision {
-    int maxShips = 0;    // 0 = use maxPlanets
+    int maxShips = 0;    // <= 0: compare maxPlanets with our planet count instead
     int maxPlanets = 0;
     int fleets = 0;
 };
 struct FleetsTable {
     std::vector<FleetDivision> divisions{{15, 0, 2}, {40, 0, 4}, {90, 0, 6}, {1'000'000, 0, 8}};
-    int percentInFleets = 75;
-    int dontUseForTurns = 12;
+    int percentInFleets = 60;
+    int dontUseForTurns = 30;
     std::string defaultFormation;   // empty: the first formation
     std::string defaultStrategy;    // empty: the empire's first strategy
-    int percentForDefense = 60;
+    int percentForDefense = 40;
 };
 
 // ---- AI_General ------------------------------------------------------------------------------------
@@ -150,53 +174,53 @@ struct GeneralInfo {
 
 // ---- Row tables -------------------------------------------------------------------------------------
 struct ResearchRow {
-    StateMask states = kAllStates;
+    StateMask states = 0;
     std::string area;
     int level = 0;           // 9999 = the area's maximum
-    int minPercent = 25;
+    int minPercent = 0;
 };
 
 struct PlanetTypeRow {
-    StateMask states = kAllStates;
+    StateMask states = 0;
     std::string type;
-    int maxPerSystem = 100;
-    int percentOfColonies = 100;
-    std::string minimumSize;           // PlanetSize stellar size name, empty = any
-    std::array<int, 3> values{};       // ratio thresholds (0 = unused)
-    int maxInEmpire = 0;               // 0 = unlimited
+    int maxPerSystem = 0;              // 0 = no limit
+    int percentOfColonies = 0;         // 0 = no limit
+    std::string minimumSize;           // PlanetSize.txt entry, empty = any
+    std::array<int, 3> values{};       // minerals, organics, radioactives; only values above 100 count
+    int maxInEmpire = 0;               // 0 = no limit
 };
 
 struct FacilityEntry {
     std::string ability;               // ability identifier
-    int amount = 1;
+    int amount = 0;                    // 0: the entry is never used
 };
 struct FacilityQueue {
-    StateMask states = kAllStates;
+    StateMask states = 0;
     std::string queueType;             // "Homeworld" or a colony type
     std::vector<FacilityEntry> entries;
 };
 
 struct VehicleEntry {
-    std::string type;                  // AI design type, or "Colonizer"
+    std::string type;                  // AI design type, "Colonizer", or text matched against the designs
     int planetsPerItem = 0;            // tenths of a planet per item (0 = unused)
     int mustHave = 0;
 };
 struct VehicleQueue {
-    StateMask states = kAllStates;
+    StateMask states = 0;
     std::vector<VehicleEntry> entries;
 };
 
 // ---- AI_DesignCreation -----------------------------------------------------------------------------
 struct DensityEntry {
     std::string ability;               // ability identifier, or "Weapon"
-    int spacesPerOne = 0;              // one component per this many kT of hull (0 = none)
+    int spacesPerOne = 0;              // floor(hull tonnage / N) copies, at least one; 0 or less: none
 };
 struct DesignTemplate {
     std::string name;                  // the AI design type
     std::string designType;
     ruleset::VehicleType vehicleType = ruleset::VehicleType::Ship;
     std::string defaultStrategy;
-    int minTonnage = 0, maxTonnage = 1'000'000;
+    int minTonnage = 0, maxTonnage = 0;
     std::vector<std::string> mustHave;
     int minSpeed = 0, desiredSpeed = 0;
     std::array<int, 5> majorityFamilies{};
@@ -228,9 +252,11 @@ struct AiProfile {
     std::vector<DesignTemplate> designs;
     Speech speech;
     std::vector<ruleset::CombatStrategy> strategies;
+    int unitReservePercent = 0;           // `_AI_Construction_Units`: resources to reserve for units
     std::vector<std::string> sources;     // files read, for diagnostics ("built-in" when none)
 
     const DesignTemplate* design(std::string_view aiType) const;
+    // The last table in the file whose states include `s` (no fallback row).
     const VehicleQueue* vehicleQueue(AiState s) const;
     const FacilityQueue* facilityQueue(AiState s, std::string_view queueType) const;
 };
@@ -239,14 +265,19 @@ struct AiProfile {
 const AiProfile& builtinProfile();
 
 // Reads a profile from an install (uncached). `raceStyle` is the race's art
-// folder ("Terran", "Neutral003"); `ministerStyle` is "Aggressive",
-// "Defensive" or "Neutral" for human ministers, or empty for the race's own files.
+// folder ("Terran", "Neutral003"); `ministerStyle` is a folder under Ai/
+// ("Aggressive", ...) or empty for the race's own files.
 AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view raceStyle, std::string_view ministerStyle = {});
 
 // Cached profile for this rules set (thread-safe; references stay valid for the
 // life of the program).
 const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::string_view ministerStyle = {});
+// The empire's own tables: its minister style when it has one, else its race's.
 const AiProfile& profileFor(const Rules& r, const Empire& e);
+
+// The race's design-name file (Dsgnname/<file> in the install), one name per
+// line; empty without an install or file. Cached.
+const std::vector<std::string>& designNameList(const Rules& r, std::string_view file);
 
 // Name helpers shared by the tables.
 bool parseTreatyName(std::string_view text, Treaty& out);   // accepts "Trade and Research Alliance"

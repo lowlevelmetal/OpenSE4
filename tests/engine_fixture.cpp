@@ -80,6 +80,7 @@ struct Builder {
         c.weapon.kind = kind;
         c.weapon.damageAtRange = std::move(damage);
         c.weapon.reloadRate = reload;
+        c.weapon.family = family;  // the "Weapon Family" the AI's design templates pick from
         c.weapon.damageType = std::move(damageType);
         c.weapon.targets = {"Ships", "Planets", "Ftr", "Sat", "Seekers", "Drone"};
         c.supplyUsed = 5;

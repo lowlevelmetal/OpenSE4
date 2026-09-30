@@ -1,9 +1,12 @@
-// Computer player: diplomacy (spec 05 §7.4 AI_Politics, §7.5 AI_Speech, §7.6).
+// Computer player: the Politics minister (spec 05 §7.4 AI_Politics, §7.5
+// AI_Speech, §7.6 Mega Evil Empire). Everything here is (confirmed: binary)
+// unless marked otherwise. Anger itself is kept by the AI step (ai_anger.cpp).
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/diplomacy.hpp"
 #include "game/query.hpp"
-#include "game/research.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
@@ -15,67 +18,19 @@ namespace {
 
 using datafile::keysEqual;
 
-// Politics treats non-hostile empires as friends (inferred).
-bool isFriend(const Empire& e, EmpireId other) {
-    const Treaty t = e.relation(other).treaty;
-    return t != Treaty::War && t != Treaty::NonIntercourse;
-}
+// Position in the treaty order of spec 05 §7.4 (1 War .. 11 Partnership; 3 is "no contact").
+int treatyNumber(Treaty t) { return t <= Treaty::NonIntercourse ? static_cast<int>(t) + 1 : static_cast<int>(t) + 2; }
 
-int warsExcept(const GameState& s, const Empire& e, EmpireId other) {
-    int n = 0;
-    for (const Empire& o : s.empires)
-        if (o.alive && o.id != e.id && o.id != other && e.relation(o.id).treaty == Treaty::War) ++n;
-    return n;
-}
-
-// Spec 05 §7.4: base + wars + early game + stronger/weaker adjustments.
-int threshold(const TreatyRule& rule, int wars, uint32_t turn, int64_t scorePct) {
-    int t = rule.baseAnger + rule.perOtherWars * wars;
-    if (turn < 50) t += rule.first50Turns;
-    if (rule.strongerPercent > 0 && scorePct >= rule.strongerPercent) t += rule.strongerAmount;
-    else if (rule.weakerPercent > 0 && scorePct <= rule.weakerPercent) t += rule.weakerAmount;
-    return t;
-}
-
-int toneFor(const PoliticsTable& pol, int64_t scorePct) {
-    if (scorePct <= pol.demandingTonePercent) return 2;
-    if (scorePct >= pol.pleadingTonePercent) return 0;
-    return 1;
-}
-
-// Rough worth of a package item to the receiver (inferred; spec 05 open question 12).
-int64_t itemValue(const Rules& r, const GameState& s, const PackageItem& item, EmpireId giver, EmpireId receiver) {
-    switch (item.kind) {
-        case PackageItem::Kind::Resources: return item.resources.total();
-        case PackageItem::Kind::Technology: {
-            if (!item.tech.valid() || item.tech.index() >= r.data().techAreas.size()) return 0;
-            const int have = s.empire(receiver).techLevel(item.tech);
-            const int get = s.empire(giver).techLevel(item.tech);
-            int64_t v = 0;
-            for (int l = have + 1; l <= get; ++l) v += research::levelCost(r, s, item.tech, l);
-            return v;
-        }
-        case PackageItem::Kind::Planet: {
-            const Colony* c = s.colony(item.planet);
-            if (!c) return 1000;
-            return 3000 + c->totalPopulation() * 5 + static_cast<int64_t>(c->facilities.size()) * 500;
-        }
-        case PackageItem::Kind::Vehicle: {
-            const Vehicle* v = s.vehicle(item.vehicle);
-            return v ? computeDesignStats(r, nullptr, s.design(v->design)).cost.total() * std::max(1, v->count) : 0;
-        }
-        case PackageItem::Kind::StarChart: return 500;
-        case PackageItem::Kind::Treaty: return 0;
-        case PackageItem::Kind::CommChannel: return 1000;
-        case PackageItem::Kind::System: return 1000;
+bool answerable(MessageType t) {
+    switch (t) {
+        case MessageType::ProposeTreaty:
+        case MessageType::CounterTreaty:
+        case MessageType::ProposeTrade:
+        case MessageType::CounterTrade:
+        case MessageType::Gift:
+        case MessageType::Tribute: return true;
+        default: return isDemand(t);
     }
-    return 0;
-}
-
-int64_t packageValue(const Rules& r, const GameState& s, const std::vector<PackageItem>& items, EmpireId giver, EmpireId receiver) {
-    int64_t v = 0;
-    for (const auto& i : items) v += itemValue(r, s, i, giver, receiver);
-    return v;
 }
 
 void replaceAll(std::string& text, std::string_view token, std::string_view value) {
@@ -83,357 +38,513 @@ void replaceAll(std::string& text, std::string_view token, std::string_view valu
         text.replace(pos, token.size(), value);
 }
 
-bool pendingProposal(const GameState& s, EmpireId from, EmpireId to) {
-    for (const auto& m : s.messages)
-        if (m.from == from && m.to == to && m.type == MessageType::ProposeTreaty && !m.answered) return true;
-    return false;
-}
-
-// A binding message we sent recently that may not have taken effect yet.
-bool recentlySent(const GameState& s, EmpireId from, EmpireId to, MessageType type) {
-    for (const auto& m : s.messages)
-        if (m.from == from && m.to == to && m.type == type && m.sentTurn + 2 > s.turn) return true;
-    return false;
-}
-
-class Diplomat {
+class Politician {
 public:
-    explicit Diplomat(Planner& p) : p_(p), pol_(p.prof.politics), scores_(politicalScores(p.r, p.st)), mee_(megaEvilEmpire(p.r, p.st)) {}
+    explicit Politician(Planner& p)
+        : p_(p), pol_(p.prof.politics), mee_(megaEvilEmpire(p.r, p.scores, p.st, p.id)), ours_(p.scores[p.id.index()]) {}
 
     void run() {
-        answerMessages();
-        for (const Empire& other : p_.st.empires) {
-            if (!other.alive || other.id == p_.id || !p_.emp().relation(other.id).contact) continue;
-            initiate(other.id);
+        for (size_t i = 0; i < p_.st.empires.size(); ++i) {
+            const EmpireId x{i};
+            if (x == p_.id || !p_.st.empire(x).alive || !rel(x).contact) continue;
+            turnWith(x);
         }
     }
 
 private:
-    int64_t scorePct(EmpireId other) const {
-        const int64_t ours = scores_[p_.id.index()];
-        const int64_t theirs = scores_[other.index()];
-        if (ours <= 0) return theirs > 0 ? 1000 : 100;
-        return theirs * 100 / ours;
+    Planner& p_;
+    const PoliticsTable& pol_;
+    EmpireId mee_;
+    int64_t ours_;
+    std::map<uint32_t, bool> wantsWar_, wantsBreak_;
+
+    const Relation& rel(EmpireId x) const { return p_.emp().relation(x); }
+    int anger(EmpireId x) const { return rel(x).anger; }
+    int64_t pct(EmpireId x) const { return ours_ <= 0 ? 0 : p_.scores[x.index()] * 100 / ours_; }
+    bool isFriend(EmpireId x) const { return rel(x).treaty >= Treaty::NonAggression; }
+    bool human(EmpireId x) const { return p_.st.empire(x).kind == PlayerKind::Human; }
+    bool teamMate(EmpireId x) const { return p_.st.options.teamMode && human(x) == human(p_.id); }
+    bool teamEnemy(EmpireId x) const { return p_.st.options.teamMode && human(x) != human(p_.id); }
+    bool subject() const {
+        for (const Empire& o : p_.st.empires)
+            if (o.id != p_.id && o.alive && rel(o.id).treaty == Treaty::Subjugation && !rel(o.id).dominant) return true;
+        return false;
     }
-    int anger(EmpireId other) const { return p_.emp().relation(other).anger; }
-    int wars(EmpireId other) const { return warsExcept(p_.st, p_.emp(), other); }
-    bool team(EmpireId other) const {
-        return p_.st.options.teamMode && p_.st.empire(other).kind != PlayerKind::Human && p_.emp().kind != PlayerKind::Human;
+    // Wars with empires whose score is above a quarter of ours.
+    int wars() const {
+        int n = 0;
+        for (const Empire& o : p_.st.empires)
+            if (o.id != p_.id && o.alive && rel(o.id).treaty == Treaty::War && p_.scores[o.id.index()] > ours_ / 4) ++n;
+        return n;
+    }
+    int strongerWeaker(const TreatyRule& percents, const TreatyRule& amounts, int64_t p, bool stronger = true) const {
+        int t = 0;
+        if (stronger && p >= percents.strongerPercent) t += amounts.strongerAmount;
+        if (p < percents.weakerPercent) t += amounts.weakerAmount;
+        return t;
+    }
+    int team(EmpireId x, int t) const {
+        if (teamEnemy(x)) return -1;
+        if (teamMate(x)) return 101;
+        return t;
     }
 
-    bool send(EmpireId to, MessageType type, std::string_view pool, Treaty treaty = Treaty::None, EmpireId third = {},
-              SystemId system = {}, std::vector<PackageItem> offer = {}) {
-        DiplomaticMessage m;
+    // ---- Thresholds (spec 05 §7.4) -------------------------------------------------------------
+
+    int acceptThreshold(EmpireId x, Treaty t) const {
+        const int64_t p = pct(x);
+        int T = pol_.accept.baseAnger;
+        if (t >= Treaty::TradeAlliance) T += pol_.acceptPerHigherLevel * (treatyNumber(t) - treatyNumber(Treaty::TradeAlliance));
+        T = std::max(T, pol_.acceptMinimumChance);
+        T += pol_.accept.perOtherWars * wars();
+        if (t >= Treaty::TradeResearchAlliance && rel(x).treatyAge < pol_.acceptMinimumTurnsSinceTreaty) T = -1;
+        if (p_.st.turn < 50) T += pol_.accept.first50Turns;
+        T += strongerWeaker(pol_.accept, pol_.accept, p);
+        if (mee_.valid()) T = x == mee_ ? -1 : T + 60;
+        if (t == Treaty::Subjugation && p < pol_.acceptSubjugationPercent) T = -1;
+        if (t == Treaty::Protectorate && p < pol_.acceptProtectoratePercent) T = -1;
+        return team(x, T);
+    }
+    int proposeThreshold(EmpireId x) const {
+        int T = pol_.propose.baseAnger + pol_.propose.perOtherWars * wars() + (p_.st.turn < 50 ? pol_.propose.first50Turns : 0) +
+                strongerWeaker(pol_.propose, pol_.propose, pct(x));
+        if (mee_.valid()) T = x == mee_ ? -1 : T + 70;
+        return team(x, T);
+    }
+    // Break uses its own percents with the Declare War amounts (a quirk of the original).
+    int breakThreshold(EmpireId x) const {
+        int T = pol_.breakTreaty.baseAnger + pol_.breakTreaty.perOtherWars * wars() + strongerWeaker(pol_.breakTreaty, pol_.declareWar, pct(x));
+        if (mee_.valid()) T += x == mee_ ? -20 : 60;
+        return team(x, T);
+    }
+    int warThreshold(EmpireId x) const {
+        int T = pol_.declareWar.baseAnger + pol_.declareWar.perOtherWars * wars() +
+                strongerWeaker(pol_.declareWar, pol_.declareWar, pct(x), x != mee_);
+        if (mee_.valid()) T += x == mee_ ? -40 : 60;
+        return team(x, T);
+    }
+
+    // The whole acceptance test for a treaty offered by x.
+    bool acceptsTreaty(EmpireId x, Treaty t) const {
+        if (teamMate(x)) return true;
+        if (teamEnemy(x)) return false;
+        if (t > pol_.highestAllowedTreaty || t == Treaty::War) return false;
+        if (rel(x).turnsSinceWar < pol_.turnsSinceWarBeforeFriendly) return false;
+        if (x == mee_) return false;
+        return acceptThreshold(x, t) > anger(x);
+    }
+
+    // ---- Decisions -----------------------------------------------------------------------------
+
+    bool wantsWar(EmpireId x) {
+        auto it = wantsWar_.find(x.value);
+        if (it != wantsWar_.end()) return it->second;
+        bool want = false;
+        if (rel(x).treaty == Treaty::War || teamMate(x)) want = false;
+        else if (teamEnemy(x) || rel(x).queuedWar) want = true;
+        else if (p_.st.options.teamMode || p_.rng.percent(50)) want = anger(x) >= warThreshold(x);
+        return wantsWar_[x.value] = want;
+    }
+    bool wantsBreak(EmpireId x) {
+        auto it = wantsBreak_.find(x.value);
+        if (it != wantsBreak_.end()) return it->second;
+        bool want = false;
+        if (rel(x).treaty < Treaty::NonAggression || teamMate(x)) want = false;
+        else if (teamEnemy(x) || rel(x).queuedBreak) want = true;
+        else if (p_.st.options.teamMode || p_.rng.percent(50)) want = anger(x) >= breakThreshold(x);
+        return wantsBreak_[x.value] = want;
+    }
+
+    void turnWith(EmpireId x) {
+        if (p_.rng.percent(50) && (wantsWar(x) || wantsBreak(x))) {
+            initiative(x);
+            return;
+        }
+        if (answerNewest(x)) return;
+        // In a simultaneous game nothing is started while x's messages wait.
+        if (p_.st.options.simultaneous)
+            for (const DiplomaticMessage& m : p_.st.messages)
+                if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type)) return;
+        initiative(x);
+    }
+
+    void initiative(EmpireId x) {
+        if (wantsWar(x)) {
+            if (x == mee_ && p_.prof.speech.pool("Mega Evil Declarations")) send(x, MessageType::DeclareWar, "Mega Evil Declarations");
+            else sendNamed(x, MessageType::DeclareWar);
+            return;
+        }
+        if (wantsBreak(x)) {
+            sendNamed(x, MessageType::BreakTreaty, rel(x).treaty);
+            return;
+        }
+        if (propose(x)) return;
+        if (p_.rng.percent(25)) demand(x);
+    }
+
+    bool propose(EmpireId x) {
+        if (subject()) return false;
+        const bool mate = teamMate(x);
+        const bool forced = mate || rel(x).queuedPeace;
+        int T = 50;  // when a forced proposal computed no threshold
+        if (!forced) {
+            const int chance = pol_.proposeChancePercent * (mee_.valid() && x != mee_ ? 3 : 1);
+            if (!p_.st.options.teamMode && !p_.rng.percent(chance)) return false;
+            const bool gated = (human(p_.id) || human(x)) && !p_.st.options.teamMode && !mee_.valid();
+            if (gated && rel(x).turnsSinceWar < pol_.turnsSinceWarBeforeFriendly) return false;
+            T = proposeThreshold(x);
+            if (anger(x) > T) return false;
+            if (anger(x) > 70 && p_.rng.percent(50)) return false;
+        }
+        Treaty pick = Treaty::Count;
+        if (mate) {
+            if (rel(x).treaty != Treaty::Partnership) pick = Treaty::Partnership;
+        } else {
+            for (const auto& [treaty, below] : pol_.proposeTypes)
+                if (treaty <= pol_.highestAllowedTreaty && treaty > rel(x).treaty && anger(x) <= T - below) pick = treaty;  // the last one
+        }
+        if (pick == Treaty::Count) return false;
+        return sendNamed(x, MessageType::ProposeTreaty, pick);
+    }
+
+    // ---- Demands the AI starts (spec 05 §7.4, always in the neutral tone) --------------------------
+
+    bool mayDemand(MessageType t, EmpireId x) const {
+        const DemandRule& rule = pol_.demands[static_cast<size_t>(t)];
+        return isFriend(x) ? rule.sendToFriend : rule.sendToEnemy;
+    }
+
+    bool demand(EmpireId x) {
+        const Relation& r = rel(x);
+        auto sendDemand = [&](MessageType t, EmpireId third = {}, SystemId sys = {}) {
+            return send(x, t, std::format("Send {}", angerKeyName(t)), Treaty::None, third, sys, {}, {}, 1);
+        };
+        // 1. Stop what they did to us.
+        if (r.attackedUs && mayDemand(MessageType::DemandStopAttacks, x)) return sendDemand(MessageType::DemandStopAttacks, {}, r.attackedIn);
+        if (r.spiedOnUs && mayDemand(MessageType::DemandStopEspionage, x)) return sendDemand(MessageType::DemandStopEspionage);
+        // 2. Their ships or colonies where we have a colony.
+        if (p_.rng.percent(20)) {
+            std::vector<uint8_t> ownColony(p_.st.galaxy.systems.size(), 0);
+            for (const auto& c : p_.st.colonies)
+                if (c && c->owner == p_.id) ownColony[p_.st.galaxy.object(c->planet).system.index()] = 1;
+            SystemId colonies, ships;
+            for (const auto& c : p_.st.colonies)
+                if (c && c->owner == x && !colonies.valid() && ownColony[p_.st.galaxy.object(c->planet).system.index()])
+                    colonies = p_.st.galaxy.object(c->planet).system;
+            for (VehicleId vid : p_.emp().knowledge.visibleVehicles)
+                if (const Vehicle* v = p_.st.vehicle(vid); v && v->owner == x && !ships.valid() && ownColony[v->location.system.index()])
+                    ships = v->location.system;
+            if (colonies.valid() && mayDemand(MessageType::DemandRemoveColonies, x)) return sendDemand(MessageType::DemandRemoveColonies, {}, colonies);
+            if (ships.valid() && mayDemand(MessageType::DemandRemoveShips, x)) return sendDemand(MessageType::DemandRemoveShips, {}, ships);
+        }
+        // 3. Break with an empire we are hostile to (or join our war).
+        if (r.treaty >= Treaty::TradeAlliance && p_.rng.percent(20)) {
+            for (const Empire& y : p_.st.empires) {
+                if (y.id == x || y.id == p_.id || !y.alive || !rel(y.id).contact || !hostileTo(p_.emp(), y.id)) continue;
+                if (r.treaty >= Treaty::MilitaryAlliance && p_.atWarWith(y.id)) {
+                    if (mayDemand(MessageType::RequestDeclareWar, x)) return sendDemand(MessageType::RequestDeclareWar, y.id);
+                } else if (mayDemand(MessageType::RequestBreakTreaty, x)) {
+                    return sendDemand(MessageType::RequestBreakTreaty, y.id);
+                }
+                break;
+            }
+        }
+        // 4. Make peace with one of our allies.
+        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20) && mayDemand(MessageType::RequestMakePeace, x))
+            for (const Empire& y : p_.st.empires)
+                if (y.id != x && y.id != p_.id && y.alive && rel(y.id).treaty >= Treaty::MilitaryAlliance &&
+                    p_.st.empire(x).relation(y.id).treaty == Treaty::War)
+                    return sendDemand(MessageType::RequestMakePeace, y.id);
+        // 5. Attack an empire in a system.
+        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20) && mayDemand(MessageType::RequestAttackEmpire, x))
+            for (const Candidate& c : p_.sit.candidates)
+                if (c.owner != x && hostileTo(p_.emp(), c.owner)) return sendDemand(MessageType::RequestAttackEmpire, c.owner, c.system);
+        // 6. Surrender, after more than one combat report in the last two turns. No flag needed.
+        if (r.treaty == Treaty::War && p_.rng.percent(33) && r.combatsThisTurn + r.combatsLastTurn > 1)
+            return sendDemand(MessageType::DemandSurrender);
+        // 7. Chatter.
+        if (r.treaty >= Treaty::TradeAlliance && p_.rng.percent(10))
+            return send(x, MessageType::General, isFriend(x) ? "Send Friend Miscellaneous Msg" : "Send Enemy Miscellaneous Msg", Treaty::None, {}, {}, {}, {}, 1);
+        return false;
+    }
+
+    // ---- Answers ---------------------------------------------------------------------------------
+
+    // The newest unanswered political message from x; true when a reply went out.
+    bool answerNewest(EmpireId x) {
+        const DiplomaticMessage* newest = nullptr;
+        for (const DiplomaticMessage& m : p_.st.messages)
+            if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type) && (!newest || m.id > newest->id)) newest = &m;
+        if (!newest) return false;
+        const DiplomaticMessage msg = *newest;  // copy: answering appends to the list
+        switch (msg.type) {
+            case MessageType::ProposeTreaty:
+            case MessageType::CounterTreaty: return answerTreaty(msg);
+            case MessageType::ProposeTrade:
+            case MessageType::CounterTrade: return answerTrade(msg);
+            case MessageType::Gift:
+            case MessageType::Tribute: return answerGift(msg);
+            default: return answerDemand(msg);
+        }
+    }
+
+    bool reply(const DiplomaticMessage& msg, bool accept, std::string_view pool) {
+        std::string text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
+        return p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(text)});
+    }
+
+    bool answerTreaty(const DiplomaticMessage& msg) {
+        if (subject()) return false;  // no answer at all
+        const EmpireId x = msg.from;
+        const bool accept = acceptsTreaty(x, msg.treaty);
+        if (!reply(msg, accept, accept ? "Send Accept Treaty" : "Send Refuse Treaty")) return false;
+        // A counter-proposal one step lower, never below Non-Aggression.
+        if (!accept && msg.treaty > Treaty::NonAggression && msg.treaty < Treaty::Count && p_.rng.percent(25)) {
+            const Treaty lower = static_cast<Treaty>(static_cast<int>(msg.treaty) - 1);
+            if (lower > rel(x).treaty && acceptsTreaty(x, lower)) {
+                DiplomaticMessage m;
+                m.inReplyTo = msg.id;
+                sendNamed(x, MessageType::CounterTreaty, lower, {}, {}, {}, {}, &m);
+            }
+        }
+        return true;
+    }
+
+    // Spec 05 §7.4 item values, for the receiving side.
+    int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const {
+        if (diplomacy::isPlaceholder(item)) return 0;
+        const GameState& s = p_.st;
+        switch (item.kind) {
+            case PackageItem::Kind::Resources: return std::max<int64_t>(0, item.resources.total()) / 1000;
+            case PackageItem::Kind::Technology: {
+                if (item.tech.index() >= p_.r.data().techAreas.size()) return 0;
+                const Empire& rcv = s.empire(receiver);
+                const int have = rcv.techLevel(item.tech);
+                if (s.empire(giver).techLevel(item.tech) <= have || !p_.r.techVisible(s, rcv, item.tech) ||
+                    have >= p_.r.tech(item.tech).maxLevel)
+                    return 0;
+                return int64_t{have + 1} * p_.r.tech(item.tech).levelCost;
+            }
+            case PackageItem::Kind::Planet: {
+                // The planet's worth: 100000 per facility plus 1000 per million people (inferred, open).
+                const Colony* c = s.colony(item.planet);
+                if (!c) return 0;
+                return (static_cast<int64_t>(c->facilities.size()) * 100000 + c->totalPopulation() * 1000) / 100000;
+            }
+            case PackageItem::Kind::Vehicle: {
+                const Vehicle* v = s.vehicle(item.vehicle);
+                if (!v) return 0;
+                const int64_t cost = computeDesignStats(p_.r, nullptr, s.design(v->design)).cost.total();
+                if (isUnitType(vehicleType(p_.r, s, *v)))
+                    return xmath::pctTrunc(cost, p_.r.setting("Scrap Unit Percent Returned", 30)) * 100 * std::max(1, v->count);
+                return cost * 100;
+            }
+            case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
+            case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;
+            case PackageItem::Kind::CommChannel: return 50000;
+            case PackageItem::Kind::System: return 0;  // open
+        }
+        return 0;
+    }
+    int64_t packageValue(const std::vector<PackageItem>& items, EmpireId giver, EmpireId receiver) const {
+        int64_t v = 0;
+        for (const PackageItem& i : items) v += itemValue(i, giver, receiver);
+        return v;
+    }
+    bool treatyItemsPass(EmpireId x, const std::vector<PackageItem>& a, const std::vector<PackageItem>& b) const {
+        for (const auto* list : {&a, &b})
+            for (const PackageItem& i : *list)
+                if (i.kind == PackageItem::Kind::Treaty && !acceptsTreaty(x, i.treaty)) return false;
+        return true;
+    }
+    // Can we hand this item over?
+    bool canGive(const PackageItem& i, EmpireId to) const {
+        const Empire& us = p_.emp();
+        switch (i.kind) {
+            case PackageItem::Kind::Resources: return us.stockpile.covers(max(i.resources, Resources{}));
+            case PackageItem::Kind::Technology: return i.tech.index() < p_.r.data().techAreas.size() && us.techLevel(i.tech) > 0;
+            case PackageItem::Kind::Planet: {
+                const Colony* c = p_.st.colony(i.planet);
+                return c && c->owner == p_.id;
+            }
+            case PackageItem::Kind::Vehicle: {
+                const Vehicle* v = p_.st.vehicle(i.vehicle);
+                return v && v->owner == p_.id;
+            }
+            case PackageItem::Kind::StarChart: return us.hasExplored(i.system);
+            case PackageItem::Kind::CommChannel:
+                return i.empire.valid() && i.empire.index() < p_.st.empires.size() && i.empire != to && rel(i.empire).contact;
+            case PackageItem::Kind::Treaty:
+            case PackageItem::Kind::System: return true;
+        }
+        return false;
+    }
+    // A random concrete item for an "any" placeholder (inferred choice of item).
+    std::optional<PackageItem> concrete(const PackageItem& any, EmpireId to) {
+        PackageItem out = any;
+        const GameState& s = p_.st;
+        switch (any.kind) {
+            case PackageItem::Kind::Technology: {
+                std::vector<ruleset::TechAreaId> ahead;
+                for (uint32_t a = 0; a < p_.r.data().techAreas.size(); ++a)
+                    if (p_.emp().techLevel(ruleset::TechAreaId{a}) > s.empire(to).techLevel(ruleset::TechAreaId{a}))
+                        ahead.push_back(ruleset::TechAreaId{a});
+                if (ahead.empty()) return std::nullopt;
+                out.tech = ahead[static_cast<size_t>(p_.rng.below(ahead.size()))];
+                return out;
+            }
+            case PackageItem::Kind::Planet: {
+                std::vector<ObjectId> planets;
+                for (const auto& c : s.colonies)
+                    if (c && c->owner == p_.id && !c->homeworld) planets.push_back(c->planet);
+                if (planets.empty()) return std::nullopt;
+                out.planet = planets[static_cast<size_t>(p_.rng.below(planets.size()))];
+                return out;
+            }
+            case PackageItem::Kind::Vehicle: {
+                std::vector<VehicleId> ships;
+                for (const Vehicle& v : s.vehicles)
+                    if (v.owner == p_.id) ships.push_back(v.id);
+                if (ships.empty()) return std::nullopt;
+                out.vehicle = ships[static_cast<size_t>(p_.rng.below(ships.size()))];
+                return out;
+            }
+            case PackageItem::Kind::StarChart:
+            case PackageItem::Kind::System: {
+                std::vector<SystemId> known;
+                for (size_t i = 0; i < s.galaxy.systems.size(); ++i)
+                    if (p_.explored(SystemId{i})) known.push_back(SystemId{i});
+                if (known.empty()) return std::nullopt;
+                out.system = known[static_cast<size_t>(p_.rng.below(known.size()))];
+                return out;
+            }
+            case PackageItem::Kind::CommChannel: {
+                std::vector<EmpireId> met;
+                for (const Empire& o : s.empires)
+                    if (o.id != p_.id && o.id != to && o.alive && rel(o.id).contact) met.push_back(o.id);
+                if (met.empty()) return std::nullopt;
+                out.empire = met[static_cast<size_t>(p_.rng.below(met.size()))];
+                return out;
+            }
+            default: return out;
+        }
+    }
+
+    bool answerTrade(const DiplomaticMessage& msg) {
+        const EmpireId x = msg.from;
+        if (teamMate(x) || teamEnemy(x)) return reply(msg, teamMate(x), teamMate(x) ? "Send Accept Trade" : "Send Refuse Trade");
+        for (const PackageItem& i : msg.request)
+            if (!diplomacy::isPlaceholder(i) && !canGive(i, x)) return reply(msg, false, "Send Refuse Trade");
+        const bool anyItems = std::any_of(msg.request.begin(), msg.request.end(), [](const PackageItem& i) { return diplomacy::isPlaceholder(i); });
+        const int need = isFriend(x) ? pol_.acceptTradeFriendPercent : pol_.acceptTradeEnemyPercent;
+        auto passes = [&](const std::vector<PackageItem>& give, const std::vector<PackageItem>& get) {
+            return packageValue(get, x, p_.id) >= xmath::pctTrunc(packageValue(give, p_.id, x), need) && treatyItemsPass(x, give, get);
+        };
+        if (anyItems) {
+            if (!reply(msg, false, "Send Refuse Trade")) return false;
+            // Counter with concrete items, half of the time, if the value test passes.
+            std::vector<PackageItem> give;
+            for (const PackageItem& i : msg.request) {
+                if (!diplomacy::isPlaceholder(i)) {
+                    give.push_back(i);
+                    continue;
+                }
+                const auto c = concrete(i, x);
+                if (!c) return true;
+                give.push_back(*c);
+            }
+            if (p_.rng.percent(50) && passes(give, msg.offer)) {
+                DiplomaticMessage m;
+                m.inReplyTo = msg.id;
+                sendNamed(x, MessageType::CounterTrade, Treaty::None, {}, {}, std::move(give), msg.offer, &m);
+            }
+            return true;
+        }
+        const bool accept = passes(msg.request, msg.offer);
+        return reply(msg, accept, accept ? "Send Accept Trade" : "Send Refuse Trade");
+    }
+
+    bool answerGift(const DiplomaticMessage& msg) {
+        const EmpireId x = msg.from;
+        const bool gift = msg.type == MessageType::Gift;
+        bool accept = false;
+        if (teamMate(x)) accept = true;
+        else if (!teamEnemy(x))
+            accept = anger(x) <= (gift ? pol_.maxAngerAcceptGift : pol_.maxAngerAcceptTribute) && treatyItemsPass(x, msg.offer, {});
+        return reply(msg, accept, gift ? (accept ? "Send Accept Gift" : "Send Refuse Gift") : (accept ? "Send Accept Tribute" : "Send Refuse Tribute"));
+    }
+
+    bool answerDemand(const DiplomaticMessage& msg) {
+        const EmpireId x = msg.from;
+        const bool friendly = isFriend(x);
+        const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
+        const int64_t p = pct(x);
+        bool accept = false;
+        if (teamEnemy(x)) accept = false;
+        else if (msg.type == MessageType::DemandSurrender) accept = false;  // "Allow Surrender" is not a game option here: off (inferred)
+        else if (teamMate(x)) accept = true;
+        else accept = p >= rule.acceptScorePercent && (friendly ? rule.acceptFromFriend : rule.acceptFromEnemy);
+        const bool gift = msg.type == MessageType::DemandGift;
+        if (accept && (gift || msg.type == MessageType::DemandTribute))
+            accept = anger(x) <= (gift ? (friendly ? pol_.giftMaxAngerFriend : pol_.giftMaxAngerEnemy)
+                                       : (friendly ? pol_.tributeMaxAngerFriend : pol_.tributeMaxAngerEnemy));
+        std::string pool = std::format("Response {} {} {}", friendly ? "Friend" : "Enemy", accept ? "YES" : "NO", angerKeyName(msg.type));
+        if (!p_.prof.speech.pool(pool)) pool = accept ? "Send Accept Demand/Request" : "Send Refuse Demand/Request";
+        if (!reply(msg, accept, pool)) return false;
+        if (accept && (gift || msg.type == MessageType::DemandTribute)) payUp(msg, friendly, p);
+        return true;
+    }
+
+    // An accepted request for a gift or tribute: the requested items in order
+    // (a random concrete one for each "any") until the package is worth V.
+    void payUp(const DiplomaticMessage& msg, bool friendly, int64_t p) {
+        if (!p_.st.options.allowGifts) return;
+        const bool gift = msg.type == MessageType::DemandGift;
+        const int64_t base = gift ? (friendly ? pol_.giftBaseFriend : pol_.giftBaseEnemy) : (friendly ? pol_.tributeBaseFriend : pol_.tributeBaseEnemy);
+        const int64_t per = gift ? (friendly ? pol_.giftPerPercentFriend : pol_.giftPerPercentEnemy)
+                                 : (friendly ? pol_.tributePerPercentFriend : pol_.tributePerPercentEnemy);
+        const int64_t target = base + (p > 100 ? p * per - 100 : 0);
+        std::vector<PackageItem> package;
+        int64_t value = 0;
+        for (const PackageItem& want : msg.request) {
+            if (value >= target) break;
+            std::optional<PackageItem> item = diplomacy::isPlaceholder(want) ? concrete(want, msg.from) : std::optional<PackageItem>(want);
+            if (!item || !canGive(*item, msg.from)) continue;
+            value += itemValue(*item, p_.id, msg.from);
+            package.push_back(*item);
+        }
+        if (package.empty()) return;
+        sendNamed(msg.from, gift ? MessageType::Gift : MessageType::Tribute, Treaty::None, {}, {}, std::move(package));
+    }
+
+    // ---- Sending -----------------------------------------------------------------------------
+
+    int toneFor(EmpireId x) const {
+        const int64_t p = pct(x);
+        if (p <= pol_.demandingTonePercent) return 2;
+        if (p >= pol_.pleadingTonePercent) return 0;
+        return 1;
+    }
+
+    bool send(EmpireId to, MessageType type, std::string_view pool, Treaty treaty = Treaty::None, EmpireId third = {}, SystemId system = {},
+              std::vector<PackageItem> offer = {}, std::vector<PackageItem> request = {}, int tone = -1,
+              const DiplomaticMessage* base = nullptr) {
+        DiplomaticMessage m = base ? *base : DiplomaticMessage{};
         m.to = to;
         m.type = type;
-        m.tone = toneFor(pol_, scorePct(to));
+        m.tone = tone >= 0 ? tone : toneFor(to);
         m.treaty = treaty;
         m.thirdEmpire = third;
         m.system = system;
         m.offer = std::move(offer);
+        m.request = std::move(request);
         m.text = speechLine(p_, pool, to, third, treaty, system);
         return p_.emit(cmd::SendMessage{std::move(m)});
     }
     bool sendNamed(EmpireId to, MessageType type, Treaty treaty = Treaty::None, EmpireId third = {}, SystemId system = {},
-                   std::vector<PackageItem> offer = {}) {
-        return send(to, type, std::format("Send {}", angerKeyName(type)), treaty, third, system, std::move(offer));
+                   std::vector<PackageItem> offer = {}, std::vector<PackageItem> request = {}, const DiplomaticMessage* base = nullptr) {
+        return send(to, type, std::format("Send {}", angerKeyName(type)), treaty, third, system, std::move(offer), std::move(request), -1, base);
     }
-
-    // ---- Incoming ----------------------------------------------------------------------------
-
-    void answerMessages() {
-        std::vector<MessageId> inbox;
-        for (const auto& m : p_.st.messages)
-            if (m.to == p_.id && m.delivered && !m.answered) inbox.push_back(m.id);
-        for (MessageId id : inbox) {
-            auto it = std::find_if(p_.st.messages.begin(), p_.st.messages.end(), [&](const DiplomaticMessage& m) { return m.id == id; });
-            if (it == p_.st.messages.end()) continue;
-            const DiplomaticMessage msg = *it;  // copy: answering appends to the list
-            if (!msg.from.valid() || msg.from.index() >= p_.st.empires.size()) continue;
-            answer(msg);
-        }
-    }
-
-    void answer(const DiplomaticMessage& msg) {
-        const EmpireId from = msg.from;
-        const int64_t pct = scorePct(from);
-        // An AI bent on war with the sender ignores it (spec 05 §7.4).
-        if (p_.atWarWith(from) && anger(from) > threshold(pol_.declareWar, wars(from), p_.st.turn, pct) && !team(from)) return;
-        bool accept = false;
-        std::string pool;
-        const bool friendly = isFriend(p_.emp(), from);
-        switch (msg.type) {
-            case MessageType::ProposeTreaty:
-            case MessageType::CounterTreaty:  // accepting a counter-proposal is an Accept Demand reply
-                accept = acceptTreaty(msg, pct);
-                pool = accept ? "Send Accept Treaty" : "Send Refuse Treaty";
-                break;
-            case MessageType::ProposeTrade:
-            case MessageType::CounterTrade: {
-                const int64_t received = packageValue(p_.r, p_.st, msg.offer, from, p_.id);
-                const int64_t given = packageValue(p_.r, p_.st, msg.request, p_.id, from);
-                const int need = friendly ? pol_.acceptTradeFriendPercent : pol_.acceptTradeEnemyPercent;
-                accept = given <= 0 ? anger(from) <= pol_.maxAngerAcceptGift : received * 100 >= given * need;
-                pool = accept ? "Send Accept Trade" : "Send Refuse Trade";
-                break;
-            }
-            case MessageType::Gift:
-                accept = anger(from) <= pol_.maxAngerAcceptGift;
-                pool = accept ? "Send Accept Gift" : "Send Refuse Gift";
-                break;
-            case MessageType::Tribute:
-                accept = anger(from) <= pol_.maxAngerAcceptTribute;
-                pool = accept ? "Send Accept Tribute" : "Send Refuse Tribute";
-                break;
-            default:
-                if (!isDemand(msg.type)) return;  // nothing to answer
-                accept = acceptDemand(msg, pct, friendly);
-                pool = std::format("Response {} {} {}", friendly ? "Friend" : "Enemy", accept ? "YES" : "NO", angerKeyName(msg.type));
-                if (!p_.prof.speech.pool(pool)) pool = accept ? "Send Accept Demand/Request" : "Send Refuse Demand/Request";
-                break;
-        }
-        std::string text = speechLine(p_, pool, from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
-        if (!p_.emit(cmd::AnswerMessage{msg.id, accept, std::move(text)})) return;
-        if (accept && isDemand(msg.type)) comply(msg);
-    }
-
-    bool acceptTreaty(const DiplomaticMessage& msg, int64_t pct) {
-        const EmpireId from = msg.from;
-        if (team(from)) return true;
-        if (p_.st.options.teamMode && p_.st.empire(from).kind == PlayerKind::Human) return false;
-        const Relation& rel = p_.emp().relation(from);
-        const Treaty t = msg.treaty;
-        if (t > pol_.highestAllowedTreaty || t == Treaty::War) return false;
-        if (t == Treaty::Subjugation && pct < pol_.acceptSubjugationPercent) return false;
-        if (t == Treaty::Protectorate && pct < pol_.acceptProtectoratePercent) return false;
-        if (rel.treatyTurn > 0 && p_.st.turn < rel.treatyTurn + static_cast<uint32_t>(std::max(0, pol_.acceptMinimumTurnsSinceTreaty)))
-            return false;
-        if (t > Treaty::NonAggression && rel.lastWarTurn >= 0 &&
-            static_cast<int64_t>(p_.st.turn) - rel.lastWarTurn < pol_.turnsSinceWarBeforeFriendly)
-            return false;
-        int limit = threshold(pol_.accept, wars(from), p_.st.turn, pct);
-        const int steps = static_cast<int>(t) - static_cast<int>(rel.treaty);
-        if (steps > 0) limit += pol_.acceptPerHigherLevel * steps;
-        if (anger(from) < limit) return true;
-        return p_.rng.percent(pol_.acceptMinimumChance);  // (inferred reading of "Minimum Anger Chance")
-    }
-
-    bool acceptDemand(const DiplomaticMessage& msg, int64_t pct, bool friendly) {
-        const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
-        if (msg.type == MessageType::DemandSurrender && p_.mode == Mode::Minister) return false;  // ministers never surrender
-        if (!(friendly ? rule.acceptFromFriend : rule.acceptFromEnemy)) return false;
-        return pct >= rule.acceptScorePercent;
-    }
-
-    // What an accepted demand makes the computer do this turn.
-    void comply(const DiplomaticMessage& msg) {
-        const EmpireId from = msg.from;
-        switch (msg.type) {
-            case MessageType::DemandRemoveShips:
-            case MessageType::DemandStopAttacks: withdrawFrom(msg.system); break;
-            case MessageType::DemandRemoveColonies:
-                if (msg.system.valid() && msg.system.index() < p_.st.galaxy.systems.size())
-                    for (ObjectId o : p_.st.galaxy.system(msg.system).objects)
-                        if (const Colony* c = p_.st.colony(o); c && c->owner == p_.id && !c->homeworld) p_.emit(cmd::AbandonPlanet{o});
-                break;
-            case MessageType::DemandLeavePlanet:
-                if (const Colony* c = p_.st.colony(msg.planet); c && c->owner == p_.id && !c->homeworld) p_.emit(cmd::AbandonPlanet{msg.planet});
-                break;
-            case MessageType::RequestStopHostilities:
-            case MessageType::RequestMakePeace:
-                if (validThird(msg.thirdEmpire) && p_.atWarWith(msg.thirdEmpire))
-                    sendNamed(msg.thirdEmpire, MessageType::ProposeTreaty, Treaty::NonAggression);
-                break;
-            case MessageType::RequestBreakTreaty:
-                if (validThird(msg.thirdEmpire) && p_.emp().relation(msg.thirdEmpire).treaty >= Treaty::NonAggression)
-                    sendNamed(msg.thirdEmpire, MessageType::BreakTreaty, p_.emp().relation(msg.thirdEmpire).treaty);
-                break;
-            case MessageType::RequestDeclareWar:
-            case MessageType::RequestAttackEmpire:
-            case MessageType::RequestSupport:
-                if (validThird(msg.thirdEmpire) && !p_.atWarWith(msg.thirdEmpire)) sendNamed(msg.thirdEmpire, MessageType::DeclareWar);
-                break;
-            case MessageType::DemandStopEspionage:
-            case MessageType::DemandStopSabotage: {
-                std::vector<IntelProjectOrder> keep;
-                for (const auto& o : p_.emp().intel)
-                    if (o.target != from) keep.push_back(o);
-                if (keep.size() != p_.emp().intel.size()) p_.emit(cmd::SetIntel{keep, p_.emp().intelEvenly, p_.emp().repeatIntel});
-                break;
-            }
-            case MessageType::DemandSurrender: sendNamed(from, MessageType::Surrender); break;
-            case MessageType::DemandGift:
-            case MessageType::DemandTribute: {
-                // Accepting a demand moves nothing by itself: pay up (inferred amount).
-                const bool gift = msg.type == MessageType::DemandGift;
-                const bool friendly = isFriend(p_.emp(), from);
-                const int64_t base = gift ? (friendly ? pol_.giftBaseFriend : pol_.giftBaseEnemy)
-                                          : (friendly ? pol_.tributeBaseFriend : pol_.tributeBaseEnemy);
-                auto offer = resourcesWorth(base);
-                if (!offer.empty() && p_.st.options.allowGifts)
-                    sendNamed(from, gift ? MessageType::Gift : MessageType::Tribute, Treaty::None, {}, {}, std::move(offer));
-                break;
-            }
-            default: break;
-        }
-    }
-
-    bool validThird(EmpireId e) const {
-        return e.valid() && e.index() < p_.st.empires.size() && e != p_.id && p_.st.empire(e).alive && p_.emp().relation(e).contact;
-    }
-
-    void withdrawFrom(SystemId sys) {
-        if (!sys.valid() || !p_.home.valid() || sys == p_.home) return;
-        for (const Fleet& f : p_.st.fleets) {
-            const Vehicle* leader = p_.st.vehicle(f.leader);
-            if (p_.controlsFleet(f) && leader && leader->location.system == sys) {
-                Order o;
-                o.kind = OrderKind::MoveTo;
-                o.location = p_.homeLocation;
-                p_.setFleetOrders(f.id, {o});
-            }
-        }
-        for (VehicleId id : p_.ownVehicles()) {
-            const Vehicle* v = p_.st.vehicle(id);
-            if (!v || v->fleet.valid() || v->location.system != sys || p_.info(v->design).stats.movement <= 0) continue;
-            Order o;
-            o.kind = OrderKind::MoveTo;
-            o.location = p_.homeLocation;
-            p_.setOrders(id, {o});
-        }
-    }
-
-    // ---- Outgoing ----------------------------------------------------------------------------
-
-    void initiate(EmpireId other) {
-        const Relation& rel = p_.emp().relation(other);
-        const int64_t pct = scorePct(other);
-        const int a = anger(other);
-        const int w = wars(other);
-
-        if (p_.st.options.teamMode) {
-            // Team mode (spec 05 §7.1): computers band together against humans.
-            if (team(other)) {
-                if (rel.treaty != Treaty::Partnership && !pendingProposal(p_.st, p_.id, other))
-                    sendNamed(other, MessageType::ProposeTreaty, Treaty::Partnership);
-            } else if (p_.st.empire(other).kind == PlayerKind::Human && rel.treaty != Treaty::War &&
-                       !recentlySent(p_.st, p_.id, other, MessageType::DeclareWar)) {
-                sendNamed(other, MessageType::DeclareWar);
-            }
-            return;
-        }
-
-        if (rel.treaty != Treaty::War && !p_.neutral && a > threshold(pol_.declareWar, w, p_.st.turn, pct)) {
-            if (!recentlySent(p_.st, p_.id, other, MessageType::DeclareWar)) sendNamed(other, MessageType::DeclareWar);
-            return;
-        }
-        if (rel.treaty >= Treaty::NonAggression && a > threshold(pol_.breakTreaty, w, p_.st.turn, pct)) {
-            if (!recentlySent(p_.st, p_.id, other, MessageType::BreakTreaty)) sendNamed(other, MessageType::BreakTreaty, rel.treaty);
-            return;
-        }
-        if (other == mee_ && p_.rng.percent(10)) {
-            if (send(other, MessageType::General, "Mega Evil Declarations")) return;
-        }
-        if (!p_.neutral && p_.rng.percent(pol_.proposeChancePercent) && !pendingProposal(p_.st, p_.id, other)) {
-            const int limit = threshold(pol_.propose, w, p_.st.turn, pct);
-            if (rel.treaty == Treaty::War) {
-                // Peace after a long enough war (inferred).
-                if (a < limit && rel.lastWarTurn >= 0 && static_cast<int64_t>(p_.st.turn) - rel.lastWarTurn >= pol_.turnsSinceWarBeforeFriendly &&
-                    sendNamed(other, MessageType::ProposeTreaty, Treaty::NonAggression))
-                    return;
-            } else {
-                for (const auto& [treaty, below] : pol_.proposeTypes) {
-                    if (treaty <= rel.treaty || treaty > pol_.highestAllowedTreaty) continue;  // never propose the current one
-                    if (a <= limit - below) {
-                        if (sendNamed(other, MessageType::ProposeTreaty, treaty)) return;
-                        break;
-                    }
-                }
-            }
-        }
-        if (!p_.neutral && demands(other, pct, a)) return;
-        if (p_.st.options.allowGifts) payments(other, pct, a);
-    }
-
-    bool mayDemand(MessageType t, EmpireId other, int64_t pct) const {
-        const DemandRule& rule = pol_.demands[static_cast<size_t>(t)];
-        const bool friendly = isFriend(p_.emp(), other);
-        return pct <= rule.sendScorePercent && (friendly ? rule.sendToFriend : rule.sendToEnemy);
-    }
-
-    bool demands(EmpireId other, int64_t pct, int a) {
-        // Their ships inside our claimed systems.
-        if (!allied(p_.st, p_.id, other) && mayDemand(MessageType::DemandRemoveShips, other, pct) && p_.rng.percent(25)) {
-            std::map<SystemId, int> count;
-            for (VehicleId vid : p_.emp().knowledge.visibleVehicles)
-                if (const Vehicle* v = p_.st.vehicle(vid); v && v->owner == other &&
-                                                             std::binary_search(p_.emp().claimedSystems.begin(), p_.emp().claimedSystems.end(),
-                                                                                v->location.system))
-                    ++count[v->location.system];
-            SystemId worst;
-            int most = 0;
-            for (const auto& [sys, n] : count)
-                if (n > most) {
-                    most = n;
-                    worst = sys;
-                }
-            if (worst.valid() && sendNamed(other, MessageType::DemandRemoveShips, Treaty::None, {}, worst)) return true;
-        }
-        // Ask a friend to join a war.
-        if (isFriend(p_.emp(), other) && p_.emp().relation(other).treaty >= Treaty::TradeAlliance &&
-            mayDemand(MessageType::RequestDeclareWar, other, pct) && p_.rng.percent(10)) {
-            for (const Empire& enemy : p_.st.empires)
-                if (enemy.alive && enemy.id != other && p_.atWarWith(enemy.id) && p_.st.empire(other).relation(enemy.id).treaty != Treaty::War &&
-                    sendNamed(other, MessageType::RequestDeclareWar, Treaty::None, enemy.id))
-                    return true;
-        }
-        // A stronger empire leans on a weaker one now and then.
-        if (a > 20 && mayDemand(MessageType::DemandGift, other, pct) && p_.rng.percent(3))
-            return sendNamed(other, MessageType::DemandGift);
-        return false;
-    }
-
-    std::vector<PackageItem> resourcesWorth(int64_t value) const {
-        const Resources& have = p_.emp().stockpile;
-        value = std::min(value, have.total() / 10);
-        value = value / 1000 * 1000;  // packages move resources in steps of 1000
-        if (value <= 0) return {};
-        PackageItem item;
-        item.kind = PackageItem::Kind::Resources;
-        for (size_t i = 0; i < 3 && value > 0; ++i) {
-            const int64_t part = std::min(value, have.v[i] / 1000 * 1000);
-            item.resources.v[i] = part;
-            value -= part;
-        }
-        if (item.resources.isZero()) return {};
-        return {item};
-    }
-
-    void payments(EmpireId other, int64_t pct, int a) {
-        const bool friendly = isFriend(p_.emp(), other);
-        // Tribute to a much stronger empire that is not a friend (inferred trigger).
-        if (!friendly || p_.emp().relation(other).treaty <= Treaty::None) {
-            if (pct >= pol_.pleadingTonePercent && a <= (friendly ? pol_.tributeMaxAngerFriend : pol_.tributeMaxAngerEnemy) &&
-                p_.rng.percent(5)) {
-                const int64_t base = friendly ? pol_.tributeBaseFriend : pol_.tributeBaseEnemy;
-                const int64_t per = friendly ? pol_.tributePerPercentFriend : pol_.tributePerPercentEnemy;
-                auto offer = resourcesWorth(base + per * std::max<int64_t>(0, pct - 100));
-                if (!offer.empty()) sendNamed(other, MessageType::Tribute, Treaty::None, {}, {}, std::move(offer));
-            }
-            return;
-        }
-        // Gifts to good friends when rich (inferred trigger).
-        if (p_.emp().relation(other).treaty >= Treaty::TradeAlliance && a <= pol_.giftMaxAngerFriend && p_.emp().stockpile.total() > 30000 &&
-            p_.rng.percent(3)) {
-            auto offer = resourcesWorth(pol_.giftBaseFriend + pol_.giftPerPercentFriend * std::max<int64_t>(0, pct - 100));
-            if (!offer.empty()) sendNamed(other, MessageType::Gift, Treaty::None, {}, {}, std::move(offer));
-        }
-    }
-
-    Planner& p_;
-    const PoliticsTable& pol_;
-    std::vector<int64_t> scores_;
-    EmpireId mee_;
 };
 
 } // namespace
@@ -468,6 +579,6 @@ std::string speechLine(Planner& p, std::string_view pool, EmpireId target, Empir
     return text;
 }
 
-void planDiplomacy(Planner& p) { Diplomat(p).run(); }
+void planPolitics(Planner& p) { Politician(p).run(); }
 
 } // namespace opense4::game::ai::detail

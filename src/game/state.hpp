@@ -69,9 +69,35 @@ struct Relation {
     int tradePercent = 0;
     uint32_t treatyTurn = 0;    // when the current treaty took effect
     int32_t lastWarTurn = -1;
-    int anger = 0;              // computer players: anger toward that empire (0..~100+)
+    int anger = 50;             // computer players: anger toward that empire, 0..100 (spec 05 §7.3)
     bool messageSentThisTurn = false;
     uint32_t messagesBlockedUntil = 0;  // messages sent while turn < this are lost (intel, spec 05 §2.3)
+    // What a computer player (or a Politics minister) remembers about that
+    // empire between turns (spec 05 §7.3, §7.4). Kept by ai::updateAnger.
+    int turnsSinceWar = 999;    // 0 while at war, +1 each turn otherwise
+    int treatyAge = 0;          // turns since the treaty changed (moves between Trade Alliance and better do not count)
+    Treaty agedTreaty = Treaty::None;  // the treaty treatyAge was last updated for
+    bool promise = false;       // we accepted their "stop hostile actions" request (-20 anger once)
+    bool queuedWar = false;     // an accepted request asks us to declare war on them
+    bool queuedBreak = false;   // ... to break our treaty with them
+    bool queuedPeace = false;   // ... to make peace with them
+    bool attackedUs = false;    // their ships attacked ours or our planets
+    bool spiedOnUs = false;     // one of their intelligence operations against us was traced to them
+    SystemId attackedIn;        // where they last attacked us
+    int combatsThisTurn = 0;    // combats with them in the last processed turn
+    int combatsLastTurn = 0;    // ... and in the turn before
+};
+
+// A computer player's plans between turns (spec 05 §7.2, §7.4).
+struct AiMemory {
+    std::vector<SystemId> targets;        // attack targets, at most 3
+    SystemId staging;                     // where the attack gathers
+    SystemId secured;                     // the system Secure Holdings watches
+    std::vector<SystemId> defend;         // systems to defend, most urgent first
+    int afterAttack = 0;                  // after-attack timer: 1 when an attack ends, +1 per turn
+    std::vector<SystemId> avoid;          // systems we agreed to leave (accepted demands)
+    std::vector<SystemId> attackSystems;  // systems an accepted request asked us to attack
+    bool metMinefield = false;            // our ships have run into a mine field
 };
 
 struct LogEntry {
@@ -164,12 +190,16 @@ struct Empire {
     std::vector<TurnStats> history;
     int experience = 0;
 
-    // Computer player state.
+    // Computer player state (spec 05 §7).
     int aiState = 0;
     int aiTurnsInState = 0;
     bool aiMinimalChanges = false;
+    AiMemory aiMemory;
+    int aiDifficulty = -1;                  // kDifficulty*; -1 until the AI step assigns it (ai::difficultyOf)
 
     bool ministerAll = false;               // full minister control
+    uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)
+    std::string ministerStyle;              // "Aggressive", "Defensive", "Neutral"; empty: the race's own AI files
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
@@ -489,11 +519,14 @@ struct GameOptions {
     bool showAllScores = false;
     int maxShipsPerPlayer = 200;
     int maxUnitsPerPlayer = 1000;
-    int aiDifficulty = 1;
+    int aiDifficulty = kDifficultyMedium;  // Computer Player Difficulty: the level random AI players get
     int aiBonus = 0;
     VictoryConditions victory;
     // Multiplayer.
     bool simultaneous = true;
+    // Per EmpireId: 1 for players added by "Random Computer/Neutral Players".
+    // Only they get the chosen aiDifficulty (spec 05 §7.1).
+    std::vector<uint8_t> randomAiPlayers;
 };
 
 // ---- The game --------------------------------------------------------------------------------

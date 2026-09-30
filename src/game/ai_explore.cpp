@@ -1,21 +1,17 @@
-// Computer player: exploration and colonization.
+// Computer player: the Colonization and Exploration ministers (spec 05 §7.5,
+// confirmed: binary unless marked). There is no scout design type: idle
+// attack ships explore.
 
 #include "game/ai_planner.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <map>
 #include <tuple>
 
 namespace opense4::game::ai::detail {
 
 namespace {
-
-Order moveTo(Location where) {
-    Order o;
-    o.kind = OrderKind::MoveTo;
-    o.location = where;
-    return o;
-}
 
 Order warpThrough(const GameState& s, ObjectId wp) {
     Order o;
@@ -25,104 +21,98 @@ Order warpThrough(const GameState& s, ObjectId wp) {
     return o;
 }
 
-bool warEnemyColonyIn(const Planner& p, SystemId sys) {
-    for (ObjectId o : p.st.galaxy.system(sys).objects)
-        if (const Colony* c = p.st.colony(o); c && p.atWarWith(c->owner)) return true;
-    return false;
-}
-
-bool canColonizeSurface(const DesignStats& st, std::string_view surface) {
-    return surface == "Rock" ? st.canColonizeRock : surface == "Ice" ? st.canColonizeIce : st.canColonizeGas;
+int damagedComponents(const Rules& r, const GameState& s, const Vehicle& v) {
+    int n = 0;
+    const size_t entries = s.design(v.design).entries.size();
+    for (size_t i = 0; i < entries; ++i) n += !entryIntact(r, s, v, i);
+    return n;
 }
 
 } // namespace
 
-namespace {
-
-// Planets our colony ships are already headed for.
-std::set<ObjectId> claimedPlanets(const Planner& p) {
-    std::set<ObjectId> out = p.reservedPlanets;
-    for (const Vehicle& v : p.st.vehicles) {
-        if (v.owner != p.id) continue;
-        for (const Order& o : v.orders)
-            if (o.kind == OrderKind::Colonize) out.insert(o.object);
+void planColonization(Planner& p) {
+    if (!p.on(Minister::Colonization)) return;
+    // Idle colony ships: no orders, or their target has become one of our colonies.
+    std::vector<VehicleId> ships;
+    for (VehicleId id : p.ownVehicles(Minister::Colonization)) {
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->fleet.valid() || p.busy.contains(id) || v->status == VehicleStatus::Mothballed) continue;
+        if (p.info(v->design).role != Role::Colonizer) continue;
+        bool idle = v->orders.empty();
+        if (!idle && v->orders.back().kind == OrderKind::Colonize)
+            if (const Colony* c = p.st.colony(v->orders.back().object); c && c->owner == p.id) idle = true;
+        if (idle) ships.push_back(id);
     }
-    return out;
-}
+    if (ships.empty()) return;
+    std::map<uint32_t, std::vector<int>> jumps;
+    for (VehicleId id : ships) jumps[id.value] = p.jumpsFrom(p.st.vehicle(id)->location.system);
 
-} // namespace
-
-bool planetClaimed(Planner& p, ObjectId planet) { return claimedPlanets(p).contains(planet); }
-
-std::vector<ColonyTarget> colonyTargets(Planner& p, std::string_view surface, SystemId from) {
-    std::vector<ColonyTarget> out;
-    if (!from.valid()) return out;
-    const std::vector<int> jumps = p.jumpsFrom(from);
-    const std::set<ObjectId> claimed = claimedPlanets(p);
-    for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
-        const SystemId sys{i};
-        if (!p.explored(sys) || jumps[i] < 0 || !p.mayEnter(sys)) continue;
-        if (p.threat[i] > 0 || warEnemyColonyIn(p, sys)) continue;
-        for (ObjectId o : p.st.galaxy.system(sys).objects) {
-            const SpaceObject& obj = p.st.galaxy.object(o);
-            if (obj.kind != ObjectKind::Planet || surfaceKey(obj.surface) != surface) continue;
-            if (!colonizable(p.r, p.st, p.emp(), obj) || claimed.contains(o)) continue;
-            out.push_back({o, colonyTargetValue(p.r, p.st, p.emp(), obj) - int64_t{jumps[i]} * 150, jumps[i]});
+    for (const ColonyTarget& t : p.sit.colonyTargets) {
+        if (ships.empty()) break;
+        if (!t.settleable || p.reservedPlanets.contains(t.planet) || !p.mayEnter(t.system)) continue;
+        const SpaceObject& planet = p.st.galaxy.object(t.planet);
+        std::optional<size_t> best;
+        int bestJumps = 0;
+        for (size_t i = 0; i < ships.size(); ++i) {
+            const Vehicle* v = p.st.vehicle(ships[i]);
+            if (!p.info(v->design).stats.canColonize(planet.surface)) continue;
+            const int j = jumps[ships[i].value][t.system.index()];
+            if (j < 0) continue;
+            if (!best || j < bestJumps) {
+                best = i;
+                bestJumps = j;
+            }
         }
+        if (!best) continue;
+        const VehicleId ship = ships[*best];
+        Order colonize;
+        colonize.kind = OrderKind::Colonize;
+        colonize.object = t.planet;
+        colonize.location = locationOf(p.st.galaxy, t.planet);
+        std::vector<Order> orders;
+        if (p.st.vehicle(ship)->location != colonize.location) orders.push_back(moveOrder(colonize.location));
+        orders.push_back(colonize);
+        if (p.setOrders(ship, std::move(orders))) p.reservedPlanets.insert(t.planet);
+        ships.erase(ships.begin() + static_cast<std::ptrdiff_t>(*best));
     }
-    std::sort(out.begin(), out.end(), [](const ColonyTarget& a, const ColonyTarget& b) {
-        return a.value != b.value ? a.value > b.value : a.planet < b.planet;
-    });
-    return out;
-}
-
-std::vector<ObjectId> explorationFrontier(Planner& p) {
-    std::vector<ObjectId> out;
-    if (p.neutral) return out;
-    const std::vector<int>& jumps = p.jumpsFromHome();
-    for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
-        if (!p.explored(SystemId{i}) || jumps[i] < 0) continue;
-        for (const Link& l : p.links[i])
-            if (!p.explored(l.to)) out.push_back(l.warpPoint);
-    }
-    return out;
 }
 
 void planExploration(Planner& p) {
-    if (p.neutral) return;
-    const std::vector<ObjectId> frontier = explorationFrontier(p);
-    bool unexplored = false;
-    for (size_t i = 0; i < p.st.galaxy.systems.size() && !unexplored; ++i) unexplored = !p.explored(SystemId{i});
-
-    std::set<ObjectId> claimed;
-    std::vector<VehicleId> scouts;
-    for (VehicleId id : p.ownVehicles()) {
+    if (!p.on(Minister::Exploration) || p.neutral) return;
+    // Explorers: idle attack ships, and loaded carriers and drone carriers,
+    // outside fleets with fewer than 4 damaged components. Ships outside the
+    // AI's design types that can only move (premade scouts) explore too (inferred).
+    std::vector<VehicleId> explorers;
+    for (VehicleId id : p.ownVehicles(Minister::Exploration)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || v->status != VehicleStatus::Normal || p.busy.contains(id)) continue;
+        if (!v || v->fleet.valid() || !p.idle(*v) || v->status != VehicleStatus::Normal) continue;
         const DesignInfo& di = p.info(v->design);
-        if (di.role != Role::Scout || di.stats.movement <= 0) continue;
-        if (!v->orders.empty()) {
-            const Order& last = v->orders.back();
-            const bool stillUseful = (last.kind == OrderKind::Warp && std::find(frontier.begin(), frontier.end(), last.object) != frontier.end()) ||
-                                     (last.kind == OrderKind::Explore && unexplored) || last.kind == OrderKind::Resupply ||
-                                     last.kind == OrderKind::Repair;
-            if (stillUseful) {
-                if (last.kind == OrderKind::Warp) claimed.insert(last.object);
-                p.busy.insert(id);
-                continue;
-            }
-        }
-        scouts.push_back(id);
+        if (di.stats.movement <= 0) continue;
+        const bool loaded = !v->cargo.units.empty();
+        const bool fits = di.role == Role::Attack || ((di.role == Role::Carrier || di.role == Role::DroneCarrier) && loaded) ||
+                          (di.role == Role::Other && !di.stats.armed() && di.stats.cargoCapacity == 0);
+        if (!fits || damagedComponents(p.r, p.st, *v) >= 4) continue;
+        explorers.push_back(id);
     }
+    if (explorers.empty() || p.sit.frontier.empty()) return;
 
-    for (VehicleId id : scouts) {
+    // How many ships each frontier point takes: free points one; when the
+    // explorers outnumber the free points 3, 5 and 8 times over, one more each.
+    std::map<uint32_t, int> room;
+    for (ObjectId wp : p.sit.freeFrontier) room[wp.value] = 1;
+    const size_t free = p.sit.freeFrontier.size();
+    int extra = 0;
+    for (size_t times : {3u, 5u, 8u}) extra += explorers.size() > times * free;
+    for (ObjectId wp : p.sit.frontier) room[wp.value] += extra;
+
+    for (VehicleId id : explorers) {
         const Vehicle* v = p.st.vehicle(id);
         const Location at = v->location;
         const std::vector<int> jumps = p.jumpsFrom(at.system);
         std::optional<ObjectId> best;
         std::tuple<int, int, uint32_t> bestKey{};
-        for (ObjectId wp : frontier) {
-            if (claimed.contains(wp)) continue;
+        for (ObjectId wp : p.sit.frontier) {
+            if (room[wp.value] <= 0) continue;
             const SpaceObject& obj = p.st.galaxy.object(wp);
             const int j = jumps[obj.system.index()];
             if (j < 0) continue;
@@ -133,52 +123,13 @@ void planExploration(Planner& p) {
                 bestKey = key;
             }
         }
-        std::vector<Order> orders;
-        if (best) {
-            claimed.insert(*best);
-            const SpaceObject& obj = p.st.galaxy.object(*best);
-            if (obj.system != at.system) orders.push_back(moveTo(locationOf(p.st.galaxy, *best)));
-            orders.push_back(warpThrough(p.st, *best));
-        } else if (unexplored && !frontier.empty()) {
-            Order o;
-            o.kind = OrderKind::Explore;
-            orders.push_back(o);
-        } else if (at.system != p.home && p.home.valid()) {
-            orders.push_back(moveTo(p.homeLocation));
-        }
-        if (!orders.empty()) p.setOrders(id, std::move(orders));
-    }
-}
-
-void planColonization(Planner& p) {
-    for (VehicleId id : p.ownVehicles()) {
-        const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || p.busy.contains(id) || v->status == VehicleStatus::Mothballed) continue;
-        const DesignInfo& di = p.info(v->design);
-        if (di.role != Role::Colonizer) continue;
-        if (!v->orders.empty() && v->orders.back().kind == OrderKind::Colonize) {
-            const ObjectId target = v->orders.back().object;
-            if (target.valid() && target.index() < p.st.galaxy.objects.size() &&
-                colonizable(p.r, p.st, p.emp(), p.st.galaxy.object(target)) && p.mayEnter(p.st.galaxy.object(target).system)) {
-                p.busy.insert(id);
-                continue;
-            }
-        }
-        if (!v->orders.empty() && (v->orders.back().kind == OrderKind::Resupply || v->orders.back().kind == OrderKind::Repair)) continue;
-        std::optional<ColonyTarget> best;
-        for (std::string_view surface : {"Rock", "Ice", "Gas"}) {
-            if (!canColonizeSurface(di.stats, surface)) continue;
-            // A copy of the planet list is rebuilt per ship: orders given to
-            // earlier ships this turn already claim their targets.
-            const auto targets = colonyTargets(p, surface, v->location.system);
-            if (!targets.empty() && (!best || targets.front().value > best->value)) best = targets.front();
-        }
         if (!best) continue;
-        Order o;
-        o.kind = OrderKind::Colonize;
-        o.object = best->planet;
-        o.location = locationOf(p.st.galaxy, best->planet);
-        if (p.setOrders(id, {o})) p.reservedPlanets.insert(best->planet);
+        --room[best->value];
+        const SpaceObject& obj = p.st.galaxy.object(*best);
+        std::vector<Order> orders;
+        if (obj.system != at.system) orders.push_back(moveOrder(locationOf(p.st.galaxy, *best)));
+        orders.push_back(warpThrough(p.st, *best));
+        p.setOrders(id, std::move(orders));
     }
 }
 

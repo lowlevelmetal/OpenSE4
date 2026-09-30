@@ -4,12 +4,29 @@
 // install's Ai/ and Pictures/Races/<Race>/ files where present (ai_data.hpp),
 // with built-in defaults otherwise.
 //
-// Everything the computer does is a Command: planTurn() and ministerCommands()
-// only read the state and return the orders an empire would send; the turn
-// pipeline applies them like anyone else's. Long-lived AI memory is limited to
-// Empire::aiState / aiTurnsInState and Relation::anger, which updateAnger()
-// maintains in turn phase 12. Everything else is re-derived from the state
-// each turn, so saving and loading a game never loses AI plans.
+// Everything the computer does to its own empire is a Command: the planning
+// entry points only read the state and return the orders an empire would
+// send; the turn pipeline applies them like anyone else's. The AI's memory
+// (Empire::aiState, aiTurnsInState, aiMemory, aiDifficulty and the AI fields
+// of Relation, including anger) is kept by updateAnger(), which runs with a
+// mutable state once per turn.
+//
+// Turn order (spec 05 §7.1, §8). The original runs the ministers in two
+// groups:
+//   1. while orders are given, before movement: the AI state update, then
+//      Politics, Troops, Transports, Colonization, Space Yard Ships,
+//      Carriers, Mines/Satellites/Drones, Fleets, Defense, Attack,
+//      Exploration, Patrol, Resupply, Repair, Scrap, Retrofit and Stellar
+//      Manipulation -> planOrders();
+//   2. at the start of the empire's economy step, before income: Design,
+//      Research, Intelligence, Facility Construction, Ship Construction and
+//      Facility Construction again (the first facility pass is skipped every
+//      fifth turn) -> planEconomyStep().
+// planTurn() runs both groups on one private copy (orders first), which is
+// what the turn pipeline calls today. The AI state update and the political
+// step (territory, anger) need a mutable state and run in updateAnger(); it
+// is called at the end of a turn, which is the same point in the cycle as
+// "before the ministers of the next turn".
 
 #include "core/rng.hpp"
 #include "game/commands.hpp"
@@ -34,10 +51,10 @@ enum class AiState : uint8_t {
     PrepareForAttack,
     Attack,
     SecureHoldings,     // "Secure Holdings After Attack"
-    Incursion,
-    PrepareForDefense,
+    Incursion,          // never entered (confirmed: binary)
+    PrepareForDefense,  // never entered
     DefendShortTerm,    // "Defend (Short Term)"
-    DefendLongTerm,     // "Defend (Long Term)"
+    DefendLongTerm,     // never entered
     NotConnected,
     Count
 };
@@ -46,15 +63,21 @@ std::string_view displayName(AiState s);  // the identifier used in the AI files
 bool parseAiState(std::string_view text, AiState& out);
 AiState stateOf(const Empire& e);
 
+// ---- Planning (read-only; the pipeline applies the commands) ------------------------------
+
 // A full turn of orders for a computer-controlled empire, or for a human
-// empire whose orders are missing (`minimal`: only keep things running).
+// empire whose orders are missing. `minimal`: the absent player forbade AI
+// changes, so nothing is planned (spec 05 §7.1).
 std::vector<Command> planTurn(const Rules& r, const GameState& s, EmpireId e, bool minimal = false);
-// Orders for the colonies and vehicles a human put under minister control
-// (everything when Empire::ministerAll is set). Empty for computer empires.
+// Group 1 above: the ministers that act while orders are given.
+std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
+// Group 2 above: Design, Research, Intelligence and the construction ministers.
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e);
+// Orders for a human empire's active ministers (both groups): the global
+// ministers switched on in Empire::ministers take over their area, the
+// individual ones act on the colonies and vehicles whose minister flag is on.
+// Everything is theirs with Empire::ministerAll. Empty for computer empires.
 std::vector<Command> ministerCommands(const Rules& r, const GameState& s, EmpireId e);
-// Turn phase 12: anger (decay, borders, coveted planets, combat, intelligence,
-// received messages, Mega Evil Empire) and the AI state transitions.
-void updateAnger(TurnContext& ctx);
 
 // The same plans with the planner's own bookkeeping, for tests and tools:
 // commands the planner considered but that the rules refused (it drops them).
@@ -64,23 +87,63 @@ struct PlanReport {
 };
 PlanReport planTurnReport(const Rules& r, const GameState& s, EmpireId e, bool minimal = false);
 
+// ---- Memory (mutable, once per turn) --------------------------------------------------------
+
+// The AI step of the turn (currently phase 12), for every living empire:
+// records what the computer players decided this turn (war declarations set
+// anger to 100, accepted demands are carried out half of the time), keeps
+// the per-empire counters, runs the AI state machine (spec 05 §7.2) for
+// computer players and humans with active ministers, and the political step
+// (territory and anger, §7.3) for empires whose Politics minister is on.
+void updateAnger(TurnContext& ctx);
+
 // ---- Helpers shared with the UI and other modules ---------------------------------------
 
-// The state the empire's computer player should be in, from the facts of the
-// current state and its previous state (phase 12 applies it).
+// The state the empire's computer player moves to from its current state
+// (the transition part of updateAnger, without changing anything).
 AiState nextState(const Rules& r, const GameState& s, EmpireId e);
-// Score used for AI politics and the Mega Evil Empire: score::empireScore when
-// the score module computes one, otherwise an estimate from the same statistics.
+// Scores used by AI politics and the Mega Evil Empire: score::empireScore
+// (spec 05 §5), 0 for eliminated empires. Index = EmpireId.
+std::vector<int64_t> politicalScores(const Rules& r, const GameState& s);
 int64_t politicalScore(const Rules& r, const GameState& s, EmpireId e);
-std::vector<int64_t> politicalScores(const Rules& r, const GameState& s);  // index = EmpireId
-// The Mega Evil Empire (spec 05 §7.6), or an invalid id when there is none.
-EmpireId megaEvilEmpire(const Rules& r, const GameState& s);
-// Leader mood shown in the Empires window for an anger value (inferred bands).
+// The Mega Evil Empire as `viewer` sees it (spec 05 §7.6), or an invalid id.
+EmpireId megaEvilEmpire(const Rules& r, const GameState& s, EmpireId viewer);
+EmpireId megaEvilEmpire(const Rules& r, const std::vector<int64_t>& scores, const GameState& s, EmpireId viewer);
+// The leader's mood word shown in the Empires window for an anger value (spec 05 §7.3).
 std::string_view moodLabel(int anger);
+
+// Whether an empire's minister for an area acts this turn: always for
+// computer players, else Empire::ministerAll or the area's bit.
+bool ministerOn(const Empire& e, Minister m);
+
+// Difficulty (spec 05 §7.1): the empire's level, kDifficultyLow..High.
+// Until the AI step assigns it (Empire::aiDifficulty < 0): the chosen level
+// for random AI players (GameOptions::randomAiPlayers), Medium otherwise.
+int difficultyOf(const GameState& s, EmpireId e);
+// An empire founded by a revolt: the highest level among the computer
+// empires, or Medium when there is none.
+int rebelDifficulty(const GameState& s);
+
+// The colony type the computer gives a new colony at colonization (spec 05
+// §7.5): the two pre-rules, then the first AI_Planet_Types row that passes,
+// else Mining Colony. For every empire whose player is not asked.
+std::string colonyTypeAtColonization(const Rules& r, const GameState& s, EmpireId e, ObjectId planet);
+
 // Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
 // Low/Medium/High setting (0..2) brings, and a race preset folder for each.
-// Computer races are drawn by personality group weight; group 0 is never drawn.
-std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng);
+// Races already in `used` (folders) are never drawn.
+std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng,
+                                               std::vector<std::string> used = {});
+// One random race (spec 05 §7.1): computer players pick the personality group
+// furthest below its target share, then a race of that group; neutral players
+// draw from the neutral races. `used` are the race folders already in the
+// game (the new player is not in it). nullptr when no race is left.
+const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral, const std::vector<std::string>& used);
+// The race a random computer player plays: the preset's `Race Opt` set of the
+// racial-point level (1 for 2000, 2 for 3000, 3 for 5000; none for 0),
+// characteristics applied while they fit the budget, then traits that fit.
+Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints);
+
 // "Computer Player Bonus" as a production/research percentage for the economy
 // and research modules (0 for humans). The size of the bonus is open (spec 05
 // §7.1); we use 10 % per bonus step (inferred).
