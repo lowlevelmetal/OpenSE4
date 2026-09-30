@@ -2120,21 +2120,31 @@ TEST_CASE("ai: a missed human turn is played with every minister on, the politic
     CHECK_FALSE(ai::ministerOn(s.empire(me), Minister::Politics));
 }
 
-TEST_CASE("ai: computer players copy the clear-orders flags of AI_Settings each turn") {
+TEST_CASE("ai: computer players copy the four movement flags of AI_Settings each turn") {
     TempTree t("clearorders");
     t.write("Pictures/Races/Hasty/Hasty_AI_Settings.txt", "Clear orders on encounter enemy := True\n");
-    t.write("Pictures/Races/Wary/Wary_AI_Settings.txt", "Clear orders on encounter enemy := True\nClear orders on encounter all := True\n");
+    t.write("Pictures/Races/Wary/Wary_AI_Settings.txt",
+            "Clear orders on encounter enemy := True\nClear orders on encounter all := True\n"
+            "Ships don't move through minefields := True\nShips don't move through restricted systems := True\n");
     const Rules rules{buildEngineRuleset(), t.root};
     GameState s = computerGame(4, 3, 0, 12);
     s.empire(EmpireId{0u}).race.style = "Hasty";
     s.empire(EmpireId{1u}).race.style = "Wary";
     s.empire(EmpireId{2u}).kind = PlayerKind::Human;
     s.empire(EmpireId{2u}).race.style = "Wary";
+    s.empire(EmpireId{2u}).avoidTaggedMinefields = false;
     TurnContext ctx{rules, s, {}, {}, {}};
     ai::updateAiStates(ctx);
     CHECK(s.empire(EmpireId{0u}).clearOrdersOnEncounter == EncounterClear::Enemy);
     CHECK(s.empire(EmpireId{1u}).clearOrdersOnEncounter == EncounterClear::Any);
     CHECK(s.empire(EmpireId{2u}).clearOrdersOnEncounter == EncounterClear::Never);  // a human sets their own
+    // Absent keys: the movement flags are off (spec 05 §7.5), whatever the empire had.
+    CHECK_FALSE(s.empire(EmpireId{0u}).avoidTaggedMinefields);
+    CHECK_FALSE(s.empire(EmpireId{0u}).avoidRestrictedSystems);
+    CHECK(s.empire(EmpireId{1u}).avoidTaggedMinefields);
+    CHECK(s.empire(EmpireId{1u}).avoidRestrictedSystems);
+    CHECK_FALSE(s.empire(EmpireId{2u}).avoidTaggedMinefields);  // a human's own choice stays
+    CHECK(s.empire(EmpireId{2u}).avoidRestrictedSystems);
 }
 
 TEST_CASE("ai: satellites and drones above the kept shares are launched from planet cargo") {

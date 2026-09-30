@@ -114,8 +114,14 @@ struct SetMinisters {
     std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag, the new-vehicle option and ministerAll
 };
 
-// ---- Ship Orders options (spec 03 §6.4) ------------------------------------------------------------
-struct SetEncounterOptions { EncounterClear clearOrdersOnEncounter = EncounterClear::Never; };
+// ---- Ship Movement and Ship Orders options (spec 03 §6.2, §6.4) ----------------------------------
+// The Empire Options window's switches that belong to the empire; fields
+// left empty are not changed.
+struct SetEncounterOptions {
+    std::optional<EncounterClear> clearOrdersOnEncounter;  // Empire::clearOrdersOnEncounter
+    std::optional<bool> avoidTaggedMinefields;             // Empire::avoidTaggedMinefields
+    std::optional<bool> avoidRestrictedSystems;            // Empire::avoidRestrictedSystems
+};
 
 } // namespace cmd
 

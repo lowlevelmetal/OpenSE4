@@ -811,10 +811,12 @@ struct Applier {
         return {};
     }
 
-    // ---- Ship Orders options (spec 03 §6.4) ----------------------------------------------------------
+    // ---- Ship Movement and Ship Orders options (spec 03 §6.2, §6.4) ---------------------------------
     R operator()(const cmd::SetEncounterOptions& c) {
-        if (c.clearOrdersOnEncounter > EncounterClear::Any) return R::fail("Unknown option");
-        emp().clearOrdersOnEncounter = c.clearOrdersOnEncounter;
+        if (c.clearOrdersOnEncounter && *c.clearOrdersOnEncounter > EncounterClear::Any) return R::fail("Unknown option");
+        if (c.clearOrdersOnEncounter) emp().clearOrdersOnEncounter = *c.clearOrdersOnEncounter;
+        if (c.avoidTaggedMinefields) emp().avoidTaggedMinefields = *c.avoidTaggedMinefields;
+        if (c.avoidRestrictedSystems) emp().avoidRestrictedSystems = *c.avoidRestrictedSystems;
         return {};
     }
 

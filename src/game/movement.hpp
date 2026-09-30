@@ -42,14 +42,23 @@ struct Path {
 
 struct RouteOptions {
     bool allowWarp = true;      // fighters cannot use warp points
+    bool sweeper = false;       // led by a mine sweeper: tagged minefields are no obstacle (leadsSweeperGroup)
 };
 
+// A group led by this vehicle ignores the owner's tagged minefields: its
+// design has the mine sweeper design type (spec 03 §6.2; the type is inferred).
+bool leadsSweeperGroup(const GameState& s, const Vehicle& lead);
+
 // Shortest route using only what empire `e` knows: systems it explored and
-// warp links it traversed (an invalid empire routes omnisciently). Systems to
-// avoid are never crossed (except the start and destination systems); when no
-// other route exists there is none (spec 03 §6.2). Only the first 10 warp
-// points of a system are used. Tagged minefields are never entered unless they
-// are the destination, and known hazard sectors lose ties.
+// warp links it traversed (an invalid empire routes omnisciently). Only the
+// first 10 warp points of a system are used, and known hazard sectors lose
+// ties. The empire's Ship Movement options (spec 03 §6.2):
+// - avoid restricted systems: its systems to avoid are never crossed (except
+//   the start and destination systems); when no other route exists there is
+//   none;
+// - avoid tagged minefields (not for a sweeper group): tagged sectors are never
+//   entered unless they are the destination, and a warp link with a tagged
+//   sector on either side is not used.
 std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Location from, Location to);
 
 // Route to the nearest of several goals; `goal` is the index of the one reached

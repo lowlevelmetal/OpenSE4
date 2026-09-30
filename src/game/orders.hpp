@@ -25,6 +25,7 @@ namespace opense4::game {
 struct OrderContext {
     EmpireId owner;
     std::vector<VehicleId> members;  // the vehicle, or the fleet's members in its sector
+    VehicleId lead;                  // the group's leading ship (the vehicle, or the fleet's leader); invalid: the first member
     Location at;                     // where the next order starts
     bool carriesPopulation = false;  // some member carries population there
 };

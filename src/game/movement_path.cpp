@@ -7,6 +7,7 @@
 // one step. Costs are compared as (steps, hazard sectors entered,
 // straightness), so hazards and zig-zags only ever break ties.
 
+#include "datafile/datafile.hpp"
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
 #include "game/sight.hpp"
@@ -62,11 +63,16 @@ class Router {
 public:
     Router(const GameState& s, EmpireId e, RouteOptions options) : s_(s), e_(e), options_(options) {
         if (knowing()) {
+            // The empire's Ship Movement options decide what is avoided (spec 03 §6.2).
             const Empire& emp = s.empire(e);
-            tagged_ = emp.taggedMinefields;
-            std::sort(tagged_.begin(), tagged_.end());
-            avoided_ = emp.systemsToAvoid;
-            std::sort(avoided_.begin(), avoided_.end());
+            if (emp.avoidTaggedMinefields && !options.sweeper) {
+                tagged_ = emp.taggedMinefields;
+                std::sort(tagged_.begin(), tagged_.end());
+            }
+            if (emp.avoidRestrictedSystems) {
+                avoided_ = emp.systemsToAvoid;
+                std::sort(avoided_.begin(), avoided_.end());
+            }
         }
     }
 
@@ -259,6 +265,8 @@ private:
             const SpaceObject& far = s_.galaxy.object(wp.destination);
             if (avoided(far.system)) continue;
             const Location arrival{far.system, far.sector};
+            // A link with a tagged minefield on either side is not used (spec 03 §6.2).
+            if (obstacle(at) || obstacle(arrival)) continue;
             relax(u, arrival, kStep + (hazard(arrival) ? kHazard : 0), w, open);
         }
     }
@@ -302,11 +310,16 @@ private:
 
 } // namespace
 
+bool leadsSweeperGroup(const GameState& s, const Vehicle& lead) {
+    if (!lead.design.valid() || lead.design.index() >= s.designs.size()) return false;
+    return datafile::keysEqual(s.design(lead.design).designType, "Mine Sweeper");
+}
+
 std::optional<NearestPath> findPathToNearest(const Rules&, const GameState& s, EmpireId e, Location from,
                                              std::span<const Location> goals, RouteOptions options) {
     if (goals.empty()) return std::nullopt;
-    // Systems to avoid are never crossed; with no route around them there is
-    // no route (spec 03 §6.2, confirmed: binary).
+    // With the avoid option on, systems to avoid are never crossed; with no
+    // route around them there is no route (spec 03 §6.2, confirmed: binary).
     Router router(s, e, options);
     return router.run(from, goals);
 }
@@ -347,6 +360,11 @@ int etaTurns(const Rules& r, const GameState& s, const Vehicle& v, Location to) 
     if (speed <= 0) return -1;
     RouteOptions options;
     options.allowWarp = vehicleType(r, s, v) != ruleset::VehicleType::Fighter;
+    const Vehicle* lead = &v;
+    if (detail::followsFleetOrders(s, v))
+        if (const Fleet* f = s.fleet(v.fleet))
+            if (const Vehicle* l = detail::fleetLeader(s, *f)) lead = l;
+    options.sweeper = leadsSweeperGroup(s, *lead);
     const Location goals[] = {to};
     const auto p = findPathToNearest(r, s, v.owner, v.location, goals, options);
     if (!p) return -1;

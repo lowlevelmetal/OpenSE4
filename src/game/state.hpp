@@ -235,6 +235,13 @@ struct Empire {
     // set it with cmd::SetEncounterOptions; computer players copy it from their
     // AI_Settings each turn (spec 05 §7.5).
     EncounterClear clearOrdersOnEncounter = EncounterClear::Never;
+    // Ship Movement options (spec 03 §6.2): routes go around the tagged
+    // minefields, and never cross the systems to avoid, only while these are
+    // on. Both are on for a new empire (inferred, spec 03 §19 Q57). Players set
+    // them with cmd::SetEncounterOptions; computer players copy them from their
+    // AI_Settings each turn (spec 05 §7.5).
+    bool avoidTaggedMinefields = true;
+    bool avoidRestrictedSystems = true;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }

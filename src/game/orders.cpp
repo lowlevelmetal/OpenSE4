@@ -28,7 +28,8 @@ bool carriesPopulation(const GameState& s, std::span<const VehicleId> members) {
     });
 }
 
-// Fighters and neutral empires never use warp points (spec 03 §6.2, spec 01 §8).
+// Fighters and neutral empires never use warp points (spec 03 §6.2, spec 01
+// §8); a group led by a mine sweeper ignores tagged minefields.
 movement::RouteOptions routeOptions(const Rules& r, const GameState& s, const OrderContext& ctx) {
     movement::RouteOptions options;
     const bool fighters = std::any_of(ctx.members.begin(), ctx.members.end(), [&](VehicleId id) {
@@ -37,6 +38,8 @@ movement::RouteOptions routeOptions(const Rules& r, const GameState& s, const Or
     });
     const bool neutral = ctx.owner.valid() && ctx.owner.index() < s.empires.size() && s.empire(ctx.owner).kind == PlayerKind::Neutral;
     options.allowWarp = !fighters && !neutral;
+    const VehicleId leadId = ctx.lead.valid() ? ctx.lead : ctx.members.empty() ? VehicleId{} : ctx.members.front();
+    if (const Vehicle* lead = leadId.valid() ? s.vehicle(leadId) : nullptr) options.sweeper = movement::leadsSweeperGroup(s, *lead);
     return options;
 }
 
@@ -180,6 +183,7 @@ OrderContext orderContextOf(const GameState&, const Vehicle& v) {
     OrderContext ctx;
     ctx.owner = v.owner;
     ctx.members = {v.id};
+    ctx.lead = v.id;
     ctx.at = v.location;
     ctx.carriesPopulation = v.cargo.totalPopulation() > 0;
     return ctx;
@@ -190,6 +194,7 @@ OrderContext orderContextOf(const GameState& s, const Fleet& f) {
     ctx.owner = f.owner;
     const Vehicle* lead = movement::detail::fleetLeader(s, f);
     if (!lead) return ctx;
+    ctx.lead = lead->id;
     ctx.at = lead->location;
     for (VehicleId id : f.members)
         if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->location == ctx.at) ctx.members.push_back(id);
