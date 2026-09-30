@@ -1,5 +1,6 @@
 add_executable(opense4_tests
     main.cpp
+    combat_fixture.cpp
     engine_fixture.cpp
     test_ai.cpp
     test_app_settings.cpp
