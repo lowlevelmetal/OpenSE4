@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Turn style (`turn.cpp`) | Every game is resolved as a simultaneous turn; the setup's "One player after another" choice changes nothing | Spec 05 §8 "Turn-based game": each player's movement, combat and diplomacy happen live in that player's turn, and `empireEndOfTurn` runs when the player ends it | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played on one computer only (local and hotseat): network hosts, `opense4-server pbem` and PBEM turn processing refuse a turn-based game with a message. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles are strategic, so the Tactical or Strategic question never comes up | Spec 05 §9.1: on different machines the save file passes from player to player; spec 04 §3 step 1; spec 06 §2.7 | M |
 
 ## Economy and population (spec 02)
 

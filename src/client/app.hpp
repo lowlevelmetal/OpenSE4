@@ -36,6 +36,7 @@ struct AppOptions {
     bool classicQuickStart = false;  // skip the intro and start a quick game
     std::string classicRace;         // race preset for the quick game
     std::string classicWindow;       // window to open at start
+    bool classicTurnBased = false;   // a quick game in the turn-based style (spec 05 §8)
 
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;

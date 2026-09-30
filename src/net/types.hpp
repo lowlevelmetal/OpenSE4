@@ -21,6 +21,12 @@ inline constexpr size_t kMaxChatLength = 500;
 
 std::string_view appVersion();  // "OpenSE4 x.y.z"
 
+// Network and play-by-e-mail games are simultaneous only: OpenSE4 plays the
+// turn-based style on one computer (docs/PARITY_GAPS.md).
+inline constexpr std::string_view kTurnBasedNotNetworked =
+    "Turn-based games (one player after another) can only be played on one computer in OpenSE4. "
+    "Choose the simultaneous turn style for network and play-by-e-mail games.";
+
 // ---- Lobby ---------------------------------------------------------------------------------
 
 enum class SlotKind : uint8_t { Human, Computer };

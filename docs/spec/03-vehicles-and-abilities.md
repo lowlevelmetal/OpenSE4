@@ -1471,7 +1471,8 @@ All rules in this section are (confirmed: binary).
     outside fleets (not bases or unit groups) in one sector with identical head orders.
     A group only loses members: after each action, members whose head order is no longer
     the leader's go on alone (or as a group of their own) from the next day, at their own
-    speed. A Load or Drop amount is shared by the group, as for fleets. When do groups
+    speed. A Load or Drop amount is shared by the group, as for fleets. In turn-based
+    games a group forms only among the ships moved by one command. When do groups
     form in the original, and can other vehicle classes join them? (inferred)
 52. **Greedy steps:** when moving straight, the three squares tried are the forward
     square and its two neighbours across the direction of travel, so a try can pick the
@@ -1491,3 +1492,11 @@ All rules in this section are (confirmed: binary).
     system is unexplored, whether or not the link is known. Orders sent again unchanged
     are not expanded again. The Load Cargo that Colonize adds takes an action of its own,
     like every order that needs no movement (§6.3). (inferred)
+55. **The Attack Sector question (turn-based, §6.2):** the engine asks before a human's group
+    (not made only of drones) steps into a sector holding a visible vehicle other than a mine,
+    or a colony, of an empire it is hostile to; a Warp jump asks about the far side. An Attack
+    order never asks about its target's sector. Orders a human gave in advance (`processTurn`)
+    and ministers' orders enter without asking. Which sectors does the original ask about?
+    (inferred)
+56. **Fighter recovery in turn-based games (§12):** "full movement points" is read as the
+    group's movement left being at least its maximum for the turn. (inferred)

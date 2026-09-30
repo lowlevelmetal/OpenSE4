@@ -1143,3 +1143,6 @@ highlighted, and an X marks each empire that has met one.
     slot ((turn ÷ N) − 1) mod 10 + 1 after turn processing, in local and hotseat games;
     network hosts have their own setting. Which files the original writes, and whether
     the count restarts on loading, are open. **(inferred)**
+39. **Default turn style.** §2.2 names the two turn styles but not which one a new game
+    starts with. OpenSE4 starts simultaneous (also for Quick Start). Which one does the
+    original's Mechanics tab select by default? **(inferred)**

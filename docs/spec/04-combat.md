@@ -956,6 +956,11 @@ checking in the running game.
 47. **Enemy tonnage destroyed.** Which tonnage does the design statistic add: the victim's
     hull `Tonnage`, or the tonnage its components fill? Do captured ships and destroyed
     planets add anything? Who sees another empire's statistics? Open.
+48. **Orders after combat in turn-based games.** §2 says combat neither clears orders nor
+    stops movement, while spec 03 §6.4 says that in turn-based games combat on entry stops
+    the move and clears the list. OpenSE4 fails the entering group's order (spec 03) and
+    otherwise only removes a Sentry at the head of a participant's list. Which groups lose
+    their orders in the original? (inferred)
 
 ### 19.1 What the engine does until the remaining questions are answered
 

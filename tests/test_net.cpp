@@ -754,3 +754,26 @@ tier = 2
     REQUIRE(rolled.has_value());
     CHECK(rolled->options.systemCount == 0);
 }
+
+TEST_CASE("net: turn-based games are refused for network and play-by-e-mail games") {
+    // A host set up for a turn-based game does not open.
+    net::HostConfig cfg = hostConfig();
+    cfg.setup.options.simultaneous = false;
+    net::HostSession host(engineRules(), cfg);
+    auto started = host.start();
+    REQUIRE_FALSE(started.has_value());
+    CHECK(started.error() == net::kTurnBasedNotNetworked);
+
+    // Nor does a saved turn-based game resume as a network game or process as PBEM.
+    game::GameState s = newEngineGame(3, 2, 8, true);
+    s.options.simultaneous = false;
+    game::SaveInfo info;
+    info.dataSet = game::dataSetIdentity(engineRules());
+    net::HostSession resumed(engineRules(), hostConfig());
+    auto back = resumed.resume(s, info);
+    REQUIRE_FALSE(back.has_value());
+    CHECK(back.error() == net::kTurnBasedNotNetworked);
+    auto processed = net::pbem::processTurn(engineRules(), s, info, std::filesystem::temp_directory_path());
+    REQUIRE_FALSE(processed.has_value());
+    CHECK(processed.error() == net::kTurnBasedNotNetworked);
+}

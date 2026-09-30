@@ -3,9 +3,9 @@
 // Select a holder in each list, then click a cargo item under one to move it
 // to the one selected in the other list, one, five, ten or all at a time.
 //
-// The classic game offers this window only in turn-based games. Our engine
-// resolves every game simultaneously, so the immediate transfer stays
-// available and the deferred Load / Drop Cargo orders are offered as well.
+// The classic game offers this window only in turn-based games. OpenSE4
+// keeps the immediate transfer in both styles and offers the deferred Load /
+// Drop Cargo orders as well; in a turn-based game those execute at once too.
 
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"

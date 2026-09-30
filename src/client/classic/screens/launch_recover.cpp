@@ -3,11 +3,11 @@
 // click a unit type to launch it. Right: the own unit groups in space; click
 // one to recover it into the ship selected on the left.
 //
-// The classic game launches at once. Our engine resolves turns
-// simultaneously, so each click gives a Launch Units or Recover Units order
-// placed at the head of the ship's (or planet's) orders, carried out during
-// the turn's movement phase; the pending ones are listed and can be taken
-// back. Colonies launch and recover without any bay: up to 1000 units of each
+// The classic game launches at once (turn-based games). Each click gives a
+// Launch Units or Recover Units order placed at the head of the ship's (or
+// planet's) orders: a turn-based game carries it out at once; a simultaneous
+// one during the turn's movement phase, and the pending ones are listed and
+// can be taken back. Colonies launch and recover without any bay: up to 1000 units of each
 // kind per turn (spec 03 §12). Launch / Recover Remotely (I / O) give the same
 // orders to a ship for another sector picked on the map.
 

@@ -64,9 +64,11 @@ namespace opense4::game::economy {
 inline constexpr int kConditionsOne = 100;
 inline constexpr int kConditionsMax = 150;
 
-// The turn number the original tests for "every N turns" rules. It advances the
-// date before the end-of-turn steps (spec 05 §8), while processTurn increments
-// GameState::turn at the very end, so during a turn this is turn + 1.
+// The turn number the original tests for "every N turns" rules. A simultaneous
+// turn advances the date before the end-of-turn steps (spec 05 §8), while
+// processTurn increments GameState::turn at the very end, so during a turn this
+// is turn + 1. A turn-based game advances it after the last player's
+// end-of-turn processing, so there it is the turn itself.
 uint32_t processingTurn(const GameState& s);
 
 // ---- Racial effects (spec 02 §8.2) ----------------------------------------------------------------

@@ -104,8 +104,43 @@ other empires' processing, events) wait in `GameState::pendingMood` for that emp
 update. The game's research pool starts at Starting Resources plus one turn of research,
 and the intelligence pool at 0 (`research::openingPools`, called by `createGame`).
 
-OpenSE4 resolves every game this way; the turn-based style (spec 05 §8, "Turn-based game")
-is not implemented. `empireEndOfTurn` is the per-player processing it would call.
+### Turn-based games
+
+With the turn style set to turn-based (`GameOptions::simultaneous` off; spec 01 §2.2,
+spec 05 §8 "Turn-based game"), players take their turns one after another in empire
+order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, API in
+`turn.hpp`):
+
+1. **Start of the player's turn**: the empire's destruction check (`score::checkDestruction`);
+   its vehicles regain their movement (`movement::startTurn(ctx, empire)`) and first carry
+   on with their order lists; then its start-of-turn step as in step 4 above
+   (`ai::updateAiState`, `ai::politicalStep` counting the previous game turn,
+   `ai::planOrders` for a computer player or active ministers, `ai::recordAiDecisions`).
+2. **The player's orders execute as they are given** (`applyLive`). `movement::runLive`
+   carries out the orders of the vehicles, fleets or planets a command set, action after
+   action until each has spent its movement points, waits or fails. A group that steps
+   into a sector where combat is possible fights there at once (mines strike first) and
+   its order fails; a human is first asked whether to enter a sector with visible enemies,
+   and answers with `cmd::EnterSector`. An order carried out in a sector (cargo, launches,
+   an attack on its target) offers it to combat without failing. Colony ships that reach
+   their planet with movement left found the colony at once. Messages take effect when
+   sent (`diplomacy::deliverMessages`), and sight and contact follow every move.
+3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living
+   empire's turn starts. Computer players take their turns the same way, one after
+   another (`resumeTurnBased`).
+4. **After the last player** the date advances, then the design cleanup (a new year), the
+   victory check and the event step run, the per-turn flags are cleared and the AI
+   remembers the turn, as in steps 7 to 10. `GameState::combats` keeps the battles of the
+   game turn in progress and of the one before, so each empire's political step counts
+   every battle of the previous game turn exactly once.
+
+In a turn-based game the end-of-turn processing sees the unadvanced date
+(`economy::processingTurn`). `processTurn` on a turn-based game plays the rest of the
+game turn: each player's `EmpireOrders` are carried out at its turn, and a human without
+orders is played by the computer as in a simultaneous turn. The per-turn records a live
+move needs across commands (steps made, emergency movement, units launched) are in
+`GameState::playerTurn`, so a game saved in the middle of a turn goes on the same.
+Network and play-by-e-mail games are simultaneous only (docs/PARITY_GAPS.md).
 
 ## Determinism
 
@@ -137,7 +172,7 @@ scaled to the window, drawn with the art from the player's install.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands, and it runs the End Turn flow for local, hotseat and network games |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, keeping the Attack Sector questions and the battle to show), and it runs the End Turn flow for local, hotseat and network games |
 | `art.*` | Pictures from the install, cached as textures |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
 | `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |

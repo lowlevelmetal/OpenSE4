@@ -3,6 +3,7 @@
 #include "game/serialize_io.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
+#include "net/types.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -82,6 +83,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
                                                       const fs::path& ordersDir) {
     ProcessReport rep;
     rep.turnBefore = state.turn;
+    if (!state.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
     std::error_code ec;
     if (!fs::is_directory(ordersDir, ec)) return std::unexpected(std::format("{}: no such directory", ordersDir.string()));
 

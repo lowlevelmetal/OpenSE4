@@ -24,6 +24,7 @@ struct ClassicOptions {
     std::string race;        // quick start race preset (folder name); empty = first
     int autoTurns = 0;       // let the computer play every empire for N turns first
     std::string openWindow;  // open this window at start (automation, screenshots)
+    bool turnBased = false;  // quick game in the turn-based style
 };
 
 class ClassicMode final : public Mode {
@@ -71,6 +72,9 @@ private:
     void drawNetwork(classic::UiContext& ui);
     bool chatOpen_ = false;
     std::string chatInput_;
+
+    // Turn-based games: the Attack Sector question.
+    void drawEntryQuestion(classic::UiContext& ui);
 
     // Hotseat hand-over between human players.
     void drawHandoff(classic::UiContext& ui);

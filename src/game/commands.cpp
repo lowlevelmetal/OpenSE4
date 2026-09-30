@@ -817,6 +817,43 @@ struct Applier {
         emp().clearOrdersOnEncounter = c.clearOrdersOnEncounter;
         return {};
     }
+
+    // ---- Turn-based games ----------------------------------------------------------------------
+
+    // The Attack Sector answer (spec 03 §6.2). Entering is carried out by the
+    // turn-based pipeline (applyLive, turn.hpp), which moves the group on;
+    // declining stops the move and the order fails: the list is cleared and
+    // Repeat switched off (spec 03 §6.4, §8).
+    R operator()(const cmd::EnterSector& c) {
+        if (s.options.simultaneous) return R::fail("Only in turn-based games");
+        std::string name;
+        if (c.fleet.valid()) {
+            Fleet* f = ownFleet(s, e, c.fleet);
+            if (!f) return R::fail("Not your fleet");
+            if (f->orders.empty()) return R::fail("The fleet has no orders");
+            if (c.enter) return {};
+            name = f->name;
+            f->orders.clear();
+            f->repeatOrders = false;
+            // Like any failed order: the members moving with the fleet lose theirs too.
+            const Vehicle* leader = fleetLeaderOf(*f);
+            for (VehicleId id : f->members)
+                if (Vehicle* v = s.vehicle(id); v && leader && v->location == leader->location) {
+                    v->orders.clear();
+                    v->repeatOrders = false;
+                }
+        } else {
+            Vehicle* v = ownVehicle(s, e, c.vehicle);
+            if (!v) return R::fail("Not your vehicle");
+            if (v->orders.empty()) return R::fail("The vehicle has no orders");
+            if (c.enter) return {};
+            name = v->name;
+            v->orders.clear();
+            v->repeatOrders = false;
+        }
+        addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.");
+        return {};
+    }
 };
 
 template <class T>
@@ -862,6 +899,7 @@ OPENSE4_CMD_NAME(SetColonyTypes)
 OPENSE4_CMD_NAME(SetEmpireOptions)
 OPENSE4_CMD_NAME(SetMinisters)
 OPENSE4_CMD_NAME(SetEncounterOptions)
+OPENSE4_CMD_NAME(EnterSector)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

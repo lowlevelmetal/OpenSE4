@@ -108,6 +108,8 @@ void updateAnger(TurnContext& ctx);
 // after the AI's commands were applied (difficulty, counters, war declarations and
 // accepted demands);
 void recordAiDecisions(TurnContext& ctx);
+// ... or one empire's, after its own group 1 (turn-based games, spec 05 §8).
+void recordAiDecisions(TurnContext& ctx, EmpireId e);
 // before the ministers act (territory and the state machine of §7.2): every
 // empire, or one empire at the start of its turn;
 void updateAiStates(TurnContext& ctx);

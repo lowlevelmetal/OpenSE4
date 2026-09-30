@@ -8,6 +8,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 
+#include <algorithm>
 #include <format>
 
 namespace opense4::client::classic {
@@ -15,10 +16,25 @@ namespace opense4::client::classic {
 ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player, SessionKind kind)
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {
     ended_.assign(state_.empires.size(), 0);
+    if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
     if (waiting_) return game::CommandResult::fail("Waiting for the other players");
+    if (turnBased() && kind_ != SessionKind::NetworkClient) {
+        const size_t battles = state_.combats.size();
+        const game::TurnResult res = game::applyLive(*rules_, state_, player_, c);
+        ++revision_;
+        for (const game::EntryQuestion& q : res.questions)
+            if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
+        for (size_t i = battles; i < state_.combats.size() && !newBattle_; ++i) {
+            const auto& who = state_.combats[i].participants;
+            if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
+        }
+        if (!res.rejected.empty()) return game::CommandResult::fail(res.rejected.front().second);
+        orders_.push_back(std::move(c));
+        return {};
+    }
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
     if (r.ok) {
         orders_.push_back(std::move(c));
@@ -27,8 +43,47 @@ game::CommandResult ClassicSession::issue(game::Command c) {
     return r;
 }
 
+void ClassicSession::answer(bool enter) {
+    if (questions_.empty()) return;
+    const game::EntryQuestion q = questions_.front();
+    questions_.erase(questions_.begin());
+    issue(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, enter});
+}
+
+std::optional<size_t> ClassicSession::takeNewBattle() {
+    std::optional<size_t> out = newBattle_;
+    newBattle_.reset();
+    return out;
+}
+
+void ClassicSession::takeResult(const game::TurnResult& result) {
+    notices_.clear();
+    for (const auto& [empire, text] : result.rejected)
+        if (empire == player_) notices_.push_back(text);
+    questions_ = result.questions;
+}
+
+void ClassicSession::resumeTurnBased() {
+    const game::TurnResult result = game::resumeTurnBased(*rules_, state_);
+    // The session belongs to the human whose turn it is (hotseat: the next one).
+    if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
+    takeResult(result);
+}
+
 void ClassicSession::endTurn() {
     if (waiting_) return;
+    if (turnBased() && kind_ != SessionKind::NetworkClient) {
+        // The player's end-of-turn processing; the computer players' turns;
+        // then the next human's turn starts.
+        const game::TurnResult result = game::endPlayerTurn(*rules_, state_, player_);
+        if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
+        takeResult(result);
+        orders_.clear();
+        waiting_ = false;
+        ++revision_;
+        if (onNewTurn) onNewTurn();
+        return;
+    }
     if (kind_ == SessionKind::NetworkClient) {
         if (transport_) transport_->submitOrders(game::EmpireOrders{player_, state_.turn, orders_});
         waiting_ = true;
@@ -101,11 +156,16 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
+    questions_.clear();
+    newBattle_.reset();
+    if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     beginTurn();
 }
 
 void ClassicSession::simulateTurns(int n) {
+    // A turn-based game plays whole game turns the same way (processTurn).
     for (int i = 0; i < n && !state_.gameOver; ++i) game::processTurn(*rules_, state_, {});
+    if (n > 0 && turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     if (n > 0) beginTurn();
 }
 

@@ -1663,10 +1663,16 @@ last seen, and step 12 drops those seen more than 50 turns before the current tu
 at turn T: still known at T + 50, forgotten at T + 51). How a design's date is set is open
 question 31.
 
-**OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for every game, and
-`empireEndOfTurn` is one empire's end-of-turn processing. Every step has a stable iteration
-order and draws its randomness from `GameState::rng`. The turn-based style is not
-implemented. The engine's choices where this section is silent are open question 24.
+**OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for a simultaneous game,
+and `empireEndOfTurn` is one empire's end-of-turn processing. A turn-based game
+(`turn_based.cpp`) starts each player's turn with its destruction check, its vehicles'
+movement and continued orders and its start-of-turn step; `applyLive` carries out each
+order as it is given (`movement::runLive`), `endPlayerTurn` runs `empireEndOfTurn` and
+passes the turn on, and after the last player the date, design cleanup, victory check and
+event step run. Every step has a stable iteration order and draws its randomness from
+`GameState::rng`. The engine's choices where this section is silent are open questions 24
+(both styles) and 32 (turn-based games). Turn-based games are not offered over the network
+or by e-mail.
 
 ## 9. Multiplayer
 
@@ -2099,3 +2105,32 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     empire has; a design already known keeps the later of the two dates. So two partners
     forget a design together unless one of them sees it again. Does the original date
     shared designs the same way, and does anything else renew a date?
+32. **Turn-based details** (§8 "Turn-based game", spec 03 §6.3). Where the rules leave a
+    detail open, OpenSE4:
+    - at the start of a player's turn refills its vehicles' movement and lets every group
+      carry on with its orders first, then runs the start-of-turn step (AI state, political
+      step, ministers);
+    - carries out a computer player's (or a minister's) orders of one planning pass
+      together after the pass, and a human's one command at a time;
+    - lets a group act until it has no movement left, waits, fails or has no orders; a
+      repeating list that goes round once without a step waits for the next turn;
+    - fights a battle when a group steps into a sector where combat is possible (the
+      entering group's order fails) or carries out an order in a sector (cargo, launches,
+      an attack on its target; the order stands), never for groups that merely sit;
+    - keeps a colony ship's Colonize order waiting at its planet until it has movement
+      left, then founds the colony at once;
+    - clears the per-turn message flags when the game turn ends, not at each player's
+      turn;
+    - counts, in each empire's political step, the battles, reports and messages of the
+      previous game turn (every player's turn of it), and has the AI remember the battles
+      of the game turn when it ends;
+    - lets the end-of-turn processing see the date before it advances ("every N turns"
+      rules test the unadvanced turn);
+    - gives an empire founded during the game turn (a rebel colony) its turn when its
+      number comes up, possibly in the same game turn;
+    - counts a vehicle that moved during the game turn, in anyone's player turn, as having
+      come from the sector it left (spec 04 §3 attackers and start boxes);
+    - plays a human without orders in `processTurn` by the computer, as in a simultaneous
+      turn, and carries out orders given in advance without the Attack Sector question.
+
+    Which of these does the original do? (inferred)

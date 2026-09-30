@@ -370,10 +370,11 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
 
     // 1. Combat. Attacking or defending is judged by where the battle was:
     // outside our territory we are the attacker (inferred; the engine does not
-    // record who started a battle).
+    // record who started a battle). Only the battles of the counted turn:
+    // turn-based games keep two turns' battles.
     if (belowNonAggression)
         for (const CombatRecord& rec : s.combats) {
-            if (!involves(rec, e.id) || !involves(rec, x.id)) continue;
+            if (!in.counts(rec.turn) || !involves(rec, e.id) || !involves(rec, x.id)) continue;
             const bool attacking = !contains(ours, rec.location.system);
             switch (outcomeFor(rec, e.id)) {
                 case Outcome::Won: add(attacking ? t.attackingWon : t.defendingWon); break;
@@ -487,7 +488,7 @@ void rememberEvents(GameState& s, Empire& e, const std::vector<SystemId>& territ
         rel.combatsLastTurn = rel.combatsThisTurn;
         rel.combatsThisTurn = 0;
         for (const CombatRecord& rec : s.combats) {
-            if (!involves(rec, e.id) || !involves(rec, x)) continue;
+            if (rec.turn != s.turn || !involves(rec, e.id) || !involves(rec, x)) continue;
             ++rel.combatsThisTurn;
             if (contains(territory, rec.location.system)) {  // they came to us (inferred)
                 rel.attackedUs = true;
@@ -566,6 +567,21 @@ void recordAiDecisions(TurnContext& ctx) {
         Rng rng = stepRng(s, e.id);
         recordDecisions(ctx, e.id, rng);
     }
+}
+
+void recordAiDecisions(TurnContext& ctx, EmpireId id) {
+    GameState& s = ctx.state;
+    if (!id.valid() || id.index() >= s.empires.size()) return;
+    Empire& e = s.empire(id);
+    if (e.aiDifficulty < 0 && e.kind != PlayerKind::Human) {
+        const auto& random = s.options.randomAiPlayers;
+        const bool randomPlayer = id.index() < random.size() && random[id.index()] != 0;
+        e.aiDifficulty = randomPlayer || s.turn == 0 ? difficultyOf(s, id) : rebelDifficulty(s);
+    }
+    if (!e.alive) return;
+    keepCounters(s, e);
+    Rng rng = stepRng(s, id);
+    recordDecisions(ctx, id, rng);
 }
 
 namespace {

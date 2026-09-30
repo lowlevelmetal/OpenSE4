@@ -265,7 +265,11 @@ void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
     std::vector<game::VehicleId> list;
     for (const game::Vehicle& v : ui.state().vehicles) {
         if (v.owner != ui.session.player() || game::isUnitType(game::vehicleType(ui.rules(), ui.state(), v))) continue;
-        if (idleOnly && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty()))) continue;
+        // "Next ship": in a turn-based game the ships that still have movement
+        // points, in a simultaneous game those without orders (spec 03 §17).
+        if (idleOnly && ui.session.turnBased() && v.movement <= 0) continue;
+        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty())))
+            continue;
         if (prefs.cycleSkipsDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
         // "Stop once per location": skip other ships in the sector we are leaving.
         if (prefs.cycleOncePerLocation && current && v.id != current->id && v.location == current->location) continue;

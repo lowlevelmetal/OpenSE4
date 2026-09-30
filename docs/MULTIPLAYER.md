@@ -13,6 +13,10 @@ Both follow the classic game's simultaneous mode (spec 05 §9): players only giv
 orders, the host resolves everyone's turn at once, and the computer plays any empire
 whose orders are missing. The host is authoritative.
 
+Turn-based games (one player after another, spec 05 §8) are played on one computer
+only, alone against the computer or hotseat. A host or `opense4-server` refuses a
+turn-based setup or saved game, and so does PBEM processing (docs/PARITY_GAPS.md).
+
 Everything here is implemented by `src/net` (the `opense4_net` library),
 `src/game/serialize.*` (the save format) and `src/server` (`opense4-server`).
 

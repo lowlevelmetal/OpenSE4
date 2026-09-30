@@ -8,10 +8,17 @@
 // Every change the player makes goes through issue(): the command is
 // validated and applied to the local state at once (so every window shows
 // it immediately) and recorded for the turn.
+//
+// Turn-based games (GameOptions::simultaneous off; local and hotseat only)
+// play one player after another: issue() carries each order out at once
+// (game::applyLive: ships move, battles are fought, messages take effect),
+// End Turn runs the player's end-of-turn processing and the computer
+// players' turns, and the turn passes to the next human.
 
 #include "game/commands.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
+#include "game/turn.hpp"
 
 #include <expected>
 #include <filesystem>
@@ -51,9 +58,20 @@ public:
     // Bumped on every state change; windows use it to refresh cached views.
     uint64_t revision() const { return revision_; }
 
-    // Validates and applies a command for the local player.
+    // Validates and applies a command for the local player (turn-based games:
+    // and carries it out).
     game::CommandResult issue(game::Command c);
     const std::vector<game::Command>& ordersThisTurn() const { return orders_; }
+
+    bool turnBased() const { return game::turnBased(state_); }
+    // Turn-based games: moves of the player's ships that stopped before a
+    // sector with enemies, oldest first; answer() gives the Attack Sector
+    // answer to the first (spec 03 §6.2).
+    const std::vector<game::EntryQuestion>& questions() const { return questions_; }
+    void answer(bool enter);
+    // Turn-based games: the first battle the player's last order started, to
+    // show at once (an index into GameState::combats), then forgotten.
+    std::optional<size_t> takeNewBattle();
 
     // Ends the local player's turn. Local: every computer empire plays and the
     // turn is processed at once. Hotseat: moves to the next human who has not
@@ -91,6 +109,10 @@ public:
 
 private:
     void beginTurn();
+    // Turn-based games: plays up to a human player's turn and hands the
+    // session to that player.
+    void resumeTurnBased();
+    void takeResult(const game::TurnResult& result);
 
     std::shared_ptr<const game::Rules> rules_;
     game::GameState state_;
@@ -103,6 +125,8 @@ private:
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
     std::string autosaveNote_;
+    std::vector<game::EntryQuestion> questions_;
+    std::optional<size_t> newBattle_;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).
