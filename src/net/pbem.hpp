@@ -81,8 +81,10 @@ struct ProcessReport {
     std::vector<std::string> warnings;           // skipped files and why
     std::vector<std::string> rejectedCommands;   // "Empire: Command: reason"
     std::vector<std::filesystem::path> used;     // .plr files that were processed
-    // Turn-based games: the empire whose turn it is now (send it the game);
-    // empty when none (the game is over).
+    // Turn-based games: one player's turn was played (the one in `submitted`
+    // or `playedByComputer`); the empire whose turn it is now (send it the
+    // game), empty when none (the game is over).
+    bool turnBased = false;
     std::string next;
     game::EmpireId nextEmpire;
 };

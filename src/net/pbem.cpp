@@ -186,6 +186,7 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
     }
 
     if (turnBased) {
+        rep.turnBased = true;
         // One player's turn: its commands one after another, as the player
         // gave them, then the end of its turn (spec 05 §8).
         if (playerTurn) {

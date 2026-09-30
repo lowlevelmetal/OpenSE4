@@ -322,8 +322,11 @@ int runServer(std::span<char*> args) {
     std::signal(SIGINT, onSignal);
     std::signal(SIGTERM, onSignal);
 
+    // What was saved last (turn-based: the game turn and whose turn it was).
+    std::optional<std::pair<uint32_t, uint32_t>> lastSaved;
     auto saveNow = [&](std::string_view why) {
         if (!host.state()) return;
+        lastSaved = std::pair{host.state()->turn, host.activeEmpire().value};
         if (auto r = host.save(saveFile); r) say(std::format("Saved turn {} to {} ({})", host.state()->turn, saveFile.string(), why));
         else say("Could not save: " + r.error());
     };
@@ -354,7 +357,8 @@ int runServer(std::span<char*> args) {
             // Turn-based games also save as each player's turn begins.
             const bool autosaveTurn = *autosave > 0 && host.state() && host.state()->turn % *autosave == 0;
             if (e.type == net::EventType::NewTurn && autosaveTurn && !host.turnBased()) saveNow("autosave");
-            if (e.type == net::EventType::PlayerTurn && autosaveTurn) saveNow("autosave");
+            if (e.type == net::EventType::PlayerTurn && autosaveTurn && lastSaved != std::pair{host.state()->turn, host.activeEmpire().value})
+                saveNow("autosave");
         }
         if (*maxTurns > 0 && host.state() && host.state()->turn >= static_cast<uint32_t>(*maxTurns)) {
             say(std::format("Reached turn {}; stopping.", host.state()->turn));
@@ -429,7 +433,13 @@ int pbemProcess(std::span<char*> args) {
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
     auto rep = net::pbem::processGameFile(**rules, o->get("game"), o->get("orders"), options);
     if (!rep) return fail(rep.error(), 1);
-    std::printf("Processed turn %u; the game is now at turn %u.\n", rep->turnBefore, rep->turnAfter);
+    const std::string played = !rep->submitted.empty() ? rep->submitted.front() : !rep->playedByComputer.empty() ? rep->playedByComputer.front() : "";
+    if (rep->turnBased && !played.empty())
+        std::printf("Played %s's turn of turn %u; the game is now at turn %u.\n", played.c_str(), rep->turnBefore, rep->turnAfter);
+    else if (rep->turnBased)
+        std::printf("The computer players played on; the game is now at turn %u.\n", rep->turnAfter);
+    else
+        std::printf("Processed turn %u; the game is now at turn %u.\n", rep->turnBefore, rep->turnAfter);
     for (const auto& s : rep->submitted) std::printf("  orders: %s\n", s.c_str());
     for (const auto& s : rep->playedByComputer) std::printf("  no orders, played by the computer: %s\n", s.c_str());
     for (const auto& s : rep->warnings) std::printf("  warning: %s\n", s.c_str());
