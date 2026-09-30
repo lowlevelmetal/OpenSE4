@@ -207,3 +207,111 @@ TEST_CASE("ship windows: stellar manipulation checks") {
     CHECK(std::string(shipui::stellarInfo(StellarAction::CreateConstructedPlanet).picture) == "Ring");
     CHECK(shipui::stellarInfo(StellarAction::CreateConstructedPlanet).frames == 16);
 }
+
+// ---- The scrap window's actions in the engine (docs/spec/03 §9, §14, §15) ----------------------------
+
+TEST_CASE("ship windows: retrofit follows the original's checks and costs") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    Colony& home = homeworld(s, me);
+    const Location where = locationOf(s.galaxy, home.planet);
+    const DesignId light = frigate(s, r, me, "Light", {"Test Laser"});
+    const DesignId heavy = frigate(s, r, me, "Heavy", {"Test Laser", "Test Laser", "Test Laser", "Test Laser", "Test Laser"});
+    const DesignId bare = frigate(s, r, me, "Bare", {});
+    const DesignId yarded = frigate(s, r, me, "Yarded", {"Test Yard Module"});
+    const VehicleId id = addTestVehicle(s, r, light, where).id;
+
+    CHECK_FALSE(apply(r, s, me, cmd::Retrofit{id, light}).ok);  // identical: nothing to do
+    // Only an increase is limited: 5 lasers cost far more than 50 % over the light design.
+    const CommandResult tooDear = apply(r, s, me, cmd::Retrofit{id, heavy});
+    CHECK_FALSE(tooDear.ok);
+    CHECK(tooDear.error.find("costs too much") != std::string::npos);
+    // Removing parts only is allowed and free.
+    const Resources before = s.empire(me).stockpile;
+    REQUIRE(apply(r, s, me, cmd::Retrofit{id, bare}).ok);
+    CHECK(s.empire(me).stockpile == before);
+    CHECK(s.vehicle(id)->design == bare);
+    // Space yards cannot be added.
+    CHECK_FALSE(apply(r, s, me, cmd::Retrofit{id, yarded}).ok);
+    // Cargo forbids it; so does a cloak.
+    s.vehicle(id)->cargo.population.push_back({me, 1});
+    CHECK_FALSE(apply(r, s, me, cmd::Retrofit{id, light}).ok);
+    s.vehicle(id)->cargo = {};
+    s.vehicle(id)->status = VehicleStatus::Cloaked;
+    CHECK_FALSE(apply(r, s, me, cmd::Retrofit{id, light}).ok);
+    s.vehicle(id)->status = VehicleStatus::Normal;
+    // A cloaked yard ship does not count as a yard.
+    home.facilities.erase(std::remove_if(home.facilities.begin(), home.facilities.end(),
+                                         [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); }),
+                          home.facilities.end());
+    const DesignId tender = addTestDesign(s, r, me, "Tender", "Test Station", {"Test Bridge", "Test Yard Module"});
+    const VehicleId yard = addTestVehicle(s, r, tender, where).id;
+    s.vehicle(yard)->status = VehicleStatus::Cloaked;
+    CHECK_FALSE(apply(r, s, me, cmd::Retrofit{id, light}).ok);
+    s.vehicle(yard)->status = VehicleStatus::Normal;
+    // Adding a part costs truncate(cost x 120 %); it starts destroyed.
+    const Resources funds = s.empire(me).stockpile;
+    REQUIRE(apply(r, s, me, cmd::Retrofit{id, light}).ok);
+    CHECK(funds - s.empire(me).stockpile == Resources{xmath::pctTrunc(40, 120), 0, xmath::pctTrunc(10, 120)});
+    CHECK(s.vehicle(id)->damage.back() == entryStructure(r, s.design(light), s.design(light).entries.size() - 1));
+}
+
+TEST_CASE("ship windows: scrap and mothball rules") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId mineD = addTestDesign(s, r, me, "Mine", "Test Mine Hull", {"Test Warhead"});
+    const DesignId droneD = addTestDesign(s, r, me, "Drone", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    const DesignId fighterD = addTestDesign(s, r, me, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    CHECK_FALSE(apply(r, s, me, cmd::Scrap{addTestVehicle(s, r, mineD, where).id}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::Scrap{addTestVehicle(s, r, droneD, where).id}).ok);
+    // A fighter group returns the unit percentage per unit.
+    Vehicle& group = addTestVehicle(s, r, fighterD, where);
+    group.count = 3;
+    const VehicleId gid = group.id;
+    const Resources unitCost = computeDesignStats(r, nullptr, s.design(fighterD)).cost;
+    const Resources before = s.empire(me).stockpile;
+    REQUIRE(apply(r, s, me, cmd::Scrap{gid}).ok);
+    CHECK(s.empire(me).stockpile - before ==
+          Resources{3 * xmath::pctRound(unitCost.v[0], 30), 3 * xmath::pctRound(unitCost.v[1], 30), 3 * xmath::pctRound(unitCost.v[2], 30)});
+
+    // Mothballing needs no cargo; the ship loses its supply; unmothballing needs no yard.
+    const DesignId d = frigate(s, r, me, "Sleeper", {"Test Supply Pod"});
+    const VehicleId ship = addTestVehicle(s, r, d, where).id;
+    s.vehicle(ship)->cargo.population.push_back({me, 1});
+    CHECK_FALSE(apply(r, s, me, cmd::Mothball{ship, true}).ok);
+    s.vehicle(ship)->cargo = {};
+    REQUIRE(apply(r, s, me, cmd::Mothball{ship, true}).ok);
+    CHECK(s.vehicle(ship)->supply == 0);
+    CHECK(vehicleMaxMovement(r, s, *s.vehicle(ship)) == 0);
+    s.vehicle(ship)->location = {where.system, Sector{where.sector.x == 0 ? 1 : 0, where.sector.y}};
+    REQUIRE(apply(r, s, me, cmd::Mothball{ship, false}).ok);  // away from any yard or depot
+    CHECK(s.vehicle(ship)->supply == 0);                      // no depot: it stays empty
+    // Bases come back with unlimited supply.
+    const DesignId baseD = addTestDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters"});
+    const VehicleId base = addTestVehicle(s, r, baseD, where).id;
+    REQUIRE(apply(r, s, me, cmd::Mothball{base, true}).ok);
+    REQUIRE(apply(r, s, me, cmd::Mothball{base, false}).ok);
+    CHECK(s.vehicle(base)->supply == kUnlimitedSupply);
+}
+
+TEST_CASE("ship windows: who can join a fleet") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
+    const VehicleId ship = addTestVehicle(s, r, frigate(s, r, me, "Lead", {}), where).id;
+    const VehicleId fighters = addTestVehicle(s, r, addTestDesign(s, r, me, "F", "Test Fighter Hull", {"Test Fighter Engine"}), where).id;
+    const VehicleId sat = addTestVehicle(s, r, addTestDesign(s, r, me, "S", "Test Satellite Hull", {"Test Satellite Gun"}), where).id;
+    const VehicleId mine = addTestVehicle(s, r, addTestDesign(s, r, me, "M", "Test Mine Hull", {"Test Warhead"}), where).id;
+    const VehicleId drone = addTestVehicle(s, r, addTestDesign(s, r, me, "D", "Test Drone Hull", {"Test Engine", "Test Warhead"}), where).id;
+    const VehicleId base = addTestVehicle(s, r, addTestDesign(s, r, me, "B", "Test Station", {"Test Bridge"}), where).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Wing", {ship, fighters}}).ok);  // fighter groups can join
+    const FleetId wing = s.fleets.back().id;
+    CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, sat}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, mine}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, drone}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::JoinFleet{wing, base}).ok);  // Bases Can Join Fleets is off
+}

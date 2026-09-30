@@ -1,4 +1,5 @@
 #include "datafile/datafile.hpp"
+#include "ruleset/ability_names.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <doctest/doctest.h>
@@ -142,4 +143,56 @@ TEST_CASE("ruleset: a player's installed classic data set (opt-in)") {
     CHECK(result.diagnostics.errors.empty());
     CHECK(result.ruleset->components.size() > 100);
     CHECK(result.ruleset->techAreas.size() > 20);
+}
+
+TEST_CASE("ruleset: ability names, the 20-ability cap, mount fields and the list override") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "opense4_ability_rules_data";
+    fs::remove_all(dir);
+    fs::copy(kFixture, dir);
+    {
+        std::ofstream out(dir / "Components.txt", std::ios::trunc);
+        out << "*BEGIN*\nName := Busy Part\nTonnage Space Taken := 1\nTonnage Structure := 1\nCost Minerals := 1\nCost Organics := 0\n"
+               "Cost Radioactives := 0\nVehicle Type := Ship\nVechicle List Type Override := Ships, Satellites and WeapPlatforms\n"
+               "Restrictions := None\nNumber of Tech Req := 0\nNumber of Abilities := 22\n";
+        for (int i = 1; i <= 22; ++i) {
+            const char* type = i == 2 ? "Warp Drive Deluxe" : i == 3 ? "System - Damage" : "Supply Storage";
+            out << "Ability " << i << " Type := " << type << "\nAbility " << i << " Descr := x\nAbility " << i << " Val 1 := " << i
+                << "\nAbility " << i << " Val 2 :=\n";
+        }
+        out << "Weapon Type := None\n*END*\n";
+    }
+    {
+        std::ofstream out(dir / "CompEnhancement.txt", std::ios::trunc);
+        out << "*BEGIN*\nLong Name := Picky Mount\nCost Percent := 110\nTonnage Percent := 100\nTonnage Structure Percent := 100\n"
+               "Damage Percent := 100\nSupply Percent := 100\nShield Percent := 150\nRange Modifier := 0\nWeapon To Hit Modifier := 0\n"
+               "Vehicle Size Minimum := 100\nVehicle Size Maximum := 400\nComp Family Requirement := 77, 78\n"
+               "Weapon Type Requirement := Any\nVehicle Type := Ship\nNumber of Tech Req := 1\nTech Area Req 1 := Drive Systems\n"
+               "Tech Level Req 1 := 2\n*END*\n";
+    }
+    const auto result = ruleset::loadRuleset(dir);
+    fs::remove_all(dir);
+    REQUIRE(result.ruleset);
+    const auto& errors = result.diagnostics.errors;
+    const auto& warnings = result.diagnostics.warnings;
+    CHECK(mentions(errors, "unknown ability type 'Warp Drive Deluxe'"));
+    CHECK(mentions(warnings, "'System - Damage' has no effect"));
+    // At most 20 abilities are read (the unknown one is still counted).
+    const ruleset::Component* part = result.ruleset->findComponent("Busy Part");
+    REQUIRE(part);
+    CHECK(part->abilities.size() == 20);
+    CHECK(result.diagnostics.unreadFields.contains("Components.txt: Ability 21 Type"));
+    // The override enables every class whose keyword occurs in the lower-cased text.
+    CHECK(part->vehicles == (ruleset::maskOf(ruleset::VehicleType::Ship) | ruleset::maskOf(ruleset::VehicleType::Satellite) |
+                             ruleset::maskOf(ruleset::VehicleType::WeaponPlatform)));
+    REQUIRE(result.ruleset->weaponMounts.size() == 1);
+    const ruleset::WeaponMount& m = result.ruleset->weaponMounts[0];
+    CHECK(m.shieldPercent == 150);
+    CHECK(m.maximumVehicleSize == 400);
+    CHECK(m.familyRequirement == std::vector<int>{77, 78});
+    REQUIRE(m.requirements.size() == 1);
+    CHECK(m.requirements[0].level == 2);
+    CHECK(ruleset::abilityNameStatus("ai tag 07") == ruleset::AbilityNameStatus::Known);
+    CHECK(ruleset::abilityNameStatus("Resupply Pod") == ruleset::AbilityNameStatus::Known);
+    CHECK(ruleset::abilityNameStatus("System - Sensor Interference") == ruleset::AbilityNameStatus::Ignored);
 }
