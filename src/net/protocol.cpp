@@ -34,6 +34,9 @@ std::string_view displayName(EventType t) {
         case EventType::TurnProcessing: return "processing";
         case EventType::NewTurn: return "new turn";
         case EventType::GameOver: return "game over";
+        case EventType::PlayerTurn: return "player turn";
+        case EventType::StateUpdated: return "state updated";
+        case EventType::CommandsDone: return "commands done";
     }
     return "?";
 }
@@ -46,7 +49,14 @@ std::string describe(const Event& e) {
         case EventType::PlayerReconnected:
             return std::format("{} {} (slot {}){}{}", tag, e.player, e.slot, e.text.empty() ? "" : ": ", e.text);
         case EventType::PlayerLeft: return std::format("{} {}{}{}", tag, e.player, e.text.empty() ? "" : ": ", e.text);
-        case EventType::OrdersReceived: return std::format("{} turn {} from {} (empire {})", tag, e.turn, e.player, e.empire.value);
+        case EventType::OrdersReceived:
+            return std::format("{} turn {} from {} (empire {}){}{}", tag, e.turn, e.player, e.empire.value, e.text.empty() ? "" : ": ", e.text);
+        case EventType::PlayerTurn:
+            if (!e.empire.valid()) return std::format("{} turn {}: nobody's turn (waiting)", tag, e.turn);
+            return std::format("{} turn {}: {} (empire {}){}{}", tag, e.turn, e.player.empty() ? std::string("computer") : e.player,
+                               e.empire.value, e.text.empty() ? "" : ", ", e.text);
+        case EventType::CommandsDone:
+            return std::format("{} request {}{}{}", tag, e.request, e.text.empty() ? "" : ": ", e.text);
         case EventType::GameStarted:
         case EventType::NewTurn:
         case EventType::TurnProcessing:

@@ -1,13 +1,16 @@
 // Multiplayer: password hashing, protocol, framing, UPnP fallback, a host
 // with two clients on 127.0.0.1 (lobby, turns, reconnects, timeouts, admin,
-// kicks, hostile input), save/resume, PBEM files and server setup files.
+// kicks, hostile input), save/resume, PBEM files and server setup files;
+// turn-based games over the network and by e-mail.
 // Everything runs in one process on loopback with ephemeral ports; nothing
 // needs a router or the Internet.
 
 #include "engine_fixture.hpp"
 
+#include "game/query.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
+#include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/client.hpp"
 #include "net/connection.hpp"
@@ -23,6 +26,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <thread>
 
 using namespace opense4;
@@ -105,6 +109,27 @@ TEST_CASE("net: protocol messages round trip") {
     CHECK_FALSE(net::proto::validPlayerName("a\nb"));
     CHECK(net::proto::sanitize("a\x01" "b\nc", 10) == "a b c");
     CHECK(net::describe(net::Event{EventType::Chat, "hi", "alice"}) == "[chat] alice: hi");
+
+    // Turn-based messages.
+    net::TurnStatus status;
+    status.turn = 4;
+    status.turnBased = true;
+    status.active = game::EmpireId{1u};
+    status.empires.resize(2);
+    status.empires[1].active = true;
+    net::TurnStatus statusBack;
+    REQUIRE(net::proto::decode(net::proto::encode(status), statusBack, error));
+    CHECK(statusBack.turnBased);
+    CHECK(statusBack.active == game::EmpireId{1u});
+    REQUIRE(statusBack.activeStatus() != nullptr);
+    CHECK(statusBack.activeStatus() == &statusBack.empires[1]);
+    net::proto::PlayResult result{7, 4, true, {}, {"SetOrders: Not your vehicle"}};
+    net::proto::PlayResult resultBack;
+    REQUIRE(net::proto::decode(net::proto::encode(result), resultBack, error));
+    CHECK(resultBack.request == 7);
+    CHECK(resultBack.refused.size() == 1);
+    net::Event turnEvent{EventType::PlayerTurn, {}, "bob", net::kNoSlot, game::EmpireId{1u}, 4};
+    CHECK(net::describe(turnEvent) == "[player turn] turn 4: bob (empire 1)");
 }
 
 namespace {
@@ -196,7 +221,7 @@ TEST_CASE("net: port mapper fallback without a router") {
 
 namespace {
 
-net::HostConfig hostConfig(int humans = 2) {
+net::HostConfig hostConfig(int humans = 2, bool turnBased = false) {
     net::HostConfig c;
     c.gameName = "Loopback";
     c.bindAddress = "127.0.0.1";
@@ -205,6 +230,7 @@ net::HostConfig hostConfig(int humans = 2) {
     c.upnp.enabled = false;
     c.setup.seed = 21;
     c.setup.options.systemCount = 10;
+    c.setup.options.simultaneous = !turnBased;
     return c;
 }
 
@@ -264,12 +290,12 @@ std::string noteOf(const game::GameState& s, game::EmpireId e) {
 
 // Two players in a started game with one computer empire.
 struct TwoPlayerGame {
-    net::HostSession host{engineRules(), hostConfig()};
+    net::HostSession host;
     net::ClientSession alice{net::ClientConfig{}};
     net::ClientSession bob{net::ClientConfig{}};
     std::unique_ptr<Loop> loop;
 
-    TwoPlayerGame() {
+    explicit TwoPlayerGame(bool turnBased = false) : host(engineRules(), hostConfig(2, turnBased)) {
         REQUIRE(host.start().has_value());
         alice.config() = clientConfig(host, "alice", "a-secret");
         bob.config() = clientConfig(host, "bob", "b-secret");
@@ -755,25 +781,525 @@ tier = 2
     CHECK(rolled->options.systemCount == 0);
 }
 
-TEST_CASE("net: turn-based games are refused for network and play-by-e-mail games") {
-    // A host set up for a turn-based game does not open.
-    net::HostConfig cfg = hostConfig();
-    cfg.setup.options.simultaneous = false;
-    net::HostSession host(engineRules(), cfg);
-    auto started = host.start();
-    REQUIRE_FALSE(started.has_value());
-    CHECK(started.error() == net::kTurnBasedNotNetworked);
 
-    // Nor does a saved turn-based game resume as a network game or process as PBEM.
-    game::GameState s = newEngineGame(3, 2, 8, true);
+// ---- Turn-based games over the network ----------------------------------------------------------------------
+
+namespace {
+
+// What a client sent in a turn-based game, in the order the host received
+// it: a command, or End Turn (no command).
+struct Sent {
+    game::EmpireId empire;
+    std::optional<game::Command> command;
+};
+
+bool viewMatches(const net::ClientSession& c, const net::HostSession& host) {
+    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), c.empire()));
+}
+
+// Sends one command and waits for the host's answer.
+void playOne(Loop& loop, net::ClientSession& c, game::Command cmd, std::vector<Sent>& log) {
+    auto request = c.play(cmd);
+    REQUIRE_MESSAGE(request.has_value(), (request ? std::string{} : request.error()));
+    log.push_back({c.empire(), std::move(cmd)});
+    REQUIRE(loop.until([&] { return c.pendingRequests() == 0; }));
+}
+
+// The turn of the client whose turn it is, as a player would play it from
+// its own view: a note, then every idle ship sent exploring, one command at
+// a time; an Attack Sector question is answered with "enter".
+void playTurn(Loop& loop, net::ClientSession& c, std::vector<Sent>& log) {
+    REQUIRE(c.myTurn());
+    playOne(loop, c, game::cmd::SetSystemNote{game::SystemId{0u}, std::format("{} was here on turn {}", c.config().playerName, c.state()->turn)},
+            log);
+    std::vector<game::VehicleId> idle;
+    for (const game::Vehicle& v : c.state()->vehicles)
+        if (v.owner == c.empire() && v.orders.empty() && !v.fleet.valid() && v.movement > 0) idle.push_back(v.id);
+    game::Order explore;
+    explore.kind = game::OrderKind::Explore;
+    for (game::VehicleId id : idle) {
+        game::cmd::SetOrders o;
+        o.vehicle = id;
+        o.orders = {explore};
+        playOne(loop, c, o, log);
+        // Each answer is carried out before the next question is looked at.
+        while (!c.questions().empty()) {
+            const game::EntryQuestion q = c.questions().front();
+            playOne(loop, c, game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true}, log);
+        }
+        CHECK(viewMatches(c, loop.host));
+    }
+}
+
+void endTurn(Loop& loop, net::ClientSession& c, std::vector<Sent>& log) {
+    const game::EmpireId e = c.empire();
+    const uint32_t turn = c.state()->turn;
+    REQUIRE(c.endTurn().has_value());
+    log.push_back({e, std::nullopt});
+    REQUIRE(loop.until([&] {
+        return c.pendingRequests() == 0 && (loop.host.activeEmpire() != e || loop.host.state()->turn != turn) &&
+               !loop.host.turnStatus().processing;
+    }));
+}
+
+} // namespace
+
+TEST_CASE("net: a turn-based network game plays like the same game on one computer") {
+    TwoPlayerGame g(true);
+    net::HostSession& host = g.host;
+    Loop& loop = *g.loop;
+    const game::EmpireId aliceE{0u}, bobE{1u};
+    REQUIRE(host.turnBased());
+    // The game as the host created it, the first player's turn started.
+    const game::GameState start = *host.state();
+    REQUIRE(start.playerTurn.started);
+    CHECK(host.activeEmpire() == aliceE);
+    REQUIRE(loop.until([&] { return g.alice.turnStatus().turnBased && g.bob.turnStatus().turnBased; }));
+    CHECK(g.alice.myTurn());
+    CHECK_FALSE(g.bob.myTurn());
+    CHECK(g.bob.turnStatus().active == aliceE);
+    CHECK(g.bob.turnStatus().empires[0].awaited());
+    CHECK_FALSE(g.bob.turnStatus().empires[1].awaited());
+    CHECK(loop.hostSaw(EventType::PlayerTurn));
+
+    // Orders for the whole turn are not how a turn-based game is played.
+    CHECK_FALSE(host.submitOrders(noteOrders(g.alice, "x")).has_value());
+
+    std::vector<Sent> log;
+    for (int round = 0; round < 3; ++round) {
+        CAPTURE(round);
+        for (net::ClientSession* player : {&g.alice, &g.bob}) {
+            net::ClientSession* other = player == &g.alice ? &g.bob : &g.alice;
+            REQUIRE(loop.until([&] { return player->myTurn(); }));
+            REQUIRE(player->state()->turn == static_cast<uint32_t>(round));
+            // Everyone holds their own view of the game as the turn passes.
+            CHECK(viewMatches(*player, host));
+            CHECK(viewMatches(*other, host));
+            // Only the player whose turn it is may act.
+            CHECK_FALSE(other->myTurn());
+            CHECK_FALSE(other->play(game::cmd::SetSystemNote{game::SystemId{0u}, "not now"}).has_value());
+            CHECK_FALSE(other->endTurn().has_value());
+            CHECK_FALSE(host.playCommands(other->empire(), {game::cmd::SetSystemNote{game::SystemId{0u}, "not now"}}).has_value());
+
+            const uint64_t otherView = game::stateChecksum(*other->state());
+            const size_t battles = host.state()->combats.size();
+            playTurn(loop, *player, log);
+            CHECK(noteOf(*player->state(), player->empire()) == std::format("{} was here on turn {}", player->config().playerName, round));
+            // The other player sees nothing of this turn yet, unless it fought in a battle of it.
+            bool fought = false;
+            for (size_t i = battles; i < host.state()->combats.size(); ++i)
+                for (game::EmpireId p : host.state()->combats[i].participants) fought = fought || p == other->empire();
+            if (!fought) CHECK(game::stateChecksum(*other->state()) == otherView);
+            CHECK(other->state()->playerTurn.moves.empty() == !fought);  // none of its own groups moved
+            CHECK(other->state()->playerTurn.questions.empty());
+            for (const game::Vehicle& v : other->state()->vehicles) {
+                if (v.owner == other->empire()) continue;
+                const auto& seen = host.state()->empire(other->empire()).knowledge.visibleVehicles;
+                CHECK(std::find(seen.begin(), seen.end(), v.id) != seen.end());
+            }
+            CHECK(noteOf(*other->state(), player->empire()).empty());
+            endTurn(loop, *player, log);
+        }
+        // After Bob, the computer player took its turn on the host and the game turn ended.
+        REQUIRE(loop.until([&] { return g.alice.myTurn() && g.bob.state()->turn == static_cast<uint32_t>(round + 1); }));
+        CHECK(host.state()->empire(game::EmpireId{2u}).history.size() == static_cast<size_t>(round + 1));
+    }
+    CHECK(host.state()->turn == 3);
+    CHECK(loop.clientSaw(0, EventType::StateUpdated));
+    CHECK(loop.clientSaw(0, EventType::CommandsDone));
+    CHECK(loop.clientSaw(1, EventType::PlayerTurn));
+    CHECK(loop.hostSaw(EventType::NewTurn));
+
+    // The same inputs on one computer give the same game.
+    game::GameState local = start;
+    for (const Sent& x : log) {
+        if (x.command) game::applyLive(engineRules(), local, x.empire, *x.command);
+        else game::endPlayerTurn(engineRules(), local, x.empire);
+    }
+    CHECK(local.turn == 3);
+    CHECK(game::stateChecksum(local) == game::stateChecksum(*host.state()));
+
+    (void)bobE;
+}
+
+namespace {
+
+// A connection that speaks the protocol by hand, to send what ClientSession would not.
+struct RawPeer {
+    std::optional<net::Connection> conn;
+    std::vector<net::Frame> frames;
+
+    void pump(Loop& loop) {
+        loop.step();
+        net::PollItem item{conn->socket().native(), true, conn->wantsWrite()};
+        net::pollSockets(std::span(&item, 1), 1);
+        conn->flush();
+        if (item.readable) conn->receive();
+        while (auto f = conn->nextFrame()) frames.push_back(std::move(*f));
+    }
+    const net::Frame* find(net::proto::MsgType t) const {
+        for (const auto& f : frames)
+            if (f.type == t) return &f;
+        return nullptr;
+    }
+    bool waitFor(Loop& loop, net::proto::MsgType t) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline && !find(t) && !conn->failed()) pump(loop);
+        return find(t) != nullptr;
+    }
+};
+
+} // namespace
+
+TEST_CASE("net: turn-based: the host refuses others' commands, and a player reconnects in the middle of a turn") {
+    TwoPlayerGame g(true);
+    net::HostSession& host = g.host;
+    Loop& loop = *g.loop;
+    REQUIRE(loop.until([&] { return g.alice.myTurn(); }));
+    std::vector<Sent> log;
+    playOne(loop, g.alice, game::cmd::SetSystemNote{game::SystemId{0u}, "alice, mid-turn"}, log);
+
+    // Bob's own connection, by hand, sends a command in Alice's turn: refused.
+    RawPeer raw;
+    auto sock = net::connectTcp("127.0.0.1", host.port());
+    REQUIRE(sock.has_value());
+    raw.conn.emplace(std::move(*sock), size_t{64} << 20);
+    net::proto::Hello hello;
+    hello.app = std::string(net::appVersion());
+    hello.dataSet = game::dataSetIdentity(engineRules());
+    hello.player = "bob";
+    hello.passwordHash = net::hashPassword("b-secret");
+    raw.conn->send(net::proto::MsgType::Hello, hello);
+    REQUIRE(raw.waitFor(loop, net::proto::MsgType::State));
+    REQUIRE(loop.until([&] { return g.bob.phase() == net::ClientPhase::Disconnected; }));  // the new connection took over
+    net::proto::PlayCommands forged;
+    forged.turn = host.state()->turn;
+    forged.request = 99;
+    forged.orders = game::serializeOrders(game::EmpireOrders{game::EmpireId{1u}, forged.turn, {game::cmd::SetSystemNote{game::SystemId{0u}, "forged"}}});
+    raw.conn->send(net::proto::MsgType::PlayCommands, forged);
+    REQUIRE(raw.waitFor(loop, net::proto::MsgType::PlayResult));
+    net::proto::PlayResult answer;
+    std::string error;
+    REQUIRE(net::proto::decode(raw.find(net::proto::MsgType::PlayResult)->payload, answer, error));
+    CHECK(answer.request == 99);
+    CHECK_FALSE(answer.ok);
+    CHECK(answer.text.find("not your turn") != std::string::npos);
+    // ... and commands for Alice's empire from Bob's connection are refused as well.
+    forged.orders = game::serializeOrders(game::EmpireOrders{game::EmpireId{0u}, forged.turn, {game::cmd::SetSystemNote{game::SystemId{0u}, "forged"}}});
+    raw.frames.clear();
+    raw.conn->send(net::proto::MsgType::PlayCommands, forged);
+    REQUIRE(raw.waitFor(loop, net::proto::MsgType::PlayResult));
+    REQUIRE(net::proto::decode(raw.find(net::proto::MsgType::PlayResult)->payload, answer, error));
+    CHECK_FALSE(answer.ok);
+    raw.frames.clear();
+    raw.conn->send(net::proto::MsgType::EndTurn, net::proto::EndTurn{forged.turn, 100});
+    REQUIRE(raw.waitFor(loop, net::proto::MsgType::PlayResult));
+    CHECK(host.activeEmpire() == game::EmpireId{0u});
+    CHECK(noteOf(*host.state(), game::EmpireId{0u}) == "alice, mid-turn");
+    CHECK(noteOf(*host.state(), game::EmpireId{1u}).empty());
+
+    // Alice drops out in the middle of her turn and comes back: her turn goes on.
+    g.alice.disconnect("crash");
+    REQUIRE(loop.until([&] { return !host.turnStatus().empires[0].connected; }));
+    for (int i = 0; i < 10; ++i) loop.step();
+    CHECK(host.activeEmpire() == game::EmpireId{0u});  // the host waits for her
+    loop.clear();
+    REQUIRE(g.alice.connect().has_value());
+    REQUIRE(loop.until([&] { return g.alice.myTurn(); }));
+    CHECK(loop.clientSaw(0, EventType::GameStarted));
+    CHECK(noteOf(*g.alice.state(), game::EmpireId{0u}) == "alice, mid-turn");
+    CHECK(viewMatches(g.alice, host));
+    playOne(loop, g.alice, game::cmd::SetSystemNote{game::SystemId{0u}, "alice, back"}, log);
+    endTurn(loop, g.alice, log);
+    CHECK(host.activeEmpire() == game::EmpireId{1u});
+
+    // Bob is away (his hand-made connection says nothing more): the turn time
+    // limit runs out and the computer plays the rest of his turn.
+    raw.conn.reset();
+    host.setTurnTimeout(1);
+    REQUIRE(loop.until([&] { return host.activeEmpire() == game::EmpireId{0u} && host.state()->turn == 1; }, 5000));
+    CHECK(std::any_of(loop.hostEvents.begin(), loop.hostEvents.end(),
+                      [](const net::Event& e) { return e.type == EventType::Info && e.text.find("rest of") != std::string::npos; }));
+    CHECK(host.state()->empire(game::EmpireId{1u}).history.size() == 1);  // Bob's end-of-turn processing ran
+    host.setTurnTimeout(0);
+
+    // Handing Alice to the computer in her turn: it plays the rest of it,
+    // and her later turns, until she is handed back.
+    REQUIRE(loop.until([&] { return g.alice.myTurn(); }));
+    REQUIRE(host.setAiControl(game::EmpireId{0u}, true).has_value());
+    CHECK(host.activeEmpire() == game::EmpireId{1u});
+    REQUIRE(loop.until([&] { return !g.alice.myTurn(); }));
+    // Bob's turn, forced on by the host; the computer plays Alice's next one.
+    REQUIRE(host.processTurnNow().has_value());
+    CHECK(host.state()->turn == 2);
+    CHECK(host.activeEmpire() == game::EmpireId{1u});
+    // Bob handed over too: the computer plays the rest of his turn, and with
+    // both humans away the game waits between game turns.
+    REQUIRE(host.setAiControl(game::EmpireId{1u}, true).has_value());
+    CHECK(host.state()->turn == 3);
+    CHECK_FALSE(host.activeEmpire().valid());
+    REQUIRE(loop.until([&] { return g.alice.turnStatus().turn == 3 && !g.alice.turnStatus().active.valid(); }));
+    CHECK(net::describe(net::Event{EventType::PlayerTurn, {}, {}, net::kNoSlot, {}, 3}).find("waiting") != std::string::npos);
+    REQUIRE(host.processTurnNow().has_value());  // one game turn, every empire played by the computer
+    CHECK(host.state()->turn == 4);
+    CHECK_FALSE(host.activeEmpire().valid());
+    REQUIRE(host.setAiControl(game::EmpireId{0u}, false).has_value());
+    CHECK(host.activeEmpire() == game::EmpireId{0u});
+    REQUIRE(loop.until([&] { return g.alice.myTurn() && g.alice.state()->turn == 4; }));
+}
+
+TEST_CASE("net: a turn-based network game saved in the middle of a turn resumes there") {
+    std::filesystem::path file = std::filesystem::temp_directory_path() / ("opense4_tb_resume_" + std::to_string(net::randomId()) + ".gam");
+    uint64_t saved = 0;
+    {
+        TwoPlayerGame g(true);
+        std::vector<Sent> log;
+        REQUIRE(g.loop->until([&] { return g.alice.myTurn(); }));
+        endTurn(*g.loop, g.alice, log);
+        REQUIRE(g.loop->until([&] { return g.bob.myTurn(); }));
+        playOne(*g.loop, g.bob, game::cmd::SetSystemNote{game::SystemId{0u}, "bob before the save"}, log);
+        REQUIRE(g.host.save(file).has_value());
+        saved = game::stateChecksum(*g.host.state());
+        g.host.stop();
+    }
+    auto loaded = game::loadGame(file);
+    REQUIRE(loaded.has_value());
+    CHECK(game::stateChecksum(loaded->first) == saved);
+    net::HostSession host(engineRules(), hostConfig(2, true));
+    REQUIRE(host.resume(loaded->first, loaded->second).has_value());
+    CHECK(host.activeEmpire() == game::EmpireId{1u});
+    CHECK(game::stateChecksum(*host.state()) == saved);  // nothing was replayed or skipped
+    net::ClientSession alice(clientConfig(host, "alice", "a-secret"));
+    net::ClientSession bob(clientConfig(host, "bob", "b-secret"));
+    Loop loop(host, {&alice, &bob});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(bob.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.state() && bob.myTurn(); }));
+    CHECK_FALSE(alice.myTurn());
+    CHECK(noteOf(*bob.state(), game::EmpireId{1u}) == "bob before the save");
+    std::vector<Sent> log;
+    endTurn(loop, bob, log);
+    REQUIRE(loop.until([&] { return alice.myTurn() && alice.state()->turn == 1; }));
+    std::error_code ec;
+    std::filesystem::remove(file, ec);
+}
+
+TEST_CASE("net: turn-based: a battle in a player's turn is asked about, fought at once and shown to both sides") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(13, 2, 12, true);
     s.options.simultaneous = false;
+    const game::EmpireId aliceE{0u}, bobE{1u};
+    s.empire(aliceE).passwordHash = net::passwordVerifier(net::hashPassword("a-secret"));
+    s.empire(bobE).passwordHash = net::passwordVerifier(net::hashPassword("b-secret"));
+    // Two warships, one sector apart, in Alice's home system.
+    const game::Location home = game::locationOf(s.galaxy, homeworld(s, aliceE).planet);
+    auto warship = [&](game::EmpireId owner) {
+        const game::DesignId d = addTestDesign(s, r, owner, "Lancer", "Test Frigate",
+                                               {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Laser"});
+        return d;
+    };
+    const int step = home.sector.x + 2 < game::kSystemSize ? 1 : -1;
+    game::Location near = home;
+    near.sector.x = static_cast<int8_t>(home.sector.x + 2 * step);
+    game::Location enemyAt = home;
+    enemyAt.sector.x = static_cast<int8_t>(home.sector.x + step);
+    const game::VehicleId lancer = addTestVehicle(s, r, warship(aliceE), near).id;
+    const game::VehicleId raider = addTestVehicle(s, r, warship(bobE), enemyAt).id;
+    for (const game::VehicleId id : {lancer, raider}) s.vehicle(id)->supply = 100000;
     game::SaveInfo info;
-    info.dataSet = game::dataSetIdentity(engineRules());
-    net::HostSession resumed(engineRules(), hostConfig());
-    auto back = resumed.resume(s, info);
-    REQUIRE_FALSE(back.has_value());
-    CHECK(back.error() == net::kTurnBasedNotNetworked);
-    auto processed = net::pbem::processTurn(engineRules(), s, info, std::filesystem::temp_directory_path());
-    REQUIRE_FALSE(processed.has_value());
-    CHECK(processed.error() == net::kTurnBasedNotNetworked);
+    info.gameName = "Skirmish";
+    info.dataSet = game::dataSetIdentity(r);
+    info.players = {"alice", "bob"};
+    net::HostSession host(r, hostConfig(2, true));
+    REQUIRE(host.resume(s, info).has_value());
+    REQUIRE(host.activeEmpire() == aliceE);
+    const game::GameState start = *host.state();
+    net::ClientSession alice(clientConfig(host, "alice", "a-secret"));
+    net::ClientSession bob(clientConfig(host, "bob", "b-secret"));
+    Loop loop(host, {&alice, &bob});
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(bob.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.myTurn() && bob.state(); }));
+    REQUIRE(alice.state()->vehicle(raider) != nullptr);  // Alice sees the raider
+
+    // Alice moves past the raider's sector: stopped before it, and asked.
+    std::vector<Sent> log;
+    game::cmd::SetOrders go;
+    go.vehicle = lancer;
+    game::Order move;
+    move.kind = game::OrderKind::MoveTo;
+    move.location = enemyAt;
+    go.orders = {move};
+    playOne(loop, alice, go, log);
+    REQUIRE(alice.questions().size() == 1);
+    CHECK(alice.questions()[0].where == enemyAt);
+    CHECK(bob.state()->playerTurn.questions.empty());
+    CHECK(host.state()->combats.empty());
+    // A question survives a reconnect.
+    alice.disconnect();
+    REQUIRE(loop.until([&] { return !host.turnStatus().empires[0].connected; }));
+    REQUIRE(alice.connect().has_value());
+    REQUIRE(loop.until([&] { return alice.myTurn(); }));
+    REQUIRE(alice.questions().size() == 1);
+
+    // Going in: the battle is fought at once; Bob, who fought it, gets his view of it now.
+    loop.clear();
+    const game::EntryQuestion q = alice.questions()[0];
+    playOne(loop, alice, game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true}, log);
+    REQUIRE(host.state()->combats.size() == 1);
+    CHECK(alice.questions().empty());
+    CHECK(alice.state()->combats.size() == 1);
+    REQUIRE(loop.until([&] { return bob.state()->combats.size() == 1; }));
+    CHECK(loop.clientSaw(1, EventType::StateUpdated));
+    CHECK(viewMatches(alice, host));
+    CHECK(viewMatches(bob, host));
+    CHECK_FALSE(bob.myTurn());
+
+    // Alice ends her turn; the same inputs on one computer give the same game.
+    endTurn(loop, alice, log);
+    REQUIRE(loop.until([&] { return bob.myTurn(); }));
+    game::GameState local = start;
+    for (const Sent& x : log) {
+        if (x.command) game::applyLive(r, local, x.empire, *x.command);
+        else game::endPlayerTurn(r, local, x.empire);
+    }
+    CHECK(game::stateChecksum(local) == game::stateChecksum(*host.state()));
+}
+
+// ---- Turn-based games by e-mail ---------------------------------------------------------------------------
+
+TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr of commands") {
+    namespace fs = std::filesystem;
+    const game::Rules& r = engineRules();
+    const fs::path dir = fs::temp_directory_path() / ("opense4_pbem_tb_" + std::to_string(net::randomId()));
+    const fs::path inbox = dir / "inbox";
+    fs::create_directories(inbox);
+
+    game::GameSetup setup;
+    setup.seed = 5;
+    setup.options.systemCount = 8;
+    setup.options.simultaneous = false;
+    for (int i = 0; i < 3; ++i) {
+        game::EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = i < 2 ? game::PlayerKind::Human : game::PlayerKind::Computer;
+        e.passwordHash = net::passwordVerifier(net::hashPassword(std::format("pw{}", i)));
+        setup.empires.push_back(e);
+    }
+    auto created = game::createGame(r, setup);
+    REQUIRE(created.has_value());
+    game::resumeTurnBased(r, *created);  // as "pbem new" does: the first human's turn starts
+    game::SaveInfo info;
+    info.gameName = "Relay";
+    info.gameId = 777;
+    info.dataSet = game::dataSetIdentity(r);
+    const fs::path gam = dir / "relay.gam";
+    REQUIRE(game::saveGame(gam, *created, info).has_value());
+
+    // A player's turn on their own copy of the game: commands carried out at
+    // once and recorded in order, Attack Sector answers included.
+    auto playTurnAt = [&](game::EmpireId e, const std::string& note) {
+        auto copy = game::loadGame(gam);
+        REQUIRE(copy.has_value());
+        game::GameState& s = copy->first;
+        REQUIRE(game::activePlayer(s) == e);
+        REQUIRE(s.playerTurn.started);
+        const uint64_t before = game::stateChecksum(s);
+        game::EmpireOrders played{e, s.turn, {}};
+        auto give = [&](game::Command c) {
+            game::applyLive(r, s, e, c);
+            played.commands.push_back(std::move(c));
+        };
+        give(game::cmd::SetSystemNote{game::SystemId{0u}, note});
+        std::vector<game::VehicleId> idle;
+        for (const game::Vehicle& v : s.vehicles)
+            if (v.owner == e && v.orders.empty() && !v.fleet.valid() && v.movement > 0) idle.push_back(v.id);
+        game::Order explore;
+        explore.kind = game::OrderKind::Explore;
+        for (game::VehicleId id : idle) {
+            game::cmd::SetOrders o;
+            o.vehicle = id;
+            o.orders = {explore};
+            give(o);
+            while (!s.playerTurn.questions.empty()) {
+                const game::EntryQuestion q = s.playerTurn.questions.front();
+                give(game::cmd::EnterSector{q.vehicle, q.fleet, q.where, true});
+            }
+        }
+        auto file = net::pbem::writePlayerTurn(inbox, info, before, played, game::stateChecksum(s), net::hashPassword(std::format("pw{}", e.value)));
+        REQUIRE(file.has_value());
+        return std::pair{*file, s};
+    };
+
+    // Empire 1's turn. Empire 2 also sends a file, but it is not its turn, and
+    // an old file of Empire 1 made from another copy of the game is skipped.
+    auto [file1, played1] = playTurnAt(game::EmpireId{0u}, "first move");
+    net::pbem::OrdersFile stray{info.gameName, info.gameId, game::EmpireId{0u}, 0, net::hashPassword("pw0"),
+                                game::EmpireOrders{game::EmpireId{0u}, 0, {}}, 12345, 12345};
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "stray.plr", stray).has_value());
+    net::pbem::OrdersFile early{info.gameName, info.gameId, game::EmpireId{1u}, 0, net::hashPassword("pw1"),
+                                game::EmpireOrders{game::EmpireId{1u}, 0, {}}, 1, 1};
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "early.plr", early).has_value());
+
+    game::GameState expected1 = played1;
+    game::endPlayerTurn(r, expected1, game::EmpireId{0u});
+    auto rep = net::pbem::processGameFile(r, gam, inbox, {});
+    REQUIRE_MESSAGE(rep.has_value(), (rep ? std::string{} : rep.error()));
+    CHECK(rep->submitted == std::vector<std::string>{"Empire 1"});
+    CHECK(rep->playedByComputer.empty());
+    CHECK(rep->turnBefore == 0);
+    CHECK(rep->turnAfter == 0);
+    CHECK(rep->next == "Empire 2");
+    CHECK(rep->nextEmpire == game::EmpireId{1u});
+    auto warned = [&](std::string_view what) {
+        return std::any_of(rep->warnings.begin(), rep->warnings.end(), [&](const std::string& w) { return w.find(what) != std::string::npos; });
+    };
+    CHECK(warned("not Empire 2's"));
+    CHECK(warned("another copy"));
+    CHECK_FALSE(warned("differs"));  // the replay matched the player's game
+    CHECK_FALSE(fs::exists(file1));
+    CHECK(fs::exists(inbox / "stray.plr"));
+    CHECK(fs::exists(inbox / "early.plr"));
+    fs::remove(inbox / "stray.plr");
+    fs::remove(inbox / "early.plr");
+    {
+        auto after = game::loadGame(gam);
+        REQUIRE(after.has_value());
+        CHECK(game::stateChecksum(after->first) == game::stateChecksum(expected1));
+        CHECK(noteOf(after->first, game::EmpireId{0u}) == "first move");
+        CHECK(game::activePlayer(after->first) == game::EmpireId{1u});
+    }
+
+    // Empire 2's turn: after it the computer player moves and the game turn ends.
+    auto [file2, played2] = playTurnAt(game::EmpireId{1u}, "second move");
+    game::GameState expected2 = played2;
+    game::endPlayerTurn(r, expected2, game::EmpireId{1u});
+    rep = net::pbem::processGameFile(r, gam, inbox, {});
+    REQUIRE(rep.has_value());
+    CHECK(rep->turnAfter == 1);
+    CHECK(rep->next == "Empire 1");
+    {
+        auto after = game::loadGame(gam);
+        REQUIRE(after.has_value());
+        CHECK(game::stateChecksum(after->first) == game::stateChecksum(expected2));
+        CHECK(after->first.empire(game::EmpireId{2u}).history.size() == 1);
+    }
+
+    // Nothing from Empire 1: the computer plays its turn, as for missing orders.
+    rep = net::pbem::processGameFile(r, gam, inbox, {});
+    REQUIRE(rep.has_value());
+    CHECK(rep->playedByComputer == std::vector<std::string>{"Empire 1"});
+    CHECK(rep->next == "Empire 2");
+    CHECK(rep->turnAfter == 1);
+    (void)file2;
+
+    // The .plr format keeps the checksums.
+    REQUIRE(net::pbem::writeOrdersFile(inbox / "check.plr", early).has_value());
+    auto back = net::pbem::readOrdersFile(inbox / "check.plr");
+    REQUIRE(back.has_value());
+    CHECK(back->startChecksum == 1);
+    CHECK(back->endChecksum == 1);
+
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }

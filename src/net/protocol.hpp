@@ -31,11 +31,11 @@ void io(Ar& ar, LobbyInfo& l) {
 }
 template <class Ar>
 void io(Ar& ar, EmpireTurnStatus& e) {
-    game::serial::fields(ar, e.empire, e.empireName, e.player, e.human, e.alive, e.connected, e.aiControl, e.submitted);
+    game::serial::fields(ar, e.empire, e.empireName, e.player, e.human, e.alive, e.connected, e.aiControl, e.submitted, e.active);
 }
 template <class Ar>
 void io(Ar& ar, TurnStatus& t) {
-    game::serial::fields(ar, t.turn, t.processing, t.secondsLeft, t.empires);
+    game::serial::fields(ar, t.turn, t.processing, t.secondsLeft, t.turnBased, t.active, t.empires);
 }
 
 } // namespace opense4::net
@@ -53,6 +53,8 @@ enum class MsgType : uint8_t {
     SubmitOrders = 4,
     ChatSend = 5,
     Admin = 6,
+    PlayCommands = 7,   // turn-based games
+    EndTurn = 8,
     // host -> client
     Welcome = 32,
     Reject = 33,
@@ -62,6 +64,7 @@ enum class MsgType : uint8_t {
     OrdersAck = 37,
     Chat = 38,
     Notice = 39,
+    PlayResult = 40,    // turn-based games
     // both ways
     Ping = 64,
     Pong = 65,
@@ -115,6 +118,30 @@ struct ChatSend {
     std::string text;
 };
 
+// Turn-based games: commands the host carries out at once, one after
+// another, for the sender's empire in its turn. The host answers with the
+// new State, then a PlayResult with the same request number.
+struct PlayCommands {
+    uint32_t turn = 0;
+    uint32_t request = 0;
+    std::vector<uint8_t> orders;  // serializeOrders() of the commands, in order
+};
+
+// Turn-based games: the sender ends its turn. The host answers with a
+// PlayResult, then sends everyone the state once the turn has passed on.
+struct EndTurn {
+    uint32_t turn = 0;
+    uint32_t request = 0;
+};
+
+struct PlayResult {
+    uint32_t request = 0;
+    uint32_t turn = 0;
+    bool ok = false;                   // false: nothing was done (text says why)
+    std::string text;
+    std::vector<std::string> refused;  // commands the rules refused
+};
+
 struct Admin {
     AdminAction action = AdminAction::StartGame;
     uint32_t slot = kNoSlot;
@@ -166,6 +193,9 @@ template <class Ar> void io(Ar& ar, SubmitSetup& m) { game::serial::fields(ar, m
 template <class Ar> void io(Ar& ar, SetReady& m) { game::serial::fields(ar, m.ready); }
 template <class Ar> void io(Ar& ar, SubmitOrders& m) { game::serial::fields(ar, m.turn, m.orders); }
 template <class Ar> void io(Ar& ar, ChatSend& m) { game::serial::fields(ar, m.text); }
+template <class Ar> void io(Ar& ar, PlayCommands& m) { game::serial::fields(ar, m.turn, m.request, m.orders); }
+template <class Ar> void io(Ar& ar, EndTurn& m) { game::serial::fields(ar, m.turn, m.request); }
+template <class Ar> void io(Ar& ar, PlayResult& m) { game::serial::fields(ar, m.request, m.turn, m.ok, m.text, m.refused); }
 template <class Ar> void io(Ar& ar, Admin& m) { game::serial::fields(ar, m.action, m.slot, m.value, m.setup, m.text); }
 template <class Ar> void io(Ar& ar, State& m) { game::serial::fields(ar, m.turn, m.empire, m.gameStart, m.state); }
 template <class Ar> void io(Ar& ar, OrdersAck& m) { game::serial::fields(ar, m.turn, m.ok, m.text); }

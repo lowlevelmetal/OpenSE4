@@ -14,18 +14,12 @@
 namespace opense4::net {
 
 inline constexpr uint16_t kDefaultPort = 6720;       // TCP, as in the classic game
-inline constexpr uint32_t kProtocolVersion = 1;
+inline constexpr uint32_t kProtocolVersion = 2;
 inline constexpr uint32_t kNoSlot = 0xffffffffu;
 inline constexpr size_t kMaxPlayerNameLength = 32;
 inline constexpr size_t kMaxChatLength = 500;
 
 std::string_view appVersion();  // "OpenSE4 x.y.z"
-
-// Network and play-by-e-mail games are simultaneous only: OpenSE4 plays the
-// turn-based style on one computer (docs/PARITY_GAPS.md).
-inline constexpr std::string_view kTurnBasedNotNetworked =
-    "Turn-based games (one player after another) can only be played on one computer in OpenSE4. "
-    "Choose the simultaneous turn style for network and play-by-e-mail games.";
 
 // ---- Lobby ---------------------------------------------------------------------------------
 
@@ -71,17 +65,29 @@ struct EmpireTurnStatus {
     bool alive = true;
     bool connected = false;
     bool aiControl = false;          // human empire currently played by the computer
-    bool submitted = false;          // orders received for this turn
+    bool submitted = false;          // orders received for this turn (turn-based: set for every empire but the active one)
+    bool active = false;             // turn-based: this empire's turn is in progress
 
-    // The host waits for these orders before processing.
+    // The host waits for this player: for its orders (simultaneous), or for
+    // it to play and end its turn (turn-based).
     bool awaited() const { return human && alive && !aiControl && !submitted; }
 };
 
 struct TurnStatus {
     uint32_t turn = 0;
     bool processing = false;
-    int32_t secondsLeft = -1;        // turn timeout countdown; -1 = no timeout
+    int32_t secondsLeft = -1;        // turn timeout countdown (turn-based: of the active player's turn); -1 = no timeout
+    // Turn-based games (spec 05 §8): players take their turns one after
+    // another and their commands are carried out at once.
+    bool turnBased = false;
+    game::EmpireId active;           // turn-based: whose turn is in progress (invalid: none; the host waits)
     std::vector<EmpireTurnStatus> empires;
+
+    const EmpireTurnStatus* activeStatus() const {
+        for (const EmpireTurnStatus& e : empires)
+            if (e.active) return &e;
+        return nullptr;
+    }
 };
 
 // ---- Events --------------------------------------------------------------------------------
@@ -103,12 +109,16 @@ enum class EventType : uint8_t {
     Chat,                // player, text
     GameStarted,         // turn; state() is available
     TurnStatusChanged,   // turnStatus() changed
-    OrdersReceived,      // host: empire, player submitted orders for turn
+    OrdersReceived,      // host: empire, player submitted orders for turn (turn-based: commands, text: how many)
     OrdersAccepted,      // client: the host stored our orders for turn
     OrdersRejected,      // client: text: why
     TurnProcessing,      // turn being processed
     NewTurn,             // turn: a new state() is available
     GameOver,            // empire: the winner, if any
+    // Turn-based games.
+    PlayerTurn,          // the turn passed: empire (invalid: none, the host waits), player, turn
+    StateUpdated,        // a new state() within the same game turn (host: some players' views changed)
+    CommandsDone,        // client: the host carried out our commands (request); text: the refusals, if any
 };
 
 std::string_view displayName(EventType t);
@@ -120,6 +130,7 @@ struct Event {
     uint32_t slot = kNoSlot;
     game::EmpireId empire;
     uint32_t turn = 0;
+    uint32_t request = 0;            // CommandsDone: the number play() returned
 };
 
 // One line for logs: "[chat] alice: hello".

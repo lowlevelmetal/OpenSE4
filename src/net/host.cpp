@@ -125,7 +125,6 @@ LanGame HostSession::lanGame() const {
 std::expected<void, std::string> HostSession::start() {
     if (phase_ != HostPhase::Stopped) return std::unexpected(std::string("The host is already running."));
     if (config_.humanSlots < 1) return std::unexpected(std::string("A game needs at least one human player slot."));
-    if (!config_.setup.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
     if (config_.localPlayer && !proto::validPlayerName(config_.localPlayer->name))
         return std::unexpected(std::string("Choose a player name of 1 to 32 characters."));
     if (auto r = openPort(); !r) return r;
@@ -157,7 +156,6 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, config_.dataSet))
         return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, config_.dataSet));
     if (state.empires.empty() || state.empires.size() > kMaxSlots) return std::unexpected(std::string("The saved game has no usable empires."));
-    if (!state.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
     if (std::string problem = game::validateState(state, &rules_); !problem.empty())
         return std::unexpected("The saved game does not fit this data set: " + problem);
     if (!info.gameName.empty()) config_.gameName = info.gameName;
@@ -189,10 +187,20 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     state_ = std::move(state);
     orders_.assign(state_->empires.size(), std::nullopt);
     phase_ = state_->gameOver ? HostPhase::GameOver : HostPhase::Playing;
-    stateCache_ = redactedState();
     refreshLobby();
+    // A turn-based game saved between player turns plays on to the next player who plays.
+    if (phase_ == HostPhase::Playing && turnBased() && !state_->playerTurn.started && anyHumanToPlay()) {
+        try {
+            game::resumeTurnBased(rules_, *state_, liveOptions());
+        } catch (const std::exception& e) {
+            return std::unexpected(std::format("The saved game could not go on: {}", e.what()));
+        }
+        if (state_->gameOver) phase_ = HostPhase::GameOver;
+    }
+    stateCache_ = redactedState();
     beginTurn();
     emit(EventType::GameStarted, std::format("resumed at turn {}", state_->turn), {}, kNoSlot, {}, state_->turn);
+    if (turnBased()) emit(EventType::PlayerTurn, {}, playerName(activeEmpire()), kNoSlot, activeEmpire(), state_->turn);
     return {};
 }
 
@@ -331,7 +339,7 @@ void HostSession::runTimers() {
             p.conn.send(MsgType::Ping, proto::Ping{randomId()});
     }
     if (phase_ == HostPhase::Playing && deadline_ && now >= *deadline_) {
-        emit(EventType::Info, "Turn time is up: processing without the missing orders.");
+        emit(EventType::Info, turnBased() ? "Turn time is up: the game goes on without the player." : "Turn time is up: processing without the missing orders.");
         if (auto r = processTurnNow(); !r) emit(EventType::Error, r.error());
     }
 }
@@ -377,6 +385,8 @@ void HostSession::handleFrame(Peer& peer, uint8_t type, std::span<const uint8_t>
             return;
         }
         case MsgType::SubmitOrders: handleOrders(peer, payload); return;
+        case MsgType::PlayCommands: handlePlay(peer, payload); return;
+        case MsgType::EndTurn: handleEndTurn(peer, payload); return;
         case MsgType::ChatSend: {
             proto::ChatSend m;
             if (!proto::decode(payload, m, error)) break;
@@ -505,6 +515,7 @@ void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     }
     auto ack = [&](bool ok, std::string text) { peer.conn.send(MsgType::OrdersAck, proto::OrdersAck{m.turn, ok, std::move(text)}); };
     if (phase_ != HostPhase::Playing || !state_) return ack(false, "No turn is open.");
+    if (turnBased()) return ack(false, "This game is turn-based: commands are carried out as they are given, in your turn.");
     if (m.turn != state_->turn) return ack(false, std::format("These orders are for turn {}, but the game is at turn {}.", m.turn, state_->turn));
     const game::EmpireId e = empireOfSlot(peer.slot);
     if (!e.valid()) return ack(false, "You have no empire in this game.");
@@ -519,6 +530,72 @@ void HostSession::handleOrders(Peer& peer, std::span<const uint8_t> payload) {
     emit(EventType::OrdersReceived, {}, peer.player, peer.slot, e, m.turn);
     refreshTurnStatus();
     broadcastTurnStatus();
+}
+
+void HostSession::handlePlay(Peer& peer, std::span<const uint8_t> payload) {
+    proto::PlayCommands m;
+    std::string error;
+    if (!proto::decode(payload, m, error)) {
+        dropPeer(peer, "protocol error: " + error, true);
+        return;
+    }
+    proto::PlayResult res;
+    res.request = m.request;
+    res.turn = state_ ? state_->turn : 0;
+    auto refuse = [&](std::string text) {
+        res.text = std::move(text);
+        peer.conn.send(MsgType::PlayResult, res);
+    };
+    if (phase_ != HostPhase::Playing || !state_) return refuse("No turn is open.");
+    if (!turnBased()) return refuse("This game is simultaneous: send your orders for the turn instead.");
+    const game::EmpireId e = empireOfSlot(peer.slot);
+    if (!e.valid()) return refuse("You have no empire in this game.");
+    if (m.turn != state_->turn) return refuse(std::format("These commands are for turn {}, but the game is at turn {}.", m.turn, state_->turn));
+    if (activeEmpire() != e) return refuse("It is not your turn.");
+    auto orders = game::deserializeOrders(m.orders);
+    if (!orders) return refuse("Unreadable commands: " + orders.error());
+    if (orders->empire != e || orders->turn != state_->turn) return refuse("These commands are for another empire or turn.");
+    const size_t count = orders->commands.size();
+    emit(EventType::OrdersReceived, std::format("{} command{}", count, count == 1 ? "" : "s"), peer.player, peer.slot, e, state_->turn);
+    game::TurnResult result;
+    try {
+        result = runLive(e, orders->commands);
+    } catch (const std::exception& ex) {
+        return refuse(std::format("The host could not carry out these commands ({}); nothing was changed.", ex.what()));
+    }
+    res.ok = true;
+    for (const auto& [who, why] : result.rejected)
+        if (who == e) res.refused.push_back(why);
+    peer.conn.send(MsgType::PlayResult, res);
+}
+
+void HostSession::handleEndTurn(Peer& peer, std::span<const uint8_t> payload) {
+    proto::EndTurn m;
+    std::string error;
+    if (!proto::decode(payload, m, error)) {
+        dropPeer(peer, "protocol error: " + error, true);
+        return;
+    }
+    proto::PlayResult res;
+    res.request = m.request;
+    res.turn = state_ ? state_->turn : 0;
+    const game::EmpireId e = empireOfSlot(peer.slot);
+    std::expected<void, std::string> done = std::unexpected(std::string("No turn is open."));
+    if (phase_ == HostPhase::Playing && state_ && turnBased()) {
+        if (m.turn != state_->turn) done = std::unexpected(std::format("The game is at turn {}, not {}.", state_->turn, m.turn));
+        else if (!e.valid() || activeEmpire() != e) done = std::unexpected(std::string("It is not your turn."));
+        else {
+            // Answer first: the states of the turns that follow come after.
+            res.ok = true;
+            peer.conn.send(MsgType::PlayResult, res);
+            if (auto r = endPlayerTurn(e); !r) notifyPlayer(e, r.error());
+            return;
+        }
+    } else if (state_ && !turnBased()) {
+        done = std::unexpected(std::string("This game is simultaneous: send your orders for the turn instead."));
+    }
+    res.text = done.error();
+    peer.conn.send(MsgType::PlayResult, res);
 }
 
 void HostSession::handleAdmin(Peer& peer, std::span<const uint8_t> payload) {
@@ -697,6 +774,9 @@ std::expected<void, std::string> HostSession::kick(uint32_t id, std::string reas
     if (state_) {
         refreshTurnStatus();
         broadcastTurnStatus();
+        // Turn-based: the computer plays the rest of a kicked player's turn.
+        if (const game::EmpireId gone = empireOfSlot(id); phase_ == HostPhase::Playing && turnBased() && gone.valid() && activeEmpire() == gone)
+            if (auto r = skipPlayerTurn(); !r) emit(EventType::Error, r.error());
     }
     return {};
 }
@@ -772,12 +852,27 @@ std::expected<void, std::string> HostSession::startGame(bool force) {
     orders_.assign(state_->empires.size(), std::nullopt);
     phase_ = HostPhase::Playing;
     for (size_t i = 0; i < slots_.size(); ++i) slots_[i]->info.setup.name = state_->empires[i].name;
+    // Turn-based: computer players before the first human take their turns now.
+    game::TurnResult opening;
+    if (turnBased()) {
+        try {
+            opening = game::resumeTurnBased(rules_, *state_, liveOptions());
+        } catch (const std::exception& e) {
+            emit(EventType::Error, std::format("The first turns could not be played: {}", e.what()));
+        }
+        if (state_->gameOver) phase_ = HostPhase::GameOver;
+    }
     stateCache_ = redactedState();
     broadcastLobby();
     beginTurn();
     broadcastState(true);
     broadcastTurnStatus();
-    emit(EventType::GameStarted, std::format("{} empires", state_->empires.size()), {}, kNoSlot, {}, state_->turn);
+    emit(EventType::GameStarted, std::format("{} empires{}", state_->empires.size(), turnBased() ? ", turn-based" : ""), {}, kNoSlot, {},
+         state_->turn);
+    if (turnBased()) {
+        notifyRejections(opening, state_->turn);
+        emit(EventType::PlayerTurn, {}, playerName(activeEmpire()), kNoSlot, activeEmpire(), state_->turn);
+    }
     return {};
 }
 
@@ -825,6 +920,8 @@ void HostSession::refreshTurnStatus() {
         const auto left = std::chrono::duration_cast<std::chrono::seconds>(*deadline_ - Clock::now()).count();
         turnStatus_.secondsLeft = static_cast<int32_t>(std::max<int64_t>(0, left));
     }
+    turnStatus_.turnBased = turnBased();
+    turnStatus_.active = activeEmpire();
     turnStatus_.empires.clear();
     for (size_t i = 0; i < state_->empires.size(); ++i) {
         const game::Empire& e = state_->empires[i];
@@ -837,7 +934,12 @@ void HostSession::refreshTurnStatus() {
         st.alive = e.alive;
         st.connected = s && (s->info.local || s->peer != 0);
         st.aiControl = s && s->info.aiControl;
-        st.submitted = orders_[i].has_value();
+        if (turnStatus_.turnBased) {
+            st.active = e.id == turnStatus_.active;
+            st.submitted = !st.active;  // the host expects nothing from the others now
+        } else {
+            st.submitted = orders_[i].has_value();
+        }
         turnStatus_.empires.push_back(std::move(st));
     }
 }
@@ -859,7 +961,7 @@ void HostSession::beginTurn() {
 }
 
 bool HostSession::allOrdersIn() const {
-    if (!state_ || turnStatus_.processing) return false;
+    if (!state_ || turnStatus_.processing || turnBased()) return false;
     bool anyActive = false;
     for (size_t i = 0; i < state_->empires.size(); ++i) {
         const game::Empire& e = state_->empires[i];
@@ -876,8 +978,24 @@ void HostSession::notifyPlayer(game::EmpireId empire, const std::string& text) {
     if (Peer* p = peerOfSlot(*slots_[empire.index()]); p && !p->closing) p->conn.send(MsgType::Notice, proto::Notice{text});
 }
 
+// Tells players which of their commands were refused.
+void HostSession::notifyRejections(const game::TurnResult& result, uint32_t turn) {
+    std::map<uint32_t, std::vector<std::string>> refused;
+    for (const auto& [empire, why] : result.rejected)
+        if (empire.valid()) refused[empire.value].push_back(why);
+    for (const auto& [empire, list] : refused) {
+        const game::EmpireId e{empire};
+        if (e.index() >= state_->empires.size() || state_->empire(e).kind != game::PlayerKind::Human) continue;
+        for (size_t i = 0; i < list.size() && i < kMaxRejectionNotices; ++i)
+            notifyPlayer(e, std::format("Turn {}: a command was refused: {}", turn, list[i]));
+        if (list.size() > kMaxRejectionNotices)
+            notifyPlayer(e, std::format("Turn {}: {} more commands were refused.", turn, list.size() - kMaxRejectionNotices));
+    }
+}
+
 std::expected<void, std::string> HostSession::submitOrders(game::EmpireOrders orders) {
     if (phase_ != HostPhase::Playing || !state_) return std::unexpected(std::string("No turn is open."));
+    if (turnBased()) return std::unexpected(std::string("This game is turn-based: play the commands in the empire's turn."));
     if (!orders.empire.valid() || orders.empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
     if (orders.turn != state_->turn)
         return std::unexpected(std::format("These orders are for turn {}, but the game is at turn {}.", orders.turn, state_->turn));
@@ -891,6 +1009,7 @@ std::expected<void, std::string> HostSession::submitOrders(game::EmpireOrders or
 
 std::expected<void, std::string> HostSession::processTurnNow() {
     if (phase_ != HostPhase::Playing || !state_) return std::unexpected(std::string("No turn is open."));
+    if (turnBased()) return skipPlayerTurn();
     const uint32_t turn = state_->turn;
     turnStatus_.processing = true;
     for (auto& p : peers_)
@@ -922,18 +1041,7 @@ std::expected<void, std::string> HostSession::processTurnNow() {
         return std::unexpected(why);
     }
 
-    // Tell players which of their commands were refused.
-    std::map<uint32_t, std::vector<std::string>> refused;
-    for (const auto& [empire, why] : result.rejected)
-        if (empire.valid()) refused[empire.value].push_back(why);
-    for (const auto& [empire, list2] : refused) {
-        const game::EmpireId e{empire};
-        if (e.index() >= state_->empires.size() || state_->empire(e).kind != game::PlayerKind::Human) continue;
-        for (size_t i = 0; i < list2.size() && i < kMaxRejectionNotices; ++i)
-            notifyPlayer(e, std::format("Turn {}: a command was refused: {}", turn, list2[i]));
-        if (list2.size() > kMaxRejectionNotices)
-            notifyPlayer(e, std::format("Turn {}: {} more commands were refused.", turn, list2.size() - kMaxRejectionNotices));
-    }
+    notifyRejections(result, turn);
     emit(EventType::Info, std::format("Turn {} processed: {} empires sent orders, {} commands refused.", turn, submitted, result.rejected.size()));
 
     orders_.assign(state_->empires.size(), std::nullopt);
@@ -968,6 +1076,167 @@ std::expected<void, std::string> HostSession::setAiControl(game::EmpireId empire
     broadcastLobby();
     broadcastTurnStatus();
     emit(EventType::Info, std::format("{} is now played by {}.", state_->empire(empire).name, ai ? "the computer" : "its player"));
+    if (turnBased()) {
+        // The computer plays the rest of that empire's turn in progress; a
+        // player back at the controls while the host waits starts playing.
+        if (ai && activeEmpire() == empire) return skipPlayerTurn();
+        if (!ai && !state_->playerTurn.started && anyHumanToPlay()) return turnBasedStep([] { return game::TurnResult{}; });
+    }
+    return {};
+}
+
+// ---- Turn-based games ------------------------------------------------------------------------------------------
+
+bool HostSession::turnBased() const { return state_ && game::turnBased(*state_); }
+
+game::EmpireId HostSession::activeEmpire() const {
+    if (!turnBased() || state_->gameOver || !state_->playerTurn.started) return {};
+    return state_->playerTurn.empire;
+}
+
+// Human empires handed to the computer (kicked, or by an administrator).
+game::LiveOptions HostSession::liveOptions() const {
+    game::LiveOptions o;
+    for (size_t i = 0; i < slots_.size() && state_ && i < state_->empires.size(); ++i)
+        if (slots_[i]->info.kind == SlotKind::Human && slots_[i]->info.aiControl) o.computerPlays.push_back(game::EmpireId{static_cast<uint32_t>(i)});
+    return o;
+}
+
+bool HostSession::anyHumanToPlay() const {
+    if (!state_) return false;
+    const game::LiveOptions o = liveOptions();
+    return std::any_of(state_->empires.begin(), state_->empires.end(),
+                       [&](const game::Empire& e) { return e.alive && e.kind == game::PlayerKind::Human && !o.computerPlaysFor(e.id); });
+}
+
+std::string HostSession::playerName(game::EmpireId empire) const {
+    if (!empire.valid() || empire.index() >= slots_.size() || slots_[empire.index()]->info.kind != SlotKind::Human) return {};
+    return slots_[empire.index()]->info.player;
+}
+
+std::expected<game::TurnResult, std::string> HostSession::playCommands(game::EmpireId empire, std::vector<game::Command> commands) {
+    if (phase_ != HostPhase::Playing || !state_) return std::unexpected(std::string("No turn is open."));
+    if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn instead."));
+    if (!empire.valid() || empire.index() >= state_->empires.size()) return std::unexpected(std::string("No such empire."));
+    if (activeEmpire() != empire) return std::unexpected(std::string("It is not that empire's turn."));
+    const std::string who = playerName(empire);
+    emit(EventType::OrdersReceived, std::format("{} command{}", commands.size(), commands.size() == 1 ? "" : "s"),
+         who.empty() ? std::string("host") : who, empire.index() < slots_.size() ? slots_[empire.index()]->info.id : kNoSlot, empire,
+         state_->turn);
+    try {
+        return runLive(empire, commands);
+    } catch (const std::exception& e) {
+        return std::unexpected(std::format("The commands could not be carried out ({}); nothing was changed.", e.what()));
+    }
+}
+
+// Carries the commands out one after another. The player gets its new view,
+// and so does everyone who fought in a battle they started (inferred: the
+// others see the game when the turn passes on). Throws when the rules fail;
+// the state is then as before.
+game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<game::Command>& commands) {
+    const size_t battlesBefore = state_->combats.size();
+    game::GameState before = *state_;
+    game::TurnResult all;
+    try {
+        for (const game::Command& c : commands) {
+            game::TurnResult r = game::applyLive(rules_, *state_, empire, c);
+            for (auto& x : r.rejected) all.rejected.push_back(std::move(x));
+            for (auto& q : r.questions) all.questions.push_back(q);
+        }
+    } catch (const std::exception& e) {
+        *state_ = std::move(before);
+        emit(EventType::Error, std::format("Turn {}: commands of {} failed: {}", state_->turn, state_->empire(empire).name, e.what()));
+        throw;
+    }
+    std::vector<game::EmpireId> changed{empire};
+    for (size_t i = battlesBefore; i < state_->combats.size(); ++i)
+        for (game::EmpireId p : state_->combats[i].participants)
+            if (p.valid() && p.index() < state_->empires.size() && std::find(changed.begin(), changed.end(), p) == changed.end())
+                changed.push_back(p);
+    // One view per empire and a spectator's; an empire founded meanwhile (a rebel colony) renews them all.
+    if (stateCache_.size() != state_->empires.size() + 1) stateCache_ = redactedState();
+    for (game::EmpireId e : changed) {
+        stateCache_[e.index()] = game::serializeState(game::redactForEmpire(*state_, e));
+        if (e.index() >= slots_.size()) continue;
+        if (Peer* p = peerOfSlot(*slots_[e.index()]); p && !p->closing) sendState(*p, false);
+    }
+    emit(EventType::StateUpdated, std::format("{} command{}", commands.size(), commands.size() == 1 ? "" : "s"), playerName(empire), kNoSlot,
+         empire, state_->turn);
+    return all;
+}
+
+std::expected<void, std::string> HostSession::endPlayerTurn(game::EmpireId empire) {
+    if (phase_ != HostPhase::Playing || !state_) return std::unexpected(std::string("No turn is open."));
+    if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn instead."));
+    if (!empire.valid() || activeEmpire() != empire) return std::unexpected(std::string("It is not that empire's turn."));
+    return turnBasedStep([&] { return game::endPlayerTurn(rules_, *state_, empire, liveOptions()); });
+}
+
+// The player whose turn it is runs out of time, is forced on by the host or
+// handed to the computer: the computer plays the rest of that turn, as it
+// plays a player whose orders are missing (spec 05 §7.1, §9.2; inferred for
+// turn-based games). With no turn in progress, one game turn is played.
+std::expected<void, std::string> HostSession::skipPlayerTurn() {
+    if (phase_ != HostPhase::Playing || !state_) return std::unexpected(std::string("No turn is open."));
+    const game::EmpireId e = activeEmpire();
+    if (!e.valid()) {
+        emit(EventType::Info, std::format("Turn {}: playing on without the players.", state_->turn));
+        return turnBasedStep([&] { return game::resumeTurnBased(rules_, *state_, liveOptions()); });
+    }
+    emit(EventType::Info, std::format("Turn {}: the computer plays the rest of {}'s turn.", state_->turn, state_->empire(e).name));
+    return turnBasedStep([&] {
+        game::LiveOptions o = liveOptions();
+        if (!o.computerPlaysFor(e)) o.computerPlays.push_back(e);
+        return game::endPlayerTurn(rules_, *state_, e, o);
+    });
+}
+
+// Runs a step that passes the turn on, then plays on to the next player who
+// plays; everyone gets their view, and the new turn status.
+std::expected<void, std::string> HostSession::turnBasedStep(const std::function<game::TurnResult()>& step) {
+    const uint32_t turnBefore = state_->turn;
+    const game::EmpireId activeBefore = activeEmpire();
+    turnStatus_.processing = true;
+    for (auto& p : peers_)
+        if (p->welcomed && !p->closing) p->conn.send(MsgType::TurnStatus, turnStatus_);
+    flushAll();
+    emit(EventType::TurnProcessing, {}, {}, kNoSlot, activeBefore, turnBefore);
+
+    game::GameState before = *state_;
+    game::TurnResult result;
+    try {
+        result = step();
+        // A step that stopped between game turns (a stand-in played the last
+        // human's turn) goes on to the next player who plays.
+        if (!state_->gameOver && !state_->playerTurn.started && anyHumanToPlay()) {
+            game::TurnResult more = game::resumeTurnBased(rules_, *state_, liveOptions());
+            for (auto& x : more.rejected) result.rejected.push_back(std::move(x));
+        }
+    } catch (const std::exception& e) {
+        *state_ = std::move(before);
+        turnStatus_.processing = false;
+        broadcastTurnStatus();
+        const std::string why = std::format("Turn {} could not go on ({}); nothing was changed.", turnBefore, e.what());
+        emit(EventType::Error, why);
+        for (auto& p : peers_)
+            if (p->welcomed && !p->closing) p->conn.send(MsgType::Notice, proto::Notice{why});
+        return std::unexpected(why);
+    }
+    notifyRejections(result, turnBefore);
+    stateCache_ = redactedState();
+    if (state_->gameOver) {
+        phase_ = HostPhase::GameOver;
+        emit(EventType::GameOver, state_->winner.valid() ? std::format("{} wins", state_->empire(state_->winner).name) : std::string{}, {},
+             kNoSlot, state_->winner, state_->turn);
+    }
+    beginTurn();
+    broadcastState(false);
+    broadcastTurnStatus();
+    if (state_->turn != turnBefore) emit(EventType::NewTurn, {}, {}, kNoSlot, {}, state_->turn);
+    const game::EmpireId now = activeEmpire();
+    if (now != activeBefore || state_->turn != turnBefore)
+        emit(EventType::PlayerTurn, {}, playerName(now), kNoSlot, now, state_->turn);
     return {};
 }
 

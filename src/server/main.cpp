@@ -4,6 +4,7 @@
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
+#include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/client.hpp"
 #include "net/host.hpp"
@@ -55,11 +56,14 @@ Network game options:
   --quadrant-size=N      Quadrant size 0 small, 1 medium (default), 2 large
   --quadrant=NAME        Quadrant type from the data set (default: the first)
   --setup=FILE.toml      Game name, seed, options and computer empires from a setup file
+  --turn-based           Players take their turns one after another, and their
+                         commands are carried out at once (default: simultaneous)
   --name=NAME            Game name (default "OpenSE4 game")
   --password=PW          Master password: players who give it may administer the game
                          (start, kick, add computer empires, force a turn)
   --join-password=PW     Password every player needs to join
   --turn-timeout=SEC     Process the turn after SEC seconds even if orders are missing
+                         (turn-based: end a player's turn after SEC seconds)
   --load=GAME.gam        Continue a saved game (players reconnect with name and password)
   --save-dir=DIR         Where autosaves go (default: the current directory, or the
                          loaded game's file)
@@ -69,15 +73,20 @@ Network game options:
 
 The game starts when every player slot is taken and every player is ready.
 Players whose orders are missing when the turn is processed are played by the
-computer for that turn. Stop the server with Ctrl+C; it saves first.
+computer for that turn. In a turn-based game the server waits for the player
+whose turn it is; when the time limit runs out the computer plays the rest of
+that turn. Stop the server with Ctrl+C; it saves first.
 
 pbem: the host keeps GAME.gam; players send one .plr file per turn. "process"
 reads every .plr in DIR, checks game, turn, empire and password, processes the
 turn, rewrites GAME.gam (the previous turn is kept as GAME.gam.bak) and deletes
-the .plr files it used (--keep-orders keeps them).
+the .plr files it used (--keep-orders keeps them). In a turn-based game (setup
+file: simultaneous = false) "process" plays one player's turn from that
+player's .plr and names the player to send the game to next.
 
 bot: a scripted player for tests. It joins, readies up, submits orders for
 --turns turns (default 2) and exits 0 once the turn has advanced that often.
+In a turn-based game it plays one command in each of its turns and ends them.
 Options: --password, --join-password, --master-password (then also --start to
 start the game), --race=PRESET, --data=DIR, --timeout=SEC (default 120).
 )";
@@ -190,6 +199,13 @@ std::string lobbySummary(const net::LobbyInfo& l) {
 }
 
 std::string turnSummary(const net::TurnStatus& t) {
+    if (t.turnBased) {
+        const net::EmpireTurnStatus* a = t.activeStatus();
+        std::string s = !a ? std::format("Turn {}: waiting (every player is played by the computer)", t.turn)
+                           : std::format("Turn {}: {}'s turn{}", t.turn, a->player.empty() ? a->empireName : a->player, a->connected ? "" : " (away)");
+        if (t.secondsLeft >= 0) s += std::format("; {} s left", t.secondsLeft);
+        return s;
+    }
     std::string waiting;
     int in = 0;
     int humans = 0;
@@ -211,7 +227,7 @@ int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns"},
-                            {"upnp", "no-upnp", "no-lan-discovery", "verbose", "help", "version"});
+                            {"upnp", "no-upnp", "no-lan-discovery", "turn-based", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -274,6 +290,8 @@ int runServer(std::span<char*> args) {
         }
     }
 
+    if (o.has("turn-based")) cfg.setup.options.simultaneous = false;
+
     if (const std::string& q = cfg.setup.options.quadrantType; !q.empty()) {
         const auto& types = (*rules)->data().quadrantTypes;
         const bool known = std::any_of(types.begin(), types.end(), [&](const auto& t) {
@@ -333,7 +351,10 @@ int runServer(std::span<char*> args) {
                 default: say(net::describe(e)); break;
             }
             if (e.type == net::EventType::GameStarted) saveNow("game start");
-            if (e.type == net::EventType::NewTurn && *autosave > 0 && host.state() && host.state()->turn % *autosave == 0) saveNow("autosave");
+            // Turn-based games also save as each player's turn begins.
+            const bool autosaveTurn = *autosave > 0 && host.state() && host.state()->turn % *autosave == 0;
+            if (e.type == net::EventType::NewTurn && autosaveTurn && !host.turnBased()) saveNow("autosave");
+            if (e.type == net::EventType::PlayerTurn && autosaveTurn) saveNow("autosave");
         }
         if (*maxTurns > 0 && host.state() && host.state()->turn >= static_cast<uint32_t>(*maxTurns)) {
             say(std::format("Reached turn {}; stopping.", host.state()->turn));
@@ -378,15 +399,20 @@ int pbemNew(std::span<char*> args) {
         gs.empires.push_back(std::move(es));
         info.players.push_back(e.player);
     }
-    if (!gs.options.simultaneous) return fail(std::string(net::kTurnBasedNotNetworked), 2);
     auto state = game::createGame(**rules, gs);
     if (!state) return fail("could not create the game: " + state.error(), 1);
+    // Turn-based: computer players before the first human play now, and that human's turn starts.
+    if (game::turnBased(*state)) game::resumeTurnBased(**rules, *state);
     const std::filesystem::path out = o->get("out");
     if (auto r = game::saveGame(out, *state, info); !r) return fail(r.error(), 1);
     std::printf("Created '%s' (turn %u) in %s:\n", info.gameName.c_str(), state->turn, out.string().c_str());
     for (const game::Empire& e : state->empires)
         std::printf("  empire %u: %s (%s)%s\n", e.id.value + 1, e.name.c_str(), e.kind == game::PlayerKind::Human ? "human" : "computer",
                     e.passwordHash.empty() ? "" : ", password set");
+    if (game::turnBased(*state)) {
+        const game::EmpireId first = game::activePlayer(*state);
+        if (first.valid()) std::printf("Turn-based: send the game to empire %u (%s) first.\n", first.value + 1, state->empire(first).name.c_str());
+    }
     return 0;
 }
 
@@ -409,6 +435,7 @@ int pbemProcess(std::span<char*> args) {
     for (const auto& s : rep->warnings) std::printf("  warning: %s\n", s.c_str());
     for (const auto& s : rep->rejectedCommands) std::printf("  refused: %s\n", s.c_str());
     if (options.deleteProcessed && !rep->used.empty()) std::printf("  deleted %zu processed .plr files\n", rep->used.size());
+    if (!rep->next.empty()) std::printf("Next: empire %u (%s); send the game there.\n", rep->nextEmpire.value + 1, rep->next.c_str());
     return 0;
 }
 
@@ -422,8 +449,21 @@ int pbemOrders(std::span<char*> args) {
     auto empire = o->integer("empire", 1, 1, static_cast<int64_t>(game->first.empires.size()));
     if (!empire) return fail(empire.error(), 2);
     // An order list without commands: "end turn" (the empire keeps its standing orders).
-    game::EmpireOrders orders{game::EmpireId{static_cast<uint32_t>(*empire - 1)}, game->first.turn, {}};
-    auto file = net::pbem::writePlayerOrders(o->get("out", "."), game->second, orders, net::hashPassword(o->get("password")));
+    const game::GameState& state = game->first;
+    game::EmpireOrders orders{game::EmpireId{static_cast<uint32_t>(*empire - 1)}, state.turn, {}};
+    std::expected<std::filesystem::path, std::string> file;
+    if (game::turnBased(state)) {
+        // The player's turn made from this very game file, without commands.
+        const game::EmpireId active = game::activePlayer(state);
+        if (!state.playerTurn.started || !active.valid())
+            return fail("no player's turn is in progress in this game file; process it first", 1);
+        if (active != orders.empire)
+            return fail(std::format("it is empire {}'s turn ({}), not empire {}'s", active.value + 1, state.empire(active).name, *empire), 1);
+        const uint64_t checksum = game::stateChecksum(state);
+        file = net::pbem::writePlayerTurn(o->get("out", "."), game->second, checksum, orders, checksum, net::hashPassword(o->get("password")));
+    } else {
+        file = net::pbem::writePlayerOrders(o->get("out", "."), game->second, orders, net::hashPassword(o->get("password")));
+    }
     if (!file) return fail(file.error(), 1);
     std::printf("Wrote %s (turn %u, empire %lld).\n", file->string().c_str(), orders.turn, static_cast<long long>(*empire));
     return 0;
@@ -443,6 +483,13 @@ int pbemInfo(std::span<char*> args) {
         const std::string player = e.id.index() < info.players.size() ? info.players[e.id.index()] : std::string{};
         std::printf("  empire %u: %s, %s%s%s%s\n", e.id.value + 1, e.name.c_str(), e.kind == game::PlayerKind::Human ? "human" : "computer",
                     player.empty() ? "" : ", player ", player.c_str(), e.alive ? "" : ", destroyed");
+    }
+    if (game::turnBased(state)) {
+        const game::EmpireId active = game::activePlayer(state);
+        if (!state.gameOver && active.valid() && state.playerTurn.started)
+            std::printf("Turn-based: it is empire %u's turn (%s).\n", active.value + 1, state.empire(active).name.c_str());
+        else if (!state.gameOver)
+            std::printf("Turn-based: between player turns (\"pbem process\" plays on).\n");
     }
     if (state.gameOver) std::printf("The game is over.\n");
     return 0;
@@ -490,6 +537,18 @@ int runBot(std::span<char*> args) {
     int64_t firstTurn = -1;
     std::string expectedNote;
     game::SystemId noteSystem;
+    uint32_t playRequest = 0;                                  // turn-based: our command in flight
+    int64_t playedTurn = -1;                                   // turn-based: the game turn we last played in
+    auto homeSystem = [](const game::GameState& s, game::EmpireId me) {
+        game::SystemId sys{0u};
+        for (const auto& c : s.colonies)
+            if (c && c->owner == me && c->homeworld) sys = s.galaxy.object(c->planet).system;
+        return sys;
+    };
+    auto noteApplied = [&](const game::GameState& s) {
+        const game::Empire& me = s.empire(client.empire());
+        return noteSystem.index() < me.knowledge.notes.size() && me.knowledge.notes[noteSystem.index()] == expectedNote;
+    };
     while (std::chrono::steady_clock::now() < deadline) {
         for (const net::Event& e : client.poll(100)) {
             say("bot " + cfg.playerName + ": " + net::describe(e));
@@ -499,13 +558,34 @@ int runBot(std::span<char*> args) {
                     client.setReady(true);
                     if (o.has("start")) client.requestStart();
                     break;
+                case net::EventType::StateUpdated:
+                case net::EventType::PlayerTurn:
+                    if (!client.turnBased()) break;
+                    [[fallthrough]];
                 case net::EventType::GameStarted:
                 case net::EventType::NewTurn: {
+                    if (!client.state()) break;
                     const game::GameState& s = *client.state();
                     if (firstTurn < 0) firstTurn = s.turn;
+                    if (client.turnBased()) {
+                        // Turn-based: one command in each of our turns, then End Turn.
+                        if (s.turn >= firstTurn + *turns && playRequest == 0) {
+                            say(std::format("bot {}: the game advanced from turn {} to {}; done", cfg.playerName, firstTurn, s.turn));
+                            client.disconnect("Test finished.");
+                            return 0;
+                        }
+                        if (!client.myTurn() || playedTurn == static_cast<int64_t>(s.turn) || client.pendingRequests() > 0) break;
+                        noteSystem = homeSystem(s, client.empire());
+                        expectedNote = std::format("bot note, turn {}", s.turn);
+                        auto r = client.play(game::cmd::SetSystemNote{noteSystem, expectedNote});
+                        if (!r) return fail(r.error(), 1);
+                        playRequest = *r;
+                        playedTurn = s.turn;
+                        break;
+                    }
                     const game::Empire& me = s.empire(client.empire());
                     if (!expectedNote.empty()) {
-                        const bool applied = noteSystem.index() < me.knowledge.notes.size() && me.knowledge.notes[noteSystem.index()] == expectedNote;
+                        const bool applied = noteApplied(s);
                         say(std::format("bot {}: last turn's orders {}", cfg.playerName, applied ? "were applied" : "were NOT applied"));
                         if (!applied) return fail("orders were not applied", 1);
                     }
@@ -514,12 +594,20 @@ int runBot(std::span<char*> args) {
                         client.disconnect("Test finished.");
                         return 0;
                     }
-                    noteSystem = game::SystemId{0u};
-                    for (const auto& c : s.colonies)
-                        if (c && c->owner == me.id && c->homeworld) noteSystem = s.galaxy.object(c->planet).system;
+                    noteSystem = homeSystem(s, me.id);
                     expectedNote = std::format("bot note, turn {}", s.turn);
                     game::EmpireOrders orders{me.id, s.turn, {game::cmd::SetSystemNote{noteSystem, expectedNote}}};
                     if (auto r = client.submitOrders(orders); !r) return fail(r.error(), 1);
+                    break;
+                }
+                case net::EventType::CommandsDone: {
+                    if (playRequest == 0 || e.request != playRequest) break;
+                    playRequest = 0;
+                    if (!e.text.empty()) return fail("command refused: " + e.text, 1);
+                    const bool applied = client.state() && noteApplied(*client.state());
+                    say(std::format("bot {}: the command {} at once", cfg.playerName, applied ? "was carried out" : "was NOT carried out"));
+                    if (!applied) return fail("the command was not carried out", 1);
+                    if (auto r = client.endTurn(); !r) return fail(r.error(), 1);
                     break;
                 }
                 case net::EventType::OrdersRejected: return fail("orders rejected: " + e.text, 1);

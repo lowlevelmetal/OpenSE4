@@ -5,6 +5,15 @@
 // turn, processes the turn (the computer plays empires whose orders are
 // missing) and sends the new state to everyone. The host is authoritative.
 //
+// Turn-based games (GameOptions::simultaneous off, spec 05 §8): the host
+// runs the game one player turn after another. Only the player whose turn it
+// is may act: its commands are carried out on the host at once
+// (game::applyLive) and it gets its new view after each; End Turn runs
+// game::endPlayerTurn, the computer players' turns run here, and everyone
+// gets their view when the turn passes on. A player who is away is waited
+// for until the turn time limit, a forced turn or a hand-over to the
+// computer, which then plays the rest of that turn (as for missing orders).
+//
 // Single-threaded: call poll() regularly (every frame in a UI, or in a loop
 // with a timeout in the dedicated server); everything happens inside poll()
 // and the methods below. Not thread-safe.
@@ -12,6 +21,7 @@
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/state.hpp"
+#include "game/turn.hpp"
 #include "net/discovery.hpp"
 #include "net/socket.hpp"
 #include "net/types.hpp"
@@ -19,6 +29,7 @@
 
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -108,7 +119,20 @@ public:
     // Orders for any empire (the host may play any empire's turn).
     std::expected<void, std::string> submitOrders(game::EmpireOrders orders);
     // Processes the turn now, with the computer playing missing empires.
+    // Turn-based games: ends the turn in progress, the computer playing the
+    // rest of it; with no turn in progress (every human is played by the
+    // computer) plays one game turn.
     std::expected<void, std::string> processTurnNow();
+
+    // ---- Turn-based games ----------------------------------------------------------------------
+    bool turnBased() const;
+    // Whose turn is in progress (invalid: none, the host waits).
+    game::EmpireId activeEmpire() const;
+    // Carries out commands for the empire whose turn it is, one after another
+    // (the host's own player, or any player the host plays for).
+    std::expected<game::TurnResult, std::string> playCommands(game::EmpireId empire, std::vector<game::Command> commands);
+    // Ends that empire's turn; computer players move and the next player's turn starts.
+    std::expected<void, std::string> endPlayerTurn(game::EmpireId empire);
     void setTurnTimeout(int seconds);
     // Hands a human empire to the computer (the host stops waiting for its
     // orders) or back to its player.
@@ -131,6 +155,8 @@ private:
     void handleHello(Peer& peer, std::span<const uint8_t> payload);
     void handleAdmin(Peer& peer, std::span<const uint8_t> payload);
     void handleOrders(Peer& peer, std::span<const uint8_t> payload);
+    void handlePlay(Peer& peer, std::span<const uint8_t> payload);
+    void handleEndTurn(Peer& peer, std::span<const uint8_t> payload);
     void reject(Peer& peer, uint8_t reason, std::string text);
     void dropPeer(Peer& peer, std::string reason, bool sayBye);
     void peerGone(Peer& peer, const std::string& reason);
@@ -152,6 +178,14 @@ private:
     bool allOrdersIn() const;
     std::vector<std::vector<uint8_t>> redactedState() const;
     void notifyPlayer(game::EmpireId empire, const std::string& text);
+    void notifyRejections(const game::TurnResult& result, uint32_t turn);
+    // Turn-based games.
+    game::LiveOptions liveOptions() const;
+    bool anyHumanToPlay() const;
+    std::string playerName(game::EmpireId empire) const;
+    game::TurnResult runLive(game::EmpireId empire, const std::vector<game::Command>& commands);
+    std::expected<void, std::string> turnBasedStep(const std::function<game::TurnResult()>& step);
+    std::expected<void, std::string> skipPlayerTurn();
 
     const game::Rules& rules_;
     HostConfig config_;

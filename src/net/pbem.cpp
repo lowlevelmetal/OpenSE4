@@ -29,7 +29,7 @@ std::string lowerExtension(const fs::path& p) {
 
 template <class Ar>
 void io(Ar& ar, OrdersFile& f) {
-    game::serial::fields(ar, f.gameName, f.gameId, f.empire, f.turn, f.passwordHash, f.orders);
+    game::serial::fields(ar, f.gameName, f.gameId, f.empire, f.turn, f.passwordHash, f.orders, f.startChecksum, f.endChecksum);
 }
 
 std::vector<uint8_t> encodeOrdersFile(const OrdersFile& f) { return game::wrapEnvelope(kPlrMagic, game::serial::encode(f)); }
@@ -79,11 +79,38 @@ std::expected<fs::path, std::string> writePlayerOrders(const fs::path& dir, cons
     return file;
 }
 
+std::expected<fs::path, std::string> writePlayerTurn(const fs::path& dir, const game::SaveInfo& info, uint64_t startChecksum,
+                                                     const game::EmpireOrders& commands, uint64_t endChecksum, std::string_view passwordHash) {
+    OrdersFile f;
+    f.gameName = info.gameName;
+    f.gameId = info.gameId;
+    f.empire = commands.empire;
+    f.turn = commands.turn;
+    f.passwordHash = std::string(passwordHash);
+    f.orders = commands;
+    f.startChecksum = startChecksum;
+    f.endChecksum = endChecksum;
+    const fs::path file = dir / ordersFileName(info, commands.empire);
+    if (auto r = writeOrdersFile(file, f); !r) return std::unexpected(r.error());
+    return file;
+}
+
 std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, game::GameState& state, const game::SaveInfo& info,
                                                       const fs::path& ordersDir) {
     ProcessReport rep;
     rep.turnBefore = state.turn;
-    if (!state.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
+    const bool turnBased = game::turnBased(state);
+    // A turn-based game file between player turns goes on to the next human
+    // first; players make their .plr from that game.
+    bool resumed = false;
+    if (turnBased && !state.gameOver && !state.playerTurn.started) {
+        for (const auto& [empire, why] : game::resumeTurnBased(rules, state).rejected)
+            rep.rejectedCommands.push_back(std::format("{}: {}", state.empire(empire).name, why));
+        resumed = true;
+    }
+    const game::EmpireId active = turnBased ? game::activePlayer(state) : game::EmpireId{};
+    const bool playerTurn = turnBased && active.valid() && state.playerTurn.started;
+    const uint64_t startChecksum = turnBased ? game::stateChecksum(state) : 0;
     std::error_code ec;
     if (!fs::is_directory(ordersDir, ec)) return std::unexpected(std::format("{}: no such directory", ordersDir.string()));
 
@@ -111,6 +138,16 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
         }
         if (f->turn != state.turn) {
             rep.warnings.push_back(std::format("{}: out of date: it is for turn {}, and the game is at turn {}", name, f->turn, state.turn));
+            continue;
+        }
+        if (turnBased && f->empire != active) {
+            rep.warnings.push_back(std::format("{}: it is {}'s turn, not {}'s", name, active.valid() ? state.empire(active).name : std::string("nobody"),
+                                               f->empire.valid() && f->empire.index() < state.empires.size() ? state.empire(f->empire).name
+                                                                                                             : std::string("?")));
+            continue;
+        }
+        if (turnBased && f->startChecksum != startChecksum) {
+            rep.warnings.push_back(std::format("{}: made from another copy of the game (not the current game file)", name));
             continue;
         }
         if (!f->empire.valid() || f->empire.index() >= state.empires.size()) {
@@ -146,6 +183,43 @@ std::expected<ProcessReport, std::string> processTurn(const game::Rules& rules, 
             rep.warnings.push_back(std::format("{}: ignored, {} for {} is newer", name, slot->path.filename().string(), e.name));
             rep.used.push_back(path);
         }
+    }
+
+    if (turnBased) {
+        // One player's turn: its commands one after another, as the player
+        // gave them, then the end of its turn (spec 05 §8).
+        if (playerTurn) {
+            const game::Empire& e = state.empire(active);
+            const std::string name = e.name;
+            game::LiveOptions options;
+            auto refused = [&](const game::TurnResult& r) {
+                for (const auto& [empire, why] : r.rejected) {
+                    const std::string who = empire.valid() && empire.index() < state.empires.size() ? state.empire(empire).name : std::string("?");
+                    rep.rejectedCommands.push_back(std::format("{}: {}", who, why));
+                }
+            };
+            if (const auto& chosen = best[active.index()]) {
+                rep.submitted.push_back(name);
+                rep.used.push_back(chosen->path);
+                for (const game::Command& c : chosen->file.orders.commands) refused(game::applyLive(rules, state, active, c));
+                if (game::stateChecksum(state) != chosen->file.endChecksum)
+                    rep.warnings.push_back(std::format("{}: the replay of {}'s turn differs from the player's own game; the host's result counts",
+                                                       chosen->path.filename().string(), name));
+            } else {
+                rep.playedByComputer.push_back(name);
+                options.computerPlays.push_back(active);
+            }
+            refused(game::endPlayerTurn(rules, state, active, options));
+        } else if (!resumed && !state.gameOver) {
+            // No human left to play: the computer players play one game turn.
+            game::TurnResult r = game::resumeTurnBased(rules, state);
+            for (const auto& [empire, why] : r.rejected) rep.rejectedCommands.push_back(std::format("{}: {}", state.empire(empire).name, why));
+        }
+        rep.turnAfter = state.turn;
+        rep.nextEmpire = game::activePlayer(state);
+        if (rep.nextEmpire.valid() && state.playerTurn.started) rep.next = state.empire(rep.nextEmpire).name;
+        else rep.nextEmpire = {};
+        return rep;
     }
 
     std::vector<game::EmpireOrders> orders;

@@ -5,6 +5,13 @@
 // every turn and sends the player's orders. Reconnecting (connect() again,
 // same name and password) resumes the current turn.
 //
+// Turn-based games (turnBased()): in the player's own turn (myTurn()) each
+// command goes to the host with play(), which carries it out at once and
+// sends back the new state (StateUpdated) and the result (CommandsDone);
+// endTurn() passes the turn on. The state also arrives when the turn passes
+// (PlayerTurn) and when a battle the player fought in someone else's turn
+// changed it.
+//
 // Single-threaded: call poll() every frame; everything happens inside poll()
 // and the methods below. Not thread-safe.
 
@@ -14,6 +21,7 @@
 
 #include <expected>
 #include <memory>
+#include <span>
 #include <optional>
 #include <string>
 #include <vector>
@@ -75,6 +83,24 @@ public:
     std::expected<void, std::string> submitOrders(game::EmpireOrders orders);
     void chat(std::string_view text);
 
+    // ---- Turn-based games ---------------------------------------------------------------------
+    bool turnBased() const { return turnStatus_.turnBased || (state_ && !state_->options.simultaneous); }
+    // Whose turn is in progress, as the host last said (invalid: none).
+    game::EmpireId activeEmpire() const { return turnStatus_.active; }
+    // Our turn is in progress: we may play commands and end it.
+    bool myTurn() const;
+    // Sends commands for the host to carry out now, one after another. Returns
+    // the request number the CommandsDone event carries (after the new state).
+    std::expected<uint32_t, std::string> play(std::vector<game::Command> commands);
+    std::expected<uint32_t, std::string> play(game::Command command);
+    // Ends our turn.
+    std::expected<uint32_t, std::string> endTurn();
+    // Requests sent that the host has not answered yet.
+    size_t pendingRequests() const { return pending_; }
+    // Our open Attack Sector questions (spec 03 §6.2), oldest first: answer
+    // each with play(cmd::EnterSector{...}).
+    std::span<const game::EntryQuestion> questions() const;
+
     // ---- Administration (needs the master password) ------------------------------------------
     void requestStart(bool force = false);
     void requestAddComputer(const game::EmpireSetup& setup = {});
@@ -104,6 +130,8 @@ private:
     std::optional<game::GameState> state_;
     game::EmpireId empire_;
     bool ordersAccepted_ = false;
+    uint32_t nextRequest_ = 1;
+    size_t pending_ = 0;
     std::vector<Event> events_;
 };
 

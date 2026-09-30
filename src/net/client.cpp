@@ -37,6 +37,7 @@ std::expected<void, std::string> ClientSession::connect() {
     admin_ = false;
     slot_ = kNoSlot;
     ordersAccepted_ = false;
+    pending_ = 0;
     return {};
 }
 
@@ -164,20 +165,30 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload) 
                 break;
             }
             const bool first = !state_ || phase_ != ClientPhase::Playing || m.gameStart;
+            const bool sameTurn = state_ && state_->turn == s->turn;
             state_ = std::move(*s);
             empire_ = m.empire;
             phase_ = ClientPhase::Playing;
-            ordersAccepted_ = false;
-            emit(first ? EventType::GameStarted : EventType::NewTurn, {}, {}, kNoSlot, empire_, state_->turn);
+            // Turn-based games get the state within a game turn too.
+            const EventType what = first ? EventType::GameStarted : sameTurn && turnBased() ? EventType::StateUpdated : EventType::NewTurn;
+            if (what != EventType::StateUpdated) ordersAccepted_ = false;
+            emit(what, {}, {}, kNoSlot, empire_, state_->turn);
             return;
         }
         case MsgType::TurnStatus: {
             TurnStatus t;
             if (!proto::decode(payload, t, error)) break;
             const bool startedProcessing = t.processing && !turnStatus_.processing;
+            const bool passed = t.turnBased && !t.processing &&
+                                (!turnStatus_.turnBased || t.active != turnStatus_.active || t.turn != turnStatus_.turn);
             turnStatus_ = std::move(t);
             if (startedProcessing) emit(EventType::TurnProcessing, {}, {}, kNoSlot, {}, turnStatus_.turn);
             emit(EventType::TurnStatusChanged, {}, {}, kNoSlot, {}, turnStatus_.turn);
+            if (passed) {
+                const EmpireTurnStatus* a = turnStatus_.activeStatus();
+                emit(EventType::PlayerTurn, a && a->empire == empire_ ? std::string("your turn") : std::string{}, a ? a->player : std::string{},
+                     kNoSlot, turnStatus_.active, turnStatus_.turn);
+            }
             return;
         }
         case MsgType::OrdersAck: {
@@ -185,6 +196,18 @@ void ClientSession::handleFrame(uint8_t type, std::span<const uint8_t> payload) 
             if (!proto::decode(payload, m, error)) break;
             if (m.ok && state_ && m.turn == state_->turn) ordersAccepted_ = true;
             emit(m.ok ? EventType::OrdersAccepted : EventType::OrdersRejected, m.text, {}, kNoSlot, empire_, m.turn);
+            return;
+        }
+        case MsgType::PlayResult: {
+            proto::PlayResult m;
+            if (!proto::decode(payload, m, error)) break;
+            if (pending_ > 0) --pending_;
+            std::string text = proto::sanitize(m.text, 1000);
+            for (const std::string& r : m.refused) text += (text.empty() ? "" : "; ") + proto::sanitize(r, 500);
+            Event e{EventType::CommandsDone, std::move(text), {}, kNoSlot, empire_, m.turn};
+            e.request = m.request;
+            if (!m.ok && e.text.empty()) e.text = "refused";
+            events_.push_back(std::move(e));
             return;
         }
         case MsgType::Chat: {
@@ -241,6 +264,45 @@ std::expected<void, std::string> ClientSession::submitOrders(game::EmpireOrders 
     ordersAccepted_ = false;
     impl_->conn->send(MsgType::SubmitOrders, m);
     return {};
+}
+
+bool ClientSession::myTurn() const {
+    return phase_ == ClientPhase::Playing && state_ && turnBased() && !state_->gameOver && state_->playerTurn.started &&
+           state_->playerTurn.empire == empire_ && turnStatus_.active == empire_ && !turnStatus_.processing;
+}
+
+std::expected<uint32_t, std::string> ClientSession::play(std::vector<game::Command> commands) {
+    if (phase_ != ClientPhase::Playing || !impl_->conn || !state_) return std::unexpected(std::string("Not in a game."));
+    if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn."));
+    if (!myTurn()) return std::unexpected(std::string("It is not your turn."));
+    proto::PlayCommands m;
+    m.turn = state_->turn;
+    m.request = nextRequest_++;
+    m.orders = game::serializeOrders(game::EmpireOrders{empire_, state_->turn, std::move(commands)});
+    impl_->conn->send(MsgType::PlayCommands, m);
+    ++pending_;
+    return m.request;
+}
+
+std::expected<uint32_t, std::string> ClientSession::play(game::Command command) {
+    std::vector<game::Command> one;
+    one.push_back(std::move(command));
+    return play(std::move(one));
+}
+
+std::expected<uint32_t, std::string> ClientSession::endTurn() {
+    if (phase_ != ClientPhase::Playing || !impl_->conn || !state_) return std::unexpected(std::string("Not in a game."));
+    if (!turnBased()) return std::unexpected(std::string("This game is simultaneous: submit orders for the turn."));
+    if (!myTurn()) return std::unexpected(std::string("It is not your turn."));
+    proto::EndTurn m{state_->turn, nextRequest_++};
+    impl_->conn->send(MsgType::EndTurn, m);
+    ++pending_;
+    return m.request;
+}
+
+std::span<const game::EntryQuestion> ClientSession::questions() const {
+    if (!state_ || state_->playerTurn.empire != empire_) return {};
+    return state_->playerTurn.questions;
 }
 
 void ClientSession::chat(std::string_view text) {
