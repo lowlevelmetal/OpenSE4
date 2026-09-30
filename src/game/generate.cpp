@@ -240,10 +240,12 @@ void applySectorType(const ruleset::Ruleset& rs, SpaceObject& obj, uint32_t inde
     }
 }
 
-int rollConditions(bool asteroids, Rng& rng) {
-    // Hundredths: R[0,10]/10 + 0.5 is 50, 60, ... 150; asteroid fields get half.
-    const int c = 50 + 10 * rng.rangeInt(0, 10);
-    return asteroids ? c / 2 : c;
+Conditions rollConditions(bool asteroids, Rng& rng) {
+    // R[0,10] / 10 + 0.5 (0.5, 0.6, ... 1.5); asteroid fields get half of that.
+    // Computed in the x87 format and stored as a double (conditions.hpp).
+    Ext c = Ext(rng.rangeInt(0, 10)) / Ext(10) + Ext(1) / Ext(2);
+    if (asteroids) c = c / Ext(2);
+    return Conditions::of(c);
 }
 
 void rollNaturalValues(const ruleset::Ruleset& rs, SpaceObject& obj, bool finite, Rng& rng) {

@@ -111,18 +111,39 @@ Resources constructionRate(const Rules& r, const GameState& s, EmpireId e, const
     return rate;
 }
 
-int upgradeableCount(const Rules& r, const GameState& s, EmpireId e, const Colony& c, uint32_t facility) {
-    if (facility >= r.data().facilities.size()) return 0;
-    const int family = r.facility(facility).family;
-    const auto latest = r.latestFacilityOfFamily(s.empire(e), family);
-    if (!latest) return 0;
-    const int newest = r.facility(*latest).romanNumeral;
+int upgradeCount(const Rules& r, const Colony& c, uint32_t target) {
+    if (target >= r.data().facilities.size()) return 0;
+    const ruleset::Facility& t = r.facility(target);
     int n = 0;
-    for (uint32_t f : c.facilities) n += r.facility(f).family == family && r.facility(f).romanNumeral < newest;
+    for (uint32_t f : c.facilities) n += f < r.data().facilities.size() && r.facility(f).family == t.family && r.facility(f).romanNumeral < t.romanNumeral;
     return n;
 }
 
-Resources itemCost(const Rules& r, const GameState& s, EmpireId e, const cmd::QueueTarget& t, const QueueItem& item) {
+QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target) {
+    QueueItem item;
+    item.kind = QueueItem::Kind::Upgrade;
+    item.facility = target;
+    item.count = upgradeCount(r, c, target);
+    return item;
+}
+
+bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t, const QueueItem& item) {
+    const Vehicle* ship = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr;
+    const Colony* c = t.vehicle.valid() ? nullptr : s.colony(t.planet);
+    if (!ship && !c) return false;  // the queue itself is gone
+    switch (item.kind) {
+        case QueueItem::Kind::Vehicle: {
+            if (!item.design.valid() || item.design.index() >= s.designs.size()) return true;
+            if (!isShipOrBase(r.hull(s.design(item.design).hull).type)) return false;  // units: every queue builds them
+            return ship ? !vehicleHasSpaceYard(r, s, *ship) : !colonyHasSpaceYard(r, *c);
+        }
+        case QueueItem::Kind::Facility: return !c || item.facility >= r.data().facilities.size();
+        case QueueItem::Kind::Upgrade: return !c || upgradeCount(r, *c, item.facility) == 0;
+    }
+    return true;
+}
+
+Resources itemCost(const Rules& r, const GameState& s, EmpireId, const cmd::QueueTarget&, const QueueItem& item) {
     switch (item.kind) {
         case QueueItem::Kind::Vehicle: {
             if (!item.design.valid() || item.design.index() >= s.designs.size()) return {};
@@ -134,16 +155,12 @@ Resources itemCost(const Rules& r, const GameState& s, EmpireId e, const cmd::Qu
             if (item.facility >= r.data().facilities.size()) return {};
             return Resources::from(r.facility(item.facility).cost).percent(100 * std::max(1, item.count));
         case QueueItem::Kind::Upgrade: {
-            // trunc(new facility's cost × Upgrade %) per facility changed (confirmed: binary). The
-            // count is the colony's older facilities of the family now (inferred: the original
-            // fixes it when the item is queued).
-            const Colony* c = s.colony(t.planet);
-            if (!c || item.facility >= r.data().facilities.size()) return {};
-            const auto latest = r.latestFacilityOfFamily(s.empire(e), r.facility(item.facility).family);
-            if (!latest) return {};
-            const int64_t n = upgradeableCount(r, s, e, *c, item.facility);
+            // trunc(the target's cost × Upgrade %) per facility, times the count stored
+            // when the item was queued (confirmed: binary).
+            if (item.facility >= r.data().facilities.size()) return {};
+            const int64_t n = std::max(0, item.count);
             const int64_t pct = r.setting("Upgrade Facility Cost Percent", 50);
-            const Resources cost = Resources::from(r.facility(*latest).cost);
+            const Resources cost = Resources::from(r.facility(item.facility).cost);
             return {pctTrunc(cost.v[0], pct) * n, pctTrunc(cost.v[1], pct) * n, pctTrunc(cost.v[2], pct) * n};
         }
     }
@@ -207,8 +224,11 @@ std::vector<QueueRef> empireQueues(const Rules& r, const GameState& s, EmpireId 
 
 Resources projectQueueUsage(const Rules& r, const GameState& s, EmpireId e, const QueueRef& q, const ConstructionQueue& queue,
                             Resources& treasury) {
-    if (queue.onHold || queue.items.empty() || !queueBlocked(r, s, q.target).empty()) return {};
-    const QueueItem& top = queue.items.front();
+    // The top item once the items the queue can no longer build are gone (spec 02 §6.1).
+    const auto first = std::find_if(queue.items.begin(), queue.items.end(),
+                                    [&](const QueueItem& item) { return !itemObsolete(r, s, q.target, item); });
+    if (queue.onHold || first == queue.items.end() || !queueBlocked(r, s, q.target).empty()) return {};
+    const QueueItem& top = *first;
     const Resources use = max(min(constructionRate(r, s, e, q.target), itemCost(r, s, e, q.target, top) - top.spent), Resources{});
     if (!treasury.covers(use)) return {};
     treasury -= use;
@@ -241,10 +261,16 @@ struct Holder {
     int64_t free = 0;
 };
 
-// Places `count` units one at a time: in the builder's cargo, else in another
-// planet or ship of the empire in the same sector (spec 02 §6.5). Returns how
-// many found room.
-int placeUnits(const Rules& r, GameState& s, EmpireId e, const QueueRef& q, DesignId design, int count) {
+// Places one unit at a time: in the builder's cargo if it fits, else in another
+// planet or ship of the empire in the same sector (spec 02 §6.5, spec 03 §1). A
+// unit that finds no room is not built, with a "No Storage Available" message
+// of its own. Returns whether the last unit was placed. The original takes the
+// other holders in its object order, planets and ships mixed; we have no such
+// order and take planets (in object order) before ships (inferred, spec 02 §13
+// Q52).
+bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design, int count) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
     const int64_t size = std::max<int64_t>(0, r.hull(s.design(design).hull).tonnage);
     std::vector<Holder> holders;
     Cargo* builder = nullptr;
@@ -264,17 +290,28 @@ int placeUnits(const Rules& r, GameState& s, EmpireId e, const QueueRef& q, Desi
         if (v.owner == e && v.location == q.location && v.count > 0 && &v.cargo != builder && isShipOrBase(vehicleType(r, s, v)))
             holders.push_back({&v.cargo, vehicleCargoCapacity(r, s, v) - cargoSpaceUsed(r, s, v.cargo)});
 
+    const std::string where = placeName(s, q);
+    const std::string name = s.design(design).name;
     int placed = 0;
+    bool last = false;
     for (int k = 0; k < count; ++k) {
         auto h = std::find_if(holders.begin(), holders.end(), [&](const Holder& x) { return x.free >= size; });
-        if (h == holders.end()) break;
+        last = h != holders.end();
+        if (!last) {
+            ctx.log(e, LogCategory::Construction, std::format("No Storage Available at {}", where),
+                    std::format("A {} found no cargo space in the sector and was not built.", name), q.location);
+            continue;
+        }
         h->free -= size;
         auto it = std::find_if(h->cargo->units.begin(), h->cargo->units.end(), [&](const UnitStack& u) { return u.design == design; });
         if (it == h->cargo->units.end()) h->cargo->units.push_back({design, 1});
         else ++it->count;
         ++placed;
     }
-    return placed;
+    s.design(design).built += placed;
+    if (placed > 0)
+        ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, name), std::format("Built at {}.", where), q.location);
+    return last;
 }
 
 Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const QueueItem& item, int autoWaypoint) {
@@ -287,14 +324,6 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             const Design& d = s.design(item.design);
             const int count = std::max(1, item.count);
             if (isShipOrBase(r.hull(d.hull).type)) {
-                if (!q.target.vehicle.valid()) {
-                    const Colony* c = s.colony(q.target.planet);
-                    if (!c || !colonyHasSpaceYard(r, *c)) {
-                        ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name), "Ships need a space yard.",
-                                q.location);
-                        return Outcome::Blocked;
-                    }
-                }
                 // At the ship limit nothing is built; the progress is already spent (confirmed: binary).
                 if (shipCount(r, s, e) >= s.options.maxShipsPerPlayer) {
                     ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name),
@@ -302,62 +331,64 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                     return Outcome::Blocked;
                 }
                 const DesignId design = item.design;
+                const int64_t tonnage = designTonnage(r, d);
                 for (int k = 0; k < count; ++k) {
                     const Vehicle& v = movement::spawnVehicle(r, s, e, design, q.location, autoWaypoint);
                     ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location);
                     ctx.mood(e, "Ship Constructed", q.location.system, anchorAt(s, q));
                     ctx.mood(e, "Any Ship Constructed");
+                    gainExperience(s.empire(e), tonnage / 10);  // the hull's tonnage div 10 per ship (confirmed: binary)
                 }
                 return Outcome::Done;
             }
-            // Units have no cap here: the units-per-player cap is checked at launch (spec 03 §12).
-            const int placed = placeUnits(r, s, e, q, item.design, count);
-            s.design(item.design).built += placed;
-            if (placed > 0)
-                ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, d.name), std::format("Built at {}.", where),
-                        q.location);
-            if (placed < count)
-                ctx.log(e, LogCategory::Construction, std::format("No Storage Available at {}", where),
-                        std::format("{} x {} found no cargo space in the sector and were not built.", count - placed, d.name), q.location);
-            return Outcome::Done;
+            // Units have no cap here: the units-per-player cap is checked at launch
+            // (spec 03 §12). The item leaves the queue only if its last unit found
+            // room; otherwise it stays with its full count (confirmed: binary).
+            return placeUnits(ctx, e, q, item.design, count) ? Outcome::Done : Outcome::Blocked;
         }
         case QueueItem::Kind::Facility: {
             Colony* c = s.colony(q.target.planet);
             if (!c || item.facility >= r.data().facilities.size()) return Outcome::Invalid;
             const ruleset::Facility& f = r.facility(item.facility);
-            if (hasAbility(r.facilityAbilities(item.facility), AbilityKind::SpaceYard) && colonyHasSpaceYard(r, *c)) {
-                ctx.log(e, LogCategory::Construction, std::format("{} dropped at {}", f.name, where), "A planet can have only one space yard.",
-                        q.location);
-                return Outcome::Invalid;
-            }
-            // Built only while the colony has a free slot; otherwise the progress is lost (confirmed: binary).
-            if (static_cast<int>(c->facilities.size()) >= facilitySlots(r, s, *c)) {
-                ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, f.name), "No facility slot is free.", q.location);
-                return Outcome::Blocked;
-            }
-            for (int k = 0; k < std::max(1, item.count) && static_cast<int>(c->facilities.size()) < facilitySlots(r, s, *c); ++k) {
+            // With a free slot the whole count is added, even past the slots; with
+            // none nothing is built and nothing is said. A second space yard is
+            // not checked for again here (confirmed: binary).
+            if (static_cast<int>(c->facilities.size()) >= facilitySlots(r, s, *c)) return Outcome::Blocked;
+            const int count = std::max(1, item.count);
+            for (int k = 0; k < count; ++k) {
                 c->facilities.push_back(item.facility);
                 ctx.log(e, LogCategory::Construction, std::format("{} completed", f.name), std::format("Built on {}.", where), q.location);
                 ctx.mood(e, "Facility Constructed", q.location.system, c->planet);
             }
+            gainExperience(s.empire(e), count);  // each finished facility item adds its count (confirmed: binary)
             return Outcome::Done;
         }
         case QueueItem::Kind::Upgrade: {
             Colony* c = s.colony(q.target.planet);
             if (!c || item.facility >= r.data().facilities.size()) return Outcome::Invalid;
-            const int family = r.facility(item.facility).family;
-            const auto latest = r.latestFacilityOfFamily(s.empire(e), family);
-            if (!latest) return Outcome::Invalid;
-            const int newest = r.facility(*latest).romanNumeral;
+            // The colony's facility types in their stored order (the order in which
+            // each type first appears); every lower level of the target's family
+            // is converted, in that order, until the stored count is used up. With
+            // fewer left, only those change: the full price was paid (confirmed: binary).
+            const ruleset::Facility& target = r.facility(item.facility);
+            std::vector<uint32_t> types;
+            for (uint32_t f : c->facilities)
+                if (std::find(types.begin(), types.end(), f) == types.end()) types.push_back(f);
+            int left = std::max(0, item.count);
             int changed = 0;
-            for (uint32_t& f : c->facilities)
-                if (r.facility(f).family == family && r.facility(f).romanNumeral < newest) {
-                    f = *latest;
-                    ++changed;
-                }
-            if (changed == 0) return Outcome::Invalid;
+            for (uint32_t type : types) {
+                if (type >= r.data().facilities.size() || r.facility(type).family != target.family ||
+                    r.facility(type).romanNumeral >= target.romanNumeral)
+                    continue;
+                for (uint32_t& f : c->facilities)
+                    if (f == type && left > 0) {
+                        f = item.facility;
+                        --left;
+                        ++changed;
+                    }
+            }
             ctx.log(e, LogCategory::Construction, std::format("{} upgraded", where),
-                    std::format("{} facilities now {}.", changed, r.facility(*latest).name), q.location);
+                    std::format("{} facilit{} now {}.", changed, changed == 1 ? "y is" : "ies are", target.name), q.location);
             return Outcome::Done;
         }
     }
@@ -386,7 +417,12 @@ Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     ConstructionQueue* queue = liveQueue(s, q);
-    if (!queue || queue->items.empty() || queue->onHold || !queueBlocked(r, s, q.target).empty()) return {};
+    if (!queue) return {};
+    // At the start of its turn a queue drops every item it can no longer build
+    // (spec 02 §6.1, confirmed: binary), also while it is on hold or cannot
+    // work this turn (inferred, spec 02 §13 Q53).
+    std::erase_if(queue->items, [&](const QueueItem& item) { return itemObsolete(r, s, q.target, item); });
+    if (queue->items.empty() || queue->onHold || !queueBlocked(r, s, q.target).empty()) return {};
     const Resources rate = constructionRate(r, s, e, q.target);
     QueueItem& item = queue->items.front();
     const Resources cost = itemCost(r, s, e, q.target, item);

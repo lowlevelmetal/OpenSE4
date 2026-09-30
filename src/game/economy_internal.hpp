@@ -37,7 +37,7 @@ Resources designCost(const Rules& r, const Design& d);
 // goes into cargo (spec 03 §1).
 bool isShipOrBase(ruleset::VehicleType t);
 
-// The system holding the empire's homeworld colony, if it still owns one.
+// The empire's recorded home system (Empire::homeSystem): it never moves.
 SystemId homeSystem(const GameState& s, EmpireId e);
 
 // Number of stars in a system (solar generation).

@@ -471,6 +471,7 @@ colony uses the `… Domed` capacities [M/D]. Edge cases:
   (the owner is told when they reach it), and a change that would leave exactly 0 gives
   0.1.
 - Conditions affect **reproduction only** (§3). They do not change anger.
+- How the stored double meets the band edges is our choice for now (inferred, §13 Q51).
 - Events can also change conditions (see the events spec).
 
 **Blockade** (confirmed: binary)
@@ -1434,7 +1435,7 @@ the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
     turn.
 33. **Overcrowding.** *Settled* (confirmed: binary, §2): nothing removes population above
     the maximum, whether a dome went up or not. The colony just has no room to grow or take
-    in people until it falls below. Our engine removes the surplus at once (PARITY_GAPS).
+    in people until it falls below.
 34. **Rebellion.** *Settled* (confirmed: binary, §4): no riot counter; see answer 10.
 35. **Plague.** *Settled* (confirmed: binary, §3): see answer 20.
 36. **Maintenance victims.** *Settled* (confirmed: binary, §7): `unpaid div amount + 1`
@@ -1450,32 +1451,28 @@ the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
     slots.
 39. **Units without room.** *Settled* (confirmed: binary, §6.5): each unit without room is
     lost with its own message. The item stays at the top, with its full count, unless the
-    last unit was placed; the units already placed are kept. Our engine always removes the
-    item (PARITY_GAPS).
+    last unit was placed; the units already placed are kept.
 40. **Upgrade count.** *Settled* (confirmed: binary, §6.6): the target and the count are
-    stored when the item is queued, and both price and completion use them. Our queue
-    items do not store them yet (PARITY_GAPS).
+    stored when the item is queued, and both price and completion use them.
 41. **Atmosphere counter.** *Settled* (confirmed: binary, §2): the counter moves only on
     turns with a converter and the wrong atmosphere. It is not reset on other turns and
-    resumes where it stopped. Our engine resets it (PARITY_GAPS).
+    resumes where it stopped.
 42. **Replicant shares.** *Settled* (confirmed: binary, §3): the share is
     `round(P × q)`, ties to even, with `q = P_race / T` first stored as a 64-bit double.
-    That differs from our exact rational rounding only when the exact product ends in one
-    half (PARITY_GAPS).
+    That differs from exact rational rounding only when the exact product ends in one
+    half.
 43. **Minimum income.** *Settled* (confirmed: binary, §5.6): every living empire gets it,
-    with or without colonies. Our engine requires a colony (PARITY_GAPS).
+    with or without colonies.
 44. **Abandoned ships.** *Settled* (confirmed: binary): no happiness event at all. Only a
     ship destroyed by damage logs `Ship Lost in System`, which also feeds `Any Ship Lost`
-    (§4). Our engine logs both for abandoned ships (PARITY_GAPS).
+    (§4).
 45. **Troops and strangers.** *Settled* (confirmed: binary, §4): `Enemy Troops on Planet`
     counts once while another empire's landed troops still contest the planet;
     `Our Troops on Planet` counts every troop unit in the colony's cargo, whoever owns it;
-    ships without an owner never count. Our engine counts ownerless ships as enemies
-    (PARITY_GAPS).
+    ships without an owner never count.
 46. **Conditions in the engine.** *Settled* (confirmed: binary, §2): the original keeps
-    conditions as a real number (a 64-bit double) and multiplies it without rounding.
-    Our hundredths, with the rounded product and the 0.01 minimum step, are an
-    approximation (PARITY_GAPS).
+    conditions as a real number (a 64-bit double) and multiplies it without rounding. The
+    engine keeps that double too (`src/game/conditions.hpp`); for the band edges see 51.
 47. **Bonus above High.** *Closed:* the original offers only None, Low, Medium and High,
     so no value above High can occur. Treating an out-of-range value as High is our own
     input handling (an OpenSE4 extension); the engine's choice stands.
@@ -1484,14 +1481,46 @@ the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
     when `date mod Reproduction Check Frequency = 0`. In a simultaneous game the date has
     already advanced when an empire's turn is processed (the first processed turn is
     24001). In a turn-based game the date advances after the last player, so the first
-    round is processed at 24000 and gets the every-10th-turn effects. Our turn number is
-    the date minus 24000. That is the same for every frequency that divides 24000 (1–6,
-    8, 10, …) but not for others such as 7 or 9 (PARITY_GAPS).
+    round is processed at 24000 and gets the every-10th-turn effects. Testing the turn
+    number (the date minus 24000) instead would differ for frequencies that do not divide
+    24000, such as 7 or 9.
 49. **Cargo and facilities over capacity.** *Settled* (confirmed: binary, §2): facilities
     above the slots and population above the maximum are never removed. Cargo above the
     capacity stays until the planet next takes damage or loses population to plague;
     then cargo population, then units from the first stack, are removed until it fits.
-    Our engine never trims cargo (PARITY_GAPS).
+    See 54 for the details the engine chose.
 50. **Minister style at setup.** *Settled* (confirmed: binary, §10): the style starts empty
     (the race's own files) and can be left empty; "Use Race Minister Style" starts
-    unticked. Our setup matches; it differs only in small ways (PARITY_GAPS).
+    unticked. Our setup matches.
+
+Items 51 onward are the engine's own choices where the rules above are silent. Each is
+marked (inferred) in `src/game` and waits for an answer from the executable or the
+running game.
+
+51. **Band edges.** *Open* (inferred, §2): the stored double is compared with each edge
+    (0.3, 0.5, 1.0, 1.3, 1.5) as an x87 constant, as a Delphi literal would be. So a
+    double just below an edge is in the band below it: the double nearest 0.3 (an
+    asteroid field's 0.6 / 2, or 0.5 lowered by an event of −0.2) is Deadly, while the
+    double nearest 1.3 lies above 1.3 and is Good. If the original compares with double
+    constants, such values fall in the band above.
+52. **Where built units go.** *Open* (inferred, §6.5): after the builder, the engine
+    tries the empire's other planets in the sector in object order, then its ships and
+    bases in vehicle order. The original takes "the game's object order, planets and ships
+    mixed"; the engine has no order that mixes the two. Which order is it: creation order,
+    or the order of the system's object list, where a ship that arrives is appended?
+53. **Removing items a queue cannot build.** *Open* (inferred, §6.1): the engine removes
+    them at the start of every queue's turn, also when the queue is on hold, cloaked or
+    without population, or its colony is rioting. The processing order of §6.3 is decided
+    by each queue's top item before the removal.
+54. **Trimming cargo.** *Open* (inferred, §2): population held as cargo is removed from
+    the first group in list order. "Takes damage" is a hit in space combat that gets past
+    the planet's shields, of any damage type; the engine trims nowhere else (events,
+    intelligence sabotage). Plague trims after its loss when the colony survives.
+55. **Experience from kills.** *Open* (inferred, §9): a destroyed unit group gives the
+    tonnage of the units it had at the start of the battle; units lost by a group that
+    survives give nothing, nor do mines outside a battle, units stored on planets or
+    ground combat.
+56. **Upgrade target at queue time.** *OpenSE4 choice* (§6.6): the original's queue does
+    no tech check when an upgrade is queued, and its Upgrades tab offers only researched
+    targets. OpenSE4's command check also refuses an unresearched target, since commands
+    can come from any client. No difference in play is expected.

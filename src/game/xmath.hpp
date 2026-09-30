@@ -238,6 +238,13 @@ public:
         return pack(neg_, int64_t{exp_} + drop, {0, kept}, false);
     }
 
+    // ±significand × 2^exponent, exactly (a zero significand gives zero). The
+    // significand need not be normalized. Beyond the format's range the value
+    // saturates or flushes to zero, as in the operations.
+    static constexpr Ext fromParts(bool negative, uint64_t significand, int64_t exponent) {
+        return pack(negative, exponent - 64, {significand, 0}, false);
+    }
+
     constexpr bool isZero() const { return mant_ == 0; }
     constexpr bool isNegative() const { return neg_; }
     // value = ±significand() × 2^exponent(); significand() has bit 63 set unless zero.
@@ -295,6 +302,37 @@ private:
         return r;
     }
 };
+
+// ---- 64-bit doubles kept as bit patterns --------------------------------------------------------
+//
+// Where the original keeps a value as a 64-bit double between turns (planet
+// conditions, spec 02 §2), the state stores the double's IEEE 754 bit pattern
+// and the rules do their arithmetic in Ext.
+
+// The exact value of the double with bit pattern `bits`. Infinities and NaNs
+// (never stored by the rules) give zero.
+constexpr Ext fromDoubleBits(uint64_t bits) {
+    const bool negative = (bits >> 63) != 0;
+    const auto biased = static_cast<int64_t>((bits >> 52) & 0x7ff);
+    const uint64_t fraction = bits & ((uint64_t{1} << 52) - 1);
+    if (biased == 0x7ff) return {};
+    if (biased == 0) return Ext::fromParts(negative, fraction, -1074);  // zero or subnormal
+    return Ext::fromParts(negative, fraction | (uint64_t{1} << 52), biased - 1075);
+}
+
+// The bit pattern of `v` rounded to a double (to nearest, ties to even): what
+// storing an extended value into a double variable keeps. Values below the
+// double's normal range flush to zero, values beyond it saturate to the
+// largest finite double.
+constexpr uint64_t toDoubleBits(Ext v) {
+    const Ext d = v.roundedTo(kDoubleBits);
+    if (d.isZero()) return 0;
+    const uint64_t sign = d.isNegative() ? uint64_t{1} << 63 : 0;
+    const int64_t biased = int64_t{d.exponent()} + 11 + 1075;  // the significand's 53 bits sit at its top
+    if (biased <= 0) return sign;
+    if (biased >= 0x7ff) return sign | (uint64_t{0x7fe} << 52) | ((uint64_t{1} << 52) - 1);
+    return sign | (static_cast<uint64_t>(biased) << 52) | ((d.significand() >> 11) & ((uint64_t{1} << 52) - 1));
+}
 
 // The factor p / 100, rounded to 64 bits: what a percentage multiplies by.
 constexpr Ext percent(int64_t p) { return Ext(p) / Ext(100); }

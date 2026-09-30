@@ -7,6 +7,7 @@
 
 #include "client/classic/screens/setup_model.hpp"
 #include "datafile/datafile.hpp"
+#include "game/economy.hpp"
 
 #include <doctest/doctest.h>
 
@@ -345,7 +346,9 @@ TEST_CASE("setup model: racial point accounting") {
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 120) == 500);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 25 * 20 + 100 * 10);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 10 * 10));
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 30));  // clamped to Min Pct 50
+    // Costed as stored, even outside Min Pct 50 (spec 02 §8.1): only the race window keeps values in range.
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 40));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 160) == 25 * 20 + 100 * 40);
     // Cunning: 20 per point, beyond +10 at 200 per point; refunds 50 per point beyond -10.
     CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 200 * 5);
     CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 50 * 10));
@@ -522,6 +525,48 @@ TEST_CASE("setup model: the minister style of Empire Setup reaches the game and 
         CHECK(game->empires[i].ministerStyle.empty());
         CHECK_FALSE(game->empires[i].useRaceMinisterStyle);
     }
+}
+
+TEST_CASE("setup model: a picked minister style cannot be emptied; the race-style box stores none") {
+    // Spec 02 §10.
+    game::EmpireSetup e;
+    setup::pickMinisterStyle(e, "Bold");
+    CHECK(e.ministerStyle == "Bold");
+    setup::pickMinisterStyle(e, "");  // picking nothing leaves the field as it was
+    CHECK(e.ministerStyle == "Bold");
+    setup::setUseRaceMinisterStyle(e, true);
+    CHECK(e.useRaceMinisterStyle);
+    CHECK(e.ministerStyle.empty());
+    setup::setUseRaceMinisterStyle(e, false);
+    CHECK(e.ministerStyle.empty());
+    setup::pickMinisterStyle(e, "Meek");
+    CHECK(e.ministerStyle == "Meek");
+}
+
+TEST_CASE("setup model: experience travels in the empire file into the game") {
+    // Spec 02 §9: kept with the empire, only shown, with the race age read off it.
+    const game::Rules& r = setupRules();
+    setup::EmpireDraft d = setup::draftFromPreset(r, *game::findPreset(r, "Alpha"), 0);
+    CHECK(d.setup.experience == 0);
+    CHECK(game::economy::raceAge(d.setup.experience) == "Newborn");
+    auto e = setup::finishDraft(r, d, 5000);
+    REQUIRE(e.has_value());
+    e->experience = 123'456;
+    auto back = setup::empireFromToml(r, setup::empireToToml(r, *e));
+    REQUIRE(back.has_value());
+    CHECK(back->empire.experience == 123'456);
+    CHECK(game::economy::raceAge(back->empire.experience) == "Moderate");
+
+    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    s.options.systemCount = 12;
+    REQUIRE_FALSE(s.players.empty());
+    s.players[0] = back->empire;
+    s.computers = {false, 0};
+    auto g = setup::buildGameSetup(r, s);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    auto game = game::createGame(r, *g);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    CHECK(game->empires[0].experience == 123'456);
 }
 
 TEST_CASE("setup model: choice lists come from the data set") {

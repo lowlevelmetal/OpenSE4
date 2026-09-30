@@ -246,6 +246,7 @@ void Battle::addVehiclePiece(const Vehicle& v) {
     if (p.kind == Kind::UnitGroup) {
         p.stacks = groupStacks(v);
         p.hpStart = groupHitPoints(p, DamageType::Normal, true);
+        for (const UnitStack& st : p.stacks) p.tonnageStart += designTonnage(r_, s_.design(st.design)) * st.count;
     }
     p.arrived = detail::arrivedThisTurn(s_, v);
     std::tie(p.boxDx, p.boxDy) = detail::arrivalDirection(s_, v);
@@ -1532,11 +1533,12 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
                     p.plague = std::max(p.plague, 1 + static_cast<int>(type) - static_cast<int>(DamageType::PlagueLevel1));
                 return;
             case DamageType::OnlyPlanetPopulation: populationLoss(att, t, std::max<int64_t>(1, rem / cs_.damagePerPopulation)); return;
-            case DamageType::OnlyPlanetConditions:
-                // D × 0.1 on the 0-1.5 conditions scale (confirmed: binary); SpaceObject::conditions
-                // holds hundredths of that scale (spec 02 §2), so the loss is D × 10.
-                p.conditionsLost += rem * 10;
+            case DamageType::OnlyPlanetConditions: {
+                // Conditions drop by D × 0.1, never below 0 (confirmed: binary), hit by hit.
+                SpaceObject& obj = s_.galaxy.object(p.object);
+                obj.conditions = conditionsPlus(obj.conditions, -(xmath::Ext(rem) * (xmath::Ext(1) / xmath::Ext(10))));
                 return;
+            }
             case DamageType::OnlyResupplyDepots:
             case DamageType::OnlySpaceports: {
                 const AbilityKind k = type == DamageType::OnlySpaceports ? AbilityKind::Spaceport : AbilityKind::SupplyGeneration;
@@ -1690,6 +1692,13 @@ void Battle::creditKill(int att, int victim) {
     const Piece& v = pieces_[victim];
     const bool big = v.kind == Kind::Vehicle || v.kind == Kind::Planet || v.colonyLost;
     if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(att, 1, designTonnage(r_, s_.design(v.unit.design)));
+    // Empire experience (spec 02 §9, confirmed: binary): the destroyer's empire gains
+    // the tonnage div 10 of a ship (its hull) or of a whole unit group (its units'
+    // total, as the group was at the start: inferred, spec 02 §13 Q55); a planet gives nothing.
+    if (const EmpireId gainer = pieces_[k].owner; gainer.valid() && gainer.index() < s_.empires.size()) {
+        if (v.kind == Kind::Vehicle && v.unit.design.valid()) economy::gainExperience(s_.empire(gainer), designTonnage(r_, s_.design(v.unit.design)) / 10);
+        else if (v.kind == Kind::UnitGroup) economy::gainExperience(s_.empire(gainer), v.tonnageStart / 10);
+    }
     Piece& killer = pieces_[k];
     if (killer.kind != Kind::Vehicle || !killer.alive) return;   // unit groups and planets gain no experience
     detail::addExperience(killer.unit.experience, killer.unit.experienceTenths, big ? kShipKillTenths : kUnitKillTenths);
@@ -1928,6 +1937,7 @@ bool Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strateg
     u.launched = true;
     u.designStrategy = strategyIndex;
     u.startCount = count;
+    u.tonnageStart = designTonnage(r_, d) * count;
     u.hpStart = groupHitPoints(u, DamageType::Normal, true);
     buildWeapons(u);
     const int idx = addPiece(std::move(u));
@@ -2622,7 +2632,7 @@ void Battle::finish() {
         }
     }
 
-    // Planets: cargo, population, facilities, plague, conditions, lost and captured colonies.
+    // Planets: cargo, population, facilities, plague, lost and captured colonies.
     for (Piece& p : pieces_) {
         if (p.kind != Kind::Planet && !p.colonyLost) continue;
         Colony* c = s_.colony(p.object);
@@ -2645,12 +2655,9 @@ void Battle::finish() {
         std::erase_if(p.population, [](const PopulationGroup& g) { return g.millions <= 0; });
         c->population = p.population;
         c->facilities = p.facilities;
+        if (p.damaged) economy::trimCargoToCapacity(r_, s_, *c);  // cargo above the capacity goes when the planet takes damage (spec 02 §2)
         c->militia = p.militia;
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
-        if (p.conditionsLost > 0) {
-            SpaceObject& obj = s_.galaxy.object(p.object);
-            obj.conditions = static_cast<int>(std::clamp<int64_t>(obj.conditions - p.conditionsLost, 0, economy::kConditionsMax));   // 0-1.5 in hundredths
-        }
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);
         if (invaders(r_, s_, *c).empty()) c->militia = -1;
     }

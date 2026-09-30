@@ -21,7 +21,7 @@ constexpr Vec2 kMapSize{236, 158};
 
 std::string percent(int64_t v) { return std::format("{}%", v); }
 // Conditions show as their band (spec 02 §2).
-std::string conditionsText(int conditions) { return std::string(game::economy::conditionsName(game::economy::conditionsBand(conditions))); }
+std::string conditionsText(game::Conditions conditions) { return std::string(game::economy::conditionsName(game::economy::conditionsBand(conditions))); }
 
 std::string surfaceAndSize(const game::SpaceObject& o) {
     if (o.kind == game::ObjectKind::Asteroids) return "Asteroids";
@@ -228,7 +228,7 @@ private:
                     case PcSystem: return s.galaxy.system(p.system).name;
                     case PcType: return surfaceAndSize(o);
                     case PcAtmosphere: return o.atmosphere;
-                    case PcConditions: return int64_t{o.conditions};
+                    case PcConditions: return static_cast<int64_t>(o.conditions.bits);  // ordered like the values (never negative)
                     case PcMinerals: return int64_t{o.value[0]};
                     case PcOrganics: return int64_t{o.value[1]};
                     case PcRadioactives: return int64_t{o.value[2]};
@@ -552,7 +552,7 @@ private:
                                  cellText(u, s.galaxy.object(r.planet).atmosphere + (r.breathable ? "" : " (dome)"),
                                           r.breathable ? ImVec4(1, 1, 1, 1) : kTextWarn);
                              }});
-                c.push_back({"Conditions", 76, [&s](R r) { return SortKey{int64_t{s.galaxy.object(r.planet).conditions}}; },
+                c.push_back({"Conditions", 76, [&s](R r) { return SortKey{static_cast<int64_t>(s.galaxy.object(r.planet).conditions.bits)}; },
                              [&s](UiContext& u, R r) { cellText(u, conditionsText(s.galaxy.object(r.planet).conditions)); }, true});
                 for (size_t i = 0; i < 3; ++i)
                     c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 72,

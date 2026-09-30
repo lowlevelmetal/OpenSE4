@@ -534,13 +534,13 @@ TEST_CASE("events: planet effects") {
     auto target = [&](ObjectId o) { return onObject(kA, o); };
 
     SpaceObject& planet = s.galaxy.object(home);
-    // Conditions are hundredths of the 0–1.5 scale (spec 02 §2).
-    planet.conditions = 5;
+    // Conditions stay within the 0–1.5 scale (spec 02 §2).
+    planet.conditions = Conditions::hundredths(5);
     hit(s, Effect::PlanetConditionsChange, target(home), -8);
-    CHECK(planet.conditions == 0);
-    planet.conditions = 140;
+    CHECK(planet.conditions == Conditions{});
+    planet.conditions = Conditions::hundredths(140);
     hit(s, Effect::PlanetConditionsChange, target(home), 25);
-    CHECK(planet.conditions == 150);
+    CHECK(planet.conditions == kOptimalConditions);
     // Each value changes by the amount, within Minimum/Maximum Planet Percent
     // Value (10 and 150 in the test settings).
     planet.value = {100, 145, 25};

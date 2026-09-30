@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
 #include "game/ai_data.hpp"
+#include "game/economy.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -452,6 +453,15 @@ std::vector<std::string> atmospheres(const game::Rules& r) {
 
 std::vector<std::string> ministerStyleChoices(const game::Rules& r) { return game::ai::ministerStyles(r); }
 
+void pickMinisterStyle(game::EmpireSetup& e, std::string_view style) {
+    if (!style.empty()) e.ministerStyle = std::string(style);
+}
+
+void setUseRaceMinisterStyle(game::EmpireSetup& e, bool on) {
+    e.useRaceMinisterStyle = on;
+    if (on) e.ministerStyle.clear();
+}
+
 std::vector<std::string> designNameFiles(const game::Rules& r) {
     std::vector<std::string> out;
     if (r.gameRoot().empty()) return out;
@@ -516,6 +526,7 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
         {"password_hash", e.passwordHash},
         {"minister_style", e.ministerStyle},
         {"use_race_minister_style", e.useRaceMinisterStyle},
+        {"experience", static_cast<int64_t>(e.experience)},
         {"race", std::move(raceTable)},
     };
     std::ostringstream os;
@@ -545,6 +556,8 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
     d.setup.color = static_cast<uint32_t>(root["color"].value_or(int64_t{0}) & 0xffffff);
     d.setup.passwordHash = root["password_hash"].value_or(std::string{});
     d.setup.useRaceMinisterStyle = root["use_race_minister_style"].value_or(false);
+    // Experience builds up over the games the empire is saved from (spec 02 §9).
+    d.setup.experience = static_cast<int>(std::clamp<int64_t>(root["experience"].value_or(int64_t{0}), 0, game::economy::kMaxEmpireExperience));
     if (d.setup.name.empty()) return std::unexpected("The empire file has no empire name.");
     const std::string style = root["minister_style"].value_or(std::string{});
     if (!style.empty()) {

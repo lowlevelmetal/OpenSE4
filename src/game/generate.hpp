@@ -114,8 +114,8 @@ std::vector<uint32_t> naturalSectorTypes(const ruleset::Ruleset& rs, ObjectKind 
 // Copies a SectType record's attributes (size, type, atmosphere, star data) onto an object.
 void applySectorType(const ruleset::Ruleset& rs, SpaceObject& obj, uint32_t sectorType);
 // Conditions of a natural planet (spec 01 §5.6): R[0,10]/10 + 0.5, halved for
-// asteroid fields. Stored in hundredths (1.5 = 150), see SpaceObject::conditions.
-int rollConditions(bool asteroids, Rng& rng);
+// asteroid fields.
+Conditions rollConditions(bool asteroids, Rng& rng);
 // Values and conditions as for a natural planet or asteroid field.
 void rollNaturalValues(const ruleset::Ruleset& rs, SpaceObject& obj, bool finiteResources, Rng& rng);
 // The sectors of a system that hold no object.

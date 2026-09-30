@@ -286,6 +286,7 @@ template <class Ar> void io(Ar& ar, Resources& r) { fields(ar, r.v); }
 template <class Ar> void io(Ar& ar, Sector& s) { fields(ar, s.x, s.y); }
 template <class Ar> void io(Ar& ar, Location& l) { fields(ar, l.system, l.sector); }
 template <class Ar> void io(Ar& ar, GalaxyPos& p) { fields(ar, p.x, p.y); }
+template <class Ar> void io(Ar& ar, Conditions& c) { fields(ar, c.bits); }
 
 template <class Ar>
 void io(Ar& ar, SpaceObject& o) {
@@ -554,7 +555,7 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
-           e.ministerStyle, e.useRaceMinisterStyle);
+           e.ministerStyle, e.useRaceMinisterStyle, e.experience);
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

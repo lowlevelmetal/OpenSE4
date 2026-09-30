@@ -98,8 +98,9 @@ Resources designCost(const Rules& r, const Design& d) {
 bool isShipOrBase(ruleset::VehicleType t) { return t == ruleset::VehicleType::Ship || t == ruleset::VehicleType::Base; }
 
 SystemId homeSystem(const GameState& s, EmpireId e) {
-    if (e.valid() && e.index() < s.empires.size() && s.empire(e).homeSystem.index() < s.galaxy.systems.size()) return s.empire(e).homeSystem;  // recorded at creation
-    for (const auto& c : s.colonies)
+    // Recorded when the game is created, and for a rebel empire when it is founded (Empire::homeSystem).
+    if (e.valid() && e.index() < s.empires.size() && s.empire(e).homeSystem.index() < s.galaxy.systems.size()) return s.empire(e).homeSystem;
+    for (const auto& c : s.colonies)  // not recorded (inferred fallback): a capital's system
         if (c && c->owner == e && c->homeworld) return s.galaxy.object(c->planet).system;
     return {};
 }
@@ -122,6 +123,7 @@ int clampedValue(const Rules& r, const GameState& s, int64_t v) {
 // A turn-based game advances the date only after the last player's end-of-turn
 // processing (spec 05 §8), so its players' processing sees the unadvanced date.
 uint32_t processingTurn(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
+uint32_t processingDate(const GameState& s) { return kStartDate + processingTurn(s); }
 
 // ---- Racial effects --------------------------------------------------------------------------------
 
@@ -163,16 +165,37 @@ int characteristicPointCost(const Rules& r, Characteristic c, int value) {
     const int64_t threshold = r.setting(std::format("Characteristic {} Threshold", name), 0);
     const int64_t pos = r.setting(std::format("Characteristic {} Threshhold Pct Cost Pos", name), 0);
     const int64_t neg = r.setting(std::format("Characteristic {} Threshhold Pct Cost Neg", name), 0);
-    // The value is first clamped to the characteristic's Min/Max Pct (spec 02 §8.1).
-    int64_t lo = r.setting(std::format("Characteristic {} Min Pct", name), 0);
-    int64_t hi = r.setting(std::format("Characteristic {} Max Pct", name), 1'000'000);
-    if (hi < lo) std::swap(lo, hi);
-    const int64_t d = std::clamp<int64_t>(value, lo, hi) - 100;
+    // Costed as stored: Min/Max Pct limit only the race window's buttons, so a
+    // value from a preset or file outside them costs what it says (spec 02 §8.1,
+    // spec 01 §14 Q35, confirmed: binary).
+    const int64_t d = int64_t{value} - 100;
     int64_t points = 0;
     if (threshold < 1 || (d <= threshold && -d <= threshold)) points = cost * d;
     else if (d > threshold) points = cost * threshold + pos * (d - threshold);
     else points = -cost * threshold - neg * (-d - threshold);
     return static_cast<int>(points);
+}
+
+// ---- Empire experience ----------------------------------------------------------------------------
+
+void gainExperience(Empire& e, int64_t amount) {
+    if (amount <= 0) return;
+    e.experience = static_cast<int>(std::min<int64_t>(int64_t{e.experience} + amount, kMaxEmpireExperience));
+}
+
+std::string_view raceAge(int64_t experience) {
+    // Each label covers experience up to its limit (confirmed: binary).
+    static constexpr std::array<std::pair<int64_t, std::string_view>, 8> kAges{{{5'000, "Newborn"},
+                                                                                {10'000, "Infantile"},
+                                                                                {50'000, "Young"},
+                                                                                {200'000, "Moderate"},
+                                                                                {1'000'000, "Old"},
+                                                                                {10'000'000, "Ancient"},
+                                                                                {100'000'000, "God-like"},
+                                                                                {400'000'000, "Stellar Ancients"}}};
+    for (const auto& [limit, name] : kAges)
+        if (experience <= limit) return name;
+    return "First Ones";
 }
 
 // ---- Modifier tables -------------------------------------------------------------------------------
@@ -214,13 +237,18 @@ int moodReproduction(Mood m) {
 
 // ---- Conditions -------------------------------------------------------------------------------------
 
-ConditionsBand conditionsBand(int conditions) {
-    // Edges 0.3, 0.5, 1.0, 1.3 and 1.5 (confirmed: binary).
-    if (conditions >= 150) return ConditionsBand::Optimal;
-    if (conditions >= 130) return ConditionsBand::Good;
-    if (conditions >= 100) return ConditionsBand::Mild;
-    if (conditions >= 50) return ConditionsBand::Unpleasant;
-    if (conditions >= 30) return ConditionsBand::Harsh;
+ConditionsBand conditionsBand(Conditions conditions) {
+    // Edges 0.3, 0.5, 1.0, 1.3 and 1.5 (confirmed: binary). The stored double is
+    // compared with each edge as an x87 constant (inferred, spec 02 §13 Q51), so
+    // a double just below an edge, such as the double nearest 0.3, is in the
+    // band below it.
+    const xmath::Ext c = conditions.value();
+    const auto atLeast = [&](int tenths) { return c >= xmath::Ext(tenths) / xmath::Ext(10); };
+    if (atLeast(15)) return ConditionsBand::Optimal;
+    if (atLeast(13)) return ConditionsBand::Good;
+    if (atLeast(10)) return ConditionsBand::Mild;
+    if (atLeast(5)) return ConditionsBand::Unpleasant;
+    if (atLeast(3)) return ConditionsBand::Harsh;
     return ConditionsBand::Deadly;
 }
 
@@ -620,11 +648,9 @@ Income computeIncome(const Rules& r, const GameState& s, EmpireId e) {
     for (const Extraction& x : inc.mined) inc.remote.v[x.resource] += x.amount;
 
     // Generate Points: flat points from every object the empire owns, no modifiers (spec 02 §5.4).
-    bool hasColony = false;
     int64_t genResearch = 0, genIntel = 0;
     for (const auto& c : s.colonies) {
         if (!c || c->owner != e) continue;
-        hasColony = true;
         for (const ParsedAbility& a : workingAbilities(r, s, *c)) {
             for (size_t k = 0; k < 3; ++k)
                 if (a.kind == kGeneratePoints[k]) inc.generated.v[k] += a.value1;
@@ -641,8 +667,9 @@ Income computeIncome(const Rules& r, const GameState& s, EmpireId e) {
     }
 
     // Not a floor: a resource the colonies deliver exactly 0 of is replaced by the
-    // Settings amount (confirmed: binary). Only for an empire that holds a colony (inferred).
-    if (hasColony) {
+    // Settings amount, for every living empire, also one left with ships only
+    // (confirmed: binary).
+    if (s.empire(e).alive) {
         static constexpr std::array<std::string_view, 3> kMinimum{"Minimum Empire Minerals Generation", "Minimum Empire Organics Generation",
                                                                   "Minimum Empire Radioactives Generation"};
         for (size_t k = 0; k < 3; ++k)
@@ -724,10 +751,8 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         ctx.log(e, LogCategory::Construction, std::format("{} {} abandoned", ship ? "Ship" : "Unit group", v.name),
                 "The empire could not pay its maintenance.", v.location);
         for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
-        if (ship) {  // (inferred) abandoned ships count as ships lost
-            ctx.mood(e, "Any Ship Lost", v.location.system);
-            ctx.mood(e, "Ship Lost in System", v.location.system);
-        }
+        // No happiness event: only a ship destroyed by damage logs `Ship Lost in
+        // System` and `Any Ship Lost` (confirmed: binary).
         v.count = 0;  // destroyed whole
     }
     s.removeDeadVehicles();

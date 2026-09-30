@@ -1079,15 +1079,53 @@ TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
     GameState& s = ar.s;
     Colony& home = homeworld(s, ar.b);
     home.population = {{ar.b, 1000}};
-    s.galaxy.object(home.planet).conditions = 120;   // hundredths of the 0-1.5 scale
+    s.galaxy.object(home.planet).conditions = Conditions::hundredths(120);
     spawn(s, frigate(s, ar.a, "Polluter", 3, {"CT Climate Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
     TurnContext ctx = context(s);
     combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
-    const int after = s.galaxy.object(home.planet).conditions;
+    const int64_t after = s.galaxy.object(home.planet).conditions.inHundredths();
     CHECK(after < 120);
     CHECK(after >= 0);
     CHECK((120 - after) % 10 == 0);   // each 1-point hit costs 0.1
     CHECK(s.colony(home.planet)->totalPopulation() == 1000);
+}
+
+TEST_CASE("combat: a planet that takes damage sheds cargo above its capacity") {
+    // Spec 02 §2, §13 Q49: the population held as cargo goes first, 1M at a time.
+    const Rules& r = combatRules();
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& home = homeworld(s, ar.b);
+    home.population = {{ar.b, 1000}};
+    const int64_t capacity = colonyCargoCapacity(r, s, home);
+    const int64_t mass = r.setting("Population Mass", 5);
+    home.cargo.units.clear();
+    home.cargo.population = {{ar.b, capacity / mass + 3}};
+    REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
+    spawn(s, frigate(s, ar.a, "Bomber", 3, {"CT Neutron Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+    REQUIRE(s.colony(home.planet) != nullptr);
+    REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
+    REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
+    CHECK(s.colony(home.planet)->cargo.population[0].millions == capacity / mass);
+}
+
+TEST_CASE("combat: the empire that destroys a ship gains its hull tonnage div 10 as experience") {
+    // Spec 02 §9: empire experience, only shown.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const DesignId hunter = frigate(s, ar.a, "Hunter", 3, {"CT Big Gun", "CT Big Armor"});
+    const DesignId prey = frigate(s, ar.b, "Prey", 1, {});
+    spawn(s, hunter, ar.loc);
+    const VehicleId victim = spawn(s, prey, ar.loc);
+    s.empire(ar.a).experience = 7;
+    s.empire(ar.b).experience = 0;
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, ar.loc);
+    REQUIRE(s.vehicle(victim)->count == 0);
+    CHECK(s.empire(ar.a).experience == 7 + combatRules().hull(s.design(prey).hull).tonnage / 10);
+    CHECK(s.empire(ar.b).experience == 0);
 }
 
 TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the map") {

@@ -11,6 +11,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
+#include "game/combat.hpp"
 #include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -108,7 +109,7 @@ Colony& plainHome(const Rules& r, GameState& s, std::initializer_list<std::strin
     c.anger = 35;
     SpaceObject& p = s.galaxy.object(c.planet);
     p.value = {100, 100, 100};
-    p.conditions = 100;
+    p.conditions = Conditions::hundredths(100);
     return c;
 }
 
@@ -163,7 +164,7 @@ Colony& addColony(GameState& s, EmpireId e, ObjectId planet, int64_t population)
     SpaceObject& p = s.galaxy.object(planet);
     p.atmosphere = s.empire(e).race.atmosphere;
     p.value = {100, 100, 100};
-    p.conditions = 100;
+    p.conditions = Conditions::hundredths(100);
     return *s.colonies[planet.index()];
 }
 
@@ -274,18 +275,24 @@ TEST_CASE("economy: population modifier rows, mood percentages and condition ban
 
     // Conditions are hundredths of the 0-1.5 scale.
     using economy::ConditionsBand;
-    using economy::conditionsBand;
-    CHECK(conditionsBand(150) == ConditionsBand::Optimal);
-    CHECK(conditionsBand(149) == ConditionsBand::Good);
-    CHECK(conditionsBand(130) == ConditionsBand::Good);
-    CHECK(conditionsBand(129) == ConditionsBand::Mild);
-    CHECK(conditionsBand(100) == ConditionsBand::Mild);
-    CHECK(conditionsBand(99) == ConditionsBand::Unpleasant);
-    CHECK(conditionsBand(50) == ConditionsBand::Unpleasant);
-    CHECK(conditionsBand(49) == ConditionsBand::Harsh);
-    CHECK(conditionsBand(30) == ConditionsBand::Harsh);
-    CHECK(conditionsBand(29) == ConditionsBand::Deadly);
-    CHECK(conditionsBand(0) == ConditionsBand::Deadly);
+    const auto band = [](int64_t hundredths) { return economy::conditionsBand(Conditions::hundredths(hundredths)); };
+    CHECK(band(150) == ConditionsBand::Optimal);
+    CHECK(band(149) == ConditionsBand::Good);
+    CHECK(band(130) == ConditionsBand::Good);
+    CHECK(band(129) == ConditionsBand::Mild);
+    CHECK(band(100) == ConditionsBand::Mild);
+    CHECK(band(99) == ConditionsBand::Unpleasant);
+    CHECK(band(50) == ConditionsBand::Unpleasant);
+    CHECK(band(49) == ConditionsBand::Harsh);
+    CHECK(band(31) == ConditionsBand::Harsh);
+    CHECK(band(29) == ConditionsBand::Deadly);
+    CHECK(band(0) == ConditionsBand::Deadly);
+    // The edges are x87 constants (inferred): the double nearest 1.3 lies above
+    // 1.3 and is Good, the double nearest 0.3 lies below 0.3 and is Deadly.
+    CHECK(Conditions::hundredths(130).value() > xmath::Ext(13) / xmath::Ext(10));
+    CHECK(Conditions::hundredths(30).value() < xmath::Ext(3) / xmath::Ext(10));
+    CHECK(band(30) == ConditionsBand::Deadly);
+    CHECK(economy::conditionsBand(Conditions::of(xmath::Ext(3) / xmath::Ext(10) + xmath::Ext(1) / xmath::Ext(1'000'000))) == ConditionsBand::Harsh);
     CHECK(economy::conditionsName(ConditionsBand::Good) == "Good");
     CHECK(economy::conditionsReproduction(ConditionsBand::Optimal) == 5);
     CHECK(economy::conditionsReproduction(ConditionsBand::Good) == 2);
@@ -475,9 +482,22 @@ TEST_CASE("economy: output reaches the treasury only through a spaceport") {
     CHECK(out.connected);
     CHECK(out.deliveryPercent == 100);
 
+    // The home system is recorded at game creation and never moves: after the
+    // homeworld is lost its other colonies there keep the quarter, and a
+    // capital elsewhere never gets it (spec 02 §2, §5.5).
+    CHECK(s.empire(kMe).homeSystem == homeSys);
+    far.facilities = {facilityIndex(*r, "Test Mine")};
+    far.population = {{kMe, 1000}};
+    far.homeworld = true;
+    Colony& moon = addColony(s, kMe, freePlanet(s, homeSys, true), 1000);
+    moon.facilities = {facilityIndex(*r, "Test Mine")};
+    s.colonies[home.planet.index()].reset();
+    CHECK(economy::colonyOutput(*r, s, moon).deliveryPercent == 25);
+    CHECK(economy::colonyOutput(*r, s, far).deliveryPercent == 0);
+
     // The No Spaceports trait connects every system.
     giveTrait(*r, s, kMe, "Free Traders");
-    CHECK(economy::colonyOutput(*r, s, home).deliveryPercent == 100);
+    CHECK(economy::colonyOutput(*r, s, far).deliveryPercent == 100);
 }
 
 TEST_CASE("economy: visible enemy ships and bases in the sector blockade a planet") {
@@ -568,6 +588,13 @@ TEST_CASE("economy: generated points, the minimum income and the opening researc
     economyTurn(*r, s);
     CHECK(s.empire(kMe).economy.colonies[Resource::Minerals] == pctTrunc(pctRound(800, 10), 105));
     CHECK(s.empire(kMe).stockpile == Resources{84, 200, 200});
+
+    // Every living empire gets it, also one left with ships only (spec 02 §5.6).
+    for (auto& c : s.colonies)
+        if (c && c->owner == kMe) c.reset();
+    s.empire(kMe).stockpile = {};
+    economyTurn(*r, s);
+    CHECK(s.empire(kMe).stockpile == Resources{200, 200, 200});
 }
 
 TEST_CASE("economy: the computer player bonus multiplies income and construction") {
@@ -659,7 +686,8 @@ TEST_CASE("economy: unpaid maintenance abandons whole vehicles, ships out of sup
     const auto moods = economyTurn(*r, s);
     CHECK(vehiclesOf(s, kMe) == 4);  // 500 unpaid: 500 div 100 + 1 = 6 abandoned
     CHECK(s.design(ship).lost == 6);
-    CHECK(countMood(moods, "Any Ship Lost") == 6);
+    CHECK(countMood(moods, "Any Ship Lost") == 0);  // no happiness event for abandoned ships
+    CHECK(countMood(moods, "Ship Lost in System") == 0);
     CHECK(logged(s, kMe, "abandoned"));
     CHECK(s.empire(kMe).stockpile.isZero());
 
@@ -871,6 +899,12 @@ TEST_CASE("economy: hold, riots, emergency and slow build") {
     CHECK(turn() == 500);
     CHECK(turn() == 500);
     CHECK(turn() == 2000);
+
+    // Switched off before a turn has passed, it costs nothing (spec 02 §6.4).
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, false, true, -1}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, false, false, -1}).ok);
+    CHECK(home.queue.slowTurns == 0);
+    CHECK(turn() == 2000);
 }
 
 TEST_CASE("economy: repeat build keeps the top item while it can be built") {
@@ -914,8 +948,10 @@ TEST_CASE("economy: ships appear at the yard, follow the queue's waypoint and re
     CHECK(economy::itemCost(r, s, kMe, q, home.queue.items[0]) == Resources{160, 20, 20});
 
     const size_t before = s.vehicles.size();
+    const int experience = s.empire(kMe).experience;
     const auto moods = economyTurn(r, s);
     REQUIRE(s.vehicles.size() == before + 1);
+    CHECK(s.empire(kMe).experience == experience + r.hull(s.design(ship).hull).tonnage / 10);  // spec 02 §9
     const Vehicle& built = s.vehicles.back();
     CHECK(built.design == ship);
     CHECK(built.location == homeLoc);
@@ -961,23 +997,37 @@ TEST_CASE("economy: units go into cargo, one at a time, in the same sector only"
     const VehicleId h = addTestVehicle(s, r, hauler, homeLoc).id;
     const VehicleId elsewhere = addTestVehicle(s, r, hauler, Location{homeLoc.system, Sector{homeLoc.sector.x == 0 ? 1 : 0, 0}}).id;
     REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    s.empire(kMe).log.clear();
     economyTurn(r, s);
     CHECK(s.vehicle(h)->cargo.unitCount(fighter) == 2);  // 50 kT holds two 20 kT fighters
     CHECK(s.vehicle(elsewhere)->cargo.unitCount(fighter) == 0);
     CHECK(s.design(fighter).built == 5);  // the third found no room and was not built
-    CHECK(home.queue.items.empty());
-    CHECK(logged(s, kMe, "No Storage Available"));
+    // The last unit found no room: the item stays at the top with its full
+    // count and no progress; one message per unit lost (spec 02 §6.5, Q39).
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].count == 3);
+    CHECK(home.queue.items[0].spent.isZero());
+    const auto noRoom = [&] {
+        return std::count_if(s.empire(kMe).log.begin(), s.empire(kMe).log.end(),
+                             [](const LogEntry& l) { return l.title.starts_with("No Storage Available"); });
+    };
+    CHECK(noRoom() == 1);
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);  // paid again; now nothing fits: three messages
+    CHECK(s.design(fighter).built == 5);
+    CHECK(noRoom() == 3);
+    REQUIRE(home.queue.items.size() == 1);
 
     // Unit caps are checked at launch, not here.
     s.options.maxUnitsPerPlayer = 0;
     home.cargo.population.clear();
     REQUIRE(economy::itemCost(r, s, kMe, q, item) == Resources{120, 0, 15});
-    home.queue.items.push_back(item);
     economyTurn(r, s);
     CHECK(s.design(fighter).built == 8);
+    CHECK(home.queue.items.empty());
 }
 
-TEST_CASE("economy: facilities need a free slot; upgrades replace older levels") {
+TEST_CASE("economy: facilities need a free slot; with one the whole count is built") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     dropVehicles(s, kMe);
@@ -985,45 +1035,169 @@ TEST_CASE("economy: facilities need a free slot; upgrades replace older levels")
     const int slots = facilitySlots(r, s, home);
     home.facilities.assign(static_cast<size_t>(slots - 1), facilityIndex(r, "Test Farm"));
     home.queue.items = {facilityItem(r, "Test Mine"), facilityItem(r, "Test Mine")};  // the second overfills
+    home.queue.items[0].count = 3;
     s.empire(kMe).stockpile = {40000, 40000, 40000};
-    economyTurn(r, s);
-    CHECK(static_cast<int>(home.facilities.size()) == slots);
+    s.empire(kMe).experience = 0;
+    auto moods = economyTurn(r, s);
+    // One slot was free: all three are added, past the slots (spec 02 §6.5, Q38).
+    CHECK(static_cast<int>(home.facilities.size()) == slots + 2);
+    CHECK(countMood(moods, "Facility Constructed") == 3);
+    CHECK(s.empire(kMe).experience == 3);  // a finished facility item adds its count
     REQUIRE(home.queue.items.size() == 1);
     CHECK(home.queue.items[0].spent.isZero());
-    economyTurn(r, s);  // paid for, but no slot: the progress is lost
-    CHECK(static_cast<int>(home.facilities.size()) == slots);
+    s.empire(kMe).log.clear();
+    economyTurn(r, s);  // paid for, but no slot: the progress is lost and nothing is said
+    CHECK(static_cast<int>(home.facilities.size()) == slots + 2);
     REQUIRE(home.queue.items.size() == 1);
     CHECK(home.queue.items[0].spent.isZero());
     CHECK(s.empire(kMe).economy.construction == Resources{300, 0, 0});
-    CHECK(logged(s, kMe, "No facility slot"));
+    CHECK_FALSE(logged(s, kMe, "Test Mine"));
+    CHECK(s.empire(kMe).experience == 3);
 
-    // Upgrades: every older mine on the planet becomes the newest level.
-    home.queue.items.clear();
-    home.facilities = {facilityIndex(r, "Test Mine"), facilityIndex(r, "Test Mine"), facilityIndex(r, "Test Farm")};
-    s.empire(kMe).techLevels[techArea(r, "Test Economics").index()] = 3;
-    QueueItem up;
-    up.kind = QueueItem::Kind::Upgrade;
-    up.facility = facilityIndex(r, "Test Mine");
-    const cmd::QueueTarget q{home.planet, {}};
-    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, up}).ok);
-    CHECK(economy::upgradeableCount(r, s, kMe, home, up.facility) == 2);
-    CHECK(economy::itemCost(r, s, kMe, q, home.queue.items[0]) == Resources{400, 0, 0});  // trunc(50 % of 400), twice
+    // A second space yard is not checked for again at completion.
+    home.facilities = {facilityIndex(r, "Test Space Yard")};
+    home.queue.items = {facilityItem(r, "Test Space Yard")};
     economyTurn(r, s);
-    CHECK(home.facilities[0] == facilityIndex(r, "Test Mine II"));
-    CHECK(home.facilities[1] == facilityIndex(r, "Test Mine II"));
-    CHECK(home.facilities[2] == facilityIndex(r, "Test Farm"));
+    CHECK(std::count(home.facilities.begin(), home.facilities.end(), facilityIndex(r, "Test Space Yard")) == 2);
+}
+
+namespace {
+
+// Test rules with a third mine level, researched from the start.
+std::unique_ptr<Rules> upgradeRules(int upgradePercent = 50) {
+    return tweakedRules([&](ruleset::Ruleset& rs) {
+        ruleset::Facility f = rs.facilities[facilityIndex(engineRules(), "Test Mine II")];
+        f.name = "Test Mine III";
+        f.romanNumeral = 3;
+        f.cost = {600, 20, 0};
+        f.requirements.clear();
+        rs.facilities.push_back(std::move(f));
+        setKey(rs, "Upgrade Facility Cost Percent", upgradePercent);
+    });
+}
+
+QueueItem upgradeTo(const Rules& r, std::string_view target) {
+    QueueItem it;
+    it.kind = QueueItem::Kind::Upgrade;
+    it.facility = facilityIndex(r, target);
+    return it;
+}
+
+} // namespace
+
+TEST_CASE("economy: an upgrade stores its target and count when queued") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t mine = facilityIndex(*r, "Test Mine"), mine2 = facilityIndex(*r, "Test Mine II"), mine3 = facilityIndex(*r, "Test Mine III");
+    const uint32_t farm = facilityIndex(*r, "Test Farm");
+    Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine II", "Test Farm", "Test Mine"});
+    s.empire(kMe).techLevels[techArea(*r, "Test Economics").index()] = 3;
+    const cmd::QueueTarget q{home.planet, {}};
+    CHECK(economy::upgradeCount(*r, home, mine3) == 3);
+    CHECK(economy::upgradeCount(*r, home, mine2) == 2);
+
+    // The count is every lower level of the family, whatever the client sends.
+    QueueItem up = upgradeTo(*r, "Test Mine III");
+    up.count = 1;
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, up}).ok);
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].facility == mine3);
+    CHECK(home.queue.items[0].count == 3);
+    // trunc(target cost × 50 %) × the stored count (spec 02 §6.6).
+    CHECK(economy::itemCost(*r, s, kMe, q, home.queue.items[0]) == Resources{300 * 3, 10 * 3, 0});
+    // The count cannot be changed, and a second upgrade to the same target is refused.
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueSetCount{q, 0, 1}).ok);
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine II")}).ok);  // another target is fine
+    CHECK(home.queue.items[1].count == 2);
+    home.queue.items.pop_back();
+    // Nothing to upgrade: refused.
+    CHECK_FALSE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Farm")}).ok);
+
+    // A mine built since does not change the price or the count: the stored
+    // count converts facility types in their stored order (the order each type
+    // first appears), not lowest level first.
+    home.facilities.push_back(mine);
+    CHECK(economy::itemCost(*r, s, kMe, q, home.queue.items[0]) == Resources{900, 30, 0});
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine2, farm, mine3, mine3});
     CHECK(home.queue.items.empty());
+    CHECK(logged(s, kMe, "3 facilities are now Test Mine III"));
+
+    // Upgrades never repeat.
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueFlags{q, false, true, false, -1}).ok);
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine3, farm, mine3, mine3});
+    CHECK(home.queue.items.empty());
+}
+
+TEST_CASE("economy: an upgrade with fewer facilities left converts those, at the full price") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t mine = facilityIndex(*r, "Test Mine"), mine3 = facilityIndex(*r, "Test Mine III");
+    Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine", "Test Mine"});
+    const cmd::QueueTarget q{home.planet, {}};
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{q, upgradeTo(*r, "Test Mine III")}).ok);
+    REQUIRE(home.queue.items[0].count == 3);
+    home.facilities.pop_back();  // one mine is lost before the upgrade finishes
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    CHECK(home.facilities == std::vector<uint32_t>{mine3, mine3});
+    CHECK(s.empire(kMe).economy.construction == Resources{900, 30, 0});
+
+    // At the start of a queue's turn an upgrade with nothing left is removed,
+    // even from under the top item (spec 02 §6.1).
+    home.facilities = {mine, mine};
+    home.queue.items = {facilityItem(*r, "Test Farm")};
+    home.queue.items[0].count = 1;
+    home.queue.items.push_back(economy::upgradeItem(*r, home, mine3));
+    REQUIRE(home.queue.items.back().count == 2);
+    home.facilities = {mine3, mine3};
+    home.queue.onHold = true;  // also on hold (inferred, spec 02 §13 Q53)
+    economyTurn(*r, s);
+    REQUIRE(home.queue.items.size() == 1);
+    CHECK(home.queue.items[0].kind == QueueItem::Kind::Facility);
 }
 
 TEST_CASE("economy: upgrade prices truncate per facility") {
     auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Upgrade Facility Cost Percent", 33); });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Test Mine", "Test Mine", "Test Mine"});
-    s.empire(kMe).techLevels[techArea(*r, "Test Economics").index()] = 3;
-    QueueItem up;
-    up.kind = QueueItem::Kind::Upgrade;
-    up.facility = facilityIndex(*r, "Test Mine");
+    const QueueItem up = economy::upgradeItem(*r, home, facilityIndex(*r, "Test Mine II"));
+    CHECK(up.count == 3);
     CHECK(economy::itemCost(*r, s, kMe, cmd::QueueTarget{home.planet, {}}, up) == Resources{pctTrunc(400, 33) * 3, 0, 0});
+}
+
+TEST_CASE("economy: ships leave a queue that has lost its yard at the start of its turn") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {"Test Space Yard"});
+    const cmd::QueueTarget q{home.planet, {}};
+    const DesignId ship = frigate(s, r, kMe);
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    QueueItem warship;
+    warship.design = ship;
+    QueueItem wasps;
+    wasps.design = fighter;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, wasps}).ok);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    home.facilities.clear();  // the yard is gone (lost in battle, say)
+    CHECK(economy::itemObsolete(r, s, q, home.queue.items[0]));
+    CHECK_FALSE(economy::itemObsolete(r, s, q, home.queue.items[1]));
+    const size_t before = s.vehicles.size();
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(r, s);
+    // Both ships are gone before anything is paid; the units are built instead.
+    CHECK(s.vehicles.size() == before);
+    CHECK(home.queue.items.empty());
+    CHECK(home.cargo.unitCount(fighter) == 1);
+    CHECK_FALSE(logged(s, kMe, "cannot build"));
 }
 
 TEST_CASE("economy: space yard ships build where they are, but not while cloaked") {
@@ -1050,6 +1224,28 @@ TEST_CASE("economy: space yard ships build where they are, but not while cloaked
     CHECK(s.vehicle(yard)->queue.items.empty());
 }
 
+TEST_CASE("economy: empire experience is capped and gives the race age") {
+    // Spec 02 §9: each label covers experience up to its limit.
+    CHECK(economy::raceAge(0) == "Newborn");
+    CHECK(economy::raceAge(5'000) == "Newborn");
+    CHECK(economy::raceAge(5'001) == "Infantile");
+    CHECK(economy::raceAge(10'001) == "Young");
+    CHECK(economy::raceAge(50'001) == "Moderate");
+    CHECK(economy::raceAge(200'001) == "Old");
+    CHECK(economy::raceAge(1'000'001) == "Ancient");
+    CHECK(economy::raceAge(10'000'001) == "God-like");
+    CHECK(economy::raceAge(100'000'001) == "Stellar Ancients");
+    CHECK(economy::raceAge(400'000'000) == "Stellar Ancients");
+    CHECK(economy::raceAge(400'000'001) == "First Ones");
+    Empire e;
+    economy::gainExperience(e, 499'999'990);
+    economy::gainExperience(e, 100);
+    CHECK(e.experience == economy::kMaxEmpireExperience);
+    e.experience = 10;
+    economy::gainExperience(e, -5);
+    CHECK(e.experience == 10);
+}
+
 // ---- Population -------------------------------------------------------------------------------------
 
 TEST_CASE("economy: growth rate from race, mood, conditions and resistance") {
@@ -1067,11 +1263,11 @@ TEST_CASE("economy: growth rate from race, mood, conditions and resistance") {
     home.anger = 70;  // Angry: -5
     CHECK(economy::reproductionPercent(*r, s, home) == 5);
     home.anger = 20;
-    planet.conditions = 140;  // Good: +2
+    planet.conditions = Conditions::hundredths(140);  // Good: +2
     CHECK(economy::reproductionPercent(*r, s, home) == 14);
-    planet.conditions = 60;  // Unpleasant: -2 (the observed Quick Start homeworld shows 10 %)
+    planet.conditions = Conditions::hundredths(60);  // Unpleasant: -2 (the observed Quick Start homeworld shows 10 %)
     CHECK(economy::reproductionPercent(*r, s, home) == 10);
-    planet.conditions = 10;  // Deadly: -20, and the rate never goes below 0
+    planet.conditions = Conditions::hundredths(10);  // Deadly: -20, and the rate never goes below 0
     CHECK(economy::reproductionPercent(*r, s, home) == 0);
     setChar(s, kMe, Characteristic::EnvironmentalResistance, 154);  // + trunc(54 / 5)
     CHECK(economy::reproductionPercent(*r, s, home) == 2);
@@ -1150,8 +1346,29 @@ TEST_CASE("economy: growth runs every Reproduction Check Frequency turns, unscal
     CHECK(home.totalPopulation() == 1010);
 }
 
+TEST_CASE("economy: growth and every 10th turn test the date in tenths of a year") {
+    // 24000 is not a multiple of 7: the date decides, not the turn number (spec 02 §13 Q48).
+    auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Reproduction Check Frequency", 7); });
+    GameState s = newGame(*r);
+    Colony& home = plainHome(*r, s, {});
+    CHECK(economy::processingDate(s) == 24001);  // a simultaneous turn is processed at the advanced date
+    s.turn = 6;  // processed as turn 7, date 24007: not a multiple of 7
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 1000);
+    s.turn = 2;  // date 24003 = 7 × 3429
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 1010);
+    // A turn-based game processes its first round at 24000 (spec 05 §8).
+    s.options.simultaneous = false;
+    s.turn = 0;
+    CHECK(economy::processingDate(s) == 24000);
+}
+
 TEST_CASE("economy: replicants add population in proportion to the races present") {
-    auto r = tweakedRules([](ruleset::Ruleset& rs) { addFacility(rs, "Cloning Vat", {ability(AbilityKind::ChangePopulationSystem, 10)}); });
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        addFacility(rs, "Cloning Vat", {ability(AbilityKind::ChangePopulationSystem, 10)});
+        addFacility(rs, "Big Vat", {ability(AbilityKind::ChangePopulationSystem, 25)});
+    });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Cloning Vat"});
     home.population = {{kMe, 300}, {kThem, 100}};
@@ -1159,6 +1376,25 @@ TEST_CASE("economy: replicants add population in proportion to the races present
     populationTurn(*r, s);
     CHECK(home.population[0].millions == 308);  // 7.5 rounds to 8
     CHECK(home.population[1].millions == 102);  // 2.5 rounds to 2
+
+    // The share is round(P × q) with q = pop ÷ total stored as a double first
+    // (spec 02 §3): the doubles nearest 0.1 and 0.9 lie above them, so 2.5 and
+    // 22.5 come out a hair above the half and round up.
+    home.facilities = {facilityIndex(*r, "Big Vat")};
+    home.population = {{kMe, 1}, {kThem, 9}};
+    populationTurn(*r, s);
+    CHECK(home.population[0].millions == 1 + 3);
+    CHECK(home.population[1].millions == 9 + 23);
+
+    // Each share is capped by the room left: earlier races first, nothing when full.
+    const int64_t cap = maxPopulation(*r, s, home);
+    home.population = {{kMe, cap - 20}, {kThem, 10}};
+    populationTurn(*r, s);
+    CHECK(home.population[0].millions == cap - 10);
+    CHECK(home.population[1].millions == 10);
+    home.population = {{kMe, cap + 50}};
+    populationTurn(*r, s);
+    CHECK(home.totalPopulation() == cap + 50);  // above the maximum: nothing added, nothing removed
 }
 
 TEST_CASE("economy: plague kills a fixed amount by level until prevented or cured") {
@@ -1193,6 +1429,34 @@ TEST_CASE("economy: plague kills a fixed amount by level until prevented or cure
     CHECK(home.population[1].millions == 100);
 }
 
+TEST_CASE("economy: cargo above the capacity stays until the planet loses population to plague") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {});
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId troop = addTestDesign(s, r, kMe, "Marines", "Test Troop Hull", {"Test Troop Rifle"});
+    const int64_t capacity = colonyCargoCapacity(r, s, home);
+    const int64_t size = r.hull(s.design(fighter).hull).tonnage;
+    const int64_t mass = r.setting("Population Mass", 5);
+    // Two fighters too many, plus 2M of people.
+    home.cargo.units = {{fighter, static_cast<int>(capacity / size + 2)}, {troop, 1}};
+    home.cargo.population = {{kThem, 1}, {kMe, 1}};
+    populationTurn(r, s);  // no damage, no plague: nothing is removed
+    const int64_t over = cargoSpaceUsed(r, s, home.cargo);
+    CHECK(over > capacity);
+
+    // The plague strikes: people first, 1M at a time from the first group,
+    // then units one at a time from the first stack (spec 02 §2, §13 Q49).
+    home.plagueLevel = 1;
+    populationTurn(r, s);
+    CHECK(home.cargo.population.empty());
+    CHECK(cargoSpaceUsed(r, s, home.cargo) <= capacity);
+    CHECK(home.cargo.unitCount(troop) == 1);
+    CHECK(home.cargo.unitCount(fighter) * size + r.hull(s.design(troop).hull).tonnage <= capacity);
+    CHECK(cargoSpaceUsed(r, s, home.cargo) + size > capacity);  // no more than needed
+    CHECK(over - 2 * mass > capacity);
+}
+
 TEST_CASE("economy: a colony whose people all die is removed and its planet loses value") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
@@ -1221,19 +1485,30 @@ TEST_CASE("economy: a colony whose people all die is removed and its planet lose
 }
 
 TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
-    auto r = tweakedRules([](ruleset::Ruleset& rs) { addFacility(rs, "Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 3)}); });
+    auto r = tweakedRules([](ruleset::Ruleset& rs) {
+        addFacility(rs, "Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 3)});
+        addFacility(rs, "Slow Air Plant", {ability(AbilityKind::PlanetChangeAtmosphere, 250)});
+    });
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Air Plant"});
     SpaceObject& planet = s.galaxy.object(home.planet);
     planet.atmosphere = "Methane";
     CHECK_FALSE(breathable(s, home));
     const int64_t domed = maxPopulation(*r, s, home);
+    REQUIRE(domed < 5000);
     home.population = {{kMe, 5000}};
     populationTurn(*r, s);
-    CHECK(home.totalPopulation() == domed);  // the surplus has no room under the dome
-    CHECK(logged(s, kMe, "overcrowded"));
+    // Nothing removes population above the maximum; it only has no room to grow (spec 02 §2, Q33).
+    CHECK(home.totalPopulation() == 5000);
     CHECK(home.atmosphereTurns == 1);
     populationTurn(*r, s);
+    CHECK(home.totalPopulation() == 5000);
+    // Turns without the converter keep the count, which resumes later (spec 02 §2, Q41).
+    home.facilities.clear();
+    populationTurn(*r, s);
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 2);
+    home.facilities = {facilityIndex(*r, "Air Plant")};
     populationTurn(*r, s);
     CHECK(planet.atmosphere == "Methane");
     CHECK(home.atmosphereTurns == 3);
@@ -1241,6 +1516,19 @@ TEST_CASE("economy: atmosphere converters take Val1 + 1 turns; domes") {
     CHECK(planet.atmosphere == s.empire(kMe).race.atmosphere);
     CHECK(home.atmosphereTurns == 0);
     CHECK(breathable(s, home));
+    // The right atmosphere leaves the counter as it is too.
+    home.atmosphereTurns = 2;
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 2);
+
+    // The counter stops at 200, so a converter needing more never finishes.
+    planet.atmosphere = "Methane";
+    home.facilities = {facilityIndex(*r, "Slow Air Plant")};
+    home.atmosphereTurns = 199;
+    populationTurn(*r, s);
+    populationTurn(*r, s);
+    CHECK(home.atmosphereTurns == 200);
+    CHECK(planet.atmosphere == "Methane");
 }
 
 // ---- Happiness ---------------------------------------------------------------------------------------
@@ -1265,6 +1553,7 @@ std::unique_ptr<Rules> moodRules() {
                       {"Enemy Ship in Sector", 40},
                       {"Enemy Ship in System", 20},
                       {"Our Troops on Planet", -10},
+                      {"Enemy Troops on Planet", 70},
                       {"Planet Plagued", 50},
                       {"New Treaty War", 500}};
         addTrait(rs, "Stoic", "Population Emotionless", 0);
@@ -1310,7 +1599,7 @@ TEST_CASE("economy: happiness events by scope, truncated to whole percent") {
 
     // Conditions do not change anger.
     w.far->anger = 40;
-    w.s.galaxy.object(w.far->planet).conditions = 0;
+    w.s.galaxy.object(w.far->planet).conditions = Conditions{};
     const int farBefore = w.far->anger;
     populationTurn(r, w.s);
     CHECK(w.far->anger == farBefore);
@@ -1393,6 +1682,13 @@ TEST_CASE("economy: ships present count per ship; allies count as ours") {
     populationTurn(r, s);
     CHECK(w.far->anger == 50 + (-10 - 20) / 10);  // the ally's ship counts as ours
 
+    // Ships without an owner never count.
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == kThem) v.owner = {};
+    w.far->anger = 40;
+    populationTurn(r, s);
+    CHECK(w.far->anger == 40);
+
     // Units never count.
     const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
     for (Vehicle& v : s.vehicles) v.status = VehicleStatus::Mothballed;
@@ -1411,6 +1707,24 @@ TEST_CASE("economy: troops and plague on the planet") {
     populationTurn(r, w.s);
     CHECK(w.home->anger == 40 - 3);
     CHECK(w.moon->anger == 40 + 5);
+
+    // Every troop unit in the cargo counts as ours, whoever owns it (spec 02 §4).
+    const DesignId theirs = addTestDesign(w.s, r, kThem, "Legion", "Test Troop Hull", {"Test Troop Rifle"});
+    w.s.empire(kMe).relation(kThem).treaty = Treaty::NonAggression;
+    w.s.empire(kThem).relation(kMe).treaty = Treaty::NonAggression;
+    w.home->cargo.units = {{troop, 1}, {theirs, 2}};
+    w.home->anger = 40;
+    w.moon->plagueLevel = 0;
+    populationTurn(r, w.s);
+    CHECK(w.home->anger == 40 - 3);
+    // Troops an enemy landed that still fight for the planet count once as
+    // enemies, and not as ours.
+    w.s.empire(kMe).relation(kThem).treaty = Treaty::War;
+    w.s.empire(kThem).relation(kMe).treaty = Treaty::War;
+    REQUIRE(combat::invaders(r, w.s, *w.home) == std::vector<EmpireId>{kThem});
+    w.home->anger = 40;
+    populationTurn(r, w.s);
+    CHECK(w.home->anger == 40 + (70 - 10) / 10);
 }
 
 TEST_CASE("economy: system happiness facilities calm every colony there after the update") {
@@ -1477,6 +1791,7 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     const Colony& rebel = *s.colony(farId);
     CHECK(rebel.owner == id);
     CHECK(rebel.homeworld);
+    CHECK(s.empire(id).homeSystem == s.galaxy.object(farId).system);  // its capital's system
     CHECK(rebel.anger == 80);
     CHECK(rebel.population[0].race == id);
     CHECK(s.empire(id).kind == PlayerKind::Computer);
@@ -1557,33 +1872,47 @@ TEST_CASE("economy: every 10th turn: planet values sum, conditions multiply") {
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Test Climate Station", "Deep Core", "Deep Core"});
     SpaceObject& p = s.galaxy.object(home.planet);
-    p.conditions = 50;
+    using xmath::Ext;
+    p.conditions = Conditions::hundredths(50);
     s.turn = 8;  // processed as turn 9
     populationTurn(*r, s);
-    CHECK(p.conditions == 50);
+    CHECK(p.conditions == Conditions::hundredths(50));
     CHECK(p.value[0] == 100);
     s.turn = 9;  // turn 10
     populationTurn(*r, s);
-    CHECK(p.conditions == 51);  // × 1.01, and at least 0.01 in our hundredths
+    // × (1 + 1 / 100), kept as the real number: no rounding, no minimum step (spec 02 §13 Q46).
+    const Conditions grown = Conditions::of(Conditions::hundredths(50).value() * (Ext(1) + Ext(1) / Ext(100)));
+    CHECK(p.conditions == grown);
+    CHECK(p.conditions > Conditions::hundredths(50));
+    CHECK(p.conditions < Conditions::hundredths(51));
     CHECK(p.value[0] == 104);  // both facilities count
+    s.turn = 19;
+    populationTurn(*r, s);
+    CHECK(p.conditions == Conditions::of(grown.value() * (Ext(1) + Ext(1) / Ext(100))));
+    // A product of exactly 0 gives 0.1.
+    p.conditions = Conditions{};
+    s.turn = 29;
+    populationTurn(*r, s);
+    CHECK(p.conditions == Conditions::of(Ext(1) / Ext(10)));
+    p.value = {104, 100, 100};
 
     // A negative sum does nothing; system changes take the best and multiply.
     home.facilities = {facilityIndex(*r, "Polluter"), facilityIndex(*r, "Terraformer"), facilityIndex(*r, "Seeder")};
-    p.conditions = 100;
-    s.turn = 19;
+    p.conditions = Conditions::hundredths(100);
+    s.turn = 39;
     populationTurn(*r, s);
-    CHECK(p.conditions == 110);
+    CHECK(p.conditions == Conditions::of(Ext(1) * Ext(110) / Ext(100)));  // × (100 + 10) / 100
     CHECK(p.value == std::array<int, 3>{109, 105, 105});
-    p.conditions = 140;
-    s.turn = 29;
+    p.conditions = Conditions::hundredths(140);
+    s.turn = 49;
     populationTurn(*r, s);
-    CHECK(p.conditions == 150);  // never above 1.5
+    CHECK(p.conditions == kOptimalConditions);  // never above 1.5
     CHECK(logged(s, kMe, "optimal conditions"));
 
     // Finite games: the system change is a percentage of the stock, truncated.
     s.options.finiteResources = true;
     p.value = {1001, 0, 50};
-    s.turn = 39;
+    s.turn = 59;
     populationTurn(*r, s);
     CHECK(p.value == std::array<int, 3>{pctTrunc(1001, 105), 0, pctTrunc(50, 105)});
 }
@@ -1699,7 +2028,7 @@ TEST_CASE("economy: installed data set reproduces the observed Quick Start homew
     planet.value = {102, 99, 103};
     CHECK(Resources{20000, 20000, 20000} + economy::empireProduction(*r, s, kMe).resources == Resources{26120, 21108, 21153});
     planet.value = {100, 98, 102};  // as observed in the first game
-    planet.conditions = 50;         // "Unpleasant"
+    planet.conditions = Conditions::hundredths(50);  // "Unpleasant"
     CHECK(economy::conditionsName(economy::conditionsBand(planet.conditions)) == "Unpleasant");
 
     CHECK(home.totalPopulation() == 2000);

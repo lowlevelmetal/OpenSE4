@@ -235,9 +235,7 @@ void planUpgrades(Planner& p, const std::vector<ObjectId>& planets) {
                 queued = queued || (q.kind == QueueItem::Kind::Upgrade && p.r.facility(q.facility).family == family);
             if (queued) continue;
             families.push_back(family);
-            QueueItem item;
-            item.kind = QueueItem::Kind::Upgrade;
-            item.facility = f;
+            const QueueItem item = economy::upgradeItem(p.r, *c, *latest);  // to the newest level (spec 02 §6.6)
             const Resources cost = queueItemCost(p, target, item);
             if (p.emit(cmd::QueueAdd{target, item, -1})) budget -= cost;
             c = p.st.colony(planet);

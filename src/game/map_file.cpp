@@ -185,7 +185,8 @@ struct Reader {
                 if (hasPlanetData(*kind)) {
                     text("surface", obj.surface);
                     text("atmosphere", obj.atmosphere);
-                    obj.conditions = static_cast<int>(std::clamp<int64_t>((*ot)["conditions"].value_or(int64_t{100}), 0, 1000));
+                    // Hundredths in the file; conditions never exceed 1.5 (spec 02 §2).
+                    obj.conditions = Conditions::hundredths(std::clamp<int64_t>((*ot)["conditions"].value_or(int64_t{100}), 0, 150));
                     if (const toml::array* values = (*ot)["values"].as_array()) {
                         if (values->size() != obj.value.size())
                             return std::unexpected(std::format("{}: 'values' lists minerals, organics and radioactives.", owhere));
@@ -292,7 +293,7 @@ std::string mapToText(const ruleset::Ruleset& rs, const QuadrantMap& map) {
             if (!o.size.empty()) out += std::format("  size = {}\n", tomlString(o.size));
             if (hasPlanetData(o.kind)) {
                 out += std::format("  surface = {}\n  atmosphere = {}\n", tomlString(o.surface), tomlString(o.atmosphere));
-                out += std::format("  conditions = {}\n", o.conditions);
+                out += std::format("  conditions = {}\n", o.conditions.inHundredths());  // to the nearest hundredth
                 out += std::format("  values = [{}, {}, {}]\n", o.value[0], o.value[1], o.value[2]);
             }
             if (hasStarData(o.kind)) {

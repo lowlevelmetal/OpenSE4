@@ -85,6 +85,7 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(ruleset::CombatStrategy);
     CHECK_ALL_FIELDS(Location);
     CHECK_ALL_FIELDS(GalaxyPos);
+    CHECK_ALL_FIELDS(Conditions);
     CHECK_ALL_FIELDS(SpaceObject);
     CHECK_ALL_FIELDS(StarSystem);
     CHECK_ALL_FIELDS(Galaxy);
@@ -569,8 +570,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xf4b567159cfc8a0bull;
-    constexpr size_t kGoldenSize = 1628;
+    constexpr uint64_t kGoldenChecksum = 0x512f77d02ab411e4ull;
+    constexpr size_t kGoldenSize = 1632;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

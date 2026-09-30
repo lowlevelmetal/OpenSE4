@@ -697,6 +697,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.colonyTypes = old.colonyTypes;
     e.repairPriorities = old.repairPriorities;
     e.claimedSystems.push_back(system);
+    e.homeSystem = system;  // the capital's system, never moved (spec 02 §2)
     e.knowledge.explored.assign(s.galaxy.systems.size(), seen);
     e.knowledge.present.assign(s.galaxy.systems.size(), 0);
     e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
@@ -945,13 +946,13 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
 
         case Effect::PlanetConditionsChange: {
             if (!col) return out;
-            // Conditions are hundredths of the 0–1.5 scale (spec 02 §2); Amount
-            // adds that many hundredths, within the scale (inferred: spec 01
-            // §10 calls it a percentage change).
+            // Amount adds that many hundredths to the 0–1.5 conditions scale
+            // (spec 02 §2), within the scale (inferred: spec 01 §10 calls it a
+            // percentage change). `actual` is the change in hundredths.
             SpaceObject& obj = s.galaxy.object(t.object);
-            const int before = obj.conditions;
-            obj.conditions = std::clamp(before + amount, 0, economy::kConditionsMax);
-            out.actual = obj.conditions - before;
+            const Conditions before = obj.conditions;
+            obj.conditions = conditionsPlus(before, xmath::Ext(amount) / xmath::Ext(100));
+            out.actual = obj.conditions.inHundredths() - before.inHundredths();
             break;
         }
         case Effect::PlanetValueChange: {

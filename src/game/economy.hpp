@@ -59,17 +59,18 @@ namespace opense4::game::economy {
 
 // ---- Scales and dates -------------------------------------------------------------------------------
 
-// Planet conditions are a real number from 0 to 1.5 in the original (spec 02 §2).
-// SpaceObject::conditions holds them in hundredths: 100 = 1.0, 150 = 1.5.
-inline constexpr int kConditionsOne = 100;
-inline constexpr int kConditionsMax = 150;
-
-// The turn number the original tests for "every N turns" rules. A simultaneous
+// The number of the turn being processed, counted from the start date. A simultaneous
 // turn advances the date before the end-of-turn steps (spec 05 §8), while
 // processTurn increments GameState::turn at the very end, so during a turn this
 // is turn + 1. A turn-based game advances it after the last player's
 // end-of-turn processing, so there it is the turn itself.
 uint32_t processingTurn(const GameState& s);
+// The game date in tenths of a year (2400.0 = 24000) that the "every N turns"
+// rules test during a turn: 24000 + processingTurn (spec 02 §13 Q48, confirmed: binary).
+// "Every 10th turn" is date mod 10 = 0; growth happens when date mod
+// `Reproduction Check Frequency` = 0.
+inline constexpr uint32_t kStartDate = 24000;
+uint32_t processingDate(const GameState& s);
 
 // ---- Racial effects (spec 02 §8.2) ----------------------------------------------------------------
 
@@ -91,9 +92,9 @@ enum class RacialEffect : uint8_t {
 int racialEffect(const Rules& r, const Race& race, RacialEffect e);
 
 // Racial points one characteristic at `value` costs, or refunds when negative
-// (spec 02 §8.1, confirmed: binary): the value clamped to Min/Max Pct, then c
-// per point up to the threshold, then P per point above it (N refunded per
-// point below it). setup's racialPointCost sums it over the characteristics.
+// (spec 02 §8.1, confirmed: binary): c per point up to the threshold, then P per
+// point above it (N refunded per point below it). The value is not clamped to
+// Min/Max Pct. setup's racialPointCost sums it over the characteristics.
 int characteristicPointCost(const Rules& r, Characteristic c, int value);
 
 // ---- Modifier tables (spec 02 §1.2, §5.2) ----------------------------------------------------
@@ -113,9 +114,9 @@ int moodReproduction(Mood m);
 
 // ---- Planet conditions (spec 02 §2) -----------------------------------------------------------
 
+// SpaceObject::conditions is the real number itself (conditions.hpp).
 enum class ConditionsBand : uint8_t { Optimal, Good, Mild, Unpleasant, Harsh, Deadly };
-// `conditions` in hundredths (SpaceObject::conditions).
-ConditionsBand conditionsBand(int conditions);
+ConditionsBand conditionsBand(Conditions conditions);
 std::string_view conditionsName(ConditionsBand b);
 // Reproduction points of a band: -20 (Deadly) to +5 (Optimal).
 int conditionsReproduction(ConditionsBand b);
@@ -183,12 +184,36 @@ int reproductionPercent(const Rules& r, const GameState& s, const Colony& c);
 // Per-turn construction rate of a queue (spec 02 §6.2), with the computer
 // bonus and emergency or slow mode.
 Resources constructionRate(const Rules& r, const GameState& s, EmpireId e, const cmd::QueueTarget& t);
-// Full cost of a queue item (vehicle design cost × count, facility, upgrade).
+// Full cost of a queue item: design cost × count, facility cost × count, or
+// for an upgrade trunc(target cost × Upgrade Facility Cost Percent / 100) ×
+// its stored count (spec 02 §6.6, confirmed: binary).
 Resources itemCost(const Rules& r, const GameState& s, EmpireId e, const cmd::QueueTarget& t, const QueueItem& item);
 // Turns to finish `remaining` at `rate` (max over resources, ceil); -1 = never.
 int turnsToComplete(const Resources& remaining, const Resources& rate);
-// Facilities of `facility`'s family on a colony below the newest level the empire has.
-int upgradeableCount(const Rules& r, const GameState& s, EmpireId e, const Colony& c, uint32_t facility);
+// Facilities of `target`'s family on the colony whose level (Roman Numeral) is
+// below the target's: what an upgrade to `target` converts (spec 02 §6.6).
+int upgradeCount(const Rules& r, const Colony& c, uint32_t target);
+// An upgrade item to `target` as the queue stores it: the target and the
+// count, both fixed when it is queued (cmd::QueueAdd sets them the same way).
+QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target);
+// Whether the queue can no longer build this item: a ship or base once the
+// queue has no space yard, a facility or upgrade in a ship's queue, an
+// upgrade with nothing left to upgrade (spec 02 §6.1). Such items are removed
+// at the start of the queue's turn.
+bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t, const QueueItem& item);
+
+// ---- Empire experience (spec 02 §9) -------------------------------------------------------------------
+
+// The largest experience total (confirmed: binary).
+inline constexpr int kMaxEmpireExperience = 500'000'000;
+// Adds to an empire's experience, never beyond kMaxEmpireExperience. Gained
+// from kills in combat (tonnage div 10), finished facility items (their count)
+// and ships built (hull tonnage div 10); it has no effect on play.
+void gainExperience(Empire& e, int64_t amount);
+// The race age shown for an experience total: Newborn up to 5,000, then
+// Infantile, Young, Moderate, Old, Ancient, God-like, Stellar Ancients and
+// First Ones (confirmed: binary).
+std::string_view raceAge(int64_t experience);
 
 // ---- Treasury (spec 02 §5.6, §7) ------------------------------------------------------------------
 
@@ -198,6 +223,16 @@ Resources maintenanceCost(const Rules& r, const GameState& s, EmpireId e);
 int maintenancePercent(const Rules& r, const Empire& e);
 // One ship's or base's maintenance per turn; 0 when mothballed and for units.
 Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& v);
+
+// ---- Cargo over capacity (spec 02 §2, §13 Q49) --------------------------------------------------------
+
+// A colony's cargo above its capacity (after a dome, a capture or a lost
+// `Cargo Storage` facility) stays until the planet next takes damage or loses
+// population to plague. Then cargo is removed until it fits: population held
+// as cargo first, 1M at a time, then units one at a time from the first stack
+// (confirmed: binary). Combat calls this for a planet that a hit got through
+// to (inferred, spec 02 §13 Q54).
+void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c);
 
 // ---- Colonies ending ------------------------------------------------------------------------------
 

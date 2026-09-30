@@ -34,6 +34,9 @@ struct EmpireSetup {
     // Computer Controlled.
     std::string ministerStyle;
     bool useRaceMinisterStyle = false;
+    // Experience kept with the empire (spec 02 §9): it comes from the empire
+    // file, becomes Empire::experience and grows during play. Only shown.
+    int experience = 0;
 };
 
 struct GameSetup {

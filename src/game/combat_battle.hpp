@@ -111,10 +111,10 @@ struct Piece {
     bool colonyLost = false;
     EmpireId capturedBy;              // planets taken by troops during the battle
     int plague = 0;
-    int64_t conditionsLost = 0;       // hundredths of the 0-1.5 conditions scale
     // Bookkeeping.
     bool fired = false, damaged = false, captured = false, pushed = false;
     int unitsLost = 0, startCount = 1;
+    int64_t tonnageStart = 0;         // unit groups: the units' total hull tonnage at the start (empire experience)
 };
 
 struct MovePlan {
