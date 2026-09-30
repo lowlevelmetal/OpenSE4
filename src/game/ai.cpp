@@ -544,9 +544,10 @@ bool Planner::setFleetOrders(FleetId fid, std::vector<Order> orders) {
     return emit(cmd::SetOrders{{}, fid, std::move(orders), false});
 }
 
-void Planner::runOrders() {
+void Planner::runOrders(bool politics, bool others) {
     if (!emp().alive) return;
-    if (on(Minister::Politics)) planPolitics(*this);
+    if (politics && on(Minister::Politics)) planPolitics(*this);
+    if (!others) return;
     planTroops(*this);
     planTransports(*this);
     planColonization(*this);
@@ -710,7 +711,7 @@ std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::st
 
 namespace {
 
-constexpr uint64_t kSaltTurn = 1, kSaltOrders = 2, kSaltEconomy = 3, kSaltMinister = 4;
+constexpr uint64_t kSaltTurn = 1, kSaltOrders = 2, kSaltEconomy = 3, kSaltMinister = 4, kSaltPolitics = 5;
 
 bool planFor(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
 
@@ -734,6 +735,22 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e) 
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltOrders);
     p.runOrders();
+    return p.report().commands;
+}
+
+std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return {};
+    const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
+    detail::Planner p(r, s, e, mode, kSaltPolitics);
+    p.runOrders(true, false);
+    return p.report().commands;
+}
+
+std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e) {
+    if (!planFor(s, e)) return {};
+    const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
+    detail::Planner p(r, s, e, mode, kSaltOrders);
+    p.runOrders(false, true);
     return p.report().commands;
 }
 

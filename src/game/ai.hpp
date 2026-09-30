@@ -73,6 +73,11 @@ AiState stateOf(const Empire& e);
 std::vector<Command> planTurn(const Rules& r, const GameState& s, EmpireId e, bool minimal = false);
 // Group 1 above: the ministers that act while orders are given.
 std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
+// Group 1 in its two parts, as the turn runs it (spec 05 §8 step 4): the
+// Politics minister alone, whose messages take effect as they are sent, then
+// the other ministers, which already see the treaties it changed.
+std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
+std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
 std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e);
 // Orders for a human empire's active ministers (both groups): the global
@@ -116,10 +121,20 @@ void updateAiStates(TurnContext& ctx);
 void updateAiState(TurnContext& ctx, EmpireId e);
 // then the political step (anger, §7.3) before Politics decides: every
 // empire counting this turn's events, or one empire counting the events of
-// `eventsTurn` (the turn processed before; none on the first turn), whose
-// battles GameState::combats still holds;
+// `eventsTurn` (the turn processed before, as a simultaneous game does; none
+// on the first turn), whose battles GameState::combats still holds, or those
+// of a window (a turn-based game: everything since the empire's previous
+// political step);
+struct PoliticalWindow {
+    std::optional<uint32_t> turn;     // none: nothing counts
+    uint32_t battles = 0;             // of the battles dated `turn` (GameState::combats order), the first ones not counted
+    std::vector<uint32_t> logs;       // per EmpireId: of its log entries dated `turn`, the first ones not counted
+    uint32_t firstMessage = 0;        // messages with a lower id do not count
+    bool andLater = false;            // everything dated after `turn` counts too
+};
 void politicalStep(TurnContext& ctx);
 void politicalStep(TurnContext& ctx, EmpireId e, std::optional<uint32_t> eventsTurn);
+void politicalStep(TurnContext& ctx, EmpireId e, const PoliticalWindow& window);
 // and once per turn after combat and every empire's end-of-turn processing
 // (combat counts, traced spies, mine fields met).
 void rememberAiEvents(TurnContext& ctx);

@@ -1007,7 +1007,13 @@ private:
             o.amount = 1;
         }
         const Travel t = travel(a, locationOf(s_.galaxy, o.object));
-        return t == Travel::Arrived ? Exec::Wait : afterTravel(a, o, t);  // colonized when the movement phase ends (runColonization)
+        if (t != Travel::Arrived) return afterTravel(a, o, t);
+        // Carried out like any order, on an acting day with movement left, so
+        // the colony exists during the later phases; without movement it
+        // waits (spec 05 §8 step 5, open question 24; spec 03 §8).
+        if (remaining(a) <= 0) return Exec::Wait;
+        foundColony(ctx_, colonizer, o.object);
+        return Exec::Done;
     }
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).
@@ -1279,13 +1285,12 @@ private:
         return it == steps_.end() ? 0 : it->second;
     }
 
-    size_t listLength(const Actor& a) {
-        const std::vector<Order>* list = orders(a);
-        return list ? list->size() : 0;
-    }
+    // A group completes at most this many orders in one run (spec 05 §8
+    // "Turn-based game" step 3, confirmed: binary).
+    static constexpr int kLiveOrderLimit = 21;
 
     void liveActor(Actor& a) {
-        size_t idle = 0;  // actions in a row that took no step
+        int completed = 0;  // orders that left the head of the list
         for (int n = 0; n < kLiveActionLimit; ++n) {
             prune(a);
             if (a.stopped) return;
@@ -1299,14 +1304,13 @@ private:
             touched_.clear();
             if (fought || a.stopped) return;
             switch (*e) {
-                case Exec::Moved:
-                case Exec::MovedDone: idle = 0; break;
+                case Exec::Moved: break;
+                case Exec::MovedDone:
                 case Exec::Done:
                 case Exec::Acted:
                 case Exec::Removed:
-                    // A repeating list that goes round without a step waits for the next
-                    // turn (inferred); any other list gets shorter with each order.
-                    if (repeat(a) && ++idle > listLength(a) + 1) return;
+                    // At most 21 orders completed, so a repeating list stops too.
+                    if (++completed >= kLiveOrderLimit) return;
                     break;
                 case Exec::ActedStay:
                 case Exec::Wait:

@@ -101,6 +101,18 @@ struct AiMemory {
     bool metMinefield = false;            // our ships have run into a mine field
 };
 
+// Turn-based games: how far an empire's last political step counted (spec 05
+// §7.3 "What it counts"): the game turn it ran in, how many battles
+// (GameState::combats) and log entries of each empire were dated that turn
+// then, and the next message id. The next step counts what came after.
+struct PoliticsMark {
+    bool set = false;
+    uint32_t turn = 0;
+    uint32_t battles = 0;
+    std::vector<uint32_t> logs;   // per EmpireId
+    uint32_t nextMessage = 0;
+};
+
 struct LogEntry {
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
@@ -223,6 +235,7 @@ struct Empire {
     bool aiMinimalChanges = false;
     AiMemory aiMemory;
     int aiDifficulty = -1;                  // kDifficulty*; -1 until the AI step assigns it (ai::difficultyOf)
+    PoliticsMark politicsMark;              // turn-based games: what its political steps have counted
 
     bool ministerAll = false;               // full minister control
     uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)

@@ -686,6 +686,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.aiState = 0;
     e.aiTurnsInState = 0;
     e.aiMemory = AiMemory{};
+    e.politicsMark = PoliticsMark{};
     e.experience = 0;
     // Its own things start empty: no designs, no contact with anyone (its
     // treaties all "no contact"), an empty log and record.

@@ -5,8 +5,8 @@
 // cargo/launch orders, colonization, stellar manipulation, supply and repair.
 //
 // Turn order (spec 05 §8, turn.cpp):
-//   step 5  movement and space combat   startTurn + runMovementAndCombat,
-//                                       then runColonization
+//   step 5  movement and space combat   startTurn + runMovementAndCombat
+//                                       (Colonize orders found colonies in it)
 //   step 6  each empire's end-of-turn processing (the numbers of that list):
 //             11 repair                 repairEmpire
 //             13 supply                 supplyEmpire
@@ -124,8 +124,12 @@ CombatHooks defaultCombatHooks();
 void runMovementAndCombat(TurnContext& ctx);
 void runMovementAndCombat(TurnContext& ctx, const CombatHooks& hooks);
 
-// The end of the movement phase: colony ships that reached their target
-// colonize (the Colonize order waits at the planet during the 30 days).
+// Colonize is carried out like any order during the movement phases, on an
+// acting day with movement left, so a colony can be founded in any phase and
+// a ship that arrives on its last acting day founds it next turn (spec 05 §8
+// step 5, spec 03 §8). runColonization founds at once the colonies of every
+// colony ship already waiting at its planet, whatever its movement (tools
+// and tests; the turn does not use it).
 void runColonization(TurnContext& ctx);
 
 // ---- The turn-based move (spec 03 §6.3 "Turn-based", spec 04 §2) --------------------------------
@@ -156,8 +160,9 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 
 // Turn-based games: the groups carry out their orders at once, spending
 // movement points, action after action until each has no movement left,
-// waits, fails or runs out of orders (a repeating list that goes round
-// without a step waits for the next turn). A group that steps into a sector
+// waits, fails or runs out of orders, completing at most 21 orders (spec 05
+// §8 "Turn-based game"). A colony ship at its planet with movement left
+// founds its colony. A group that steps into a sector
 // where combat is possible fights there at once (mines strike first) and its
 // order fails; the Attack order's target sector is fought by the order
 // itself, after decloaking, and the order stays. An order carried out in a
@@ -169,7 +174,8 @@ std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move, const
 
 // Turn-based games: the empire's colony ships waiting at their planet with
 // movement left found their colonies now (spec 03 §8 Colonize); one with no
-// movement left waits for its next turn.
+// movement left waits for its next turn. runLive does this itself; tools
+// and tests use it.
 void runColonization(TurnContext& ctx, EmpireId empire);
 
 // ---- End of turn -------------------------------------------------------------------------------

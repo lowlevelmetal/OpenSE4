@@ -26,6 +26,11 @@ bool ministersPlan(const GameState& s, EmpireId e, Control c);
 
 bool living(const GameState& s, EmpireId e);
 
+// Step 16 of an empire's end-of-turn processing (spec 05 §8): each of its
+// ships, bases, fighter groups and drone groups records its current sector
+// as the one it comes from (Vehicle::cameFrom).
+void resetCameFrom(const Rules& r, GameState& s, EmpireId e);
+
 // Applies the commands as the empire's orders, collecting rejections.
 void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands);
 

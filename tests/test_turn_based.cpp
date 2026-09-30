@@ -5,7 +5,11 @@
 
 #include "movement_fixture.hpp"
 
+#include "game/ai.hpp"
+#include "game/ai_data.hpp"
 #include "game/commands.hpp"
+#include "game/events.hpp"
+#include "game/intel.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "game/turn.hpp"
@@ -441,13 +445,96 @@ TEST_CASE("turn-based: orders that need no movement run one after another; a rep
     CHECK(d.w.v(hauler).location == at(d.a, 1, 6));
     CHECK(d.w.v(hauler).cargo.totalPopulation() > 0);
 
-    // Loading again and again at one place: the list goes round a little, then waits.
+    // Loading again and again at one place: the list goes round until 21
+    // orders are completed, then waits (spec 05 §8 "Turn-based game").
     cmd::SetOrders loop = ordersFor(hauler, {load, load});
     loop.repeat = true;
     const TurnResult res = applyLive(d.r(), d.s(), kA, loop);
     CHECK_FALSE(hasRejection(res));
     CHECK(d.w.v(hauler).orders.size() == 2);
     CHECK(d.w.v(hauler).repeatOrders);
+
+    // A long list: at most 21 orders are completed; the rest waits.
+    std::vector<Order> many(30, load);
+    applyLive(d.r(), d.s(), kA, ordersFor(hauler, many));
+    CHECK(d.w.v(hauler).orders.size() == 9);
+    endPlayerTurn(d.r(), d.s(), kA);
+    endPlayerTurn(d.r(), d.s(), kB);
+    CHECK(d.w.v(hauler).orders.empty());  // carried on at the start of the next turn
+}
+
+TEST_CASE("turn-based: a vehicle counts as coming from elsewhere only until its owner's turn ends") {
+    // Step 16 of the end-of-turn processing records each vehicle's current
+    // sector as the one it comes from (spec 05 §8, spec 04 §3).
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 2, 6)}));
+    REQUIRE(d.w.v(d.runner).location == at(d.a, 2, 6));
+    CHECK(d.w.v(d.runner).cameFrom == at(d.a, 1, 6));
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK(d.w.v(d.runner).cameFrom == at(d.a, 2, 6));
+    CHECK(activePlayer(d.s()) == kB);
+}
+
+TEST_CASE("turn-based: the political step counts everything logged since the empire's previous one") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(11, 3, 12, false);
+    s.options.simultaneous = false;
+    const EmpireId human{0u}, a{1u}, b{2u};
+    for (auto [x, y] : {std::pair{a, b}, std::pair{b, a}}) s.empire(x).relation(y).contact = true;
+    const auto& table = ai::builtinProfile().anger;
+    const std::string culprit = effects::empireFullName(s.empire(b));
+    auto report = [&](uint32_t turn) {
+        s.empire(a).log.push_back(
+            LogEntry{turn, LogCategory::Intelligence, "Sabotage", "A hostile intelligence operation struck us." + intel::suspectLine(culprit), std::nullopt, {}});
+    };
+    // Turn 5: one report of turn 4 was counted by a's step in turn 4; one came
+    // after it, and one comes in turn 5 before a's turn.
+    s.turn = 5;
+    report(4);
+    report(4);
+    report(5);
+    ai::PoliticalWindow w;
+    w.turn = 4u;
+    w.logs.assign(s.empires.size(), 0);
+    w.logs[a.index()] = 1;
+    w.andLater = true;
+    TurnContext ctx{r, s, {}, {}, {}};
+    s.empire(a).relation(b).anger = 50;
+    ai::politicalStep(ctx, a, w);
+    CHECK(s.empire(a).relation(b).anger == std::clamp(50 + 2 * table.intelligenceAgainstUs, 0, 100) + table.regularDecrease);
+
+    // The turn-based game keeps the mark of each step.
+    GameState g = test::newEngineGame(11, 3, 12, false);
+    g.options.simultaneous = false;
+    resumeTurnBased(r, g);
+    REQUIRE(g.empire(human).politicsMark.set);
+    CHECK(g.empire(human).politicsMark.turn == 0);
+    CHECK_FALSE(g.empire(a).politicsMark.set);  // its turn has not come yet
+    endPlayerTurn(r, g, human);
+    for (EmpireId e : {a, b}) {
+        const PoliticsMark& m = g.empire(e).politicsMark;
+        REQUIRE(m.set);
+        CHECK(m.turn == 0);
+        CHECK(m.logs.size() == g.empires.size());
+        CHECK(m.nextMessage <= g.nextMessageId);
+    }
+}
+
+TEST_CASE("turn-based: the ministers plan before the vehicles regain their movement and carry out every order") {
+    // Spec 05 §8 "Turn-based game": the start-of-turn step comes first, then
+    // the movement refill and the orders, the ministers' new ones included.
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(11, 3, 12, false);
+    s.options.simultaneous = false;
+    const EmpireId human{0u}, cpu{1u};
+    resumeTurnBased(r, s);
+    endPlayerTurn(r, s, human);
+    // The computer players' groups carried out the orders their ministers gave
+    // this turn: none waits with movement left and orders it could follow.
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == cpu && !v.orders.empty() && v.orders.front().kind == OrderKind::MoveTo && v.location != v.orders.front().location)
+            CHECK(v.movement == 0);
 }
 
 TEST_CASE("turn-based: an Attack order goes after its target without asking, fights it at once and stays") {

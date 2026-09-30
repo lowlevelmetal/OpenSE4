@@ -96,13 +96,12 @@ void addQuestions(LiveContext& lc, const std::vector<EntryQuestion>& qs) {
     }
 }
 
-// The groups move and fight now; then colony ships at their planet found
-// their colonies, and sight and first contact follow the new positions.
+// The groups move, fight and colonize now; then sight and first contact
+// follow the new positions.
 void carryOut(LiveContext& lc, const movement::LiveMove& move) {
     TurnContext& ctx = lc.ctx;
     GameState& s = ctx.state;
     addQuestions(lc, movement::runLive(ctx, move));
-    movement::runColonization(ctx, move.empire);
     s.removeDeadVehicles();
     pruneQuestions(s);
     sight::updateKnowledge(ctx.rules, s);
@@ -176,9 +175,60 @@ void applyBatch(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
     settle(lc, fx);
 }
 
+// Orders given at the start of a turn: they take effect (messages at once),
+// and the vehicles carry them out afterwards with the rest (spec 05 §8
+// "Turn-based game" step 3).
+void giveOrders(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
+    if (commands.empty()) return;
+    const bool messages = std::any_of(commands.begin(), commands.end(), [](const Command& c) {
+        return std::holds_alternative<cmd::SendMessage>(c) || std::holds_alternative<cmd::AnswerMessage>(c);
+    });
+    detail::applyCommands(lc.ctx, e, std::move(commands));
+    if (messages) diplomacy::deliverMessages(lc.ctx);
+}
+
+// ---- The political step (spec 05 §7.3 "What it counts") ----------------------------------------
+
+// Everything logged since the empire's previous political step, among what
+// is dated this game turn or the one before: the rest of its own last turn,
+// the turns of the players after it and those of the players before it in
+// this game turn (confirmed: binary).
+ai::PoliticalWindow politicalWindow(const GameState& s, EmpireId e) {
+    ai::PoliticalWindow w;
+    w.andLater = true;
+    const PoliticsMark& mark = s.empire(e).politicsMark;
+    const uint32_t earliest = s.turn > 0 ? s.turn - 1 : 0;
+    if (mark.set && mark.turn >= earliest && mark.turn <= s.turn) {
+        w.turn = mark.turn;
+        w.battles = mark.battles;
+        w.logs = mark.logs;
+        w.firstMessage = mark.nextMessage;
+    } else {
+        w.turn = earliest;
+    }
+    return w;
+}
+
+// After the step: everything logged so far counts as counted.
+void markPoliticalStep(GameState& s, EmpireId e) {
+    PoliticsMark mark;
+    mark.set = true;
+    mark.turn = s.turn;
+    for (const CombatRecord& c : s.combats) mark.battles += c.turn == s.turn ? 1 : 0;
+    for (const Empire& x : s.empires)
+        mark.logs.push_back(static_cast<uint32_t>(std::count_if(x.log.begin(), x.log.end(), [&](const LogEntry& l) { return l.turn == s.turn; })));
+    mark.nextMessage = s.nextMessageId;
+    s.empire(e).politicsMark = std::move(mark);
+}
+
 // ---- A player's turn ------------------------------------------------------------------------------
 
-// The start of `e`'s turn. False when the empire is destroyed at its check.
+// The start of `e`'s turn (spec 05 §8 "Turn-based game", confirmed: binary):
+// a human's destruction check; the start-of-turn step (AI state, political
+// step, the Politics minister and then the other ministers give their orders,
+// messages taking effect when sent); the vehicles get their movement back and
+// every group carries out its orders, the ministers' new ones included; a
+// computer player's destruction check. False when the empire is destroyed.
 bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     TurnContext& ctx = lc.ctx;
     const Rules& r = ctx.rules;
@@ -186,23 +236,34 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     s.playerTurn.empire = e;
     s.playerTurn.started = true;
     s.playerTurn.questions.clear();
-    // The destruction check comes when the empire's turn comes up (spec 05 §6).
-    score::checkDestruction(ctx, e);
-    if (!living(s, e)) return false;
-    // Movement is refilled and every group first carries on with its orders
-    // (spec 03 §6.3); then the start-of-turn step (spec 05 §8) (inferred: in
-    // this order).
+    const bool human = s.empire(e).kind == PlayerKind::Human;
+    // 1. A human's turn starts with the destruction check (spec 05 §6).
+    if (human) {
+        score::checkDestruction(ctx, e);
+        if (!living(s, e)) return false;
+    }
+    // 2. The start-of-turn step.
+    ai::updateAiState(ctx, e);
+    if (control != Control::Absent) {
+        ai::politicalStep(ctx, e, politicalWindow(s, e));
+        markPoliticalStep(s, e);
+    }
+    if (ministersPlan(s, e, control)) {
+        giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
+        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e));
+    }
+    ai::recordAiDecisions(ctx, e);
+    // 3. Movement is refilled, and every group carries out its orders.
     movement::startTurn(ctx, e);
     movement::LiveMove all;
     all.empire = e;
     all.ask = control == Control::Player;
     carryOut(lc, all);
-    if (!living(s, e)) return true;  // it may have lost everything in battle; the check comes next turn
-    ai::updateAiState(ctx, e);
-    const std::optional<uint32_t> previousTurn = s.turn > 0 ? std::optional<uint32_t>(s.turn - 1) : std::nullopt;
-    if (control != Control::Absent) ai::politicalStep(ctx, e, previousTurn);
-    if (ministersPlan(s, e, control)) applyBatch(lc, e, ai::planOrders(r, s, e));
-    ai::recordAiDecisions(ctx, e);
+    // 4. A computer player's destruction check comes now; its turn then ends.
+    if (!human) {
+        score::checkDestruction(ctx, e);
+        if (!living(s, e)) return false;
+    }
     return true;
 }
 
@@ -230,7 +291,8 @@ void endGameTurn(TurnContext& ctx) {
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
     ++s.turn;
     // The battles of the game turn just ended stay for the political steps of
-    // the next one, which count them (spec 05 open question 32); older ones go.
+    // the next one, which count those fought since each empire's previous
+    // step (spec 05 §7.3); older ones go.
     std::erase_if(s.combats, [&](const CombatRecord& c) { return c.turn + 1 < s.turn; });
     economy::updateReports(r, s);
     s.playerTurn = PlayerTurn{};
@@ -282,9 +344,11 @@ void computerTurn(LiveContext& lc, EmpireId e, Control control) {
         }
     } else if (control != Control::Computer && ministersPlan(s, e, control)) {
         // Taking over a human's turn in progress: the ministers plan the rest
-        // of it now, as at a start of turn (inferred). The turn's counters and
-        // decisions were recorded when it started.
-        applyBatch(lc, e, ai::planOrders(ctx.rules, s, e));
+        // of it now, the Politics minister first, as at a start of turn, and
+        // their orders are carried out at once (inferred). The turn's counters
+        // and decisions were recorded when it started.
+        applyBatch(lc, e, ai::planPoliticsOrders(ctx.rules, s, e));
+        applyBatch(lc, e, ai::planOrdersAfterPolitics(ctx.rules, s, e));
     }
     s.playerTurn.questions.clear();
     finishPlayerTurn(lc, e, control);
