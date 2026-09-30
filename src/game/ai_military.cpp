@@ -111,10 +111,11 @@ std::vector<Order> stateGoal(Planner& p) {
     }
 }
 
-// Orders that engage an enemy-in-territory entry.
+// Orders that engage an enemy-in-territory entry: in a simultaneous game a
+// ship is pursued, otherwise its spot is the goal (spec 05 §7.5).
 std::vector<Order> engage(const Planner& p, const Threat& t) {
     if (t.vehicle.valid())
-        if (const Vehicle* v = p.st.vehicle(t.vehicle)) return {attackVehicle(*v)};
+        if (const Vehicle* v = p.st.vehicle(t.vehicle)) return {p.st.options.simultaneous ? attackVehicle(*v) : moveOrder(v->location)};
     if (t.planet.valid()) return {moveOrder(locationOf(p.st.galaxy, t.planet)), attackPlanet(p.st, t.planet)};
     return {};
 }

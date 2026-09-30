@@ -1856,6 +1856,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
         facility;
       - the threat a defence commitment is measured against: the strength of the listed
         enemies in that system;
+      - "our strength in every system within 4 jumps of each target" (Prepare for Attack
+        and Attack step 4): each system counts once, however many targets it is near;
+      - jumps for the staging system, the 4-jump test and Secure Holdings' neighbours are
+        counted over the warp links we know;
       - a planet's worth in trades: 100,000 per facility plus 1,000 per million people;
       - "the number of designs the designer has made so far" for design names: all of the
         empire's designs;
