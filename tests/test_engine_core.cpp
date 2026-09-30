@@ -125,9 +125,9 @@ TEST_CASE("engine: vehicle movement caps without supply or control") {
     v.supply = 0;
     CHECK(vehicleMaxMovement(r, s, v) == 1);
     v.supply = 100;
-    v.damage[0] = 1000;  // bridge destroyed
+    v.damage[0] = 1000;  // bridge destroyed: movement is halved (spec 03 §6.1)
     CHECK_FALSE(vehicleHasControl(r, s, v));
-    CHECK(vehicleMaxMovement(r, s, v) == 1);
+    CHECK(vehicleMaxMovement(r, s, v) == 2);
     v.damage[0] = 0;
     v.damage[4] = 1000;  // one engine destroyed
     CHECK(vehicleMaxMovement(r, s, v) == 3);

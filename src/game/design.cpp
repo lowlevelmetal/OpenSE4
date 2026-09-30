@@ -1,9 +1,11 @@
 #include "game/design.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
+#include <limits>
 #include <map>
 
 namespace opense4::game {
@@ -12,10 +14,20 @@ namespace {
 
 using ruleset::VehicleType;
 using ruleset::WeaponKind;
+using xmath::pctRound;
+using xmath::pctTrunc;
 
+// Classes that never move by themselves (spec 03 §1).
 bool isImmobile(VehicleType t) {
     return t == VehicleType::Base || t == VehicleType::Satellite || t == VehicleType::Mine || t == VehicleType::Troop ||
            t == VehicleType::WeaponPlatform;
+}
+
+bool isUnit(VehicleType t) { return t != VehicleType::Ship && t != VehicleType::Base; }
+
+// Satellites and mines have no supply at all; troops and platforms never use any (spec 03 §1, §12).
+bool typeUsesSupply(VehicleType t) {
+    return t == VehicleType::Ship || t == VehicleType::Base || t == VehicleType::Fighter || t == VehicleType::Drone;
 }
 
 std::string_view weaponKindName(WeaponKind k) {
@@ -29,33 +41,81 @@ std::string_view weaponKindName(WeaponKind k) {
     return "None";
 }
 
-// Movement from a set of (component index, abilities) pairs, per spec 03 §6.1.
-int movementFrom(const Rules& r, const Race* race, uint32_t hullIndex, const std::vector<std::span<const ParsedAbility>>& comps) {
-    const ruleset::VehicleSize& hull = r.hull(hullIndex);
-    if (isImmobile(hull.type)) return 0;
-    int64_t engines = 0;
-    std::optional<int64_t> bonus;
-    std::map<int64_t, int64_t> extra;  // stacking id -> best
-    for (const auto& abilities : comps) {
-        const int64_t e = sumValue1(abilities, AbilityKind::StandardShipMovement);
-        if (e > 0) {
-            engines += e;
-            const int64_t b = bestValue1(abilities, AbilityKind::MovementBonus);
-            bonus = bonus ? std::min(*bonus, b) : b;
+int toInt(int64_t v) {
+    return static_cast<int>(std::clamp<int64_t>(v, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+}
+
+// The bonus B of §6.1 over a list: the smallest `Movement Bonus` plus the
+// first-per-id `Extra Movement Generation` (confirmed: binary).
+int64_t movementBonus(std::span<const ParsedAbility> list) {
+    return abilitySmallest(list, AbilityKind::MovementBonus) + abilityFirstPerId(list, AbilityKind::ExtraMovementGeneration);
+}
+
+// Appends a component's abilities, marked with its family; shields scaled by the mount.
+void appendComponent(const Rules& r, const DesignEntry& e, std::vector<ParsedAbility>& out) {
+    const ruleset::Component& c = r.component(e.component);
+    const MountedComponent m = mounted(r, e);
+    const auto abilities = r.componentAbilities(e.component);
+    // A mount scales the component's summed shields, rounded once (§4.3).
+    int64_t shields[2] = {abilitySum(abilities, AbilityKind::ShieldGeneration), abilitySum(abilities, AbilityKind::PhasedShieldGeneration)};
+    if (m.mountApplies)
+        for (int64_t& v : shields) v = pctRound(v, m.shieldPercent);
+    bool shieldGiven[2] = {false, false};
+    for (ParsedAbility a : abilities) {
+        a.fromComponent = true;
+        a.family = c.family;
+        const int slot = a.kind == AbilityKind::ShieldGeneration ? 0 : a.kind == AbilityKind::PhasedShieldGeneration ? 1 : -1;
+        if (slot >= 0) {
+            a.value1 = shieldGiven[slot] ? 0 : shields[slot];
+            shieldGiven[slot] = true;
         }
-        for (const auto& a : abilities)
-            if (a.kind == AbilityKind::ExtraMovementGeneration) extra[a.value2] = std::max(extra[a.value2], a.value1);
+        out.push_back(std::move(a));
     }
-    for (const auto& a : r.hullAbilities(hullIndex))
-        if (a.kind == AbilityKind::ExtraMovementGeneration) extra[a.value2] = std::max(extra[a.value2], a.value1);
-    int64_t mp = hull.enginesPerMove > 0 ? engines / hull.enginesPerMove : 0;
-    if (engines > 0 && bonus) mp += *bonus;
-    for (const auto& [id, v] : extra) mp += v;
-    if (race && (engines > 0 || !extra.empty())) mp += r.traitValue(*race, "Vehicle Speed");
-    return static_cast<int>(std::max<int64_t>(0, mp));
+}
+
+// Hull abilities followed by the components' (all of them, or the working ones).
+std::vector<ParsedAbility> designAbilities(const Rules& r, uint32_t hull, std::span<const DesignEntry> entries) {
+    std::vector<ParsedAbility> out(r.hullAbilities(hull).begin(), r.hullAbilities(hull).end());
+    for (const DesignEntry& e : entries) appendComponent(r, e, out);
+    return out;
 }
 
 } // namespace
+
+// ---- Weapon mounts ------------------------------------------------------------------------------
+
+bool mountApplies(const Rules& r, uint32_t component, uint32_t mount) {
+    if (mount >= r.data().weaponMounts.size()) return false;
+    const ruleset::WeaponMount& m = r.data().weaponMounts[mount];
+    const ruleset::Component& c = r.component(component);
+    const std::string& req = m.weaponTypeRequirement;
+    bool type = false;
+    if (req.empty()) type = true;  // no requirement written (inferred: every component)
+    else if (datafile::keysEqual(req, "None")) type = !c.isWeapon();
+    else if (datafile::keysEqual(req, "Any")) type = c.isWeapon();  // every weapon type, not non-weapons
+    else type = c.isWeapon() && datafile::keysEqual(req, weaponKindName(c.weapon.kind));
+    if (!type) return false;
+    return m.familyRequirement.empty() ||
+           std::find(m.familyRequirement.begin(), m.familyRequirement.end(), c.family) != m.familyRequirement.end();
+}
+
+bool mountFitsHull(const Rules& r, uint32_t hullIndex, uint32_t mount) {
+    if (mount >= r.data().weaponMounts.size()) return false;
+    const ruleset::WeaponMount& m = r.data().weaponMounts[mount];
+    const int tons = r.hull(hullIndex).tonnage;
+    return tons >= m.minimumVehicleSize && (m.maximumVehicleSize <= 0 || tons <= m.maximumVehicleSize);
+}
+
+bool mountOffered(const Rules& r, uint32_t hullIndex, uint32_t mount) {
+    if (mount >= r.data().weaponMounts.size()) return false;
+    const std::string& text = r.data().weaponMounts[mount].vehicleType;
+    if (text.empty() || datafile::keysEqual(text, "Any")) return true;
+    return text.find(ruleset::displayName(r.hull(hullIndex).type)) != std::string::npos;  // matching case (confirmed: binary)
+}
+
+bool mountAllowed(const Rules& r, uint32_t hullIndex, uint32_t component, uint32_t mount) {
+    return mountOffered(r, hullIndex, mount) && mountFitsHull(r, hullIndex, mount) && mountApplies(r, component, mount);
+}
 
 MountedComponent mounted(const Rules& r, const DesignEntry& e) {
     const ruleset::Component& c = r.component(e.component);
@@ -65,51 +125,56 @@ MountedComponent mounted(const Rules& r, const DesignEntry& e) {
     m.cost = Resources::from(c.cost);
     m.supplyUsed = c.supplyUsed;
     m.toHitModifier = c.weapon.modifier;
-    if (e.mount >= 0 && static_cast<size_t>(e.mount) < r.data().weaponMounts.size()) {
-        const ruleset::WeaponMount& mt = r.data().weaponMounts[static_cast<size_t>(e.mount)];
-        m.tonnage = c.tonnage * mt.tonnagePercent / 100;
-        m.structure = c.structure * mt.structurePercent / 100;
-        m.cost = m.cost.percent(mt.costPercent);
-        m.supplyUsed = c.supplyUsed * mt.supplyPercent / 100;
-        m.damagePercent = mt.damagePercent;
-        m.rangeModifier = mt.rangeModifier;
-        m.toHitModifier += mt.toHitModifier;
-    }
+    if (e.mount < 0 || !mountApplies(r, e.component, static_cast<uint32_t>(e.mount))) return m;
+    const ruleset::WeaponMount& mt = r.data().weaponMounts[static_cast<size_t>(e.mount)];
+    // Each value in floating point, rounded half to even (§4.3, confirmed: binary).
+    m.mountApplies = true;
+    m.tonnage = toInt(pctRound(c.tonnage, mt.tonnagePercent));
+    m.structure = toInt(pctRound(c.structure, mt.structurePercent));
+    for (Resource res : kResources) m.cost[res] = pctRound(m.cost[res], mt.costPercent);
+    m.supplyUsed = toInt(pctRound(c.supplyUsed, mt.supplyPercent));
+    m.damagePercent = mt.damagePercent;
+    m.rangeModifier = mt.rangeModifier;
+    m.toHitModifier += mt.toHitModifier;
+    m.shieldPercent = mt.shieldPercent;
     return m;
 }
+
+namespace {
+
+constexpr int kDamageTableSize = 20;
+constexpr int64_t kMaxMountedDamage = 50'000;
+
+int tableDamage(const ruleset::Component& c, int index) {
+    if (index < 1 || index > kDamageTableSize || index > static_cast<int>(c.weapon.damageAtRange.size())) return 0;
+    return c.weapon.damageAtRange[static_cast<size_t>(index - 1)];
+}
+
+} // namespace
 
 int weaponDamageAtRange(const Rules& r, const DesignEntry& e, int range) {
     const ruleset::Component& c = r.component(e.component);
     if (!c.isWeapon() || range < 1) return 0;
     const MountedComponent m = mounted(r, e);
-    const int index = std::max(1, range - m.rangeModifier);
-    if (index > static_cast<int>(c.weapon.damageAtRange.size())) return 0;
-    return c.weapon.damageAtRange[static_cast<size_t>(index - 1)] * m.damagePercent / 100;
+    if (!m.mountApplies) return tableDamage(c, range);  // 0 beyond range 20
+    // The table index is shifted by the range modifier and clamped to 1..20;
+    // closer ranges use the range-1 damage (§4.3, confirmed: binary).
+    const int index = std::clamp(range - m.rangeModifier, 1, kDamageTableSize);
+    return toInt(std::min(kMaxMountedDamage, pctRound(tableDamage(c, index), m.damagePercent)));
 }
 
 int weaponMaxRange(const Rules& r, const DesignEntry& e) {
     const ruleset::Component& c = r.component(e.component);
     if (!c.isWeapon()) return 0;
     int last = 0;
-    for (size_t i = 0; i < c.weapon.damageAtRange.size(); ++i)
-        if (c.weapon.damageAtRange[i] > 0) last = static_cast<int>(i) + 1;
-    return last > 0 ? last + mounted(r, e).rangeModifier : 0;
+    for (int i = 1; i <= kDamageTableSize; ++i)
+        if (tableDamage(c, i) > 0) last = i;
+    if (last == 0) return 0;
+    const MountedComponent m = mounted(r, e);
+    return m.mountApplies ? std::max(1, last + m.rangeModifier) : last;
 }
 
-bool mountAllowed(const Rules& r, uint32_t hullIndex, uint32_t component, uint32_t mount) {
-    if (mount >= r.data().weaponMounts.size()) return false;
-    const ruleset::WeaponMount& m = r.data().weaponMounts[mount];
-    const ruleset::VehicleSize& hull = r.hull(hullIndex);
-    const ruleset::Component& c = r.component(component);
-    if (hull.tonnage < m.minimumVehicleSize) return false;
-    if (!m.vehicleType.empty() && !datafile::keysEqual(m.vehicleType, "Any") &&
-        !datafile::keysEqual(m.vehicleType, ruleset::displayName(hull.type)))
-        return false;
-    const std::string& req = m.weaponTypeRequirement;
-    if (req.empty() || datafile::keysEqual(req, "Any")) return true;
-    if (datafile::keysEqual(req, "None")) return !c.isWeapon();
-    return c.isWeapon() && datafile::keysEqual(req, weaponKindName(c.weapon.kind));
-}
+// ---- Designs --------------------------------------------------------------------------------------
 
 bool DesignStats::canColonize(std::string_view surface) const {
     if (datafile::keysEqual(surface, "Rock")) return canColonizeRock;
@@ -117,81 +182,147 @@ bool DesignStats::canColonize(std::string_view surface) const {
     return canColonizeGas;  // "Gas Giant"
 }
 
+int designMovement(const Rules& r, uint32_t hullIndex, std::span<const DesignEntry> entries) {
+    if (hullIndex >= r.data().vehicleSizes.size()) return 0;
+    const ruleset::VehicleSize& hull = r.hull(hullIndex);
+    if (isImmobile(hull.type)) return 0;
+    const std::vector<ParsedAbility> list = designAbilities(r, hullIndex, entries);
+    const int64_t engines = abilitySum(list, AbilityKind::StandardShipMovement);
+    int64_t mp = hull.enginesPerMove > 0 ? engines / hull.enginesPerMove : 0;
+    const int64_t bonus = movementBonus(list);
+    if (bonus > 0 && bonus < 100) mp += bonus;  // (§4.4, confirmed: binary)
+    return toInt(std::max<int64_t>(0, mp));
+}
+
 DesignStats computeDesignStats(const Rules& r, const Empire* owner, uint32_t hullIndex, std::span<const DesignEntry> entries) {
     DesignStats st;
-    const ruleset::VehicleSize& hull = r.hull(hullIndex);
-    st.vehicleType = hull.type;
-    st.tonnageMax = hull.tonnage;
-    st.cost = Resources::from(hull.cost);
     auto problem = [&](std::string s) { st.problems.push_back(std::move(s)); };
+    // 1. A hull: without one, this is the only warning.
+    if (hullIndex >= r.data().vehicleSizes.size()) {
+        problem("Choose a hull for the design");
+        return st;
+    }
+    const ruleset::VehicleSize& hull = r.hull(hullIndex);
+    const int T = hull.tonnage;
+    st.vehicleType = hull.type;
+    st.tonnageMax = T;
+    st.cost = Resources::from(hull.cost);
 
-    if (owner && !r.hullAvailable(*owner, hullIndex)) problem(std::format("{} hull is not yet researched", hull.name));
+    // Per component: its mounted values and which abilities it has (a component
+    // counts once for an ability, however many entries of it it has).
+    struct Part {
+        const ruleset::Component* c;
+        MountedComponent m;
+        std::span<const ParsedAbility> abilities;
+        bool has(AbilityKind k) const { return hasAbility(abilities, k); }
+    };
+    std::vector<Part> parts;
+    for (const DesignEntry& e : entries) parts.push_back({&r.component(e.component), mounted(r, e), r.componentAbilities(e.component)});
+    auto count = [&](AbilityKind k) { return static_cast<int>(std::count_if(parts.begin(), parts.end(), [&](const Part& p) { return p.has(k); })); };
+    auto size = [&](AbilityKind k) {
+        int64_t total = 0;
+        for (const Part& p : parts)
+            if (p.has(k)) total += p.m.tonnage;
+        return total;
+    };
 
-    int bridges = 0, aux = 0, lifeSupport = 0, crew = 0, engines = 0;
-    bool masterComputer = false;
-    int bayTonnage = 0, colonyTonnage = 0, cargoTonnage = 0;
-    std::map<uint32_t, int> perComponent;
-    std::vector<std::span<const ParsedAbility>> abilities;
-    for (const DesignEntry& e : entries) {
-        const ruleset::Component& c = r.component(e.component);
-        const MountedComponent m = mounted(r, e);
-        const auto ab = r.componentAbilities(e.component);
-        abilities.push_back(ab);
-        st.tonnageUsed += m.tonnage;
-        st.structure += m.structure;
-        st.cost += m.cost;
-        ++perComponent[e.component];
-        if (owner && !r.componentAvailable(*owner, e.component)) problem(std::format("{} is not yet researched", c.name));
-        if (!(c.vehicles & ruleset::maskOf(hull.type))) problem(std::format("{} cannot be placed on a {}", c.name, ruleset::displayName(hull.type)));
-        if (e.mount >= 0 && !mountAllowed(r, hullIndex, e.component, static_cast<uint32_t>(e.mount)))
-            problem(std::format("{} cannot use that mount", c.name));
-
-        bridges += hasAbility(ab, AbilityKind::ShipBridge);
-        aux += hasAbility(ab, AbilityKind::ShipAuxiliaryControl);
-        lifeSupport += hasAbility(ab, AbilityKind::ShipLifeSupport);
-        crew += hasAbility(ab, AbilityKind::ShipCrewQuarters);
-        masterComputer = masterComputer || hasAbility(ab, AbilityKind::MasterComputer);
-        if (hasAbility(ab, AbilityKind::StandardShipMovement)) ++engines;
-        if (hasAbility(ab, AbilityKind::LaunchRecoverFighters)) bayTonnage += m.tonnage;
-        if (hasAbility(ab, AbilityKind::ColonizeRock) || hasAbility(ab, AbilityKind::ColonizeIce) || hasAbility(ab, AbilityKind::ColonizeGas))
-            colonyTonnage += m.tonnage;
-        if (hasAbility(ab, AbilityKind::CargoStorage)) cargoTonnage += m.tonnage;
-
-        st.supplyCapacity += sumValue1(ab, AbilityKind::SupplyStorage);
-        st.cargoCapacity += static_cast<int>(sumValue1(ab, AbilityKind::CargoStorage));
-        st.shields += static_cast<int>(sumValue1(ab, AbilityKind::ShieldGeneration) * m.shieldPercent / 100);
-        st.phasedShields += static_cast<int>(sumValue1(ab, AbilityKind::PhasedShieldGeneration) * m.shieldPercent / 100);
-        st.spaceYard = st.spaceYard || hasAbility(ab, AbilityKind::SpaceYard);
-        st.canColonizeRock = st.canColonizeRock || hasAbility(ab, AbilityKind::ColonizeRock);
-        st.canColonizeIce = st.canColonizeIce || hasAbility(ab, AbilityKind::ColonizeIce);
-        st.canColonizeGas = st.canColonizeGas || hasAbility(ab, AbilityKind::ColonizeGas);
-        if (c.isWeapon()) {
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const Part& p = parts[i];
+        st.tonnageUsed += p.m.tonnage;
+        st.structure += p.m.structure;
+        st.cost += p.m.cost;
+        if (p.has(AbilityKind::StandardShipMovement)) ++st.engines;
+        if (p.c->isWeapon()) {
             ++st.weapons;
-            st.maxWeaponRange = std::max(st.maxWeaponRange, weaponMaxRange(r, e));
+            st.maxWeaponRange = std::max(st.maxWeaponRange, weaponMaxRange(r, entries[i]));
         }
     }
-    st.engines = engines;
-    st.movement = movementFrom(r, owner ? &owner->race : nullptr, hullIndex, abilities);
+    const std::vector<ParsedAbility> list = designAbilities(r, hullIndex, entries);
+    st.movement = designMovement(r, hullIndex, entries);
+    st.supplyCapacity = typeUsesSupply(hull.type) ? abilitySum(list, AbilityKind::SupplyStorage) : 0;
+    st.cargoCapacity = toInt(abilitySum(list, AbilityKind::CargoStorage));
+    st.shields = toInt(abilitySum(list, AbilityKind::ShieldGeneration));
+    st.phasedShields = toInt(abilitySum(list, AbilityKind::PhasedShieldGeneration));
+    st.spaceYard = count(AbilityKind::SpaceYard) > 0;
+    st.canColonizeRock = count(AbilityKind::ColonizeRock) > 0;
+    st.canColonizeIce = count(AbilityKind::ColonizeIce) > 0;
+    st.canColonizeGas = count(AbilityKind::ColonizeGas) > 0;
 
-    if (st.tonnageUsed > st.tonnageMax) problem(std::format("Components use {} kT of {} kT", st.tonnageUsed, st.tonnageMax));
-    if (hull.mustHaveBridge && bridges == 0 && !masterComputer) problem("Needs a bridge");
-    if (!hull.canHaveAuxControl && aux > 0) problem("This hull cannot have auxiliary control");
-    if (!masterComputer && lifeSupport < hull.minLifeSupport) problem(std::format("Needs {} life support", hull.minLifeSupport));
-    if (!masterComputer && crew < hull.minCrewQuarters) problem(std::format("Needs {} crew quarters", hull.minCrewQuarters));
-    const int maxEngines = hull.usesEngines ? hull.maxEngines : 0;
-    if (engines > maxEngines) problem(std::format("At most {} engines", maxEngines));
-    auto pct = [&](int have, int required, const char* what) {
-        if (required > 0 && have * 100 < hull.tonnage * required)
-            problem(std::format("At least {}% of the hull must be {}", required, what));
-    };
-    pct(bayTonnage, hull.maxPercentFighterBays, "fighter bays");
-    pct(colonyTonnage, hull.maxPercentColonyModules, "colony modules");
-    pct(cargoTonnage, hull.maxPercentCargo, "cargo space");
-    for (const auto& [comp, n] : perComponent) {
-        const int limit = r.component(comp).maxPerVehicle;
-        if (limit > 0 && n > limit) problem(std::format("At most {} {} per vehicle", limit, r.component(comp).name));
+    // 2. Technology of the hull and the components (mounts: rule 5).
+    if (owner && !r.hullAvailable(*owner, hullIndex)) problem(std::format("{} hull is not yet researched", hull.name));
+    if (owner)
+        for (size_t i = 0; i < parts.size(); ++i)
+            if (!r.componentAvailable(*owner, entries[i].component)) {
+                problem(std::format("{} is not yet researched", parts[i].c->name));
+                break;
+            }
+    // 3. Space.
+    if (st.tonnageUsed > T) problem(std::format("Components use {} kT of {} kT", st.tonnageUsed, T));
+    // 4. One space yard at most.
+    if (count(AbilityKind::SpaceYard) > 1) problem("A design can have only one space yard");
+    // 5. Mounts: size bounds first, then technology; one warning at most.
+    bool sizeFail = false, techFail = false;
+    for (const DesignEntry& e : entries) {
+        if (e.mount < 0) continue;
+        const auto m = static_cast<uint32_t>(e.mount);
+        if (!mountFitsHull(r, hullIndex, m)) sizeFail = true;
+        else if (owner && !r.mountAvailable(*owner, m)) techFail = true;
     }
+    if (sizeFail) problem("A weapon mount is not allowed on a hull of this size");
+    else if (techFail) problem("A weapon mount is beyond our technology");
+    // 6. Restrictions: the whole family at most N times; only the first violation.
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const int limit = parts[i].c->maxPerVehicle;
+        if (limit <= 0) continue;
+        int others = 0;
+        for (size_t j = 0; j < parts.size(); ++j) others += j != i && parts[j].c->family == parts[i].c->family;
+        if (others >= limit) {
+            problem(std::format("At most {} of the {} family per vehicle", limit, parts[i].c->name));
+            break;
+        }
+    }
+    // 7. Control requirements, lifted by a Master Computer.
+    if (count(AbilityKind::MasterComputer) == 0) {
+        if (hull.mustHaveBridge && count(AbilityKind::ShipBridge) != 1) {
+            const char* part = hull.type == VehicleType::Fighter || hull.type == VehicleType::Troop ? "cockpit"
+                               : hull.type == VehicleType::Satellite || hull.type == VehicleType::Drone ||
+                                         hull.type == VehicleType::WeaponPlatform
+                                   ? "computer core"
+                                   : "bridge";
+            problem(std::format("Needs exactly one {}", part));
+        }
+        if (hull.canHaveAuxControl && count(AbilityKind::ShipAuxiliaryControl) > 1) problem("At most one auxiliary control");
+        if (hull.minLifeSupport > 0 && count(AbilityKind::ShipLifeSupport) < hull.minLifeSupport)
+            problem(std::format("Needs {} life support", hull.minLifeSupport));
+        if (hull.minCrewQuarters > 0 && count(AbilityKind::ShipCrewQuarters) < hull.minCrewQuarters)
+            problem(std::format("Needs {} crew quarters", hull.minCrewQuarters));
+    }
+    // 8. Engines (a Master Computer does not matter); no minimum.
+    if (!hull.usesEngines && st.engines > 0) problem("This hull cannot use engines");
+    else if (hull.usesEngines && hull.maxEngines > 0 && st.engines > hull.maxEngines) problem(std::format("At most {} engines", hull.maxEngines));
+    // 9. Percentages of the hull, by mounted size, against truncate(T × p %).
+    auto pct = [&](int64_t have, int required, const char* what) {
+        if (required > 0 && have < pctTrunc(T, required)) problem(std::format("At least {}% of the hull must be {}", required, what));
+    };
+    pct(size(AbilityKind::LaunchRecoverFighters), hull.maxPercentFighterBays, "fighter bays");
+    pct(size(AbilityKind::ColonizeRock) + size(AbilityKind::ColonizeIce) + size(AbilityKind::ColonizeGas), hull.maxPercentColonyModules,
+        "colony modules");
+    pct(size(AbilityKind::CargoStorage), hull.maxPercentCargo, "cargo space");
+    // Not a warning in the original, but the designer never offers such parts,
+    // so a created design must respect it (§4.2).
+    for (const Part& p : parts)
+        if (!(p.c->vehicles & ruleset::maskOf(hull.type))) {
+            problem(std::format("{} cannot be placed on a {}", p.c->name, ruleset::displayName(hull.type)));
+            break;
+        }
     return st;
+}
+
+bool designNameInUse(const GameState& s, std::string_view name) {
+    for (const Empire& e : s.empires)
+        for (DesignId id : e.designs)
+            if (id.index() < s.designs.size() && s.design(id).name == name) return true;
+    return false;
 }
 
 // ---- Vehicles -------------------------------------------------------------------------
@@ -224,78 +355,91 @@ bool vehicleDestroyed(const Rules& r, const GameState& s, const Vehicle& v) {
     return true;
 }
 
+ruleset::VehicleType vehicleType(const Rules& r, const GameState& s, const Vehicle& v) { return r.hull(s.design(v.design).hull).type; }
+
 std::vector<ParsedAbility> vehicleAbilities(const Rules& r, const GameState& s, const Vehicle& v) {
     std::vector<ParsedAbility> out;
-    if (v.status == VehicleStatus::Mothballed) return out;
+    if (v.status == VehicleStatus::Mothballed) return out;  // no abilities at all (§3.1)
     const Design& d = s.design(v.design);
     for (const auto& a : r.hullAbilities(d.hull)) out.push_back(a);
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        if (!entryIntact(r, s, v, i)) continue;
-        const int shieldPct = mounted(r, d.entries[i]).shieldPercent;
-        for (ParsedAbility a : r.componentAbilities(d.entries[i].component)) {
-            if (a.kind == AbilityKind::ShieldGeneration || a.kind == AbilityKind::PhasedShieldGeneration) a.value1 = a.value1 * shieldPct / 100;
-            out.push_back(std::move(a));
-        }
-    }
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (entryIntact(r, s, v, i)) appendComponent(r, d.entries[i], out);
     return out;
 }
 
-bool vehicleHasControl(const Rules& r, const GameState& s, const Vehicle& v) {
-    const Design& d = s.design(v.design);
-    const ruleset::VehicleSize& hull = r.hull(d.hull);
-    bool bridge = false, lifeSupport = false, crew = false;
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        if (!entryIntact(r, s, v, i)) continue;
-        const auto ab = r.componentAbilities(d.entries[i].component);
-        if (hasAbility(ab, AbilityKind::MasterComputer)) return true;
-        bridge = bridge || hasAbility(ab, AbilityKind::ShipBridge) || hasAbility(ab, AbilityKind::ShipAuxiliaryControl);
-        lifeSupport = lifeSupport || hasAbility(ab, AbilityKind::ShipLifeSupport);
-        crew = crew || hasAbility(ab, AbilityKind::ShipCrewQuarters);
-    }
-    if (hull.mustHaveBridge && !bridge) return false;
-    if (hull.minLifeSupport > 0 && !lifeSupport) return false;
-    if (hull.minCrewQuarters > 0 && !crew) return false;
-    return true;
-}
-
 bool vehicleHasQuantumReactor(const Rules& r, const GameState& s, const Vehicle& v) {
-    const Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i) && hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::QuantumReactor)) return true;
-    return false;
+    return hasAbility(vehicleAbilities(r, s, v), AbilityKind::QuantumReactor);
 }
 
-ruleset::VehicleType vehicleType(const Rules& r, const GameState& s, const Vehicle& v) { return r.hull(s.design(v.design).hull).type; }
+bool vehicleHasControl(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (isUnit(vehicleType(r, s, v))) return true;
+    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
+    if (hasAbility(list, AbilityKind::MasterComputer)) return true;
+    return (hasAbility(list, AbilityKind::ShipBridge) || hasAbility(list, AbilityKind::ShipAuxiliaryControl)) &&
+           abilityCount(list, AbilityKind::ShipCrewQuarters) > 0 && abilityCount(list, AbilityKind::ShipLifeSupport) > 0;
+}
 
 int vehicleMaxMovement(const Rules& r, const GameState& s, const Vehicle& v) {
     if (v.status == VehicleStatus::Mothballed) return 0;
     const Design& d = s.design(v.design);
-    std::vector<std::span<const ParsedAbility>> intact;
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i)) intact.push_back(r.componentAbilities(d.entries[i].component));
-    const Race* race = v.owner.valid() && v.owner.index() < s.empires.size() ? &s.empire(v.owner).race : nullptr;
-    int mp = movementFrom(r, race, d.hull, intact);
-    if (mp > 1) {
-        if (v.supply <= 0 && !vehicleHasQuantumReactor(r, s, v)) mp = 1;
-        if (!vehicleHasControl(r, s, v)) mp = 1;
+    const ruleset::VehicleSize& hull = r.hull(d.hull);
+    if (isImmobile(hull.type)) return 0;
+    if (isUnit(hull.type)) {
+        // A unit group moves at its design's speed, or 1 at zero supply (§12).
+        const int speed = designMovement(r, d.hull, d.entries);
+        return speed > 0 && v.supply <= 0 ? 1 : speed;
     }
-    return mp;
+    // Ships (spec 03 §6.1, confirmed: binary).
+    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
+    const int64_t engines = abilitySum(list, AbilityKind::StandardShipMovement) & 0xff;  // the original keeps 8 bits
+    int64_t mp = hull.enginesPerMove > 0 ? engines / hull.enginesPerMove : 0;
+    const int64_t bonus = movementBonus(list);
+    if (mp > 0 && bonus < 100) mp = std::max<int64_t>(0, mp + bonus);  // the original wraps below 0; we clamp
+    if (mp > 0 && v.owner.valid() && v.owner.index() < s.empires.size())
+        mp = std::max<int64_t>(0, mp + r.traitValue(s.empire(v.owner).race, "Vehicle Speed"));
+    if (mp <= 0) return 0;
+    if (v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) return 1;
+    if (!hasAbility(list, AbilityKind::MasterComputer)) {
+        const bool missing[] = {!hasAbility(list, AbilityKind::ShipBridge) && !hasAbility(list, AbilityKind::ShipAuxiliaryControl),
+                                abilityCount(list, AbilityKind::ShipCrewQuarters) == 0, abilityCount(list, AbilityKind::ShipLifeSupport) == 0};
+        for (bool m : missing)
+            if (m) mp = std::max<int64_t>(1, mp / 2);
+    }
+    return toInt(mp);
 }
 
+int64_t vehicleToHitOffense(const Rules& r, const GameState& s, const Vehicle& v) {
+    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
+    return abilityPerFamily(list, AbilityKind::CombatToHitOffensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitOffenseMinus);
+}
+
+int64_t vehicleToHitDefense(const Rules& r, const GameState& s, const Vehicle& v) {
+    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
+    return abilityPerFamily(list, AbilityKind::CombatToHitDefensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitDefenseMinus);
+}
+
+// ---- Supply -------------------------------------------------------------------------------------
+
+bool vehicleHasUnlimitedSupply(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (v.status == VehicleStatus::Mothballed) return false;
+    return vehicleType(r, s, v) == VehicleType::Base || vehicleHasQuantumReactor(r, s, v);
+}
+
+bool vehicleUsesSupply(const Rules& r, const GameState& s, const Vehicle& v) { return typeUsesSupply(vehicleType(r, s, v)); }
+
 int64_t vehicleSupplyCapacity(const Rules& r, const GameState& s, const Vehicle& v) {
-    const Design& d = s.design(v.design);
-    int64_t total = 0;
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i)) total += sumValue1(r.componentAbilities(d.entries[i].component), AbilityKind::SupplyStorage);
-    return total;
+    if (!vehicleUsesSupply(r, s, v)) return 0;
+    const int64_t each = abilitySum(vehicleAbilities(r, s, v), AbilityKind::SupplyStorage);
+    return isUnit(vehicleType(r, s, v)) ? each * std::max(1, v.count) : each;
+}
+
+int64_t initialSupply(const Rules& r, const GameState& s, const Vehicle& v) {
+    return vehicleHasUnlimitedSupply(r, s, v) ? kUnlimitedSupply : vehicleSupplyCapacity(r, s, v);
 }
 
 int vehicleCargoCapacity(const Rules& r, const GameState& s, const Vehicle& v) {
-    const Design& d = s.design(v.design);
-    int64_t total = sumValue1(r.hullAbilities(d.hull), AbilityKind::CargoStorage);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i)) total += sumValue1(r.componentAbilities(d.entries[i].component), AbilityKind::CargoStorage);
-    return static_cast<int>(total);
+    if (isUnit(vehicleType(r, s, v))) return 0;  // unit groups in space hold no cargo (§11)
+    return toInt(abilitySum(vehicleAbilities(r, s, v), AbilityKind::CargoStorage));
 }
 
 int64_t cargoSpaceUsed(const Rules& r, const GameState& s, const Cargo& c) {

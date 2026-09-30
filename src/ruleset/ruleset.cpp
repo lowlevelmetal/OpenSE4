@@ -1,5 +1,7 @@
 #include "ruleset/ruleset.hpp"
 
+#include "ruleset/ability_names.hpp"
+
 #include <cstdlib>
 #include <fstream>
 #include <regex>
@@ -55,6 +57,23 @@ const Facility* Ruleset::findFacility(std::string_view name) const {
 const VehicleSize* Ruleset::findVehicleSize(std::string_view name) const {
     auto i = lookup(vehicleIndex_, name);
     return i ? &vehicleSizes[*i] : nullptr;
+}
+
+AbilityNameStatus abilityNameStatus(std::string_view type) {
+    static const std::unordered_map<std::string, AbilityNameStatus> kNames = [] {
+        std::unordered_map<std::string, AbilityNameStatus> m;
+#define OPENSE4_ABILITY_NAME(name, text) m.emplace(datafile::normalizeKey(text), AbilityNameStatus::Known);
+        OPENSE4_ABILITIES(OPENSE4_ABILITY_NAME)
+#undef OPENSE4_ABILITY_NAME
+        // Listed in a file header, but not a type the original knows (spec 01 §4.4).
+        for (const char* ignored : {"System - Sensor Interference", "System - Damage", "System - Ability Required"})
+            m[datafile::normalizeKey(ignored)] = AbilityNameStatus::Ignored;
+        return m;
+    }();
+    const std::string key = datafile::normalizeKey(type);
+    if (key.starts_with("ai tag")) return AbilityNameStatus::Known;
+    const auto it = kNames.find(key);
+    return it == kNames.end() ? AbilityNameStatus::Unknown : it->second;
 }
 
 std::string Settings::normalize(std::string_view key) { return datafile::normalizeKey(key); }

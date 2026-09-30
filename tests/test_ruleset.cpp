@@ -78,7 +78,7 @@ TEST_CASE("ruleset: the fixture data set loads completely") {
     CHECK(engine->vehicles == (ruleset::maskOf(ruleset::VehicleType::Ship) | ruleset::maskOf(ruleset::VehicleType::Base) |
                                ruleset::maskOf(ruleset::VehicleType::Drone)));
     REQUIRE(engine->abilities.size() == 1);
-    CHECK(engine->abilities[0].type == "Movement Standard");
+    CHECK(engine->abilities[0].type == "Standard Ship Movement");
     CHECK(engine->abilities[0].number1() == 1);
     CHECK(engine->abilities[0].number2() == 0);  // blank value
     CHECK(beam->weapon.kind == ruleset::WeaponKind::DirectFire);
