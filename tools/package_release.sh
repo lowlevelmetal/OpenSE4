@@ -3,6 +3,7 @@
 #
 #   dist/OpenSE4-<version>-linux-x86_64.tar.gz   static except the C library (glibc 2.34+)
 #   dist/OpenSE4-<version>-windows-x86_64.zip    static, cross-built with MinGW-w64
+#   dist/OpenSE4-<version>-SHA256SUMS.txt
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts and prototype data built in, plus the README, the licence (GPL 3.0 or
@@ -27,8 +28,14 @@ for arg in "$@"; do
 done
 [ ${#targets[@]} -gt 0 ] || targets=(linux windows)
 
+# A tagged commit (v0.1.0) is packaged as that version; anything else as the
+# project version plus the commit.
 project_version=$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)
-version="${project_version}-$(git rev-parse --short HEAD)"
+if tag=$(git describe --tags --exact-match --match 'v*' 2>/dev/null); then
+    version="${tag#v}"
+else
+    version="${project_version}-$(git rev-parse --short HEAD)"
+fi
 dist="$root/dist"
 mkdir -p "$dist"
 
@@ -122,3 +129,7 @@ for target in "${targets[@]}"; do
         echo "    $dist/$name.zip"
     fi
 done
+
+# Checksums for whatever this version's archives are in dist/.
+(cd "$dist" && sha256sum OpenSE4-"${version}"-*.tar.gz OpenSE4-"${version}"-*.zip 2> /dev/null > "OpenSE4-${version}-SHA256SUMS.txt" || true)
+echo "==> checksums: $dist/OpenSE4-${version}-SHA256SUMS.txt"
