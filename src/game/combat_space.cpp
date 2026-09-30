@@ -124,24 +124,72 @@ Weapon Battle::makeWeapon(const DesignEntry& de, size_t entry) const {
 void Battle::buildWeapons(Piece& p) const {
     p.weapons.clear();
     if (p.mothballed) return;
-    const Design& d = s_.design(p.unit.design);
-    const bool fighters = p.kind == Kind::UnitGroup && p.vtype == VehicleType::Fighter;
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        const ruleset::Component& c = r_.component(d.entries[i].component);
-        if (!c.isWeapon() || c.weapon.kind == WeaponKind::Warhead) continue;
-        if (fighters) {
-            // A fighter group fires identical weapons (same part and mount) together (confirmed: binary).
-            auto same = std::find_if(p.weapons.begin(), p.weapons.end(), [&](const Weapon& w) { return w.de == d.entries[i]; });
-            if (same != p.weapons.end()) {
-                ++same->perUnit;
-                continue;
-            }
+    if (p.kind != Kind::UnitGroup) {
+        const Design& d = s_.design(p.unit.design);
+        for (size_t i = 0; i < d.entries.size(); ++i) {
+            const ruleset::Component& c = r_.component(d.entries[i].component);
+            if (!c.isWeapon() || c.weapon.kind == WeaponKind::Warhead) continue;
+            Weapon w = makeWeapon(d.entries[i], i);
+            w.reload.assign(1, 0);
+            p.weapons.push_back(std::move(w));
         }
-        Weapon w = makeWeapon(d.entries[i], i);
-        // Satellite and drone groups fire each weapon of each unit on its own.
-        w.reload.assign(p.kind == Kind::UnitGroup && !fighters ? static_cast<size_t>(std::max(1, p.unit.count)) : 1, 0);
-        p.weapons.push_back(std::move(w));
+        return;
     }
+    // A unit group: the weapons of each of its designs, design by design.
+    const bool fighters = p.vtype == VehicleType::Fighter;
+    for (size_t k = 0; k < p.stacks.size(); ++k) {
+        const int stack = static_cast<int>(k);
+        const Design& d = s_.design(p.stacks[k].design);
+        for (size_t i = 0; i < d.entries.size(); ++i) {
+            const ruleset::Component& c = r_.component(d.entries[i].component);
+            if (!c.isWeapon() || c.weapon.kind == WeaponKind::Warhead) continue;
+            if (fighters) {
+                // A fighter group fires identical weapons (same part and mount) together,
+                // whichever of its designs carries them (confirmed: binary).
+                auto same = std::find_if(p.weapons.begin(), p.weapons.end(), [&](const Weapon& w) { return w.de == d.entries[i]; });
+                if (same != p.weapons.end()) {
+                    auto share = std::find_if(same->shares.begin(), same->shares.end(), [&](const auto& sh) { return sh.first == stack; });
+                    if (share == same->shares.end()) same->shares.emplace_back(stack, 1);
+                    else ++share->second;
+                    if (same->stack == stack) ++same->perUnit;
+                    continue;
+                }
+            }
+            Weapon w = makeWeapon(d.entries[i], i);
+            w.stack = stack;
+            if (fighters) {
+                w.shares.emplace_back(stack, 1);
+                w.reload.assign(1, 0);
+            } else {
+                // Satellite and drone groups fire each weapon of each unit on its own.
+                w.reload.assign(static_cast<size_t>(std::max(1, p.stacks[k].count)), 0);
+            }
+            p.weapons.push_back(std::move(w));
+        }
+    }
+}
+
+int64_t Battle::groupHitPoints(const Piece& p, DamageType type, bool shielded) const {
+    int64_t hp = 0;
+    for (const UnitStack& st : p.stacks)
+        if (st.count > 0) hp += detail::unitHitPoints(r_, s_.design(st.design), type, shielded) * st.count;
+    return hp;
+}
+
+void Battle::syncGroup(Piece& p) { setGroupStacks(s_, p.unit, p.stacks); }
+
+DesignId Battle::killerDesign(int att) const {
+    if (att < 0) return {};
+    const Piece& a = pieces_[att];
+    if (a.kind == Kind::Seeker) {
+        // A seeker's kills go to its launcher's design (the design that fired it); planets keep none.
+        if (a.launcher < 0 || pieces_[a.launcher].kind == Kind::Planet) return {};
+        return a.unit.design;
+    }
+    if (a.kind == Kind::Planet || a.kind == Kind::Obstacle) return {};
+    if (a.kind == Kind::UnitGroup && firingStack_ >= 0 && static_cast<size_t>(firingStack_) < a.stacks.size())
+        return a.stacks[static_cast<size_t>(firingStack_)].design;
+    return a.unit.design;
 }
 
 void Battle::buildPlanetWeapons(Piece& p) const {
@@ -168,8 +216,9 @@ int Battle::addPiece(Piece p) {
     acted_.push_back(pieces_.back().kind == Kind::Seeker ? 1 : 0);
     const Piece& q = pieces_.back();
     const bool big = q.kind == Kind::Planet || q.kind == Kind::Obstacle;
+    const int32_t count = q.kind == Kind::UnitGroup ? q.unit.count : q.kind == Kind::Seeker ? q.members : 1;
     rec_.pieces.push_back(CombatPiece{q.kind, q.owner, q.source, q.object, big ? DesignId{} : q.unit.design, q.name,
-                                      static_cast<int16_t>(q.x), static_cast<int16_t>(q.y)});
+                                      static_cast<int16_t>(q.x), static_cast<int16_t>(q.y), count});
     return i;
 }
 
@@ -194,6 +243,10 @@ void Battle::addVehiclePiece(const Vehicle& v) {
         }
     }
     p.startCount = v.count;
+    if (p.kind == Kind::UnitGroup) {
+        p.stacks = groupStacks(v);
+        p.hpStart = groupHitPoints(p, DamageType::Normal, true);
+    }
     p.arrived = detail::arrivedThisTurn(s_, v);
     std::tie(p.boxDx, p.boxDy) = detail::arrivalDirection(s_, v);
     buildWeapons(p);
@@ -841,7 +894,7 @@ int64_t Battle::hitPoints(int j) const {
         case Kind::Planet: return planetHp(p);
         case Kind::UnitGroup: {
             const bool shielded = !(p.vtype == VehicleType::Fighter && p.unit.supply <= 0);
-            return std::max<int64_t>(0, detail::unitHitPoints(r_, s_.design(p.unit.design), DamageType::Normal, shielded) * p.unit.count - p.pool);
+            return std::max<int64_t>(0, groupHitPoints(p, DamageType::Normal, shielded) - p.pool);
         }
         case Kind::Vehicle: return detail::remainingStructure(r_, s_, p.unit);
         case Kind::Obstacle: return 0;
@@ -858,8 +911,7 @@ int Battle::damagePercent(int j) const {
         const int structure = std::max(1, detail::designStructure(r_, d));
         return (structure - detail::remainingStructure(r_, s_, p.unit)) * 100 / structure;
     }
-    const int64_t per = std::max<int64_t>(1, detail::unitHitPoints(r_, d, DamageType::Normal));
-    const int64_t total = per * std::max(1, p.startCount);
+    const int64_t total = std::max<int64_t>(1, p.hpStart);
     return static_cast<int>(std::clamp<int64_t>((total - hitPoints(j)) * 100 / total, 0, 100));
 }
 
@@ -867,6 +919,11 @@ int64_t Battle::sizeOf(int j) const {
     const Piece& p = pieces_[j];
     if (p.kind == Kind::Planet) return kPlanetSizeRank;
     if (p.kind == Kind::Seeker || p.kind == Kind::Obstacle) return 0;
+    if (p.kind == Kind::UnitGroup) {
+        int64_t tons = 0;
+        for (const UnitStack& st : p.stacks) tons += int64_t{r_.hull(s_.design(st.design).hull).tonnage} * std::max(0, st.count);
+        return tons;
+    }
     return int64_t{r_.hull(s_.design(p.unit.design).hull).tonnage} * p.unit.count;
 }
 
@@ -884,14 +941,22 @@ int Battle::instances(int i, const Weapon& w) const {
     if (p.kind == Kind::Planet) return w.stack >= 0 ? std::min<int>(static_cast<int>(w.reload.size()), p.unit.cargo.units[static_cast<size_t>(w.stack)].count) : 0;
     if (p.kind == Kind::UnitGroup) {
         if (p.unit.count <= 0) return 0;
-        return p.vtype == VehicleType::Fighter ? 1 : std::min<int>(static_cast<int>(w.reload.size()), p.unit.count);
+        if (p.vtype == VehicleType::Fighter) return firedTogether(i, w) > 0 ? 1 : 0;
+        if (w.stack < 0 || static_cast<size_t>(w.stack) >= p.stacks.size()) return 0;
+        return std::min<int>(static_cast<int>(w.reload.size()), p.stacks[static_cast<size_t>(w.stack)].count);
     }
     return entryIntact(r_, s_, p.unit, w.entry) ? 1 : 0;
 }
 
 int Battle::firedTogether(int i, const Weapon& w) const {
     const Piece& p = pieces_[i];
-    if (p.kind == Kind::UnitGroup && p.vtype == VehicleType::Fighter) return p.unit.count * w.perUnit;
+    if (p.kind == Kind::UnitGroup && p.vtype == VehicleType::Fighter) {
+        // Every unit's identical weapons, over the group's designs.
+        int n = 0;
+        for (const auto& [stack, per] : w.shares)
+            if (static_cast<size_t>(stack) < p.stacks.size()) n += std::max(0, p.stacks[static_cast<size_t>(stack)].count) * per;
+        return n;
+    }
     return 1;
 }
 
@@ -1278,7 +1343,9 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
     }
     const int64_t damage = xmath::pctRound(int64_t{table} * hits, 100 + damageBonus(pieces_[i].owner));
     event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
+    const int firing = std::exchange(firingStack_, w.stack);   // a unit group: the design that fired gets the credit
     applyHit(i, t, w.type, damage);
+    firingStack_ = firing;
 }
 
 void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
@@ -1299,6 +1366,8 @@ void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
     sk.unit.owner = sk.owner;
     if (pieces_[i].kind == Kind::Planet) {
         if (w.stack >= 0) sk.unit.design = pieces_[i].unit.cargo.units[static_cast<size_t>(w.stack)].design;
+    } else if (pieces_[i].kind == Kind::UnitGroup && w.stack >= 0 && static_cast<size_t>(w.stack) < pieces_[i].stacks.size()) {
+        sk.unit.design = pieces_[i].stacks[static_cast<size_t>(w.stack)].design;   // the design that fired it
     } else {
         sk.unit.design = pieces_[i].unit.design;
     }
@@ -1379,11 +1448,15 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
         b.shieldPool += damage;
         return;
     }
-    const Design& d = s_.design(b.unit.design);
     if (rule.armorSpecials) {
-        // (inferred) emissive armor of the unit design acts as on a ship.
-        int64_t emissive = bestValue1(r_.hullAbilities(d.hull), AbilityKind::EmissiveArmor);
-        for (const DesignEntry& e : d.entries) emissive = std::max(emissive, bestValue1(r_.componentAbilities(e.component), AbilityKind::EmissiveArmor));
+        // (inferred) emissive armor of the unit designs acts as on a ship: the best of the group's designs.
+        int64_t emissive = 0;
+        for (const UnitStack& st : b.stacks) {
+            if (st.count <= 0) continue;
+            const Design& d = s_.design(st.design);
+            emissive = std::max(emissive, bestValue1(r_.hullAbilities(d.hull), AbilityKind::EmissiveArmor));
+            for (const DesignEntry& e : d.entries) emissive = std::max(emissive, bestValue1(r_.componentAbilities(e.component), AbilityKind::EmissiveArmor));
+        }
         if (emissive > 0) {
             if (damage <= emissive) return;
             damage -= emissive;
@@ -1393,22 +1466,35 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
     const int64_t before = b.pool;
     b.pool += damage;
     const bool shielded = !(b.vtype == VehicleType::Fighter && b.unit.supply <= 0);
-    const int64_t hp = detail::unitHitPoints(r_, d, type, shielded);
-    const int64_t shieldPart = hp - detail::designStructure(r_, d);
     int kills = 0;
+    int64_t tonnage = 0;
     for (int n = 0; n < 20 && b.unit.count > 0; ++n) {
-        const int64_t soak = std::min(b.shieldPool, shieldPart);   // Shields Only damage makes kills easier (inferred)
-        if (b.pool < hp - soak) break;
+        // One of the group's designs at random; a unit of it dies when the pool covers it.
+        std::vector<size_t> live;
+        for (size_t k = 0; k < b.stacks.size(); ++k)
+            if (b.stacks[k].count > 0) live.push_back(k);
+        if (live.empty()) break;
+        UnitStack& st = b.stacks[live.size() == 1 ? live.front() : live[rng_.below(live.size())]];
+        const Design& d = s_.design(st.design);
+        const int64_t hp = detail::unitHitPoints(r_, d, type, shielded);
+        const int64_t soak = std::min(b.shieldPool, hp - detail::designStructure(r_, d));   // Shields Only damage makes kills easier (inferred)
+        if (b.pool < hp - soak) {
+            if (live.size() == 1) break;
+            continue;
+        }
         b.pool -= hp - soak;
         b.shieldPool -= soak;
-        --b.unit.count;
+        --st.count;
+        ++s_.design(st.design).lost;
+        tonnage += designTonnage(r_, d);
         ++kills;
+        syncGroup(b);
     }
     if (!rule.hullDamaging) b.pool = std::min(b.pool, before);   // other types count for this hit only
     if (kills > 0) {
         b.unitsLost += kills;
-        s_.design(b.unit.design).lost += kills;
-        creditDesignKills(att, kills, kills * designTonnage(r_, d));
+        creditDesignKills(att, kills, tonnage);
+        event(Ev::UnitsLost, t, att >= 0 ? att : t, kills);
     }
     if (b.unit.count <= 0) kill(t, att);
     else if (kills > 0) afterDamage(t);
@@ -1603,7 +1689,7 @@ void Battle::creditKill(int att, int victim) {
     if (k < 0) return;
     const Piece& v = pieces_[victim];
     const bool big = v.kind == Kind::Vehicle || v.kind == Kind::Planet || v.colonyLost;
-    if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(k, 1, designTonnage(r_, s_.design(v.unit.design)));
+    if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(att, 1, designTonnage(r_, s_.design(v.unit.design)));
     Piece& killer = pieces_[k];
     if (killer.kind != Kind::Vehicle || !killer.alive) return;   // unit groups and planets gain no experience
     detail::addExperience(killer.unit.experience, killer.unit.experienceTenths, big ? kShipKillTenths : kUnitKillTenths);
@@ -1619,10 +1705,9 @@ void Battle::creditKill(int att, int victim) {
 // killer's design; a seeker's to its launcher's. Planets keep no statistics.
 void Battle::creditDesignKills(int att, int kills, int64_t tonnage) {
     if (kills <= 0 || att < 0) return;
-    int k = att;
-    if (pieces_[k].kind == Kind::Seeker) k = pieces_[k].launcher;
-    if (k < 0 || pieces_[k].kind == Kind::Planet || !pieces_[k].unit.design.valid()) return;
-    Design& d = s_.design(pieces_[k].unit.design);
+    const DesignId id = killerDesign(att);
+    if (!id.valid()) return;
+    Design& d = s_.design(id);
     d.kills += kills;
     d.enemyTonnageDestroyed += tonnage;
 }
@@ -1828,6 +1913,7 @@ bool Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strateg
     u.unit.owner = u.owner;
     u.unit.design = design;
     u.unit.count = count;
+    u.stacks = {UnitStack{design, count}};
     u.unit.location = where_;
     u.unit.damage.assign(d.entries.size(), 0);
     int64_t supply = detail::hullSum(r_, d, AbilityKind::SupplyStorage);
@@ -1842,6 +1928,7 @@ bool Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strateg
     u.launched = true;
     u.designStrategy = strategyIndex;
     u.startCount = count;
+    u.hpStart = groupHitPoints(u, DamageType::Normal, true);
     buildWeapons(u);
     const int idx = addPiece(std::move(u));
     occupy(idx);
@@ -2238,17 +2325,22 @@ void Battle::ram(int i, int t) {
     const uint8_t mask = maskOf(t);
     auto collect = [&](const Piece& p, bool own) {
         if (p.kind != Kind::Vehicle && p.kind != Kind::UnitGroup) return;
-        const Design& d = s_.design(p.unit.design);
-        const int copies = p.kind == Kind::UnitGroup ? p.unit.count : 1;
-        for (size_t e = 0; e < d.entries.size(); ++e) {
-            const ruleset::Component& c = r_.component(d.entries[e].component);
-            if (c.weapon.kind != WeaponKind::Warhead || !entryIntact(r_, s_, p.unit, e)) continue;
-            const DamageType type = parseDamageType(c.weapon.damageType);
-            if (own && !(parseWeaponTargets(c.weapon.targets) & mask)) continue;
-            const int64_t value = weaponLargestDamage(r_, d.entries[e]);
-            if (own && drone)
-                for (int n = 0; n < copies; ++n) droneWarheads.emplace_back(type, value);
-            if (warheadExplodes(type)) warheads += value * copies;
+        // A ship's intact warheads; a unit group's, every unit of each design.
+        const std::vector<UnitStack> designs = p.kind == Kind::UnitGroup ? p.stacks : std::vector<UnitStack>{{p.unit.design, 1}};
+        for (const UnitStack& st : designs) {
+            if (st.count <= 0) continue;
+            const Design& d = s_.design(st.design);
+            const int copies = st.count;
+            for (size_t e = 0; e < d.entries.size(); ++e) {
+                const ruleset::Component& c = r_.component(d.entries[e].component);
+                if (c.weapon.kind != WeaponKind::Warhead || (p.kind == Kind::Vehicle && !entryIntact(r_, s_, p.unit, e))) continue;
+                const DamageType type = parseDamageType(c.weapon.damageType);
+                if (own && !(parseWeaponTargets(c.weapon.targets) & mask)) continue;
+                const int64_t value = weaponLargestDamage(r_, d.entries[e]);
+                if (own && drone)
+                    for (int n = 0; n < copies; ++n) droneWarheads.emplace_back(type, value);
+                if (warheadExplodes(type)) warheads += value * copies;
+            }
         }
     };
     collect(a, true);
@@ -2315,7 +2407,39 @@ void Battle::dropTroops(int i, int t) {
     for (uint32_t f : pl.facilities) fight.groundDefensePercent += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetChangeGroundDefense);
     for (const auto& a : s_.galaxy.object(pl.object).abilities)
         if (parseAbilityKind(a.type) == AbilityKind::PlanetChangeGroundDefense) fight.groundDefensePercent += a.number1();
+    // The record for the Ground Combat window: both sides as the fight begins
+    // (another empire's waiting invaders are on neither side).
+    GroundCombat gc;
+    gc.round = static_cast<uint8_t>(std::clamp(round_, 0, 255));
+    gc.planetPiece = static_cast<uint32_t>(t);
+    gc.troopShip = static_cast<uint32_t>(i);
+    gc.planet = pl.object;
+    gc.attacker = attacker;
+    gc.defender = pl.owner;
+    for (const PopulationGroup& g : pl.population) gc.population += g.millions;
+    gc.facilities = pl.facilities;
+    gc.militia = std::max(0, pl.militia);
+    std::vector<int> side(pl.unit.cargo.units.size(), 0);   // 1 attacker, 2 defender
+    for (size_t k = 0; k < pl.unit.cargo.units.size(); ++k) {
+        const UnitStack& st = pl.unit.cargo.units[k];
+        if (st.count <= 0) continue;
+        const bool troop = isTroopDesign(r_, s_, st.design);
+        const EmpireId owner = s_.design(st.design).owner;
+        if (troop && owner == attacker) side[k] = 1;
+        else if (!invaderStack(pl, k)) side[k] = 2;
+        if (side[k] == 1) gc.attackers.push_back(st);
+        if (side[k] == 2) gc.defenders.push_back(st);
+    }
     const detail::GroundOutcome o = detail::fightGround(r_, s_, cs_, fight, rng_);
+    for (size_t k = 0; k < side.size() && k < pieces_[t].unit.cargo.units.size(); ++k) {
+        const UnitStack& st = pieces_[t].unit.cargo.units[k];
+        if (side[k] == 1) gc.attackersLeft.push_back(st);
+        if (side[k] == 2) gc.defendersLeft.push_back(st);
+    }
+    gc.militiaLeft = std::max(0, pieces_[t].militia);
+    gc.rounds = o.rounds;
+    gc.captured = o.captured;
+    rec_.grounds.push_back(std::move(gc));
     groundReports_.push_back(std::format("Ground combat on {}: {} rounds; invaders lost {} of {} troops, defenders {} units and {} militia{}.",
                                          pl.name, o.rounds, o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost,
                                          o.captured ? "; the planet fell" : o.attackersGone ? "; the invasion failed" : ""));
@@ -2473,6 +2597,7 @@ void Battle::finish() {
         if (!v) continue;
         if (!p.alive) {
             v->count = 0;
+            v->mixed.clear();
             continue;
         }
         if (p.kind == Kind::Vehicle) detail::restoreRegeneratingArmor(r_, s_, p.unit, kRegenerationCap);   // (history 1.79)
@@ -2539,7 +2664,7 @@ void Battle::finish() {
         VehicleId target;
     };
     std::vector<Spawn> spawns;
-    std::vector<int> left(pieces_.size(), 0);
+    std::vector<int> left(pieces_.size(), 0);   // launched groups: units not recovered yet (one design each)
     for (size_t k = 0; k < pieces_.size(); ++k)
         if (pieces_[k].kind == Kind::UnitGroup && pieces_[k].alive) left[k] = pieces_[k].unit.count;
     for (const bool planets : {false, true})
@@ -2583,7 +2708,7 @@ void Battle::finish() {
                 spawns.push_back({u.owner, u.unit.design, left[k], target});
             }
         } else if (Vehicle* v = s_.vehicle(u.source); v && u.alive) {
-            v->count = u.unit.count;
+            setGroupStacks(s_, *v, u.stacks);   // the units of each design that are left
             v->damage.assign(s_.design(v->design).entries.size(), 0);
         }
     }
@@ -2623,8 +2748,9 @@ void Battle::finish() {
         Knowledge& known = s_.empire(e).knowledge;
         for (const Piece& p : pieces_) {
             if (p.startOwner == e || p.kind == Kind::Seeker || p.kind == Kind::Planet || p.kind == Kind::Obstacle || !p.unit.design.valid()) continue;
-            if (s_.design(p.unit.design).owner == e) continue;
-            seeDesign(known, p.unit.design, s_.turn);
+            const std::vector<UnitStack> designs = p.kind == Kind::UnitGroup ? p.stacks : std::vector<UnitStack>{{p.unit.design, 1}};
+            for (const UnitStack& st : designs)
+                if (s_.design(st.design).owner != e) seeDesign(known, st.design, s_.turn);
         }
     }
 
@@ -2632,9 +2758,25 @@ void Battle::finish() {
     s_.combats.push_back(std::move(rec_));
     if (std::find(ctx_.battleSites.begin(), ctx_.battleSites.end(), where_) == ctx_.battleSites.end()) ctx_.battleSites.push_back(where_);
 
-    // Last: new vehicles for units left in space (invalidates vehicle references).
+    // Last: units left in space (invalidates vehicle references). They were
+    // launched into the sector, so, as a launch outside combat does, they join
+    // the owner's group of their kind there, one per (owner, kind, sector),
+    // which is refilled; drones stay groups of their own (inferred, spec 03 §12).
     for (const Spawn& sp : spawns) {
         const Design& d = s_.design(sp.design);
+        const VehicleType type = r_.hull(d.hull).type;
+        Vehicle* group = nullptr;
+        if (type != VehicleType::Drone)
+            for (Vehicle& g : s_.vehicles)
+                if (g.count > 0 && g.owner == sp.owner && g.location == where_ && vehicleType(r_, s_, g) == type) {
+                    group = &g;
+                    break;
+                }
+        if (group) {
+            addGroupUnits(s_, *group, sp.design, sp.count);
+            group->supply = std::max(group->supply, initialSupply(r_, s_, *group));
+            continue;
+        }
         Vehicle v;
         v.owner = sp.owner;
         v.design = sp.design;

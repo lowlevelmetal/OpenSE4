@@ -77,8 +77,9 @@ questions are what the observation sessions still have to settle.
 - [x] Retrofit, scrap and mothball.
 - [x] The order, fleet, cargo, unit, scrap and stellar-manipulation windows.
 - [x] 30-phase simultaneous movement, every order (expanded when given), ad-hoc groups,
-      greedy in-system steps, colonization, supply and repair. Left: unit groups that mix
-      designs are one record per design (PARITY_GAPS.md).
+      greedy in-system steps, colonization, supply and repair.
+- [x] Unit groups: one per (owner, unit kind, sector), mixing designs, through launch and
+      recovery, supply, movement, damage, sight, combat, the windows and the save.
 
 ### M4: Research, intelligence, diplomacy (done)
 - [x] Tech costs, queue allocation, racial and unique areas, ruins.
@@ -101,6 +102,9 @@ questions are what the observation sessions still have to settle.
       by replaying its orders.
 - [x] The combat simulator: mock battles between virtual empires on a sandbox copy of
       the game, fought tactically or strategically.
+- [x] The watch-only Strategic Combat window (turn-based battles answered Strategic or
+      started by the player's orders, simultaneous battles when the Settings flag asks,
+      computer-only simulations) and the Ground Combat window after troops land.
 
 ### M6: Computer players (done)
 - [x] An AI driven by the install's `Ai/` and race files:
@@ -115,9 +119,8 @@ questions are what the observation sessions still have to settle.
       buttons, order strip with the original icons, system/report/galaxy panels, and
       the original hotkeys.
 - [x] Every window in the inventory, including the combat resolution prompt, Tactical
-      Combat with its Orders and Options, and the Combat Simulator; except the
-      watch-only Strategic Combat and the Ground Combat windows (strategic battles play in
-      the Combat Replay, ground fights are reported in the battle's summary).
+      Combat with its Orders and Options, the Combat Simulator, the watch-only Strategic
+      Combat and the Ground Combat windows.
 - [x] Sounds (UI, weapons, explosions; remastered set) and the three music playlists.
 - [ ] `.fon` fonts, cursors.
 - [ ] Screenshot comparisons against the original through the harness.
@@ -152,5 +155,5 @@ questions are what the observation sessions still have to settle.
    Implement from the corrected specs, not from any listing.
 2. Observation sessions for what the executable could not settle, such as the
    simultaneous-movement day schedule (spec 03 Q8), the tactical-combat details of spec
-   04 Q49-Q54, and the questions still marked open.
+   04 Q49-Q56, the combat windows of spec 06 Q21-Q23, and the questions still marked open.
 3. Encrypted connections, and per-player views for PBEM.

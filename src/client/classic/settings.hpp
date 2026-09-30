@@ -54,6 +54,7 @@ struct ClassicSettings {
     bool tacticalRanges = true;      // the selected piece's weapon ranges and movement
     bool tacticalNames = false;      // names under the pieces
     bool tacticalAutoEnd = true;     // end the phase when nothing is left to fight
+    bool tacticalLaunchStep = true;  // stop at a phase's launch step when a piece of mine can launch
 };
 
 // The settings of this machine, loaded on first use.

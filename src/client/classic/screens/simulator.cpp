@@ -1,7 +1,8 @@
 // Combat Simulator (docs/spec/06 §1.2, docs/spec/04 §17): set up a mock
 // battle from the player's designs, enemy designs they have seen and sample
 // planets of the home system, split between virtual empires; then fight it in
-// the Tactical Combat window, tactically or strategically. The battle runs on
+// the Tactical Combat window, or watch the strategies fight it in the
+// Strategic Combat window when every side is computer-controlled. The battle runs on
 // a sandbox (game/simulator.hpp); the real game never changes.
 
 #include "client/classic/screens/screens.hpp"
@@ -71,8 +72,10 @@ bool begin(UiContext& ui, const SimulatorSetup& setup, std::string& message) {
     fight.battle = std::move(battle);
     fight.players = std::move(players);
     fight.title = "Combat Simulator";
+    // With every side computer-controlled the strategies fight it: watched in Strategic Combat (spec 06 §1.6).
+    const bool strategic = fight.players.empty();
     ui.session.startTactical(std::move(fight));
-    ui.open(ScreenId::TacticalCombat);
+    ui.open(strategic ? ScreenId::StrategicCombat : ScreenId::TacticalCombat);
     return true;
 }
 

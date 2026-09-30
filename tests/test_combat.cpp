@@ -1499,6 +1499,23 @@ TEST_CASE("combat: troops dropped during a space battle fight at once") {
     CHECK(countEvents(s.combats.front(), CombatEvent::Kind::Launch) >= 1);
     CHECK(countEvents(s.combats.front(), CombatEvent::Kind::Captured) == 1);
     CHECK(moodCount(ctx, ar.b, "Any Our Planet Captured") == 1);
+    // The Ground Combat window's record: both sides as the fight began, and what was left.
+    const CombatRecord& rec = s.combats.front();
+    REQUIRE(rec.grounds.size() == 1);
+    const GroundCombat& g = rec.grounds.front();
+    CHECK(g.planet == planet);
+    CHECK(g.attacker == ar.a);
+    CHECK(g.defender == ar.b);
+    CHECK(g.population == 20);
+    CHECK(g.captured);
+    CHECK(g.rounds >= 1);
+    CHECK(rec.pieces[g.planetPiece].planet == planet);
+    CHECK(rec.pieces[g.troopShip].vehicle == transport);
+    REQUIRE(g.attackers == std::vector<UnitStack>{{trooper, 8}});
+    REQUIRE(g.attackersLeft.size() == 1);
+    CHECK(g.attackersLeft.front().count == s.colony(planet)->cargo.unitCount(trooper));
+    CHECK(g.militia == 1);   // 20M: one militia unit
+    CHECK(g.militiaLeft == 0);
 }
 
 // ---- Determinism --------------------------------------------------------------------------------------------

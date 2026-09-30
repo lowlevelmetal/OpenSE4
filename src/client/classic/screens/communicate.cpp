@@ -2,6 +2,7 @@
 // Select Package editor) and answer received messages (docs/spec/06 §1.5,
 // §4.2; docs/spec/05 §3.4).
 
+#include "client/classic/reports.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 
@@ -491,7 +492,7 @@ private:
                     i.kind = PackageItem::Kind::Vehicle;
                     i.vehicle = v.id;
                     const std::string name = v.count > 1 ? std::format("{} x{}", v.name, v.count) : v.name;
-                    out.push_back({std::format("{} ({})", name, s.design(v.design).name), i});
+                    out.push_back({std::format("{} ({})", name, v.mixed.empty() ? s.design(v.design).name : groupDesigns(s, v, 2)), i});
                 };
                 if (give)
                     for (const game::Vehicle& v : s.vehicles) consider(v);

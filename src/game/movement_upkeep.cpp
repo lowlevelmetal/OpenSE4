@@ -223,8 +223,16 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
         const bool cloaked = v.status == VehicleStatus::Cloaked;
         const int64_t cloak = cloaked ? cloakSupply(r, s, v) : 0;
         int64_t cost = cloak;
-        if (t == VehicleType::Fighter) cost = int64_t{std::max(1, v.count)} * (cloaked ? cloak : fighterUse);
-        else if (t == VehicleType::Drone) cost = int64_t{std::max(1, v.count)} * (droneUse + cloak);
+        if (t == VehicleType::Fighter) {
+            cost = int64_t{std::max(1, v.count)} * fighterUse;
+            if (cloaked) {
+                // Each unit pays its own design's cloak parts instead.
+                cost = 0;
+                for (const UnitStack& st : groupStacks(v)) cost += int64_t{std::max(0, st.count)} * cloakSupply(r, s, stackProbe(s, v, st));
+            }
+        } else if (t == VehicleType::Drone) {
+            cost = int64_t{std::max(1, v.count)} * (droneUse + cloak);
+        }
         spendSupply(r, s, v, cost);
     }
     for (Vehicle& v : s.vehicles)
@@ -242,8 +250,7 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     // Solar collectors: V1 per star in the system, capped at the maximum.
     for (Vehicle& v : s.vehicles) {
         if (!alive(v) || v.owner != e || vehicleHasUnlimitedSupply(r, s, v) || !vehicleUsesSupply(r, s, v)) continue;
-        const int64_t solar = abilitySum(vehicleAbilities(r, s, v), AbilityKind::SolarSupplyGeneration) *
-                              (isShipOrBase(vehicleType(r, s, v)) ? 1 : std::max(1, v.count));  // a group adds every unit's
+        const int64_t solar = vehicleAbilityTotal(r, s, v, AbilityKind::SolarSupplyGeneration);  // a group adds every unit's
         const int64_t capacity = vehicleSupplyCapacity(r, s, v);
         if (solar > 0 && v.supply < capacity) v.supply = std::min(capacity, v.supply + solar * starsIn(s, v.location.system));
     }
@@ -298,7 +305,8 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
             if (item.kind == QueueItem::Kind::Vehicle) inUse.insert(item.design);
     };
     for (const Vehicle& v : s.vehicles) {
-        if (alive(v)) inUse.insert(v.design);
+        if (alive(v))
+            for (const UnitStack& st : groupStacks(v)) inUse.insert(st.design);   // every design of a unit group
         cargo(v.cargo);
         queue(v.queue);
     }

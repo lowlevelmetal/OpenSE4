@@ -174,10 +174,22 @@ std::string ordersSummary(const game::GameState& s, const game::Vehicle& v, game
     return out;
 }
 
+std::string groupDesigns(const game::GameState& s, const game::Vehicle& v, size_t shown) {
+    if (v.mixed.empty()) {
+        const std::string& name = s.design(v.design).name;
+        return v.count > 1 ? std::format("{} x{}", name, v.count) : name;
+    }
+    // A unit group that mixes designs: each design with its units.
+    std::string out;
+    for (size_t i = 0; i < v.mixed.size() && i < shown; ++i)
+        out += std::format("{}{} x{}", i ? ", " : "", s.design(v.mixed[i].design).name, v.mixed[i].count);
+    if (v.mixed.size() > shown) out += std::format(" and {} more designs", v.mixed.size() - shown);
+    return out;
+}
+
 std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
-    const game::Design& d = s.design(v.design);
-    std::string out = v.count > 1 ? std::format("{} x{}", d.name, v.count) : d.name;
+    std::string out = groupDesigns(s, v, 2);
     if (v.owner != ui.session.player() && v.owner.valid()) out += " (" + s.empire(v.owner).name + ")";
     return out;
 }
@@ -228,10 +240,13 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
             image(ui, vehiclePortrait(ui, v), {110, 110});
             ImGui::SameLine();
             ImGui::BeginGroup();
-            labelValue(ui, "Class", d.name, 70);
+            labelValue(ui, "Class", v.mixed.empty() ? d.name : std::format("{} designs", v.mixed.size()), 70);
             labelValue(ui, "Size", r.hull(d.hull).name, 70);
             if (v.owner.valid() && !own) labelValue(ui, "Owner", s.empire(v.owner).name, 70);
             if (v.count > 1) labelValue(ui, "Units", std::to_string(v.count), 70);
+            // A group that mixes designs: how many units of each (spec 03 §12).
+            for (const game::UnitStack& st : v.mixed)
+                labelValue(ui, "", std::format("{} x{} ({})", s.design(st.design).name, st.count, r.hull(s.design(st.design).hull).name), 70);
             if (v.status != game::VehicleStatus::Normal)
                 labelValue(ui, "Status", v.status == game::VehicleStatus::Mothballed ? "Mothballed" : "Cloaked", 70);
             ImGui::EndGroup();
@@ -255,7 +270,18 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
         }
         case ReportTab::Components:
         case ReportTab::Facilities: {
-            for (size_t i = 0; i < d.entries.size(); ++i) {
+            // A group that mixes designs lists each design's parts (its units are whole).
+            for (const game::UnitStack& st : v.mixed) {
+                const game::Design& sd = s.design(st.design);
+                heading(ui, std::format("{} x{}", sd.name, st.count).c_str());
+                for (const game::DesignEntry& e : sd.entries) {
+                    const auto& c = r.component(e.component);
+                    image(ui, ui.art.component(c.picture), {24, 24});
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted((e.mount >= 0 ? r.data().weaponMounts[static_cast<size_t>(e.mount)].shortName + " " + c.name : c.name).c_str());
+                }
+            }
+            for (size_t i = 0; i < d.entries.size() && v.mixed.empty(); ++i) {
                 const auto& c = r.component(d.entries[i].component);
                 const bool intact = game::entryIntact(r, s, v, i);
                 image(ui, ui.art.component(c.picture), {24, 24}, intact ? Color{1, 1, 1, 1} : Color{1, 0.3f, 0.3f, 0.8f});

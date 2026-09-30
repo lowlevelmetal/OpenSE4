@@ -32,23 +32,23 @@ expanded when given (`orders.hpp`), ships with identical head orders move as ad-
 in-system steps are greedy with the random re-choice, the empire option to clear
 orders on meeting empires is `Empire::clearOrdersOnEncounter`, and the Ship Movement
 options (avoid tagged minefields, avoid restricted systems) are
-`Empire::avoidTaggedMinefields` and `avoidRestrictedSystems`. The engine's choices where
-the spec is silent are spec 03 §19 Q50–Q58.
-
-| Where | Engine now | Original | Impact |
-|---|---|---|---|
-| Low | Unit groups that mix designs are kept as one record per design: they share the per-sector caps and launch refills, but move, pay supply and fight as separate records (spec 03 §19 Q43). A single record would need a vehicle that holds several designs, which touches combat, movement, supply, cargo, the windows and the save layout | One group per (owner, unit kind, sector), mixing designs: its supply is pooled, its MP is the lowest design speed, and it fights as one group (spec 03 §1, §12) | L |
+`Empire::avoidTaggedMinefields` and `avoidRestrictedSystems`. Units in space are held in
+one group per (owner, unit kind, sector) that mixes designs (`Vehicle::mixed` and the
+group helpers of `design.hpp`): it moves at its slowest design's speed, pays supply for
+every unit and fights as one piece. The engine's choices where the spec is silent are
+spec 03 §19 Q28, Q43 and Q50–Q58. No gap is left in this section.
 
 ## Combat (spec 04)
 
 Every row of this section was implemented. Designs record the enemy tonnage their
 vehicles destroyed (`Design::enemyTonnageDestroyed`, spec 04 §15; the measure is open
 question 47). Tactical combat and the combat simulator follow spec 04 §3, §4 and §17; the
-details the spec leaves open are the engine's choices in spec 04 §19.1 (Q49-Q54).
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Tactical combat in the client (`screens/tactical.cpp`, `session.*`) | A battle is fought in the Tactical Combat window before the game moves on; the game is saved as it was before the order (or End Turn) that started it, so quitting in the middle of a battle drops that order. A ground fight started by troops in a tactical battle is reported in the summary, without the Ground Combat window. The client ends a player's launch step at once, so a player launches after the side's drones and seekers have moved (the engine allows launching first) | A battle may be saved in progress (unknown); the Ground Combat window opens after troops land (spec 06 §1.6) | L |
+details the spec leaves open are the engine's choices in spec 04 §19.1 (Q49-Q56), among
+them that a battle is never saved in progress (Q55) and how groups that mix designs fight
+(Q56). The client has the watch-only Strategic Combat window and the Ground Combat window
+(spec 06 §1.6; its choices are spec 06 question 23), and stops at a phase's launch step
+so that a player launches before the side's drones and seekers move. No gap is left in
+this section.
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 

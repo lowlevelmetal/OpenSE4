@@ -91,7 +91,7 @@ enum class ScreenId {
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).
-    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator,
+    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
     // Files.
     SaveGame, LoadGame,
     // Graphics, controls and sound.
@@ -108,6 +108,7 @@ struct ScreenArgs {
     game::EmpireId empire;
     std::optional<game::Location> location;
     int index = -1;
+    int sub = -1;          // a second index (a ground combat within a battle)
     std::string text;
 };
 

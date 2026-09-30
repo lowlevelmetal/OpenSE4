@@ -1,7 +1,7 @@
 #pragma once
 
-// The combat map shared by the Combat Replay and Tactical Combat windows
-// (docs/spec/06 §1.6): the system background and grid, every piece with its
+// The combat map shared by the Combat Replay, Tactical Combat and Strategic
+// Combat windows (docs/spec/06 §1.6): the system background and grid, every piece with its
 // picture, facing and owner frame, and the event being played (moves,
 // beams and torpedoes, hits and misses, explosions, captures, launches).
 // The pieces' squares come from a CombatPlayback over the battle's record,
@@ -50,6 +50,11 @@ public:
     float pieceExtent(uint32_t i) const;
     // Every piece on the map; returns the one under `mouse` when `hover` is set.
     std::optional<uint32_t> pieces(ImDrawList* dl, const CombatView& v, bool hover, ImVec2 mouse) const;
+    // Every piece as a square of its owner's colour (planets and obstacles 4x4,
+    // neutral grey, seekers as dots), for small maps: the Strategic Combat
+    // window's map and the Tactical Combat overview. Returns the piece under
+    // `mouse` when `hover` is set. `minSize` is the smallest square in pixels.
+    std::optional<uint32_t> squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover = false, ImVec2 mouse = {}) const;
     // The event being animated, `t` of the way through.
     void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, float t) const;
     // Weapon and explosion sounds for the events played between two cursors.

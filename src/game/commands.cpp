@@ -920,9 +920,12 @@ Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {
     const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
     Resources value;
     if (isUnitType(vehicleType(r, s, v))) {
-        // A fighter or satellite group: the unit percentage, per unit.
+        // A fighter or satellite group: the unit percentage, per unit of each design.
         const int64_t pct = r.setting("Scrap Unit Percent Returned", 30);
-        for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct) * std::max(1, v.count);
+        for (const UnitStack& st : groupStacks(v)) {
+            const Resources each = st.design == v.design ? cost : computeDesignStats(r, nullptr, s.design(st.design)).cost;
+            for (Resource res : kResources) value[res] += xmath::pctRound(each[res], pct) * std::max(1, st.count);
+        }
         return value;
     }
     // Ships and bases: the larger of the setting and the owner's best Resource Reclamation here.

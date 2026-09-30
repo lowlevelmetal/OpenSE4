@@ -614,6 +614,9 @@ void TacticalBattle::refresh() {
         v.supply = p.unit.supply;
         v.hasSupply = battle_->hasSupply(i);
         v.count = p.kind == CombatPiece::Kind::UnitGroup ? p.unit.count : 1;
+        if (p.kind == CombatPiece::Kind::UnitGroup)
+            for (const UnitStack& st : p.stacks)
+                if (st.count > 0) v.units.push_back(st);
         v.budget = p.budget;
         v.engaged = static_cast<int>(p.engaged.size());
         for (const detail::Weapon& w : p.weapons) {

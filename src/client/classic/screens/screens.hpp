@@ -77,6 +77,14 @@ std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
 
+// strategic_combat.cpp: the watch-only Strategic Combat window and the Ground
+// Combat window. Strategic Combat shows GameState::combats[index], or with
+// index -1 the session's simulation fought by the strategies. Ground Combat
+// shows ground combat `sub` of that battle (index -1 and the session's
+// tactical fight: its record; no battle given: the last one with a ground combat).
+std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args);
+std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args);
+
 // simulator.cpp: the Combat Simulator window (Designs -> Simulator). ScreenArgs::text
 // "demo" fills it with a sample battle (automation, screenshots).
 std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);

@@ -4,6 +4,7 @@
 // give or cost. With an own colony in the sector a Facilities tab lists its
 // facilities for Scrap Facilities.
 
+#include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
@@ -104,7 +105,7 @@ private:
         for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
             RowStyle st;
             st.lamp = isSelected(v->id) ? Lamp::On : Lamp::Off;
-            std::string detail = s.design(v->design).name;
+            std::string detail = groupDesigns(s, *v, 2);
             if (v->status == game::VehicleStatus::Mothballed) detail += ", mothballed";
             const RowClick c = row(ui, static_cast<int>(v->id.value), isUnitVehicle(r, s, *v) ? unitMini(ui, *v) : vehicleMini(ui, *v),
                                    v->count > 1 ? std::format("{} (x{})", v->name, v->count) : v->name, detail, st);

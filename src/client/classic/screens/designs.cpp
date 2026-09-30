@@ -67,7 +67,7 @@ int inService(const game::GameState& s, game::DesignId id) {
     int n = 0;
     auto cargo = [&](const game::Cargo& c) { n += c.unitCount(id); };
     for (const game::Vehicle& v : s.vehicles) {
-        if (v.design == id) n += v.count;
+        n += game::groupUnits(v, id);   // a unit group that mixes designs counts this one's units
         cargo(v.cargo);
     }
     for (const auto& c : s.colonies)

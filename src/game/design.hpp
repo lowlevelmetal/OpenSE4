@@ -107,9 +107,36 @@ ruleset::VehicleType vehicleType(const Rules& r, const GameState& s, const Vehic
 
 // The vehicle's ability list (§3.1): the hull's abilities, then those of every
 // component that is not destroyed (marked with the component's family, and
-// shields scaled by the mount). Empty when mothballed. A unit group's list is
-// that of one unit; rules that scale with the unit count multiply.
+// shields scaled by the mount). Empty when mothballed. A unit group's list
+// holds the list of each of its designs once (a unit's list); rules that add
+// up over the units use vehicleAbilityTotal.
 std::vector<ParsedAbility> vehicleAbilities(const Rules& r, const GameState& s, const Vehicle& v);
+// An ability summed over every unit of a unit group (each unit lists its
+// design's abilities, spec 03 §12), or over a ship's or base's list.
+int64_t vehicleAbilityTotal(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k, bool value2 = false);
+
+// ---- Unit groups (spec 03 §12) ---------------------------------------------------------------
+// Units in space are held in groups, one per (owner, unit kind, sector) and
+// mixing designs; every drone is its own group (confirmed: binary). A group
+// that holds one design keeps it in Vehicle::design and count; one that mixes
+// designs lists them in Vehicle::mixed. Units are whole or dead in battles
+// and hazards; only a mine strike leaves the front unit's damage (spec 04 §19.1).
+
+// The designs of a vehicle and how many of each, in the order they joined: a
+// mixed group's stacks, otherwise {design, count}.
+std::vector<UnitStack> groupStacks(const Vehicle& v);
+// Units of one design in the group (0 when it holds none).
+int groupUnits(const Vehicle& v, DesignId d);
+// Replaces what the group holds: empty stacks go, repeated designs merge, and
+// `design` (the first stack's), `count` (the total), `mixed` and the damage
+// list follow. A group left with no units has count 0 (it is gone).
+void setGroupStacks(const GameState& s, Vehicle& v, std::vector<UnitStack> stacks);
+void addGroupUnits(const GameState& s, Vehicle& v, DesignId d, int n);
+// Removes up to n units of design d; returns how many went.
+int removeGroupUnits(const GameState& s, Vehicle& v, DesignId d, int n);
+// A copy of the group that holds only this stack, undamaged: the rules that
+// read one design (speed, offense, defense, cloaks, weapons) look at it.
+Vehicle stackProbe(const GameState& s, const Vehicle& group, const UnitStack& st);
 
 // Maximum movement points (spec 03 §6.1 for ships and bases, §12 for units).
 int vehicleMaxMovement(const Rules& r, const GameState& s, const Vehicle& v);

@@ -65,6 +65,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     tactical.insert("ranges", s.tacticalRanges);
     tactical.insert("names", s.tacticalNames);
     tactical.insert("auto_end", s.tacticalAutoEnd);
+    tactical.insert("launch_step", s.tacticalLaunchStep);
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_volume", double(s.musicVolume));
@@ -97,6 +98,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (auto v = root["tactical"]["ranges"].value<bool>()) s.tacticalRanges = *v;
     if (auto v = root["tactical"]["names"].value<bool>()) s.tacticalNames = *v;
     if (auto v = root["tactical"]["auto_end"].value<bool>()) s.tacticalAutoEnd = *v;
+    if (auto v = root["tactical"]["launch_step"].value<bool>()) s.tacticalLaunchStep = *v;
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_volume"].value<double>()) s.musicVolume = std::clamp(float(*v), 0.0f, 1.0f);
     return s;

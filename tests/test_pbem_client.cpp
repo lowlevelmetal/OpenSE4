@@ -205,7 +205,7 @@ TEST_CASE("pbem client: a turn-based game file is played command by command and 
     CHECK(session->pbemResumed() == first->ordersThisTurn().size());
     CHECK(session->ordersThisTurn().size() == first->ordersThisTurn().size());
     CHECK(game::stateChecksum(session->state()) == game::stateChecksum(first->state()));
-    CHECK_FALSE(session->takeNewBattle().has_value());
+    CHECK(session->takeStrategicBattles().empty());  // battles of the replayed commands were seen before
     const game::GameState played = session->state();
 
     session->endTurn();

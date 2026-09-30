@@ -46,6 +46,12 @@ void checkInvariants(const Rules& r, const GameState& s) {
         else if (v.supply != kUnlimitedSupply) CHECK(v.supply <= vehicleSupplyCapacity(r, s, v));
         // Cargo that no longer fits is lost at once (spec 03 §11).
         CHECK(cargoSpaceUsed(r, s, v.cargo) <= vehicleCargoCapacity(r, s, v));
+        // A unit group that mixes designs holds units of one kind (spec 03 §12).
+        for (const UnitStack& st : v.mixed) {
+            REQUIRE(st.design.index() < s.designs.size());
+            CHECK(r.hull(s.design(st.design).hull).type == vehicleType(r, s, v));
+            CHECK(st.count > 0);
+        }
         if (v.fleet.valid()) {
             const Fleet* f = s.fleet(v.fleet);
             REQUIRE(f);

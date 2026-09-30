@@ -377,11 +377,101 @@ ruleset::VehicleType vehicleType(const Rules& r, const GameState& s, const Vehic
 std::vector<ParsedAbility> vehicleAbilities(const Rules& r, const GameState& s, const Vehicle& v) {
     std::vector<ParsedAbility> out;
     if (v.status == VehicleStatus::Mothballed) return out;  // no abilities at all (§3.1)
+    if (!v.mixed.empty()) {
+        // A group that mixes designs: each design's list once (units are whole).
+        for (const UnitStack& st : v.mixed) {
+            const Design& d = s.design(st.design);
+            for (const auto& a : r.hullAbilities(d.hull)) out.push_back(a);
+            for (const DesignEntry& e : d.entries) appendComponent(r, e, out);
+        }
+        return out;
+    }
     const Design& d = s.design(v.design);
     for (const auto& a : r.hullAbilities(d.hull)) out.push_back(a);
     for (size_t i = 0; i < d.entries.size(); ++i)
         if (entryIntact(r, s, v, i)) appendComponent(r, d.entries[i], out);
     return out;
+}
+
+int64_t vehicleAbilityTotal(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k, bool value2) {
+    if (!isUnit(vehicleType(r, s, v))) return abilitySum(vehicleAbilities(r, s, v), k, value2);
+    if (v.mixed.empty()) return abilitySum(vehicleAbilities(r, s, v), k, value2) * std::max(1, v.count);
+    // Every unit lists its design's abilities once (spec 03 §12).
+    int64_t total = 0;
+    for (const UnitStack& st : v.mixed) total += abilitySum(vehicleAbilities(r, s, stackProbe(s, v, st)), k, value2) * st.count;
+    return total;
+}
+
+// ---- Unit groups ------------------------------------------------------------------------------
+
+std::vector<UnitStack> groupStacks(const Vehicle& v) {
+    if (v.count <= 0) return {};   // gone
+    if (!v.mixed.empty()) return v.mixed;
+    return {UnitStack{v.design, v.count}};
+}
+
+int groupUnits(const Vehicle& v, DesignId d) {
+    int n = 0;
+    for (const UnitStack& st : groupStacks(v))
+        if (st.design == d) n += std::max(0, st.count);
+    return n;
+}
+
+void setGroupStacks(const GameState& s, Vehicle& v, std::vector<UnitStack> stacks) {
+    std::vector<UnitStack> merged;
+    for (const UnitStack& st : stacks) {
+        if (st.count <= 0 || !st.design.valid()) continue;
+        auto it = std::find_if(merged.begin(), merged.end(), [&](const UnitStack& m) { return m.design == st.design; });
+        if (it == merged.end()) merged.push_back(st);
+        else it->count += st.count;
+    }
+    if (merged.empty()) {
+        v.mixed.clear();
+        v.count = 0;
+        return;
+    }
+    const DesignId first = merged.front().design;
+    if (first != v.design || v.damage.size() != s.design(first).entries.size()) v.damage.assign(s.design(first).entries.size(), 0);
+    v.design = first;
+    int64_t total = 0;
+    for (const UnitStack& st : merged) total += st.count;
+    v.count = toInt(total);
+    if (merged.size() == 1) v.mixed.clear();
+    else v.mixed = std::move(merged);
+}
+
+void addGroupUnits(const GameState& s, Vehicle& v, DesignId d, int n) {
+    if (n <= 0) return;
+    std::vector<UnitStack> stacks = v.count > 0 ? groupStacks(v) : std::vector<UnitStack>{};
+    stacks.push_back({d, n});
+    setGroupStacks(s, v, std::move(stacks));
+}
+
+int removeGroupUnits(const GameState& s, Vehicle& v, DesignId d, int n) {
+    std::vector<UnitStack> stacks = groupStacks(v);
+    int removed = 0;
+    for (UnitStack& st : stacks)
+        if (st.design == d && n > removed) {
+            const int take = std::min(st.count, n - removed);
+            st.count -= take;
+            removed += take;
+        }
+    if (removed > 0) setGroupStacks(s, v, std::move(stacks));
+    return removed;
+}
+
+Vehicle stackProbe(const GameState& s, const Vehicle& group, const UnitStack& st) {
+    Vehicle p;
+    p.id = group.id;
+    p.owner = group.owner;
+    p.design = st.design;
+    p.name = group.name;
+    p.location = group.location;
+    p.count = st.count;
+    p.damage.assign(s.design(st.design).entries.size(), 0);
+    p.supply = group.supply;
+    p.status = group.status;
+    return p;
 }
 
 bool vehicleHasQuantumReactor(const Rules& r, const GameState& s, const Vehicle& v) {
@@ -402,8 +492,12 @@ int vehicleMaxMovement(const Rules& r, const GameState& s, const Vehicle& v) {
     const ruleset::VehicleSize& hull = r.hull(d.hull);
     if (isImmobile(hull.type)) return 0;
     if (isUnit(hull.type)) {
-        // A unit group moves at its design's speed, or 1 at zero supply (§12).
-        const int speed = designMovement(r, d.hull, d.entries);
+        // A unit group moves at the lowest speed of its designs, or 1 at zero supply (§12).
+        int speed = designMovement(r, d.hull, d.entries);
+        for (const UnitStack& st : v.mixed) {
+            const Design& sd = s.design(st.design);
+            speed = std::min(speed, designMovement(r, sd.hull, sd.entries));
+        }
         return speed > 0 && v.supply <= 0 ? 1 : speed;
     }
     // Ships (spec 03 §6.1, confirmed: binary).
@@ -425,14 +519,25 @@ int vehicleMaxMovement(const Rules& r, const GameState& s, const Vehicle& v) {
     return toInt(mp);
 }
 
-int64_t vehicleToHitOffense(const Rules& r, const GameState& s, const Vehicle& v) {
+namespace {
+// Plus − minus per family; a group that mixes designs takes its best design (spec 04 §7).
+int64_t toHitTerms(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind plus, AbilityKind minus) {
+    if (!v.mixed.empty()) {
+        int64_t best = std::numeric_limits<int64_t>::min();
+        for (const UnitStack& st : v.mixed) best = std::max(best, toHitTerms(r, s, stackProbe(s, v, st), plus, minus));
+        return best;
+    }
     const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
-    return abilityPerFamily(list, AbilityKind::CombatToHitOffensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitOffenseMinus);
+    return abilityPerFamily(list, plus) - abilityPerFamily(list, minus);
+}
+} // namespace
+
+int64_t vehicleToHitOffense(const Rules& r, const GameState& s, const Vehicle& v) {
+    return toHitTerms(r, s, v, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus);
 }
 
 int64_t vehicleToHitDefense(const Rules& r, const GameState& s, const Vehicle& v) {
-    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
-    return abilityPerFamily(list, AbilityKind::CombatToHitDefensePlus) - abilityPerFamily(list, AbilityKind::CombatToHitDefenseMinus);
+    return toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
 }
 
 // ---- Supply -------------------------------------------------------------------------------------
@@ -446,8 +551,7 @@ bool vehicleUsesSupply(const Rules& r, const GameState& s, const Vehicle& v) { r
 
 int64_t vehicleSupplyCapacity(const Rules& r, const GameState& s, const Vehicle& v) {
     if (!vehicleUsesSupply(r, s, v)) return 0;
-    const int64_t each = abilitySum(vehicleAbilities(r, s, v), AbilityKind::SupplyStorage);
-    return isUnit(vehicleType(r, s, v)) ? each * std::max(1, v.count) : each;
+    return vehicleAbilityTotal(r, s, v, AbilityKind::SupplyStorage);  // a group: the sum over its units (§12)
 }
 
 int64_t initialSupply(const Rules& r, const GameState& s, const Vehicle& v) {

@@ -3,6 +3,7 @@
 // column tabs. Left-click a row to select it in the main window, right-click
 // for its report.
 
+#include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
@@ -200,11 +201,14 @@ private:
                 // Unlimited supply shows as "Endless" (spec 03 §7).
                 const std::string supplyText =
                     game::vehicleHasUnlimitedSupply(r, s, v) ? std::string("Endless") : std::format("{} / {}", formatNumber(v.supply), formatNumber(cap));
-                return {text(hull.name), text(d.designType.empty() ? std::string(ruleset::displayName(hull.type)) : d.designType),
+                // A unit group that mixes designs shows its kind (spec 03 §12).
+                const std::string role = !v.mixed.empty() ? std::format("{} designs", v.mixed.size())
+                                         : d.designType.empty() ? std::string(ruleset::displayName(hull.type)) : d.designType;
+                return {text(hull.name), text(role),
                         number(v.movement, std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v))),
                         number(damage, std::format("{}/{}", damage, structure)), number(v.supply, supplyText)};
             }
-            case ShipsTab::Orders: return {text(d.name), text(ordersCell(ui, orderOwner(s, v.id), v.design))};
+            case ShipsTab::Orders: return {text(v.mixed.empty() ? d.name : groupDesigns(s, v, 2)), text(ordersCell(ui, orderOwner(s, v.id), v.design))};
             case ShipsTab::Cargo: {
                 const int64_t used = game::cargoSpaceUsed(r, s, v.cargo);
                 const int64_t cap = game::vehicleCargoCapacity(r, s, v);

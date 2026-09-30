@@ -398,11 +398,17 @@ enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
 struct Vehicle {
     VehicleId id;
     EmpireId owner;
-    DesignId design;
+    DesignId design;                // a unit group that mixes designs: its first design
     std::string name;
     Location location;
-    int count = 1;                  // unit groups in space hold several identical units
-    std::vector<int> damage;        // per design entry; destroyed when >= structure
+    int count = 1;                  // unit groups in space: the number of units, all designs together
+    // A unit group in space that mixes designs (spec 03 §12): each design and
+    // how many units of it, in the order they joined (at least two stacks).
+    // Empty when the vehicle holds one design, which is then `design` × `count`.
+    // Read and change it through the group helpers of design.hpp
+    // (groupStacks, addGroupUnits, removeGroupUnits, setGroupStacks).
+    std::vector<UnitStack> mixed;
+    std::vector<int> damage;        // per entry of `design`; destroyed when >= structure (a unit group: its front unit's, from mines)
     int64_t supply = 0;
     int movement = 0;               // movement points left this turn
     std::vector<Order> orders;
@@ -491,7 +497,9 @@ struct DiplomaticMessage {
 // ---- Combat records (replays and reports) ----------------------------------------------------
 
 struct CombatEvent {
-    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker };
+    // UnitsLost: unit group `piece` loses `amount` units to a hit by `target`
+    // (it may be Destroyed next, when none is left).
+    enum class Kind : uint8_t { Move, Fire, Hit, Miss, Destroyed, Captured, Launch, Seeker, UnitsLost };
     Kind kind = Kind::Move;
     uint8_t round = 0;
     uint32_t piece = 0;       // index into CombatRecord::pieces
@@ -507,9 +515,29 @@ struct CombatPiece {
     EmpireId owner;
     VehicleId vehicle;
     ObjectId planet;
-    DesignId design;
+    DesignId design;                   // a unit group that mixes designs: its first
     std::string name;
     int16_t startX = 0, startY = 0;
+    int32_t count = 1;                 // units in a group at the start (seekers: members)
+};
+
+// A ground combat fought during a space battle, when troops landed (spec 04
+// §11, §13): what the Ground Combat window shows (spec 06 §1.6).
+struct GroundCombat {
+    uint8_t round = 0;                      // the combat turn the troops landed in
+    uint32_t planetPiece = 0;               // index into CombatRecord::pieces
+    uint32_t troopShip = 0;                 // the piece that dropped them
+    ObjectId planet;
+    EmpireId attacker, defender;
+    int64_t population = 0;                 // millions when the troops landed
+    std::vector<uint32_t> facilities;       // Facilities.txt indices
+    std::vector<UnitStack> attackers;       // the invading troops at the start
+    std::vector<UnitStack> defenders;       // the planet's troops and other stored units at the start
+    std::vector<UnitStack> attackersLeft;   // the same stacks after the fight
+    std::vector<UnitStack> defendersLeft;
+    int militia = 0, militiaLeft = 0;       // the colony's militia pool before and after
+    int rounds = 0;
+    bool captured = false;                  // the planet fell
 };
 
 struct CombatRecord {
@@ -519,6 +547,7 @@ struct CombatRecord {
     std::vector<CombatPiece> pieces;
     std::vector<CombatEvent> events;
     std::vector<std::string> summary;  // human-readable lines
+    std::vector<GroundCombat> grounds; // troops landed during the battle
 };
 
 // ---- Events and options ------------------------------------------------------------------------

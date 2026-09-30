@@ -97,6 +97,7 @@ inline ruleset::Ruleset buildRuleset() {
     comp("Mv Drone Rack", 20, 10, shipBase, {ab(AbilityKind::LaunchDrones, 1, 2), ab(AbilityKind::CargoStorage, 400)});
     comp("Mv Fighter Tank", 2, 5, maskOf(VehicleType::Fighter), {ab(AbilityKind::SupplyStorage, 12)});
     comp("Mv Drone Tank", 5, 5, maskOf(VehicleType::Drone), {ab(AbilityKind::SupplyStorage, 300)});
+    comp("Mv Fighter Engine", 5, 5, maskOf(VehicleType::Fighter), {ab(AbilityKind::StandardShipMovement, 1)}, 2, "Engines");
     // Stellar manipulation devices.
     const auto once = ab(AbilityKind::ComponentDestroyedOnUse);
     comp("Mv Planet Maker", 20, 10, ship, {ab(AbilityKind::CreatePlanetSize, 3), once}, 50);
