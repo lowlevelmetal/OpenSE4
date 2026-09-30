@@ -60,7 +60,11 @@ private:
 
     const Relation& rel(EmpireId x) const { return p_.emp().relation(x); }
     int anger(EmpireId x) const { return rel(x).anger; }
-    int64_t pct(EmpireId x) const { return ours_ <= 0 ? 0 : p_.scores[x.index()] * 100 / ours_; }
+    // P = their score / our score x 100, truncated; 0 when our score is 0 or less.
+    int64_t pct(EmpireId x) const {
+        if (ours_ <= 0) return 0;
+        return (xmath::Ext(p_.scores[x.index()]) / xmath::Ext(ours_) * xmath::Ext(100)).trunc();
+    }
     bool isFriend(EmpireId x) const { return rel(x).treaty >= Treaty::NonAggression; }
     bool human(EmpireId x) const { return p_.st.empire(x).kind == PlayerKind::Human; }
     bool teamMate(EmpireId x) const { return p_.st.options.teamMode && human(x) == human(p_.id); }

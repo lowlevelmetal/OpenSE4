@@ -9,6 +9,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
@@ -261,7 +262,7 @@ private:
             const auto part = parts_.best(k);
             if (!part) return;
             const int size = std::max(1, r_.component(*part).tonnage);
-            const int n = hull_.tonnage * pct / 100 / size + 1;
+            const int n = static_cast<int>(xmath::pctTrunc(hull_.tonnage, pct) / size + 1);  // trunc(tonnage x pct / 100) / size + 1
             for (int i = 0; i < n; ++i) add(part);
         };
         if (hull_.maxPercentFighterBays > 0) share(hull_.maxPercentFighterBays, AbilityKind::LaunchRecoverFighters);

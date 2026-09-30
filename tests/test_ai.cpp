@@ -1732,6 +1732,34 @@ TEST_CASE("ai: fleet roles: odd fleets attack while under the defence share") {
     CHECK_FALSE(attacking[3]);
 }
 
+TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(13, 2, 12, true);
+    const EmpireId me{0u};
+    s.turn = 40;
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Fifteen components: bridge, life support, crew quarters, two engines, a laser and nine plates.
+    const DesignId warship = addTestDesign(s, r, me, "Hammer", "Test Cruiser",
+                                           {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine",
+                                            "Test Laser", "Test Armor Plate", "Test Armor Plate", "Test Armor Plate", "Test Armor Plate",
+                                            "Test Armor Plate", "Test Armor Plate", "Test Armor Plate", "Test Armor Plate", "Test Armor Plate"});
+    s.design(warship).designType = "Attack Ship";
+    const VehicleId lead = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {lead}}).ok);
+    auto disbanded = [&] { return countOf<cmd::DisbandFleet>(ai::planTurn(r, s, me)) > 0; };
+    CHECK_FALSE(disbanded());
+    // round(0.3 x 15) is 4, not 5: the double nearest 0.3 is a hair below it.
+    Vehicle& v = *s.vehicle(lead);
+    for (size_t i = 6; i < 10; ++i) v.damage[i] = entryStructure(r, s.design(warship), i);
+    CHECK_FALSE(disbanded());
+    v.damage[10] = entryStructure(r, s.design(warship), 10);
+    CHECK(disbanded());
+    // A ship without a part it needs to operate is unfit too.
+    for (size_t i = 6; i < 11; ++i) v.damage[i] = 0;
+    v.damage[1] = entryStructure(r, s.design(warship), 1);  // life support
+    CHECK(disbanded());
+}
+
 TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(13, 2, 12, true);

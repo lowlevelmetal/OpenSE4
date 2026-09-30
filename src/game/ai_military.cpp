@@ -33,6 +33,14 @@ Order attackPlanet(const GameState& s, ObjectId planet) {
     return o;
 }
 
+// A factor written as a decimal constant in the rules (0.3, 1.3): the double
+// nearest to it, num / 2^shift exactly, as the original loads it.
+xmath::Ext decimal(int64_t num, int shift) { return xmath::Ext(num) / xmath::Ext(int64_t{1} << shift); }
+const xmath::Ext kPoint3 = decimal(5404319552844595, 54);   // 0.3
+const xmath::Ext kPoint25 = decimal(1, 2);                   // 0.25
+const xmath::Ext kOnePoint3 = decimal(5854679515581645, 52); // 1.3
+const xmath::Ext kOnePoint5 = decimal(3, 1);                 // 1.5
+
 int damagedComponents(const Rules& r, const GameState& s, const Vehicle& v) {
     int n = 0;
     const size_t entries = s.design(v.design).entries.size();
@@ -56,7 +64,8 @@ bool unfit(Planner& p, const Vehicle& v) {
     const DesignInfo& di = p.info(v.design);
     if (!combatRole(di.role)) return true;
     const int components = static_cast<int>(p.st.design(v.design).entries.size());
-    const int64_t allowed = xmath::pctRound(components, di.role == Role::Attack || di.role == Role::Defense ? 30 : 25);
+    // round(0.3 x the component count) for attack and defence ships, round(0.25 x) for other combat types.
+    const int64_t allowed = ((di.role == Role::Attack || di.role == Role::Defense ? kPoint3 : kPoint25) * xmath::Ext(components)).round();
     if (damagedComponents(p.r, p.st, v) > allowed) return true;
     if (!vehicleHasControl(p.r, p.st, v) || vehicleMaxMovement(p.r, p.st, v) <= 0) return true;
     if (di.stats.armed() && vehicleRating(p.r, p.st, v) == 0) return true;
@@ -246,10 +255,13 @@ void planFleets(Planner& p) {
     std::sort(keep.begin(), keep.end());
 
     const int n = static_cast<int>(keep.size());
-    const int64_t members = wanted > 0 ? int64_t{vehicles} * t.percentInFleets / 100 / wanted : 0;
+    // trunc(vehicles x pct / 100 / n) members per fleet.
+    const int64_t members =
+        wanted > 0 ? (xmath::Ext(vehicles) * xmath::percent(t.percentInFleets) / xmath::Ext(wanted)).trunc() : 0;
+    // Fleet i of n attacks when i is odd and (i + 1) / 2 < n x (100 - defence %) / 100.
+    const xmath::Ext attackShare = xmath::Ext(wanted) * xmath::percent(100 - t.percentForDefense);
     std::vector<uint8_t> attack(keep.size(), 0);
-    for (int i = 1; i <= n; ++i)
-        attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && int64_t{(i + 1) / 2} * 100 < int64_t{wanted} * (100 - t.percentForDefense);
+    for (int i = 1; i <= n; ++i) attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && xmath::Ext((i + 1) / 2) < attackShare;
 
     // Recruits: idle ships outside fleets within 3 jumps.
     for (size_t k = 0; k < keep.size(); ++k) {
@@ -351,8 +363,8 @@ void planFleets(Planner& p) {
 
 void planDefense(Planner& p) {
     if (!p.on(Minister::Defense) || anyFleet(p) || p.sit.defend.empty()) return;
-    // Defenders keep going to a threat until they exceed 1.3 (Low) or 1.5 times it.
-    const int64_t pct = p.difficulty == kDifficultyLow ? 130 : 150;
+    // Defenders keep going to a threat until they exceed round(1.3 x) it (Low) or round(1.5 x) it.
+    const xmath::Ext factor = p.difficulty == kDifficultyLow ? kOnePoint3 : kOnePoint5;
     std::vector<VehicleId> defenders;
     for (VehicleId id : p.ownVehicles(Minister::Defense)) {
         const Vehicle* v = p.st.vehicle(id);
@@ -371,7 +383,7 @@ void planDefense(Planner& p) {
             strength += v ? vehicleRating(p.r, p.st, *v) + 1 : 1;
         }
         if (!threat) continue;
-        const int64_t need = xmath::pctRound(strength, pct);
+        const int64_t need = (factor * xmath::Ext(strength)).round();
         int64_t have = 0;
         std::vector<std::pair<int, VehicleId>> byDistance;
         for (VehicleId id : defenders) {
@@ -412,7 +424,7 @@ void planAttack(Planner& p) {
             const EmpireId owner = candidates[i]->owner;
             // k = 1.5 when our score exceeds 1.5 times the owner's.
             const bool strong = p.scores[p.id.index()] * 2 > p.scores[owner.index()] * 3;
-            const int64_t limit = strong ? xmath::pctRound(candidates[i]->value, 150) : candidates[i]->value;
+            const int64_t limit = strong ? (kOnePoint5 * xmath::Ext(candidates[i]->value)).round() : candidates[i]->value;
             if (assigned[i] <= limit) pick = i;
         }
         for (size_t i = 0; i < candidates.size() && !pick; ++i)
