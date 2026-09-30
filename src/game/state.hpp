@@ -468,7 +468,7 @@ struct GameOptions {
     bool omnipresent = false;
     bool finiteResources = false;
     // Events.
-    int eventFrequency = 2;              // 0 none, 1 low, 2 medium, 3 high
+    int eventFrequency = 1;              // 0 none, 1 low (the default, spec 01 §2.2), 2 medium, 3 high
     int maxEventSeverity = 2;            // 0 low .. 3 catastrophic
     // Technology.
     int techCost = 1;                    // Technology Cost: 0 low, 1 medium (the default), 2 high (spec 05 §1.3)

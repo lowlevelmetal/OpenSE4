@@ -694,6 +694,22 @@ TEST_CASE("events: stellar events") {
     CHECK(hasMood(ctx, kA, "Any Planet Lost"));
 }
 
+TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that plays on") {
+    auto r = rulesWith({event(Effect::PlanetPopulationRebel, 1, "Low", "Owner")});
+    GameState s = newPoliticsGame(12);
+    s.options.eventFrequency = 3;
+    s.turn = 19;
+    std::vector<EmpireOrders> none;
+    for (int t = 0; t < 150 && s.empires.size() == 3; ++t) processTurn(*r, s, none);
+    REQUIRE(s.empires.size() > 3);
+    const EmpireId rebel{3u};
+    CHECK(s.empire(rebel).alive);
+    CHECK(hasLog(s, rebel, "First Contact"));
+    for (int t = 0; t < 3; ++t) processTurn(*r, s, none);
+    for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
+    CHECK(s.empire(rebel).history.size() >= 3);
+}
+
 TEST_CASE("events: rolling is deterministic") {
     std::vector<ruleset::EventType> all;
     for (size_t i = 0; i < static_cast<size_t>(Effect::Count); ++i) {
