@@ -897,6 +897,22 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         CHECK(l.w.v(gunboat).orders.empty());
         CHECK(l.w.logged(kA, "Combat on entering the sector."));
     }
+    SUBCASE("the Attack goes to the sector its target was in when given and attacks there") {
+        // Spec 03 §8: Move To the target's sector plus an Attack there.
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, at(l.a, 5, 5), {}, picket));
+        l.w.v(picket).location = at(l.a, 9, 9);  // it has moved on since
+        l.run();
+        CHECK(l.spy.asked == std::vector<Location>{at(l.a, 4, 5), at(l.a, 5, 5), at(l.a, 5, 5)});
+        CHECK(l.spy.checkers.back() == std::vector<VehicleId>{gunboat});
+        CHECK(l.spy.fought.empty());
+        CHECK(l.w.v(gunboat).location == at(l.a, 5, 5));
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.v(gunboat).movement == 0);
+    }
     SUBCASE("a Seek at its target attacks every time its list runs and stays") {
         Live l;
         const DesignId dart = l.w.design(kA, "Dart", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});

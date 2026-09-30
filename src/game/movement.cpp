@@ -1041,25 +1041,29 @@ private:
     // point and one move's supply; cloaked drones decloak first); the battle
     // comes from the day's combat check and the order stays. It is done when
     // the target is gone, the attacker's owner's, or a planet without colony.
-    // In a turn-based game a group that is not all drones goes to the target's
-    // sector and attacks there, decloaking (§6.4): 1 movement point, one
-    // move's supply and a battle check, and the order is used up; without
-    // movement left it is removed doing nothing. A drone group's pursuit (a
-    // Seek) at its target attacks and runs a battle check every time its list
-    // runs, and stays (spec 04 §2, confirmed: binary).
+    // In a turn-based game a group that is not all drones goes to the sector
+    // the target was in when the order was given (Order::location: Move To
+    // that sector plus an Attack there, §8) and attacks there, whatever became
+    // of the target, decloaking (§6.4): 1 movement point, one move's supply
+    // and a battle check, and the order is used up; without movement left it
+    // is removed doing nothing. A drone group's pursuit (a Seek) at its target
+    // attacks and runs a battle check every time its list runs, and stays
+    // (spec 04 §2, confirmed: binary).
     Exec attack(Group& g, Order& o) {
-        if (pursuitOver(s_, g.owner, o)) {
+        const bool pursuit = !live_ || onlyDrones(g);
+        const bool fixedPlace = !pursuit && validLocation(s_, o.location);
+        if (!fixedPlace && pursuitOver(s_, g.owner, o)) {
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
             return Exec::Done;
         }
         // A drone sent at a warp point goes through it (an order given before
         // the expansion, orders.hpp).
-        if (o.object.valid() && s_.galaxy.object(o.object).kind == ObjectKind::WarpPoint) return warp(g, o);
-        const Location goal = o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
+        if (o.object.valid() && o.object.index() < s_.galaxy.objects.size() && s_.galaxy.object(o.object).kind == ObjectKind::WarpPoint)
+            return warp(g, o);
+        const Location goal = fixedPlace ? o.location : o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
         const Travel t = travel(g, goal);
         if (t == Travel::Reached) return Exec::Moved;  // the attack needs the next action's movement
         if (t != Travel::Arrived) return afterTravel(g, o, t);
-        const bool pursuit = !live_ || onlyDrones(g);
         if (remaining(g) <= 0 || immobile(g)) {
             if (pursuit) return Exec::Wait;
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
@@ -1070,7 +1074,7 @@ private:
             if (!v || !alive(*v)) continue;
             const bool drone = vehicleType(r_, s_, *v) == VehicleType::Drone;
             if ((drone || !pursuit) && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
-            if (drone) {
+            if (drone && pursuit) {
                 // Its target in the battle (spec 04 §10.7).
                 v->targetVehicle = o.vehicle;
                 v->targetObject = o.object;
