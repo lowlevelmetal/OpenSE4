@@ -9,6 +9,7 @@
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
 
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -80,6 +81,7 @@ private:
     void drawBattleQuestion(classic::UiContext& ui);
     std::vector<uint8_t> battleChoices_;   // per human side: 1 tactical
     size_t battleChoiceKey_ = SIZE_MAX;
+    std::deque<size_t> strategicQueue_;   // battles (GameState::combats) waiting for the Strategic Combat window
 
     // Hotseat hand-over between human players.
     void drawHandoff(classic::UiContext& ui);

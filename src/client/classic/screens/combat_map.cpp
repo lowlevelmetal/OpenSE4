@@ -1,5 +1,5 @@
-// The combat map shared by the Combat Replay and Tactical Combat windows
-// (docs/spec/06 §1.6). See combat_map.hpp.
+// The combat map shared by the Combat Replay, Tactical Combat and Strategic
+// Combat windows (docs/spec/06 §1.6). See combat_map.hpp.
 
 #include "client/classic/screens/combat_map.hpp"
 
@@ -236,6 +236,29 @@ std::optional<uint32_t> CombatMapPainter::pieces(ImDrawList* dl, const CombatVie
         }
     }
     if (anim) event(dl, v, *anim, playback_.fraction());
+    return hovered;
+}
+
+std::optional<uint32_t> CombatMapPainter::squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover, ImVec2 mouse) const {
+    const auto& pieces = playback_.pieces();
+    std::optional<uint32_t> hovered;
+    // Big pieces first, so the small ones stay visible on top of them.
+    for (const bool big : {true, false})
+        for (uint32_t i = 0; i < pieces.size() && i < record_.pieces.size(); ++i) {
+            const CombatPlayback::Piece& p = pieces[i];
+            if (!p.onMap || (p.size > 1) != big) continue;
+            const ImVec2 c = piecePos(v, i);
+            const bool seeker = record_.pieces[i].kind == game::CombatPiece::Kind::Seeker;
+            const ImU32 col = p.neutral ? IM_COL32(120, 120, 120, 255) : empireColor(s_, p.owner);
+            if (seeker) {
+                dl->AddCircleFilled(c, std::max(1.5f, v.cell * 0.25f), withAlpha(col, 0.85f));
+                continue;
+            }
+            const float h = std::max(minSize, v.cell * float(p.size)) * 0.5f;
+            dl->AddRectFilled({c.x - h, c.y - h}, {c.x + h, c.y + h}, big ? withAlpha(col, 0.55f) : col);
+            if (p.captured) dl->AddRect({c.x - h - 1, c.y - h - 1}, {c.x + h + 1, c.y + h + 1}, IM_COL32(255, 220, 80, 255));
+            if (hover && std::abs(mouse.x - c.x) <= h + 1 && std::abs(mouse.y - c.y) <= h + 1 && (!hovered || pieces[*hovered].size > p.size)) hovered = i;
+        }
     return hovered;
 }
 

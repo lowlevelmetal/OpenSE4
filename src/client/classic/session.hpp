@@ -102,9 +102,14 @@ public:
     // answer to the first (spec 03 §6.2).
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
-    // Turn-based games: the first battle the player's last order started, to
-    // show at once (an index into GameState::combats), then forgotten.
-    std::optional<size_t> takeNewBattle();
+    // Battles to watch in the Strategic Combat window (spec 06 §1.6, spec 04
+    // §2), as indices into GameState::combats, oldest first, then forgotten:
+    // turn-based games, those the player's orders started and those in which
+    // the player answered Strategic (never one fought in the Tactical Combat
+    // window); simultaneous games, when the Settings flag `Simultaneous Games
+    // Show Strategic Combat` is on, every battle of the processed turn the
+    // player fought in.
+    std::vector<size_t> takeStrategicBattles();
 
     // Tactical combat (see the file comment). The battle that waits for its
     // answer, if any: while it waits the game is as before the call.
@@ -158,6 +163,8 @@ private:
     // session to that player.
     void resumeTurnBased();
     void takeResult(const game::TurnResult& result);
+    // Simultaneous games: the processed turn's battles of the player, when the Settings flag asks for them.
+    void queueTurnBattles();
     // Turn-based games: the engine call in progress, made again with the
     // battle answers until no battle asks; then its results are taken.
     enum class Call { None, Issue, EndTurn, Resume };
@@ -178,7 +185,8 @@ private:
     std::unique_ptr<TurnTransport> transport_;
     std::vector<std::string> notices_;
     std::string autosaveNote_;
-    std::optional<size_t> newBattle_;
+    std::vector<size_t> strategic_;           // battles to watch (takeStrategicBattles)
+    std::vector<game::Location> answeredStrategic_, answeredTactical_;   // this call's answers of the local player
     Call call_ = Call::None;
     std::optional<game::Command> callCommand_;
     size_t callBattles_ = 0;                  // GameState::combats before the call

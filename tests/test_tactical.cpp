@@ -1028,10 +1028,39 @@ TEST_CASE("client session: a turn-based battle asks, is fought tactically in the
     CHECK(session.tactical() == nullptr);
     CHECK_FALSE(session.battleQuestion().has_value());
     REQUIRE(session.state().combats.size() == 1);
-    CHECK_FALSE(session.takeNewBattle().has_value());   // seen already in the window
+    CHECK(session.takeStrategicBattles().empty());   // seen already in the window
     // The order went through: the warship entered the sector (if it survived).
     if (const Vehicle* v = session.state().vehicle(warship)) CHECK(v->location == to);
     CHECK(session.ordersThisTurn().size() == 2);
+}
+
+TEST_CASE("client session: simultaneous games show their battles when the Settings flag asks") {
+    for (const bool show : {false, true}) {
+        CAPTURE(show);
+        Arena ar = makeArena(31);
+        GameState& s = ar.s;
+        s.options.simultaneous = true;
+        s.empire(ar.a).kind = PlayerKind::Human;
+        s.empire(ar.b).kind = PlayerKind::Computer;
+        const Location to = ar.loc, from{to.system, Sector{to.sector.x - 1, to.sector.y}};
+        const VehicleId warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "CT Big Armor"}), from);
+        spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), to);
+        for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+        ruleset::Ruleset rs = buildCombatRuleset();
+        rs.settings.set("Simultaneous Games Show Strategic Combat", show ? "TRUE" : "FALSE");
+        client::classic::ClassicSession session(std::make_shared<const Rules>(std::move(rs)), std::move(s), ar.a,
+                                                client::classic::SessionKind::Local);
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = to;
+        REQUIRE(session.issue(cmd::SetOrders{warship, {}, {o}}).ok);
+        CHECK(session.takeStrategicBattles().empty());   // orders only: nothing is fought yet
+        session.endTurn();
+        REQUIRE_FALSE(session.state().combats.empty());
+        const std::vector<size_t> shown = session.takeStrategicBattles();
+        CHECK(shown.empty() != show);
+        for (size_t i : shown) CHECK(i < session.state().combats.size());
+    }
 }
 
 TEST_CASE("client session: a strategic answer, and a game without tactical combat, fight at once") {
@@ -1058,6 +1087,7 @@ TEST_CASE("client session: a strategic answer, and a game without tactical comba
         if (offered) session.answerBattle(BattleAnswer{});
         CHECK_FALSE(session.battleQuestion().has_value());
         CHECK(session.state().combats.size() == 1);
-        CHECK(session.takeNewBattle().has_value());   // shown in the replay window
+        CHECK(session.takeStrategicBattles() == std::vector<size_t>{0});   // watched in the Strategic Combat window
+        CHECK(session.takeStrategicBattles().empty());
     }
 }

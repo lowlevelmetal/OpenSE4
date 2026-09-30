@@ -77,13 +77,15 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 error = std::format("Unknown window '{}'", options.openWindow);
                 return nullptr;
             }
-            if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions) {
-                // A sample battle to show: the player's warships against copies of them.
-                if (!startDemoSimulation(*mode->ui_, true)) {
+            if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions ||
+                *id == ScreenId::StrategicCombat) {
+                // A sample battle to show: the player's warships against copies of them
+                // (fought by the strategies for Strategic Combat).
+                if (!startDemoSimulation(*mode->ui_, *id != ScreenId::StrategicCombat)) {
                     error = "No armed ship design to fight a sample battle with.";
                     return nullptr;
                 }
-                if (*id != ScreenId::TacticalCombat) mode->ui_->open(*id);
+                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id);
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";
@@ -109,7 +111,10 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     ui_ = std::make_unique<UiContext>(*session_, *art_, fonts_);
     ui_->app = platform_.app;
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
-    session_->onNewTurn = [this] { openLogOnTurn_ = true; };
+    session_->onNewTurn = [this] {
+        openLogOnTurn_ = true;
+        strategicQueue_.clear();   // battles of the turn before: GameState::combats holds the new ones
+    };
     main_ = MainWindow{};
     main_.reset(*ui_);
     handoffPlayer_ = {};
@@ -140,7 +145,9 @@ void ClassicMode::updateAudio() {
     audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, prefs.musicVolume, prefs.remasteredSounds});
     // Intro music in the front end, battle music while a replay is open, background music otherwise.
     bool combat = false;
-    for (const auto& [id, screen] : screens_) combat = combat || id == ScreenId::CombatReplay || id == ScreenId::TacticalCombat;
+    for (const auto& [id, screen] : screens_)
+        combat = combat || id == ScreenId::CombatReplay || id == ScreenId::TacticalCombat || id == ScreenId::StrategicCombat ||
+                 id == ScreenId::GroundCombat;
     const std::vector<std::string>& list = !session_ ? playlists_.intro : combat ? playlists_.combat : playlists_.background;
     if (prefs.musicOn && !list.empty()) audio().playMusic(list);
     else audio().stopMusic();
@@ -194,16 +201,25 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         return !ui.requests.quitGame;
     }
 
-    // Turn-based games: a battle the player's order started is shown at once.
-    if (auto battle = session_->takeNewBattle()) {
-        ScreenArgs args;
-        args.index = int(*battle);
-        openScreen(ScreenId::CombatReplay, std::move(args));
-    }
-    // Tactical combat: the Tactical Combat window stays open while a battle is fought in it.
-    if (session_->tactical() && std::none_of(screens_.begin(), screens_.end(), [](const auto& s) { return s.first == ScreenId::TacticalCombat; }))
-        openScreen(ScreenId::TacticalCombat, {});
+    auto isOpen = [&](ScreenId id) { return std::any_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == id; }); };
+    // A battle fought in the client stays in its window until it is done: the
+    // Tactical Combat window, or Strategic Combat for a simulation the
+    // strategies fight (spec 06 §1.6).
+    if (session_->tactical() && !isOpen(ScreenId::TacticalCombat) && !isOpen(ScreenId::StrategicCombat))
+        openScreen(session_->tactical()->players.empty() ? ScreenId::StrategicCombat : ScreenId::TacticalCombat, {});
     const bool battleAsking = !session_->tactical() && session_->battleQuestion().has_value();
+    // Battles to watch in the Strategic Combat window, one after another.
+    for (size_t i : session_->takeStrategicBattles()) strategicQueue_.push_back(i);
+    if (!session_->tactical() && !battleAsking && !isOpen(ScreenId::StrategicCombat) && !isOpen(ScreenId::GroundCombat) &&
+        !strategicQueue_.empty()) {
+        const size_t i = strategicQueue_.front();
+        strategicQueue_.pop_front();
+        if (i < ui.state().combats.size()) {
+            ScreenArgs args;
+            args.index = int(i);
+            openScreen(ScreenId::StrategicCombat, std::move(args));
+        }
+    }
     const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
 
     // Classic windows are modal: while one is open the main window takes no input.
@@ -244,7 +260,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
-    if (openLogOnTurn_ && !battleAsking && !session_->tactical()) {
+    if (openLogOnTurn_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
         openLogOnTurn_ = false;
         if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});

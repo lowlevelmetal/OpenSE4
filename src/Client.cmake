@@ -65,6 +65,7 @@ add_executable(opense4
     client/classic/screens/ships_common.cpp
     client/classic/screens/ships_logic.cpp
     client/classic/screens/stellar.cpp
+    client/classic/screens/strategic_combat.cpp
     client/classic/screens/tactical.cpp
     client/classic/screens/vehicle_orders.cpp
     client/classic/session.cpp

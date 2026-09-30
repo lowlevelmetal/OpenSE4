@@ -78,6 +78,16 @@ public:
             saveSettings();
         }
         d.spacer();
+        // Ground combats fought when troops landed in this battle (spec 06 §1.6).
+        for (size_t k = 0; k < record_.grounds.size(); ++k) {
+            const std::string label = record_.grounds.size() == 1 ? std::string("Ground Combat") : std::format("Ground Combat {}", k + 1);
+            if (d.button(label.c_str())) {
+                ScreenArgs a;
+                a.index = index_;
+                a.sub = int(k);
+                ui.open(ScreenId::GroundCombat, std::move(a));
+            }
+        }
         const int count = int(combats.size());
         if (d.button("Previous Battle", index_ > 0)) load(ui, index_ - 1, combats);
         if (d.button("Next Battle", index_ + 1 < count)) load(ui, index_ + 1, combats);

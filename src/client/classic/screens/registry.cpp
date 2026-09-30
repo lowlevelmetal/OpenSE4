@@ -73,6 +73,8 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::TacticalOrders: return "Tactical Combat Orders";
         case ScreenId::TacticalOptions: return "Tactical Combat Options";
         case ScreenId::CombatSimulator: return "Combat Simulator";
+        case ScreenId::StrategicCombat: return "Strategic Combat";
+        case ScreenId::GroundCombat: return "Ground Combat";
         case ScreenId::SaveGame: return "Save Game";
         case ScreenId::LoadGame: return "Load Game";
         case ScreenId::Settings: return "Settings";
@@ -89,14 +91,16 @@ std::optional<ScreenId> screenFromName(std::string_view name) {
         return out;
     };
     const std::string want = squash(name);
-    static constexpr std::array<std::pair<ScreenId, const char*>, 8> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+    static constexpr std::array<std::pair<ScreenId, const char*>, 10> kAliases{{{ScreenId::Ships, "ShipsUnits"},
                                                                                 {ScreenId::Queues, "Queues"},
                                                                                 {ScreenId::SetQueue, "SetQueue"},
                                                                                 {ScreenId::Queues, "ConstructionQueues"},
                                                                                 {ScreenId::EmpireStatus, "Status"},
                                                                                 {ScreenId::CombatReplay, "Replay"},
                                                                                 {ScreenId::TacticalCombat, "Tactical"},
-                                                                                {ScreenId::CombatSimulator, "Simulator"}}};
+                                                                                {ScreenId::CombatSimulator, "Simulator"},
+                                                                                {ScreenId::StrategicCombat, "Strategic"},
+                                                                                {ScreenId::GroundCombat, "Ground"}}};
     for (const auto& [id, alias] : kAliases)
         if (squash(alias) == want) return id;
     for (int i = 0; i < static_cast<int>(ScreenId::Count); ++i) {
@@ -150,6 +154,8 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::TacticalOrders: return makeTacticalOrders(args);
         case ScreenId::TacticalOptions: return makeTacticalOptions(args);
         case ScreenId::CombatSimulator: return makeCombatSimulator(args);
+        case ScreenId::StrategicCombat: return makeStrategicCombat(args);
+        case ScreenId::GroundCombat: return makeGroundCombat(args);
         case ScreenId::SaveGame: return makeSaveGame(args);
         case ScreenId::LoadGame: return makeLoadGame(args);
         case ScreenId::Settings: return makeSettings(args);
