@@ -412,15 +412,7 @@ std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, 
     return collapse(r, d);
 }
 
-std::string hashPassword(std::string_view password) {
-    if (password.empty()) return {};
-    uint64_t h = 0xcbf29ce484222325ull;
-    for (unsigned char c : password) {
-        h ^= c;
-        h *= 0x100000001b3ull;
-    }
-    return std::format("fnv1a:{:016x}", h);
-}
+std::string hashPassword(std::string_view password) { return game::hashPassword(password); }
 
 // ---- Choice lists ---------------------------------------------------------------------------
 

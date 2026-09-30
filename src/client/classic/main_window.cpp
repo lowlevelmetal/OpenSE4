@@ -1,5 +1,7 @@
 #include "client/classic/main_window.hpp"
 
+#include "client/classic/settings.hpp"
+
 #include "game/design.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
@@ -78,6 +80,7 @@ Vec2 galaxyPos(const game::Galaxy& g, const game::StarSystem& s) {
 
 void MainWindow::reset(UiContext& ui) {
     clearSelection();
+    showMovementLines_ = settings().showMovementLines;
     const game::GameState& s = ui.state();
     for (const auto& c : s.colonies)
         if (c && c->owner == ui.session.player() && c->homeworld) {
@@ -158,11 +161,17 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
 }
 
 void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
+    const ClassicSettings& prefs = settings();
+    const game::Vehicle* current = selectedVehicle(ui);
     std::vector<game::VehicleId> list;
-    for (const game::Vehicle& v : ui.state().vehicles)
-        if (v.owner == ui.session.player() && !game::isUnitType(game::vehicleType(ui.rules(), ui.state(), v)) &&
-            (!idleOnly || (v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty()))))
-            list.push_back(v.id);
+    for (const game::Vehicle& v : ui.state().vehicles) {
+        if (v.owner != ui.session.player() || game::isUnitType(game::vehicleType(ui.rules(), ui.state(), v))) continue;
+        if (idleOnly && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty()))) continue;
+        if (prefs.cycleSkipsDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
+        // "Stop once per location": skip other ships in the sector we are leaving.
+        if (prefs.cycleOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
+        list.push_back(v.id);
+    }
     if (list.empty()) return;
     auto it = vehicle_ ? std::find(list.begin(), list.end(), *vehicle_) : list.end();
     size_t i = it == list.end() ? 0 : size_t(it - list.begin());
@@ -688,7 +697,7 @@ void MainWindow::overlayText(UiContext& ui) {
         for (const auto& [sector, n] : counts)
             if (n > 1) text(sectorCenter(sector) + Vec2{10, 8}, 11, IM_COL32_WHITE, std::to_string(n));
         const auto& known = ui.me().knowledge.knownWarpLink;
-        for (game::ObjectId id : s.galaxy.warpPoints(sys.id)) {
+        for (game::ObjectId id : settings().showWarpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
             const game::SpaceObject& wp = s.galaxy.object(id);
             if (!wp.destination.valid() || id.index() >= known.size() || !known[id.index()]) continue;
             const std::string& dest = s.galaxy.system(s.galaxy.object(wp.destination).system).name;
@@ -731,7 +740,9 @@ void MainWindow::mouse(UiContext& ui) {
 
     if (kGalaxyPanel.contains(p)) {
         if (right) {
-            ui.open(ScreenId::GalaxyMap);
+            ScreenArgs args;
+            args.location = game::Location{shown_, {}};
+            ui.open(ScreenId::GalaxyMap, args);
             return;
         }
         std::optional<game::SystemId> best;
@@ -989,8 +1000,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     if (sector_) brackets(*sector_, kSelectYellow.withAlpha(0.75f + 0.25f * float(std::sin(ui.time * 5.0))));
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
-    for (const auto& w : ui.me().waypoints)
-        if (w.set && w.location.system == shown_) r.ring(sectorCenter(w.location.sector), 5.0f, 1.5f, Color::hex(0x40d0ff));
+    if (settings().showWaypointMarkers)
+        for (const auto& w : ui.me().waypoints)
+            if (w.set && w.location.system == shown_) r.ring(sectorCenter(w.location.sector), 5.0f, 1.5f, Color::hex(0x40d0ff));
 }
 
 void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {

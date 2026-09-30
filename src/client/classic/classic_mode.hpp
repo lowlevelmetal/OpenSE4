@@ -60,6 +60,7 @@ private:
     std::vector<std::pair<classic::ScreenId, std::unique_ptr<classic::Screen>>> screens_;
     std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
     bool openLogOnTurn_ = false;
+    bool confirmEndTurn_ = false;
 };
 
 } // namespace opense4::client

@@ -49,4 +49,9 @@ std::vector<int> startingTechLevels(const Rules& r, const GameOptions& o, const 
 // Distinct empire colours for automatic assignment.
 uint32_t defaultEmpireColor(size_t index);
 
+// The digest stored in Empire::passwordHash / EmpireSetup::passwordHash
+// ("fnv1a64:<hex>"; empty password -> empty). It only keeps hotseat and
+// network players out of each other's empires; it is not a security measure.
+std::string hashPassword(std::string_view password);
+
 } // namespace opense4::game

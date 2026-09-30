@@ -1,5 +1,7 @@
 #include "client/classic/classic_mode.hpp"
 
+#include "client/classic/settings.hpp"
+
 #include "core/log.hpp"
 
 #include <imgui.h>
@@ -147,11 +149,28 @@ bool ClassicMode::update(const FrameState& fs) {
 
     if (ui.requests.endTurn) {
         ui.requests.endTurn = false;
-        endTurn();
+        if (settings().confirmEndTurn) confirmEndTurn_ = true;
+        else endTurn();
+    }
+    if (confirmEndTurn_) {
+        ImGui::SetNextWindowPos(ui.at({362, 330}));
+        ImGui::SetNextWindowSize(ui.size({300, 110}));
+        ImGui::PushFont(platform_.fonts->regular, 14.0f * ui.k());
+        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+        ImGui::TextUnformatted("End the turn now?");
+        if (ImGui::Button("End Turn", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+            confirmEndTurn_ = false;
+            endTurn();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) confirmEndTurn_ = false;
+        ImGui::End();
+        ImGui::PopFont();
     }
     if (openLogOnTurn_) {
         openLogOnTurn_ = false;
-        if (!ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn) openScreen(ScreenId::Log, {});
+        if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
+            openScreen(ScreenId::Log, {});
     }
     if (ui.requests.loadGame) {
         const std::filesystem::path file = *ui.requests.loadGame;

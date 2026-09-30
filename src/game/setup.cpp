@@ -6,6 +6,7 @@
 #include "game/generate.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
+#include "core/hash.hpp"
 
 #include <algorithm>
 #include <array>
@@ -75,6 +76,14 @@ uint32_t defaultEmpireColor(size_t index) {
         0x3a7bd5, 0xd53a3a, 0x3ad56b, 0xd5c83a, 0xa03ad5, 0x3ad5cf, 0xd5823a, 0xd53aa6, 0x8fd53a, 0x6b6bd5,
         0x9a6b3a, 0xb0b0b0, 0x1f5f8f, 0x8f1f1f, 0x1f8f3f, 0x8f7f1f, 0x5f1f8f, 0x1f8f8a, 0x8f4f1f, 0x8f1f6a};
     return kColors[index % kColors.size()];
+}
+
+std::string hashPassword(std::string_view password) {
+    if (password.empty()) return {};
+    Hasher h;
+    h.add(std::string_view("opense4-empire-password"));
+    h.add(password);
+    return std::format("fnv1a64:{:016x}", h.value());
 }
 
 const ruleset::RacePreset* findPreset(const Rules& r, std::string_view folderOrName) {

@@ -1,5 +1,7 @@
 #include "client/classic/settings.hpp"
 
+#include "game/setup.hpp"
+
 #include "client/classic/session.hpp"
 #include "core/hash.hpp"
 #include "core/log.hpp"
@@ -160,12 +162,6 @@ bool saveSettings() {
     return true;
 }
 
-std::string hashPassword(std::string_view password) {
-    if (password.empty()) return {};
-    Hasher h;
-    h.add(std::string_view("opense4-empire-password"));
-    h.add(password);
-    return std::format("fnv1a64:{:016x}", h.value());
-}
+std::string hashPassword(std::string_view password) { return game::hashPassword(password); }
 
 } // namespace opense4::client::classic
