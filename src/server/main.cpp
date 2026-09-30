@@ -343,6 +343,11 @@ int runServer(std::span<char*> args) {
                     lastLobby = std::move(s);
                     break;
                 }
+                case net::EventType::StateUpdated:
+                case net::EventType::TurnProcessing:
+                    // Turn-based games: every command and every player turn (the turn summary says whose turn it is).
+                    if (verbose || !host.turnBased()) say(net::describe(e));
+                    break;
                 case net::EventType::TurnStatusChanged: {
                     // Only the open turn's status (events from a turn processed since are stale).
                     if (e.turn != host.turnStatus().turn || host.turnStatus().processing) break;

@@ -1158,11 +1158,11 @@ game::TurnResult HostSession::runLive(game::EmpireId empire, const std::vector<g
     if (stateCache_.size() != state_->empires.size() + 1) stateCache_ = redactedState();
     for (game::EmpireId e : changed) {
         stateCache_[e.index()] = game::serializeState(game::redactForEmpire(*state_, e));
+        emit(EventType::StateUpdated, e == empire ? std::string("its own commands") : std::string("a battle"), playerName(e), kNoSlot, e,
+             state_->turn);
         if (e.index() >= slots_.size()) continue;
         if (Peer* p = peerOfSlot(*slots_[e.index()]); p && !p->closing) sendState(*p, false);
     }
-    emit(EventType::StateUpdated, std::format("{} command{}", commands.size(), commands.size() == 1 ? "" : "s"), playerName(empire), kNoSlot,
-         empire, state_->turn);
     return all;
 }
 

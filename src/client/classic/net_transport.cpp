@@ -83,7 +83,8 @@ std::optional<game::GameState> HostTransport::pollState() {
     bool fresh = std::exchange(fresh_, false);
     for (const net::Event& e : host_->poll(0)) {
         if (worthShowing(e.type)) log_.add(net::describe(e));
-        fresh = fresh || e.type == net::EventType::NewTurn || e.type == net::EventType::PlayerTurn || e.type == net::EventType::StateUpdated;
+        fresh = fresh || e.type == net::EventType::NewTurn || e.type == net::EventType::PlayerTurn ||
+                (e.type == net::EventType::StateUpdated && e.empire == host_->localEmpire());
     }
     // The hosting player sees the same fog of war as everyone else.
     if (fresh && host_->state()) return game::redactForEmpire(*host_->state(), host_->localEmpire());

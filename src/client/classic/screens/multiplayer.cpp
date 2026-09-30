@@ -46,6 +46,10 @@ public:
                 openLobby(ctx);
             } else if (a.starts_with("join=")) {
                 std::string addr = a.substr(5);
+                if (addr.ends_with(",ready")) {
+                    addr.resize(addr.size() - 6);
+                    autoReady_ = true;
+                }
                 if (const size_t colon = addr.rfind(':'); colon != std::string::npos) {
                     port_ = std::atoi(addr.c_str() + colon + 1);
                     addr.resize(colon);
@@ -291,6 +295,7 @@ private:
             if (e.type == net::EventType::Joined && client_ && !setupSent_) {
                 client_->submitSetup(mySetup(ctx));
                 setupSent_ = true;
+                if (autoReady_) client_->setReady(true);
             }
             if (e.type == net::EventType::Rejected) error_ = e.text;
             if (e.type == net::EventType::GameStarted) {
@@ -344,6 +349,8 @@ private:
                                                                                                     : "Connecting...";
             ImGui::Text("%s - %s:%u", phase, client_->config().host.c_str(), unsigned(client_->config().port));
         }
+        ImGui::TextDisabled("%s", info.options.simultaneous ? "Simultaneous turns: everyone gives orders, then the host runs the turn."
+                                                             : "Turn-based: players take their turns one after another.");
         ImGui::Separator();
 
         // Slots.
@@ -466,6 +473,7 @@ private:
     std::string chat_;
     std::string error_;
     bool setupSent_ = false;
+    bool autoReady_ = false;  // automation: ready as soon as we joined
     NetLog log_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<net::HostSession> host_;

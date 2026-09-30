@@ -117,7 +117,7 @@ enum class EventType : uint8_t {
     GameOver,            // empire: the winner, if any
     // Turn-based games.
     PlayerTurn,          // the turn passed: empire (invalid: none, the host waits), player, turn
-    StateUpdated,        // a new state() within the same game turn (host: some players' views changed)
+    StateUpdated,        // a new state() within the same game turn (host: empire's view changed)
     CommandsDone,        // client: the host carried out our commands (request); text: the refusals, if any
 };
 

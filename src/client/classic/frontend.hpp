@@ -67,7 +67,8 @@ game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playe
 // `startPage`: a Game Setup page name, or "empire[:page]" to open Empire Setup at once.
 std::unique_ptr<FrontScreen> makeGameSetupScreen(std::string_view startPage = {});
 // `automation`: "host" opens a lobby at once (no UPnP), "join=ADDR[:PORT]"
-// connects at once; the player is named "Player" (for screenshots/tests).
+// connects at once (",ready" appended: and says it is ready); the player is
+// named "Player" (for screenshots/tests).
 std::unique_ptr<FrontScreen> makeMultiplayerScreen(std::string_view automation);
 
 } // namespace opense4::client::classic
