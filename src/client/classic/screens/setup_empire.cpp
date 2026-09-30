@@ -58,6 +58,7 @@ EmpireEditor::EmpireEditor(std::shared_ptr<const game::Rules> rules, EmpireDraft
     surfaces_ = planetSurfaces(*rules_);
     atmospheres_ = atmospheres(*rules_);
     designFiles_ = designNameFiles(*rules_);
+    ministerStyles_ = ministerStyleChoices(*rules_);
 }
 
 const ruleset::RacePreset* EmpireEditor::preset() const { return presetOf(rules(), draft_.setup); }
@@ -70,6 +71,8 @@ void EmpireEditor::choosePreset(size_t position) {
     next.setup.kind = draft_.setup.kind;
     next.setup.passwordHash = draft_.setup.passwordHash;
     next.setup.color = draft_.setup.color;
+    next.setup.ministerStyle = draft_.setup.ministerStyle;
+    next.setup.useRaceMinisterStyle = draft_.setup.useRaceMinisterStyle;
     draft_ = std::move(next);
 }
 
@@ -215,6 +218,24 @@ void EmpireEditor::pageGeneral(MenuContext& ctx) {
     int kind = draft_.setup.kind == game::PlayerKind::Human ? 0 : 1;
     if (lampChoice(ctx, "##kind", kind, {"Human player", "Computer controlled"}))
         draft_.setup.kind = kind == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
+    ImGui::Dummy(ImVec2(0, ctx.px(4)));
+    // Minister style (spec 02 §9, spec 05 §7.1): the personality the ministers,
+    // and a computer-controlled empire, play with. "Use Race Minister Style"
+    // disables the choice.
+    row("Minister Style");
+    ImGui::BeginDisabled(draft_.setup.useRaceMinisterStyle);
+    ImGui::SetNextItemWidth(ctx.px(200));
+    const std::string style = draft_.setup.ministerStyle.empty() ? std::string("(the race's own)") : draft_.setup.ministerStyle;
+    if (ImGui::BeginCombo("##mstyle", style.c_str())) {
+        if (ImGui::Selectable("(the race's own)", draft_.setup.ministerStyle.empty())) draft_.setup.ministerStyle.clear();
+        for (const std::string& st : ministerStyles_)
+            if (ImGui::Selectable(st.c_str(), datafile::keysEqual(st, draft_.setup.ministerStyle))) draft_.setup.ministerStyle = st;
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    bool raceStyle = draft_.setup.useRaceMinisterStyle;
+    if (lamp(ctx, "Use Race Minister Style", raceStyle)) draft_.setup.useRaceMinisterStyle = raceStyle;
     ImGui::Dummy(ImVec2(0, ctx.px(4)));
     row("Password");
     inputText("##pw", password_, ctx.px(200), ImGuiInputTextFlags_Password);

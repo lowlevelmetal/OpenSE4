@@ -158,6 +158,8 @@ std::string hashPassword(std::string_view password);
 std::vector<std::string> planetSurfaces(const game::Rules& r);  // physical types of planets in SectType.txt
 std::vector<std::string> atmospheres(const game::Rules& r);      // planet atmospheres in SectType.txt
 std::vector<std::string> designNameFiles(const game::Rules& r);  // Dsgnname/*.txt of the install
+// Minister styles of the install (the folders under Ai/ holding AI tables, game::ai::ministerStyles).
+std::vector<std::string> ministerStyleChoices(const game::Rules& r);
 // The SectType picture of a planet with this surface and atmosphere, if any.
 std::optional<int> planetPicture(const game::Rules& r, std::string_view surface, std::string_view atmosphere);
 

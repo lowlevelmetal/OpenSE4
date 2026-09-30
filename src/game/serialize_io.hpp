@@ -546,7 +546,8 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
-    fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash);
+    fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
+           e.ministerStyle, e.useRaceMinisterStyle);
 }
 
 template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }

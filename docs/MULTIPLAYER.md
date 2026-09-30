@@ -367,6 +367,8 @@ color = 0x3070ff
 empire_type = ""
 leader = ""
 leader_title = ""
+minister_style = "Aggressive"  # a folder under Ai/ of the install; default: none (the race's own AI files)
+use_race_minister_style = false
 ```
 
 The network server takes the name, seed, options, master password and computer

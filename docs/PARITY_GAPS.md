@@ -28,9 +28,11 @@ cost sums `economy::characteristicPointCost`.
 
 Design names are unique in the whole game (`uniqueDesignName`), composite orders are
 expanded when given (`orders.hpp`), ships with identical head orders move as ad-hoc groups,
-in-system steps are greedy with the random re-choice, and the empire option to clear
-orders on meeting empires is `Empire::clearOrdersOnEncounter`. The engine's choices where
-the spec is silent are spec 03 §19 Q50–Q54.
+in-system steps are greedy with the random re-choice, the empire option to clear
+orders on meeting empires is `Empire::clearOrdersOnEncounter`, and the Ship Movement
+options (avoid tagged minefields, avoid restricted systems) are
+`Empire::avoidTaggedMinefields` and `avoidRestrictedSystems`. The engine's choices where
+the spec is silent are spec 03 §19 Q50–Q57.
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
@@ -62,6 +64,10 @@ gap is left in this section.
 
 ## Computer player (spec 05 §7)
 
-| Where | Engine now | Original | Impact |
-|---|---|---|---|
-| Low | Of the four AI_Settings movement flags only the clear-orders pair is copied (into `Empire::clearOrdersOnEncounter`, which movement reads); empires have no minefield or avoided-system option, and routes always go around both. The empire setup (`EmpireSetup`, `setup.cpp`) has no minister style or "Use Race Minister Style", so every empire starts without a style; only the Ministers window sets one | The four flags become the computer empire's own movement options each turn (§7.5, spec 03 §6.2, §6.4). A style chosen at setup also applies to an empire marked Computer Controlled, unless it uses its race's style (§7.1, spec 02 §9) | L |
+The four AI_Settings movement flags become the computer empire's own Ship Movement and
+Ship Orders options each turn (`Empire::avoidTaggedMinefields`, `avoidRestrictedSystems`,
+`clearOrdersOnEncounter`), and routes follow those options (spec 03 §6.2; the engine's
+choices are spec 03 §19 Q57). Empire Setup sets the minister style and "Use Race Minister
+Style" (`EmpireSetup::ministerStyle`, `useRaceMinisterStyle`), which the empire keeps
+whether a human plays it or it is marked Computer Controlled (spec 02 §13 Q49). No gap is
+left in this section.

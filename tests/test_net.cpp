@@ -782,6 +782,21 @@ tier = 2
     auto rolled = server::parseSetup("[options]\nsystems = 0\n", "z.toml", r);
     REQUIRE(rolled.has_value());
     CHECK(rolled->options.systemCount == 0);
+    // Minister styles must be installed (this data set has none); the race-style switch is a flag.
+    auto styled = server::parseSetup("[[empire]]\nuse_race_minister_style = true\n", "m.toml", r);
+    REQUIRE(styled.has_value());
+    CHECK(styled->empires[0].setup.useRaceMinisterStyle);
+    CHECK(styled->empires[0].setup.ministerStyle.empty());
+    auto unknownStyle = server::parseSetup("[[empire]]\nminister_style = \"Nope\"\n", "n.toml", r);
+    REQUIRE_FALSE(unknownStyle.has_value());
+    CHECK(unknownStyle.error().find("no minister style 'Nope'") != std::string::npos);
+    net::HostSession host(r, hostConfig());
+    REQUIRE(host.start().has_value());
+    game::EmpireSetup cpu;
+    cpu.ministerStyle = "Nope";
+    const auto refused = host.addComputerEmpire(cpu);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == "Unknown minister style 'Nope'.");
 }
 
 
