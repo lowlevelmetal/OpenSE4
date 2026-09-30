@@ -121,7 +121,7 @@ private:
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
         heading(ui, "Vehicle");
         ImGui::TextUnformatted(v.name.c_str());
-        ImGui::TextColored(kDim, "%s", sectorName(s, v.location).c_str());
+        ImGui::TextColored(kDim, "%s", sectorName(s, v.location, ui.session.player()).c_str());
         if (const game::Fleet* f = s.fleet(v.fleet)) ImGui::TextColored(kDim, "In fleet %s (orders go to the fleet)", f->name.c_str());
         ImGui::Dummy(ImVec2(0, ui.px(10)));
         if (hovered_) {

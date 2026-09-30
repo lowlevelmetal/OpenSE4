@@ -97,7 +97,7 @@ private:
     void vehiclesContent(UiContext& ui) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
-        ImGui::TextColored(kDim, "Location: %s", sectorName(s, *where_).c_str());
+        ImGui::TextColored(kDim, "Location: %s", sectorName(s, *where_, ui.session.player()).c_str());
         const float listW = ImGui::GetContentRegionAvail().x * 0.46f;
         const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.4f;
         beginPanel(ui, "##vehicles", "Selected Vehicles", ImVec2(listW, h));

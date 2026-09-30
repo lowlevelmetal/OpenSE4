@@ -47,7 +47,7 @@ public:
             ImGui::TextColored(kDim, "You have no ships.");
         } else {
             heading(ui, ownerName(ui, owner).c_str());
-            if (auto where = ownerLocation(s, owner)) ImGui::TextColored(kDim, "At %s", sectorName(s, *where).c_str());
+            if (auto where = ownerLocation(s, owner)) ImGui::TextColored(kDim, "At %s", sectorName(s, *where, ui.session.player()).c_str());
             if (owner.fleet.valid()) ImGui::TextColored(kDim, "Fleet orders: every member follows them.");
             ImGui::Dummy(ImVec2(0, ui.px(4)));
             beginPanel(ui, "##orders", "Orders", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 4.2f));

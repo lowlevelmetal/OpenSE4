@@ -1320,6 +1320,32 @@ TEST_CASE("ai: only a successful operation whose culprit is named angers the vic
     CHECK(s.empire(a).relation(b).spiedOnUs);
 }
 
+TEST_CASE("ai: the political step at the start of a turn counts the turn processed before") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 3, 0, 10);
+    const EmpireId a{0u}, b{1u};
+    meet(s, a, b);
+    s.turn = 5;
+    const auto& table = ai::builtinProfile().anger;
+    const std::string culprit = effects::empireFullName(s.empire(b));
+    // A report of turn 4, read by a's political step at the start of turn 5
+    // (spec 05 §7.1, §8 step 4).
+    s.empire(a).log.push_back(
+        LogEntry{4, LogCategory::Intelligence, "Sabotage", "A hostile intelligence operation struck us." + intel::suspectLine(culprit), std::nullopt, {}});
+    TurnContext ctx{r, s, {}, {}, {}};
+    s.empire(a).relation(b).anger = 50;
+    ai::politicalStep(ctx, a, 4u);
+    CHECK(s.empire(a).relation(b).anger == std::clamp(50 + table.intelligenceAgainstUs, 0, 100) + table.regularDecrease);
+    // Only that turn counts; before the first processed turn nothing does.
+    s.empire(a).relation(b).anger = 50;
+    ai::politicalStep(ctx, a, 5u);
+    CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease);
+    s.empire(a).relation(b).anger = 50;
+    ai::politicalStep(ctx, a, std::nullopt);
+    CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease);
+    CHECK(s.empire(b).relation(a).anger == 50);  // one empire's step changes only its own anger
+}
+
 TEST_CASE("ai: anger starts at 50 and every term is clamped to 0-100") {
     const Rules& r = engineRules();
     GameState s = computerGame(4, 3, 0, 10);

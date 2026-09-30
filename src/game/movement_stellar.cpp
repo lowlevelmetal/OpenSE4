@@ -12,6 +12,7 @@
 #include "game/sight.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 namespace opense4::game::movement {
@@ -87,43 +88,50 @@ struct Actor {
     int64_t supply = 0;  // supply the device uses
 };
 
-class Manipulation {
-public:
-    Manipulation(TurnContext& ctx, const Order& o) : ctx_(ctx), r_(ctx.rules), s_(ctx.state), o_(o) {}
+// What the checks found for the manipulation to act on.
+struct Plan {
+    std::optional<ObjectId> object;              // the asteroid field, planet, star, warp point or storm
+    std::vector<uint32_t> types;                 // Create Planet, Create Star: the records to draw from
+    const ruleset::PlanetSize* world = nullptr;  // Construct: the planet size to build
+    std::vector<std::pair<int, int64_t>> needs;  // Construct: (Custom Group, kT) requirements
+    SystemId to;                                 // Open Warp Point: the destination
+};
 
-    std::string run(std::span<const VehicleId> members, bool& consumed) {
-        consumed = false;
+// The checks of a stellar manipulation (spec 01 §9, confirmed: binary), on a
+// state they do not change. `planning`: the order is being given, not
+// carried out, so the movement test uses the movement the vehicle will have
+// when the next movement phase starts, and Open Warp Point without a
+// destination skips the tests that need one.
+class Checks {
+public:
+    Checks(const Rules& r, const GameState& s, const Order& o, bool planning) : r_(r), cs_(s), o_(o), planning_(planning) {}
+
+    // Empty when the manipulation can happen now; noop() then tells a
+    // harmless no-op (closing a link that is already gone).
+    std::string check(std::span<const VehicleId> members) {
         if (o_.amount < 0 || o_.amount >= static_cast<int>(StellarAction::Count)) return "Unknown stellar manipulation";
         action_ = static_cast<StellarAction>(o_.amount);
         if (std::string why = chooseActor(members); !why.empty()) return why;
-        const Vehicle& v = *s_.vehicle(actor_.vehicle);
+        const Vehicle& v = *cs_.vehicle(actor_.vehicle);
         owner_ = v.owner;
         here_ = v.location;
         name_ = v.name;
-        const Design& d = s_.design(v.design);
-        const DesignEntry entry = d.entries[actor_.entry];
-        const auto abilities = r_.componentAbilities(entry.component);
-
+        abilities_ = r_.componentAbilities(cs_.design(v.design).entries[actor_.entry].component);
         // A harmless no-op: closing a link that is already gone (a simultaneous-turn race).
-        if (action_ == StellarAction::CloseWarpPoint && o_.object.valid() && o_.object.index() < s_.galaxy.objects.size() &&
-            s_.galaxy.object(o_.object).kind == ObjectKind::WarpPoint && !inSystem(s_.galaxy, o_.object))
+        if (action_ == StellarAction::CloseWarpPoint && o_.object.valid() && o_.object.index() < cs_.galaxy.objects.size() &&
+            cs_.galaxy.object(o_.object).kind == ObjectKind::WarpPoint && !inSystem(cs_.galaxy, o_.object)) {
+            noop_ = true;
             return {};
-        if (hostileHere()) return "A hostile presence in the sector prevents it";
-        if (std::string why = perform(abilities); !why.empty()) return why;
-        consumed = true;
-        // Pay for the device; one-shot devices are used up (the ship may be gone already).
-        if (Vehicle* after = s_.vehicle(actor_.vehicle); after && alive(*after) && !vehicleDestroyed(r_, s_, *after)) {
-            spendSupply(r_, s_, *after, actor_.supply);
-            if (hasAbility(abilities, AbilityKind::ComponentDestroyedOnUse)) {
-                if (after->damage.size() < d.entries.size()) after->damage.resize(d.entries.size(), 0);
-                after->damage[actor_.entry] = entryStructure(r_, d, actor_.entry);
-            }
         }
-        return {};
+        if (hostileHere()) return "A hostile presence in the sector prevents it";
+        return conditions();
     }
 
-private:
-    StarSystem& system() { return s_.galaxy.system(here_.system); }
+    bool noop() const { return noop_; }
+    const Plan& plan() const { return plan_; }
+
+protected:
+    const StarSystem& system() const { return cs_.galaxy.system(here_.system); }
 
     // The first member with a working device that can act: movement remaining
     // (except Construct, which needs none; the movement is not spent), not
@@ -132,16 +140,17 @@ private:
         const AbilityKind k = abilityFor(action_);
         std::string firstReason;
         for (VehicleId id : members) {
-            const Vehicle* v = s_.vehicle(id);
+            const Vehicle* v = cs_.vehicle(id);
             if (!v || !alive(*v) || v->status == VehicleStatus::Mothballed) continue;
-            const Design& d = s_.design(v->design);
+            const Design& d = cs_.design(v->design);
+            const int movement = planning_ ? turnMovement(r_, cs_, *v) : v->movement;
             for (size_t i = 0; i < d.entries.size(); ++i) {
-                if (!entryIntact(r_, s_, *v, i)) continue;
+                if (!entryIntact(r_, cs_, *v, i)) continue;
                 const auto ab = r_.componentAbilities(d.entries[i].component);
                 if (!hasAbility(ab, k)) continue;
-                const int64_t supply = scaledSupply(r_, s_, v->owner, mounted(r_, d.entries[i]).supplyUsed);
+                const int64_t supply = scaledSupply(r_, cs_, v->owner, mounted(r_, d.entries[i]).supplyUsed);
                 std::string why;
-                if (action_ != StellarAction::CreateConstructedPlanet && v->movement <= 0) why = "No movement left for stellar manipulation";
+                if (action_ != StellarAction::CreateConstructedPlanet && movement <= 0) why = "No movement left for stellar manipulation";
                 else if (v->status == VehicleStatus::Cloaked) why = "A cloaked ship cannot manipulate stars";
                 else if (v->supply < supply) why = "Not enough supply for stellar manipulation";
                 if (why.empty()) {
@@ -157,29 +166,29 @@ private:
     // A visible object in the sector owned by an empire without a treaty of
     // Non-Aggression or better with us (war, non-intercourse, none, or no contact).
     bool hostileTo(EmpireId other) const {
-        if (!other.valid() || other == owner_ || other.index() >= s_.empires.size()) return false;
-        const Relation& rel = s_.empire(owner_).relation(other);
+        if (!other.valid() || other == owner_ || other.index() >= cs_.empires.size()) return false;
+        const Relation& rel = cs_.empire(owner_).relation(other);
         return !rel.contact || rel.treaty < Treaty::NonAggression;
     }
 
     bool hostileHere() const {
-        for (const Vehicle& v : s_.vehicles)
-            if (alive(v) && v.location == here_ && hostileTo(v.owner) && sight::canSeeVehicle(r_, s_, owner_, v)) return true;
-        for (ObjectId o : s_.galaxy.system(here_.system).objects) {
-            if (s_.galaxy.object(o).sector != here_.sector) continue;
-            if (const Colony* c = s_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, s_, owner_, o)) return true;
+        for (const Vehicle& v : cs_.vehicles)
+            if (alive(v) && v.location == here_ && hostileTo(v.owner) && sight::canSeeVehicle(r_, cs_, owner_, v)) return true;
+        for (ObjectId o : cs_.galaxy.system(here_.system).objects) {
+            if (cs_.galaxy.object(o).sector != here_.sector) continue;
+            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, cs_, owner_, o)) return true;
         }
         return false;
     }
 
     // The object an order names, or the first object of that kind in the sector; visible to us.
-    std::optional<ObjectId> target(ObjectKind kind) {
+    std::optional<ObjectId> target(ObjectKind kind) const {
         auto usable = [&](ObjectId id) {
-            const SpaceObject& obj = s_.galaxy.object(id);
-            return matches(kind, obj.kind) && inSystem(s_.galaxy, id) && obj.system == here_.system && obj.sector == here_.sector &&
-                   sight::canSeePlanet(r_, s_, owner_, id);
+            const SpaceObject& obj = cs_.galaxy.object(id);
+            return matches(kind, obj.kind) && inSystem(cs_.galaxy, id) && obj.system == here_.system && obj.sector == here_.sector &&
+                   sight::canSeePlanet(r_, cs_, owner_, id);
         };
-        if (o_.object.valid() && o_.object.index() < s_.galaxy.objects.size() && usable(o_.object)) return o_.object;
+        if (o_.object.valid() && o_.object.index() < cs_.galaxy.objects.size() && usable(o_.object)) return o_.object;
         for (ObjectId id : system().objects)
             if (usable(id)) return id;
         return std::nullopt;
@@ -189,22 +198,20 @@ private:
     // colony's, whoever the owner, the acting empire included. `sector`
     // limits the search to one sector (Stop Planet Destroyer).
     bool blocked(SystemId sys, AbilityKind stop, std::optional<Sector> sector = std::nullopt) const {
-        for (ObjectId o : s_.galaxy.system(sys).objects) {
-            if (sector && s_.galaxy.object(o).sector != *sector) continue;
-            if (const Colony* c = s_.colony(o); c && hasAbility(colonyAbilities(r_, s_, *c), stop)) return true;
+        for (ObjectId o : cs_.galaxy.system(sys).objects) {
+            if (sector && cs_.galaxy.object(o).sector != *sector) continue;
+            if (const Colony* c = cs_.colony(o); c && hasAbility(colonyAbilities(r_, cs_, *c), stop)) return true;
         }
-        for (const Vehicle& v : s_.vehicles) {
+        for (const Vehicle& v : cs_.vehicles) {
             if (!alive(v) || v.location.system != sys || (sector && v.location.sector != *sector)) continue;
-            if (hasAbility(vehicleAbilities(r_, s_, v), stop)) return true;
+            if (hasAbility(vehicleAbilities(r_, cs_, v), stop)) return true;
         }
         return false;
     }
 
-    uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.below(types.size())]; }
-
     int count(SystemId sys, auto&& pred) const {
         int n = 0;
-        for (ObjectId o : s_.galaxy.system(sys).objects) n += pred(s_.galaxy.object(o)) ? 1 : 0;
+        for (ObjectId o : cs_.galaxy.system(sys).objects) n += pred(cs_.galaxy.object(o)) ? 1 : 0;
         return n;
     }
 
@@ -223,6 +230,166 @@ private:
             if (keysEqual(sizes[i].name, obj.size)) return static_cast<int64_t>(i) + 1;
         return 0;
     }
+
+    // Each action's own conditions; what it will act on goes into plan_.
+    std::string conditions() {
+        const StarSystem& sys = system();
+        const auto& rs = r_.data();
+        switch (action_) {
+            case StellarAction::CreatePlanet: {
+                plan_.object = target(ObjectKind::Asteroids);
+                if (!plan_.object) return "No asteroid field here";
+                if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) == 0) return "A planet needs a star in the system";
+                // Exactly min(Val 1, the field's size).
+                const int size = static_cast<int>(std::min<int64_t>(actor_.value, stellarSizeOf(rs, cs_.galaxy.object(*plan_.object))));
+                plan_.types = naturalSectorTypes(rs, ObjectKind::Planet, size);
+                if (plan_.types.empty()) return "No planet of that size can be made";
+                return {};
+            }
+            case StellarAction::DestroyPlanet: {
+                plan_.object = target(ObjectKind::Planet);
+                if (!plan_.object) return "No planet here";
+                const SpaceObject& obj = cs_.galaxy.object(*plan_.object);
+                if (sizeRecordNumber(obj) > actor_.value) return "The planet is too large";
+                if (blocked(sys.id, AbilityKind::StopPlanetDestroyer, obj.sector)) return "The planet is protected";
+                return {};
+            }
+            case StellarAction::CreateStar:
+                if (keysEqual(sys.physicalType, "Nebulae") || keysEqual(sys.physicalType, "Black Hole"))
+                    return "Stars cannot be created in this system";
+                if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) > 0) return "The system already has a star";
+                if (count(sys.id, [&](const SpaceObject& o) { return constructedWorld(o); }) > 0) return "A constructed world blocks it";
+                plan_.types = naturalSectorTypes(rs, ObjectKind::Star);
+                if (plan_.types.empty()) return "No star type exists";
+                return {};
+            case StellarAction::DestroyStar:
+                plan_.object = target(ObjectKind::Star);
+                if (!plan_.object) return "No star here";
+                if (blocked(sys.id, AbilityKind::StopStarDestroyer)) return "The star is protected";
+                return {};
+            case StellarAction::OpenWarpPoint: return openWarpPointConditions();
+            case StellarAction::CloseWarpPoint: {
+                plan_.object = target(ObjectKind::WarpPoint);
+                if (!plan_.object) return "No warp point here";
+                const ObjectId far = cs_.galaxy.object(*plan_.object).destination;
+                if (blocked(sys.id, AbilityKind::StopCloseWarpPoint) ||
+                    (far.valid() && blocked(cs_.galaxy.object(far).system, AbilityKind::StopCloseWarpPoint)))
+                    return "Warp point closure is blocked";
+                return {};
+            }
+            case StellarAction::CreateStorm: return {};
+            case StellarAction::DestroyStorm:
+                plan_.object = target(ObjectKind::Storm);
+                if (!plan_.object) return "No storm here";
+                return {};
+            case StellarAction::CreateNebulae:
+            case StellarAction::CreateBlackHole: {
+                const bool nebula = action_ == StellarAction::CreateNebulae;
+                plan_.object = target(ObjectKind::Star);
+                if (!plan_.object) return "No star here";
+                if (blocked(sys.id, nebula ? AbilityKind::StopNebulaeCreator : AbilityKind::StopBlackHoleCreator)) return "The star is protected";
+                return {};
+            }
+            case StellarAction::DestroyNebulae:
+            case StellarAction::DestroyBlackHole: {
+                const bool nebula = action_ == StellarAction::DestroyNebulae;
+                if (!keysEqual(sys.physicalType, nebula ? "Nebulae" : "Black Hole"))
+                    return nebula ? "This system is not a nebula" : "This system is not a black hole";
+                return {};
+            }
+            case StellarAction::CreateConstructedPlanet: return constructConditions();
+            case StellarAction::Count: break;
+        }
+        return "Unknown stellar manipulation";
+    }
+
+    std::string openWarpPointConditions() {
+        const SystemId from = here_.system;
+        const SystemId to = o_.location.system;
+        const bool anyDestination = planning_ && !to.valid();  // the destination is picked later
+        if (anyDestination) {
+            if (static_cast<int>(cs_.galaxy.warpPoints(from).size()) >= kMaxWarpPoints) return "Too many warp points";
+            if (blocked(from, AbilityKind::StopOpenWarpPoint)) return "Warp point creation is blocked";
+            return {};
+        }
+        if (!to.valid() || to.index() >= cs_.galaxy.systems.size() || to == from) return "Choose another system to open a warp point to";
+        const GalaxyPos a = cs_.galaxy.system(from).position, b = cs_.galaxy.system(to).position;
+        if (galaxyDistance(a, b) > actor_.value) return "That system is out of range";  // Val 1 in quadrant squares
+        const auto nb = cs_.galaxy.neighbors(from);
+        if (std::find(nb.begin(), nb.end(), to) != nb.end()) return "A warp point already leads there";
+        if (static_cast<int>(cs_.galaxy.warpPoints(from).size()) >= kMaxWarpPoints ||
+            static_cast<int>(cs_.galaxy.warpPoints(to).size()) >= kMaxWarpPoints)
+            return "Too many warp points";
+        if (blocked(from, AbilityKind::StopOpenWarpPoint) || blocked(to, AbilityKind::StopOpenWarpPoint)) return "Warp point creation is blocked";
+        plan_.to = to;
+        return {};
+    }
+
+    std::string constructConditions() {
+        plan_.object = target(ObjectKind::Star);
+        if (!plan_.object) return "No star here";
+        for (const auto& ps : r_.data().planetSizes)
+            if (ps.constructed && ps.specialAbilityId == actor_.value) plan_.world = &ps;
+        if (!plan_.world) return "Unknown constructed planet";
+        // Every requirement: the ships in this sector, whoever owns them, carry at
+        // least Val 2 kT of components whose Custom Group is Val 1.
+        for (const ParsedAbility& a : abilities_)
+            if (a.kind == AbilityKind::ConstructedPlanetRequirements) plan_.needs.emplace_back(static_cast<int>(a.value1), a.value2);
+        for (const auto& [group, tons] : plan_.needs) {
+            int64_t have = 0;
+            for (const Vehicle& v : cs_.vehicles) {
+                if (!alive(v) || v.location != here_) continue;
+                const Design& d = cs_.design(v.design);
+                for (size_t i = 0; i < d.entries.size(); ++i)
+                    if (entryIntact(r_, cs_, v, i) && r_.component(d.entries[i].component).customGroup == group)
+                        have += mounted(r_, d.entries[i]).tonnage;
+            }
+            if (have < tons) return "The construction materials are not all here";
+        }
+        return {};
+    }
+
+    const Rules& r_;
+    const GameState& cs_;
+    const Order& o_;
+    bool planning_ = false;
+    StellarAction action_ = StellarAction::Count;
+    Actor actor_;
+    std::span<const ParsedAbility> abilities_;
+    EmpireId owner_;
+    Location here_;
+    std::string name_;
+    Plan plan_;
+    bool noop_ = false;
+};
+
+// A manipulation carried out during the movement phase: the checks, then the result.
+class Manipulation : public Checks {
+public:
+    Manipulation(TurnContext& ctx, const Order& o) : Checks(ctx.rules, ctx.state, o, false), ctx_(ctx), s_(ctx.state) {}
+
+    std::string run(std::span<const VehicleId> members, bool& consumed) {
+        consumed = false;
+        if (std::string why = check(members); !why.empty()) return why;
+        if (noop()) return {};
+        perform();
+        consumed = true;
+        // Pay for the device; one-shot devices are used up (the ship may be gone already).
+        if (Vehicle* after = s_.vehicle(actor_.vehicle); after && alive(*after) && !vehicleDestroyed(r_, s_, *after)) {
+            spendSupply(r_, s_, *after, actor_.supply);
+            if (hasAbility(abilities_, AbilityKind::ComponentDestroyedOnUse)) {
+                const Design& d = s_.design(after->design);
+                if (after->damage.size() < d.entries.size()) after->damage.resize(d.entries.size(), 0);
+                after->damage[actor_.entry] = entryStructure(r_, d, actor_.entry);
+            }
+        }
+        return {};
+    }
+
+private:
+    StarSystem& system() { return s_.galaxy.system(here_.system); }
+
+    uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.below(types.size())]; }
 
     ObjectId append(SpaceObject obj, SystemId sys) {
         obj.id = ObjectId{s_.galaxy.objects.size()};
@@ -287,75 +454,50 @@ private:
 
     std::string planetName(SystemId sys) const { return std::format("{} {}", s_.galaxy.system(sys).name, romanNumeral(nextPlanetNumeral(s_.galaxy, sys))); }
 
-    std::string perform(std::span<const ParsedAbility> abilities) {
+    // The result, after every check has passed.
+    void perform() {
         StarSystem& sys = system();
         const auto& rs = r_.data();
         switch (action_) {
             case StellarAction::CreatePlanet: {
-                const auto field = target(ObjectKind::Asteroids);
-                if (!field) return "No asteroid field here";
-                if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) == 0) return "A planet needs a star in the system";
-                // Exactly min(Val 1, the field's size).
-                const int size = static_cast<int>(std::min<int64_t>(actor_.value, stellarSizeOf(rs, s_.galaxy.object(*field))));
-                const auto types = naturalSectorTypes(rs, ObjectKind::Planet, size);
-                if (types.empty()) return "No planet of that size can be made";
-                loseColony(ctx_, *field, "The asteroid field became a planet.");
+                loseColony(ctx_, *plan_.object, "The asteroid field became a planet.");
                 const std::string name = planetName(sys.id);
-                SpaceObject& obj = s_.galaxy.object(*field);
+                SpaceObject& obj = s_.galaxy.object(*plan_.object);
                 obj.kind = ObjectKind::Planet;
                 obj.abilities.clear();
-                applySectorType(rs, obj, pick(types));
+                applySectorType(rs, obj, pick(plan_.types));
                 obj.conditions = rollConditions(false, s_.rng);  // the values are kept
                 obj.name = name;
                 announce(std::format("Planet Created: {}", obj.name));
-                return {};
+                return;
             }
             case StellarAction::DestroyPlanet: {
-                const auto planet = target(ObjectKind::Planet);
-                if (!planet) return "No planet here";
-                SpaceObject& obj = s_.galaxy.object(*planet);
-                if (sizeRecordNumber(obj) > actor_.value) return "The planet is too large";
-                if (blocked(sys.id, AbilityKind::StopPlanetDestroyer, obj.sector)) return "The planet is protected";
-                destroyPlanet(ctx_, *planet, "The planet was destroyed.", s_.rng);
-                announce(std::format("{}{}", kPlanetDestroyed, obj.name));
-                return {};
+                destroyPlanet(ctx_, *plan_.object, "The planet was destroyed.", s_.rng);
+                announce(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name));
+                return;
             }
             case StellarAction::CreateStar: {
-                if (keysEqual(sys.physicalType, "Nebulae") || keysEqual(sys.physicalType, "Black Hole"))
-                    return "Stars cannot be created in this system";
-                if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) > 0) return "The system already has a star";
-                if (count(sys.id, [&](const SpaceObject& o) { return constructedWorld(o); }) > 0) return "A constructed world blocks it";
-                const auto types = naturalSectorTypes(rs, ObjectKind::Star);
-                if (types.empty()) return "No star type exists";
                 SpaceObject star;
                 star.kind = ObjectKind::Star;
                 star.sector = here_.sector;
-                applySectorType(rs, star, pick(types));
+                applySectorType(rs, star, pick(plan_.types));
                 star.name = sys.name + " Star";
                 announce(std::format("Star Created: {}", star.name));
                 append(std::move(star), sys.id);
-                return {};
+                return;
             }
-            case StellarAction::DestroyStar: {
-                const auto star = target(ObjectKind::Star);
-                if (!star) return "No star here";
-                if (blocked(sys.id, AbilityKind::StopStarDestroyer)) return "The star is protected";
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*star).name));
+            case StellarAction::DestroyStar:
+                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
                 shockwave(sys.id, "A star exploded in the system.");
-                return {};
-            }
-            case StellarAction::OpenWarpPoint: return openWarpPoint();
+                return;
+            case StellarAction::OpenWarpPoint: openWarpPoint(); return;
             case StellarAction::CloseWarpPoint: {
-                const auto wp = target(ObjectKind::WarpPoint);
-                if (!wp) return "No warp point here";
-                const ObjectId far = s_.galaxy.object(*wp).destination;
-                if (blocked(sys.id, AbilityKind::StopCloseWarpPoint) ||
-                    (far.valid() && blocked(s_.galaxy.object(far).system, AbilityKind::StopCloseWarpPoint)))
-                    return "Warp point closure is blocked";
-                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *wp)));
+                const ObjectId wp = *plan_.object;
+                const ObjectId far = s_.galaxy.object(wp).destination;
+                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, wp)));
                 if (far.valid() && inSystem(s_.galaxy, far)) remove(far);
-                remove(*wp);
-                return {};
+                remove(wp);
+                return;
             }
             case StellarAction::CreateStorm: {
                 const auto types = naturalSectorTypes(rs, ObjectKind::Storm);
@@ -378,23 +520,16 @@ private:
                 storm.name = "Storm";
                 announce(std::format("Storm created in {}", sys.name));
                 append(std::move(storm), sys.id);
-                return {};
+                return;
             }
-            case StellarAction::DestroyStorm: {
-                const auto storm = target(ObjectKind::Storm);
-                if (!storm) return "No storm here";
+            case StellarAction::DestroyStorm:
                 announce(std::format("Storm destroyed in {}", sys.name));
-                remove(*storm);
-                return {};
-            }
+                remove(*plan_.object);
+                return;
             case StellarAction::CreateNebulae:
             case StellarAction::CreateBlackHole: {
                 const bool nebula = action_ == StellarAction::CreateNebulae;
-                const auto star = target(ObjectKind::Star);
-                if (!star) return "No star here";
-                if (blocked(sys.id, nebula ? AbilityKind::StopNebulaeCreator : AbilityKind::StopBlackHoleCreator))
-                    return "The star is protected";
-                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*star).name));
+                announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
                 announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name));
                 shockwave(sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.");
                 if (nebula) setSystemKind(system(), "Nebulae", {ability(AbilityKind::SectorSightObscuration, 3)});
@@ -402,35 +537,24 @@ private:
                     setSystemKind(system(), "Black Hole",
                                   {ability(AbilityKind::SystemMovementTowardsCenter, 2), ability(AbilityKind::SystemDestructiveCenter, 5000),
                                    ability(AbilityKind::SectorShieldDisruption, 5000)});
-                return {};
+                return;
             }
             case StellarAction::DestroyNebulae:
             case StellarAction::DestroyBlackHole: {
                 const bool nebula = action_ == StellarAction::DestroyNebulae;
-                if (!keysEqual(sys.physicalType, nebula ? "Nebulae" : "Black Hole"))
-                    return nebula ? "This system is not a nebula" : "This system is not a black hole";
                 announce(std::format("{} removed from {}", nebula ? "Nebula" : "Black hole", sys.name));
                 setSystemKind(sys, "Normal", {});  // a standard, start-eligible system; the objects stay
-                return {};
+                return;
             }
-            case StellarAction::CreateConstructedPlanet: return construct(abilities);
-            case StellarAction::Count: break;
+            case StellarAction::CreateConstructedPlanet: construct(); return;
+            case StellarAction::Count: return;
         }
-        return "Unknown stellar manipulation";
     }
 
-    std::string openWarpPoint() {
+    void openWarpPoint() {
         const SystemId from = here_.system;
-        const SystemId to = o_.location.system;
-        if (!to.valid() || to.index() >= s_.galaxy.systems.size() || to == from) return "Choose another system to open a warp point to";
+        const SystemId to = plan_.to;
         const GalaxyPos a = s_.galaxy.system(from).position, b = s_.galaxy.system(to).position;
-        if (galaxyDistance(a, b) > actor_.value) return "That system is out of range";  // Val 1 in quadrant squares
-        const auto nb = s_.galaxy.neighbors(from);
-        if (std::find(nb.begin(), nb.end(), to) != nb.end()) return "A warp point already leads there";
-        if (static_cast<int>(s_.galaxy.warpPoints(from).size()) >= kMaxWarpPoints ||
-            static_cast<int>(s_.galaxy.warpPoints(to).size()) >= kMaxWarpPoints)
-            return "Too many warp points";
-        if (blocked(from, AbilityKind::StopOpenWarpPoint) || blocked(to, AbilityKind::StopOpenWarpPoint)) return "Warp point creation is blocked";
         // Both ends use the first plain warp point record and carry no ability.
         std::optional<uint32_t> type;
         const auto& types = r_.data().sectorObjectTypes;
@@ -454,41 +578,16 @@ private:
         s_.galaxy.object(far).destination = near;
         sight::learnWarpLink(s_, owner_, near);
         announce(std::format("Warp Point Opened to {}", s_.galaxy.system(to).name));
-        return {};
     }
 
-    std::string construct(std::span<const ParsedAbility> abilities) {
-        const auto star = target(ObjectKind::Star);
-        if (!star) return "No star here";
-        const ruleset::PlanetSize* size = nullptr;
-        for (const auto& ps : r_.data().planetSizes)
-            if (ps.constructed && ps.specialAbilityId == actor_.value) size = &ps;
-        if (!size) return "Unknown constructed planet";
-        // Every requirement: the ships in this sector, whoever owns them, carry at
-        // least Val 2 kT of components whose Custom Group is Val 1.
-        std::vector<std::pair<int, int64_t>> needs;
-        for (const ParsedAbility& a : abilities)
-            if (a.kind == AbilityKind::ConstructedPlanetRequirements) needs.emplace_back(static_cast<int>(a.value1), a.value2);
-        auto inGroup = [&](const Vehicle& v, size_t i, int group) {
-            return entryIntact(r_, s_, v, i) && r_.component(s_.design(v.design).entries[i].component).customGroup == group;
-        };
-        for (const auto& [group, tons] : needs) {
-            int64_t have = 0;
-            for (const Vehicle& v : s_.vehicles) {
-                if (!alive(v) || v.location != here_) continue;
-                const Design& d = s_.design(v.design);
-                for (size_t i = 0; i < d.entries.size(); ++i)
-                    if (inGroup(v, i, group)) have += mounted(r_, d.entries[i]).tonnage;
-            }
-            if (have < tons) return "The construction materials are not all here";
-        }
-
+    void construct() {
+        const ruleset::PlanetSize& size = *plan_.world;
         // A planet of that size, of the builder's type and atmosphere when such a record exists.
         const Race& race = s_.empire(owner_).race;
         const auto& types = r_.data().sectorObjectTypes;
         std::vector<uint32_t> own, any;
         for (uint32_t i = 0; i < types.size(); ++i) {
-            if (parseObjectKind(types[i].physicalType) != ObjectKind::Planet || !keysEqual(types[i].planetSize, size->name)) continue;
+            if (parseObjectKind(types[i].physicalType) != ObjectKind::Planet || !keysEqual(types[i].planetSize, size.name)) continue;
             any.push_back(i);
             if (keysEqual(types[i].planetPhysicalType, race.nativeSurface) && keysEqual(types[i].planetAtmosphere, race.atmosphere)) own.push_back(i);
         }
@@ -497,7 +596,7 @@ private:
         world.kind = ObjectKind::Planet;
         world.sector = here_.sector;
         if (!own.empty() || !any.empty()) applySectorType(r_.data(), world, pick(own.empty() ? any : own));
-        world.size = size->name;
+        world.size = size.name;
         if (world.surface.empty()) world.surface = race.nativeSurface;
         if (world.atmosphere.empty()) world.atmosphere = race.atmosphere;
         const bool finite = s_.options.finiteResources;
@@ -506,7 +605,7 @@ private:
         world.conditions = 150;  // Optimal (1.5)
         world.name = planetName(sysId);
         announce(std::format("Planet Created: {}", world.name));
-        remove(*star);  // the star is used up
+        remove(*plan_.object);  // the star is used up
         append(std::move(world), sysId);
         // Every builder ship here carrying the device or any required material is destroyed.
         for (Vehicle& v : s_.vehicles) {
@@ -515,22 +614,14 @@ private:
             bool used = false;
             for (size_t i = 0; i < d.entries.size() && !used; ++i) {
                 used = hasAbility(r_.componentAbilities(d.entries[i].component), AbilityKind::CreateConstructedPlanet);
-                for (const auto& need : needs) used = used || r_.component(d.entries[i].component).customGroup == need.first;
+                for (const auto& need : plan_.needs) used = used || r_.component(d.entries[i].component).customGroup == need.first;
             }
             if (used) vehicleLost(ctx_, v, "Used up in planet construction.");
         }
-        return {};
     }
 
     TurnContext& ctx_;
-    const Rules& r_;
     GameState& s_;
-    const Order& o_;
-    StellarAction action_ = StellarAction::Count;
-    Actor actor_;
-    EmpireId owner_;
-    Location here_;
-    std::string name_;
 };
 
 } // namespace
@@ -564,6 +655,14 @@ void objectsAppended(GameState& s) {
 } // namespace opense4::game::movement::detail
 
 namespace opense4::game::movement {
+
+std::string stellarProblem(const Rules& r, const GameState& s, VehicleId vehicle, const Order& o, ObjectId* target) {
+    detail::Checks checks(r, s, o, true);
+    const std::array<VehicleId, 1> members{vehicle};
+    std::string why = checks.check(members);
+    if (why.empty() && target && checks.plan().object) *target = *checks.plan().object;
+    return why;
+}
 
 void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng) {
     GameState& s = ctx.state;

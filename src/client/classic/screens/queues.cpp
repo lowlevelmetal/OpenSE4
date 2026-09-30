@@ -681,7 +681,7 @@ private:
         ImGui::TextUnformatted(name.c_str());
         ImGui::PopFont();
         const game::Location where = v ? v->location : game::locationOf(s.galaxy, target_.planet);
-        if (v) ImGui::TextColored(kTextDim, "%s at %s", s.design(v->design).name.c_str(), sectorName(s, where).c_str());
+        if (v) ImGui::TextColored(kTextDim, "%s at %s", s.design(v->design).name.c_str(), sectorName(s, where, ui.session.player()).c_str());
         else ImGui::TextColored(kTextDim, "%s, %s", c ? c->colonyType.c_str() : "", s.galaxy.system(where.system).name.c_str());
         ImGui::TextColored(kTextLabel, "Rate");
         ImGui::SameLine(ui.px(84));
@@ -711,7 +711,7 @@ private:
         std::string moveTo = "None";
         if (q.autoWaypoint >= 0 && static_cast<size_t>(q.autoWaypoint) < ui.me().waypoints.size()) {
             const game::Waypoint& w = ui.me().waypoints[static_cast<size_t>(q.autoWaypoint)];
-            moveTo = w.set ? std::format("{} ({})", w.name.empty() ? std::format("Waypoint {}", q.autoWaypoint + 1) : w.name, sectorName(s, w.location))
+            moveTo = w.set ? std::format("{} ({})", w.name.empty() ? std::format("Waypoint {}", q.autoWaypoint + 1) : w.name, sectorName(s, w.location, ui.session.player()))
                            : std::format("Waypoint {} (not set)", q.autoWaypoint + 1);
         }
         labelValue(ui, "New ships to", moveTo, 90);
@@ -1026,7 +1026,7 @@ private:
         bool any = false;
         for (size_t i = 0; i < wps.size(); ++i) {
             const game::Waypoint& w = wps[i];
-            const std::string label = w.set ? std::format("{}. {} - {}", i + 1, w.name.empty() ? "Waypoint" : w.name, sectorName(ui.state(), w.location))
+            const std::string label = w.set ? std::format("{}. {} - {}", i + 1, w.name.empty() ? "Waypoint" : w.name, sectorName(ui.state(), w.location, ui.session.player()))
                                              : std::format("{}. (not set)", i + 1);
             if (ImGui::Selectable(label.c_str(), flags.autoWaypoint == static_cast<int>(i), w.set ? 0 : ImGuiSelectableFlags_Disabled)) {
                 flags.autoWaypoint = static_cast<int>(i);

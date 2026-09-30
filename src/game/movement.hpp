@@ -137,6 +137,17 @@ void purgeObsoleteDesigns(TurnContext& ctx);
 // ship, base and unit group; spends no movement or supply; starts no combat.
 void runStellarHazards(TurnContext& ctx);
 
+// Why `vehicle` cannot carry out stellar manipulation order `o` (Order::amount
+// = the StellarAction) when the next movement phase runs it, or empty when it
+// can: the checks the turn makes (spec 01 §9, confirmed: binary) on the
+// current state, with the movement the vehicle will have then. A working part
+// with the ability and supply for it, movement (except Construct), not
+// cloaked, no visible hostile in the sector, and the action's own conditions.
+// Open Warp Point without a destination (invalid o.location.system) is
+// checked for what does not depend on it. `target`, when given, receives the
+// object the manipulation would act on (none for some actions).
+std::string stellarProblem(const Rules& r, const GameState& s, VehicleId vehicle, const Order& o, ObjectId* target = nullptr);
+
 // The Destroy Planet result (spec 01 §9, confirmed: binary): the colony is
 // lost (its owner is told `cause`) and the planet becomes a random natural
 // asteroid field of the same stellar size that keeps its name, values and

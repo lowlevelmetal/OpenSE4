@@ -196,7 +196,7 @@ ruleset::Ruleset buildEngineRuleset() {
     b.comp("Test Emergency Thruster", 10, 10, {20, 0, 20}, kShip,
            {ab(AbilityKind::EmergencyEnergy, 3), ab(AbilityKind::ComponentDestroyedOnUse)}, {prop});
     b.comp("Test Self Destruct", 10, 10, {20, 0, 20}, kShipBase, {ab(AbilityKind::SelfDestruct, 50)}, {con});
-    b.comp("Test Planet Maker", 100, 50, {2000, 500, 2000}, kShip, {ab(AbilityKind::CreatePlanetSize, 1)}, {b.req("Test Physics", 5)});
+    b.comp("Test Planet Maker", 100, 50, {2000, 500, 2000}, kShip, {ab(AbilityKind::CreatePlanetSize, 3)}, {b.req("Test Physics", 5)});
 
     // ---- Weapons.
     b.weapon("Test Laser", WeaponKind::DirectFire, 20, 15, {40, 0, 10}, kShipBase | maskOf(VehicleType::Satellite),

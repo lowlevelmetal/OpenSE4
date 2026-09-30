@@ -743,7 +743,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             ImGui::PushID(int(id.value));
             image(ui, objectSprite(ui, o), {30, 30});
             ImGui::SameLine();
-            if (ImGui::Selectable(o.name.c_str(), false, 0, ImVec2(0, ui.px(30)))) {
+            if (ImGui::Selectable(objectName(s, id, ui.session.player()).c_str(), false, 0, ImVec2(0, ui.px(30)))) {
                 clearSelection();
                 sector_ = o.sector;
                 object_ = id;
@@ -802,11 +802,14 @@ void MainWindow::overlayText(UiContext& ui) {
         for (game::ObjectId id : sys.objects) ++counts[s.galaxy.object(id).sector];
         for (const auto& [sector, n] : counts)
             if (n > 1) text(sectorCenter(sector) + Vec2{10, 8}, 11, IM_COL32_WHITE, std::to_string(n));
-        const auto& known = ui.me().knowledge.knownWarpLink;
         for (game::ObjectId id : settings().showWarpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
+            // A warp point is named after its destination once we have explored it
+            // (docs/spec/01 §5.4, sight::warpPointName).
             const game::SpaceObject& wp = s.galaxy.object(id);
-            if (!wp.destination.valid() || id.index() >= known.size() || !known[id.index()]) continue;
-            const std::string& dest = s.galaxy.system(s.galaxy.object(wp.destination).system).name;
+            if (!wp.destination.valid()) continue;
+            const game::SystemId to = s.galaxy.object(wp.destination).system;
+            if (!s.options.omnipresent && !ui.me().hasExplored(to)) continue;
+            const std::string& dest = s.galaxy.system(to).name;
             const ImVec2 size = font->CalcTextSizeA(11 * k, FLT_MAX, 0.0f, dest.c_str());
             const ImVec2 c = ui.at(sectorCenter(wp.sector) + Vec2{0, 18});
             dl->AddText(font, 11 * k, ImVec2{c.x - size.x * 0.5f, c.y}, IM_COL32(184, 200, 255, 255), dest.c_str());

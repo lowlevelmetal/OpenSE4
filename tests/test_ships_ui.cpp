@@ -197,8 +197,14 @@ TEST_CASE("ship windows: stellar manipulation checks") {
     s.galaxy.object(field).kind = ObjectKind::Asteroids;
     s.vehicle(id)->location = locationOf(s.galaxy, field);
     const shipui::StellarCheck ok = shipui::checkStellar(r, s, *s.vehicle(id), StellarAction::CreatePlanet);
-    CHECK(ok.possible);
+    CHECK_MESSAGE(ok.possible, ok.reason);
     CHECK(ok.target == field);
+    // The engine's own checks (docs/spec/01 §9), for example: not while cloaked.
+    s.vehicle(id)->status = VehicleStatus::Cloaked;
+    const shipui::StellarCheck cloaked = shipui::checkStellar(r, s, *s.vehicle(id), StellarAction::CreatePlanet);
+    CHECK_FALSE(cloaked.possible);
+    CHECK(cloaked.reason == "A cloaked ship cannot manipulate stars.");
+    s.vehicle(id)->status = VehicleStatus::Normal;
 
     const Order o = shipui::stellarOrder(*s.vehicle(id), StellarAction::CreatePlanet, ok.target);
     CHECK(o.kind == OrderKind::StellarManipulation);
