@@ -394,6 +394,23 @@ struct Applier {
         });
     }
 
+    // A queued facility switches to another level of its family in place: its
+    // count and what was paid into it stay (spec 02 §6.6, spec 05 §7.5).
+    R operator()(const cmd::QueueReplaceFacility& c) {
+        if (c.target.vehicle.valid()) return R::fail("Only planets build facilities");
+        return queueEdit(c.target, [&](ConstructionQueue& q) {
+            if (c.index >= q.items.size()) return R::fail("No such item");
+            QueueItem& item = q.items[c.index];
+            if (item.kind != QueueItem::Kind::Facility) return R::fail("Only a queued facility can be switched");
+            if (c.facility >= r.data().facilities.size()) return R::fail("Unknown facility");
+            if (!r.facilityAvailable(emp(), c.facility)) return R::fail("Facility not yet researched");
+            const int family = r.facility(item.facility).family;
+            if (family == 0 || r.facility(c.facility).family != family) return R::fail("Not a facility of the same family");
+            item.facility = c.facility;
+            return R{};
+        });
+    }
+
     R operator()(const cmd::QueueFlags& c) {
         return queueEdit(c.target, [&](ConstructionQueue& q) {
             if (c.autoWaypoint < -1 || c.autoWaypoint >= static_cast<int>(emp().waypoints.size())) return R::fail("Invalid waypoint");
@@ -955,6 +972,7 @@ OPENSE4_CMD_NAME(SetEncounterOptions)
 OPENSE4_CMD_NAME(EnterSector)
 OPENSE4_CMD_NAME(EditDesign)
 OPENSE4_CMD_NAME(OpenVehicleReport)
+OPENSE4_CMD_NAME(QueueReplaceFacility)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

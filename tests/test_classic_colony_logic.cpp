@@ -174,12 +174,26 @@ TEST_CASE("classic ui: facility upgrades and choices") {
         return std::any_of(list.begin(), list.end(), [&](const QueueItem& q) { return q.kind == QueueItem::Kind::Upgrade && q.facility == mine2; });
     };
     CHECK_FALSE(upgradesMine(possibleUpgrades(r, s, kMe, home)));
+    QueueItem queuedMine;
+    queuedMine.kind = QueueItem::Kind::Facility;
+    queuedMine.facility = mine;
+    queuedMine.spent = {7, 0, 0};
+    home.queue.items.insert(home.queue.items.begin(), queuedMine);
+    CHECK(queuedFacilitySwitches(r, s, kMe, home).empty());
     auto latest = facilityChoices(r, s.empire(kMe), true);
     CHECK(std::find(latest.begin(), latest.end(), mine) != latest.end());
 
     s.empire(kMe).techLevels[techArea(r, "Test Economics").index()] = 3;
     const auto upgrades = possibleUpgrades(r, s, kMe, home);
     REQUIRE(upgradesMine(upgrades));
+    // A queued older mine moves to the newest level in place (spec 02 §6.6).
+    const auto switches = queuedFacilitySwitches(r, s, kMe, home);
+    REQUIRE(switches.size() == 1);
+    CHECK(switches[0] == std::pair<uint32_t, uint32_t>{0, mine2});
+    REQUIRE(apply(r, s, kMe, cmd::QueueReplaceFacility{{home.planet, {}}, switches[0].first, switches[0].second}).ok);
+    CHECK(homeworld(s, kMe).queue.items.front().facility == mine2);
+    CHECK(homeworld(s, kMe).queue.items.front().spent == Resources{7, 0, 0});
+    CHECK(queuedFacilitySwitches(r, s, kMe, homeworld(s, kMe)).empty());
     latest = facilityChoices(r, s.empire(kMe), true);
     CHECK(std::find(latest.begin(), latest.end(), mine) == latest.end());
     CHECK(std::find(latest.begin(), latest.end(), mine2) != latest.end());

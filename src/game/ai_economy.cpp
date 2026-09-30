@@ -244,9 +244,8 @@ Resources queueItemCost(const Planner& p, const cmd::QueueTarget& t, const Queue
 // income in all three resources, checked before each planet (so a zero
 // budget still upgrades the first planet). A planet's queue need not be
 // empty, and every queued facility of an older version switches to the
-// newest one. OpenSE4 has no command that changes a queued item in place:
-// the switch removes the item and queues the newest version at the same
-// place, so what was paid into an older item is lost (a command is needed).
+// newest one in place, keeping its count and what was paid into it
+// (cmd::QueueReplaceFacility, spec 02 §6.6).
 void planUpgrades(Planner& p, const std::vector<ObjectId>& planets) {
     const Resources net = p.netIncome();
     const Resources half{net.v[0] / 2, net.v[1] / 2, net.v[2] / 2};  // division toward zero
@@ -258,18 +257,14 @@ void planUpgrades(Planner& p, const std::vector<ObjectId>& planets) {
         const Colony* c = p.st.colony(planet);
         if (!c) continue;
         const cmd::QueueTarget target{planet, {}};
-        // Queued facilities of an older version switch to the newest one.
-        for (size_t i = c->queue.items.size(); i-- > 0;) {
-            c = p.st.colony(planet);
-            const QueueItem item = c->queue.items[i];
+        // Queued facilities of an older version switch to the newest one in place.
+        for (size_t i = 0; i < c->queue.items.size(); ++i) {
+            const QueueItem& item = c->queue.items[i];
             if (item.kind != QueueItem::Kind::Facility || p.r.facility(item.facility).family == 0) continue;
             const auto latest = p.r.latestFacilityOfFamily(p.emp(), p.r.facility(item.facility).family);
             if (!latest || *latest == item.facility || p.r.facility(*latest).romanNumeral <= p.r.facility(item.facility).romanNumeral) continue;
-            QueueItem newer = item;
-            newer.facility = *latest;
-            // Should the newer version be refused, the old one goes back in its place.
-            if (p.emit(cmd::QueueRemove{target, static_cast<uint32_t>(i)}) && !p.emit(cmd::QueueAdd{target, newer, static_cast<int32_t>(i)}))
-                p.emit(cmd::QueueAdd{target, item, static_cast<int32_t>(i)});
+            p.emit(cmd::QueueReplaceFacility{target, static_cast<uint32_t>(i), *latest});
+            c = p.st.colony(planet);
         }
         c = p.st.colony(planet);
         std::vector<int> families;

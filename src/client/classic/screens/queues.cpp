@@ -394,15 +394,23 @@ private:
         const game::EmpireId me = ui.session.player();
         const std::vector<game::ObjectId> only = selectedPlanets();
         std::vector<std::pair<game::ObjectId, game::QueueItem>> work;
+        // Facility items already queued move to the newest level too, keeping
+        // their counts and what was paid (spec 02 §6.6).
+        std::vector<game::cmd::QueueReplaceFacility> switches;
         for (const auto& c : s.colonies) {
-            if (!c || c->owner != me || c->totalPopulation() == 0) continue;
+            if (!c || c->owner != me) continue;
             if (!only.empty() && std::find(only.begin(), only.end(), c->planet) == only.end()) continue;
+            for (const auto& [index, facility] : queuedFacilitySwitches(ui.rules(), s, me, *c))
+                switches.push_back({{c->planet, {}}, index, facility});
+            if (c->totalPopulation() == 0) continue;
             for (const game::QueueItem& item : possibleUpgrades(ui.rules(), s, me, *c)) work.emplace_back(c->planet, item);
         }
-        if (work.empty()) {
+        if (work.empty() && switches.empty()) {
             status_.info("No facilities can be upgraded right now");
             return;
         }
+        int switched = 0;
+        for (const game::cmd::QueueReplaceFacility& c : switches) switched += status_.issue(ui, c) ? 1 : 0;
         int done = 0;
         std::vector<game::ObjectId> planets;
         for (const auto& [planet, item] : work)
@@ -410,8 +418,11 @@ private:
                 ++done;
                 if (std::find(planets.begin(), planets.end(), planet) == planets.end()) planets.push_back(planet);
             }
-        if (done == static_cast<int>(work.size()))
-            status_.info(std::format("Queued {} upgrade{} on {} colon{}", done, done == 1 ? "" : "s", planets.size(), planets.size() == 1 ? "y" : "ies"));
+        if (done == static_cast<int>(work.size()) && switched == static_cast<int>(switches.size())) {
+            std::string text = std::format("Queued {} upgrade{} on {} colon{}", done, done == 1 ? "" : "s", planets.size(), planets.size() == 1 ? "y" : "ies");
+            if (switched > 0) text += std::format("; {} queued facilit{} moved to the newest level", switched, switched == 1 ? "y" : "ies");
+            status_.info(text);
+        }
     }
 
     void multiAddPopup(UiContext& ui) {

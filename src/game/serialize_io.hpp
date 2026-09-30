@@ -520,6 +520,7 @@ template <class Ar> void io(Ar& ar, cmd::QueueRemove& c) { fields(ar, c.target, 
 template <class Ar> void io(Ar& ar, cmd::QueueMove& c) { fields(ar, c.target, c.from, c.to); }
 template <class Ar> void io(Ar& ar, cmd::QueueSetCount& c) { fields(ar, c.target, c.index, c.count); }
 template <class Ar> void io(Ar& ar, cmd::QueueFlags& c) { fields(ar, c.target, c.onHold, c.repeat, c.emergency, c.autoWaypoint); }
+template <class Ar> void io(Ar& ar, cmd::QueueReplaceFacility& c) { fields(ar, c.target, c.index, c.facility); }
 template <class Ar> void io(Ar& ar, cmd::Retrofit& c) { fields(ar, c.vehicle, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyType& c) { fields(ar, c.planet, c.colonyType); }
 template <class Ar> void io(Ar& ar, cmd::AbandonPlanet& c) { fields(ar, c.planet); }

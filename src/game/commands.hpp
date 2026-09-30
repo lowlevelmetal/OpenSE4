@@ -64,6 +64,11 @@ struct QueueRemove { QueueTarget target; uint32_t index = 0; };
 struct QueueMove { QueueTarget target; uint32_t from = 0; uint32_t to = 0; };
 struct QueueSetCount { QueueTarget target; uint32_t index = 0; int count = 1; };
 struct QueueFlags { QueueTarget target; bool onHold = false; bool repeat = false; bool emergency = false; int autoWaypoint = -1; };
+// Switches a queued facility item, in place, to another researched facility
+// of the same family, keeping its count and what was paid into it: the
+// Upgrade Facilities button moves queued facility items to the newest level
+// (spec 02 §6.6), and so do the computer player's upgrades (spec 05 §7.5).
+struct QueueReplaceFacility { QueueTarget target; uint32_t index = 0; uint32_t facility = 0; };
 struct Retrofit { VehicleId vehicle; DesignId design; };  // at an own space yard in the vehicle's sector (spec 03 §14)
 
 // ---- Planets -------------------------------------------------------------------------------
@@ -147,7 +152,8 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport>;
+    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
+    cmd::QueueReplaceFacility>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

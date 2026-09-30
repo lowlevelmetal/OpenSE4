@@ -2661,10 +2661,46 @@ TEST_CASE("ai: facility upgrades go on while what was queued is at most half the
     ai::detail::planFacilities(p, false);
     CHECK(upgrades(p, first) == 1);
     CHECK(upgrades(p, later) == 1);
-    // The queued old version switched to the newest, paid or not.
-    bool switched = false;
-    for (const QueueItem& q : p.st.colony(*second)->queue.items) switched = switched || (q.kind == QueueItem::Kind::Facility && q.facility == newMine);
-    CHECK(switched);
+    // The queued old version switched to the newest in place, keeping what was
+    // paid into it (spec 02 §6.6, spec 05 §7.5).
+    const auto& items = p.st.colony(*second)->queue.items;
+    REQUIRE_FALSE(items.empty());
+    CHECK(items.front().kind == QueueItem::Kind::Facility);
+    CHECK(items.front().facility == newMine);
+    CHECK(items.front().spent == Resources{10, 0, 0});
+    bool replaced = false;
+    for (const Command& c : p.out) replaced = replaced || std::holds_alternative<cmd::QueueReplaceFacility>(c);
+    CHECK(replaced);
+}
+
+TEST_CASE("commands: a queued facility switches to another level of its family in place") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(8, 2, 0, 10);
+    const EmpireId me{0u}, other{1u};
+    researchEverything(r, s.empire(me));
+    const uint32_t oldMine = facilityIndex(r, "Test Mine"), newMine = facilityIndex(r, "Test Mine II");
+    Colony& home = homeworld(s, me);
+    QueueItem queued;
+    queued.kind = QueueItem::Kind::Facility;
+    queued.facility = oldMine;
+    queued.count = 2;
+    queued.spent = {40, 5, 0};
+    home.queue.items = {queued};
+    const cmd::QueueTarget target{home.planet, {}};
+    // Only an own planet's queued facility, to a researched level of the same family.
+    CHECK_FALSE(apply(r, s, other, cmd::QueueReplaceFacility{target, 0, newMine}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::QueueReplaceFacility{target, 1, newMine}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::QueueReplaceFacility{target, 0, static_cast<uint32_t>(r.data().facilities.size())}).ok);
+    for (uint32_t f = 0; f < r.data().facilities.size(); ++f)
+        if (r.facility(f).family != r.facility(oldMine).family) {
+            CHECK_FALSE(apply(r, s, me, cmd::QueueReplaceFacility{target, 0, f}).ok);
+            break;
+        }
+    REQUIRE(apply(r, s, me, cmd::QueueReplaceFacility{target, 0, newMine}).ok);
+    const QueueItem& now = homeworld(s, me).queue.items.front();
+    CHECK(now.facility == newMine);
+    CHECK(now.count == 2);
+    CHECK(now.spent == Resources{40, 5, 0});
 }
 
 TEST_CASE("ai: the current player at a battle counts it as Attacking, whatever the place") {

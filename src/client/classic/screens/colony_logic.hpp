@@ -134,6 +134,11 @@ game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game:
 // Upgrade items this colony could queue: one per facility family that has an
 // older level than the newest one researched, skipping families already queued.
 std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c);
+// Queued facility items of an older level than the newest one researched in
+// their family, with that newest level: what Upgrade Facilities switches in
+// place (spec 02 §6.6, cmd::QueueReplaceFacility). Pairs of (item index, facility).
+std::vector<std::pair<uint32_t, uint32_t>> queuedFacilitySwitches(const game::Rules& r, const game::GameState& s, game::EmpireId e,
+                                                                  const game::Colony& c);
 
 // Researched facilities; with onlyLatest, the newest level of each family.
 std::vector<uint32_t> facilityChoices(const game::Rules& r, const game::Empire& e, bool onlyLatest);

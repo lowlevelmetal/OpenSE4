@@ -378,6 +378,22 @@ std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::
     return out;
 }
 
+std::vector<std::pair<uint32_t, uint32_t>> queuedFacilitySwitches(const game::Rules& r, const game::GameState& s, game::EmpireId e,
+                                                                  const game::Colony& c) {
+    const game::Empire& emp = s.empire(e);
+    std::vector<std::pair<uint32_t, uint32_t>> out;
+    for (size_t i = 0; i < c.queue.items.size(); ++i) {
+        const game::QueueItem& q = c.queue.items[i];
+        if (q.kind != game::QueueItem::Kind::Facility || q.facility >= r.data().facilities.size()) continue;
+        const int family = r.facility(q.facility).family;
+        if (family == 0) continue;
+        const auto latest = r.latestFacilityOfFamily(emp, family);
+        if (latest && *latest != q.facility && r.facility(*latest).romanNumeral > r.facility(q.facility).romanNumeral)
+            out.emplace_back(static_cast<uint32_t>(i), *latest);
+    }
+    return out;
+}
+
 std::vector<uint32_t> facilityChoices(const game::Rules& r, const game::Empire& e, bool onlyLatest) {
     std::vector<uint32_t> out;
     for (uint32_t i = 0; i < r.data().facilities.size(); ++i) {
