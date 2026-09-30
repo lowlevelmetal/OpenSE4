@@ -22,25 +22,41 @@ research, build and fight against computer empires. See [docs/DESIGN.md](docs/DE
 
 ## Building
 
-Requirements:
+Full instructions for Linux, Windows and macOS are in
+[docs/BUILDING.md](docs/BUILDING.md). In short, you need:
 
-- A C++23 compiler (GCC 14+, Clang 18+, MSVC 17.10+), CMake 3.25+ and Ninja.
-- SDL3, taken from the system or fetched automatically.
-- `glslc`, from the Vulkan SDK or the `shaderc` package, used to compile shaders at build time.
-
-Other dependencies are fetched at pinned versions with verified hashes: Dear ImGui,
-volk, VMA, Vulkan-Headers, toml++, stb and doctest. The Vulkan loader is *not* linked.
-It is loaded at runtime, so the game still starts on machines without Vulkan.
+- a C++23 compiler (GCC 14+, Clang 18+, MSVC 17.10+), CMake 3.25+ and Ninja;
+- SDL3, which CMake fetches if the system has none;
+- `glslc`, from the Vulkan SDK or `shaderc`.
 
 ```sh
 cmake --preset debug              # or: release, asan
 cmake --build --preset debug
-ctest --preset debug              # unit tests for the game rules
+ctest --preset debug
 ./build/debug/opense4
 ```
 
-On Arch Linux: `pacman -S cmake ninja sdl3 shaderc`. Install `vulkan-validation-layers`
-too if you want `--validation` to do anything.
+On Arch Linux, install them with `pacman -S cmake ninja sdl3 shaderc vulkan-headers`.
+
+## Setting up the game data
+
+Classic mode reads your installed copy of Space Empires IV Deluxe in place.
+[docs/SETUP.md](docs/SETUP.md) explains:
+
+- how to get the files, including on Linux and macOS;
+- how OpenSE4 finds them;
+- how to check a data set or a mod with `opense4-datacheck`.
+
+## Multiplayer
+
+Games are hosted from the client or with the dedicated `opense4-server`.
+
+- **TCP:** direct play over the network. The default port is 6720, and the router is
+  forwarded automatically over UPnP when the router allows it.
+- **Hotseat:** several players on one machine.
+- **PBEM:** turn files passed by mail or a shared folder.
+
+See [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 ## Running
 
@@ -101,7 +117,9 @@ hulls.toml:95 [hull 'broken']: unknown field 'speeed'
 src/core      math, deterministic RNG, typed ids, logging
 src/datafile  reader for the classic "Key := Value" data format
 src/ruleset   typed model of a complete classic data set
-src/game      classic-rules engine (clean-room; milestone by milestone)
+src/game      classic-rules engine (clean-room, implemented from docs/spec/)
+src/net       multiplayer: sessions, protocol, UPnP port mapping
+src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
 src/sim       the prototype's own simplified rules (headless, deterministic)
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge

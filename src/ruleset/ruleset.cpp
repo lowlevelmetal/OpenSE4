@@ -94,7 +94,9 @@ std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem:
         steamRoots.push_back(fs::path(home) / ".local/share/Steam");
         steamRoots.push_back(fs::path(home) / ".steam/steam");
         steamRoots.push_back(fs::path(home) / ".var/app/com.valvesoftware.Steam/.local/share/Steam");
+        steamRoots.push_back(fs::path(home) / "Library/Application Support/Steam");  // macOS
     }
+    if (const char* programFiles = std::getenv("ProgramFiles(x86)")) steamRoots.push_back(fs::path(programFiles) / "Steam");
     steamRoots.push_back("C:/Program Files (x86)/Steam");
     steamRoots.push_back("C:/Program Files/Steam");
 
