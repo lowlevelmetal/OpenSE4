@@ -32,7 +32,8 @@ add_executable(opense4_tests
     test_ships_ui.cpp
     test_sight.cpp
     test_turn.cpp
-    test_winfont.cpp)
+    test_winfont.cpp
+    test_xmath.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
