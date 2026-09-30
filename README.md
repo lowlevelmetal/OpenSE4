@@ -9,9 +9,13 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
 - **You need your own copy of Space Empires IV Deluxe.** It is available on Steam.
   OpenSE4 reads the game's data files, art and sound from your installation at
   runtime. None of the original game ships with this project.
-- **Clean-room.** The rules are reimplemented from the manual, the game's documented
-  data formats and observation of the running game. The original executable is never
-  decompiled or disassembled. See [docs/CLEANROOM.md](docs/CLEANROOM.md).
+- **Written from specs, nothing copied.** The rules are reimplemented from the manual,
+  the game's documented data formats, observation of the running game and, since
+  2026-09-29, analysis of the original executable. Findings are written up as
+  plain-language specs and the code is written from those; no code, data, art or
+  text from the original is copied or shipped. The game's license forbids reverse
+  engineering, so this project is not clean-room in the strict sense. See
+  [docs/CLEANROOM.md](docs/CLEANROOM.md).
 - **Playable.** Every part of the classic rules is implemented:
   - economy and population;
   - ships and movement;
@@ -132,7 +136,7 @@ hulls.toml:95 [hull 'broken']: unknown field 'speeed'
 src/core      math, deterministic RNG, typed ids, logging
 src/datafile  reader for the classic "Key := Value" data format
 src/ruleset   typed model of a complete classic data set
-src/game      classic-rules engine (clean-room, implemented from docs/spec/)
+src/game      classic-rules engine (implemented from docs/spec/)
 src/net       multiplayer: sessions, protocol, UPnP port mapping
 src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
@@ -140,7 +144,7 @@ src/sim       the prototype's own simplified rules (headless, deterministic)
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge
 src/client    the app shell plus two modes: prototype and classic
 tools/        opense4-datacheck, opense4-observe (drive the original), cleanroom_check.py
-docs/spec/    clean-room rules specs, written in our own words
+docs/spec/    rules specs, written in our own words
 shaders/      GLSL shared by both backends
 data/         the prototype's content (TOML)
 assets/       fonts (Noto Sans, SIL OFL)

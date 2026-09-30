@@ -1,20 +1,24 @@
 # OpenSE4
 
 OpenSE4 is an open-source engine reimplementation for Space Empires IV Deluxe. It
-is a clean-room, faithful rewrite in C++23, with Vulkan 1.3 rendering and an
+is a faithful rewrite in C++23, with Vulkan 1.3 rendering and an
 OpenGL 3.3 fallback, and runs on the player's own installed copy of the game's data
 and art. It is not affiliated with the game's publishers. `opense4` plays the
 classic game when an install is found; `--prototype` (or no install) runs a
 prototype with our own simplified rules. See README.md, docs/ENGINE.md,
 docs/PARITY_PLAN.md and docs/spec/.
 
-## Clean-room rules (read docs/CLEANROOM.md before touching the original game)
+## Clean-room and reverse-engineering rules (read docs/CLEANROOM.md first)
 
 - Never copy anything from the installed original into this repo: data, art, sound,
   manual text, or tables from the data files. Rewrite everything in our own words.
   Functional identifiers such as field names, ability names and enum values are fine.
-- Never disassemble, decompile, hex-dump or run `strings` on the original
-  executables. Observe the running game black-box only, with `tools/observe`.
+- Since 2026-09-29 the owner allows analysing `Se4.exe` (Ghidra, rizin, gdb under
+  Wine) even though its license forbids it. Keep all raw output (listings, decompiler
+  output, addresses, binary symbol names) in `reference/re/` (gitignored). Findings go
+  into `docs/spec/` as plain-language rules marked "(confirmed: binary)". Implement
+  from the spec text, never from the listing. Never patch the executable.
+- Black-box observation of the running game uses `tools/observe`.
 - Screenshots and notes from the original go in `reference/` (gitignored), never
   in tracked files.
 - Run `python3 tools/cleanroom_check.py` after writing docs or content; it must

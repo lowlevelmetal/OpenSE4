@@ -10,6 +10,10 @@ that must be rewritten in our own words (see docs/CLEANROOM.md).
 
 Default paths: docs/ src/ data/ tests/ README.md. Exit status 1 if matches are found.
 
+It also rejects traces of reverse-engineering output in tracked text: addresses in
+the executable's range (eight hex digits starting with 004 or 005) and
+decompiler-generated names (FUN_, DAT_, sub_ or fcn. followed by an address). Raw analysis output belongs in reference/re/.
+
 Reviewed matches that are only functional identifiers (enum value lists, field
 and setting names) can be listed, one lowercase snippet per line, in
 tools/cleanroom_allow.txt; a match containing an allowed snippet is ignored.
@@ -96,6 +100,27 @@ def scan(path, grams, n):
     return runs
 
 
+# Address-like tokens (8 hex digits in the executable's 0x004xxxxx/0x005xxxxx range)
+# and names that disassemblers and decompilers generate.
+BINARY_TRACES = re.compile(
+    r"\b(?:0x)?00[45][0-9a-fA-F]{5}\b|\b(?:thunk_)?(?:FUN|DAT|LAB|PTR|SUB|switchD|caseD)_[0-9a-fA-F]{6,8}\b"
+    r"|\bsub_[0-9a-fA-F]{6,8}\b|\bfcn\.[0-9a-fA-F]{8}\b")
+
+
+def binary_traces(files):
+    found = 0
+    for f in files:
+        try:
+            lines = open(f, encoding="utf-8", errors="replace").read().splitlines()
+        except OSError:
+            continue
+        for i, line in enumerate(lines, 1):
+            for m in BINARY_TRACES.finditer(line):
+                found += 1
+                print(f"{f}:{i}: looks like reverse-engineering output: {m.group(0)}")
+    return found
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--install", help="original game directory (containing Data/ and Manual/)")
@@ -130,7 +155,10 @@ def main():
             found += 1
             print(f"{f}: {len(run.split())} words: \"{run[:200]}\"")
     print(f"{found} matching passage(s) of {args.min_words}+ words in {len(files)} files")
-    return 1 if found else 0
+    traces = binary_traces(files + [f for f in ("CLAUDE.md",) if os.path.exists(f)] +
+                           [os.path.join(r, n) for r, _, ns in os.walk("tools") for n in ns if n.endswith((".py", ".cpp", ".hpp", ".md", ".txt"))])
+    print(f"{traces} trace(s) of reverse-engineering output")
+    return 1 if found or traces else 0
 
 
 if __name__ == "__main__":

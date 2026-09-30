@@ -1,4 +1,4 @@
-# Clean-room policy
+# Clean-room and reverse-engineering policy
 
 This project aims to be a **mechanically faithful reimplementation** of a
 classic 4X game that the player already owns. It follows the model used by
@@ -15,6 +15,13 @@ Anyone contributing, human or AI, follows these rules.
 > agreement forbids copying, reverse engineering and "derivative works". Get a
 > lawyer's review before any public release, especially a commercial one.
 
+> **Change on 2026-09-29.** The project owner decided to also study the
+> original executable (disassembly and decompilation) to confirm the rules,
+> knowing that the license agreement forbids it (clause c). OpenSE4 therefore
+> no longer claims to be clean-room in the strict sense. It still never copies
+> or redistributes anything from the original, and its code is written from
+> our specs, not from the binary. The rules below keep it that way.
+
 ## Allowed sources of knowledge
 
 1. **The manual** (HTML/PDF shipped with the game). Read it to learn the rules;
@@ -27,12 +34,39 @@ Anyone contributing, human or AI, follows these rules.
    `tools/observe` (synthetic input, window capture); compare its behavior
    with ours.
 4. Public community knowledge (FAQs, strategy guides, wikis), restated in our own words.
+5. **Analysis of the executable** on the contributor's own machine (Ghidra,
+   rizin, gdb under Wine), under the rules in the next section.
+
+## Reverse engineering: study, specify, then implement
+
+1. **Raw material stays local.** Analysis projects, disassembly and decompiler
+   output, addresses, symbol and function names taken from the binary, memory
+   dumps and notes that quote any of these live only under `reference/re/`
+   (gitignored). They never go into tracked files, commits, issues or pull
+   requests.
+2. **Findings become plain-language rules.** What the game does goes into
+   `docs/spec/` in our own words: behaviour, formulas written as ordinary maths
+   in our own notation, and the constants that are rules (a 14 % rate, a limit
+   of 50). Never code, never pseudo-code transcribed from the decompiler, never
+   addresses or binary symbol names.
+3. **Code follows the spec, not the listing.** Write or update the spec note
+   first, then implement from that text, in our own structure and names. Do
+   not write engine code while reading decompiler output.
+4. **Say where a rule comes from.** Mark rules in the specs and the code as
+   "(confirmed: binary)" when checked in the executable, "(observed)" for
+   black-box observation, and "(inferred)" for guesses.
+5. **No patching.** Never modify, crack or redistribute the executable, and
+   never work around copy protection.
+6. **The lint checks it.** `tools/cleanroom_check.py` also rejects tracked
+   text containing address-like numbers (eight hex digits starting with 004
+   or 005) or decompiler-generated names (`FUN_`, `DAT_` or `LAB_` followed by
+   an address).
+
+Our own helper scripts that read the player's executable at run time (for
+example to list its UI forms) may be tracked under `tools/re/`. Their output
+may not.
 
 ## Forbidden
-
-- Disassembling, decompiling, hex-dumping, running `strings` on, or otherwise
-  inspecting the original **executables** or their memory. Observation stays
-  black-box: input in, pixels and behavior out.
 - Copying any original file into this repository: data files, images, sounds,
   music, fonts, maps, save files, or the manual. That includes partial copies,
   such as data tables pasted into docs or tests.
@@ -53,6 +87,8 @@ Anyone contributing, human or AI, follows these rules.
 | Classic-format data reader (interop) | `src/datafile/`, `src/ruleset/` | yes |
 | Our own test fixtures (invented content) | `tests/fixtures/` | yes |
 | Screenshots and notes from the player's copy | `reference/` | **no**, gitignored |
+| Analysis projects, listings, raw reverse-engineering notes | `reference/re/` | **no**, gitignored |
+| Our reverse-engineering helper scripts (no output) | `tools/re/` | yes |
 | The player's installed game | Wherever Steam put it. Auto-detected, never copied. | no |
 
 ## Tools
@@ -65,6 +101,10 @@ Anyone contributing, human or AI, follows these rules.
 - To launch the original: `steam steam://rungameid/1610`. Capture a window with
   `import -window <id> file.png` (ImageMagick). Save captures under
   `reference/`, never anywhere tracked.
+
+- Reverse engineering: `ghidra` (headless: `/opt/ghidra/support/analyzeHeadless`),
+  `rizin`/`cutter`, `gdb` with `wine`. Keep projects and output in
+  `reference/re/`.
 
 ## Testing against the player's data
 
