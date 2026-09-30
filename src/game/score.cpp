@@ -129,10 +129,11 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     for (Empire& x : s.empires) std::erase_if(x.intel, [&](const IntelProjectOrder& o) { return o.target == id; });
     diplomacy::forgetEmpire(s, id);
 
-    // No victory for the last empire standing; it is told and plays on (spec 05 §6).
+    // No victory for the last empire standing; it is told and plays on (spec 05
+    // §6). Neutral empires do not count (OpenSE4 choice, inferred).
     std::vector<EmpireId> left;
     for (const Empire& x : s.empires)
-        if (x.alive) left.push_back(x.id);
+        if (x.alive && x.kind != PlayerKind::Neutral) left.push_back(x.id);
     if (left.size() == 1)
         ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on.");
 }
