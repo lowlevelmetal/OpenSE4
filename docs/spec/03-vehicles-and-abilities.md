@@ -14,8 +14,10 @@ Conventions:
 - A component is either **working** or **destroyed**; the original keeps no partial damage per
   component (§5). Destroyed components provide no abilities.
 - Counts and sums are integers. Most percentages in the original are applied in floating point:
-  it first computes `pct / 100` in x87 extended precision (64-bit mantissa, the default precision
-  setting; not measured at run time), multiplies the value
+  it first computes `pct / 100` in x87 extended precision (64-bit mantissa, rounding to nearest
+  with ties to even; the game sets this at start-up, in every thread it starts and after every
+  exception it handles, and never changes it otherwise, and the setting was measured in the
+  running game, §6.3), multiplies the value
   by that, and then converts to an integer. Each rule says which conversion is used:
   **round** (to nearest, halves to even) or **truncate** (toward zero). Because `pct / 100` is
   inexact for most `pct`, a truncated result can be one less than the exact `value × pct / 100`
@@ -38,13 +40,15 @@ list of components. The hull's `Vehicle Type` decides the class:
 | Fighter | yes | no (confirmed: binary) | no | launched from a ship bay or a planet | yes | not destroyed: the group moves at most 1 MP (confirmed: binary) |
 | Satellite | no | no | no | deployed from a ship bay or a planet | yes | never: satellites have no supply at all (confirmed: binary) |
 | Mine | no | no | no | laid by a mine layer or a planet | no | never: mines have no supply at all (confirmed: binary) |
-| Drone | yes (automatic) | yes (confirmed: binary) | no: unit groups in space hold no cargo (confirmed: binary) | launched from a launcher or a planet | no | destroyed (confirmed: binary) |
+| Drone | yes (by orders, §12) | yes (confirmed: binary) | no: unit groups in space hold no cargo (confirmed: binary) | launched from a launcher or a planet | no | destroyed (confirmed: binary) |
 | Troop | no | no | no | dropped on a planet during combat only | n/a | n/a |
 | Weapon Platform | no | no | no | moved to a planet as cargo, or built there | n/a | n/a |
 
-Everything except Ship and Base is a **unit**. Units are built into cargo (the builder's cargo
-first, then any other cargo space the empire owns [VERIFY scope]). If no space exists, the unit is
-not built and a log message is produced. Units can be moved between ships and planets as cargo.
+Everything except Ship and Base is a **unit**. Units are built into cargo: the builder's own cargo
+if a unit fits there, otherwise the first other object of the same empire in the builder's
+**sector** (in the system's object order) that can hold cargo and has room for it: a colonized
+planet's cargo or a ship's or base's cargo. Nothing further away is used. If no space exists,
+the unit is not built and a log message is produced (confirmed: binary). Units can be moved between ships and planets as cargo.
 Troops and weapon platforms are never placed in open space.
 
 Units that are in space are held as **groups**: one per (owner, unit kind, sector), mixing
@@ -250,8 +254,8 @@ Most abilities are automatic. Some only act through an order:
 | Use Component | `Emergency Energy`, `Emergency Resupply` |
 | Stellar Manipulation | create/destroy/open/close abilities |
 | Cloak | `Cloak Level` of a ship or base, from hull and components alike (§8) |
-| Sweep Mines | an explicit sweep (automatic sweeping also happens on entry) |
-| Scrap window (a Self-Destruct order) | `Self-Destruct` |
+| Sweep Mines | runs the sector's mine encounter again: sweeping, then the remaining mines strike (automatic sweeping also happens on entry, §12) |
+| Scrap window (a Self-Destruct order) | `Self-Destruct` (ships and bases only; §15) |
 
 A **mothballed** vehicle has no abilities at all (confirmed: binary).
 
@@ -330,7 +334,7 @@ type, none = defined but unused.
 | `Sector - Sight Obscuration` | S | level | – | Raises obscuration in all sight types to V1 for objects there (a storm covers its sector, a nebula its system). Units do not benefit. |
 | `Sector - Sensor Interference` | S | penalty | – | Subtracted from to-hit rolls in combat there. |
 | `Sector - Shield Disruption` | S | points | – | Shield points removed from each combatant during combat there. |
-| `Sector - Damage` | S | damage | – | A group stepping into the sector has a 50 % chance to take the total V1 (storms there plus the system) and stop; vehicles staying there take nothing (§6.2) (confirmed: binary). |
+| `Sector - Damage` | S | damage | – | A group stepping into the sector has a 50 % chance to take the total V1 (storms there plus the system) and stop; vehicles staying there, and groups arriving through a warp point, take nothing (§6.2) (confirmed: binary). |
 | `Resource Generation - Minerals` / `Resource Generation - Organics` / `Resource Generation - Radioactives` | F | amount/turn | – | Base planetary production, before planet value and population modifiers. |
 | `Point Generation - Research` / `Point Generation - Intelligence` | F | points/turn | – | Research or intelligence output. |
 | `Spaceport` | F | – | – | The system's planets deliver their output to the empire. |
@@ -361,7 +365,7 @@ type, none = defined but unused.
 | `Sensor Level` | C | sight type name | level | Detection in that sight type. The empire sees a system at its best level per type (see the sight spec). |
 | `Emergency Resupply` | C | supply | – | On use, adds V1 supply, capped at the maximum (§8) (confirmed: binary). |
 | `Emergency Energy` | C | MP | – | On use, adds V1 movement this turn (§8) (confirmed: binary). |
-| `Long Range Scanner` | C | sectors | – | Can inspect enemy vehicles up to V1 sectors away, which also reveals their designs. |
+| `Long Range Scanner` | C | sectors | – | Lets the empire inspect another empire's ship, base or unit group in the **same system** when some own object there is within its own largest V1 (in sectors) of the target, unless the target has a `Scanner Jammer`. Inspection happens when a player displays the target's details (map selection or report): the details and cargo are shown, and the design (for a unit group, the designs of its units) is recorded as seen by that empire on that date (§4.1) (confirmed: binary). |
 | `Open Warp Point Distance` | C | distance | – | Opens a warp point to a chosen system within range. The range is in galaxy-map squares, straight-line distance rounded to nearest (§8) (confirmed: binary). |
 | `Create Planet Size` | C | size index | – | Turns asteroids into a planet no larger than V1. |
 | `Destroy Planet Size` | C | size index | – | Destroys a planet no larger than V1, leaving asteroids. |
@@ -388,8 +392,8 @@ type, none = defined but unused.
 | `Change Bad Event Chance - System` | F | ±% | – | Adjusts the chance of bad events. |
 | `Change Bad Intelligence Chance - System` | F | ±% | – | Adjusts the chance of hostile intelligence events. |
 | `Change Population Happiness - System` | F | ±%/turn | – | Mood drift across the system. |
-| `Ship Training` | F | +exp/turn | cap | Each own object in the sector (planet facilities or vehicle abilities) is a separate source with its own largest V1 and V2. From each source in turn, a non-mothballed ship below V2 gains the smaller of V1 and (V2 − its experience). V2 = 0 means no training (confirmed: binary). |
-| `Fleet Training` | F | +exp/turn | cap | Same for fleet experience (same shape; less fully traced). |
+| `Ship Training` | F | +exp/turn | cap | Each own object is a separate source for its own sector, taken in object order: a colonized planet through its facilities (no population needed), a ship, base or unit group through its abilities, each with its own largest V1 and largest V2. From a source with V1 > 0, every own ship or base in that sector that is not mothballed and has experience below V2 gains V1, or exactly V2 − its experience if V1 would pass V2 (experience is fractional). Ship experience never exceeds 50. V2 = 0 means no training (confirmed: binary; details and timing in §9). |
+| `Fleet Training` | F | +exp/turn | cap | The same sources train every own fleet located in the source's sector whose experience is below V2: it gains V1, or V2 − truncate(its experience) if V1 would pass V2, so a fleet at 9.5 with V1 = 1 and V2 = 10 reaches 10.5. Fleet experience is capped at 50 (confirmed: binary). |
 | `Modify Reproduction - System` | F | ±% | – | Population growth modifier. |
 | `Change Population - System` | F | M/turn | – | Population added each turn in the system. |
 | `Plague Prevention - System` | F | level | – | Plagues up to V1 are prevented in the system. |
@@ -398,7 +402,7 @@ type, none = defined but unused.
 | `Close Warp Point` | C | – | – | Stellar manipulation. |
 | `Destroy Star` / `Create Star` | C | – | – | Stellar manipulation. Destroying a star wipes out the system, including the user. |
 | `Destroy Storm` / `Create Storm` | C | – | – | Stellar manipulation. Created storms are capped by the `Created Storm ...` settings. |
-| `Self-Destruct` | C | – | – | Enables self-destruct. It also fires automatically when the vehicle is about to be captured. |
+| `Self-Destruct` | C | – | – | Enables self-destruct for a ship or base (from any source in its ability list, the hull included; a mothballed vehicle has none). It also fires automatically when the vehicle is about to be captured. Satellite groups, minefields and drone groups can always self-destruct without it; fighter groups never can (confirmed: binary). |
 | `Colonize Planet - Rock` / `Colonize Planet - Ice` / `Colonize Planet - Gas` | C | – | – | Can colonize a planet of that type (§8). |
 | `Point-Defense` | C | – | – | Marks a point-defense weapon. |
 | `Armor` | C | – | – | The component absorbs damage before non-armor components. |
@@ -413,8 +417,8 @@ type, none = defined but unused.
 | `Destroy Black Hole` / `Create Black Hole` | C | – | – | As above, for black holes. |
 | `Stop Planet Destroyer` / `Stop Star Destroyer` / `Stop Nebulae Creator` / `Stop Black Hole Creator` / `Stop Open Warp Point` / `Stop Close Warp Point` | F | – | – | Blocks that manipulation in the whole system, whoever owns the blocking object; `Stop Planet Destroyer` protects only its sector (§8) (confirmed: binary). |
 | `Component Destroyed On Use` | C | – | – | The component becomes destroyed after its use ability fires. |
-| `Ancient Ruins` | S | count | – | Number of random tech areas granted when the planet is colonized. |
-| `Ancient Ruins Unique` | S | tech id | – | Grants that unique tech area when the planet is colonized. |
+| `Ancient Ruins` | S | count | – | When the planet is colonized, N = the planet's largest V1. If N > 0: N times, one research area is drawn at random (up to 1000 draws) among areas whose requirements the colonizing empire meets, that it may research and that are below their maximum level, and it gains one level; then this ability is removed from the planet. `Ancient Ruins Unique` is then not applied and stays on the planet (confirmed: binary). |
+| `Ancient Ruins Unique` | S | tech id | – | When the planet is colonized and it has no `Ancient Ruins` above 0: the unique area V1 is added to the colonizing empire's unique areas, every research area with that unique id that is not at its maximum level gains one level (requirements are not checked), and this ability is removed from the planet (confirmed: binary). |
 | `Combat Best Experience` | C | – | – | In combat, uses the highest experience among the owner's combatants. |
 | `Combat Movement` | C | MP | – | Extra movement in combat only. Largest value on the vehicle (§3.2). |
 | `Solar Supply Generation` | C | supply/star | – | At the end of each turn adds V1 × (stars in the current system), capped at the maximum (§7) (confirmed: binary). |
@@ -424,8 +428,8 @@ type, none = defined but unused.
 | `Create Constructed Planet` | C | PlanetSize special id | – | Builds a ringworld or sphereworld. |
 | `Constructed Planet Requirements` | C | custom group | kT | V2 kT of components with `Custom Group` = V1 must be present at the location. |
 | `Modified Maintenance Cost` | H | ±% | – | Changes this vehicle's maintenance: −50 halves it. |
-| `Ship Training - System` / `Fleet Training - System` | F | +exp/turn | cap | As `Ship Training` / `Fleet Training`, but system-wide. |
-| `Long Range Scanner - System` | F | – | – | Long-range scanning across the whole system [VERIFY]. |
+| `Ship Training - System` / `Fleet Training - System` | F | +exp/turn | cap | System-wide, one source per system rather than per object: for each system the empire has explored, V1 and V2 are each the largest over all the empire's objects in that system taken together. Every own ship or base there that is not mothballed and has experience below V2 gains V1, or V2 − truncate(its experience) if V1 would pass V2; fleets located in the system likewise. This runs after all the sector sources of the turn (confirmed: binary). |
+| `Long Range Scanner - System` | F | – | – | While any object of the empire in a system has it (planet facilities count without population), the empire can inspect every ship and base of other empires in that system, as with `Long Range Scanner` but at any distance; a `Scanner Jammer` still prevents it, and unit groups are not covered (confirmed: binary). |
 | `Solar Resource Generation - Minerals` / `Solar Resource Generation - Organics` / `Solar Resource Generation - Radioactives` | F | amount/star | – | Output per star in the system. |
 | `Reduced Maintenance Cost - System` | F | % reduction | – | The owner's ships in the system pay less. The sign is **opposite** to `Modified Maintenance Cost`: +10 means 90 %. |
 | `Shield Modifier - System` | F | points | – | Added to the maximum shields of the owner's ships in combat in the system. |
@@ -435,7 +439,7 @@ type, none = defined but unused.
 | `Generate Points Minerals` / `Generate Points Organics` / `Generate Points Radioactives` / `Generate Points Research` / `Generate Points Intelligence` (no dash) | none | amount/turn | – | Flat income from a component or facility, not drawn from a planet. |
 | `Launch Drones` | C | per combat turn | per game turn | **Missing from Abilities.txt** but used by drone launchers. Launch only, no recovery. |
 | `None` | F | – | – | Placeholder in some facility records. Ignore it. |
-| `Random`, `Warp Point - Unstable`, `Warp Point - Periodic`, `Warp Point - Ability Required`, `Sector - Ability Required`, `Resupply Pod`, `Maximum Population` | none | – | – | Recognised type names that stock data does not use (confirmed: binary). Their effects were not traced; the loader MUST accept them. |
+| `Random`, `Warp Point - Unstable`, `Warp Point - Periodic`, `Warp Point - Ability Required`, `Sector - Ability Required`, `Resupply Pod`, `Maximum Population` | none | – | – | Recognised type names that stock data does not use. No game rule reads any of them: they have no effect. `Resupply Pod` and `Maximum Population` only appear in the computer player's ranking of items by an ability's value (confirmed: binary). The loader MUST accept them. |
 
 ---
 
@@ -448,7 +452,13 @@ type, none = defined but unused.
   statistics (number constructed, in service, lost, and enemy tonnage destroyed).
 - **Name** MUST be non-empty and differ from the name of every design in the game, other empires'
   designs included. The comparison is exact and case-sensitive (confirmed: binary). Name
-  suggestions come from the empire's name list.
+  suggestions come from the empire's name list. The original checks the name only in the design
+  window and when a computer player picks a name. Designs that arrive in a player's turn file
+  or come from an empire file (premade starting designs) are only checked for validity (§4.2),
+  not for their name, so two designs can end up sharing a name. A computer player takes the
+  first name of its design-name list, after the last one it used, that is not in use; after
+  that it adds the numerals II to XV to a name; without a list it uses a generic numbered
+  name (confirmed: binary).
 - **Prototype:** a design is a prototype until the first vehicle of it is built. Only prototypes
   can be edited. After that, changes go through **Copy**, which clones the design with an empty
   name. The original's Edit action refuses a design that is currently in one of the empire's
@@ -457,9 +467,15 @@ type, none = defined but unused.
 - **Upgrade** builds a candidate design that replaces every component with the highest-numeral
   known component of the same `Family`, keeping the mount. It is then saved under a new name.
 - **Obsolete** is a flag. Obsolete designs can be hidden in lists. Designs cannot be deleted
-  directly. An obsolete design is removed automatically once all of these hold: no vehicle or unit
-  of that design exists, it is in none of the owner's construction queues, and no other living
-  empire has seen it in the last 50 turns (confirmed: binary).
+  directly. Every design keeps, for each empire, the turn that empire last saw it. Sightings are
+  recorded by battles (the designs of ships and bases, and of the units in their or a colony's
+  cargo, but not of unit groups in space), mine encounters (the mines' designs), long-range
+  inspection (§3.3), intelligence, messages and gifts, planet transfers and treaties. In its
+  end-of-turn processing each empire forgets sightings more than 50 turns old. Every 10th turn,
+  after all empires' end-of-turn processing, an obsolete design is removed once all of these
+  hold: no vehicle or unit of that design exists (in space, in cargo or on a planet), it is in
+  none of the owner's construction queues, and no other living empire saw it less than 50 turns
+  ago, so a sighting exactly 50 turns old no longer protects it (confirmed: binary).
 - Unit designs and ship/base designs are listed separately. **Enemy designs** become known through
   combat, long-range scanning or intelligence. They show without design type or prototype status.
 - The combat strategy of a fleet overrides a design's default strategy.
@@ -636,8 +652,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   max(|dx|, |dy|). One step moves to an adjacent sector, diagonals included, and costs 1 MP and one
   step's supply (§7).
 - A **warp** moves a vehicle from a warp point's sector to the linked warp point in the other
-  system. It costs 1 MP and one step's supply. Ships (and bases, which cannot move) and drones can
-  warp; fighters cannot. Each transit through a warp point with `Warp Point - Turbulence` has a
+  system. It costs 1 MP and one step's supply. Ships (and bases, which cannot move) and drone
+  groups can warp; fighter groups cannot: a group containing one fails a Warp order (the list is
+  cleared), and a Move To into another system travels to the warp point and fails there. Each
+  transit through a warp point with `Warp Point - Turbulence` has a
   50 % chance that every vehicle in the moving group takes the total turbulence V1 as damage. The
   transit still happens, but the order then fails (§8).
 - **Routes between systems** are a shortest-path search whose cost is the in-system distance to
@@ -651,33 +669,55 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   fallback through avoided systems. The window's map filters (Presence, Ally Claimed, Enemy
   Claimed) are read-only.
 - **Tagged minefields** (a per-empire set of sectors, added or removed by order) are avoided only
-  when the empire's option to route around them is on. Then a warp link whose sector on either side
-  is tagged is not used, and in-system steps avoid tagged sectors. A group whose leading ship has a
-  particular design type (inferred: the mine-sweeper type) is exempt.
+  when the empire's option to route around them is on. Then a warp link whose warp-point sector on
+  either side is tagged is not used, whether or not it is the start or the destination, and
+  in-system steps avoid tagged sectors (below). A group whose first member has the design type
+  named `Mine Sweeper` may still use such links; for a fleet the first member is the first one at
+  the fleet's location in object order, not necessarily the chosen leader. The exemption never
+  applies to in-system steps.
 - These two options (avoid tagged minefields, avoid restricted systems) are the empire's **Ship
-  Movement** options in the Empire Options window (spec 06). Computer players copy them from their
-  `AI_Settings` each turn (spec 05 §7.5). OpenSE4 switches both on for a new empire, and treats a
-  tagged sector at the start or the destination as no obstacle (inferred, §19 Q58).
-- **In-system steps are greedy:** one square toward the target, diagonal first. The step is
-  re-chosen when the next square is not the destination and is a tagged minefield (option on), has
-  `Sector - Damage`, or holds a visible hostile object. The re-choice picks at random among the
-  other steps that still approach the target (1 of 2 when moving diagonally, 1 of 3 when moving
-  straight). After 10 failed tries the vehicle does not move and the order fails.
+  Movement** options in the Empire Options window (spec 06). Both are on for a new empire.
+  Computer players copy them from their `AI_Settings` each turn (spec 05 §7.5).
+- **In-system steps are greedy.** The target square is the destination, or the sector of the next
+  warp point on the route. The first candidate is one square toward it, diagonal when both
+  coordinates differ. Unless that candidate is the target, it is tested; a square is *bad* when it
+  is a tagged minefield (option on), when objects on it have `Sector - Damage` (the system's own
+  value is not counted here), or when it holds an object the mover can see whose owner is hostile
+  to it (treaty below Non-Aggression): a ship, base, unit group (a mine only if seen) or colony.
+  A bad candidate is replaced by a random one, always drawn from the current square: when the
+  first step was diagonal, the straight step along x or along y (1 in 2 each); when it was
+  straight, the forward square or either square beside it (1 in 3 each, so the forward square can
+  come up again). Coordinates are clamped to 0..12, so a draw off the grid becomes the edge square.
+  Every replacement is tested, even when it is the target. After the 10th bad test the group stays
+  where it is and the order fails.
 - In a system with `System - Destructive Center`, paths avoid the squares near the centre within
   the `System - Movement Towards Center` radius (the exact cost formula was not decoded).
-- **Entering a sector with enemy ships:** in simultaneous games human ships simply enter; in
-  turn-based games the human is asked, and declining stops the move and fails the order. Computer
-  players decide for themselves. Groups made only of drones always enter.
+- **Entering a sector with enemies:** only in turn-based games, only for in-system steps (a warp
+  jump never asks), and only while a human is the current player (orders carried over and run at
+  the start of that human's turn included). The question comes when the next sector holds any
+  object the group's owner can see of an empire hostile to it (mines and colonies included if
+  seen); declining stops the move and fails the order. The approach steps of an Attack ask like
+  any other step. No question is asked for a group made only of drones, or when every member is
+  cloaked. Computer players' groups let their AI decide, and in simultaneous games groups simply
+  enter.
 - A ship whose space yard has items in its construction queue cannot move or warp; the order fails.
 - Fighters stay in their system. Satellites, mines, troops and platforms never move by themselves.
-  Drones move toward their target (§12).
+  Drones move only by orders: an Attack order makes them pursue their target (§8, §12).
 
 **Hazards met while moving:**
 
 - Stepping into a sector with `Sector - Damage` (the storm objects there plus the system's own
-  value) has a 50 % chance of dealing that damage to each vehicle of the moving group, with no
-  shields. If it does, movement stops and the order fails. Vehicles that stay in a storm take
-  nothing.
+  value) has a 50 % chance of dealing that damage to each vehicle of the moving group. If it does,
+  movement stops and the order fails. Vehicles that stay in a storm take nothing, and a warp
+  arrival makes no storm roll.
+- Storm, turbulence and destructive-centre damage (and the `Ship - Damage` event, spec 01 §10) use the
+  combat damage routine for Normal damage, with no shields, no emissive or crystalline armor, no
+  damage modifier and no carried-over pool: on a ship, the components are destroyed in the random,
+  structure-weighted order with all armor first, until the damage cannot cover the next one
+  (spec 04 §9.1a), and what is left is lost; on a unit group, whole units die as in spec 04 §9.4
+  (up to 20 random draws, a unit's shields counting as hit points), and the leftover is lost. A
+  vehicle still under construction that is hit becomes Normal with 0 supply (then refilled if it
+  is at a depot). All of this is (confirmed: binary).
 - Hitting a minefield stops the move and fails the order.
 - In turn-based games only, entering a sector with enemies starts combat at once and fails the
   order.
@@ -689,7 +729,8 @@ no MP or supply spent:
   the centre square (6, 6).
 - `System - Movement Random` picks one random target square per turn, shared by every system and
   drawn only from sector numbers 0..144 (the original never picks the last row and a half); objects
-  move V1 steps toward it.
+  move V1 steps toward it. The square is drawn every turn, first thing in the events step, even
+  when no system has the ability, so it always takes one number from the random sequence.
 - `System - Destructive Center` deals V1 damage to everything on the centre square.
 
 ### 6.3 Turn modes
@@ -701,29 +742,84 @@ every vehicle regains MP and first continues its existing order list.
 over a **30-day** month (confirmed: binary):
 
 1. At the start, every vehicle's MP is reset to its maximum, and every fleet member's MP to the
-   lowest maximum among the members in the fleet's sector. Each vehicle's day counter is set to 0.
-2. On each day, before anyone acts, every vehicle adds speed / 30 to its counter, where speed is its
-   current MP (for fleet members, the fleet's lowest maximum).
-3. A vehicle acts on a day when its counter is at least 1, and after acting subtracts 1. A vehicle
-   with 0 maximum MP that has orders acts once, on day 1.
-4. Each action carries out exactly **one** order execution with 1 MP available. Orders that need no
-   movement (load, drop, launch, use component...) also use up that day's action, so the next order
-   starts on the vehicle's next acting day.
-5. Within a day, vehicles act in the order the objects were created.
+   lowest maximum among the members in the fleet's sector. Every day counter is set to 0.
+2. On each day, before anyone acts, every ship, base and unit group whose MP is above 0 adds
+   speed ÷ 30 to its counter, where speed is its current MP; for a fleet member it is the lowest
+   current MP among the members in the fleet's sector. The arithmetic is given below.
+3. On a day, a ship, base, fighter group or drone group acts when its counter is at least 1, and
+   its counter then loses 1. A vehicle with 0 maximum MP that has orders acts on day 1 only, and
+   so do colonized planets, minefields and satellite groups that have orders.
+4. An action runs the object's order list (§8) with exactly 1 MP. It executes the head order, and
+   every order that completes chains into the next within the same action, up to 21 executions;
+   the action ends at the first order that waits (a move once its 1 MP is used, a Sentry...) or
+   fails. So a Move To that arrives, a Load Cargo and a Drop Cargo can all happen in one action,
+   and an object that acts on day 1 only runs all of its orders that need no movement then.
+   MP are not spent in this mode: after the action the vehicle's MP is put back to its value
+   before the action, unless its maximum fell below that value during the action; then it keeps
+   what the action left (0 after a step), gains nothing on the following days and so stops for
+   the rest of the turn. A maximum lowered between actions (by combat damage) caps the MP, which
+   only slows the daily gain.
+5. Within a day, objects act in the order of their slots in the game's object list. A new object
+   takes the first slot freed by a destroyed object (else a new slot at the end), so this is
+   creation order only until something has been destroyed. A fleet acts when the first of its
+   members in that order is due; the members it carries along do not act again that day, but
+   those that were due still lose 1 from their counters. Ad-hoc groups are formed at each
+   execution (§8).
 6. After each day, every sector where something acted is checked. If mutually hostile forces that
-   can see each other are there, a combat is fought, unless every object now present already
-   fought there this turn. Combat is always resolved automatically.
-7. Combat does **not** clear orders or stop movement. Its only effect on orders is that a Sentry
-   order at the head of a participant's list is removed.
+   can see each other are there, a combat is fought, unless the location already had a battle
+   this turn and both of these hold for the latest one: no piece recorded as surviving it was
+   below full structure (damage from before that battle counts), and every object owned by a
+   player now in the sector (ships, bases, unit groups including minefields, and colonies) is on
+   its owner's list of that battle's survivors, matched by name. So a minefield (never a combat
+   piece) or any newcomer forces a new battle. Combat is always resolved automatically.
+7. Also after each day, pursuit orders (Attack, §8) whose target is gone are removed.
+8. Combat does **not** clear orders or stop movement. Its only effect on orders is that a Sentry
+   order at the head of a participant's list is removed, even with Repeat on.
 
-In exact arithmetic, steps 2–3 give a vehicle with speed M a step on day d when
-floor(d·M/30) > floor((d−1)·M/30): for M = 5, days 6, 12, 18, 24 and 30, as the manual says. The
-original accumulates the counter in floating point (the quotient and sum in the x87 registers,
-stored as a 64-bit double each day). Depending on the x87 precision in effect at run time, many
-speeds then lose their last step: with extended or double precision a speed-1 ship would never
-move and speed 5 would move on days 7, 13, 19 and 25; with single precision only speeds 13, 17,
-19, 21, 23, 25 and 27 lose day 30. This needs checking in the running game (§19). The engine
-SHOULD use the exact formula until then.
+**The day counter's arithmetic.** The counter is a 64-bit floating-point number (a double). Each
+day the original divides speed by 30 and adds the stored counter in x87 extended precision, each
+of the two operations rounded to a 64-bit significand (to nearest, ties to even), and stores the
+sum back as a double, which rounds it again to a 53-bit significand (to nearest, ties to even).
+The test is counter ≥ 1, and acting subtracts exactly 1. Emergency Energy's addition (§8) is done
+the same way. Because 1/30 is not exact in binary, the stored sum often lands just below a whole
+number, so many speeds lose their day-30 step and some steps come a day later than in exact
+arithmetic, where speed M acts on day d when floor(d·M/30) > floor((d−1)·M/30) (for M = 5 that is
+days 6, 12, 18, 24 and 30, as the manual says; the original moves on days 7, 13, 19 and 25). The
+game sets the x87 to 64-bit precision at start-up, in every thread and after every exception it
+handles, and never lowers it (confirmed: binary). In the running game (under Wine), turn
+processing runs at that precision, and a speed-6 ship's stored counter matched this arithmetic bit
+for bit over a whole turn, while double or single precision would differ from day 3 and day 1
+(observed). An implementation MUST reproduce this arithmetic exactly, for example with an
+emulated extended-precision divide and add followed by rounding to a double. It gives these
+acting days:
+
+| Speed (MP) | Days the vehicle acts |
+|---|---|
+| 1 | never |
+| 2 | 16 |
+| 3 | 11, 21 |
+| 4 | 8, 16, 23 |
+| 5 | 7, 13, 19, 25 |
+| 6 | 6, 11, 16, 21, 26 |
+| 7 | 5, 9, 13, 18, 22, 26 |
+| 9 | 4, 7, 11, 14, 17, 21, 24, 27 |
+| 11 | 3, 6, 9, 11, 14, 17, 20, 22, 25, 28 |
+| 16 | every day except 1, 3, 5, 7, 9, 11, 13, 15, 18, 20, 22, 24, 26, 28, 30 |
+| 17 | every day except 1, 3, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 28, 30 |
+| 18 | every day except 1, 3, 5, 8, 10, 13, 15, 18, 20, 23, 25, 28, 30 |
+| 19 | every day except 1, 3, 6, 9, 11, 14, 17, 20, 22, 25, 28, 30 |
+| 20 | every day except 1, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30 |
+| 21 | every day except 1, 4, 7, 10, 14, 17, 20, 24, 27, 30 |
+| 22 | every day except 1, 4, 8, 12, 15, 19, 23, 27, 30 |
+| 23 | every day except 1, 5, 9, 13, 18, 22, 26, 30 |
+| 25 | every day except 1, 6, 12, 18, 24, 30 |
+| 27 | every day except 1, 10, 20, 30 |
+| 29 | every day except 1, 30 |
+| 8, 10, 12, 13, 14, 15, 24, 26, 28, 30 | as in exact arithmetic |
+| above 30 | every day (at most one action a day; the counter just grows) |
+
+Each speed in the upper part of the table makes one action fewer than its MP. A speed-1 vehicle
+never moves in a simultaneous game unless it gets extra actions (Emergency Energy).
 
 The Cargo Transfer and Launch/Recover windows do not exist in this mode. Their effects happen
 through the Load, Drop, Launch-remote and Recover-remote orders during resolution. A movement log
@@ -738,13 +834,19 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Movement stops and the list is cleared by: storm damage on entry, turbulence damage on a warp,
   a minefield, a refused entry into an enemy sector, and (turn-based games only) combat on entry.
 - Being in combat in a simultaneous game neither stops movement nor clears orders.
-- Each empire has two options, off by default: clear orders on encountering an enemy empire, and
-  on encountering any empire (computer players take them from their AI settings). When one of them
-  applies after a warp into a system where such an empire has objects, the Warp order fails and
-  the list is cleared (confirmed: binary). Whether in-system steps check these options was not
-  traced.
-- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1). If supply
-  runs out during its own step, it makes no further steps this turn (the maximum becomes 1).
+- Each empire has two **Ship Orders** options: clear orders on encountering an enemy empire (on
+  for a new empire) and on encountering any empire (off); computer players take them from their
+  AI settings. They are checked only at the end of a warp transit that met no other trouble
+  (turbulence damage, mines, turn-based combat), whether the jump belongs to a Warp order, a Move
+  To or a pursuit; never on in-system steps, and not for groups made only of drones. They count
+  the objects of other empires in the arrival system that the group's owner can see (colonies
+  and unit groups included, only if seen); "enemy" means a treaty below Non-Aggression. When one
+  applies, every group member's order list is cleared, fleet copies included. The jump itself
+  does not fail: a Warp order just ends, and a Move To in progress keeps stepping to its end in a
+  turn-based game while MP last, while in a simultaneous game the action ends there.
+- If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1). In a
+  simultaneous game a drop during the vehicle's own action (supply running out on its step, for
+  example) stops it for the rest of the turn, and a drop between its actions slows it (§6.3).
 - A cloaked vehicle that the enemy cannot detect passes through enemy-held sectors without combat.
   Detection triggers combat as usual. A cloaked vehicle decloaks when it attacks (§8).
 - Treaties can allow passing through another empire's sectors without combat (see the diplomacy
@@ -791,8 +893,27 @@ a normal supply value on its next move.
   each member the smaller of that share and its capacity, then hand out what did not fit, in member
   order, to members that still have room. A member with unlimited supply adds its marker value to
   the total, so it effectively refills the fleet.
-- `Solar Supply Generation` adds V1 × (number of stars in the system) at the end of the turn, after
-  depot refills and fleet pooling, capped at the maximum.
+- `Solar Supply Generation` adds V1 × (number of stars in the system) at the end of the turn, capped
+  at the maximum, in the empire's training step (below), so after depot refills, fleet pooling and
+  the loss of drones out of supply. Fighter and drone groups with it gain too.
+
+**End-of-turn order.** In each empire's end-of-turn processing (spec 05 §8), after maintenance
+(§16) and repair (§13), the supply step runs (confirmed: binary):
+
+1. Upkeep, for every object of the empire in object order: a cloaked ship or base pays its cloak
+   parts' supply; a fighter group pays its per-unit upkeep (or its cloak cost instead while
+   cloaked); a drone group pays its upkeep plus its cloak cost while cloaked (§12). A vehicle whose
+   supply reaches 0 here decloaks at once.
+2. The depot check (and `Medical Bay`) for every object of the empire.
+3. Fleet pooling for every fleet of the empire.
+4. Drone groups at 0 supply are destroyed.
+
+The storage cap of spec 02 follows, then the training step, which applies the training abilities
+(§3.3) and solar collectors object by object and then the system-wide abilities. A later
+per-object step of the end-of-turn processing only records each vehicle's current sector as the
+sector it came from; it involves no supply. In simultaneous games all of this comes after the
+turn's movement and combat; in turn-based games each empire's end-of-turn processing runs when
+that player ends the turn, after its own moves.
 - `Emergency Resupply` adds V1 when used, capped at the maximum (§8).
 - Drones can never be resupplied; fighters only at a depot planet (§12).
 
@@ -821,8 +942,13 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   mistake, so the UI should show the queue.
 - **Fleets:** the members at the fleet's location act as one group on the fleet's head order, and
   every change to the list applies to each of those members' lists.
-- **Ad-hoc groups:** ships in the same sector whose head orders are identical execute them as one
-  group, so they move together at the pace of the slowest.
+- **Ad-hoc groups:** the executing group is rebuilt every time an order is executed. For a
+  computer player, every own vehicle in the sector whose head order is identical joins: ships,
+  bases and unit groups, fleet members and cloaked ones included. For a human player only a drone
+  group outside fleets gathers the other drone groups outside fleets in its sector with an
+  identical head order; human ships never form ad-hoc groups. In turn-based games the vehicles the
+  player selected together act as the group. A group moves only while every member has MP left
+  (confirmed: binary).
 
 Several orders are expanded into simpler ones at the moment they are given; they never exist as
 stored orders (confirmed: binary). "Composite" orders below become Move To (when the target
@@ -833,31 +959,31 @@ sector is elsewhere) plus the action.
 | Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. |
 | Move To Waypoint (Ctrl 0–9) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
 | Set Waypoint (Alt 0–9) | sector | Empire-level. Defines a waypoint (§8.1). |
-| Attack (A) | target | Turn-based: starts combat with enemies at the ship's current location. For a ship target it becomes a pursuit: the ship follows the target and on reaching it decloaks if needed and fights. The order stays until the target is destroyed or no longer seen, then it is done (confirmed: binary). |
+| Attack (A) | target | In turn-based games (except for drones) it becomes Move To the target's sector plus an Attack there, which costs 1 MP and one move's supply and starts combat at once. In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed; once there it attacks (1 MP and one move's supply, cloaked drones decloaking first; the battle itself comes from the day's combat check, §6.3) and the order stays. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
 | Warp (W) | warp point | Composite. Needed for links to unexplored systems. The transit needs MP (else it waits), a warp point in the sector and every group member able to warp (else it fails), and no member with a space yard whose queue is not empty (else it fails). It costs 1 MP and one move's supply (§7). On each transit there is a 50 % chance that every member takes damage equal to the warp point's total `Warp Point - Turbulence`; taking that damage, or meeting mines or enemies on arrival, fails the order (confirmed: binary). |
-| Resupply (S) | — | Expanded at once into Move To the nearest depot: a colonized planet with `Supply Generation` owned by the empire or by an empire with Military Alliance or better, in an explored system, skipping sectors that hold a visible, armed, non-mothballed hostile (confirmed: binary). |
-| Repair (R) | — | Expanded at once into Move To the nearest own object with `Component Repair`, preferring immobile sources (planets, bases); repair ships are used only if there is no immobile source (confirmed: binary). |
-| Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance, that lies in a system the empire has explored and leads to one it has not, skipping warp points another own ship is already bound for. With no candidate nothing is added (confirmed: binary). |
-| Colonize (C) | planet | Composite. At the current location it first adds Load Cargo (population), but only if the ship carries no population. See the rules below the table. |
-| Sentry (Y) | — | Stays at the head at no MP cost. It ends when an empire the owner is hostile to (War, Non-Intercourse, None or no contact) is present in the same **system**, or when any group member's supply is below `Supply Amount for Low Supply Warning`. Then only the Sentry order is removed and the following orders run; the list is not cleared (confirmed: binary). |
+| Resupply (S) | — | Expanded at once into Move To the nearest depot: a colonized planet with `Supply Generation` owned by the empire or by an empire with Military Alliance or better, in an explored system, skipping sectors that hold a visible, armed, non-mothballed hostile, nearest by travel distance (the first one found wins a tie). The Move To is added even when the depot is in the current sector, where it completes at once; with no reachable depot nothing is added (confirmed: binary). |
+| Repair (R) | — | Expanded at once into Move To the nearest own object with `Component Repair`, preferring immobile sources (planets, bases); repair ships are used only if there is no immobile source. As for Resupply, the Move To is added even for the current sector, and nothing is added without a reachable source (confirmed: binary). |
+| Explore (E) | — | Expanded at once into Move To plus Warp for the warp point, nearest by travel distance, that lies in a system the empire has explored and leads to one it has not (nothing else about the link is checked), skipping every warp point that some own vehicle has a Warp order for anywhere in its list, the ordered vehicle's own earlier orders and fleet copies included. With no candidate nothing is added (confirmed: binary). |
+| Colonize (C) | planet | Composite. At the current location it first adds Load Cargo (population), but only if the ship carries no population; that Load Cargo completes and chains into the next order within the same action (§6.3). See the rules below the table. |
+| Sentry (Y) | — | Stays at the head at no MP cost. It ends when the owner can see, anywhere in the same **system**, an object (ship, base, unit group or colony) of an empire whose treaty with it is below Non-Aggression (War, Non-Intercourse, None or no contact), or when any group member's supply is below `Supply Amount for Low Supply Warning` (for fighter groups one tenth of it). The Sentry then counts as done: without Repeat it is removed and the following orders run; with Repeat on it stays in the list and execution moves past it. The list is not cleared (confirmed: binary). |
 | Set Patrol (P) | list of points | Each click appends a Move To. Clicking the ship's own location ends it and turns Repeat on; if only one order results, the list is cleared instead (confirmed: binary). |
 | Repeat Orders (K) | toggle | See the list rules above. |
 | Clear Orders (Del) | — | Empties the list and switches Repeat off. |
 | View Orders (V) | — | UI only. |
-| Load Cargo (L) | cargo type, sector | Composite. Loads as much of the type as fits, from own planets in the sector first, then own vehicles. Always done, even when nothing loads (confirmed: binary). |
+| Load Cargo (L) | cargo type, sector | Composite. Loads as much of the type as fits, from own planets in the sector first, then own vehicles; in a group each member loads for itself. Always done, even when nothing loads (confirmed: binary). |
 | Drop Cargo (D) | cargo type, sector | Composite. Drops the type into an own colony or vehicle there that has room. Can fail (confirmed: binary). |
 | Launch Units Remotely (I) | unit type, sector | Composite. Launches as many units of the type as allowed (§12). Always done (confirmed: binary). |
-| Recover Units Remotely (O) | unit type, sector | Composite. Recovers as many units as there is room for. Always done (confirmed: binary). |
+| Recover Units Remotely (O) | unit type, sector | Composite. Names a unit kind (fighters or satellites), not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Always done (confirmed: binary). |
 | Cargo Transfer (T) | — | Instant window, turn-based games only (§11). |
 | Launch/Recover Units (U) | — | Instant window, turn-based games only (§12). |
 | Jettison Cargo (J) | — | Destroys the selected or all cargo. No MP. |
 | Fleet Transfer (F) | — | Window (§9). |
 | Change Formation\Strategy (H) | — | Fleet only. |
 | Cloak (Z) / Decloak (X) | — | Take effect immediately; they are not queued. Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). |
-| Sweep Mines (Ctrl M) | — | Runs the minefield encounter of the current sector again (§12), then costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
+| Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
 | Use Component | component | A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap; in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
-| Self-Destruct | — | A separate order; needs a working `Self-Destruct` ability (§15). |
+| Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
 | Change Name (N) | text | — |
@@ -874,14 +1000,19 @@ sector is elsewhere) plus the action.
 - The colonizer is the last suitable member in group order. The colony starts with
   `Automatic Colonization Population`, and then every kind of cargo on the ship is dropped under
   the Drop Cargo rules, so only what fits arrives; the rest is lost with the ship, which is
-  consumed.
+  consumed. Then the planet's ancient ruins take effect (§3.3).
+- The colony type: when the empire's option to choose it on colonization is on (it is on for a
+  new empire) and the colonizing empire is a human player in a turn-based game, the player picks
+  it in a dialog; otherwise it is chosen automatically, as a computer player chooses it
+  (spec 05 §7.5).
 - When two ships target the same planet, the first one processed wins; the other's order fails.
 - A colony with 0 population is legal but cannot build facilities.
 
 **Stellar manipulation** (confirmed: binary):
 
-- It needs movement left but does not spend it. It is refused while the vehicle is cloaked and
-  while a visible hostile is present in the target sector.
+- It needs movement left but does not spend it (Construct needs none). It is refused while the
+  vehicle is cloaked and, for every action except Destroy Planet, while a visible hostile is
+  present in the target sector (spec 01 §9 defines "hostile" there).
 - The first working part with the ability must have a mounted `Supply Amount Used` no greater than
   the current supply. That amount is paid on success, without the racial supply modifier, and the
   part is destroyed if it has `Component Destroyed On Use`.
@@ -894,8 +1025,8 @@ sector is elsewhere) plus the action.
   `Open Warp Point Distance`.
 - The `Stop ...` abilities protect the whole system, counting objects of every empire, except
   `Stop Planet Destroyer`, which protects only the target's sector.
-- Other preconditions per action: asteroids to create a planet, a planet to destroy one, a star to
-  destroy or nebularise, a warp point to close, and so on.
+- The other preconditions and every result (what Destroy Star leaves, created nebulae, black
+  holes and storms, the far end of an opened warp point...) are in spec 01 §9.
 
 Planet-only orders (Scrap Facilities, Abandon Planet, Use Facility, Convert Resources) belong to
 other specs. The movement-log replay orders are UI only.
@@ -940,13 +1071,16 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   per-move cost, leaving out fighter groups and members with unlimited supply, and shows "Endless"
   when every member has unlimited supply. Supply is pooled among the members in the fleet's
   sector at the end of each turn (§7).
-- **Strategy** (from the manual; not checked in the binary): the fleet strategy overrides each
-  member's design default. By default the whole fleet forms one combat group in its formation. A
-  strategy can list vehicle types that break formation.
+- **Strategy:** in combat a member (ship or fighter group) uses the fleet's strategy while it is
+  in the fleet's combat group, and its own design's default otherwise (for a unit group, its first
+  design's). Only armed members (at least one weapon component, not mothballed) join the combat
+  group; unarmed members are placed at random and use their design strategy. How members leave
+  the group and when it dissolves is in §10 and spec 04 §4 and §16 (confirmed: binary).
 - **Experience:** a fleet has its own fractional experience value, capped at 50 (a gain past 50
   sets it to 50). It is not reduced when members join or leave; it is lost only when the fleet is
-  deleted. `Fleet Training` raises it. One further gain path adds 0.1 with a 1-in-4 chance; its
-  trigger was not traced.
+  deleted. The training abilities raise it (§3.3). Whenever a member ship gains experience from a
+  kill in combat or from a ram (spec 04), there is a 1-in-4 chance that its fleet gains 0.1
+  (confirmed: binary). The fleet's experience adds to its members' to-hit (spec 04).
 
 ---
 
@@ -955,10 +1089,11 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 All rules in this section are (confirmed: binary) unless marked otherwise.
 
 - The fleet's formation takes effect only in **combat**.
-- The leader takes the leader cell. The other members get positions 1, 2, 3… in the order their
-  pieces enter combat, skipping members whose strategy tells them to break formation. Members
-  numbered beyond the formation's position count get no formation place. If the leader itself
-  breaks formation, the fleet is anchored differently (only partly traced).
+- The fleet's armed members (see §9) form its combat group. The fleet leader anchors it and takes
+  the leader cell, even when it is unarmed; if the leader is not in the battle, the first armed
+  member in piece order anchors instead. The other armed members get positions 1, 2, 3… in the
+  order their pieces enter combat. Nothing breaks formation at placement. Members numbered beyond
+  the formation's position count get no formation place.
 - A position's `Type` and the `Leader Design Type` are never used for placement; they are for
   display only.
 - A member's target cell is the leader's cell plus the offset (dx, dy) = its position − the leader
@@ -978,8 +1113,15 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   The diagonal facings are not rescaled, so they stretch the pattern by about 1.41. The result is
   clamped to the combat map (x 0..71, y 0..62).
 - At most 100 positions are read per formation record.
-- The formation breaks when the leader is destroyed, or when it is cleared by a combat group order
-  (from the manual; not checked in the binary).
+- Members leave the formation only during automated moves (every piece in strategic combat): a
+  piece leaves when its strategy in effect is Don't Get Hurt, Drop Troops, Board or Ram, or when
+  the strategy's `Break Formation` flag covers its category (spec 04 §16.1). The whole group
+  dissolves when the leader is destroyed or removed from the group, when the leader of an
+  automated side is left with 0 movement by damage, or when, after the leader's automated move,
+  every square on the map around it is occupied. When the leader itself leaves formation, only
+  its own marks are cleared: the members stay in the group, keep the fleet strategy, but have no
+  leader to follow and move on their own. In tactical combat the player's combat group orders
+  also change groups (spec 04 §5).
 - Fleet Transfer and Change Formation\Strategy select the formation. The Formation Report draws the
   grid.
 
@@ -1036,9 +1178,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   1000. The counts reset every turn.
 - **Per combat turn:** a ship launches up to the Sum of `Val 1`; a planet up to 100 of each kind it
   carries. The per-turn budget and the units-in-space cap do not apply in combat.
-- **Recovery:** only fighters and satellites can be recovered. There is no per-turn limit; free
-  cargo space is the only limit. In turn-based games a fighter group can be recovered only while
-  it has its full movement points.
+- **Recovery:** only fighters and satellites can be recovered. A ship or base needs the matching
+  ability (`Launch/Recover Fighters` or `Launch/Recover Satellites`); a colonized planet needs
+  none. There is no per-turn limit; free cargo space is the only limit. In turn-based games a
+  fighter group can be recovered only while its MP left equal its maximum.
 - **Caps:**
   - Mines and satellites per sector: if the owner's mines (satellites) in the sector are already at
     `Maximum Mines Per Player Per Sector` (`Maximum Satellites Per Player Per Sector`), the launch
@@ -1049,12 +1192,22 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
     not count.
   - Ships: building a ship or base is refused while the empire has at least the game's
     ships-per-player option (default `Default Number Of Ships Per Player`).
-- **Grouping:** units in space are held in groups, one per (owner, unit kind, sector); different
-  designs share a group. Every drone is launched as its own group and drones never merge.
-  Launching into a group refills the whole group's supply to its new maximum; new groups start
-  full.
+- **Grouping:** units in space are held in groups; different designs share a group. Launching
+  outside combat adds the units to the **last** group of the same kind and owner in the sector's
+  object order, whatever its designs, fleet, orders or cloak, and refills that group's supply to
+  its new maximum; with no such group a new one is made, which starts full. Every drone is
+  launched as its own group. Groups never merge otherwise: a group moving into a sector where
+  another of its kind waits, the end of the turn and combat all leave them apart. In combat each
+  launch action (one launcher in one combat turn) makes a new group holding everything it
+  launched, and groups that no carrier recovers afterwards stay as they are.
+- **Movement of a new group:** it starts with 0 MP. In a turn-based game the launch then sets its
+  MP to its maximum, so it can move, and be recovered, in the same turn; in a simultaneous game it
+  stays at 0 and the group does nothing more that turn. Units added to an existing group do not
+  change its MP. (In combat launched units move at once, spec 04 §5.)
 - **Group abilities** list each unit's design abilities once per unit, so summed abilities scale
-  with the number of units.
+  with the number of units. A group's cloak and sensor levels are, per sight type, the best level
+  of any of its units (a cloak level at least 1, an `EM Active` sensor level at least 1); a unit
+  group's cloak level applies whether or not the group is flagged as cloaked.
 - **Group supply:**
   - Maximum = the sum over units of each unit's `Supply Storage`.
   - Upkeep each turn: fighters pay count × `Fighter Supply Usage Per Turn`, or, while cloaked,
@@ -1073,22 +1226,30 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 
 | Unit | Notes |
 |---|---|
-| Fighter | Moves like a ship inside the system. Whether it can use warp points was not determined. |
+| Fighter | Moves like a ship inside its system; cannot use warp points (§6.2). |
 | Satellite | Stationary. Fires on enemies in its sector. |
-| Mine | Hidden: hull cloak level 5 in all sight types (stock data). Triggers when a hostile vehicle enters the sector. |
-| Drone | Needs a ship or planet target at launch and moves toward it automatically to ram. How drones pick and follow targets was not traced. |
+| Mine | Hidden: hull cloak level 5 in all sight types (stock data). Strikes hostile groups that enter the sector (below). Its owner sees it, as every owner sees its own objects. |
+| Drone | A launch takes no target and adds no order. A drone group follows orders like any vehicle: an Attack order makes it pursue its target, through warp points too, and ram it in combat (§8, spec 04 §10.7). Out of supply it is destroyed, after each step or warp and at the end of the turn. |
 
-The remaining points come from the manual and were not checked in the binary:
-
-- **Mines:** "hostile" means any empire with which there is no treaty, or war. Mines hit cloaked
-  vehicles as well. They hit fighters and drones when `Fighters/Drones Can Be Hit By Mines` is
-  true. A mine explosion damages the mine as well. The owner always sees its own mines.
-- **Sweeping:** a vehicle with `Mine Sweeping` removes up to V1 enemy mines when it enters a
-  sector, before detonation [VERIFY order], and again on each Sweep Mines order.
-- **In combat:** after combat, survivors are recovered automatically into own carriers in the
-  sector that have space. Units that do not fit stay in space.
-- **Self-destruct** works on unit groups as on ships. Drone groups and minefields cannot be
-  scrapped (§15).
+- **Mine encounter.** When a group enters a sector (by a step or a warp arrival), and when it runs
+  a Sweep Mines order, the minefields there act, unless some vehicle of the group belongs to the
+  mine owner or to an empire the mine owner rates at Non-Aggression or better (the mine owner's
+  side of the treaty); so mines strike at War, Non-Intercourse, None and no contact. Sweeping
+  comes first: if the group has a sweeper and the sector is one of its owner's tagged minefields,
+  its cloaked members decloak; then the total `Mine Sweeping` of the group's uncloaked members
+  removes that many hostile mines, minefield by minefield in sector order and design by design in
+  the order the designs joined. Then every remaining hostile mine strikes a random vehicle of the
+  group, cloaked ones included, using its own design's warheads, and is used up, as spec 04 §10.6
+  describes (fighter and drone groups are skipped unless `Fighters Can Be Hit By Mines` /
+  `Drones Can Be Hit By Mines` allow them). If mines struck, the move stops and the order fails.
+- **After combat:** each carrier recovers the fighter and satellite groups it launched itself in
+  that battle, ships first and then planets, in piece order, with every design of each group,
+  as far as its free cargo allows. It needs to still have a working bay of that kind (a colonized
+  planet needs none); the turn-based full-movement test does not apply. Groups launched by
+  others, mines and drones stay in space.
+- **Self-destruct:** satellite groups, minefields and drone groups can self-destruct at any time
+  with no ability; fighter groups never can. Drone groups and minefields cannot be scrapped
+  (§15).
 
 ---
 
@@ -1096,12 +1257,15 @@ The remaining points come from the manual and were not checked in the binary:
 
 All rules in this section are (confirmed: binary) unless marked otherwise.
 
-- **When:** once per turn, in each empire's end-of-turn processing, right after that empire's
-  maintenance has been paid (§16). That this comes after the turn's movement and combat is
-  (inferred) from the phase order.
+- **When:** once per turn, in each empire's end-of-turn processing, after that empire's
+  maintenance has been paid (§16) and before its supply step (§7). In simultaneous games this is
+  after the whole turn's movement and combat; in turn-based games the empire's end-of-turn
+  processing runs when that player ends the turn, after its own moves.
 - **Where and how much:** repair is pooled per (empire, sector). The pool is the Sum of
-  `Component Repair` V1 over all of that empire's own objects in the sector: ships, bases and
-  planet facilities. Allies' sources do not count. Repair is free.
+  `Component Repair` V1 over all of that empire's own objects in the sector: ships, bases, unit
+  groups (their abilities) and colonized planets (their own abilities and their facilities). A
+  colony needs no population or anything else to count. Allies' sources do not count. Repair is
+  free.
 - **Points:** repair points = truncate(pool × (100 + R) %), where R is the empire's repair
   modifier: racial trait values, plus (Repair Aptitude − 100), plus the culture's repair value,
   added together before the one truncation.
@@ -1116,7 +1280,6 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Components with `Emergency Energy` or `Emergency Resupply` can be repaired only when an own space
   yard is in the sector. Other used-up one-shot components are repaired like any other.
 - The status icons "Under Repair" and "Can Repair" follow from this.
-- Whether a planet's facilities need population to repair was not determined.
 
 ---
 
@@ -1175,7 +1338,7 @@ section are (confirmed: binary).
 | Mothball | a space yard, not cloaked, status Normal, no cargo | Status becomes Mothballed: no abilities, 0 movement, 0 supply, no maintenance. |
 | Unmothball | status Mothballed | Costs round(design cost × `UnMothball Ship Percent Cost` %) per resource, and every resource must be in stock. The vehicle returns to Normal. Bases and vehicles with a working `Quantum Reactor` come back with full (unlimited) supply; others are refilled only if they are at a resupply depot and otherwise stay at 0. |
 | Retrofit | a space yard | §14. |
-| Self-destruct | a working `Self-Destruct` ability | The vehicle is destroyed. No yard is needed and nothing is refunded. |
+| Self-destruct | a ship or base: `Self-Destruct` in its ability list (the hull counts; a mothballed vehicle has none); satellite groups, minefields and drone groups: nothing; fighter groups: never allowed | The whole object is destroyed. No yard is needed and nothing is refunded. |
 | Fire On | another own object in the sector with at least one weapon | The selected vehicles are destroyed. The last armed object cannot be destroyed this way. |
 
 "round" is to nearest with halves to even, computed in floating point (see Conventions).
@@ -1287,10 +1450,15 @@ All rules in this section are (confirmed: binary).
 8. **Simultaneous day schedule:** the exact rounding for MP that do not divide 30, and processing
    order within a day. Does a combat interruption clear orders in simultaneous mode?
    **Answer:** a per-vehicle counter gains speed / 30 each day and the vehicle acts when it reaches
-   1; processing within a day is in object creation order; combat does not clear orders (§6.3)
-   (confirmed: binary). Still open: the counter is kept in floating point, and whether some speeds
-   lose their last step (a speed-1 ship never moving, for example) depends on the x87 precision
-   at run time. Observe a speed-1 and a speed-5 ship in a simultaneous game.
+   1; combat does not clear orders (§6.3) (confirmed: binary). The counter is a double updated in
+   x87 extended precision; the game never lowers that precision (confirmed: binary), and turn
+   processing was measured at it in the running game, where a speed-6 ship's counter matched the
+   arithmetic bit for bit (observed). So many speeds lose their day-30 step and some steps come a
+   day later: speed 1 never moves, speed 5 moves on days 7, 13, 19 and 25, and only speeds 8, 10,
+   12–15, 24, 26, 28, 30 and above keep the exact schedule. §6.3 gives the arithmetic and the full
+   table. Within a day objects act in object-slot order, and one action runs orders until one
+   waits (done orders chain) (§6.3) (confirmed: binary). The engine counts exactly
+   (PARITY_GAPS).
 9. **Systems To Avoid** when no avoid-free route exists: refuse the order or go through?
    **Answer:** the Move To fails and the list is cleared; there is no fallback (§6.2)
    (confirmed: binary).
@@ -1378,19 +1546,21 @@ All rules in this section are (confirmed: binary).
     `Val 2` at 0) with separate budgets for launching and recovering. Launched units start with
     full supply and move from the next turn; drones only join groups with the same target.
     **Answer:** the original uses `Val 2` only (no fallback), budgets launches only (recovery is
-    limited by cargo space), groups units per (owner, unit kind, sector) across designs, and never
-    merges drones. New groups start full and launching refills the whole group. When launched units
-    first move was not determined (§12) (confirmed: binary).
+    limited by cargo space), adds launched units to the last group of their kind in the sector
+    whatever its designs, and never merges drones. New groups start full and launching refills
+    the group joined. A new group starts with 0 MP: a turn-based launch then sets its MP to the
+    maximum, so it moves (and can be recovered) the same turn, while in a simultaneous game it
+    first moves the next turn (§12) (confirmed: binary).
 28. **Hazard damage outside combat:** storms, destructive centres and turbulence hit armor first,
-    then other components, with no shields. **Answer (partial):** storm damage happens only to a
-    group stepping into the storm sector, with a 50 % chance, and stops it; turbulence is 50 % per
-    transit; neither uses shields. Destructive centres hit everything on the centre square at the
-    end of the turn (§6.2) (confirmed: binary). How the damage is spread over components was not
-    checked here. The engine hits a ship's armor first, then its other components; a unit group
-    loses whole units instead, as a group does in combat (spec 04 §9.4) but without shields and
-    without a pool: while the damage covers a unit's structure, a unit of one of the group's
-    designs, drawn at random, dies; what is left over is lost, so a group never carries partial
-    damage. (inferred)
+    then other components, with no shields. **Answer:** storm damage happens only to a group
+    stepping into the storm sector (not on a warp arrival), with a 50 % chance, and stops it;
+    turbulence is 50 % per transit; destructive centres hit everything on the centre square at
+    the end of the turn. All of them, and the `Ship - Damage` event, use the combat damage routine
+    for Normal damage without shields, special armor, modifiers or pool: a ship loses components in
+    the random, structure-weighted order with armor first until the damage cannot cover the next
+    one, and the rest is lost; a unit group loses whole units by up to 20 random draws, a unit's
+    shields counting as hit points, and the rest is lost (§6.2) (confirmed: binary). The engine
+    keeps partial damage and picks differently (PARITY_GAPS).
 29. **Cargo lost to damage:** the engine drops the last unit stack first, then population.
     **Answer:** wrong way round: the original drops population first (1M at a time), then units
     from the first stack (§11) (confirmed: binary).
@@ -1403,135 +1573,186 @@ All rules in this section are (confirmed: binary).
 32. **Resupply and repair sources:** the engine requires a populated colony for depot and
     facility repair, repairs for free, and lets allies' depots refuel from Military Alliance up.
     **Answer:** depots need no population; allies' depots refuel from Military Alliance up; repair
-    is free and uses own sources only. Whether facility repair needs population was not determined
-    (§7, §13) (confirmed: binary).
+    is free and uses own sources only. Facility repair needs no population either: every own
+    colonized planet, ship, base and unit group in the sector adds its `Component Repair` (§7,
+    §13) (confirmed: binary).
 33. **Training:** the engine uses the single best source (sector or system facility) and treats a
-    `Val 2` of 0 as no cap. **Answer:** sources stack: every own object in the sector is a
-    separate source with its own largest V1 and V2, and a V2 of 0 gives no training (§3.3)
-    (confirmed: binary for sector-level ship training; the system-wide and fleet paths have the
-    same shape but were less fully traced).
+    `Val 2` of 0 as no cap. **Answer:** sector sources stack: every own object in the sector is a
+    separate source with its own largest V1 and V2, and a V2 of 0 gives no training. Fleet
+    training works the same way on fleets located in the sector, but a gain that would pass the cap
+    is V2 − truncate(experience). The system-wide abilities give one source per system (the largest
+    V1 and V2 over all the empire's objects there), train ships, bases and fleets in the whole
+    system with the truncated-experience cap rule, and run after all sector sources. Ship
+    experience is capped at 50 (§3.3, §9) (confirmed: binary).
 34. **Colonization:** population or units beyond the new colony's capacity are lost, the colony
     type is the first of the empire's colony types, ruins are used up, and asteroids cannot be
     colonized. When two ships reach a planet in the same turn the lower vehicle id wins.
-    **Answer (partial):** cargo beyond capacity is lost; the first ship processed (object creation
-    order) wins and the other's order fails; the colony also receives
-    `Automatic Colonization Population` (§8) (confirmed: binary). Colony type and ruins were not
-    determined.
-35. **Stellar manipulation:** the engine requires movement left but does not spend it. Destroy
-    Star leaves a Destroyed Star and removes every other body but warp points. Created nebulae
-    and black holes take the first system type of that physical type; removing them takes the
-    first normal type without abilities. Created storms get one random effect up to the
-    `Created Storm Maximum ...` caps. Opened links are two-way, and their far end goes on the
-    free edge sector facing the origin. **Answer (partial):** movement is required but not spent
-    (confirmed: binary). The original also refuses while cloaked or with a visible hostile in the
-    target sector, needs the part's supply, and for Open Warp Point refuses existing links, systems
-    with 10 warp points and blocked systems (§8) (confirmed: binary). The created-object details
-    were not checked.
+    **Answer:** cargo beyond capacity is lost; the first ship processed (object-slot order) wins
+    and the other's order fails; the colony also receives `Automatic Colonization Population`.
+    The colony type is picked by the player in a dialog when the empire's option for it is on (the
+    default) and a human colonizes in a turn-based game, and otherwise chosen automatically as a
+    computer player would. `Ancient Ruins` are used up (removed) once applied; `Ancient Ruins
+    Unique` applies only when there are no plain ruins and is then used up too (§3.3, §8)
+    (confirmed: binary).
+35. **Stellar manipulation:** the engine requires movement left but does not spend it.
+    **Answer:** movement is required but not spent (Construct needs none). The original also
+    refuses while cloaked or, except for Destroy Planet, with a visible hostile in the target
+    sector, needs the part's supply, and for Open Warp Point refuses existing links, systems with
+    10 warp points and blocked systems (§8) (confirmed: binary). Every created or removed object is
+    in spec 01 §9 (confirmed: binary): Destroy Star sends a shockwave that turns planets into
+    asteroid fields and destroys everything else but warp points, and **no destroyed star
+    remains**; Create Nebulae and Create Black Hole do the same and then give the system fixed
+    abilities; Destroy Nebulae and Destroy Black Hole make it a normal system with no system
+    abilities; a created storm gets one random effect whose value equals its `Created Storm ...`
+    setting; an opened link is two-way, its far end on the target system's edge facing the origin.
 36. **End-of-turn supply order:** the engine runs, per empire, unit and cloak upkeep, then depot
     refills, fleet pooling and solar collectors, then the limits (a drone at 0 is lost, a cloak at
-    0 supply drops). The text above fixes only that solar collectors come after depots and
-    pooling. Is the rest in that order, and is the upkeep of units part of this step or of the
-    per-object upkeep that follows? (inferred)
-37. **Storms on a warp arrival:** does a group that arrives through a warp point in a sector with
-    `Sector - Damage` roll for storm damage as if it had stepped in? The engine says yes.
-    (inferred)
-38. **Emergency Energy in simultaneous games:** it adds V1 to the day counter. Does it also add
-    V1 to the movement points left, so the extra actions can be steps? The engine adds both.
-    (inferred)
-39. **Acting order within a day:** vehicles act in object creation order. Where do planets with
-    launch or recover orders and fleets fit in? The engine puts planets first (they were created
-    before any vehicle), a fleet at its leader's place, and a fleet member's own in-place orders
-    right after its fleet. (inferred)
-40. **Sentry "present":** the engine ends a Sentry when a hostile empire has a colony in the
-    system or a vehicle there that the owner can see. Do unseen (cloaked) vehicles count, and do
-    colonies? (inferred)
-41. **Recovery into a ship:** does a ship need the matching launch ability (bay) to recover units,
-    as the engine requires? Planets need none. (inferred)
-42. **Mounted damage far out:** with a mount the table index is clamped to 1..20, so a weapon
-    whose range-20 damage is above 0 would reach any distance. The engine's maximum range stops
-    at the last damaging range plus the range modifier. How far does the original let such a
-    weapon fire? (inferred)
-43. **Groups of several designs:** one group per (owner, unit kind, sector) holds every design
-    (§1, §12) and moves, pays supply and fights as one. Where the spec is silent the engine
-    chooses (inferred):
-    - launched units join the first group of their kind in the sector (in object order),
-      whatever its orders or fleet; groups that move into a sector where another group of their
-      kind waits stay apart, since only launching is known to merge;
-    - Recover Units takes the units of one design out of the group (the Launch \ Recover
-      window offers the whole group, one order per design); the supply left stays with the
-      group, up to what the rest can hold;
-    - a minefield that mixes designs loses its mines, to sweepers and when they strike, in the
-      order its designs joined, and each mine strikes with its own design's warheads;
-    - a group's cloak and sensor levels are the best of its designs' (its ability list holds
-      every design's abilities, §12), and every design of a group that is seen counts as seen;
-    - the Combat Simulator puts the units of one side and kind into one group; units launched
-      in a battle that no carrier recovers join the sector's group of their kind (drones stay
-      alone) (spec 04 §19.1).
-44. **Training sources:** the engine takes the owner's populated colonies first, then vehicles, as
-    sources, and facilities need population. What order and population rule does the original
-    use? (inferred)
-45. **Obsolete design purge:** "seen in the last 50 turns" is read as "still in the empire's list
-    of seen designs". Each empire's end-of-turn step 12 drops designs last seen more than 50 turns
-    ago from that list (spec 05 §8, open question 31). (inferred)
-46. **Attack on a planet:** the engine ends it when the colony is gone or has become the
-    attacker's. When does the original end it? (inferred)
-47. **Repeat battles within a turn:** "every object present already fought here" — the engine
-    counts vehicles (not mines) and colonies whose owner is hostile to, or faced by, another owner
-    present, and takes a cloaked vehicle that did not fight as unseen. (inferred)
-48. **Drift target:** the engine draws the shared random target only in turns when some system
-    drifts. Does the original draw it every turn? This changes only the random sequence.
-    (inferred)
-49. **Sentry with Repeat on:** when a Sentry ends, the engine removes it even with Repeat on,
-    instead of keeping it at the end of the list. (inferred)
-50. **Names taken meanwhile:** a design created with a name that another design took since
-    the order was given (two players in one turn, a computer player's name list) gets the
-    first free Roman numeral ("Scout II") instead of being refused. Premade starting
-    designs keep their plain name when it is free, else get the empire's name in front.
-    (inferred)
-51. **Ad-hoc groups:** the engine forms them when the movement phase starts, from ships
-    outside fleets (not bases or unit groups) in one sector with identical head orders.
-    A group only loses members: after each action, members whose head order is no longer
-    the leader's go on alone (or as a group of their own) from the next day, at their own
-    speed. A Load or Drop amount is shared by the group, as for fleets. In turn-based
-    games a group forms only among the ships moved by one command. When do groups
-    form in the original, and can other vehicle classes join them? (inferred)
-52. **Greedy steps:** when moving straight, the three squares tried are the forward
-    square and its two neighbours across the direction of travel, so a try can pick the
-    avoided square again; squares off the grid are failed tries. The square the group
-    heads for (never avoided) is the next warp point on the route or the destination.
-    Storm damage counts the `Sector - Damage` of the objects in the sector, not a
-    system-wide value; hostile colonies count as hostile objects, unseen vehicles (mines
-    included) do not. (inferred)
-53. **Clearing orders on meeting empires:** the engine checks the option after every
-    warp transit (Warp orders and the jumps of a Move To), counting that empire's
-    colonies in the system and its vehicles the owner can see. The order in progress fails
-    even when the jump ended it. (inferred)
-54. **Orders as given:** a Resupply or Repair given where the depot or repair source
-    already is adds nothing, and so does one with no reachable target. Explore skips warp
-    points named by Warp orders anywhere in the lists of other own ships and fleets, and
-    by the orders given before it in the same list; its candidates are those whose far
-    system is unexplored, whether or not the link is known. Orders sent again unchanged
-    are not expanded again. The Load Cargo that Colonize adds takes an action of its own,
-    like every order that needs no movement (§6.3). (inferred)
-55. **The Attack Sector question (turn-based, §6.2):** the engine asks before a human's group
-    (not made only of drones) steps into a sector holding a visible vehicle other than a mine,
-    or a colony, of an empire it is hostile to; a Warp jump asks about the far side. An Attack
-    order never asks about its target's sector. Orders a human gave in advance (`processTurn`)
-    and ministers' orders enter without asking. Which sectors does the original ask about?
-    (inferred)
-56. **Fighter recovery in turn-based games (§12):** "full movement points" is read as the
-    group's movement left being at least its maximum for the turn. (inferred)
-57. **Damage between upkeep steps:** supply and cargo are cut back to the capacity that is
-    left as soon as damage outside combat wrecks storage (events, sabotage, hazards, in
-    turn-based moves too, and a storage part used up by its own device), since
-    these strike after the owner's end-of-turn upkeep; after combat the owner's upkeep does
-    it later in the same turn (§7, §11). A `Ship - Lose Supply` on a vehicle with unlimited
-    supply takes from the marker value, which returns at the owner's next upkeep; it never
-    shows, since such a vehicle reads "Endless". (inferred)
-58. **Ship Movement options (§6.2):** the engine switches both options (avoid tagged
-    minefields, avoid restricted systems) on for a new human empire; a computer player's are
-    overwritten each turn by its `AI_Settings` flags, which are off when the keys are absent.
-    The group exempt from tagged minefields is one whose leading ship (the fleet leader, the
-    first ship of an ad-hoc group, or the ship itself) has the design type `Mine Sweeper`. A
-    tagged sector where the route starts or ends blocks neither a step nor a warp link. What are
-    the original's defaults for a new empire, and which design type is exempt? (inferred)
+    0 supply drops). **Answer:** upkeep for every own object (cloak cost, fighter and drone
+    upkeep), with a vehicle that reaches 0 decloaking at once; then depot checks; then fleet
+    pooling; then drones at 0 are destroyed. Solar collectors come later, in the training step
+    after the storage cap. The units' upkeep is part of this step; the later per-object step only
+    records the sector each vehicle came from (§7) (confirmed: binary). The engine decloaks after
+    the depot refill and adds solar supply before the drone losses (PARITY_GAPS).
+37. **Storms on a warp arrival:** does a group arriving through a warp point roll for storm damage?
+    **Answer:** no; only in-system steps into the sector roll (§6.2) (confirmed: binary). The engine
+    also rolls on arrival (PARITY_GAPS).
+38. **Emergency Energy in simultaneous games:** **Answer:** it adds V1 to the day counter only. MP
+    left are untouched, but every action runs with 1 MP anyway, so the extra actions can be steps
+    (§6.3, §8) (confirmed: binary). The engine also adds V1 to the movement left, which gives the
+    same result.
+39. **Acting order within a day:** **Answer:** one list in object-slot order (a new object reuses
+    the first slot freed by a destroyed one). Colonized planets with orders, minefields, satellite
+    groups and vehicles with 0 maximum MP act on day 1 only, where their slots put them. A fleet
+    acts at the place of the first member due that day, not its leader, and there are no separate
+    member orders: each member's list holds copies of the fleet's orders (§6.3) (confirmed: binary).
+    The engine puts planets first and fleets at the leader's place, and a fleet member's own
+    in-place orders are an OpenSE4 extension (PARITY_GAPS).
+40. **Sentry "present":** **Answer:** an object the owner can see, anywhere in the system, of an
+    empire whose treaty with it is below Non-Aggression: ships, bases, unit groups (mines only if
+    seen) and colonies (only if seen) (§8) (confirmed: binary). The engine counts unseen colonies
+    (PARITY_GAPS).
+41. **Recovery into a ship:** **Answer:** yes, a ship or base needs the matching ability for the
+    kind (`Launch/Recover Fighters` or `Launch/Recover Satellites`); planets need none (§12)
+    (confirmed: binary).
+42. **Mounted damage far out:** **Answer:** a weapon may fire whenever its damage at the actual
+    distance is above 0; there is no other range cap, so a mounted weapon whose range-20 entry is
+    above 0 reaches the whole combat map. The "maximum range" used by range strategies,
+    point-defense and the reports is the largest range from 1 to 20 with damage, so at most 20
+    (confirmed: binary). No stock weapon does damage at range 20. The engine's maximum range can
+    exceed 20 (PARITY_GAPS).
+43. **Groups of several designs:** **Answer** (§12) (confirmed: binary):
+    - launched units join the **last** group of their kind and owner in the sector (object
+      order), whatever its designs, orders, fleet or cloak, and only that group is refilled;
+      groups never merge in any other way (moving, end of turn, combat);
+    - Recover Units takes a unit kind, not a design: it recovers every design of each own group
+      of that kind in the sector, group by group;
+    - a mixed minefield loses mines to sweepers design by design in the order the designs joined,
+      strikes in the same order, and each mine uses its own design's warheads;
+    - a group's cloak and sensor levels are the best of its units', and its cloak applies whether
+      or not it is flagged as cloaked;
+    - the Combat Simulator puts the units of one side and kind into one group (each drone alone);
+      in a battle each launch action makes its own group, and groups that no carrier recovers
+      stay separate;
+    - battles record the designs of ships and bases (and of units in cargo) as seen, but not
+      those of unit groups in space; mine encounters record the mines' designs.
+    The engine joins the first group, refills every group of that kind, recovers per design and
+    merges unrecovered battle groups (PARITY_GAPS).
+44. **Training sources:** **Answer:** every own object in object order, colonized planets without
+    any population requirement (§3.3, question 33) (confirmed: binary). The engine takes populated colonies
+    first (PARITY_GAPS).
+45. **Obsolete design purge:** **Answer:** each design keeps, per empire, the turn it was last seen.
+    Each empire forgets sightings more than 50 turns old in its end-of-turn processing, and every
+    10th turn a design seen by another living empire less than 50 turns ago is kept, so a
+    sighting exactly 50 turns old no longer protects it (§4.1) (confirmed: binary). The engine
+    keeps it one turn longer (PARITY_GAPS).
+46. **Attack on a planet:** **Answer:** the pursuit ends when the target no longer exists, belongs
+    to the attacker's owner, or is a planet without a colony; there is no visibility test for any
+    target (§8) (confirmed: binary). The engine matches for planets but drops a ship target that
+    is no longer seen, and decloaks every member, not only drones, when it attacks (PARITY_GAPS).
+47. **Repeat battles within a turn:** **Answer:** only the latest battle at that location this
+    turn counts. A new battle is fought if any of its surviving pieces was below full structure;
+    otherwise it is skipped only when every object owned by a player in the sector (ships,
+    bases, unit groups including minefields, colonies) is on its owner's list of that battle's
+    survivors, matched by name, with no exception for cloaked or peaceful objects (§6.3)
+    (confirmed: binary). The engine's test differs (PARITY_GAPS).
+48. **Drift target:** **Answer:** it is drawn every turn, whether or not any system drifts (§6.2)
+    (confirmed: binary). The engine draws it only when needed; this changes only the random
+    sequence (PARITY_GAPS).
+49. **Sentry with Repeat on:** **Answer:** an ending Sentry counts as done, so with Repeat on it
+    stays in the list and execution moves past it; the removal of a head Sentry after combat
+    ignores Repeat (§6.3, §8) (confirmed: binary). The engine removes it (PARITY_GAPS).
+50. **Names taken meanwhile:** **Answer:** the original never checks names of designs that arrive
+    in a turn file or come from an empire file, so a duplicate name is simply kept; computer
+    players pick names from their list, then add II to XV, then use a numbered name (§4.1)
+    (confirmed: binary). The engine's renaming (first free Roman numeral, empire name in front of
+    premade designs) is an OpenSE4 extension that keeps names unique; engine choice stands.
+51. **Ad-hoc groups:** **Answer:** the executing group is rebuilt at every execution. A computer
+    player's group takes every own vehicle in the sector with an identical head order (ships,
+    bases, unit groups, fleet members and cloaked ones included); a human player's ships never
+    group this way, only drone groups outside fleets do; in turn-based games the vehicles selected
+    together form the group. Load and Drop carry no amount: each member loads or drops for itself
+    (§8) (confirmed: binary). The engine groups ships of every empire from the start of movement
+    (PARITY_GAPS).
+52. **Greedy steps:** **Answer:** the target is the next warp point on the route or the
+    destination; replacements are drawn from the current square (1 in 2 straight steps after a
+    diagonal, 1 in 3 among the forward square and its two side neighbours after a straight step,
+    so the forward square can repeat); coordinates are clamped to the grid, so an off-grid draw
+    becomes the edge square; every replacement is tested even when it is the target; bad squares
+    are tagged minefields (option on, no Mine Sweeper exemption inside a system), squares whose
+    objects have `Sector - Damage` (the system value is not counted), and squares with a visible
+    hostile object, colonies included, mines only if seen (§6.2) (confirmed: binary). The engine
+    differs in the edge cases (PARITY_GAPS).
+53. **Clearing orders on meeting empires:** **Answer:** checked only at the end of a warp transit
+    that met no other trouble (Warp orders and the jumps of a Move To or a pursuit), not for
+    drone-only groups, counting objects of that empire in the arrival system that the owner can
+    see; every member's list is cleared but the jump itself does not fail (§6.4) (confirmed:
+    binary). New empires have "clear on meeting an enemy" on. The engine's default is off and it
+    counts unseen colonies (PARITY_GAPS).
+54. **Orders as given:** **Answer:** Resupply and Repair add their Move To even for the current
+    sector (it completes at once), and nothing without a reachable target, which the engine's
+    choice matches in effect. Explore skips warp points named by a Warp order anywhere in any own
+    vehicle's list, the vehicle's own earlier orders and fleet copies included, and checks nothing
+    about the link beyond explored/unexplored; the engine matches. The Load Cargo that Colonize
+    adds does not take an action of its own: done orders chain within one action (§6.3, §8)
+    (confirmed: binary); the engine gives it its own action (PARITY_GAPS). Not expanding orders
+    that are sent again unchanged is an OpenSE4 extension; engine choice stands.
+55. **The Attack Sector question (turn-based, §6.2):** **Answer:** asked only on in-system steps
+    and only while a human is the current player, orders carried over to the start of that turn
+    included; any object of a hostile empire in the next sector that the owner can see counts,
+    mines and colonies included if seen; never for drone-only groups or groups whose members are
+    all cloaked; warp jumps never ask; the approach steps of an Attack ask like any step (§6.2)
+    (confirmed: binary). The engine differs in these points (PARITY_GAPS).
+56. **Fighter recovery in turn-based games (§12):** **Answer:** recovery is refused while the
+    group's MP left are below its maximum (§12) (confirmed: binary), which the engine's reading
+    matches.
+57. **Damage between upkeep steps:** **Answer:** every destroyed component, in combat or outside
+    it, triggers an immediate recompute that clamps supply and trims cargo to the new capacity.
+    `Ship - Lose Supply` does nothing to a vehicle with unlimited supply; otherwise it takes the
+    smaller of the event amount and the current supply (§7, §11) (confirmed: binary). The engine
+    leaves the clamp after combat to the owner's upkeep and takes the event's supply from the
+    unlimited marker (PARITY_GAPS).
+58. **Ship Movement options (§6.2):** **Answer:** a new empire has both on (avoid tagged
+    minefields, avoid restricted systems), and "clear orders on meeting an enemy" on too. The
+    exempt design type is the one named `Mine Sweeper`, tested on the group's first member (for a
+    fleet the first member at its location in object order), and only for warp links. A tagged
+    warp-point sector blocks a link even at the start or the destination (§6.2) (confirmed:
+    binary). The engine exempts the start and goal sectors and tests the leader (PARITY_GAPS).
+59. **Body notes settled in this pass** (confirmed: binary): units that do not fit in the
+    builder's cargo go to other own cargo in the same sector only (§1); `Long Range Scanner -
+    System` lets the empire inspect every foreign ship and base in the system, and inspection takes
+    effect when a player displays the target's details (§3.3); mine sweeping comes before the
+    mines strike (§12); fighters cannot use warp points (§6.2); drones get no target at launch and
+    pursue targets only through Attack orders (§12); a fleet's strategy applies to its armed
+    members while they are in its combat group (§9); when members leave formation and when the
+    group dissolves, the 0.1 fleet experience gain (a kill or a ram, 1 in 4) and the anchoring when
+    the leader is absent or leaves formation (§9, §10); mine hostility, cloaked victims, the
+    fighter and drone settings, mines used up per strike, owners seeing their mines (§12);
+    automatic recovery after combat of the groups a carrier launched in that battle (§12);
+    self-destruct of unit groups (§12, §15); the seven recognised but unused ability types have no
+    effect (§3.3); repair and the rest of the end-of-turn processing come after the turn's
+    movement and combat in simultaneous games (§7, §13).
+
+Still open in the body, outside this pass: the exact path cost around a `System - Destructive
+Center` (§6.2; tracing that routine's cost formula would settle it), how the prototype state
+gates design editing beyond the construction-queue test (§4.1), and which treaties let vehicles
+pass without combat (§6.4, the diplomacy spec).

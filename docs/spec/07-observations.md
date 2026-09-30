@@ -251,6 +251,19 @@ background black.
 - Homeworld values were 102% / 99% / 103%, and production scaled by them
   (6120 / 1108 / 1153).
 
+## Session 2: simultaneous movement days (2026-09-30)
+
+Watched with a debugger under Wine during a simultaneous turn: a speed-6 ship's day
+counter over the 30 days of one turn.
+
+- The ship acted on days 6, 11, 16, 21 and 26: five steps, not six. The counter
+  matched, bit for bit, a counter added in 64-bit-mantissa precision and stored as a
+  double each day; a double-precision or single-precision sum would differ from day 3
+  or day 1.
+- The x87 was at 64-bit precision throughout turn processing, including inside the day
+  addition.
+- This settles spec 03 Q8; the resulting schedule for every speed is in spec 03 §6.3.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
