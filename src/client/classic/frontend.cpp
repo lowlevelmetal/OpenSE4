@@ -195,4 +195,16 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
     return nullptr;
 }
 
+std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
+    const size_t colon = name.find(':');
+    const std::string_view screen = name.substr(0, colon);
+    const std::string_view page = colon == std::string_view::npos ? std::string_view{} : name.substr(colon + 1);
+    if (datafile::keysEqual(screen, "intro")) return makeFrontScreen(FrontId::Intro);
+    if (datafile::keysEqual(screen, "quickstart")) return makeFrontScreen(FrontId::QuickStart);
+    if (datafile::keysEqual(screen, "setup") || datafile::keysEqual(screen, "newgame")) return makeGameSetupScreen(page);
+    if (datafile::keysEqual(screen, "empiresetup")) return makeGameSetupScreen(std::string("empire:") + std::string(page));
+    if (datafile::keysEqual(screen, "multiplayer")) return makeFrontScreen(FrontId::Multiplayer);
+    return nullptr;
+}
+
 } // namespace opense4::client::classic

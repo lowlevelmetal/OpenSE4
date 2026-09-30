@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 
 namespace opense4::client::classic {
 
@@ -47,6 +48,11 @@ public:
 };
 
 std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
+// Automation (--open=NAME): a front-end screen by name: intro, quickstart,
+// setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
+// (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer.
+// Returns nullptr if NAME is not a front-end screen.
+std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 
 // Creates a local game from a setup; on failure returns the reason.
 std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup);
@@ -55,7 +61,8 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::
 game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playerPreset, uint64_t seed, int opponents = 4);
 
 // Game Setup / Empire Setup windows (setup.cpp in screens/), Multiplayer lobby (multiplayer.cpp).
-std::unique_ptr<FrontScreen> makeGameSetupScreen();
+// `startPage`: a Game Setup page name, or "empire[:page]" to open Empire Setup at once.
+std::unique_ptr<FrontScreen> makeGameSetupScreen(std::string_view startPage = {});
 std::unique_ptr<FrontScreen> makeMultiplayerScreen();
 
 } // namespace opense4::client::classic

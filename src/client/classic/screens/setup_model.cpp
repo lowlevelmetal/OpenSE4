@@ -1,0 +1,628 @@
+#include "client/classic/screens/setup_model.hpp"
+
+#include "datafile/datafile.hpp"
+
+#include <toml++/toml.hpp>
+
+#include <algorithm>
+#include <array>
+#include <format>
+#include <fstream>
+#include <sstream>
+
+namespace opense4::client::classic::setup {
+
+namespace {
+
+using datafile::keysEqual;
+
+constexpr std::array<std::string_view, 3> kLevelNames{"Low", "Medium", "High"};
+constexpr int kEmpireFileFormat = 1;
+
+bool isNone(std::string_view s) { return s.empty() || keysEqual(s, "None"); }
+
+std::optional<uint32_t> findTrait(const game::Rules& r, std::string_view name) {
+    const auto& traits = r.data().racialTraits;
+    for (uint32_t i = 0; i < traits.size(); ++i)
+        if (keysEqual(traits[i].name, name)) return i;
+    return std::nullopt;
+}
+
+bool hasTraitNamed(const game::Rules& r, const game::Race& race, std::string_view name) {
+    for (uint32_t t : race.traits)
+        if (t < r.data().racialTraits.size() && keysEqual(r.data().racialTraits[t].name, name)) return true;
+    return false;
+}
+
+template <class T>
+std::optional<uint32_t> indexByName(const std::vector<T>& list, std::string_view name) {
+    for (uint32_t i = 0; i < list.size(); ++i)
+        if (keysEqual(list[i].name, name)) return i;
+    return std::nullopt;
+}
+
+void addUnique(std::vector<std::string>& list, std::string_view value) {
+    if (value.empty()) return;
+    for (const auto& v : list)
+        if (keysEqual(v, value)) return;
+    list.emplace_back(value);
+}
+
+// An empire's name as game::createGame will show it.
+std::string effectiveName(const game::Rules& r, const game::EmpireSetup& e) {
+    if (!e.name.empty()) return e.name;
+    if (const ruleset::RacePreset* p = presetOf(r, e)) return p->empireName.empty() ? p->name : p->empireName;
+    return e.customRace ? e.customRace->name : std::string{};
+}
+
+bool nameTaken(const std::vector<std::string>& names, std::string_view name) {
+    for (const auto& n : names)
+        if (keysEqual(n, name)) return true;
+    return false;
+}
+
+std::string lowerAscii(std::string_view s) {
+    std::string out(s);
+    for (char& c : out)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return out;
+}
+
+// Picks a race preset for a random player (spec 05 §7.1): a personality group
+// weighted by `Random Player Personality Group N Percent`, then a race of that
+// group; races already in the game are avoided while others remain.
+const ruleset::RacePreset* pickRandomPreset(const game::Rules& r, Rng& rng, bool neutral, const std::vector<std::string>& usedStyles) {
+    std::vector<const ruleset::RacePreset*> fresh, all;
+    for (const auto& p : r.racePresets()) {
+        if (p.neutral != neutral) continue;
+        all.push_back(&p);
+        if (!nameTaken(usedStyles, p.folder)) fresh.push_back(&p);
+    }
+    const auto& pool = fresh.empty() ? all : fresh;
+    if (pool.empty()) return nullptr;
+    if (!neutral) {
+        const int groups = static_cast<int>(r.setting("Random Player Personality Groups", 0));
+        std::vector<std::pair<int, int>> weights;  // (group, percent) for groups with a candidate
+        int total = 0;
+        for (int g = 1; g <= groups; ++g) {
+            const int pct = static_cast<int>(r.setting(std::format("Random Player Personality Group {} Percent", g), 0));
+            const bool any = std::any_of(pool.begin(), pool.end(), [&](const ruleset::RacePreset* p) { return p->personalityGroup == g; });
+            if (pct > 0 && any) {
+                weights.emplace_back(g, pct);
+                total += pct;
+            }
+        }
+        if (total > 0) {
+            int roll = static_cast<int>(rng.below(static_cast<uint64_t>(total)));
+            int group = weights.back().first;
+            for (const auto& [g, pct] : weights) {
+                if (roll < pct) {
+                    group = g;
+                    break;
+                }
+                roll -= pct;
+            }
+            std::vector<const ruleset::RacePreset*> inGroup;
+            for (const ruleset::RacePreset* p : pool)
+                if (p->personalityGroup == group) inGroup.push_back(p);
+            return inGroup[rng.below(inGroup.size())];
+        }
+    }
+    return pool[rng.below(pool.size())];
+}
+
+// Names the preset tier when the race is unmodified, keeps the custom race otherwise.
+game::EmpireSetup collapse(const game::Rules& r, const EmpireDraft& d) {
+    game::EmpireSetup out = d.setup;
+    out.customRace.reset();
+    if (const ruleset::RacePreset* p = presetOf(r, out)) {
+        const int tiers = std::max<int>(1, static_cast<int>(p->tiers.size()));
+        const int first = std::clamp(out.presetTier, 0, tiers - 1);
+        if (sameRace(d.race, game::raceFromPreset(r, *p, first))) {
+            out.presetTier = first;
+            return out;
+        }
+        for (int t = 0; t < tiers; ++t)
+            if (sameRace(d.race, game::raceFromPreset(r, *p, t))) {
+                out.presetTier = t;
+                return out;
+            }
+    }
+    out.customRace = d.race;
+    return out;
+}
+
+std::string fileStem(std::string_view name) {
+    std::string out;
+    for (char c : name) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+        if (ok) out += c;
+        else if (c == ' ' && !out.empty() && out.back() != '_') out += '_';
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out.empty() ? std::string("Empire") : out;
+}
+
+} // namespace
+
+// ---- Settings ----------------------------------------------------------------------------
+
+NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed) {
+    NewGameSettings s;
+    s.seed = seed ? seed : 1;
+    game::GameOptions& o = s.options;
+    if (!r.data().quadrantTypes.empty()) o.quadrantType = r.data().quadrantTypes.front().name;
+    o.systemCount = std::clamp(o.systemCount, 1, maxSystems(r));
+    o.maxShipsPerPlayer = static_cast<int>(r.setting("Default Number Of Ships Per Player", o.maxShipsPerPlayer));
+    o.maxUnitsPerPlayer = static_cast<int>(r.setting("Default Number Of Units Per Player", o.maxUnitsPerPlayer));
+
+    // The player: the first Quick Start style, else the first playable race.
+    const ruleset::RacePreset* first = nullptr;
+    const int styles = static_cast<int>(r.setting("Number of Quick Start Styles", 0));
+    for (int i = 1; i <= styles && !first; ++i)
+        if (auto style = r.data().settings.text(std::format("Quick Start Style {}", i)))
+            if (const ruleset::RacePreset* p = game::findPreset(r, *style); p && !p->neutral) first = p;
+    for (const auto& p : r.racePresets())
+        if (!first && !p.neutral) first = &p;
+    if (first) {
+        const EmpireDraft d = draftFromPreset(r, *first, bestTierWithin(r, *first, o.racialPoints));
+        s.players.push_back(collapse(r, d));
+    }
+    return s;
+}
+
+int maxSystems(const game::Rules& r) { return static_cast<int>(std::clamp<int64_t>(r.setting("Maximum Number Of Systems", 100), 1, 255)); }
+
+game::QuadrantOptions quadrantOptions(const game::GameOptions& o) {
+    game::QuadrantOptions q;
+    q.quadrantType = o.quadrantType;
+    q.systemCount = o.systemCount;
+    q.allWarpPointsConnected = o.allWarpPointsConnected;
+    q.noWarpPoints = o.noWarpPoints;
+    q.warpPointsAnywhere = o.warpPointsAnywhere;
+    q.noRuins = o.noRuins;
+    q.finiteResources = o.finiteResources;
+    return q;
+}
+
+std::expected<game::Generated, std::string> previewQuadrant(const game::Rules& r, uint64_t seed, const game::GameOptions& o) {
+    // Mirrors game::createGame: the game rng is seeded, and the quadrant uses its first fork.
+    Rng rng;
+    rng.reseed(seed);
+    Rng galaxyRng = rng.fork();
+    return game::generateQuadrant(r.data(), quadrantOptions(o), galaxyRng);
+}
+
+// ---- Players -----------------------------------------------------------------------------
+
+std::pair<int, int> randomPlayerRange(const game::Rules& r, bool neutral, int level) {
+    // Our fallbacks when a data set has no such keys.
+    static constexpr std::array<std::pair<int, int>, 3> kFallback{{{1, 2}, {3, 5}, {6, 9}}};
+    const size_t l = static_cast<size_t>(std::clamp(level, 0, 2));
+    const char* who = neutral ? "Neutral" : "Computer";
+    const int lo = static_cast<int>(r.setting(std::format("Minimum {} Player {} Setting", who, kLevelNames[l]), kFallback[l].first));
+    const int hi = static_cast<int>(r.setting(std::format("Maximum {} Player {} Setting", who, kLevelNames[l]), kFallback[l].second));
+    return {std::max(0, lo), std::max({0, lo, hi})};
+}
+
+std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r, const NewGameSettings& s) {
+    game::GameSetup g;
+    g.seed = s.seed;
+    g.options = s.options;
+    game::GameOptions& o = g.options;
+    o.systemCount = std::clamp(o.systemCount, 1, maxSystems(r));
+    o.victory.percentOfSecondValue = std::max(100, o.victory.percentOfSecondValue);
+    o.victory.techPercentValue = std::clamp(o.victory.techPercentValue, 1, 100);
+    o.startingPlanets = std::max(1, o.startingPlanets);
+    // Technology Areas Allowed: one flag per area; areas that cannot be removed stay allowed.
+    const auto& areas = r.data().techAreas;
+    if (!o.techAreasAllowed.empty()) {
+        o.techAreasAllowed.resize(areas.size(), 1);
+        for (size_t i = 0; i < areas.size(); ++i)
+            if (!areas[i].canBeRemoved) o.techAreasAllowed[i] = 1;
+        if (std::all_of(o.techAreasAllowed.begin(), o.techAreasAllowed.end(), [](uint8_t v) { return v != 0; })) o.techAreasAllowed.clear();
+    }
+
+    std::vector<std::string> names, styles;
+    int humans = 0;
+    for (const game::EmpireSetup& e : s.players) {
+        const std::string name = effectiveName(r, e);
+        if (name.empty()) return std::unexpected("Every empire needs a name.");
+        if (nameTaken(names, name)) return std::unexpected(std::format("Two empires are named {}; rename one of them.", name));
+        const int cost = game::racialPointCost(r, raceOf(r, e));
+        if (cost > o.racialPoints)
+            return std::unexpected(std::format("{} spends {} racial points, but this game allows {}. Edit the empire or raise Racial Points.",
+                                               name, cost, o.racialPoints));
+        if (e.kind == game::PlayerKind::Human) ++humans;
+        names.push_back(name);
+        if (const ruleset::RacePreset* p = presetOf(r, e)) styles.push_back(p->folder);
+        g.empires.push_back(e);
+    }
+    if (humans == 0) return std::unexpected("A game needs at least one human player. Add an empire or switch one to human.");
+    if (static_cast<int>(g.empires.size()) > kMaxEmpires)
+        return std::unexpected(std::format("A game holds at most {} empires.", kMaxEmpires));
+
+    // Random computer and neutral players, rolled from the seed.
+    Rng rng(s.seed ^ 0x6a09e667f3bcc909ull);
+    for (const bool neutral : {false, true}) {
+        const RandomPlayers& rp = neutral ? s.neutrals : s.computers;
+        if (!rp.enabled) continue;
+        const auto [lo, hi] = randomPlayerRange(r, neutral, rp.level);
+        const int count = rng.rangeInt(lo, hi);
+        for (int i = 0; i < count && static_cast<int>(g.empires.size()) < kMaxEmpires; ++i) {
+            const ruleset::RacePreset* p = pickRandomPreset(r, rng, neutral, styles);
+            if (!p) break;
+            game::EmpireSetup e;
+            e.preset = p->folder;
+            // Computer races are built with the preset tier the racial points allow (inferred).
+            e.presetTier = bestTierWithin(r, *p, o.racialPoints);
+            e.kind = neutral ? game::PlayerKind::Neutral : game::PlayerKind::Computer;
+            std::string name = effectiveName(r, e);
+            for (int n = 2; nameTaken(names, name); ++n) name = std::format("{} {}", effectiveName(r, e), n);
+            e.name = name;
+            names.push_back(name);
+            styles.push_back(p->folder);
+            g.empires.push_back(std::move(e));
+        }
+    }
+    return g;
+}
+
+// ---- Races --------------------------------------------------------------------------------
+
+const ruleset::RacePreset* presetOf(const game::Rules& r, const game::EmpireSetup& e) {
+    return e.preset.empty() ? nullptr : game::findPreset(r, e.preset);
+}
+
+game::Race raceOf(const game::Rules& r, const game::EmpireSetup& e) {
+    if (e.customRace) return *e.customRace;
+    if (const ruleset::RacePreset* p = presetOf(r, e)) return game::raceFromPreset(r, *p, e.presetTier);
+    game::Race race;
+    race.name = e.name;
+    return race;
+}
+
+bool sameRace(const game::Race& a, const game::Race& b) {
+    auto sorted = [](std::vector<uint32_t> v) {
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+        return v;
+    };
+    return a.name == b.name && a.style == b.style && a.biology == b.biology && a.society == b.society && a.history == b.history &&
+           a.characteristics == b.characteristics && sorted(a.traits) == sorted(b.traits) && a.culture == b.culture &&
+           a.happinessModel == b.happinessModel && keysEqual(a.nativeSurface, b.nativeSurface) && keysEqual(a.atmosphere, b.atmosphere) &&
+           a.demeanor == b.demeanor && keysEqual(a.designNameFile, b.designNameFile);
+}
+
+std::vector<int> tierCosts(const game::Rules& r, const ruleset::RacePreset& p) {
+    std::vector<int> out;
+    for (size_t t = 0; t < p.tiers.size(); ++t) out.push_back(game::racialPointCost(r, game::raceFromPreset(r, p, static_cast<int>(t))));
+    return out;
+}
+
+int bestTierWithin(const game::Rules& r, const ruleset::RacePreset& p, int budget) {
+    int best = 0, bestCost = -1;
+    const std::vector<int> costs = tierCosts(r, p);
+    for (size_t t = 0; t < costs.size(); ++t)
+        if (costs[t] <= budget && costs[t] > bestCost) {
+            best = static_cast<int>(t);
+            bestCost = costs[t];
+        }
+    return best;
+}
+
+CharacteristicLimits characteristicLimits(const game::Rules& r, game::Characteristic c) {
+    const std::string name{game::displayName(c)};
+    CharacteristicLimits l;
+    l.min = static_cast<int>(r.setting(std::format("Characteristic {} Min Pct", name), l.min));
+    l.max = static_cast<int>(r.setting(std::format("Characteristic {} Max Pct", name), l.max));
+    if (l.max < l.min) std::swap(l.min, l.max);
+    return l;
+}
+
+int characteristicCost(const game::Rules& r, game::Characteristic c, int value) {
+    game::Race probe;  // every characteristic at 100 %, no traits
+    probe.characteristics[static_cast<size_t>(c)] = value;
+    return game::racialPointCost(r, probe);
+}
+
+int racialPointsLeft(const game::Rules& r, const game::Race& race, int budget) { return budget - game::racialPointCost(r, race); }
+
+bool hasTrait(const game::Race& race, uint32_t trait) { return std::find(race.traits.begin(), race.traits.end(), trait) != race.traits.end(); }
+
+TraitCheck canAddTrait(const game::Rules& r, const game::Race& race, uint32_t trait) {
+    const auto& traits = r.data().racialTraits;
+    if (trait >= traits.size()) return {false, "Unknown trait"};
+    if (hasTrait(race, trait)) return {};
+    const ruleset::RacialTrait& t = traits[trait];
+    for (const auto& need : t.requiredTraits)
+        if (!isNone(need) && !hasTraitNamed(r, race, need)) return {false, std::format("Requires {}", need)};
+    for (const auto& no : t.restrictedTraits)
+        if (!isNone(no) && hasTraitNamed(r, race, no)) return {false, std::format("Cannot be combined with {}", no)};
+    for (uint32_t other : race.traits) {
+        if (other >= traits.size()) continue;
+        for (const auto& no : traits[other].restrictedTraits)
+            if (!isNone(no) && keysEqual(no, t.name)) return {false, std::format("Cannot be combined with {}", traits[other].name)};
+    }
+    return {};
+}
+
+bool addTrait(const game::Rules& r, game::Race& race, uint32_t trait) {
+    if (hasTrait(race, trait)) return true;
+    if (!canAddTrait(r, race, trait).ok) return false;
+    race.traits.push_back(trait);
+    return true;
+}
+
+void removeTrait(const game::Rules& r, game::Race& race, uint32_t trait) {
+    std::erase(race.traits, trait);
+    // Drop whatever no longer has its requirements, until nothing changes.
+    const auto& traits = r.data().racialTraits;
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (size_t i = 0; i < race.traits.size(); ++i) {
+            const uint32_t t = race.traits[i];
+            if (t >= traits.size()) continue;
+            const bool missing = std::any_of(traits[t].requiredTraits.begin(), traits[t].requiredTraits.end(),
+                                             [&](const std::string& need) { return !isNone(need) && !hasTraitNamed(r, race, need); });
+            if (missing) {
+                race.traits.erase(race.traits.begin() + static_cast<std::ptrdiff_t>(i));
+                changed = true;
+                break;
+            }
+        }
+    }
+}
+
+// ---- Empire drafts -----------------------------------------------------------------------------
+
+EmpireDraft draftFromPreset(const game::Rules& r, const ruleset::RacePreset& p, int tier) {
+    EmpireDraft d;
+    d.setup.name = p.empireName.empty() ? p.name : p.empireName;
+    d.setup.empireType = p.empireType;
+    d.setup.leaderTitle = p.emperorTitle;
+    d.setup.leaderName = p.emperorName;
+    d.setup.preset = p.folder;
+    d.setup.presetTier = std::clamp(tier, 0, std::max(0, static_cast<int>(p.tiers.size()) - 1));
+    d.setup.kind = game::PlayerKind::Human;
+    d.race = game::raceFromPreset(r, p, d.setup.presetTier);
+    return d;
+}
+
+EmpireDraft draftFromSetup(const game::Rules& r, const game::EmpireSetup& e) {
+    EmpireDraft d;
+    d.setup = e;
+    d.race = raceOf(r, e);
+    d.setup.customRace.reset();
+    if (const ruleset::RacePreset* p = presetOf(r, e)) {
+        if (d.setup.name.empty()) d.setup.name = p->empireName.empty() ? p->name : p->empireName;
+        if (d.setup.empireType.empty()) d.setup.empireType = p->empireType;
+        if (d.setup.leaderTitle.empty()) d.setup.leaderTitle = p->emperorTitle;
+        if (d.setup.leaderName.empty()) d.setup.leaderName = p->emperorName;
+    }
+    return d;
+}
+
+std::expected<game::EmpireSetup, std::string> finishDraft(const game::Rules& r, const EmpireDraft& d, int racialPoints) {
+    if (d.setup.name.empty()) return std::unexpected("Enter a name for the empire.");
+    const int left = racialPointsLeft(r, d.race, racialPoints);
+    if (left < 0)
+        return std::unexpected(std::format("This race costs {} racial points more than the {} available. Lower a characteristic or drop a trait.",
+                                           -left, racialPoints));
+    return collapse(r, d);
+}
+
+std::string hashPassword(std::string_view password) {
+    if (password.empty()) return {};
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (unsigned char c : password) {
+        h ^= c;
+        h *= 0x100000001b3ull;
+    }
+    return std::format("fnv1a:{:016x}", h);
+}
+
+// ---- Choice lists ---------------------------------------------------------------------------
+
+std::vector<std::string> planetSurfaces(const game::Rules& r) {
+    std::vector<std::string> out;
+    for (const auto& t : r.data().sectorObjectTypes)
+        if (keysEqual(t.physicalType, "Planet") && !isNone(t.planetPhysicalType)) addUnique(out, t.planetPhysicalType);
+    for (const auto& p : r.racePresets())
+        if (!isNone(p.planetType)) addUnique(out, p.planetType);
+    if (out.empty()) out = {"Rock", "Ice", "Gas Giant"};
+    return out;
+}
+
+std::vector<std::string> atmospheres(const game::Rules& r) {
+    std::vector<std::string> out;
+    for (const auto& t : r.data().sectorObjectTypes)
+        if (keysEqual(t.physicalType, "Planet") && !t.planetAtmosphere.empty()) addUnique(out, t.planetAtmosphere);
+    for (const auto& p : r.racePresets())
+        if (!p.atmosphere.empty()) addUnique(out, p.atmosphere);
+    if (out.empty()) out = {"Oxygen"};
+    return out;
+}
+
+std::vector<std::string> designNameFiles(const game::Rules& r) {
+    std::vector<std::string> out;
+    if (r.gameRoot().empty()) return out;
+    std::error_code ec;
+    for (const auto& dir : std::filesystem::directory_iterator(r.gameRoot(), ec)) {
+        if (!dir.is_directory(ec) || lowerAscii(dir.path().filename().string()) != "dsgnname") continue;
+        for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec))
+            if (f.is_regular_file(ec) && lowerAscii(f.path().extension().string()) == ".txt") out.push_back(f.path().filename().string());
+    }
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return lowerAscii(a) < lowerAscii(b); });
+    return out;
+}
+
+std::optional<int> planetPicture(const game::Rules& r, std::string_view surface, std::string_view atmosphere) {
+    std::optional<int> any;
+    for (const auto& t : r.data().sectorObjectTypes) {
+        if (!keysEqual(t.physicalType, "Planet") || !keysEqual(t.planetPhysicalType, surface) || !keysEqual(t.planetAtmosphere, atmosphere))
+            continue;
+        if (keysEqual(t.planetSize, "Large") || keysEqual(t.planetSize, "Medium")) return t.picture;
+        if (!any) any = t.picture;
+    }
+    return any;
+}
+
+// ---- Empire files ---------------------------------------------------------------------------
+
+std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
+    const game::Race race = raceOf(r, e);
+    toml::table chars;
+    for (size_t i = 0; i < game::kCharacteristics; ++i)
+        chars.insert(std::string(game::displayName(static_cast<game::Characteristic>(i))), static_cast<int64_t>(race.characteristics[i]));
+    toml::array traits;
+    for (uint32_t t : race.traits)
+        if (t < r.data().racialTraits.size()) traits.push_back(r.data().racialTraits[t].name);
+    const auto& cultures = r.data().cultures;
+    const auto& moods = r.data().happinessModels;
+    toml::table raceTable{
+        {"name", race.name},
+        {"style", race.style},
+        {"native_surface", race.nativeSurface},
+        {"atmosphere", race.atmosphere},
+        {"culture", race.culture < cultures.size() ? cultures[race.culture].name : std::string{}},
+        {"happiness", race.happinessModel < moods.size() ? moods[race.happinessModel].name : std::string{}},
+        {"demeanor", race.demeanor},
+        {"design_name_file", race.designNameFile},
+        {"biology", race.biology},
+        {"society", race.society},
+        {"history", race.history},
+        {"traits", std::move(traits)},
+        {"characteristics", std::move(chars)},
+    };
+    toml::table root{
+        {"format", kEmpireFileFormat},
+        {"name", e.name},
+        {"empire_type", e.empireType},
+        {"leader_title", e.leaderTitle},
+        {"leader_name", e.leaderName},
+        {"computer", e.kind != game::PlayerKind::Human},
+        {"preset", e.preset},
+        {"preset_tier", e.presetTier},
+        {"color", static_cast<int64_t>(e.color)},
+        {"password_hash", e.passwordHash},
+        {"race", std::move(raceTable)},
+    };
+    std::ostringstream os;
+    os << "# OpenSE4 empire file\n" << root << "\n";
+    return os.str();
+}
+
+std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, std::string_view text) {
+    toml::table root;
+    try {
+        root = toml::parse(text);
+    } catch (const toml::parse_error& err) {
+        return std::unexpected(std::format("Not a valid empire file (line {}): {}", err.source().begin.line, err.description()));
+    }
+    const int64_t format = root["format"].value_or(int64_t{0});
+    if (format < 1 || format > kEmpireFileFormat) return std::unexpected("Not an OpenSE4 empire file, or one from a newer version.");
+
+    LoadedEmpire out;
+    EmpireDraft d;
+    d.setup.name = root["name"].value_or(std::string{});
+    d.setup.empireType = root["empire_type"].value_or(std::string{});
+    d.setup.leaderTitle = root["leader_title"].value_or(std::string{});
+    d.setup.leaderName = root["leader_name"].value_or(std::string{});
+    d.setup.kind = root["computer"].value_or(false) ? game::PlayerKind::Computer : game::PlayerKind::Human;
+    d.setup.preset = root["preset"].value_or(std::string{});
+    d.setup.presetTier = static_cast<int>(root["preset_tier"].value_or(int64_t{0}));
+    d.setup.color = static_cast<uint32_t>(root["color"].value_or(int64_t{0}) & 0xffffff);
+    d.setup.passwordHash = root["password_hash"].value_or(std::string{});
+    if (d.setup.name.empty()) return std::unexpected("The empire file has no empire name.");
+    if (!d.setup.preset.empty() && !game::findPreset(r, d.setup.preset)) {
+        out.warnings.push_back(std::format("The race style {} is not installed; generic art is used.", d.setup.preset));
+    }
+
+    const toml::table* rt = root["race"].as_table();
+    if (!rt) return std::unexpected("The empire file has no [race] table.");
+    game::Race& race = d.race;
+    race.name = (*rt)["name"].value_or(d.setup.name);
+    race.style = (*rt)["style"].value_or(d.setup.preset);
+    race.nativeSurface = (*rt)["native_surface"].value_or(race.nativeSurface);
+    race.atmosphere = (*rt)["atmosphere"].value_or(race.atmosphere);
+    race.demeanor = (*rt)["demeanor"].value_or(std::string{});
+    race.designNameFile = (*rt)["design_name_file"].value_or(std::string{});
+    race.biology = (*rt)["biology"].value_or(std::string{});
+    race.society = (*rt)["society"].value_or(std::string{});
+    race.history = (*rt)["history"].value_or(std::string{});
+    const std::string culture = (*rt)["culture"].value_or(std::string{});
+    if (auto i = indexByName(r.data().cultures, culture)) race.culture = *i;
+    else if (!culture.empty()) out.warnings.push_back(std::format("Culture {} is not in this data set; using {}.", culture,
+                                                                   r.data().cultures.empty() ? "none" : r.data().cultures.front().name));
+    const std::string mood = (*rt)["happiness"].value_or(std::string{});
+    if (auto i = indexByName(r.data().happinessModels, mood)) race.happinessModel = *i;
+    else if (!mood.empty()) out.warnings.push_back(std::format("Happiness type {} is not in this data set.", mood));
+
+    if (const toml::table* chars = (*rt)["characteristics"].as_table())
+        for (const auto& [key, node] : *chars) {
+            game::Characteristic c;
+            if (!game::parseCharacteristic(key.str(), c)) {
+                out.warnings.push_back(std::format("Unknown characteristic {} ignored.", key.str()));
+                continue;
+            }
+            const int value = static_cast<int>(node.value_or(int64_t{100}));
+            const CharacteristicLimits l = characteristicLimits(r, c);
+            const int clamped = std::clamp(value, l.min, l.max);
+            if (clamped != value)
+                out.warnings.push_back(std::format("{} {}% is outside {}..{}%; set to {}%.", key.str(), value, l.min, l.max, clamped));
+            race.characteristics[static_cast<size_t>(c)] = clamped;
+        }
+    if (const toml::array* traits = (*rt)["traits"].as_array()) {
+        // Added in two passes so a trait listed before its requirement still fits.
+        std::vector<uint32_t> wanted;
+        for (const auto& node : *traits) {
+            const std::string name = node.value_or(std::string{});
+            if (auto t = findTrait(r, name)) wanted.push_back(*t);
+            else out.warnings.push_back(std::format("Trait {} is not in this data set; dropped.", name));
+        }
+        for (int pass = 0; pass < 2; ++pass)
+            for (uint32_t t : wanted) addTrait(r, race, t);
+        for (uint32_t t : wanted)
+            if (!hasTrait(race, t))
+                out.warnings.push_back(std::format("Trait {} dropped: {}.", r.data().racialTraits[t].name, canAddTrait(r, race, t).reason));
+    }
+    out.empire = collapse(r, d);
+    return out;
+}
+
+std::expected<std::filesystem::path, std::string> saveEmpireFile(const game::Rules& r, const std::filesystem::path& dir,
+                                                                 const game::EmpireSetup& e) {
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) return std::unexpected(std::format("Cannot create {}: {}", dir.string(), ec.message()));
+    const std::filesystem::path file = dir / (fileStem(e.name) + ".toml");
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out << empireToToml(r, e);
+    if (!out) return std::unexpected(std::format("Cannot write {}", file.string()));
+    return file;
+}
+
+std::expected<LoadedEmpire, std::string> loadEmpireFile(const game::Rules& r, const std::filesystem::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return std::unexpected(std::format("Cannot read {}", file.string()));
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return empireFromToml(r, ss.str());
+}
+
+std::vector<EmpireFileInfo> listEmpireFiles(const game::Rules& r, const std::filesystem::path& dir) {
+    std::vector<EmpireFileInfo> out;
+    std::error_code ec;
+    for (const auto& f : std::filesystem::directory_iterator(dir, ec)) {
+        if (!f.is_regular_file(ec) || lowerAscii(f.path().extension().string()) != ".toml") continue;
+        auto loaded = loadEmpireFile(r, f.path());
+        if (!loaded) continue;
+        const game::Race race = raceOf(r, loaded->empire);
+        out.push_back({f.path(), loaded->empire.name, race.name, race.style});
+    }
+    std::sort(out.begin(), out.end(), [](const EmpireFileInfo& a, const EmpireFileInfo& b) { return lowerAscii(a.name) < lowerAscii(b.name); });
+    return out;
+}
+
+} // namespace opense4::client::classic::setup

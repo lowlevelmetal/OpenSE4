@@ -37,6 +37,8 @@ Classic rules (work in progress, see docs/PARITY_PLAN.md):
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
+                                  or start on a front-end screen: intro, quickstart, setup[:PAGE],
+                                  empiresetup[:PAGE], multiplayer (e.g. --open=setup:players)
 
 Paths:
   --data=DIR                      Game data directory (default: auto-detect)

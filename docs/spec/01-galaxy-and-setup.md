@@ -801,7 +801,9 @@ empire that has met one.
 17. **Starting year.** Commonly remembered as 2400; not in our sources.
 18. **Option lists.** What choices exist for Starting Resources, Racial Points, Tech
     Cost, Tech Level (is there a Medium?), AI Difficulty, AI Bonus, Score Display and
-    Autosave?
+    Autosave? Until observed, our Game Setup offers free numbers for resources and racial
+    points, cost growth of 0/50/100/150/200 % per level, difficulty Easy to Expert (0-3)
+    and bonus None to High (0-3) **(inferred)**.
 19. **Manipulation aftermath.** What does a system look like after Destroy Star? Which
     SystemType do created nebulae and black holes use? Does Destroy Planet kill the
     colony's population and facilities?
