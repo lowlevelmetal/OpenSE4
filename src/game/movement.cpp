@@ -1046,9 +1046,10 @@ private:
     // that sector plus an Attack there, §8) and attacks there, whatever became
     // of the target, decloaking (§6.4): 1 movement point, one move's supply
     // and a battle check, and the order is used up; without movement left it
-    // is removed doing nothing. A drone group's pursuit (a Seek) at its target
-    // attacks and runs a battle check every time its list runs, and stays
-    // (spec 04 §2, confirmed: binary).
+    // is removed doing nothing. "Used up" is done, so with Repeat on it goes
+    // to the end of the list (inferred, spec 04 §19.2 Q77). A drone group's
+    // pursuit (a Seek) at its target attacks and runs a battle check every
+    // time its list runs, and stays (spec 04 §2, confirmed: binary).
     Exec attack(Group& g, Order& o) {
         const bool pursuit = !live_ || onlyDrones(g);
         const bool fixedPlace = !pursuit && validLocation(s_, o.location);
@@ -1551,8 +1552,8 @@ private:
     // A movement step (a warp jump included) runs a battle check once the
     // mines have struck. A battle is fought at once; the group's order fails
     // and every member's list is cleared, an Attack or Seek at the head
-    // included (spec 03 §6.4, spec 04 §2, confirmed: binary). True when the
-    // group's run ends here.
+    // included (spec 03 §6.4, spec 04 §2, confirmed: binary; for a Seek, spec
+    // 04 §19.2 Q76). True when the group's run ends here.
     bool entryCombat(Group& g) {
         prune(g);
         if (g.stopped) return true;

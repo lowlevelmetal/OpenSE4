@@ -1259,7 +1259,9 @@ highlighted, and an X marks each empire that has met one.
     of turns since 2400.0 is a multiple of N, into a file named after that number's last
     digit, so at most ten files, and fewer for N = 2, 5 or 10 (§2.2). It follows the game
     date, so nothing restarts on loading. OpenSE4's file names, save format and the network
-    host's own autosave setting are OpenSE4 extensions.
+    host's own autosave setting are OpenSE4 extensions. The choice can be changed during a
+    local or hotseat game in the Empire Options window; network and e-mail games are saved
+    by their host.
 39. **Default turn style.** *Answered* (confirmed: binary): Turn-Based. The Mechanics tab
     selects it for a new game. Quick Start sets no turn style of its own, and the game
     options the program starts with are turn-based too. OpenSE4's network host and its
@@ -1278,3 +1280,11 @@ highlighted, and an X marks each empire that has met one.
     this sector" and leaves out only mothballed ships and unit groups. The engine counts
     bases' components as well **(inferred)**, and uses up the builder's bases that carry
     a required component like its ships.
+43. **Comet and warp point entries in the names.** Open. §5.6 says that such a template
+    entry creates nothing but still claims its sector with an empty name, so a planet
+    placed on it is named with a space and a letter only. The engine gives the entry no
+    sector at all **(inferred)**: it draws no position (so it uses no random numbers), a
+    `Same As` that names it gives sector (0,0) as for an object not placed (§4.3), and no
+    later planet takes its name. Does the original draw a position for the entry (random
+    numbers for `Ring` and `Circle Radius`, a sector for `Same As`), or does the entry keep
+    sector (0,0), so that only a planet placed at (0,0) is named after it?

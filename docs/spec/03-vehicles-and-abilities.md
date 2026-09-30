@@ -784,8 +784,10 @@ over a **30-day** month (confirmed: binary):
    members in that order is due; the members it carries along do not act again that day, but
    those that were due still lose 1 from their counters. Ad-hoc groups are formed at each
    execution (§8).
-6. After each day, every sector where something acted is checked. If mutually hostile forces that
-   can see each other are there, a combat is fought, unless the location already had a battle
+6. After each day, every sector where an object carried out an order that day (any order, a
+   Sentry that waits included) is checked. When an empire with an uncloaked vehicle there sees
+   an object, not a minefield, of an empire it is hostile to (spec 04 §2; a colony never counts
+   as the side that sees), a combat is fought, unless the location already had a battle
    this turn and both of these hold for the latest one: no piece recorded as surviving it was
    below full structure (damage from before that battle counts), and every object owned by a
    player now in the sector (ships, bases, unit groups including minefields, and colonies) is on
@@ -1667,7 +1669,7 @@ All rules in this section are (confirmed: binary).
       stay separate;
     - battles record the designs of ships and bases (and of units in cargo) as seen, but not
       those of unit groups in space; mine encounters record the mines' designs.
-    The engine merges unrecovered battle groups (PARITY_GAPS, Combat).
+    The engine keeps unrecovered battle groups separate too (spec 04 §19 Q56).
 44. **Training sources:** **Answer:** every own object in object order, colonized planets without
     any population requirement (§3.3, question 33) (confirmed: binary).
 45. **Obsolete design purge:** **Answer:** each design keeps, per empire, the turn it was last seen.
@@ -1794,4 +1796,10 @@ gives the engine's choice, marked (inferred), until it is checked.
     attacks, as §6.4 says of any attacker; in the pursuit form only drones decloak (inferred).
 70. **Colonies "seen" (§6.2, §6.4, §8):** a colony counts as seen when its planet is on the
     viewer's map now (a planet hidden by a storm or nebula needs sensors that pierce it)
-    (inferred).
+    (inferred). The battle check is combat's and treats colonies its own way (spec 04 §19
+    Q74).
+71. **The turn-based Attack as one order (§8):** the engine keeps a turn-based Attack as one
+    stored order instead of a Move To plus an Attack: the order carries the target's sector
+    as it was when given (`Order::location`), goes there and attacks there, whatever became
+    of the target, which has the same effect. An Attack with no sector recorded follows its
+    target (inferred).

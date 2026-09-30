@@ -2127,7 +2127,11 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
   - The original rule held combat on every 5th day in any sector with hostiles.
   - v1.15 made combat depend on movement.
   - From v1.42, at most one combat happens per sector per phase, and only where some ship
-    executed orders that phase. Implement the v1.42 rule.
+    executed orders that phase. The settled rule (spec 04 §2, spec 03 §6.3 step 6,
+    confirmed: binary): after each day, every sector where an object (a vehicle or a
+    colony) carried out any order that day, a waiting Sentry included, is checked, and a
+    sector that already had a battle that game turn fights again only when a newcomer is
+    there or a survivor of that battle was damaged.
 - **Combat order**: the defending side moves first in simultaneous combat [H]. The setting
   `Simultaneous Games Show Strategic Combat` controls whether players see these battles.
 - **Tie-break**: within a day, vehicles act in the order the objects were created (spec 03

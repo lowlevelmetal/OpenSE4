@@ -807,7 +807,9 @@ private:
                 placed.push_back(std::nullopt);
                 continue;
             }
-            // Comet and warp point entries create nothing but keep their index for Same As (confirmed: binary).
+            // Comet and warp point entries create nothing but keep their index for
+            // Same As (confirmed: binary). The engine draws no sector for them, so no
+            // planet is named after them (inferred, spec 01 §14 Q43).
             if (*kind == ObjectKind::Comet || *kind == ObjectKind::WarpPoint) {
                 placed.push_back(std::nullopt);
                 continue;

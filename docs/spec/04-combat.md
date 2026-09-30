@@ -1490,3 +1490,23 @@ Each names the engine's choice, marked "(inferred)" in the code.
     viewer's strategies, which the simulator's items and fleets pick from.
 72. **Invaders of an empire that is gone.** Landed troops of an empire no longer in the
     game fight on in the colony owner's step.
+73. **A check that finds nobody to fight.** The battle check of §2 counts minefields (and,
+    in a turn-based game, mothballed ships) as objects to see, but minefields never become
+    pieces. When the check passes and no two empires with pieces in the sector are hostile
+    to each other (in either direction), the engine fights no battle, so the moving group
+    keeps its orders; the mines have already struck it. Does the original start an empty
+    battle there, clearing the group's orders?
+74. **Colonies in the check.** A colony in the sector is always seen by the empire making
+    the check, as planets cannot hide in combat; a vehicle is seen when the viewer's sensors
+    detect it, or, uncloaked, unless a storm or nebula obscures its sector. Does the check
+    apply sight obscuration to colonies?
+75. **"Uncloaked" in the simultaneous check.** An empire counts as able to see when it has
+    a vehicle in the sector whose status is not cloaked, a unit group, even a minefield,
+    included, although a unit group's cloak applies whatever its status (spec 03 §19 Q43).
+    Is a unit group whose cloak works a seeing side?
+76. **A Seek stepping in.** A drone group's pursuit that steps into its target's sector
+    makes a movement step, so a battle there clears its list like any step's (spec 03 §6.4);
+    only a Seek already at its target keeps its order after the battle it starts.
+77. **The Attack order and Repeat.** "Used up" is read as done: with Repeat on, the Attack
+    goes to the end of the list like any completed order. With no movement left it is
+    removed the same way, and its owner is told in the log (an OpenSE4 message).

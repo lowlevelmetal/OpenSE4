@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player sends the commands of their turn (`.plr`), and the host replays them and sends the game on to the next player. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM `.gam` (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles in network and e-mail games are strategic: the host never asks Tactical or Strategic, so tactical combat over the network is left for later (local and hotseat turn-based games offer it) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §3 step 1; spec 06 §2.7 | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played locally, hotseat, over the network and by e-mail. On different machines a host is in charge: over the network (an OpenSE4 extension) it carries out the commands of the player whose turn it is; by e-mail each player sends the commands of their turn (`.plr`), and the host replays them and sends the game on to the next player. A player who is away, out of time or without a `.plr` is played by the computer for that turn (spec 05 open question 33). The game client opens a PBEM `.gam` (Multiplayer, Play by E-mail, or `--pbem`), plays the player's turn in either style and writes the `.plr` at End Turn (spec 05 open question 36). A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. As in the original, nobody is asked Tactical or Strategic in a game played on different machines: the host resolves the battle (local and hotseat turn-based games ask) | Spec 05 §9.1: on different machines the save file passes from player to player, and TCP/IP is for simultaneous games only; spec 04 §2, §3 step 1; spec 06 §2.7 | M |
 
 ## Economy and population (spec 02)
 
@@ -26,13 +26,14 @@ facilities, events, combat, stellar manipulation), and setup's racial point cost
 `economy::characteristicPointCost`, which costs each characteristic as stored. On
 2026-09-30 the engine's remaining guesses (spec 02 §13 items 33 and 37–50) and the other
 open items of spec 02 were settled from the executable, and the rows found then were
-implemented the same day, except the one below (the opening pools of spec 02 §9 followed
-with the turn order). The engine's own choices where the spec is silent are spec 02 §13
-items 51–56. This row is where the engine differs:
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Where built units go (`economy_queue.cpp` `placeUnits`) | After the builder, the empire's other planets in the sector (object order), then its ships and bases (vehicle order) | Spec 02 §6.5: the other holders in the game's object order, planets and ships mixed. The engine keeps planets and vehicles in separate lists with no common order, so it cannot mix them (spec 02 §13 Q52) | L |
+implemented the same day (the opening pools of spec 02 §9 followed with the turn order).
+Built units go to the holders in the game's object order (spec 02 §6.5): with the
+engine's object slots every planet comes before every vehicle, so after the builder they
+try the planets, then the ships and bases by slot (spec 02 §13 Q52). A queued facility
+switches to a newer level in place, keeping what was paid (`cmd::QueueReplaceFacility`,
+spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades. The
+engine's own choices where the spec is silent are spec 02 §13 items 51–56. No row
+remains.
 
 ## Vehicles, movement and logistics (spec 03)
 
@@ -44,11 +45,13 @@ line with the rules of spec 03 §19 as settled from the executable: the stored-d
 chained actions in object-slot order, ad-hoc groups, the Ship Orders options, launches and
 recovery, hazard damage, repeat battles, Sweep Mines, repair and training sources, ruins, the
 destructive-centre cost map, design editing and the smaller rules. The engine's own choices
-where the spec is silent are spec 03 §19 Q60–Q70. What is left:
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Long-range scanning (`sight.cpp` `scannerReaches`) | A design is learned only when a human opens the report of a vehicle the scanners reach (`cmd::OpenVehicleReport`), as the spec says; but `Long Range Scanner - System` works only from a populated colony and also covers unit groups | §3.3: `Long Range Scanner - System` works from any own object in the system that has it (planet facilities without population) and does not cover unit groups | L |
+where the spec is silent are spec 03 §19 Q60–Q71. Long-range scanning follows §3.3: a
+design is learned only when a human opens the report of a vehicle the scanners reach
+(`cmd::OpenVehicleReport`), a ranged scanner works from any own object within its reach,
+and `Long Range Scanner - System` works from any own object in the system (colonies
+without population too) and covers ships and bases, not unit groups (`sight.cpp`
+`scannerReaches`). A turn-based Attack goes to the sector its target was in when the order
+was given and attacks there (§8, Q71). No row remains.
 
 ## Combat (spec 04)
 
@@ -56,14 +59,17 @@ The combat engine follows the rules of spec 04 settled on 2026-09-30 (§2-§19.1
 positions, unit group and seeker damage, mines, cargo lost at once, troops fighting for
 the ship's owner and ground combat in the colony owner's step, planets, the strategies
 with the danger and attack maps, launches, design statistics, the tactical window's
-phases, Auto, Resolve Combat and groups, and the combat simulator. The details the spec
-leaves open are the engine's choices in spec 04 §19.1 and the questions of §19.2. The two
-rows left are in the movement phase's order execution (`movement.cpp`), not in combat.
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Battle checks (`movement.cpp:1297`, `:1362`, `:483-487`, `:839`) | Turn-based: Load, Drop, Launch/Recover, Cloak, Sweep Mines, Use Component and Stellar Manipulation orders also run a battle check. Simultaneous: only moves and orders that acted make a sector a candidate | Spec 04 §2: turn-based only movement steps, Attack and a Seek at its target; simultaneous any order carried out that day (a waiting Sentry included) | L |
-| Attack and Seek into a battle (`movement.cpp:1347-1360`) | An Attack order entering its target's sector skips the arrival battle | Spec 04 §2: every movement step checks; a Seek fights on arrival, keeps the order and attacks again after decloaking the next time the list runs | L |
+phases, Auto, Resolve Combat and groups, and the combat simulator. When battles happen
+follows §2 too (`combat::BattleCheck`, `movement.cpp`): in turn-based games only a
+movement step (a warp jump included, after the mines), the Attack order and a Seek order
+at its target run a battle check, one-directional from the group that runs it; a battle
+started by a step clears the group's whole list, the Attack is used up, a Seek stays and
+attacks again every time its list runs, and other participants lose only a Sentry at the
+head of their lists. In simultaneous games every sector where an object carried out an
+order that day, a waiting Sentry included, is checked from the side of each empire with
+an uncloaked vehicle there, and a sector fights again in the same turn only when
+newcomers arrive or a survivor was damaged. The details the spec leaves open are the
+engine's choices in spec 04 §19.1 and the questions of §19.2. No row remains.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
@@ -85,12 +91,14 @@ turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 `map_file.hpp`) with starting points placed first; the game keeps the points a later Save
 Map writes (`GameState::startingPoints`). The autosave choices are applied after each
 processed game turn in local and hotseat games of either turn style, into files named
-after the last digit of the turn count. Spec 01 §14 Q41 and Q42 are the engine's
-remaining guesses here. These rows are where the engine differs:
+after the last digit of the turn count, and can be changed during the game (Empire
+Options). Spec 01 §14 Q41–Q43 are the engine's remaining guesses here (Q43: how a comet or
+warp point entry of a system template claims a sector for the planets' names). This row
+is where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Generation edge cases (`generate.cpp:428-452` `drawNames`, `:577-615` connectivity pass, `:906`, `:1081-1093` `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
+| Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Computer player (spec 05 §7)
 
@@ -111,12 +119,11 @@ list, the 4-jump test, design names (`Design::templateName`) and design typing, 
 Surrender (`GameOptions::allowSurrender`, also a check box of the Game Settings page and the
 server's `allow_surrender` key), colonization danger, the one-per-system list,
 the Repair, Resupply, Space Yard Ship and Stellar Manipulation ministers, trade item
-values, the replies and speech pools, and template entries of the vehicle list. The
-engine's own choices where the spec is silent are spec 05 open question 37. These rows
-remain, for want of a command the AI could give:
-
-| Where | Engine now | Original | Impact |
-|---|---|---|---|
-| Queued facilities switched by an upgrade (`ai_economy.cpp` `planUpgrades`) | The older queued facility is removed and the newest queued in its place, so what was paid into it is lost | Spec 05 §7.5: the queued item switches to the newest version (a command that replaces a queued item in place is needed) | L |
-| A war declaration with an empty speech pool (`ai_diplomacy.cpp` `initiative`) | Nothing happens: anger changes only through the declaration the AI sends | Spec 05 §7.5 `AI_Speech`: anger still becomes 100, only the declaration is not made (a command that sets anger is needed) | L |
+values, the replies and speech pools, and template entries of the vehicle list. Queued
+facilities switched by an upgrade change in place and keep what was paid
+(`cmd::QueueReplaceFacility`); a war declaration whose speech pool is empty declares
+nothing but still sets the anger to 100 (`cmd::DecideWar`); a new design's fallback
+strategy follows the design type as §7.5 lists it, so transports, colony ships and the
+other unarmed types get Don't Get Hurt. The engine's own choices where the spec is silent
+are spec 05 open question 37. No row remains.
 
