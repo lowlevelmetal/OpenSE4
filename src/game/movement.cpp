@@ -1621,7 +1621,7 @@ private:
     std::set<VehicleId> participants_;                  // who took part in the action
     std::map<RouteKey, Route> routes_;
     std::vector<VehicleId> objectOrder_;                // the vehicles in object order (refreshed each day)
-    std::vector<Location> touched_;                     // sectors where something acted today
+    std::vector<Location> touched_;                     // simultaneous: sectors where an order was carried out today
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
