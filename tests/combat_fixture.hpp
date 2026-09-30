@@ -54,6 +54,9 @@ game::DesignId frigate(game::GameState& s, game::EmpireId owner, std::string_vie
 void useStrategy(game::GameState& s, game::EmpireId e, std::vector<std::pair<std::string, std::string>> settings);
 // Marks a vehicle as having moved in this turn from the sector (dx, dy) away.
 void arriveFrom(game::GameState& s, game::VehicleId id, int dx, int dy);
+// Marks a vehicle as having come through a warp point this turn: it starts in
+// the small box at the map's centre (spec 04 §3), beside the pieces already there.
+void warpIn(game::GameState& s, game::VehicleId id);
 
 int moodCount(const game::TurnContext& ctx, game::EmpireId e, std::string_view trigger);
 int damageTaken(const game::GameState& s, game::VehicleId id);

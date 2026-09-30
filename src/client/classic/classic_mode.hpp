@@ -93,8 +93,8 @@ private:
     // Turn-based games: the combat resolution prompt, Tactical or Strategic for
     // each human side of the battle that waits (spec 06 §1.6, spec 04 §3).
     void drawBattleQuestion(classic::UiContext& ui);
-    std::vector<uint8_t> battleChoices_;   // per human side: 1 tactical
-    size_t battleChoiceKey_ = SIZE_MAX;
+    size_t battleChoiceKey_ = SIZE_MAX;    // the battle question on screen
+    bool battleNotice_ = false;            // the notice before it (a computer empire's turn)
     std::deque<size_t> strategicQueue_;   // battles (GameState::combats) waiting for the Strategic Combat window
 
     // Hotseat hand-over between human players.

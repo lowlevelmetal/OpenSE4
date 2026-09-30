@@ -233,6 +233,14 @@ void arriveFrom(GameState& s, VehicleId id, int dx, int dy) {
     v.cameFromTurn = s.turn;
 }
 
+// Marks a vehicle as having come through a warp point this turn (from another system).
+void warpIn(GameState& s, VehicleId id) {
+    Vehicle& v = *s.vehicle(id);
+    const uint32_t systems = static_cast<uint32_t>(s.galaxy.systems.size());
+    v.cameFrom = {SystemId{(v.location.system.value + 1) % systems}, Sector{0, 0}};
+    v.cameFromTurn = s.turn;
+}
+
 int moodCount(const TurnContext& ctx, EmpireId e, std::string_view trigger) {
     int n = 0;
     for (const MoodEvent& m : ctx.moodEvents)
@@ -313,7 +321,10 @@ std::pair<GameState, Location> battleScenario(int variant, uint64_t seed) {
         }
         const VehicleId v = spawn(s, d, ar.loc);
         if (kind == 2) s.vehicle(v)->cargo.units.push_back({drone, 2 + pick.rangeInt(0, 3)});
-        if (pick.rangeInt(0, 1) == 0) arriveFrom(s, v, pick.rangeInt(-1, 1), pick.rangeInt(-1, 1));
+        // B arrives: from a neighbouring sector (an edge of the map), or through a
+        // warp point (the middle, beside A, spec 04 §3).
+        if (pick.rangeInt(0, 2) == 0) arriveFrom(s, v, pick.rangeInt(-1, 1), pick.rangeInt(-1, 1));
+        else warpIn(s, v);
     }
     if (variant % 3 == 1) spawn(s, sat, ar.loc, 3);
     if (variant % 3 == 2) {

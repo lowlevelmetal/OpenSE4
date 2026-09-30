@@ -48,15 +48,15 @@ GameState strategic(GameState s, Location where) {
     return s;
 }
 
-// The player side's phases played by the strategies (Auto in the launch step),
-// with the strategies' orders recorded phase by phase.
+// The player side's phases played by the strategies (AutoPhase), with the
+// strategies' orders recorded phase by phase.
 std::vector<std::vector<TacticalOrder>> playAuto(TacticalBattle& b) {
     std::vector<TacticalOrder> log;
     std::vector<std::vector<TacticalOrder>> phases;
     b.recordStrategies(&log);
     while (b.awaitingOrders()) {
         const size_t before = log.size();
-        REQUIRE(b.submit(order(OK::Auto, b.phaseEmpire())).empty());
+        REQUIRE(b.submit(order(OK::AutoPhase, b.phaseEmpire())).empty());
         phases.emplace_back(log.begin() + static_cast<std::ptrdiff_t>(before), log.end());
     }
     b.recordStrategies(nullptr);
@@ -64,11 +64,19 @@ std::vector<std::vector<TacticalOrder>> playAuto(TacticalBattle& b) {
     return phases;
 }
 
+// Whether the strategies launched drones in a phase: drones a player launches
+// first act at the side's next phase (spec 04 §4), so such a phase cannot be
+// given as orders by hand to the same effect.
+bool launchesDrones(const GameState& s, const std::vector<TacticalOrder>& phase) {
+    return std::any_of(phase.begin(), phase.end(), [&](const TacticalOrder& o) {
+        return o.kind == OK::Launch && combatRules().hull(s.design(o.design).hull).type == ruleset::VehicleType::Drone;
+    });
+}
+
 // Plays A's phases with a simple hand policy: close on the nearest enemy, then fire everything at it.
 void playByHand(TacticalBattle& b, EmpireId me) {
     while (b.awaitingOrders()) {
         REQUIRE(b.phaseEmpire() == me);
-        REQUIRE(b.submit(order(OK::Begin, me)).empty());
         for (size_t i = 0; i < b.pieces().size(); ++i) {
             const combat::TacticalPiece& p = b.pieces()[i];
             if (!p.alive || p.owner != me || p.kind == CombatPiece::Kind::Seeker || p.type == ruleset::VehicleType::Drone) continue;
@@ -98,10 +106,13 @@ void playByHand(TacticalBattle& b, EmpireId me) {
 // ---- One set of rules, two kinds of control ------------------------------------------------------
 
 TEST_CASE("tactical: a battle stepped with the strategies' orders is the strategic battle") {
-    // For each battle: (1) strategic resolution; (2) the player sides on Auto,
-    // which records the strategies' orders; (3) those orders given by hand;
-    // (4) the accepted orders replayed as a script. All four end in the same state.
-    int battles = 0, orders = 0;
+    // For each battle: (1) strategic resolution; (2) the player sides played by
+    // the strategies (AutoPhase), which records their orders; (3) those orders
+    // given by hand; (4) the accepted orders replayed as a script. (2) to (4) end
+    // in the same state. So does (1), except that a battle with player sides ends
+    // after the phase in which the last enemy falls, a strategic one only after
+    // the whole combat turn (spec 04 §4): up to then both record the same events.
+    int battles = 0, orders = 0, whole = 0;
     for (int variant = 0; variant < 20; ++variant)
         for (uint64_t seed = 1; seed <= 3; ++seed) {
             CAPTURE(variant);
@@ -111,18 +122,37 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
                                             : control == 1 ? std::vector<EmpireId>{EmpireId{1u}}
                                                            : std::vector<EmpireId>{EmpireId{0u}, EmpireId{1u}};
             auto [start, where] = battleScenario(variant, seed);
-            const uint64_t expected = stateChecksum(strategic(start, where));
+            const GameState resolved = strategic(start, where);
             const TacticalBattle::Setup setup{where, std::nullopt, players};
 
             TacticalBattle autoBattle(combatRules(), start, setup);
             REQUIRE(autoBattle.started());
             const std::vector<std::vector<TacticalOrder>> phases = playAuto(autoBattle);
-            CHECK(stateChecksum(autoBattle.state()) == expected);
+            const uint64_t expected = stateChecksum(autoBattle.state());
+            {
+                const std::vector<CombatEvent>& mine = autoBattle.record().events;
+                const std::vector<CombatEvent>& theirs = resolved.combats.back().events;
+                REQUIRE(mine.size() <= theirs.size());
+                bool prefix = true;
+                for (size_t i = 0; i < mine.size() && prefix; ++i)
+                    prefix = mine[i].kind == theirs[i].kind && mine[i].piece == theirs[i].piece && mine[i].target == theirs[i].target &&
+                             mine[i].amount == theirs[i].amount && mine[i].x == theirs[i].x && mine[i].y == theirs[i].y;
+                CHECK(prefix);
+                if (mine.size() == theirs.size()) {
+                    CHECK(expected == stateChecksum(resolved));
+                    ++whole;
+                }
+            }
 
             TacticalBattle byHand(combatRules(), start, setup);
             size_t phase = 0;
             while (byHand.awaitingOrders()) {
                 REQUIRE(phase < phases.size());
+                if (launchesDrones(start, phases[phase])) {
+                    REQUIRE(byHand.submit(order(OK::AutoPhase, byHand.phaseEmpire())).empty());
+                    ++phase;
+                    continue;
+                }
                 for (const TacticalOrder& o : phases[phase]) {
                     const std::string why = byHand.submit(o);
                     CHECK_MESSAGE(why.empty(), identifier(o.kind) << ": " << why);
@@ -145,6 +175,7 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
         }
     CHECK(battles == 60);
     CHECK(orders > 1000);
+    CHECK(whole > 30);
 }
 
 TEST_CASE("tactical: without player sides the battle is fought at once, as strategic resolution fights it") {
@@ -251,11 +282,14 @@ struct Skirmish {
         boarder = spawn(s, frigate(s, ar.a, "Boarder", 4, {"Test Boarding Party", "Test Boarding Party", "CT Combat Thruster"}), ar.loc);
         carrier = spawn(s, frigate(s, ar.a, "Carrier", 1, {"Test Fighter Bay", "Test Fighter Bay", "CT Big Armor"}), ar.loc);
         s.vehicle(carrier)->cargo.units.push_back({fighter, 7});
-        // Unarmed bases: they neither shoot nor run away.
+        // Unarmed bases: they neither shoot nor run away. They came through a warp
+        // point, so they start beside A in the middle of the map (spec 04 §3).
         target = spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "CT Big Armor"}), ar.loc);
         shielded = spawn(s, design(s, ar.b, "Shielded", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Shield",
                                                                          "CT Big Armor"}),
                          ar.loc);
+        warpIn(s, target);
+        warpIn(s, shielded);
     }
 };
 
@@ -274,22 +308,17 @@ TEST_CASE("tactical: orders are refused out of turn and for pieces that are not 
     Skirmish k;
     TacticalBattle b = startSkirmish(k);
     const int gunner = pieceIndex(b, k.gunner), target = pieceIndex(b, k.target);
-    CHECK(b.launchStep());
+    CHECK_FALSE(b.paused());
     CHECK(b.check(order(OK::EndPhase, k.ar.b)) == "It is not that side's phase.");
     TacticalOrder mv = order(OK::Move, k.ar.a, target);
     mv.x = 1;
     mv.y = 1;
     CHECK(b.check(mv) == "That piece is not yours.");
     CHECK(b.check(order(OK::Fire, k.ar.a, gunner, pieceIndex(b, k.boarder))) == "That is not an enemy.");
-    CHECK(b.check(order(OK::Begin, k.ar.a)).empty());
     // A refused order changes nothing and is not part of the script.
     CHECK_FALSE(b.submit(mv).empty());
     CHECK(b.script().empty());
-    CHECK(b.launchStep());
-    // Begin ends the launch step; it is refused afterwards.
-    CHECK(b.submit(order(OK::Begin, k.ar.a)).empty());
-    CHECK_FALSE(b.launchStep());
-    CHECK(b.check(order(OK::Begin, k.ar.a)) == "The phase has already begun.");
+    CHECK(b.submit(order(OK::ClearAllGroups, k.ar.a)).empty());
     CHECK(b.script().size() == 1);
 }
 
@@ -372,8 +401,7 @@ TEST_CASE("tactical: weapons can be switched off, and Fire uses the ones left on
     const int gunner = pieceIndex(b, k.gunner), target = pieceIndex(b, k.target);
     TacticalOrder off = order(OK::ToggleWeapon, a, gunner);
     off.on = false;
-    CHECK(b.submit(off).empty());   // all weapons off (a launch-step order)
-    CHECK(b.launchStep());
+    CHECK(b.submit(off).empty());   // all weapons off
     CHECK(b.check(order(OK::Fire, a, gunner, target)) == "No weapon is selected.");
     TacticalOrder laserOn = order(OK::ToggleWeapon, a, gunner);
     laserOn.weapon = 1;
@@ -407,13 +435,14 @@ TEST_CASE("tactical: carriers launch fighters in groups of the chosen size, up t
     const EmpireId a = k.ar.a;
     const int carrier = pieceIndex(b, k.carrier);
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 8);   // two bays of 4
-    TacticalOrder launch = order(OK::Launch, a, carrier);
+    TacticalOrder launch = order(OK::LaunchFighters, a, carrier);
     launch.design = k.fighter;
     launch.count = 7;
     launch.group = 2;
+    CHECK(b.check(launch) == "Fighter groups hold 5, 8, 10, 15, 20, 30, 40 or 50.");
+    launch.group = 5;
     const size_t before = b.pieces().size();
     CHECK(b.submit(launch).empty());
-    CHECK(b.launchStep());   // launching keeps the launch step
     std::vector<int> groups;
     for (size_t i = before; i < b.pieces().size(); ++i) {
         CHECK(b.pieces()[i].kind == CombatPiece::Kind::UnitGroup);
@@ -422,15 +451,18 @@ TEST_CASE("tactical: carriers launch fighters in groups of the chosen size, up t
         CHECK(b.pieces()[i].movement > 0);   // full movement at once (spec 04 §5)
         groups.push_back(b.pieces()[i].count);
     }
-    CHECK(groups == std::vector<int>{2, 2, 2, 1});
+    CHECK(groups == std::vector<int>{5, 2});
     CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 1);
     CHECK(b.pieces()[static_cast<size_t>(carrier)].cargo.empty());
     CHECK(b.check(launch) == "It carries no such units.");
     // The new groups take orders like any piece.
     TacticalOrder mv = order(OK::Move, a, static_cast<int>(before));
-    mv.x = b.pieces()[before].x > 36 ? 0 : 71;
-    mv.y = b.pieces()[before].y;
-    CHECK(b.check(mv).empty());
+    for (const auto& [dx, dy] : {std::pair{-3, 0}, std::pair{3, 0}, std::pair{0, -3}, std::pair{0, 3}, std::pair{3, 3}, std::pair{-3, -3}}) {
+        mv.x = b.pieces()[before].x + dx;
+        mv.y = b.pieces()[before].y + dy;
+        if (b.check(mv).empty()) break;
+    }
+    CHECK_MESSAGE(b.check(mv).empty(), b.check(mv));
     // Launched units that survive land on their carrier after the battle.
     b.submit(order(OK::ResolveCombat, a));
     CHECK(b.finished());
@@ -457,36 +489,60 @@ TEST_CASE("tactical: drones launched by a player act on their own") {
     const size_t before = b.pieces().size();
     CHECK(b.submit(launch).empty());
     REQUIRE(b.pieces().size() == before + 2);
-    // In the launch step they wait for the side's drone step, like a computer side's launches.
-    CHECK_FALSE(b.pieces()[before].acted);
+    // Each drone is a group of its own; it first acts at the side's next phase (spec 04 §4, §10.7).
+    CHECK(b.pieces()[before].count == 1);
+    CHECK(b.pieces()[before + 1].count == 1);
+    CHECK(b.pieces()[before].acted);
+    const int x0 = b.pieces()[before].x, y0 = b.pieces()[before].y;
     TacticalOrder mv = order(OK::Move, ar.a, static_cast<int>(before));
     mv.x = 0;
     mv.y = 0;
     CHECK(b.check(mv) == "Drones act on their own.");
-    CHECK(b.submit(order(OK::Begin, ar.a)).empty());
-    CHECK(b.pieces()[before].acted);
-    CHECK(b.pieces()[before + 1].acted);
+    CHECK(b.check(order(OK::Auto, ar.a, static_cast<int>(before))) == "Drones act on their own.");
+    // The strategies play the rest of the phase: the new drones still wait.
+    CHECK(b.submit(order(OK::AutoPhase, ar.a)).empty());
+    size_t moves = 0;
+    for (const CombatEvent& e : b.record().events)
+        if (e.kind == CombatEvent::Kind::Move && e.piece == static_cast<uint32_t>(before)) ++moves;
+    // At the side's next phase they moved before the player got control.
+    REQUIRE(b.phaseEmpire() == ar.a);
+    CHECK(moves > 0);
+    CHECK((b.pieces()[before].x != x0 || b.pieces()[before].y != y0 || !b.pieces()[before].alive));
+    int firstRound = 0;
+    for (const CombatEvent& e : b.record().events)
+        if (e.kind == CombatEvent::Kind::Move && e.piece == static_cast<uint32_t>(before)) {
+            firstRound = e.round;
+            break;
+        }
+    CHECK(firstRound == b.round());   // not in the combat turn they were launched
 }
 
 TEST_CASE("tactical: combat groups follow their leader") {
     Skirmish k;
     TacticalBattle b = startSkirmish(k);
     const EmpireId a = k.ar.a;
-    const int gunner = pieceIndex(b, k.gunner), boarder = pieceIndex(b, k.boarder);
+    const int gunner = pieceIndex(b, k.gunner), boarder = pieceIndex(b, k.boarder), carrier = pieceIndex(b, k.carrier);
     TacticalOrder member = order(OK::SetMember, a, boarder);
     member.group = 3;
     CHECK(b.check(member) == "Group 3 has no leader.");
     TacticalOrder leader = order(OK::SetLeader, a, gunner);
     leader.group = 3;
+    CHECK(b.check(leader) == "Pick a formation for the group.");   // the player picks one (spec 04 §5)
+    leader.formation = 0;                                          // Test Line: one square either side
     CHECK(b.submit(leader).empty());
+    // Refused: a number that already has a leader, and a piece already in a group.
+    TacticalOrder second = order(OK::SetLeader, a, carrier);
+    second.group = 3;
+    second.formation = 0;
+    CHECK(b.check(second) == "Group 3 already has a leader.");
     CHECK(b.submit(member).empty());
+    CHECK(b.check(member) == "It already belongs to a group.");
     CHECK(b.pieces()[static_cast<size_t>(gunner)].isLeader);
     CHECK(b.pieces()[static_cast<size_t>(gunner)].group == 3);
     CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == gunner);
     CHECK(b.pieces()[static_cast<size_t>(boarder)].group == 3);
-    const int dx = b.pieces()[static_cast<size_t>(boarder)].x - b.pieces()[static_cast<size_t>(gunner)].x;
-    const int dy = b.pieces()[static_cast<size_t>(boarder)].y - b.pieces()[static_cast<size_t>(gunner)].y;
-    // The leader moves two squares; the member keeps its place beside it.
+    // The member takes the formation's next place, turned by the leader's facing:
+    // its first slot is one square to the leader's left before turning.
     const combat::TacticalPiece lead = b.pieces()[static_cast<size_t>(gunner)];
     TacticalOrder mv = order(OK::Move, a, gunner);
     const int sx = lead.x > 36 ? -1 : 1;   // toward the middle of the map: room to move
@@ -497,15 +553,20 @@ TEST_CASE("tactical: combat groups follow their leader") {
     const combat::TacticalPiece& l = b.pieces()[static_cast<size_t>(gunner)];
     const combat::TacticalPiece& m = b.pieces()[static_cast<size_t>(boarder)];
     CHECK(l.x == lead.x + 2 * sx);
-    if (std::max(std::abs(l.x + dx - m.x), std::abs(l.y + dy - m.y)) != 0) {
-        // Blocked on the way: it got as close as it could.
-        CHECK(std::max(std::abs(l.x + dx - m.x), std::abs(l.y + dy - m.y)) <= 2);
-    }
+    // Facing east (1) the slot (-1, 0) is (0, -1); facing west (3) it is (0, 1).
+    const int slotY = l.y + (sx > 0 ? -1 : 1);
+    CHECK(std::max(std::abs(l.x - m.x), std::abs(slotY - m.y)) <= 2);   // there, or as close as its movement allowed
     CHECK(m.movement < m.movementMax);
-    // Clearing the leader dissolves the group.
+    // Clearing the leader clears only it: the member keeps its number and
+    // follows whichever piece leads that number later.
     CHECK(b.submit(order(OK::ClearGroup, a, gunner)).empty());
+    CHECK_FALSE(b.pieces()[static_cast<size_t>(gunner)].isLeader);
     CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == -1);
-    CHECK(b.pieces()[static_cast<size_t>(boarder)].group == -1);
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].group == 3);
+    second.piece = carrier;
+    CHECK(b.submit(second).empty());
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == carrier);
+    CHECK(b.submit(order(OK::ClearGroup, a, boarder)).empty());
     CHECK(b.check(order(OK::ClearGroup, a, boarder)) == "It is in no group.");
 }
 
@@ -628,7 +689,6 @@ TEST_CASE("tactical: finishing early lets the strategies play the phases left, a
     const TacticalBattle::Setup setup{where, std::nullopt, {EmpireId{0u}}};
     TacticalBattle b(combatRules(), start, setup);
     REQUIRE(b.awaitingOrders());
-    REQUIRE(b.submit(order(OK::Begin, EmpireId{0u})).empty());
     REQUIRE(b.submit(order(OK::EndPhase, EmpireId{0u})).empty());
     b.finish();
     CHECK(b.applied());
@@ -1022,7 +1082,6 @@ TEST_CASE("client session: a turn-based battle asks, is fought tactically in the
     session.startTactical(std::move(fight));
     TacticalBattle& b = *session.tactical()->battle;
     REQUIRE(b.awaitingOrders());
-    CHECK(b.submit(order(OK::Begin, ar.a)).empty());
     CHECK(b.submit(order(OK::EndPhase, ar.a)).empty());
     session.endTactical();   // the strategies play what is left; the orders answer the question
     CHECK(session.tactical() == nullptr);

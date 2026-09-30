@@ -332,7 +332,7 @@ std::string uniqueDesignName(const GameState& s, std::string_view wanted) {
 }
 
 void resetDesignStatistics(Design& d) {
-    d.built = d.lost = d.kills = 0;
+    d.built = d.lost = 0;
     d.enemyTonnageDestroyed = 0;
 }
 

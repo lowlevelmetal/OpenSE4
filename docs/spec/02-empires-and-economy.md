@@ -1517,8 +1517,9 @@ running game.
     the planet's shields, of any damage type; the engine trims nowhere else (events,
     intelligence sabotage). Plague trims after its loss when the colony survives.
 55. **Experience from kills.** *Open* (inferred, §9): a destroyed unit group gives the
-    tonnage of the units it had at the start of the battle; units lost by a group that
-    survives give nothing, nor do mines outside a battle, units stored on planets or
+    tonnage of every unit it had in the battle (killed ones and units that joined it
+    included), the value that credits enemy tonnage (spec 04 §15); units lost by a group
+    that survives give nothing, nor do mines outside a battle, units stored on planets or
     ground combat.
 56. **Upgrade target at queue time.** *OpenSE4 choice* (§6.6): the original's queue does
     no tech check when an upgrade is queued, and its Upgrades tab offers only researched

@@ -266,7 +266,7 @@ int64_t hitCargoUnits(const Rules& r, GameState& s, Cargo& c, int64_t damage, Rn
     for (int n = 0; n < 20 && pool > 0 && !c.units.empty(); ++n) {
         UnitStack& st = c.units[rng.below(c.units.size())];
         if (st.count <= 0 || st.design.index() >= s.designs.size()) continue;
-        const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design), combat::DamageType::Normal));
+        const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design)));
         if (pool < hp) continue;
         pool -= hp;
         --st.count;

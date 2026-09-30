@@ -19,8 +19,8 @@
 //   vehicles that moved into the sector this turn (Vehicle::cameFrom), one
 //   group per empire, or every vehicle there when none is marked (inferred
 //   fallback).
-//   combatPossible() is also true when only mines face a vehicle they can
-//   hurt, so the same call pair handles "a vehicle enters a mined sector".
+//   combatPossible() is also true when only mines face a vehicle they may
+//   strike, so the same call pair handles "a vehicle enters a mined sector".
 //   Destroyed vehicles get count = 0; the caller runs removeDeadVehicles().
 //   Combat does not clear orders (spec 03 §6.3): only ships that change owner
 //   lose theirs. Removing a leading Sentry order is movement's job. The
@@ -33,20 +33,21 @@
 //   and cameFromTurn == GameState::turn; movement records both on each step.
 //   Every other vehicle, and every planet, was already in the sector.
 //
-// * Troops on the ground (spec 04 §11, §13). Invading troops are stored as
-//   ordinary UnitStack entries in the target Colony::cargo.units. A troop
-//   stack belongs to the empire that owns its design (Design::owner); a troop
-//   stack whose design owner is hostile to the colony owner is an invader.
-//   Other units in a colony's cargo always serve the colony owner. Ground
-//   combat (runGroundCombat, step 17 of each empire's end-of-turn processing)
-//   fights every colony that the empire's troops invade. To land troops outside space combat (e.g. a Drop Cargo order
-//   onto an enemy planet), movement calls landTroops(), which moves the stack
-//   from the carrier's cargo into the colony's cargo. During a space battle,
-//   ships with a Drop Troops strategy land their troops the same way, and the
-//   ground combat is fought at once. Colony::militia holds the militia pool
-//   of an invaded colony (-1 when nobody invades it).
-//   Known limitation: a troop unit captured in a ship's cargo keeps the
-//   allegiance of its design owner.
+// * Troops on the ground (spec 04 §11, §13). Units in cargo have no owner
+//   of their own: a ship drops every troop unit aboard, of whatever design,
+//   for the empire that owns the ship, and the units stored on a planet
+//   always serve the planet's owner. Landed troops are kept apart, in
+//   Colony::landedTroops, and fight for Colony::invader (one invader at a
+//   time: a third empire may not land where another's troops fight). Ground
+//   combat between turns (runGroundCombat) runs in the colony owner's
+//   end-of-turn processing, at its ground-combat step (spec 05 §8): each of
+//   its colonies with landed troops fights on, unless the owner is the
+//   landed empire or at Non-Aggression or better with it, in which case the
+//   troops join the colony's cargo and the invasion ends. To land troops
+//   outside space combat (a Drop Cargo order onto an enemy planet), movement
+//   calls landTroops(). During a space battle, ships land their troops the
+//   same way and the ground combat is fought at once. Colony::militia holds
+//   the militia pool of an invaded colony (-1 when nobody invades it).
 //
 // The replay record (GameState::combats)
 // --------------------------------------
@@ -69,7 +70,8 @@
 //              seeker expires). A planet whose colony dies stays on the map as
 //              an unowned obstacle.
 //   Captured   piece changed owner; target = the capturer; amount = new owner id
-//   Launch     piece = new unit group, target = its carrier, amount = units;
+//   Launch     piece = a unit group, target = its carrier, amount = units launched
+//              (again for units that join it from the same Launch Units window);
 //              or piece = a troop ship, target = the planet, amount = troops landed
 //   Seeker     piece = new seeker, target = its target, amount = members, component
 // With Settings `Create Combat Replay` off, events are left out (pieces and
@@ -214,10 +216,11 @@ struct Strategy {
     std::array<int, kTargetCategories> typePriority{};   // 1 = engage first
     std::array<bool, kTargetCategories> dontFireOn{};
     std::array<bool, kTargetCategories> breakFormation{};
-    int fighterLaunchGroup = 10;
+    int fighterLaunchGroup = 10;   // 0: all of a carrier's fighters in one group (spec 04 §10.4)
     // "Drones Per Target" (default 3): set in the strategies window and stored
     // with the game, not a DefaultStrategies.txt key (spec 04 §10.7). Read from
-    // the empire's strategy record when it holds that key.
+    // the empire's strategy record when it holds that key. The computer's drone
+    // launch batch and, times the hostile ships and bases, its limit; 0: all.
     int dronesPerTarget = 3;
     int damagePercentShip = 100;
     int damagePercentPlanet = 100;
@@ -241,11 +244,13 @@ bool combatPossible(const Rules& r, const GameState& s, Location where);
 void resolveSpaceCombat(TurnContext& ctx, Location where);
 // The same with the vehicles that just moved in (the mines' victims; none when empty).
 void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering);
-// Ground combat on planets where `attacker` has troops against an enemy
-// (spec 05 §8 end-of-turn step 17): its invading troops fight each such
-// colony, which it captures when the defense is gone. A colony that no
-// longer holds invaders loses its militia pool.
-void runGroundCombat(TurnContext& ctx, EmpireId attacker);
+// The ground-combat step of `owner`'s end-of-turn processing (spec 05 §8,
+// spec 04 §13): on each of its colonies where landed troops still fight, the
+// fight goes on, or, when the owner is the landed empire or at Non-Aggression
+// or better with it, the troops join the colony's cargo and the invasion
+// ends. A colony the invaders take changes owner; a colony that no longer
+// holds invaders loses its militia pool.
+void runGroundCombat(TurnContext& ctx, EmpireId owner);
 
 // ---- Queries and helpers ------------------------------------------------------------------------
 
@@ -263,14 +268,23 @@ int weaponLargestDamage(const Rules& r, const DesignEntry& e);
 // Longest range at which weaponDamage() is above 0 (0 = none; 20 when a mount clamps it).
 int weaponReach(const Rules& r, const DesignEntry& e);
 
-// Empires whose troops are invading this colony (hostile troop stacks in its cargo), by id.
+// The empire whose landed troops fight on this colony (Colony::invader, while
+// any are left); empty when nobody invades it.
 std::vector<EmpireId> invaders(const Rules& r, const GameState& s, const Colony& c);
 bool isTroopDesign(const Rules& r, const GameState& s, DesignId d);
 // Moves up to `count` troop units of `design` from a carrier onto a hostile
-// colony in the carrier's sector (spec 04 §11 Drop Troops). Refused when the
-// colony is not hostile or is already contested by another invader (spec 04
-// §13). The first landing gives the colony its militia pool. Returns the number landed.
+// colony in the carrier's sector (spec 04 §11 Drop Troops): they land for the
+// carrier's owner. Refused when the colony is not hostile to it or is already
+// contested by another invader (spec 04 §13). The first landing gives the
+// colony its militia pool. Returns the number landed.
 int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet, DesignId design, int count);
+
+// The level name of crew or fleet experience (whole points and tenths), on one
+// scale (confirmed: binary, spec 04 §15): 5 or less Novice, up to 10
+// Experienced, up to 20 Veteran, up to 30 Elite, above 30 Legendary.
+std::string_view experienceLevel(int experience, int tenths = 0);
+// The label shown for it: the level name and the truncated experience as a to-hit bonus, "Veteran (+14%)".
+std::string experienceLabel(int experience, int tenths = 0);
 
 // Militia raised by one population group of `populationMillions` (spec 04 §13):
 // one per `Defending Units Per Population` million, truncated, no minimum.

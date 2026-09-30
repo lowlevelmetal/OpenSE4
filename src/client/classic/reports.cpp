@@ -1,5 +1,6 @@
 #include "client/classic/reports.hpp"
 
+#include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
@@ -284,7 +285,7 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
                 labelValue(ui, "Supplies", game::vehicleHasUnlimitedSupply(r, s, v)
                                                ? std::string("Endless")
                                                : std::format("{} / {}", formatNumber(v.supply), formatNumber(game::vehicleSupplyCapacity(r, s, v))));
-                labelValue(ui, "Experience", std::format("{}%", v.experience));
+                labelValue(ui, "Experience", game::combat::experienceLabel(v.experience, v.experienceTenths));
                 if (const game::Fleet* f = s.fleet(v.fleet)) labelValue(ui, "Fleet", f->name);
                 labelValue(ui, "Location", sectorName(s, v.location, ui.session.player()));
                 heading(ui, "Orders");
@@ -347,7 +348,7 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
     if (f.members.empty()) mp = 0;
     labelValue(ui, "Movement", std::to_string(mp));
     labelValue(ui, "Supplies", endless ? std::string("Endless") : std::format("{} / {}", formatNumber(supply), formatNumber(capacity)));
-    labelValue(ui, "Experience", std::format("{}%", f.experience));
+    labelValue(ui, "Experience", game::combat::experienceLabel(f.experience, f.experienceTenths));
     if (f.formation < r.data().formations.size()) labelValue(ui, "Formation", r.data().formations[f.formation].name);
     const auto& strategies = s.empire(f.owner).strategies;
     if (f.strategy < strategies.size()) labelValue(ui, "Strategy", strategies[f.strategy].name);

@@ -1182,7 +1182,9 @@ TEST_CASE("movement: load and drop cargo orders") {
     w.v(lander).cargo.units.push_back({troop, 2});
     w.order(lander, mk(OrderKind::DropCargo, {}, {}, {}, troop, -1));
     w.move();
-    CHECK(w.s.colony(enemy)->cargo.unitCount(troop) == 2);
+    // Landed troops are kept apart from the colony's cargo and fight for the lander's owner (spec 04 §13).
+    CHECK(w.s.colony(enemy)->landedTroops == std::vector<UnitStack>{{troop, 2}});
+    CHECK(w.s.colony(enemy)->invader == kA);
     CHECK(w.v(lander).cargo.unitCount(troop) == 0);
 
     // Loading is always done, even when nothing loads; a drop with nowhere to go fails (spec 03 §8).
@@ -2603,7 +2605,13 @@ TEST_CASE("movement: cargo that no longer fits goes population first, then from 
     v.cargo.population = {{kA, 4}, {kB, 4}};  // 40 kT
     v.cargo.units = {{mine, 3}, {mine2, 3}};  // 60 kT
     v.damage[6] = 1000;                       // one bay gone: 50 kT left
+    // The owner's upkeep no longer cuts cargo: it is cut when the part is
+    // destroyed, at once (spec 04 §9.4), as hazards do (fitToCapacity).
+    const Cargo before = v.cargo;
     w.upkeep();
+    CHECK(w.v(hauler).cargo.units == before.units);
+    CHECK(w.v(hauler).cargo.population == before.population);
+    movement::fitToCapacity(r, w.s, w.v(hauler));
     // 50 kT over: 8M of people (40 kT), then one mine of the first stack.
     CHECK(w.v(hauler).cargo.population.empty());
     REQUIRE(w.v(hauler).cargo.units.size() == 2);
@@ -2862,7 +2870,7 @@ TEST_CASE("movement: the drift target is drawn every turn; hazards hit unit grou
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
     const VehicleId swarm = w.spawn(fighter, at(a, 4, 4));
     w.v(swarm).count = 30;
-    const int64_t hp = combat::detail::unitHitPoints(w.rules(), w.s.design(fighter), combat::DamageType::Normal);
+    const int64_t hp = combat::detail::unitHitPoints(w.rules(), w.s.design(fighter));
     const int lostBefore = w.s.design(fighter).lost;
     movement::damageUnitGroup(w.rules(), w.s, w.v(swarm), hp * 25 + hp / 2, w.s.rng);
     CHECK(w.v(swarm).count == 10);  // one unit per draw, 20 draws

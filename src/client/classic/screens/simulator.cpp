@@ -14,6 +14,7 @@
 #include "game/simulator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 namespace opense4::client::classic {
@@ -25,8 +26,10 @@ using game::combat::SimulatorItem;
 using game::combat::SimulatorSetup;
 using game::combat::SimulatorSide;
 
-constexpr size_t kMaxSides = 4;   // (inferred) the window's owner picker holds four virtual empires
-constexpr std::array<const char*, kMaxSides> kSideNames{"Blue", "Red", "Green", "Gold"};
+// Up to 10 virtual empires (confirmed: binary, spec 04 §17); the names are ours.
+constexpr size_t kMaxSides = size_t(game::combat::kSimulatorMaxSides);
+constexpr std::array<const char*, kMaxSides> kSideNames{"Side 1", "Side 2", "Side 3", "Side 4", "Side 5",
+                                                        "Side 6", "Side 7", "Side 8", "Side 9", "Side 10"};
 
 SimulatorSetup defaultSetup(game::EmpireId viewer) {
     SimulatorSetup s;
@@ -130,10 +133,11 @@ private:
 
     // The owner picker: which virtual empire new items go to.
     void sideTabs(UiContext& ui) {
+        // Up to ten sides: five tabs a row.
         for (size_t k = 0; k < setup_.sides.size(); ++k) {
-            if (k > 0) ImGui::SameLine(0, ui.px(6));
+            if (k % 5 != 0) ImGui::SameLine(0, ui.px(6));
             const std::string label = std::format("{}{}", setup_.sides[k].name, setup_.sides[k].computer ? "" : " (you)");
-            if (classicButton(ui, label.c_str(), {128, 22}, 1, current_ == int(k))) current_ = int(k);
+            if (classicButton(ui, label.c_str(), {122, 22}, 1, current_ == int(k))) current_ = int(k);
         }
     }
 
@@ -358,7 +362,7 @@ bool startDemoSimulation(UiContext& ui, bool tactical) {
     // A couple of turns in, played by the strategies, so there is something to see.
     TacticalFight* f = ui.session.tactical();
     for (int phase = 0; phase < 2 && f->battle->awaitingOrders(); ++phase)
-        f->battle->submit(game::combat::TacticalOrder{game::combat::TacticalOrder::Kind::Auto, f->battle->phaseEmpire()});
+        f->battle->submit(game::combat::TacticalOrder{game::combat::TacticalOrder::Kind::AutoPhase, f->battle->phaseEmpire()});
     f->seen = f->battle->record().events.size();
     return true;
 }

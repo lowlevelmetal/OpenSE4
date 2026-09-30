@@ -10,8 +10,9 @@ On 2026-09-29 most rules below were checked against the original executable. Rul
 marked **(confirmed: binary)** describe what the game really does, in our own words;
 where the binary disagreed with an earlier reading, the rule was rewritten. Rules still
 marked **(inferred)** are our own choices. Section 19 lists the questions that were
-open; on 2026-09-30 the last of them were answered from the executable, and §19.1 keeps
-the engine's own choices and OpenSE4's extensions.
+open; on 2026-09-30 the last of them were answered from the executable, §19.1 keeps
+the engine's own choices and OpenSE4's extensions, and §19.2 the questions that came up
+while implementing the settled rules.
 
 Conventions:
 
@@ -1399,33 +1400,93 @@ has no rule, and OpenSE4's extensions.
 
 The engine (`src/game/combat*.cpp`) marks each of these choices "(inferred)". The
 confirmed rules above take precedence over any older engine behaviour; where the engine
-still differs from them, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it.
+still differs from them, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it. Section 19.2 names
+the engine's current choice where the settled rules leave a detail open.
 
-- **Groups of several designs (Q56).** A group that mixes designs is one piece. Each of the
-  §9.4 tries draws one of its designs that still has units, at random; the unit's hit
-  points are its design's. A fighter group's identical weapons (same part and mount) fire
-  together whichever designs carry them; a satellite or drone group fires each weapon of
-  each unit of each design. Offense and defense are the best design's (§7), speed the
-  slowest design's (spec 03 §12), and the target budget counts every unit. Each loss of
-  units is recorded (a `UnitsLost` event, for the Strategic Combat window and the
-  replay). Where this differs from the confirmed rules (the draw, kill credit, emissive
-  armor, unrecovered units), PARITY_GAPS lists it.
+- **Groups of several designs (Q56).** A group that mixes designs is one piece: a unit
+  group in space, or a group launched from one "Launch Units" window (§10.4). The §9.4
+  draws pick among all its design entries, dead ones too; a unit's hit points are its
+  design's. A fighter group's identical weapons (same part and mount) fire together
+  whichever designs carry them; a satellite or drone group fires each weapon of each unit
+  of each design. Offense and defense are the best design's (§7), counting the designs
+  whose units have all died, speed the slowest design's (spec 03 §12), and the target
+  budget counts the living units. Each loss of units is recorded (a `UnitsLost` event,
+  for the Strategic Combat window and the replay). A launched group that mixes designs
+  keeps the smallest full supply load of its designs.
 - **Facility losses (Q39).** OpenSE4 does not copy the original's stale count of
-  destroyed facilities (§11): each destroyed facility is removed once. (The engine
-  still removes them at once instead of at the battle's end; see PARITY_GAPS.)
+  destroyed facilities (§11): each destroyed facility keeps working until the battle
+  ends and is then removed once.
 - **Mines outside the movement phase.** Without a record of the entering group (a
   battle outside the movement phase), every vehicle in the sector counts as entering,
   one group per empire. In the original, mines only ever strike a group as it moves in.
 - **Tactical groups (Q50).** A group a player formed is not a fleet group: its pieces use
-  their design's strategy when the computer plays them. The rest of the engine's group
-  handling is to follow §5 (PARITY_GAPS).
-- **OpenSE4 extensions in the tactical window (Q49); engine choice stands.** Auto can be
-  given to a single piece, which then acts by its strategy at once. The client can end a
-  player's phase by itself when no enemy is left (an option); the battle still ends only
-  when a phase ends, as in the original. How the engine orders a player's phase, Auto and
-  Resolve Combat is to follow §4 (PARITY_GAPS).
+  their design's strategy when the computer plays them.
+- **Planning dice.** Each empire's pieces break their planning ties (the 1-in-10 and
+  coin-flip choices of §16.1) with random numbers of their own, forked from the battle's
+  at setup. The original uses one stream for everything; ours keeps a side's moves, given
+  as orders by hand, playing out exactly as its strategies' do (the tactical tests rely
+  on it). Both are deterministic.
+- **OpenSE4 extensions in the tactical window (Q49).** Auto can be given to a single
+  piece, which then acts by its strategy at once, and "Auto This Phase" lets the
+  strategies play the rest of the player's phase (the battle's Auto toggle and Resolve
+  Combat follow §4). The client can end a player's phase by itself when no enemy is left
+  (an option); the battle still ends only when a phase ends, as in the original.
 - **Quitting during a battle (Q55); OpenSE4 detail.** As in the original, a battle is
   never saved in progress. If the program is quit while a battle asks Tactical or
   Strategic, or is being fought, the order that started it (or End Turn) is dropped: the
   game loads as it was before that order. Once the battle is over, the game saves with
   its results.
+
+### 19.2 Questions from implementing the settled rules
+
+Each names the engine's choice, marked "(inferred)" in the code.
+
+57. **Numbering the empires in the middle.** Our game keeps vehicles apart from a
+    system's list of objects. The engine ranks an empire by its first colony in the
+    system's object list, else by its first vehicle in the system in the game's vehicle
+    order (§3 step 4). Is the original's list ordered the same way?
+58. **Placement hops.** The ten random hops walk on from one another, a hop onto a square
+    off the map simply continuing, and the growing-squares search starts from the square
+    first drawn. Is that the original's walk?
+59. **Arrivals from farther away.** A vehicle that came from a sector of the same system
+    that is not a neighbour (never the case for a step) starts at the edge or corner in
+    that sector's direction.
+60. **A weapon's target while its piece plans.** For the attack map and the fire-first
+    test (§16.1) a ready weapon's target is the first of the sorted targets it can hit and
+    affect, wherever the piece stands: range and the target budget are left to the moment
+    it fires.
+61. **Choosing the square.** The range strategies scan column by column (as Don't Get
+    Hurt's tie rule suggests), and the piece's own square may be chosen (staying put) even
+    though a piece stands on it. "Danger within 10 squares" is read as a square with
+    danger within 10 squares (either axis) of the piece. The attack map leaves
+    point-defense out, and the emissive cut compares one shot's value.
+62. **When the computer launches.** A computer carrier or planet launches as it acts, a
+    carrier before it moves; the new groups act later in the same phase. Drones go in
+    batches of "Drones Per Target" until the limit or the rate is reached, the last batch
+    possibly smaller.
+63. **Launch Units windows.** When the group made earlier in the same window has died,
+    the next launch starts a new group.
+64. **Tactical groups.** A member given a number whose leader's formation has no free
+    place left keeps its number but no place, and acts on its own. A new leader of a
+    number keeps the members' earlier places. Clearing a fleet's leader leaves its members
+    without a leader (a fleet's group has no number).
+65. **Ground combat.** The stack of the killing side credited with dead units' tonnage is
+    drawn among its stacks alive as the round began. Units without weapons do not roll
+    (they would add nothing).
+66. **Seekers.** When a hit of another type (not hull-damaging) destroys a member, the
+    group's pool stays as it was.
+67. **The ram's blow.** The rammer's `Damage Modifier - System` applies to its blow on the
+    target, as to any hit with an attacker; the recoil has none (§10.3).
+68. **Shield pools.** A unit group's shield pool has no cap; during one mine strike each
+    unit group keeps its own shield pool, and it is cleared afterwards.
+69. **Strategies without a target.** Drop Troops with no hostile colony to land on, and
+    Board or Ram with no target, fall back to Don't Get Hurt; Ram is possible for any ship.
+70. **The end of an unseen battle.** A battle without player sides (strategic resolution)
+    checks its end after whole combat turns, as the strategic window does (§4), so the
+    phases left in the combat turn are still played.
+71. **The simulator's location.** The battle stands for one in the viewer's home sector
+    (that sector's interference and disruption apply), but is fought in an empty system of
+    the home system's type so that nothing else there takes part. Every side uses the
+    viewer's strategies, which the simulator's items and fleets pick from.
+72. **Invaders of an empire that is gone.** Landed troops of an empire no longer in the
+    game fight on in the colony owner's step.

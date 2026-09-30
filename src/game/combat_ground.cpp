@@ -1,12 +1,16 @@
 // Ground combat and planet capture (docs/spec/04 §13).
 //
-// Invading troops are troop stacks in a colony's cargo whose design owner is
-// hostile to the colony owner (see combat.hpp). The same fight runs at once
-// when troops drop during a space battle (combat_space.cpp) and in each
-// empire's end-of-turn processing (spec 05 §8 step 17) for every colony where
-// its troops still invade: up to `Number Of Ground Combat Turns` rounds of the invaders against the defender's troops, militia and
-// other stored units. When the defending troops and militia are gone the
-// planet changes hands with its facilities, stored units and population.
+// Troops landed on a colony are kept in Colony::landedTroops and fight for
+// Colony::invader, the empire that owned the ship that dropped them; the
+// units in the colony's cargo always serve the colony's owner (see
+// combat.hpp). The same fight runs at once when troops drop during a space
+// battle (combat_space.cpp), and in the colony owner's end-of-turn
+// processing (spec 05 §8, its ground-combat step) for each of its colonies
+// where landed troops still fight: up to `Number Of Ground Combat Turns`
+// rounds of the invaders against the defender's troops, militia and other
+// stored units. When the defending troops and militia are gone the planet
+// changes hands with its facilities, stored units and population, and the
+// surviving invaders join its cargo.
 
 #include "game/combat.hpp"
 
@@ -17,6 +21,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <format>
 #include <map>
 #include <optional>
@@ -27,21 +32,30 @@ namespace detail {
 
 namespace {
 
+using ruleset::VehicleType;
+
 // One stack of a side, in the order damage reaches it.
 struct Stack {
-    size_t cargo = SIZE_MAX;   // index into the cargo (SIZE_MAX: militia)
+    std::vector<UnitStack>* list = nullptr;   // where the units are (null: militia)
+    size_t index = 0;
+    DesignId design;
     int count = 0;
     int start = 0;
     int64_t hitPoints = 1;     // per unit
     int attack = 0;            // per unit that hits (0: does not attack)
-    bool rolls = false;        // troops and militia roll to hit
+    bool troop = false;        // troops and militia: they hold the planet and roll to hit
 };
 
-// Structure plus shields of one unit (spec 04 §13; shields counted once here).
+// Hit points of one unit: structure plus shields for troops, fighters and
+// weapon platforms, structure alone for other stored units (confirmed: binary).
 int64_t groundHitPoints(const Rules& r, const Design& d) {
-    int64_t shields = hullSum(r, d, AbilityKind::ShieldGeneration) + hullSum(r, d, AbilityKind::PhasedShieldGeneration);
-    for (const DesignEntry& e : d.entries)
-        shields += mountedShield(r, e, AbilityKind::ShieldGeneration) + mountedShield(r, e, AbilityKind::PhasedShieldGeneration);
+    const VehicleType t = r.hull(d.hull).type;
+    int64_t shields = 0;
+    if (t == VehicleType::Troop || t == VehicleType::Fighter || t == VehicleType::WeaponPlatform) {
+        shields = hullSum(r, d, AbilityKind::ShieldGeneration) + hullSum(r, d, AbilityKind::PhasedShieldGeneration);
+        for (const DesignEntry& e : d.entries)
+            shields += mountedShield(r, e, AbilityKind::ShieldGeneration) + mountedShield(r, e, AbilityKind::PhasedShieldGeneration);
+    }
     return std::max<int64_t>(1, designStructure(r, d) + shields);
 }
 
@@ -55,9 +69,10 @@ int troopAttack(const Rules& r, const Design& d) {
     return static_cast<int>(std::min<int64_t>(total, INT32_MAX));
 }
 
-// (Offense or defense plus − minus) over a side's troop units, the best part of
-// each component family counting once, halved and truncated (confirmed: binary).
-int sideModifier(const Rules& r, const GameState& s, const Cargo& cargo, const std::vector<Stack>& side, AbilityKind plus, AbilityKind minus) {
+// (Plus − Minus) ÷ 2, truncated, over the side's living troop designs only:
+// the single best hull value among them plus the best component of each
+// family, the families added up (confirmed: binary). Recomputed every round.
+int sideModifier(const Rules& r, const GameState& s, const std::vector<Stack>& side, AbilityKind plus, AbilityKind minus) {
     std::map<int, int64_t> bestPlus, bestMinus;
     auto note = [&](std::map<int, int64_t>& best, uint32_t component, AbilityKind k) {
         const auto ab = r.componentAbilities(component);
@@ -68,33 +83,34 @@ int sideModifier(const Rules& r, const GameState& s, const Cargo& cargo, const s
         if (it == best.end()) best.emplace(family, value);
         else it->second = std::max(it->second, value);
     };
-    int64_t hull = 0;
+    std::optional<int64_t> hullPlus, hullMinus;
     for (const Stack& st : side) {
-        if (!st.rolls || st.cargo == SIZE_MAX || st.count <= 0) continue;
-        const Design& d = s.design(cargo.units[st.cargo].design);
-        hull += hullSum(r, d, plus) - hullSum(r, d, minus);   // (inferred) each troop design's hull counts once
+        if (!st.troop || !st.list || st.count <= 0) continue;
+        const Design& d = s.design(st.design);
+        hullPlus = std::max(hullPlus.value_or(INT64_MIN), hullSum(r, d, plus));
+        hullMinus = std::max(hullMinus.value_or(INT64_MIN), hullSum(r, d, minus));
         for (const DesignEntry& e : d.entries) {
             note(bestPlus, e.component, plus);
             note(bestMinus, e.component, minus);
         }
     }
-    int64_t total = hull;
+    int64_t total = hullPlus.value_or(0) - hullMinus.value_or(0);
     for (const auto& [f, v] : bestPlus) total += v;
     for (const auto& [f, v] : bestMinus) total -= v;
     return static_cast<int>(total / 2);
 }
 
-int alive(const std::vector<Stack>& side, bool rollersOnly) {
+int holders(const std::vector<Stack>& side) {
     int n = 0;
     for (const Stack& st : side)
-        if (!rollersOnly || st.rolls) n += st.count;
+        if (st.troop) n += st.count;
     return n;
 }
 
 int64_t hits(const std::vector<Stack>& side, int chance, Rng& rng) {
     int64_t total = 0;
     for (const Stack& st : side) {
-        if (!st.rolls || st.attack <= 0) continue;
+        if (st.attack <= 0) continue;
         for (int n = 0; n < st.count; ++n)
             if (rng.rangeInt(1, 100) <= chance) total += st.attack;   // no clamp (confirmed: binary)
     }
@@ -102,16 +118,29 @@ int64_t hits(const std::vector<Stack>& side, int chance, Rng& rng) {
 }
 
 // Whole units die while the damage covers their hit points; the rest moves on
-// to the next stack. Returns what is left over.
-int64_t applyDamage(std::vector<Stack>& side, int64_t damage) {
+// to the next stack. Each loss credits a random stack of the killing side with
+// the dead units' hull tonnage, unless that stack is militia (confirmed:
+// binary). Returns what is left over.
+int64_t applyDamage(const Rules& r, GameState& s, std::vector<Stack>& side, const std::vector<Stack>& killers, int64_t damage, Rng& rng) {
     for (Stack& st : side) {
         if (damage <= 0) break;
         if (st.count <= 0) continue;
         const int64_t killed = std::min<int64_t>(st.count, damage / st.hitPoints);
         st.count -= static_cast<int>(killed);
         damage -= killed * st.hitPoints;
+        if (killed <= 0 || !st.list || killers.empty()) continue;
+        const Stack& credit = killers[rng.below(killers.size())];
+        if (credit.list && credit.design.valid())
+            s.design(credit.design).enemyTonnageDestroyed += killed * designTonnage(r, s.design(st.design));
     }
     return std::max<int64_t>(0, damage);
+}
+
+std::vector<Stack> living(const std::vector<Stack>& side) {
+    std::vector<Stack> out;
+    for (const Stack& st : side)
+        if (st.count > 0) out.push_back(st);
+    return out;
 }
 
 } // namespace
@@ -123,33 +152,35 @@ int groundModifier(const Rules& r, const Empire& e) {
 
 GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs, const GroundFight& f, Rng& rng) {
     GroundOutcome out;
-    Cargo& cargo = *f.cargo;
-    std::vector<Stack> att, defTroops, defOther;
-    for (size_t k = 0; k < cargo.units.size(); ++k) {
-        const UnitStack& u = cargo.units[k];
-        if (u.count <= 0) continue;
+    auto stackOf = [&](std::vector<UnitStack>& list, size_t k) {
+        const UnitStack& u = list[k];
         const Design& d = s.design(u.design);
         Stack st;
-        st.cargo = k;
-        st.count = st.start = u.count;
+        st.list = &list;
+        st.index = k;
+        st.design = u.design;
+        st.count = st.start = std::max(0, u.count);
         st.hitPoints = groundHitPoints(r, d);
-        if (isTroopDesign(r, s, u.design)) {
-            st.rolls = true;
-            st.attack = troopAttack(r, d);
-            if (d.owner == f.attacker) att.push_back(st);
-            else if (d.owner == f.defender || !enemies(s, d.owner, f.defender)) defTroops.push_back(st);
-            // Another invader's troops wait for their own fight.
-        } else {
-            defOther.push_back(st);   // stored units absorb damage but never attack
-        }
+        st.troop = isTroopDesign(r, s, u.design);
+        st.attack = st.troop ? troopAttack(r, d) : 0;   // stored units other than troops never attack
+        return st;
+    };
+    // The invaders: armed troops first, then the rest, each in landing order.
+    std::vector<Stack> att;
+    std::vector<Stack> attRest;
+    for (size_t k = 0; k < f.invaders->size(); ++k) {
+        if ((*f.invaders)[k].count <= 0 || !isTroopDesign(r, s, (*f.invaders)[k].design)) continue;
+        Stack st = stackOf(*f.invaders, k);
+        (st.attack > 0 ? att : attRest).push_back(st);
     }
-    if (att.empty()) return out;
-    out.attackersAtStart = alive(att, true);
+    att.insert(att.end(), attRest.begin(), attRest.end());
+    if (holders(att) == 0) return out;
+    out.attackersAtStart = holders(att);
 
     // Militia: the colony's pool, raised per population group (confirmed: binary).
     if (*f.militia < 0) *f.militia = militiaCount(cs, *f.population);
     Stack militia;
-    militia.rolls = true;
+    militia.troop = true;
     militia.attack = cs.militiaAttack;
     militia.hitPoints = std::max(1, cs.militiaHitPoints);
     {
@@ -161,63 +192,87 @@ GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs
         }
         militia.start = militia.count;
     }
-    // Damage reaches troops and militia first, then the other stored units.
-    std::vector<Stack> def = defTroops;
+    // The defenders in the order damage reaches them: the units that attack
+    // (armed troops in cargo order, then the militia, added at the end of the
+    // cargo list), then everything left in cargo order (confirmed: binary).
+    std::vector<Stack> def, defRest;
+    for (size_t k = 0; k < f.cargo->units.size(); ++k) {
+        if (f.cargo->units[k].count <= 0) continue;
+        Stack st = stackOf(f.cargo->units, k);
+        (st.attack > 0 ? def : defRest).push_back(st);
+    }
     def.push_back(militia);
-    def.insert(def.end(), defOther.begin(), defOther.end());
+    def.insert(def.end(), defRest.begin(), defRest.end());
 
-    const int attOffense = sideModifier(r, s, cargo, att, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus);
-    const int attDefense = sideModifier(r, s, cargo, att, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
-    const int defOffense = sideModifier(r, s, cargo, def, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus);
-    const int defDefense = sideModifier(r, s, cargo, def, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
-    const int attChance = attOffense + 50 - defDefense;
-    const int defChance = defOffense + 50 - attDefense;
     const int attRacial = groundModifier(r, s.empire(f.attacker));
     const int defRacial = f.defender.valid() ? groundModifier(r, s.empire(f.defender)) : 0;
     const int percent = cs.groundDamagePercent;
 
     int64_t carryAtt = 0, carryDef = 0;
     for (int round = 1; round <= cs.groundTurns; ++round) {
-        if (alive(att, true) == 0 || alive(def, true) == 0) break;
+        if (holders(att) == 0 || holders(def) == 0) break;
         ++out.rounds;
-        const int64_t attHits = hits(att, attChance, rng);
-        const int64_t defHits = hits(def, defChance, rng);
-        // The totals with last round's carry, times the ground percentage (truncated),
-        // then the planet's and the races' modifiers (rounded) (confirmed: binary).
+        const int attOffense = sideModifier(r, s, att, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus);
+        const int attDefense = sideModifier(r, s, att, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
+        const int defOffense = sideModifier(r, s, def, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus);
+        const int defDefense = sideModifier(r, s, def, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus);
+        const int64_t attHits = hits(att, attOffense + 50 - defDefense, rng);
+        const int64_t defHits = hits(def, defOffense + 50 - attDefense, rng);
+        // The totals with last round's carry, times the ground percentage
+        // (truncated), then the modifiers, chained and rounded: the defender's
+        // planet first, then each side's race (confirmed: binary).
         const int64_t attBase = xmath::pctTrunc(attHits + carryAtt, percent);
         const int64_t defBase = xmath::pctTrunc(defHits + carryDef, percent);
         const int64_t attTotal = attBase + xmath::pctRound(attBase, attRacial);
-        const int64_t defTotal = defBase + xmath::pctRound(defBase, f.groundDefensePercent) + xmath::pctRound(defBase, defRacial);
-        const int64_t attLeft = applyDamage(def, attTotal);
-        const int64_t defLeft = applyDamage(att, defTotal);
+        const int64_t defPlanet = defBase + xmath::pctRound(defBase, f.groundDefensePercent);
+        const int64_t defTotal = defPlanet + xmath::pctRound(defPlanet, defRacial);
+        const std::vector<Stack> attKillers = living(att), defKillers = living(def);
+        const int64_t attLeft = applyDamage(r, s, def, attKillers, attTotal, rng);
+        const int64_t defLeft = applyDamage(r, s, att, defKillers, defTotal, rng);
         // What is left is carried to the next round, divided back by the percentage.
         carryAtt = percent != 0 ? (xmath::Ext(attLeft) / xmath::percent(percent)).trunc() : 0;
         carryDef = percent != 0 ? (xmath::Ext(defLeft) / xmath::percent(percent)).trunc() : 0;
     }
 
-    // Losses back into the cargo and the design statistics; militia losses cost no population.
+    // Losses back into the lists and the design statistics; militia losses cost no population.
     auto settle = [&](const std::vector<Stack>& side, int& lost) {
         for (const Stack& st : side) {
             const int dead = st.start - st.count;
             if (dead <= 0) continue;
-            if (st.cargo == SIZE_MAX) {
+            if (!st.list) {
                 out.militiaLost += dead;
                 continue;
             }
             lost += dead;
-            cargo.units[st.cargo].count -= dead;
-            s.design(cargo.units[st.cargo].design).lost += dead;
+            (*st.list)[st.index].count -= dead;
+            s.design(st.design).lost += dead;
         }
     };
     settle(att, out.attackersLost);
     settle(def, out.defendersLost);
     for (const Stack& st : def)
-        if (st.cargo == SIZE_MAX) *f.militia = st.count;   // the survivors are the new pool
-    // Empty stacks stay in the cargo so that stack indices remain valid for the caller.
+        if (!st.list) *f.militia = st.count;   // the survivors are the new pool
+    // Empty stacks stay in the lists so that stack indices remain valid for the caller.
 
-    out.attackersGone = alive(att, true) == 0;
-    out.captured = !out.attackersGone && alive(def, true) == 0;
+    out.attackersGone = holders(att) == 0;
+    out.captured = !out.attackersGone && holders(def) == 0;
     return out;
+}
+
+void joinUnits(std::vector<UnitStack>& into, std::span<const UnitStack> units) {
+    for (const UnitStack& u : units) {
+        if (u.count <= 0) continue;
+        auto it = std::find_if(into.begin(), into.end(), [&](const UnitStack& x) { return x.design == u.design; });
+        if (it != into.end()) it->count += u.count;
+        else into.push_back(u);
+    }
+}
+
+void endInvasion(Colony& c, bool joinCargo) {
+    if (joinCargo) joinUnits(c.cargo.units, c.landedTroops);
+    c.landedTroops.clear();
+    c.invader = {};
+    c.militia = -1;
 }
 
 void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
@@ -226,12 +281,13 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
     const bool home = c.homeworld;
     const SystemId sys = s.galaxy.object(c.planet).system;
     const std::string name = s.galaxy.object(c.planet).name;
-    // The captor takes the planet with its facilities, stored units and population (spec 04 §13).
+    // The captor takes the planet with its facilities, stored units and
+    // population; its surviving troops join the cargo (spec 04 §13).
     c.owner = captor;
     c.homeworld = false;
     c.queue = ConstructionQueue{};
     c.minister = false;
-    c.militia = -1;
+    endInvasion(c, c.invader == captor);
     Empire& e = s.empire(captor);
     if (sys.index() < e.knowledge.explored.size()) e.knowledge.explored[sys.index()] = 1;
     ctx.mood(old, "Any Our Planet Captured", sys, c.planet);
@@ -269,35 +325,52 @@ void logGround(TurnContext& ctx, const Colony& c, EmpireId attacker, EmpireId de
 
 } // namespace
 
-void runGroundCombat(TurnContext& ctx, EmpireId attacker) {
+void runGroundCombat(TurnContext& ctx, EmpireId owner) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (!attacker.valid() || attacker.index() >= s.empires.size() || !s.empire(attacker).alive) return;
+    if (!owner.valid() || owner.index() >= s.empires.size()) return;
     std::optional<CombatSettings> cs;
     std::optional<Rng> rng;   // forked only when a fight happens, so quiet turns leave GameState::rng alone
     for (size_t idx = 0; idx < s.colonies.size(); ++idx) {
         Colony* c = s.colony(ObjectId{idx});
-        if (!c) continue;
+        if (!c || c->owner != owner) continue;
         const std::vector<EmpireId> attackers = invaders(r, s, *c);
-        if (attackers.empty()) c->militia = -1;  // nobody invades it (any more)
-        if (std::find(attackers.begin(), attackers.end(), attacker) == attackers.end()) continue;
-        // Fighting stops at once on peace or surrender (history 1.03, 1.20).
-        if (c->owner == attacker || !detail::enemies(s, attacker, c->owner)) continue;
+        if (attackers.empty()) {
+            if (c->invader.valid() || !c->landedTroops.empty() || c->militia >= 0) detail::endInvasion(*c, false);   // nobody invades it (any more)
+            continue;
+        }
+        const EmpireId attacker = attackers.front();
+        const std::string name = s.galaxy.object(c->planet).name;
+        const Location where = locationOf(s.galaxy, c->planet);
+        // The colony's owner is the landed empire, or at Non-Aggression or better
+        // with it: no fight; the troops join the cargo and serve the owner, and
+        // the invasion ends (confirmed: binary).
+        if (attacker == owner || !hostile(s, owner, attacker)) {
+            detail::endInvasion(*c, true);
+            if (attacker != owner)
+                ctx.log(attacker, LogCategory::Combat, std::format("Ground combat on {} ended", name),
+                        std::format("Our troops on {} now serve the {}.", name, s.empire(owner).name), where);
+            ctx.log(owner, LogCategory::Combat, std::format("Ground combat on {} ended", name),
+                    std::format("The troops landed on {} joined our garrison.", name), where);
+            continue;
+        }
+        if (!s.empire(owner).alive) continue;
         if (!cs) cs = loadSettings(r);
         if (!rng) rng = s.rng.fork();
-        const EmpireId defender = c->owner;
         detail::GroundFight fight;
         fight.attacker = attacker;
-        fight.defender = defender;
+        fight.defender = owner;
+        fight.invaders = &c->landedTroops;
         fight.cargo = &c->cargo;
         fight.population = &c->population;
         fight.militia = &c->militia;
         fight.groundDefensePercent = sumValue1(colonyAbilities(r, s, *c), AbilityKind::PlanetChangeGroundDefense);
         const detail::GroundOutcome o = detail::fightGround(r, s, *cs, fight, *rng);
         std::erase_if(c->cargo.units, [](const UnitStack& u) { return u.count <= 0; });
-        logGround(ctx, *c, attacker, defender, o);
+        std::erase_if(c->landedTroops, [](const UnitStack& u) { return u.count <= 0; });
+        logGround(ctx, *c, attacker, owner, o);
         if (o.captured) detail::capturePlanet(ctx, *c, attacker);
-        if (Colony* after = s.colony(ObjectId{idx}); after && invaders(r, s, *after).empty()) after->militia = -1;
+        else if (o.attackersGone) detail::endInvasion(*c, false);
     }
 }
 

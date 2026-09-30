@@ -7,6 +7,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
+#include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
 
@@ -217,7 +218,7 @@ private:
             }
             case ShipsTab::Fleet: {
                 const game::Fleet* f = s.fleet(v.fleet);
-                return {number(v.experience, std::format("{}%", v.experience)), text(f ? f->name : std::string("-"))};
+                return {number(v.experience, game::combat::experienceLabel(v.experience, v.experienceTenths)), text(f ? f->name : std::string("-"))};
             }
             case ShipsTab::Maintenance: {
                 const game::Resources m = vehicleMaintenance(r, s, v);
@@ -271,7 +272,7 @@ private:
             case ShipsTab::Cargo:
                 return {number(used, std::format("{}kT", formatNumber(used))), number(cap, std::format("{}kT", formatNumber(cap))),
                         text(std::format("{} vessel{}", members, members == 1 ? "" : "s"))};
-            case ShipsTab::Fleet: return {number(f.experience, std::format("{}%", f.experience)), text(f.name)};
+            case ShipsTab::Fleet: return {number(f.experience, game::combat::experienceLabel(f.experience, f.experienceTenths)), text(f.name)};
             case ShipsTab::Maintenance: return {number(maintenance.v[0]), number(maintenance.v[1]), number(maintenance.v[2])};
         }
         return {};

@@ -706,7 +706,7 @@ TEST_CASE("events: planet effects") {
     CHECK(out.actual == 10);
     CHECK(c.cargo.population == std::vector<PopulationGroup>{{kB, 48}});
     const DesignId sat = addTestDesign(s, r, kA, "Guard Sat", "Test Satellite Hull", {"Test Armor Plate"});
-    const int64_t hp = combat::detail::unitHitPoints(r, s.design(sat), combat::DamageType::Normal);
+    const int64_t hp = combat::detail::unitHitPoints(r, s.design(sat));
     c.cargo.units = {{sat, 3}};
     out = hit(s, Effect::PlanetCargoDamage, target(home), static_cast<int>(480 + hp - 1));
     CHECK(c.cargo.population.empty());  // 48 million absorb 480

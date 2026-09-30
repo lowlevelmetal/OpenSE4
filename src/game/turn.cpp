@@ -112,7 +112,8 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // moved in its owner's turn counts as an arrival only until now (spec 05
     // §8 step 16, spec 04 §3, confirmed: binary; which vehicles, open question 46).
     resetCameFrom(ctx.rules, s, e);
-    // 17. Ground combat where the empire's troops invade an enemy planet.
+    // 17. Ground combat on the empire's colonies where landed troops still
+    // fight (spec 04 §13: the colony owner's step).
     combat::runGroundCombat(ctx, e);
     s.removeDeadVehicles();
     // 18. The log keeps only this turn's entries (spec 05 §3.4).

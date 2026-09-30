@@ -125,7 +125,8 @@ TEST_CASE("unit groups: the per-sector caps count every design") {
     CHECK(w.v(layer).cargo.unitCount(mineB) == 7);
 
     // A Sweep Mines order clears a minefield that mixes designs in the order its
-    // mines were laid (duds here, so that no mine strikes afterwards).
+    // mines were laid; the mines left then strike, and each is used up even
+    // when none of its warheads applied (duds here: spec 04 §10.6).
     const DesignId dudA = w.design(kA, "Dud A", "Mv Mine Hull", {});
     const DesignId dudB = w.design(kA, "Dud B", "Mv Mine Hull", {});
     const Location there = at(a, 2, 2);
@@ -138,9 +139,9 @@ TEST_CASE("unit groups: the per-sector caps count every design") {
     const VehicleId sw = w.spawn(sweeper, there);
     w.order(sw, Order{OrderKind::SweepMines});
     w.move();
-    CHECK(w.v(duds).count == 88);
-    CHECK(groupUnits(w.v(duds), dudA) == 85);
-    CHECK(groupUnits(w.v(duds), dudB) == 3);
+    CHECK(w.logged(kA, "6 of our mines were cleared"));
+    CHECK(w.s.vehicle(duds) == nullptr);   // the other 88 went off at the sweeper, doing nothing
+    CHECK(w.v(sw).count > 0);
     CHECK(w.v(sw).orders.empty());   // always done
 }
 
@@ -252,7 +253,9 @@ TEST_CASE("combat: a unit group that mixes designs fights as one piece") {
     } else {
         CHECK(lostUnits == 5);
     }
-    CHECK(s.design(gunship).kills == lostUnits);
+    // The gunship's design is credited only when the whole group dies, for every unit it had (spec 04 §15).
+    const int64_t had = 3 * int64_t{r.hull(s.design(gunSat).hull).tonnage} + 2 * int64_t{r.hull(s.design(laserSat).hull).tonnage};
+    CHECK(s.design(gunship).enemyTonnageDestroyed == (lostUnits == 5 ? had : 0));
 }
 
 TEST_CASE("combat: fighters of several designs fire their identical guns as one shot") {
@@ -265,7 +268,8 @@ TEST_CASE("combat: fighters of several designs fire their identical guns as one 
     const VehicleId group = spawn(s, wasp, ar.loc, 2);
     addGroupUnits(s, *s.vehicle(group), hornet, 3);
     s.vehicle(group)->supply = vehicleSupplyCapacity(r, s, *s.vehicle(group));
-    spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc);
+    useStrategy(s, ar.a, {{"Primary Movement Strategy", "Point Blank"}});
+    warpIn(s, spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc));
     combat::TacticalBattle battle(r, s, {ar.loc, std::vector<VehicleId>{}, {ar.a}});
     REQUIRE(battle.started());
     const auto it = std::find_if(battle.pieces().begin(), battle.pieces().end(), [&](const combat::TacticalPiece& p) { return p.vehicle == group; });
@@ -284,7 +288,7 @@ TEST_CASE("combat: fighters of several designs fire their identical guns as one 
     CHECK(biggest > 12);   // more than two guns' worth in one hit
 }
 
-TEST_CASE("combat: units launched in a battle that stay in space join the sector's group") {
+TEST_CASE("combat: units launched in a battle that nobody recovers stay separate groups") {
     const Rules& r = combatRules();
     Arena ar = makeArena();
     GameState& s = ar.s;
@@ -296,18 +300,21 @@ TEST_CASE("combat: units launched in a battle that stay in space join the sector
     s.vehicle(carrier)->cargo.units = {{hornet, 4}};
     // The enemy fires only on ships: the carrier dies, its fighters live on.
     useStrategy(s, ar.b, {{"Primary Movement Strategy", "Point Blank"}, {"Dont Fire On Fighters", "TRUE"}});
-    spawn(s, frigate(s, ar.b, "Killer", 3, {"CT Big Gun", "CT Big Gun", "CT Big Armor", "CT Big Armor"}), ar.loc);
+    warpIn(s, spawn(s, frigate(s, ar.b, "Killer", 3, {"CT Big Gun", "CT Big Gun", "CT Big Armor", "CT Big Armor"}), ar.loc));
     TurnContext ctx = context(s);
     combat::resolveSpaceCombat(ctx, ar.loc);
     s.removeDeadVehicles();
     CHECK(s.vehicle(carrier) == nullptr);
+    // The launched group stays the separate group it is (spec 04 §10.4, confirmed: binary).
     const std::vector<VehicleId> groups = groupsAt(r, s, ar.a, ar.loc, VehicleType::Fighter);
-    REQUIRE(groups.size() == 1);   // never two fighter groups of one owner here
-    CHECK(groups.front() == group);
+    REQUIRE(groups.size() == 2);
+    CHECK(std::find(groups.begin(), groups.end(), group) != groups.end());
     const Vehicle& g = *s.vehicle(group);
     CHECK(groupUnits(g, wasp) == 2);
-    CHECK(groupUnits(g, hornet) == 4);
-    CHECK(g.supply == vehicleSupplyCapacity(r, s, g));   // joining refills the group
+    CHECK(groupUnits(g, hornet) == 0);
+    const Vehicle& launched = *s.vehicle(groups.front() == group ? groups.back() : groups.front());
+    CHECK(groupUnits(launched, hornet) == 4);
+    CHECK(launched.supply == vehicleSupplyCapacity(r, s, launched));
     CHECK(validateState(s, &r).empty());
 }
 

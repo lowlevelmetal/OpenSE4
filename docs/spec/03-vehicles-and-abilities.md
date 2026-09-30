@@ -1763,8 +1763,9 @@ gives the engine's choice, marked (inferred), until it is checked.
 
 60. **Formations of a player's side in tactical combat (§10):** the group dissolves when the
     leader of an automated side is left with 0 movement. Does that ever happen to a human side
-    in tactical combat? The engine dissolves it for every side, so that a tactical battle fought
-    with the strategies' orders stays the strategic battle (inferred).
+    in tactical combat? The engine dissolves it for every side in strategic combat and for a
+    player's side in tactical combat while Auto is on, so that a tactical battle fought on Auto
+    stays the strategic battle; a side the player moves keeps its group (inferred).
 61. **Fleet members away from the fleet's sector (§6.3 step 2):** their day speed is their own
     movement points, not the lowest among the members in the fleet's sector (inferred).
 62. **Object slots (§6.3 step 5):** the engine keeps a slot per vehicle; planets come before every

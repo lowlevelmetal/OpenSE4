@@ -291,10 +291,10 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     }
     for (Vehicle& v : s.vehicles) {
         if (!alive(v) || v.owner != e) continue;
-        // Capacity lost to damage takes supply and cargo with it (already done
-        // when each component was lost; kept as a safeguard).
+        // Capacity lost to damage takes supply with it. Cargo is cut when the
+        // part is destroyed, at once (fitToCapacity; spec 03 §19 Q57, spec 04
+        // §9.4: in combat, by mines and hazards), never here.
         if (vehicleUsesSupply(r, s, v)) holdSupply(r, s, v);
-        trimCargo(r, s, v);
         // Drones at 0 are lost; fighters are not, they drop to 1 MP (§12, confirmed: binary).
         if (vehicleType(r, s, v) == VehicleType::Drone && v.supply <= 0) vehicleLost(ctx, v, "Ran out of supplies.");
     }

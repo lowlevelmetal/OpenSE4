@@ -8,32 +8,30 @@
 // identical and only control differs (spec 04 §3 step 1).
 //
 // The turn sequence (spec 04 §4). A combat turn runs the empires' phases in
-// the order drawn at setup. In a computer side's phase the side launches
-// units, then its drones act, its seekers move, and its other pieces act by
-// their strategies. A player's phase stops for orders:
+// the order drawn at setup. Every phase starts with the side's drones and
+// seekers (always computer-controlled). A computer side's other pieces then
+// act by their strategies, each launching as it acts. A player's phase then
+// stops for orders: they run at once, in any number and order; a piece may
+// move while it has movement points and fire each weapon whose reload counter
+// is 0. EndPhase ("End Turn") ends the phase; unused movement points are
+// lost, and idle pieces do not fire by themselves. Drones a player launches
+// first act at the start of the side's next phase.
 //
-//   launch step  Only Launch, weapon toggles and group orders are taken.
-//                Launching here matches the computer's timing, so the new
-//                drones act with the side's drones. Any other order (Begin
-//                is the plain one) ends the step: the side's drones act and
-//                its seekers move (drones and seekers are always
-//                computer-controlled), then the order runs.
-//   orders       Orders run at once, in any number and order. A piece may
-//                move while it has movement points and fire each weapon
-//                whose reload counter is 0. EndPhase ends the phase; unused
-//                movement points are lost.
+// Auto (piece -1) is one toggle for the whole battle and every empire: from
+// the next phase on every empire follows its strategies, and play pauses
+// after the phase of the last player's empire in each combat turn (EndPhase
+// goes on). Releasing it gives the players back their sides. Resolve Combat
+// hands every empire to its strategies until the battle ends. OpenSE4
+// extensions (spec 04 §19.1): Auto with a piece makes that piece act by its
+// strategy at once; AutoPhase lets the strategies play the rest of the
+// player's phase. The battle's end is checked only after a phase.
 //
-// Auto hands the rest of the phase to the strategies (with a piece: just that
-// piece now); Resolve Combat hands them the side for the rest of the battle
-// (spec 04 §4). Auto given in the launch step plays the whole phase as the
-// computer would, so a player side on Auto from the start of every phase
-// fights exactly like a strategic battle.
-//
-// Orders are validated (spec 04 §5, §6, §10.3, §11, §12) and refused with a
-// reason; a refused order changes nothing. Everything is deterministic: the
-// same battle start and the same accepted orders give the same battle, which
-// is how a turn-based game applies a tactical battle fought in the client
-// (the accepted orders are the battle's script, see turn.hpp BattleAnswer).
+// Orders are validated (spec 04 §5, §6, §10.3, §10.4, §11, §12) and refused
+// with a reason; a refused order changes nothing. Everything is
+// deterministic: the same battle start and the same accepted orders give the
+// same battle, which is how a turn-based game applies a tactical battle
+// fought in the client (the accepted orders are the battle's script, see
+// turn.hpp BattleAnswer).
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -61,21 +59,24 @@ struct Square {
 
 struct TacticalOrder {
     enum class Kind : uint8_t {
-        Begin,           // ends the launch step: the side's drones act and its seekers move
         Move,            // `piece` toward (x, y), or along `path` (adjacent squares) when it is not empty
         Fire,            // `piece` fires at `target`: `weapon` (-1: every enabled weapon), `instance` (-1: every ready one)
         ToggleWeapon,    // `piece`'s `weapon` (-1: all) on or off (`on`)
-        Launch,          // `piece` launches `count` units of `design` in groups of `group` (fighters and drones)
+        Launch,          // "Launch Units": `piece` launches `count` units of `design`; `group` is the window
+                         // session: units of one kind launched from the piece in one session share a group
+                         // (drones: one each) (spec 04 §10.4)
+        LaunchFighters,  // "Launch Fighters in Groups": `count` fighters of `design` in groups of `group` (5-50)
         DropTroops,      // `piece` lands its troops on the adjacent planet `target` (spec 04 §11)
         Ram,             // `piece` rams the adjacent `target` (spec 04 §10.3)
         Capture,         // `piece` boards the adjacent ship `target` (spec 04 §12)
-        SetLeader,       // `piece` leads combat group `group` (0-9)
-        SetMember,       // `piece` joins combat group `group`
-        ClearGroup,      // `piece` leaves its group; a leader's group dissolves
-        ClearAllGroups,  // every group of the side dissolves
-        Auto,            // `piece` acts by its strategy now; -1: the strategies play the rest of the phase
-        EndPhase,        // the side's phase ends
-        ResolveCombat,   // the strategies play the side for the rest of the battle (and this phase)
+        SetLeader,       // `piece` leads combat group `group` (0-9) in `formation` (Formations.txt index)
+        SetMember,       // `piece` joins combat group `group`: the next slot of its leader's formation
+        ClearGroup,      // `piece` leaves its group (its members keep the number)
+        ClearAllGroups,  // every piece of the side leaves its group
+        Auto,            // `piece` acts by its strategy now; -1: the battle's Auto toggle, set to `on`
+        AutoPhase,       // the strategies play the rest of this phase (an OpenSE4 extension)
+        EndPhase,        // "End Turn": the side's phase ends (or, paused by Auto, play goes on)
+        ResolveCombat,   // every empire follows its strategies to the end of the battle
     };
     Kind kind = Kind::EndPhase;
     EmpireId empire;              // the side giving it: the empire whose phase it is
@@ -88,10 +89,13 @@ struct TacticalOrder {
     DesignId design;
     int count = 0;
     int group = 0;
+    int formation = -1;           // SetLeader
     bool on = true;
     bool alone = false;           // Move of a group leader: the members stay (the strategies' moves)
     bool operator==(const TacticalOrder&) const = default;
 };
+// Group sizes of "Launch Fighters in Groups" (spec 04 §10.4).
+inline constexpr std::array<int, 8> kFighterGroupSizes{5, 8, 10, 15, 20, 30, 40, 50};
 std::string_view identifier(TacticalOrder::Kind k);
 
 // What the tactical window shows of one piece.
@@ -131,16 +135,18 @@ struct TacticalPiece {
     std::vector<UnitStack> units; // a unit group: its designs and the units left of each
     int budget = 1;               // targets it may engage this turn
     int engaged = 0;              // targets engaged this turn
-    bool acted = false;           // the strategy acted for it this phase (Auto)
+    bool acted = false;           // it has had its turn this phase (its strategy acted, or it was launched now)
     int leader = -1;              // the group leader it follows (-1: none)
     bool isLeader = false;
     int group = -1;               // combat group number 0-9 (-1: none or a fleet's group)
     int seekTarget = -1, launcher = -1, carrier = -1;
     std::vector<TacticalWeapon> weapons;
-    std::vector<UnitStack> cargo;  // units carried (planets: without invading troops)
+    std::vector<UnitStack> cargo;  // units carried (planets: their stored units)
+    std::vector<UnitStack> landed; // planets: troops landed by `invader`, fighting on the ground
+    EmpireId invader;
     std::array<int, 3> launchLeft{};  // fighters, satellites, drones it may still launch this turn
     int64_t boardingAttack = 0;
-    bool troops = false;          // carries troops of its own side
+    bool troops = false;          // carries troops (they land for its owner)
 };
 
 // A battle that can be stepped (see the file comment). It works on its own
@@ -156,6 +162,11 @@ public:
         // two-argument form); empty: nobody entered.
         std::optional<std::vector<VehicleId>> entering;
         std::vector<EmpireId> players;   // sides the player drives
+        // The combat simulator (spec 04 §17): the sides that get hand control
+        // back when Auto is released (only side 1), and the location's
+        // interference and disruption with no system modifier totals.
+        std::optional<std::vector<EmpireId>> release;
+        std::optional<int> interference, disruption;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);
@@ -173,7 +184,8 @@ public:
     int lastRound() const;               // the last combat turn fought
     EmpireId phaseEmpire() const;        // whose phase waits for orders (invalid otherwise)
     bool awaitingOrders() const;         // a player's phase waits for orders
-    bool launchStep() const;             // ... still in its launch step
+    bool paused() const;                 // ... paused by Auto after the last player's phase of a combat turn
+    bool autoOn() const;                 // the battle's Auto toggle
     bool over() const;                   // no two hostile sides have pieces left
     bool finished() const;               // the last phase was played
     const std::vector<EmpireId>& participants() const;

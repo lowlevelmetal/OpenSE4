@@ -383,6 +383,13 @@ struct Colony {
     bool homeworld = false;           // the capital flag: anger never above 80; every starting planet has it (spec 02 §2, §9)
     uint32_t foundedTurn = 0;
     int militia = -1;                 // ground combat: militia left to raise; -1 = no invasion (spec 04 §13)
+    // Troops landed by another empire that still fight for the colony (spec 04
+    // §13): they serve `invader`, the empire that owned the ship that dropped
+    // them, not their design's owner. Kept apart from `cargo`, whose units
+    // always serve the colony's owner. Empty (and `invader` invalid) when
+    // nobody invades the colony.
+    EmpireId invader;
+    std::vector<UnitStack> landedTroops;
     // Planet orders (simultaneous games, spec 05 §9.2): Launch Units and
     // Recover Units, carried out in the movement phase (spec 03 §12).
     std::vector<Order> orders;
@@ -423,9 +430,9 @@ struct Design {
     // nothing built (spec 03 §4.1; designIsPrototype, design.hpp).
     bool retrofitted = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
+    // There is no kill counter (confirmed: binary).
     int built = 0;
     int lost = 0;
-    int kills = 0;
     int64_t enemyTonnageDestroyed = 0;  // hull tonnage of the enemy vehicles its vehicles destroyed
 };
 

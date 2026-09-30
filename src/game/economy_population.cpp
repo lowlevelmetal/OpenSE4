@@ -282,17 +282,14 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
     else total += v("Our Ship in System") * p.ourSystem;
 
     // 5. Troops (confirmed: binary): troops another empire landed that still
-    //    fight for the planet count once as enemies; every other troop unit in
-    //    the colony's cargo counts as ours, whoever owns it. The original keeps
-    //    landed troops apart from the cargo; ours holds them too, and
-    //    combat::invaders tells them apart.
-    const std::vector<EmpireId> landed = combat::invaders(r, s, c);
+    //    fight for the planet count once as enemies, whatever the treaty; they
+    //    are kept apart from the cargo (Colony::landedTroops, spec 04 §13),
+    //    and combat::invaders names their empire. Every troop unit in the
+    //    colony's cargo counts as ours, whoever owns it.
     int64_t ourTroops = 0;
-    for (const UnitStack& u : c.cargo.units) {
-        if (u.count <= 0 || !combat::isTroopDesign(r, s, u.design)) continue;
-        if (std::find(landed.begin(), landed.end(), s.design(u.design).owner) == landed.end()) ourTroops += u.count;
-    }
-    if (!landed.empty()) total += v("Enemy Troops on Planet");
+    for (const UnitStack& u : c.cargo.units)
+        if (u.count > 0 && combat::isTroopDesign(r, s, u.design)) ourTroops += u.count;
+    if (!combat::invaders(r, s, c).empty()) total += v("Enemy Troops on Planet");
     total += v("Our Troops on Planet") * ourTroops;
 
     // 6. Plague.

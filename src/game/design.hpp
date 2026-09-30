@@ -91,7 +91,7 @@ bool designNameInUse(const GameState& s, std::string_view name);
 // `wanted` followed by the first free Roman numeral from II on ("Scout II",
 // "Scout III", ...) (inferred numbering). Empty `wanted` gives "Design".
 std::string uniqueDesignName(const GameState& s, std::string_view wanted);
-// Zeroes a design's statistics: built, lost, kills and enemy tonnage destroyed
+// Zeroes a design's statistics: built, lost and enemy tonnage destroyed
 // (a new, copied or redacted design starts without any).
 void resetDesignStatistics(Design& d);
 // A design is a prototype until a construction queue completes a vehicle or

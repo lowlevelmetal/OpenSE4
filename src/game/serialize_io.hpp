@@ -387,7 +387,7 @@ void io(Ar& ar, ConstructionQueue& q) {
 template <class Ar>
 void io(Ar& ar, Colony& c) {
     fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
-           c.minister, c.homeworld, c.foundedTurn, c.militia, c.orders);
+           c.minister, c.homeworld, c.foundedTurn, c.militia, c.invader, c.landedTroops, c.orders);
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -397,7 +397,7 @@ template <class Ar> void io(Ar& ar, DesignEntry& d) { fields(ar, d.component, d.
 template <class Ar>
 void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
-           d.kills, d.enemyTonnageDestroyed);
+           d.enemyTonnageDestroyed);
     fields(ar, d.templateName);
 }
 

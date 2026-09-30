@@ -771,7 +771,7 @@ int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount
         if (std::none_of(stacks.begin(), stacks.end(), [](const UnitStack& st) { return st.count > 0; })) break;
         UnitStack& st = stacks[stacks.size() == 1 ? 0 : rng.below(stacks.size())];
         if (st.count <= 0) continue;
-        const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design), combat::DamageType::Normal));
+        const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design)));
         if (pool < hp) continue;
         pool -= hp;
         used += hp;

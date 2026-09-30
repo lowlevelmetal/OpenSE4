@@ -1718,9 +1718,12 @@ TEST_CASE("economy: troops and plague on the planet") {
     populationTurn(r, w.s);
     CHECK(w.home->anger == 40 - 3);
     // Troops an enemy landed that still fight for the planet count once as
-    // enemies, and not as ours.
+    // enemies, and not as ours: they are kept apart from the cargo (spec 04 §13).
     w.s.empire(kMe).relation(kThem).treaty = Treaty::War;
     w.s.empire(kThem).relation(kMe).treaty = Treaty::War;
+    w.home->cargo.units = {{troop, 1}};
+    w.home->landedTroops = {{theirs, 2}};
+    w.home->invader = kThem;
     REQUIRE(combat::invaders(r, w.s, *w.home) == std::vector<EmpireId>{kThem});
     w.home->anger = 40;
     populationTurn(r, w.s);

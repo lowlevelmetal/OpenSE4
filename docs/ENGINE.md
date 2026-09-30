@@ -171,17 +171,21 @@ own copy of the game, forking the random numbers and striking with mines exactly
 2. **Query**: `pieces()` (position, shields, damage, movement, weapons with reload
    counters, cargo, groups), `record()` (the replay record as it grows), `round()`,
    `phaseEmpire()`, `pathTo`, `hitChance`, `damageAt`, `fireProblem`.
-3. **Orders** for the side whose phase it is: `check(order)` says why an order would be
-   refused, `submit(order)` carries it out and plays the computer phases that follow.
-   Orders: Move (to a square, or along a path), Fire (one weapon, or every enabled
-   weapon), ToggleWeapon, Launch (in groups), DropTroops, Ram, Capture, SetLeader,
-   SetMember, ClearGroup, ClearAllGroups, Auto, EndPhase, ResolveCombat, Begin.
+3. **Orders** for the side whose phase it is (its drones and seekers have moved before
+   it gets control): `check(order)` says why an order would be refused, `submit(order)`
+   carries it out and plays the computer phases that follow. Orders: Move (to a square,
+   or along a path), Fire (one weapon, or every enabled weapon), ToggleWeapon, Launch (a
+   "Launch Units" window session), LaunchFighters (in groups of 5 to 50), DropTroops,
+   Ram, Capture, SetLeader (with a formation), SetMember, ClearGroup, ClearAllGroups,
+   Auto (one piece now, or the battle's toggle for every empire), AutoPhase, EndPhase,
+   ResolveCombat (every empire to its strategies).
 4. **Finish**: `finish()` lets the strategies play what is left and applies the results
    to the battle's copy with the same code as a strategic battle.
 
 The accepted orders are the battle's `script()`: the same start and script give the same
-battle. Tests check that a player side on Auto, the strategies' orders given by hand, and
-the replayed script all give the strategic battle, bit for bit.
+battle. Tests check that a player side whose phases the strategies play (AutoPhase), the
+strategies' orders given by hand, and the replayed script all give the strategic battle,
+bit for bit.
 
 In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
 play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
