@@ -163,10 +163,13 @@ int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k);
 // at most V. So it never matters in the stock data.
 bool chanceRejects(int64_t v, Rng& rng);
 
-// A colony breaks away as a new independent empire (spec 05 §2.3): a
-// computer player with the owner's race, technology and data lists, at War
-// with its former owner (inferred). Invalid when kMaxEmpires are reached.
-// Adding an empire invalidates references into GameState::empires.
+// A colony breaks away as a new independent empire (spec 05 §2.3, spec 02
+// §4): a computer player with the race of the colony's largest population
+// group, the owner's technology and data lists, at War with its former owner
+// (inferred). The planet becomes its capital (anger capped at 80). The one
+// way a new empire is founded: the rebellion event and the intelligence
+// operation both use it. Invalid when kMaxEmpires are reached. Adding an
+// empire invalidates references into GameState::empires.
 EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 
 // Damage to a vehicle in the standard order: armor first (design order),

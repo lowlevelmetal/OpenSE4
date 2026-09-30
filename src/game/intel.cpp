@@ -242,7 +242,6 @@ void intelStep(TurnContext& ctx, EmpireId id) {
 }
 
 void runIntel(TurnContext& ctx) {
-    const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
@@ -250,7 +249,7 @@ void runIntel(TurnContext& ctx) {
         intelStep(ctx, id);
         if (!s.empire(id).alive) continue;
         Empire& e = s.empire(id);
-        research::addToPools(e, 0, e.economy.intelligence - diplomacy::tariffDue(r, s, id).intelligence);
+        research::addToPools(e, 0, e.economy.intelligence);  // already net of a master's tariff (economy)
     }
 }
 

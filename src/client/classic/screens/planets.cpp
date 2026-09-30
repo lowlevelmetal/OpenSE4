@@ -20,6 +20,8 @@ namespace {
 constexpr Vec2 kMapSize{236, 158};
 
 std::string percent(int64_t v) { return std::format("{}%", v); }
+// Conditions show as their band (spec 02 §2).
+std::string conditionsText(int conditions) { return std::string(game::economy::conditionsName(game::economy::conditionsBand(conditions))); }
 
 std::string surfaceAndSize(const game::SpaceObject& o) {
     if (o.kind == game::ObjectKind::Asteroids) return "Asteroids";
@@ -177,7 +179,7 @@ private:
             heading(ui, o.name.c_str());
             stat(ui, "Type", surfaceAndSize(o), 90);
             stat(ui, "Atmosphere", o.atmosphere, 90);
-            stat(ui, "Conditions", percent(o.conditions), 90);
+            stat(ui, "Conditions", conditionsText(o.conditions), 90);
             stat(ui, "Value", std::format("{}% / {}% / {}%", o.value[0], o.value[1], o.value[2]), 90);
             if (selected->colonized) {
                 ImGui::TextColored(kTextLabel, "Owner");
@@ -276,7 +278,7 @@ private:
         ImGui::TableSetColumnIndex(4);
         cellText(ui, p.asteroids ? "-" : o.atmosphere, p.breathable ? kTextGood : ImVec4(1, 1, 1, 1));
         ImGui::TableSetColumnIndex(5);
-        cellText(ui, percent(o.conditions));
+        cellText(ui, conditionsText(o.conditions));
         for (int r = 0; r < 3; ++r) {
             ImGui::TableSetColumnIndex(6 + r);
             cellText(ui, percent(o.value[static_cast<size_t>(r)]));
@@ -339,6 +341,7 @@ struct ColonyRow {
     int64_t population = 0, maxPopulation = 0;
     int facilities = 0, slots = 0;
     game::Mood mood = game::Mood::Indifferent;
+    std::string moodName;
     int anger = 0;
     game::economy::ColonyOutput out;
     int64_t cargoUsed = 0, cargoCapacity = 0;
@@ -448,6 +451,7 @@ private:
             row.slots = game::facilitySlots(r, s, *c);
             row.anger = c->anger;
             row.mood = game::moodFromAnger(c->anger);
+            row.moodName = std::string(game::economy::moodName(r, s, *c));
             row.out = game::economy::colonyOutput(r, s, *c);
             row.cargoUsed = game::cargoSpaceUsed(r, s, c->cargo);
             row.cargoCapacity = game::colonyCargoCapacity(r, s, *c);
@@ -536,7 +540,7 @@ private:
                              true});
                 c.push_back({"Mood", 78, [=](R r) { return num(r.anger); },
                              [=](UiContext& u, R r) {
-                                 cellText(u, std::string(game::displayName(r.mood)), r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
+                                 cellText(u, r.moodName, r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
                              }});
                 c.push_back({"Facil.", 60, [=](R r) { return num(r.facilities); },
                              [=](UiContext& u, R r) { text(u, std::format("{} / {}", r.facilities, r.slots)); }, true});
@@ -549,7 +553,7 @@ private:
                                           r.breathable ? ImVec4(1, 1, 1, 1) : kTextWarn);
                              }});
                 c.push_back({"Conditions", 76, [&s](R r) { return SortKey{int64_t{s.galaxy.object(r.planet).conditions}}; },
-                             [&s](UiContext& u, R r) { cellText(u, percent(s.galaxy.object(r.planet).conditions)); }, true});
+                             [&s](UiContext& u, R r) { cellText(u, conditionsText(s.galaxy.object(r.planet).conditions)); }, true});
                 for (size_t i = 0; i < 3; ++i)
                     c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 72,
                                  [&s, i](R r) { return SortKey{int64_t{s.galaxy.object(r.planet).value[i]}}; },
@@ -601,10 +605,10 @@ private:
                              [](UiContext& u, R r) { statusIconRow(u, r.icons); }, true});
                 c.push_back({"Mood", 90, [](R r) { return SortKey{int64_t{r.anger}}; },
                              [](UiContext& u, R r) {
-                                 cellText(u, std::string(game::displayName(r.mood)), r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
+                                 cellText(u, r.moodName, r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
                              }});
                 c.push_back({"Anger", 60, [](R r) { return SortKey{int64_t{r.anger}}; },
-                             [](UiContext& u, R r) { cellText(u, std::format("{}.{}%", r.anger / 10, r.anger % 10), kTextDim); }, true});
+                             [](UiContext& u, R r) { cellText(u, std::format("{}%", r.anger), kTextDim); }, true});
                 break;
             case ColonyTab::Races:
                 c.push_back({"Races", 0, [&s](R r) { return SortKey{int64_t(s.colony(r.planet) ? s.colony(r.planet)->population.size() : 0)}; },

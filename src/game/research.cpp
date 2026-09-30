@@ -1,6 +1,5 @@
 #include "game/research.hpp"
 
-#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
@@ -300,7 +299,6 @@ void researchStep(TurnContext& ctx, EmpireId id) {
 }
 
 void runResearch(TurnContext& ctx) {
-    const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
@@ -310,9 +308,10 @@ void runResearch(TurnContext& ctx) {
         if (s.turn == 0 && s.empire(id).researchPool == 0) s.empire(id).researchPool = std::max<int64_t>(0, s.empire(id).economy.research);
         researchStep(ctx, id);
         // Income: this turn's research, less the Starting Resources the
-        // economy adds on the first turn and the part a master's tariff takes.
+        // economy adds on the first turn. The economy has already taken a
+        // master's tariff (and added the computer bonus and trade).
         Empire& e = s.empire(id);
-        const int64_t income = e.economy.research - economy::openingResearchPool(s) - diplomacy::tariffDue(r, s, id).research;
+        const int64_t income = e.economy.research - economy::openingResearchPool(s);
         addToPools(e, income, 0);
     }
 }

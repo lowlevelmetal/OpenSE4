@@ -63,8 +63,8 @@ void intelStep(TurnContext& ctx, EmpireId e);
 
 // Aggregate phase for turn.cpp (after research): for each living empire in
 // order, its intelligence step, then this turn's intelligence income (the
-// economy's Empire::economy.intelligence less the tariff to a master) goes
-// into the pool.
+// economy's Empire::economy.intelligence, already net of a master's tariff)
+// goes into the pool.
 void runIntel(TurnContext& ctx);
 
 } // namespace opense4::game::intel

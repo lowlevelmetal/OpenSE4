@@ -80,15 +80,21 @@ constexpr bool treatyTradesResearch(Treaty t) { return t >= Treaty::TradeResearc
 constexpr bool treatyAllowsResupply(Treaty t) { return t >= Treaty::MilitaryAlliance; }
 constexpr bool treatySharesSight(Treaty t) { return t == Treaty::Partnership; }
 
-// ---- Population mood (spec 02 §1.8) -----------------------------------------------
+// ---- Population mood (spec 02 §1.8, §4) --------------------------------------------
+// Anger is one whole percent per colony, 0 (calm) to 100 (confirmed: binary).
+inline constexpr int kMaxAnger = 100;
+inline constexpr int kCapitalMaxAnger = 80;   // capitals never riot (spec 02 §2)
+inline constexpr int kNewColonyAnger = 25;    // a new colony starts Happy (spec 02 §2)
+inline constexpr int kEmotionlessAnger = 35;  // any change to an Emotionless colony sets this (spec 02 §4)
 enum class Mood : uint8_t { Jubilant, Happy, Indifferent, Unhappy, Angry, Rioting };
+// The game's own band limits, not the Happiness.txt header's (confirmed: binary).
 constexpr Mood moodFromAnger(int anger) {
-    return anger >= 750 ? Mood::Rioting
-           : anger >= 600 ? Mood::Angry
-           : anger >= 450 ? Mood::Unhappy
-           : anger >= 300 ? Mood::Indifferent
-           : anger >= 150 ? Mood::Happy
-                          : Mood::Jubilant;
+    return anger >= 90 ? Mood::Rioting
+           : anger >= 60 ? Mood::Angry
+           : anger >= 45 ? Mood::Unhappy
+           : anger >= 30 ? Mood::Indifferent
+           : anger >= 15 ? Mood::Happy
+                         : Mood::Jubilant;
 }
 std::string_view displayName(Mood m);
 

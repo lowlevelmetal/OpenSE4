@@ -115,7 +115,8 @@ void researchStep(TurnContext& ctx, EmpireId e);
 
 // Aggregate phase for turn.cpp (after the economy): for each living empire in
 // order, the research step, then this turn's research income (the economy's
-// Empire::economy.research less the tariff to a master) goes into the pool.
+// Empire::economy.research, already net of a master's tariff) goes into the
+// pool.
 void runResearch(TurnContext& ctx);
 
 } // namespace opense4::game::research

@@ -623,16 +623,10 @@ void advanceTrade(TurnContext& ctx) {
 // ---- Trade and tariffs ------------------------------------------------------------------------------
 
 Generated generated(const Rules& r, const GameState& s, EmpireId e) {
-    Generated g;
-    for (const auto& c : s.colonies) {
-        if (!c || c->owner != e) continue;
-        const economy::ColonyOutput out = economy::colonyOutput(r, s, *c);
-        if (!out.connected || out.blockaded) continue;
-        g.resources += out.production;
-        g.research += out.research;
-        g.intelligence += out.intelligence;
-    }
-    return g;
+    // What the colonies deliver, system by system (spec 02 §5.5): the figure
+    // the empire's own income starts from.
+    const economy::Production p = economy::empireProduction(r, s, e);
+    return {p.resources, p.research, p.intelligence};
 }
 
 int tradePercent(const Rules& r, const GameState& s, EmpireId e, EmpireId partner) {

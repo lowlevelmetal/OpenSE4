@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
@@ -706,6 +707,8 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
 
     const EmpireId id{s.empires.size()};
     const Empire& old = s.empire(former);
+    const SystemId system = s.galaxy.object(planet).system;
+    const uint8_t seen = s.options.allSystemsSeen ? 1 : 0;
     Empire e;
     e.id = id;
     e.name = std::format("Free {}", s.galaxy.object(planet).name);
@@ -714,16 +717,18 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.race = s.empire(raceOf).race;
     e.color = defaultEmpireColor(id.index());
     e.kind = PlayerKind::Computer;
+    e.racialPointsSpent = s.empire(raceOf).racialPointsSpent;
     e.techLevels = old.techLevels;
     e.uniqueAreasUnlocked = old.uniqueAreasUnlocked;
     e.strategies = old.strategies;
     e.designTypes = old.designTypes;
     e.colonyTypes = old.colonyTypes;
     e.repairPriorities = old.repairPriorities;
-    e.knowledge.explored.assign(s.galaxy.systems.size(), 0);
+    e.claimedSystems.push_back(system);
+    e.knowledge.explored.assign(s.galaxy.systems.size(), seen);
     e.knowledge.present.assign(s.galaxy.systems.size(), 0);
     e.knowledge.lastSeen.assign(s.galaxy.systems.size(), 0);
-    e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 0);
+    e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), seen);
     e.knowledge.notes.assign(s.galaxy.systems.size(), {});
     s.empires.push_back(std::move(e));
     for (Empire& x : s.empires) x.relations.resize(s.empires.size());
@@ -731,7 +736,14 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     ctx.mood(former, "Any Planet Lost");
     if (home) ctx.mood(former, "Homeworld Lost");
     diplomacy::transferColony(s, planet, id);
-    s.colony(planet)->homeworld = true;  // the new empire's capital (inferred)
+    Colony& c = *s.colony(planet);
+    // The rebels of the new empire's race are its own people (inferred).
+    for (PopulationGroup& g : c.population)
+        if (g.race == raceOf) g.race = id;
+    // The planet is the new empire's capital (spec 02 §4), so its anger is
+    // at most the capital limit (spec 02 §2).
+    c.homeworld = true;
+    c.anger = std::min(c.anger, c.maxAnger());
     diplomacy::makeContact(ctx, former, id);
     diplomacy::declareWar(ctx, id, former);
     return id;
@@ -957,9 +969,12 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
 
         case Effect::PlanetConditionsChange: {
             if (!col) return out;
+            // Conditions are hundredths of the 0–1.5 scale (spec 02 §2); Amount
+            // adds that many hundredths, within the scale (inferred: spec 01
+            // §10 calls it a percentage change).
             SpaceObject& obj = s.galaxy.object(t.object);
             const int before = obj.conditions;
-            obj.conditions = std::clamp(before + amount, 0, 100);
+            obj.conditions = std::clamp(before + amount, 0, economy::kConditionsMax);
             out.actual = obj.conditions - before;
             break;
         }
@@ -1006,16 +1021,19 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::PlanetPopulationAngerChange: {
+            // Amount is in tenths of a percent, like Happiness.txt (spec 05
+            // §2.3, inferred); anger is a whole percent, so the change is
+            // trunc(Amount / 10), within 0 and 100 (80 on a capital) (spec 02 §4).
             if (!col || emotionless(r, s, *col)) return out;
             const int before = col->anger;
-            col->anger = std::clamp(before + amount, 0, 1000);
+            col->anger = std::clamp(before + amount / 10, 0, col->maxAnger());
             out.actual = col->anger - before;
             break;
         }
         case Effect::PlanetPopulationRiot: {
             if (!col || emotionless(r, s, *col)) return out;
             const int before = col->anger;
-            col->anger = std::max(before, 750);  // the Rioting band (types.hpp)
+            col->anger = col->maxAnger();  // 100, or 80 on a capital (spec 02 §4)
             out.actual = col->anger - before;
             break;
         }
@@ -1061,13 +1079,13 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             if (!col) return out;
             const SpaceObject& obj = s.galaxy.object(t.object);
             explore(s, t.source, obj.system);
-            out.report.push_back(std::format("{}: {} {}, atmosphere {}, conditions {}%", obj.name, obj.size, obj.surface, obj.atmosphere,
-                                             obj.conditions));
+            out.report.push_back(std::format("{}: {} {}, atmosphere {}, conditions {}", obj.name, obj.size, obj.surface, obj.atmosphere,
+                                             economy::conditionsName(economy::conditionsBand(obj.conditions))));
             out.report.push_back(std::format("Value: minerals {}, organics {}, radioactives {}", obj.value[0], obj.value[1], obj.value[2]));
             for (const PopulationGroup& p : col->population)
                 out.report.push_back(std::format("Population: {}M {}", p.millions,
                                                  validEmpire(s, p.race) ? s.empire(p.race).race.name : std::string("unknown")));
-            out.report.push_back(std::format("Mood: {}", displayName(moodFromAnger(col->anger))));
+            out.report.push_back(std::format("Mood: {}", economy::moodName(r, s, *col)));
             std::map<uint32_t, int> facilities;
             for (uint32_t f : col->facilities) ++facilities[f];
             for (const auto& [f, n] : facilities) out.report.push_back(std::format("Facility: {} x{}", r.facility(f).name, n));

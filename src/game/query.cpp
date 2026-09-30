@@ -1,6 +1,7 @@
 #include "game/query.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 
@@ -78,23 +79,36 @@ bool breathable(const GameState& s, const Colony& c) {
     return true;
 }
 
+namespace {
+
+// The `Planet Storage Space` trait: (100 + Val1) % of a colony's facility slots,
+// population and cargo, truncated (spec 02 §2, confirmed: binary).
+int64_t withStorageTrait(const Rules& r, const GameState& s, const Colony& c, int64_t amount) {
+    const int64_t pct = r.traitValue(s.empire(c.owner).race, "Planet Storage Space");
+    return pct == 0 ? amount : xmath::pctTrunc(amount, 100 + pct);
+}
+
+} // namespace
+
 int facilitySlots(const Rules& r, const GameState& s, const Colony& c) {
     const ruleset::PlanetSize* ps = planetSize(r, s.galaxy.object(c.planet));
     if (!ps) return 0;
-    return breathable(s, c) ? ps->maxFacilities : ps->maxFacilitiesDomed;
+    return static_cast<int>(withStorageTrait(r, s, c, breathable(s, c) ? ps->maxFacilities : ps->maxFacilitiesDomed));
 }
 
 int64_t maxPopulation(const Rules& r, const GameState& s, const Colony& c) {
     const ruleset::PlanetSize* ps = planetSize(r, s.galaxy.object(c.planet));
     if (!ps) return 0;
-    return breathable(s, c) ? ps->maxPopulation : ps->maxPopulationDomed;
+    return withStorageTrait(r, s, c, breathable(s, c) ? ps->maxPopulation : ps->maxPopulationDomed);
 }
 
 int64_t colonyCargoCapacity(const Rules& r, const GameState& s, const Colony& c) {
     const ruleset::PlanetSize* ps = planetSize(r, s.galaxy.object(c.planet));
     int64_t total = ps ? (breathable(s, c) ? ps->maxCargo : ps->maxCargoDomed) : 0;
+    for (const ruleset::Ability& a : s.galaxy.object(c.planet).abilities)
+        if (const ParsedAbility p = parseAbility(a); p.kind == AbilityKind::CargoStorage) total += p.value1;  // the planet's own
     for (uint32_t f : c.facilities) total += sumValue1(r.facilityAbilities(f), AbilityKind::CargoStorage);
-    return total * (100 + r.traitValue(s.empire(c.owner).race, "Planet Storage Space")) / 100;
+    return withStorageTrait(r, s, c, total);
 }
 
 bool hostile(const GameState& s, EmpireId a, EmpireId b) {

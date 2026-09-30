@@ -4,6 +4,7 @@
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "game/ai.hpp"
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
@@ -243,15 +244,35 @@ TEST_CASE("research: a master's tariff takes part of the research income, and no
     const EmpireId master{0u}, subject{1u};
     TurnContext ctx = context(r, s);
     setContact(s, master, subject);
+    ++s.turn;  // past the opening pool
+    // A computer subject with the Low bonus: its incomes are doubled after the tariff (spec 05 §8).
+    s.empire(subject).kind = PlayerKind::Computer;
+    s.options.aiBonus = 1;
+    REQUIRE(ai::incomeBonusFactor(s, subject) == 2);
+    REQUIRE(ai::incomeBonusFactor(s, master) == 1);
+    auto income = [&] {
+        economy::collectIncome(ctx, subject);
+        economy::collectIncome(ctx, master);
+        return std::pair{s.empire(subject).economy, s.empire(master).economy};
+    };
+    const auto [freeSubject, freeMaster] = income();
+
     diplomacy::setTreaty(ctx, master, subject, Treaty::Subjugation, true);
-    const int64_t due = diplomacy::tariffDue(r, s, subject).research;
-    REQUIRE(due > 0);
-    ++s.turn;
-    s.empire(subject).economy.research = 5000;
-    s.empire(master).economy.research = 5000;
+    const diplomacy::Generated due = diplomacy::tariffDue(r, s, subject);
+    REQUIRE(due.research > 0);
+    const auto [paying, receiving] = income();
+    // The income step takes the tariff once, before the bonus, on research and intelligence too.
+    CHECK(paying.research == freeSubject.research - 2 * due.research);
+    CHECK(paying.intelligence == freeSubject.intelligence - 2 * due.intelligence);
+    CHECK(receiving.research == freeMaster.research);  // nobody receives the research part
+    CHECK(receiving.intelligence == freeMaster.intelligence);
+
+    // The research step adds that net income to the pool as it is.
+    s.empire(subject).researchPool = 0;
+    s.empire(master).researchPool = 0;
     research::runResearch(ctx);
-    CHECK(s.empire(subject).researchPool == 5000 - due);
-    CHECK(s.empire(master).researchPool == 5000);
+    CHECK(s.empire(subject).researchPool == paying.research);
+    CHECK(s.empire(master).researchPool == receiving.research);
 }
 
 TEST_CASE("research: ETA simulates the queue") {

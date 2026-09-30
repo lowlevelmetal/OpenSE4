@@ -109,7 +109,6 @@ TEST_CASE("intel: defense points") {
 }
 
 TEST_CASE("intel: the pool is spent at the step and emptied") {
-    const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
     Empire& a = s.empire(kA);
@@ -122,11 +121,12 @@ TEST_CASE("intel: the pool is spent at the step and emptied") {
     // Last turn's 400 points were spent; this turn's 700 wait for the next step.
     CHECK(a.intel[0].progress == 400);
     CHECK(a.intelPool == 700);
-    // A master's tariff takes its part of the income, which nobody receives.
+    // A master's tariff is taken once, by the economy's income step
+    // (economy::collectIncome): the pool gets the income as it is.
     diplomacy::setTreaty(ctx, kB, kA, Treaty::Subjugation, true);
     a.intelPool = 0;
     intel::runIntel(ctx);
-    CHECK(a.intelPool == 700 - diplomacy::tariffDue(r, s, kA).intelligence);
+    CHECK(a.intelPool == 700);
 }
 
 TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") {

@@ -4,21 +4,33 @@
 #include "game/design.hpp"
 #include "game/economy_internal.hpp"
 #include "game/query.hpp"
-#include "game/setup.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <optional>
 
-// Population (docs/spec/02 §3-4): growth, replicants, domes, plague, riots,
-// rebellion, atmosphere converters and the per-turn mood update.
+// Population (docs/spec/02 §2-4): growth, replicants, domes, plague,
+// atmosphere converters, planet value and conditions changes, happiness, and
+// the colony's end when its people die out.
 
 namespace opense4::game::economy {
 
 using namespace detail;
+using xmath::Ext;
+using xmath::pctRound;
+using xmath::pctTrunc;
 
 namespace {
+
+// The empire's colonies in object order (stable), as planet ids: steps may remove colonies.
+std::vector<ObjectId> coloniesOf(const GameState& s, EmpireId e) {
+    std::vector<ObjectId> out;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e) out.push_back(c->planet);
+    return out;
+}
 
 // ---- Population arithmetic ----------------------------------------------------------------------
 
@@ -28,29 +40,6 @@ int largestGroup(const Colony& c) {
     for (size_t i = 0; i < c.population.size(); ++i)
         if (best < 0 || c.population[i].millions > c.population[static_cast<size_t>(best)].millions) best = static_cast<int>(i);
     return best;
-}
-
-// Adds `amount` M split across the races present in proportion to their size;
-// a colony without people receives the owner's race.
-void addPopulation(Colony& c, int64_t amount) {
-    if (amount <= 0) return;
-    const int64_t total = c.totalPopulation();
-    if (total <= 0) {
-        for (PopulationGroup& g : c.population)
-            if (g.race == c.owner) {
-                g.millions += amount;
-                return;
-            }
-        c.population.push_back({c.owner, amount});
-        return;
-    }
-    int64_t given = 0;
-    for (PopulationGroup& g : c.population) {
-        const int64_t share = amount * g.millions / total;
-        g.millions += share;
-        given += share;
-    }
-    c.population[static_cast<size_t>(largestGroup(c))].millions += amount - given;
 }
 
 // Removes `amount` M in proportion to each race's size.
@@ -80,49 +69,73 @@ EmpireId majorityRace(const Colony& c) {
 
 // ---- Growth (spec 02 §3) ---------------------------------------------------------------------------
 
-void growColony(const Rules& r, GameState& s, Colony& c, bool reproduce, int freq) {
-    const int64_t maxPop = maxPopulation(r, s, c);
-    if (reproduce && c.totalPopulation() > 0) {
-        std::vector<int64_t> gain(c.population.size(), 0);
-        int64_t totalGain = 0;
-        for (size_t i = 0; i < c.population.size(); ++i) {
-            PopulationGroup& g = c.population[i];
-            if (g.millions <= 0) continue;
-            const int rate = reproductionPercent(r, s, c, g.race);
-            const int64_t change = g.millions * rate * freq / 1000;  // % per year, 10 turns a year
-            if (rate > 0) {
-                gain[i] = std::max<int64_t>(1, change);  // small colonies still grow (inferred)
-                totalGain += gain[i];
-            } else if (rate < 0) {
-                g.millions = std::max<int64_t>(1, g.millions + change);  // decline never empties a colony (inferred)
-            }
-        }
-        const int64_t room = std::max<int64_t>(0, maxPop - c.totalPopulation());
-        if (totalGain > room) {
-            // Not enough room: share it in proportion to each race's growth.
-            int64_t given = 0, bestIdx = -1;
-            for (size_t i = 0; i < gain.size(); ++i) {
-                const int64_t g = totalGain > 0 ? gain[i] * room / totalGain : 0;
-                if (bestIdx < 0 || gain[i] > gain[static_cast<size_t>(bestIdx)]) bestIdx = static_cast<int64_t>(i);
-                gain[i] = g;
-                given += g;
-            }
-            if (bestIdx >= 0) gain[static_cast<size_t>(bestIdx)] += room - given;
-        }
-        for (size_t i = 0; i < gain.size(); ++i) c.population[i].millions += gain[i];
+void growColony(const Rules& r, GameState& s, Colony& c) {
+    const int rate = reproductionPercent(r, s, c);
+    int64_t room = std::max<int64_t>(0, maxPopulation(r, s, c) - c.totalPopulation());
+    // Earlier races fill the free room first (confirmed: binary).
+    const Ext perTurn = xmath::percent(rate) / Ext(10);  // % per year, 10 turns a year
+    for (PopulationGroup& g : c.population) {
+        if (room <= 0) break;
+        if (g.millions <= 0) continue;
+        int64_t grown = (Ext(g.millions) * perTurn).round();
+        if (rate > 0 && grown == 0) grown = 1;
+        grown = std::min(grown, room);
+        g.millions += grown;
+        room -= grown;
     }
+}
 
-    // Replicant facilities: every turn, the best in the system (spec 02 §3).
-    const SystemId sys = s.galaxy.object(c.planet).system;
-    const int64_t replicants = bestInSystem(r, s, c.owner, sys, AbilityKind::ChangePopulationSystem);
-    if (replicants > 0) addPopulation(c, std::min(replicants, std::max<int64_t>(0, maxPop - c.totalPopulation())));
-
-    // A colony over its capacity (a dome went up) loses the surplus (inferred, spec 02 §13).
+// A colony over its capacity (a dome went up) loses the surplus at once (inferred, spec 02 §13 Q33).
+void overcrowding(const Rules& r, GameState& s, Colony& c) {
+    const int64_t maxPop = maxPopulation(r, s, c);
     if (const int64_t excess = c.totalPopulation() - maxPop; excess > 0 && maxPop >= 0) {
         removePopulation(c, excess);
         addLog(s, c.owner, LogCategory::Misc, std::format("{} is overcrowded", s.galaxy.object(c.planet).name),
                std::format("{}M could not be housed and were lost.", excess), locationOf(s.galaxy, c.planet));
     }
+}
+
+// ---- Planet value and conditions (spec 02 §1.5, §2) ------------------------------------------------------
+
+// Multiplies a planet's conditions by pct %. Our conditions are hundredths of
+// the original's real number, so the product is rounded to a hundredth, and a
+// growing value moves by at least 0.01 so that small changes do not stall
+// (inferred; spec 02 §13). Never above 1.5; a result of exactly 0 gives 0.1.
+void scaleConditions(TurnContext& ctx, const Colony& c, int64_t pct) {
+    SpaceObject& p = ctx.state.galaxy.object(c.planet);
+    const int before = p.conditions;
+    int64_t v = pctRound(before, pct);
+    if (pct > 100 && v <= before) v = before + 1;
+    v = std::min<int64_t>(v, kConditionsMax);
+    if (v == 0) v = 10;
+    p.conditions = static_cast<int>(v);
+    if (p.conditions == kConditionsMax && before < kConditionsMax)
+        ctx.log(c.owner, LogCategory::Misc, std::format("{} has optimal conditions", p.name), {}, locationOf(ctx.state.galaxy, c.planet));
+}
+
+// A value change: normal games add points, finite games a percentage of the stock (truncated).
+void changeValue(const Rules& r, GameState& s, SpaceObject& p, size_t k, int64_t amount, bool systemWide) {
+    if (!s.options.finiteResources) {
+        p.value[k] = clampedValue(r, s, int64_t{p.value[k]} + amount);
+        return;
+    }
+    const int64_t stock = std::max(0, p.value[k]);
+    p.value[k] = clampedValue(r, s, systemWide ? pctTrunc(stock, 100 + amount) : stock + pctTrunc(stock, amount));
+}
+
+constexpr std::array<AbilityKind, 3> kValueChange{AbilityKind::PlanetChangeMineralsValue, AbilityKind::PlanetChangeOrganicsValue,
+                                                  AbilityKind::PlanetChangeRadioactivesValue};
+
+// Every 10th turn: the colony's own `Planet - Change ... Value` (summed) and
+// `Planet - Change Conditions` (summed; only a positive sum acts).
+void planetChanges(TurnContext& ctx, Colony& c) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    const std::vector<ParsedAbility> own = workingAbilities(r, s, c);
+    SpaceObject& p = s.galaxy.object(c.planet);
+    for (size_t k = 0; k < 3; ++k)
+        if (const int64_t v = sumValue1(own, kValueChange[k]); v != 0) changeValue(r, s, p, k, v, false);
+    if (const int64_t v = sumValue1(own, AbilityKind::PlanetChangeConditions); v > 0) scaleConditions(ctx, c, 100 + v);
 }
 
 // ---- Plague (spec 02 §3) ------------------------------------------------------------------------------
@@ -136,133 +149,73 @@ int64_t medicalBayAt(const Rules& r, const GameState& s, const Colony& c) {
     return best;
 }
 
-void plague(TurnContext& ctx, Colony& c) {
+// Millions a plague of this level kills at least each turn (confirmed: binary).
+int64_t plagueBase(int level) {
+    static constexpr std::array<int64_t, 6> kBase{10, 50, 100, 150, 300, 500};
+    return kBase[static_cast<size_t>(std::clamp(level, 1, 6) - 1)];
+}
+
+void cure(TurnContext& ctx, Colony& c) {
+    c.plagueLevel = 0;
+    ctx.log(c.owner, LogCategory::Events, std::format("Plague on {} cured", ctx.state.galaxy.object(c.planet).name), {},
+            locationOf(ctx.state.galaxy, c.planet));
+}
+
+// Returns false when the colony died out and was removed.
+bool plague(TurnContext& ctx, Colony& c) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    if (c.plagueLevel <= 0) return;
-    const std::string name = s.galaxy.object(c.planet).name;
-    const Location where = locationOf(s.galaxy, c.planet);
+    if (c.plagueLevel <= 0) return true;
     if (c.totalPopulation() <= 0) {
         c.plagueLevel = 0;
-        return;
+        return true;
     }
-    if (plagueProtection(r, s, c) >= c.plagueLevel || medicalBayAt(r, s, c) >= c.plagueLevel) {
-        c.plagueLevel = 0;
-        ctx.log(c.owner, LogCategory::Events, std::format("Plague on {} cured", name), {}, where);
-        return;
+    // No Plagues cures it the next time it would strike, with no loss.
+    if (r.hasTrait(s.empire(c.owner).race, "No Plagues") || medicalBayAt(r, s, c) >= c.plagueLevel) {
+        cure(ctx, c);
+        return true;
     }
-    // Each level kills 1 % of every race per turn, at least 1M (inferred, spec 02 §13 Q20).
-    int64_t dead = 0;
+    const int64_t base = plagueBase(c.plagueLevel);
+    const int64_t dead = s.rng.range(base, base + base / 5);
+    const std::string name = s.galaxy.object(c.planet).name;
+    if (dead >= c.totalPopulation()) {
+        ctx.log(c.owner, LogCategory::Events, std::format("Plague wiped out {}", name), "Every inhabitant died of the plague.",
+                locationOf(s.galaxy, c.planet));
+        colonyDiesOut(ctx, c.planet);
+        return false;
+    }
+    int64_t left = dead;  // taken from the races in their stored order
     for (PopulationGroup& g : c.population) {
-        if (g.millions <= 0) continue;
-        const int64_t loss = std::min(g.millions, std::max<int64_t>(1, g.millions * c.plagueLevel / 100));
-        g.millions -= loss;
-        dead += loss;
+        const int64_t n = std::min(left, g.millions);
+        g.millions -= n;
+        left -= n;
     }
-    ctx.log(c.owner, LogCategory::Events, std::format("Plague on {}", name), std::format("{}M died of the plague this turn.", dead), where);
+    ctx.log(c.owner, LogCategory::Events, std::format("Plague on {}", name), std::format("{}M died of the plague this turn.", dead),
+            locationOf(s.galaxy, c.planet));
+    return true;
 }
 
-// ---- Riots and rebellion (spec 02 §4) -----------------------------------------------------------------
-
-constexpr int kRebellionRiotTurns = 10;  // (inferred) spec 02 §13 Q10
-constexpr int kRebellionPercent = 10;    // chance per turn once rioting that long (inferred)
-
-void foundRebelEmpire(TurnContext& ctx, ObjectId planet) {
-    GameState& s = ctx.state;
-    const EmpireId old = s.colony(planet)->owner;
-    const EmpireId people = majorityRace(*s.colony(planet));
-    const EmpireId id{s.empires.size()};
-    const std::string planetName = s.galaxy.object(planet).name;
-
-    Empire rebel;
-    {
-        const Empire& from = s.empire(old);
-        rebel.id = id;
-        rebel.name = std::format("Free {}", planetName);
-        rebel.empireType = "Rebellion";
-        rebel.race = s.empire(people).race;
-        rebel.color = defaultEmpireColor(id.index());
-        rebel.kind = PlayerKind::Computer;
-        rebel.racialPointsSpent = s.empire(people).racialPointsSpent;
-        rebel.techLevels = from.techLevels;
-        rebel.strategies = from.strategies;
-        rebel.designTypes = from.designTypes;
-        rebel.colonyTypes = from.colonyTypes;
-        rebel.repairPriorities = from.repairPriorities;
-        rebel.relations.assign(s.empires.size() + 1, Relation{});
-        const size_t systems = s.galaxy.systems.size();
-        rebel.knowledge.explored.assign(systems, s.options.allSystemsSeen ? 1 : 0);
-        rebel.knowledge.present.assign(systems, 0);
-        rebel.knowledge.lastSeen.assign(systems, 0);
-        rebel.knowledge.notes.assign(systems, {});
-        rebel.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
-        rebel.knowledge.explored[s.galaxy.object(planet).system.index()] = 1;
-    }
-    for (Empire& e : s.empires) e.relations.resize(id.index() + 1);
-    s.empires.push_back(std::move(rebel));  // invalidates Empire references
-
-    Colony& c = *s.colony(planet);
-    const bool wasHome = c.homeworld;
-    c.owner = id;
-    for (PopulationGroup& g : c.population)
-        if (g.race == old) g.race = id;  // the rebels are the new nation's own people
-    c.anger = 200;
-    c.riotTurns = 0;
-    c.homeworld = false;
-    c.minister = false;
-    c.queue = ConstructionQueue{};
-    s.empire(id).claimedSystems.push_back(s.galaxy.object(planet).system);
-
-    const Location where = locationOf(s.galaxy, planet);
-    ctx.log(old, LogCategory::Misc, std::format("{} has rebelled", planetName), "Years of rioting ended in open revolt; the planet is lost.",
-            where);
-    ctx.log(id, LogCategory::Misc, std::format("{} declares independence", planetName), {}, where);
-    ctx.mood(old, "Any Planet Lost");
-    if (wasHome) ctx.mood(old, "Homeworld Lost");
-}
-
-void riots(TurnContext& ctx) {
-    GameState& s = ctx.state;
-    std::vector<ObjectId> rebels;
-    for (auto& c : s.colonies) {
-        if (!c) continue;
-        if (c->totalPopulation() <= 0 || moodFromAnger(c->anger) != Mood::Rioting ||
-            ctx.rules.hasTrait(s.empire(c->owner).race, "Population Emotionless")) {
-            c->riotTurns = 0;
-            continue;
-        }
-        if (++c->riotTurns == 1)
-            ctx.log(c->owner, LogCategory::Misc, std::format("Riots on {}", s.galaxy.object(c->planet).name),
-                    "The population produces nothing and builds nothing until calm returns.", locationOf(s.galaxy, c->planet));
-        if (c->riotTurns >= kRebellionRiotTurns && s.rng.percent(kRebellionPercent)) rebels.push_back(c->planet);
-    }
-    for (ObjectId p : rebels) foundRebelEmpire(ctx, p);
-}
-
-// ---- Atmosphere converters ------------------------------------------------------------------------------
+// ---- Atmosphere converters (spec 02 §2) ------------------------------------------------------------------
 
 void convertAtmosphere(TurnContext& ctx, Colony& c) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    int64_t turns = 0;
-    if (facilitiesWork(c))
-        for (uint32_t f : c.facilities)
-            for (const auto& a : r.facilityAbilities(f))
-                if (a.kind == AbilityKind::PlanetChangeAtmosphere && a.value1 > 0 && (turns == 0 || a.value1 < turns)) turns = a.value1;
+    bool converter = false;
+    const int64_t turns = bestOf(workingAbilities(r, s, c), AbilityKind::PlanetChangeAtmosphere, &converter);
     SpaceObject& planet = s.galaxy.object(c.planet);
     const std::string& target = s.empire(majorityRace(c)).race.atmosphere;
-    if (turns == 0 || datafile::keysEqual(planet.atmosphere, target)) {
-        c.atmosphereCountdown = -1;
+    // The counter only runs while a converter works (inferred).
+    if (!converter || datafile::keysEqual(planet.atmosphere, target)) {
+        c.atmosphereTurns = 0;
         return;
     }
-    if (c.atmosphereCountdown < 0) c.atmosphereCountdown = static_cast<int>(turns);
-    if (--c.atmosphereCountdown > 0) return;
+    if (++c.atmosphereTurns <= turns) return;  // more than Val1 turns: Val1 + 1 in all (confirmed: binary)
+    c.atmosphereTurns = 0;
     ctx.log(c.owner, LogCategory::Misc, std::format("{} now has a {} atmosphere", planet.name, target), {}, locationOf(s.galaxy, c.planet));
     planet.atmosphere = target;
-    c.atmosphereCountdown = -1;
 }
 
-// ---- Mood (spec 02 §4) ---------------------------------------------------------------------------------
+// ---- Happiness (spec 02 §4) ---------------------------------------------------------------------------
 
 enum class Scope { Empire, System, Location };
 
@@ -280,129 +233,211 @@ const ruleset::HappinessModel* modelOf(const Rules& r, const Race& race) {
     return race.happinessModel < models.size() ? &models[race.happinessModel] : nullptr;
 }
 
-std::optional<int> triggerValue(const ruleset::HappinessModel* m, std::string_view trigger) {
-    if (!m) return std::nullopt;
+int64_t triggerValue(const ruleset::HappinessModel* m, std::string_view trigger) {
+    if (!m) return 0;
     for (const auto& [key, value] : m->triggers)
         if (datafile::keysEqual(key, trigger)) return value;
-    return std::nullopt;
+    return 0;
 }
 
-// A mood change split into its angering and calming parts.
-struct Delta {
-    int64_t angrier = 0;
-    int64_t calmer = 0;  // <= 0
-    void add(int64_t d) { (d > 0 ? angrier : calmer) += d; }
+// Ships and bases in a system that count for happiness: not destroyed, cloaked or mothballed.
+struct Presence {
+    int ourSector = 0, ourSystem = 0, enemySector = 0, enemySystem = 0;
 };
 
-void updateMood(TurnContext& ctx) {
+Presence presenceAt(const Rules& r, const GameState& s, const Colony& c) {
+    Presence p;
+    const Location where = locationOf(s.galaxy, c.planet);
+    for (const Vehicle& v : s.vehicles) {
+        if (v.location.system != where.system || v.count <= 0 || v.status != VehicleStatus::Normal) continue;
+        if (!isShipOrBase(vehicleType(r, s, v))) continue;
+        // Non-Aggression or better counts as ours (confirmed: binary); ownerless vehicles as enemies (inferred).
+        const bool ours = v.owner == c.owner || (v.owner.valid() && !hostile(s, c.owner, v.owner));
+        const bool here = v.location.sector == where.sector;
+        (ours ? p.ourSystem : p.enemySystem) += 1;
+        if (here) (ours ? p.ourSector : p.enemySector) += 1;
+    }
+    return p;
+}
+
+void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::span<const MoodEvent> events) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    std::vector<Delta> deltas(s.colonies.size());
+    const ruleset::HappinessModel* model = modelOf(r, s.empire(c.owner).race);
+    const auto v = [&](std::string_view key) { return triggerValue(model, key); };
+    const Location where = locationOf(s.galaxy, c.planet);
+    int64_t total = empireWide;  // tenths of a percent
 
-    // Reported events.
-    for (const MoodEvent& ev : ctx.moodEvents) {
-        if (!ev.empire.valid() || ev.empire.index() >= s.empires.size()) continue;
-        const auto value = triggerValue(modelOf(r, s.empire(ev.empire).race), ev.trigger);
-        if (!value || *value == 0) continue;
-        const int64_t d = int64_t{*value} * std::max(1, ev.count);
-        switch (scopeOf(ev.trigger)) {
-            case Scope::Empire:
-                for (size_t i = 0; i < s.colonies.size(); ++i)
-                    if (s.colonies[i] && s.colonies[i]->owner == ev.empire) deltas[i].add(d);
-                break;
-            case Scope::System: {
-                SystemId sys = ev.system;
-                if (!sys.valid() && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size()) sys = s.galaxy.object(ev.planet).system;
-                for (const Colony* c : coloniesInSystem(s, ev.empire, sys)) deltas[c->planet.index()].add(d);
-                break;
-            }
-            case Scope::Location:
-                if (!ev.planet.valid() || ev.planet.index() >= s.galaxy.objects.size()) break;
-                for (ObjectId o : planetsAt(s, locationOf(s.galaxy, ev.planet)))
-                    if (const Colony* c = s.colony(o); c && c->owner == ev.empire) deltas[o.index()].add(d);
-                break;
+    // 1. Drift towards Indifferent; other races resent their rulers.
+    int64_t own = 0;
+    for (const PopulationGroup& g : c.population)
+        if (g.race == c.owner) own += g.millions;
+    if (own < c.totalPopulation() / 2) {
+        total += v("Natural Decrease for Other Races");
+    } else {
+        switch (moodFromAnger(c.anger)) {
+            case Mood::Rioting:
+            case Mood::Angry:
+            case Mood::Unhappy: total += v("Natural Decrease"); break;
+            case Mood::Happy:
+            case Mood::Jubilant: total -= v("Natural Decrease"); break;
+            case Mood::Indifferent: break;
         }
     }
 
-    // Presence of ships and troops, computed from the state (spec 02 §4).
-    std::vector<std::vector<const Vehicle*>> bySystem(s.galaxy.systems.size());
-    for (const Vehicle& v : s.vehicles)
-        if (v.count > 0 && v.status != VehicleStatus::Mothballed && v.location.system.index() < bySystem.size())
-            bySystem[v.location.system.index()].push_back(&v);
-
-    for (size_t i = 0; i < s.colonies.size(); ++i) {
-        if (!s.colonies[i]) continue;
-        Colony& c = *s.colonies[i];
-        const int64_t population = c.totalPopulation();
-        const Race& race = s.empire(c.owner).race;
-        if (population <= 0 || r.hasTrait(race, "Population Emotionless")) continue;  // emotionless: anger never changes
-        const ruleset::HappinessModel* model = modelOf(r, race);
-        auto trigger = [&](std::string_view key) -> int64_t { return triggerValue(model, key).value_or(0); };
-        Delta& d = deltas[i];
-        const Location where = locationOf(s.galaxy, c.planet);
-
-        // Our ships calm, enemy ships anger; the sector effect replaces the system one (inferred: once per colony).
-        bool ourSector = false, ourSystem = false, enemySector = false, enemySystem = false;
-        for (const Vehicle* v : bySystem[where.system.index()]) {
-            const ruleset::VehicleType t = vehicleType(r, s, *v);
-            const bool here = v->location.sector == where.sector;
-            if (v->owner == c.owner) {
-                if (isShipOrBase(t)) (here ? ourSector : ourSystem) = true;
-            } else if (hostile(s, c.owner, v->owner) && v->status != VehicleStatus::Cloaked && t != ruleset::VehicleType::Mine) {
-                (here ? enemySector : enemySystem) = true;
-            }
+    // 2-3. Events in the colony's sector and anywhere in its system.
+    for (const MoodEvent& ev : events) {
+        const int64_t d = v(ev.trigger) * std::max(1, ev.count);
+        if (d == 0) continue;
+        const Scope scope = scopeOf(ev.trigger);
+        if (scope == Scope::System) {
+            SystemId sys = ev.system;
+            if (!sys.valid() && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size()) sys = s.galaxy.object(ev.planet).system;
+            if (sys == where.system) total += d;
+        } else if (scope == Scope::Location && ev.planet.valid() && ev.planet.index() < s.galaxy.objects.size() &&
+                   locationOf(s.galaxy, ev.planet) == where) {
+            total += d;
         }
-        if (ourSector) d.add(trigger("Our Ship in Sector"));
-        else if (ourSystem) d.add(trigger("Our Ship in System"));
-        if (enemySector) d.add(trigger("Enemy Ship in Sector"));
-        else if (enemySystem) d.add(trigger("Enemy Ship in System"));
-        int troops = 0;
-        for (const UnitStack& u : c.cargo.units)
-            if (r.hull(s.design(u.design).hull).type == ruleset::VehicleType::Troop) troops += u.count;
-        if (troops > 0) d.add(trigger("Our Troops on Planet") * troops);
-
-        // Natural drift: the owner's race calms, other races resent their rulers.
-        int64_t own = 0;
-        for (const PopulationGroup& g : c.population)
-            if (g.race == c.owner) own += g.millions;
-        d.add((trigger("Natural Decrease") * own + trigger("Natural Decrease for Other Races") * (population - own)) / population);
-
-        // Conditions, then happiness facilities: 1 % = 10 tenths (inferred).
-        d.add(conditionsAnger(conditionsBand(s.galaxy.object(c.planet).conditions), race.characteristic(Characteristic::EnvironmentalResistance)));
-        const int64_t calming = std::max(bestOf(workingAbilities(r, s, c), AbilityKind::PlanetChangePopulationHappiness),
-                                         bestInSystem(r, s, c.owner, where.system, AbilityKind::ChangePopulationHappinessSystem));
-        if (calming > 0) d.add(-calming * 10);
-
-        // Happiness characteristic and culture speed up calming (inferred).
-        const ruleset::Culture* culture = r.culture(race);
-        const int64_t calmPct = std::max(0, 100 + charBonus(race, Characteristic::Happiness) + (culture ? culture->happiness : 0));
-        int64_t change = d.angrier + d.calmer * calmPct / 100;
-        if (model && (model->maxPositiveChange != 0 || model->maxNegativeChange != 0))
-            change = std::clamp<int64_t>(change, std::min(model->maxNegativeChange, 0), std::max(model->maxPositiveChange, 0));
-        c.anger = static_cast<int>(std::clamp<int64_t>(c.anger + change, 0, 1000));
     }
+
+    // 4. Ships present, counted per ship; the sector value replaces the system one.
+    const Presence p = presenceAt(r, s, c);
+    if (p.enemySector > 0) total += v("Enemy Ship in Sector") * p.enemySector;
+    else total += v("Enemy Ship in System") * p.enemySystem;
+    if (p.ourSector > 0) total += v("Our Ship in Sector") * p.ourSector;
+    else total += v("Our Ship in System") * p.ourSystem;
+
+    // 5. Troops: ours per unit in the colony's cargo, enemies once.
+    int64_t ourTroops = 0;
+    bool enemyTroops = false;
+    for (const UnitStack& u : c.cargo.units) {
+        if (!u.design.valid() || u.design.index() >= s.designs.size() || u.count <= 0) continue;
+        const Design& d = s.design(u.design);
+        if (r.hull(d.hull).type != ruleset::VehicleType::Troop) continue;
+        if (d.owner == c.owner) ourTroops += u.count;
+        else if (hostile(s, c.owner, d.owner)) enemyTroops = true;
+    }
+    if (enemyTroops) total += v("Enemy Troops on Planet");
+    total += v("Our Troops on Planet") * ourTroops;
+
+    // 6. Plague.
+    if (c.plagueLevel > 0) total += v("Planet Plagued");
+
+    // Whole percent (truncated), plus the colony's own happiness facilities (positive angers).
+    int64_t change = total / 10 + sumValue1(workingAbilities(r, s, c), AbilityKind::PlanetChangePopulationHappiness);
+    if (model) {
+        // The data gives the negative limit as a negative number; a positive one is read the same (inferred).
+        if (change < 0) change = std::max<int64_t>(change, -std::abs(model->maxNegativeChange) / 10);
+        else change = std::min<int64_t>(change, model->maxPositiveChange / 10);
+    }
+    setAnger(r, s, c, static_cast<int>(std::clamp<int64_t>(c.anger + change, -kMaxAnger, 2 * kMaxAnger)));
+    if (moodFromAnger(c.anger) == Mood::Rioting)
+        ctx.log(c.owner, LogCategory::Misc, std::format("Riots on {}", s.galaxy.object(c.planet).name),
+                "The population produces nothing, builds nothing and does not grow until calm returns.", where);
 }
 
 } // namespace
 
-void runPopulation(TurnContext& ctx) {
+// ---- Colonies ending ------------------------------------------------------------------------------
+
+void colonyDiesOut(TurnContext& ctx, ObjectId planet) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    const int freq = static_cast<int>(std::max<int64_t>(1, r.setting("Reproduction Check Frequency", 1)));
-    const bool reproduce = s.turn % static_cast<uint32_t>(freq) == 0;
+    Colony* c = s.colony(planet);
+    if (!c) return;
+    const EmpireId owner = c->owner;
+    // `Homeworld Lost` when the colony had the first default colony type (confirmed: binary).
+    const auto& types = r.data().names.colonyTypes;
+    const bool home = types.empty() ? c->homeworld : datafile::keysEqual(c->colonyType, types.front());
+    SpaceObject& p = s.galaxy.object(planet);
+    const int64_t loss = r.setting("Planet Value Percent Loss After Owner Death", 10);
+    for (size_t k = 0; k < 3; ++k)
+        p.value[k] = clampedValue(r, s, p.value[k] - (s.options.finiteResources ? pctTrunc(std::max(0, p.value[k]), loss) : loss));
+    s.colonies[planet.index()].reset();
+    ctx.mood(owner, home ? "Homeworld Lost" : "Any Planet Lost", p.system, planet);
+}
 
-    // Growth under this turn's mood, replicants, domes; then plague.
-    for (auto& c : s.colonies)
-        if (c && c->owner.valid() && c->owner.index() < s.empires.size()) {
-            growColony(r, s, *c, reproduce, freq);
-            plague(ctx, *c);
+// ---- Per-empire steps -------------------------------------------------------------------------------
+
+void processPlanets(TurnContext& ctx, EmpireId e) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    if (!livingEmpire(s, e)) return;
+    const auto freq = static_cast<uint32_t>(std::max<int64_t>(1, r.setting("Reproduction Check Frequency", 1)));
+    const bool reproduce = processingTurn(s) % freq == 0;  // the amount is not scaled by the frequency
+    const bool yearly = processingTurn(s) % 10 == 0;
+    for (ObjectId planet : coloniesOf(s, e)) {
+        Colony& c = *s.colony(planet);
+        if (reproduce) growColony(r, s, c);
+        overcrowding(r, s, c);
+        if (yearly) planetChanges(ctx, c);
+        if (!plague(ctx, c)) continue;
+        convertAtmosphere(ctx, c);
+    }
+}
+
+void updateHappiness(TurnContext& ctx, EmpireId e) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    // This empire's events since the last update; they are used up here.
+    std::vector<MoodEvent> events;
+    for (const MoodEvent& ev : ctx.moodEvents)
+        if (ev.empire == e) events.push_back(ev);
+    std::erase_if(ctx.moodEvents, [&](const MoodEvent& ev) { return ev.empire == e; });
+    if (!livingEmpire(s, e) || emotionless(r, s, e)) return;  // Emotionless: the whole update is skipped
+
+    // The empire-wide part: events that hit every colony, and the race's calm.
+    const Race& race = s.empire(e).race;
+    const ruleset::HappinessModel* model = modelOf(r, race);
+    int64_t empireWide = 0;
+    for (const MoodEvent& ev : events)
+        if (scopeOf(ev.trigger) == Scope::Empire) empireWide += triggerValue(model, ev.trigger) * std::max(1, ev.count);
+    empireWide -= racialEffect(r, race, RacialEffect::Happiness) / 5;
+    std::erase_if(events, [](const MoodEvent& ev) { return scopeOf(ev.trigger) == Scope::Empire; });
+
+    for (ObjectId planet : coloniesOf(s, e)) updateColonyAnger(ctx, *s.colony(planet), empireWide, events);
+}
+
+void applySystemAbilities(TurnContext& ctx, EmpireId e) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    if (!livingEmpire(s, e)) return;
+    const bool yearly = processingTurn(s) % 10 == 0;
+    for (ObjectId planet : coloniesOf(s, e)) {
+        Colony& c = *s.colony(planet);
+        const SystemId sys = s.galaxy.object(planet).system;
+        // Happiness facilities calm by whole percent, outside the per-turn clamp.
+        if (const int64_t calm = bestInSystem(r, s, e, sys, AbilityKind::ChangePopulationHappinessSystem); calm > 0)
+            setAnger(r, s, c, static_cast<int>(std::max<int64_t>(-kMaxAnger, c.anger - calm)));
+        // Replicants: each race gets its share, rounded, up to the colony's maximum (inferred rounding of the share).
+        if (const int64_t added = bestInSystem(r, s, e, sys, AbilityKind::ChangePopulationSystem); added > 0) {
+            const int64_t total = c.totalPopulation();
+            int64_t room = std::max<int64_t>(0, maxPopulation(r, s, c) - total);
+            for (PopulationGroup& g : c.population) {
+                if (total <= 0 || room <= 0) break;
+                const int64_t share = std::min(room, xmath::divRoundHalfEven(added * g.millions, total));
+                g.millions += share;
+                room -= share;
+            }
         }
-    // Riots and rebellion follow the mood the colony had this turn.
-    riots(ctx);
-    for (auto& c : s.colonies)
-        if (c) convertAtmosphere(ctx, *c);
-    // Last, the mood for next turn, with every event reported during this turn.
-    updateMood(ctx);
+        if (c.plagueLevel > 0 && bestInSystem(r, s, e, sys, AbilityKind::PlaguePreventionSystem) >= c.plagueLevel) cure(ctx, c);
+        if (yearly) {
+            SpaceObject& p = s.galaxy.object(planet);
+            if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetValueChangeSystem); v > 0)
+                for (size_t k = 0; k < 3; ++k) changeValue(r, s, p, k, v, true);
+            if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetConditionsChangeSystem); v > 0) scaleConditions(ctx, c, 100 + v);
+        }
+    }
+}
+
+void runPopulation(TurnContext& ctx) {
+    for (size_t i = 0; i < ctx.state.empires.size(); ++i) {
+        const EmpireId id{i};
+        if (!ctx.state.empire(id).alive) continue;
+        processPlanets(ctx, id);
+        updateHappiness(ctx, id);
+        applySystemAbilities(ctx, id);
+    }
 }
 
 } // namespace opense4::game::economy

@@ -1853,14 +1853,17 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     before movement; research and intelligence run after movement, in each empire's
     end-of-turn processing (§8). Still open: the day schedule for speeds that do not divide
     30 and how same-phase ties resolve.
-15. **Tariff base** (§3.3): OpenSE4 cuts the tariff from the production of the subject's
-    colonies (the trade base). Does it also apply to remote mining and to flat `Generate
+15. **Tariff base** (§3.3): OpenSE4 cuts the tariff from what the subject's colonies
+    deliver (spec 02 §5.5, the trade base), once, at its income step before the
+    computer-player bonus. Does it also apply to remote mining and to flat `Generate
     Points` income? And is the race's trade bonus a trait of Type `Trade` (none exists in
     the stock data)? (inferred)
 16. **Rebel colonies** (§2.3): OpenSE4 makes the new independent empire a computer player
     with the former owner's race (of the planet's largest population group), technology,
     strategies and name lists, the planet as its capital, in contact and at War with the
-    former owner, and named after the planet. Which of these does the original do? Does the
+    former owner, and named after the planet. The population of that race becomes the new
+    empire's own people, and the planet's system is its claimed system. Which of these does
+    the original do? Does the
     20-empire limit count destroyed empires, and does it also stop the intelligence
     variant? (inferred)
 17. **Intelligence details** (§2.1–§2.4): OpenSE4 reads the defense sum as
@@ -1890,3 +1893,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     The peace counter moves (after the qualifier's date) whether or not the peace condition
     is on. A surrender clears the surrendered empire's relations and the intel projects
     aimed at it like a destruction. (inferred)
+20. **Event amounts on the spec 02 scales** (§2.3, §4): OpenSE4 adds a `Planet -
+    Conditions Change` Amount as hundredths of the 0–1.5 conditions scale, within 0 and
+    1.5, and reads a `Planet - Population Anger Change` Amount in tenths, changing the
+    whole-percent anger by trunc(Amount / 10) within 0 and 100 (80 on a capital). Is the
+    conditions change additive, or a percentage of the current value like `Planet
+    Conditions Change - System` (spec 02 §1.5)? (inferred)

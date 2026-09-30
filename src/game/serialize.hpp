@@ -36,6 +36,10 @@ class Rules;
 // Current and oldest readable version of the binary format (save files,
 // order files and network messages share it). Bump kSaveVersion when a
 // change to the serialized structs makes older files unreadable.
+// Version 2: colony anger in whole percent (was tenths), no riot counter,
+// atmosphere counter counts up (spec 02 §2, §4); research and intelligence
+// pools, the trade counter, the Research - Steal target area, and the
+// Technology Cost and Score Display options (spec 05).
 inline constexpr uint32_t kSaveVersion = 2;
 inline constexpr uint32_t kMinSaveVersion = 2;
 

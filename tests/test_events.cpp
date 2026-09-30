@@ -492,9 +492,13 @@ TEST_CASE("events: planet effects") {
     auto target = [&](ObjectId o) { return onObject(kA, o); };
 
     SpaceObject& planet = s.galaxy.object(home);
+    // Conditions are hundredths of the 0–1.5 scale (spec 02 §2).
     planet.conditions = 5;
     hit(s, Effect::PlanetConditionsChange, target(home), -8);
     CHECK(planet.conditions == 0);
+    planet.conditions = 140;
+    hit(s, Effect::PlanetConditionsChange, target(home), 25);
+    CHECK(planet.conditions == 150);
     // Each value changes by the amount, within Minimum/Maximum Planet Percent
     // Value (10 and 150 in the test settings).
     planet.value = {100, 145, 25};
@@ -525,12 +529,21 @@ TEST_CASE("events: planet effects") {
     out = hit(s, Effect::PlanetPopulationChange, target(home), 1000000);
     CHECK(c.totalPopulation() == maxPopulation(r, s, c));
 
-    c.anger = 900;
+    // The amount is in tenths; anger is a whole percent, and a homeworld is a
+    // capital, capped at 80 (spec 02 §4).
+    c.anger = 40;
+    hit(s, Effect::PlanetPopulationAngerChange, target(home), 25);
+    CHECK(c.anger == 42);
+    c.anger = 70;
     hit(s, Effect::PlanetPopulationAngerChange, target(home), 200);
-    CHECK(c.anger == 1000);
-    c.anger = 100;
+    CHECK(c.anger == 80);
+    c.anger = 10;
+    hit(s, Effect::PlanetPopulationRiot, target(home), 1);
+    CHECK(c.anger == 80);
+    c.homeworld = false;
     hit(s, Effect::PlanetPopulationRiot, target(home), 1);
     CHECK(moodFromAnger(c.anger) == Mood::Rioting);
+    c.homeworld = true;
 
     const size_t facilities = c.facilities.size();
     REQUIRE(facilities >= 2);
