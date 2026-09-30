@@ -123,7 +123,7 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     for (Vehicle& v : s.vehicles)
         if (v.owner == id) v.count = 0;
     s.removeDeadVehicles();
-    const std::string text = std::format("The {} has been destroyed.", effects::empireFullName(s.empire(id)));
+    const std::string text = destroyedText(s, id);
     for (const Empire& x : s.empires)
         if (x.id == id || (x.alive && x.relation(id).contact)) {
             ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text);
@@ -149,6 +149,69 @@ void recordStatistics(TurnContext& ctx, EmpireId e) {
     if (!validEmpire(s, e) || !s.empire(e).alive) return;
     TurnStats t = currentStats(ctx.rules, s, e);
     s.empire(e).history.push_back(std::move(t));
+    if (s.empire(e).kind == PlayerKind::Human) ctx.records.push_back(playerRecords(ctx.rules, s, e));
+}
+
+std::string destroyedText(const GameState& s, EmpireId gone) {
+    return std::format("The {} has been destroyed.", effects::empireFullName(s.empire(gone)));
+}
+
+std::string dateText(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
+
+std::string statisticsLine(EmpireId e, const TurnStats& t) {
+    return std::format("{:>4}{:>8}{:>14}{:>14}{:>12}{:>12}{:>6}{:>6}{:>6}{:>12}{:>8}{:>6}{:>6}", e.value + 1, dateText(t.turn), t.score,
+                       t.production.total(), t.research, t.intelligence, t.techLevels, t.systems, t.planets, t.population, t.units, t.ships,
+                       t.bases);
+}
+
+std::string historyLine(uint32_t turn, EmpireId other, std::string_view text) {
+    return std::format("{:>8}{:>4} 0 0 {}", dateText(turn), other.valid() ? other.value + 1 : 0u, text);
+}
+
+PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
+    PlayerRecords out;
+    out.empire = e;
+    if (!validEmpire(s, e)) return out;
+    // Statistics: every empire whose score the player may see (spec 05 §5).
+    for (const Empire& x : s.empires)
+        if (x.alive && scoreVisible(s, e, x.id)) out.statistics.push_back(statisticsLine(x.id, currentStats(r, s, x.id)));
+    if (s.turn == 0) return out;
+    const uint32_t before = s.turn - 1;
+    // History: the political messages of the turn before (spec 05 §3.4).
+    auto findMessage = [&](MessageId id) -> const DiplomaticMessage* {
+        for (const DiplomaticMessage& m : s.messages)
+            if (m.id == id) return &m;
+        return nullptr;
+    };
+    for (const DiplomaticMessage& m : s.messages) {
+        if (m.sentTurn != before || (m.from != e && m.to != e)) continue;
+        const EmpireId other = m.from == e ? m.to : m.from;
+        const DiplomaticMessage* answered = findMessage(m.inReplyTo);
+        const bool acceptsTreaty = m.type == MessageType::AcceptTreaty ||
+                                   (m.type == MessageType::AcceptDemand && answered && answered->type == MessageType::CounterTreaty);
+        if (acceptsTreaty && answered) out.history.push_back(historyLine(before, other, std::format("{} established", displayName(answered->treaty))));
+        else if (m.type == MessageType::BreakTreaty) out.history.push_back(historyLine(before, other, "Treaty broken"));
+        else if (m.type == MessageType::DeclareWar) out.history.push_back(historyLine(before, other, "War declared"));
+    }
+    // ... and the player's own log: empires destroyed and first contacts.
+    const Empire& me = s.empire(e);
+    for (const LogEntry& l : me.log) {
+        if (l.turn != before) continue;
+        for (const Empire& x : s.empires) {
+            if (x.id == e) continue;
+            if (l.title == "Empire Destroyed" && l.text == destroyedText(s, x.id))
+                out.history.push_back(historyLine(before, x.id, std::format("The {} was destroyed", effects::empireFullName(x))));
+            else if (l.title == "First Contact" && l.text == diplomacy::firstContactText(s, x.id))
+                out.history.push_back(historyLine(before, x.id, std::format("First contact with the {}", effects::empireFullName(x))));
+        }
+    }
+    // The text copy of the log.
+    if (r.settingFlag("Create Log Text Files for Players", true))
+        for (const LogEntry& l : me.log)
+            if (l.turn == before)
+                out.log.push_back(std::format("{:>8} {:<12} {}{}{}", dateText(l.turn), std::string(displayName(l.category)), l.title,
+                                              l.text.empty() ? "" : ": ", l.text));
+    return out;
 }
 
 bool leadsBy(int64_t score, int64_t other, int percent) { return xmath::Ext(score) >= xmath::percent(percent) * xmath::Ext(other); }

@@ -37,7 +37,7 @@ public:
     LiveContext(const LiveContext&) = delete;
     LiveContext& operator=(const LiveContext&) = delete;
 
-    TurnResult result() { return TurnResult{std::move(ctx.rejected), std::move(questions)}; }
+    TurnResult result() { return TurnResult{std::move(ctx.rejected), std::move(questions), {}, std::move(ctx.records)}; }
 
     TurnContext ctx;
     std::vector<EntryQuestion> questions;

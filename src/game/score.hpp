@@ -12,6 +12,8 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::game {
@@ -55,9 +57,45 @@ bool defeated(const Rules& r, const GameState& s, EmpireId e);
 // treaties with it return to "no contact", intelligence projects aimed at it
 // are removed and its remaining objects (empty colonies, units) go.
 void checkDestruction(TurnContext& ctx, EmpireId e);
-// Appends this turn's statistics to a living empire's history (spec 05 §5:
-// written at the start of the empire's end-of-turn processing).
+// Step 2 of an empire's end-of-turn processing (spec 05 §5, §8): appends this
+// turn's statistics to a living empire's history, and for a human player
+// adds the lines of its files to TurnContext::records.
 void recordStatistics(TurnContext& ctx, EmpireId e);
+
+// ---- Human players' files (spec 05 §3.4, §5, §8 step 2, confirmed: binary) --------------------
+//
+// At step 2 of a human player's end-of-turn processing the game appends to
+// three plain-text files of that player: statistics, history and a text copy
+// of the log. The engine makes the lines (TurnResult::records); whoever runs
+// the game writes them (the classic client: a folder per game in the user
+// data directory). Fixed-width columns, one record per line.
+struct PlayerRecords {
+    EmpireId empire;
+    // One row per empire whose score the player may see (scoreVisible):
+    // statisticsLine.
+    std::vector<std::string> statistics;
+    // The entries dated the turn before: treaties accepted, treaties broken
+    // and declarations of war among the political messages the player sent
+    // or received, and the empires destroyed and first contacts of its log
+    // (a surrender is never recorded): historyLine.
+    std::vector<std::string> history;
+    // The player's log entries dated the turn before, when `Create Log Text
+    // Files for Players` is on (the default, inferred).
+    std::vector<std::string> log;
+};
+PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e);
+// "2401.3": the date of a turn number (2400.0 + turn / 10).
+std::string dateText(uint32_t turn);
+// A statistics row: the empire's number (EmpireId + 1), the date and the
+// Score window's columns: score, resources, research, intelligence, tech
+// levels, systems, planets, population, units, ships, bases (widths inferred).
+std::string statisticsLine(EmpireId e, const TurnStats& t);
+// A history row: the date, the other empire's number (0 for none), two flags
+// always 0, and the text.
+std::string historyLine(uint32_t turn, EmpireId other, std::string_view text);
+// The log text of a destroyed empire's announcement (the history file finds
+// the empire by it).
+std::string destroyedText(const GameState& s, EmpireId gone);
 // The victory tests' comparisons, in floating point (spec 05 §6, confirmed:
 // binary; xmath's extended precision): "X % of second place" is score >=
 // (X / 100) × other; "X % of tech" is levels >= maxLevels × X / 100.

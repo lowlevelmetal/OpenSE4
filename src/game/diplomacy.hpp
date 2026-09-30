@@ -51,6 +51,9 @@ std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
 // Establishes contact both ways; logs first contact.
 void makeContact(TurnContext& ctx, EmpireId a, EmpireId b);
+// The log text of a first contact with `other` (the history file finds the
+// empire by it).
+std::string firstContactText(const GameState& s, EmpireId other);
 // Declare War (spec 05 §3.4): both sides are at War whatever the treaty was,
 // and both are told. Also used by `Politics - Fake Messages` (§2.3).
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);

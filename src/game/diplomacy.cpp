@@ -341,11 +341,13 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
     if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || inContact(s, a, b)) return;
     s.empire(a).relation(b).contact = true;
     s.empire(b).relation(a).contact = true;
-    ctx.log(a, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, b)));
-    ctx.log(b, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, a)));
+    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b));
+    ctx.log(b, LogCategory::Politics, "First Contact", firstContactText(s, a));
     addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
     addHistory(s, b, a, std::format("First contact with the {}", nameOf(s, a)));
 }
+
+std::string firstContactText(const GameState& s, EmpireId other) { return std::format("We have made contact with the {}.", nameOf(s, other)); }
 
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
     GameState& s = ctx.state;

@@ -73,9 +73,9 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // no refresh of their own: their rates are worked out when they run
     // (inferred).
     if (ministers) applyCommands(ctx, e, ai::planEconomyStep(r, s, e));
-    // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5).
-    // The original writes the files for human players; OpenSE4 keeps every
-    // empire's history (inferred).
+    // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
+    // OpenSE4 keeps every empire's in the save), and for a human player the
+    // lines of its statistics, history and log text files (TurnResult::records).
     score::recordStatistics(ctx, e);
     // 3-4. Intelligence, then research: each spends the pool the previous
     // turn's income and trade filled, then empties it (spec 05 §1.1, §2.1).
@@ -242,7 +242,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     ++s.turn;
     economy::updateReports(r, s);
 
-    return TurnResult{std::move(ctx.rejected), {}};
+    return TurnResult{std::move(ctx.rejected), {}, {}, std::move(ctx.records)};
 }
 
 } // namespace opense4::game

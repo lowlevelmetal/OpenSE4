@@ -12,8 +12,41 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 
 namespace opense4::client::classic {
+
+namespace {
+
+// Human players' statistics, history and log text files (spec 05 §5, §8 step
+// 2): the lines the engine made, appended to per-player files in a folder of
+// the game under the user data directory, named after its seed
+// (history/<seed>/player<N>_stats.txt, _events.txt, _log.txt; inferred, the
+// original keeps them in its installation, spec 05 open question 39).
+void writePlayerRecords(const game::GameState& s, const std::vector<game::score::PlayerRecords>& records) {
+    if (records.empty()) return;
+    std::error_code ec;
+    const std::filesystem::path dir = userDataDir() / "history" / std::format("{:016x}", s.seed);
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        log::warn("Cannot create {}: {}", dir.string(), ec.message());
+        return;
+    }
+    auto append = [&](const std::filesystem::path& file, const std::vector<std::string>& lines) {
+        if (lines.empty()) return;
+        std::ofstream out(file, std::ios::app);
+        for (const std::string& line : lines) out << line << '\n';
+        if (!out) log::warn("Cannot write {}", file.string());
+    };
+    for (const game::score::PlayerRecords& rec : records) {
+        const std::string base = std::format("player{}", rec.empire.value + 1);
+        append(dir / (base + "_stats.txt"), rec.statistics);
+        append(dir / (base + "_events.txt"), rec.history);
+        append(dir / (base + "_log.txt"), rec.log);
+    }
+}
+
+} // namespace
 
 ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player, SessionKind kind)
     : rules_(std::move(rules)), state_(std::move(state)), player_(player), kind_(kind) {
@@ -175,6 +208,7 @@ void ClassicSession::runCall() {
         return;
     }
     const Call call = std::exchange(call_, Call::None);
+    if (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) writePlayerRecords(state_, res.records);
     // The battles fought in the Tactical Combat window must have come out the same here.
     for (const game::CombatRecord& fought : fought_) {
         const auto same = [&](const game::CombatRecord& r) {
@@ -309,6 +343,7 @@ void ClassicSession::endTurn() {
     for (const game::Empire& e : state_.empires)
         if (e.alive && e.kind == game::PlayerKind::Human) submitted.push_back({e.id, state_.turn, {}});
     const game::TurnResult result = game::processTurn(*rules_, state_, submitted);
+    writePlayerRecords(state_, result.records);
     strategic_.clear();
     notices_.clear();
     for (const auto& [empire, text] : result.rejected)
@@ -394,7 +429,10 @@ void ClassicSession::replaceState(game::GameState s) {
 void ClassicSession::simulateTurns(int n) {
     if (kind_ == SessionKind::Pbem) return;  // only the host plays PBEM turns
     // A turn-based game plays whole game turns the same way (processTurn).
-    for (int i = 0; i < n && !state_.gameOver; ++i) game::processTurn(*rules_, state_, {});
+    for (int i = 0; i < n && !state_.gameOver; ++i) {
+        const game::TurnResult result = game::processTurn(*rules_, state_, {});
+        if (kind_ != SessionKind::NetworkClient) writePlayerRecords(state_, result.records);
+    }
     if (n > 0 && turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     if (n > 0) beginTurn();
 }

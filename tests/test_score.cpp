@@ -389,3 +389,77 @@ TEST_CASE("score: the turn pipeline keeps history and stops at game over") {
     processTurn(r, a, none);
     CHECK(a.turn == 4);
 }
+
+TEST_CASE("score: a human player's statistics, history and log text files") {
+    // Spec 05 §3.4, §5, §8 step 2: written for human players at the start of
+    // their end-of-turn processing; the engine makes the lines.
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    s.empire(kC).kind = PlayerKind::Computer;
+    TurnContext ctx = context(s);
+    setContact(s, kA, kB);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
+
+    // Statistics: a row per empire whose score the player may see.
+    score::PlayerRecords rec = score::playerRecords(r, s, kA);
+    REQUIRE(rec.statistics.size() == 2);
+    const TurnStats mine = score::currentStats(r, s, kA);
+    CHECK(rec.statistics[0] == score::statisticsLine(kA, mine));
+    CHECK(rec.statistics[0].starts_with("   1  2400.0"));
+    CHECK(rec.statistics[1].starts_with("   2"));
+    CHECK(rec.statistics[0].find(std::to_string(mine.score)) != std::string::npos);
+    s.options.scoreDisplay = 2;
+    CHECK(score::playerRecords(r, s, kA).statistics.size() == 3);
+    s.options.scoreDisplay = 0;
+    CHECK(score::playerRecords(r, s, kA).statistics.size() == 1);
+    CHECK(rec.history.empty());  // nothing dated before the first turn
+
+    // History: the turn before's accepted treaties, broken treaties, wars,
+    // first contacts and destroyed empires, each naming the other empire.
+    s.turn = 5;
+    auto message = [&](EmpireId from, EmpireId to, MessageType type, uint32_t turn, Treaty t = Treaty::None, MessageId reply = {}) {
+        DiplomaticMessage m;
+        m.id = MessageId{s.nextMessageId++};
+        m.from = from;
+        m.to = to;
+        m.type = type;
+        m.sentTurn = turn;
+        m.treaty = t;
+        m.inReplyTo = reply;
+        m.delivered = true;
+        s.messages.push_back(m);
+        return m.id;
+    };
+    const MessageId proposal = message(kA, kB, MessageType::ProposeTreaty, 3, Treaty::TradeAlliance);
+    message(kB, kA, MessageType::AcceptTreaty, 4, Treaty::None, proposal);
+    message(kC, kA, MessageType::DeclareWar, 4);
+    message(kA, kC, MessageType::BreakTreaty, 5);  // this turn: next time
+    message(kB, kC, MessageType::DeclareWar, 4);    // not ours
+    message(kC, kA, MessageType::Surrender, 4);     // never recorded
+    s.empire(kA).log.push_back(LogEntry{4, LogCategory::Politics, "First Contact", diplomacy::firstContactText(s, kC), std::nullopt, {}});
+    s.empire(kA).log.push_back(LogEntry{4, LogCategory::Politics, "Empire Destroyed", score::destroyedText(s, kB), std::nullopt, {}});
+    s.empire(kA).log.push_back(LogEntry{5, LogCategory::Misc, "Too New", "", std::nullopt, {}});
+    rec = score::playerRecords(r, s, kA);
+    REQUIRE(rec.history.size() == 4);
+    CHECK(rec.history[0] == score::historyLine(4, kB, "Trade Alliance established"));
+    CHECK(rec.history[0] == "  2400.4   2 0 0 Trade Alliance established");
+    CHECK(rec.history[1] == score::historyLine(4, kC, "War declared"));
+    CHECK(rec.history[2].find("First contact with") != std::string::npos);
+    CHECK(rec.history[2].starts_with("  2400.4   3 0 0 "));
+    CHECK(rec.history[3].find("was destroyed") != std::string::npos);
+    CHECK(score::historyLine(4, {}, "x") == "  2400.4   0 0 0 x");
+    // The log copy: the entries of the turn before.
+    REQUIRE(rec.log.size() == 2);
+    CHECK(rec.log[0].find("First Contact") != std::string::npos);
+
+    // processTurn hands out a set of lines for each human player only.
+    GameState g = newPoliticsGame();
+    g.empire(kC).kind = PlayerKind::Computer;
+    TurnOptions o;
+    o.aiForMissing = false;
+    const TurnResult result = processTurn(r, g, {}, o);
+    REQUIRE(result.records.size() == 2);
+    CHECK(result.records[0].empire == kA);
+    CHECK(result.records[1].empire == kB);
+    CHECK_FALSE(result.records[0].statistics.empty());
+}

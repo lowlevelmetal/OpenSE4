@@ -27,6 +27,7 @@
 #include "game/commands.hpp"
 #include "game/movement.hpp"
 #include "game/rules.hpp"
+#include "game/score.hpp"
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 
@@ -93,6 +94,9 @@ struct TurnContext {
         size_t next = 0;
     };
     Battles* battles = nullptr;
+    // Human players' file lines made at step 2 of their end-of-turn
+    // processing (score::recordStatistics), handed out in TurnResult::records.
+    std::vector<score::PlayerRecords> records;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
@@ -116,6 +120,10 @@ struct TurnResult {
     // Turn-based games with tactical combat: the battle whose answer is
     // missing. The call changed nothing; call it again with the answer.
     std::optional<BattleQuestion> battle;
+    // The lines to append to human players' statistics, history and log
+    // text files, one entry per end-of-turn processing in the call (spec 05
+    // §5, §8 step 2). The caller writes them (or not).
+    std::vector<score::PlayerRecords> records;
 };
 
 // Processes one full turn: applies orders, runs every phase, advances the date.
