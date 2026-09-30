@@ -84,8 +84,26 @@ computer empire, and the server's scripted `bot` client, which plays two turns.
 
 ## Joining
 
-To join, a player needs the host's address and port, a player name, and optionally
-a password of their own:
+**On the same local network:** Multiplayer → Join a Game lists the games that hosts on
+the LAN are running, with:
+
+- players and slots;
+- whether the game has started;
+- whether a join password is needed;
+- a warning when the host's game data differs from yours.
+
+Click a game to fill in its address. A host answers these searches on UDP port 6716,
+the port the classic game used for its control traffic. The dedicated server turns
+this off with `--no-lan-discovery`.
+
+**Over the internet,** or when a game is not listed, enter the host's address and port.
+To join, a player needs:
+
+- the host's address and port;
+- a player name;
+- optionally, a password of their own.
+
+Both routes then check:
 
 - **Same version and data.** The client and the host must speak the same network
   protocol (the same OpenSE4 release) and use the same data set. The data set is
@@ -163,6 +181,10 @@ The host's own firewall must allow incoming TCP on the port:
   `sudo firewall-cmd --add-port=6720/tcp --permanent && sudo firewall-cmd --reload`.
 - **macOS**: allow incoming connections when asked (System Settings, Network,
   Firewall).
+
+For LAN discovery, also allow incoming UDP 6716 on the host (for example
+`sudo ufw allow 6716/udp`). Without it, players on the LAN can still join by typing
+the address.
 
 Players need no incoming ports: they only connect out.
 
@@ -312,8 +334,7 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 - Per-player views for PBEM (a `.gam` per empire).
 - Encrypted connections.
-- IPv6 hosting, and automatic discovery of games on the local network. The classic
-  game used UDP port 6716 for this.
+- IPv6 hosting.
 - Sending only the changes between turns instead of the whole game.
 - Processing the turn on a background thread, so an in-game host's interface stays
   responsive during long turns.

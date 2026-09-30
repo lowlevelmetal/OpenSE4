@@ -47,6 +47,7 @@ Network game options:
   --port=N               TCP port (default 6720; 0 = any free port)
   --bind=ADDRESS         Listen on one address only (default: all IPv4 interfaces)
   --upnp / --no-upnp     Forward the port on the router with UPnP (default: on)
+  --no-lan-discovery     Do not answer LAN game searches (UDP port 6716)
   --players=N            Human player slots (default 2)
   --ai=N                 Computer empires (default 0)
   --seed=N               Galaxy seed (default: random)
@@ -209,7 +210,7 @@ int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
                             {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns"},
-                            {"upnp", "no-upnp", "verbose", "help", "version"});
+                            {"upnp", "no-upnp", "no-lan-discovery", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
     const Options& o = *parsed;
     if (o.has("help")) return usage();
@@ -245,6 +246,7 @@ int runServer(std::span<char*> args) {
     cfg.masterPasswordHash = net::hashPassword(o.get("password"));
     cfg.joinPasswordHash = net::hashPassword(o.get("join-password"));
     cfg.upnp.enabled = !o.has("no-upnp");
+    cfg.lanDiscovery = !o.has("no-lan-discovery");
     cfg.setup.seed = o.has("seed") ? static_cast<uint64_t>(*seed) : net::randomId();
     cfg.setup.options.systemCount = static_cast<int>(*systems);
     cfg.setup.options.quadrantType = o.get("quadrant");

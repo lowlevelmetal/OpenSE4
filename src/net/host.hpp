@@ -12,6 +12,7 @@
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/state.hpp"
+#include "net/discovery.hpp"
 #include "net/socket.hpp"
 #include "net/types.hpp"
 #include "net/upnp.hpp"
@@ -45,6 +46,8 @@ struct HostConfig {
     bool autoStart = false;            // start as soon as every human slot is taken and ready
     int turnTimeoutSeconds = 0;        // process the turn after this long even if orders are missing; 0: wait
     PortMapperOptions upnp;            // UPnP port mapping (on by default)
+    bool lanDiscovery = true;          // answer LAN discovery queries (net/discovery.hpp)
+    uint16_t discoveryPort = kDiscoveryPort;
     size_t maxOrdersBytes = size_t{16} << 20;  // largest message a joined client may send
     size_t maxConnections = 64;
     int handshakeTimeoutSeconds = 10;
@@ -76,6 +79,9 @@ public:
     uint16_t port() const { return port_; }
     const HostConfig& config() const { return config_; }
     PortMapStatus portMapping() const { return mapper_.status(); }
+    // How this game appears to LAN discovery.
+    LanGame lanGame() const;
+    bool lanDiscoveryRunning() const { return discovery_.running(); }
     const LobbyInfo& lobby() const { return lobby_; }
 
     // ---- Lobby ------------------------------------------------------------------------------
@@ -154,6 +160,8 @@ private:
     uint64_t gameId_ = 0;
     Socket listener_;
     PortMapper mapper_;
+    DiscoveryResponder discovery_;
+    NativeSocket discoveryNative() const { return discovery_.native(); }
     std::vector<std::unique_ptr<Peer>> peers_;
     std::vector<std::unique_ptr<Slot>> slots_;
     std::vector<std::string> banned_;

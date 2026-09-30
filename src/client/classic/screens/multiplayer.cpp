@@ -9,6 +9,7 @@
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
+#include "net/discovery.hpp"
 #include "net/socket.hpp"
 
 #include <algorithm>
@@ -37,7 +38,9 @@ public:
     void draw(MenuContext& ctx) override {
         if (!automation_.empty()) {
             const std::string a = std::exchange(automation_, {});
-            if (a == "host") {
+            if (a == "browse") {
+                mode_ = Mode::Join;
+            } else if (a == "host") {
                 upnp_ = false;
                 openLobby(ctx);
             } else if (a.starts_with("join=")) {
@@ -140,8 +143,53 @@ private:
         if (ImGui::Button("Back", ctx.size({200, 36}))) mode_ = Mode::Choose;
     }
 
+    void lanGames(MenuContext& ctx) {
+        if (!browser_.running()) browser_.start();
+        browser_.poll();
+        ImGui::SeparatorText("Games on your local network");
+        if (!browser_.running()) {
+            ImGui::TextDisabled("LAN discovery is not available on this machine; enter the host's address below.");
+            return;
+        }
+        const std::string mine = game::dataSetIdentity(*ctx.rules);
+        if (ImGui::BeginTable("##lan", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY,
+                              ImVec2(0, ctx.px(140)))) {
+            ImGui::TableSetupColumn("Game");
+            ImGui::TableSetupColumn("Address", ImGuiTableColumnFlags_WidthFixed, ctx.px(170));
+            ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthFixed, ctx.px(70));
+            ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, ctx.px(90));
+            ImGui::TableSetupColumn("Note", ImGuiTableColumnFlags_WidthFixed, ctx.px(190));
+            ImGui::TableHeadersRow();
+            for (size_t i = 0; i < browser_.games().size(); ++i) {
+                const net::LanGame& g = browser_.games()[i];
+                ImGui::PushID(int(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                const bool chosen = address_ == g.address && port_ == g.port;
+                if (ImGui::Selectable(g.gameName.c_str(), chosen, ImGuiSelectableFlags_SpanAllColumns)) {
+                    address_ = g.address;
+                    port_ = g.port;
+                }
+                ImGui::TableNextColumn();
+                ImGui::Text("%s:%u", g.address.c_str(), unsigned(g.port));
+                ImGui::TableNextColumn();
+                ImGui::Text("%u / %u", g.players, g.slots);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(g.started ? "In progress" : "Lobby");
+                ImGui::TableNextColumn();
+                if (g.dataSet != mine) ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "Different game data");
+                else if (g.password) ImGui::TextUnformatted("Password needed");
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (browser_.games().empty()) ImGui::TextDisabled("Looking for games...");
+        if (ImGui::SmallButton("Refresh")) browser_.refresh();
+    }
+
     void joinForm(MenuContext& ctx) {
         const float w = ctx.px(300);
+        lanGames(ctx);
         ImGui::SeparatorText("Host");
         textField("Address", address_, w);
         ImGui::SetNextItemWidth(w);
@@ -278,6 +326,7 @@ private:
             ImGui::PushTextWrapPos(0);
             if (pm.state != net::PortMapState::Mapped && !pm.message.empty()) ImGui::TextColored(col, "%s", pm.message.c_str());
             ImGui::PopTextWrapPos();
+            if (host_->lanDiscoveryRunning()) ImGui::TextDisabled("Players on your local network see this game in their Join list.");
         } else {
             const char* phase = client_->phase() == net::ClientPhase::Lobby ? "In the lobby" : client_->phase() == net::ClientPhase::Playing
                                                                                                     ? "Playing"
@@ -409,6 +458,7 @@ private:
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<net::HostSession> host_;
     std::unique_ptr<net::ClientSession> client_;
+    net::DiscoveryBrowser browser_;
 };
 
 } // namespace

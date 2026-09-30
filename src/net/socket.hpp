@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -84,5 +85,21 @@ int pollSockets(std::span<PollItem> items, int timeoutMs);
 // The address other machines on the LAN most likely reach this one at
 // (no packets are sent); empty if unknown.
 std::string localAddressGuess();
+
+// ---- UDP (LAN discovery) --------------------------------------------------------------------
+
+// A non-blocking IPv4 UDP socket bound to `port` (0 = ephemeral) on every
+// interface, with broadcast allowed. `shared`: other sockets may bind the
+// same port (several hosts on one machine).
+std::expected<Socket, std::string> openUdp(uint16_t port, bool shared);
+// Sends a datagram to "a.b.c.d" (or "255.255.255.255") : port.
+bool sendDatagram(const Socket& s, const std::string& address, uint16_t port, std::span<const uint8_t> data);
+struct Datagram {
+    std::string address;  // sender's IPv4 address
+    uint16_t port = 0;
+    size_t bytes = 0;
+};
+// One pending datagram, or nullopt when there is none.
+std::optional<Datagram> receiveDatagram(const Socket& s, std::span<uint8_t> buffer);
 
 } // namespace opense4::net

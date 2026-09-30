@@ -51,7 +51,7 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
 // Automation (--open=NAME): a front-end screen by name: intro, quickstart,
 // setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
 // (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer,
-// multiplayer:host, multiplayer:join=ADDR[:PORT].
+// multiplayer:host, multiplayer:browse, multiplayer:join=ADDR[:PORT].
 // Returns nullptr if NAME is not a front-end screen.
 std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 

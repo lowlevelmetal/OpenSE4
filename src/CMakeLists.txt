@@ -69,7 +69,8 @@ add_library(opense4_net STATIC
     net/pbem.cpp
     net/protocol.cpp
     net/socket.cpp
-    net/upnp.cpp)
+    net/upnp.cpp
+    net/discovery.cpp)
 target_link_libraries(opense4_net PUBLIC opense4_game PRIVATE Threads::Threads opense4_warnings)
 target_compile_definitions(opense4_net PRIVATE OPENSE4_VERSION="${PROJECT_VERSION}")
 if(OPENSE4_ENABLE_UPNP)

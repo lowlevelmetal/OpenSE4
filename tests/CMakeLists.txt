@@ -9,6 +9,7 @@ add_executable(opense4_tests
     test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
+    test_discovery.cpp
     test_economy.cpp
     test_engine_core.cpp
     test_engine_install.cpp

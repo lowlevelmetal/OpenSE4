@@ -327,4 +327,47 @@ std::string localAddressGuess() {
     return out == "0.0.0.0" ? std::string{} : out;
 }
 
+std::expected<Socket, std::string> openUdp(uint16_t port, bool shared) {
+    ensureInit();
+    Socket s(static_cast<NativeSocket>(::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)));
+    if (!s.valid()) return std::unexpected(errorText(lastError()));
+    int one = 1;
+    setsockopt(s.native(), SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&one), static_cast<SockLen>(sizeof one));
+    if (shared) {
+        setsockopt(s.native(), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&one), static_cast<SockLen>(sizeof one));
+#ifdef SO_REUSEPORT
+        setsockopt(s.native(), SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<const char*>(&one), static_cast<SockLen>(sizeof one));
+#endif
+    }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (::bind(s.native(), reinterpret_cast<const sockaddr*>(&addr), static_cast<SockLen>(sizeof addr)) != 0)
+        return std::unexpected(std::format("cannot bind UDP port {}: {}", port, errorText(lastError())));
+    setNonBlocking(s.native());
+    return s;
+}
+
+bool sendDatagram(const Socket& s, const std::string& address, uint16_t port, std::span<const uint8_t> data) {
+    sockaddr_in to{};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(port);
+    if (inet_pton(AF_INET, address.c_str(), &to.sin_addr) != 1) return false;
+    const auto n = ::sendto(s.native(), reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size()), kSendFlags,
+                            reinterpret_cast<const sockaddr*>(&to), static_cast<SockLen>(sizeof to));
+    return n >= 0 && static_cast<size_t>(n) == data.size();
+}
+
+std::optional<Datagram> receiveDatagram(const Socket& s, std::span<uint8_t> buffer) {
+    sockaddr_in from{};
+    auto len = static_cast<SockLen>(sizeof from);
+    const auto n = ::recvfrom(s.native(), reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), 0,
+                              reinterpret_cast<sockaddr*>(&from), &len);
+    if (n < 0) return std::nullopt;
+    char host[INET_ADDRSTRLEN] = {};
+    inet_ntop(AF_INET, &from.sin_addr, host, sizeof host);
+    return Datagram{host, ntohs(from.sin_port), static_cast<size_t>(n)};
+}
+
 } // namespace opense4::net

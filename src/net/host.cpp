@@ -99,7 +99,27 @@ std::expected<void, std::string> HostSession::openPort() {
     emit(EventType::Listening, std::format("{} is waiting for players on TCP port {}", config_.gameName, port_));
     PortMapperOptions upnp = config_.upnp;
     mapper_.start(port_, upnp);
+    if (config_.lanDiscovery) {
+        if (discovery_.start(config_.discoveryPort))
+            emit(EventType::Info, std::format("Players on the local network can find this game (UDP port {})", config_.discoveryPort));
+        else
+            emit(EventType::Info, std::format("LAN discovery is off: UDP port {} is not available", config_.discoveryPort));
+    }
     return {};
+}
+
+LanGame HostSession::lanGame() const {
+    LanGame g;
+    g.port = port_;
+    g.gameName = lobby_.gameName.empty() ? config_.gameName : lobby_.gameName;
+    g.version = std::string(appVersion());
+    g.dataSet = config_.dataSet.empty() ? game::dataSetIdentity(rules_) : config_.dataSet;
+    g.slots = static_cast<uint32_t>(std::max(0, config_.humanSlots));
+    for (const LobbySlot& slot : lobby_.slots)
+        if (slot.kind == SlotKind::Human && !slot.player.empty()) ++g.players;
+    g.started = phase_ != HostPhase::Lobby;
+    g.password = !config_.joinPasswordHash.empty();
+    return g;
 }
 
 std::expected<void, std::string> HostSession::start() {
@@ -193,6 +213,7 @@ void HostSession::stop(std::string_view reason) {
     for (auto& p : peers_) p->conn.socket().shutdownSend();
     peers_.clear();
     listener_.close();
+    discovery_.stop();
     mapper_.stop();
     if (auto u = mapper_.takeUpdate()) emit(EventType::PortMapping, u->message);
     phase_ = HostPhase::Stopped;
@@ -206,12 +227,15 @@ std::vector<Event> HostSession::poll(int timeoutMs) {
         std::vector<PollItem> items;
         items.push_back({listener_.native(), true, false});
         for (auto& p : peers_) items.push_back({p->conn.socket().native(), true, p->conn.wantsWrite()});
+        // Last, so the listener and peer entries keep their positions.
+        if (discovery_.running()) items.push_back({discoveryNative(), true, false});
         int wait = std::max(0, timeoutMs);
         if (deadline_) {
             const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(*deadline_ - Clock::now()).count();
             wait = static_cast<int>(std::clamp<int64_t>(left, 0, wait));
         }
         pollSockets(items, wait);
+        discovery_.poll(lanGame());
 
         const size_t known = peers_.size();
         if (items[0].readable) acceptPeers();
