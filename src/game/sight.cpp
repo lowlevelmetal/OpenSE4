@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <format>
+#include <map>
 #include <optional>
 
 namespace opense4::game::sight {
@@ -50,6 +51,30 @@ void addLevels(SightVector& out, std::span<const ParsedAbility> abilities, Abili
     }
 }
 
+// Sensor or cloak levels of a vehicle's hull and intact components (what
+// vehicleAbilities would list), without building the list: sight runs often.
+void addVehicleLevels(SightVector& out, const Rules& r, const GameState& s, const Vehicle& v, AbilityKind kind) {
+    if (v.status == VehicleStatus::Mothballed) return;
+    const Design& d = s.design(v.design);
+    addLevels(out, r.hullAbilities(d.hull), kind);
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        const auto ab = r.componentAbilities(d.entries[i].component);
+        if (hasAbility(ab, kind) && entryIntact(r, s, v, i)) addLevels(out, ab, kind);
+    }
+}
+
+// The best Value 1 of an ability over a vehicle's hull and intact components.
+int64_t vehicleBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind kind) {
+    if (v.status == VehicleStatus::Mothballed) return 0;
+    const Design& d = s.design(v.design);
+    int64_t best = bestValue1(r.hullAbilities(d.hull), kind);
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        const auto ab = r.componentAbilities(d.entries[i].component);
+        if (hasAbility(ab, kind) && entryIntact(r, s, v, i)) best = std::max(best, bestValue1(ab, kind));
+    }
+    return best;
+}
+
 int64_t bestRaw(const std::vector<ruleset::Ability>& list, AbilityKind k) {
     int64_t best = 0;
     for (const auto& a : list)
@@ -61,12 +86,14 @@ int64_t bestRaw(const std::vector<ruleset::Ability>& list, AbilityKind k) {
 // storms or warp points (spec 01 §5.3, confirmed: binary).
 bool hideable(ObjectKind k) { return k == ObjectKind::Planet || k == ObjectKind::Asteroids || k == ObjectKind::Comet; }
 
-// The environment's obscuration at a place: the largest `Sector - Sight
-// Obscuration` among the storms, planets and ships in the sector, and the
-// system-wide value; at least 1. A planet's colony facilities count as the
-// planet's (inferred).
-int environmentObscuration(const Rules& r, const GameState& s, Location where) {
-    if (!validSystem(s, where.system)) return 1;
+// The obscuration a ship or base spreads over its sector (unit groups do not, inferred).
+int64_t vehicleObscuring(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (!alive(v) || isUnitType(vehicleType(r, s, v))) return 0;
+    return vehicleBest(r, s, v, AbilityKind::SectorSightObscuration);
+}
+
+// The system-wide value and the stellar objects and colonies of a sector.
+int64_t placeObscuration(const Rules& r, const GameState& s, Location where) {
     const StarSystem& sys = s.galaxy.system(where.system);
     int64_t level = std::max<int64_t>(1, bestRaw(sys.abilities, AbilityKind::SectorSightObscuration));
     for (ObjectId o : sys.objects) {
@@ -76,18 +103,47 @@ int environmentObscuration(const Rules& r, const GameState& s, Location where) {
         if (const Colony* c = s.colony(o))
             for (uint32_t f : c->facilities) level = std::max(level, bestValue1(r.facilityAbilities(f), AbilityKind::SectorSightObscuration));
     }
-    for (const Vehicle& v : s.vehicles) {
-        if (!alive(v) || v.location != where) continue;
-        if (isUnitType(vehicleType(r, s, v))) continue;  // ships and bases (inferred: not unit groups)
-        level = std::max(level, bestValue1(vehicleAbilities(r, s, v), AbilityKind::SectorSightObscuration));
-    }
+    return level;
+}
+
+// The environment's obscuration at a place: the largest `Sector - Sight
+// Obscuration` among the storms, planets and ships in the sector, and the
+// system-wide value; at least 1. A planet's colony facilities count as the
+// planet's (inferred).
+int environmentObscuration(const Rules& r, const GameState& s, Location where) {
+    if (!validSystem(s, where.system)) return 1;
+    int64_t level = placeObscuration(r, s, where);
+    for (const Vehicle& v : s.vehicles)
+        if (v.location == where) level = std::max(level, vehicleObscuring(r, s, v));
     return static_cast<int>(level);
+}
+
+// The same for every place with vehicles at once (knowledge updates).
+std::map<Location, int> environmentByPlace(const Rules& r, const GameState& s) {
+    std::map<Location, int64_t> ships;
+    for (const Vehicle& v : s.vehicles)
+        if (alive(v) && validSystem(s, v.location.system)) {
+            int64_t& level = ships[v.location];
+            level = std::max(level, vehicleObscuring(r, s, v));
+        }
+    std::map<Location, int> out;
+    for (const auto& [where, level] : ships) out[where] = static_cast<int>(std::max(level, placeObscuration(r, s, where)));
+    return out;
+}
+
+// Cloak levels: a ship's only while it is cloaked; unit groups always use
+// theirs (spec 01 §6.2, confirmed: binary). Mothballed vehicles have none.
+SightVector cloakLevels(const Rules& r, const GameState& s, const Vehicle& v) {
+    SightVector o;
+    o.fill(1);
+    if (v.status == VehicleStatus::Cloaked || isUnitType(vehicleType(r, s, v))) addVehicleLevels(o, r, s, v, AbilityKind::CloakLevel);
+    return o;
 }
 
 std::optional<SightVector> vehicleSensors(const Rules& r, const GameState& s, const Vehicle& v) {
     if (!isSensorSource(vehicleType(r, s, v))) return std::nullopt;
     SightVector out = baseline();
-    addLevels(out, vehicleAbilities(r, s, v), AbilityKind::SensorLevel);
+    addVehicleLevels(out, r, s, v, AbilityKind::SensorLevel);
     return out;
 }
 
@@ -117,6 +173,14 @@ std::vector<std::vector<uint8_t>> sensorReach(const GameState& s) {
 
 std::vector<uint8_t> reachOf(const GameState& s, EmpireId viewer) {
     if (!viewer.valid() || viewer.index() >= s.empires.size()) return {};
+    bool partners = false;
+    for (const Empire& e : s.empires)
+        for (const Relation& rel : e.relations) partners = partners || treatySharesSight(rel.treaty);
+    if (!partners) {
+        std::vector<uint8_t> self(s.empires.size(), 0);
+        self[viewer.index()] = 1;
+        return self;
+    }
     return sensorReach(s)[viewer.index()];
 }
 
@@ -189,12 +253,7 @@ SightVector sensorLevels(const Rules& r, const GameState& s, EmpireId viewer, Sy
 }
 
 SightVector obscuration(const Rules& r, const GameState& s, const Vehicle& v) {
-    SightVector o;
-    o.fill(1);
-    // A ship's cloak levels count only while it is cloaked; unit groups always
-    // use theirs (spec 01 §6.2, confirmed: binary). Mothballed vehicles have no
-    // working abilities.
-    if (v.status == VehicleStatus::Cloaked || isUnitType(vehicleType(r, s, v))) addLevels(o, vehicleAbilities(r, s, v), AbilityKind::CloakLevel);
+    SightVector o = cloakLevels(r, s, v);
     const int env = environmentObscuration(r, s, v.location);
     for (int& x : o) x = std::max(x, env);
     return o;
@@ -329,8 +388,14 @@ void updateKnowledge(const Rules& r, GameState& s) {
 
     // Visible foreign vehicles: explored system, and a sight type that reaches the obscuration.
     std::vector<SightVector> obsc(s.vehicles.size());
-    for (size_t vi = 0; vi < s.vehicles.size(); ++vi)
-        if (alive(s.vehicles[vi])) obsc[vi] = obscuration(r, s, s.vehicles[vi]);
+    const std::map<Location, int> env = environmentByPlace(r, s);
+    for (size_t vi = 0; vi < s.vehicles.size(); ++vi) {
+        const Vehicle& v = s.vehicles[vi];
+        if (!alive(v) || !validSystem(s, v.location.system)) continue;
+        obsc[vi] = cloakLevels(r, s, v);
+        const auto it = env.find(v.location);
+        for (int& x : obsc[vi]) x = std::max(x, it == env.end() ? 1 : it->second);
+    }
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Empire& e = s.empires[ei];
         e.knowledge.visibleVehicles.clear();
