@@ -21,6 +21,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <sstream>
 
@@ -704,6 +705,41 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
                 if (item.kind == QueueItem::Kind::Vehicle) CHECK(q.info(item.design).role == ai::detail::Role::Colonizer);
 }
 
+TEST_CASE("ai: Colonizer entries build the colony-ship type of the first uncovered target") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12, false);
+    exploreEverything(s);
+    const EmpireId cpu{1u};
+    Empire& e = s.empire(cpu);
+    researchEverything(r, e);
+    e.economy = {};
+    e.economy.colonies = Resources{100000, 100000, 100000};
+    std::map<std::string, DesignId> ships;
+    for (std::string_view surface : {"Rock", "Ice", "Gas"}) {
+        const std::string pod = std::format("Test {} Pod", surface);
+        const DesignId d = addTestDesign(s, r, cpu, std::format("{} Settler", surface), "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", pod});
+        s.design(d).designType = std::format("Colony ({})", surface);
+        e.designs.push_back(d);
+        ships[std::format("Colony ({})", surface)] = d;
+    }
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 5);
+    p.state = ai::AiState::Exploration;
+    REQUIRE_FALSE(p.sit.colonyTargets.empty());
+    std::vector<std::string> wanted;
+    for (const ai::detail::ColonyTarget& t : p.sit.colonyTargets)
+        if (t.settleable) wanted.push_back(ai::detail::colonyTypeName(s.galaxy.object(t.planet).surface));
+    ai::detail::planShips(p);
+    std::vector<std::string> built;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == cpu)
+            for (const QueueItem& q : c->queue.items)
+                if (q.kind == QueueItem::Kind::Vehicle && p.info(q.design).role == ai::detail::Role::Colonizer) built.push_back(p.info(q.design).aiType);
+    REQUIRE_FALSE(built.empty());
+    // In queue order, each colony ship covers the next target.
+    for (size_t i = 0; i < built.size() && i < wanted.size(); ++i) CHECK(built[i] == wanted[i]);
+}
+
 TEST_CASE("ai: facilities go only to colonies with an empty queue and a free slot") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(11, 2, 12, false);
@@ -740,8 +776,16 @@ TEST_CASE("ai: facilities go only to colonies with an empty queue and a free slo
 }
 
 TEST_CASE("ai: colony types at colonization") {
-    const Rules& r = engineRules();
-    GameState s = newEngineGame(11, 2, 12, false);
+    TempTree t("planettypes");
+    // Rows in file order; a 0 limit means no limit.
+    t.write("Ai/Default_AI_Planet_Types.txt",
+            "AI State := Exploration, Infrastructure\nPlanet Type := Research Compound\nMax Per System := 0\nPercent of Colonies := 0\n"
+            "Maximum Total in Empire := 1\n"
+            "AI State := Exploration, Infrastructure\nPlanet Type := Refining Colony\nRadioactives Value := 100\nMineral Value := 130\n"
+            "AI State := Exploration, Infrastructure\nPlanet Type := Farming Colony\nOrganics Value := 120\nPercent of Colonies := 50\n"
+            "AI State := Attack\nPlanet Type := Military Installation\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(11, 2, 0, 12, r);
     const EmpireId cpu{1u};
     Empire& e = s.empire(cpu);
     ObjectId planet;
@@ -752,28 +796,55 @@ TEST_CASE("ai: colony types at colonization") {
         }
     REQUIRE(planet.valid());
     SpaceObject& obj = s.galaxy.object(planet);
-    // Pre-rule 1: little minerals in store and a rich planet.
-    e.stockpile = Resources{1500, 50000, 50000};
-    obj.value = {90, 40, 40};
-    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Mining Colony");
-    // Pre-rule 2: an organics deficit above 2000.
     e.stockpile = Resources{50000, 50000, 50000};
     e.economy = {};
-    e.economy.colonies = Resources{10000, 1000, 10000};
-    e.economy.maintenance = Resources{0, 5000, 0};
+    e.economy.colonies = Resources{10000, 10000, 10000};
+    e.economy.research = 100;
+
+    // Pre-rule 1: little minerals in store and a planet rich in them.
+    e.stockpile[Resource::Minerals] = 1500;
+    obj.value = {90, 40, 40};
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Mining Colony");
+    e.stockpile[Resource::Minerals] = 50000;
+    // Pre-rule 2: an organics deficit above 2000 on a planet with 50 or more organics.
+    e.economy.maintenance = Resources{0, 13000, 0};
     obj.value = {60, 60, 60};
     CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Farming Colony");
-    // Otherwise the first AI_Planet_Types row that passes: value thresholds are
-    // absolute minimums, and only those above 100 count.
     e.economy.maintenance = Resources{};
-    obj.value = {110, 60, 60};
-    const std::string type = ai::colonyTypeAtColonization(r, s, cpu, planet);
-    CHECK(type != "Farming Colony");
-    CHECK(type != "Refining Colony");
-    obj.value = {125, 60, 60};
-    bool mining = false;
-    for (int i = 0; i < 1; ++i) mining = ai::colonyTypeAtColonization(r, s, cpu, planet) == "Mining Colony" || mining;
-    CHECK(ai::parseColonyType(ai::colonyTypeAtColonization(r, s, cpu, planet)) != ai::ColonyType::Count);
+
+    // The first row that passes: a Research Compound (at most one in the empire).
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Research Compound");
+    for (auto& c : s.colonies)
+        if (c && c->owner == cpu) c->colonyType = "Research Compound";
+    // Refining needs minerals of at least 130 (only thresholds above 100 count;
+    // they are absolute minimums, not ratios).
+    obj.value = {129, 60, 999};
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Mining Colony");  // no row passes
+    obj.value = {130, 60, 10};
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Refining Colony");
+    // Farming: organics of at least 120, and not more than 50 % of the colonies already.
+    obj.value = {60, 120, 60};
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Farming Colony");
+    // Two more colonies: one Farming of three is 33 %, two of three is 67 %.
+    std::vector<ObjectId> extra;
+    for (const SpaceObject& o : s.galaxy.objects)
+        if (o.kind == ObjectKind::Planet && !s.colony(o.id) && o.id != planet && extra.size() < 2) extra.push_back(o.id);
+    REQUIRE(extra.size() == 2);
+    for (ObjectId o : extra) {
+        Colony c;
+        c.planet = o;
+        c.owner = cpu;
+        c.population.push_back({cpu, 10});
+        c.colonyType = "Mining Colony";
+        s.colonies[o.index()] = c;
+    }
+    s.colonies[extra[0].index()]->colonyType = "Farming Colony";
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Farming Colony");
+    s.colonies[extra[1].index()]->colonyType = "Farming Colony";
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Mining Colony");
+    // The row's state must match.
+    e.aiState = static_cast<int>(ai::AiState::Attack);
+    CHECK(ai::colonyTypeAtColonization(r, s, cpu, planet) == "Military Installation");
 }
 
 // ---- Designs --------------------------------------------------------------------------------------
@@ -797,6 +868,10 @@ TEST_CASE("ai: the designer takes the largest allowed hull and fills it by densi
             CHECK(st.engines >= t.minSpeed);
             CHECK(st.tonnageUsed == st.tonnageMax);         // the fill leaves no space
             CHECK(st.shields > 0);                          // shields at 1 per 300 kT
+            // The newest weapon of the first family pick (Laser II outranks Laser).
+            int laser2 = 0;
+            for (const DesignEntry& en : d->entries) laser2 += r.component(en.component).name == "Test Laser II";
+            CHECK(laser2 >= 1);
         }
         if (t.name == "Colony (Ice)") CHECK(st.canColonizeIce);
     }
@@ -810,15 +885,20 @@ TEST_CASE("ai: the designer takes the largest allowed hull and fills it by densi
     // A template without a maximum tonnage never finds a hull.
     small.maxTonnage = 0;
     CHECK_FALSE(ai::detail::buildDesign(r, s, e, small));
-    // No weapon family researched: no weapon, and a Weapon must-have builds nothing.
+    // "Spaces Per One" N gives floor(tonnage / N) copies, at least one: 10000 means one.
+    ai::DesignTemplate one = *ai::builtinProfile().design("Attack Ship");
+    one.misc = {{"Sensor Level", 10000}};
+    one.shieldsSpacesPerOne = 0;
+    auto withSensor = ai::detail::buildDesign(r, s, e, one);
+    REQUIRE(withSensor);
+    int sensors = 0;
+    for (const DesignEntry& en : withSensor->entries) sensors += r.component(en.component).name == "Test Sensor";
+    CHECK(sensors == 1);
+    // No family pick with a researched weapon: the template gets no weapon.
     ai::DesignTemplate unarmed = *ai::builtinProfile().design("Attack Ship");
     unarmed.majorityFamilies = {999, 0, 0, 0, 0};
-    GameState s2 = s;
-    const auto cmds = [&] {
-        ai::detail::Planner p(r, s2, EmpireId{0u}, ai::detail::Mode::Computer, 1);
-        return p.prof.designs.size();
-    }();
-    CHECK(cmds > 0);
+    auto d = ai::detail::buildDesign(r, s, e, unarmed);
+    if (d) CHECK_FALSE(computeDesignStats(r, &e, *d).armed());
 }
 
 TEST_CASE("ai: new designs make every older design of their type obsolete") {
@@ -1050,6 +1130,128 @@ TEST_CASE("ai: gifts, tributes and demands are answered from the politics tables
     CHECK(applyAll(r, s, cpu, cmds).empty());
 }
 
+TEST_CASE("ai: wars count only against empires above a quarter of our score") {
+    const Rules& r = engineRules();
+    auto answer = [&](bool weakThird) {
+        GameState s = newEngineGame(7, 3, 12, false);
+        const EmpireId human{0u}, cpu{1u}, third{2u};
+        meet(s, human, cpu);
+        meet(s, cpu, third);
+        s.empire(cpu).relation(third).treaty = Treaty::War;
+        s.empire(third).relation(cpu).treaty = Treaty::War;
+        if (weakThird) {  // nothing left: a score of 0
+            for (auto& c : s.colonies)
+                if (c && c->owner == third) c.reset();
+            std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == third; });
+            for (int& l : s.empire(third).techLevels) l = 0;
+            s.empire(third).economy = {};
+        }
+        const auto scores = ai::politicalScores(r, s);
+        CHECK((scores[third.index()] > scores[cpu.index()] / 4) == !weakThird);
+        s.turn = 60;
+        // Built-in accept rule: base 55, -10 per war. Anger 50 passes only without a counted war.
+        s.empire(cpu).relation(human).anger = 50;
+        s.empire(cpu).relation(third).anger = 50;
+        const MessageId treaty = deliver(s, human, cpu, MessageType::ProposeTreaty, Treaty::NonAggression);
+        std::optional<bool> a;
+        for (uint32_t turn = 60; turn < 70 && !a; ++turn) {
+            s.turn = turn;
+            a = answerTo(r, s, cpu, treaty);
+        }
+        return a;
+    };
+    const auto strong = answer(false);
+    const auto weak = answer(true);
+    REQUIRE(strong);
+    REQUIRE(weak);
+    CHECK_FALSE(*strong);
+    CHECK(*weak);
+}
+
+TEST_CASE("ai: trades are judged on item values") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, false);
+    const EmpireId human{0u}, cpu{1u};
+    meet(s, human, cpu);
+    s.empire(cpu).stockpile = Resources{50000, 50000, 50000};
+    s.empire(cpu).relation(human).anger = 30;
+    auto trade = [&](int64_t give, int64_t get) {
+        s.messages.clear();
+        DiplomaticMessage m;
+        m.id = MessageId{s.nextMessageId++};
+        m.from = human;
+        m.to = cpu;
+        m.type = MessageType::ProposeTrade;
+        m.sentTurn = s.turn;
+        m.delivered = true;
+        PackageItem offer, request;
+        offer.resources = {give, 0, 0};
+        request.resources = {get, 0, 0};
+        m.offer.push_back(offer);
+        m.request.push_back(request);
+        s.messages.push_back(m);
+        std::optional<bool> a;
+        for (uint32_t turn = 60; turn < 70 && !a; ++turn) {
+            s.turn = turn;
+            a = answerTo(r, s, cpu, m.id);
+        }
+        return a;
+    };
+    // Resources are worth 1 per 1000. An enemy must offer 120 % of what it asks.
+    CHECK(trade(10000, 10000) == false);
+    CHECK(trade(12000, 10000) == true);
+    // A friend only 95 %: 10 >= trunc(10 x 95 %).
+    s.empire(cpu).relation(human).treaty = Treaty::NonAggression;
+    s.empire(human).relation(cpu).treaty = Treaty::NonAggression;
+    CHECK(trade(10000, 10000) == true);
+    CHECK(trade(8000, 10000) == false);
+    // What the AI does not have is refused.
+    CHECK(trade(900000, 60000) == false);
+}
+
+TEST_CASE("ai: an accepted request is carried out half of the time and queues a war") {
+    TempTree t("request");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Score Percent To Accept Declare war on empire := 0\nWill Accept From Enemy Declare war on empire := True\n"
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 3, 0, 12, r);
+    const EmpireId asker{0u}, cpu{1u}, third{2u};
+    meet(s, asker, cpu);
+    meet(s, cpu, third);
+    meet(s, asker, third);
+    bool queued = false;
+    int accepted = 0;
+    for (uint32_t turn = 1; turn < 30 && !queued; ++turn) {
+        s.turn = turn;
+        s.messages.clear();
+        DiplomaticMessage m;
+        m.id = MessageId{s.nextMessageId++};
+        m.from = asker;
+        m.to = cpu;
+        m.type = MessageType::RequestDeclareWar;
+        m.thirdEmpire = third;
+        m.sentTurn = turn;
+        m.delivered = true;
+        s.messages.push_back(m);
+        const auto cmds = ai::planTurn(r, s, cpu);
+        REQUIRE(applyAll(r, s, cpu, cmds).empty());
+        for (const DiplomaticMessage& reply : s.messages) accepted += reply.from == cpu && reply.type == MessageType::AcceptDemand;
+        for (Empire& e : s.empires)
+            for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
+        TurnContext ctx{r, s, {}, {}, {}};
+        ai::updateAnger(ctx);
+        queued = s.empire(cpu).relation(third).queuedWar;
+    }
+    CHECK(accepted > 0);
+    REQUIRE(queued);
+    // The queued war is declared at the next opportunity.
+    bool declared = false;
+    for (const Command& c : ai::planTurn(r, s, cpu))
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == third && m->message.type == MessageType::DeclareWar) declared = true;
+    CHECK(declared);
+}
+
 TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(7, 2, 12, false);
@@ -1230,23 +1432,61 @@ TEST_CASE("ai: the AI state machine") {
 }
 
 TEST_CASE("ai: the after-attack timer holds off the next attack") {
-    const Rules& r = engineRules();
-    GameState s = computerGame(13, 2, 0, 12);
+    TempTree t("timer");
+    t.write("Ai/Default_AI_Settings.txt", "Turns to Wait until next attack := 3\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
     exploreEverything(s);
     const EmpireId me{0u}, enemy{1u};
     meet(s, me, enemy);
     s.empire(me).relation(enemy).treaty = Treaty::War;
     s.empire(enemy).relation(me).treaty = Treaty::War;
-    Empire& e = s.empire(me);
-    e.aiState = static_cast<int>(ai::AiState::Infrastructure);
-    e.aiMemory.afterAttack = 1;
-    ai::detail::Situation sit;
-    // With `Turns to Wait until next attack` 0 the gap opens as soon as the timer runs.
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Infrastructure);
+    s.empire(me).aiMemory.afterAttack = 1;  // an attack just ended
     TurnContext ctx{r, s, {}, {}, {}};
-    s.turn = 7;
+    // The timer grows by one each turn; the next attack waits until it is above 3.
+    for (int expected : {2, 3}) {
+        ++s.turn;
+        ai::updateAnger(ctx);
+        CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::Infrastructure));
+        CHECK(s.empire(me).aiMemory.afterAttack == expected);
+    }
+    ++s.turn;
     ai::updateAnger(ctx);
     CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::PrepareForAttack));
-    CHECK(s.empire(me).aiMemory.afterAttack == 0);  // reset outside Infrastructure
+    CHECK(s.empire(me).aiMemory.afterAttack == 0);  // every state but Infrastructure resets it
+}
+
+TEST_CASE("ai: Not Connected when little is left to settle, explore or reach") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId me{0u};
+    Empire& e = s.empire(me);
+    // Everything explored, no warp link known (so almost nothing is reachable),
+    // no colony module, and our ships already head for every frontier point.
+    e.knowledge.explored.assign(s.galaxy.systems.size(), 1);
+    e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 0);
+    for (const auto& a : r.data().techAreas)
+        if (a.name.find("Colonies") != std::string::npos) e.techLevels[r.data().findTechArea(a.name)->index()] = 0;
+    std::vector<Order> everywhere;
+    for (const SpaceObject& o : s.galaxy.objects)
+        if (o.kind == ObjectKind::WarpPoint) {
+            Order warp;
+            warp.kind = OrderKind::Warp;
+            warp.object = o.id;
+            warp.location = locationOf(s.galaxy, o.id);
+            everywhere.push_back(warp);
+        }
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me) {
+            v.orders = everywhere;
+            break;
+        }
+    CHECK(ai::nextState(r, s, me) == ai::AiState::NotConnected);
+    // Knowing the links makes the galaxy reachable: the test fails.
+    s.empire(me).aiState = static_cast<int>(ai::AiState::NotConnected);
+    s.empire(me).knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 1);
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
 }
 
 TEST_CASE("ai: difficulty is per empire: random players get the chosen level, rebels the highest") {
@@ -1454,11 +1694,42 @@ TEST_CASE("ai: fleets follow the division table and attack the state's goal") {
 }
 
 TEST_CASE("ai: fleet roles: odd fleets attack while under the defence share") {
-    // n = 4 wanted, 40 % for defence: fleets 1 and 3 attack when (i+1)/2 < 4 x 60 %.
-    int attackFleets = 0;
-    const int n = 4, defence = 40;
-    for (int i = 1; i <= n; ++i) attackFleets += (i % 2 == 1) && (i + 1) / 2 * 100 < n * (100 - defence);
-    CHECK(attackFleets == 2);
+    TempTree t("fleets");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 4\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 40\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    exploreEverything(s);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    s.empire(me).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(me).treaty = Treaty::War;
+    const SystemId enemyHome = s.galaxy.object(homeworld(s, enemy).planet).system;
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Attack);
+    s.empire(me).aiMemory.targets = {enemyHome};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    std::vector<FleetId> fleets;
+    for (int i = 0; i < 4; ++i) {
+        const VehicleId v = addTestVehicle(s, r, warship, home).id;
+        REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {v}}).ok);
+        fleets.push_back(s.fleets.back().id);
+    }
+    // 4 fleets wanted, 60 % for attack: fleets 1 and 3 attack ((i + 1) / 2 < 2.4), 2 and 4 defend.
+    const auto cmds = ai::planTurn(r, s, me);
+    std::vector<bool> attacking(4, false);
+    for (const Command& c : cmds)
+        if (const auto* o = as<cmd::SetOrders>(c); o && o->fleet.valid())
+            for (size_t i = 0; i < fleets.size(); ++i)
+                if (o->fleet == fleets[i])
+                    for (const Order& ord : o->orders) attacking[i] = attacking[i] || (ord.kind == OrderKind::Attack && ord.object.valid());
+    CHECK(attacking[0]);
+    CHECK_FALSE(attacking[1]);
+    CHECK(attacking[2]);
+    CHECK_FALSE(attacking[3]);
 }
 
 TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
