@@ -76,6 +76,42 @@ void addLog(GameState& s, EmpireId empire, LogCategory category, std::string tit
         LogEntry{s.turn, category, std::move(title), std::move(text), where, std::move(picture)});
 }
 
+void addHistory(GameState& s, EmpireId empire, EmpireId about, std::string text, std::optional<Location> where) {
+    if (!empire.valid() || empire.index() >= s.empires.size()) return;
+    if (about.valid() && about.index() >= s.empires.size()) about = {};
+    if (where && !(where->system.valid() && where->system.index() < s.galaxy.systems.size() && where->sector.valid())) where.reset();
+    s.empire(empire).historyEvents.push_back(HistoryEntry{s.turn, about, std::move(text), where});
+}
+
+namespace {
+template <class List>
+auto seenLowerBound(List& list, DesignId d) {
+    return std::lower_bound(list.begin(), list.end(), d, [](const SeenDesign& x, DesignId id) { return x.design < id; });
+}
+} // namespace
+
+bool knowsDesign(const Knowledge& k, DesignId d) { return designSeenTurn(k, d).has_value(); }
+
+std::optional<uint32_t> designSeenTurn(const Knowledge& k, DesignId d) {
+    const auto it = seenLowerBound(k.seenDesigns, d);
+    if (it == k.seenDesigns.end() || it->design != d) return std::nullopt;
+    return it->turn;
+}
+
+void seeDesign(Knowledge& k, DesignId d, uint32_t turn) {
+    if (!d.valid()) return;
+    const auto it = seenLowerBound(k.seenDesigns, d);
+    if (it != k.seenDesigns.end() && it->design == d) it->turn = std::max(it->turn, turn);
+    else k.seenDesigns.insert(it, SeenDesign{d, turn});
+}
+
+std::vector<DesignId> seenDesignIds(const Knowledge& k) {
+    std::vector<DesignId> out;
+    out.reserve(k.seenDesigns.size());
+    for (const SeenDesign& x : k.seenDesigns) out.push_back(x.design);
+    return out;
+}
+
 Vehicle& GameState::addVehicle(Vehicle v) {
     v.id = VehicleId{nextVehicleId++};
     // "Automatically use Individual Ministers for newly built vehicles": every

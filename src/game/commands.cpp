@@ -499,6 +499,7 @@ struct Applier {
             return R::fail("Too many people live there to abandon it");
         s.colonies[c.planet.index()].reset();
         addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet));
+        addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));
         return {};
     }
 

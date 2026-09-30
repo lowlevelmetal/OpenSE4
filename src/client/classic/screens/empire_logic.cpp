@@ -478,6 +478,38 @@ std::vector<game::TurnStats> statsSeries(const game::Rules& r, const game::GameS
     return out;
 }
 
+std::vector<game::EmpireId> historyEmpires(const game::GameState& s, game::EmpireId viewer) {
+    std::vector<game::EmpireId> out;
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return out;
+    std::vector<uint8_t> listed(s.empires.size(), 0);
+    listed[viewer.index()] = 1;
+    for (game::EmpireId e : contactedEmpires(s, viewer)) listed[e.index()] = 1;
+    for (const game::HistoryEntry& h : s.empire(viewer).historyEvents)
+        if (h.empire.valid() && h.empire.index() < listed.size()) listed[h.empire.index()] = 1;
+    for (size_t i = 0; i < listed.size(); ++i)
+        if (listed[i]) out.push_back(game::EmpireId{i});
+    return out;
+}
+
+std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::EmpireId empire,
+                                      bool stats) {
+    std::vector<HistoryLine> out;
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return out;
+    if (empire.valid()) {
+        if (empire.index() >= s.empires.size()) return out;
+        const game::Empire& e = s.empire(empire);
+        out.push_back({0, std::format("The {} {} is founded", e.name, e.empireType), std::nullopt});
+        if (stats)
+            for (HistoryEvent& h : statsEvents(statsSeries(r, s, empire))) out.push_back({h.turn, std::move(h.text), std::nullopt});
+    }
+    for (const game::HistoryEntry& h : s.empire(viewer).historyEvents)
+        if (h.empire == empire) out.push_back({h.turn, h.text, h.location});
+    // Oldest first (the record is in order of events), then reversed.
+    std::stable_sort(out.begin(), out.end(), [](const HistoryLine& a, const HistoryLine& b) { return a.turn < b.turn; });
+    std::reverse(out.begin(), out.end());
+    return out;
+}
+
 std::vector<HistoryEvent> statsEvents(const std::vector<game::TurnStats>& series) {
     std::vector<HistoryEvent> out;
     auto plural = [](int64_t n, std::string_view one, std::string_view many) { return std::format("{} {}", n, n == 1 ? one : many); };

@@ -294,6 +294,15 @@ bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), obsc);
 }
 
+size_t forgetOldDesigns(GameState& s, EmpireId e) {
+    if (!e.valid() || e.index() >= s.empires.size()) return 0;
+    // "More than 50 turns ago": a design seen at turn T is still known at
+    // turn T + 50 and forgotten at T + 51. Both turns are GameState::turn
+    // values, the number every record of the turn carries.
+    return std::erase_if(s.empire(e).knowledge.seenDesigns,
+                         [&](const SeenDesign& d) { return d.turn < s.turn && s.turn - d.turn > kDesignMemoryTurns; });
+}
+
 void markExplored(GameState& s, EmpireId e, SystemId sys) {
     if (!e.valid() || e.index() >= s.empires.size() || !sys.valid()) return;
     Knowledge& k = s.empire(e).knowledge;
@@ -436,7 +445,7 @@ void updateKnowledge(const Rules& r, GameState& s) {
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Empire& e = s.empires[ei];
         for (DesignId d : scanned[ei])
-            if (d.valid() && d.index() < s.designs.size() && s.design(d).owner != e.id) insertSorted(e.knowledge.seenDesigns, d);
+            if (d.valid() && d.index() < s.designs.size() && s.design(d).owner != e.id) seeDesign(e.knowledge, d, s.turn);
     }
 }
 

@@ -181,7 +181,7 @@ bool plague(TurnContext& ctx, Colony& c) {
     if (dead >= c.totalPopulation()) {
         ctx.log(c.owner, LogCategory::Events, std::format("Plague wiped out {}", name), "Every inhabitant died of the plague.",
                 locationOf(s.galaxy, c.planet));
-        colonyDiesOut(ctx, c.planet);
+        colonyDiesOut(ctx, c.planet, "plague");
         return false;
     }
     int64_t left = dead;  // taken from the races in their stored order
@@ -340,7 +340,7 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
 
 // ---- Colonies ending ------------------------------------------------------------------------------
 
-void colonyDiesOut(TurnContext& ctx, ObjectId planet) {
+void colonyDiesOut(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Colony* c = s.colony(planet);
@@ -355,6 +355,9 @@ void colonyDiesOut(TurnContext& ctx, ObjectId planet) {
         p.value[k] = clampedValue(r, s, p.value[k] - (s.options.finiteResources ? pctTrunc(std::max(0, p.value[k]), loss) : loss));
     s.colonies[planet.index()].reset();
     ctx.mood(owner, home ? "Homeworld Lost" : "Any Planet Lost", p.system, planet);
+    std::string line = std::format("The colony on {} died out", p.name);
+    if (!cause.empty()) line += std::format(": {}", cause);
+    addHistory(s, owner, owner, std::move(line), locationOf(s.galaxy, planet));
 }
 
 // ---- Per-empire steps -------------------------------------------------------------------------------

@@ -2600,7 +2600,7 @@ void Battle::finish() {
                      std::format("Our colony on {} was wiped out in the battle at {}.", p.name, sector), where_);
             // Its population died out: the colony is removed, the planet loses
             // value and the owner gets Homeworld Lost or Any Planet Lost (spec 02 §2).
-            economy::colonyDiesOut(ctx_, p.object);
+            economy::colonyDiesOut(ctx_, p.object, std::format("wiped out in the battle at {}", sector));
             continue;
         }
         std::erase_if(p.unit.cargo.units, [](const UnitStack& u) { return u.count <= 0; });
@@ -2706,16 +2706,14 @@ void Battle::finish() {
         ctx_.log(e, LogCategory::Combat, std::format("Battle at {}", sector), std::move(text), where_);
     }
 
-    // Each participant learns the designs it fought.
+    // Each participant learns (or sees again) the designs it fought.
     for (EmpireId e : empires_) {
-        std::vector<DesignId>& seen = s_.empire(e).knowledge.seenDesigns;
+        Knowledge& known = s_.empire(e).knowledge;
         for (const Piece& p : pieces_) {
             if (p.startOwner == e || p.kind == Kind::Seeker || p.kind == Kind::Planet || p.kind == Kind::Obstacle || !p.unit.design.valid()) continue;
             if (s_.design(p.unit.design).owner == e) continue;
-            seen.push_back(p.unit.design);
+            seeDesign(known, p.unit.design, s_.turn);
         }
-        std::sort(seen.begin(), seen.end());
-        seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
     }
 
     if (!cs_.createReplay) rec_.events.clear();

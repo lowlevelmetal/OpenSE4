@@ -32,6 +32,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         e.research.clear();
         e.intel.clear();
         e.log.clear();
+        e.historyEvents.clear();
         e.waypoints = {};
         e.systemsToAvoid.clear();
         e.taggedMinefields.clear();
@@ -90,7 +91,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
     }
 
     // Designs: foreign designs we have not seen keep only their hull.
-    std::vector<DesignId> seen = me ? me->knowledge.seenDesigns : std::vector<DesignId>{};
+    std::vector<DesignId> seen = me ? seenDesignIds(me->knowledge) : std::vector<DesignId>{};
     for (const Vehicle& x : v.vehicles) seen.push_back(x.design);
     std::sort(seen.begin(), seen.end());
     for (Design& d : v.designs) {

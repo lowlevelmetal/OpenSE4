@@ -8,6 +8,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -113,6 +114,25 @@ struct HistoryEvent {
     std::string text;
 };
 std::vector<HistoryEvent> statsEvents(const std::vector<game::TurnStats>& series);
+
+// ---- History window (spec 05 §3.4) ------------------------------------------------------------
+
+// The empire lists the History window offers `viewer`: itself, the empires
+// it knows, and the empires its record mentions (destroyed ones included), in
+// empire order. The General list comes on top of these.
+std::vector<game::EmpireId> historyEmpires(const game::GameState& s, game::EmpireId viewer);
+
+struct HistoryLine {
+    uint32_t turn = 0;
+    std::string text;
+    std::optional<game::Location> where;
+};
+// One list of the viewer's History window, newest first: the record's
+// entries about `empire` (invalid: the General list). An empire's list also
+// starts with its founding and, with `stats`, the changes its statistics show
+// (statsEvents).
+std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::EmpireId empire,
+                                      bool stats);
 
 // ---- Lists ---------------------------------------------------------------------------------
 

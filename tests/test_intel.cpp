@@ -417,7 +417,7 @@ TEST_CASE("intel: ships defect to the source") {
     CHECK(v->orders.empty());
     CHECK(s.fleets.size() == 1);
     CHECK(std::find(s.fleets[0].members.begin(), s.fleets[0].members.end(), theirs[0]) == s.fleets[0].members.end());
-    CHECK(std::binary_search(s.empire(kA).knowledge.seenDesigns.begin(), s.empire(kA).knowledge.seenDesigns.end(), v->design));
+    CHECK(knowsDesign(s.empire(kA).knowledge, v->design));
     CHECK(hasMood(ctx, kB, "Any Ship Lost"));
 }
 

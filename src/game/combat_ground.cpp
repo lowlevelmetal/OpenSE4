@@ -243,6 +243,8 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
             where);
     ctx.log(captor, LogCategory::Combat, std::format("{} captured", name), std::format("Our troops took {} from the {}.", name, s.empire(old).name),
             where);
+    addHistory(s, old, captor, std::format("The {} captured {}", e.name, name), where);
+    addHistory(s, captor, old, std::format("Captured {} from the {}", name, s.empire(old).name), where);
 }
 
 } // namespace detail

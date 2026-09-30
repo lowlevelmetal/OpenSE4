@@ -90,8 +90,8 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     economy::runConstruction(ctx, e);
     // 11. Repair.
     movement::repairEmpire(ctx, e);
-    // 12. Forgetting foreign designs seen more than 50 turns ago: OpenSE4 does
-    // not record when a design was seen, so nothing is forgotten.
+    // 12. Foreign designs last seen more than 50 turns ago are forgotten.
+    sight::forgetOldDesigns(s, e);
     // 13. Supply, with the per-turn upkeep of unit groups and cloaks (the
     // per-object upkeep of step 16 is part of it, inferred).
     movement::supplyEmpire(ctx, e);
