@@ -3,8 +3,9 @@
 // Complete state of one classic-rules game. Plain data: rules live in the
 // subsystem modules (economy, movement, combat, research, ...), all state
 // changes by players go through commands (commands.hpp), and all randomness
-// goes through GameState::rng. Everything here is serialized (serialize.hpp);
-// when adding a field, add it to the serializer too.
+// goes through GameState::rng. Everything here is serialized: when adding a
+// field, add it to its struct's io() list in serialize_io.hpp (a test fails
+// until you do, and the golden-checksum test prints the new value).
 
 #include "core/rng.hpp"
 #include "game/galaxy.hpp"
