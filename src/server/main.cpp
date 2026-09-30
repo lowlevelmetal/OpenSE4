@@ -97,6 +97,15 @@ int usage() {
     return 0;
 }
 
+const char* kindName(game::PlayerKind k) {
+    switch (k) {
+        case game::PlayerKind::Human: return "human";
+        case game::PlayerKind::Computer: return "computer";
+        case game::PlayerKind::Neutral: return "neutral";
+    }
+    return "computer";
+}
+
 int fail(std::string_view message, int code = 1) {
     std::fprintf(stderr, "opense4-server: %.*s\n", static_cast<int>(message.size()), message.data());
     return code;
@@ -384,7 +393,7 @@ int pbemNew(std::span<char*> args) {
     if (auto r = game::saveGame(out, *state, info); !r) return fail(r.error(), 1);
     std::printf("Created '%s' (turn %u) in %s:\n", info.gameName.c_str(), state->turn, out.string().c_str());
     for (const game::Empire& e : state->empires)
-        std::printf("  empire %u: %s (%s)%s\n", e.id.value + 1, e.name.c_str(), e.kind == game::PlayerKind::Human ? "human" : "computer",
+        std::printf("  empire %u: %s (%s)%s\n", e.id.value + 1, e.name.c_str(), kindName(e.kind),
                     e.passwordHash.empty() ? "" : ", password set");
     return 0;
 }
@@ -440,7 +449,7 @@ int pbemInfo(std::span<char*> args) {
     std::printf("Data set: %s\nMaster password: %s\n", info.dataSet.c_str(), info.masterPasswordVerifier.empty() ? "none" : "set");
     for (const game::Empire& e : state.empires) {
         const std::string player = e.id.index() < info.players.size() ? info.players[e.id.index()] : std::string{};
-        std::printf("  empire %u: %s, %s%s%s%s\n", e.id.value + 1, e.name.c_str(), e.kind == game::PlayerKind::Human ? "human" : "computer",
+        std::printf("  empire %u: %s, %s%s%s%s\n", e.id.value + 1, e.name.c_str(), kindName(e.kind),
                     player.empty() ? "" : ", player ", player.c_str(), e.alive ? "" : ", destroyed");
     }
     if (state.gameOver) std::printf("The game is over.\n");
