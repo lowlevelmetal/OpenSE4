@@ -68,7 +68,8 @@ void planColonization(Planner& p) {
         // "Move there, then colonize" is the Colonize order itself: it loads
         // colonists where it starts when the ship carries none, then travels
         // (spec 03 §8). A separate Move To first would load them at the
-        // target instead, and the colony would start empty.
+        // target instead, and the colony would start empty (inferred, spec
+        // 05 open question 23).
         Order colonize;
         colonize.kind = OrderKind::Colonize;
         colonize.object = t.planet;
