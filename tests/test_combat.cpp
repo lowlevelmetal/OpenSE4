@@ -15,6 +15,7 @@
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/setup.hpp"
+#include "game/sight.hpp"
 #include "game/tactical.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
@@ -523,6 +524,62 @@ TEST_CASE("combat: combatPossible respects treaties, cloaking and mines") {
     CHECK(combat::combatPossible(r, s, ar.loc));
     setTreaty(s, ar.a, ar.b, Treaty::NonAggression);
     CHECK_FALSE(combat::combatPossible(r, s, ar.loc));
+}
+
+TEST_CASE("combat: the battle check - one-directional in turn-based games; colonies never see in simultaneous ones") {
+    // Spec 04 §2 (confirmed: binary).
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const VehicleId mover = spawn(s, frigate(s, ar.a, "Mover", 1, {"CT Cloak"}), ar.loc);
+    const VehicleId lurker = spawn(s, frigate(s, ar.b, "Lurker", 1, {"CT Cloak"}), ar.loc);
+    const combat::BattleCheck byMover{{mover}}, byLurker{{lurker}}, daily{};
+    s.vehicle(lurker)->status = VehicleStatus::Cloaked;
+    REQUIRE_FALSE(sight::canSeeVehicle(r, s, ar.a, *s.vehicle(lurker)));
+    // A's ship steps in; B's cloaked ship sees it, but A sees nothing hostile: no battle.
+    CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byMover));
+    CHECK_FALSE(combat::combatPossible(r, s, ar.loc, byMover));
+    // B's cloaked ship itself steps in: A's uncloaked ship does not see it either.
+    CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byLurker));
+    // A sees it with sensors: A's step now finds a hostile object.
+    const VehicleId eye = spawn(s, frigate(s, ar.a, "Eye", 1, {"CT Sensor"}), Location{ar.loc.system, Sector{0, 0}});
+    REQUIRE(sight::canSeeVehicle(r, s, ar.a, *s.vehicle(lurker)));
+    CHECK(combat::battleCheck(r, s, ar.loc, byMover));
+    // A wholly cloaked group that another empire present sees, and that empire is hostile to it.
+    CHECK(combat::battleCheck(r, s, ar.loc, byLurker));
+    s.empire(ar.a).relation(ar.b).treaty = Treaty::NonAggression;  // A's side at peace: it does not count
+    CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byLurker));
+    CHECK_FALSE(combat::battleCheck(r, s, ar.loc, byMover));
+    s.empire(ar.a).relation(ar.b).treaty = Treaty::War;
+    s.vehicle(eye)->count = 0;
+    s.removeDeadVehicles();
+
+    // Simultaneous games: a colony alone never counts as the side that sees.
+    Arena col = makeArena();
+    GameState& t = col.s;
+    const Colony& home = homeworld(t, col.a);
+    const Location there = locationOf(t.galaxy, home.planet);
+    spawn(t, frigate(t, col.a, "Colony Eye", 1, {"CT Sensor"}), Location{there.system, Sector{0, 0}});
+    const VehicleId sneak = spawn(t, frigate(t, col.b, "Sneak", 1, {"CT Cloak"}), there);
+    t.vehicle(sneak)->status = VehicleStatus::Cloaked;
+    REQUIRE(sight::canSeeVehicle(r, t, col.a, *t.vehicle(sneak)));
+    CHECK_FALSE(combat::battleCheck(r, t, there, daily));   // A has only its colony there; B's ship is cloaked
+    CHECK_FALSE(combat::combatPossible(r, t, there));
+    // In a turn-based game the cloaked ship stepping in is seen by the colony's owner.
+    CHECK(combat::battleCheck(r, t, there, combat::BattleCheck{{sneak}}));
+    t.vehicle(sneak)->status = VehicleStatus::Normal;  // uncloaked, it sees the colony
+    CHECK(combat::battleCheck(r, t, there, daily));
+
+    // A minefield is never what a simultaneous check sees; a turn-based step
+    // that sees one passes the check, but with nobody to fight no battle starts.
+    Arena mf = makeArena();
+    const VehicleId walker = spawn(mf.s, frigate(mf.s, mf.a, "Walker", 1, {}), mf.loc);
+    const VehicleId field = spawn(mf.s, design(mf.s, mf.b, "Mine", "Test Mine Hull", {"Test Warhead"}), mf.loc, 3);
+    mf.s.empire(mf.b).relation(mf.a).treaty = Treaty::NonAggression;  // only A's view counts
+    CHECK_FALSE(combat::battleCheck(r, mf.s, mf.loc, daily));
+    CHECK(combat::battleCheck(r, mf.s, mf.loc, combat::BattleCheck{{walker}}) ==
+          combat::detail::visibleTo(r, mf.s, mf.a, *mf.s.vehicle(field)));
+    CHECK_FALSE(combat::detail::battleForces(r, mf.s, mf.loc, combat::BattleCheck{{walker}}).battle);
 }
 
 TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the record") {

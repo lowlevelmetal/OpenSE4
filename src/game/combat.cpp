@@ -1024,7 +1024,7 @@ std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v) {
     return {sign(v.cameFrom.sector.x - v.location.sector.x), sign(v.cameFrom.sector.y - v.location.sector.y)};
 }
 
-Forces battleForces(const Rules& r, const GameState& s, Location where) {
+Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check) {
     Forces f;
     if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return f;
     std::vector<const Vehicle*> vehicles;
@@ -1041,20 +1041,13 @@ Forces battleForces(const Rules& r, const GameState& s, Location where) {
         }
     std::sort(present.begin(), present.end());
     present.erase(std::unique(present.begin(), present.end()), present.end());
-    // A battle starts when two hostile empires present see each other; planets cannot hide (spec 04 §2).
-    std::vector<EmpireId> seen;
-    for (const Vehicle* v : vehicles)
+    // The check passes, and two empires with pieces are hostile, one way or
+    // the other: a check that finds only minefields fights nothing (inferred).
+    bool opponents = false;
+    for (EmpireId a : present)
         for (EmpireId b : present)
-            if (b != v->owner && enemies(s, b, v->owner) && visibleTo(r, s, b, *v)) {
-                seen.push_back(v->owner);
-                break;
-            }
-    for (ObjectId o : f.colonies) seen.push_back(s.colony(o)->owner);
-    std::sort(seen.begin(), seen.end());
-    seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
-    for (EmpireId a : seen)
-        for (EmpireId b : seen)
-            if (a < b && enemies(s, a, b)) f.battle = true;
+            if (a < b && enemies(s, a, b)) opponents = true;
+    f.battle = opponents && battleCheck(r, s, where, check);
     if (!f.battle) {
         f.colonies.clear();
         return f;
@@ -1287,10 +1280,63 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
 
 // ---- Entry points ------------------------------------------------------------------------------------
 
-bool combatPossible(const Rules& r, const GameState& s, Location where) {
+// The battle check of spec 04 §2 (confirmed: binary; see BattleCheck).
+bool battleCheck(const Rules& r, const GameState& s, Location where, const BattleCheck& check) {
+    if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return false;
+    std::vector<const Vehicle*> here;
+    for (const Vehicle& v : s.vehicles)
+        if (v.location == where && v.count > 0 && v.owner.valid()) here.push_back(&v);
+    std::vector<const Colony*> colonies;
+    for (ObjectId o : planetsAt(s, where))
+        if (const Colony* c = s.colony(o); c && c->owner.valid()) colonies.push_back(c);
+    // `viewer` sees an object of an empire it is hostile to (minefields only when `mines`).
+    auto seesHostile = [&](EmpireId viewer, bool mines) {
+        for (const Vehicle* v : here)
+            if (v->owner != viewer && hostile(s, viewer, v->owner) && (mines || detail::typeOf(r, s, *v) != VehicleType::Mine) &&
+                detail::visibleTo(r, s, viewer, *v))
+                return true;
+        for (const Colony* c : colonies)
+            if (c->owner != viewer && hostile(s, viewer, c->owner)) return true;  // planets cannot hide (inferred)
+        return false;
+    };
+    if (check.group.empty()) {
+        // Simultaneous games: an empire with an uncloaked vehicle here sees a
+        // hostile object that is not a minefield; colonies never see.
+        std::vector<EmpireId> seeing;
+        for (const Vehicle* v : here)
+            if (v->status != VehicleStatus::Cloaked && std::find(seeing.begin(), seeing.end(), v->owner) == seeing.end())
+                seeing.push_back(v->owner);
+        for (EmpireId e : seeing)
+            if (seesHostile(e, false)) return true;
+        return false;
+    }
+    // Turn-based games: the group that stepped in, attacked or sought.
+    std::vector<const Vehicle*> group;
+    for (VehicleId id : check.group)
+        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->location == where && v->owner.valid()) group.push_back(v);
+    if (group.empty()) return false;
+    const EmpireId mover = group.front()->owner;
+    const bool cloaked = std::all_of(group.begin(), group.end(), [](const Vehicle* v) { return v->status == VehicleStatus::Cloaked; });
+    if (!cloaked) return seesHostile(mover, true);
+    // A wholly cloaked group: another empire present with an uncloaked object
+    // must see one of the group's vehicles and be hostile to its owner.
+    std::vector<EmpireId> watchers;
+    for (const Vehicle* v : here)
+        if (v->owner != mover && v->status != VehicleStatus::Cloaked) watchers.push_back(v->owner);
+    for (const Colony* c : colonies)
+        if (c->owner != mover) watchers.push_back(c->owner);
+    for (EmpireId e : watchers) {
+        if (!hostile(s, e, mover)) continue;
+        for (const Vehicle* v : group)
+            if (detail::visibleTo(r, s, e, *v)) return true;
+    }
+    return false;
+}
+
+bool combatPossible(const Rules& r, const GameState& s, Location where, const BattleCheck& check) {
     if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return false;
     if (detail::minesCanStrike(r, s, where, {})) return true;
-    return detail::battleForces(r, s, where).battle;
+    return detail::battleForces(r, s, where, check).battle;
 }
 
 int toHitPercent(const Rules& r, const GameState& s, const Vehicle& attacker, size_t weaponEntry, const Vehicle& defender, int distance) {

@@ -7,12 +7,14 @@
 //
 // Cross-module contracts
 // ----------------------
-// * Movement calls combatPossible() for a sector where a vehicle moved and,
-//   when it is true, resolveSpaceCombat() for that sector (at most once per
-//   sector per movement phase, spec 05 §9.3). resolveSpaceCombat() first lets
+// * Movement calls combatPossible() for a sector where a battle check runs
+//   (spec 04 §2: in turn-based games a group's movement step, Attack order or
+//   Seek order at its target; in simultaneous games every sector where an
+//   order was carried out that day) and, when it is true,
+//   resolveSpaceCombat() for that sector. resolveSpaceCombat() first lets
 //   hostile mines strike the group of vehicles that entered the sector (after
-//   that group's sweepers clear what they can, spec 04 §10.6), then fights the
-//   battle if two hostile empires present can see each other. The three-argument
+//   that group's sweepers clear what they can, spec 04 §10.6), then runs the
+//   battle check (BattleCheck) and fights the battle when it passes. The three-argument
 //   form names the vehicles that just entered (movement passes the day's
 //   steps; empty = nobody entered, no mine strike), struck group by group: a
 //   fleet together, any other vehicle alone. The two-argument form takes the
@@ -85,6 +87,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace opense4::game {
 struct TurnContext;
@@ -236,14 +239,41 @@ Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 
 // ---- Turn phases -----------------------------------------------------------------------------
 
-// True when hostile empires that can see each other are present in the
-// sector, or hostile mines there can strike an entering vehicle (spec 04 §2, §10.6).
-bool combatPossible(const Rules& r, const GameState& s, Location where);
+// Who runs a battle check, and so who must see whom (spec 04 §2, confirmed:
+// binary).
+//   - Turn-based games: `group` is the group whose movement step (a warp jump
+//     included), Attack order or Seek order at its target runs the check. The
+//     check is one-directional: the group's owner must see an object in the
+//     sector (a vehicle of any kind, mothballed ships and minefields
+//     included, or a colony) of an empire it is hostile to; when every member
+//     of the group is cloaked, another empire present with an uncloaked
+//     object (a vehicle or a colony) must instead see one of the group's
+//     vehicles and be hostile to the group's owner.
+//   - Empty `group`: the check a simultaneous game makes of a sector after a
+//     day (tools and tests use it too). It passes when an empire with an
+//     uncloaked vehicle in the sector (a unit group, even a minefield, counts;
+//     "uncloaked" is the vehicle's status) sees an object there, not a
+//     minefield, of an empire it is hostile to; a colony never counts as the
+//     side that sees.
+// Hostility is each empire's own side of the treaty (spec 03 §6.4). A colony
+// in the sector is always seen (planets cannot hide, inferred); a vehicle is
+// seen by combat's rule (detail::visibleTo). Once the check passes, the
+// battle is fought when two empires with pieces there are hostile (in either
+// direction); a check that finds only minefields fights nothing (inferred).
+struct BattleCheck {
+    std::vector<VehicleId> group;
+};
+bool battleCheck(const Rules& r, const GameState& s, Location where, const BattleCheck& check);
+
+// True when the check passes and a battle would be fought, or hostile mines
+// there can strike an entering vehicle (spec 04 §2, §10.6).
+bool combatPossible(const Rules& r, const GameState& s, Location where, const BattleCheck& check = {});
 // Mines first, then the battle: appends a CombatRecord, applies damage,
 // destruction, capture, experience, design statistics, mood events and logs.
 void resolveSpaceCombat(TurnContext& ctx, Location where);
-// The same with the vehicles that just moved in (the mines' victims; none when empty).
-void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering);
+// The same with the vehicles that just moved in (the mines' victims; none
+// when empty), and the check that decides whether the battle starts.
+void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering, const BattleCheck& check = {});
 // The ground-combat step of `owner`'s end-of-turn processing (spec 05 §8,
 // spec 04 §13): on each of its colonies where landed troops still fight, the
 // fight goes on, or, when the owner is the landed empire or at Non-Aggression

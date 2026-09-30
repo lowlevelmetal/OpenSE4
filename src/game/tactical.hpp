@@ -33,6 +33,7 @@
 // fought in the client (the accepted orders are the battle's script, see
 // turn.hpp BattleAnswer).
 
+#include "game/combat.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
@@ -167,6 +168,9 @@ public:
         // interference and disruption with no system modifier totals.
         std::optional<std::vector<EmpireId>> release;
         std::optional<int> interference, disruption;
+        // Who ran the battle check that started it (spec 04 §2); empty: a
+        // simultaneous game's check (the simulator and tests).
+        BattleCheck check;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);

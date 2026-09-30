@@ -14,6 +14,7 @@
 //   step 7  design cleanup (10th turn)  purgeObsoleteDesigns
 //   step 9  event step, first           runStellarHazards
 
+#include "game/combat.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
@@ -122,10 +123,12 @@ void startTurn(TurnContext& ctx);
 // How movement asks for space combat. The default calls combat::combatPossible
 // and combat::resolveSpaceCombat; tests substitute their own. `resolve` gets
 // the vehicles that stepped into the sector that day (the groups hostile mines
-// strike, spec 04 §10.6); empty when nobody entered it.
+// strike, spec 04 §10.6); empty when nobody entered it. Both get who runs the
+// battle check (spec 04 §2): in turn-based games the group that stepped in,
+// attacked or sought; empty in simultaneous games.
 struct CombatHooks {
-    std::function<bool(const Rules&, const GameState&, Location)> possible;
-    std::function<void(TurnContext&, Location, std::span<const VehicleId>)> resolve;
+    std::function<bool(const Rules&, const GameState&, Location, const combat::BattleCheck&)> possible;
+    std::function<void(TurnContext&, Location, std::span<const VehicleId>, const combat::BattleCheck&)> resolve;
 };
 CombatHooks defaultCombatHooks();
 
@@ -140,8 +143,9 @@ CombatHooks defaultCombatHooks();
 // orders that complete chain into the next, up to 21 executions, until one
 // waits or fails. Movement points are not spent: they come back after the
 // action, unless the maximum fell below them during it. After each day every
-// sector where something acted is offered to combat, unless the latest battle
-// there this turn left every object in the sector as an undamaged survivor;
+// sector where an object carried out an order (any order, a waiting Sentry
+// included) runs a battle check, unless the latest battle there this turn
+// left every object in the sector as an undamaged survivor;
 // pursuits of targets that are gone end. Each step records where the vehicle
 // came from (Vehicle::cameFrom, cameFromTurn: combat's attackers and start
 // boxes, spec 04 §3). Combat neither stops movement nor clears orders; a
@@ -191,13 +195,17 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 // waits, fails or runs out of orders; orders that complete chain into the
 // next, up to 21 executions an action, and a group completes at most 21
 // orders a run (spec 05 §8 "Turn-based game"). A colony ship at its planet
-// with movement left founds its colony. A group that steps into a sector
-// where combat is possible fights there at once (mines strike first) and its
-// order fails; the Attack order's target sector is fought by the order
-// itself, after decloaking, and the order stays. An order carried out in a
-// sector (cargo, launches, an attack) offers the sector to combat without
-// failing. Groups that merely sit start no battle (spec 04 §2). Returns the
-// questions of the groups that stopped before a sector with enemies.
+// with movement left founds its colony. Only three things run a battle check
+// (spec 04 §2, combat::BattleCheck, confirmed: binary): a group's movement
+// step (a warp jump included), once the mines there have struck: a battle is
+// fought at once, the order fails and every member's list is cleared; the
+// Attack order where its target is (1 movement point, decloaking): the order
+// is used up, the rest of the list goes on, and without movement left it is
+// removed doing nothing; and a drone group's pursuit (a Seek) at its target,
+// which attacks every time the list runs and stays. Other participants lose
+// only a Sentry at the head of their lists. No other order, Sentry included,
+// starts a battle, nor do groups that merely sit. Returns the questions of
+// the groups that stopped before a sector with enemies.
 std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move);
 std::vector<EntryQuestion> runLive(TurnContext& ctx, const LiveMove& move, const CombatHooks& hooks);
 

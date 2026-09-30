@@ -537,7 +537,7 @@ TEST_CASE("turn-based: the ministers plan before the vehicles regain their movem
             CHECK(v.movement == 0);
 }
 
-TEST_CASE("turn-based: an Attack order's approach asks like any step; once in, it fights its target at once and stays") {
+TEST_CASE("turn-based: an Attack order's approach asks like any step; entering the target's sector fights there and ends the orders") {
     Duel d;
     const VehicleId gunboat = d.w.spawn(d.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Armor", "Mv Armor"}), at(d.a, 0, 0));
     fuel(d.w, gunboat);
@@ -548,19 +548,44 @@ TEST_CASE("turn-based: an Attack order's approach asks like any step; once in, i
     attack.location = at(d.a, 2, 0);
     attack.vehicle = target;
     // The step into the target's sector asks (spec 03 §6.2, confirmed: binary).
-    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(gunboat, {attack}));
+    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(gunboat, {attack, moveTo(d.a, 0, 3)}));
     REQUIRE(res.questions.size() == 1);
     CHECK(res.questions[0].where == at(d.a, 2, 0));
     CHECK(d.s().combats.empty());
     const TurnResult in = applyLive(d.r(), d.s(), kA, cmd::EnterSector{gunboat, {}, at(d.a, 2, 0), true});
     CHECK_FALSE(hasRejection(in));
+    // Every movement step runs a battle check: the battle is fought on
+    // entering, and the group's whole list is cleared, the Attack with it
+    // (spec 04 §2, questions 18 and 48).
     REQUIRE(d.s().combats.size() == 1);
     CHECK(d.s().combats[0].location == at(d.a, 2, 0));
     REQUIRE(d.s().vehicle(gunboat));
     CHECK(d.w.v(gunboat).location == at(d.a, 2, 0));
-    // The pursuit stays while the target lives and is seen.
-    if (d.s().vehicle(target)) CHECK(d.w.v(gunboat).orders.size() == 1);
-    else CHECK(d.w.v(gunboat).orders.size() <= 1);
+    CHECK(d.w.v(gunboat).orders.empty());
+    CHECK(d.w.logged(kA, "Combat on entering the sector."));
+}
+
+TEST_CASE("turn-based: the Attack order where the target is fights at once and is used up; sitting together starts nothing") {
+    Duel d;
+    const VehicleId gunboat = d.w.spawn(d.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Armor", "Mv Armor"}), at(d.a, 6, 0));
+    fuel(d.w, gunboat);
+    const VehicleId target = d.w.spawn(d.w.ship(kB, "Target", 1, {"Mv Armor", "Mv Armor", "Mv Armor", "Mv Armor"}), at(d.a, 6, 0));
+    resumeTurnBased(d.r(), d.s());
+    // Hostile ships sharing a sector fight only when an order runs a check (spec 04 §2).
+    endPlayerTurn(d.r(), d.s(), kA);
+    endPlayerTurn(d.r(), d.s(), kB);
+    REQUIRE(activePlayer(d.s()) == kA);
+    CHECK(d.s().combats.empty());
+    Order attack;
+    attack.kind = OrderKind::Attack;
+    attack.vehicle = target;
+    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(gunboat, {attack}));
+    CHECK_FALSE(hasRejection(res));
+    REQUIRE(d.s().combats.size() == 1);
+    CHECK(d.s().combats[0].location == at(d.a, 6, 0));
+    REQUIRE(d.s().vehicle(gunboat));
+    CHECK(d.w.v(gunboat).orders.empty());
+    CHECK(d.w.v(gunboat).movement == 2);  // the attack cost 1 movement point
 }
 
 TEST_CASE("turn-based: open Attack Sector questions stay in the game until answered or overtaken") {

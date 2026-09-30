@@ -799,6 +799,127 @@ TEST_CASE("movement: combat is offered once per sector and phase, only where ord
     CHECK(twin.asked.size() == 3);
 }
 
+TEST_CASE("movement: simultaneous games check every sector where an order was carried out, a waiting Sentry included") {
+    // Spec 04 §2 (confirmed: binary).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId watch = w.spawn(w.ship(kA, "Watch", 4), at(a, 5, 5));  // acts on days 8, 16 and 23
+    fuel(w, watch);
+    w.order(watch, mk(OrderKind::Sentry));
+    const VehicleId idle = w.spawn(w.ship(kA, "Idle", 4), at(a, 7, 7));  // no orders: never checked
+    fuel(w, idle);
+    CombatSpy spy;
+    w.move(spy.hooks());
+    CHECK(spy.asked == std::vector<Location>(3, at(a, 5, 5)));
+    for (const auto& group : spy.checkers) CHECK(group.empty());  // the day's check of the sector
+    CHECK(w.v(watch).orders.size() == 1);
+}
+
+TEST_CASE("movement: turn-based games check for battle only on a step, an Attack, or a Seek at its target") {
+    // Spec 04 §2, questions 18 and 48 (confirmed: binary).
+    struct Live {
+        World w;
+        SystemId a;
+        CombatSpy spy;
+        Live() {
+            w.s.options.simultaneous = false;
+            a = w.system("A");
+            w.exploreAll(kA);
+            w.setTreaty(kA, kB, Treaty::War);
+            spy.fight = hostilesMeet;
+        }
+        void run(bool refill = true) {
+            TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+            if (refill) movement::startTurn(ctx, kA);
+            movement::runLive(ctx, movement::LiveMove{kA}, spy.hooks());
+            w.s.removeDeadVehicles();
+        }
+    };
+    const auto picketAt = [](Live& l, int x, int y) { return l.w.spawn(l.w.ship(kB, "Picket", 1, {"Mv Armor", "Mv Armor"}), at(l.a, x, y)); };
+
+    SUBCASE("orders carried out in place, Sentry included, never start one") {
+        Live l;
+        l.w.colony(l.w.planet(l.a, {5, 5}), kA, 1000);
+        const VehicleId hauler = l.w.spawn(l.w.ship(kA, "Hauler", 3, {"Test Cargo Bay"}), at(l.a, 5, 5));
+        fuel(l.w, hauler);
+        picketAt(l, 5, 5);
+        l.w.order(hauler, mk(OrderKind::LoadCargo, {}, {}, {}, {}, -1));
+        l.w.order(hauler, mk(OrderKind::Decloak));
+        l.w.order(hauler, mk(OrderKind::Sentry));
+        l.run();
+        CHECK(l.spy.asked.empty());
+        CHECK(l.spy.fought.empty());
+        CHECK(l.w.v(hauler).cargo.totalPopulation() > 0);
+        CHECK(l.w.v(hauler).orders.empty());  // the Sentry ended at once: an enemy is in the system
+    }
+    SUBCASE("the Attack order runs one where the group stands and is used up; the rest of the list goes on") {
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 5, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(gunboat, moveTo(l.a, 5, 7));
+        l.run();
+        REQUIRE(l.spy.asked.size() == 3);
+        CHECK(l.spy.asked[0] == at(l.a, 5, 5));
+        CHECK(l.spy.checkers[0] == std::vector<VehicleId>{gunboat});
+        REQUIRE(l.spy.fought.size() == 1);
+        CHECK(l.spy.fought[0].second == at(l.a, 5, 5));
+        // 1 movement point for the attack, then two steps of the Move To (each checked).
+        CHECK(l.spy.asked[1] == at(l.a, 5, 6));
+        CHECK(l.w.v(gunboat).location == at(l.a, 5, 7));
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.v(gunboat).movement == 0);
+    }
+    SUBCASE("without movement left the Attack is removed doing nothing") {
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 5, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.v(gunboat).movement = 0;
+        l.run(false);
+        CHECK(l.spy.asked.empty());
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.logged(kA, "no movement left to attack"));
+    }
+    SUBCASE("a step into the target's sector fights there and clears the whole list") {
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(gunboat, moveTo(l.a, 0, 0));
+        l.run();
+        CHECK(l.spy.asked == std::vector<Location>{at(l.a, 4, 5), at(l.a, 5, 5)});
+        REQUIRE(l.spy.fought.size() == 1);
+        CHECK(l.w.v(gunboat).location == at(l.a, 5, 5));
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.logged(kA, "Combat on entering the sector."));
+    }
+    SUBCASE("a Seek at its target attacks every time its list runs and stays") {
+        Live l;
+        const DesignId dart = l.w.design(kA, "Dart", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
+        const VehicleId drone = l.w.spawn(dart, at(l.a, 5, 5));
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(drone, mk(OrderKind::Attack, {}, {}, picket));
+        l.run();
+        REQUIRE(l.spy.fought.size() == 1);
+        CHECK(l.spy.checkers[0] == std::vector<VehicleId>{drone});
+        CHECK(l.w.v(drone).orders.size() == 1);
+        l.run(false);  // the list runs again, as it does when orders are given
+        CHECK(l.spy.fought.size() == 2);
+        CHECK(l.w.v(drone).orders.size() == 1);
+        // A Seek that steps into its target's sector: a movement step, so the battle clears its list.
+        const VehicleId late = l.w.spawn(dart, at(l.a, 3, 5));
+        l.w.order(late, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.v(drone).orders.clear();
+        l.run();
+        CHECK(l.w.v(late).location == at(l.a, 5, 5));
+        CHECK(l.w.v(late).orders.empty());
+    }
+}
+
 TEST_CASE("movement: with the real combat module, meetings become battles and mines stop a ship") {
     const movement::CombatHooks real = movement::defaultCombatHooks();
     REQUIRE(real.possible);
@@ -967,8 +1088,8 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     f.order(raider, moveTo(fa, 6, 8));
     f.setTreaty(kA, kB, Treaty::NonAggression);  // no alarm from the raider's presence alone
     int battles = 0;
-    movement::CombatHooks hooks{[](const Rules&, const GameState& gs, Location l) { return hostilesMeet(gs, l); },
-                                [&](TurnContext& ctx, Location l, std::span<const VehicleId>) {
+    movement::CombatHooks hooks{[](const Rules&, const GameState& gs, Location l, const combat::BattleCheck&) { return hostilesMeet(gs, l); },
+                                [&](TurnContext& ctx, Location l, std::span<const VehicleId>, const combat::BattleCheck&) {
                                     ++battles;
                                     CombatRecord rec;
                                     rec.location = l;
@@ -2408,8 +2529,8 @@ TEST_CASE("movement: a sector is fought over again only after a damaged survivor
         movement::CombatHooks hooks = spy.hooks();
         if (damage) {
             auto resolve = hooks.resolve;
-            hooks.resolve = [resolve, guard](TurnContext& ctx, Location l, std::span<const VehicleId> in) {
-                resolve(ctx, l, in);
+            hooks.resolve = [resolve, guard](TurnContext& ctx, Location l, std::span<const VehicleId> in, const combat::BattleCheck& check) {
+                resolve(ctx, l, in, check);
                 // The guard loses its armor plate: a survivor below full structure.
                 if (Vehicle* g = ctx.state.vehicle(guard)) g->damage.back() = 30;
             };

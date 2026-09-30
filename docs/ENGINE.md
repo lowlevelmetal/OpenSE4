@@ -64,8 +64,11 @@ empires are skipped.
    `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
    vehicle, fleet and planet with orders carries out one order whenever its day counter
-   reaches 1, and `combat::resolveSpaceCombat` runs in sectors where something acted and
-   hostiles meet (spec 03 §6.3). A Colonize order founds its colony like any order, on an
+   reaches 1. After each day every sector where an object carried out an order (any order,
+   a waiting Sentry included) runs a battle check, and `combat::resolveSpaceCombat` fights
+   where an empire with an uncloaked vehicle there sees a hostile object; a sector gets a
+   second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
+   §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase. Sight and first
    contact are then updated.
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
@@ -128,12 +131,16 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    destruction check comes last.
 2. **The player's orders execute as they are given** (`applyLive`). `movement::runLive`
    carries out the orders of the vehicles, fleets or planets a command set, action after
-   action until each has spent its movement points, waits or fails. A group that steps
-   into a sector where combat is possible fights there at once (mines strike first) and
-   its order fails; a human is first asked whether to enter a sector with visible enemies,
-   and answers with `cmd::EnterSector`. An order carried out in a sector (cargo, launches,
-   an attack on its target) offers it to combat without failing. Colony ships that reach
-   their planet with movement left found the colony at once. Messages take effect when
+   action until each has spent its movement points, waits or fails. Only three things run
+   a battle check (spec 04 §2, `combat::BattleCheck`): a movement step (a warp jump
+   included), after the mines there have struck, which fights at once, fails the order
+   and clears the group's whole list; the Attack order where its target is, which is then
+   used up; and a drone group's pursuit (a Seek) at its target, which attacks every time
+   the list runs and stays. The check is one-directional: the group's owner must see a
+   hostile object there, or, for a wholly cloaked group, another empire must see it. A
+   human is first asked whether to enter a sector with visible enemies, and answers with
+   `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
+   colony at once. Messages take effect when
    sent (`diplomacy::deliverMessages`), and sight and contact follow every move.
 3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living
    empire's turn starts. Computer players take their turns the same way, one after

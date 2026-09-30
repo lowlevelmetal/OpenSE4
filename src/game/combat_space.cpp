@@ -333,7 +333,7 @@ bool Battle::setup() {
     disruption_ = overrides_ ? overrides_->disruption : detail::shieldDisruption(s_, where_);
     satelliteCap_ = static_cast<int>(r_.setting("Maximum Satellites Per Player Per Sector", 100));
 
-    const detail::Forces forces = detail::battleForces(r_, s_, where_);
+    const detail::Forces forces = detail::battleForces(r_, s_, where_, check_);
     if (!forces.battle) return false;
     empires_ = forces.empires;
     if (!overrides_)
@@ -3399,7 +3399,8 @@ bool humanPresent(const GameState& s, Location where) {
 
 // `entering` null: the vehicles that moved in this turn (the fallback of
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
-void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering) {
+// `check`: who runs the battle check after the mines (spec 04 §2).
+void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
     // A turn-based game with tactical combat asks the human sides (turn.hpp):
     // keep the game as the battle begins, in case the answer is missing.
     TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
@@ -3410,6 +3411,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
     if (!entering) detail::resolveMines(ctx, where, {}, rng);
     else if (!entering->empty()) detail::resolveMines(ctx, where, *entering, rng);
     detail::Battle battle(ctx, where, rng);
+    battle.setCheck(check);
     if (!battle.setup()) return;
     if (ask) {
         // One question per battle for every human empire in it, hostile or not (confirmed: binary).
@@ -3421,6 +3423,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
                 BattleQuestion q;
                 q.where = where;
                 if (entering) q.entering = std::vector<VehicleId>(entering->begin(), entering->end());
+                q.check = check;
                 q.humans = std::move(humans);
                 q.participants = battle.empires();
                 q.state = std::move(before);
@@ -3443,8 +3446,10 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
 
 } // namespace
 
-void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering) { resolve(ctx, where, &entering); }
+void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering, const BattleCheck& check) {
+    resolve(ctx, where, &entering, check);
+}
 
-void resolveSpaceCombat(TurnContext& ctx, Location where) { resolve(ctx, where, nullptr); }
+void resolveSpaceCombat(TurnContext& ctx, Location where) { resolve(ctx, where, nullptr, {}); }
 
 } // namespace opense4::game::combat

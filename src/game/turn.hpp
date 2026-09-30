@@ -65,6 +65,7 @@ struct BattleQuestion {
     Location where;
     // The vehicles that entered the sector (the mines' targets; see TacticalBattle::Setup).
     std::optional<std::vector<VehicleId>> entering;
+    combat::BattleCheck check;                    // who ran the battle check (see TacticalBattle::Setup)
     std::vector<EmpireId> humans;                 // human sides that fight in it, each asked
     std::vector<EmpireId> participants;           // every side with pieces
     std::shared_ptr<const GameState> state;       // the game just before the battle (before the mines)

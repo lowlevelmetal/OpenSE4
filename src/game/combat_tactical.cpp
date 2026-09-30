@@ -470,6 +470,7 @@ TacticalBattle::TacticalBattle(const Rules& r, GameState state, Setup setup)
     battle_ = std::make_unique<detail::Battle>(ctx_->turn, setup_.where, ctx_->rng);
     if (setup_.interference || setup_.disruption)
         battle_->setOverrides(detail::BattleOverrides{setup_.interference.value_or(0), setup_.disruption.value_or(0)});
+    battle_->setCheck(setup_.check);
     started_ = battle_->setup();
     if (started_) {
         battle_->setPlayers(setup_.players, setup_.release);

@@ -7,11 +7,14 @@
 // that acts is rebuilt at every order execution: a fleet's members at its
 // location, and ad-hoc companions with an identical head order (spec 03 §8).
 // An action runs the order list with exactly 1 movement point; orders that
-// complete chain into the next. After every day, each sector where something
-// acted is offered to combat.
+// complete chain into the next. After every day, each sector where an object
+// carried out an order (any order, a waiting Sentry included) runs a battle
+// check (spec 04 §2).
 //
 // Turn-based games (runLive): the groups a player sets in motion carry out
-// their orders at once, spending movement points.
+// their orders at once, spending movement points. Only a movement step (a
+// warp jump included), the Attack order and a Seek order at its target run a
+// battle check (spec 04 §2).
 
 #include "game/movement.hpp"
 
@@ -35,8 +38,12 @@ namespace opense4::game::movement {
 using namespace detail;
 
 CombatHooks defaultCombatHooks() {
-    return {[](const Rules& r, const GameState& s, Location where) { return combat::combatPossible(r, s, where); },
-            [](TurnContext& ctx, Location where, std::span<const VehicleId> entering) { combat::resolveSpaceCombat(ctx, where, entering); }};
+    return {[](const Rules& r, const GameState& s, Location where, const combat::BattleCheck& check) {
+                return combat::combatPossible(r, s, where, check);
+            },
+            [](TurnContext& ctx, Location where, std::span<const VehicleId> entering, const combat::BattleCheck& check) {
+                combat::resolveSpaceCombat(ctx, where, entering, check);
+            }};
 }
 
 namespace {
@@ -101,7 +108,7 @@ constexpr int kChainLimit = 21;
 
 enum class Exec {
     Done,       // completed without acting here: removed (kept at the end with Repeat); the chain goes on
-    Acted,      // completed by acting here (the sector is offered to combat); the chain goes on
+    Acted,      // completed by acting here; the chain goes on
     ActedStay,  // acted here; the order stays and the action ends (a pursuit at its target)
     Removed,    // this order alone is removed, even with Repeat; the chain goes on
     Fail,       // failed: the whole list is cleared and Repeat switched off (§8)
@@ -184,10 +191,12 @@ public:
 
     // The selected groups of one empire carry out their orders now, action
     // after action, until each has spent its movement, waits, fails or has
-    // nothing left. A group that steps into a sector where combat is possible
-    // fights there at once and its order fails; one that carries out an order
-    // in a sector offers it to combat without failing. The per-turn records
-    // (steps, emergency movement, launches) live in GameState::playerTurn.
+    // nothing left. A group's movement step runs a battle check: a battle is
+    // fought there at once and the group's whole list is cleared. The Attack
+    // order and a Seek order at its target run one where the group stands:
+    // the Attack is used up, the Seek stays. No other order starts a battle
+    // (spec 04 §2). The per-turn records (steps, emergency movement,
+    // launches) live in GameState::playerTurn.
     void runLive(const LiveMove& m) {
         live_ = &m;
         budget_.turnBased = true;
@@ -534,6 +543,10 @@ private:
             prune(g);
             last = g;
             result = e;
+            // Simultaneous games: every sector where an object carried out an
+            // order today, whatever the order (a Sentry that waits too), is
+            // checked after the day (spec 04 §2, confirmed: binary).
+            if (!live_ && !g.stopped) touched_.push_back(where(g));
             if (!g.stopped || e == Exec::Fail) settle(g, e, o);
             if (completed && chains(e) && ++*completed >= kLiveOrderLimit) break;
             if (g.stopped || !chains(e)) break;
@@ -549,14 +562,8 @@ private:
             case Exec::Wait: writeBack(g, o); break;
             case Exec::MovedDone:
             case Exec::Done: complete(g); break;
-            case Exec::Acted:
-                touched_.push_back(where(g));
-                complete(g);
-                break;
-            case Exec::ActedStay:
-                touched_.push_back(where(g));
-                writeBack(g, o);
-                break;
+            case Exec::Acted: complete(g); break;
+            case Exec::ActedStay: writeBack(g, o); break;
             case Exec::Removed: removeFront(g); break;
             case Exec::Fail: setLists(g, {}); break;
             case Exec::Cleared:
@@ -904,7 +911,8 @@ private:
             // The Ship Orders options apply only after a transit that met no other
             // trouble (turbulence, mines, turn-based combat), never to drone-only
             // groups (§6.4, confirmed: binary).
-            const bool trouble = shaken || combat::detail::minesCanStrike(r_, s_, next, g.members) || (live_ && combatHere(next));
+            const bool trouble = shaken || combat::detail::minesCanStrike(r_, s_, next, g.members) ||
+                                 (live_ && combatHere(next, combat::BattleCheck{g.members}));
             if (!trouble && !onlyDrones(g) && encounterClearsOrders(g.owner, next.system)) g.encountered = true;
         } else if (const int64_t storm = stormDamageAt(next); storm > 0 && s_.rng.percent(50)) {
             // A storm: a 50 % chance for a group stepping in; it stops. A warp
@@ -1033,8 +1041,12 @@ private:
     // point and one move's supply; cloaked drones decloak first); the battle
     // comes from the day's combat check and the order stays. It is done when
     // the target is gone, the attacker's owner's, or a planet without colony.
-    // In a turn-based game a group that is not all drones attacks at once
-    // where it stands, decloaking (§6.4).
+    // In a turn-based game a group that is not all drones goes to the target's
+    // sector and attacks there, decloaking (§6.4): 1 movement point, one
+    // move's supply and a battle check, and the order is used up; without
+    // movement left it is removed doing nothing. A drone group's pursuit (a
+    // Seek) at its target attacks and runs a battle check every time its list
+    // runs, and stays (spec 04 §2, confirmed: binary).
     Exec attack(Group& g, Order& o) {
         if (pursuitOver(s_, g.owner, o)) {
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
@@ -1047,8 +1059,12 @@ private:
         const Travel t = travel(g, goal);
         if (t == Travel::Reached) return Exec::Moved;  // the attack needs the next action's movement
         if (t != Travel::Arrived) return afterTravel(g, o, t);
-        if (remaining(g) <= 0 || immobile(g)) return Exec::Wait;
         const bool pursuit = !live_ || onlyDrones(g);
+        if (remaining(g) <= 0 || immobile(g)) {
+            if (pursuit) return Exec::Wait;
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
+            return Exec::Done;
+        }
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
@@ -1062,7 +1078,8 @@ private:
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
-        return Exec::ActedStay;
+        if (live_) checkHere_ = true;  // turn-based: the attack runs a battle check (runLive)
+        return pursuit ? Exec::ActedStay : Exec::Acted;
     }
 
     // Explore, Resupply and Repair are expanded when they are given (orders.hpp);
@@ -1379,10 +1396,10 @@ private:
         sites.erase(std::unique(sites.begin(), sites.end()), sites.end());
         if (hooks_.possible && hooks_.resolve)
             for (const Location& where : sites) {
-                if (!hooks_.possible(r_, s_, where) || !freshBattle(where)) continue;
+                if (!hooks_.possible(r_, s_, where, {}) || !freshBattle(where)) continue;
                 const auto before = marks(where);
                 const size_t records = s_.combats.size();
-                hooks_.resolve(ctx_, where, entering(where));
+                hooks_.resolve(ctx_, where, entering(where), {});
                 afterBattle(where, records, before);
                 rememberBattle(where, records);
             }
@@ -1392,9 +1409,12 @@ private:
 
     // Combat neither stops movement nor clears orders: lists are kept, and only
     // a Sentry order at the head of a participant's list is removed, even with
-    // Repeat on (§6.3, §6.4, confirmed: binary). A group that met a minefield
-    // stops and its order fails.
-    void afterBattle(Location where, size_t recordsBefore, const std::map<VehicleId, std::pair<int, std::vector<int>>>& before) {
+    // Repeat on (§6.3, §6.4, confirmed: binary); in a turn-based game the
+    // group whose order started the battle (`starter`) is not one of those
+    // other participants (spec 04 §2). A group that met a minefield stops and
+    // its order fails.
+    void afterBattle(Location where, size_t recordsBefore, const std::map<VehicleId, std::pair<int, std::vector<int>>>& before,
+                     std::span<const VehicleId> starter = {}) {
         std::set<VehicleId> fought;
         for (size_t i = recordsBefore; i < s_.combats.size(); ++i)
             if (s_.combats[i].location == where)
@@ -1404,7 +1424,7 @@ private:
             ctx_.battleSites.push_back(where);
         for (VehicleId id : fought) {
             Vehicle* v = s_.vehicle(id);
-            if (!v || !alive(*v)) continue;
+            if (!v || !alive(*v) || std::find(starter.begin(), starter.end(), id) != starter.end()) continue;
             std::vector<Order>* list = &v->orders;
             if (followsFleetOrders(s_, *v))
                 if (Fleet* f = s_.fleet(v->fleet)) list = &f->orders;
@@ -1472,12 +1492,13 @@ private:
         int completed = 0;  // orders that left the head of the list, chained ones included
         for (int n = 0; n < kLiveActionLimit; ++n) {
             const size_t steps = entered_.size();
+            checkHere_ = false;
             Group g;
             const std::optional<Exec> e = act(ref, g, &completed);
             if (!e) return;
             bool fought = false;
             if (entered_.size() > steps) fought = entryCombat(g);
-            else if (*e == Exec::Acted || *e == Exec::ActedStay) placeCombat(g);
+            else if (checkHere_) orderCombat(g);
             entered_.clear();
             touched_.clear();
             if (fought || g.stopped) return;
@@ -1501,41 +1522,43 @@ private:
         }
     }
 
-    // Where the group's Attack order at the head of its list means to fight.
-    std::optional<Location> attackGoal(const Group& g) {
-        const std::vector<Order>* list = orders(g);
-        if (!list || list->empty() || list->front().kind != OrderKind::Attack) return std::nullopt;
-        const Order& o = list->front();
-        if (o.vehicle.valid()) {
-            if (const Vehicle* t = s_.vehicle(o.vehicle); t && alive(*t)) return t->location;
-            return std::nullopt;
-        }
-        if (o.object.valid() && o.object.index() < s_.galaxy.objects.size() && inSystem(s_.galaxy, o.object))
-            return locationOf(s_.galaxy, o.object);
-        return std::nullopt;
-    }
-
-    // Fights the battle of `where` now (mines strike `entering` first).
-    void fight(Location where, const std::vector<VehicleId>& entering) {
+    // Fights the battle of `where` now (mines strike `entering` first) if the
+    // check passes; `starter`: the group whose order started it.
+    void fight(Location where, const std::vector<VehicleId>& entering, const combat::BattleCheck& check,
+               std::span<const VehicleId> starter = {}) {
         const auto before = marks(where);
         const size_t records = s_.combats.size();
-        hooks_.resolve(ctx_, where, entering);
-        afterBattle(where, records, before);
+        hooks_.resolve(ctx_, where, entering, check);
+        afterBattle(where, records, before, starter);
         s_.removeDeadVehicles();
     }
 
-    bool combatHere(Location where) const { return hooks_.possible && hooks_.resolve && hooks_.possible(r_, s_, where); }
+    bool combatHere(Location where, const combat::BattleCheck& check) const {
+        return hooks_.possible && hooks_.resolve && hooks_.possible(r_, s_, where, check);
+    }
 
-    // A step into a sector where combat is possible: the battle is fought at
-    // once and the order fails (spec 03 §6.2, §6.4; spec 04 §2). The sector of
-    // an Attack order's target is fought by the order itself, after decloaking.
+    // Whether a battle was fought at `where` since the record count `before`.
+    bool battleSince(Location where, size_t before) const {
+        for (size_t i = before; i < s_.combats.size(); ++i)
+            if (s_.combats[i].location == where) return true;
+        return false;
+    }
+
+    // A movement step (a warp jump included) runs a battle check once the
+    // mines have struck. A battle is fought at once; the group's order fails
+    // and every member's list is cleared, an Attack or Seek at the head
+    // included (spec 03 §6.4, spec 04 §2, confirmed: binary). True when the
+    // group's run ends here.
     bool entryCombat(Group& g) {
         prune(g);
         if (g.stopped) return true;
         const Location here = where(g);
-        if (attackGoal(g) == here || !combatHere(here)) return false;
-        fight(here, entering(here));
+        const combat::BattleCheck check{g.members};
+        if (!combatHere(here, check)) return false;
+        const size_t records = s_.combats.size();
+        fight(here, entering(here), check);
         prune(g);
+        if (!battleSince(here, records)) return g.stopped;  // only mines struck
         if (!g.stopped)
             if (const std::vector<Order>* list = orders(g); list && !list->empty()) {
                 fail(g, list->front(), "Combat on entering the sector.");
@@ -1545,12 +1568,14 @@ private:
         return true;
     }
 
-    // An order carried out in a sector offers it to combat (spec 04 §2).
-    void placeCombat(Group& g) {
+    // The Attack order, or a Seek order at its target, runs a battle check
+    // where the group stands; the group keeps the rest of its list (spec 04 §2).
+    void orderCombat(Group& g) {
         prune(g);
         if (g.stopped) return;
         const Location here = where(g);
-        if (combatHere(here)) fight(here, {});
+        const combat::BattleCheck check{g.members};
+        if (combatHere(here, check)) fight(here, {}, check, g.members);
     }
 
     // Objects of an empire `e` is hostile to in a sector, that `e` sees: ships,
@@ -1594,6 +1619,7 @@ private:
     std::vector<Location> touched_;                     // sectors where something acted today
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
+    bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
     UnitBudget budget_;
 };
 

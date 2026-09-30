@@ -110,6 +110,18 @@ ruleset::Ruleset buildCombatRuleset() {
     gun(rs, "CT Climate Bomb", WK::DirectFire, {1, 1, 1, 1, 1}, "Only Planet Conditions", {"Planets"});
 
     part(rs, "CT Battle Computer", 10, {ab(AbilityKind::CombatModifierSystem, 7)});
+    {
+        // Sensors that see through the cloaking device (spec 01 §6.3).
+        std::vector<ruleset::Ability> sensors;
+        for (const char* type : {"EM Active", "EM Passive", "Psychic", "Gravitic", "Temporal"}) {
+            ruleset::Ability a;
+            a.type = std::string(game::identifier(AbilityKind::SensorLevel));
+            a.value1 = type;
+            a.value2 = "3";
+            sensors.push_back(std::move(a));
+        }
+        part(rs, "CT Sensor", 10, std::move(sensors));
+    }
     for (int value : {10, 4}) {
         ruleset::Facility f;
         f.name = std::format("CT Combat Center {}", value);

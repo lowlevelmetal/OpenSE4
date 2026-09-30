@@ -152,6 +152,8 @@ public:
 
     // The simulator's location (before setup).
     void setOverrides(const BattleOverrides& o) { overrides_ = o; }
+    // The battle check that decides whether it starts (spec 04 §2; before setup).
+    void setCheck(BattleCheck c) { check_ = std::move(c); }
     bool setup();
     // Every side by its strategies, to the end (strategic resolution).
     void run();
@@ -360,6 +362,7 @@ private:
     CombatSettings cs_;
     CombatRecord rec_;
     std::optional<BattleOverrides> overrides_;
+    BattleCheck check_;
     std::vector<Piece> pieces_;
     std::vector<char> acted_;
     std::vector<EmpireId> empires_;

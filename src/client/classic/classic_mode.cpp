@@ -520,7 +520,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
             session_->answerBattle(game::BattleAnswer{});
             return;
         }
-        auto battle = std::make_unique<game::combat::TacticalBattle>(*rules_, *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, tactical});
+        auto battle = std::make_unique<game::combat::TacticalBattle>(*rules_, *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, tactical, std::nullopt, std::nullopt, std::nullopt, q.check});
         if (!battle->started()) {
             session_->answerBattle(game::BattleAnswer{});
             return;

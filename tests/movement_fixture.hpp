@@ -395,6 +395,7 @@ private:
 // CombatRecord listing them; `entered` keeps the entering vehicles passed each time.
 struct CombatSpy {
     std::vector<Location> asked;
+    std::vector<std::vector<VehicleId>> checkers;       // per question: the group that ran the check (empty: the day's check)
     std::vector<std::pair<uint32_t, Location>> fought;  // (call order, location)
     std::vector<std::vector<VehicleId>> entered;        // per resolve call: the vehicles that stepped in that day
     std::function<bool(const GameState&, Location)> fight;
@@ -402,11 +403,12 @@ struct CombatSpy {
     static bool isMine(const TurnContext& ctx, const Vehicle& v) { return vehicleType(ctx.rules, ctx.state, v) == VehicleType::Mine; }
 
     movement::CombatHooks hooks() {
-        return {[this](const Rules&, const GameState& s, Location l) {
+        return {[this](const Rules&, const GameState& s, Location l, const combat::BattleCheck& check) {
                     asked.push_back(l);
+                    checkers.push_back(check.group);
                     return fight && fight(s, l);
                 },
-                [this](TurnContext& ctx, Location l, std::span<const VehicleId> in) {
+                [this](TurnContext& ctx, Location l, std::span<const VehicleId> in, const combat::BattleCheck&) {
                     fought.emplace_back(static_cast<uint32_t>(fought.size()), l);
                     entered.emplace_back(in.begin(), in.end());
                     GameState& s = ctx.state;

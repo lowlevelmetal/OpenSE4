@@ -25,18 +25,18 @@ bool canBePiece(ruleset::VehicleType t);
 // obscures it; otherwise the sight module decides (spec 04 §2).
 bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v);
 
-// Who is in a sector (spec 04 §2, §3). A battle starts when two hostile
-// empires present there see each other (undetected cloaked vehicles do not
-// count). Once it starts, every owned vehicle that can be a piece and every
-// colony there take part, including empires hostile to nobody present.
+// Who is in a sector (spec 04 §2, §3). A battle starts when the battle
+// check passes (BattleCheck) and two empires with pieces there are hostile.
+// Once it starts, every owned vehicle that can be a piece and every colony
+// there take part, including empires hostile to nobody present.
 struct Forces {
-    bool battle = false;               // two hostile empires see each other
+    bool battle = false;               // the check passed and there is someone to fight
     std::vector<EmpireId> empires;     // every empire with a piece, by id
     std::vector<VehicleId> vehicles;   // every vehicle that becomes a piece, by id
     std::vector<ObjectId> colonies;    // every colony there, in object order
     std::vector<ObjectId> obstacles;   // stars, warp points, comets, uncolonised planets
 };
-Forces battleForces(const Rules& r, const GameState& s, Location where);
+Forces battleForces(const Rules& r, const GameState& s, Location where, const BattleCheck& check = {});
 
 // Whether a vehicle moved into its sector this turn (spec 04 §3), whether it
 // came through a warp point (the sector it left is in another system), and
