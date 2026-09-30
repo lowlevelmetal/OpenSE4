@@ -597,8 +597,10 @@ struct Applier {
         reply.offer = it->request;  // what they asked us for is what we now give
         reply.request = it->offer;
         switch (it->type) {
-            case MessageType::ProposeTreaty: reply.type = c.accept ? MessageType::AcceptTreaty : MessageType::RefuseTreaty; break;
-            case MessageType::ProposeTrade: reply.type = c.accept ? MessageType::AcceptTrade : MessageType::RefuseTrade; break;
+            case MessageType::ProposeTreaty:
+            case MessageType::CounterTreaty: reply.type = c.accept ? MessageType::AcceptTreaty : MessageType::RefuseTreaty; break;
+            case MessageType::ProposeTrade:
+            case MessageType::CounterTrade: reply.type = c.accept ? MessageType::AcceptTrade : MessageType::RefuseTrade; break;
             case MessageType::Gift:
             case MessageType::Tribute: reply.type = c.accept ? MessageType::AcceptGift : MessageType::RefuseGift; break;
             default: reply.type = c.accept ? MessageType::AcceptDemand : MessageType::RefuseDemand; break;
