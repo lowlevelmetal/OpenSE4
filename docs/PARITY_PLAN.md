@@ -43,8 +43,8 @@ questions are what the observation sessions still have to settle.
 - [x] Knowledge and sight: explored, present and last-seen state; sensors against
       cloaking by sight type; scanners; sharing between partners.
 - [x] Galaxy panel and the Galaxy Map window: overlays, distances, notes.
-- [ ] Quadrant size choices and galaxy grid dimensions (spec 01 Q2); compare placement
-      with the original's maps.
+- [x] Quadrant size choices and the 67 × 46 galaxy grid (spec 01 §2.2, §3.2).
+- [ ] Compare generated quadrants with the original's maps.
 
 ### M2: Empires and economy (done; calibration continues)
 - [x] Empire setup:

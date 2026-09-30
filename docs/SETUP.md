@@ -72,7 +72,7 @@ support yet.
 
 ```sh
 opense4 --classic                         # auto-detects the install
-opense4 --classic --quadrant="Spiral Arm" --systems=80
+opense4 --classic --quadrant="Spiral Arm" --systems=80   # an exact count; Game Setup rolls it from the Quadrant Size
 opense4 --classic --renderer=opengl       # if Vulkan misbehaves on your machine
 ```
 
