@@ -21,6 +21,9 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet);
 // empire knows them (sight::warpPointName: the destination once explored);
 // without one they show their plain name.
 std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v);
+// A vehicle's design, "Name xN" for a unit group, or for a group that mixes
+// designs each design with its units (the first `shown`, then "and N more").
+std::string groupDesigns(const game::GameState& s, const game::Vehicle& v, size_t shown = 3);
 std::string ordersSummary(const game::GameState& s, const game::Vehicle& v, game::EmpireId viewer = {});
 std::string orderText(const game::GameState& s, const game::Order& o, game::EmpireId viewer = {});
 std::string sectorName(const game::GameState& s, game::Location where, game::EmpireId viewer = {});

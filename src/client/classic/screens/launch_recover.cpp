@@ -1,7 +1,8 @@
 // Launch \ Recover Units (order U, docs/spec/06 §1.3, spec 03 §12). Left:
 // the own ships and colonies in the sector with the units in their cargo;
-// click a unit type to launch it. Right: the own unit groups in space; click
-// one to recover it into the ship selected on the left.
+// click a unit type to launch it. Right: the own unit groups in space (one per
+// unit kind, mixing designs); click one, or one design of it, to recover it
+// into the ship selected on the left.
 //
 // The classic game launches at once (turn-based games). Each click gives a
 // Launch Units or Recover Units order placed at the head of the ship's (or
@@ -193,17 +194,41 @@ private:
         for (const game::Vehicle* v : where_ ? ownVehiclesAt(ui, *where_) : std::vector<const game::Vehicle*>{}) {
             if (!isUnitVehicle(ui.rules(), s, *v)) continue;
             ++shown;
-            const int64_t recovering = pendingCount(pending, game::OrderKind::RecoverUnits, v->design, v->id);
+            // A group may mix designs (spec 03 §12); each design is recovered on its own.
+            const std::vector<game::UnitStack> stacks = game::groupStacks(*v);
+            int64_t recovering = 0;
+            for (const game::UnitStack& u : stacks) recovering += pendingCount(pending, game::OrderKind::RecoverUnits, u.design, v->id);
             std::string detail = std::format("{} unit{}", v->count, v->count == 1 ? "" : "s");
+            if (stacks.size() > 1) detail += std::format(" of {} designs", stacks.size());
             if (recovering > 0) detail += std::format(", recovering {}", formatNumber(recovering));
             RowStyle st;
             st.enabled = holder;
             const RowClick c = row(ui, static_cast<int>(v->id.value), unitMini(ui, *v), v->name, detail, st);
-            if (c.left && holder) recover(ui, holder_, *v, v->count - recovering);
+            if (c.left && holder) {
+                // The whole group: every design in it.
+                for (const game::UnitStack& u : stacks)
+                    recover(ui, holder_, *v, u.design, u.count - pendingCount(pending, game::OrderKind::RecoverUnits, u.design, v->id), stacks.size() > 1);
+            }
             if (c.right) report_.vehicle(v->id);
+            if (stacks.size() < 2) continue;
+            ImGui::PushID(static_cast<int>(v->id.value));
+            int k = 0;
+            for (const game::UnitStack& u : stacks) {
+                const int64_t taking = pendingCount(pending, game::OrderKind::RecoverUnits, u.design, v->id);
+                RowStyle is;
+                is.indent = 26;
+                is.height = 32;
+                is.picture = 26;
+                is.enabled = holder;
+                std::string line = std::format("{} unit{}", formatNumber(u.count), u.count == 1 ? "" : "s");
+                if (taking > 0) line += std::format(", recovering {}", formatNumber(taking));
+                if (row(ui, 100 + k++, designMini(ui, u.design), s.design(u.design).name, line, is).left && holder)
+                    recover(ui, holder_, *v, u.design, u.count - taking, false);
+            }
+            ImGui::PopID();
         }
         if (shown == 0) ImGui::TextColored(kDim, "No units of yours in space here.");
-        endPanel(ui, "Click a group to bring it aboard the selected ship or planet.");
+        endPanel(ui, "Click a group, or one design of a mixed group, to bring it aboard the selected ship or planet.");
     }
 
     void pendingPanel(UiContext& ui) {
@@ -256,17 +281,19 @@ private:
                       std::format("{} will launch {} {}.", holderName(ui, from), o.amount, ui.state().design(design).name));
     }
 
-    void recover(UiContext& ui, const Holder& into, const game::Vehicle& group, int64_t available) {
+    // Recovers units of one design from the group (`quiet`: part of recovering a
+    // whole mixed group, where a design already on its way is simply skipped).
+    void recover(UiContext& ui, const Holder& into, const game::Vehicle& group, game::DesignId design, int64_t available, bool quiet) {
         if (available <= 0) {
-            status_.error("That group is already being recovered.");
+            if (!quiet) status_.error("Those units are already being recovered.");
             return;
         }
         game::Order o{game::OrderKind::RecoverUnits, group.location};
-        o.design = group.design;
+        o.design = design;
         o.vehicle = group.id;
         o.amount = static_cast<int>(stepAmount(step_, available));
         status_.issue(ui, withImmediate(ui.state(), ownerOf(ui, into), o),
-                      std::format("{} will recover {} {}.", holderName(ui, into), o.amount, ui.state().design(group.design).name));
+                      std::format("{} will recover {} {}.", holderName(ui, into), o.amount, ui.state().design(design).name));
     }
 
     void takeBack(UiContext& ui, const Holder& h, const game::Order& order) {

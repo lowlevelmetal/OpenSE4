@@ -135,6 +135,15 @@ int directionOf(int dx, int dy) {
 
 float angleOf(int dx, int dy) { return std::atan2(float(dx), float(-dy)); }
 
+// A unit group's units: "Wasp x5", or each design of a group that mixes them (spec 03 §12).
+std::string unitsText(const game::GameState& s, const TacticalPiece& p) {
+    if (p.units.size() < 2) return std::format("{} x{}", p.design.index() < s.designs.size() ? s.design(p.design).name : std::string("?"), p.count);
+    std::string out;
+    for (const game::UnitStack& st : p.units)
+        out += std::format("{}{} x{}", out.empty() ? "" : ", ", st.design.index() < s.designs.size() ? s.design(st.design).name : "?", st.count);
+    return out;
+}
+
 // ---- The Tactical Combat window --------------------------------------------------------------------------
 
 class TacticalCombatScreen final : public Screen {
@@ -585,8 +594,7 @@ private:
         ImGui::PopFont();
         if (p.design.valid() && p.design.index() < s.designs.size()) {
             const game::Design& d = s.design(p.design);
-            dimText(p.kind == PieceKind::UnitGroup ? std::format("{} x{}", d.name, p.count).c_str()
-                                                    : std::format("{} ({})", d.name, ui.rules().hull(d.hull).name).c_str());
+            dimText(p.kind == PieceKind::UnitGroup ? unitsText(s, p).c_str() : std::format("{} ({})", d.name, ui.rules().hull(d.hull).name).c_str());
         } else {
             dimText(p.kind == PieceKind::Planet ? "Planet" : p.kind == PieceKind::Seeker ? "Seeker" : "Obstacle");
         }
@@ -872,7 +880,7 @@ private:
                 if (const game::Vehicle* v = p.vehicle.valid() ? s.vehicle(p.vehicle) : nullptr)
                     if (const game::Fleet* fleet = s.fleet(v->fleet); fleet && fleet->formation < ui.rules().data().formations.size())
                         labelValue(ui, "Formation", std::format("{} ({})", ui.rules().data().formations[fleet->formation].name, fleet->name), 90);
-                if (p.kind == PieceKind::UnitGroup) labelValue(ui, "Units", std::format("{}", p.count), 90);
+                if (p.kind == PieceKind::UnitGroup) labelValue(ui, "Units", unitsText(s, p), 90);
                 if (!p.cargo.empty()) {
                     std::string cargo;
                     for (const game::UnitStack& st : p.cargo)

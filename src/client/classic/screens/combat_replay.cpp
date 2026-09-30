@@ -181,6 +181,7 @@ private:
                 case Kind::Hit: ImGui::TextColored(ImVec4(1, 0.7f, 0.4f, 1), "  %s", text.c_str()); break;
                 case Kind::Miss: ImGui::TextColored(ImVec4(0.6f, 0.62f, 0.68f, 1), "  %s", text.c_str()); break;
                 case Kind::Destroyed: ImGui::TextColored(ImVec4(1, 0.4f, 0.35f, 1), "%s", text.c_str()); break;
+                case Kind::UnitsLost: ImGui::TextColored(ImVec4(1, 0.55f, 0.45f, 1), "  %s", text.c_str()); break;
                 case Kind::Captured: ImGui::TextColored(ImVec4(1, 0.85f, 0.3f, 1), "%s", text.c_str()); break;
                 default: ImGui::TextUnformatted(text.c_str()); break;
             }
@@ -247,6 +248,7 @@ private:
                 labelValue(ui, "Design", hull ? std::format("{} ({})", d.name, hull->name) : d.name, 80);
             }
             labelValue(ui, "Owner", p.neutral ? std::string("None") : paint.empireName(p.owner), 80);
+            if (rp.kind == game::CombatPiece::Kind::UnitGroup) labelValue(ui, "Units", std::format("{} of {} left", p.units, rp.count), 80);
             if (p.captured) labelValue(ui, "Captured from", paint.empireName(rp.owner), 80);
             labelValue(ui, "Square", std::format("{}, {}", p.x, p.y), 80);
             if (p.damage > 0) labelValue(ui, "Hits taken", std::format("{} damage so far", p.damage), 80);
