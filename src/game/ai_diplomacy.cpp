@@ -260,8 +260,11 @@ private:
     void initiative(EmpireId x) {
         if (wantsWar(x)) {
             // Against the MEE the text is a `Mega Evil Declarations` line.
-            if (x == mee_) send(x, MessageType::DeclareWar, "Mega Evil Declarations");
-            else sendNamed(x, MessageType::DeclareWar);
+            const bool sent = x == mee_ ? send(x, MessageType::DeclareWar, "Mega Evil Declarations") : sendNamed(x, MessageType::DeclareWar);
+            // Anger toward x becomes 100 with the declaration (ai_anger.cpp
+            // recordDecisions); with an empty speech pool nothing is declared,
+            // but the anger still becomes 100 (spec 05 §7.3, §7.5 AI_Speech).
+            if (!sent) p_.emit(cmd::DecideWar{x});
             return;
         }
         if (wantsBreak(x)) {

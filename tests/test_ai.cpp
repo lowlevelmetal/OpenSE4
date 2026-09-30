@@ -1379,6 +1379,41 @@ TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100"
     CHECK(s.empire(cpu).relation(human).anger >= 100 + ai::builtinProfile().anger.regularDecrease - 1);
 }
 
+TEST_CASE("ai: a war declaration with an empty speech pool declares nothing, yet anger becomes 100") {
+    // Spec 05 §7.5 AI_Speech: no "Send Declare War" lines at all.
+    TempTree t("silentwar");
+    t.write("Ai/Default_AI_Speech.txt", "Number of Send Refuse Treaty := 1\nSend Refuse Treaty 1 := No.\n");
+    t.write("Ai/Default_AI_Politics.txt", "Declare War Base Anger Level := 10\nBreak Treaty Base Anger Level := 1000\n"
+                                          "Propose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 10, r);
+    const EmpireId other{0u}, cpu{1u};
+    meet(s, other, cpu);
+    const Treaty before = s.empire(cpu).relation(other).treaty;
+    bool decided = false;
+    for (uint32_t turn = 1; turn < 30 && !decided; ++turn) {
+        s.turn = turn;
+        s.empire(cpu).relation(other).anger = 60;
+        const auto cmds = ai::planTurn(r, s, cpu);
+        for (const Command& c : cmds) {
+            if (const auto* m = as<cmd::SendMessage>(c)) CHECK(m->message.type != MessageType::DeclareWar);
+            if (const auto* d = as<cmd::DecideWar>(c); d && d->target == other) decided = true;
+        }
+        if (decided) REQUIRE(applyAll(r, s, cpu, cmds).empty());
+    }
+    REQUIRE(decided);
+    CHECK(s.empire(cpu).relation(other).anger == 100);
+    CHECK(s.empire(cpu).relation(other).treaty == before);  // nothing was declared
+
+    // The command itself: only toward another living empire already met.
+    CHECK_FALSE(apply(r, s, cpu, cmd::DecideWar{cpu}).ok);
+    CHECK_FALSE(apply(r, s, cpu, cmd::DecideWar{EmpireId{9u}}).ok);
+    s.empire(other).relation(cpu).contact = true;
+    s.empire(other).relation(cpu).anger = 10;
+    REQUIRE(apply(r, s, other, cmd::DecideWar{cpu}).ok);
+    CHECK(s.empire(other).relation(cpu).anger == 100);
+}
+
 // ---- Anger and the AI step ---------------------------------------------------------------------------
 
 TEST_CASE("ai: only a successful operation whose culprit is named angers the victim") {

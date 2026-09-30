@@ -99,6 +99,13 @@ struct SetIntel { std::vector<IntelProjectOrder> queue; bool evenly = true; bool
 // ---- Diplomacy -----------------------------------------------------------------------------
 struct SendMessage { DiplomaticMessage message; };   // id/from/turn are assigned
 struct AnswerMessage { MessageId message; bool accept = false; std::string text; };
+// Declaring war on an empire sets the declaring empire's anger toward it to
+// 100 (spec 05 §7.3, §7.4). A computer player (or a Politics minister) whose
+// war declaration has an empty speech pool declares nothing, yet its anger
+// still becomes 100 (spec 05 §7.5 AI_Speech): this command is that decision.
+// The treaty does not change and no message is sent. `target` must be another
+// living empire the player has met.
+struct DecideWar { EmpireId target; };
 
 // ---- Empire-wide lists ------------------------------------------------------------------------
 struct SetWaypoint { int slot = 0; std::optional<Waypoint> waypoint; };
@@ -153,7 +160,7 @@ using Command = std::variant<
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
-    cmd::QueueReplaceFacility>;
+    cmd::QueueReplaceFacility, cmd::DecideWar>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

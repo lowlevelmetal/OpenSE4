@@ -754,6 +754,17 @@ struct Applier {
         return {};
     }
 
+    // A war decision with nothing said: anger toward the target becomes 100,
+    // nothing is declared (spec 05 §7.3-§7.5).
+    R operator()(const cmd::DecideWar& c) {
+        if (!c.target.valid() || c.target.index() >= s.empires.size() || c.target == e) return R::fail("Invalid empire");
+        if (!s.empire(c.target).alive) return R::fail("That empire is gone");
+        Relation& rel = emp().relation(c.target);
+        if (!rel.contact) return R::fail("No contact with that empire");
+        rel.anger = kMaxAnger;
+        return {};
+    }
+
     R operator()(const cmd::SetWaypoint& c) {
         if (c.slot < 0 || c.slot >= static_cast<int>(emp().waypoints.size())) return R::fail("Invalid slot");
         if (c.waypoint && !knownSystem(s, c.waypoint->location.system)) return R::fail("Invalid location");
@@ -973,6 +984,7 @@ OPENSE4_CMD_NAME(EnterSector)
 OPENSE4_CMD_NAME(EditDesign)
 OPENSE4_CMD_NAME(OpenVehicleReport)
 OPENSE4_CMD_NAME(QueueReplaceFacility)
+OPENSE4_CMD_NAME(DecideWar)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

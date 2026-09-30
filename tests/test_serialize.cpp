@@ -354,6 +354,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::EditDesign{DesignId{3u}, design});
     c.push_back(cmd::OpenVehicleReport{VehicleId{33u}});
     c.push_back(cmd::QueueReplaceFacility{yard, 3, 34});
+    c.push_back(cmd::DecideWar{EmpireId{2u}});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());

@@ -538,6 +538,7 @@ template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c
 template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.evenly, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message); }
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
+template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
 template <class Ar> void io(Ar& ar, cmd::SetWaypoint& c) { fields(ar, c.slot, c.waypoint); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemFlags& c) { fields(ar, c.system, c.avoid, c.claim); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemNote& c) { fields(ar, c.system, c.note); }
