@@ -171,6 +171,7 @@ std::string historyLine(uint32_t turn, EmpireId other, std::string_view text) {
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     PlayerRecords out;
     out.empire = e;
+    out.turn = s.turn;
     if (!validEmpire(s, e)) return out;
     // Statistics: every empire whose score the player may see (spec 05 §5).
     for (const Empire& x : s.empires)

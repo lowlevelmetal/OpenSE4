@@ -71,6 +71,7 @@ void recordStatistics(TurnContext& ctx, EmpireId e);
 // data directory). Fixed-width columns, one record per line.
 struct PlayerRecords {
     EmpireId empire;
+    uint32_t turn = 0;  // the turn processed (the first is 0: the files start afresh)
     // One row per empire whose score the player may see (scoreVisible):
     // statisticsLine.
     std::vector<std::string> statistics;

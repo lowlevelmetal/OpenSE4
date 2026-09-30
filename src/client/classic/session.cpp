@@ -32,17 +32,22 @@ void writePlayerRecords(const game::GameState& s, const std::vector<game::score:
         log::warn("Cannot create {}: {}", dir.string(), ec.message());
         return;
     }
-    auto append = [&](const std::filesystem::path& file, const std::vector<std::string>& lines) {
-        if (lines.empty()) return;
-        std::ofstream out(file, std::ios::app);
+    // The first turn of a game starts its files afresh (a new game with the same seed).
+    auto append = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh) {
+        if (lines.empty()) {
+            if (fresh) std::filesystem::remove(file, ec);
+            return;
+        }
+        std::ofstream out(file, fresh ? std::ios::trunc : std::ios::app);
         for (const std::string& line : lines) out << line << '\n';
         if (!out) log::warn("Cannot write {}", file.string());
     };
     for (const game::score::PlayerRecords& rec : records) {
         const std::string base = std::format("player{}", rec.empire.value + 1);
-        append(dir / (base + "_stats.txt"), rec.statistics);
-        append(dir / (base + "_events.txt"), rec.history);
-        append(dir / (base + "_log.txt"), rec.log);
+        const bool fresh = rec.turn == 0;
+        append(dir / (base + "_stats.txt"), rec.statistics, fresh);
+        append(dir / (base + "_events.txt"), rec.history, fresh);
+        append(dir / (base + "_log.txt"), rec.log, fresh);
     }
 }
 

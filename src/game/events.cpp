@@ -802,6 +802,8 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         case Effect::ShipLoseSupply:
             if (!v) return out;
+            // Unlimited supply is never charged (spec 03 §7): it stays at its marker (inferred).
+            if (vehicleHasUnlimitedSupply(r, s, *v)) break;
             out.actual = std::clamp<int64_t>(amount, 0, std::max<int64_t>(0, v->supply));
             v->supply -= out.actual;
             break;
