@@ -351,7 +351,8 @@ private:
         }
         if (chosen) {
             if (!chosen->description.empty()) note(chosen->description.c_str());
-            ImGui::TextColored(kDim, "%s placement, up to %d warp points per system", chosen->systemPlacement.c_str(),
+            // Max Warp Points per Sys is how many nearest systems each one considers for links (spec 01 §3.5).
+            ImGui::TextColored(kDim, "%s placement; links to its %d nearest systems considered", chosen->systemPlacement.c_str(),
                                chosen->maxWarpPointsPerSystem);
         }
         ImGui::Dummy(ImVec2(0, ctx.px(6)));
