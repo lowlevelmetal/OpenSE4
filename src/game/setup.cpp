@@ -132,7 +132,8 @@ int racialPointCost(const Rules& r, const Race& race) {
         if (d > 0) total += c * std::min(d, t) + c * pos / 100 * std::max<int64_t>(0, d - t);
         if (d < 0) total -= c * std::min(-d, t) + c * neg / 100 * std::max<int64_t>(0, -d - t);
     }
-    for (uint32_t ti : race.traits) total += r.data().racialTraits[ti].cost;
+    for (uint32_t ti : race.traits)
+        if (ti < r.data().racialTraits.size()) total += r.data().racialTraits[ti].cost;
     return static_cast<int>(total);
 }
 

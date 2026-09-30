@@ -27,6 +27,7 @@ bool Rules::techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId
     if (t.racialArea > 0) {
         bool ok = false;
         for (uint32_t ti : e.race.traits) {
+            if (ti >= data_.racialTraits.size()) continue;
             const auto& trait = data_.racialTraits[ti];
             if (datafile::keysEqual(trait.traitType, "Tech Area") && !trait.values.empty() &&
                 datafile::parseInteger(trait.values.front()).value_or(-1) == t.racialArea)
@@ -82,6 +83,7 @@ std::optional<uint32_t> Rules::bestFacilityWith(const Empire& e, AbilityKind k) 
 int64_t Rules::traitValue(const Race& race, std::string_view traitType) const {
     int64_t total = 0;
     for (uint32_t ti : race.traits) {
+        if (ti >= data_.racialTraits.size()) continue;
         const auto& t = data_.racialTraits[ti];
         if (datafile::keysEqual(t.traitType, traitType) && !t.values.empty()) total += datafile::parseInteger(t.values.front()).value_or(0);
     }
@@ -90,7 +92,7 @@ int64_t Rules::traitValue(const Race& race, std::string_view traitType) const {
 
 bool Rules::hasTrait(const Race& race, std::string_view traitType) const {
     for (uint32_t ti : race.traits)
-        if (datafile::keysEqual(data_.racialTraits[ti].traitType, traitType)) return true;
+        if (ti < data_.racialTraits.size() && datafile::keysEqual(data_.racialTraits[ti].traitType, traitType)) return true;
     return false;
 }
 
