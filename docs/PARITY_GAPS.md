@@ -16,7 +16,6 @@ outcomes, **L** is an edge case.
 |---|---|---|---|
 | Arithmetic | Integer maths with floor division throughout | Percentages are applied in floating point, and each rule states whether its result is rounded (half to even) or truncated (spec 02 §1, spec 03 §2). Because of extended precision, an exact product can come out one lower, e.g. 100 × 53 % gives 52 | M |
 | Turn style (`turn.cpp`) | Every game is resolved as a simultaneous turn; the setup's "One player after another" choice changes nothing | Spec 05 §8 "Turn-based game": each player's movement, combat and diplomacy happen live in that player's turn, and `empireEndOfTurn` runs when the player ends it | M |
-| End-of-turn step 12 (`turn.cpp`) | Nothing is forgotten: the engine does not record when a foreign design was seen | Spec 05 §8 step 12: knowledge of foreign designs seen more than 50 turns ago is forgotten | L |
 
 ## Economy and population (spec 02)
 
@@ -44,7 +43,7 @@ The rules of this section follow the spec. What is left depends on other parts o
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| History window (client `empires.cpp`) | Lists the log's entries, and the log keeps only the last turn's (§3.4, as the original) | The history window keeps its own long record, the per-player `<game>_events.txt` (§5) | L |
+| Statistics and history files | Not written: every empire's statistics rows and history record (`Empire::history`, `Empire::historyEvents`) live in the save, and the windows read them there | Human players' `<game>_stats.txt`, `<game>_events.txt` and a text copy of the log are written at step 2 of their end-of-turn processing (§5, §8); their layout is unknown (spec 06 question 12) | L |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 

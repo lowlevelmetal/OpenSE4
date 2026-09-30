@@ -310,11 +310,13 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 - **Each network player gets only their own view.** Each turn, the host sends every
   player the game as their empire knows it (`game::redactForEmpire`):
   - Removed:
-    - other empires' treasuries, research and intelligence queues, logs and plans;
+    - other empires' treasuries, research and intelligence queues, logs, history
+      records and plans;
     - ships the player cannot see this turn;
     - colonies in systems the player has not explored;
     - the contents of foreign colonies;
-    - the details of designs the player has never seen;
+    - the details of designs the player has never seen, or has forgotten (designs not
+      seen for 50 turns);
     - other empires' messages;
     - battles the player was not in;
     - the random-number state.

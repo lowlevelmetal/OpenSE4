@@ -1450,7 +1450,8 @@ All rules in this section are (confirmed: binary).
     sources, and facilities need population. What order and population rule does the original
     use? (inferred)
 45. **Obsolete design purge:** "seen in the last 50 turns" is read as "still in the empire's list
-    of seen designs"; the list itself is kept by the intelligence rules. (inferred)
+    of seen designs". Each empire's end-of-turn step 12 drops designs last seen more than 50 turns
+    ago from that list (spec 05 §8, open question 31). (inferred)
 46. **Attack on a planet:** the engine ends it when the colony is gone or has become the
     attacker's. When does the original end it? (inferred)
 47. **Repeat battles within a turn:** "every object present already fought here" — the engine
