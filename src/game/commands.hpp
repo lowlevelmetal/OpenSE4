@@ -22,11 +22,12 @@ class Rules;
 namespace cmd {
 
 // ---- Vehicles and fleets ----------------------------------------------------------------
-struct SetOrders {           // replaces the order list (vehicle or fleet)
+struct SetOrders {           // replaces the order list (vehicle, fleet or planet)
     VehicleId vehicle;
-    FleetId fleet;           // one of the two
+    FleetId fleet;           // one of the three
     std::vector<Order> orders;
     bool repeat = false;
+    ObjectId planet;         // an own colony: Launch Units and Recover Units only (spec 03 §12)
 };
 struct CreateFleet {         // new fleet from vehicles in one sector; first is the leader
     std::string name;
@@ -58,7 +59,7 @@ struct QueueRemove { QueueTarget target; uint32_t index = 0; };
 struct QueueMove { QueueTarget target; uint32_t from = 0; uint32_t to = 0; };
 struct QueueSetCount { QueueTarget target; uint32_t index = 0; int count = 1; };
 struct QueueFlags { QueueTarget target; bool onHold = false; bool repeat = false; bool emergency = false; int autoWaypoint = -1; };
-struct Retrofit { VehicleId vehicle; DesignId design; };  // queued at the space yard in the vehicle's sector
+struct Retrofit { VehicleId vehicle; DesignId design; };  // at an own space yard in the vehicle's sector (spec 03 §14)
 
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };

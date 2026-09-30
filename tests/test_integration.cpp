@@ -38,7 +38,9 @@ void checkInvariants(const Rules& r, const GameState& s) {
         CHECK(v.location.sector.valid());
         CHECK(v.damage.size() == s.design(v.design).entries.size());
         CHECK(v.supply >= 0);
-        CHECK(v.supply <= std::max<int64_t>(vehicleSupplyCapacity(r, s, v), computeDesignStats(r, nullptr, s.design(v.design)).supplyCapacity));
+        // Unlimited supply (bases, quantum reactors) is held at its marker (spec 03 §7).
+        if (vehicleHasUnlimitedSupply(r, s, v)) CHECK(v.supply == kUnlimitedSupply);
+        else CHECK(v.supply <= std::max<int64_t>(vehicleSupplyCapacity(r, s, v), computeDesignStats(r, nullptr, s.design(v.design)).supplyCapacity));
         if (v.fleet.valid()) {
             const Fleet* f = s.fleet(v.fleet);
             REQUIRE(f);

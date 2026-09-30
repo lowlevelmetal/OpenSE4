@@ -4,6 +4,7 @@
 
 #include "game/commands.hpp"
 #include "game/design.hpp"
+#include "game/xmath.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
 
@@ -182,7 +183,7 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     REQUIRE(s.fleets.size() == 1);
     CHECK(s.vehicle(mine[0])->fleet == s.fleets[0].id);
     CHECK(apply(r, s, me, cmd::LeaveFleet{mine[0]}).ok);
-    CHECK(s.fleets[0].leader == mine[1]);
+    CHECK_FALSE(s.fleets[0].leader.valid());  // the choice is cleared: the first member leads (spec 03 §9)
     CHECK(apply(r, s, me, cmd::DisbandFleet{s.fleets[0].id}).ok);
     CHECK(s.fleets.empty());
 
@@ -226,7 +227,10 @@ TEST_CASE("engine: scrap refunds and retrofit keeps damage") {
     const Resources pre = s.empires[0].stockpile;
     REQUIRE(apply(r, s, me, cmd::Scrap{id}).ok);
     CHECK(s.vehicle(id) == nullptr);
-    CHECK(s.empires[0].stockpile == pre + computeDesignStats(r, nullptr, s.design(b)).cost.percent(30));
+    // round(cost × 30 %) per resource, in floating point (spec 03 §15).
+    const Resources cost = computeDesignStats(r, nullptr, s.design(b)).cost;
+    const Resources refund{xmath::pctRound(cost.v[0], 30), xmath::pctRound(cost.v[1], 30), xmath::pctRound(cost.v[2], 30)};
+    CHECK(s.empires[0].stockpile == pre + refund);
 }
 
 TEST_CASE("engine: processTurn advances and rejects stale orders") {

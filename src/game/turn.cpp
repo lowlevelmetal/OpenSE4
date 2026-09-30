@@ -80,7 +80,8 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     research::runResearch(ctx);
     intel::runIntel(ctx);
 
-    // ---- 9-10. Events, then supply and repair.
+    // ---- 9-10. Events (hazards first, spec 05 §8 step 9), then supply and repair.
+    movement::runStellarHazards(ctx);
     events::runEvents(ctx);
     movement::runUpkeep(ctx);
     s.removeDeadVehicles();

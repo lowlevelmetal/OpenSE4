@@ -79,6 +79,7 @@ inline ruleset::Ruleset buildRuleset() {
     comp("Mv Engine", 10, 10, ship | maskOf(VehicleType::Drone), {ab(AbilityKind::StandardShipMovement, 1)}, 10, "Engines");
     comp("Mv Armor", 10, 30, shipBase, {ab(AbilityKind::Armor)}, 0, "Armor");
     comp("Mv Tank", 10, 10, shipBase, {ab(AbilityKind::SupplyStorage, 100)}, 0, "Supply");
+    comp("Mv Fuel Cell", 10, 10, shipBase, {ab(AbilityKind::SupplyStorage, 1'000'000)}, 0, "Supply");
     comp("Mv Sensor 3", 10, 10, shipBase, {abText(AbilityKind::SensorLevel, "EM Active", 3)}, 0, "Sensors");
     comp("Mv Psychic Sensor", 10, 10, shipBase, {abText(AbilityKind::SensorLevel, "Psychic", 2)}, 0, "Sensors");
     comp("Mv Cloak", 10, 10, shipBase, allTypes(AbilityKind::CloakLevel, 3), 20, "Sensors");
@@ -307,7 +308,7 @@ public:
         std::fill(s.empire(e).knowledge.knownWarpLink.begin(), s.empire(e).knowledge.knownWarpLink.end(), 1);
     }
 
-    // Movement phase only (start + 30 days + hazards), then dead vehicles are removed.
+    // Movement phase only (start + 30 days), then dead vehicles are removed.
     void move(const movement::CombatHooks& hooks = {}) {
         TurnContext ctx{r_, s, {}, {}, {}};
         movement::startTurn(ctx);
@@ -326,6 +327,13 @@ public:
         TurnContext ctx{r_, s, {}, {}, {}};
         movement::runUpkeep(ctx);
         s.removeDeadVehicles();
+    }
+
+    // The event step's pull, drift and centre damage.
+    void hazards() {
+        TurnContext ctx{r_, s, {}, {}, {}};
+        movement::runStellarHazards(ctx);
+        lastMoods = ctx.moodEvents;
     }
 
     void fullTurn() {
@@ -361,7 +369,7 @@ private:
 
 // Records the combat calls movement makes; `fight` decides combatPossible.
 // Like combat, a resolved sector where hostile non-mine vehicles meet gets a
-// CombatRecord listing them, and they lose their orders.
+// CombatRecord listing them.
 struct CombatSpy {
     std::vector<Location> asked;
     std::vector<std::pair<uint32_t, Location>> fought;  // (call order, location)
@@ -392,6 +400,8 @@ struct CombatSpy {
                             }
                     }
                     if (rec.pieces.empty()) return;
+                    // Like the combat module today, the spy clears the fighters' orders;
+                    // movement keeps the lists anyway (spec 03 §6.3).
                     for (const CombatPiece& p : rec.pieces) s.vehicle(p.vehicle)->orders.clear();
                     s.combats.push_back(std::move(rec));
                 }};
