@@ -129,11 +129,6 @@ int rebelDifficulty(const GameState& s);
 // else Mining Colony. For every empire whose player is not asked.
 std::string colonyTypeAtColonization(const Rules& r, const GameState& s, EmpireId e, ObjectId planet);
 
-// Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
-// Low/Medium/High setting (0..2) brings, and a race preset folder for each.
-// Races already in `used` (folders) are never drawn.
-std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng,
-                                               std::vector<std::string> used = {});
 // One random race (spec 05 §7.1): computer players pick the personality group
 // furthest below its target share, then a race of that group; neutral players
 // draw from the neutral races. `used` are the race folders already in the
@@ -144,6 +139,10 @@ const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral
 // characteristics applied while they fit the budget, then traits that fit.
 Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints);
 
+// Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
+// Low/Medium/High setting (0..2) brings, and a race preset folder for each.
+// Races are drawn with pickRandomRace; none is drawn twice.
+std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng);
 // "Computer Player Bonus" as a production/research percentage for the economy
 // and research modules (0 for humans). The size of the bonus is open (spec 05
 // §7.1); we use 10 % per bonus step (inferred).
