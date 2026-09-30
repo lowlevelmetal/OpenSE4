@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/settings.hpp"
 
 #include "game/design.hpp"
@@ -17,23 +18,29 @@ namespace opense4::client::classic {
 
 namespace {
 
-// Classic main-window geometry at 1024×768 (docs/spec/06 §2, spec 07).
+// Classic main-window geometry at 1024×768, measured on the original
+// (docs/spec/06 §2, docs/spec/07 §UI): the frame is drawn from the
+// Screens/1024X768 strips, the panels sit between them.
 constexpr float kSectorSize = 50.0f;
 constexpr float kSpriteSize = 36.0f;
+constexpr const char* kScreens = "Pictures/Game/Screens/1024X768/";
 
 // Panel rectangles for the frame's current extent. Classic 4:3 (left 0,
-// right 1024) gives the original layout; a wider frame stretches the bars
-// and, with enough room, puts a full-height galaxy map beside the report.
+// right 1024) gives the original layout; a wider frame keeps the system view
+// and moves the right-hand panels to the right edge, and with enough room puts
+// a full-height galaxy map beside the report.
 struct Geometry {
     float left = 0, right = kFrameW;
-    Rect statusBar{{0, 0}, {1024, 32}};
-    Rect commandPanel{{0, 32}, {958, 106}};
+    Rect statusBar{{0, 0}, {1024, 29}};
+    Rect commandPanel{{0, 29}, {957, 106}};
     Rect systemBackground{{3, 105}, {663, 765}};
     Vec2 sectorOrigin{8, 110};
-    Rect reportPanel{{668, 108}, {958, 470}};
-    Rect galaxyPanel{{668, 497}, {1018, 762}};
-    std::optional<Rect> strip = Rect{{960, 108}, {1022, 470}};  // the classic right-hand filler
-    int ordersPerRow = 14;
+    Rect reportPanel{{671, 117}, {957, 470}};
+    Rect galaxyPanel{{671, 479}, {1016, 760}};
+    std::optional<Rect> strip = Rect{{958, 107}, {1020, 472}};  // the circuit-board filler
+    std::optional<Rect> gap;   // more filler where a wider frame leaves room beside the report
+    float divider = 655;       // x of the Middle strip between the system view and the right panels
+    std::optional<float> wideDivider;  // second Middle strip (wide layout)
     bool wide = false;  // side-by-side report and galaxy map
 };
 Geometry geo;
@@ -44,33 +51,33 @@ void layOut(float left, float right) {
     g.right = right;
     const float extra = right - left - kFrameW;
     if (extra > 0.5f) {
-        g.statusBar = Rect{{left, 0}, {right, 32}};
-        g.commandPanel = Rect{{left, 32}, {right - 66, 106}};
+        g.statusBar = Rect{{left, 0}, {right, 29}};
+        g.commandPanel = Rect{{left, 29}, {right - 67, 106}};
         g.systemBackground = Rect{{left + 3, 105}, {left + 663, 765}};
         g.sectorOrigin = {left + 8, 110};
-        const float x0 = left + 668, x1 = right - 6;
-        if (x1 - x0 >= 620.0f) {
+        g.divider = left + 655;
+        const float x0 = left + 671, x1 = right - 67;
+        if (right - 12 - x0 >= 640.0f) {
+            // Report, then a full-height galaxy map up to the right edge.
             g.wide = true;
-            g.reportPanel = Rect{{x0, 108}, {x0 + 290, 762}};
-            g.galaxyPanel = Rect{{x0 + 296, 108}, {x1, 762}};
+            g.reportPanel = Rect{{x0, 117}, {x0 + 286, 760}};
+            g.wideDivider = x0 + 286;
+            g.galaxyPanel = Rect{{x0 + 302, 117}, {right - 12, 760}};
             g.strip.reset();
         } else {
-            g.reportPanel = Rect{{x0, 108}, {x1 - 64, 470}};
-            g.strip = Rect{{x1 - 62, 108}, {x1, 470}};
-            g.galaxyPanel = Rect{{x0, 497}, {x1, 762}};
+            g.reportPanel = Rect{{x1 - 286, 117}, {x1, 470}};
+            g.strip = Rect{{x1 + 1, 107}, {x1 + 63, 472}};
+            if (x1 - 286 - x0 > 4) g.gap = Rect{{x0 - 1, 107}, {x1 - 289, 472}};
+            g.galaxyPanel = Rect{{x0, 479}, {right - 8, 760}};
         }
-        // Order buttons fill the room between the command buttons and the selection cycles.
-        g.ordersPerRow = std::max(14, int((g.commandPanel.size().x - 240 - 16 - 16 - 190) / 36.0f));
     }
     geo = g;
 }
 
-const Color kFrameBlue = Color::hex(0x2c4f9e);
-const Color kFrameBright = Color::hex(0x5b86e0);
 const Color kSelectYellow = Color::hex(0xffd040);
-const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 
-// Command buttons: (icon in Main.bmp, window, hotkey label). Two rows of six.
+// Command buttons: (icon in Main.bmp, window, tooltip). Two rows of six, in the
+// original's order (verified against the running game).
 struct CommandButton {
     int icon;
     std::optional<ScreenId> screen;
@@ -78,22 +85,60 @@ struct CommandButton {
 };
 constexpr std::array<CommandButton, 12> kCommands{{
     {0, ScreenId::GameMenu, "Game Menu (F2)"},
-    {1, ScreenId::Designs, "Designs (F3)"},
+    {4, ScreenId::Designs, "Designs (F3)"},
     {2, ScreenId::Planets, "Planets (F4)"},
-    {5, ScreenId::Colonies, "Colonies (F5)"},
+    {1, ScreenId::Colonies, "Colonies (F5)"},
     {3, ScreenId::Ships, "Ships \\ Units (F6)"},
-    {4, ScreenId::Queues, "Construction Queues (F7)"},
+    {9, ScreenId::Queues, "Construction Queues (F7)"},
     {6, ScreenId::Research, "Research (F8)"},
     {7, ScreenId::Empires, "Empires (F9)"},
     {8, ScreenId::Log, "Log (F10)"},
-    {9, ScreenId::EmpireStatus, "Empire Status (F11)"},
+    {5, ScreenId::EmpireStatus, "Empire Status (F11)"},
     {10, ScreenId::Help, "Help (F1)"},
     {11, std::nullopt, "End Turn (F12)"},
 }};
 
-// Order icons in Orders.bmp: (band, column). Bands are 4 state rows of 34 px.
-Sprite orderIcon(Art& art, int band, int column, int state) {
+// The order strip: 20 columns × 2 rows at fixed places, each order dimmed when
+// it does not apply (the original's layout; manual names in comments).
+// `key` matches OrderButton::label; the icon is (band, column) in Orders.bmp,
+// whose bands hold four 34-px state rows: normal, hover, lit, dim.
+struct OrderSlot {
+    const char* key;
+    int band, column;
+    const char* tooltip;  // shown when the order is not available
+};
+constexpr std::array<std::array<OrderSlot, 2>, 20> kOrderStrip{{
+    {{{"Move", 0, 0, "Move To"}, {"Warp", 0, 5, "Warp"}}},
+    {{{"Wpt", 0, 1, "Move To Waypoint"}, {"Colonize", 0, 2, "Colonize"}}},
+    {{{"Attack", 0, 4, "Attack"}, {"Fleet", 0, 6, "Fleet Transfer"}}},
+    {{{"Supply", 0, 8, "Resupply At Nearest"}, {"Repair", 0, 9, "Repair At Nearest"}}},
+    {{{"Clear", 0, 10, "Clear Orders"}, {"Queue", 0, 11, "Build Queue"}}},
+    {{{"Cargo", 2, 10, "Cargo Transfer"}, {"Units", 2, 9, "Launch \\ Recover Units"}}},
+    {{{"Load", 0, 19, "Load Cargo"}, {"Drop", 0, 20, "Drop Cargo"}}},
+    {{{"LaunchRemote", 0, 15, "Launch Units Remotely"}, {"RecoverRemote", 0, 16, "Recover Units Remotely"}}},
+    {{{"Sentry", 0, 12, "Sentry"}, {"Explore", 0, 3, "Explore"}}},
+    {{{"Patrol", 0, 13, "Set Patrol"}, {"Repeat", 0, 14, "Repeat Orders"}}},
+    {{{"Stellar", 1, 5, "Stellar Manipulation"}, {"Name", 2, 0, "Change Name"}}},
+    {{{"Scrap", 0, 18, "Scrap \\ Analyze \\ Mothball"}, {"Strategy", 1, 0, "Change Formation \\ Strategy"}}},
+    {{{"Orders", 2, 1, "View Orders"}, {"Sweep", 1, 11, "Sweep Mines"}}},
+    {{{"ScrapFacilities", 1, 18, "Scrap Facilities"}, {"Jettison", 1, 17, "Jettison Cargo"}}},
+    {{{"Cloak", 1, 21, "Cloak"}, {"Decloak", 1, 22, "Decloak"}}},
+    {{{"UseComponent", 1, 12, "Use Component"}, {"UseFacility", 1, 13, "Use Facility"}}},
+    {{{"Abandon", 1, 3, "Abandon Planet"}, {"Convert", 2, 2, "Convert Resources"}}},
+    {{{"", 2, 8, ""}, {"Minister", 0, 22, "Toggle Minister Control"}}},
+    {{{"ReplayPlay", 2, 4, "Play Movement Log"}, {"ReplayShip", 2, 5, "Play Movement Log For Ship"}}},
+    {{{"ReplayStep", 2, 6, "Play Movement Log Stepped"}, {"ReplayRewind", 2, 7, "Rewind Movement Log"}}},
+}};
+
+Sprite orderCell(Art& art, int band, int column, int state) {
     return art.region("Pictures/Game/Buttons/Orders.bmp", column * 34, (band * 4 + state) * 34, 34, 34, false);
+}
+
+// Draws a sprite into an ImGui draw list over a frame-pixel rectangle.
+void drawAt(UiContext& ui, ImDrawList* dl, const Sprite& s, Vec2 min, Vec2 size) {
+    if (!s) return;
+    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), ui.at(min), ui.at(min + size), {s.uv.min.x, s.uv.min.y},
+                 {s.uv.max.x, s.uv.max.y});
 }
 
 Vec2 sectorCenter(game::Sector s) { return geo.sectorOrigin + Vec2{kSectorSize * (float(s.x) + 0.5f), kSectorSize * (float(s.y) + 0.5f)}; }
@@ -108,20 +153,18 @@ std::optional<game::Sector> sectorAt(Vec2 p) {
 
 Color colorOf(uint32_t rgb) { return Color::hex(rgb); }
 
-// Where the quadrant is drawn in the galaxy panel: stretched to the classic
-// panel, or with its proportions kept on the big widescreen map.
+// Where the quadrant is drawn in the galaxy panel.
 struct GalaxyTransform {
     Vec2 origin;
     float sx = 1, sy = 1;
 };
 GalaxyTransform galaxyTransform(const game::Galaxy& g) {
-    const Rect inner = geo.galaxyPanel.expanded(-8.0f);
+    // The quadrant keeps its proportions, centred in the panel (as the original draws it).
+    const Rect inner = geo.galaxyPanel.expanded(-4.0f);
     GalaxyTransform t{inner.min, inner.size().x / float(std::max(1, g.width)), inner.size().y / float(std::max(1, g.height))};
-    if (geo.wide) {
-        const float s1 = std::min(t.sx, t.sy);
-        t.origin += (inner.size() - Vec2{s1 * float(g.width), s1 * float(g.height)}) * 0.5f;
-        t.sx = t.sy = s1;
-    }
+    const float s1 = std::min(t.sx, t.sy);
+    t.origin += (inner.size() - Vec2{s1 * float(g.width), s1 * float(g.height)}) * 0.5f;
+    t.sx = t.sy = s1;
     return t;
 }
 
@@ -382,7 +425,6 @@ std::vector<MainWindow::OrderButton> MainWindow::availableOrders(UiContext& ui) 
     std::vector<OrderButton> out;
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
-    Art& art = ui.art;
     const game::EmpireId me = ui.session.player();
 
     if (const game::Vehicle* v = selectedVehicle(ui); v && v->owner == me) {
@@ -395,120 +437,129 @@ std::vector<MainWindow::OrderButton> MainWindow::availableOrders(UiContext& ui) 
         const std::vector<game::Order>& current = fleet ? fleet->orders : v->orders;
         const bool repeat = fleet ? fleet->repeatOrders : v->repeatOrders;
         auto simple = [&](game::OrderKind k) { return [this, &ui, k] { giveOrder(ui, game::Order{k}); }; };
-        out.push_back({"Move", "Move To (M)", orderIcon(art, 0, 0, 0), mobile, [this, &ui] { startPick(ui, Pick::MoveTo, "Move To: pick a destination"); }});
-        out.push_back({"Wpt", "Move To Waypoint", orderIcon(art, 0, 1, 0), mobile, [&ui, id] {
+        out.push_back({"Move", "Move To (M)", mobile, [this, &ui] { startPick(ui, Pick::MoveTo, "Move To: pick a destination"); }});
+        out.push_back({"Wpt", "Move To Waypoint", mobile, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::SelectWaypoint, a);
                        }});
-        out.push_back({"Warp", "Warp (W)", orderIcon(art, 0, 5, 0), mobile && hasWarp, [this, &ui] { startPick(ui, Pick::Warp, "Warp: pick a warp point"); }});
-        out.push_back({"Attack", "Attack (A)", orderIcon(art, 0, 4, 0), st.armed(), [this, &ui] { startPick(ui, Pick::Attack, "Attack: pick a target"); }});
-        out.push_back({"Colonize", "Colonize (C)", orderIcon(art, 0, 2, 0), st.canColonizeRock || st.canColonizeIce || st.canColonizeGas,
+        out.push_back({"Warp", "Warp (W)", mobile && hasWarp, [this, &ui] { startPick(ui, Pick::Warp, "Warp: pick a warp point"); }});
+        out.push_back({"Attack", "Attack (A)", st.armed(), [this, &ui] { startPick(ui, Pick::Attack, "Attack: pick a target"); }});
+        out.push_back({"Colonize", "Colonize (C)", st.canColonizeRock || st.canColonizeIce || st.canColonizeGas,
                        [this, &ui] { startPick(ui, Pick::Colonize, "Colonize: pick a planet"); }});
-        out.push_back({"Explore", "Explore (E)", orderIcon(art, 0, 3, 0), mobile, simple(game::OrderKind::Explore)});
-        out.push_back({"Supply", "Resupply (S)", orderIcon(art, 1, 12, 0), mobile, simple(game::OrderKind::Resupply)});
-        out.push_back({"Repair", "Repair (R)", orderIcon(art, 0, 9, 0), mobile, simple(game::OrderKind::Repair)});
-        out.push_back({"Sentry", "Sentry (Y)", orderIcon(art, 0, 12, 0), true, simple(game::OrderKind::Sentry)});
-        out.push_back({"Patrol", "Set Patrol (P): pick points, then Enter", orderIcon(art, 0, 13, 0), mobile,
+        out.push_back({"Explore", "Explore (E)", mobile, simple(game::OrderKind::Explore)});
+        out.push_back({"Supply", "Resupply (S)", mobile, simple(game::OrderKind::Resupply)});
+        out.push_back({"Repair", "Repair (R)", mobile, simple(game::OrderKind::Repair)});
+        out.push_back({"Sentry", "Sentry (Y)", true, simple(game::OrderKind::Sentry)});
+        out.push_back({"Patrol", "Set Patrol (P): pick points, then Enter", mobile,
                        [this, &ui] { startPick(ui, Pick::Patrol, "Patrol: pick points, Enter to finish"); }});
-        out.push_back({"Repeat", repeat ? "Repeat Orders: on (K)" : "Repeat Orders: off (K)", orderIcon(art, 0, 14, repeat ? 2 : 0), true,
+        out.push_back({"Repeat", repeat ? "Repeat Orders: on (K)" : "Repeat Orders: off (K)", true,
                        [this, &ui, current, repeat] { replaceOrders(ui, current, !repeat); }});
-        out.push_back({"Clear", "Clear Orders (Del)", orderIcon(art, 0, 10, 0), !current.empty(), [this, &ui] { replaceOrders(ui, {}, false); }});
-        out.push_back({"Fleet", "Fleet Transfer (F)", orderIcon(art, 0, 6, 0), true, [&ui, id] {
+        out.back().lit = repeat;
+        out.push_back({"Clear", "Clear Orders (Del)", !current.empty(), [this, &ui] { replaceOrders(ui, {}, false); }});
+        out.push_back({"Fleet", "Fleet Transfer (F)", true, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::FleetTransfer, a);
                        }});
         const bool cargo = game::vehicleCargoCapacity(r, s, *v) > 0;
-        out.push_back({"Load", "Load Cargo (L)", orderIcon(art, 0, 16, 0), cargo, [this, &ui] {
+        out.push_back({"Load", "Load Cargo (L)", cargo, [this, &ui] {
                            pickDesign_ = {};
                            startPick(ui, Pick::LoadCargo, "Load population: pick where");
                        }});
-        out.push_back({"Drop", "Drop Cargo (D)", orderIcon(art, 0, 15, 0), cargo && !v->cargo.empty(), [this, &ui] {
+        out.push_back({"Drop", "Drop Cargo (D)", cargo && !v->cargo.empty(), [this, &ui] {
                            pickDesign_ = {};
                            startPick(ui, Pick::DropCargo, "Drop population: pick where");
                        }});
-        out.push_back({"Cargo", "Cargo Transfer (T)", orderIcon(art, 1, 9, 0), cargo, [&ui, id] {
+        out.push_back({"Cargo", "Cargo Transfer (T)", cargo, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::CargoTransfer, a);
                        }});
-        out.push_back({"Units", "Launch \\ Recover Units (U)", orderIcon(art, 1, 10, 0), cargo, [&ui, id] {
+        out.push_back({"Units", "Launch \\ Recover Units (U)", cargo, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::LaunchRecover, a);
                        }});
         const bool cloak = game::hasAbility(abilities, game::AbilityKind::CloakLevel);
         if (cloak) {
-            out.push_back({"Cloak", "Cloak (Z)", orderIcon(art, 1, 21, 0), v->status != game::VehicleStatus::Cloaked, simple(game::OrderKind::Cloak)});
-            out.push_back({"Decloak", "Decloak (X)", orderIcon(art, 1, 22, 0), v->status == game::VehicleStatus::Cloaked,
+            out.push_back({"Cloak", "Cloak (Z)", v->status != game::VehicleStatus::Cloaked, simple(game::OrderKind::Cloak)});
+            out.push_back({"Decloak", "Decloak (X)", v->status == game::VehicleStatus::Cloaked,
                            simple(game::OrderKind::Decloak)});
         }
         if (game::hasAbility(abilities, game::AbilityKind::MineSweeping))
-            out.push_back({"Sweep", "Sweep Mines (Ctrl+M)", orderIcon(art, 0, 17, 0), true, simple(game::OrderKind::SweepMines)});
+            out.push_back({"Sweep", "Sweep Mines (Ctrl+M)", true, simple(game::OrderKind::SweepMines)});
         if (game::vehicleHasSpaceYard(r, s, *v))
-            out.push_back({"Queue", "Build Queue (Q)", Sprite{}, true, [&ui, id] {
+            out.push_back({"Queue", "Build Queue (Q)", true, [&ui, id] {
                                ScreenArgs a;
                                a.vehicle = id;
                                ui.open(ScreenId::SetQueue, a);
                            }});
-        out.push_back({"Stellar", "Stellar Manipulation (B)", orderIcon(art, 0, 23, 0), true, [&ui, id] {
+        out.push_back({"Stellar", "Stellar Manipulation (B)", true, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::StellarManipulation, a);
                        }});
-        out.push_back({"Scrap", "Scrap / Analyze / Mothball (G)", orderIcon(art, 0, 18, 0), true, [&ui, id] {
+        out.push_back({"Scrap", "Scrap / Analyze / Mothball (G)", true, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::Scrap, a);
                        }});
-        out.push_back({"Orders", "View Orders (V)", orderIcon(art, 2, 1, 0), true, [&ui, id] {
+        out.push_back({"Orders", "View Orders (V)", true, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::ViewOrders, a);
                        }});
-        out.push_back({"Name", "Change Name (N)", orderIcon(art, 2, 0, 0), true, [&ui, id] {
+        out.push_back({"Name", "Change Name (N)", true, [&ui, id] {
                            ScreenArgs a;
                            a.vehicle = id;
                            ui.open(ScreenId::Rename, a);
                        }});
-        out.push_back({"Minister", v->minister ? "Minister Control: on" : "Minister Control: off", orderIcon(art, 0, 22, v->minister ? 2 : 0), true,
+        out.push_back({"Minister", v->minister ? "Minister Control: on" : "Minister Control: off", true,
                        [&ui, id, on = !v->minister] {
                            game::cmd::SetMinister c;
                            c.vehicle = id;
                            c.on = on;
                            ui.session.issue(c);
                        }});
+        out.back().lit = v->minister;
     } else if (const game::Colony* c = selectedColony(ui); c && c->owner == me) {
         const game::ObjectId planet = c->planet;
-        out.push_back({"Queue", "Set Construction Queue (Q)", Sprite{}, c->totalPopulation() > 0, [&ui, planet] {
+        out.push_back({"Queue", "Set Construction Queue (Q)", c->totalPopulation() > 0, [&ui, planet] {
                            ScreenArgs a;
                            a.planet = planet;
                            ui.open(ScreenId::SetQueue, a);
                        }});
-        out.push_back({"Cargo", "Cargo Transfer (T)", orderIcon(art, 1, 9, 0), true, [&ui, planet] {
+        out.push_back({"Cargo", "Cargo Transfer (T)", true, [&ui, planet] {
                            ScreenArgs a;
                            a.planet = planet;
                            ui.open(ScreenId::CargoTransfer, a);
                        }});
-        out.push_back({"Scrap", "Scrap Facilities", orderIcon(art, 1, 18, 0), !c->facilities.empty(), [&ui, planet] {
+        for (const char* key : {"Scrap", "ScrapFacilities"})
+            out.push_back({key, "Scrap Facilities", !c->facilities.empty(), [&ui, planet] {
+                               ScreenArgs a;
+                               a.planet = planet;
+                               ui.open(ScreenId::Scrap, a);
+                           }});
+        out.push_back({"Units", "Launch \\ Recover Units (U)", true, [&ui, planet] {
                            ScreenArgs a;
                            a.planet = planet;
-                           ui.open(ScreenId::Scrap, a);
+                           ui.open(ScreenId::LaunchRecover, a);
                        }});
-        out.push_back({"Name", "Change Name (N)", orderIcon(art, 2, 0, 0), true, [&ui, planet] {
+        out.push_back({"Name", "Change Name (N)", true, [&ui, planet] {
                            ScreenArgs a;
                            a.planet = planet;
                            ui.open(ScreenId::Rename, a);
                        }});
-        out.push_back({"Minister", c->minister ? "Minister Control: on" : "Minister Control: off", orderIcon(art, 0, 22, c->minister ? 2 : 0), true,
+        out.push_back({"Minister", c->minister ? "Minister Control: on" : "Minister Control: off", true,
                        [&ui, planet, on = !c->minister] {
                            game::cmd::SetMinister m;
                            m.planet = planet;
                            m.on = on;
                            ui.session.issue(m);
                        }});
-        out.push_back({"Abandon", "Abandon Planet (Ctrl+A)", orderIcon(art, 1, 23, 0),
+        out.back().lit = c->minister;
+        out.push_back({"Abandon", "Abandon Planet (Ctrl+A)",
                        c->totalPopulation() <= r.setting("Maximum Population For Abandon Planet Order", 50) && !c->homeworld,
                        [&ui, planet] { ui.session.issue(game::cmd::AbandonPlanet{planet}); }});
     }
@@ -535,61 +586,56 @@ void MainWindow::update(UiContext& ui, bool blocked) {
 }
 
 void MainWindow::statusBar(UiContext& ui) {
+    // Flag, empire, leader, game date and the treasury, at the original's places.
     const game::Empire& e = ui.me();
-    ImGui::SetNextWindowPos(ui.at(geo.statusBar.min));
-    ImGui::SetNextWindowSize(ui.size(geo.statusBar.size()));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(6), ui.px(5)));
-    ImGui::Begin("##status", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    ImGui::PushFont(ui.fonts.medium, ui.fontPx(14.0f));
-    image(ui, ui.art.flag(e.race.style), {30, 20});
-    ImGui::SameLine();
-    ImGui::TextUnformatted(std::format("{} {}", e.name, e.empireType).c_str());
-    ImGui::SameLine(ui.px(300));
-    ImGui::TextColored(kLabelBlue, "Game Date");
-    ImGui::SameLine();
-    ImGui::TextUnformatted(formatDate(ui.state().turn).c_str());
-    ImGui::SameLine(ui.px(520));
-    resources(ui, e.stockpile);
-    if (ui.session.waitingForOthers()) {
-        ImGui::SameLine(ui.px(880));
-        ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "Waiting...");
+    const float x0 = geo.left;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    drawAt(ui, dl, ui.art.flag(e.race.style), {x0 + 15, 8}, {26, 18});
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize();
+    auto text = [&](float x, ImU32 color, const std::string& t) { dl->AddText(font, size, ui.at({x, 12}), color, t.c_str()); };
+    text(x0 + 47, IM_COL32_WHITE, std::format("{} {}", e.name, e.empireType));
+    text(x0 + 231, IM_COL32_WHITE, std::format("{} {}", e.leaderTitle, e.leaderName));
+    text(x0 + 421, ImGui::GetColorU32(kLabelBlue), "Game Date");
+    text(x0 + 501, IM_COL32_WHITE, formatDate(ui.state().turn));
+    static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+    static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
+    static constexpr std::array<float, 3> kX{627, 700, 771};
+    for (size_t i = 0; i < 3; ++i) {
+        const std::string amount = std::to_string(e.stockpile.v[i]);
+        text(x0 + kX[i], imColor(kColors[i]), amount);
+        const float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, amount.c_str()).x / ui.k();
+        drawAt(ui, dl, ui.art.icon16(kIcons[i]), {x0 + kX[i] + w + 1, 10}, {14, 14});
     }
-    ImGui::PopFont();
-    ImGui::End();
-    ImGui::PopStyleVar();
+    if (ui.session.waitingForOthers()) text(x0 + 860, IM_COL32(255, 204, 77, 255), "Waiting...");
 }
 
 void MainWindow::commandPanel(UiContext& ui) {
     ImGui::SetNextWindowPos(ui.at(geo.commandPanel.min));
-    ImGui::SetNextWindowSize(ui.size(geo.commandPanel.size()));
+    ImGui::SetNextWindowSize(ui.size(geo.commandPanel.size() + Vec2{67, 0}));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##commands", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                             ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    ImGui::PushFont(ui.fonts.medium, 11.0f * ui.k());
-    const ImVec2 origin = ImGui::GetWindowPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float x0 = geo.left;
+    auto hit = [&](const char* id, Vec2 min, Vec2 size) {
+        ImGui::SetCursorScreenPos(ui.at(min));
+        const bool clicked = ImGui::InvisibleButton(id, ui.size(size));
+        return std::pair{clicked, ImGui::IsItemHovered()};
+    };
 
-    // Command buttons.
+    // Command buttons: 34-px cells from (13, 36).
     for (size_t i = 0; i < kCommands.size(); ++i) {
-        const float x = 14.0f + float(i % 6) * 36.0f, y = 4.0f + float(i / 6) * 36.0f;
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(x), origin.y + ui.px(y)));
         const CommandButton& b = kCommands[i];
-        const bool hovered = ImGui::IsMouseHoveringRect(ImGui::GetCursorScreenPos(),
-                                                        ImVec2(ImGui::GetCursorScreenPos().x + ui.px(34), ImGui::GetCursorScreenPos().y + ui.px(34)));
-        Sprite s = ui.art.commandButton(b.icon, hovered ? 1 : 0);
+        const Vec2 at{x0 + 13 + float(i % 6) * 34, 36 + float(i / 6) * 34};
         ImGui::PushID(int(i));
-        bool clicked;
-        if (s) {
-            clicked = ImGui::InvisibleButton("cmd", ui.size({34, 34}));
-            ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                 ImVec2(s.uv.min.x, s.uv.min.y), ImVec2(s.uv.max.x, s.uv.max.y));
-        } else {
-            clicked = ImGui::Button(b.tooltip, ui.size({34, 34}));
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", b.tooltip);
+        const auto [clicked, hovered] = hit("cmd", at, {34, 34});
         ImGui::PopID();
+        const int state = hovered ? (ImGui::IsMouseDown(ImGuiMouseButton_Left) ? 2 : 1) : 0;
+        drawAt(ui, dl, ui.art.commandButton(b.icon, state), at, {34, 34});
+        if (hovered) ImGui::SetTooltip("%s", b.tooltip);
         if (clicked) {
             if (b.screen) {
                 audio().play("cmdbtn");
@@ -600,68 +646,47 @@ void MainWindow::commandPanel(UiContext& ui) {
         }
     }
 
-    // Order strip: 2 rows of 14, paged.
+    // Order strip: every order at its own place, dimmed when it does not apply.
     const auto orders = availableOrders(ui);
-    const int perRow = geo.ordersPerRow;
-    const int kPerPage = perRow * 2;
-    const int pages = std::max(1, int((orders.size() + kPerPage - 1) / kPerPage));
-    orderPage_ = std::clamp(orderPage_, 0, pages - 1);
-    const float stripX = 240.0f;
-    for (int slot = 0; slot < kPerPage; ++slot) {
-        const size_t idx = size_t(orderPage_ * kPerPage + slot);
-        const float x = stripX + 16.0f + float(slot % perRow) * 36.0f, y = 4.0f + float(slot / perRow) * 36.0f;
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(x), origin.y + ui.px(y)));
-        if (idx >= orders.size()) {
-            ImGui::GetWindowDrawList()->AddRect(ImGui::GetCursorScreenPos(),
-                                                ImVec2(ImGui::GetCursorScreenPos().x + ui.px(34), ImGui::GetCursorScreenPos().y + ui.px(34)),
-                                                IM_COL32(44, 79, 158, 110));
-            continue;
+    for (size_t col = 0; col < kOrderStrip.size(); ++col)
+        for (size_t row = 0; row < 2; ++row) {
+            const OrderSlot& slot = kOrderStrip[col][row];
+            const Vec2 at{x0 + 246 + float(col) * 34, 36 + float(row) * 34};
+            const OrderButton* b = nullptr;
+            for (const OrderButton& o : orders)
+                if (*slot.key && std::string_view(o.label) == slot.key) b = &o;
+            const bool enabled = b && b->enabled;
+            ImGui::PushID(int(col * 2 + row) + 100);
+            const auto [clicked, hovered] = hit("order", at, {34, 34});
+            ImGui::PopID();
+            const int state = !enabled ? 3 : b->lit ? 2 : hovered ? 1 : 0;
+            drawAt(ui, dl, orderCell(ui.art, slot.band, slot.column, state), at, {34, 34});
+            if (hovered && *slot.tooltip) ImGui::SetTooltip("%s", b ? b->tooltip : slot.tooltip);
+            if (clicked && enabled && b->action) {
+                audio().play("ordbtn");
+                b->action();
+            }
         }
-        const OrderButton& b = orders[idx];
-        ImGui::PushID(int(idx));
-        ImGui::BeginDisabled(!b.enabled);
-        bool clicked;
-        const ImVec2 p0 = ImGui::GetCursorScreenPos();
-        const bool hovered = b.enabled && ImGui::IsMouseHoveringRect(p0, ImVec2(p0.x + ui.px(34), p0.y + ui.px(34)));
-        if (b.icon) {
-            clicked = ImGui::InvisibleButton("order", ui.size({34, 34}));
-            // Hover and disabled looks come from the other state rows of the same column.
-            Sprite s = b.icon;
-            const float rowH = s.uv.max.y - s.uv.min.y;
-            const float shift = !b.enabled ? 3 * rowH : hovered ? rowH : 0.0f;
-            ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                 ImVec2(s.uv.min.x, s.uv.min.y + shift), ImVec2(s.uv.max.x, s.uv.max.y + shift));
-        } else {
-            clicked = ImGui::Button(b.label, ui.size({34, 34}));
-        }
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", b.tooltip);
-        ImGui::PopID();
-        if (clicked && b.action) {
-            audio().play("ordbtn");
-            b.action();
-        }
-    }
-    if (pages > 1) {
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(stripX), origin.y + ui.px(4)));
-        if (ImGui::Button("<", ui.size({14, 70}))) orderPage_ = (orderPage_ + pages - 1) % pages;
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(stripX + 16 + float(perRow) * 36), origin.y + ui.px(4)));
-        if (ImGui::Button(">", ui.size({14, 70}))) orderPage_ = (orderPage_ + 1) % pages;
+    // Page arrows at both ends; every order fits at this size, so they stay dim.
+    for (const bool right : {false, true}) {
+        const float ax = x0 + (right ? 927.0f : 231.0f);
+        dl->AddRect(ui.at({ax - 2, 37}), ui.at({ax + 15, 104}), imColor(palette::kDisabled));
+        drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/BigLeftRightArrows.bmp", right ? 14 : 0, 150, 14, 50, false), {ax, 44}, {14, 50});
     }
 
-    // Selection cycles: ship, fleet, colony.
-    const float cx = geo.commandPanel.size().x - 168.0f;
-    const std::array<const char*, 3> names{"Ship", "Fleet", "Colony"};
+    // Selection cycles (ship, fleet, colony): the Nextprev.bmp selectors at the top right.
+    const float sx = geo.right - 59;
     for (int row = 0; row < 3; ++row) {
-        const float y = 4.0f + float(row) * 24.0f;
-        ImGui::PushID(100 + row);
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(cx), origin.y + ui.px(y)));
-        const bool prev = ImGui::Button("<", ui.size({24, 22}));
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(cx + 26), origin.y + ui.px(y + 3)));
-        ImGui::TextUnformatted(names[size_t(row)]);
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + ui.px(cx + 90), origin.y + ui.px(y)));
-        const bool next = ImGui::Button(">", ui.size({24, 22}));
+        const Vec2 at{sx, 34 + float(row) * 24};
+        ImGui::PushID(200 + row);
+        const auto [prev, prevHover] = hit("prev", at, {16, 24});
         ImGui::PopID();
+        ImGui::PushID(300 + row);
+        const auto [next, nextHover] = hit("next", at + Vec2{32, 0}, {16, 24});
+        ImGui::PopID();
+        const int state = prevHover || nextHover ? 1 : 0;
+        drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/Nextprev.bmp", row * 48, state * 24, 48, 24, false), at, {48, 24});
+        if (prevHover || nextHover) ImGui::SetTooltip("%s", row == 0 ? "Previous \\ next ship" : row == 1 ? "Previous \\ next fleet" : "Previous \\ next colony");
         if (prev || next) {
             const int dir = next ? 1 : -1;
             if (row == 0) cycleVehicle(ui, dir, false);
@@ -670,30 +695,28 @@ void MainWindow::commandPanel(UiContext& ui) {
         }
     }
 
-    ImGui::PopFont();
     ImGui::End();
     ImGui::PopStyleVar(3);
 }
 
 void MainWindow::reportPanel(UiContext& ui) {
     const game::GameState& s = ui.state();
-    ImGui::SetNextWindowPos(ui.at(geo.reportPanel.min + Vec2{4, 4}));
-    ImGui::SetNextWindowSize(ui.size(geo.reportPanel.size() - Vec2{8, 8}));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(4), ui.px(4)));
+    ImGui::SetNextWindowPos(ui.at(geo.reportPanel.min));
+    ImGui::SetNextWindowSize(ui.size(geo.reportPanel.size()));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin("##report", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                           ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    ImGui::PushFont(ui.fonts.regular, ui.fontPx(13.0f));
-
+    const float tabsY = geo.reportPanel.size().y - 31;
+    bool tabsFor = false, planetTabs = false;
     const bool single = object_ || vehicle_;
-    if (single && sector_ && (objectsAt(ui, *sector_).size() + vehiclesAt(ui, {shown_, *sector_}).size()) > 1) {
-        if (ImGui::SmallButton("^ List")) {
-            object_.reset();
-            vehicle_.reset();
-            fleet_.reset();
-            listMode_ = true;
-        }
-    }
-
+    const bool several = single && sector_ && (objectsAt(ui, *sector_).size() + vehiclesAt(ui, {shown_, *sector_}).size()) > 1;
+    // The report body scrolls above the tabs; the portrait, flag and name reach over the frame rail above it.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
+    ImGui::BeginChild("##body", ui.size({geo.reportPanel.size().x, tabsY - 1}), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoBackground);
+    ImGui::PopStyleVar();
+    ImGui::PushClipRect(ui.at(geo.reportPanel.min - Vec2{8, 12}), ui.at(geo.reportPanel.min + Vec2{geo.reportPanel.size().x, tabsY}), false);
     if (vehicle_) {
         if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
             if (fleet_) {
@@ -703,15 +726,13 @@ void MainWindow::reportPanel(UiContext& ui) {
                 }
             }
             vehicleReport(ui, *v, tab_);
-            ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), ImGui::GetWindowHeight() - ui.px(28)));
-            tab_ = reportTabs(ui, tab_ == ReportTab::Facilities ? ReportTab::Components : tab_, false);
+            tabsFor = true;
         }
     } else if (object_) {
         const game::SpaceObject& o = s.galaxy.object(*object_);
         if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
             planetReport(ui, *object_, tab_);
-            ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), ImGui::GetWindowHeight() - ui.px(28)));
-            tab_ = reportTabs(ui, tab_ == ReportTab::Components ? ReportTab::Facilities : tab_, true);
+            tabsFor = planetTabs = true;
         } else {
             objectReport(ui, *object_);
         }
@@ -740,9 +761,28 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (shown_.valid()) {
         systemReport(ui, shown_);
     }
-    ImGui::PopFont();
+    ImGui::PopClipRect();
+    ImGui::EndChild();
+    if (tabsFor) {
+        ImGui::SetCursorPos(ImVec2(ui.px(-4), ui.px(tabsY)));
+        const ReportTab current = planetTabs ? (tab_ == ReportTab::Components ? ReportTab::Facilities : tab_)
+                                             : (tab_ == ReportTab::Facilities ? ReportTab::Components : tab_);
+        tab_ = reportTabs(ui, current, planetTabs);
+    }
+    if (several) {
+        // Back to the list of everything in the sector.
+        ImGui::SetCursorPos(ImVec2(ui.px(250), ui.px(tabsY - 18)));
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        if (ImGui::SmallButton("List")) {
+            object_.reset();
+            vehicle_.reset();
+            fleet_.reset();
+            listMode_ = true;
+        }
+        ImGui::PopFont();
+    }
     ImGui::End();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void MainWindow::overlayText(UiContext& ui) {
@@ -754,7 +794,7 @@ void MainWindow::overlayText(UiContext& ui) {
     auto text = [&](Vec2 p, float size, ImU32 c, const std::string& str) { dl->AddText(font, size * k, ui.at(p), c, str.c_str()); };
     const game::StarSystem& sys = s.galaxy.system(shown_);
     const Vec2 sysMin = geo.systemBackground.min;
-    text(sysMin + Vec2{11, 9}, 16, IM_COL32_WHITE, sys.name);
+    dl->AddText(ui.fonts.bold, ui.fontPx(kTitleSize), ui.at(Vec2{geo.left + 13, 120}), IM_COL32_WHITE, sys.name.c_str());
     if (!ui.me().hasExplored(shown_)) {
         text(sysMin + Vec2{247, 315}, 18, IM_COL32(150, 160, 190, 255), "Unexplored system");
     } else {
@@ -955,16 +995,74 @@ void MainWindow::hotkeys(UiContext& ui) {
 
 void MainWindow::render(gfx::Renderer2D& r, UiContext& ui) {
     layOut(ui.map.left, ui.map.right);
-    // Frame chrome.
-    r.rect(Rect{{geo.left, 0}, {geo.right, kFrameH}}, Color::hex(0x02040a));
-    r.rect(geo.statusBar, Color::hex(0x060c1c));
-    r.rect(geo.commandPanel, Color::hex(0x0a1224));
-    for (const Rect& panel : {geo.statusBar, geo.commandPanel, geo.systemBackground, geo.reportPanel, geo.galaxyPanel}) r.rectOutline(panel, 1.5f, kFrameBright);
-    if (geo.strip) r.rect(*geo.strip, Color::hex(0x07101f));
-    r.rect(geo.reportPanel.expanded(-1.0f), Color::hex(0x040914));
-    r.rectOutline(Rect{{geo.left, 0}, {geo.right, kFrameH}}, 2.0f, kFrameBlue);
+    r.rect(Rect{{geo.left, 0}, {geo.right, kFrameH}}, Color::hex(0x000000));
     drawSystem(r, ui);
     drawGalaxy(r, ui);
+    drawFrame(r, ui);
+}
+
+void MainWindow::drawFrame(gfx::Renderer2D& r, UiContext& ui) {
+    // The original's frame strips, at their measured places; black is see-through.
+    auto strip = [&](const char* name) { return ui.art.image(std::string(kScreens) + name); };
+    auto put = [&](const Sprite& s, Vec2 at) {
+        if (s) r.sprite(s.tex, Rect::fromPosSize(at, s.size), s.uv);
+    };
+    // A horizontal strip on a wider frame: its two halves at the ends, the middle column stretched between.
+    auto wideStrip = [&](const Sprite& s, float y, float x0, float x1, float split) {
+        if (!s) return;
+        const float w = s.size.x;
+        if (x1 - x0 <= w + 0.5f) {
+            put(s, {x0, y});
+            return;
+        }
+        auto part = [&](float u0, float u1, float dx0, float dx1) {
+            const float su = s.uv.max.x - s.uv.min.x;
+            const Rect uv{{s.uv.min.x + su * u0 / w, s.uv.min.y}, {s.uv.min.x + su * u1 / w, s.uv.max.y}};
+            r.sprite(s.tex, Rect{{dx0, y}, {dx1, y + s.size.y}}, uv);
+        };
+        part(0, split, x0, x0 + split);
+        part(split, split + 1, x0 + split, x1 - (w - split - 1));
+        part(split + 1, w, x1 - (w - split - 1), x1);
+    };
+    const float L = geo.left, R = geo.right;
+    wideStrip(strip("Top.bmp"), 0, L, R, 512);
+    wideStrip(strip("Toptitle.bmp"), 29, L, R, 512);
+    wideStrip(strip("Topsys.bmp"), 106, L, R, 700);
+    wideStrip(strip("Bottom.bmp"), 760, L, R, 512);
+    put(strip("Left.bmp"), {L, 0});
+    const Sprite right = strip("Right.bmp");
+    put(strip("Middle.bmp"), {geo.divider, 106});
+    if (geo.wideDivider) put(strip("Middle.bmp"), {*geo.wideDivider, 106});
+    if (right && geo.wide) {
+        // Only the edge pipe below the command strip: the rest of the strip frames panels that moved.
+        auto part = [&](float x0, float y0, float x1, float y1) {
+            const Vec2 su = right.uv.max - right.uv.min;
+            const Rect uv{right.uv.min + Vec2{su.x * x0 / 67, su.y * y0 / 768}, right.uv.min + Vec2{su.x * x1 / 67, su.y * y1 / 768}};
+            r.sprite(right.tex, Rect{{R - 67 + x0, y0}, {R - 67 + x1, y1}}, uv);
+        };
+        part(0, 0, 67, 107);
+        part(52, 107, 67, 768);
+    } else {
+        put(right, {R - 67, 0});
+    }
+    if (geo.strip) put(strip("RightFiller.bmp"), geo.strip->min);
+    if (const Sprite filler = strip("RightFiller.bmp"); filler && geo.gap) {
+        // Tiled from the right, clipped at the left edge of the gap.
+        const Vec2 su = filler.uv.max - filler.uv.min;
+        for (float x1 = geo.gap->max.x; x1 > geo.gap->min.x; x1 -= filler.size.x) {
+            const float x0 = std::max(geo.gap->min.x, x1 - filler.size.x);
+            const float h = std::min(filler.size.y, geo.gap->size().y);
+            const float u0 = (filler.size.x - (x1 - x0)) / filler.size.x;
+            r.sprite(filler.tex, Rect{{x0, geo.gap->min.y}, {x1, geo.gap->min.y + h}},
+                     Rect{{filler.uv.min.x + su.x * u0, filler.uv.min.y}, {filler.uv.max.x, filler.uv.min.y + su.y * h / filler.size.y}});
+        }
+        r.line({geo.gap->max.x + 1, geo.gap->min.y}, {geo.gap->max.x + 1, geo.gap->max.y}, 1.0f, Color::hex(palette::kFrame));
+    }
+    if (!geo.wide) {
+        // The rail over the galaxy map, stretched across it on a wider frame.
+        const Sprite top = strip("Topgal.bmp");
+        wideStrip(top, 470, geo.galaxyPanel.min.x - 9, R, top ? top.size.x * 0.5f : 0);
+    }
 }
 
 void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
@@ -984,6 +1082,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
 
     if (explored) {
+        const ColonizeTech tech = colonizeTech(rules, ui.me());
         std::map<game::Sector, std::vector<game::ObjectId>> bySector;
         for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].push_back(id);
         for (const auto& [sector, ids] : bySector) {
@@ -994,15 +1093,20 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             const Vec2 c = sectorCenter(sector);
             if (!spriteAt(objectSprite(ui, o), c, kSpriteSize))
                 r.disc(c, 12.0f, o.kind == game::ObjectKind::Star ? Color::hex(0xffe080) : Color::hex(0x8090a0));
-            for (game::ObjectId id : ids)
+            // Colonies carry the owner's small flag at the top right; planets we could
+            // colonise get the classic star (green: breathable, red: needs domes).
+            for (game::ObjectId id : ids) {
                 if (const game::Colony* col = s.colony(id)) {
-                    // Population bar in the owner's colour at the top right.
-                    const int64_t maxPop = std::max<int64_t>(1, game::maxPopulation(rules, s, *col));
-                    const float fill = float(std::min<int64_t>(col->totalPopulation(), maxPop)) / float(maxPop);
-                    const Rect bar = Rect::fromPosSize(c + Vec2{12, -20}, {8, 3});
-                    r.rect(bar, Color::hex(0x202020));
-                    r.rect(Rect::fromPosSize(bar.min, {8 * std::max(0.15f, fill), 3}), colorOf(s.empire(col->owner).color));
+                    const Sprite flag = ui.art.flag(s.empire(col->owner).race.style, false);
+                    if (!spriteAt(flag, c + Vec2{11, -12}, 14))
+                        r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), colorOf(s.empire(col->owner).color));
+                } else if (s.galaxy.object(id).kind == game::ObjectKind::Planet &&
+                           colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
+                    const bool breathe = breathableBy(s, ui.session.player(), s.galaxy.object(id));
+                    const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
+                    if (star) r.sprite(star.tex, Rect::fromPosSize(c + Vec2{11, -17}, {7, 7}), star.uv);
                 }
+            }
         }
     }
 
@@ -1053,16 +1157,17 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
 
     // Selection brackets and pick hover.
     auto brackets = [&](game::Sector sec, Color col) {
+        // Small corner marks around the sprite, as the original draws the selection.
         const Vec2 c = sectorCenter(sec);
-        const float h = kSectorSize * 0.5f - 2.0f, l = 8.0f;
+        const float h = kSpriteSize * 0.5f, l = 4.0f;
         for (float sx : {-1.0f, 1.0f})
             for (float sy : {-1.0f, 1.0f}) {
                 const Vec2 corner = c + Vec2{sx * h, sy * h};
-                r.line(corner, corner - Vec2{sx * l, 0}, 2.0f, col);
-                r.line(corner, corner - Vec2{0, sy * l}, 2.0f, col);
+                r.line(corner, corner - Vec2{sx * l, 0}, 1.0f, col);
+                r.line(corner, corner - Vec2{0, sy * l}, 1.0f, col);
             }
     };
-    if (sector_) brackets(*sector_, kSelectYellow.withAlpha(0.75f + 0.25f * float(std::sin(ui.time * 5.0))));
+    if (sector_) brackets(*sector_, kSelectYellow);
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
     if (settings().showWaypointMarkers)
         for (const auto& w : ui.me().waypoints)
@@ -1073,29 +1178,22 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
     const game::GameState& s = ui.state();
     const game::Galaxy& g = s.galaxy;
     const game::Empire& me = ui.me();
-    r.rect(geo.galaxyPanel, Color::hex(0x02050c));
+    r.rect(geo.galaxyPanel, Color::hex(0x000000));
+    // A fine grid, one line per galaxy unit.
     const GalaxyTransform t = galaxyTransform(g);
     const Vec2 extent{t.sx * float(g.width), t.sy * float(g.height)};
-    for (int x = 0; x <= g.width; x += 2)
-        r.line({t.origin.x + float(x) * t.sx, t.origin.y}, {t.origin.x + float(x) * t.sx, t.origin.y + extent.y}, 1.0f, Color::hex(0x10224a, 0.8f));
-    for (int y = 0; y <= g.height; y += 2)
-        r.line({t.origin.x, t.origin.y + float(y) * t.sy}, {t.origin.x + extent.x, t.origin.y + float(y) * t.sy}, 1.0f, Color::hex(0x10224a, 0.8f));
+    const Color grid = Color::hex(palette::kGrid);
+    for (int x = 0; x <= g.width; ++x)
+        r.line({t.origin.x + float(x) * t.sx, t.origin.y}, {t.origin.x + float(x) * t.sx, t.origin.y + extent.y}, 1.0f, grid);
+    for (int y = 0; y <= g.height; ++y)
+        r.line({t.origin.x, t.origin.y + float(y) * t.sy}, {t.origin.x + extent.x, t.origin.y + float(y) * t.sy}, 1.0f, grid);
 
+    // Only warp links the empire knows are drawn.
     const auto& known = me.knowledge.knownWarpLink;
     for (const game::SpaceObject& o : g.objects) {
-        if (o.kind != game::ObjectKind::WarpPoint || !o.destination.valid()) continue;
-        const bool linkKnown = o.id.index() < known.size() && known[o.id.index()];
-        const Vec2 a = galaxyPos(g, g.system(o.system));
-        if (linkKnown) {
-            if (o.destination < o.id) continue;
-            r.line(a, galaxyPos(g, g.system(g.object(o.destination).system)), 1.0f, Color::hex(0x4868a8, 0.9f));
-        } else if (me.hasExplored(o.system)) {
-            // A stub toward the unknown destination.
-            const Vec2 b = galaxyPos(g, g.system(g.object(o.destination).system));
-            const Vec2 d = b - a;
-            const float len = std::max(1.0f, std::sqrt(d.x * d.x + d.y * d.y));
-            r.line(a, a + d * (7.0f / len), 1.0f, Color::hex(0x4868a8, 0.9f));
-        }
+        if (o.kind != game::ObjectKind::WarpPoint || !o.destination.valid() || o.destination < o.id) continue;
+        if (o.id.index() >= known.size() || !known[o.id.index()]) continue;
+        r.line(galaxyPos(g, g.system(o.system)), galaxyPos(g, g.system(g.object(o.destination).system)), 1.0f, Color::hex(0x4868a8, 0.9f));
     }
 
     // Presence per system: own colour, another empire's colour, or several.
@@ -1112,17 +1210,15 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
     for (const game::StarSystem& sys : g.systems) {
         const Vec2 p = galaxyPos(g, sys);
         const auto& who = presence[sys.id.index()];
-        Color c = me.hasExplored(sys.id) ? Color::hex(0xc8d0dc) : Color::hex(0x505866);
-        if (who.size() == 1) c = colorOf(s.empire(who.front()).color);
         if (who.size() > 1) {
             r.triangle(p + Vec2{0, -4.5f}, p + Vec2{-4, 3.5f}, p + Vec2{4, 3.5f}, Color::hex(0xffffff));
+        } else if (who.size() == 1) {
+            r.disc(p, 3.5f, colorOf(s.empire(who.front()).color));
+            r.ring(p, 3.5f, 1.0f, Color::hex(0xffffff, 0.7f));
         } else {
-            r.ring(p, 3.2f, 1.5f, c);
+            r.ring(p, 3.0f, 1.0f, Color::hex(0xa0a0a0));
         }
-        if (sys.id == shown_) {
-            r.disc(p, 2.0f, kSelectYellow);
-            r.ring(p, 6.0f, 1.5f, kSelectYellow);
-        }
+        if (sys.id == shown_) r.ring(p, 6.0f, 1.0f, kSelectYellow);
     }
 }
 

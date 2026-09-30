@@ -21,7 +21,6 @@
 
 namespace opense4::client::classic::shipui {
 
-inline constexpr ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 inline constexpr ImVec4 kDim{0.55f, 0.62f, 0.72f, 1.0f};
 inline constexpr ImVec4 kGood{0.45f, 0.95f, 0.55f, 1.0f};
 inline constexpr ImVec4 kBad{1.0f, 0.45f, 0.40f, 1.0f};

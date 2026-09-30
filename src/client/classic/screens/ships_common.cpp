@@ -223,7 +223,7 @@ void endPanel(UiContext& ui, const char* footnote) {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     if (footnote) {
-        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.85f);
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
         ImGui::TextColored(kDim, "%s", footnote);
         ImGui::PopFont();
     }
@@ -274,7 +274,7 @@ RowClick row(UiContext& ui, int id, const Sprite& picture, std::string_view titl
 bool stepButtons(Dialog& d, Step& step) {
     bool changed = false;
     for (Step s : {Step::One, Step::Five, Step::Ten, Step::All})
-        if (d.button(stepLabel(s), true, step == s)) {
+        if (d.tab(stepLabel(s), step == s)) {
             changed = step != s;
             step = s;
         }

@@ -154,7 +154,7 @@ void EmpireEditor::pageGeneral(MenuContext& ctx) {
     ImGui::SetCursorPos(ImVec2(start.x + arrowW + portrait + 2 * gap, start.y + (portrait - arrowH) * 0.5f));
     if (arrowButton(ctx, "##next", false, {24, 57})) choosePreset(presetPos_ + 1);
     ImGui::SetCursorPos(ImVec2(start.x, start.y + portrait + ImGui::GetStyle().ItemSpacing.y));
-    ImGui::PushFont(ctx.fonts.bold, ImGui::GetFontSize() * 1.15f);
+    ImGui::PushFont(ctx.fonts.bold, kTitleSize * ctx.k());
     ImGui::TextColored(kHighlight, "%s", draft_.race.name.c_str());
     ImGui::PopFont();
     sprite(ctx.art.flag(draft_.race.style), ctx.size({39, 27}));

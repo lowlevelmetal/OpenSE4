@@ -178,7 +178,7 @@ MiniMapResult miniMap(UiContext& ui, const char* id, Vec2 frameSize, const MiniM
 void projectPageButtons(Dialog& d, int& page) {
     for (int p = 0; p < kMaxProjects / kProjectsPerPage; ++p) {
         const std::string label = std::format("Projects {}-{}", p * kProjectsPerPage + 1, (p + 1) * kProjectsPerPage);
-        if (d.button(label.c_str(), true, page == p)) page = p;
+        if (d.tab(label.c_str(), page == p)) page = p;
     }
 }
 

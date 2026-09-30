@@ -129,9 +129,9 @@ public:
         ImGui::EndChild();
 
         d.beginButtons();
-        if (d.button("All", true, filter_ < 0)) setFilter(-1);
+        if (d.tab("All", filter_ < 0)) setFilter(-1);
         for (int c = 0; c < kCategories; ++c)
-            if (d.button(filterLabel(c), counts[size_t(c)] > 0, filter_ == c)) setFilter(c);
+            if (d.tab(filterLabel(c), filter_ == c, counts[size_t(c)] > 0)) setFilter(c);
         d.spacer();
         const game::DiplomaticMessage* msg = sel ? sel->message : nullptr;
         if (d.button("Send Reply", msg != nullptr)) {
@@ -260,7 +260,7 @@ private:
         ImGui::SameLine(0, ui.px(12));
         ImGui::BeginGroup();
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.1f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(r->title.c_str());
         ImGui::PopFont();
         ImGui::PopTextWrapPos();

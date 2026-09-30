@@ -34,7 +34,7 @@ SetupFrame::SetupFrame(MenuContext& ctx, const char* title) : ctx_(ctx) {
 
     ImGui::SetNextWindowPos(ctx.at({6, 6}));
     ImGui::SetNextWindowSize(ctx.size({kFrameW - 12, kFrameH - 12}));
-    ImGui::PushFont(ctx.fonts.regular, 14.0f * ctx.k());
+    ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
     visible_ = ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
                                                 ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -94,7 +94,7 @@ bool escapePressed() {
 // ---- Text ----------------------------------------------------------------------------------
 
 void heading(MenuContext& ctx, const char* text) {
-    ImGui::PushFont(ctx.fonts.bold, ImGui::GetFontSize());
+    ImGui::PushFont(ctx.fonts.bold, kTitleSize * ctx.k());
     ImGui::TextColored(kLabelBlue, "%s", text);
     ImGui::PopFont();
 }

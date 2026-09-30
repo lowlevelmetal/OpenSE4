@@ -22,7 +22,7 @@ void background(MenuContext& ctx) {
 bool beginPanel(MenuContext& ctx, const char* id, Rect r) {
     ImGui::SetNextWindowPos(ctx.at(r.min));
     ImGui::SetNextWindowSize(ctx.size(r.size()));
-    ImGui::PushFont(ctx.fonts.medium, 15.0f * ctx.k());
+    ImGui::PushFont(ctx.fonts.medium, kTextSize * ctx.k());
     return ImGui::Begin(id, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 }
 
@@ -114,7 +114,7 @@ public:
         background(ctx);
         ImGui::SetNextWindowPos(ctx.at({13, 80}));
         ImGui::SetNextWindowSize(ctx.size({998, 608}));
-        ImGui::PushFont(ctx.fonts.regular, 14.0f * ctx.k());
+        ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
         if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                                    ImGuiWindowFlags_NoSavedSettings)) {
             if (ImGui::BeginTabBar("##pages")) {

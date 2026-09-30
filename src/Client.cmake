@@ -73,6 +73,7 @@ add_executable(opense4
     client/settings_window.cpp
     client/main.cpp
     client/prototype_mode.cpp
+    client/ui/bitmap_font.cpp
     client/ui/hud.cpp
     client/ui/theme.cpp
     client/views/galaxy_view.cpp

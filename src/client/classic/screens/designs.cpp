@@ -30,7 +30,7 @@ namespace {
 using Kind = ItemRef::Kind;
 
 void title(UiContext& ui, std::string_view text) {
-    ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.2f);
+    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
     ImGui::PopFont();
 }

@@ -59,7 +59,7 @@ public:
 
         ImGui::SetNextWindowPos(ctx.at({62, 50}));
         ImGui::SetNextWindowSize(ctx.size({900, 668}));
-        ImGui::PushFont(ctx.fonts.regular, 15.0f * ctx.k());
+        ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
         ImGui::Begin(mode_ == Mode::Lobby ? "Multiplayer Lobby" : "Multiplayer", nullptr,
                      ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
         switch (mode_) {

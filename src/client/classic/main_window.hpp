@@ -29,11 +29,11 @@ public:
 private:
     enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, Callback };
     struct OrderButton {
-        const char* label;
+        const char* label;  // the slot key in the order strip
         const char* tooltip;
-        Sprite icon;
         bool enabled;
         std::function<void()> action;
+        bool lit = false;   // toggles that are on (Repeat Orders, Minister)
     };
 
     // Selection.
@@ -64,6 +64,7 @@ private:
     void overlayText(UiContext& ui);
     void mouse(UiContext& ui);
     void drawSystem(gfx::Renderer2D& r, UiContext& ui);
+    void drawFrame(gfx::Renderer2D& r, UiContext& ui);
     void drawGalaxy(gfx::Renderer2D& r, UiContext& ui);
 
     game::SystemId shown_;
@@ -73,7 +74,6 @@ private:
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
     ReportTab tab_ = ReportTab::Detail;
-    int orderPage_ = 0;
     bool showMovementLines_ = true;
 
     Pick pick_ = Pick::None;

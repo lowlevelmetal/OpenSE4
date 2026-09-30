@@ -42,8 +42,10 @@ private:
     void openScreen(classic::ScreenId id, classic::ScreenArgs args);
     void endTurn();
     void updateAudio();
+    bool updateFrame(const FrameState& fs);
 
     Platform platform_;
+    Fonts fonts_;  // the classic game's fonts, else the app's
     ClassicOptions options_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<classic::Art> art_;

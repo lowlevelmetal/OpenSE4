@@ -132,6 +132,102 @@ million people to start producing as soon as mining facilities are built on
 it, so facility output is not limited by `Population Required to Operate One
 Facility` (spec 02 §13 Q3).
 
+## UI: layout, fonts and palette
+
+**How it was measured.** A Quick Start game at the 1024×768 frame (the game
+draws that frame unscaled, centred on a larger desktop). Each window was opened
+with its command button and captured on its own; frame pieces were located by
+exact pixel matching against the player's own picture files (nothing copied).
+
+**Main window.** The frame is built from the `Game/Screens/1024X768` strips,
+all drawn 1:1 with black transparent, at these top-left corners: `Top` (0,0),
+`Toptitle` (0,29), `Topsys` (0,106), `Bottom` (0,760), `Left` (0,0), `Right`
+(957,0), `Middle` (655,106), `RightFiller` (958,107), `Topgal` (662,470).
+- Status bar: large flag (15,8); empire name and type at x 47; leader title
+  and name at x 231; "Game Date" label at x 421 and the date at x 501; the
+  three stockpiles at x 627, 700 and 771, each an amount in its resource
+  colour followed by the resource icon. Text top at y 12.
+- Command buttons: `Main.bmp` cells at (13 + 34·col, 36 + 34·row), in this
+  order. Top row: Game Menu (icon 0), Designs (4), Planets (2), Colonies (1),
+  Ships (3), Construction Queues (9). Bottom row: Research (6), Empires (7),
+  Log (8), Empire Status (5), Help (10), End Turn (11).
+- Order strip: every order has a fixed place, 20 columns × 2 rows of 34 px
+  from (246, 36), and is drawn dim when it does not apply. There is one page at
+  1024; the `BigLeftRightArrows` pager halves sit dim at (231,44) and (927,44).
+  Columns (top / bottom), with their `Orders.bmp` cell as band:column:
+  Move To 0:0 / Warp 0:5; Move To Waypoint 0:1 / Colonize 0:2; Attack 0:4 /
+  Fleet Transfer 0:6; Resupply 0:8 / Repair 0:9; Clear Orders 0:10 / Build
+  Queue 0:11; Cargo Transfer 2:10 / Launch-Recover Units 2:9; Load Cargo 0:19 /
+  Drop Cargo 0:20; Launch Units Remotely 0:15 / Recover Units Remotely 0:16;
+  Sentry 0:12 / Explore 0:3; Patrol 0:13 / Repeat Orders 0:14; Stellar
+  Manipulation 1:5 / Change Name 2:0; Scrap 0:18 / Formation-Strategy 1:0;
+  View Orders 2:1 / Sweep Mines 1:11; Scrap Facilities 1:18 / Jettison Cargo
+  1:17; Cloak 1:21 / Decloak 1:22; Use Component 1:12 / Use Facility 1:13;
+  Abandon Planet 1:3 / Convert Resources 2:2; an unused cell 2:8 / Minister
+  0:22; Play Movement Log 2:4 / Play Log For Ship 2:5; Play Log Stepped 2:6 /
+  Rewind Log 2:7. The manual lists 2:8 as "not being used". Other cells of the
+  sheet (0:7, 0:17, 0:21, 1:16 and more) are not placed in the strip.
+- With the homeworld selected these are lit: Cargo Transfer, Build Queue,
+  Launch-Recover Units, Recover Units Remotely, Change Name, Scrap, Scrap
+  Facilities, Abandon Planet, Minister.
+- Selectors: `Nextprev.bmp` groups (ship, fleet, planet) at (965, 34 + 24·row).
+- Report panel (planet, Detail tab): portrait at the top left; the name in the
+  button font centred over the right column (centre x 824, text top y 115);
+  label lines at x 797 with the value on the next line at x 807, 15 px apart
+  (Type, Atmosphere, Conditions, Value; Value shows the three percentages in the
+  resource colours with icons). The description follows in the small font at
+  y 251, 12 px lines. Then two columns (labels x 671, values x 807, 14 px
+  lines): Colony Type, Population (with the population picture), Reproduction,
+  Mood; Resource Production, Research, Intelligence (values right-aligned to
+  x 833, then an icon); Under Construction, Time Remaining. `TabBtns.bmp`
+  tabs (72×30) sit at (667 + 72·i, 439); the selected tab uses state row 2.
+- System view: colonies carry the owner's small flag at the planet's top
+  right. Uncolonized planets that the empire can colonize carry a small star
+  from `General.bmp` (green when the atmosphere is breathable, red otherwise).
+  The selection is four small yellow corner marks around the sprite. The
+  system name is in the button font at (13, 121).
+- Galaxy map: a fine grid in dark blue, the quadrant kept in proportion and
+  centred; systems are small grey rings; no warp lines are drawn before any
+  link is known.
+
+**Windows.** Most windows are 780×475, centred. Planets, Colonies, Ships and
+Construction Queues are 780 wide and as tall as the screen less 50 px at the
+top and bottom. The Game Menu is 173×320 with no title strip.
+- Frame: side pipes from `Dialogs/MainParts.bmp` (top cap, a straight run,
+  bottom cap; the right side mirrored), light rails at the top and bottom
+  edges, a title strip (10,4)-(770,31), then a content box and a button box.
+- Title: white, in the button font, at (18, 8).
+- Button column: 180×28 buttons, one slot every 31 px from (585, 35), with
+  Close in the 14th slot. Unused slots show as dark empty boxes. Page and
+  filter buttons (tabs) have the top-right corner cut off and a green lamp when
+  selected. On/off settings have a check box that holds a green lamp when on.
+  Action buttons are plain rectangles. Disabled buttons are drawn in dark grey.
+  Tall windows fill the column below Close with the circuit filler.
+- Text: headings in the button font in silver; body text in Futurist Medium;
+  notes and hints in Futurist Small; field labels in blue with white values.
+  Numbers have no digit grouping (26120, 500000).
+
+**Fonts** (`Fonts/*.fon`, Windows 3.x raster fonts, character set 0):
+Futurist Medium (16 px cell, ascent 13, internal leading 3), Futurist small
+(12, 10, 2), SE4 Block 1 Large/Medium/Small (15/12/9 px, all capitals),
+SE4 Text button (17 px, ascent 12, no leading).
+
+**Palette** (sampled): frame lines #4F65A2 with brighter rails #647EC7;
+button outlines and captions #617BC2; labels #7D9FFF; headings #C0C0C0;
+second lines #A0A0A0; unavailable rows #606060; disabled buttons and empty
+slots #2D2D2D; minerals #4665CC, organics #008000, radioactives #FF0000;
+background black.
+
+**Calibration notes from the same game.**
+- On the first turn the stockpile shows 20000 plus one turn of production
+  (26120 / 21108 / 21153 with production 6120 / 1108 / 1153). It looks as if
+  the first turn's income is already counted when the game starts.
+- The homeworld showed Conditions "Good" and 14% reproduction with mood Happy.
+  "Good" is not one of our condition band names (spec 02 §13 Q25), so the band
+  names and their reproduction effects need another look.
+- Homeworld values were 102% / 99% / 103%, and production scaled by them
+  (6120 / 1108 / 1153).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.

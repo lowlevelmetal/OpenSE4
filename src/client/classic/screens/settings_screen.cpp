@@ -27,9 +27,9 @@ public:
         }
         ImGui::EndChild();
         d.beginButtons();
-        if (d.button("Graphics", true, page_ == Page::Graphics)) page_ = Page::Graphics;
-        if (d.button("Controls", true, page_ == Page::Controls)) page_ = Page::Controls;
-        if (d.button("Sound", true, page_ == Page::Sound)) page_ = Page::Sound;
+        if (d.tab("Graphics", page_ == Page::Graphics)) page_ = Page::Graphics;
+        if (d.tab("Controls", page_ == Page::Controls)) page_ = Page::Controls;
+        if (d.tab("Sound", page_ == Page::Sound)) page_ = Page::Sound;
         // While a key is being captured, Escape cancels the capture instead of closing.
         if (!state_.capturing) d.close();
         return d.keepOpen();

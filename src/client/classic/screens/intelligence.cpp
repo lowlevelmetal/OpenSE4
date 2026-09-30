@@ -47,8 +47,8 @@ public:
         d.beginButtons();
         projectPageButtons(d, page_);
         d.spacer();
-        if (d.button("Repeat Projects", allowed, e.repeatIntel)) set(ui, e.intel, e.intelEvenly, !e.repeatIntel);
-        if (d.button("Divide Evenly", allowed, e.intelEvenly)) set(ui, e.intel, !e.intelEvenly, e.repeatIntel);
+        if (d.check("Repeat Projects", e.repeatIntel, allowed)) set(ui, e.intel, e.intelEvenly, !e.repeatIntel);
+        if (d.check("Divide Evenly", e.intelEvenly, allowed)) set(ui, e.intel, !e.intelEvenly, e.repeatIntel);
         if (d.button("Reorder Projects", allowed && e.intel.size() > 1)) {
             std::vector<std::string> rows;
             for (const auto& p : e.intel) rows.push_back(orderLabel(ui, p));
@@ -282,7 +282,7 @@ private:
                 const ruleset::IntelProject& p = project(ui, o.project);
                 ImGui::Text("%zu.", i + 1);
                 ImGui::SameLine();
-                ImGui::PushFont(ui.fonts.bold, 0.0f);
+                ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
                 ImGui::TextUnformatted(p.name.c_str());
                 ImGui::PopFont();
                 if (ImGui::IsItemHovered()) hovered_ = o.project;
@@ -313,7 +313,7 @@ private:
             return;
         }
         const ruleset::IntelProject& p = project(ui, *i);
-        ImGui::PushFont(ui.fonts.bold, 0.0f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(p.name.c_str());
         ImGui::PopFont();
         ImGui::SameLine();

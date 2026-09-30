@@ -81,8 +81,8 @@ public:
         d.beginButtons();
         projectPageButtons(d, page_);
         d.spacer();
-        if (d.button("Repeat Projects", true, e.repeatResearch)) set(ui, e.research, e.researchEvenly, !e.repeatResearch);
-        if (d.button("Divide Pts Evenly", true, e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
+        if (d.check("Repeat Projects", e.repeatResearch)) set(ui, e.research, e.researchEvenly, !e.repeatResearch);
+        if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
         d.spacer();
         if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
         if (d.button("Reorder Projects", e.research.size() > 1)) {
@@ -222,7 +222,7 @@ private:
                 const int64_t cost = game::research::levelCost(r, s, p.area, next);
                 ImGui::Text("%zu.", i + 1);
                 ImGui::SameLine();
-                ImGui::PushFont(ui.fonts.bold, 0.0f);
+                ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
                 ImGui::Text("%s %d", t.name.c_str(), next);
                 ImGui::PopFont();
                 if (ImGui::IsItemHovered()) hovered_ = p.area;
@@ -264,7 +264,7 @@ private:
         }
         const ruleset::TechArea& t = r.tech(*a);
         const int level = e.techLevel(*a);
-        ImGui::PushFont(ui.fonts.bold, 0.0f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(t.name.c_str());
         ImGui::PopFont();
         ImGui::SameLine();
@@ -309,8 +309,8 @@ public:
         if (levels_) levelsView(ui);
         else areasView(ui);
         d.beginButtons();
-        if (d.button("Tech Areas", true, !levels_)) levels_ = false;
-        if (d.button("Tech Levels", true, levels_)) levels_ = true;
+        if (d.tab("Tech Areas", !levels_)) levels_ = false;
+        if (d.tab("Tech Levels", levels_)) levels_ = true;
         d.spacer();
         if (d.button("Export")) exportView(ui);
         d.close();
@@ -426,7 +426,7 @@ private:
         ImGui::BeginChild("##levels", ImVec2(0, 0));
         const TechAreaId a = *selected_;
         const ruleset::TechArea& t = r.tech(a);
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.15f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(t.name.c_str());
         ImGui::PopFont();
         ImGui::SameLine();

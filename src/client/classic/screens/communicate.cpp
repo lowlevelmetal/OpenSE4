@@ -613,7 +613,7 @@ private:
     void packageButtons(UiContext&, Dialog& d) {
         for (int t = 0; t < int(PackageTab::Count); ++t) {
             const auto tab = static_cast<PackageTab>(t);
-            if (d.button(tabName(tab), true, tab_ == tab)) tab_ = tab;
+            if (d.tab(tabName(tab), tab_ == tab)) tab_ = tab;
         }
         d.spacer();
         if (d.button("Clear Package")) (giveSide_ ? draft_.offer : draft_.request).clear();

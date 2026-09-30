@@ -9,6 +9,8 @@
 //   opense4-observe key    <win> <keysym>...     press keys (e.g. Return, F1, a)
 //   opense4-observe type   <win> <text>          type text
 //   opense4-observe move   <win> <x> <y>         move the pointer
+//   opense4-observe skey   <win> [ctrl+]<keysym>...  keys sent straight to the window
+//   opense4-observe smove  <win> <x> <y>         pointer motion sent straight to the window
 //   opense4-observe sclick <win> <x> <y> [btn]   click with events sent straight to the
 //                                            window (works where XTest is blocked,
 //                                            e.g. XWayland without input permission)
@@ -168,6 +170,48 @@ void syntheticClick(Display* dpy, Window w, int x, int y, unsigned button) {
     send(ButtonRelease, Button1Mask << (button - 1), ButtonReleaseMask);
 }
 
+// Pointer motion sent straight to the window (hover, tooltips).
+void syntheticMove(Display* dpy, Window w, int x, int y) {
+    const Window target = deepestChild(dpy, w, x, y);
+    int rx = 0, ry = 0;
+    Window unused;
+    XTranslateCoordinates(dpy, target, DefaultRootWindow(dpy), x, y, &rx, &ry, &unused);
+    XEvent m{};
+    m.xmotion.type = MotionNotify;
+    m.xmotion.display = dpy;
+    m.xmotion.window = target;
+    m.xmotion.root = DefaultRootWindow(dpy);
+    m.xmotion.x = x;
+    m.xmotion.y = y;
+    m.xmotion.x_root = rx;
+    m.xmotion.y_root = ry;
+    m.xmotion.same_screen = True;
+    XSendEvent(dpy, target, True, PointerMotionMask, &m);
+    XFlush(dpy);
+}
+
+// A key press sent straight to the window (for when XTest input is dropped).
+void syntheticKey(Display* dpy, Window w, KeySym sym, unsigned state) {
+    const KeyCode code = XKeysymToKeycode(dpy, sym);
+    auto send = [&](int type, long mask) {
+        XEvent e{};
+        e.xkey.type = type;
+        e.xkey.display = dpy;
+        e.xkey.window = w;
+        e.xkey.root = DefaultRootWindow(dpy);
+        e.xkey.subwindow = None;
+        e.xkey.time = CurrentTime;
+        e.xkey.state = state;
+        e.xkey.keycode = code;
+        e.xkey.same_screen = True;
+        XSendEvent(dpy, w, True, mask, &e);
+        XFlush(dpy);
+        pause(40);
+    };
+    send(KeyPress, KeyPressMask);
+    send(KeyRelease, KeyReleaseMask);
+}
+
 int usage() {
     std::fputs("usage: opense4-observe list | click <win> <x> <y> [button] | dclick <win> <x> <y> | "
                "key <win> <keysym>... | type <win> <text> | move <win> <x> <y>\n",
@@ -219,6 +263,23 @@ int main(int argc, char** argv) {
         if (cmd == "dclick") click(dpy, button);
     } else if (cmd == "sclick" && argc >= 5) {
         syntheticClick(dpy, w, std::atoi(argv[3]), std::atoi(argv[4]), argc >= 6 ? static_cast<unsigned>(std::atoi(argv[5])) : 1u);
+    } else if (cmd == "smove" && argc >= 5) {
+        syntheticMove(dpy, w, std::atoi(argv[3]), std::atoi(argv[4]));
+    } else if (cmd == "skey" && argc >= 4) {
+        // skey <win> [ctrl+|shift+|alt+]keysym ...
+        for (int i = 3; i < argc; ++i) {
+            std::string k = argv[i];
+            unsigned state = 0;
+            for (;;) {
+                if (k.rfind("ctrl+", 0) == 0) state |= ControlMask, k = k.substr(5);
+                else if (k.rfind("shift+", 0) == 0) state |= ShiftMask, k = k.substr(6);
+                else if (k.rfind("alt+", 0) == 0) state |= Mod1Mask, k = k.substr(4);
+                else break;
+            }
+            const KeySym sym = XStringToKeysym(k.c_str());
+            if (sym == NoSymbol) std::fprintf(stderr, "unknown keysym %s\n", k.c_str());
+            else syntheticKey(dpy, w, sym, state);
+        }
     } else if (cmd == "key" && argc >= 4) {
         for (int i = 3; i < argc; ++i) {
             const KeySym sym = XStringToKeysym(argv[i]);

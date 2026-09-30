@@ -16,7 +16,6 @@
 
 namespace opense4::client::classic::setup {
 
-inline const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 inline const ImVec4 kGood{0.45f, 0.95f, 0.5f, 1.0f};
 inline const ImVec4 kBad{1.0f, 0.45f, 0.4f, 1.0f};
 inline const ImVec4 kDim{0.62f, 0.66f, 0.76f, 1.0f};

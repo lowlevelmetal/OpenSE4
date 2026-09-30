@@ -31,7 +31,8 @@ add_executable(opense4_tests
     test_setup_model.cpp
     test_ships_ui.cpp
     test_sight.cpp
-    test_turn.cpp)
+    test_turn.cpp
+    test_winfont.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
@@ -45,7 +46,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game opense4_net doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

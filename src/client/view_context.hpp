@@ -13,6 +13,8 @@ struct Fonts {
     ImFont* regular = nullptr;
     ImFont* medium = nullptr;
     ImFont* bold = nullptr;
+    ImFont* small = nullptr;   // fine print (falls back to regular)
+    bool bitmap = false;       // the classic game's own bitmap fonts are in use
 };
 
 // Everything a view or panel needs for one frame.

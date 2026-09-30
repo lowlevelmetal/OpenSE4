@@ -25,6 +25,43 @@ namespace opense4::client::classic {
 inline constexpr float kFrameW = 1024.0f;
 inline constexpr float kFrameH = 768.0f;
 
+// Font sizes in frame pixels that draw the classic bitmap fonts at their
+// native pixels (client/ui/bitmap_font.hpp): Futurist Medium for text,
+// Futurist Small for fine print, SE4 Text Button for titles and buttons.
+inline constexpr float kTextSize = 13.0f;
+inline constexpr float kSmallSize = 10.0f;
+inline constexpr float kTitleSize = 17.0f;
+
+// The classic palette, measured on the original's screens (docs/spec/07 §UI).
+namespace palette {
+inline constexpr uint32_t kFrame = 0x4f65a2;       // panel and box lines
+inline constexpr uint32_t kFrameLight = 0x647ec7;  // the brighter rail of double lines
+inline constexpr uint32_t kButton = 0x617bc2;      // button outlines and captions
+inline constexpr uint32_t kButtonHot = 0xa8bcff;   // hovered caption (ours)
+inline constexpr uint32_t kLabel = 0x7d9fff;       // field labels
+inline constexpr uint32_t kHeading = 0xc0c0c0;     // section headings
+inline constexpr uint32_t kSecondary = 0xa0a0a0;   // second lines, notes
+inline constexpr uint32_t kDim = 0x606060;         // unavailable rows
+inline constexpr uint32_t kDisabled = 0x2d2d2d;    // disabled buttons, empty button slots
+inline constexpr uint32_t kGrid = 0x1c2a4c;        // map grid lines
+inline constexpr uint32_t kMinerals = 0x4665cc;
+inline constexpr uint32_t kOrganics = 0x008000;
+inline constexpr uint32_t kRadioactives = 0xff0000;
+} // namespace palette
+
+constexpr ImU32 imColor(uint32_t rgb, float alpha = 1.0f) {
+    return IM_COL32((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff, int(alpha * 255.0f + 0.5f));
+}
+constexpr ImVec4 imColorV(uint32_t rgb, float alpha = 1.0f) {
+    return ImVec4(float((rgb >> 16) & 0xff) / 255.0f, float((rgb >> 8) & 0xff) / 255.0f, float(rgb & 0xff) / 255.0f, alpha);
+}
+inline constexpr ImVec4 kLabelBlue = imColorV(palette::kLabel);
+inline constexpr ImVec4 kDimText = imColorV(palette::kSecondary);
+
+// The classic fonts from the install's Fonts folder, falling back to `app`
+// for any that are missing. Call outside an ImGui frame.
+Fonts loadClassicFonts(const Fonts& app, const assets::InstallFiles& files);
+
 // Frame <-> framebuffer pixels, recomputed each frame. The classic screens
 // are laid out in a 1024×768 frame; on a wider window the frame extends
 // equally to the left and right (x from `left` to `right`), so centred
@@ -147,7 +184,7 @@ void resources(UiContext& ui, const game::Resources& r, bool compact = false);
 void labelValue(UiContext& ui, const char* label, const std::string& value, float valueColumn = 110.0f);
 // Heading text in the classic label blue.
 void heading(UiContext& ui, const char* text);
-std::string formatNumber(int64_t v);             // 12,345
+std::string formatNumber(int64_t v);             // 12345 (the classic screens use no digit grouping)
 std::string formatDate(uint32_t turn);           // 2400.3
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
 
@@ -169,8 +206,12 @@ public:
     bool open() const { return visible_; }
     void beginContent();
     void beginButtons();
-    // A right-column button (fixed width). `active` draws it highlighted (toggles/tabs).
-    bool button(const char* label, bool enabled = true, bool active = false);
+    // Right-column buttons (180 × 28, one slot per 31 px). A plain action button;
+    bool button(const char* label, bool enabled = true);
+    // a page or filter tab (chamfered corner, green lamp when selected);
+    bool tab(const char* label, bool selected, bool enabled = true);
+    // an on/off setting (a check box that shows a lamp when on).
+    bool check(const char* label, bool on, bool enabled = true);
     void spacer();
     // The bottom Close button; also true on Escape.
     bool close();
@@ -179,15 +220,28 @@ public:
 
 private:
     void endChild();
+    bool slot(const char* label, int style, bool on, bool enabled);
     UiContext& ui_;
+    Rect rect_;
     bool visible_ = false;
     bool keep_ = true;
     bool inChild_ = false;
     bool buttonsStarted_ = false;
     float buttonColumn_;
+    int nextSlot_ = 0;
+    float pitch_ = 31.0f;    // slot pitch; tighter when a window has more buttons than slots
+    float buttonH_ = 28.0f;
 };
 
-// Applies the classic look (dark navy, blue frames) to ImGui; call once.
+// A classic text button drawn at the cursor: 1 px outline and caption in the
+// button blue. `style` 0 plain, 1 tab (chamfer, lamp when on), 2 check box.
+bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int style = 0, bool on = false, bool enabled = true);
+// An empty button slot (the classic dark placeholder box).
+void emptySlot(UiContext& ui, Vec2 frameSize);
+// The classic frame around a window: pipes at the sides, double rails, a title strip.
+void drawWindowFrame(UiContext& ui, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn);
+
+// Applies the classic look (black, 1 px blue lines) to ImGui; call once.
 void applyClassicStyle();
 
 // Screen factory (screens/registry.cpp).

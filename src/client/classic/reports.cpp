@@ -5,13 +5,15 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <format>
 
 namespace opense4::client::classic {
 
 namespace {
 
-const ImVec4 kDim{0.55f, 0.62f, 0.72f, 1.0f};
+const ImVec4 kDim = kDimText;
 
 void wrapped(const std::string& text) {
     ImGui::PushTextWrapPos(0.0f);
@@ -20,7 +22,7 @@ void wrapped(const std::string& text) {
 }
 
 void title(UiContext& ui, const std::string& text) {
-    ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.15f);
+    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::TextUnformatted(text.c_str());
     ImGui::PopFont();
 }
@@ -58,6 +60,56 @@ void abilityList(const std::vector<game::ParsedAbility>& list) {
         else ImGui::BulletText("%s", name.c_str());
     }
 }
+
+// Draws at fixed places in the current window, in frame pixels from its top-left
+// (the report panel's classic layout).
+class Pen {
+public:
+    explicit Pen(UiContext& ui) : ui_(ui), origin_(ImGui::GetWindowPos()), dl_(ImGui::GetWindowDrawList()) {}
+
+    ImVec2 at(float x, float y) const { return {origin_.x + ui_.px(x), origin_.y + ui_.px(y)}; }
+    void sprite(const Sprite& s, float x, float y, float w, float h) const {
+        if (!s) return;
+        const ImVec2 a = at(x, y), b = at(x + w, y + h);
+        dl_->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), a, b, {s.uv.min.x, s.uv.min.y}, {s.uv.max.x, s.uv.max.y});
+    }
+    void text(float x, float y, ImU32 color, std::string_view t) const {
+        dl_->AddText(ImGui::GetFont(), ImGui::GetFontSize(), snap(at(x, y)), color, t.data(), t.data() + t.size());
+    }
+    void text(float x, float y, ImVec4 color, std::string_view t) const { text(x, y, ImGui::GetColorU32(color), t); }
+    void rightAligned(float x, float y, ImU32 color, std::string_view t) const {
+        const float w = ImGui::CalcTextSize(t.data(), t.data() + t.size()).x / ui_.k();
+        text(x - w, y, color, t);
+    }
+    void centered(ImFont* font, float size, float x, float y, ImU32 color, std::string_view t) const {
+        ImGui::PushFont(font, ui_.fontPx(size));
+        const float w = ImGui::CalcTextSize(t.data(), t.data() + t.size()).x / ui_.k();
+        text(x - w * 0.5f, y, color, t);
+        ImGui::PopFont();
+    }
+    void wrapped(ImFont* font, float size, float x, float y, float width, ImU32 color, std::string_view t) const {
+        ImGui::PushFont(font, ui_.fontPx(size));
+        dl_->AddText(ImGui::GetFont(), ImGui::GetFontSize(), snap(at(x, y)), color, t.data(), t.data() + t.size(), ui_.px(width));
+        ImGui::PopFont();
+    }
+    // Three amounts in the resource colours, each followed by its icon.
+    void resourceRow(std::array<int64_t, 3> v, std::array<float, 3> xs, float y, const char* suffix) const {
+        static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+        static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
+        for (size_t i = 0; i < 3; ++i) {
+            const std::string t = std::format("{}{}", v[i], suffix);
+            text(xs[i], y, imColor(kColors[i]), t);
+            const float w = ImGui::CalcTextSize(t.c_str()).x / ui_.k();
+            sprite(ui_.art.icon16(kIcons[i]), xs[i] + w + 1, y - 2, 14, 14);
+        }
+    }
+
+private:
+    static ImVec2 snap(ImVec2 p) { return {std::floor(p.x + 0.5f), std::floor(p.y + 0.5f)}; }
+    UiContext& ui_;
+    ImVec2 origin_;
+    ImDrawList* dl_;
+};
 
 } // namespace
 
@@ -123,17 +175,32 @@ std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v) {
 }
 
 ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
-    const std::array<std::pair<ReportTab, const char*>, 4> tabs{{{ReportTab::Detail, "Detail"},
-                                                                 {planet ? ReportTab::Facilities : ReportTab::Components, planet ? "Facil" : "Comps"},
-                                                                 {ReportTab::Cargo, "Cargo"},
-                                                                 {ReportTab::Abilities, "Ability"}}};
+    // The image tabs of TabBtns.bmp: 72×30 cells; columns Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech;
+    // rows normal, hover, selected, (unused), disabled.
+    struct TabCell {
+        ReportTab tab;
+        int column;
+        const char* label;
+    };
+    const std::array<TabCell, 4> tabs{{{ReportTab::Detail, 0, "Detail"},
+                                       {planet ? ReportTab::Facilities : ReportTab::Components, planet ? 4 : 1, planet ? "Facil" : "Comps"},
+                                       {ReportTab::Cargo, 2, "Cargo"},
+                                       {ReportTab::Abilities, 3, "Ability"}}};
     ReportTab chosen = current;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     for (size_t i = 0; i < tabs.size(); ++i) {
-        if (i > 0) ImGui::SameLine(0, ui.px(2));
-        const bool active = tabs[i].first == current;
-        if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.36f, 0.75f, 1));
-        if (ImGui::Button(tabs[i].second, ImVec2(ui.px(64), ui.px(22)))) chosen = tabs[i].first;
-        if (active) ImGui::PopStyleColor();
+        if (i > 0) ImGui::SameLine(0, 0);
+        ImGui::PushID(int(i));
+        const bool clicked = ImGui::InvisibleButton("tab", ui.size({72, 30}));
+        ImGui::PopID();
+        const bool selected = tabs[i].tab == current;
+        const int row = selected ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+        if (Sprite cell = ui.art.region("Pictures/Game/Buttons/TabBtns.bmp", tabs[i].column * 72, row * 30, 72, 30, false))
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(cell.tex.value)), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                         {cell.uv.min.x, cell.uv.min.y}, {cell.uv.max.x, cell.uv.max.y});
+        else
+            dl->AddText(ImGui::GetItemRectMin(), imColor(selected ? 0xffffff : palette::kButton), tabs[i].label);
+        if (clicked) chosen = tabs[i].tab;
     }
     return chosen;
 }
@@ -235,49 +302,76 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
     const game::SpaceObject& o = s.galaxy.object(planet);
     const game::Colony* c = s.colony(planet);
     const bool own = c && c->owner == ui.session.player();
-    if (c) {
-        if (Sprite flag = ui.art.flag(s.empire(c->owner).race.style)) {
-            image(ui, flag, {26, 18});
-            ImGui::SameLine();
-        }
+    const ruleset::SectorObjectType& type = r.data().sectorObjectTypes[o.sectorType];
+    if (tab != ReportTab::Detail) {
+        if (c)
+            if (Sprite flag = ui.art.flag(s.empire(c->owner).race.style)) {
+                image(ui, flag, {26, 18});
+                ImGui::SameLine();
+            }
+        title(ui, o.name);
     }
-    title(ui, o.name);
     switch (tab) {
         case ReportTab::Detail: {
-            image(ui, ui.art.planetPortrait(r.data().sectorObjectTypes[o.sectorType].picture), {96, 96});
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-            labelValue(ui, "Type", std::format("{} - {}", o.surface, o.size), 80);
-            labelValue(ui, "Atmosphere", o.atmosphere, 80);
-            labelValue(ui, "Conditions", std::format("{}%", o.conditions), 80);
-            labelValue(ui, "Value", std::format("{}% / {}% / {}%", o.value[0], o.value[1], o.value[2]), 80);
-            ImGui::EndGroup();
-            if (!c) {
-                wrapped(r.data().sectorObjectTypes[o.sectorType].description);
+            // The classic layout, measured on the original (docs/spec/07 §UI): portrait at the
+            // top left, name centred over the right column, label lines with the value
+            // indented below, the description, then the colony block in two columns.
+            Pen pen(ui);
+            pen.sprite(ui.art.planetPortrait(type.picture), -5, -11, 128, 128);
+            if (c) pen.sprite(ui.art.flag(s.empire(c->owner).race.style), -2, -6, 26, 18);
+            pen.centered(ui.fonts.bold, kTitleSize, 153, -4, IM_COL32_WHITE, o.name);
+            float y = 15;
+            auto field = [&](const char* label, const std::string& value) {
+                pen.text(126, y, kLabelBlue, label);
+                pen.text(136, y + 15, IM_COL32_WHITE, value);
+                y += 30;
+            };
+            field("Type", std::format("{} - {}", o.surface, o.size));
+            field("Atmosphere", o.atmosphere);
+            field("Conditions", std::string(game::economy::conditionsName(game::economy::conditionsBand(o.conditions))));
+            pen.text(126, y, kLabelBlue, "Value");
+            pen.resourceRow({o.value[0], o.value[1], o.value[2]}, {138, 194, 242}, y + 12, "%");
+            pen.wrapped(ui.fonts.small, kSmallSize, -1, 134, 286, imColor(palette::kHeading), type.description);
+            if (!c) break;
+            float row = 177;
+            auto line = [&](const char* label, const std::string& value) {
+                pen.text(0, row, kLabelBlue, label);
+                pen.text(136, row, IM_COL32_WHITE, value);
+                row += 14;
+            };
+            if (!own) {
+                line("Owner", s.empire(c->owner).name);
+                line("Colony Type", c->colonyType);
+                line("Population", std::format("{}M", c->totalPopulation()));
                 break;
             }
-            labelValue(ui, "Owner", s.empire(c->owner).name);
-            labelValue(ui, "Colony Type", c->colonyType);
-            labelValue(ui, "Population", std::format("{}M / {}M", formatNumber(c->totalPopulation()), formatNumber(game::maxPopulation(r, s, *c))));
-            if (own) {
-                const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
-                labelValue(ui, "Reproduction", std::format("{}% per year", out.reproductionPercent));
-                labelValue(ui, "Mood", std::string(game::displayName(game::moodFromAnger(c->anger))));
-                ImGui::TextColored(ImVec4(0.44f, 0.61f, 1.0f, 1.0f), "Production");
-                ImGui::SameLine(ui.px(110));
-                resources(ui, out.production, true);
-                labelValue(ui, "Research", formatNumber(out.research));
-                labelValue(ui, "Intelligence", formatNumber(out.intelligence));
-                if (!c->queue.items.empty()) {
-                    const game::QueueItem& q = c->queue.items.front();
-                    const std::string what = q.kind == game::QueueItem::Kind::Facility ? r.facility(q.facility).name
-                                             : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
-                                                                                        : s.design(q.design).name;
-                    labelValue(ui, "Constructing", what);
-                } else {
-                    labelValue(ui, "Constructing", "Nothing");
-                }
+            const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
+            line("Colony Type", c->colonyType);
+            pen.sprite(ui.art.populationMini(s.empire(c->owner).race.style), 229, row - 4, 20, 20);
+            line("Population", std::format("{}M/{}M", c->totalPopulation(), game::maxPopulation(r, s, *c)));
+            line("Reproduction", std::format("{}% per year", out.reproductionPercent));
+            line("Mood", std::string(game::displayName(game::moodFromAnger(c->anger))));
+            row += 8;
+            pen.text(0, row, kLabelBlue, "Resource Production");
+            pen.resourceRow({out.production.v[0], out.production.v[1], out.production.v[2]}, {139, 196, 249}, row, "");
+            row += 14;
+            pen.text(0, row, kLabelBlue, "Research");
+            pen.rightAligned(163, row, IM_COL32_WHITE, std::to_string(out.research));
+            pen.sprite(ui.art.icon16(Icon::Research), 165, row - 2, 14, 14);
+            row += 14;
+            pen.text(0, row, kLabelBlue, "Intelligence");
+            pen.rightAligned(163, row, IM_COL32_WHITE, std::to_string(out.intelligence));
+            pen.sprite(ui.art.icon16(Icon::Intelligence), 165, row - 2, 14, 14);
+            row += 22;
+            std::string building = "None", remaining;
+            if (!c->queue.items.empty()) {
+                const game::QueueItem& q = c->queue.items.front();
+                building = q.kind == game::QueueItem::Kind::Facility  ? r.facility(q.facility).name
+                           : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
+                                                                      : s.design(q.design).name;
             }
+            line("Under Construction", building);
+            line("Time Remaining", remaining);
             break;
         }
         case ReportTab::Facilities:

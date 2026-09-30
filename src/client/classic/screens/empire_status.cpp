@@ -19,7 +19,6 @@ namespace {
 
 namespace cmd = game::cmd;
 
-const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 const ImVec4 kGood{0.45f, 0.9f, 0.45f, 1.0f};
 const ImVec4 kBad{1.0f, 0.45f, 0.4f, 1.0f};
 const ImVec4 kErrorText{1.0f, 0.5f, 0.45f, 1.0f};
@@ -96,7 +95,7 @@ public:
             image(ui, flag, {26, 18});
             ImGui::SameLine();
         }
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.15f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::Text("%s %s", me.name.c_str(), me.empireType.c_str());
         ImGui::PopFont();
         dimText(std::format("Budget per turn, {}", formatDate(ui.state().turn)).c_str());
@@ -286,8 +285,8 @@ public:
             changed = true;
         }
         d.spacer();
-        if (d.button("Complete AI On", !completeAi, completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = true});
-        if (d.button("Complete AI Off", completeAi, !completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = false});
+        if (d.tab("Complete AI On", completeAi, !completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = true});
+        if (d.tab("Complete AI Off", !completeAi, completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = false});
         if (changed) saveSettings();
         d.close();
         return d.keepOpen();
@@ -341,10 +340,10 @@ public:
         status_.draw();
 
         d.beginButtons();
-        if (d.button("Avoid", true, overlay_ == MapOverlay::Avoid)) overlay_ = MapOverlay::Avoid;
-        if (d.button("Presence", true, overlay_ == MapOverlay::Presence)) overlay_ = MapOverlay::Presence;
-        if (d.button("Ally Claimed", true, overlay_ == MapOverlay::AllyClaimed)) overlay_ = MapOverlay::AllyClaimed;
-        if (d.button("Enemy Claimed", true, overlay_ == MapOverlay::EnemyClaimed)) overlay_ = MapOverlay::EnemyClaimed;
+        if (d.tab("Avoid", overlay_ == MapOverlay::Avoid)) overlay_ = MapOverlay::Avoid;
+        if (d.tab("Presence", overlay_ == MapOverlay::Presence)) overlay_ = MapOverlay::Presence;
+        if (d.tab("Ally Claimed", overlay_ == MapOverlay::AllyClaimed)) overlay_ = MapOverlay::AllyClaimed;
+        if (d.tab("Enemy Claimed", overlay_ == MapOverlay::EnemyClaimed)) overlay_ = MapOverlay::EnemyClaimed;
         d.spacer();
         if (claimTab) {
             if (d.button("Release All Claims", !me.claimedSystems.empty())) {
@@ -664,7 +663,7 @@ public:
         d.beginButtons();
         static constexpr std::array<const char*, 4> kPages{"Movement", "Firing", "Launching", "Formation"};
         for (int i = 0; i < 4; ++i)
-            if (d.button(kPages[size_t(i)], true, page_ == i)) page_ = i;
+            if (d.tab(kPages[size_t(i)], page_ == i)) page_ = i;
         d.spacer();
         if (d.button("Add")) {
             ruleset::CombatStrategy st = !ui.rules().data().combatStrategies.empty() ? ui.rules().data().combatStrategies.front()

@@ -13,7 +13,6 @@ namespace opense4::client::classic {
 
 namespace {
 
-const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 const ImVec4 kErrorText{1.0f, 0.5f, 0.45f, 1.0f};
 const ImVec4 kGoodText{0.5f, 0.9f, 0.5f, 1.0f};
 
@@ -90,7 +89,7 @@ public:
         const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
-        ImGui::PushFont(ui.fonts.regular, 14.0f * ui.k());
+        ImGui::PushFont(ui.fonts.regular, ui.fontPx(kTextSize));
         bool keep = true;
         if (ImGui::Begin("Game Menu", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar)) {

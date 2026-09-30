@@ -28,8 +28,8 @@ constexpr std::array<const char*, static_cast<size_t>(game::Treaty::Count)> kTre
     "The closest bond: adds a share of intelligence points, shared sight and star charts, and copies of enemy designs the partner scans.",
 }};
 
-void title(UiContext& ui, std::string_view text, float scale = 1.15f) {
-    ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * scale);
+void title(UiContext& ui, std::string_view text) {
+    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
     ImGui::PopTextWrapPos();
@@ -445,7 +445,7 @@ std::string itemName(const UiContext& ui, const ItemRef& item) {
 }
 
 void ItemReportPopup::draw(UiContext& ui) {
-    ImGui::PushFont(ui.fonts.regular, 14.0f * ui.k());
+    ImGui::PushFont(ui.fonts.regular, ui.fontPx(kTextSize));
     if (request_) {
         ImGui::OpenPopup("##itemreport");
         request_ = false;
@@ -470,20 +470,7 @@ void drawSprite(const Sprite& s, ImVec2 min, ImVec2 max, ImU32 tint) {
                                          ImVec2(s.uv.max.x, s.uv.max.y), tint);
 }
 
-bool lampButton(UiContext& ui, Dialog& d, const char* label, bool lit, bool enabled) {
-    const bool clicked = d.button(label, enabled, lit);
-    const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
-    const float s = ui.px(11);
-    const ImVec2 p(a.x + ui.px(7), (a.y + b.y - s) * 0.5f);
-    // Indicator lamps in the General picture: green (lit) and grey (off).
-    const Sprite lamp = ui.art.region("Pictures/Game/General.bmp", lit ? 190 : 216, 0, 13, 13);
-    const ImU32 tint = enabled ? (lit ? IM_COL32_WHITE : IM_COL32(150, 150, 150, 255)) : IM_COL32(90, 90, 90, 255);
-    if (lamp) drawSprite(lamp, p, ImVec2(p.x + s, p.y + s), tint);
-    else
-        ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + s * 0.5f, p.y + s * 0.5f), s * 0.5f,
-                                                    lit ? IM_COL32(60, 220, 80, 255) : IM_COL32(90, 90, 100, 255));
-    return clicked;
-}
+bool lampButton(UiContext& /*ui*/, Dialog& d, const char* label, bool lit, bool enabled) { return d.tab(label, lit, enabled); }
 
 RowResult itemRow(UiContext& ui, int id, const Sprite& icon, std::string_view text, bool selected, const RowStyle& style) {
     ImGui::PushID(id);
@@ -549,7 +536,7 @@ RowResult itemRow(UiContext& ui, int id, const Sprite& icon, std::string_view te
 
 void listHeading(UiContext& ui, std::string_view text) {
     ImGui::Dummy(ImVec2(0, ui.px(2)));
-    ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize());
+    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::TextColored(kBlueText, "%.*s", static_cast<int>(text.size()), text.data());
     ImGui::PopFont();
     const ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();

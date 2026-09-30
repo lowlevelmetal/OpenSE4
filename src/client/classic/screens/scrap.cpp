@@ -50,8 +50,8 @@ public:
 
         d.beginButtons();
         if (colony) {
-            if (d.button("Vehicles", true, !facilities_)) facilities_ = false;
-            if (d.button("Facilities", true, facilities_)) facilities_ = true;
+            if (d.tab("Vehicles", !facilities_)) facilities_ = false;
+            if (d.tab("Facilities", facilities_)) facilities_ = true;
             d.spacer();
         }
         if (facilities_) facilityButtons(ui, d, *colony);

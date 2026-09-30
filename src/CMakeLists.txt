@@ -92,7 +92,8 @@ set_target_properties(opense4-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAK
 
 # --- assets: runtime access to the player's installed classic art ------------------
 add_library(opense4_assets STATIC
-    assets/assets.cpp)
+    assets/assets.cpp
+    assets/winfont.cpp)
 target_link_libraries(opense4_assets PUBLIC opense4_core PRIVATE stb opense4_warnings)
 
 # --- sim: the headless, deterministic game rules ---------------------------------

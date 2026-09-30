@@ -89,7 +89,7 @@ public:
             selected_ = -1;
         }
         d.spacer();
-        if (d.button("Repeat Orders", owner.valid(), repeat)) update(orders, !repeat);
+        if (d.check("Repeat Orders", repeat, owner.valid())) update(orders, !repeat);
         if (d.close()) return false;
         return d.keepOpen();
     }

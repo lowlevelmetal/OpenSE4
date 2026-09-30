@@ -16,11 +16,6 @@ ImU32 rgb(uint32_t c, float alpha = 1.0f) {
     return IM_COL32((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff, static_cast<int>(alpha * 255.0f));
 }
 
-void drawSprite(ImDrawList* dl, const Sprite& s, ImVec2 min, ImVec2 max, ImU32 tint = IM_COL32_WHITE) {
-    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(s.tex.value)), min, max, ImVec2(s.uv.min.x, s.uv.min.y), ImVec2(s.uv.max.x, s.uv.max.y),
-                 tint);
-}
-
 // Space inside a table row after the cell padding.
 float rowInner(UiContext& ui) { return ui.px(kRowHeight) - 2.0f * ImGui::GetStyle().CellPadding.y; }
 
@@ -33,18 +28,10 @@ bool escapePressed() { return ImGui::IsKeyPressed(ImGuiKey_Escape, false); }
 
 } // namespace
 
-bool lampButton(Dialog& d, UiContext& ui, const char* label, bool on, bool enabled, const char* tooltip) {
-    const bool clicked = d.button(label, enabled, on);
-    const ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+bool lampButton(Dialog& d, UiContext& /*ui*/, const char* label, bool on, bool enabled, const char* tooltip) {
+    // A classic tab button: the lamp shows on the selected one.
+    const bool clicked = d.tab(label, on, enabled);
     if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) itemTooltip(tooltip);
-    const float s = ui.px(11);
-    const ImVec2 p0(mn.x + ui.px(7), (mn.y + mx.y - s) * 0.5f), p1(p0.x + s, p0.y + s);
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    // General.bmp holds 13x13 lamps: blue, green, red, grey from x = 178.
-    if (Sprite lamp = ui.art.region("Pictures/Game/General.bmp", on ? 191 : 217, 0, 13, 13))
-        drawSprite(dl, lamp, p0, p1, enabled ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 110));
-    else
-        dl->AddCircleFilled(ImVec2(p0.x + s * 0.5f, p0.y + s * 0.5f), s * 0.45f, on ? IM_COL32(40, 200, 60, 255) : IM_COL32(90, 90, 90, 255));
     return clicked;
 }
 

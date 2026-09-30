@@ -677,7 +677,7 @@ private:
         ImGui::SameLine();
         ImGui::BeginGroup();
         const std::string name = v ? v->name : s.galaxy.object(target_.planet).name;
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.15f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(name.c_str());
         ImGui::PopFont();
         const game::Location where = v ? v->location : game::locationOf(s.galaxy, target_.planet);
@@ -949,7 +949,7 @@ private:
         image(ui, portrait, {96, 96});
         ImGui::SameLine();
         ImGui::BeginChild("##detailtext", ImVec2(0, 0));
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.1f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(queueItemName(r, s, *item).c_str());
         ImGui::PopFont();
         ImGui::TextColored(kTextLabel, "Cost");

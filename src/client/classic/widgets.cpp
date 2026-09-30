@@ -8,7 +8,6 @@ namespace opense4::client::classic {
 
 namespace {
 
-const ImVec4 kDimText{0.55f, 0.62f, 0.72f, 1.0f};
 
 // The indicator lamps in General.bmp: 13 px cells from x=178 (blue, green, red, grey).
 Sprite lampSprite(UiContext& ui, bool on) { return ui.art.region("Pictures/Game/General.bmp", 178 + 13 * (on ? 1 : 3), 0, 13, 13); }

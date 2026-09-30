@@ -71,7 +71,7 @@ public:
     }
 
     bool draw(UiContext& ui) override {
-        Dialog d(ui, screenTitle(ScreenId::Ships), DialogSize::Large);
+        Dialog d(ui, screenTitle(ScreenId::Ships), DialogSize::Tall);
         if (!d.open()) return d.keepOpen();
         refresh(ui);
 
@@ -86,11 +86,11 @@ public:
                                                                                {ShipsTab::Fleet, "Fleet"},
                                                                                {ShipsTab::Maintenance, "Maintenance"}}};
         for (const auto& [tab, label] : kTabs)
-            if (d.button(label, true, tab_ == tab)) tab_ = tab;
+            if (d.tab(label, tab_ == tab)) tab_ = tab;
         d.spacer();
-        if (d.button("Show Ships", true, ships_)) ships_ = !ships_;
-        if (d.button("Show Units", true, units_)) units_ = !units_;
-        if (d.button("Show Fleets", true, fleets_)) fleets_ = !fleets_;
+        if (d.check("Show Ships", ships_)) ships_ = !ships_;
+        if (d.check("Show Units", units_)) units_ = !units_;
+        if (d.check("Show Fleets", fleets_)) fleets_ = !fleets_;
         if (d.close()) return false;
         report_.draw(ui);
         if (selected_) {

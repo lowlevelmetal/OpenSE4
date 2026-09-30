@@ -87,7 +87,6 @@ std::string mountLabel(const game::Rules& r, int32_t mount);  // "" when unmount
 bool containsNoCase(std::string_view haystack, std::string_view needle);
 
 // Colours shared by these windows.
-inline constexpr ImVec4 kDimText{0.55f, 0.62f, 0.72f, 1.0f};
 inline constexpr ImVec4 kWarnText{1.0f, 0.45f, 0.40f, 1.0f};
 inline constexpr ImVec4 kGoodText{0.45f, 0.90f, 0.50f, 1.0f};
 inline constexpr ImVec4 kBlueText{0.44f, 0.61f, 1.0f, 1.0f};

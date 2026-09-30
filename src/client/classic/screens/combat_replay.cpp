@@ -22,7 +22,6 @@ namespace {
 
 using Kind = game::CombatEvent::Kind;
 
-const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 constexpr std::array<float, 5> kSpeeds{0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
 
 int toInt(std::string_view v) {
@@ -251,7 +250,7 @@ private:
 
     void statusBar(UiContext& ui) {
         const game::GameState& s = ui.state();
-        ImGui::PushFont(ui.fonts.bold, ImGui::GetFontSize() * 1.1f);
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::Text("Battle at %s", sectorName(s, record_.location).c_str());
         ImGui::PopFont();
         ImGui::SameLine();

@@ -89,7 +89,7 @@ public:
         if (revision_ != ui.session.revision()) refresh(ui);
         bool keep = true;
         {
-            Dialog d(ui, "Planets", DialogSize::Large);
+            Dialog d(ui, "Planets", DialogSize::Tall);
             if (!d.open()) return d.keepOpen();
             const game::GameState& s = ui.state();
 

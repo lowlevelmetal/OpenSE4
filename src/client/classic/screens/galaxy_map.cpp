@@ -13,7 +13,6 @@ namespace opense4::client::classic {
 
 namespace {
 
-const ImVec4 kLabelBlue{0.44f, 0.61f, 1.0f, 1.0f};
 
 std::string noteOf(const game::Empire& me, game::SystemId sys) {
     const auto& notes = me.knowledge.notes;
@@ -89,7 +88,7 @@ public:
                                                                                      {MapOverlay::Spaceports, "Spaceports"},
                                                                                      {MapOverlay::ResupplyDepots, "Resupply Depots"}}};
         for (const auto& [overlay, label] : kOverlays)
-            if (d.button(label, true, overlay_ == overlay)) overlay_ = overlay;
+            if (d.tab(label, overlay_ == overlay)) overlay_ = overlay;
         d.spacer();
         if (d.button("Goto System")) {
             filter_.clear();
@@ -99,8 +98,8 @@ public:
             ui.requests.showSystem = *sys;
             keep = false;
         }
-        if (d.button("Show Distances", true, distances_)) distances_ = !distances_;
-        if (d.button("Show Names", true, names_)) names_ = !names_;
+        if (d.check("Show Distances", distances_)) distances_ = !distances_;
+        if (d.check("Show Names", names_)) names_ = !names_;
         d.spacer();
         legend(ui);
         d.close();

@@ -41,6 +41,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
               mode->rules_->racePresets().size());
     audio().setInstall(&mode->art_->files());
+    mode->fonts_ = loadClassicFonts(*platform.fonts, mode->art_->files());
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
 
@@ -90,7 +91,7 @@ ClassicMode::~ClassicMode() {
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     screens_.clear();
     session_ = std::move(session);
-    ui_ = std::make_unique<UiContext>(*session_, *art_, *platform_.fonts);
+    ui_ = std::make_unique<UiContext>(*session_, *art_, fonts_);
     ui_->app = platform_.app;
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] { openLogOnTurn_ = true; };
@@ -133,10 +134,18 @@ void ClassicMode::updateAudio() {
 bool ClassicMode::update(const FrameState& fs) {
     updateAudio();
     mapping_ = frameMappingFor(float(fs.frame.width), float(fs.frame.height));
+    // Every classic window defaults to the game's text font at its native size.
+    ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale * appSettings().graphics.textScale);
+    const bool keepRunning = updateFrame(fs);
+    ImGui::PopFont();
+    return keepRunning;
+}
+
+bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
     if (!session_) {
-        MenuContext ctx{rules_, *art_, *platform_.fonts, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, frontError_};
+        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, frontError_};
         ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
@@ -194,7 +203,7 @@ bool ClassicMode::update(const FrameState& fs) {
     if (confirmEndTurn_) {
         ImGui::SetNextWindowPos(ui.at({362, 330}));
         ImGui::SetNextWindowSize(ui.size({300, 110}));
-        ImGui::PushFont(platform_.fonts->regular, 14.0f * ui.k());
+        ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
         ImGui::TextUnformatted("End the turn now?");
         if (ImGui::Button("End Turn", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
@@ -240,7 +249,7 @@ void ClassicMode::drawNetwork(UiContext& ui) {
     // A status strip at the bottom of the system panel: who we wait for, the latest line.
     ImGui::SetNextWindowPos(ui.at({8, 712}));
     ImGui::SetNextWindowSize(ui.size({650, 50}));
-    ImGui::PushFont(platform_.fonts->regular, 13.0f * ui.k());
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
     ImGui::Begin("##netstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                              ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -279,7 +288,7 @@ void ClassicMode::drawHandoff(UiContext& ui) {
     const game::Empire& e = ui.me();
     ImGui::SetNextWindowPos(ui.at({312, 250}));
     ImGui::SetNextWindowSize(ui.size({400, 230}));
-    ImGui::PushFont(platform_.fonts->regular, 15.0f * ui.k());
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
     image(ui, art_->flag(e.race.style), {39, 27});
     ImGui::SameLine();

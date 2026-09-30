@@ -63,7 +63,7 @@ void pageButtons(Dialog& d, int& page, size_t count, int perPage) {
     page = std::min(page, pages - 1);
     for (int p = 0; p < pages; ++p) {
         const std::string label = std::format("Empires {}-{}", p * perPage + 1, std::min<int>(int(count), (p + 1) * perPage));
-        if (d.button(label.c_str(), true, page == p)) page = p;
+        if (d.tab(label.c_str(), page == p)) page = p;
     }
     d.spacer();
 }
@@ -107,14 +107,14 @@ public:
         else portraits(ui);
 
         d.beginButtons();
-        if (d.button("Treaty", true, !borders_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
-        if (d.button("Trade", true, !borders_ && tab_ == Tab::Trade)) select(Tab::Trade);
-        if (d.button("Tariff", true, !borders_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
+        if (d.tab("Treaty", !borders_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
+        if (d.tab("Trade", !borders_ && tab_ == Tab::Trade)) select(Tab::Trade);
+        if (d.tab("Tariff", !borders_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
         d.spacer();
         if (d.button("History")) ui.open(ScreenId::History);
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
         if (d.button("Intelligence")) ui.open(ScreenId::Intelligence);
-        if (d.button("Borders", true, borders_)) borders_ = !borders_;
+        if (d.check("Borders", borders_)) borders_ = !borders_;
         if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
         if (d.button("Scores")) ui.open(ScreenId::Scores);
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
@@ -555,7 +555,7 @@ public:
         d.beginButtons();
         for (int i = 0; i < int(Metric::Count); ++i) {
             const auto m = static_cast<Metric>(i);
-            if (d.button(std::string(metricName(m)).c_str(), true, metric_ == m)) metric_ = m;
+            if (d.tab(std::string(metricName(m)).c_str(), metric_ == m)) metric_ = m;
         }
         d.close();
         return d.keepOpen();
@@ -721,7 +721,7 @@ public:
         d.beginButtons();
         for (EmpireId k : all) {
             ImGui::PushID(int(k.index()));
-            if (d.button(k == ui.session.player() ? "Our Empire" : s.empire(k).name.c_str(), true, k == empire_)) {
+            if (d.tab(k == ui.session.player() ? "Our Empire" : s.empire(k).name.c_str(), k == empire_)) {
                 empire_ = k;
                 selected_ = -1;
             }

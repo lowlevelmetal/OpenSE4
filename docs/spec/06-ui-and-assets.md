@@ -585,7 +585,7 @@ black-hole swirls, and the ringworld and sphereworld (cells 300, 301).
   - `Buttons/Main.bmp` 442x102: 13 command icons × 3 state rows, 34x34.
   - `Buttons/Orders.bmp` 816x408: 24 columns × 12 rows of 34x34, in three bands of four
     state rows (normal, hover with a mesh overlay, pressed/lit, disabled/dark); 59
-    icons in use. Which icon is which order is Q3.
+    icons in use. The cell of each order is in spec 07 §UI.
   - `Buttons/TabBtns.bmp` 576x150: 8 labelled tabs (Detail, Comps, Cargo, Ability,
     Facil, Descr, Race, Tech) of 72x30 × 5 state rows: the report tab strips.
   - `Buttons/Nextprev.bmp` 192x96: 4 selectors (ship, fleet, planet, crosshair) of 48x24
@@ -673,12 +673,14 @@ name/date/summary, can be shown from our own saves.
 
 ## 7. Open questions to verify in the running game
 
-1. **1024x768 layout.** Exact panel rectangles; what fills the 67 px right strip and
+1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
+   Exact panel rectangles; what fills the 67 px right strip and
    RightFiller (more order buttons?); whether the layout follows the desktop resolution
    or an option.
 2. **System grid pitch.** How the 13x13 grid maps onto 490 and 660 px backgrounds
    (about 37.7 and 50.8 px per cell); are 36 px sprites scaled at 1024?
-3. **Order icon map.** Which `Orders.bmp` cell is which order; what the extra icons are
+3. **Order icon map.** *Answered in spec 07 §UI (the 20×2 strip and every cell).*
+   Which `Orders.bmp` cell is which order; what the extra icons are
    (59 used vs about 43 documented orders); which `Main.bmp` icon is the 13th.
 4. **Order availability.** When each order button is enabled (selection type,
    simultaneous mode, cloak), how many order pages exist and whether the page follows
