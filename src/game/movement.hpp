@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::game {
@@ -141,6 +142,11 @@ void runUpkeep(TurnContext& ctx);
 void runStellarHazards(TurnContext& ctx);
 
 // ---- Shared helpers (AI, UI, other subsystems) --------------------------------------------------
+
+// Whether an Events log title written by a stellar manipulation reports a
+// destroyed planet or star (a new nebula or black hole reports the star it
+// consumed, once): what the computer players' anger term 2 counts (spec 05 §7.3).
+bool isDestructiveStellarReport(std::string_view title);
 
 // Why this vehicle cannot colonize that planet (empty = it can, ignoring distance).
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet);

@@ -1193,10 +1193,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
                 wp.kind = ObjectKind::WarpPoint;
                 wp.sector = sec;
                 wp.name = std::format("{} Warp Point {}", s.galaxy.system(sys).name, s.galaxy.warpPoints(sys).size() + 1);
-                if (auto st = pickSectorType(r, "Warp Point", {}, rng)) {
-                    wp.sectorType = *st;
-                    wp.oneWay = false;
-                }
+                if (auto st = pickSectorType(r, "Warp Point", {}, rng)) wp.sectorType = *st;
                 return addObject(s, sys, std::move(wp));
             };
             const ObjectId a = makeWp(t.system, *here);

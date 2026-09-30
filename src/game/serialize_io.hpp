@@ -290,7 +290,7 @@ template <class Ar> void io(Ar& ar, GalaxyPos& p) { fields(ar, p.x, p.y); }
 template <class Ar>
 void io(Ar& ar, SpaceObject& o) {
     fields(ar, o.id, o.kind, o.system, o.sector, o.sectorType, o.name, o.abilities, o.size, o.surface, o.atmosphere, o.conditions,
-           o.value, o.starAge, o.starColor, o.starLuminosity, o.destination, o.oneWay);
+           o.value, o.starAge, o.starColor, o.starLuminosity, o.destination);
 }
 
 template <class Ar>
@@ -455,6 +455,7 @@ void io(Ar& ar, GameOptions& o) {
            o.teamMode, o.scoreDisplay, o.maxShipsPerPlayer, o.maxUnitsPerPlayer, o.aiDifficulty, o.aiBonus, o.victory);
     fields(ar, o.simultaneous);
     fields(ar, o.randomAiPlayers);
+    fields(ar, o.quadrantSize, o.allPlanetsSameSize);
 }
 
 // ---- The game -----------------------------------------------------------------------------------------

@@ -31,7 +31,8 @@ struct BoolOption {
 using O = game::GameOptions;
 
 constexpr std::array kIntOptions{
-    IntOption{"systems", &O::systemCount, 1, 500},
+    IntOption{"systems", &O::systemCount, 0, 500},          // 0: rolled from quadrant_size (spec 01 §2.2)
+    IntOption{"quadrant_size", &O::quadrantSize, 0, 2},
     IntOption{"events", &O::eventFrequency, 0, 3},
     IntOption{"max_event_severity", &O::maxEventSeverity, 0, 3},
     IntOption{"tech_cost", &O::techCost, 0, 2},
@@ -41,13 +42,14 @@ constexpr std::array kIntOptions{
     IntOption{"starting_planets", &O::startingPlanets, 1, 20},
     IntOption{"max_ships", &O::maxShipsPerPlayer, 1, 100000},
     IntOption{"max_units", &O::maxUnitsPerPlayer, 1, 1000000},
-    IntOption{"ai_difficulty", &O::aiDifficulty, 0, 5},
-    IntOption{"ai_bonus", &O::aiBonus, 0, 5},
+    IntOption{"ai_difficulty", &O::aiDifficulty, 0, 2},     // Low, Medium, High (spec 05 §7.1)
+    IntOption{"ai_bonus", &O::aiBonus, 0, 3},               // None, Low, Medium, High
     IntOption{"score_display", &O::scoreDisplay, 0, 2},
 };
 
 constexpr std::array kBoolOptions{
     BoolOption{"all_warp_points_connected", &O::allWarpPointsConnected},
+    BoolOption{"all_planets_same_size", &O::allPlanetsSameSize},
     BoolOption{"no_warp_points", &O::noWarpPoints},
     BoolOption{"warp_points_anywhere", &O::warpPointsAnywhere},
     BoolOption{"all_systems_seen", &O::allSystemsSeen},

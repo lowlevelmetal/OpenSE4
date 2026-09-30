@@ -85,8 +85,9 @@ enum class RacialEffect : uint8_t {
 int racialEffect(const Rules& r, const Race& race, RacialEffect e);
 
 // Racial points one characteristic at `value` costs, or refunds when negative
-// (spec 02 §8.1, confirmed: binary): c per point up to the threshold, then P
-// per point above it (N refunded per point below it).
+// (spec 02 §8.1, confirmed: binary): the value clamped to Min/Max Pct, then c
+// per point up to the threshold, then P per point above it (N refunded per
+// point below it). setup's racialPointCost sums it over the characteristics.
 int characteristicPointCost(const Rules& r, Characteristic c, int value);
 
 // ---- Modifier tables (spec 02 §1.2, §5.2) ----------------------------------------------------

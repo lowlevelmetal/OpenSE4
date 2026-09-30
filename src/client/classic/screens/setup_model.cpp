@@ -116,7 +116,7 @@ NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed) {
     s.seed = seed ? seed : 1;
     game::GameOptions& o = s.options;
     if (!r.data().quadrantTypes.empty()) o.quadrantType = r.data().quadrantTypes.front().name;
-    o.systemCount = std::clamp(o.systemCount, 1, maxSystems(r));
+    o.systemCount = 0;  // rolled from the Quadrant Size, as the original does
     o.maxShipsPerPlayer = static_cast<int>(r.setting("Default Number Of Ships Per Player", o.maxShipsPerPlayer));
     o.maxUnitsPerPlayer = static_cast<int>(r.setting("Default Number Of Units Per Player", o.maxUnitsPerPlayer));
 
@@ -135,12 +135,17 @@ NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed) {
     return s;
 }
 
-int maxSystems(const game::Rules& r) { return static_cast<int>(std::clamp<int64_t>(r.setting("Maximum Number Of Systems", 100), 1, 255)); }
+int maxSystems(const game::Rules& r) { return game::maxSystemCount(r.data()); }
+
+std::pair<int, int> quadrantSizeRange(const game::Rules& r, int quadrantSize) {
+    return game::systemCountRange(r.data(), static_cast<game::QuadrantSize>(std::clamp(quadrantSize, 0, 2)));
+}
 
 game::QuadrantOptions quadrantOptions(const game::GameOptions& o) {
     game::QuadrantOptions q;
     q.quadrantType = o.quadrantType;
     q.systemCount = o.systemCount;
+    q.size = static_cast<game::QuadrantSize>(std::clamp(o.quadrantSize, 0, 2));
     q.allWarpPointsConnected = o.allWarpPointsConnected;
     q.noWarpPoints = o.noWarpPoints;
     q.warpPointsAnywhere = o.warpPointsAnywhere;
@@ -174,7 +179,8 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
     g.seed = s.seed;
     g.options = s.options;
     game::GameOptions& o = g.options;
-    o.systemCount = std::clamp(o.systemCount, 1, maxSystems(r));
+    if (o.systemCount > 0) o.systemCount = std::min(o.systemCount, maxSystems(r));  // 0: rolled from the Quadrant Size
+    o.quadrantSize = std::clamp(o.quadrantSize, 0, 2);
     o.victory.percentOfSecondValue = std::max(100, o.victory.percentOfSecondValue);
     o.victory.techPercentValue = std::clamp(o.victory.techPercentValue, 1, 100);
     o.startingPlanets = std::max(1, o.startingPlanets);

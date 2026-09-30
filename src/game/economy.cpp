@@ -159,7 +159,11 @@ int characteristicPointCost(const Rules& r, Characteristic c, int value) {
     const int64_t threshold = r.setting(std::format("Characteristic {} Threshold", name), 0);
     const int64_t pos = r.setting(std::format("Characteristic {} Threshhold Pct Cost Pos", name), 0);
     const int64_t neg = r.setting(std::format("Characteristic {} Threshhold Pct Cost Neg", name), 0);
-    const int64_t d = int64_t{value} - 100;
+    // The value is first clamped to the characteristic's Min/Max Pct (spec 02 §8.1).
+    int64_t lo = r.setting(std::format("Characteristic {} Min Pct", name), 0);
+    int64_t hi = r.setting(std::format("Characteristic {} Max Pct", name), 1'000'000);
+    if (hi < lo) std::swap(lo, hi);
+    const int64_t d = std::clamp<int64_t>(value, lo, hi) - 100;
     int64_t points = 0;
     if (threshold < 1 || (d <= threshold && -d <= threshold)) points = cost * d;
     else if (d > threshold) points = cost * threshold + pos * (d - threshold);

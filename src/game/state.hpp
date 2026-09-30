@@ -504,7 +504,8 @@ struct VictoryConditions {
 struct GameOptions {
     // Quadrant (spec 01 §2.2).
     std::string quadrantType;
-    int systemCount = 40;
+    int systemCount = 0;                 // 0: rolled from quadrantSize; > 0: exactly this many
+    int quadrantSize = 1;                // 0 small, 1 medium, 2 large
     bool allWarpPointsConnected = true;
     bool noWarpPoints = false;
     bool warpPointsAnywhere = false;
@@ -521,8 +522,9 @@ struct GameOptions {
     // Players.
     Resources startingResources{20000, 20000, 20000};
     int racialPoints = 2000;
-    int homePlanetValue = 1;             // 0 low, 1 medium, 2 high
-    int startingPlanets = 1;
+    int homePlanetValue = 1;             // 0 low, 1 medium, 2 high (Bad, Average, Good)
+    int startingPlanets = 1;             // 1, 3, 5 or 10
+    bool allPlanetsSameSize = true;      // every homeworld has the Home Planet Value size
     bool sameSystemAllowed = false;
     bool evenlyDistributed = true;
     // Game settings.

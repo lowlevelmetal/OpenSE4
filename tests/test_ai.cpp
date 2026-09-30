@@ -592,6 +592,10 @@ TEST_CASE("ai: idle attack ships explore the frontier") {
     const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId warship = addWarship(s, r, me, "Picket");
     const VehicleId explorer = addTestVehicle(s, r, warship, home).id;
+    // The starting ships are busy, so the free warp points go to the new ship
+    // (the home system may have a single warp point).
+    for (Vehicle& v : s.vehicles)
+        if (v.owner == me && v.id != explorer) v.orders = {Order{OrderKind::Sentry}};
     const auto cmds = ai::planTurn(r, s, me);
     bool explored = false;
     std::vector<ObjectId> targets;

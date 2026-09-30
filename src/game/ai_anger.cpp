@@ -11,6 +11,7 @@
 #include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/intel.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
 #include "game/sight.hpp"
@@ -342,11 +343,6 @@ struct AngerInputs {
     std::vector<EmpireId> mee;                      // per viewer
 };
 
-bool isStellarReport(std::string_view title) {
-    return title.starts_with("Planet destroyed:") || title.starts_with("Star destroyed:") || title.starts_with("Black hole created") ||
-           title.starts_with("Nebula created");
-}
-
 // Was the empire in that system when something happened there this turn?
 // It is still there, or it logged something located there (inferred).
 bool presentIn(const GameState& s, const Empire& e, SystemId sys) {
@@ -382,7 +378,7 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
         }
     // 2. Stellar manipulation reported to empires in that system.
     for (const LogEntry& l : x.log)
-        if (l.turn == s.turn && l.category == LogCategory::Events && isStellarReport(l.title) && l.location &&
+        if (l.turn == s.turn && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
             presentIn(s, e, l.location->system))
             add(int64_t{2} * t.defendingLost);
     // 3. Successful operations traced to them: the victim's log names the

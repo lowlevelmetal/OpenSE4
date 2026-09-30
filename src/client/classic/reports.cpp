@@ -440,7 +440,6 @@ void objectReport(UiContext& ui, game::ObjectId id) {
             const bool known = o.id.index() < ui.me().knowledge.knownWarpLink.size() && ui.me().knowledge.knownWarpLink[o.id.index()];
             labelValue(ui, "Destination",
                        known && o.destination.valid() ? s.galaxy.system(s.galaxy.object(o.destination).system).name : std::string("Unknown"));
-            if (o.oneWay) labelValue(ui, "Note", "One-way");
             break;
         }
         default: labelValue(ui, "Kind", std::string(game::displayName(o.kind))); break;

@@ -43,7 +43,8 @@ class Rules;
 // experience tenths, the sector a vehicle came from, colony militia and
 // obstacle combat pieces (spec 04); the computer players' memory, relation
 // counters and flags, difficulty, ministers, and the random-players option
-// (spec 05 §7); planet orders (Colony::orders, spec 03 §12).
+// (spec 05 §7); planet orders (Colony::orders, spec 03 §12); the Quadrant
+// Size and All Planets Same Size options (spec 01 §2).
 inline constexpr uint32_t kSaveVersion = 2;
 inline constexpr uint32_t kMinSaveVersion = 2;
 

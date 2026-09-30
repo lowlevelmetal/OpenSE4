@@ -1097,3 +1097,33 @@ highlighted, and an X marks each empire that has met one.
 26. **Sensors.** *Partly answered* (confirmed: binary): every owned planet and every ship,
     base, fighter, satellite and drone group is a sensor source; mine fields are not. Still
     open: whether an unpopulated colony's facilities contribute their sensor levels.
+27. **Edge placement reversal.** The engine compares the outline sector with the sectors the
+    system's earlier warp points ended up on (the reading of §3.5). Nudged coordinates are
+    always even, so with that reading the reversal never moves a warp point. Does the original
+    compare with the earlier warp points' outline sectors instead? **(inferred)**
+28. **Asteroid numerals.** The engine numbers planets and asteroid fields in one sequence, so
+    "Xyz II" can be followed by "Xyz Asteroid Belt III". Do asteroid fields count their own
+    numerals? **(inferred)**
+29. **Numerals of made planets.** Create Planet and Construct name the new planet with one
+    above the highest numeral the system's planets and asteroid fields carry. **(inferred)**
+30. **Order of the extra starting planets.** The engine scans the home system first, then the
+    systems one jump away, then two, each group in system order. **(inferred)**
+31. **Missing records.** When no natural planet record has the home size for a race's
+    atmosphere and type, a created homeworld or starting planet uses a record of another size
+    (and is given the race's atmosphere and type if no record has them). Placement with
+    *Warp Points located anywhere* stops redrawing after 1,000 draws, and the connectivity pass
+    marks a system it cannot link because every marked system is full. **(OpenSE4 choice)**
+32. **What obscures a sector.** The engine counts the rolled abilities of the objects in the
+    sector, the facilities of colonies there, and the abilities of ships and bases (not unit
+    groups) there. **(inferred)**
+33. **Construct materials.** The engine sums the intact components of the required group over
+    all ships in the sector, and destroys every ship of the builder there that carries the
+    device or a component of a required group. **(inferred)**
+34. **Hostile objects for stellar manipulation.** The engine counts visible ships and unit
+    groups, and colonies it can see, of empires below Non-Aggression or without contact. The
+    asteroid field's own rolled ability does not carry over to a planet made from it.
+    **(inferred)**
+35. **Setup details.** The racial point cost uses each characteristic clamped to its Min/Max
+    Pct. Extra starting planets are ordinary colonies (not capitals) of colony type
+    "Balanced". "More than 60 %" of Maximum Number Of Systems is compared exactly.
+    **(inferred)**

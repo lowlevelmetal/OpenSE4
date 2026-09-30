@@ -60,7 +60,7 @@ const game::Rules& setupRules() {
         out.root = fs::temp_directory_path() / "opense4_setup_model_test";
         fs::remove_all(out.root);
         // Tier 1: Intelligence 110 (250 points); tier 2: + Night Eyes (750); tier 3: Intelligence 150,
-        // Cunning 115, Night Eyes (2150).
+        // Cunning 115, Night Eyes (5200).
         const std::string tiers = R"(Race Opt 1 Num Characteristics := 1
 Race Opt 1 Characteristic 1 Type := Intelligence
 Race Opt 1 Characteristic 1 Amount := 110
@@ -151,12 +151,34 @@ TEST_CASE("setup model: defaults start one human empire from the first Quick Sta
     CHECK_FALSE(s.players[0].customRace.has_value());
     CHECK(s.players[0].presetTier == 1);  // the costliest tier within the default 2000 points
     CHECK(setup::maxSystems(r) == 60);
+    // The original's defaults (spec 01 §2.2, spec 02 §9).
+    CHECK(s.options.systemCount == 0);  // rolled from the Quadrant Size
+    CHECK(s.options.quadrantSize == 1);  // Medium
+    CHECK(s.options.allWarpPointsConnected);
+    CHECK(s.options.allPlanetsSameSize);
+    CHECK_FALSE(s.options.sameSystemAllowed);
+    CHECK(s.options.evenlyDistributed);
+    CHECK(s.options.startingResources == game::Resources{20000, 20000, 20000});
+    CHECK(s.options.racialPoints == 2000);
+    CHECK(s.options.homePlanetValue == 1);
+    CHECK(s.options.startingPlanets == 1);
+    CHECK(s.options.startTechLevel == 0);
+    CHECK(s.options.eventFrequency == 1);  // Low
+    CHECK(setup::kStartingResources == std::array<int64_t, 3>{5000, 20000, 100000});
+    CHECK(setup::kRacialPoints == std::array<int, 4>{0, 2000, 3000, 5000});
+    CHECK(setup::kStartingPlanets == std::array<int, 4>{1, 3, 5, 10});
+    // Maximum Number Of Systems 60: q = 12.
+    CHECK(setup::quadrantSizeRange(r, 0) == std::pair{12, 23});
+    CHECK(setup::quadrantSizeRange(r, 1) == std::pair{24, 47});
+    CHECK(setup::quadrantSizeRange(r, 2) == std::pair{48, 59});
 }
 
 TEST_CASE("setup model: options, seed and players map into the game setup") {
     const game::Rules& r = setupRules();
     setup::NewGameSettings s = setup::defaultSettings(r, 7);
     s.options.systemCount = 20;
+    s.options.quadrantSize = 2;
+    s.options.allPlanetsSameSize = false;
     s.options.eventFrequency = 3;
     s.options.maxEventSeverity = 1;
     s.options.startTechLevel = 1;
@@ -179,6 +201,8 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
         REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
         CHECK(g->seed == 7);
         CHECK(g->options.systemCount == 20);
+        CHECK(g->options.quadrantSize == 2);
+        CHECK_FALSE(g->options.allPlanetsSameSize);
         CHECK(g->options.eventFrequency == 3);
         CHECK(g->options.maxEventSeverity == 1);
         CHECK(g->options.startTechLevel == 1);
@@ -279,7 +303,7 @@ TEST_CASE("setup model: options, seed and players map into the game setup") {
 TEST_CASE("setup model: the preview is the map the game starts with") {
     const game::Rules& r = setupRules();
     setup::NewGameSettings s = setup::defaultSettings(r, 99);
-    s.options.systemCount = 14;
+    s.options.quadrantSize = 0;  // Small: 12 to 23 systems
     s.computers.enabled = false;
     auto preview = setup::previewQuadrant(r, s.seed, s.options);
     REQUIRE_MESSAGE(preview.has_value(), (preview ? std::string{} : preview.error()));
@@ -288,6 +312,8 @@ TEST_CASE("setup model: the preview is the map the game starts with") {
     auto state = game::createGame(r, *g);
     REQUIRE(state.has_value());
     REQUIRE(state->galaxy.systems.size() == preview->galaxy.systems.size());
+    CHECK(preview->galaxy.systems.size() >= 12);
+    CHECK(preview->galaxy.systems.size() <= 23);
     for (size_t i = 0; i < preview->galaxy.systems.size(); ++i) {
         CHECK(state->galaxy.systems[i].name == preview->galaxy.systems[i].name);
         CHECK(state->galaxy.systems[i].position == preview->galaxy.systems[i].position);
@@ -304,20 +330,23 @@ TEST_CASE("setup model: the preview is the map the game starts with") {
 TEST_CASE("setup model: racial point accounting") {
     const game::Rules& r = setupRules();
     using game::Characteristic;
-    // Intelligence: 25 per point up to +20, then 25 * 100% beyond; refunds 25 per point to -20, then 10 % of that.
+    // Intelligence: 25 per point up to +20, then P = 100 points per point beyond;
+    // refunds 25 per point down to -20, then N = 10 per point (spec 02 §8.1).
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 100) == 0);
     CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 110) == 250);
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 750);
-    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 25 * 10 / 100 * 10));
-    // Cunning: 20 per point, beyond +10 at 200 %.
-    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 40 * 5);
-    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 10 * 10));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 120) == 500);
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 130) == 25 * 20 + 100 * 10);
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 70) == -(25 * 20 + 10 * 10));
+    CHECK(setup::characteristicCost(r, Characteristic::Intelligence, 40) == -(25 * 20 + 10 * 30));  // clamped to Min Pct 50
+    // Cunning: 20 per point, beyond +10 at 200 per point; refunds 50 per point beyond -10.
+    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 115) == 20 * 10 + 200 * 5);
+    CHECK(setup::characteristicCost(r, Characteristic::Cunning, 80) == -(20 * 10 + 50 * 10));
     const setup::CharacteristicLimits l = setup::characteristicLimits(r, Characteristic::Intelligence);
     CHECK(l.min == 50);
     CHECK(l.max == 150);
 
     const ruleset::RacePreset& alpha = *game::findPreset(r, "Alpha");
-    CHECK(setup::tierCosts(r, alpha) == std::vector<int>{250, 750, (25 * 20 + 25 * 30) + (20 * 10 + 40 * 5) + 500});
+    CHECK(setup::tierCosts(r, alpha) == std::vector<int>{250, 750, (25 * 20 + 100 * 30) + (20 * 10 + 200 * 5) + 500});
     CHECK(setup::bestTierWithin(r, alpha, 2000) == 1);
     CHECK(setup::bestTierWithin(r, alpha, 100) == 0);
 

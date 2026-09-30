@@ -5,6 +5,9 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <format>
+#include <map>
+#include <optional>
 
 namespace opense4::game::sight {
 
@@ -20,6 +23,8 @@ bool inSystem(const Galaxy& g, ObjectId o) {
     return std::find(list.begin(), list.end(), o) != list.end();
 }
 
+bool validSystem(const GameState& s, SystemId sys) { return sys.valid() && sys.index() < s.galaxy.systems.size(); }
+
 void raise(SightVector& a, const SightVector& b) {
     for (size_t t = 0; t < kSightTypes; ++t) a[t] = std::max(a[t], b[t]);
 }
@@ -30,7 +35,11 @@ SightVector baseline() {
     return v;
 }
 
-// Sensor Level / Cloak Level: Val 1 names the sight type, Val 2 is the level.
+bool any(const SightVector& v) {
+    return std::any_of(v.begin(), v.end(), [](int x) { return x > 0; });
+}
+
+// Sensor Level / Cloak Level: Val 1 names the sight type, Val 2 is the level; the highest counts.
 void addLevels(SightVector& out, std::span<const ParsedAbility> abilities, AbilityKind kind) {
     for (const ParsedAbility& a : abilities) {
         if (a.kind != kind) continue;
@@ -42,6 +51,30 @@ void addLevels(SightVector& out, std::span<const ParsedAbility> abilities, Abili
     }
 }
 
+// Sensor or cloak levels of a vehicle's hull and intact components (what
+// vehicleAbilities would list), without building the list: sight runs often.
+void addVehicleLevels(SightVector& out, const Rules& r, const GameState& s, const Vehicle& v, AbilityKind kind) {
+    if (v.status == VehicleStatus::Mothballed) return;
+    const Design& d = s.design(v.design);
+    addLevels(out, r.hullAbilities(d.hull), kind);
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        const auto ab = r.componentAbilities(d.entries[i].component);
+        if (hasAbility(ab, kind) && entryIntact(r, s, v, i)) addLevels(out, ab, kind);
+    }
+}
+
+// The best Value 1 of an ability over a vehicle's hull and intact components.
+int64_t vehicleBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind kind) {
+    if (v.status == VehicleStatus::Mothballed) return 0;
+    const Design& d = s.design(v.design);
+    int64_t best = bestValue1(r.hullAbilities(d.hull), kind);
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        const auto ab = r.componentAbilities(d.entries[i].component);
+        if (hasAbility(ab, kind) && entryIntact(r, s, v, i)) best = std::max(best, bestValue1(ab, kind));
+    }
+    return best;
+}
+
 int64_t bestRaw(const std::vector<ruleset::Ability>& list, AbilityKind k) {
     int64_t best = 0;
     for (const auto& a : list)
@@ -49,59 +82,144 @@ int64_t bestRaw(const std::vector<ruleset::Ability>& list, AbilityKind k) {
     return best;
 }
 
-int environmentObscuration(const GameState& s, Location where) {
-    if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return 0;
+// Storms and nebulae hide planets, asteroid fields and comets; never stars,
+// storms or warp points (spec 01 §5.3, confirmed: binary).
+bool hideable(ObjectKind k) { return k == ObjectKind::Planet || k == ObjectKind::Asteroids || k == ObjectKind::Comet; }
+
+// The obscuration a ship or base spreads over its sector (unit groups do not, inferred).
+int64_t vehicleObscuring(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (!alive(v) || isUnitType(vehicleType(r, s, v))) return 0;
+    return vehicleBest(r, s, v, AbilityKind::SectorSightObscuration);
+}
+
+// The system-wide value and the stellar objects and colonies of a sector.
+int64_t placeObscuration(const Rules& r, const GameState& s, Location where) {
     const StarSystem& sys = s.galaxy.system(where.system);
-    int64_t level = bestRaw(sys.abilities, AbilityKind::SectorSightObscuration);
+    int64_t level = std::max<int64_t>(1, bestRaw(sys.abilities, AbilityKind::SectorSightObscuration));
     for (ObjectId o : sys.objects) {
         const SpaceObject& obj = s.galaxy.object(o);
-        if (obj.sector == where.sector) level = std::max(level, bestRaw(obj.abilities, AbilityKind::SectorSightObscuration));
+        if (obj.sector != where.sector) continue;
+        level = std::max(level, bestRaw(obj.abilities, AbilityKind::SectorSightObscuration));
+        if (const Colony* c = s.colony(o))
+            for (uint32_t f : c->facilities) level = std::max(level, bestValue1(r.facilityAbilities(f), AbilityKind::SectorSightObscuration));
     }
+    return level;
+}
+
+// The environment's obscuration at a place: the largest `Sector - Sight
+// Obscuration` among the storms, planets and ships in the sector, and the
+// system-wide value; at least 1. A planet's colony facilities count as the
+// planet's (inferred).
+int environmentObscuration(const Rules& r, const GameState& s, Location where) {
+    if (!validSystem(s, where.system)) return 1;
+    int64_t level = placeObscuration(r, s, where);
+    for (const Vehicle& v : s.vehicles)
+        if (v.location == where) level = std::max(level, vehicleObscuring(r, s, v));
     return static_cast<int>(level);
 }
 
-SightVector vehicleSensors(const Rules& r, const GameState& s, const Vehicle& v) {
-    SightVector out = baseline();
-    addLevels(out, vehicleAbilities(r, s, v), AbilityKind::SensorLevel);
+// The same for every place with vehicles at once (knowledge updates).
+std::map<Location, int> environmentByPlace(const Rules& r, const GameState& s) {
+    std::map<Location, int64_t> ships;
+    for (const Vehicle& v : s.vehicles)
+        if (alive(v) && validSystem(s, v.location.system)) {
+            int64_t& level = ships[v.location];
+            level = std::max(level, vehicleObscuring(r, s, v));
+        }
+    std::map<Location, int> out;
+    for (const auto& [where, level] : ships) out[where] = static_cast<int>(std::max(level, placeObscuration(r, s, where)));
     return out;
 }
 
-// Facilities only work on a populated colony (inferred); the planet itself
-// always carries the baseline.
+// Cloak levels: a ship's only while it is cloaked; unit groups always use
+// theirs (spec 01 §6.2, confirmed: binary). Mothballed vehicles have none.
+SightVector cloakLevels(const Rules& r, const GameState& s, const Vehicle& v) {
+    SightVector o;
+    o.fill(1);
+    if (v.status == VehicleStatus::Cloaked || isUnitType(vehicleType(r, s, v))) addVehicleLevels(o, r, s, v, AbilityKind::CloakLevel);
+    return o;
+}
+
+std::optional<SightVector> vehicleSensors(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (!isSensorSource(vehicleType(r, s, v))) return std::nullopt;
+    SightVector out = baseline();
+    addVehicleLevels(out, r, s, v, AbilityKind::SensorLevel);
+    return out;
+}
+
+// Every owned planet is a sensor source; its facilities add their sensor
+// levels only while it is populated (inferred, spec 01 §14 Q26).
 SightVector colonySensors(const Rules& r, const GameState& s, const Colony& c) {
     SightVector out = baseline();
     if (c.totalPopulation() > 0) addLevels(out, colonyAbilities(r, s, c), AbilityKind::SensorLevel);
     return out;
 }
 
-std::vector<uint8_t> groupMask(const GameState& s, EmpireId viewer) {
-    std::vector<uint8_t> mask(s.empires.size(), 0);
-    for (EmpireId e : sightGroup(s, viewer)) mask[e.index()] = 1;
-    return mask;
+// reach[e][m]: empire e gets empire m's sensors. Each round raises every
+// empire, in empire order, to the empires it holds a Partnership with; five
+// rounds (spec 01 §6.1, confirmed: binary).
+std::vector<std::vector<uint8_t>> sensorReach(const GameState& s) {
+    const size_t n = s.empires.size();
+    std::vector<std::vector<uint8_t>> reach(n, std::vector<uint8_t>(n, 0));
+    for (size_t e = 0; e < n; ++e) reach[e][e] = 1;
+    for (int round = 0; round < 5; ++round)
+        for (size_t e = 0; e < n; ++e)
+            for (size_t p = 0; p < n; ++p) {
+                if (p == e || p >= s.empires[e].relations.size() || !treatySharesSight(s.empires[e].relations[p].treaty)) continue;
+                for (size_t m = 0; m < n; ++m) reach[e][m] = reach[e][m] | reach[p][m];
+            }
+    return reach;
 }
 
-bool inGroup(const std::vector<uint8_t>& mask, EmpireId e) { return e.valid() && e.index() < mask.size() && mask[e.index()]; }
+std::vector<uint8_t> reachOf(const GameState& s, EmpireId viewer) {
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return {};
+    bool partners = false;
+    for (const Empire& e : s.empires)
+        for (const Relation& rel : e.relations) partners = partners || treatySharesSight(rel.treaty);
+    if (!partners) {
+        std::vector<uint8_t> self(s.empires.size(), 0);
+        self[viewer.index()] = 1;
+        return self;
+    }
+    return sensorReach(s)[viewer.index()];
+}
 
-// Every vehicle (units included) and every colony, even an empty one, gives presence (inferred).
-bool presenceFor(const GameState& s, const std::vector<uint8_t>& mask, SystemId sys) {
+bool inMask(const std::vector<uint8_t>& mask, EmpireId e) { return e.valid() && e.index() < mask.size() && mask[e.index()]; }
+
+bool presenceFor(const Rules& r, const GameState& s, const std::vector<uint8_t>& mask, SystemId sys) {
     if (s.options.omnipresent) return true;
-    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return false;
+    if (!validSystem(s, sys)) return false;
     for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.location.system == sys && inGroup(mask, v.owner)) return true;
+        if (alive(v) && v.location.system == sys && inMask(mask, v.owner) && isSensorSource(vehicleType(r, s, v))) return true;
     for (ObjectId o : s.galaxy.system(sys).objects)
-        if (const Colony* c = s.colony(o); c && inGroup(mask, c->owner)) return true;
+        if (const Colony* c = s.colony(o); c && inMask(mask, c->owner)) return true;
     return false;
 }
 
 SightVector sensorsFor(const Rules& r, const GameState& s, const std::vector<uint8_t>& mask, SystemId sys) {
     SightVector out{};
-    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return out;
+    if (!validSystem(s, sys)) return out;
     for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.location.system == sys && inGroup(mask, v.owner)) raise(out, vehicleSensors(r, s, v));
+        if (alive(v) && v.location.system == sys && inMask(mask, v.owner))
+            if (auto sensors = vehicleSensors(r, s, v)) raise(out, *sensors);
     for (ObjectId o : s.galaxy.system(sys).objects)
-        if (const Colony* c = s.colony(o); c && inGroup(mask, c->owner)) raise(out, colonySensors(r, s, *c));
-    if (s.options.omnipresent) raise(out, baseline());
+        if (const Colony* c = s.colony(o); c && inMask(mask, c->owner)) raise(out, colonySensors(r, s, *c));
+    if (s.options.omnipresent) raise(out, baseline());  // every system as if present (spec 01 §6.5)
     return out;
+}
+
+// The empire's own sensor source in a system: arriving there explored it.
+bool ownSourceIn(const Rules& r, const GameState& s, EmpireId e, SystemId sys) {
+    for (const Vehicle& v : s.vehicles)
+        if (alive(v) && v.owner == e && v.location.system == sys && isSensorSource(vehicleType(r, s, v))) return true;
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (const Colony* c = s.colony(o); c && c->owner == e) return true;
+    return false;
+}
+
+// Only explored systems show anything (the explored test is dropped with omnipresence).
+bool explored(const Rules& r, const GameState& s, EmpireId e, SystemId sys) {
+    return s.options.omnipresent || s.empire(e).hasExplored(sys) || ownSourceIn(r, s, e, sys);
 }
 
 bool scannerJammed(const Rules& r, const GameState& s, const Vehicle& v) {
@@ -115,88 +233,65 @@ void insertSorted(std::vector<DesignId>& list, DesignId d) {
 
 } // namespace
 
+bool isSensorSource(ruleset::VehicleType t) {
+    using ruleset::VehicleType;
+    return t == VehicleType::Ship || t == VehicleType::Base || t == VehicleType::Fighter || t == VehicleType::Satellite ||
+           t == VehicleType::Drone;
+}
+
 std::vector<EmpireId> sightGroup(const GameState& s, EmpireId viewer) {
     std::vector<EmpireId> out;
-    if (!viewer.valid() || viewer.index() >= s.empires.size()) return out;
-    std::vector<uint8_t> seen(s.empires.size(), 0);
-    std::vector<EmpireId> queue{viewer};
-    seen[viewer.index()] = 1;
-    for (size_t i = 0; i < queue.size(); ++i) {
-        const Empire& a = s.empire(queue[i]);
-        for (size_t j = 0; j < s.empires.size(); ++j) {
-            if (seen[j]) continue;
-            const Empire& b = s.empires[j];
-            const bool ab = j < a.relations.size() && treatySharesSight(a.relations[j].treaty);
-            const bool ba = queue[i].index() < b.relations.size() && treatySharesSight(b.relations[queue[i].index()].treaty);
-            if (ab || ba) {
-                seen[j] = 1;
-                queue.push_back(EmpireId{j});
-            }
-        }
-    }
-    std::sort(queue.begin(), queue.end());
-    return queue;
+    const std::vector<uint8_t> mask = reachOf(s, viewer);
+    for (size_t i = 0; i < mask.size(); ++i)
+        if (mask[i]) out.push_back(EmpireId{i});
+    return out;
 }
 
 SightVector sensorLevels(const Rules& r, const GameState& s, EmpireId viewer, SystemId sys) {
-    if (!viewer.valid()) return {};
-    return sensorsFor(r, s, groupMask(s, viewer), sys);
+    if (!viewer.valid() || viewer.index() >= s.empires.size()) return {};
+    return sensorsFor(r, s, reachOf(s, viewer), sys);
 }
 
 SightVector obscuration(const Rules& r, const GameState& s, const Vehicle& v) {
-    SightVector o;
-    o.fill(1);
-    const Design& d = s.design(v.design);
-    if (v.status != VehicleStatus::Mothballed) {
-        addLevels(o, r.hullAbilities(d.hull), AbilityKind::CloakLevel);  // hull cloaks are always on (inferred)
-        if (v.status == VehicleStatus::Cloaked)
-            for (size_t i = 0; i < d.entries.size(); ++i)
-                if (entryIntact(r, s, v, i)) addLevels(o, r.componentAbilities(d.entries[i].component), AbilityKind::CloakLevel);
-    }
-    // Storms and nebulae hide ships but not units (spec 01 §5.3, interpretation).
-    if (!isUnitType(vehicleType(r, s, v))) {
-        const int env = environmentObscuration(s, v.location);
-        for (int& x : o) x = std::max(x, env);
-    }
-    return o;
-}
-
-SightVector planetObscuration(const GameState& s, ObjectId planet) {
-    SightVector o;
-    o.fill(1);
-    const SpaceObject& obj = s.galaxy.object(planet);
-    if (obj.kind == ObjectKind::Star || obj.kind == ObjectKind::DestroyedStar) return o;  // stars are never hidden
-    const int env = environmentObscuration(s, {obj.system, obj.sector});
+    SightVector o = cloakLevels(r, s, v);
+    const int env = environmentObscuration(r, s, v.location);
     for (int& x : o) x = std::max(x, env);
     return o;
 }
 
-bool hasPresence(const GameState& s, EmpireId viewer, SystemId sys) {
+SightVector planetObscuration(const Rules& r, const GameState& s, ObjectId planet) {
+    SightVector o;
+    o.fill(1);
+    const SpaceObject& obj = s.galaxy.object(planet);
+    if (!hideable(obj.kind)) return o;
+    const int env = environmentObscuration(r, s, {obj.system, obj.sector});
+    for (int& x : o) x = std::max(x, env);
+    return o;
+}
+
+bool hasPresence(const Rules& r, const GameState& s, EmpireId viewer, SystemId sys) {
     if (!viewer.valid() || viewer.index() >= s.empires.size()) return false;
-    return presenceFor(s, groupMask(s, viewer), sys);
+    return presenceFor(r, s, reachOf(s, viewer), sys);
 }
 
 bool canSeeVehicle(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v) {
     if (!alive(v) || !viewer.valid() || viewer.index() >= s.empires.size()) return false;
     if (v.owner == viewer) return true;
-    const std::vector<uint8_t> mask = groupMask(s, viewer);
-    if (inGroup(mask, v.owner)) return true;  // partners share everything they see
-    if (!presenceFor(s, mask, v.location.system)) return false;
-    return detects(sensorsFor(r, s, mask, v.location.system), obscuration(r, s, v));
+    if (!validSystem(s, v.location.system) || !explored(r, s, viewer, v.location.system)) return false;
+    return detects(sensorsFor(r, s, reachOf(s, viewer), v.location.system), obscuration(r, s, v));
 }
 
 bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
     if (!viewer.valid() || viewer.index() >= s.empires.size() || !planet.valid() || planet.index() >= s.galaxy.objects.size())
         return false;
     if (!inSystem(s.galaxy, planet)) return false;
-    const std::vector<uint8_t> mask = groupMask(s, viewer);
-    if (const Colony* c = s.colony(planet); c && inGroup(mask, c->owner)) return true;
+    if (const Colony* c = s.colony(planet); c && c->owner == viewer) return true;
     const SpaceObject& obj = s.galaxy.object(planet);
-    if (!s.options.omnipresent && !s.empire(viewer).hasExplored(obj.system)) return false;
-    const SightVector obsc = planetObscuration(s, planet);
-    if (std::all_of(obsc.begin(), obsc.end(), [](int x) { return x <= 1; })) return true;
+    if (!explored(r, s, viewer, obj.system)) return false;
+    const SightVector obsc = planetObscuration(r, s, planet);
+    if (std::all_of(obsc.begin(), obsc.end(), [](int x) { return x <= 1; })) return true;  // remembered since exploration
     // Hidden by a storm or nebula: only current sensors that pierce it reveal it.
-    return presenceFor(s, mask, obj.system) && detects(sensorsFor(r, s, mask, obj.system), obsc);
+    return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), obsc);
 }
 
 void markExplored(GameState& s, EmpireId e, SystemId sys) {
@@ -211,7 +306,7 @@ void learnWarpLink(GameState& s, EmpireId e, ObjectId warpPoint) {
     Knowledge& k = s.empire(e).knowledge;
     if (k.knownWarpLink.size() < s.galaxy.objects.size()) k.knownWarpLink.resize(s.galaxy.objects.size(), 0);
     k.knownWarpLink[warpPoint.index()] = 1;
-    // Travelling a link also shows where its far end leads back to (inferred).
+    // Travelling a link also shows where its far end leads back to (inferred, spec 01 §14 Q24).
     const ObjectId back = s.galaxy.object(warpPoint).destination;
     if (back.valid() && back.index() < k.knownWarpLink.size()) k.knownWarpLink[back.index()] = 1;
 }
@@ -220,6 +315,17 @@ bool knowsWarpLink(const GameState& s, EmpireId e, ObjectId warpPoint) {
     if (s.options.omnipresent || !e.valid()) return true;
     const Knowledge& k = s.empire(e).knowledge;
     return warpPoint.index() < k.knownWarpLink.size() && k.knownWarpLink[warpPoint.index()];
+}
+
+std::string warpPointName(const GameState& s, EmpireId viewer, ObjectId warpPoint) {
+    std::string name = "Warp Point";
+    if (!warpPoint.valid() || warpPoint.index() >= s.galaxy.objects.size()) return name;
+    const ObjectId far = s.galaxy.object(warpPoint).destination;
+    if (!far.valid() || far.index() >= s.galaxy.objects.size()) return name;
+    const SystemId dest = s.galaxy.object(far).system;
+    const bool known = !viewer.valid() || viewer.index() >= s.empires.size() || s.options.omnipresent || s.empire(viewer).hasExplored(dest);
+    if (known && validSystem(s, dest)) name += " " + s.galaxy.system(dest).name;
+    return name;
 }
 
 void updateKnowledge(const Rules& r, GameState& s) {
@@ -235,14 +341,16 @@ void updateKnowledge(const Rules& r, GameState& s) {
         k.notes.resize(nSys);
     }
 
-    // Each empire's own presence and sensors per system.
+    // Each empire's own sensor sources and sensors per system.
     std::vector<std::vector<uint8_t>> own(nEmp, std::vector<uint8_t>(nSys, 0));
     std::vector<std::vector<SightVector>> sensors(nEmp, std::vector<SightVector>(nSys, SightVector{}));
     for (const Vehicle& v : s.vehicles) {
-        if (!alive(v) || !v.owner.valid() || v.owner.index() >= nEmp) continue;
+        if (!alive(v) || !v.owner.valid() || v.owner.index() >= nEmp || !validSystem(s, v.location.system)) continue;
+        const auto vs = vehicleSensors(r, s, v);
+        if (!vs) continue;  // mine fields give no presence
         const size_t sys = v.location.system.index();
         own[v.owner.index()][sys] = 1;
-        raise(sensors[v.owner.index()][sys], vehicleSensors(r, s, v));
+        raise(sensors[v.owner.index()][sys], *vs);
     }
     for (size_t i = 0; i < s.colonies.size(); ++i) {
         const auto& c = s.colonies[i];
@@ -252,7 +360,7 @@ void updateKnowledge(const Rules& r, GameState& s) {
         raise(sensors[c->owner.index()][sys], colonySensors(r, s, *c));
     }
 
-    // Exploration by own presence, and the options that reveal everything.
+    // Exploration by the empire's own sources, and the options that reveal everything.
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Empire& e = s.empires[ei];
         const bool galaxySeen = s.options.allSystemsSeen || r.hasTrait(e.race, "Galaxy Seen");
@@ -261,48 +369,41 @@ void updateKnowledge(const Rules& r, GameState& s) {
         if (s.options.omnipresent || r.hasTrait(e.race, "Galaxy Seen")) std::fill(e.knowledge.knownWarpLink.begin(), e.knowledge.knownWarpLink.end(), 1);
     }
 
-    // Partners share their live view: presence and sensors, through chains of
-    // partnerships (spec 01 §6.1). Their maps and scanned designs are shared by
-    // diplomacy::updateContacts.
-    std::vector<std::vector<EmpireId>> groups(nEmp);
-    for (size_t ei = 0; ei < nEmp; ++ei) groups[ei] = sightGroup(s, EmpireId{ei});
-    std::vector<std::vector<SightVector>> groupSensors(nEmp, std::vector<SightVector>(nSys, SightVector{}));
+    // Partners' sensors (one-way, through chains); omnipresence gives baseline sensors everywhere.
+    const auto reach = sensorReach(s);
+    std::vector<std::vector<SightVector>> shared(nEmp, std::vector<SightVector>(nSys, SightVector{}));
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Knowledge& k = s.empires[ei].knowledge;
-        for (EmpireId member : groups[ei]) {
-            const size_t mi = member.index();
-            for (size_t sys = 0; sys < nSys; ++sys) {
-                if (own[mi][sys]) k.present[sys] = 1;
-                raise(groupSensors[ei][sys], sensors[mi][sys]);
-            }
-        }
+        for (size_t mi = 0; mi < nEmp; ++mi)
+            if (reach[ei][mi])
+                for (size_t sys = 0; sys < nSys; ++sys) raise(shared[ei][sys], sensors[mi][sys]);
         for (size_t sys = 0; sys < nSys; ++sys) {
-            if (s.options.omnipresent) {
+            if (s.options.omnipresent) raise(shared[ei][sys], baseline());
+            if (any(shared[ei][sys])) {
                 k.present[sys] = 1;
-                raise(groupSensors[ei][sys], baseline());
-            }
-            if (k.present[sys]) {
-                k.explored[sys] = 1;
                 k.lastSeen[sys] = s.turn;
             }
         }
     }
 
-    // Visible foreign vehicles.
+    // Visible foreign vehicles: explored system, and a sight type that reaches the obscuration.
     std::vector<SightVector> obsc(s.vehicles.size());
-    for (size_t vi = 0; vi < s.vehicles.size(); ++vi)
-        if (alive(s.vehicles[vi])) obsc[vi] = obscuration(r, s, s.vehicles[vi]);
+    const std::map<Location, int> env = environmentByPlace(r, s);
+    for (size_t vi = 0; vi < s.vehicles.size(); ++vi) {
+        const Vehicle& v = s.vehicles[vi];
+        if (!alive(v) || !validSystem(s, v.location.system)) continue;
+        obsc[vi] = cloakLevels(r, s, v);
+        const auto it = env.find(v.location);
+        for (int& x : obsc[vi]) x = std::max(x, it == env.end() ? 1 : it->second);
+    }
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Empire& e = s.empires[ei];
-        std::vector<uint8_t> mask(nEmp, 0);
-        for (EmpireId m : groups[ei]) mask[m.index()] = 1;
         e.knowledge.visibleVehicles.clear();
         for (size_t vi = 0; vi < s.vehicles.size(); ++vi) {
             const Vehicle& v = s.vehicles[vi];
-            if (!alive(v) || v.owner == e.id) continue;
+            if (!alive(v) || v.owner == e.id || !validSystem(s, v.location.system)) continue;
             const size_t sys = v.location.system.index();
-            if (inGroup(mask, v.owner) || (e.knowledge.present[sys] && detects(groupSensors[ei][sys], obsc[vi])))
-                e.knowledge.visibleVehicles.push_back(v.id);
+            if ((e.knowledge.explored[sys] || s.options.omnipresent) && detects(shared[ei][sys], obsc[vi])) e.knowledge.visibleVehicles.push_back(v.id);
         }
     }
 

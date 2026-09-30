@@ -51,7 +51,8 @@ Network game options:
   --players=N            Human player slots (default 2)
   --ai=N                 Computer empires (default 0)
   --seed=N               Galaxy seed (default: random)
-  --systems=N            Number of star systems (default 40)
+  --systems=N            Exactly N star systems (default 0: rolled from the quadrant size)
+  --quadrant-size=N      Quadrant size 0 small, 1 medium (default), 2 large
   --quadrant=NAME        Quadrant type from the data set (default: the first)
   --setup=FILE.toml      Game name, seed, options and computer empires from a setup file
   --name=NAME            Game name (default "OpenSE4 game")
@@ -208,7 +209,7 @@ std::string turnSummary(const net::TurnStatus& t) {
 
 int runServer(std::span<char*> args) {
     auto parsed = parseArgs(args,
-                            {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant", "setup", "name", "password",
+                            {"data", "port", "bind", "players", "ai", "seed", "systems", "quadrant-size", "quadrant", "setup", "name", "password",
                              "join-password", "turn-timeout", "load", "save-dir", "autosave", "max-turns"},
                             {"upnp", "no-upnp", "no-lan-discovery", "verbose", "help", "version"});
     if (!parsed) return fail(parsed.error(), 2);
@@ -224,12 +225,13 @@ int runServer(std::span<char*> args) {
     auto port = o.integer("port", net::kDefaultPort, 0, 65535);
     auto players = o.integer("players", 2, 1, 32);
     auto ai = o.integer("ai", 0, 0, 31);
-    auto systems = o.integer("systems", 40, 1, 500);
+    auto systems = o.integer("systems", 0, 0, 500);
+    auto quadrantSize = o.integer("quadrant-size", 1, 0, 2);
     auto timeout = o.integer("turn-timeout", 0, 0, 7 * 24 * 3600);
     auto autosave = o.integer("autosave", 1, 0, 100000);
     auto maxTurns = o.integer("max-turns", 0, 0, 1000000);
     auto seed = o.integer("seed", 0, 0, std::numeric_limits<int64_t>::max());
-    for (const auto* v : {&port, &players, &ai, &systems, &timeout, &autosave, &maxTurns, &seed})
+    for (const auto* v : {&port, &players, &ai, &systems, &quadrantSize, &timeout, &autosave, &maxTurns, &seed})
         if (!*v) return fail(v->error(), 2);
 
     auto rules = loadRules(o.get("data"));
@@ -249,6 +251,7 @@ int runServer(std::span<char*> args) {
     cfg.lanDiscovery = !o.has("no-lan-discovery");
     cfg.setup.seed = o.has("seed") ? static_cast<uint64_t>(*seed) : net::randomId();
     cfg.setup.options.systemCount = static_cast<int>(*systems);
+    cfg.setup.options.quadrantSize = static_cast<int>(*quadrantSize);
     cfg.setup.options.quadrantType = o.get("quadrant");
     std::vector<game::EmpireSetup> computers(static_cast<size_t>(*ai));
 
@@ -258,9 +261,11 @@ int runServer(std::span<char*> args) {
         if (!o.has("name")) cfg.gameName = setup->gameName;
         if (setup->seed && !o.has("seed")) cfg.setup.seed = *setup->seed;
         const int count = o.has("systems") ? cfg.setup.options.systemCount : setup->options.systemCount;
+        const int size = o.has("quadrant-size") ? cfg.setup.options.quadrantSize : setup->options.quadrantSize;
         const std::string quadrant = o.has("quadrant") ? cfg.setup.options.quadrantType : setup->options.quadrantType;
         cfg.setup.options = setup->options;
         cfg.setup.options.systemCount = count;
+        cfg.setup.options.quadrantSize = size;
         cfg.setup.options.quadrantType = quadrant;
         if (!setup->masterPasswordHash.empty() && !o.has("password")) cfg.masterPasswordHash = setup->masterPasswordHash;
         for (const auto& e : setup->empires) {

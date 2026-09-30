@@ -701,6 +701,9 @@ master_password = "boss"
 
 [options]
 systems = 25
+quadrant_size = 2
+all_planets_same_size = false
+ai_difficulty = 2
 start_tech = 1
 no_ruins = true
 starting_resources = [1000, 2000, 3000]
@@ -724,6 +727,9 @@ tier = 2
     CHECK(s->seed == 99u);
     CHECK(s->masterPasswordHash == net::hashPassword("boss"));
     CHECK(s->options.systemCount == 25);
+    CHECK(s->options.quadrantSize == 2);
+    CHECK_FALSE(s->options.allPlanetsSameSize);
+    CHECK(s->options.aiDifficulty == 2);
     CHECK(s->options.startTechLevel == 1);
     CHECK(s->options.noRuins);
     CHECK(s->options.startingResources == game::Resources{1000, 2000, 3000});
@@ -742,4 +748,9 @@ tier = 2
     CHECK(bad.error().find("unknown option 'warp'") != std::string::npos);
     CHECK(bad.error().find("'kind' must be") != std::string::npos);
     CHECK_FALSE(server::parseSetup("name = [", "broken.toml", r).has_value());
+    // Three difficulty levels (spec 05 §7.1); 0 systems means "rolled from the quadrant size".
+    CHECK_FALSE(server::parseSetup("[options]\nai_difficulty = 3\n", "d.toml", r).has_value());
+    auto rolled = server::parseSetup("[options]\nsystems = 0\n", "z.toml", r);
+    REQUIRE(rolled.has_value());
+    CHECK(rolled->options.systemCount == 0);
 }

@@ -13,6 +13,7 @@
 #include "net/socket.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
@@ -127,7 +128,10 @@ private:
         ImGui::SetNextItemWidth(w);
         ImGui::SliderInt("Computer players", &computers_, 0, 19);
         ImGui::SetNextItemWidth(w);
-        ImGui::SliderInt("Star systems", &systems_, 10, 250);
+        // The number of systems is rolled from the quadrant size, as in the original (spec 01 §2.2).
+        static constexpr std::array<const char*, 3> kSizes{"Small", "Medium", "Large"};
+        ImGui::Combo("Quadrant size", &quadrantSize_, kSizes.data(), static_cast<int>(kSizes.size()));
+        quadrantSize_ = std::clamp(quadrantSize_, 0, 2);
         ImGui::SetNextItemWidth(w);
         ImGui::SliderInt("Turn time limit (s, 0 = none)", &timeout_, 0, 3600);
         textField("Join password (optional)", joinPassword_, w, ImGuiInputTextFlags_Password);
@@ -219,7 +223,8 @@ private:
         cfg.humanSlots = humans_;
         cfg.localPlayer = net::LocalPlayer{name_, net::hashPassword(password_), mySetup(ctx)};
         cfg.setup.seed = ctx.seed;
-        cfg.setup.options.systemCount = systems_;
+        cfg.setup.options.systemCount = 0;  // rolled from the quadrant size
+        cfg.setup.options.quadrantSize = quadrantSize_;
         cfg.joinPasswordHash = net::hashPassword(joinPassword_);
         cfg.turnTimeoutSeconds = timeout_;
         cfg.upnp.enabled = upnp_ && net::PortMapper::supported();
@@ -448,7 +453,7 @@ private:
     int port_ = net::kDefaultPort;
     int humans_ = 2;
     int computers_ = 2;
-    int systems_ = 40;
+    int quadrantSize_ = 1;  // Medium, the default
     int timeout_ = 0;
     bool upnp_ = true;
     std::string chat_;

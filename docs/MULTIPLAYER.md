@@ -38,7 +38,7 @@ everyone else. On top of that it can:
 `opense4-server` hosts a game without playing in it:
 
 ```sh
-opense4-server --players=3 --ai=2 --systems=40 --name="Friday Game" --password=boss
+opense4-server --players=3 --ai=2 --quadrant-size=1 --name="Friday Game" --password=boss
 ```
 
 It finds the installed classic data set on its own (or takes `--data=DIR`), opens TCP
@@ -57,7 +57,7 @@ port forwarding.
 | `--upnp` / `--no-upnp` | UPnP port forwarding (default: on) |
 | `--players=N` | human player slots (default 2) |
 | `--ai=N` | computer empires (default 0) |
-| `--seed=N`, `--systems=N`, `--quadrant=NAME` | galaxy settings |
+| `--seed=N`, `--quadrant-size=N`, `--systems=N`, `--quadrant=NAME` | galaxy settings (by default the number of systems is rolled from the quadrant size) |
 | `--setup=FILE.toml` | name, seed, options and computer empires from a [setup file](#setup-files) |
 | `--name=NAME` | game name (also the save file's name) |
 | `--password=PW` | master password (see below) |
@@ -238,7 +238,8 @@ seed = 1234                    # galaxy seed; random when missing
 master_password = "boss"       # or master_password_hash = "<opense4-server hash-password output>"
 
 [options]
-systems = 30
+quadrant_size = 1              # 0 small, 1 medium (the default), 2 large: the number of systems is rolled
+systems = 30                   # optional: exactly this many systems instead (0 = rolled from quadrant_size)
 quadrant = "Name From QuadrantTypes"   # default: the data set's first quadrant type
 start_tech = 0                 # 0 low, 1 medium, 2 high
 starting_resources = [20000, 20000, 20000]
@@ -250,10 +251,10 @@ home_planet_value = 1
 starting_planets = 1
 max_ships = 200
 max_units = 1000
-ai_difficulty = 1
-ai_bonus = 0
+ai_difficulty = 1              # 0 low, 1 medium, 2 high: the level random computer players get
+ai_bonus = 0                   # 0 none, 1 low, 2 medium, 3 high
 score_display = 1              # 0 own, 1 own and Non-Aggression or better, 2 all
-# true/false: all_warp_points_connected, no_warp_points, warp_points_anywhere,
+# true/false: all_warp_points_connected, all_planets_same_size, no_warp_points, warp_points_anywhere,
 # all_systems_seen, omnipresent, finite_resources, same_system_allowed,
 # evenly_distributed, no_tactical_combat, allow_gifts, allow_tech_trades,
 # allow_intel, no_ruins, only_breathable, only_home_type, team_mode,

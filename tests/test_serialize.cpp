@@ -556,8 +556,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x42d7fafce7b2b41dull;
-    constexpr size_t kGoldenSize = 1569;
+    constexpr uint64_t kGoldenChecksum = 0x7fa0c9cd26d9525ull;
+    constexpr size_t kGoldenSize = 1573;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
