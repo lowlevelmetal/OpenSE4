@@ -59,14 +59,14 @@ namespace opense4::game::economy {
 
 // ---- Scales and dates -------------------------------------------------------------------------------
 
-// The turn number the original tests for "every N turns" rules. A simultaneous
+// The number of the turn being processed, counted from the start date. A simultaneous
 // turn advances the date before the end-of-turn steps (spec 05 §8), while
 // processTurn increments GameState::turn at the very end, so during a turn this
 // is turn + 1. A turn-based game advances it after the last player's
 // end-of-turn processing, so there it is the turn itself.
 uint32_t processingTurn(const GameState& s);
-// The game date in tenths of a year (2400.0 = 24000) that those rules test
-// during a turn: 24000 + processingTurn (spec 02 §13 Q48, confirmed: binary).
+// The game date in tenths of a year (2400.0 = 24000) that the "every N turns"
+// rules test during a turn: 24000 + processingTurn (spec 02 §13 Q48, confirmed: binary).
 // "Every 10th turn" is date mod 10 = 0; growth happens when date mod
 // `Reproduction Check Frequency` = 0.
 inline constexpr uint32_t kStartDate = 24000;
