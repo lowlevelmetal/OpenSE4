@@ -35,6 +35,8 @@ Classic rules (work in progress, see docs/PARITY_PLAN.md):
   --classic                       Run the classic-rules engine on your installed classic data set
   --classic-dir=DIR               Game directory of the installed classic game (default: auto-detect)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
+  --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
+  --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
 
 Paths:
   --data=DIR                      Game data directory (default: auto-detect)
@@ -103,6 +105,14 @@ int main(int argc, char** argv) {
             options.classic = true;
         } else if (key == "--classic-dir") {
             options.classicDir = std::string(value);
+            options.classic = true;
+        } else if (key == "--quick-start") {
+            options.classicQuickStart = true;
+            options.classic = true;
+            if (!value.empty()) options.classicRace = std::string(value);
+        } else if (key == "--open") {
+            options.classicWindow = std::string(value);
+            options.classicQuickStart = true;
             options.classic = true;
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);

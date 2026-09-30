@@ -18,7 +18,28 @@ set_source_files_properties(gfx/vulkan/vma_impl.cpp PROPERTIES COMPILE_OPTIONS "
 # --- the game executable --------------------------------------------------------------
 add_executable(opense4
     client/app.cpp
+    client/classic/art.cpp
     client/classic/classic_mode.cpp
+    client/classic/frontend.cpp
+    client/classic/main_window.cpp
+    client/classic/reports.cpp
+    client/classic/screens/combat_replay.cpp
+    client/classic/screens/designs.cpp
+    client/classic/screens/empire_status.cpp
+    client/classic/screens/empires.cpp
+    client/classic/screens/galaxy_map.cpp
+    client/classic/screens/game_menu.cpp
+    client/classic/screens/help.cpp
+    client/classic/screens/log.cpp
+    client/classic/screens/multiplayer.cpp
+    client/classic/screens/planets.cpp
+    client/classic/screens/queues.cpp
+    client/classic/screens/registry.cpp
+    client/classic/screens/research.cpp
+    client/classic/screens/setup.cpp
+    client/classic/screens/ships.cpp
+    client/classic/session.cpp
+    client/classic/ui.cpp
     client/game_session.cpp
     client/main.cpp
     client/prototype_mode.cpp

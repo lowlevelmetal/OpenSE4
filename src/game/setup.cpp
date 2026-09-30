@@ -236,6 +236,9 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     po.finiteResources = s.options.finiteResources;
     auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng);
     if (!homes) return std::unexpected(homes.error());
+    // Placement may add a planet to a start system without one.
+    s.colonies.resize(s.galaxy.objects.size());
+    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), s.options.allSystemsSeen ? 1 : 0);
 
     for (size_t i = 0; i < n; ++i) {
         Empire& e = s.empires[i];

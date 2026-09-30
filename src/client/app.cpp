@@ -62,6 +62,10 @@ int App::run(const AppOptions& options) {
         co.systemCount = options.setup.galaxy.systemCount;
         co.empireCount = options.setup.empireCount;
         co.quadrantType = options.quadrantType;
+        co.skipIntro = options.classicQuickStart || !options.screenshotPath.empty();
+        co.race = options.classicRace;
+        co.autoTurns = options.autoTurns;
+        co.openWindow = options.classicWindow;
         mode_ = ClassicMode::create(platform, co, error);
     } else {
         PrototypeOptions po;

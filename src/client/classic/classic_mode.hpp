@@ -1,28 +1,28 @@
 #pragma once
 
-// The classic-rules client: the new engine (src/game) driven by a classic
-// data set, presented in the classic main-window layout (a fixed 1024×768
-// frame, scaled to fit). Art comes from the player's own installed copy.
-//
-// Milestone 1: quadrant generation and browsing (galaxy panel, system panel,
-// object reports). See docs/PARITY_PLAN.md.
+// The classic-rules client: the engine in src/game driven by the player's
+// installed classic data set and art, presented in the classic main-window
+// layout (a fixed 1024×768 frame, scaled to fit). See docs/spec/06.
 
-#include "assets/assets.hpp"
+#include "client/classic/frontend.hpp"
+#include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
-#include "game/generate.hpp"
 
-#include <map>
 #include <memory>
-#include <optional>
+#include <vector>
 
 namespace opense4::client {
 
 struct ClassicOptions {
     std::string installDir;  // empty = auto-detect
     uint64_t seed = 1;
-    int systemCount = 0;     // 0 = 40
-    int empireCount = 4;
+    int systemCount = 0;     // 0 = default
+    int empireCount = 5;
     std::string quadrantType;
+    bool skipIntro = false;  // start a quick game at once (automation, screenshots)
+    std::string race;        // quick start race preset (folder name); empty = first
+    int autoTurns = 0;       // let the computer play every empire for N turns first
+    std::string openWindow;  // open this window at start (automation, screenshots)
 };
 
 class ClassicMode final : public Mode {
@@ -37,46 +37,29 @@ public:
 private:
     explicit ClassicMode(const Platform& platform) : platform_(platform) {}
 
-    struct Empire {
-        std::string name;
-        Color color;
-        game::ObjectId homeworld;
-    };
-
-    // Frame (1024×768) <-> framebuffer mapping, recomputed each frame.
-    struct FrameMapping {
-        float scale = 1.0f;
-        Vec2 offset;
-        Vec2 toFb(Vec2 p) const { return offset + p * scale; }
-        Vec2 fromFb(Vec2 p) const { return (p - offset) / scale; }
-    };
-
-    gfx::TextureId loadTexture(const std::string& key, std::initializer_list<std::string_view> candidates, bool colorKey);
-    gfx::TextureId systemBackground(const game::StarSystem& sys);
-    gfx::TextureId portrait(const game::SpaceObject& obj);
-    void drawFrame(gfx::Renderer2D& r);
-    void drawSystemPanel(gfx::Renderer2D& r, double time);
-    void drawGalaxyPanel(gfx::Renderer2D& r);
-    void drawText(const FrameState& fs);
-    void reportPanel(const FrameState& fs);
-    void handleInput(const FrameState& fs);
-    std::vector<game::ObjectId> objectsAt(game::Sector s) const;
+    void startGame(std::unique_ptr<classic::ClassicSession> session);
+    void openScreen(classic::ScreenId id, classic::ScreenArgs args);
+    void endTurn();
 
     Platform platform_;
-    ruleset::Ruleset rules_;
-    assets::InstallFiles files_;
-    game::Galaxy galaxy_;
-    std::vector<Empire> empires_;
-    std::vector<std::string> warnings_;
+    ClassicOptions options_;
+    std::shared_ptr<const game::Rules> rules_;
+    std::unique_ptr<classic::Art> art_;
+    classic::FrameMapping mapping_;
 
-    game::SystemId shownSystem_;
-    std::optional<game::Sector> selectedSector_;
-    std::optional<game::ObjectId> selectedObject_;
+    // Before a game: the front end.
+    std::unique_ptr<classic::FrontScreen> front_;
+    std::optional<classic::FrontId> nextFront_;
+    std::string frontError_;
+    bool quit_ = false;
 
-    std::map<std::string, gfx::TextureId> textures_;
-    gfx::TextureId planetSheet_;
-    int sheetWidth_ = 0, sheetHeight_ = 0;
-    FrameMapping mapping_;
+    // During a game.
+    std::unique_ptr<classic::ClassicSession> session_;
+    std::unique_ptr<classic::UiContext> ui_;
+    classic::MainWindow main_;
+    std::vector<std::pair<classic::ScreenId, std::unique_ptr<classic::Screen>>> screens_;
+    std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
+    bool openLogOnTurn_ = false;
 };
 
 } // namespace opense4::client

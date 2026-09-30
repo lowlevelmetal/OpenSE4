@@ -31,6 +31,9 @@ struct AppOptions {
     bool classic = false;
     std::string classicDir;  // install or Data directory; empty = auto-detect
     std::string quadrantType;
+    bool classicQuickStart = false;  // skip the intro and start a quick game
+    std::string classicRace;         // race preset for the quick game
+    std::string classicWindow;       // window to open at start
 
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;
