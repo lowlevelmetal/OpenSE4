@@ -376,7 +376,7 @@ void io(Ar& ar, ConstructionQueue& q) {
 template <class Ar>
 void io(Ar& ar, Colony& c) {
     fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
-           c.minister, c.homeworld, c.foundedTurn, c.militia);
+           c.minister, c.homeworld, c.foundedTurn, c.militia, c.orders);
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -467,7 +467,7 @@ void io(Ar& ar, GameState& s) {
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------
 
-template <class Ar> void io(Ar& ar, cmd::SetOrders& c) { fields(ar, c.vehicle, c.fleet, c.orders, c.repeat); }
+template <class Ar> void io(Ar& ar, cmd::SetOrders& c) { fields(ar, c.vehicle, c.fleet, c.orders, c.repeat, c.planet); }
 template <class Ar> void io(Ar& ar, cmd::CreateFleet& c) { fields(ar, c.name, c.members); }
 template <class Ar> void io(Ar& ar, cmd::JoinFleet& c) { fields(ar, c.fleet, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::LeaveFleet& c) { fields(ar, c.vehicle); }

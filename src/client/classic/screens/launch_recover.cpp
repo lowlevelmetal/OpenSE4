@@ -5,10 +5,11 @@
 //
 // The classic game launches at once. Our engine resolves turns
 // simultaneously, so each click gives a Launch Units or Recover Units order
-// placed at the head of the ship's orders (carried out here, first thing
-// when the turn is processed); the pending ones are listed and can be taken
-// back. Launch / Recover Remotely (I / O) give the same orders for another
-// sector picked on the map.
+// placed at the head of the ship's (or planet's) orders, carried out during
+// the turn's movement phase; the pending ones are listed and can be taken
+// back. Colonies launch and recover without any bay: up to 1000 units of each
+// kind per turn (spec 03 §12). Launch / Recover Remotely (I / O) give the same
+// orders to a ship for another sector picked on the map.
 
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
@@ -106,10 +107,10 @@ private:
         return out;
     }
 
-    // Immediate launch / recover orders already given for this vehicle.
-    std::vector<game::Order> pendingOf(const UiContext& ui, game::VehicleId id) const {
+    // Immediate launch / recover orders already given for this ship or planet.
+    std::vector<game::Order> pendingOf(const UiContext& ui, const Holder& h) const {
         std::vector<game::Order> out;
-        const auto* orders = ordersOf(ui.state(), orderOwner(ui.state(), id));
+        const auto* orders = ordersOf(ui.state(), ownerOf(ui, h));
         if (!orders || !where_) return out;
         for (const game::Order& o : *orders) {
             if (!immediateKind(o.kind)) break;
@@ -155,11 +156,12 @@ private:
                 c = row(ui, 0, vehicleMini(ui, *v), v->name, ratesText(launchRates(r, s, *v)), st);
                 if (c.right) report_.vehicle(v->id);
                 cargo = &v->cargo;
-                pending = pendingOf(ui, v->id);
+                pending = pendingOf(ui, h);
             } else if (const game::Colony* col = ownColony(ui, h.planet)) {
-                c = row(ui, 0, colonySprite(ui, h.planet), s.galaxy.object(h.planet).name, "Planets cannot launch units yet", st);
+                c = row(ui, 0, colonySprite(ui, h.planet), s.galaxy.object(h.planet).name, "Launch per turn: 1000 of each kind", st);
                 if (c.right) report_.planet(h.planet);
                 cargo = &col->cargo;
+                pending = pendingOf(ui, h);
             }
             if (c.left) holder_ = h;
             int k = 0;
@@ -170,11 +172,11 @@ private:
                 is.height = 32;
                 is.picture = 26;
                 const game::Vehicle* v = ownVehicle(ui, h.vehicle);
-                is.enabled = v && canLaunch(r, s, *v, u.design);
+                is.enabled = v ? canLaunch(r, s, *v, u.design) : isUnitDesign(r, s, u.design) && launchableKind(r, s, u.design);
                 std::string detail = std::format("{} in cargo", formatNumber(u.count));
                 if (launching > 0) detail += std::format(", launching {}", formatNumber(launching));
-                if (row(ui, 100 + k++, designMini(ui, u.design), s.design(u.design).name, detail, is).left && v)
-                    launch(ui, *v, u.design, u.count - launching);
+                if (row(ui, 100 + k++, designMini(ui, u.design), s.design(u.design).name, detail, is).left && is.enabled)
+                    launch(ui, h, u.design, u.count - launching);
             }
             ImGui::PopID();
         }
@@ -184,8 +186,8 @@ private:
 
     void spacePanel(UiContext& ui, ImVec2 size) {
         const game::GameState& s = ui.state();
-        const game::Vehicle* carrier = ownVehicle(ui, holder_.vehicle);
-        const std::vector<game::Order> pending = carrier ? pendingOf(ui, carrier->id) : std::vector<game::Order>{};
+        const bool holder = holderValid(ui, holder_);
+        const std::vector<game::Order> pending = holder ? pendingOf(ui, holder_) : std::vector<game::Order>{};
         beginPanel(ui, "##space", "Units in space", size);
         int shown = 0;
         for (const game::Vehicle* v : where_ ? ownVehiclesAt(ui, *where_) : std::vector<const game::Vehicle*>{}) {
@@ -195,58 +197,83 @@ private:
             std::string detail = std::format("{} unit{}", v->count, v->count == 1 ? "" : "s");
             if (recovering > 0) detail += std::format(", recovering {}", formatNumber(recovering));
             RowStyle st;
-            st.enabled = carrier != nullptr;
+            st.enabled = holder;
             const RowClick c = row(ui, static_cast<int>(v->id.value), unitMini(ui, *v), v->name, detail, st);
-            if (c.left && carrier) recover(ui, *carrier, *v, v->count - recovering);
+            if (c.left && holder) recover(ui, holder_, *v, v->count - recovering);
             if (c.right) report_.vehicle(v->id);
         }
         if (shown == 0) ImGui::TextColored(kDim, "No units of yours in space here.");
-        endPanel(ui, "Click a group to bring it aboard the selected ship.");
+        endPanel(ui, "Click a group to bring it aboard the selected ship or planet.");
     }
 
     void pendingPanel(UiContext& ui) {
-        const game::Vehicle* carrier = ownVehicle(ui, holder_.vehicle);
-        const std::string caption = carrier ? std::format("Orders given for {} (click to take one back)", ownerName(ui, orderOwner(ui.state(), carrier->id)))
-                                            : std::string("Orders given");
+        const bool holder = holderValid(ui, holder_);
+        const std::string caption =
+            holder ? std::format("Orders given for {} (click to take one back)", ownerName(ui, ownerOf(ui, holder_))) : std::string("Orders given");
         beginPanel(ui, "##pending", caption, ImVec2(0, ui.px(100)));
-        const std::vector<game::Order> pending = carrier ? pendingOf(ui, carrier->id) : std::vector<game::Order>{};
+        const std::vector<game::Order> pending = holder ? pendingOf(ui, holder_) : std::vector<game::Order>{};
         for (size_t i = 0; i < pending.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(describeOrder(ui, pending[i]).c_str())) takeBack(ui, *carrier, pending[i]);
+            if (ImGui::Selectable(describeOrder(ui, pending[i]).c_str())) takeBack(ui, holder_, pending[i]);
             ImGui::PopID();
         }
         if (pending.empty()) ImGui::TextColored(kDim, "None. Launches and recoveries happen when the turn is processed.");
         endPanel(ui);
     }
 
-    void launch(UiContext& ui, const game::Vehicle& carrier, game::DesignId design, int64_t available) {
+    // Fighters, satellites, mines and drones can be launched; troops and platforms never.
+    static bool launchableKind(const game::Rules& r, const game::GameState& s, game::DesignId d) {
+        const auto t = r.hull(s.design(d).hull).type;
+        return t == ruleset::VehicleType::Fighter || t == ruleset::VehicleType::Satellite || t == ruleset::VehicleType::Mine ||
+               t == ruleset::VehicleType::Drone;
+    }
+
+    bool holderValid(const UiContext& ui, const Holder& h) const {
+        return ownVehicle(ui, h.vehicle) != nullptr || (!h.vehicle.valid() && ownColony(ui, h.planet) != nullptr);
+    }
+
+    OrderOwner ownerOf(const UiContext& ui, const Holder& h) const {
+        if (h.vehicle.valid()) return orderOwner(ui.state(), h.vehicle);
+        OrderOwner o;
+        o.planet = h.planet;
+        return o;
+    }
+
+    std::string holderName(const UiContext& ui, const Holder& h) const {
+        if (const game::Vehicle* v = ownVehicle(ui, h.vehicle)) return v->name;
+        return h.planet.valid() ? ui.state().galaxy.object(h.planet).name : std::string{};
+    }
+
+    void launch(UiContext& ui, const Holder& from, game::DesignId design, int64_t available) {
         if (available <= 0) {
             status_.error("All of those are already being launched.");
             return;
         }
-        game::Order o{game::OrderKind::LaunchUnits, carrier.location};
+        game::Order o{game::OrderKind::LaunchUnits, where_.value_or(game::Location{})};
         o.design = design;
         o.amount = static_cast<int>(stepAmount(step_, available));
-        status_.issue(ui, withImmediate(ui.state(), orderOwner(ui.state(), carrier.id), o),
-                      std::format("{} will launch {} {}.", carrier.name, o.amount, ui.state().design(design).name));
+        status_.issue(ui, withImmediate(ui.state(), ownerOf(ui, from), o),
+                      std::format("{} will launch {} {}.", holderName(ui, from), o.amount, ui.state().design(design).name));
     }
 
-    void recover(UiContext& ui, const game::Vehicle& carrier, const game::Vehicle& group, int64_t available) {
+    void recover(UiContext& ui, const Holder& into, const game::Vehicle& group, int64_t available) {
         if (available <= 0) {
             status_.error("That group is already being recovered.");
             return;
         }
-        game::Order o{game::OrderKind::RecoverUnits, carrier.location};
+        game::Order o{game::OrderKind::RecoverUnits, group.location};
         o.design = group.design;
         o.vehicle = group.id;
         o.amount = static_cast<int>(stepAmount(step_, available));
-        status_.issue(ui, withImmediate(ui.state(), orderOwner(ui.state(), carrier.id), o),
-                      std::format("{} will recover {} {}.", carrier.name, o.amount, ui.state().design(group.design).name));
+        status_.issue(ui, withImmediate(ui.state(), ownerOf(ui, into), o),
+                      std::format("{} will recover {} {}.", holderName(ui, into), o.amount, ui.state().design(group.design).name));
     }
 
-    void takeBack(UiContext& ui, const game::Vehicle& carrier, const game::Order& order) {
-        const OrderOwner owner = orderOwner(ui.state(), carrier.id);
-        std::vector<game::Order> orders = *ordersOf(ui.state(), owner);
+    void takeBack(UiContext& ui, const Holder& h, const game::Order& order) {
+        const OrderOwner owner = ownerOf(ui, h);
+        const auto* current = ordersOf(ui.state(), owner);
+        if (!current) return;
+        std::vector<game::Order> orders = *current;
         if (auto it = std::find(orders.begin(), orders.end(), order); it != orders.end()) orders.erase(it);
         status_.issue(ui, setOrders(owner, std::move(orders), repeatOf(ui.state(), owner)), "Order taken back.");
     }

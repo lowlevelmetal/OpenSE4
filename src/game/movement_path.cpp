@@ -31,6 +31,7 @@ constexpr int64_t kStraight = 10;
 constexpr int64_t kDiagonal = 14;
 constexpr int64_t kInf = std::numeric_limits<int64_t>::max();
 constexpr int kCells = kSystemSize * kSystemSize;
+constexpr int kWarpPointsConsidered = 10;
 
 int cell(Sector s) { return s.y * kSystemSize + s.x; }
 Sector sectorOf(int c) { return Sector{c % kSystemSize, c / kSystemSize}; }
@@ -59,8 +60,7 @@ struct Grid {
 
 class Router {
 public:
-    Router(const GameState& s, EmpireId e, RouteOptions options, bool avoidSystems)
-        : s_(s), e_(e), options_(options), avoid_(avoidSystems) {
+    Router(const GameState& s, EmpireId e, RouteOptions options) : s_(s), e_(e), options_(options) {
         if (knowing()) {
             const Empire& emp = s.empire(e);
             tagged_ = emp.taggedMinefields;
@@ -69,8 +69,6 @@ public:
             std::sort(avoided_.begin(), avoided_.end());
         }
     }
-
-    bool hasAvoidedSystems() const { return !avoided_.empty(); }
 
     std::optional<NearestPath> run(Location from, std::span<const Location> goals) {
         if (!valid(from)) return std::nullopt;
@@ -114,7 +112,7 @@ private:
         return s_.empire(e_).hasExplored(sys);
     }
     bool avoided(SystemId sys) const {
-        if (!avoid_ || sys == from_.system) return false;
+        if (sys == from_.system) return false;
         if (std::binary_search(goalSystems_.begin(), goalSystems_.end(), sys)) return false;
         return std::binary_search(avoided_.begin(), avoided_.end(), sys);
     }
@@ -125,14 +123,13 @@ private:
         return it->second;
     }
 
-    // A warp point the route may jump through: still in place, linked, the
-    // link known to the empire, and not the closed end of a one-way link.
+    // A warp point the route may jump through: still in place, linked and the
+    // link known to the empire. The one-way flag is never read: every link
+    // works both ways (spec 01 §8, confirmed: binary).
     bool usableWarp(ObjectId w) const {
         const SpaceObject& wp = s_.galaxy.object(w);
         if (wp.kind != ObjectKind::WarpPoint || !wp.destination.valid() || !inSystem(s_.galaxy, w)) return false;
         if (!inSystem(s_.galaxy, wp.destination)) return false;
-        const SpaceObject& far = s_.galaxy.object(wp.destination);
-        if (!wp.oneWay && far.oneWay) return false;  // (inferred) the flagged end is the entrance
         return !knowing() || sight::knowsWarpLink(s_, e_, w);
     }
 
@@ -247,7 +244,11 @@ private:
         for (auto it = goalIndex_.lower_bound(Location{sys, Sector{0, 0}}); it != goalIndex_.end() && it->first.system == sys; ++it)
             if (valid(it->first)) relax(u, it->first, legCost(sys, at.sector, it->first.sector), {}, open);
         if (!routable(sys)) return;
+        // Only the first 10 warp points of a system are considered (spec 03 §6.2, confirmed: binary).
+        int warpPoints = 0;
         for (ObjectId w : s_.galaxy.system(sys).objects) {
+            if (s_.galaxy.object(w).kind != ObjectKind::WarpPoint) continue;
+            if (++warpPoints > kWarpPointsConsidered) break;
             if (!usableWarp(w)) continue;
             const SpaceObject& wp = s_.galaxy.object(w);
             if (wp.sector != at.sector) {
@@ -284,7 +285,6 @@ private:
     const GameState& s_;
     EmpireId e_;
     RouteOptions options_;
-    bool avoid_;
     Location from_{};
     std::vector<Location> goals_;
     std::map<Location, size_t> goalIndex_;
@@ -305,12 +305,10 @@ private:
 std::optional<NearestPath> findPathToNearest(const Rules&, const GameState& s, EmpireId e, Location from,
                                              std::span<const Location> goals, RouteOptions options) {
     if (goals.empty()) return std::nullopt;
-    Router first(s, e, options, true);
-    if (auto p = first.run(from, goals)) return p;
-    // Systems to avoid are crossed only when no route around them exists (spec 03 §6.2, inferred).
-    if (!first.hasAvoidedSystems()) return std::nullopt;
-    Router second(s, e, options, false);
-    return second.run(from, goals);
+    // Systems to avoid are never crossed; with no route around them there is
+    // no route (spec 03 §6.2, confirmed: binary).
+    Router router(s, e, options);
+    return router.run(from, goals);
 }
 
 std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Location from, Location to) {
@@ -321,9 +319,12 @@ std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Loc
 }
 
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f) {
+    // The lowest maximum among the members in the fleet's sector (spec 03 §9).
+    const Vehicle* lead = detail::fleetLeader(s, f);
+    if (!lead) return 0;
     int speed = -1;
     for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && detail::alive(*v)) {
+        if (const Vehicle* v = s.vehicle(id); v && detail::alive(*v) && v->location == lead->location) {
             const int mp = detail::turnMovement(r, s, *v);
             speed = speed < 0 ? mp : std::min(speed, mp);
         }

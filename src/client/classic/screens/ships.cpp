@@ -197,10 +197,12 @@ private:
                 const int structure = game::vehicleStructure(r, s, v);
                 const int damage = std::min(structure, game::vehicleDamageTaken(s, v));
                 const int64_t cap = game::vehicleSupplyCapacity(r, s, v);
+                // Unlimited supply shows as "Endless" (spec 03 §7).
+                const std::string supplyText =
+                    game::vehicleHasUnlimitedSupply(r, s, v) ? std::string("Endless") : std::format("{} / {}", formatNumber(v.supply), formatNumber(cap));
                 return {text(hull.name), text(d.designType.empty() ? std::string(ruleset::displayName(hull.type)) : d.designType),
                         number(v.movement, std::format("{}/{}", v.movement, game::vehicleMaxMovement(r, s, v))),
-                        number(damage, std::format("{}/{}", damage, structure)),
-                        number(v.supply, std::format("{} / {}", formatNumber(v.supply), formatNumber(cap)))};
+                        number(damage, std::format("{}/{}", damage, structure)), number(v.supply, supplyText)};
             }
             case ShipsTab::Orders: return {text(d.name), text(ordersCell(ui, orderOwner(s, v.id), v.design))};
             case ShipsTab::Cargo: {
@@ -228,6 +230,7 @@ private:
         int64_t supply = 0, supplyCap = 0, used = 0, cap = 0;
         game::Resources maintenance;
         int members = 0;
+        bool endless = true;
         for (game::VehicleId id : f.members) {
             const game::Vehicle* v = s.vehicle(id);
             if (!v) continue;
@@ -237,8 +240,14 @@ private:
             const int st = game::vehicleStructure(r, s, *v);
             structure += st;
             damage += std::min(st, game::vehicleDamageTaken(s, *v));
-            supply += v->supply;
-            supplyCap += game::vehicleSupplyCapacity(r, s, *v);
+            // Fighter groups and members with unlimited supply are left out (spec 03 §9).
+            if (!game::vehicleHasUnlimitedSupply(r, s, *v)) {
+                endless = false;
+                if (game::vehicleType(r, s, *v) != ruleset::VehicleType::Fighter) {
+                    supply += v->supply;
+                    supplyCap += game::vehicleSupplyCapacity(r, s, *v);
+                }
+            }
             used += game::cargoSpaceUsed(r, s, v->cargo);
             cap += game::vehicleCargoCapacity(r, s, *v);
             maintenance += vehicleMaintenance(r, s, *v);
@@ -248,7 +257,8 @@ private:
             case ShipsTab::General:
                 return {text("Fleet"), text(std::format("{} vessel{}", members, members == 1 ? "" : "s")),
                         number(move, std::format("{}/{}", move, maxMove)), number(damage, std::format("{}/{}", damage, structure)),
-                        number(supply, std::format("{} / {}", formatNumber(supply), formatNumber(supplyCap)))};
+                        number(supply, endless && members > 0 ? std::string("Endless")
+                                                              : std::format("{} / {}", formatNumber(supply), formatNumber(supplyCap)))};
             case ShipsTab::Orders: {
                 OrderOwner owner;
                 owner.fleet = f.id;

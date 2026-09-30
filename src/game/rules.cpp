@@ -20,7 +20,7 @@ bool Rules::meets(const Empire& e, std::span<const ruleset::TechRequirement> req
     return true;
 }
 
-bool Rules::mountAvailable(const Empire&, uint32_t m) const { return m < data_.weaponMounts.size(); }
+bool Rules::mountAvailable(const Empire& e, uint32_t m) const { return m < data_.weaponMounts.size() && meets(e, data_.weaponMounts[m].requirements); }
 
 bool Rules::techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const {
     return techAreaOpen(s, e, a) && meets(e, tech(a).requirements);

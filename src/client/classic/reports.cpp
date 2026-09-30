@@ -232,7 +232,9 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
             labelValue(ui, "Movement", std::format("{} / {}", v.movement, game::vehicleMaxMovement(r, s, v)));
             labelValue(ui, "Damage", std::format("{} / {} ({}%)", damage, structure, structure > 0 ? damage * 100 / structure : 0));
             if (own) {
-                labelValue(ui, "Supplies", std::format("{} / {}", formatNumber(v.supply), formatNumber(game::vehicleSupplyCapacity(r, s, v))));
+                labelValue(ui, "Supplies", game::vehicleHasUnlimitedSupply(r, s, v)
+                                               ? std::string("Endless")
+                                               : std::format("{} / {}", formatNumber(v.supply), formatNumber(game::vehicleSupplyCapacity(r, s, v))));
                 labelValue(ui, "Experience", std::format("{}%", v.experience));
                 if (const game::Fleet* f = s.fleet(v.fleet)) labelValue(ui, "Fleet", f->name);
                 labelValue(ui, "Location", sectorName(s, v.location));
@@ -271,15 +273,20 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
     title(ui, f.name);
     int mp = 1 << 30;
     int64_t supply = 0, capacity = 0;
+    bool endless = !f.members.empty();
     for (game::VehicleId id : f.members)
         if (const game::Vehicle* v = s.vehicle(id)) {
             mp = std::min(mp, v->movement);
+            // Fighter groups and members with unlimited supply are left out (spec 03 §9).
+            if (game::vehicleHasUnlimitedSupply(r, s, *v)) continue;
+            endless = false;
+            if (game::vehicleType(r, s, *v) == ruleset::VehicleType::Fighter) continue;
             supply += v->supply;
             capacity += game::vehicleSupplyCapacity(r, s, *v);
         }
     if (f.members.empty()) mp = 0;
     labelValue(ui, "Movement", std::to_string(mp));
-    labelValue(ui, "Supplies", std::format("{} / {}", formatNumber(supply), formatNumber(capacity)));
+    labelValue(ui, "Supplies", endless ? std::string("Endless") : std::format("{} / {}", formatNumber(supply), formatNumber(capacity)));
     labelValue(ui, "Experience", std::format("{}%", f.experience));
     if (f.formation < r.data().formations.size()) labelValue(ui, "Formation", r.data().formations[f.formation].name);
     const auto& strategies = s.empire(f.owner).strategies;

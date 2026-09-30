@@ -543,24 +543,6 @@ bool Planner::setFleetOrders(FleetId fid, std::vector<Order> orders) {
     return emit(cmd::SetOrders{{}, fid, std::move(orders), false});
 }
 
-// The newly founded colonies of a computer player get their type (spec 05
-// §7.5 "at colonization"). Colonization itself gives them the empire's first
-// colony type; this replaces it on the first plan after founding (inferred
-// stand-in until colonization calls colonyTypeAtColonization itself).
-void typeNewColonies(Planner& p) {
-    if (p.mode != Mode::Computer) return;
-    const std::string defaultType = p.emp().colonyTypes.empty() ? "Balanced" : p.emp().colonyTypes.front();
-    std::vector<ObjectId> fresh;
-    for (const auto& c : p.st.colonies)
-        if (c && c->owner == p.id && !c->homeworld && c->foundedTurn + 1 >= p.st.turn && c->foundedTurn > 0 &&
-            (c->colonyType == defaultType || c->colonyType.empty()))
-            fresh.push_back(c->planet);
-    for (ObjectId planet : fresh) {
-        std::string type = colonyTypeAtColonization(p.r, p.st, p.id, planet);
-        if (type != p.st.colony(planet)->colonyType) p.emit(cmd::SetColonyType{planet, std::move(type)});
-    }
-}
-
 void Planner::runOrders() {
     if (!emp().alive) return;
     if (on(Minister::Politics)) planPolitics(*this);
@@ -584,10 +566,9 @@ void Planner::runOrders() {
 
 void Planner::runEconomy() {
     if (!emp().alive) return;
-    if (mode == Mode::Computer) {
-        planStrategies(*this);
-        typeNewColonies(*this);
-    }
+    // New colonies already have their type: colonization calls
+    // colonyTypeAtColonization for every empire (spec 05 §7.5).
+    if (mode == Mode::Computer) planStrategies(*this);
     if (on(Minister::Design)) planDesigns(*this);
     if (on(Minister::Research)) planResearch(*this);
     if (on(Minister::Intelligence)) planIntel(*this);

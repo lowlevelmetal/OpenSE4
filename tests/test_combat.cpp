@@ -431,13 +431,13 @@ TEST_CASE("combat: to-hit parts add up by family, the system bonus is offense on
     const VehicleId one = spawn(s, frigate(s, ar.b, "One", 1, {"CT ECM A", "CT ECM B"}), ar.loc);
     const VehicleId two = spawn(s, frigate(s, ar.b, "Two", 1, {"CT ECM A", "CT Stealth Armor"}), ar.loc);
     const size_t laser = 4;
-    CHECK(combat::detail::familyBest(r, s, *s.vehicle(one), AbilityKind::CombatToHitDefensePlus) == 20);
-    CHECK(combat::detail::familyBest(r, s, *s.vehicle(two), AbilityKind::CombatToHitDefensePlus) == 30);
+    CHECK(vehicleToHitDefense(r, s, *s.vehicle(one)) == 20);
+    CHECK(vehicleToHitDefense(r, s, *s.vehicle(two)) == 30);
     CHECK(combat::toHitPercent(r, s, *s.vehicle(gunner), laser, *s.vehicle(one), 2) == 100 - 20 - 20);
     CHECK(combat::toHitPercent(r, s, *s.vehicle(gunner), laser, *s.vehicle(two), 2) == 100 - 20 - 30);
     // The family's best intact part counts: with ECM A destroyed, ECM B remains.
     s.vehicle(one)->damage[4] = 1000;
-    CHECK(combat::detail::familyBest(r, s, *s.vehicle(one), AbilityKind::CombatToHitDefensePlus) == 15);
+    CHECK(vehicleToHitDefense(r, s, *s.vehicle(one)) == 15);
     // Mothballed ships have no offense or defense.
     s.vehicle(two)->status = VehicleStatus::Mothballed;
     CHECK(combat::detail::vehicleDefense(r, s, *s.vehicle(two), 0, 0) == 0);
@@ -1189,20 +1189,31 @@ TEST_CASE("combat: mines strike the entering group only, straight to the compone
         CHECK(damageTaken(s, newcomer) > 0);
     }
     {
-        // A vehicle of an empire at peace with the mine owner in the group stops the field.
+        // A group of an empire at peace with the mine owner is left alone. The
+        // vehicles movement names are struck group by group (a fleet, or one
+        // vehicle), so the peaceful group does not shield the hostile one.
         Arena ar = makeArena(7, 3);
         GameState& s = ar.s;
         setTreaty(s, ar.b, ar.c, Treaty::NonAggression);
         const DesignId mine = design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"});
         const VehicleId field = spawn(s, mine, ar.loc, 2);
         const VehicleId hostile = spawn(s, frigate(s, ar.a, "Hostile", 1, {"Test Armor Plate"}), ar.loc);
-        const VehicleId friendly = spawn(s, frigate(s, ar.c, "Friendly", 1, {}), ar.loc);
+        const VehicleId friendly = spawn(s, frigate(s, ar.c, "Friendly", 1, {"Test Armor Plate"}), ar.loc);
         setTreaty(s, ar.a, ar.c, Treaty::NonAggression);
         TurnContext ctx = context(s);
-        const std::vector<VehicleId> entering{hostile, friendly};
-        combat::resolveSpaceCombat(ctx, ar.loc, entering);
+        const std::vector<VehicleId> peaceful{friendly};
+        combat::resolveSpaceCombat(ctx, ar.loc, peaceful);
         CHECK(s.vehicle(field)->count == 2);
-        CHECK(damageTaken(s, hostile) == 0);
+        CHECK(damageTaken(s, friendly) == 0);
+        // Nobody entered: no strike either.
+        combat::resolveSpaceCombat(ctx, ar.loc, std::span<const VehicleId>{});
+        CHECK(s.vehicle(field)->count == 2);
+        const std::vector<VehicleId> both{hostile, friendly};
+        combat::resolveSpaceCombat(ctx, ar.loc, both);
+        const bool used = s.vehicle(field) == nullptr || s.vehicle(field)->count < 2;
+        CHECK(used);
+        CHECK(damageTaken(s, friendly) == 0);
+        CHECK(damageTaken(s, hostile) > 0);
     }
 }
 
@@ -1501,7 +1512,8 @@ TEST_CASE("combat: a ship without supplies neither fires nor raises shields; bas
         Arena ar = makeArena();
         GameState& s = ar.s;
         const VehicleId base = spawn(s, design(s, ar.a, "Fort", "Test Station", {"Test Bridge", "CT Gun", "CT Big Armor"}), ar.loc);
-        CHECK(s.vehicle(base)->supply == 0);
+        // Bases hold unlimited supply (spec 03 §7); even with none they fire.
+        s.vehicle(base)->supply = 0;
         spawn(s, frigate(s, ar.b, "Target", 1, {"CT Gun", "CT Big Armor"}), ar.loc);   // armed, so it closes in
         TurnContext ctx = context(s);
         combat::resolveSpaceCombat(ctx, ar.loc);

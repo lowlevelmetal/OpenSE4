@@ -86,6 +86,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         c->queue = {};
         c->facilities.clear();
         c->minister = false;
+        c->orders.clear();
     }
 
     // Designs: foreign designs we have not seen keep only their hull.

@@ -128,7 +128,10 @@ std::vector<uint32_t> knownWeapons(const game::Rules& r, const game::Empire& e, 
 }
 
 bool designNameTaken(const game::GameState& s, const game::Empire& e, std::string_view name) {
-    return std::any_of(e.designs.begin(), e.designs.end(), [&](game::DesignId id) { return s.design(id).name == name; });
+    // Names differ from every design in the game, other empires' included,
+    // exactly (spec 03 §4.1); a client sees the foreign designs it knows.
+    return std::any_of(e.designs.begin(), e.designs.end(), [&](game::DesignId id) { return s.design(id).name == name; }) ||
+           game::designNameInUse(s, name);
 }
 
 std::string romanNumeral(int n) {

@@ -11,9 +11,12 @@
 //   hostile mines strike the group of vehicles that entered the sector (after
 //   that group's sweepers clear what they can, spec 04 §10.6), then fights the
 //   battle if two hostile empires present can see each other. The three-argument
-//   form names the entering group; the two-argument form takes the vehicles
-//   that moved into the sector this turn (Vehicle::cameFrom), one group per
-//   empire, or every vehicle there when none is marked (inferred fallback).
+//   form names the vehicles that just entered (movement passes the day's
+//   steps; empty = nobody entered, no mine strike), struck group by group: a
+//   fleet together, any other vehicle alone. The two-argument form takes the
+//   vehicles that moved into the sector this turn (Vehicle::cameFrom), one
+//   group per empire, or every vehicle there when none is marked (inferred
+//   fallback).
 //   combatPossible() is also true when only mines face a vehicle they can
 //   hurt, so the same call pair handles "a vehicle enters a mined sector".
 //   Destroyed vehicles get count = 0; the caller runs removeDeadVehicles().
@@ -232,7 +235,7 @@ bool combatPossible(const Rules& r, const GameState& s, Location where);
 // Mines first, then the battle: appends a CombatRecord, applies damage,
 // destruction, capture, experience, design statistics, mood events and logs.
 void resolveSpaceCombat(TurnContext& ctx, Location where);
-// The same with the group of vehicles that just moved in (the mines' victims).
+// The same with the vehicles that just moved in (the mines' victims; none when empty).
 void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering);
 // Turn phase 4: invading troops against planets; capture of planets.
 void runGroundCombat(TurnContext& ctx);

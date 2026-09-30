@@ -6,6 +6,7 @@
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
@@ -44,11 +45,13 @@ int turnMovement(const Rules& r, const GameState& s, const Vehicle& v) { return 
 bool isShipOrBase(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Base; }
 bool isMobileType(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Fighter || t == VehicleType::Drone; }
 
+// The chosen leader, else the first member in object order (spec 03 §9).
 const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
-    if (const Vehicle* v = s.vehicle(f.leader); v && alive(*v)) return v;
+    if (const Vehicle* v = s.vehicle(f.leader); v && alive(*v) && v->fleet == f.id) return v;
+    const Vehicle* first = nullptr;
     for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && alive(*v)) return v;
-    return nullptr;
+        if (const Vehicle* v = s.vehicle(id); v && alive(*v) && (!first || v->id < first->id)) first = v;
+    return first;
 }
 
 // Fleet orders take precedence over a member's own while it is with the leader (inferred).
@@ -64,47 +67,59 @@ bool followsFleetOrders(const GameState& s, const Vehicle& v) {
 
 int64_t scaledSupply(const Rules& r, const GameState& s, EmpireId owner, int64_t amount) {
     if (!owner.valid() || owner.index() >= s.empires.size()) return amount;
-    const int64_t pct = 100 + r.traitValue(s.empire(owner).race, "Supply Cost");
-    return amount * std::max<int64_t>(0, pct) / 100;
+    const int64_t c = r.traitValue(s.empire(owner).race, "Supply Cost");
+    if (c == 0) return amount;
+    return std::max<int64_t>(0, xmath::pctRound(amount, 100 + c));  // to nearest, halves to even (§7, confirmed: binary)
+}
+
+void holdSupply(const Rules& r, const GameState& s, Vehicle& v) {
+    if (vehicleHasUnlimitedSupply(r, s, v)) {
+        v.supply = kUnlimitedSupply;
+        return;
+    }
+    v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
 }
 
 void spendSupply(const Rules& r, const GameState& s, Vehicle& v, int64_t amount) {
-    if (amount <= 0 || vehicleHasQuantumReactor(r, s, v)) return;
+    holdSupply(r, s, v);
+    if (amount <= 0 || vehicleHasUnlimitedSupply(r, s, v)) return;
     v.supply = std::max<int64_t>(0, v.supply - amount);
 }
 
 void refillSupply(const Rules& r, const GameState& s, Vehicle& v) {
-    if (vehicleType(r, s, v) == VehicleType::Drone) return;  // drones are never resupplied
-    v.supply = std::max(v.supply, vehicleSupplyCapacity(r, s, v));
+    if (vehicleType(r, s, v) == VehicleType::Drone) return;  // drones are never resupplied (§12)
+    if (!vehicleUsesSupply(r, s, v)) return;
+    v.supply = std::max(v.supply, initialSupply(r, s, v));
 }
 
 void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members) {
     std::vector<Vehicle*> pool;
-    int64_t total = 0, capacity = 0;
-    for (VehicleId id : members) {
-        Vehicle* v = s.vehicle(id);
-        if (!v || !alive(*v) || vehicleHasQuantumReactor(r, s, *v)) continue;
-        const int64_t cap = vehicleSupplyCapacity(r, s, *v);
-        if (cap <= 0) continue;
-        pool.push_back(v);
-        total += std::min(v->supply, cap);
-        capacity += cap;
-    }
-    if (pool.size() < 2 || capacity <= 0) return;
-    // Proportional to capacity; the remainder goes one point at a time in member order (inferred).
-    int64_t given = 0;
+    for (VehicleId id : members)
+        if (Vehicle* v = s.vehicle(id); v && alive(*v) && vehicleUsesSupply(r, s, *v)) pool.push_back(v);
+    if (pool.size() < 2) return;
+    // Equal shares, the remainder of the division lost; each member takes what
+    // fits, and the overflow goes in member order to members with room (§7,
+    // confirmed: binary). A member with unlimited supply brings its marker value.
+    int64_t total = 0;
     std::vector<int64_t> caps;
     for (Vehicle* v : pool) {
-        const int64_t cap = vehicleSupplyCapacity(r, s, *v);
-        caps.push_back(cap);
-        v->supply = total * cap / capacity;
-        given += v->supply;
+        total += v->supply;
+        caps.push_back(vehicleSupplyCapacity(r, s, *v));
     }
-    for (size_t i = 0; given < total; i = (i + 1) % pool.size())
-        if (pool[i]->supply < caps[i]) {
-            ++pool[i]->supply;
-            ++given;
-        }
+    const int64_t share = total / static_cast<int64_t>(pool.size());
+    int64_t overflow = 0;
+    for (size_t i = 0; i < pool.size(); ++i) {
+        pool[i]->supply = std::min(share, caps[i]);
+        overflow += share - pool[i]->supply;
+    }
+    for (size_t i = 0; i < pool.size() && overflow > 0; ++i) {
+        const int64_t add = std::min(overflow, caps[i] - pool[i]->supply);
+        if (add <= 0) continue;
+        pool[i]->supply += add;
+        overflow -= add;
+    }
+    for (Vehicle* v : pool)
+        if (vehicleHasUnlimitedSupply(r, s, *v)) v->supply = kUnlimitedSupply;
 }
 
 // ---- Losses ------------------------------------------------------------------------------------
@@ -140,7 +155,9 @@ int sweepMines(TurnContext& ctx, VehicleId sweeperId) {
     GameState& s = ctx.state;
     Vehicle* sweeper = s.vehicle(sweeperId);
     if (!sweeper || !alive(*sweeper)) return 0;
-    int64_t capacity = sumValue1(vehicleAbilities(r, s, *sweeper), AbilityKind::MineSweeping);
+    // A unit group lists every unit's abilities, so its sweeping adds up (§12).
+    int64_t capacity = abilitySum(vehicleAbilities(r, s, *sweeper), AbilityKind::MineSweeping);
+    if (isUnitType(vehicleType(r, s, *sweeper))) capacity *= std::max(1, sweeper->count);
     if (capacity <= 0) return 0;
     const EmpireId owner = sweeper->owner;
     const Location where = sweeper->location;
@@ -210,45 +227,45 @@ std::vector<EmpireId> racesOf(const std::vector<PopulationGroup>& pop, EmpireId 
     return out;
 }
 
-Colony* ownColonyHere(GameState& s, EmpireId owner, Location where) {
+std::vector<ObjectId> ownColoniesHere(const GameState& s, EmpireId owner, Location where) {
+    std::vector<ObjectId> out;
     for (ObjectId o : planetsAt(s, where))
-        if (Colony* c = s.colony(o); c && c->owner == owner) return c;
-    return nullptr;
-}
-
-std::vector<VehicleId> ownBasesHere(const Rules& r, const GameState& s, EmpireId owner, Location where, VehicleId except) {
-    std::vector<VehicleId> out;
-    for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.id != except && v.owner == owner && v.location == where && vehicleType(r, s, v) == VehicleType::Base)
-            out.push_back(v.id);
+        if (const Colony* c = s.colony(o); c && c->owner == owner) out.push_back(o);
     return out;
 }
 
-// Units of the vehicle's own cargo that no longer fit are lost, last stack first, then population (inferred).
-void trim(const Rules& r, const GameState& s, Vehicle& v) {
-    const int64_t mass = r.setting("Population Mass", 5);
-    int64_t over = cargoSpaceUsed(r, s, v.cargo) - vehicleCargoCapacity(r, s, v);
-    while (over > 0 && !v.cargo.units.empty()) {
-        UnitStack& u = v.cargo.units.back();
-        --u.count;
-        over -= unitTons(r, s, u.design);
-        if (u.count <= 0) v.cargo.units.pop_back();
+// Own ships and bases in the sector (cargo holders), in creation order, except `group`.
+std::vector<VehicleId> ownHoldersHere(const Rules& r, const GameState& s, EmpireId owner, Location where, VehicleId self,
+                                      std::span<const VehicleId> group) {
+    std::vector<VehicleId> out;
+    for (const Vehicle& v : s.vehicles) {
+        if (!alive(v) || v.id == self || v.owner != owner || v.location != where || !isShipOrBase(vehicleType(r, s, v))) continue;
+        if (std::find(group.begin(), group.end(), v.id) != group.end()) continue;
+        out.push_back(v.id);
     }
-    while (over > 0 && !v.cargo.population.empty()) {
-        PopulationGroup& p = v.cargo.population.back();
-        const int64_t n = std::min(p.millions, mass > 0 ? (over + mass - 1) / mass : p.millions);
-        p.millions -= n;
-        over -= n * mass;
-        if (p.millions <= 0) v.cargo.population.pop_back();
-        if (mass <= 0) break;
-    }
+    return out;
 }
 
 } // namespace
 
-void trimCargo(const Rules& r, const GameState& s, Vehicle& v) { trim(r, s, v); }
+void trimCargo(const Rules& r, const GameState& s, Vehicle& v) {
+    const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
+    int64_t over = cargoSpaceUsed(r, s, v.cargo) - vehicleCargoCapacity(r, s, v);
+    while (over > 0 && !v.cargo.population.empty()) {
+        PopulationGroup& p = v.cargo.population.front();
+        --p.millions;
+        over -= mass;
+        if (p.millions <= 0) v.cargo.population.erase(v.cargo.population.begin());
+    }
+    while (over > 0 && !v.cargo.units.empty()) {
+        UnitStack& u = v.cargo.units.front();
+        --u.count;
+        over -= unitTons(r, s, u.design);
+        if (u.count <= 0) v.cargo.units.erase(v.cargo.units.begin());
+    }
+}
 
-int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount) {
+int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
@@ -274,28 +291,31 @@ int64_t loadCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount)
         }
     };
 
-    if (Colony* c = ownColonyHere(s, owner, where)) {
+    // Own planets first (none quarantined by plague), then own vehicles (§8, §11).
+    for (ObjectId o : ownColoniesHere(s, owner, where)) {
+        Colony* c = s.colony(o);
+        if (want <= 0 || c->plagueLevel > 0) continue;
         if (unit.valid()) {
             fromCargo(c->cargo);
-        } else {
-            // A colony keeps at least 1M people (spec 03 §11).
-            for (EmpireId race : racesOf(c->population, owner)) {
-                v = s.vehicle(id);
-                const int64_t spare = std::max<int64_t>(0, c->totalPopulation() - 1);
-                const int64_t n = movePopulation(c->population, v->cargo.population, race, std::min({want, spare, freeCargo(r, s, *v) / mass}));
-                want -= n;
-                moved += n;
-            }
+            continue;
+        }
+        // A colony keeps at least 1M people (spec 03 §11).
+        for (EmpireId race : racesOf(c->population, owner)) {
+            v = s.vehicle(id);
+            const int64_t spare = std::max<int64_t>(0, c->totalPopulation() - 1);
+            const int64_t n = movePopulation(c->population, v->cargo.population, race, std::min({want, spare, freeCargo(r, s, *v) / mass}));
+            want -= n;
+            moved += n;
         }
     }
-    for (VehicleId b : ownBasesHere(r, s, owner, where, id)) {
+    for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
         if (want <= 0) break;
         fromCargo(s.vehicle(b)->cargo);
     }
     return moved;
 }
 
-int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount) {
+int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount, std::span<const VehicleId> group) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
@@ -306,7 +326,10 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount)
     int64_t moved = 0;
     const int64_t mass = std::max<int64_t>(1, r.setting("Population Mass", 5));
 
-    if (Colony* c = ownColonyHere(s, owner, where)) {
+    for (ObjectId o : ownColoniesHere(s, owner, where)) {
+        if (want <= 0) break;
+        Colony* c = s.colony(o);
+        v = s.vehicle(id);
         if (unit.valid()) {
             const int64_t n = moveUnits(v->cargo, c->cargo, unit, std::min(want, colonyFreeCargo(r, s, *c) / unitTons(r, s, unit)));
             want -= n;
@@ -329,17 +352,17 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount)
             want -= n;
             moved += n;
         }
-    for (VehicleId b : ownBasesHere(r, s, owner, where, id)) {
+    for (VehicleId b : ownHoldersHere(r, s, owner, where, id, group)) {
         if (want <= 0) break;
-        Vehicle* base = s.vehicle(b);
+        Vehicle* holder = s.vehicle(b);
         v = s.vehicle(id);
         if (unit.valid()) {
-            const int64_t n = moveUnits(v->cargo, base->cargo, unit, std::min(want, freeCargo(r, s, *base) / unitTons(r, s, unit)));
+            const int64_t n = moveUnits(v->cargo, holder->cargo, unit, std::min(want, freeCargo(r, s, *holder) / unitTons(r, s, unit)));
             want -= n;
             moved += n;
         } else {
             for (EmpireId race : racesOf(v->cargo.population, owner)) {
-                const int64_t n = movePopulation(v->cargo.population, base->cargo.population, race, std::min(want, freeCargo(r, s, *base) / mass));
+                const int64_t n = movePopulation(v->cargo.population, holder->cargo.population, race, std::min(want, freeCargo(r, s, *holder) / mass));
                 want -= n;
                 moved += n;
             }
@@ -351,7 +374,7 @@ int64_t dropCargo(TurnContext& ctx, VehicleId id, DesignId unit, int64_t amount)
 int64_t loadColonists(TurnContext& ctx, VehicleId id) {
     const Vehicle* v = ctx.state.vehicle(id);
     if (!v || !alive(*v) || v->cargo.totalPopulation() > 0) return 0;
-    if (!ownColonyHere(ctx.state, v->owner, v->location)) return 0;
+    if (ownColoniesHere(ctx.state, v->owner, v->location).empty()) return 0;
     return loadCargo(ctx, id, {}, -1);
 }
 
@@ -369,42 +392,77 @@ AbilityKind launcherFor(VehicleType t) {
 
 namespace {
 
-// Per-game-turn rate of a vehicle's intact launchers: Val 2, or Val 1 when a
-// record leaves Val 2 at 0 (inferred).
-int64_t turnRate(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
-    int64_t rate = 0;
-    for (const ParsedAbility& a : vehicleAbilities(r, s, v))
-        if (a.kind == k) rate += a.value2 > 0 ? a.value2 : a.value1;
-    return rate;
-}
+// A colonized planet launches up to this many units of each kind per game turn (§12).
+constexpr int64_t kPlanetLaunchesPerTurn = 1000;
 
-int64_t groupsOfTypeHere(const Rules& r, const GameState& s, EmpireId owner, Location where, VehicleType t) {
+int64_t unitsOfTypeHere(const Rules& r, const GameState& s, EmpireId owner, Location where, VehicleType t) {
     int64_t n = 0;
     for (const Vehicle& g : s.vehicles)
         if (alive(g) && g.owner == owner && g.location == where && vehicleType(r, s, g) == t) n += g.count;
     return n;
 }
 
+struct Holder {
+    Cargo* cargo = nullptr;
+    EmpireId owner;
+    Location where;
+    int64_t perTurn = 0;       // launches per unit kind this game turn
+    bool canRecover = false;
+    int64_t freeSpace = 0;
+};
+
+Holder holderOf(const Rules& r, GameState& s, Launcher l, AbilityKind k) {
+    Holder h;
+    if (l.vehicle.valid()) {
+        Vehicle* v = s.vehicle(l.vehicle);
+        if (!v || !alive(*v) || !isShipOrBase(vehicleType(r, s, *v))) return h;
+        const std::vector<ParsedAbility> abilities = vehicleAbilities(r, s, *v);
+        h.cargo = &v->cargo;
+        h.owner = v->owner;
+        h.where = v->location;
+        h.perTurn = abilitySum(abilities, k, true);  // Σ Val 2, no fallback to Val 1 (confirmed: binary)
+        h.canRecover = hasAbility(abilities, k);     // (inferred) recovery needs the matching bay too
+        h.freeSpace = freeCargo(r, s, *v);
+        return h;
+    }
+    Colony* c = s.colony(l.planet);
+    if (!c) return h;
+    h.cargo = &c->cargo;
+    h.owner = c->owner;
+    h.where = locationOf(s.galaxy, c->planet);
+    h.perTurn = kPlanetLaunchesPerTurn;  // no ability needed (confirmed: binary)
+    h.canRecover = true;
+    h.freeSpace = colonyFreeCargo(r, s, *c);
+    return h;
+}
+
 } // namespace
 
-int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, VehicleId id, const Order& o) {
+int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const Order& o) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    const Vehicle* v = s.vehicle(id);
-    if (!v || !alive(*v) || !o.design.valid() || o.design.index() >= s.designs.size()) return 0;
+    if (!o.design.valid() || o.design.index() >= s.designs.size()) return 0;
     const DesignId unit = o.design;
     const VehicleType type = r.hull(s.design(unit).hull).type;
     const AbilityKind k = launcherFor(type);
     if (k == AbilityKind::Unknown) return 0;  // troops and weapon platforms are never launched into space
-    const int64_t inCargo = v->cargo.unitCount(unit);
-    int64_t n = std::min<int64_t>(inCargo, turnRate(r, s, *v, k) - budget.launched[{id, k}]);
+    Holder h = holderOf(r, s, from, k);
+    if (!h.cargo) return 0;
+    const auto key = std::make_tuple(from.vehicle, from.planet, k);
+    int64_t n = std::min<int64_t>(h.cargo->unitCount(unit), h.perTurn - budget.launched[key]);
     if (o.amount >= 0) n = std::min<int64_t>(n, o.amount);
-    const EmpireId owner = v->owner;
-    const Location where = v->location;
-    if (type == VehicleType::Mine)
-        n = std::min(n, r.setting("Maximum Mines Per Player Per Sector", 100) - groupsOfTypeHere(r, s, owner, where, type));
-    if (type == VehicleType::Satellite)
-        n = std::min(n, r.setting("Maximum Satellites Per Player Per Sector", 100) - groupsOfTypeHere(r, s, owner, where, type));
+    // Mines and satellites per sector: refused at the cap, otherwise cut to the room left.
+    const char* capKey = type == VehicleType::Mine ? "Maximum Mines Per Player Per Sector"
+                         : type == VehicleType::Satellite ? "Maximum Satellites Per Player Per Sector"
+                                                          : nullptr;
+    if (capKey) {
+        const int64_t room = r.setting(capKey, 100) - unitsOfTypeHere(r, s, h.owner, h.where, type);
+        if (room <= 0) return 0;
+        n = std::min(n, room);
+    }
+    // Units in space: the empire must be below the cap before the stack; the
+    // launch is not cut to fit (confirmed: binary).
+    if (unitsInSpace(r, s, h.owner) >= s.options.maxUnitsPerPlayer) return 0;
     VehicleId targetVehicle;
     ObjectId targetObject;
     if (type == VehicleType::Drone) {
@@ -415,64 +473,76 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, VehicleId id, const Or
     }
     if (n <= 0) return 0;
 
-    Vehicle* launcher = s.vehicle(id);
     Cargo taken;
-    n = moveUnits(launcher->cargo, taken, unit, n);
-    budget.launched[{id, k}] += n;
-
-    // One group per (owner, design, sector); drones also share a target.
+    n = moveUnits(*h.cargo, taken, unit, n);
+    budget.launched[key] += n;
+    const EmpireId owner = h.owner;
+    const Location where = h.where;
     const Design& d = s.design(unit);
-    const int64_t fullSupply = computeDesignStats(r, nullptr, d).supplyCapacity;
-    for (Vehicle& g : s.vehicles) {
-        if (!alive(g) || g.owner != owner || g.design != unit || g.location != where || g.fleet.valid()) continue;
-        if (type == VehicleType::Drone && (g.targetVehicle != targetVehicle || g.targetObject != targetObject)) continue;
-        g.supply = (g.supply * g.count + fullSupply * n) / (g.count + n);
-        g.count += static_cast<int>(n);
+
+    auto newGroup = [&](int count) {
+        Vehicle g;
+        g.owner = owner;
+        g.design = unit;
+        g.name = d.name;
+        g.location = where;
+        g.count = count;
+        g.damage.assign(d.entries.size(), 0);
+        g.movement = 0;  // launched units act from the next turn (inferred)
+        g.targetVehicle = targetVehicle;
+        g.targetObject = targetObject;
+        g.builtTurn = s.turn;
+        Vehicle& added = s.addVehicle(std::move(g));
+        added.supply = initialSupply(r, s, added);  // new groups start full
+    };
+    if (type == VehicleType::Drone) {
+        for (int64_t i = 0; i < n; ++i) newGroup(1);  // every drone is its own group and never merges (confirmed: binary)
         return n;
     }
-    Vehicle g;
-    g.owner = owner;
-    g.design = unit;
-    g.name = d.name;
-    g.location = where;
-    g.count = static_cast<int>(n);
-    g.damage.assign(d.entries.size(), 0);
-    g.supply = fullSupply;
-    g.movement = 0;  // launched units act from the next turn (inferred)
-    g.targetVehicle = targetVehicle;
-    g.targetObject = targetObject;
-    g.builtTurn = s.turn;
-    s.addVehicle(std::move(g));
+    // One group per (owner, kind, sector) (confirmed: binary). The engine keeps
+    // a record per design within it (inferred representation); launching
+    // refills the whole group's supply.
+    bool merged = false;
+    for (Vehicle& g : s.vehicles)
+        if (alive(g) && g.owner == owner && g.design == unit && g.location == where) {
+            g.count += static_cast<int>(n);
+            merged = true;
+            break;
+        }
+    if (!merged) newGroup(static_cast<int>(n));
+    for (Vehicle& g : s.vehicles)
+        if (alive(g) && g.owner == owner && g.location == where && vehicleType(r, s, g) == type) g.supply = initialSupply(r, s, g);
     return n;
 }
 
-int64_t recoverUnits(TurnContext& ctx, UnitBudget& budget, VehicleId id, const Order& o) {
+int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    Vehicle* v = s.vehicle(id);
-    if (!v || !alive(*v) || !o.design.valid() || o.design.index() >= s.designs.size()) return 0;
+    if (!o.design.valid() || o.design.index() >= s.designs.size()) return 0;
     const DesignId unit = o.design;
     const VehicleType type = r.hull(s.design(unit).hull).type;
-    if (type != VehicleType::Fighter && type != VehicleType::Satellite) return 0;  // mines and drones never come back
-    const AbilityKind k = launcherFor(type);
-    int64_t n = std::min(turnRate(r, s, *v, k) - budget.recovered[{id, k}], freeCargo(r, s, *v) / unitTons(r, s, unit));
+    if (type != VehicleType::Fighter && type != VehicleType::Satellite) return 0;  // only fighters and satellites come back
+    const Holder h = holderOf(r, s, into, launcherFor(type));
+    if (!h.cargo || !h.canRecover) return 0;
+    // No per-turn limit: free cargo space is the only limit (confirmed: binary).
+    int64_t n = h.freeSpace / unitTons(r, s, unit);
     if (o.amount >= 0) n = std::min<int64_t>(n, o.amount);
     int64_t moved = 0;
     for (Vehicle& g : s.vehicles) {
         if (n <= 0) break;
-        if (!alive(g) || g.id == id || g.owner != v->owner || g.design != unit || g.location != v->location) continue;
+        if (!alive(g) || g.id == into.vehicle || g.owner != h.owner || g.design != unit || g.location != h.where) continue;
         if (o.vehicle.valid() && g.id != o.vehicle) continue;  // a named group only
         const int64_t take = std::min<int64_t>(n, g.count);
         g.count -= static_cast<int>(take);
+        if (g.count > 0) g.supply = std::min(g.supply, vehicleSupplyCapacity(r, s, g));
         n -= take;
         moved += take;
     }
     if (moved > 0) {
-        v = s.vehicle(id);
-        auto it = std::find_if(v->cargo.units.begin(), v->cargo.units.end(), [&](const UnitStack& u) { return u.design == unit; });
-        if (it == v->cargo.units.end()) v->cargo.units.push_back({unit, static_cast<int>(moved)});
+        Cargo* cargo = into.vehicle.valid() ? &s.vehicle(into.vehicle)->cargo : &s.colony(into.planet)->cargo;
+        auto it = std::find_if(cargo->units.begin(), cargo->units.end(), [&](const UnitStack& u) { return u.design == unit; });
+        if (it == cargo->units.end()) cargo->units.push_back({unit, static_cast<int>(moved)});
         else it->count += static_cast<int>(moved);
-        budget.recovered[{id, k}] += moved;
     }
     return moved;
 }
@@ -486,23 +556,44 @@ int useComponent(TurnContext& ctx, VehicleId id, int entry) {
     if (!v || !alive(*v) || v->status == VehicleStatus::Mothballed) return -1;
     const Design& d = s.design(v->design);
     if (entry < 0 || static_cast<size_t>(entry) >= d.entries.size() || !entryIntact(r, s, *v, static_cast<size_t>(entry))) return -1;
-    const auto abilities = r.componentAbilities(d.entries[static_cast<size_t>(entry)].component);
+    const auto e = static_cast<size_t>(entry);
+    const auto abilities = r.componentAbilities(d.entries[e].component);
     if (hasAbility(abilities, AbilityKind::SelfDestruct)) {  // spec 03 §15: no yard needed
         vehicleLost(ctx, *v, "It self-destructed.");
         return 0;
     }
-    const int64_t energy = sumValue1(abilities, AbilityKind::EmergencyEnergy);
-    const int64_t resupply = sumValue1(abilities, AbilityKind::EmergencyResupply);
+    const int64_t energy = abilitySum(abilities, AbilityKind::EmergencyEnergy);
+    const int64_t resupply = abilitySum(abilities, AbilityKind::EmergencyResupply);
     if (energy <= 0 && resupply <= 0) return -1;
-    spendSupply(r, s, *v, scaledSupply(r, s, v->owner, mounted(r, d.entries[static_cast<size_t>(entry)]).supplyUsed));
-    if (resupply > 0) v->supply = std::min(v->supply + resupply, std::max(v->supply, vehicleSupplyCapacity(r, s, *v)));  // capped (inferred)
+    // A part destroyed on use goes first; no supply is charged (§8, confirmed: binary).
     if (hasAbility(abilities, AbilityKind::ComponentDestroyedOnUse)) {
         if (v->damage.size() < d.entries.size()) v->damage.resize(d.entries.size(), 0);
-        v->damage[static_cast<size_t>(entry)] = entryStructure(r, d, static_cast<size_t>(entry));
+        v->damage[e] = entryStructure(r, d, e);
     }
-    ctx.log(v->owner, LogCategory::Misc, std::format("{} used {}", v->name, r.component(d.entries[static_cast<size_t>(entry)].component).name), {},
-            v->location);
-    return static_cast<int>(std::max<int64_t>(0, energy));
+    if (resupply > 0 && !vehicleHasUnlimitedSupply(r, s, *v))
+        v->supply = std::max(v->supply, std::min(v->supply + resupply, vehicleSupplyCapacity(r, s, *v)));
+    ctx.log(v->owner, LogCategory::Misc, std::format("{} used {}", v->name, r.component(d.entries[e].component).name), {}, v->location);
+    // Emergency energy only helps a vehicle that can move at all.
+    return energy > 0 && vehicleMaxMovement(r, s, *v) > 0 ? static_cast<int>(std::min<int64_t>(energy, 1000)) : 0;
+}
+
+// ---- Cloaking ------------------------------------------------------------------------------------------
+
+bool canCloak(const Rules& r, const GameState& s, const Vehicle& v) {
+    const std::vector<ParsedAbility> list = vehicleAbilities(r, s, v);
+    for (size_t t = 0; t < kSightTypes; ++t)
+        if (abilityPerSightType(list, AbilityKind::CloakLevel, static_cast<SightType>(t)) >= 2) return true;
+    return false;
+}
+
+int64_t cloakSupply(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (v.status == VehicleStatus::Mothballed) return 0;
+    const Design& d = s.design(v.design);
+    int64_t cost = 0;
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (entryIntact(r, s, v, i) && hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::CloakLevel))
+            cost += mounted(r, d.entries[i]).supplyUsed;
+    return cost;
 }
 
 } // namespace detail
@@ -510,6 +601,13 @@ int useComponent(TurnContext& ctx, VehicleId id, int entry) {
 // ---- Public helpers ------------------------------------------------------------------------------------
 
 using detail::alive;
+
+int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner) {
+    int64_t n = 0;
+    for (const Vehicle& g : s.vehicles)
+        if (alive(g) && g.owner == owner && isUnitType(vehicleType(r, s, g))) n += g.count;
+    return static_cast<int>(std::min<int64_t>(n, std::numeric_limits<int>::max()));
+}
 
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet) {
     if (!planet.valid() || planet.index() >= s.galaxy.objects.size()) return "No such planet";
@@ -532,36 +630,57 @@ std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v
 bool resupplyDepotAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
     for (ObjectId o : planetsAt(s, where)) {
         const Colony* c = s.colony(o);
-        if (!c || c->totalPopulation() <= 0) continue;  // facilities need people (inferred)
-        if (c->owner != empire && !allied(s, c->owner, empire)) continue;
-        if (hasAbility(colonyAbilities(r, s, *c), AbilityKind::SupplyGeneration)) return true;
+        if (!c) continue;  // a colonized planet; no population is needed (confirmed: binary)
+        const bool usable = c->owner == empire || (empire.valid() && c->owner.valid() && empire.index() < s.empires.size() &&
+                                                    treatyAllowsResupply(s.empire(empire).relation(c->owner).treaty));
+        if (usable && hasAbility(colonyAbilities(r, s, *c), AbilityKind::SupplyGeneration)) return true;
     }
     return false;
 }
 
-int repairCapacityAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
-    int64_t total = 0;
+int64_t repairPoolAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
+    int64_t pool = 0;
     for (ObjectId o : planetsAt(s, where))
-        if (const Colony* c = s.colony(o); c && c->owner == empire && c->totalPopulation() > 0)
-            total += sumValue1(colonyAbilities(r, s, *c), AbilityKind::ComponentRepair);
+        if (const Colony* c = s.colony(o); c && c->owner == empire && c->totalPopulation() > 0)  // (inferred) facilities need people
+            pool += abilitySum(colonyAbilities(r, s, *c), AbilityKind::ComponentRepair);
     for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == empire && v.location == where) total += sumValue1(vehicleAbilities(r, s, v), AbilityKind::ComponentRepair);
-    if (total <= 0) return 0;
-    // Repair Aptitude and the culture's Repair percentage both scale it (inferred: multiplied).
+        if (alive(v) && v.owner == empire && v.location == where && detail::isShipOrBase(vehicleType(r, s, v)))
+            pool += abilitySum(vehicleAbilities(r, s, v), AbilityKind::ComponentRepair);
+    return std::min(pool, kAbilitySumCap);
+}
+
+int64_t repairModifier(const Rules& r, const GameState& s, EmpireId empire) {
+    if (!empire.valid() || empire.index() >= s.empires.size()) return 0;
     const Race& race = s.empire(empire).race;
     const ruleset::Culture* culture = r.culture(race);
-    total = total * race.characteristic(Characteristic::RepairAptitude) / 100;
-    total = total * (100 + (culture ? culture->repair : 0)) / 100;
-    return static_cast<int>(std::max<int64_t>(0, total));
+    return r.traitValue(race, "Repair") + (race.characteristic(Characteristic::RepairAptitude) - 100) + (culture ? culture->repair : 0);
+}
+
+int repairCapacityAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
+    const int64_t pool = repairPoolAt(r, s, empire, where);
+    if (pool <= 0) return 0;
+    // One truncation of pool × (100 + R) % (§13, confirmed: binary).
+    const int64_t points = xmath::pctTrunc(pool, 100 + repairModifier(r, s, empire));
+    return static_cast<int>(std::clamp<int64_t>(points, 0, std::numeric_limits<int>::max()));
 }
 
 int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v) {
-    if (vehicleHasQuantumReactor(r, s, v)) return 0;
+    if (vehicleHasUnlimitedSupply(r, s, v)) return 0;
+    // S = the mounted supply use of every working component with Standard Ship
+    // Movement, Movement Bonus or Extra Movement Generation above 0 (§7).
     const Design& d = s.design(v.design);
     int64_t cost = 0;
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i) && hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::StandardShipMovement))
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        if (!entryIntact(r, s, v, i)) continue;
+        const auto ab = r.componentAbilities(d.entries[i].component);
+        auto positive = [&](AbilityKind k) {
+            return std::any_of(ab.begin(), ab.end(), [&](const ParsedAbility& a) { return a.kind == k && a.value1 > 0; });
+        };
+        if (positive(AbilityKind::StandardShipMovement) || positive(AbilityKind::MovementBonus) || positive(AbilityKind::ExtraMovementGeneration))
             cost += mounted(r, d.entries[i]).supplyUsed;
+    }
+    // A unit group pays for every unit, then the racial percentage (§12).
+    if (isUnitType(vehicleType(r, s, v))) cost *= std::max(1, v.count);
     return detail::scaledSupply(r, s, v.owner, cost);
 }
 
@@ -600,7 +719,7 @@ Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId des
     v.location = where;
     v.damage.assign(d.entries.size(), 0);
     v.builtTurn = s.turn;
-    v.supply = computeDesignStats(r, nullptr, d).supplyCapacity;
+    v.supply = initialSupply(r, s, v);  // full; bases and reactor ships unlimited (§7)
     const Empire& e = s.empire(owner);
     if (autoWaypoint >= 0 && static_cast<size_t>(autoWaypoint) < e.waypoints.size() && e.waypoints[static_cast<size_t>(autoWaypoint)].set)
         v.orders.push_back(Order{OrderKind::MoveTo, e.waypoints[static_cast<size_t>(autoWaypoint)].location});

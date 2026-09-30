@@ -79,6 +79,7 @@ inline ruleset::Ruleset buildRuleset() {
     comp("Mv Engine", 10, 10, ship | maskOf(VehicleType::Drone), {ab(AbilityKind::StandardShipMovement, 1)}, 10, "Engines");
     comp("Mv Armor", 10, 30, shipBase, {ab(AbilityKind::Armor)}, 0, "Armor");
     comp("Mv Tank", 10, 10, shipBase, {ab(AbilityKind::SupplyStorage, 100)}, 0, "Supply");
+    comp("Mv Fuel Cell", 10, 10, shipBase, {ab(AbilityKind::SupplyStorage, 1'000'000)}, 0, "Supply");
     comp("Mv Sensor 3", 10, 10, shipBase, {abText(AbilityKind::SensorLevel, "EM Active", 3)}, 0, "Sensors");
     comp("Mv Psychic Sensor", 10, 10, shipBase, {abText(AbilityKind::SensorLevel, "Psychic", 2)}, 0, "Sensors");
     comp("Mv Cloak", 10, 10, shipBase, allTypes(AbilityKind::CloakLevel, 3), 20, "Sensors");
@@ -307,7 +308,7 @@ public:
         std::fill(s.empire(e).knowledge.knownWarpLink.begin(), s.empire(e).knowledge.knownWarpLink.end(), 1);
     }
 
-    // Movement phase only (start + 30 days + hazards), then dead vehicles are removed.
+    // Movement phase only (start + 30 days), then dead vehicles are removed.
     void move(const movement::CombatHooks& hooks = {}) {
         TurnContext ctx{r_, s, {}, {}, {}};
         movement::startTurn(ctx);
@@ -326,6 +327,13 @@ public:
         TurnContext ctx{r_, s, {}, {}, {}};
         movement::runUpkeep(ctx);
         s.removeDeadVehicles();
+    }
+
+    // The event step's pull, drift and centre damage.
+    void hazards() {
+        TurnContext ctx{r_, s, {}, {}, {}};
+        movement::runStellarHazards(ctx);
+        lastMoods = ctx.moodEvents;
     }
 
     void fullTurn() {
@@ -361,10 +369,11 @@ private:
 
 // Records the combat calls movement makes; `fight` decides combatPossible.
 // Like combat, a resolved sector where hostile non-mine vehicles meet gets a
-// CombatRecord listing them, and they lose their orders.
+// CombatRecord listing them; `entered` keeps the entering vehicles passed each time.
 struct CombatSpy {
     std::vector<Location> asked;
     std::vector<std::pair<uint32_t, Location>> fought;  // (call order, location)
+    std::vector<std::vector<VehicleId>> entered;        // per resolve call: the vehicles that stepped in that day
     std::function<bool(const GameState&, Location)> fight;
 
     static bool isMine(const TurnContext& ctx, const Vehicle& v) { return vehicleType(ctx.rules, ctx.state, v) == VehicleType::Mine; }
@@ -374,8 +383,9 @@ struct CombatSpy {
                     asked.push_back(l);
                     return fight && fight(s, l);
                 },
-                [this](TurnContext& ctx, Location l) {
+                [this](TurnContext& ctx, Location l, std::span<const VehicleId> in) {
                     fought.emplace_back(static_cast<uint32_t>(fought.size()), l);
+                    entered.emplace_back(in.begin(), in.end());
                     GameState& s = ctx.state;
                     CombatRecord rec;
                     rec.turn = s.turn;
@@ -392,7 +402,7 @@ struct CombatSpy {
                             }
                     }
                     if (rec.pieces.empty()) return;
-                    for (const CombatPiece& p : rec.pieces) s.vehicle(p.vehicle)->orders.clear();
+                    // Like the combat module, the spy clears no orders (spec 03 §6.3).
                     s.combats.push_back(std::move(rec));
                 }};
     }

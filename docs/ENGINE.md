@@ -49,12 +49,17 @@ steps one empire at a time. The engine still has to be brought in line with it.
 1. **Orders.** Each human's `EmpireOrders` are applied. Computer empires, and humans
    who sent nothing, are played by `ai::planTurn`. Then ministers act.
 2. **Diplomacy:** `diplomacy::deliverMessages`.
-3. **Movement and space combat:** `movement::runMovementAndCombat`. Movement runs in 30
-   phases, and `combat::resolveSpaceCombat` runs in any sector where hostiles meet.
+3. **Movement and space combat:** `movement::runMovementAndCombat`. Movement runs over 30
+   days: each vehicle, fleet and planet with orders carries out one order whenever its day
+   counter reaches 1, and `combat::resolveSpaceCombat` runs in sectors where something
+   acted and hostiles meet (spec 03 §6.3).
 4. **Ground combat and capture**, then colonization.
 5. **Economy:** production, trade, maintenance, then construction.
 6. **Research.** 7. **Intelligence.**
-8. **Events.** 9. **Upkeep:** supply and repair.
+8. **Hazards** (black-hole pull, drift, destructive centres: `movement::runStellarHazards`),
+   then **events**. 9. **Upkeep:** each empire's repair, supply and training
+   (`movement::runUpkeep`; per-empire steps in `movement.hpp`), and the design cleanup when
+   a year starts.
 10. **Sight, contact and trade.** 11. **AI anger.**
 12. **Population:** growth, then mood from every event of the turn, riots and plague.
     The spec places it earlier. It runs last so that mood events raised by the later

@@ -26,6 +26,10 @@ OrderOwner orderOwner(const game::GameState& s, game::VehicleId id) {
 }
 
 const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o) {
+    if (o.planet.valid()) {
+        const game::Colony* c = s.colony(o.planet);
+        return c ? &c->orders : nullptr;
+    }
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
         return f ? &f->orders : nullptr;
@@ -35,6 +39,7 @@ const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o)
 }
 
 bool repeatOf(const game::GameState& s, OrderOwner o) {
+    if (o.planet.valid()) return false;
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
         return f && f->repeatOrders;
@@ -45,7 +50,8 @@ bool repeatOf(const game::GameState& s, OrderOwner o) {
 
 game::cmd::SetOrders setOrders(OrderOwner o, std::vector<game::Order> orders, bool repeat) {
     game::cmd::SetOrders c;
-    if (o.fleet.valid()) c.fleet = o.fleet;
+    if (o.planet.valid()) c.planet = o.planet;
+    else if (o.fleet.valid()) c.fleet = o.fleet;
     else c.vehicle = o.vehicle;
     c.orders = std::move(orders);
     c.repeat = repeat;
@@ -74,6 +80,10 @@ void insertImmediate(std::vector<game::Order>& orders, const game::Order& order,
 }
 
 std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner o) {
+    if (o.planet.valid()) {
+        if (!s.colony(o.planet)) return std::nullopt;
+        return game::locationOf(s.galaxy, o.planet);
+    }
     game::VehicleId id = o.vehicle;
     if (const game::Fleet* f = s.fleet(o.fleet)) id = f->leader.valid() ? f->leader : f->members.empty() ? game::VehicleId{} : f->members.front();
     if (const game::Vehicle* v = s.vehicle(id)) return v->location;
@@ -163,19 +173,9 @@ bool canLaunch(const game::Rules& r, const game::GameState& s, const game::Vehic
 
 // ---- Scrap window ---------------------------------------------------------------------------
 
-game::Resources scrapValue(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
-    const bool unit = isUnitVehicle(r, s, v);
-    int64_t pct = r.setting(unit ? "Scrap Unit Percent Returned" : "Scrap Ship Percent Returned", 30);
-    if (v.owner.valid()) pct = std::max<int64_t>(pct, game::reclamationPercentAt(r, s, v.owner, v.location));
-    const game::Resources each = game::computeDesignStats(r, nullptr, s.design(v.design)).cost.percent(pct);
-    game::Resources total;
-    for (int i = 0; i < std::max(1, v.count); ++i) total += each;
-    return total;
-}
+game::Resources scrapValue(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) { return game::scrapRefund(r, s, v); }
 
-game::Resources unmothballCost(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
-    return game::computeDesignStats(r, nullptr, s.design(v.design)).cost.percent(r.setting("UnMothball Ship Percent Cost", 20));
-}
+game::Resources unmothballCost(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) { return game::unmothballCharge(r, s, v); }
 
 game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& s, const game::Colony& c, size_t slot) {
     if (slot >= c.facilities.size()) return {};

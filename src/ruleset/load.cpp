@@ -1,8 +1,11 @@
 #include "ruleset/ruleset.hpp"
 
+#include "ruleset/ability_names.hpp"
+
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -153,18 +156,53 @@ private:
         return out;
     }
 
+    // A type name the original does not know is a data error; a few names that
+    // file headers list but the original never accepted load with a warning
+    // and do nothing (spec 03 §2.1, spec 01 §4.4).
+    static void checkAbilityType(const RecordReader& r, std::string_view type) {
+        switch (abilityNameStatus(type)) {
+            case AbilityNameStatus::Known: break;
+            case AbilityNameStatus::Ignored: r.warn(std::format("ability type '{}' has no effect", type)); break;
+            case AbilityNameStatus::Unknown: r.error(std::format("unknown ability type '{}'", type)); break;
+        }
+    }
+
     std::vector<Ability> abilities(RecordReader& r, const char* countKey = "Number of Abilities") {
         std::vector<Ability> out;
-        const int count = r.int32(countKey, Need::Optional);
+        // At most 20 are read; a larger count is treated as 20 (spec 03 §2.1, confirmed: binary).
+        const int count = std::min(r.int32(countKey, Need::Optional), kMaxAbilitiesPerRecord);
         for (int n = 1; n <= count; ++n) {
             Ability a;
             a.type = r.str(RecordReader::key("Ability {} Type", n));
             a.description = r.str(RecordReader::key("Ability {} Descr", n), Need::Optional);
             a.value1 = r.str(RecordReader::key("Ability {} Val 1", n), Need::Optional);
             a.value2 = r.str(RecordReader::key("Ability {} Val 2", n), Need::Optional);
-            if (!isNone(a.type)) out.push_back(std::move(a));
+            if (isNone(a.type)) continue;
+            checkAbilityType(r, a.type);
+            out.push_back(std::move(a));
         }
         return out;
+    }
+
+    // `Vechicle List Type Override`: lower-cased, and every class whose keyword
+    // occurs anywhere in the text is enabled (spec 03 §2.3, confirmed: binary).
+    static VehicleTypeMask overrideMask(std::string_view text) {
+        std::string lower(text);
+        for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        static constexpr std::array<std::pair<std::string_view, VehicleType>, 8> kKeywords{{
+            {"ship", VehicleType::Ship},
+            {"base", VehicleType::Base},
+            {"fighter", VehicleType::Fighter},
+            {"satellite", VehicleType::Satellite},
+            {"mine", VehicleType::Mine},
+            {"troop", VehicleType::Troop},
+            {"drone", VehicleType::Drone},
+            {"weapplatform", VehicleType::WeaponPlatform},
+        }};
+        VehicleTypeMask mask = 0;
+        for (const auto& [word, type] : kKeywords)
+            if (lower.find(word) != std::string::npos) mask |= maskOf(type);
+        return mask;
     }
 
     VehicleTypeMask vehicleMask(RecordReader& r, std::string_view key, Need need = Need::Required) {
@@ -260,6 +298,9 @@ private:
         v.maxPercentFighterBays = r.int32("Requirement Pct Fighter Bays", Need::Optional);
         v.maxPercentColonyModules = r.int32("Requirement Pct Colony Mods", Need::Optional);
         v.maxPercentCargo = r.int32("Requirement Pct Cargo", Need::Optional);
+        // Documented unit-only flags that the original never reads (spec 03 §2.2).
+        r.str("Launched from Ship", Need::Optional);
+        r.str("Launched from Planet", Need::Optional);
         rs_.vehicleSizes.push_back(std::move(v));
     }
 
@@ -274,7 +315,7 @@ private:
         c.vehicles = vehicleMask(r, "Vehicle Type");
         // Optional override (the classic files spell the key "Vechicle").
         for (const char* key : {"Vechicle List Type Override", "Vehicle List Type Override"})
-            if (r.has(key)) c.vehicles = vehicleMask(r, key);
+            if (r.has(key)) c.vehicles = overrideMask(r.str(key));
         c.vehicleDescription = r.str("Vehicle List Type Description", Need::Optional);
         c.supplyUsed = r.int32("Supply Amount Used", Need::Optional);
         const std::string restriction = r.str("Restrictions", Need::Optional);
@@ -405,6 +446,7 @@ private:
             a.description = r.str(RecordReader::key("Ability {} Descr", n), Need::Optional);
             a.value1 = r.str(RecordReader::key("Ability {} Val 1", n), Need::Optional);
             a.value2 = r.str(RecordReader::key("Ability {} Val 2", n), Need::Optional);
+            if (!isNone(a.type)) checkAbilityType(r, a.type);
             s.possibleAbilities.emplace_back(chance, std::move(a));
         }
         rs_.stellarAbilityTypes.push_back(std::move(s));
@@ -467,11 +509,19 @@ private:
         m.structurePercent = r.int32("Tonnage Structure Percent", Need::Optional, 100);
         m.damagePercent = r.int32("Damage Percent", Need::Optional, 100);
         m.supplyPercent = r.int32("Supply Percent", Need::Optional, 100);
+        m.shieldPercent = r.int32("Shield Percent", Need::Optional, 100);
         m.rangeModifier = r.int32("Range Modifier", Need::Optional);
         m.toHitModifier = r.int32("Weapon To Hit Modifier", Need::Optional);
         m.minimumVehicleSize = r.int32("Vehicle Size Minimum", Need::Optional);
+        m.maximumVehicleSize = r.int32("Vehicle Size Maximum", Need::Optional);
+        for (const std::string& family : r.list("Comp Family Requirement", ',', Need::Optional)) {
+            if (family.empty()) continue;
+            if (auto id = datafile::parseInteger(family)) m.familyRequirement.push_back(static_cast<int>(*id));
+            else r.error(std::format("'Comp Family Requirement' should list whole numbers, not '{}'", family));
+        }
         m.weaponTypeRequirement = r.str("Weapon Type Requirement", Need::Optional);
         m.vehicleType = r.str("Vehicle Type", Need::Optional);
+        m.requirements = techRequirements(r);
         rs_.weaponMounts.push_back(std::move(m));
     }
 

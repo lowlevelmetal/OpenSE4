@@ -32,25 +32,13 @@ ready for the turn-order change; open engine choices are spec 02 §13 items 37�
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| `movement.cpp:770-791` | Combat clears orders and stops movement | It does neither; only a leading Sentry order is removed (§6.4) | H |
-| `movement.cpp:238` | A failed order removes only itself | The whole list is cleared for every fleet member, and Repeat is turned off (§8) | H |
-| `movement_upkeep.cpp:219` | Fighters at 0 supply die | They drop to 1 MP; drones die (§12) | H |
-| `movement_util.cpp:390-446` | Planets cannot launch or recover units | They can, with no ability needed (§12) | H |
-| `design.cpp:243-258,278-281` | Lost control sets MP to 1 | Halve (min 1) once per missing item: bridge or aux, crew quarters, life support (§6.1) | M |
-| `design.cpp:190-193`; `combat.cpp:374-383,494-505` | Restrictions per component; to-hit takes the best part | Restrictions per family; to-hit sums the best of each family (§3.2, §4.2) | M |
-| `design.cpp:70-73, 285-291` | Mounted values truncated; no unlimited supply | Rounded; bases, ships under construction and Quantum Reactor ships have unlimited supply (§4.3, §7) | M |
-| `movement.cpp:384-388, 795-839, 743, 450-456, 861-876` | Turbulence always hits; storms hit every turn; cloak charged once; Sentry clears the list | Turbulence 50 % and fails the order; storms hit 50 % on entry and stop the move; cloak charged each turn; Sentry removes itself and ends on low supply (§6, §7, §8) | M |
-| `movement_path.cpp:312` | Route falls back through avoided systems | The order fails (§6.2) | M |
-| `movement_util.cpp:423-434,458`, `movement_upkeep.cpp:147-169,197-198` | Groups per design; recovery limit; fighter upkeep per group, race-scaled; best single training source | Groups per owner, kind and sector; limit on launch only; count × setting; training sources stack (§12) | M |
-| `commands.cpp:374-387, 778` | Two-sided retrofit cap, always charged; unit cap at build time | Cap limits increases only; charged only when something is added; no cargo; unit cap at launch, units in space only (§12, §14) | M |
-| Low | extra movement max per id (`design.cpp:33-56`); validity details (`:177-184`); unparsed fields (`ruleset.hpp:253-268`); 20-ability cap (`load.cpp:156`); cargo trim order; fleet pooling; actor order; depot population; Use Component; manipulation checks; scrap and unmothball rounding; design-name uniqueness and purge; fleet join rules; repair modifier order; build queue blocks movement; Attack and Sweep Mines cost | see spec 03 | L |
+| Low | Design names are unique per empire in `CreateDesign` (`commands.cpp`): starting designs (`setup.cpp`) and computer players' designs (`ai_design.cpp`) reuse names across empires, so a game-wide check would stop computer players from creating designs; `designNameInUse` exists, renaming a design already checks every empire, and the designer avoids every empire's names. Stellar manipulation's cloak and hostile checks and its supply payment without the racial modifier are in `movement_stellar.cpp` (galaxy work); movement makes the order wait when no capable member has movement left. Unit groups that mix designs are kept as one record per design (they share caps and launch refills, but move and fight as separate records). Not implemented: the empire options to clear orders on meeting empires, ad-hoc groups of ships with identical head orders, greedy in-system steps with the random re-choice, and composite orders being expanded when given | see spec 03 | L |
 
 ## Combat (spec 04)
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| `movement.cpp` (`moveMembers`, the combat hooks) | Movement does not record where a vehicle came from, nor which group entered a sector | Combat reads `Vehicle::cameFrom`/`cameFromTurn` for attackers and start boxes (§3) and takes the entering group for mines (§10.6, `resolveSpaceCombat(ctx, where, entering)`). Until movement records them, every vehicle counts as already present and mines strike every hostile empire's vehicles there | M |
-| Low | design statistics lack "enemy tonnage destroyed": it needs a `Design` field that the design commands, redaction and events also reset; mount `Comp Family Requirement` and `Shield Percent` are not read by the loader (combat applies them once they are) | see spec 04 §8, §15, §18.2 | L |
+| Low | design statistics lack "enemy tonnage destroyed": it needs a `Design` field that the design commands, redaction and events also reset | see spec 04 §15 | L |
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 
@@ -59,8 +47,7 @@ The rules of this section follow the spec. What is left depends on other parts o
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | `turn.cpp` phases | Research runs before intelligence, both after the economy; the first research step takes its opening pool from the economy's first-turn income (`economy::openingResearchPool`) | Intelligence, then research, first in each empire's end-of-turn processing; the pools are filled when the game is created and by the income step (§1.1, §8). The per-empire steps exist: `intel::intelStep`, `research::researchStep`, `research::addToPools`, `research::openingPools`, `diplomacy::treatyStep`, `score::checkDestruction`, `score::checkVictory`, `events::fireDueEvents`, `events::rollNewEvent` | L |
-| `commands.cpp` `SetResearch` | Accepts an area twice | Adding an area that is already queued does nothing; the research step now drops the repeat | L |
-| `events.cpp` | `Planet - Destroyed` maps Tiny and Huge planets to asteroid sizes; the event step does not apply hazard damage | The Destroy Planet result of spec 01 §9; hazards first in the event step (spec 01 §7) | L |
+| `events.cpp` | `Planet - Destroyed` maps Tiny and Huge planets to asteroid sizes | The Destroy Planet result of spec 01 §9 (the hazards now run first in the event step, `movement::runStellarHazards`) | L |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -71,14 +58,13 @@ The rules of this section follow the spec. What is left depends on other parts o
 | `generate.cpp:96-204, 353, 514-547` | Free size, invented placements, conditions 0–100, each warp end rolls its own ability | Small/Medium/Large counts; 67×46 grid; the five placements; conditions 0.5–1.5; paired ends share one roll (§3) | M |
 | `setup.cpp:284-317` | Extra planets at ¼ population, no facilities | Full homeworld setup, matching atmosphere and type, 1–2 jumps away (spec 02 §9) | M |
 | `movement_stellar.cpp` | Create Planet, Destroy Star, nebula, black hole, storm and Construct results; no hostile or cloak checks | Results and checks in §9 | M |
-| Low | Circle Radius rounding; comets instantiated; naming; homeworld value spread; facility order and first-turn income (`setup.cpp`); ship cloaks always on, units ignore obscuration, mines give presence, partners always visible (`sight.cpp`); drift; blockers; one-way handling | see spec 01 | L |
+| Low | Circle Radius rounding; comets instantiated; naming; homeworld value spread; facility order and first-turn income (`setup.cpp`); ship cloaks always on, units ignore obscuration, mines give presence, partners always visible (`sight.cpp`); blockers | see spec 01 | L |
 
 ## Computer player (spec 05 §7)
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
 | `turn.cpp:39-104` | The AI plans both minister groups while orders are applied (`ai::planTurn`); anger and the state machine run at the end of the turn (`ai::updateAnger`) | Design, Research, Intelligence and the construction ministers run at the start of each empire's economy step (§7.1, §8). `ai::planOrders` and `ai::planEconomyStep` are the two groups, and `updateAnger`'s parts (`recordAiDecisions`, `updateAiStates`, `politicalStep`, `rememberAiEvents`) are separate, ready for the §8 turn order | M |
-| `movement_upkeep.cpp` (colonize) | A new colony gets the empire's first colony type; the AI retypes its own colonies on its next turn | Every empire's new colony gets `ai::colonyTypeAtColonization` at colonization, unless the player is asked (§7.5) | L |
 | Commands | No command sets `Empire::ministers` or `Empire::ministerStyle`; the Ministers window keeps its switches on this computer | The per-area minister switches and the minister style are part of the player's settings (§7.1) | L |
 | Commands | No command launches units from a planet's cargo | Satellites and drones above the kept percentages are launched from planets, drones half anti-ship and half anti-planet (§7.5) | L |
 | Low | Acknowledgement chatter replies; the Units file rows; the AI_Settings movement flags (no empire movement options yet); a missed human turn's political step; the Race Opt planet type and atmosphere check | see §7 | L |

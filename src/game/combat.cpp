@@ -20,6 +20,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <deque>
 #include <format>
 #include <map>
@@ -433,22 +434,6 @@ int64_t componentBest(const Rules& r, const GameState& s, const Vehicle& v, Abil
     return best;
 }
 
-int64_t familyBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
-    std::map<int, int64_t> best;   // component Family -> best value
-    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) {
-        const auto ab = r.componentAbilities(e.component);
-        if (!hasAbility(ab, k)) return;
-        const int family = r.component(e.component).family;
-        const int64_t value = bestValue1(ab, k);
-        auto it = best.find(family);
-        if (it == best.end()) best.emplace(family, value);
-        else it->second = std::max(it->second, value);
-    });
-    int64_t total = 0;
-    for (const auto& [family, value] : best) total += value;
-    return total;
-}
-
 int64_t facilityFamilyBest(const Rules& r, std::span<const uint32_t> facilities, AbilityKind k) {
     std::map<int, int64_t> best;
     for (uint32_t f : facilities) {
@@ -489,25 +474,10 @@ bool vehicleArmed(const Rules& r, const GameState& s, const Vehicle& v) {
 // ---- Mounts ------------------------------------------------------------------------------------------
 
 bool mountApplies(const Rules& r, const DesignEntry& e) {
-    if (e.mount < 0 || static_cast<size_t>(e.mount) >= r.data().weaponMounts.size()) return false;
     // The damage, range, structure and shield effects apply only to components
-    // that meet the mount's weapon type requirement (confirmed: binary). "Any"
-    // means any weapon, "None" non-weapons only. The family requirement is not
-    // read by the data loader yet.
-    const ruleset::WeaponMount& m = r.data().weaponMounts[static_cast<size_t>(e.mount)];
-    const ruleset::Component& c = r.component(e.component);
-    const std::string& req = m.weaponTypeRequirement;
-    if (req.empty() || datafile::keysEqual(req, "Any")) return c.isWeapon();
-    if (datafile::keysEqual(req, "None")) return !c.isWeapon();
-    if (!c.isWeapon()) return false;
-    switch (c.weapon.kind) {
-        case WeaponKind::DirectFire: return datafile::keysEqual(req, "Direct Fire");
-        case WeaponKind::Seeking: return datafile::keysEqual(req, "Seeking");
-        case WeaponKind::PointDefense: return datafile::keysEqual(req, "Point-Defense");
-        case WeaponKind::Warhead: return datafile::keysEqual(req, "Warhead");
-        case WeaponKind::None: break;
-    }
-    return false;
+    // that meet the mount's weapon type and family requirements (spec 03 §4.3,
+    // spec 04 §18.2). One implementation: game::mountApplies (design.hpp).
+    return e.mount >= 0 && game::mountApplies(r, e.component, static_cast<uint32_t>(e.mount));
 }
 
 int combatStructure(const Rules& r, const DesignEntry& e) {
@@ -624,9 +594,12 @@ int fleetExperience(const GameState& s, const Vehicle& v) {
 }
 
 namespace {
-int toHitTerms(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind plus, AbilityKind minus) {
-    const Design& d = s.design(v.design);
-    return static_cast<int>(familyBest(r, s, v, plus) - familyBest(r, s, v, minus) + hullSum(r, d, plus) - hullSum(r, d, minus));
+// The ability part of offense or defense: the hull in full plus the best
+// intact component of each family, Plus − Minus (spec 03 §3.2, spec 04 §7).
+// One implementation, in design.hpp.
+int toHitTerms(const Rules& r, const GameState& s, const Vehicle& v, bool offense) {
+    const int64_t terms = offense ? vehicleToHitOffense(r, s, v) : vehicleToHitDefense(r, s, v);
+    return static_cast<int>(std::clamp<int64_t>(terms, INT_MIN, INT_MAX));
 }
 int racial(const Rules& r, const GameState& s, EmpireId owner, bool offense) {
     if (!owner.valid() || owner.index() >= s.empires.size()) return 0;
@@ -636,23 +609,23 @@ int racial(const Rules& r, const GameState& s, EmpireId owner, bool offense) {
 
 int vehicleOffense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExp) {
     if (v.status == VehicleStatus::Mothballed) return 0;
-    return toHitTerms(r, s, v, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus) + crewExperience + fleetExp +
+    return toHitTerms(r, s, v, true) + crewExperience + fleetExp +
            racial(r, s, v.owner, true);
 }
 
 int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExp) {
     if (v.status == VehicleStatus::Mothballed) return 0;
-    return toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus) + crewExperience + fleetExp +
+    return toHitTerms(r, s, v, false) + crewExperience + fleetExp +
            racial(r, s, v.owner, false);
 }
 
 int unitOffense(const Rules& r, const GameState& s, const Vehicle& v) {
-    return std::max(0, toHitTerms(r, s, v, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus)) +
+    return std::max(0, toHitTerms(r, s, v, true)) +
            racial(r, s, v.owner, true);
 }
 
 int unitDefense(const Rules& r, const GameState& s, const Vehicle& v) {
-    return std::max(0, toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus)) +
+    return std::max(0, toHitTerms(r, s, v, false)) +
            racial(r, s, v.owner, false);
 }
 
@@ -1043,10 +1016,17 @@ std::vector<std::vector<VehicleId>> enteringGroups(const Rules& r, const GameSta
         return v.location == where && v.count > 0 && v.owner.valid() && typeOf(r, s, v) != VehicleType::Mine;
     };
     if (!entering.empty()) {
-        std::vector<VehicleId> g;
-        for (VehicleId id : entering)
-            if (const Vehicle* v = s.vehicle(id); v && eligible(*v)) g.push_back(id);
-        if (!g.empty()) groups.push_back(std::move(g));
+        // The vehicles movement names are struck group by group, as they moved:
+        // a fleet together, any other vehicle on its own (inferred).
+        std::map<std::pair<int, uint32_t>, size_t> index;
+        for (VehicleId id : entering) {
+            const Vehicle* v = s.vehicle(id);
+            if (!v || !eligible(*v)) continue;
+            const std::pair<int, uint32_t> key = v->fleet.valid() ? std::pair{0, v->fleet.value} : std::pair{1, v->id.value};
+            auto [it, added] = index.emplace(key, groups.size());
+            if (added) groups.emplace_back();
+            groups[it->second].push_back(id);
+        }
         return groups;
     }
     // Once movement records arrivals (any vehicle moved this turn), only the

@@ -2741,16 +2741,25 @@ void Battle::finish() {
 
 } // namespace
 
-void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering) {
+namespace {
+
+// `entering` null: the vehicles that moved in this turn (the fallback of
+// detail::enteringGroups); empty: nobody entered, so no mine strikes.
+void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering) {
     Rng rng = ctx.state.rng.fork();
     // Mines strike first, then the battle check runs (confirmed: binary).
-    detail::resolveMines(ctx, where, entering, rng);
+    if (!entering) detail::resolveMines(ctx, where, {}, rng);
+    else if (!entering->empty()) detail::resolveMines(ctx, where, *entering, rng);
     Battle battle(ctx, where, rng);
     if (!battle.setup()) return;
     battle.run();
     battle.finish();
 }
 
-void resolveSpaceCombat(TurnContext& ctx, Location where) { resolveSpaceCombat(ctx, where, {}); }
+} // namespace
+
+void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const VehicleId> entering) { resolve(ctx, where, &entering); }
+
+void resolveSpaceCombat(TurnContext& ctx, Location where) { resolve(ctx, where, nullptr); }
 
 } // namespace opense4::game::combat

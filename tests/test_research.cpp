@@ -207,6 +207,17 @@ TEST_CASE("research: repeat re-queues the area at the end until the maximum") {
     CHECK(logCount(s, me, "All Projects Completed") == 1);
 }
 
+TEST_CASE("research: an area already queued is not queued again") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const auto beams = techArea(r, "Test Beams"), armor = techArea(r, "Test Armor");
+    REQUIRE(apply(r, s, me, cmd::SetResearch{{{beams, 0}, {armor, 0}, {beams, 0}}, true, false}).ok);
+    REQUIRE(s.empire(me).research.size() == 2);  // spec 05 §1.4
+    CHECK(s.empire(me).research[0].area == beams);
+    CHECK(s.empire(me).research[1].area == armor);
+}
+
 TEST_CASE("research: points are spent the turn after they are produced") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

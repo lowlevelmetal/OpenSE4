@@ -211,6 +211,47 @@ struct Empire {
     bool hasExplored(SystemId s) const { return s.index() < knowledge.explored.size() && knowledge.explored[s.index()]; }
 };
 
+// ---- Orders (spec 03 §8) -------------------------------------------------------------------------
+
+enum class OrderKind : uint8_t {
+    MoveTo,         // location
+    Warp,           // object = warp point
+    Attack,         // vehicle or object target
+    Resupply,
+    Repair,
+    Explore,
+    Colonize,       // object = planet
+    Sentry,
+    LoadCargo,      // design (unit) or population (design invalid); amount (-1 = all that fit)
+    DropCargo,      // same
+    LaunchUnits,    // design, amount
+    RecoverUnits,   // design, amount
+    Cloak,
+    Decloak,
+    SweepMines,
+    UseComponent,   // amount = design entry index
+    StellarManipulation,  // amount = StellarAction, object/location = target
+    MoveToWaypoint, // amount = waypoint slot
+    Count
+};
+std::string_view displayName(OrderKind k);
+
+enum class StellarAction : uint8_t {
+    CreatePlanet, DestroyPlanet, CreateStar, DestroyStar, OpenWarpPoint, CloseWarpPoint,
+    CreateStorm, DestroyStorm, CreateNebulae, DestroyNebulae, CreateBlackHole, DestroyBlackHole,
+    CreateConstructedPlanet, Count
+};
+
+struct Order {
+    OrderKind kind = OrderKind::MoveTo;
+    Location location;
+    ObjectId object;
+    VehicleId vehicle;
+    DesignId design;
+    int amount = 0;
+    bool operator==(const Order&) const = default;
+};
+
 // ---- Cargo, queues, colonies ------------------------------------------------------------
 
 struct PopulationGroup {
@@ -276,6 +317,9 @@ struct Colony {
     bool homeworld = false;           // also the capital flag: anger never above 80 (spec 02 §2)
     uint32_t foundedTurn = 0;
     int militia = -1;                 // ground combat: militia left to raise; -1 = no invasion (spec 04 §13)
+    // Planet orders (simultaneous games, spec 05 §9.2): Launch Units and
+    // Recover Units, carried out in the movement phase (spec 03 §12).
+    std::vector<Order> orders;
 
     int64_t totalPopulation() const {
         int64_t n = 0;
@@ -307,45 +351,6 @@ struct Design {
     int built = 0;
     int lost = 0;
     int kills = 0;
-};
-
-enum class OrderKind : uint8_t {
-    MoveTo,         // location
-    Warp,           // object = warp point
-    Attack,         // vehicle or object target
-    Resupply,
-    Repair,
-    Explore,
-    Colonize,       // object = planet
-    Sentry,
-    LoadCargo,      // design (unit) or population (design invalid); amount (-1 = all that fit)
-    DropCargo,      // same
-    LaunchUnits,    // design, amount
-    RecoverUnits,   // design, amount
-    Cloak,
-    Decloak,
-    SweepMines,
-    UseComponent,   // amount = design entry index
-    StellarManipulation,  // amount = StellarAction, object/location = target
-    MoveToWaypoint, // amount = waypoint slot
-    Count
-};
-std::string_view displayName(OrderKind k);
-
-enum class StellarAction : uint8_t {
-    CreatePlanet, DestroyPlanet, CreateStar, DestroyStar, OpenWarpPoint, CloseWarpPoint,
-    CreateStorm, DestroyStorm, CreateNebulae, DestroyNebulae, CreateBlackHole, DestroyBlackHole,
-    CreateConstructedPlanet, Count
-};
-
-struct Order {
-    OrderKind kind = OrderKind::MoveTo;
-    Location location;
-    ObjectId object;
-    VehicleId vehicle;
-    DesignId design;
-    int amount = 0;
-    bool operator==(const Order&) const = default;
 };
 
 enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };

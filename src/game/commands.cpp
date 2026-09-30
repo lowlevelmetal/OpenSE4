@@ -1,8 +1,10 @@
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
@@ -102,9 +104,48 @@ struct Applier {
 
     Empire& emp() { return s.empire(e); }
 
+    // An own space yard in the sector: a planet facility, or a ship's Space
+    // Yard component while that ship is not cloaked (spec 03 §14, §15).
+    bool yardAt(Location where) const {
+        for (ObjectId o : planetsAt(s, where))
+            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasSpaceYard(r, *c)) return true;
+        for (const Vehicle& v : s.vehicles)
+            if (v.count > 0 && v.owner == e && v.location == where && v.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(r, s, v))
+                return true;
+        return false;
+    }
+
+    // Ships always; bases when the setting allows; fighter groups yes; drones,
+    // satellites and mines never (spec 03 §9, confirmed: binary).
+    std::string fleetJoinProblem(const Vehicle& v) const {
+        switch (vehicleType(r, s, v)) {
+            case ruleset::VehicleType::Ship:
+            case ruleset::VehicleType::Fighter: return {};
+            case ruleset::VehicleType::Base:
+                return r.settingFlag("Bases Can Join Fleets", false) ? std::string{} : std::string("Bases cannot join fleets");
+            default: return std::format("{} cannot join a fleet", v.name);
+        }
+    }
+
+    const Vehicle* fleetLeaderOf(const Fleet& f) const {
+        if (const Vehicle* v = s.vehicle(f.leader); v && v->count > 0) return v;
+        const Vehicle* first = nullptr;
+        for (VehicleId id : f.members)
+            if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && (!first || v->id < first->id)) first = v;
+        return first;
+    }
+
     R operator()(const cmd::SetOrders& c) {
         for (const Order& o : c.orders)
             if (auto p = orderProblem(s, e, o); !p.empty()) return R::fail(p);
+        if (c.planet.valid()) {
+            Colony* col = ownColony(s, e, c.planet);
+            if (!col) return R::fail("Not your planet");
+            for (const Order& o : c.orders)
+                if (o.kind != OrderKind::LaunchUnits && o.kind != OrderKind::RecoverUnits) return R::fail("Planets can only launch and recover units");
+            col->orders = c.orders;
+            return {};
+        }
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
@@ -124,14 +165,12 @@ struct Applier {
         const Vehicle* first = ownVehicle(s, e, c.members.front());
         if (!first) return R::fail("Not your vehicle");
         const Location where = first->location;
-        const bool basesJoin = r.settingFlag("Bases Can Join Fleets", false);
         for (VehicleId id : c.members) {
             const Vehicle* v = ownVehicle(s, e, id);
             if (!v) return R::fail("Not your vehicle");
             if (v->location != where) return R::fail("Fleet members must share a sector");
             if (v->fleet.valid()) return R::fail(std::format("{} is already in a fleet", v->name));
-            const auto t = vehicleType(r, s, *v);
-            if (t == ruleset::VehicleType::Base && !basesJoin) return R::fail("Bases cannot join fleets");
+            if (auto why = fleetJoinProblem(*v); !why.empty()) return R::fail(why);
         }
         Fleet f;
         f.owner = e;
@@ -148,10 +187,9 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!f || !v) return R::fail("Not yours");
         if (v->fleet.valid()) return R::fail("Already in a fleet");
-        const Vehicle* leader = s.vehicle(f->leader);
+        const Vehicle* leader = fleetLeaderOf(*f);
         if (leader && leader->location != v->location) return R::fail("Must be in the fleet's sector");
-        if (vehicleType(r, s, *v) == ruleset::VehicleType::Base && !r.settingFlag("Bases Can Join Fleets", false))
-            return R::fail("Bases cannot join fleets");
+        if (auto why = fleetJoinProblem(*v); !why.empty()) return R::fail(why);
         f->members.push_back(v->id);
         v->fleet = f->id;
         return {};
@@ -164,7 +202,8 @@ struct Applier {
         v->fleet = {};
         if (f) {
             std::erase(f->members, v->id);
-            if (f->leader == v->id) f->leader = f->members.empty() ? VehicleId{} : f->members.front();
+            // A chosen leader that leaves is no longer chosen: the first member leads (spec 03 §9).
+            if (f->leader == v->id) f->leader = {};
             // Members that leave take the fleet's orders with them.
             if (v->orders.empty()) v->orders = f->orders;
         }
@@ -213,6 +252,8 @@ struct Applier {
             f->name = c.name;
         } else if (c.design.valid()) {
             if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
+            // A design name differs from every design in the game, exactly (spec 03 §4.1).
+            if (s.design(c.design).name != c.name && designNameInUse(s, c.name)) return R::fail("A design with that name exists");
             s.design(c.design).name = c.name;
         } else if (c.planet.valid()) {
             if (!ownColony(s, e, c.planet)) return R::fail("Not your planet");
@@ -227,12 +268,12 @@ struct Applier {
         if (c.vehicle.valid()) {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");
-            if (!spaceYardAt(r, s, e, v->location)) return R::fail("Scrapping needs a space yard in the sector");
-            const bool unit = isUnitType(vehicleType(r, s, *v));
-            int pct = static_cast<int>(r.setting(unit ? "Scrap Unit Percent Returned" : "Scrap Ship Percent Returned", 30));
-            pct = std::max(pct, reclamationPercentAt(r, s, e, v->location));
-            const Resources value = computeDesignStats(r, nullptr, s.design(v->design)).cost.percent(pct);
-            for (int i = 0; i < v->count; ++i) emp().stockpile += value;
+            if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be scrapped");
+            if (!yardAt(v->location)) return R::fail("Scrapping needs a space yard in the sector");
+            const auto type = vehicleType(r, s, *v);
+            if (type == ruleset::VehicleType::Drone || type == ruleset::VehicleType::Mine) return R::fail("Drones and minefields cannot be scrapped");
+            // Damage does not lower the value and cargo is lost (spec 03 §15).
+            emp().stockpile += scrapRefund(r, s, *v);
             addLog(s, e, LogCategory::Construction, std::format("{} scrapped", v->name), {}, v->location);
             v->count = 0;
             s.removeDeadVehicles();
@@ -254,22 +295,34 @@ struct Applier {
         return {};
     }
 
+    // Spec 03 §15: mothballing needs a yard, status Normal and no cargo; it
+    // leaves no abilities, movement or supply. Unmothballing needs no yard.
     R operator()(const cmd::Mothball& c) {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
-        if (!spaceYardAt(r, s, e, v->location)) return R::fail("Needs a space yard in the sector");
+        if (isUnitType(vehicleType(r, s, *v))) return R::fail("Units cannot be mothballed");
         if (c.mothball) {
-            if (v->status == VehicleStatus::Mothballed) return R::fail("Already mothballed");
+            if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be mothballed");
+            if (v->status != VehicleStatus::Normal) return R::fail("Already mothballed");
+            if (!yardAt(v->location)) return R::fail("Needs a space yard in the sector");
+            if (!v->cargo.empty()) return R::fail("Unload the cargo first");
             v->status = VehicleStatus::Mothballed;
             v->orders.clear();
+            v->repeatOrders = false;
             v->queue.items.clear();
+            v->supply = 0;
+            v->movement = 0;
         } else {
             if (v->status != VehicleStatus::Mothballed) return R::fail("Not mothballed");
-            const Resources cost =
-                computeDesignStats(r, nullptr, s.design(v->design)).cost.percent(r.setting("UnMothball Ship Percent Cost", 20));
+            // Every resource must be in stock.
+            const Resources cost = unmothballCharge(r, s, *v);
             if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources to unmothball");
             emp().stockpile -= cost;
             v->status = VehicleStatus::Normal;
+            // Unlimited supply comes back full; others only at a depot, else 0.
+            if (vehicleHasUnlimitedSupply(r, s, *v)) v->supply = kUnlimitedSupply;
+            else if (movement::resupplyDepotAt(r, s, e, v->location)) v->supply = vehicleSupplyCapacity(r, s, *v);
+            else v->supply = 0;
         }
         return {};
     }
@@ -349,61 +402,84 @@ struct Applier {
         });
     }
 
+    // Retrofit (spec 03 §14, confirmed: binary): the checks in order, the
+    // first failure cancels it.
     R operator()(const cmd::Retrofit& c) {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
         if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
-        if (!spaceYardAt(r, s, e, v->location)) return R::fail("Retrofit needs a space yard in the sector");
+        if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be retrofitted");
         const Design& oldD = s.design(v->design);
         const Design& newD = s.design(c.design);
-        if (oldD.hull != newD.hull) return R::fail("A retrofit must keep the hull");
-        auto count = [&](const Design& d, AbilityKind k) {
-            int n = 0;
-            for (const auto& en : d.entries) n += hasAbility(r.componentAbilities(en.component), k);
-            return n;
-        };
-        if (r.settingFlag("No Retrofit Adding Of Spaceyards", true) && count(newD, AbilityKind::SpaceYard) > count(oldD, AbilityKind::SpaceYard))
-            return R::fail("Space yards cannot be added by retrofit");
-        const int colOld = count(oldD, AbilityKind::ColonizeRock) + count(oldD, AbilityKind::ColonizeIce) + count(oldD, AbilityKind::ColonizeGas);
-        const int colNew = count(newD, AbilityKind::ColonizeRock) + count(newD, AbilityKind::ColonizeIce) + count(newD, AbilityKind::ColonizeGas);
-        if (r.settingFlag("No Retrofit Adding Of Colony Module", true) && colNew > colOld)
-            return R::fail("Colony modules cannot be added by retrofit");
-        const DesignStats oldS = computeDesignStats(r, nullptr, oldD);
-        const DesignStats newS = computeDesignStats(r, &emp(), newD);
-        if (!newS.problems.empty()) return R::fail(newS.problems.front());
-        const int64_t maxDiff = oldS.cost.total() * r.setting("Retrofit Max Percent Difference in Cost", 50) / 100;
-        if (std::abs(newS.cost.total() - oldS.cost.total()) > maxDiff) return R::fail("The designs differ too much in cost");
-
-        std::map<std::pair<uint32_t, int32_t>, int> diff;
-        for (const auto& en : newD.entries) ++diff[{en.component, en.mount}];
-        for (const auto& en : oldD.entries) --diff[{en.component, en.mount}];
+        // Pair each target component with the first unpaired current entry of the
+        // same component and mount; unpaired target parts cost Comps %, unpaired
+        // current parts Comp Removal %, each truncated. The hull costs nothing.
+        std::vector<bool> paired(oldD.entries.size(), false);
+        std::vector<int> pairOf(newD.entries.size(), -1);
         Resources cost;
-        for (const auto& [key, n] : diff) {
-            const Resources each = mounted(r, DesignEntry{key.first, key.second}).cost;
-            if (n > 0) cost += each.percent(r.setting("Retrofit Cost Percent For Comps", 120) * n);
-            if (n < 0) cost += each.percent(r.setting("Retrofit Cost Percent For Comp Removal", 30) * -n);
-        }
-        if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources for the retrofit");
-        emp().stockpile -= cost;
-
-        // Kept components keep their damage; added ones start destroyed (spec 03 §14).
-        std::map<std::pair<uint32_t, int32_t>, std::vector<int>> oldDamage;
-        for (size_t i = 0; i < oldD.entries.size(); ++i)
-            oldDamage[{oldD.entries[i].component, oldD.entries[i].mount}].push_back(i < v->damage.size() ? v->damage[i] : 0);
-        std::vector<int> damage;
+        bool added = false;
+        const int64_t addPct = r.setting("Retrofit Cost Percent For Comps", 120);
+        const int64_t removePct = r.setting("Retrofit Cost Percent For Comp Removal", 30);
         for (size_t i = 0; i < newD.entries.size(); ++i) {
-            auto& pool = oldDamage[{newD.entries[i].component, newD.entries[i].mount}];
-            if (!pool.empty()) {
-                damage.push_back(pool.front());
-                pool.erase(pool.begin());
-            } else {
-                damage.push_back(entryStructure(r, newD, i));
-            }
+            for (size_t j = 0; j < oldD.entries.size(); ++j)
+                if (!paired[j] && oldD.entries[j] == newD.entries[i]) {
+                    paired[j] = true;
+                    pairOf[i] = static_cast<int>(j);
+                    break;
+                }
+            if (pairOf[i] >= 0) continue;
+            added = true;
+            const Resources each = mounted(r, newD.entries[i]).cost;
+            for (Resource res : kResources) cost[res] += xmath::pctTrunc(each[res], addPct);
         }
+        for (size_t j = 0; j < oldD.entries.size(); ++j) {
+            if (paired[j]) continue;
+            const Resources each = mounted(r, oldD.entries[j]).cost;
+            for (Resource res : kResources) cost[res] += xmath::pctTrunc(each[res], removePct);
+        }
+        // 1. Identical designs.
+        if (cost.total() == 0) return R::fail("The designs are the same");
+        // 2. An own space yard in the sector (a ship's only while it is not cloaked).
+        if (!yardAt(v->location)) return R::fail("Retrofit needs a space yard in the sector");
+        // 3. The hull.
+        if (oldD.hull != newD.hull) return R::fail("A retrofit must keep the hull");
+        // 4. Cargo.
+        if (!v->cargo.empty()) return R::fail("Unload the cargo before a retrofit");
+        // 5. Resources in stock.
+        if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources for the retrofit");
+        // 6. Space yards and colony modules cannot be added.
+        auto has = [&](const Design& d, AbilityKind k) {
+            return std::any_of(d.entries.begin(), d.entries.end(), [&](const DesignEntry& en) { return hasAbility(r.componentAbilities(en.component), k); });
+        };
+        auto colonizes = [&](const Design& d) {
+            return has(d, AbilityKind::ColonizeRock) || has(d, AbilityKind::ColonizeIce) || has(d, AbilityKind::ColonizeGas);
+        };
+        if (r.settingFlag("No Retrofit Adding Of Spaceyards", true) && !has(oldD, AbilityKind::SpaceYard) && has(newD, AbilityKind::SpaceYard))
+            return R::fail("Space yards cannot be added by retrofit");
+        if (r.settingFlag("No Retrofit Adding Of Colony Module", true) && !colonizes(oldD) && colonizes(newD))
+            return R::fail("Colony modules cannot be added by retrofit");
+        // 7. Only an increase in total cost is limited, compared in floating point.
+        const int64_t oldTotal = computeDesignStats(r, nullptr, oldD).cost.total();
+        const int64_t newTotal = computeDesignStats(r, nullptr, newD).cost.total();
+        const int64_t maxPct = r.setting("Retrofit Max Percent Difference in Cost", 50);
+        if (xmath::Ext(newTotal) > xmath::Ext(oldTotal) * xmath::percent(100 + maxPct)) return R::fail("The new design costs too much more");
+
+        // The cost is taken only when a component is added.
+        if (added) emp().stockpile -= cost;
+        // Paired parts keep their state; added parts start destroyed and must be repaired.
+        std::vector<int> damage;
+        for (size_t i = 0; i < newD.entries.size(); ++i)
+            damage.push_back(pairOf[i] >= 0 && static_cast<size_t>(pairOf[i]) < v->damage.size() ? v->damage[static_cast<size_t>(pairOf[i])]
+                             : pairOf[i] >= 0                                                        ? 0
+                                                                                                     : entryStructure(r, newD, i));
+        const std::string name = newD.name;
         v->design = c.design;
         v->damage = std::move(damage);
-        v->supply = std::min(v->supply, vehicleSupplyCapacity(r, s, *v));
-        addLog(s, e, LogCategory::Construction, std::format("{} retrofitted to {}", v->name, newD.name), {}, v->location);
+        // Movement and supply recomputed and clamped to the new maxima.
+        v->movement = std::min(v->movement, vehicleMaxMovement(r, s, *v));
+        if (vehicleHasUnlimitedSupply(r, s, *v)) v->supply = kUnlimitedSupply;
+        else v->supply = std::clamp<int64_t>(v->supply, 0, vehicleSupplyCapacity(r, s, *v));
+        addLog(s, e, LogCategory::Construction, std::format("{} retrofitted to {}", v->name, name), {}, v->location);
         return {};
     }
 
@@ -437,6 +513,7 @@ struct Applier {
             from = &v->cargo;
             a = v->location;
         } else if (Colony* col = ownColony(s, e, c.fromPlanet)) {
+            if (col->plagueLevel > 0) return R::fail("Nothing can be loaded from a planet quarantined by plague");
             from = &col->cargo;
             a = locationOf(s.galaxy, col->planet);
             if (!c.unitDesign.valid()) {
@@ -534,11 +611,14 @@ struct Applier {
             if (emp().techLevel(p.area) >= r.tech(p.area).maxLevel) return R::fail(std::format("{} is complete", r.tech(p.area).name));
         }
         // Progress belongs to the area, not the queue slot: keep it for areas still queued.
-        std::vector<ResearchProject> q = c.queue;
-        for (auto& p : q) {
+        // Adding an area that is already queued does nothing (spec 05 §1.4): later repeats are dropped.
+        std::vector<ResearchProject> q;
+        for (ResearchProject p : c.queue) {
+            if (std::any_of(q.begin(), q.end(), [&](const ResearchProject& x) { return x.area == p.area; })) continue;
             p.progress = 0;
             for (const auto& old : emp().research)
                 if (old.area == p.area) p.progress = old.progress;
+            q.push_back(p);
         }
         emp().research = std::move(q);
         emp().researchEvenly = c.evenly;
@@ -742,6 +822,29 @@ std::string_view commandName(const Command& c) {
     return std::visit([](const auto& x) { return NameOf<std::decay_t<decltype(x)>>::value; }, c);
 }
 
+Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {
+    const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
+    Resources value;
+    if (isUnitType(vehicleType(r, s, v))) {
+        // A fighter or satellite group: the unit percentage, per unit.
+        const int64_t pct = r.setting("Scrap Unit Percent Returned", 30);
+        for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct) * std::max(1, v.count);
+        return value;
+    }
+    // Ships and bases: the larger of the setting and the owner's best Resource Reclamation here.
+    int64_t pct = r.setting("Scrap Ship Percent Returned", 30);
+    if (v.owner.valid()) pct = std::max<int64_t>(pct, reclamationPercentAt(r, s, v.owner, v.location));
+    for (Resource res : kResources) value[res] = xmath::pctRound(cost[res], pct);
+    return value;
+}
+
+Resources unmothballCharge(const Rules& r, const GameState& s, const Vehicle& v) {
+    const Resources cost = computeDesignStats(r, nullptr, s.design(v.design)).cost;
+    Resources out;
+    for (Resource res : kResources) out[res] = xmath::pctRound(cost[res], r.setting("UnMothball Ship Percent Cost", 20));
+    return out;
+}
+
 ConstructionQueue* findQueue(GameState& s, EmpireId empire, const cmd::QueueTarget& t) {
     if (t.vehicle.valid()) {
         Vehicle* v = ownVehicle(s, empire, t.vehicle);
@@ -774,11 +877,9 @@ std::string queueItemProblem(const Rules& r, const GameState& s, EmpireId empire
             if (!st.problems.empty()) return st.problems.front();
             const bool unit = isUnitType(st.vehicleType);
             if (!unit && col && !colonyHasSpaceYard(r, *col)) return "Building ships and bases needs a space yard";
-            if (unit) {
-                if (unitCount(r, s, empire) + item.count > s.options.maxUnitsPerPlayer) return "Unit limit reached";
-            } else if (shipCount(r, s, empire) >= s.options.maxShipsPerPlayer) {
-                return "Ship limit reached";
-            }
+            // Ships and bases are capped when built; units only when launched,
+            // counting units in space (spec 03 §12, confirmed: binary).
+            if (!unit && shipCount(r, s, empire) >= s.options.maxShipsPerPlayer) return "Ship limit reached";
             return {};
         }
         case QueueItem::Kind::Facility: {

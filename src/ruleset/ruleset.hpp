@@ -260,11 +260,15 @@ struct WeaponMount {
     int structurePercent = 100;
     int damagePercent = 100;
     int supplyPercent = 100;
+    int shieldPercent = 100;             // optional; missing means 100 (spec 03 §2.4)
     int rangeModifier = 0;
     int toHitModifier = 0;
     int minimumVehicleSize = 0;
+    int maximumVehicleSize = 0;          // optional; 0 means no upper bound
+    std::vector<int> familyRequirement;  // allowed component families; empty = every family
     std::string weaponTypeRequirement;
     std::string vehicleType;
+    std::vector<TechRequirement> requirements;
 };
 
 // ---- Formations.txt ------------------------------------------------------------------

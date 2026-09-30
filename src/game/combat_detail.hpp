@@ -46,9 +46,9 @@ std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v);
 
 int64_t componentSum(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);   // intact components
 int64_t componentBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);  // best single intact component
-// Spec 04 §7: the best intact component of each component Family, summed over the families.
-int64_t familyBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);
-// The same over a list of facilities (a planet's).
+// Spec 04 §7 over a list of facilities (a planet's): the best of each facility
+// Family, summed. A vehicle's per-family to-hit is vehicleToHitOffense/Defense
+// (design.hpp).
 int64_t facilityFamilyBest(const Rules& r, std::span<const uint32_t> facilities, AbilityKind k);
 bool hasIntactComponent(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k);
 bool designHasComponent(const Rules& r, const Design& d, AbilityKind k);                   // destroyed or not

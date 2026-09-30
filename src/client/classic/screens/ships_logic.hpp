@@ -18,11 +18,13 @@ namespace opense4::client::classic::shipui {
 // ---- Orders ---------------------------------------------------------------------------------
 
 // Who holds the orders of a vehicle: its fleet when it is in one, else itself
-// (docs/spec/03 §8: an order given to a fleet goes to every member).
+// (docs/spec/03 §8: an order given to a fleet goes to every member). A planet
+// holds its own launch and recover orders (spec 03 §12).
 struct OrderOwner {
     game::VehicleId vehicle;
     game::FleetId fleet;
-    bool valid() const { return vehicle.valid() || fleet.valid(); }
+    game::ObjectId planet;
+    bool valid() const { return vehicle.valid() || fleet.valid() || planet.valid(); }
 };
 OrderOwner orderOwner(const game::GameState& s, game::VehicleId v);
 const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o);
