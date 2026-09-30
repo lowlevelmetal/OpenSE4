@@ -1326,7 +1326,11 @@ binary).
     6. higher planet value first.
   - *Ships*: idle colony ships are those with no orders, or whose target has become one
     of our colonies. Each target, in order, gets the nearest idle colony ship (by jumps)
-    whose design can settle it, with the orders move there, then colonize.
+    whose design can settle it, with the orders move there, then colonize. OpenSE4 gives
+    them as the single Colonize order of spec 03 §8, which moves there by itself and
+    first takes colonists aboard where the ship is. A separate Move To in front would
+    make the ship look for colonists at the target and found an empty colony (inferred,
+    open question 23).
 - **Logistics ministers** (confirmed: binary unless marked).
   - *Transports*: an idle population transport more than half full delivers.
     - The destination is the least-populated own planet below its maximum, in a safe
@@ -1929,3 +1933,45 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     whole-percent anger by trunc(Amount / 10) within 0 and 100 (80 on a capital). Is the
     conditions change additive, or a percentage of the current value like `Planet
     Conditions Change - System` (spec 02 §1.5)? (inferred)
+21. **How much the AI spends** (§7.2, §7.5). In OpenSE4's all-computer games on the stock
+    data (5 empires, 30 systems, 120 turns), organics and radioactives mostly sit at or
+    near their storage caps. Minerals are spent while an empire founds colonies and builds
+    their facilities; an empire that stops expanding fills its mineral storage too. By
+    turn 120, none to four of the five empires had full mineral storage in the games we
+    ran. Every step follows the rules above:
+    - The Ship Construction budget is one turn of net income per resource, and the
+      stockpile never counts. The loop stops as soon as any one resource of the budget is
+      at or below 0. Under the stock planet-type table most colonies become Mining
+      Colonies, so radioactives or organics run out first and minerals pile up.
+    - A queue takes a new item only while its backlog is under 5 turns, and ships need a
+      yard. Most AI empires have one or two yards: the homeworld, and Construction Yard or
+      Military Installation colonies.
+    - The stock vehicle lists ask for numbers that grow with the colony count. Only the
+      Defend (Short Term) list ends with an entry that asks for many attack ships per
+      colony. In the other states an empire with few colonies soon has everything its
+      list asks for.
+    - Over the soft maintenance cap only colony ships are built, and the Scrap minister
+      scraps one ship per turn. The budget lets maintenance grow up to the whole revenue,
+      past the soft cap, so an empire near the cap builds and scraps ships in turn.
+    - The facility minister fills only empty colony queues. A homeworld whose queue
+      always holds ships gets no new facilities.
+    - Neighbours below Non-Aggression keep each other in Defend (Short Term), whose stock
+      list asks for few colony ships. A hostile populated colony within one jump of ours
+      keeps an AI in that state until the colony falls.
+    - Loading colonists always leaves 1M on the planet (spec 03 §11). A colony ship built
+      at the yard of a young 1M colony carries nobody and founds an empty colony.
+
+    To check in the original with an all-computer game on the stock data: each empire's
+    stock of the three resources at turns 40, 80 and 100; its planets, ships, bases and
+    yards at those turns; how many turns it spends in Defend (Short Term); whether it
+    scraps ships while it builds others; whether it ever spends more in a turn than one
+    turn of net income; and whether its colonies are ever founded empty.
+22. **Repair and resupply orders** (§7.5): OpenSE4's Repair and Resupply ministers replace
+    a ship's current orders, a colony ship's Colonize order included, once it is more
+    than 30 % damaged or below 20 % supply. They give the order even when no repair or
+    supply point can be reached, and the order then fails. Does the original interrupt
+    orders, and does it skip ships that have nowhere to go? (inferred)
+23. **Colonists on AI colony ships** (§7.5): OpenSE4 gives the colony ship its Colonize
+    order where it is, usually at the yard that built it, so it takes colonists aboard
+    there before it leaves (spec 03 §8). Do the original's AI colonies start with the
+    people the colony ship carried, as a player's do? (inferred)
