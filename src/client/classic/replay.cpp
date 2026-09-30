@@ -1,5 +1,7 @@
 #include "client/classic/replay.hpp"
 
+#include "game/combat.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -14,6 +16,11 @@ using Kind = game::CombatEvent::Kind;
 float headingOf(int dx, int dy) { return std::atan2(float(dx), float(-dy)); }
 
 bool placesPiece(Kind k) { return k == Kind::Move || k == Kind::Launch || k == Kind::Seeker; }
+
+// Planets and neutral obstacles cover a square of this many map squares.
+int footprint(game::CombatPiece::Kind k) {
+    return k == game::CombatPiece::Kind::Planet || k == game::CombatPiece::Kind::Obstacle ? game::combat::kBigPieceSize : 1;
+}
 
 } // namespace
 
@@ -60,10 +67,15 @@ CombatPlayback::CombatPlayback(const game::CombatRecord& record) : record_(&reco
         const game::CombatPiece& p = record.pieces[i];
         Piece& s = start_[i];
         s.owner = p.owner;
+        s.size = footprint(p.kind);
+        s.neutral = p.kind == game::CombatPiece::Kind::Obstacle;
         s.x = s.fromX = p.startX;
         s.y = s.fromY = p.startY;
         s.onMap = p.kind != game::CombatPiece::Kind::Seeker && !launched[i];
-        if (s.onMap) extend(s.x, s.y);
+        if (s.onMap) {
+            extend(s.x, s.y);
+            extend(s.x + s.size - 1, s.y + s.size - 1);
+        }
     }
     for (const game::CombatEvent& e : events)
         if (placesPiece(e.kind)) extend(e.x, e.y);
@@ -73,7 +85,7 @@ CombatPlayback::CombatPlayback(const game::CombatRecord& record) : record_(&reco
         float sx = 0, sy = 0;
         int n = 0;
         for (const Piece& o : start_)
-            if (o.onMap && o.owner != start_[i].owner) {
+            if (o.onMap && !o.neutral && o.owner != start_[i].owner) {
                 sx += float(o.x);
                 sy += float(o.y);
                 ++n;
@@ -118,6 +130,12 @@ void CombatPlayback::apply(const game::CombatEvent& e) {
             break;
         case Kind::Miss: break;
         case Kind::Destroyed:
+            if (record_ && record_->pieces[e.piece].kind == game::CombatPiece::Kind::Planet) {
+                // A colony wiped out: the planet stays on the map as an unowned obstacle.
+                p.neutral = true;
+                p.owner = {};
+                break;
+            }
             p.destroyed = true;
             p.onMap = false;
             break;

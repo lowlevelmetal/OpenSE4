@@ -1,7 +1,12 @@
 // Combat rules shared by space and ground combat (docs/spec/04): settings,
-// damage types, weapon target sets, strategies, to-hit, the damage pipeline,
-// mines, and the combat-possible test. The battle itself is in
-// combat_space.cpp, ground combat in combat_ground.cpp.
+// damage types, weapon target sets, strategies, damage at range and mounts,
+// to-hit terms, the damage pipeline of ships and units, mines, and the
+// combat-possible test. The battle itself is in combat_space.cpp, ground
+// combat in combat_ground.cpp.
+//
+// Rules marked "(confirmed: binary)" follow the spec text of the same name;
+// "(inferred)" marks our own choices where the spec is silent. Percentages the
+// original applies in floating point go through game/xmath.hpp.
 
 #include "game/combat.hpp"
 
@@ -12,9 +17,12 @@
 #include "game/query.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <format>
+#include <map>
 
 namespace opense4::game::combat {
 
@@ -126,28 +134,26 @@ int number(std::string_view text, int fallback) {
     return fallback;
 }
 
-// A mine's warheads that can hit this vehicle (entries of the mine design).
-std::vector<size_t> mineWarheads(const Rules& r, const GameState& s, const Vehicle& mine, const Vehicle& victim,
-                                 const detail::ShieldState& sh) {
-    std::vector<size_t> out;
-    const Design& d = s.design(mine.design);
-    const uint8_t mask = targetMaskOf(detail::typeOf(r, s, victim));
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        const ruleset::Component& c = r.component(d.entries[i].component);
-        if (!c.isWeapon() || !entryIntact(r, s, mine, i)) continue;
-        if (!(parseWeaponTargets(c.weapon.targets) & mask)) continue;
-        if (weaponDamageAtRange(r, d.entries[i], 1) <= 0) continue;
-        const DamageType t = parseDamageType(c.weapon.damageType);
-        if (!detail::damageRule(t).structural || !detail::canAffectVehicle(r, s, victim, sh, t)) continue;
-        out.push_back(i);
-    }
-    return out;
-}
-
 bool mineMayHit(const CombatSettings& cs, VehicleType t) {
     if (t == VehicleType::Fighter) return cs.fightersHitByMines;
     if (t == VehicleType::Drone) return cs.dronesHitByMines;
     return detail::canBePiece(t);
+}
+
+// A mine's warheads (entries of the mine design) whose damage type can affect this vehicle (spec 04 §10.6).
+std::vector<size_t> mineWarheads(const Rules& r, const GameState& s, const Vehicle& mine, const Vehicle& victim) {
+    std::vector<size_t> out;
+    const Design& d = s.design(mine.design);
+    const detail::ShieldState none;   // shields never act against mines
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        const ruleset::Component& c = r.component(d.entries[i].component);
+        if (c.weapon.kind != WeaponKind::Warhead || !entryIntact(r, s, mine, i)) continue;
+        if (weaponLargestDamage(r, d.entries[i]) <= 0) continue;
+        const DamageType t = parseDamageType(c.weapon.damageType);
+        if (!detail::damageRule(t).structural || !detail::canAffectVehicle(r, s, victim, none, t)) continue;
+        out.push_back(i);
+    }
+    return out;
 }
 
 } // namespace
@@ -219,21 +225,27 @@ bool isSpecialEffect(DamageType t) {
     }
 }
 
+bool isHullDamaging(DamageType t) { return detail::damageRule(t).hullDamaging; }
+
 uint8_t parseWeaponTargets(std::span<const std::string> targets) {
+    // `Weapon Target` joins fixed names with '\'; a list override contains the
+    // category words in free text (confirmed: binary). Both are matched by word.
     uint8_t mask = 0;
     auto add = [&](std::string_view token) {
         const std::string v = compact(token);
-        if (v == "ships" || v == "ship") mask |= kTargetShips;
-        else if (v == "planets" || v == "planet") mask |= kTargetPlanets;
-        else if (v == "ftr" || v == "fighters" || v == "fighter") mask |= kTargetFighters;
-        else if (v == "sat" || v == "satellites" || v == "satellite") mask |= kTargetSatellites;
-        else if (v == "seekers" || v == "seeker") mask |= kTargetSeekers;
-        else if (v == "drone" || v == "drones") mask |= kTargetDrones;
+        if (v.empty()) return;
+        if (v == "all") mask |= kTargetShips | kTargetPlanets | kTargetFighters | kTargetSatellites | kTargetSeekers | kTargetDrones;
+        if (v.starts_with("ship")) mask |= kTargetShips;
+        if (v.starts_with("planet")) mask |= kTargetPlanets;
+        if (v == "ftr" || v.starts_with("fighter")) mask |= kTargetFighters;
+        if (v == "sat" || v.starts_with("satellite")) mask |= kTargetSatellites;
+        if (v.starts_with("seeker")) mask |= kTargetSeekers;
+        if (v.starts_with("drone")) mask |= kTargetDrones;
     };
     for (const std::string& t : targets) {
         size_t start = 0;
         for (size_t i = 0; i <= t.size(); ++i)
-            if (i == t.size() || t[i] == '\\' || t[i] == ',' || t[i] == '/') {
+            if (i == t.size() || t[i] == '\\' || t[i] == ',' || t[i] == '/' || t[i] == ' ') {
                 add(std::string_view(t).substr(start, i - start));
                 start = i + 1;
             }
@@ -250,6 +262,43 @@ uint8_t targetMaskOf(VehicleType t) {
         case VehicleType::Drone: return kTargetDrones;
         default: return 0;
     }
+}
+
+// ---- Damage at range (spec 04 §8) ----------------------------------------------------------------
+
+int weaponDamage(const Rules& r, const DesignEntry& e, int range) {
+    const ruleset::Component& c = r.component(e.component);
+    if (!c.isWeapon()) return 0;
+    const std::vector<int>& table = c.weapon.damageAtRange;
+    int64_t value = 0;
+    if (detail::mountApplies(r, e)) {
+        // With a valid mount the index is clamped, so ranges past the table read entry 20 (confirmed: binary).
+        const MountedComponent m = mounted(r, e);
+        const int index = std::clamp(range - m.rangeModifier, 1, 20);
+        if (index > static_cast<int>(table.size())) return 0;
+        value = xmath::pctRound(table[static_cast<size_t>(index - 1)], m.damagePercent);
+    } else {
+        if (range < 1 || range > 20 || range > static_cast<int>(table.size())) return 0;
+        value = table[static_cast<size_t>(range - 1)];
+    }
+    return static_cast<int>(std::clamp<int64_t>(value, 0, kMaxShotDamage));
+}
+
+int weaponLargestDamage(const Rules& r, const DesignEntry& e) {
+    const ruleset::Component& c = r.component(e.component);
+    if (!c.isWeapon()) return 0;
+    int64_t best = 0;
+    const size_t n = std::min<size_t>(20, c.weapon.damageAtRange.size());
+    for (size_t i = 0; i < n; ++i) best = std::max<int64_t>(best, c.weapon.damageAtRange[i]);
+    if (detail::mountApplies(r, e)) best = xmath::pctRound(best, mounted(r, e).damagePercent);
+    return static_cast<int>(std::clamp<int64_t>(best, 0, kMaxShotDamage));
+}
+
+int weaponReach(const Rules& r, const DesignEntry& e) {
+    int reach = 0;
+    for (int d = 1; d <= kCombatMapWidth; ++d)
+        if (weaponDamage(r, e, d) > 0) reach = d;
+    return reach;
 }
 
 // ---- Strategies ----------------------------------------------------------------------------------
@@ -305,6 +354,8 @@ Strategy parseStrategy(const ruleset::CombatStrategy& src) {
             if (auto c = parseCategory(k.substr(14))) st.breakFormation[static_cast<size_t>(*c)] = flag(value, false);
         } else if (k == "fighterslaunchgroupamount") {
             st.fighterLaunchGroup = std::max(1, number(value, st.fighterLaunchGroup));
+        } else if (k == "dronespertarget") {
+            st.dronesPerTarget = std::max(1, number(value, st.dronesPerTarget));
         } else if (k == "damagepercentpership") {
             st.damagePercentShip = number(value, st.damagePercentShip);
         } else if (k == "damagepercentperplanet") {
@@ -335,7 +386,6 @@ bool enemies(const GameState& s, EmpireId a, EmpireId b) { return hostile(s, a, 
 
 ruleset::VehicleType typeOf(const Rules& r, const GameState& s, const Vehicle& v) { return vehicleType(r, s, v); }
 
-// Vehicles that can be combat pieces (mines, troops and platforms never are).
 bool canBePiece(VehicleType t) { return t != VehicleType::Mine && t != VehicleType::Troop && t != VehicleType::WeaponPlatform; }
 
 namespace {
@@ -350,11 +400,17 @@ bool sectorObscured(const GameState& s, Location where) {
         if (parseAbilityKind(a.type) == AbilityKind::SectorSightObscuration) return true;
     return false;
 }
+
+// Families of the intact components of a vehicle that have ability k, with their best Value 1.
+template <class Each>
+void forIntactParts(const Rules& r, const GameState& s, const Vehicle& v, Each&& each) {
+    if (v.status == VehicleStatus::Mothballed) return;
+    const Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (entryIntact(r, s, v, i)) each(i, d.entries[i]);
+}
 } // namespace
 
-// Whether `viewer` (which has pieces in the same sector) sees vehicle `v`.
-// Uncloaked vehicles sharing a sector are seen unless a storm or nebula
-// obscures it; otherwise the sight module decides (spec 04 §2).
 bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v) {
     if (v.owner == viewer) return true;
     if (sight::canSeeVehicle(r, s, viewer, v)) return true;
@@ -363,31 +419,56 @@ bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicl
 }
 
 int64_t componentSum(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
-    if (v.status == VehicleStatus::Mothballed) return 0;
-    const Design& d = s.design(v.design);
     int64_t total = 0;
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (entryIntact(r, s, v, i)) total += sumValue1(r.componentAbilities(d.entries[i].component), k);
+    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) { total += sumValue1(r.componentAbilities(e.component), k); });
     return total;
 }
 
 int64_t componentBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
-    if (v.status == VehicleStatus::Mothballed) return 0;
-    const Design& d = s.design(v.design);
     int64_t best = 0;
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        const auto ab = r.componentAbilities(d.entries[i].component);
-        if (hasAbility(ab, k) && entryIntact(r, s, v, i)) best = std::max(best, bestValue1(ab, k));
-    }
+    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) {
+        const auto ab = r.componentAbilities(e.component);
+        if (hasAbility(ab, k)) best = std::max(best, bestValue1(ab, k));
+    });
     return best;
 }
 
+int64_t familyBest(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
+    std::map<int, int64_t> best;   // component Family -> best value
+    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) {
+        const auto ab = r.componentAbilities(e.component);
+        if (!hasAbility(ab, k)) return;
+        const int family = r.component(e.component).family;
+        const int64_t value = bestValue1(ab, k);
+        auto it = best.find(family);
+        if (it == best.end()) best.emplace(family, value);
+        else it->second = std::max(it->second, value);
+    });
+    int64_t total = 0;
+    for (const auto& [family, value] : best) total += value;
+    return total;
+}
+
+int64_t facilityFamilyBest(const Rules& r, std::span<const uint32_t> facilities, AbilityKind k) {
+    std::map<int, int64_t> best;
+    for (uint32_t f : facilities) {
+        const auto ab = r.facilityAbilities(f);
+        if (!hasAbility(ab, k)) continue;
+        const int family = r.facility(f).family;
+        const int64_t value = bestValue1(ab, k);
+        auto it = best.find(family);
+        if (it == best.end()) best.emplace(family, value);
+        else it->second = std::max(it->second, value);
+    }
+    int64_t total = 0;
+    for (const auto& [family, value] : best) total += value;
+    return total;
+}
+
 bool hasIntactComponent(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
-    if (v.status == VehicleStatus::Mothballed) return false;
-    const Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (hasAbility(r.componentAbilities(d.entries[i].component), k) && entryIntact(r, s, v, i)) return true;
-    return false;
+    bool found = false;
+    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) { found = found || hasAbility(r.componentAbilities(e.component), k); });
+    return found;
 }
 
 bool designHasComponent(const Rules& r, const Design& d, AbilityKind k) {
@@ -397,45 +478,96 @@ bool designHasComponent(const Rules& r, const Design& d, AbilityKind k) {
 int64_t hullSum(const Rules& r, const Design& d, AbilityKind k) { return sumValue1(r.hullAbilities(d.hull), k); }
 
 bool vehicleArmed(const Rules& r, const GameState& s, const Vehicle& v) {
-    if (v.status == VehicleStatus::Mothballed) return false;
-    const Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (r.component(d.entries[i].component).isWeapon() && entryIntact(r, s, v, i)) return true;
+    bool armed = false;
+    forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) {
+        const ruleset::Component& c = r.component(e.component);
+        armed = armed || (c.isWeapon() && c.weapon.kind != WeaponKind::Warhead);
+    });
+    return armed;
+}
+
+// ---- Mounts ------------------------------------------------------------------------------------------
+
+bool mountApplies(const Rules& r, const DesignEntry& e) {
+    if (e.mount < 0 || static_cast<size_t>(e.mount) >= r.data().weaponMounts.size()) return false;
+    // The damage, range, structure and shield effects apply only to components
+    // that meet the mount's weapon type requirement (confirmed: binary). "Any"
+    // means any weapon, "None" non-weapons only. The family requirement is not
+    // read by the data loader yet.
+    const ruleset::WeaponMount& m = r.data().weaponMounts[static_cast<size_t>(e.mount)];
+    const ruleset::Component& c = r.component(e.component);
+    const std::string& req = m.weaponTypeRequirement;
+    if (req.empty() || datafile::keysEqual(req, "Any")) return c.isWeapon();
+    if (datafile::keysEqual(req, "None")) return !c.isWeapon();
+    if (!c.isWeapon()) return false;
+    switch (c.weapon.kind) {
+        case WeaponKind::DirectFire: return datafile::keysEqual(req, "Direct Fire");
+        case WeaponKind::Seeking: return datafile::keysEqual(req, "Seeking");
+        case WeaponKind::PointDefense: return datafile::keysEqual(req, "Point-Defense");
+        case WeaponKind::Warhead: return datafile::keysEqual(req, "Warhead");
+        case WeaponKind::None: break;
+    }
     return false;
 }
 
-bool needsSupply(const Rules& r, const GameState& s, const Vehicle& v) {
-    if (hasIntactComponent(r, s, v, AbilityKind::QuantumReactor)) return false;
-    const Design& d = s.design(v.design);
-    int64_t capacity = hullSum(r, d, AbilityKind::SupplyStorage);
-    for (const DesignEntry& e : d.entries) capacity += sumValue1(r.componentAbilities(e.component), AbilityKind::SupplyStorage);
-    return capacity > 0;
+int combatStructure(const Rules& r, const DesignEntry& e) {
+    const int base = r.component(e.component).structure;
+    if (!mountApplies(r, e)) return base;
+    const ruleset::WeaponMount& m = r.data().weaponMounts[static_cast<size_t>(e.mount)];
+    return static_cast<int>(xmath::pctRound(base, m.structurePercent));
 }
 
-int supplyPerShot(const Rules& r, const GameState& s, const Vehicle& v, const DesignEntry& e) {
-    int64_t use = mounted(r, e).supplyUsed;
-    if (v.owner.valid() && v.owner.index() < s.empires.size())
-        use = use * (100 + r.traitValue(s.empire(v.owner).race, "Supply Cost")) / 100;
-    return static_cast<int>(std::max<int64_t>(0, use));
+int64_t mountedShield(const Rules& r, const DesignEntry& e, AbilityKind k) {
+    const int64_t value = sumValue1(r.componentAbilities(e.component), k);
+    if (value == 0 || !mountApplies(r, e)) return value;
+    return xmath::pctRound(value, mounted(r, e).shieldPercent);
+}
+
+// ---- Supply ------------------------------------------------------------------------------------------
+
+bool unlimitedSupply(const Rules& r, const GameState& s, const Vehicle& v) {
+    return typeOf(r, s, v) == VehicleType::Base || hasIntactComponent(r, s, v, AbilityKind::QuantumReactor);
+}
+
+bool usesSupply(const Rules& r, const GameState& s, const Vehicle& v) {
+    const VehicleType t = typeOf(r, s, v);
+    if (t != VehicleType::Ship && t != VehicleType::Fighter) return false;
+    return !unlimitedSupply(r, s, v);
+}
+
+bool hasSupplies(const Rules& r, const GameState& s, const Vehicle& v) { return !usesSupply(r, s, v) || v.supply > 0; }
+
+int supplyPerShot(const Rules& r, const DesignEntry& e) {
+    const int base = r.component(e.component).supplyUsed;
+    if (!mountApplies(r, e)) return std::max(0, base);
+    const ruleset::WeaponMount& m = r.data().weaponMounts[static_cast<size_t>(e.mount)];
+    return static_cast<int>(std::max<int64_t>(0, xmath::pctRound(base, m.supplyPercent)));
 }
 
 int remainingStructure(const Rules& r, const GameState& s, const Vehicle& v) {
     const Design& d = s.design(v.design);
     int total = 0;
-    for (size_t i = 0; i < d.entries.size(); ++i) {
-        const int st = entryStructure(r, d, i);
-        const int dmg = i < v.damage.size() ? v.damage[i] : 0;
-        total += std::max(0, st - dmg);
-    }
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (entryIntact(r, s, v, i)) total += combatStructure(r, d.entries[i]);
     return total;
 }
 
-int clampChance(int chance) { return std::clamp(chance, 1, 99); }
-
-int toHitChance(const CombatSettings& cs, int distance, int offense, int defense, int interference) {
-    return clampChance(cs.baseToHit - cs.toHitPerSquare * std::max(0, distance) + offense - defense - interference);
+int designStructure(const Rules& r, const Design& d) {
+    int total = 0;
+    for (const DesignEntry& e : d.entries) total += combatStructure(r, e);
+    return total;
 }
 
+// ---- To-hit ------------------------------------------------------------------------------------------
+
+int clampChance(int chance) { return std::clamp(chance, 1, 99); }
+
+int toHitChance(const CombatSettings& cs, int aimDistance, int offense, int defense, int interference) {
+    // One clamp, after every modifier (history 1.56).
+    return clampChance(cs.baseToHit + offense - defense - cs.toHitPerSquare * std::max(0, aimDistance) - interference);
+}
+
+// Racial traits that change combat to-hit would add here too; the stock data has none.
 int racialOffense(const Rules& r, const Empire& e) {
     const ruleset::Culture* c = r.culture(e.race);
     return (c ? c->spaceCombat : 0) + e.race.characteristic(Characteristic::Aggressiveness) - 100;
@@ -447,41 +579,43 @@ int racialDefense(const Rules& r, const Empire& e) {
 }
 
 int systemModifier(const Rules& r, const GameState& s, EmpireId e, SystemId sys, AbilityKind k) {
-    if (!e.valid() || !sys.valid()) return 0;
-    int64_t best = 0;
-    for (ObjectId o : s.galaxy.system(sys).objects) {
+    if (!e.valid() || !sys.valid() || sys.index() >= s.galaxy.systems.size()) return 0;
+    const StarSystem& system = s.galaxy.system(sys);
+    int64_t total = 0;
+    for (const auto& a : system.abilities)
+        if (parseAbilityKind(a.type) == k) total += a.number1();
+    // Each colony adds its best facility, each vehicle its best component (confirmed: binary).
+    for (ObjectId o : system.objects) {
         const Colony* c = s.colony(o);
         if (!c || c->owner != e || c->totalPopulation() <= 0) continue;
-        best = std::max(best, bestValue1(colonyAbilities(r, s, *c), k));
+        int64_t best = 0;
+        for (uint32_t f : c->facilities) best = std::max(best, bestValue1(r.facilityAbilities(f), k));
+        total += best;
     }
-    return static_cast<int>(best);
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == e && v.count > 0 && v.location.system == sys) total += componentBest(r, s, v, k);
+    return static_cast<int>(total);
 }
 
 namespace {
-int locationAbility(const GameState& s, Location where, AbilityKind sectorKind, std::optional<AbilityKind> systemKind) {
+int sectorAbility(const GameState& s, Location where, AbilityKind kind) {
     int64_t total = 0;
-    auto add = [&](const ruleset::Ability& a, bool sameSector) {
-        const auto k = parseAbilityKind(a.type);
-        if (!k) return;
-        if ((*k == sectorKind && sameSector) || (systemKind && *k == *systemKind)) total += a.number1();
-    };
     const StarSystem& sys = s.galaxy.system(where.system);
+    for (const auto& a : sys.abilities)
+        if (parseAbilityKind(a.type) == kind) total += a.number1();
     for (ObjectId o : sys.objects) {
         const SpaceObject& obj = s.galaxy.object(o);
-        for (const auto& a : obj.abilities) add(a, obj.sector == where.sector);
+        if (obj.sector != where.sector) continue;
+        for (const auto& a : obj.abilities)
+            if (parseAbilityKind(a.type) == kind) total += a.number1();
     }
-    for (const auto& a : sys.abilities) add(a, true);  // system-type abilities cover every sector
     return static_cast<int>(total);
 }
 } // namespace
 
-int sensorInterference(const GameState& s, Location where) {
-    return locationAbility(s, where, AbilityKind::SectorSensorInterference, AbilityKind::SystemSensorInterference);
-}
+int sensorInterference(const GameState& s, Location where) { return sectorAbility(s, where, AbilityKind::SectorSensorInterference); }
 
-int shieldDisruption(const GameState& s, Location where) {
-    return locationAbility(s, where, AbilityKind::SectorShieldDisruption, std::nullopt);
-}
+int shieldDisruption(const GameState& s, Location where) { return sectorAbility(s, where, AbilityKind::SectorShieldDisruption); }
 
 int fleetExperience(const GameState& s, const Vehicle& v) {
     if (!v.fleet.valid()) return 0;
@@ -489,24 +623,37 @@ int fleetExperience(const GameState& s, const Vehicle& v) {
     return f && f->owner == v.owner ? f->experience : 0;
 }
 
-int vehicleOffense(const Rules& r, const GameState& s, const Vehicle& v, bool unitGroup, int crewExperience) {
+namespace {
+int toHitTerms(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind plus, AbilityKind minus) {
     const Design& d = s.design(v.design);
-    int64_t o = componentBest(r, s, v, AbilityKind::CombatToHitOffensePlus) - componentBest(r, s, v, AbilityKind::CombatToHitOffenseMinus) +
-                hullSum(r, d, AbilityKind::CombatToHitOffensePlus) - hullSum(r, d, AbilityKind::CombatToHitOffenseMinus);
-    o += crewExperience;
-    if (!unitGroup) o += fleetExperience(s, v);
-    if (v.owner.valid() && v.owner.index() < s.empires.size()) o += racialOffense(r, s.empire(v.owner));
-    return static_cast<int>(o);
+    return static_cast<int>(familyBest(r, s, v, plus) - familyBest(r, s, v, minus) + hullSum(r, d, plus) - hullSum(r, d, minus));
+}
+int racial(const Rules& r, const GameState& s, EmpireId owner, bool offense) {
+    if (!owner.valid() || owner.index() >= s.empires.size()) return 0;
+    return offense ? racialOffense(r, s.empire(owner)) : racialDefense(r, s.empire(owner));
+}
+} // namespace
+
+int vehicleOffense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExp) {
+    if (v.status == VehicleStatus::Mothballed) return 0;
+    return toHitTerms(r, s, v, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus) + crewExperience + fleetExp +
+           racial(r, s, v.owner, true);
 }
 
-int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, bool unitGroup, int crewExperience) {
-    const Design& d = s.design(v.design);
-    int64_t o = componentBest(r, s, v, AbilityKind::CombatToHitDefensePlus) - componentBest(r, s, v, AbilityKind::CombatToHitDefenseMinus) +
-                hullSum(r, d, AbilityKind::CombatToHitDefensePlus) - hullSum(r, d, AbilityKind::CombatToHitDefenseMinus);
-    o += crewExperience;
-    if (!unitGroup) o += fleetExperience(s, v);
-    if (v.owner.valid() && v.owner.index() < s.empires.size()) o += racialDefense(r, s.empire(v.owner));
-    return static_cast<int>(o);
+int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, int crewExperience, int fleetExp) {
+    if (v.status == VehicleStatus::Mothballed) return 0;
+    return toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus) + crewExperience + fleetExp +
+           racial(r, s, v.owner, false);
+}
+
+int unitOffense(const Rules& r, const GameState& s, const Vehicle& v) {
+    return std::max(0, toHitTerms(r, s, v, AbilityKind::CombatToHitOffensePlus, AbilityKind::CombatToHitOffenseMinus)) +
+           racial(r, s, v.owner, true);
+}
+
+int unitDefense(const Rules& r, const GameState& s, const Vehicle& v) {
+    return std::max(0, toHitTerms(r, s, v, AbilityKind::CombatToHitDefensePlus, AbilityKind::CombatToHitDefenseMinus)) +
+           racial(r, s, v.owner, false);
 }
 
 // ---- Damage pipeline -----------------------------------------------------------------------------------
@@ -514,103 +661,126 @@ int vehicleDefense(const Rules& r, const GameState& s, const Vehicle& v, bool un
 DamageRule damageRule(DamageType t) {
     using S = DamageRule::Shields;
     DamageRule d;
+    auto onlyType = [&](Layer layer, S shields) {
+        d.only = layer;
+        d.shields = shields;
+        d.hullDamaging = false;
+        d.armorSpecials = false;
+    };
     switch (t) {
         case DamageType::Normal: break;
-        case DamageType::ShieldsOnly: d.shieldsOnly = true; break;
+        case DamageType::ShieldsOnly:
+            d.shieldsOnly = true;
+            d.hullDamaging = false;
+            d.armorSpecials = false;
+            break;
         case DamageType::SkipsNormalShields: d.shields = S::PhasedOnly; break;
-        case DamageType::SkipsAllShields: d.shields = S::None; break;
-        case DamageType::SkipsArmor: d.skipsArmor = true; break;
-        case DamageType::SkipsShieldsAndArmor:
-            d.shields = S::None;
+        case DamageType::SkipsAllShields: d.shields = S::Ignore; break;
+        case DamageType::SkipsArmor:
             d.skipsArmor = true;
+            d.armorSpecials = false;
             break;
-        case DamageType::QuadDamageToShields: d.shieldNum = 4; break;
-        case DamageType::DoubleDamageToShields: d.shieldNum = 2; break;
-        case DamageType::HalfDamageToShields: d.shieldDen = 2; break;
-        case DamageType::QuarterDamageToShields: d.shieldDen = 4; break;
-        case DamageType::OnlyEngines: d.only = Layer::Engines; break;  // shields still absorb (history 1.70)
-        case DamageType::OnlyWeapons:
-            d.shields = S::None;
-            d.only = Layer::Weapons;
+        case DamageType::SkipsShieldsAndArmor:
+            d.shields = S::Ignore;
+            d.skipsArmor = true;
+            d.armorSpecials = false;
             break;
-        case DamageType::OnlyShieldGenerators:
-            d.shields = S::None;
-            d.only = Layer::ShieldGenerators;
+        case DamageType::QuadDamageToShields: d.shieldMultiply = 4; break;
+        case DamageType::DoubleDamageToShields: d.shieldMultiply = 2; break;
+        case DamageType::HalfDamageToShields: d.shieldDivide = 2; break;
+        case DamageType::QuarterDamageToShields: d.shieldDivide = 4; break;
+        case DamageType::OnlyEngines: onlyType(Layer::Engines, S::Absorb); break;   // shields absorb (history 1.70)
+        case DamageType::OnlyWeapons: onlyType(Layer::Weapons, S::Ignore); break;
+        case DamageType::OnlyShieldGenerators: onlyType(Layer::ShieldGenerators, S::Ignore); break;
+        case DamageType::OnlyMasterComputers: onlyType(Layer::MasterComputers, S::Ignore); break;
+        case DamageType::OnlyBoardingParties: onlyType(Layer::BoardingParties, S::Absorb); break;
+        case DamageType::OnlySecurityStations: onlyType(Layer::SecurityStations, S::Absorb); break;
+        case DamageType::OnlyPlanetDestroyers: onlyType(Layer::PlanetDestroyers, S::Absorb); break;
+        case DamageType::PushesTarget:
+        case DamageType::PullsTarget:
+        case DamageType::RandomTargetMovement:
+            // The move comes first; then the value still counts as damage, shields first (confirmed: binary).
+            d.hullDamaging = false;
+            d.armorSpecials = false;
             break;
-        case DamageType::OnlyMasterComputers:
-            d.shields = S::None;
-            d.only = Layer::MasterComputers;
+        case DamageType::IncreaseReloadTime:
+        case DamageType::DisruptReloadTime:
+        case DamageType::CrewConversion:
+            d.shields = S::Ignore;
+            d.hullDamaging = false;
+            d.armorSpecials = false;
+            d.structural = false;
             break;
-        case DamageType::OnlyBoardingParties:
-            d.shields = S::None;
-            d.only = Layer::BoardingParties;
+        default:   // planet-only types: shields first, then the planet effect
+            d.hullDamaging = false;
+            d.armorSpecials = false;
+            d.structural = false;
             break;
-        case DamageType::OnlySecurityStations:
-            d.shields = S::None;
-            d.only = Layer::SecurityStations;
-            break;
-        case DamageType::OnlyPlanetDestroyers:
-            d.shields = S::None;
-            d.only = Layer::PlanetDestroyers;
-            break;
-        default: d.structural = false; break;  // special effects and planet-only types
     }
     return d;
 }
 
-void refreshShields(const Rules& r, const GameState& s, const Vehicle& v, ShieldState& sh, bool fill) {
+void refreshShields(const Rules& r, const GameState& s, const Vehicle& v, int systemBonus, int disruption, ShieldState& sh, bool fill) {
     int64_t normal = 0, phased = 0;
-    if (v.status != VehicleStatus::Mothballed && !(needsSupply(r, s, v) && v.supply <= 0)) {
-        const auto abilities = vehicleAbilities(r, s, v);   // mount Shield Percent already applied
-        normal = sumValue1(abilities, AbilityKind::ShieldGeneration) + sh.bonus;
-        phased = sumValue1(abilities, AbilityKind::PhasedShieldGeneration);
-        if (normal < 0) {
-            phased = std::max<int64_t>(0, phased + normal);
-            normal = 0;
+    if (v.status != VehicleStatus::Mothballed && hasSupplies(r, s, v)) {
+        const Design& d = s.design(v.design);
+        normal = hullSum(r, d, AbilityKind::ShieldGeneration);
+        phased = hullSum(r, d, AbilityKind::PhasedShieldGeneration);
+        for (size_t i = 0; i < d.entries.size(); ++i) {
+            if (!entryIntact(r, s, v, i)) continue;
+            normal += mountedShield(r, d.entries[i], AbilityKind::ShieldGeneration);
+            phased += mountedShield(r, d.entries[i], AbilityKind::PhasedShieldGeneration);
         }
     }
-    sh.maxNormal = static_cast<int>(normal);
-    sh.maxPhased = static_cast<int>(phased);
-    if (fill) {
-        sh.normal = sh.maxNormal;
-        sh.phased = sh.maxPhased;
-    } else {
-        sh.normal = std::min(sh.normal, sh.maxNormal);
-        sh.phased = std::min(sh.phased, sh.maxPhased);
-    }
+    int64_t total = normal + phased;
+    if (total > 0 && systemBonus > 0) total += systemBonus;
+    total = std::max<int64_t>(0, total - disruption);
+    sh.max = static_cast<int>(std::min<int64_t>(total, 1'000'000'000));
+    // One pool: normal if any normal generator, phased only if all are phased (confirmed: binary).
+    sh.kind = normal > 0 ? ShieldState::Kind::Normal : phased > 0 ? ShieldState::Kind::Phased : ShieldState::Kind::None;
+    sh.current = fill ? sh.max : std::min(sh.current, sh.max);
 }
 
-int absorbShields(ShieldState& sh, int damage, const DamageRule& rule) {
-    using S = DamageRule::Shields;
-    if (rule.shields == S::None || damage <= 0) return damage;
-    int64_t effective = int64_t{damage} * rule.shieldNum / rule.shieldDen;
-    int64_t drained = 0;
-    if (rule.shields == S::Both) {
-        const int64_t n = std::min<int64_t>(sh.normal, effective);
-        sh.normal -= static_cast<int>(n);
-        effective -= n;
-        drained += n;
+bool shieldsApply(const DamageRule& rule, const ShieldState& sh) {
+    switch (rule.shields) {
+        case DamageRule::Shields::Absorb: return true;
+        case DamageRule::Shields::PhasedOnly: return sh.kind == ShieldState::Kind::Phased;
+        case DamageRule::Shields::Ignore: return false;
     }
-    const int64_t p = std::min<int64_t>(sh.phased, effective);
-    sh.phased -= static_cast<int>(p);
-    drained += p;
-    if (rule.shieldsOnly) return 0;
-    const bool left = sh.phased > 0 || (rule.shields == S::Both && sh.normal > 0);
-    if (left) return 0;  // the shields held
-    const int64_t rawUsed = (drained * rule.shieldDen + rule.shieldNum - 1) / rule.shieldNum;  // (inferred) rounded up
-    return static_cast<int>(std::max<int64_t>(0, damage - rawUsed));
+    return true;
+}
+
+int64_t absorbShields(ShieldState& sh, int64_t damage, const DamageRule& rule) {
+    if (damage <= 0 || !shieldsApply(rule, sh)) return damage;
+    if (rule.shieldsOnly) {
+        sh.current -= static_cast<int>(std::min<int64_t>(sh.current, damage));
+        return 0;
+    }
+    if (rule.shieldMultiply != 1 || rule.shieldDivide != 1) {
+        // Against shields the value is scaled first; what is left is scaled
+        // back and continues as Normal (confirmed: binary). (inferred) With the
+        // shields already down there is nothing to scale against.
+        if (sh.current <= 0) return damage;
+        int64_t effective = damage * rule.shieldMultiply / rule.shieldDivide;
+        const int64_t absorbed = std::min<int64_t>(sh.current, effective);
+        sh.current -= static_cast<int>(absorbed);
+        effective -= absorbed;
+        return effective * rule.shieldDivide / rule.shieldMultiply;
+    }
+    const int64_t absorbed = std::min<int64_t>(sh.current, damage);
+    sh.current -= static_cast<int>(absorbed);
+    return damage - absorbed;
 }
 
 namespace {
 bool inLayer(const Rules& r, uint32_t component, Layer layer) {
     const auto ab = r.componentAbilities(component);
     switch (layer) {
-        case Layer::Armor: return hasAbility(ab, AbilityKind::Armor);
-        case Layer::Internal: return !hasAbility(ab, AbilityKind::Armor);
         case Layer::Engines: return hasAbility(ab, AbilityKind::StandardShipMovement);
         case Layer::Weapons: return r.component(component).isWeapon();
         case Layer::ShieldGenerators:
-            return hasAbility(ab, AbilityKind::ShieldGeneration) || hasAbility(ab, AbilityKind::PhasedShieldGeneration);
+            return hasAbility(ab, AbilityKind::ShieldGeneration) || hasAbility(ab, AbilityKind::PhasedShieldGeneration) ||
+                   hasAbility(ab, AbilityKind::PlanetShieldGeneration);
         case Layer::MasterComputers: return hasAbility(ab, AbilityKind::MasterComputer);
         case Layer::BoardingParties: return hasAbility(ab, AbilityKind::BoardingAttack);
         case Layer::SecurityStations: return hasAbility(ab, AbilityKind::BoardingDefense);
@@ -618,69 +788,113 @@ bool inLayer(const Rules& r, uint32_t component, Layer layer) {
     }
     return false;
 }
+
+bool isArmor(const Rules& r, uint32_t component) { return hasAbility(r.componentAbilities(component), AbilityKind::Armor); }
 } // namespace
 
-int damageLayer(const Rules& r, const GameState& s, Vehicle& v, Layer layer, int amount, Rng& rng) {
-    const Design& d = s.design(v.design);
+void destroyEntry(const Rules& r, const Design& d, Vehicle& v, size_t entry) {
     if (v.damage.size() < d.entries.size()) v.damage.resize(d.entries.size(), 0);
-    int used = 0;
-    std::vector<size_t> candidates;
-    while (amount > 0) {
-        candidates.clear();
-        for (size_t i = 0; i < d.entries.size(); ++i)
-            if (entryIntact(r, s, v, i) && inLayer(r, d.entries[i].component, layer)) candidates.push_back(i);
-        if (candidates.empty()) break;
-        // (inferred) the next component is picked uniformly among the intact ones (spec 04 §19 Q6).
-        const size_t pick = candidates[rng.below(candidates.size())];
-        const int room = entryStructure(r, d, pick) - v.damage[pick];
-        const int hit = std::min(room, amount);
-        v.damage[pick] += hit;
-        amount -= hit;
-        used += hit;
-    }
-    return used;
+    // At least the design's own structure figure, so entryIntact() agrees.
+    v.damage[entry] = std::max(combatStructure(r, d.entries[entry]), entryStructure(r, d, entry));
 }
 
-HitOutcome hitUnit(const Rules& r, const GameState& s, Vehicle& unit, ShieldState& sh, int damage, DamageType type, Rng& rng) {
-    HitOutcome out;
+int64_t destroyComponents(const Rules& r, const GameState& s, Vehicle& v, int64_t damage, DamageType type, Rng& rng) {
+    if (damage <= 0) return std::max<int64_t>(0, damage);
+    const Design& d = s.design(v.design);
+    if (v.damage.size() < d.entries.size()) v.damage.resize(d.entries.size(), 0);
     const DamageRule rule = damageRule(type);
-    if (!rule.structural || damage <= 0) return out;
-    const int before = sh.normal + sh.phased;
-    int rem = absorbShields(sh, std::min(damage, kMaxShotDamage), rule);
-    out.shieldDamage = before - (sh.normal + sh.phased);
-    if (rem <= 0) return out;
 
-    if (rule.only) {
-        const int used = damageLayer(r, s, unit, *rule.only, rem, rng);
-        out.structureDamage += used;
-        rem -= used;
-    } else if (rule.skipsArmor) {
-        // (inferred) with only armor left, armor-skipping damage is lost.
-        const int used = damageLayer(r, s, unit, Layer::Internal, rem, rng);
-        out.structureDamage += used;
-        rem -= used;
-    } else {
-        // Emissive armor ignores a hit no larger than its value (inferred: after shields, largest value counts).
-        const int64_t emissive = std::max(componentBest(r, s, unit, AbilityKind::EmissiveArmor),
-                                          hullSum(r, s.design(unit.design), AbilityKind::EmissiveArmor));
-        if (rem <= emissive) return out;
-        // Crystalline armor turns part of the hit into shield points (inferred: capped at the maximum).
-        const int64_t crystal = componentSum(r, s, unit, AbilityKind::ShieldGenerationFromDamage);
-        if (crystal > 0) {
-            const int conv = static_cast<int>(std::min<int64_t>({rem, crystal, std::max(0, sh.maxNormal - sh.normal)}));
-            sh.normal += conv;
-            rem -= conv;
-        }
-        int used = damageLayer(r, s, unit, Layer::Armor, rem, rng);
-        out.structureDamage += used;
-        rem -= used;
-        used = damageLayer(r, s, unit, Layer::Internal, rem, rng);
-        out.structureDamage += used;
-        rem -= used;
+    // Candidates, narrowed by the damage type (confirmed: binary).
+    struct Candidate {
+        size_t entry = 0;
+        int64_t structure = 0;
+        bool armor = false;
+    };
+    std::vector<Candidate> pool;
+    for (size_t i = 0; i < d.entries.size(); ++i) {
+        if (!entryIntact(r, s, v, i)) continue;
+        const uint32_t c = d.entries[i].component;
+        if (rule.only && !inLayer(r, c, *rule.only)) continue;
+        pool.push_back({i, combatStructure(r, d.entries[i]), isArmor(r, c)});
     }
-    out.destroyed = vehicleDestroyed(r, s, unit);
-    if (out.destroyed) out.excess = std::max(0, rem);
-    else refreshShields(r, s, unit, sh, false);  // lost generators lower the maximum (inferred: current is capped)
+    if (rule.skipsArmor && !rule.only) {
+        // Armor-skipping damage reaches armor only once nothing else is left.
+        const bool other = std::any_of(pool.begin(), pool.end(), [](const Candidate& c) { return !c.armor; });
+        if (other) std::erase_if(pool, [](const Candidate& c) { return c.armor; });
+    }
+    if (pool.empty()) return damage;
+    // Nothing can fall when the hit is smaller than every part that could come first.
+    const bool anyArmor = std::any_of(pool.begin(), pool.end(), [](const Candidate& c) { return c.armor; });
+    int64_t smallest = INT64_MAX;
+    for (const Candidate& c : pool)
+        if (!anyArmor || c.armor) smallest = std::min(smallest, c.structure);
+    if (damage < smallest) return damage;
+
+    // The order: draws weighted by structure; armor goes to the front, the rest to the back.
+    std::deque<Candidate> queue;
+    while (!pool.empty()) {
+        int64_t total = 0;
+        for (const Candidate& c : pool) total += std::max<int64_t>(0, c.structure);
+        size_t pick = 0;
+        if (total > 0) {
+            int64_t roll = static_cast<int64_t>(rng.below(static_cast<uint64_t>(total)));
+            for (size_t k = 0; k < pool.size(); ++k) {
+                roll -= std::max<int64_t>(0, pool[k].structure);
+                if (roll < 0) {
+                    pick = k;
+                    break;
+                }
+            }
+        }
+        if (pool[pick].armor) queue.push_front(pool[pick]);
+        else queue.push_back(pool[pick]);
+        pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(pick));
+    }
+    // Whole components fall while the damage covers them; the first it cannot destroy stops it.
+    for (const Candidate& c : queue) {
+        if (damage < c.structure) break;
+        destroyEntry(r, d, v, c.entry);
+        damage -= c.structure;
+    }
+    return damage;
+}
+
+HitResult hitVehicle(const Rules& r, const GameState& s, Vehicle& v, ShieldState& sh, int64_t& pool, int64_t damage, DamageType type,
+                     Rng& rng) {
+    HitResult out;
+    const DamageRule rule = damageRule(type);
+    if (!rule.structural || damage < 0) return out;
+    const int64_t hit = damage;   // after the system damage modifier, without the pool
+    const int64_t poolBefore = pool;
+    if (rule.hullDamaging) {
+        damage += pool;
+        pool = 0;
+    }
+    const int before = sh.current;
+    damage = absorbShields(sh, damage, rule);
+    out.shieldDamage = before - sh.current;
+    if (rule.shieldsOnly || damage <= 0) return out;
+    if (rule.armorSpecials) {
+        // Crystalline armor turns part of what got through into shields, up to the maximum (confirmed: binary).
+        const int64_t crystal =
+            componentSum(r, s, v, AbilityKind::ShieldGenerationFromDamage) + hullSum(r, s.design(v.design), AbilityKind::ShieldGenerationFromDamage);
+        if (crystal > 0 && sh.max > 0) sh.current = static_cast<int>(std::min<int64_t>(sh.max, sh.current + std::min(crystal, damage)));
+        // Emissive armor: a hit no larger than its value does nothing to the hull, a larger one loses it.
+        const int64_t emissive = std::max(componentBest(r, s, v, AbilityKind::EmissiveArmor),
+                                          bestValue1(r.hullAbilities(s.design(v.design).hull), AbilityKind::EmissiveArmor));
+        if (emissive > 0) {
+            if (hit <= emissive) {
+                pool = poolBefore;
+                return out;
+            }
+            damage -= emissive;
+            if (damage <= 0) return out;
+        }
+    }
+    out.reached = damage;
+    const int64_t left = destroyComponents(r, s, v, damage, type, rng);
+    if (rule.hullDamaging) pool = left;   // the "Only" and other types lose what is left
+    out.destroyed = vehicleDestroyed(r, s, v);
     return out;
 }
 
@@ -700,7 +914,7 @@ bool canAffectVehicle(const Rules& r, const GameState& s, const Vehicle& v, cons
         case DamageType::RandomTargetMovement: return true;
         default: break;
     }
-    if (rule.shieldsOnly) return sh.normal + sh.phased > 0;
+    if (rule.shieldsOnly) return sh.current > 0;
     if (rule.only) {
         const Design& d = s.design(v.design);
         for (size_t i = 0; i < d.entries.size(); ++i)
@@ -710,10 +924,61 @@ bool canAffectVehicle(const Rules& r, const GameState& s, const Vehicle& v, cons
     return true;
 }
 
-void restoreRegeneratingArmor(const Rules& r, const GameState& s, Vehicle& v) {
+int64_t unitHitPoints(const Rules& r, const Design& d, DamageType type, bool shielded) {
+    int64_t normal = hullSum(r, d, AbilityKind::ShieldGeneration), phased = hullSum(r, d, AbilityKind::PhasedShieldGeneration);
+    for (const DesignEntry& e : d.entries) {
+        normal += mountedShield(r, e, AbilityKind::ShieldGeneration);
+        phased += mountedShield(r, e, AbilityKind::PhasedShieldGeneration);
+    }
+    const VehicleType t = r.hull(d.hull).type;
+    int times = t == VehicleType::Fighter || t == VehicleType::Troop || t == VehicleType::WeaponPlatform ? 2 : 1;
+    ShieldState kind;
+    kind.kind = normal > 0 ? ShieldState::Kind::Normal : phased > 0 ? ShieldState::Kind::Phased : ShieldState::Kind::None;
+    if (!shieldsApply(damageRule(type), kind)) --times;   // counted once less when the type skips shields
+    if (!shielded) times = 0;
+    return designStructure(r, d) + (normal + phased) * times;
+}
+
+int64_t restoreRegeneratingArmor(const Rules& r, const GameState& s, Vehicle& v, int64_t budget) {
     const Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size() && i < v.damage.size(); ++i)
-        if (hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::ArmorRegeneration)) v.damage[i] = 0;
+    int64_t used = 0;
+    for (size_t i = 0; i < d.entries.size() && i < v.damage.size(); ++i) {
+        if (entryIntact(r, s, v, i) || !hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::ArmorRegeneration)) continue;
+        const int64_t cost = combatStructure(r, d.entries[i]);
+        if (cost > budget - used) break;   // (inferred) restored strictly in design order
+        v.damage[i] = 0;
+        used += cost;
+    }
+    return used;
+}
+
+bool hasDestroyedRegeneratingArmor(const Rules& r, const GameState& s, const Vehicle& v) {
+    const Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (!entryIntact(r, s, v, i) && hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::ArmorRegeneration)) return true;
+    return false;
+}
+
+void addExperience(int& whole, int& tenths, int gainTenths) {
+    const int64_t before = int64_t{whole} * 10 + tenths;
+    const int64_t cap = int64_t{kMaxCombatExperience} * 10;
+    const int64_t after = std::max(before, std::min(cap, before + gainTenths));   // a gain past 50 sets it to 50
+    whole = static_cast<int>(after / 10);
+    tenths = static_cast<int>(after % 10);
+}
+
+// ---- Who is in a sector --------------------------------------------------------------------------------
+
+bool arrivedThisTurn(const GameState& s, const Vehicle& v) {
+    return v.cameFromTurn == s.turn && v.cameFrom.system.valid() && v.cameFrom != v.location;
+}
+
+std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v) {
+    if (!arrivedThisTurn(s, v) || v.cameFrom.system != v.location.system) return {0, 0};
+    const int dx = v.cameFrom.sector.x - v.location.sector.x;
+    const int dy = v.cameFrom.sector.y - v.location.sector.y;
+    if (std::max(std::abs(dx), std::abs(dy)) != 1) return {0, 0};   // (inferred) not a neighbour: the centre
+    return {dx, dy};
 }
 
 Forces battleForces(const Rules& r, const GameState& s, Location where) {
@@ -733,27 +998,34 @@ Forces battleForces(const Rules& r, const GameState& s, Location where) {
         }
     std::sort(present.begin(), present.end());
     present.erase(std::unique(present.begin(), present.end()), present.end());
-    // A vehicle joins when a hostile empire present sees it; planets cannot hide.
-    std::vector<EmpireId> active;
+    // A battle starts when two hostile empires present see each other; planets cannot hide (spec 04 §2).
+    std::vector<EmpireId> seen;
     for (const Vehicle* v : vehicles)
         for (EmpireId b : present)
             if (b != v->owner && enemies(s, b, v->owner) && visibleTo(r, s, b, *v)) {
-                f.vehicles.push_back(v->id);
-                active.push_back(v->owner);
+                seen.push_back(v->owner);
                 break;
             }
-    for (ObjectId o : f.colonies) active.push_back(s.colony(o)->owner);
-    std::sort(active.begin(), active.end());
-    active.erase(std::unique(active.begin(), active.end()), active.end());
-    for (EmpireId a : active)
-        for (EmpireId b : active)
-            if (a != b && enemies(s, a, b)) {
-                f.empires.push_back(a);
-                break;
-            }
-    auto participates = [&](EmpireId e) { return std::binary_search(f.empires.begin(), f.empires.end(), e); };
-    std::erase_if(f.vehicles, [&](VehicleId id) { return !participates(s.vehicle(id)->owner); });
-    std::erase_if(f.colonies, [&](ObjectId o) { return !participates(s.colony(o)->owner); });
+    for (ObjectId o : f.colonies) seen.push_back(s.colony(o)->owner);
+    std::sort(seen.begin(), seen.end());
+    seen.erase(std::unique(seen.begin(), seen.end()), seen.end());
+    for (EmpireId a : seen)
+        for (EmpireId b : seen)
+            if (a < b && enemies(s, a, b)) f.battle = true;
+    if (!f.battle) {
+        f.colonies.clear();
+        return f;
+    }
+    // Once it starts, every owned object in the sector is a piece (confirmed: binary; history 1.28).
+    f.empires = present;
+    for (const Vehicle* v : vehicles) f.vehicles.push_back(v->id);
+    for (ObjectId o : s.galaxy.system(where.system).objects) {
+        const SpaceObject& obj = s.galaxy.object(o);
+        if (obj.sector != where.sector) continue;
+        const bool obstacle = obj.kind == ObjectKind::Star || obj.kind == ObjectKind::WarpPoint || obj.kind == ObjectKind::Comet ||
+                              (obj.kind == ObjectKind::Planet && !s.colony(o));
+        if (obstacle) f.obstacles.push_back(o);
+    }
     return f;
 }
 
@@ -765,119 +1037,153 @@ std::string sectorName(const GameState& s, Location where) {
 
 // ---- Mines (spec 04 §10.6) ---------------------------------------------------------------------------
 
-bool minesCanStrike(const Rules& r, const GameState& s, Location where) {
-    const CombatSettings cs = loadSettings(r);
-    const auto here = s.vehiclesAt(where);
-    for (const Vehicle* m : here) {
-        if (m->count <= 0 || typeOf(r, s, *m) != VehicleType::Mine) continue;
-        for (const Vehicle* v : here) {
-            if (v->count <= 0 || !mineMayHit(cs, typeOf(r, s, *v)) || !enemies(s, m->owner, v->owner)) continue;
-            ShieldState sh;
-            sh.bonus = -shieldDisruption(s, where);
-            refreshShields(r, s, *v, sh, true);
-            if (!mineWarheads(r, s, *m, *v, sh).empty()) return true;
-        }
+std::vector<std::vector<VehicleId>> enteringGroups(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering) {
+    std::vector<std::vector<VehicleId>> groups;
+    auto eligible = [&](const Vehicle& v) {
+        return v.location == where && v.count > 0 && v.owner.valid() && typeOf(r, s, v) != VehicleType::Mine;
+    };
+    if (!entering.empty()) {
+        std::vector<VehicleId> g;
+        for (VehicleId id : entering)
+            if (const Vehicle* v = s.vehicle(id); v && eligible(*v)) g.push_back(id);
+        if (!g.empty()) groups.push_back(std::move(g));
+        return groups;
     }
+    std::vector<const Vehicle*> all, moved;
+    for (const Vehicle& v : s.vehicles)
+        if (eligible(v)) {
+            all.push_back(&v);
+            if (arrivedThisTurn(s, v)) moved.push_back(&v);
+        }
+    const std::vector<const Vehicle*>& base = moved.empty() ? all : moved;
+    std::map<uint32_t, std::vector<VehicleId>> byOwner;
+    for (const Vehicle* v : base) byOwner[v->owner.value].push_back(v->id);
+    for (auto& [owner, ids] : byOwner) groups.push_back(std::move(ids));
+    return groups;
+}
+
+namespace {
+// Minefields that strike this group: hostile to every vehicle in it; a vehicle
+// of the owner or of an empire at Non-Aggression or better stops the field (confirmed: binary).
+std::vector<VehicleId> activeMinefields(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> group) {
+    std::vector<VehicleId> out;
+    for (const Vehicle& m : s.vehicles) {
+        if (m.location != where || m.count <= 0 || !m.owner.valid() || typeOf(r, s, m) != VehicleType::Mine) continue;
+        bool friendly = false;
+        for (VehicleId id : group)
+            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !enemies(s, m.owner, v->owner))) friendly = true;
+        if (!friendly) out.push_back(m.id);
+    }
+    return out;
+}
+} // namespace
+
+bool minesCanStrike(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering) {
+    if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return false;
+    const CombatSettings cs = loadSettings(r);
+    for (const std::vector<VehicleId>& group : enteringGroups(r, s, where, entering))
+        for (VehicleId mid : activeMinefields(r, s, where, group))
+            for (VehicleId id : group) {
+                const Vehicle& v = *s.vehicle(id);
+                if (mineMayHit(cs, typeOf(r, s, v)) && !mineWarheads(r, s, *s.vehicle(mid), v).empty()) return true;
+            }
     return false;
 }
 
-void resolveMines(TurnContext& ctx, Location where, Rng& rng) {
+void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> entering, Rng& rng) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     const CombatSettings cs = loadSettings(r);
-    std::vector<VehicleId> mines, victims;
-    for (const Vehicle& v : s.vehicles) {
-        if (v.location != where || v.count <= 0 || !v.owner.valid()) continue;
-        if (typeOf(r, s, v) == VehicleType::Mine) mines.push_back(v.id);
-    }
-    if (mines.empty()) return;
-    for (const Vehicle& v : s.vehicles) {
-        if (v.location != where || v.count <= 0 || !v.owner.valid() || !mineMayHit(cs, typeOf(r, s, v))) continue;
-        for (VehicleId m : mines)
-            if (enemies(s, s.vehicle(m)->owner, v.owner)) {
-                victims.push_back(v.id);
-                break;
-            }
-    }
-    if (victims.empty()) return;
+    for (const std::vector<VehicleId>& group : enteringGroups(r, s, where, entering)) {
+        const std::vector<VehicleId> fields = activeMinefields(r, s, where, group);
+        if (fields.empty()) continue;
+        const EmpireId victimOwner = s.vehicle(group.front())->owner;
 
-    // Sweepers of each victim empire clear mines first.
-    std::vector<EmpireId> sweeping;
-    for (VehicleId id : victims) sweeping.push_back(s.vehicle(id)->owner);
-    std::sort(sweeping.begin(), sweeping.end());
-    sweeping.erase(std::unique(sweeping.begin(), sweeping.end()), sweeping.end());
-    for (EmpireId e : sweeping) {
+        // The group's own uncloaked sweepers clear mines first (confirmed: binary).
         int64_t capacity = 0;
-        for (const Vehicle& v : s.vehicles)
-            if (v.location == where && v.owner == e && v.count > 0) capacity += componentSum(r, s, v, AbilityKind::MineSweeping) * v.count;
-        int swept = 0;
-        for (VehicleId m : mines) {
-            Vehicle* mv = s.vehicle(m);
-            if (capacity <= 0) break;
-            if (!enemies(s, mv->owner, e)) continue;
-            const int n = static_cast<int>(std::min<int64_t>(capacity, mv->count));
-            mv->count -= n;
-            capacity -= n;
-            swept += n;
-            if (n > 0)
-                ctx.log(mv->owner, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
-                        std::format("{} of our mines were cleared by enemy sweepers.", n), where);
+        for (VehicleId id : group) {
+            const Vehicle& v = *s.vehicle(id);
+            if (v.status != VehicleStatus::Cloaked) capacity += componentSum(r, s, v, AbilityKind::MineSweeping) * v.count;
         }
-        if (swept > 0)
-            ctx.log(e, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
-                    std::format("Our sweepers cleared {} enemy mines.", swept), where);
-    }
-
-    for (VehicleId id : victims) {
-        Vehicle* v = s.vehicle(id);
-        if (!v || v->count <= 0) continue;
-        ShieldState sh;
-        sh.bonus = -shieldDisruption(s, where);
-        refreshShields(r, s, *v, sh, true);   // (inferred) shields are up when the mines strike
-        const bool unit = isUnitType(typeOf(r, s, *v));
-        int strikes = 0, unitsLost = 0;
-        for (VehicleId mid : mines) {
+        std::map<uint32_t, int> sweptBy;   // minefield owner -> mines lost
+        for (VehicleId mid : fields) {
+            if (capacity <= 0) break;
             Vehicle* m = s.vehicle(mid);
-            if (m->count <= 0 || !enemies(s, m->owner, v->owner)) continue;
-            const std::vector<size_t> warheads = mineWarheads(r, s, *m, *v, sh);
-            if (warheads.empty()) continue;   // a mine never detonates against a target it cannot hurt (history 1.70)
-            const Design& md = s.design(m->design);
-            const int lostBefore = unitsLost;
-            int used = 0;
-            while (m->count > 0 && v->count > 0) {
-                for (size_t w : warheads) {
-                    int dmg = std::min(kMaxShotDamage, weaponDamageAtRange(r, md.entries[w], 1));
-                    const DamageType t = parseDamageType(r.component(md.entries[w].component).weapon.damageType);
-                    while (dmg > 0 && v->count > 0) {
-                        const HitOutcome o = hitUnit(r, s, *v, sh, dmg, t, rng);
-                        if (!o.destroyed) break;
-                        --v->count;
-                        ++unitsLost;
-                        if (v->count <= 0) break;
-                        v->damage.assign(s.design(v->design).entries.size(), 0);
-                        refreshShields(r, s, *v, sh, true);
-                        dmg = o.excess;
-                    }
-                    if (v->count <= 0) break;
+            const int n = static_cast<int>(std::min<int64_t>(capacity, m->count));
+            m->count -= n;
+            capacity -= n;
+            sweptBy[m->owner.value] += n;
+        }
+        int sweptTotal = 0;
+        for (const auto& [owner, n] : sweptBy) {
+            if (n <= 0) continue;
+            sweptTotal += n;
+            ctx.log(EmpireId{owner}, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
+                    std::format("{} of our mines were cleared by enemy sweepers.", n), where);
+        }
+        if (sweptTotal > 0)
+            ctx.log(victimOwner, LogCategory::Combat, std::format("Mines swept at {}", sectorName(s, where)),
+                    std::format("Our sweepers cleared {} enemy mines.", sweptTotal), where);
+
+        // Each mine strikes one random vehicle of the group with its warheads,
+        // straight to the components; leftover damage is shared by the whole strike (history 1.70, 1.78).
+        int64_t pool = 0;
+        std::map<uint32_t, int> struck, lost;   // victim vehicle -> mines, units lost
+        for (VehicleId mid : fields) {
+            int used = 0, kills = 0;
+            while (s.vehicle(mid)->count > 0) {
+                const Vehicle& mine = *s.vehicle(mid);
+                std::vector<VehicleId> targets;
+                for (VehicleId id : group) {
+                    const Vehicle& v = *s.vehicle(id);
+                    if (v.count > 0 && mineMayHit(cs, typeOf(r, s, v)) && !mineWarheads(r, s, mine, v).empty()) targets.push_back(id);
                 }
-                --m->count;
+                if (targets.empty()) break;
+                Vehicle& victim = *s.vehicle(targets[rng.below(targets.size())]);
+                const std::vector<size_t> warheads = mineWarheads(r, s, mine, victim);
+                const Design& md = s.design(mine.design);
+                const Design& vd = s.design(victim.design);
+                for (size_t w : warheads) {
+                    if (victim.count <= 0) break;
+                    const DamageType t = parseDamageType(r.component(md.entries[w].component).weapon.damageType);
+                    int64_t dmg = weaponLargestDamage(r, md.entries[w]);
+                    const bool hull = damageRule(t).hullDamaging;
+                    if (hull) {
+                        dmg += pool;
+                        pool = 0;
+                    }
+                    const int64_t left = destroyComponents(r, s, victim, dmg, t, rng);
+                    if (hull) pool = left;
+                    if (vehicleDestroyed(r, s, victim)) {
+                        --victim.count;
+                        ++kills;
+                        ++lost[victim.id.value];
+                        if (victim.count > 0) victim.damage.assign(vd.entries.size(), 0);   // the next unit of the group
+                    }
+                }
+                ++struck[victim.id.value];
+                --s.vehicle(mid)->count;   // the mine is used up
                 ++used;
-                ++strikes;
             }
             if (used > 0) {
-                s.design(m->design).kills += unitsLost - lostBefore;
-                ctx.log(m->owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
-                        std::format("{} of our mines struck {}{}.", used, v->name, v->count <= 0 ? ", destroying it" : ""), where);
+                const Vehicle& m = *s.vehicle(mid);
+                s.design(m.design).kills += kills;
+                ctx.log(m.owner, LogCategory::Combat, std::format("Mines detonated at {}", sectorName(s, where)),
+                        std::format("{} of our mines struck {} enemy vehicles{}.", used, struck.size(),
+                                    kills > 0 ? std::format(", destroying {}", kills) : std::string{}),
+                        where);
             }
-            if (v->count <= 0) break;
         }
-        if (strikes == 0) continue;
-        s.design(v->design).lost += unitsLost;
-        ctx.log(v->owner, LogCategory::Combat, std::format("Mines at {}", sectorName(s, where)),
-                std::format("{} was struck by {} enemy mines{}.", v->name, strikes, v->count <= 0 ? " and destroyed" : ""), where);
-        if (unitsLost > 0 && !unit) {
-            ctx.mood(v->owner, "Any Ship Lost", {}, {}, unitsLost);
-            ctx.mood(v->owner, "Ship Lost in System", where.system, {}, unitsLost);
+        for (const auto& [id, strikes] : struck) {
+            const Vehicle& v = *s.vehicle(VehicleId{id});
+            const int unitsLost = lost[id];
+            s.design(v.design).lost += unitsLost;
+            ctx.log(v.owner, LogCategory::Combat, std::format("Mines at {}", sectorName(s, where)),
+                    std::format("{} was struck by {} enemy mines{}.", v.name, strikes, v.count <= 0 ? " and destroyed" : ""), where);
+            if (unitsLost > 0 && !isUnitType(typeOf(r, s, v))) {
+                ctx.mood(v.owner, "Any Ship Lost", {}, {}, unitsLost);
+                ctx.mood(v.owner, "Ship Lost in System", where.system, {}, unitsLost);
+            }
         }
     }
 }
@@ -888,25 +1194,28 @@ void resolveMines(TurnContext& ctx, Location where, Rng& rng) {
 
 bool combatPossible(const Rules& r, const GameState& s, Location where) {
     if (!where.system.valid() || where.system.index() >= s.galaxy.systems.size()) return false;
-    if (detail::minesCanStrike(r, s, where)) return true;
-    return detail::battleForces(r, s, where).empires.size() >= 2;
+    if (detail::minesCanStrike(r, s, where, {})) return true;
+    return detail::battleForces(r, s, where).battle;
 }
 
-int toHitPercent(const Rules& r, const GameState& s, const Vehicle& attacker, size_t weaponEntry, const Vehicle& defender, int range) {
+int toHitPercent(const Rules& r, const GameState& s, const Vehicle& attacker, size_t weaponEntry, const Vehicle& defender, int distance) {
     const Design& d = s.design(attacker.design);
     if (weaponEntry >= d.entries.size()) return 0;
     const ruleset::Component& c = r.component(d.entries[weaponEntry].component);
     if (!c.isWeapon()) return 0;
     if (c.weapon.kind == WeaponKind::Seeking || c.weapon.kind == WeaponKind::Warhead) return 100;
-    if (c.weapon.kind == WeaponKind::DirectFire && detail::hasIntactComponent(r, s, attacker, AbilityKind::WeaponsAlwaysHit)) return 100;
+    // Weapons Always Hit covers direct fire and point-defense (confirmed: binary).
+    if (detail::hasIntactComponent(r, s, attacker, AbilityKind::WeaponsAlwaysHit)) return 100;
     const CombatSettings cs = loadSettings(r);
     const bool aUnit = isUnitType(detail::typeOf(r, s, attacker));
     const bool dUnit = isUnitType(detail::typeOf(r, s, defender));
-    const int offense = detail::vehicleOffense(r, s, attacker, aUnit, attacker.experience) + mounted(r, d.entries[weaponEntry]).toHitModifier +
+    const int offense = (aUnit ? detail::unitOffense(r, s, attacker)
+                               : detail::vehicleOffense(r, s, attacker, attacker.experience, detail::fleetExperience(s, attacker))) +
+                        mounted(r, d.entries[weaponEntry]).toHitModifier +
                         detail::systemModifier(r, s, attacker.owner, attacker.location.system, AbilityKind::CombatModifierSystem);
-    const int defense = detail::vehicleDefense(r, s, defender, dUnit, defender.experience) +
-                        detail::systemModifier(r, s, defender.owner, defender.location.system, AbilityKind::CombatModifierSystem);
-    return detail::toHitChance(cs, range, offense, defense, detail::sensorInterference(s, attacker.location));
+    const int defense = dUnit ? detail::unitDefense(r, s, defender)
+                              : detail::vehicleDefense(r, s, defender, defender.experience, detail::fleetExperience(s, defender));
+    return detail::toHitChance(cs, distance, offense, defense, detail::sensorInterference(s, attacker.location));
 }
 
 // ---- Troops ----------------------------------------------------------------------------------------------
@@ -934,7 +1243,8 @@ int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet,
     if (locationOf(s.galaxy, planet) != v->location) return 0;
     const EmpireId troopOwner = s.design(design).owner;
     if (troopOwner == c->owner || !detail::enemies(s, troopOwner, c->owner)) return 0;
-    for (EmpireId e : invaders(r, s, *c))
+    const std::vector<EmpireId> already = invaders(r, s, *c);
+    for (EmpireId e : already)
         if (e != troopOwner) return 0;   // already contested by another empire (spec 04 §13)
     auto it = std::find_if(v->cargo.units.begin(), v->cargo.units.end(), [&](const UnitStack& u) { return u.design == design; });
     if (it == v->cargo.units.end() || it->count <= 0) return 0;
@@ -944,12 +1254,20 @@ int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet,
     auto dst = std::find_if(c->cargo.units.begin(), c->cargo.units.end(), [&](const UnitStack& u) { return u.design == design; });
     if (dst != c->cargo.units.end()) dst->count += n;
     else c->cargo.units.push_back({design, n});
+    // The first invading troops give the colony its militia pool (confirmed: binary).
+    if (already.empty() || c->militia < 0) c->militia = militiaCount(loadSettings(r), c->population);
     return n;
 }
 
 int militiaCount(const CombatSettings& cs, int64_t populationMillions) {
     if (populationMillions <= 0) return 0;
-    return static_cast<int>(std::max<int64_t>(1, populationMillions / std::max(1, cs.defendingUnitsPerPopulation)));
+    return static_cast<int>(std::min<int64_t>(INT32_MAX, populationMillions / std::max(1, cs.defendingUnitsPerPopulation)));
+}
+
+int militiaCount(const CombatSettings& cs, std::span<const PopulationGroup> population) {
+    int64_t total = 0;
+    for (const PopulationGroup& g : population) total += militiaCount(cs, g.millions);
+    return static_cast<int>(std::min<int64_t>(INT32_MAX, total));
 }
 
 } // namespace opense4::game::combat

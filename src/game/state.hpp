@@ -242,6 +242,7 @@ struct Colony {
     bool minister = false;
     bool homeworld = false;
     uint32_t foundedTurn = 0;
+    int militia = -1;                 // ground combat: militia left to raise; -1 = no invasion (spec 04 §13)
 
     int64_t totalPopulation() const {
         int64_t n = 0;
@@ -329,6 +330,7 @@ struct Vehicle {
     FleetId fleet;
     Cargo cargo;
     int experience = 0;
+    int experienceTenths = 0;       // tenths of a point beyond `experience` (0-9; combat gains, spec 04 §15)
     VehicleStatus status = VehicleStatus::Normal;
     bool minister = false;
     ConstructionQueue queue;        // used when the design has a Space Yard
@@ -336,6 +338,11 @@ struct Vehicle {
     ObjectId targetObject;
     uint32_t builtTurn = 0;
     uint32_t immobileUntil = 0;     // no movement while turn < this (sabotage/events, spec 05 §2.3)
+    // The sector the vehicle last left when it moved during turn `cameFromTurn`
+    // (spec 04 §3: attackers and start boxes). Movement records it on each step;
+    // it counts only while cameFromTurn == GameState::turn.
+    Location cameFrom;
+    uint32_t cameFromTurn = 0;
 };
 
 struct Fleet {
@@ -347,6 +354,7 @@ struct Fleet {
     uint32_t formation = 0;         // Formations.txt index
     uint32_t strategy = 0;          // owner's strategy index
     int experience = 0;
+    int experienceTenths = 0;       // tenths beyond `experience` (0-9)
     std::vector<Order> orders;
     bool repeatOrders = false;
     bool minister = false;
@@ -414,7 +422,7 @@ struct CombatEvent {
 };
 
 struct CombatPiece {
-    enum class Kind : uint8_t { Vehicle, Planet, UnitGroup, Seeker };
+    enum class Kind : uint8_t { Vehicle, Planet, UnitGroup, Seeker, Obstacle };
     Kind kind = Kind::Vehicle;
     EmpireId owner;
     VehicleId vehicle;
