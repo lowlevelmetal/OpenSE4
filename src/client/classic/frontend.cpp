@@ -89,53 +89,98 @@ public:
     }
 };
 
+// Tiles the star field over the whole window (the empire picker's backdrop).
+void starfield(MenuContext& ctx) {
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const ImVec2 size = ImGui::GetIO().DisplaySize;
+    dl->AddRectFilled({0, 0}, size, IM_COL32_BLACK);
+    const Sprite sky = ctx.art.image("Pictures/Game/Screens/1024X768/Starmap.bmp", false);
+    if (!sky) return;
+    const float tw = ctx.px(sky.size.x), th = ctx.px(sky.size.y);
+    for (float y = 0; y < size.y; y += th)
+        for (float x = 0; x < size.x; x += tw)
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sky.tex.value)), {x, y}, {x + tw, y + th}, {sky.uv.min.x, sky.uv.min.y},
+                         {sky.uv.max.x, sky.uv.max.y});
+}
+
 class QuickStartScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
-        background(ctx);
+        // The original's picker: a title and hint at the left, a framed two-column
+        // list of portraits with each race's name and description, and the
+        // Begin Game and Cancel buttons below it.
+        starfield(ctx);
+        const Painter p = ctx.painter();
         const auto& presets = ctx.rules->racePresets();
-        if (beginPanel(ctx, "##quick", Rect{{112, 90}, {912, 690}}, "Pick Empire")) {
-            ImGui::BeginChild("##races", ImVec2(0, -ctx.px(46)));
+        ImGui::SetNextWindowPos(ctx.at({0, 0}));
+        ImGui::SetNextWindowSize(ctx.size({kFrameW, kFrameH}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        if (ImGui::Begin("##quick", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                 ImGuiWindowFlags_NoBackground)) {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImGui::PushFont(ctx.fonts.bold, p.fontPx(kTitleSize));
+            dl->AddText(ctx.at({113, 84}), IM_COL32_WHITE, "Select Empire");
+            ImGui::PopFont();
+            ImGui::SetCursorPos(ctx.size({111, 126}));
+            ImGui::PushTextWrapPos(ctx.px(280));
+            ImGui::TextColored(kLabelBlue, "Choose the empire you will lead by clicking its portrait.");
+            ImGui::PopTextWrapPos();
+
+            const Rect box{{328, 85}, {912, 632}};
+            drawWindowFrame(p, dl, box, nullptr, 0);
+            ImGui::SetCursorPos(ctx.size({338, 95}));
+            ImGui::BeginChild("##races", ctx.size({566, 530}));
             int col = 0;
             for (size_t i = 0; i < presets.size(); ++i) {
                 if (presets[i].neutral) continue;
+                if (col++ % 2) ImGui::SameLine(ctx.px(277));
                 ImGui::PushID(int(i));
                 ImGui::BeginGroup();
-                const Sprite portrait = ctx.art.racePortrait(presets[i].folder);
+                const ImVec2 a = ImGui::GetCursorScreenPos();
+                const ImVec2 b{a.x + ctx.px(128), a.y + ctx.px(128)};
+                if (ImGui::InvisibleButton("##portrait", ctx.size({128, 128}))) chosen_ = int(i);
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) begin(ctx, i);
+                ImDrawList* cl = ImGui::GetWindowDrawList();
+                if (Sprite portrait = ctx.art.racePortrait(presets[i].folder))
+                    cl->AddImage(ImTextureRef(static_cast<ImTextureID>(portrait.tex.value)), a, b, {portrait.uv.min.x, portrait.uv.min.y},
+                                 {portrait.uv.max.x, portrait.uv.max.y});
                 const bool selected = int(i) == chosen_;
-                if (portrait) {
-                    if (ImGui::ImageButton("##p", ImTextureRef(static_cast<ImTextureID>(portrait.tex.value)), ctx.size({112, 112}),
-                                           ImVec2(portrait.uv.min.x, portrait.uv.min.y), ImVec2(portrait.uv.max.x, portrait.uv.max.y),
-                                           selected ? ImVec4(0.3f, 0.5f, 1.0f, 0.6f) : ImVec4(0, 0, 0, 0)))
-                        chosen_ = int(i);
-                } else if (ImGui::Button(presets[i].name.c_str(), ctx.size({112, 112}))) {
-                    chosen_ = int(i);
-                }
-                ImGui::TextColored(selected ? ImVec4(1, 1, 0.6f, 1) : ImVec4(0.8f, 0.85f, 0.95f, 1), "%s", presets[i].name.c_str());
+                cl->AddRect(a, b, selected ? IM_COL32(255, 220, 90, 255) : imColor(palette::kFrame), 0.0f, selected ? 2.0f : 1.0f);
+                ImGui::SameLine(0, ctx.px(5));
+                ImGui::BeginGroup();
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ctx.px(138));
+                const std::string name = presets[i].empireType.empty() ? presets[i].name : presets[i].name + " " + presets[i].empireType;
+                ImGui::TextUnformatted(name.c_str());
+                ImGui::PushFont(ctx.fonts.small, p.fontPx(kSmallSize));
+                ImGui::TextUnformatted(presets[i].description.c_str());
+                ImGui::PopFont();
+                ImGui::PopTextWrapPos();
+                ImGui::EndGroup();
                 ImGui::EndGroup();
                 ImGui::PopID();
-                if (++col % 6 != 0) ImGui::SameLine();
+                if (col % 2 == 0) ImGui::Dummy(ctx.size({0, 2}));
             }
             ImGui::EndChild();
-            ImGui::BeginDisabled(chosen_ < 0);
-            if (ImGui::Button("Begin Game", ctx.size({140, 34}))) {
-                auto setup = quickStartSetup(*ctx.rules, presets[size_t(chosen_)].folder, ctx.seed);
-                auto session = startLocalGame(ctx.rules, setup);
-                if (session) ctx.startGame(std::move(*session));
-                else error_ = session.error();
-            }
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel", ctx.size({140, 34}))) ctx.go(FrontId::Intro);
-            if (!error_.empty()) {
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", error_.c_str());
-            }
+
+            ImGui::SetCursorPos(ctx.size({608, 645}));
+            if (classicButton(p, "Begin Game", {148, 26}, 0, false, chosen_ >= 0)) begin(ctx, size_t(chosen_));
+            ImGui::SetCursorPos(ctx.size({761, 645}));
+            if (classicButton(p, "Cancel", {148, 26}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ctx.go(FrontId::Intro);
+            if (!error_.empty()) dl->AddText(ctx.at({328, 680}), IM_COL32(255, 128, 100, 255), error_.c_str());
         }
-        endPanel();
+        ImGui::End();
+        ImGui::PopStyleVar(2);
     }
 
 private:
+    void begin(MenuContext& ctx, size_t preset) {
+        auto setup = quickStartSetup(*ctx.rules, ctx.rules->racePresets()[preset].folder, ctx.seed);
+        auto session = startLocalGame(ctx.rules, setup);
+        if (session) ctx.startGame(std::move(*session));
+        else error_ = session.error();
+    }
+
     int chosen_ = -1;
     std::string error_;
 };

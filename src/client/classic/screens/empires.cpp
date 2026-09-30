@@ -130,7 +130,7 @@ public:
 private:
     enum class Tab { Treaty, Trade, Tariff };
     enum class Filter { All, Allies, Enemies, Us };
-    static constexpr int kPerPage = 5;
+    static constexpr int kPerPage = 4;
 
     void select(Tab t) {
         tab_ = t;
@@ -142,11 +142,10 @@ private:
         switch (tab_) {
             case Tab::Treaty:
                 heading(ui, "Treaties");
-                ImGui::SameLine();
-                if (known == 0) ImGui::TextColored(kTextDim, "No other empire met yet.");
-                else
-                    ImGui::TextColored(kTextDim, "%zu %s met. Click a portrait to send a message, right-click for its race report.", known,
-                                       known == 1 ? "empire" : "empires");
+                if (known > 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(kTextDim, "(right-click a portrait for its race report)");
+                }
                 break;
             case Tab::Trade:
                 heading(ui, "Trade income");
@@ -170,33 +169,84 @@ private:
     }
 
     void portraits(UiContext& ui) {
+        // The original's strip: a framed row of four portraits between the big page
+        // arrows; each empire's details are listed under its portrait.
         const game::GameState& s = ui.state();
         const auto known = knownEmpires(ui);
-        header(ui, known.size());
-        ImGui::Separator();
+        ImGui::TextColored(kTextBlue, "%zu Known Empires", known.size());
+        ImGui::SameLine();
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        const char* hint = "(click on a portrait to communicate with the empire)";
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(hint).x));
+        ImGui::TextColored(kTextBlue, "%s", hint);
+        ImGui::PopFont();
+
+        const int pages = std::max(1, int((known.size() + kPerPage - 1) / kPerPage));
+        page_ = std::clamp(page_, 0, pages - 1);
+        const ImVec2 a = ImGui::GetCursorScreenPos();
+        const float w = ImGui::GetContentRegionAvail().x, h = ui.px(130);
+        const float arrowW = ui.px(16), slotW = (w - 2 * arrowW) / kPerPage;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRect(a, {a.x + w, a.y + h}, imColor(palette::kFrame));
+        for (int c = 0; c <= kPerPage; ++c) {
+            const float x = a.x + arrowW + slotW * float(c);
+            dl->AddLine({x, a.y}, {x, a.y + h}, imColor(palette::kFrame));
+        }
+        auto arrow = [&](bool right, bool enabled) {
+            const ImVec2 at{right ? a.x + w - arrowW : a.x, a.y};
+            ImGui::SetCursorScreenPos(at);
+            ImGui::PushID(right ? "next" : "prev");
+            const bool clicked = ImGui::InvisibleButton("##arrow", ImVec2(arrowW, h)) && enabled;
+            const int state = !enabled ? 3 : ImGui::IsItemHovered() ? 1 : 0;
+            ImGui::PopID();
+            if (Sprite sp = ui.art.region("Pictures/Game/Buttons/BigLeftRightArrows.bmp", right ? 14 : 0, state * 50, 14, 50, false)) {
+                const ImVec2 p0{at.x + ui.px(1), at.y + (h - ui.px(50)) * 0.5f};
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(sp.tex.value)), p0, {p0.x + ui.px(14), p0.y + ui.px(50)}, {sp.uv.min.x, sp.uv.min.y},
+                             {sp.uv.max.x, sp.uv.max.y});
+            }
+            return clicked;
+        };
+        if (arrow(false, page_ > 0)) --page_;
+        if (arrow(true, page_ + 1 < pages)) ++page_;
+        for (int c = 0; c < kPerPage; ++c) {
+            const size_t i = size_t(page_ * kPerPage + c);
+            if (i >= known.size()) break;
+            const game::Empire& them = s.empire(known[i]);
+            const ImVec2 p{a.x + arrowW + slotW * float(c) + (slotW - ui.px(128)) * 0.5f, a.y + ui.px(1)};
+            ImGui::SetCursorScreenPos(p);
+            ImGui::PushID(int(i));
+            ImGui::InvisibleButton("##portrait", ui.size({128, 128}));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+            if (Sprite portrait = ui.art.racePortrait(them.race.style))
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(portrait.tex.value)), p, {p.x + ui.px(128), p.y + ui.px(128)},
+                             {portrait.uv.min.x, portrait.uv.min.y}, {portrait.uv.max.x, portrait.uv.max.y});
+            if (hovered) {
+                dl->AddRect(p, ImVec2(p.x + ui.px(128), p.y + ui.px(128)), IM_COL32(255, 208, 64, 255), 0.0f, 2.0f);
+                ImGui::SetTooltip("Left-click: Communicate\nRight-click: Race Report");
+            }
+            ScreenArgs args;
+            args.empire = them.id;
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) ui.open(ScreenId::Communicate, args);
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ui.open(ScreenId::RaceReport, args);
+        }
+        ImGui::SetCursorScreenPos({a.x, a.y + h + ui.px(4)});
         if (known.empty()) {
-            ImGui::Dummy(ui.size({0, 40}));
+            header(ui, 0);
+            ImGui::Dummy(ui.size({0, 10}));
             wrappedText("We have not made contact with any other empire yet. Our ships meet other empires when both are in the same "
                         "system and not cloaked.",
                         kTextDim);
             return;
         }
-        const int pages = int((known.size() + kPerPage - 1) / kPerPage);
-        page_ = std::clamp(page_, 0, pages - 1);
-        if (pages > 1) {
-            if (ImGui::ArrowButton("##prev", ImGuiDir_Left)) page_ = std::max(0, page_ - 1);
-            ImGui::SameLine();
-            ImGui::Text("%d / %d", page_ + 1, pages);
-            ImGui::SameLine();
-            if (ImGui::ArrowButton("##next", ImGuiDir_Right)) page_ = std::min(pages - 1, page_ + 1);
-        }
-        const float colW = ImGui::GetContentRegionAvail().x / kPerPage;
+        header(ui, known.size());
+        const float y0 = ImGui::GetCursorScreenPos().y;
         for (int c = 0; c < kPerPage; ++c) {
             const size_t i = size_t(page_ * kPerPage + c);
             if (i >= known.size()) break;
-            if (c > 0) ImGui::SameLine();
+            ImGui::SetCursorScreenPos({a.x + arrowW + slotW * float(c) + ui.px(3), y0});
             ImGui::PushID(int(i));
-            ImGui::BeginChild("##col", ImVec2(colW - ImGui::GetStyle().ItemSpacing.x, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+            ImGui::BeginChild("##col", ImVec2(slotW - ui.px(6), 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
             column(ui, s.empire(known[i]));
             ImGui::EndChild();
             ImGui::PopID();
@@ -205,22 +255,6 @@ private:
 
     void column(UiContext& ui, const game::Empire& them) {
         const game::Relation& rel = ui.me().relation(them.id);
-        // Portrait: left-click Communicate, right-click Race Report.
-        const float indent = std::max(0.0f, (ImGui::GetContentRegionAvail().x - ui.px(128)) * 0.5f);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
-        const ImVec2 p = ImGui::GetCursorScreenPos();
-        framedImage(ui, ui.art.racePortrait(them.race.style), {128, 128});
-        const bool hovered = ImGui::IsItemHovered();
-        if (hovered) {
-            ImGui::GetWindowDrawList()->AddRect(p, ImVec2(p.x + ui.px(128), p.y + ui.px(128)), IM_COL32(255, 208, 64, 255), 0.0f, 2.0f);
-            ImGui::SetTooltip("Left-click: Communicate\nRight-click: Race Report");
-        }
-        ScreenArgs a;
-        a.empire = them.id;
-        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) ui.open(ScreenId::Communicate, a);
-        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ui.open(ScreenId::RaceReport, a);
-
-        ImGui::Spacing();
         empireLabel(ui, them.id, true);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kTextDim, "%s %s", them.leaderTitle.c_str(), them.leaderName.c_str());

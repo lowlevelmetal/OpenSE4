@@ -20,6 +20,7 @@ struct RacePreset {
     std::string folder;        // art style, e.g. "Terran"
     bool neutral = false;
     std::string name;
+    std::string description;   // the short blurb shown when picking an empire
     std::string empireName, empireType, emperorName, emperorTitle;
     std::string biology, society, history;
     std::string demeanor, culture, happinessType, planetType, atmosphere, designNameFile;

@@ -50,6 +50,7 @@ void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset
         p.folder = folder.filename().string();
         p.neutral = neutral;
         p.name = field(r, "Name");
+        p.description = field(r, "Description");
         p.empireName = field(r, "Empire Name");
         p.empireType = field(r, "Empire Type");
         p.emperorName = field(r, "Emperor Name");

@@ -207,6 +207,29 @@ top and bottom. The Game Menu is 173×320 with no title strip.
   notes and hints in Futurist Small; field labels in blue with white values.
   Numbers have no digit grouping (26120, 500000).
 
+- Research: "Research Points Available" and the amount sit in the title strip;
+  the list of areas spans the content width with Current Level and Cost
+  columns (completed areas stay listed, dimmed, with "Complete" as the cost);
+  below it four project boxes side by side; clicking a project cancels it.
+- Empires: "N Known Empires" over a framed strip of four portraits between
+  the big page arrows; clicking a portrait opens Communicate.
+- Designs: a list of about 240 px on the left with lamps (green for the
+  selected design, blue otherwise) under design-type headings; the detail
+  shows the portrait, then the name with Size, Design Type and Date Created
+  stacked, then Cost, Movement, Shields, Cargo Space and Supply Capacity.
+- Intro: the intro picture is stretched to the whole screen. A black band
+  along the bottom holds two rows of four buttons across the full width
+  (26 px tall, 5 px apart): Quick Start, New Game, Resume Game (not
+  available on a first run), Load Game; Tutorial, Scenario, Credits, Quit
+  Game. The version is at the left over the picture, the loading state at
+  the right.
+- Quick Start's Select Empire: a star field; the title and a hint at the left;
+  a framed two-column list of 128 px portraits, each with the empire name and
+  its short description (the `Description` key of the race's general AI
+  file), in alphabetical order down the left column and then the right; Begin
+  Game and Cancel below. Only eight empires were listed although `Empires/`
+  holds 20 empire files; which rule picks them is an open question.
+
 **Fonts** (`Fonts/*.fon`, Windows 3.x raster fonts, character set 0):
 Futurist Medium (16 px cell, ascent 13, internal leading 3), Futurist small
 (12, 10, 2), SE4 Block 1 Large/Medium/Small (15/12/9 px, all capitals),
