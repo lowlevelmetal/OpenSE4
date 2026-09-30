@@ -163,8 +163,9 @@ public:
     }
 
 private:
-    // Writes the current quadrant, with the empires' capitals as their starting
-    // points, to <user data>/maps (our map format, docs/MAPS.md).
+    // Writes the current quadrant, with the starting points the game still holds
+    // (spec 01 §12: a loaded map's specific and unused common points; none for a
+    // generated game), to <user data>/maps (our map format, docs/MAPS.md).
     void saveMapPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({380, 0}));
         if (!ImGui::BeginPopupModal("Save Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;

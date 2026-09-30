@@ -162,6 +162,10 @@ TEST_CASE("integration: installed data set plays 60 turns (opt-in)") {
     setup.options.eventFrequency = 3;
     setup.options.maxEventSeverity = 3;
     setup.options.finiteResources = true;
+    // The invariants below hold after a simultaneous turn; between the players of
+    // a turn-based turn supply can still exceed a capacity cut by combat until the
+    // owner's upkeep (PARITY_GAPS, "Damage and supply").
+    setup.options.simultaneous = true;
     for (size_t i = 0; i < 5; ++i) {
         EmpireSetup e;
         e.preset = r.racePresets()[i * 2 % r.racePresets().size()].folder;

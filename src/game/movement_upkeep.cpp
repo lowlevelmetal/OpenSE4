@@ -120,7 +120,7 @@ size_t repairRank(const Rules& r, const Empire& e, const DesignEntry& entry) {
 
 int starsIn(const GameState& s, SystemId sys) {
     int n = 0;
-    for (ObjectId o : s.galaxy.system(sys).objects) n += s.galaxy.object(o).kind == ObjectKind::Star;
+    for (ObjectId o : s.galaxy.system(sys).objects) n += isStarKind(s.galaxy.object(o).kind);  // destroyed stars count (spec 01 §5.4)
     return n;
 }
 

@@ -289,7 +289,7 @@ TEST_CASE("maps: starting points place empires first, converting or creating pla
     CHECK(*x == *y);
 }
 
-TEST_CASE("maps: a game starts on a loaded map and Save Map records the capitals") {
+TEST_CASE("maps: a game starts on a loaded map; Save Map writes the starting points the game still holds") {
     const Rules& r = test::engineRules();
     // A quadrant of the engine's data set, saved and loaded as a map.
     QuadrantOptions qo;
@@ -300,10 +300,16 @@ TEST_CASE("maps: a game starts on a loaded map and Save Map records the capitals
     QuadrantMap m;
     m.name = "Engine test map";
     m.galaxy = gen->galaxy;
-    // Player 2's own point on system 3, and a common one on system 5, both at empty sectors.
+    // Player 2's own point on system 3 (listed twice: the last one counts), a
+    // point for an absent player 7, and common ones on systems 5 and 6, all at
+    // empty sectors.
     const Sector free3 = emptySectors(m.galaxy, SystemId{3u}).front();
+    const Sector other3 = emptySectors(m.galaxy, SystemId{3u}).back();
     const Sector free5 = emptySectors(m.galaxy, SystemId{5u}).front();
-    m.startingPoints = {{SystemId{5u}, free5, kCommonStart}, {SystemId{3u}, free3, 1}};
+    const Sector free6 = emptySectors(m.galaxy, SystemId{6u}).front();
+    const Sector free7 = emptySectors(m.galaxy, SystemId{7u}).front();
+    m.startingPoints = {{SystemId{5u}, free5, kCommonStart}, {SystemId{3u}, other3, 1}, {SystemId{3u}, free3, 1},
+                        {SystemId{7u}, free7, 6}, {SystemId{6u}, free6, kCommonStart}};
     auto loaded = mapFromText(r.data(), mapToText(r.data(), m));
     REQUIRE(loaded.has_value());
 
@@ -329,18 +335,29 @@ TEST_CASE("maps: a game starts on a loaded map and Save Map records the capitals
     const SpaceObject* second = capitalOf(EmpireId{1u});
     REQUIRE(first);
     REQUIRE(second);
-    // Player 1 has no specific point and takes the common one; player 2 its own.
-    CHECK(Location{first->system, first->sector} == Location{SystemId{5u}, free5});
+    // Player 1 has no specific point and takes one of the common ones; player 2
+    // the last point listed for it.
+    const bool onFive = first->system == SystemId{5u};
+    CHECK(Location{first->system, first->sector} == (onFive ? Location{SystemId{5u}, free5} : Location{SystemId{6u}, free6}));
     CHECK(Location{second->system, second->sector} == Location{SystemId{3u}, free3});
     CHECK(first->atmosphere == s->empires[0].race.atmosphere);
     CHECK(second->atmosphere == s->empires[1].race.atmosphere);
+    CHECK(s->empires[1].homeSystem == SystemId{3u});
 
-    // Save Map during the game: the quadrant with each capital as its player's point.
+    // Save Map during the game (spec 01 §12): every specific point of the map and
+    // the common point nobody took, in the map's order; no capitals.
     const QuadrantMap saved = mapOfGame(*s, "Later");
     CHECK(saved.galaxy.systems.size() == s->galaxy.systems.size());
-    REQUIRE(saved.startingPoints.size() == 2);
-    CHECK(saved.startingPoints[0] == StartingPoint{SystemId{5u}, free5, 0});
-    CHECK(saved.startingPoints[1] == StartingPoint{SystemId{3u}, free3, 1});
+    const StartingPoint unused = onFive ? StartingPoint{SystemId{6u}, free6, kCommonStart} : StartingPoint{SystemId{5u}, free5, kCommonStart};
+    std::vector<StartingPoint> held{{SystemId{3u}, other3, 1}, {SystemId{3u}, free3, 1}, {SystemId{7u}, free7, 6}};
+    held.insert(onFive ? held.end() : held.begin(), unused);
+    CHECK(saved.startingPoints == held);
+    CHECK(s->startingPoints == held);  // kept in the game (and its saves)
+
+    // A generated game holds no starting points.
+    const GameState generated = test::newEngineGame(3, 2, 12, true);
+    CHECK(generated.startingPoints.empty());
+    CHECK(mapOfGame(generated, "Plain").startingPoints.empty());
 }
 
 TEST_CASE("maps: Game Setup loads and saves maps; loading clears earlier starting points") {

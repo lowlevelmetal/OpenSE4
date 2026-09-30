@@ -339,6 +339,7 @@ game::GameState newEngineGame(uint64_t seed, int empires, int systems, bool allH
     game::GameSetup setup;
     setup.seed = seed;
     setup.options.systemCount = systems;
+    setup.options.simultaneous = true;  // the tests using this fixture were written for simultaneous turns
     for (int i = 0; i < empires; ++i) {
         game::EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);
@@ -392,6 +393,10 @@ game::Vehicle& addTestVehicle(game::GameState& s, const game::Rules& r, game::De
 }
 
 game::Colony& homeworld(game::GameState& s, game::EmpireId e) {
+    // Every starting planet is a capital; the homeworld is the one in the home system.
+    const game::SystemId home = s.empire(e).homeSystem;
+    for (auto& c : s.colonies)
+        if (c && c->owner == e && c->homeworld && (!home.valid() || s.galaxy.object(c->planet).system == home)) return *c;
     for (auto& c : s.colonies)
         if (c && c->owner == e && c->homeworld) return *c;
     FAIL("no homeworld");

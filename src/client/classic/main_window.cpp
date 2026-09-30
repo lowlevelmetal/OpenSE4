@@ -184,11 +184,15 @@ void MainWindow::reset(UiContext& ui) {
     clearSelection();
     showMovementLines_ = settings().showMovementLines;
     const game::GameState& s = ui.state();
-    for (const auto& c : s.colonies)
-        if (c && c->owner == ui.session.player() && c->homeworld) {
-            selectPlanet(ui, c->planet);
-            return;
-        }
+    // Every starting planet is a capital: the one in the home system first.
+    const game::EmpireId me = ui.session.player();
+    const game::SystemId home = me.valid() && me.index() < s.empires.size() ? s.empire(me).homeSystem : game::SystemId{};
+    for (const bool inHome : {true, false})
+        for (const auto& c : s.colonies)
+            if (c && c->owner == me && c->homeworld && (!inHome || s.galaxy.object(c->planet).system == home)) {
+                selectPlanet(ui, c->planet);
+                return;
+            }
     if (!s.galaxy.systems.empty()) shown_ = s.galaxy.systems.front().id;
 }
 

@@ -36,7 +36,14 @@ struct SetupFile {
     std::string gameName;
     std::optional<uint64_t> seed;
     std::string masterPasswordHash;  // hashPassword() of master_password
-    game::GameOptions options;
+    // A network or e-mail game is simultaneous unless the file says
+    // `simultaneous = false` (docs/MULTIPLAYER.md); a new local game is
+    // turn-based (GameOptions).
+    game::GameOptions options = [] {
+        game::GameOptions o;
+        o.simultaneous = true;
+        return o;
+    }();
     std::vector<SetupEmpire> empires;
 };
 

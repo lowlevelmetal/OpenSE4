@@ -34,6 +34,7 @@ bool usable(const GameState& s, EmpireId viewer, DesignId d) {
 }
 
 SystemId homeSystem(const GameState& s, EmpireId viewer) {
+    if (viewer.valid() && viewer.index() < s.empires.size() && s.empire(viewer).homeSystem.index() < s.galaxy.systems.size()) return s.empire(viewer).homeSystem;
     for (const auto& c : s.colonies)
         if (c && c->owner == viewer && c->homeworld) return s.galaxy.object(c->planet).system;
     return {};

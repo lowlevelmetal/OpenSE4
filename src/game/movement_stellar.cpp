@@ -54,11 +54,13 @@ AbilityKind abilityFor(StellarAction a) {
 }
 
 // A destroyed star is a star for every manipulation (spec 01 §5.4).
-bool isStar(ObjectKind k) { return k == ObjectKind::Star || k == ObjectKind::DestroyedStar; }
+bool isStar(ObjectKind k) { return isStarKind(k); }
 
 bool matches(ObjectKind want, ObjectKind have) { return want == have || (isStar(want) && isStar(have)); }
 
 // A colony lost to a stellar manipulation or event: its owner is told why.
+// `Homeworld Lost` goes with the colony type "Homeworld", which every starting
+// planet has (spec 01 §3.6, spec 02 §2).
 void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     GameState& s = ctx.state;
     Colony* c = s.colony(planet);
@@ -68,7 +70,7 @@ void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     ctx.log(owner, LogCategory::Events, std::format("{} lost", s.galaxy.object(planet).name), std::string(cause), locationOf(s.galaxy, planet));
     addHistory(s, owner, owner, std::format("Lost the colony on {}. {}", s.galaxy.object(planet).name, cause), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Lost", sys, planet);
-    if (c->homeworld) ctx.mood(owner, "Homeworld Lost", sys, planet);
+    if (keysEqual(c->colonyType, "Homeworld")) ctx.mood(owner, "Homeworld Lost", sys, planet);
     s.colonies[planet.index()].reset();
 }
 
@@ -152,7 +154,8 @@ public:
             noop_ = true;
             return {};
         }
-        if (hostileHere()) return "A hostile presence in the sector prevents it";
+        // Destroy Planet makes no such check (spec 01 §9, confirmed: binary).
+        if (action_ != StellarAction::DestroyPlanet && hostileHere()) return "A hostile presence in the sector prevents it";
         return conditions();
     }
 
@@ -192,17 +195,23 @@ protected:
         return firstReason.empty() ? "No working component for that manipulation" : firstReason;
     }
 
-    // A visible object in the sector owned by an empire without a treaty of
-    // Non-Aggression or better with us (war, non-intercourse, none, or no contact).
+    // An owner without a treaty of Non-Aggression or better with us (war,
+    // non-intercourse, none, or no contact).
     bool hostileTo(EmpireId other) const {
         if (!other.valid() || other == owner_ || other.index() >= cs_.empires.size()) return false;
         const Relation& rel = cs_.empire(owner_).relation(other);
         return !rel.contact || rel.treaty < Treaty::NonAggression;
     }
 
+    // A hostile object in the sector that we can see: a ship or base that is
+    // not mothballed, or a colonized planet or asteroid field. Unit groups
+    // (fighters, mines, satellites, drones) never block (spec 01 §9, §14 Q34,
+    // confirmed: binary).
     bool hostileHere() const {
         for (const Vehicle& v : cs_.vehicles)
-            if (alive(v) && v.location == here_ && hostileTo(v.owner) && sight::canSeeVehicle(r_, cs_, owner_, v)) return true;
+            if (alive(v) && v.location == here_ && v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r_, cs_, v)) &&
+                hostileTo(v.owner) && sight::canSeeVehicle(r_, cs_, owner_, v))
+                return true;
         for (ObjectId o : cs_.galaxy.system(here_.system).objects) {
             if (cs_.galaxy.object(o).sector != here_.sector) continue;
             if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, cs_, owner_, o)) return true;
@@ -210,12 +219,13 @@ protected:
         return false;
     }
 
-    // The object an order names, or the first object of that kind in the sector; visible to us.
-    std::optional<ObjectId> target(ObjectKind kind) const {
+    // The object an order names, or the first object of that kind in the sector;
+    // visible to us. `uncolonized`: only one without a colony.
+    std::optional<ObjectId> target(ObjectKind kind, bool uncolonized = false) const {
         auto usable = [&](ObjectId id) {
             const SpaceObject& obj = cs_.galaxy.object(id);
             return matches(kind, obj.kind) && inSystem(cs_.galaxy, id) && obj.system == here_.system && obj.sector == here_.sector &&
-                   sight::canSeePlanet(r_, cs_, owner_, id);
+                   (!uncolonized || !cs_.colony(id)) && sight::canSeePlanet(r_, cs_, owner_, id);
         };
         if (o_.object.valid() && o_.object.index() < cs_.galaxy.objects.size() && usable(o_.object)) return o_.object;
         for (ObjectId id : system().objects)
@@ -266,8 +276,9 @@ protected:
         const auto& rs = r_.data();
         switch (action_) {
             case StellarAction::CreatePlanet: {
-                plan_.object = target(ObjectKind::Asteroids);
-                if (!plan_.object) return "No asteroid field here";
+                // A colonized asteroid field is not a valid target (confirmed: binary).
+                plan_.object = target(ObjectKind::Asteroids, true);
+                if (!plan_.object) return "No asteroid field without a colony here";
                 if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) == 0) return "A planet needs a star in the system";
                 // Exactly min(Val 1, the field's size).
                 const int size = static_cast<int>(std::min<int64_t>(actor_.value, stellarSizeOf(rs, cs_.galaxy.object(*plan_.object))));
@@ -361,17 +372,19 @@ protected:
             if (ps.constructed && ps.specialAbilityId == actor_.value) plan_.world = &ps;
         if (!plan_.world) return "Unknown constructed planet";
         // Every requirement: the ships in this sector, whoever owns them, carry at
-        // least Val 2 kT of components whose Custom Group is Val 1.
+        // least Val 2 kT of components whose Custom Group is Val 1. The count goes
+        // by design: every such component, damaged or not, with its mounted size;
+        // mothballed ships and unit groups do not count (spec 01 §9, §14 Q33,
+        // confirmed: binary). Bases count like ships (inferred, spec 01 §14 Q42).
         for (const ParsedAbility& a : abilities_)
             if (a.kind == AbilityKind::ConstructedPlanetRequirements) plan_.needs.emplace_back(static_cast<int>(a.value1), a.value2);
         for (const auto& [group, tons] : plan_.needs) {
             int64_t have = 0;
             for (const Vehicle& v : cs_.vehicles) {
-                if (!alive(v) || v.location != here_) continue;
+                if (!alive(v) || v.location != here_ || v.status == VehicleStatus::Mothballed || !isShipOrBase(vehicleType(r_, cs_, v))) continue;
                 const Design& d = cs_.design(v.design);
                 for (size_t i = 0; i < d.entries.size(); ++i)
-                    if (entryIntact(r_, cs_, v, i) && r_.component(d.entries[i].component).customGroup == group)
-                        have += mounted(r_, d.entries[i]).tonnage;
+                    if (r_.component(d.entries[i].component).customGroup == group) have += mounted(r_, d.entries[i]).tonnage;
             }
             if (have < tons) return "The construction materials are not all here";
         }
@@ -470,7 +483,8 @@ private:
         const auto& rs = r_.data();
         switch (action_) {
             case StellarAction::CreatePlanet: {
-                loseColony(ctx_, *plan_.object, "The asteroid field became a planet.");
+                // The field has no colony (checked). Its rolled ability does not carry
+                // over, and the planet rolls none (spec 01 §14 Q34, confirmed: binary).
                 const std::string name = planetName(sys.id);
                 SpaceObject& obj = s_.galaxy.object(*plan_.object);
                 obj.kind = ObjectKind::Planet;
@@ -614,7 +628,9 @@ private:
         announce(std::format("Planet Created: {}", world.name));
         remove(*plan_.object);  // the star is used up
         append(std::move(world), sysId);
-        // Every builder ship here carrying the device or any required material is destroyed.
+        // Every object of the builder here carrying the device or any component of a
+        // required group is destroyed, whole ship included, mothballed ships too
+        // (spec 01 §9, confirmed: binary).
         for (Vehicle& v : s_.vehicles) {
             if (!alive(v) || v.owner != owner_ || v.location != here_) continue;
             const Design& d = s_.design(v.design);

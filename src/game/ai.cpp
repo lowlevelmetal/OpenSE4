@@ -83,6 +83,7 @@ bool hostileTo(const Empire& e, EmpireId other) {
 }
 
 SystemId homeSystem(const GameState& s, EmpireId e) {
+    if (e.valid() && e.index() < s.empires.size() && s.empire(e).homeSystem.index() < s.galaxy.systems.size()) return s.empire(e).homeSystem;  // recorded at creation
     SystemId first;
     for (const auto& c : s.colonies) {
         if (!c || c->owner != e) continue;

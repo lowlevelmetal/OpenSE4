@@ -87,6 +87,7 @@ GameState newGame(const Rules& r, uint64_t seed = 7, int empires = 2) {
     GameSetup setup;
     setup.seed = seed;
     setup.options.systemCount = 12;
+    setup.options.simultaneous = true;  // written for simultaneous turns
     for (int i = 0; i < empires; ++i) {
         EmpireSetup e;
         e.name = std::format("Empire {}", i + 1);

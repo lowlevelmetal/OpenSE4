@@ -137,9 +137,10 @@ NewGameSettings defaultSettings(const game::Rules& r, uint64_t seed) {
 }
 
 std::optional<std::string> autosaveName(int everyTurns, uint32_t turn) {
+    // Saved when the turns since 2400.0 are a multiple of N, into the file of
+    // that number's last digit (spec 01 §2.2, §14 Q38, confirmed: binary).
     if (everyTurns <= 0 || turn == 0 || turn % static_cast<uint32_t>(everyTurns) != 0) return std::nullopt;
-    const uint32_t slot = (turn / static_cast<uint32_t>(everyTurns) - 1) % 10 + 1;
-    return std::format("Autosave {}", slot);
+    return std::format("Autosave {}", turn % 10);
 }
 
 int maxSystems(const game::Rules& r) { return game::maxSystemCount(r.data()); }

@@ -4,8 +4,8 @@
 //
 // Sight is resolved per system. An empire's sensor vector in a system is the
 // per-type maximum over its sensor sources there (ships and bases, fighter,
-// satellite and drone groups, owned planets; never mine fields), each with the
-// baseline EM Active 1, raised to its partners' vectors. Sharing is one-way:
+// satellite and drone groups, owned planets, populated or not; never mine
+// fields), each with the baseline EM Active 1, raised to its partners' vectors. Sharing is one-way:
 // an empire gets the sensors of every empire it holds a Partnership with, and
 // this is repeated five times so chains pass sight along. An object the empire
 // does not own is seen when the system is explored and some sight type's
@@ -47,7 +47,11 @@ std::vector<EmpireId> sightGroup(const GameState& s, EmpireId viewer);
 // The viewer's sensor levels in a system (all zero without a sensor source).
 SightVector sensorLevels(const Rules& r, const GameState& s, EmpireId viewer, SystemId sys);
 // Obscuration per sight type: baseline 1; cloak levels (a ship's only while it
-// is cloaked, a unit group's always); and the storm or nebula around it.
+// is cloaked, a unit group's always); and the environment: the system-wide
+// value and the largest `Sector - Sight Obscuration` of the storms, planets
+// and asteroid fields (their own rolled abilities), ships and bases in its
+// sector. Unit groups, stars, warp points, comets and colony facilities never
+// obscure a sector.
 SightVector obscuration(const Rules& r, const GameState& s, const Vehicle& v);
 // Obscuration of a stellar body: storms and nebulae hide planets, asteroid
 // fields and comets, never stars, storms or warp points.

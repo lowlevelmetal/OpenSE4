@@ -149,6 +149,7 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     call_ = call;
     callCommand_ = std::move(command);
     callBattles_ = state_.combats.size();
+    callTurn_ = state_.turn;
     answers_.clear();
     fought_.clear();
     answeredStrategic_.clear();
@@ -222,11 +223,13 @@ void ClassicSession::runCall() {
             takeResult(res);
             orders_.clear();
             waiting_ = false;
+            if (state_.turn != callTurn_) autosave();  // the game turn was processed (spec 01 §2.2)
             if (onNewTurn) onNewTurn();
             break;
         case Call::Resume:
             nextHuman();
             takeResult(res);
+            if (state_.turn != callTurn_) autosave();
             break;
         case Call::None: break;
     }

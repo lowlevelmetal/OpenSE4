@@ -24,9 +24,8 @@ processing (`turn.cpp`, spec 05 §8). Conditions are hundredths of the 0–1.5 s
 everywhere (generation, events, combat, stellar manipulation), and setup's racial point
 cost sums `economy::characteristicPointCost`. On 2026-09-30 the engine's remaining guesses
 (spec 02 §13 items 33 and 37–50) and the other open items of spec 02 were settled from the
-executable. Two spec 02 differences are listed under "Galaxy, setup and sight" and not
-repeated here: the Min/Max Pct clamp inside `characteristicPointCost` (spec 02 §8.1) and
-the extra starting planets that are not capitals of type "Homeworld" (spec 02 §2, §9).
+executable. One spec 02 difference is listed under "Galaxy, setup and sight" and not
+repeated here: the Min/Max Pct clamp inside `characteristicPointCost` (spec 02 §8.1).
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
@@ -38,7 +37,7 @@ These rows are where the engine differs:
 | Facility completion (`economy_queue.cpp:328-341`) | A second space yard is dropped at completion; the count is added only up to the free slots; "cannot build" is logged when no slot is free | Spec 02 §6.5: no second-yard check at completion; with one free slot the whole count is added; no message when nothing is built | L |
 | Leaving emergency mode (`commands.cpp:400`) | Switching emergency off always starts at least one slow turn | Spec 02 §6.4: the counter is left as it is, so an emergency switched off before any turn passed costs nothing | L |
 | Opening pools (`setup.cpp:410-413`, `research.cpp:160-166`) | Starting Resources plus one turn of full income: remote mining, `Generate Points`, trade and the computer player's bonus included | Spec 02 §9: plus one turn of production only (colony output as delivered, minimum-generation rule); no bonus | L |
-| Home system (`economy.cpp:100-104`, `combat_ground.cpp:231`) | The system of the colony flagged as homeworld; after the homeworld is captured the empire has no home system, so the 25 % no-spaceport delivery stops there (and the AI and simulator lose their home) | Spec 02 §2, §5.5: recorded at game creation (for a rebel empire, at its founding) and never moves | L |
+| Home system (`economy.cpp:100-105`, `events.cpp:717`) | Recorded when the game is created (`Empire::homeSystem`, used by the economy, the AI and the simulator); a rebel empire records none, so its home is the system of its capital colony and is lost with it | Spec 02 §2, §5.5: a rebel empire's home system is recorded at its founding and never moves either | L |
 | Minimum income (`economy.cpp:642-649`) | Only for an empire that holds a colony | Spec 02 §5.6: every living empire, also one left with ships only | L |
 | Abandoned ships (`economy.cpp:726-729`) | Log `Any Ship Lost` and `Ship Lost in System` | Spec 02 §7: no happiness event; only a ship destroyed by damage logs a loss | L |
 | Atmosphere counter (`economy_population.cpp:207-211`) | Reset to 0 on any turn without a converter or with the right atmosphere | Spec 02 §2: kept as it is on such turns; the count resumes later | L |
@@ -173,32 +172,21 @@ or was found when spec 05's open questions were settled on 2026-09-30:
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
 Generation, empire placement, starting planets and stockpile, the setup option lists,
-racial point costs, sight and stellar manipulation follow the specs as they stood on
-2026-09-29 (`generate.cpp`, `setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). Maps are
-saved and loaded in our own format ([MAPS.md](MAPS.md), `map_file.hpp`) with starting
-points placed first, and the autosave choices are applied after each processed turn in
-local and hotseat games. On 2026-09-30 the remaining open questions of spec 01 §14 (Q16,
-Q22, Q24 and Q26–Q40) and its other unconfirmed notes were settled from the executable.
-These rows are where the engine differs:
+racial point costs, sight and stellar manipulation follow the specs as settled on
+2026-09-30 (`generate.cpp`, `setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). Every
+starting planet is a capital of colony type "Homeworld", and the home system is recorded
+when the game is created (`Empire::homeSystem`). A new game and Quick Start are
+turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
+`map_file.hpp`) with starting points placed first; the game keeps the points a later Save
+Map writes (`GameState::startingPoints`). The autosave choices are applied after each
+processed game turn in local and hotseat games of either turn style, into files named
+after the last digit of the turn count. Spec 01 §14 Q41 and Q42 are the engine's
+remaining guesses here. These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Starting planets (`setup.cpp:115-170` `extraStartingPlanets`) | Candidate systems ordered by jump distance, then system number; only systems where another empire already has a colony are skipped, so an empire placed earlier can take planets in a later empire's home system; only the systems that receive a planet start explored; every planet in a sector is considered | Spec 01 §3.6: the home system, then its neighbours in the order of its warp points, then theirs; other players' home systems are skipped as well; every candidate system starts explored; only the first planet of each sector is considered | M |
-| Extra starting planets (`setup.cpp:174-192` `setUpStartingPlanet`) | Ordinary colonies of type "Balanced", not capitals | Spec 01 §3.6, §14 Q35: every starting planet is a capital (anger at most 80) of colony type "Homeworld", so losing one logs `Homeworld Lost` (spec 02) | M |
-| Default turn style (`state.hpp:636`) | A new game (and Quick Start) is simultaneous | Spec 01 §2.2, §14 Q39: Turn-Based by default | M |
-| Asteroid field names (`generate.cpp:816` `nameObjects`) | Planets and asteroid fields share one numeral count | Spec 01 §5.6: asteroid fields have their own count ("Xyz Asteroid Belt I" beside "Xyz II") | L |
-| Names of made planets (`generate.cpp:299` `nextPlanetNumeral`, used by `movement_stellar.cpp:465`) | One above the highest numeral of any planet or asteroid field, any size of numeral | Spec 01 §5.6: planets only, the first planet of each sector, numerals I to XXX | L |
-| Created homeworlds and starting planets (`generate.cpp:914-935` `createPlanet`, `:1090-1096`) | A created homeworld goes on an empty sector; the name's numeral is one above the number of occupied sectors | Spec 01 §3.6: a created homeworld goes on any sector without a planet (other objects may be there); the numeral (also for created extra starting planets) is one above the number of sectors that hold a planet | L |
-| Solar generation (`economy.cpp:106-108` `starCount`, `movement_upkeep.cpp:123`) | Only stars count | Spec 01 §5.4: destroyed stars count as stars for solar supply and solar resource generation | L |
-| Colony sensors (`sight.cpp:163` `colonySensors`) | A colony's facilities give sensor levels only while it is populated | Spec 01 §6.1, §14 Q26: whether populated or not | L |
-| Sector obscuration (`sight.cpp:107` `placeObscuration`) | Counts the abilities of every object in the sector (stars, warp points and comets included) and the facilities of colonies there | Spec 01 §6.2, §14 Q32: storms, planets and asteroid fields (their own rolled abilities only) and ships and bases | L |
-| Hostile objects for stellar manipulation (`movement_stellar.cpp:155`, `:203-211`) | Any visible vehicle of a hostile empire blocks, unit groups and mothballed ships included, and the check also applies to Destroy Planet | Spec 01 §9, §14 Q34: only visible ships and bases that are not mothballed, and colonies; Destroy Planet has no such check | L |
-| Create Planet on a colonized field (`movement_stellar.cpp:268-271`, `:473`) | Allowed; the colony is lost | Spec 01 §9: a colonized asteroid field is not a valid target | L |
-| Construct materials (`movement_stellar.cpp:357-376`) | Sums intact components only, over every vehicle in the sector (mothballed ships and unit groups included) | Spec 01 §9, §14 Q33: every component of the design, damaged or not; ships of any owner that are not mothballed; no unit groups | L |
 | Racial point cost (`economy.cpp:159` `characteristicPointCost`) | Each characteristic is clamped to its Min/Max Pct before costing | Spec 01 §14 Q35: costed as stored; only the race window's buttons keep a value in range, so an out-of-range value from a file costs what it says | L |
-| Save Map during a game (`map_file.cpp:349` `mapOfGame`) | Writes each living empire's capital as that player's starting point | Spec 01 §12, §14 Q37: writes the starting points the game still holds (a loaded map's specific points and unused common points; none for a generated game) | L |
-| Autosave slots (`client/classic/screens/setup_model.cpp:139-143` `autosaveName`) | Saves when the turn number is a multiple of N and cycles through ten slots whatever N is | Spec 01 §2.2, §14 Q38: the file is picked by the last digit of the turn count, so every 2, 5 or 10 turns keeps five, two or one files (names and format are ours) | L |
-| Generation edge cases (`generate.cpp:407-425`, `:554-588`, `:879`, `:1034-1055`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
+| Generation edge cases (`generate.cpp:428-452` `drawNames`, `:577-615` connectivity pass, `:906`, `:1081-1093` `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Computer player (spec 05 §7)
 

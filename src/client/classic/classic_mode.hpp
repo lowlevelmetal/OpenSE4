@@ -25,7 +25,7 @@ struct ClassicOptions {
     std::string race;        // quick start race preset (folder name); empty = first
     int autoTurns = 0;       // let the computer play every empire for N turns first
     std::string openWindow;  // open this window at start (automation, screenshots)
-    bool turnBased = false;  // quick game in the turn-based style
+    bool turnBased = true;   // quick game in the turn-based style (the default, spec 01 §14 Q39)
     // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
     // 0: the only empire that can play now) and play its turn.
     std::string pbemFile;

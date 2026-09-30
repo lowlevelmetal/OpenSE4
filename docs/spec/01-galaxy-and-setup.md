@@ -1195,27 +1195,22 @@ highlighted, and an X marks each empire that has met one.
 26. **Sensors.** *Answered* (confirmed: binary): every owned planet and every ship, base,
     fighter, satellite and drone group is a sensor source; mine fields are not. An
     unpopulated colony's facilities do give their sensor levels: nothing in the sensor
-    rule looks at population (§6.1). The engine counts them only while the colony is
-    populated (PARITY_GAPS).
+    rule looks at population (§6.1).
 27. **Edge placement reversal.** *Answered* (confirmed: binary): the original compares the
     outline sector with the sectors the earlier warp points actually ended up on, as the
     engine does, and takes the last matching warp point. The reversal is not dead: it
     moves a bottom-edge warp point in the one case described in §3.5. The engine takes the
     first match instead of the last, which gives the same result in that case.
 28. **Asteroid numerals.** *Answered* (confirmed: binary): asteroid fields have their own
-    count, separate from the planets' (§5.6). The engine's single sequence differs
-    (PARITY_GAPS).
+    count, separate from the planets' (§5.6).
 29. **Numerals of made planets.** *Answered* (confirmed: binary): one above the highest
     numeral from I to XXX that ends the name of the first planet in each sector; asteroid
     fields are ignored (§5.6). Homeworlds and starting planets that setup creates use the
-    number of sectors that hold a planet instead (§3.6). The engine also counts asteroid
-    fields, any numeral, and every occupied sector for created homeworlds (PARITY_GAPS).
+    number of sectors that hold a planet instead (§3.6).
 30. **Order of the extra starting planets.** *Answered* (confirmed: binary): the home system,
     then its neighbours in the order of its warp points, then their neighbours in the same
     way; other players' home systems are excluded unless systems may be shared; every
-    candidate system starts explored (§3.6). The engine orders by jump distance then system
-    number, only checks existing colonies, and explores only the systems that receive a
-    planet (PARITY_GAPS).
+    candidate system starts explored (§3.6).
 31. **Missing records.** *Answered* (confirmed: binary). The home size is raised to the
     smallest natural size that exists for the race's atmosphere and type, so with *All player
     planets the same size* a record always exists when any record of that atmosphere and
@@ -1230,29 +1225,26 @@ highlighted, and an X marks each empire that has met one.
     finishes (PARITY_GAPS).
 32. **What obscures a sector.** *Answered* (confirmed: binary): storms, planets and asteroid
     fields (their own rolled abilities only, not their colonies' facilities) and ships and
-    bases (§6.2). Unit groups, stars, warp points and comets never count. The engine also
-    counts colony facilities and the abilities of stars, warp points and comets
-    (PARITY_GAPS).
+    bases (§6.2). Unit groups, stars, warp points and comets never count.
 33. **Construct materials.** *Answered* (confirmed: binary): the sum goes by design, so every
     component of the group counts, damaged or not, with its mounted size; ships of any
     owner count, mothballed ships and unit groups do not. Every object of the builder in the
     sector that carries the construction ability or a component of a required group is
-    destroyed, mothballed ships included (§9). The engine counts intact components only and
-    includes mothballed ships and unit groups (PARITY_GAPS).
+    destroyed, mothballed ships included (§9). Whether bases count as material carriers is
+    open question 42.
 34. **Hostile objects for stellar manipulation.** *Answered* (confirmed: binary): visible ships
     and bases that are not mothballed, and visible colonized planets and asteroid fields, of
     empires below Non-Aggression or without contact; unit groups never block, and Destroy
     Planet makes no such check at all (§9). The asteroid field's rolled ability does not
     carry over to a planet made from it, and the new planet rolls none. Create Planet also
-    refuses a colonized asteroid field. The engine counts unit groups and mothballed ships,
-    checks Destroy Planet too, and accepts a colonized field (PARITY_GAPS).
+    refuses a colonized asteroid field.
 35. **Setup details.** *Answered* (confirmed: binary). The racial point cost uses each
     characteristic as stored, without clamping; only the race window's up and down buttons
     keep a value within its Min/Max Pct, so a race read from a file with a value outside
     them is costed at that value. Every starting planet, extra ones included, is a capital
     of colony type "Homeworld" (§3.6). "More than 60 %" is compared exactly (the original's
     floating-point test gives the same answer for every count). The engine clamps the
-    cost and makes extra planets ordinary "Balanced" colonies (PARITY_GAPS).
+    cost (PARITY_GAPS).
 36. **Map starting points.** *Answered* (confirmed: binary): the order and the conversion are
     as the engine does them (§3.6): only a different atmosphere triggers the conversion, and
     the converted planet keeps its name, values, conditions and stellar size. With no
@@ -1263,17 +1255,26 @@ highlighted, and an X marks each empire that has met one.
     and the menu entry is disabled without it. The original writes the starting points the
     game still holds (a loaded map's specific points and unused common points; none for a
     generated game), not the capitals (§12). The map file layout is an OpenSE4 extension.
-    The engine writes the capitals (PARITY_GAPS).
 38. **Autosave.** *Answered* (confirmed: binary): after a turn is processed, when the number
     of turns since 2400.0 is a multiple of N, into a file named after that number's last
     digit, so at most ten files, and fewer for N = 2, 5 or 10 (§2.2). It follows the game
-    date, so nothing restarts on loading. The engine's slot rule differs (PARITY_GAPS).
-    Its file names, its save format and the network host's own autosave setting are OpenSE4
-    extensions.
+    date, so nothing restarts on loading. OpenSE4's file names, save format and the network
+    host's own autosave setting are OpenSE4 extensions.
 39. **Default turn style.** *Answered* (confirmed: binary): Turn-Based. The Mechanics tab
     selects it for a new game. Quick Start sets no turn style of its own, and the game
-    options the program starts with are turn-based too. OpenSE4 starts simultaneous
-    (PARITY_GAPS).
+    options the program starts with are turn-based too. OpenSE4's network host and its
+    setup files, an OpenSE4 extension, still default to simultaneous turns (the
+    original offers its network connection for simultaneous games only).
 40. **No Tactical Combat default.** *Answered* (confirmed: binary): the box is clear for a new
     game (§2.2), as in OpenSE4, so turn-based games ask each human side Tactical or
     Strategic (spec 04 §3).
+41. **The home system among the starting-planet candidates.** Open. Step 2 of the
+    starting-planet rule (§3.6) drops other players' home systems unless systems may be
+    shared. When a map's starting points put two empires in one system without that
+    option, is the home system itself dropped for the second empire, leaving only
+    neighbours (and no system at all for created planets if every neighbour is dropped)?
+    The engine always keeps the empire's own home system **(inferred)**.
+42. **Bases carrying Construct materials.** Open. §9 counts the materials on "the ships in
+    this sector" and leaves out only mothballed ships and unit groups. The engine counts
+    bases' components as well **(inferred)**, and uses up the builder's bases that carry
+    a required component like its ships.

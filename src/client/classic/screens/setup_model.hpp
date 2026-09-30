@@ -56,9 +56,12 @@ inline constexpr std::array<int, 4> kRacialPoints{0, 2'000, 3'000, 5'000};      
 inline constexpr std::array<int, 4> kStartingPlanets{1, 3, 5, 10};                   // 1 is the default
 inline constexpr std::array<int, 6> kAutosaveTurns{0, 1, 2, 3, 5, 10};               // 0 None (the default), or every N turns
 
-// Autosave (spec 01 §2.2): the save written after turn `turn` has been
-// processed, "Autosave N" with N the slot 1-10 (the ten slots are used in
-// rotation), or nothing when `everyTurns` is 0 or this turn is not saved.
+// Autosave (spec 01 §2.2, §14 Q38, confirmed: binary): the save written after
+// a turn has been processed, when `turn` (the turns since 2400.0, the game
+// date) is a multiple of `everyTurns`: "Autosave D" with D the last digit of
+// `turn`, so at most ten files (five for every 2 turns, two for every 5, one
+// for every 10). Nothing when `everyTurns` is 0 or this turn is not saved.
+// The file names are ours.
 std::optional<std::string> autosaveName(int everyTurns, uint32_t turn);
 
 // ---- Quadrant -----------------------------------------------------------------------------

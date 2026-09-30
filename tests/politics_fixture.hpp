@@ -142,6 +142,7 @@ inline game::GameState newPoliticsGame(uint64_t seed = 5, int empires = 3, int s
     setup.seed = seed;
     setup.options.systemCount = systems;
     setup.options.eventFrequency = 0;  // tests turn events on where they want them
+    setup.options.simultaneous = true;  // written for simultaneous turns
     for (int i = 0; i < empires; ++i) {
         game::EmpireSetup e;
         e.name = std::format("Realm {}", i + 1);

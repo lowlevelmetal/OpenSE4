@@ -283,25 +283,48 @@ std::string romanNumeral(int n) {
 
 namespace {
 
-// The value of a trailing Roman numeral word ("Xyz IV" -> 4), 0 if there is none.
+// The value of the Roman numeral I..XXX that ends a name ("Xyz IV" -> 4), 0 if
+// there is none; larger numerals are not recognised (spec 01 §5.6).
 int trailingNumeral(std::string_view name) {
     const size_t space = name.rfind(' ');
     if (space == std::string_view::npos) return 0;
     const std::string_view word = name.substr(space + 1);
-    if (word.empty() || word.find_first_not_of("IVXLCDM") != std::string_view::npos) return 0;
-    for (int n = 1; n < 4000; ++n)
+    if (word.empty() || word.find_first_not_of("IVX") != std::string_view::npos) return 0;
+    for (int n = 1; n <= 30; ++n)
         if (romanNumeral(n) == word) return n;
     return 0;
 }
 
-} // namespace
+// Sector number y·13 + x (spec 01 §4.1).
+size_t sectorIndex(Sector s) { return static_cast<size_t>(s.y * kSystemSize + s.x); }
 
-int nextPlanetNumeral(const Galaxy& g, SystemId sys) {
-    int highest = 0;
+// The number of sectors of a system that hold a planet (asteroid fields do not count).
+int sectorsWithPlanet(const Galaxy& g, SystemId sys) {
+    std::array<bool, kSystemSize * kSystemSize> used{};
     for (ObjectId o : g.system(sys).objects) {
         const SpaceObject& obj = g.object(o);
-        if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) highest = std::max(highest, trailingNumeral(obj.name));
+        if (obj.kind == ObjectKind::Planet && obj.sector.valid()) used[sectorIndex(obj.sector)] = true;
     }
+    return static_cast<int>(std::count(used.begin(), used.end(), true));
+}
+
+} // namespace
+
+std::array<std::optional<ObjectId>, kSystemSize * kSystemSize> firstPlanetPerSector(const Galaxy& g, SystemId sys) {
+    std::array<std::optional<ObjectId>, kSystemSize * kSystemSize> first{};
+    for (ObjectId o : g.system(sys).objects) {
+        const SpaceObject& obj = g.object(o);
+        if (obj.kind == ObjectKind::Planet && obj.sector.valid() && !first[sectorIndex(obj.sector)]) first[sectorIndex(obj.sector)] = o;
+    }
+    return first;
+}
+
+int nextPlanetNumeral(const Galaxy& g, SystemId sys) {
+    // Planets only (not asteroid fields), the first planet of each sector, and
+    // only the numerals I to XXX (spec 01 §5.6, confirmed: binary).
+    int highest = 0;
+    for (const auto& planet : firstPlanetPerSector(g, sys))
+        if (planet) highest = std::max(highest, trailingNumeral(g.object(*planet).name));
     return highest + 1;
 }
 
@@ -570,15 +593,18 @@ private:
         while (std::find(marked.begin(), marked.end(), 0) != marked.end()) {
             for (uint32_t b = 0; b < n; ++b) {
                 if (marked[b]) continue;
+                // A system that gets no link is marked without one. The original marks it
+                // together with everything linked to it, looks for a partner only up to 68
+                // squares away and can loop forever; we mark the system alone, search any
+                // distance and always finish (OpenSE4 choice, spec 01 §3.5, §14 Q31).
                 if (full(b)) {
-                    marked[b] = 1;  // quirk: treated as marked without a new link
+                    marked[b] = 1;
                     continue;
                 }
                 std::optional<uint32_t> best;
                 for (uint32_t c = 0; c < n; ++c)
                     if (marked[c] && !full(c) && (!best || distance(b, c) <= distance(b, *best))) best = c;  // ties: highest number
                 if (!best) {
-                    // Every marked system is full: the original would search forever (OpenSE4 guard).
                     marked[b] = 1;
                     warn("A system could not be connected to the rest of the quadrant.");
                     continue;
@@ -811,10 +837,10 @@ private:
     // Names (spec 01 §5.4, §5.6, confirmed: binary): stars "System Star", storms
     // "Storm"; planets numbered in template order, a planet in a sector an
     // earlier object uses gets that object's name plus a letter; asteroid
-    // fields "System Asteroid Belt" plus a numeral. That asteroid fields and
-    // planets share one sequence of numerals is our reading (inferred).
+    // fields "System Asteroid Belt" plus their own numeral, counted apart from
+    // the planets' ("Xyz II" beside "Xyz Asteroid Belt I").
     void nameObjects(StarSystem& sys) {
-        int numeral = 0;
+        int numeral = 0, beltNumeral = 0;
         for (size_t i = 0; i < sys.objects.size(); ++i) {
             SpaceObject& o = out_.galaxy.object(sys.objects[i]);
             std::vector<ObjectId> before;
@@ -824,7 +850,7 @@ private:
                 case ObjectKind::Star:
                 case ObjectKind::DestroyedStar: o.name = sys.name + " Star"; break;
                 case ObjectKind::Storm: o.name = "Storm"; break;
-                case ObjectKind::Asteroids: o.name = std::format("{} Asteroid Belt {}", sys.name, romanNumeral(++numeral)); break;
+                case ObjectKind::Asteroids: o.name = std::format("{} Asteroid Belt {}", sys.name, romanNumeral(++beltNumeral)); break;
                 case ObjectKind::Planet:
                     if (before.empty()) o.name = std::format("{} {}", sys.name, romanNumeral(++numeral));
                     else o.name = std::format("{} {}", out_.galaxy.object(before.front()).name, static_cast<char>('A' + std::min<size_t>(before.size() - 1, 25)));
@@ -874,7 +900,8 @@ private:
             wp.kind = ObjectKind::WarpPoint;
             wp.name = "Warp Point";  // the destination is added for viewers who explored it
             if (opt_.warpPointsAnywhere) {
-                // Up to 4 squares inward from the edge, redrawn until the sector is empty.
+                // Up to 4 squares inward from the edge, redrawn until the sector is empty;
+                // the original never stops redrawing, we stop after 1,000 draws (OpenSE4 choice).
                 wp.sector = warpInwardSector(a, rng_.rangeInt(0, 4));
                 for (int n = 0; n < 1000 && occupied(sys, wp.sector); ++n) wp.sector = warpInwardSector(a, rng_.rangeInt(0, 4));
             } else {
@@ -910,7 +937,8 @@ bool startEligible(const Galaxy& g, const ruleset::Ruleset& rs, SystemId s) {
     return sys.type.index() < rs.systemTypes.size() && rs.systemTypes[sys.type.index()].empiresCanStartIn;
 }
 
-// A new natural planet of an empire's atmosphere and type (spec 01 §3.6).
+// A new natural planet of an empire's atmosphere and type (spec 01 §3.6),
+// named with the numeral one above the number of sectors that hold a planet.
 ObjectId createPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sysId, Sector where, std::string_view surface, std::string_view atmosphere,
                       int size, bool finite, Rng& rng) {
     std::vector<uint32_t> types = naturalSectorTypes(rs, ObjectKind::Planet, size, surface, atmosphere);
@@ -927,9 +955,9 @@ ObjectId createPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sysId, Sec
     p.surface = std::string(surface);
     p.atmosphere = std::string(atmosphere);
     rollNaturalValues(rs, p, finite, rng);
-    // The system name and the numeral one above the number of occupied sectors.
-    const int occupiedSectors = kSystemSize * kSystemSize - static_cast<int>(emptySectors(g, sysId).size());
-    p.name = std::format("{} {}", sys.name, romanNumeral(occupiedSectors + 1));
+    // The system name and the numeral one above the number of sectors that
+    // hold a planet; asteroid fields do not count (confirmed: binary).
+    p.name = std::format("{} {}", sys.name, romanNumeral(sectorsWithPlanet(g, sysId) + 1));
     sys.objects.push_back(p.id);
     g.objects.push_back(std::move(p));
     return g.objects.back().id;
@@ -1010,7 +1038,8 @@ int homePlanetSize(const ruleset::Ruleset& rs, HomeValue value, std::string_view
 
 std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy, const ruleset::Ruleset& rs,
                                                                   std::span<const EmpireStart> empires,
-                                                                  const PlacementOptions& options, Rng& rng) {
+                                                                  const PlacementOptions& options, Rng& rng,
+                                                                  std::vector<StartingPoint>* heldPoints) {
     if (galaxy.systems.empty()) return std::unexpected("The quadrant has no systems.");
     const int systemCount = static_cast<int>(galaxy.systems.size());
     const int perPlayer = systemCount / std::max<int>(1, static_cast<int>(empires.size()));
@@ -1030,32 +1059,46 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
     };
 
     // A map's starting points come first (confirmed: binary): each empire, in
-    // player order, takes its specific point, else a random remaining common
-    // point. A point on a sector another empire already took is skipped (inferred).
+    // player order, takes its specific point (the last one listed for it), else
+    // a random remaining common point, which is then used up. The original does
+    // not check whether an earlier empire took the same sector; we skip such a
+    // point (OpenSE4 choice, spec 01 §14 Q36).
     auto onMap = [&](const StartingPoint& p) { return p.system.valid() && p.system.index() < galaxy.systems.size() && p.sector.valid(); };
     std::vector<std::optional<StartingPoint>> point(empires.size());
-    std::vector<StartingPoint> common;
+    std::vector<StartingPoint> common, usedCommon;
     for (const StartingPoint& p : options.startingPoints) {
         if (!onMap(p)) continue;
         if (p.player == kCommonStart) common.push_back(p);
-        else if (p.player >= 0 && static_cast<size_t>(p.player) < empires.size() && !point[static_cast<size_t>(p.player)])
-            point[static_cast<size_t>(p.player)] = p;
+        else if (p.player >= 0 && static_cast<size_t>(p.player) < empires.size()) point[static_cast<size_t>(p.player)] = p;
+    }
+    // The points the game keeps for Save Map (spec 01 §12): every specific
+    // point, and the common points no player takes (worked out below).
+    if (heldPoints) {
+        heldPoints->clear();
+        for (const StartingPoint& p : options.startingPoints)
+            if (onMap(p)) heldPoints->push_back(p);
     }
     std::vector<Location> taken;
     auto unclaimed = [&](const StartingPoint& p) { return std::find(taken.begin(), taken.end(), Location{p.system, p.sector}) == taken.end(); };
     for (size_t i = 0; i < empires.size(); ++i) {
         if (point[i] && !unclaimed(*point[i])) point[i].reset();
-        std::erase_if(common, [&](const StartingPoint& p) { return !unclaimed(p); });
-        if (!point[i] && !common.empty()) {
-            const size_t k = static_cast<size_t>(draw(rng, static_cast<int>(common.size())));
-            point[i] = common[k];
-            common.erase(common.begin() + static_cast<std::ptrdiff_t>(k));
+        std::vector<StartingPoint> open;
+        for (const StartingPoint& p : common)
+            if (unclaimed(p)) open.push_back(p);
+        if (!point[i] && !open.empty()) {
+            const StartingPoint pick = open[static_cast<size_t>(draw(rng, static_cast<int>(open.size())))];
+            point[i] = pick;
+            usedCommon.push_back(pick);
+            common.erase(std::find(common.begin(), common.end(), pick));
         }
         if (!point[i]) continue;
         taken.push_back({point[i]->system, point[i]->sector});
         const EmpireStart& e = empires[i];
         settle(i, homeAtPoint(galaxy, rs, *point[i], e, homePlanetSize(rs, options.homeValue, e.surface, e.atmosphere), options, rng));
     }
+    if (heldPoints)
+        for (const StartingPoint& used : usedCommon)
+            if (auto it = std::find(heldPoints->begin(), heldPoints->end(), used); it != heldPoints->end()) heldPoints->erase(it);
 
     for (size_t player = 0; player < empires.size(); ++player) {
         if (homes[player].valid()) continue;
@@ -1094,8 +1137,14 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
                 if (startEligible(galaxy, rs, s) && !isHomeSystem(s)) target = s;
             }
             if (!target) target = SystemId{static_cast<uint32_t>(draw(rng, systemCount))};
-            std::vector<Sector> free = emptySectors(galaxy, *target);
-            const Sector where = free.empty() ? Sector{draw(rng, kSystemSize), draw(rng, kSystemSize)}
+            // Any sector without a planet: a star, storm, warp point or asteroid
+            // field may be there (confirmed: binary). The original redraws until it
+            // finds one; drawing from the list gives the same distribution.
+            const auto planets = firstPlanetPerSector(galaxy, *target);
+            std::vector<Sector> free;
+            for (int n = 0; n < kSystemSize * kSystemSize; ++n)
+                if (!planets[static_cast<size_t>(n)]) free.push_back(Sector{n % kSystemSize, n / kSystemSize});
+            const Sector where = free.empty() ? Sector{draw(rng, kSystemSize), draw(rng, kSystemSize)}  // (OpenSE4 choice) never happens
                                               : free[static_cast<size_t>(draw(rng, static_cast<int>(free.size())))];
             home = createPlanet(galaxy, rs, *target, where, e.surface, e.atmosphere, options.allPlanetsSameSize ? homeSize : 0,
                                 options.finiteResources, rng);
