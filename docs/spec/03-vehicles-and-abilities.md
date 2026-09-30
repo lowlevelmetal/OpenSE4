@@ -459,13 +459,21 @@ type, none = defined but unused.
   first name of its design-name list, after the last one it used, that is not in use; after
   that it adds the numerals II to XV to a name; without a list it uses a generic numbered
   name (confirmed: binary).
-- **Prototype:** a design is a prototype until the first vehicle of it is built. Only prototypes
-  can be edited. After that, changes go through **Copy**, which clones the design with an empty
-  name. The original's Edit action refuses a design that is currently in one of the empire's
-  construction queues (confirmed: binary); how the prototype state gates it otherwise was not
-  traced.
+- **Prototype:** a design is a prototype until a construction queue completes a vehicle or unit
+  of it, or a ship is retrofitted to it; from then on it is marked as built for good. The Edit
+  button is enabled only for one of the player's own designs that is still a prototype (never on
+  the enemy design tabs or with nothing selected), and the Edit action also refuses a design that
+  is in one of the empire's construction queues. Editing changes the design **in place**: the
+  same design, which may keep its name. After a design is built, changes go through **Copy**,
+  which clones it with an empty name, or **Upgrade**; both are enabled for any own design, built
+  or not (confirmed: binary).
 - **Upgrade** builds a candidate design that replaces every component with the highest-numeral
-  known component of the same `Family`, keeping the mount. It is then saved under a new name.
+  known component of the same `Family`, keeping the mount, and opens it in the designer (even
+  when nothing changed). When accepted, it is added as a **new** design under its own name; the
+  original is untouched (confirmed: binary).
+- Whenever the designer accepts a design (Create, Copy, Edit or Upgrade), the result starts as a
+  prototype that is not obsolete, with no sightings by other empires (§4.1 Obsolete) and empty
+  statistics (confirmed: binary).
 - **Obsolete** is a flag. Obsolete designs can be hidden in lists. Designs cannot be deleted
   directly. Every design keeps, for each empire, the turn that empire last saw it. Sightings are
   recorded by battles (the designs of ships and bases, and of the units in their or a colony's
@@ -690,8 +698,19 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   come up again). Coordinates are clamped to 0..12, so a draw off the grid becomes the edge square.
   Every replacement is tested, even when it is the target. After the 10th bad test the group stays
   where it is and the order fails.
-- In a system with `System - Destructive Center`, paths avoid the squares near the centre within
-  the `System - Movement Towards Center` radius (the exact cost formula was not decoded).
+- **Around a destructive centre.** In a system whose total `System - Destructive Center` is above 0,
+  every in-system step of a moving order (and the route estimates and path display) is chosen by
+  a cost map instead of the greedy rule above (confirmed: binary). Let R be the system's total
+  `System - Movement Towards Center` (0 makes no zone). The target square costs 1. Entering a
+  square from a neighbour costs 1 + (30 − round(√(dx² + dy²))) + (1000 if max(|dx|, |dy|) ≤ R),
+  where (dx, dy) is that square's offset from the centre square (6, 6) and the rounding is to
+  nearest; each square keeps its cheapest cost, and only squares whose cost is at most 500 spread
+  further. The group then steps to the cheapest of the nine squares around it, its own included;
+  on a tie the square with the lowest sector number wins. So
+  groups keep out of the zone within R of the centre and prefer squares far from it. When no
+  square around the group was reached (the path would cost more than 500, or every square next to
+  the target lies in the zone), the greedy step is used after all. The cost map ignores tagged
+  minefields, storms and hostile objects. Stellar drift toward the centre does not use it.
 - **Entering a sector with enemies:** only in turn-based games, only for in-system steps (a warp
   jump never asks), and only while a human is the current player (orders carried over and run at
   the start of that human's turn included). The question comes when the next sector holds any
@@ -849,8 +868,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   example) stops it for the rest of the turn, and a drop between its actions slows it (§6.3).
 - A cloaked vehicle that the enemy cannot detect passes through enemy-held sectors without combat.
   Detection triggers combat as usual. A cloaked vehicle decloaks when it attacks (§8).
-- Treaties can allow passing through another empire's sectors without combat (see the diplomacy
-  spec; not checked here).
+- Treaties decide whether a meeting leads to combat: an empire whose treaty with another is
+  Non-Aggression or better never fights it, so their vehicles pass through each other's sectors;
+  below that (War, Non-Intercourse, None, or not yet met) the battle checks of spec 04 §2 apply.
+  Each empire judges by its own side of the treaty (spec 04 §2, spec 05 §3.2) (confirmed: binary).
 
 ---
 
@@ -1752,7 +1773,6 @@ All rules in this section are (confirmed: binary).
     effect (§3.3); repair and the rest of the end-of-turn processing come after the turn's
     movement and combat in simultaneous games (§7, §13).
 
-Still open in the body, outside this pass: the exact path cost around a `System - Destructive
-Center` (§6.2; tracing that routine's cost formula would settle it), how the prototype state
-gates design editing beyond the construction-queue test (§4.1), and which treaties let vehicles
-pass without combat (§6.4, the diplomacy spec).
+The last three body notes are settled too (confirmed: binary): the path cost around a destructive
+centre (§6.2), how prototype status gates Edit and what Upgrade makes (§4.1), and which treaties
+let vehicles pass without combat (§6.4). Nothing in this spec's body is left unverified.
