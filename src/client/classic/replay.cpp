@@ -71,6 +71,7 @@ CombatPlayback::CombatPlayback(const game::CombatRecord& record) : record_(&reco
         s.neutral = p.kind == game::CombatPiece::Kind::Obstacle;
         s.x = s.fromX = p.startX;
         s.y = s.fromY = p.startY;
+        s.units = std::max(1, int(p.count));
         s.onMap = p.kind != game::CombatPiece::Kind::Seeker && !launched[i];
         if (s.onMap) {
             extend(s.x, s.y);
@@ -154,6 +155,7 @@ void CombatPlayback::apply(const game::CombatEvent& e) {
                 if (validPiece(e.target)) p.heading = pieces_[e.target].heading;
             }
             break;
+        case Kind::UnitsLost: p.units = std::max(0, p.units - std::max(0, int(e.amount))); break;
         case Kind::Seeker:
             if (p.destroyed) break;
             if (!p.onMap) {
@@ -226,6 +228,7 @@ float CombatPlayback::eventDuration(size_t i) const {
         case Kind::Captured: d = 0.5f; break;
         case Kind::Launch: d = 0.3f; break;
         case Kind::Seeker: d = 0.2f; break;
+        case Kind::UnitsLost: d = 0.05f; break;
     }
     // A short pause before each new round.
     if (i > 0 && event(i).round != event(i - 1).round) d += 0.4f;

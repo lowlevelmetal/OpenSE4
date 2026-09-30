@@ -425,7 +425,12 @@ private:
         int64_t n = 0;
         for (const Vehicle& v : p_.st.vehicles) {
             if (v.owner != p_.id) continue;
-            if (match(v.design)) n += std::max(1, v.count);
+            if (v.mixed.empty()) {
+                if (match(v.design)) n += std::max(1, v.count);
+            } else {
+                for (const UnitStack& u : v.mixed)
+                    if (match(u.design)) n += u.count;
+            }
             for (const UnitStack& u : v.cargo.units)
                 if (match(u.design)) n += u.count;
         }

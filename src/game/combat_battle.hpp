@@ -42,7 +42,10 @@ struct Weapon {
     int reloadRate = 1;
     int reach = 0;           // longest range with damage (seekers: travel)
     int perUnit = 1;         // fighter groups: identical entries on one unit, fired together
-    int stack = -1;          // planets: the platform stack in the planet's cargo
+    int stack = -1;          // planets: the platform stack in the planet's cargo; unit groups: the design (Piece::stacks)
+    // Fighter groups: every design with this weapon, as (stack, identical entries
+    // on one unit); all of them fire together as one shot (spec 04 §6).
+    std::vector<std::pair<int, int>> shares;
     std::vector<int> reload; // one counter per instance (0 = ready)
     bool enabled = true;     // tactical: fires with the piece's Fire order (spec 06 §1.6 weapon toggles)
 
@@ -55,6 +58,9 @@ struct Piece {
     VehicleId source;                 // the vehicle this piece stands for (invalid for launched units)
     ObjectId object;                  // planets and obstacles
     Vehicle unit;                     // working copy: one ship, or a unit group (count units, no partial damage)
+    // Unit groups: their designs and the units left of each, in a fixed order
+    // (weapons refer to them by index); `unit` follows them (setGroupStacks).
+    std::vector<UnitStack> stacks;
     ruleset::VehicleType vtype = ruleset::VehicleType::Ship;
     std::string name;
     int x = 0, y = 0, size = 1;
@@ -101,7 +107,7 @@ struct Piece {
     std::vector<uint32_t> facilities;
     size_t facilitiesStart = 0;
     int militia = -1;
-    int64_t popKilled = 0, hpStart = 0;
+    int64_t popKilled = 0, hpStart = 0;   // hpStart: planets and unit groups, hit points at the start
     bool colonyLost = false;
     EmpireId capturedBy;              // planets taken by troops during the battle
     int plague = 0;
@@ -265,6 +271,11 @@ private:
     void expire(int i);
     void launchUnits(EmpireId e);
     bool spawnUnit(int carrier, DesignId design, int count, uint32_t strategyIndex);
+    // Unit groups: hit points of the units left (without the pool), and `unit` brought in line with `stacks`.
+    int64_t groupHitPoints(const Piece& p, DamageType type, bool shielded) const;
+    void syncGroup(Piece& p);
+    // The design credited with a kill by piece `att` (a unit group: the design that fired).
+    DesignId killerDesign(int att) const;
     int launchKindOf(DesignId design) const;   // LaunchKind, or -1 for units that are not launched
 
     // ---- Movement.
@@ -333,6 +344,7 @@ private:
     int satelliteCap_ = 100;
     int interference_ = 0;
     int disruption_ = 0;
+    int firingStack_ = -1;            // the unit group design whose weapon is being fired (kill credit)
 
     // The turn sequence.
     Stage stage_ = Stage::Between;

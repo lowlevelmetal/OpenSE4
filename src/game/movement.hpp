@@ -231,10 +231,16 @@ int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v);
 // An empire's units in space (not in cargo): what the units-per-player cap counts (§12).
 int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner);
 // Applies `amount` normal damage outside combat (no shields): armor first, then
-// other components, picked at random. Unit groups take it once for all
-// members. Returns true when the vehicle was destroyed (count set to 0).
-// A survivor's supply and cargo are cut back at once (fitToCapacity).
+// other components, picked at random. A unit group loses whole units instead
+// (damageUnitGroup, which records them in the design statistics). Returns true
+// when the vehicle was destroyed (count set to 0). A survivor's supply and
+// cargo are cut back at once (fitToCapacity).
 bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount);
+// Damage outside combat to a unit group: whole units die while the damage
+// covers their structure, each drawn from one of the group's designs at random
+// (spec 04 §9.4 without shields); what is left over is lost (inferred). Each
+// unit killed counts as lost for its design. Returns the damage used.
+int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng);
 // After damage: supply clamped to the capacity that is left (spec 03 §7) and
 // cargo that no longer fits removed (§11). Unlimited supply is left alone
 // (a vehicle that lost its reactor drops back when it next moves).

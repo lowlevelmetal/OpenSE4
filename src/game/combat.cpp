@@ -409,6 +409,11 @@ void forIntactParts(const Rules& r, const GameState& s, const Vehicle& v, Each&&
     const Design& d = s.design(v.design);
     for (size_t i = 0; i < d.entries.size(); ++i)
         if (entryIntact(r, s, v, i)) each(i, d.entries[i]);
+    // The other designs of a unit group that mixes them: one unit of each, whole.
+    for (size_t k = 1; k < v.mixed.size(); ++k) {
+        const Design& m = s.design(v.mixed[k].design);
+        for (size_t i = 0; i < m.entries.size(); ++i) each(i, m.entries[i]);
+    }
 }
 } // namespace
 
@@ -889,10 +894,9 @@ bool canAffectVehicle(const Rules& r, const GameState& s, const Vehicle& v, cons
     }
     if (rule.shieldsOnly) return sh.current > 0;
     if (rule.only) {
-        const Design& d = s.design(v.design);
-        for (size_t i = 0; i < d.entries.size(); ++i)
-            if (entryIntact(r, s, v, i) && inLayer(r, d.entries[i].component, *rule.only)) return true;
-        return false;
+        bool found = false;
+        forIntactParts(r, s, v, [&](size_t, const DesignEntry& e) { found = found || inLayer(r, e.component, *rule.only); });
+        return found;
     }
     return true;
 }

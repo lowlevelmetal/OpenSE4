@@ -133,6 +133,7 @@ std::string CombatMapPainter::eventText(const game::CombatEvent& e) const {
                        : std::format("{} is captured", pieceName(e.piece));
         case Kind::Launch: return std::format("{} launches {}", pieceName(e.target), pieceName(e.piece));
         case Kind::Seeker: return std::format("{} closes on {}", pieceName(e.piece), pieceName(e.target));
+        case Kind::UnitsLost: return std::format("{} loses {} unit{}", pieceName(e.piece), e.amount, e.amount == 1 ? "" : "s");
     }
     return {};
 }
@@ -255,6 +256,7 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
     switch (e.kind) {
         case Kind::Move:
         case Kind::Seeker: break;  // drawn as piece movement
+        case Kind::UnitsLost: break;  // shown by the Hit before it
         case Kind::Fire: {
             if (!hasTarget) break;
             const auto& comps = ui_.rules().data().components;

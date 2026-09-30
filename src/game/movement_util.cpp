@@ -124,26 +124,40 @@ void poolSupply(const Rules& r, GameState& s, std::span<const VehicleId> members
 
 // ---- Losses ------------------------------------------------------------------------------------
 
-void vehicleLost(TurnContext& ctx, Vehicle& v, std::string_view cause) {
-    if (!alive(v)) return;
-    GameState& s = ctx.state;
-    Design& d = s.design(v.design);
-    d.lost += v.count;
-    const bool unit = isUnitType(vehicleType(ctx.rules, s, v));
+namespace {
+// The log line and mood of a vehicle lost outside combat.
+void announceLoss(TurnContext& ctx, const Vehicle& v, std::string_view cause) {
     ctx.log(v.owner, LogCategory::Misc, std::format("{} destroyed", v.name), std::string(cause), v.location);
-    if (!unit) {
+    if (!isUnitType(vehicleType(ctx.rules, ctx.state, v))) {
         ctx.mood(v.owner, "Any Ship Lost");
         ctx.mood(v.owner, "Ship Lost in System", v.location.system);
     }
+}
+} // namespace
+
+void vehicleLost(TurnContext& ctx, Vehicle& v, std::string_view cause) {
+    if (!alive(v)) return;
+    GameState& s = ctx.state;
+    for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;  // every unit of a group
+    announceLoss(ctx, v, cause);
     v.count = 0;
+    v.mixed.clear();
 }
 
 bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause) {
     Vehicle* v = ctx.state.vehicle(id);
     if (!v || !alive(*v) || amount <= 0) return false;
+    if (isUnitType(vehicleType(ctx.rules, ctx.state, *v))) {
+        // Whole units die; the design statistics count each (damageUnitGroup).
+        const Vehicle before = *v;
+        damageUnitGroup(ctx.rules, ctx.state, *v, amount, ctx.state.rng);
+        if (alive(*v)) return false;
+        announceLoss(ctx, before, cause);
+        return true;
+    }
     const int count = v->count;
     if (!damageVehicle(ctx.rules, ctx.state, *v, amount)) return false;
-    v->count = count;  // restored so vehicleLost records every member
+    v->count = count;  // restored so vehicleLost records it
     vehicleLost(ctx, *v, cause);
     return true;
 }
@@ -156,8 +170,7 @@ int sweepMines(TurnContext& ctx, VehicleId sweeperId) {
     Vehicle* sweeper = s.vehicle(sweeperId);
     if (!sweeper || !alive(*sweeper)) return 0;
     // A unit group lists every unit's abilities, so its sweeping adds up (§12).
-    int64_t capacity = abilitySum(vehicleAbilities(r, s, *sweeper), AbilityKind::MineSweeping);
-    if (isUnitType(vehicleType(r, s, *sweeper))) capacity *= std::max(1, sweeper->count);
+    int64_t capacity = vehicleAbilityTotal(r, s, *sweeper, AbilityKind::MineSweeping);
     if (capacity <= 0) return 0;
     const EmpireId owner = sweeper->owner;
     const Location where = sweeper->location;
@@ -166,11 +179,14 @@ int sweepMines(TurnContext& ctx, VehicleId sweeperId) {
         if (capacity <= 0) break;
         if (!alive(m) || m.location != where || m.owner == owner || vehicleType(r, s, m) != VehicleType::Mine) continue;
         if (!treatyIsHostile(s.empire(owner).relation(m.owner).treaty)) continue;  // the mine rule: no treaty or worse
-        const int64_t n = std::min<int64_t>(capacity, m.count);
-        m.count -= static_cast<int>(n);
-        capacity -= n;
-        swept += n;
-        s.design(m.design).lost += static_cast<int>(n);
+        // A minefield that mixes designs loses its mines in the order they were laid (inferred).
+        for (const UnitStack& st : groupStacks(m)) {
+            if (capacity <= 0) break;
+            const int n = removeGroupUnits(s, m, st.design, static_cast<int>(std::min<int64_t>(capacity, st.count)));
+            capacity -= n;
+            swept += n;
+            s.design(st.design).lost += n;
+        }
     }
     if (swept > 0) {
         const Vehicle* sv = s.vehicle(sweeperId);
@@ -499,13 +515,12 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const O
         for (int64_t i = 0; i < n; ++i) newGroup(1);  // every drone is its own group and never merges (confirmed: binary)
         return n;
     }
-    // One group per (owner, kind, sector) (confirmed: binary). The engine keeps
-    // a record per design within it (inferred representation); launching
-    // refills the whole group's supply.
+    // One group per (owner, kind, sector), mixing designs (confirmed: binary):
+    // the units join the first such group there; launching refills its supply.
     bool merged = false;
     for (Vehicle& g : s.vehicles)
-        if (alive(g) && g.owner == owner && g.design == unit && g.location == where) {
-            g.count += static_cast<int>(n);
+        if (alive(g) && g.owner == owner && g.location == where && vehicleType(r, s, g) == type) {
+            addGroupUnits(s, g, unit, static_cast<int>(n));
             merged = true;
             break;
         }
@@ -530,12 +545,13 @@ int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
     int64_t moved = 0;
     for (Vehicle& g : s.vehicles) {
         if (n <= 0) break;
-        if (!alive(g) || g.id == into.vehicle || g.owner != h.owner || g.design != unit || g.location != h.where) continue;
+        if (!alive(g) || g.id == into.vehicle || g.owner != h.owner || g.location != h.where || groupUnits(g, unit) <= 0) continue;
         if (o.vehicle.valid() && g.id != o.vehicle) continue;  // a named group only
         // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
         if (!s.options.simultaneous && type == VehicleType::Fighter && g.movement < turnMovement(r, s, g)) continue;
-        const int64_t take = std::min<int64_t>(n, g.count);
-        g.count -= static_cast<int>(take);
+        // The units of that design leave the group; the others stay (inferred: the supply
+        // left over stays with the group, up to what the rest can hold).
+        const int take = removeGroupUnits(s, g, unit, static_cast<int>(std::min<int64_t>(n, std::numeric_limits<int>::max())));
         if (g.count > 0) g.supply = std::min(g.supply, vehicleSupplyCapacity(r, s, g));
         n -= take;
         moved += take;
@@ -682,13 +698,59 @@ int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v) {
         if (positive(AbilityKind::StandardShipMovement) || positive(AbilityKind::MovementBonus) || positive(AbilityKind::ExtraMovementGeneration))
             cost += mounted(r, d.entries[i]).supplyUsed;
     }
-    // A unit group pays for every unit, then the racial percentage (§12).
-    if (isUnitType(vehicleType(r, s, v))) cost *= std::max(1, v.count);
+    // A unit group pays for every unit: Σ over its designs of the design's cost
+    // × its count, then the racial percentage (§12).
+    if (isUnitType(vehicleType(r, s, v))) {
+        if (!v.mixed.empty()) {
+            int64_t total = 0;
+            for (const UnitStack& st : v.mixed) {
+                Vehicle probe = stackProbe(s, v, st);
+                probe.owner = {};  // the racial percentage comes once, below
+                total += moveSupplyCost(r, s, probe) * st.count;
+            }
+            return detail::scaledSupply(r, s, v.owner, total);
+        }
+        cost *= std::max(1, v.count);
+    }
     return detail::scaledSupply(r, s, v.owner, cost);
+}
+
+int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng) {
+    if (amount <= 0 || !alive(v)) return 0;
+    // Whole units die while the damage covers their structure, each drawn from
+    // one of the group's designs at random, as in combat (spec 04 §9.4) but
+    // without shields, and what is left is lost (inferred).
+    std::vector<UnitStack> stacks = groupStacks(v);
+    auto structure = [&](DesignId id) {
+        const Design& d = s.design(id);
+        int64_t total = 0;
+        for (size_t i = 0; i < d.entries.size(); ++i) total += entryStructure(r, d, i);
+        return std::max<int64_t>(1, total);
+    };
+    int64_t left = amount, used = 0;
+    for (;;) {
+        std::vector<size_t> live;
+        for (size_t k = 0; k < stacks.size(); ++k)
+            if (stacks[k].count > 0 && structure(stacks[k].design) <= left) live.push_back(k);
+        if (live.empty()) break;
+        UnitStack& st = stacks[live.size() == 1 ? live.front() : live[rng.below(live.size())]];
+        const int64_t hp = structure(st.design);
+        left -= hp;
+        used += hp;
+        --st.count;
+        ++s.design(st.design).lost;
+    }
+    setGroupStacks(s, v, std::move(stacks));
+    if (alive(v)) fitToCapacity(r, s, v);
+    return used;
 }
 
 bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount) {
     if (amount <= 0 || !alive(v)) return false;
+    if (isUnitType(vehicleType(r, s, v))) {
+        damageUnitGroup(r, s, v, amount, s.rng);   // records the units lost
+        return !alive(v);
+    }
     const Design& d = s.design(v.design);
     if (d.entries.empty()) return false;
     if (v.damage.size() < d.entries.size()) v.damage.resize(d.entries.size(), 0);

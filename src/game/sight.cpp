@@ -55,6 +55,12 @@ void addLevels(SightVector& out, std::span<const ParsedAbility> abilities, Abili
 // vehicleAbilities would list), without building the list: sight runs often.
 void addVehicleLevels(SightVector& out, const Rules& r, const GameState& s, const Vehicle& v, AbilityKind kind) {
     if (v.status == VehicleStatus::Mothballed) return;
+    // A group that mixes designs lists every design's abilities: the best level counts.
+    for (size_t k = 1; k < v.mixed.size(); ++k) {
+        const Design& d = s.design(v.mixed[k].design);
+        addLevels(out, r.hullAbilities(d.hull), kind);
+        for (const DesignEntry& e : d.entries) addLevels(out, r.componentAbilities(e.component), kind);
+    }
     const Design& d = s.design(v.design);
     addLevels(out, r.hullAbilities(d.hull), kind);
     for (size_t i = 0; i < d.entries.size(); ++i) {
@@ -68,6 +74,11 @@ int64_t vehicleBest(const Rules& r, const GameState& s, const Vehicle& v, Abilit
     if (v.status == VehicleStatus::Mothballed) return 0;
     const Design& d = s.design(v.design);
     int64_t best = bestValue1(r.hullAbilities(d.hull), kind);
+    for (size_t k = 1; k < v.mixed.size(); ++k) {   // the other designs of a mixed group
+        const Design& m = s.design(v.mixed[k].design);
+        best = std::max(best, bestValue1(r.hullAbilities(m.hull), kind));
+        for (const DesignEntry& e : m.entries) best = std::max(best, bestValue1(r.componentAbilities(e.component), kind));
+    }
     for (size_t i = 0; i < d.entries.size(); ++i) {
         const auto ab = r.componentAbilities(d.entries[i].component);
         if (hasAbility(ab, kind) && entryIntact(r, s, v, i)) best = std::max(best, bestValue1(ab, kind));
@@ -430,7 +441,7 @@ void updateKnowledge(const Rules& r, GameState& s) {
             if (!alive(t) || t.owner == scanner.owner || t.location.system != scanner.location.system) continue;
             if (chebyshev(t.location.sector, scanner.location.sector) > range) continue;
             if (!visibleTo(scanner.owner.index(), t.id) || scannerJammed(r, s, t)) continue;
-            insertSorted(scanned[scanner.owner.index()], t.design);
+            for (const UnitStack& st : groupStacks(t)) insertSorted(scanned[scanner.owner.index()], st.design);
         }
     }
     for (size_t i = 0; i < s.colonies.size(); ++i) {
@@ -440,7 +451,7 @@ void updateKnowledge(const Rules& r, GameState& s) {
         const SystemId sys = s.galaxy.object(c->planet).system;
         for (const Vehicle& t : s.vehicles)
             if (alive(t) && t.owner != c->owner && t.location.system == sys && visibleTo(c->owner.index(), t.id) && !scannerJammed(r, s, t))
-                insertSorted(scanned[c->owner.index()], t.design);
+                for (const UnitStack& st : groupStacks(t)) insertSorted(scanned[c->owner.index()], st.design);
     }
     for (size_t ei = 0; ei < nEmp; ++ei) {
         Empire& e = s.empires[ei];

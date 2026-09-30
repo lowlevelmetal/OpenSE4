@@ -95,7 +95,8 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
     // foreign design shows its statistics (built, lost, kills, enemy tonnage
     // destroyed): they are the owner's records (inferred).
     std::vector<DesignId> seen = me ? seenDesignIds(me->knowledge) : std::vector<DesignId>{};
-    for (const Vehicle& x : v.vehicles) seen.push_back(x.design);
+    for (const Vehicle& x : v.vehicles)
+        for (const UnitStack& st : groupStacks(x)) seen.push_back(st.design);   // every design of a unit group
     std::sort(seen.begin(), seen.end());
     for (Design& d : v.designs) {
         if (d.owner == viewer) continue;

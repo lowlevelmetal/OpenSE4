@@ -19,6 +19,7 @@
 //              (x, y); or troop ship `piece` lands troops on planet `target`.
 //   Seeker     seeker piece `piece` flies to (x, y) toward `target`; it appears
 //              on its first event.
+//   UnitsLost  unit group `piece` loses `amount` units to a hit by `target`.
 // Pieces of kind Seeker, and pieces launched by a Launch event, start off the
 // map. Planets and obstacles cover 4x4 squares from their top-left square.
 // Events are played in round order (stable for equal rounds).
@@ -43,6 +44,7 @@ public:
         int fromX = 0, fromY = 0;  // square before the latest move (for animation)
         float heading = 0.0f;      // radians, 0 = facing up (map y decreasing)
         int damage = 0;            // total damage taken so far
+        int units = 1;             // units left in a group (seekers: members at the start)
         int shots = 0;             // Fire events so far
     };
 

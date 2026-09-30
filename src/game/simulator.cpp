@@ -246,7 +246,26 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             continue;
         }
         const DesignId d = copyOf(side, item.design, item.strategy);
-        const bool units = isUnitType(r.hull(sb.design(d).hull).type);
+        const VehicleType type = r.hull(sb.design(d).hull).type;
+        const bool units = isUnitType(type);
+        if (units && type != VehicleType::Drone) {
+            // Units in space form one group per (owner, kind, sector), mixing designs (spec 03 §12).
+            Vehicle* group = nullptr;
+            for (Vehicle& g : sb.vehicles)
+                if (g.owner == owner && g.location == sim.where && g.count > 0 && vehicleType(r, sb, g) == type) {
+                    group = &g;
+                    break;
+                }
+            if (group) {
+                addGroupUnits(sb, *group, d, item.count);
+                group->supply = initialSupply(r, sb, *group);
+                if (item.fleet >= 0) {
+                    auto& members = fleetMembers[static_cast<size_t>(item.fleet)];
+                    if (std::find(members.begin(), members.end(), group->id) == members.end()) members.push_back(group->id);
+                }
+                continue;
+            }
+        }
         const int vehicles = units ? 1 : item.count;
         for (int n = 0; n < vehicles; ++n) {
             Vehicle v;

@@ -128,6 +128,7 @@ struct TacticalPiece {
     int64_t supply = 0;
     bool hasSupply = true;        // may fire and hold shields
     int count = 1;                // units in a group; seekers: members
+    std::vector<UnitStack> units; // a unit group: its designs and the units left of each
     int budget = 1;               // targets it may engage this turn
     int engaged = 0;              // targets engaged this turn
     bool acted = false;           // the strategy acted for it this phase (Auto)

@@ -633,10 +633,10 @@ Income computeIncome(const Rules& r, const GameState& s, EmpireId e) {
     }
     for (const Vehicle& v : s.vehicles) {
         if (v.owner != e || v.count <= 0 || v.status == VehicleStatus::Mothballed) continue;
-        const auto ab = vehicleAbilities(r, s, v);
-        for (size_t k = 0; k < 3; ++k) inc.generated.v[k] += sumValue1(ab, kGeneratePoints[k]) * v.count;
-        genResearch += sumValue1(ab, AbilityKind::GeneratePointsResearch) * v.count;
-        genIntel += sumValue1(ab, AbilityKind::GeneratePointsIntelligence) * v.count;
+        // A unit group adds every unit's (spec 03 §12).
+        for (size_t k = 0; k < 3; ++k) inc.generated.v[k] += vehicleAbilityTotal(r, s, v, kGeneratePoints[k]);
+        genResearch += vehicleAbilityTotal(r, s, v, AbilityKind::GeneratePointsResearch);
+        genIntel += vehicleAbilityTotal(r, s, v, AbilityKind::GeneratePointsIntelligence);
     }
 
     // Not a floor: a resource the colonies deliver exactly 0 of is replaced by the
@@ -722,7 +722,7 @@ void abandonVehicles(TurnContext& ctx, EmpireId e, int64_t unpaid) {
         const bool ship = isShipOrBase(vehicleType(r, s, v));
         ctx.log(e, LogCategory::Construction, std::format("{} {} abandoned", ship ? "Ship" : "Unit group", v.name),
                 "The empire could not pay its maintenance.", v.location);
-        s.design(v.design).lost += v.count;
+        for (const UnitStack& st : groupStacks(v)) s.design(st.design).lost += st.count;
         if (ship) {  // (inferred) abandoned ships count as ships lost
             ctx.mood(e, "Any Ship Lost", v.location.system);
             ctx.mood(e, "Ship Lost in System", v.location.system);

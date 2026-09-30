@@ -398,7 +398,7 @@ template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o
 
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
-    fields(ar, v.id, v.owner, v.design, v.name, v.location, v.count, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
+    fields(ar, v.id, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn);
 }
@@ -431,12 +431,18 @@ void io(Ar& ar, CombatEvent& e) {
 
 template <class Ar>
 void io(Ar& ar, CombatPiece& p) {
-    fields(ar, p.kind, p.owner, p.vehicle, p.planet, p.design, p.name, p.startX, p.startY);
+    fields(ar, p.kind, p.owner, p.vehicle, p.planet, p.design, p.name, p.startX, p.startY, p.count);
+}
+
+template <class Ar>
+void io(Ar& ar, GroundCombat& g) {
+    fields(ar, g.round, g.planetPiece, g.troopShip, g.planet, g.attacker, g.defender, g.population, g.facilities, g.attackers,
+           g.defenders, g.attackersLeft, g.defendersLeft, g.militia, g.militiaLeft, g.rounds, g.captured);
 }
 
 template <class Ar>
 void io(Ar& ar, CombatRecord& c) {
-    fields(ar, c.turn, c.location, c.participants, c.pieces, c.events, c.summary);
+    fields(ar, c.turn, c.location, c.participants, c.pieces, c.events, c.summary, c.grounds);
 }
 
 template <class Ar>
