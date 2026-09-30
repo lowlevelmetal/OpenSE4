@@ -1081,7 +1081,7 @@ bool Battle::canAffect(DamageType type, int t, int att) const {
     const detail::DamageRule rule = detail::damageRule(type);
     switch (b.kind) {
         case Kind::Obstacle: return false;
-        case Kind::Seeker: return rule.structural && !isSpecialEffect(type);
+        case Kind::Seeker: return rule.structural && !rule.shieldsOnly && !isSpecialEffect(type);
         case Kind::Planet:
             if (isPlanetOnlyDamage(type)) return true;
             if (!rule.structural || isSpecialEffect(type)) return false;   // (inferred) no reload, conversion or moves on planets
@@ -1570,7 +1570,8 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
 
 void Battle::seekerHit(int att, int t, DamageType type, int64_t damage) {
     // A hit that (with the pool) reaches a seeker's hit points destroys one member (confirmed: binary).
-    if (!detail::damageRule(type).structural || isSpecialEffect(type)) return;
+    const detail::DamageRule rule = detail::damageRule(type);
+    if (!rule.structural || rule.shieldsOnly || isSpecialEffect(type)) return;   // a seeker has no shields to drain
     Piece& b = pieces_[t];
     const int64_t total = b.pool + damage;
     if (total < b.hp) {

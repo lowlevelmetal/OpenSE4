@@ -124,6 +124,14 @@ ruleset::Ruleset buildCombatRuleset() {
     gun(rs, "CT Quad Gun", WK::DirectFire, {15, 15, 15}, "Quad Damage To Shields");
     gun(rs, "CT Slow Gun", WK::DirectFire, std::vector<int>(20, 4), "Normal").weapon.reloadRate = 3;
 
+    part(rs, "CT Battle Computer", 10, {ab(AbilityKind::CombatModifierSystem, 7)});
+    for (int value : {10, 4}) {
+        ruleset::Facility f;
+        f.name = std::format("CT Combat Center {}", value);
+        f.abilities = {ab(AbilityKind::CombatModifierSystem, value)};
+        rs.facilities.push_back(std::move(f));
+    }
+
     ruleset::VehicleSize platform;
     platform.name = platform.shortName = "CT Platform Hull";
     platform.type = VehicleType::WeaponPlatform;
@@ -432,6 +440,28 @@ TEST_CASE("combat: to-hit parts add up by family, the system bonus is offense on
     // Mothballed ships have no offense or defense.
     s.vehicle(two)->status = VehicleStatus::Mothballed;
     CHECK(combat::detail::vehicleDefense(r, s, *s.vehicle(two), 0, 0) == 0);
+}
+
+TEST_CASE("combat: system modifiers add up over colonies and vehicles") {
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const SystemId sys = ar.loc.system;
+    CHECK(combat::detail::systemModifier(r, s, ar.a, sys, AbilityKind::CombatModifierSystem) == 0);
+    // Each colony adds its best facility; each vehicle its best component (confirmed: binary).
+    Colony& home = homeworld(s, ar.a);
+    home.facilities.push_back(facilityIndex(r, "CT Combat Center 10"));
+    home.facilities.push_back(facilityIndex(r, "CT Combat Center 4"));
+    CHECK(combat::detail::systemModifier(r, s, ar.a, sys, AbilityKind::CombatModifierSystem) == 10);
+    spawn(s, frigate(s, ar.a, "Flagship", 1, {"CT Battle Computer", "CT Battle Computer"}), ar.loc);
+    spawn(s, frigate(s, ar.a, "Escort", 1, {"CT Battle Computer"}), ar.loc);
+    CHECK(combat::detail::systemModifier(r, s, ar.a, sys, AbilityKind::CombatModifierSystem) == 10 + 7 + 7);
+    CHECK(combat::detail::systemModifier(r, s, ar.b, sys, AbilityKind::CombatModifierSystem) == 0);
+    // The system bonus helps offense only (spec 04 §7).
+    const VehicleId gunner = spawn(s, frigate(s, ar.a, "Gunner", 1, {"Test Laser"}), ar.loc);
+    const VehicleId target = spawn(s, frigate(s, ar.b, "Target", 1, {}), ar.loc);
+    CHECK(combat::toHitPercent(r, s, *s.vehicle(gunner), 4, *s.vehicle(target), 5) == 50 + 24);
+    CHECK(combat::toHitPercent(r, s, *s.vehicle(target), 4, *s.vehicle(gunner), 5) == 0);   // not a weapon entry
 }
 
 TEST_CASE("combat: damage at range with and without a mount") {
