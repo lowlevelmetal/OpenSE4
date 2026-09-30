@@ -63,6 +63,7 @@ constexpr std::array kBoolOptions{
     BoolOption{"allow_gifts", &O::allowGifts},
     BoolOption{"allow_tech_trades", &O::allowTechTrades},
     BoolOption{"allow_intel", &O::allowIntel},
+    BoolOption{"allow_surrender", &O::allowSurrender},
     BoolOption{"no_ruins", &O::noRuins},
     BoolOption{"only_breathable", &O::onlyBreathable},
     BoolOption{"only_home_type", &O::onlyHomeType},

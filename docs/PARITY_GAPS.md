@@ -26,12 +26,12 @@ facilities, events, combat, stellar manipulation), and setup's racial point cost
 `economy::characteristicPointCost`, which costs each characteristic as stored. On
 2026-09-30 the engine's remaining guesses (spec 02 §13 items 33 and 37–50) and the other
 open items of spec 02 were settled from the executable, and the rows found then were
-implemented the same day, except the two below. The engine's own choices where the spec
-is silent are spec 02 §13 items 51–56. These rows are where the engine differs:
+implemented the same day, except the one below (the opening pools of spec 02 §9 followed
+with the turn order). The engine's own choices where the spec is silent are spec 02 §13
+items 51–56. This row is where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Opening pools (`setup.cpp:410-413`, `research.cpp:160-166`) | Starting Resources plus one turn of full income: remote mining, `Generate Points`, trade and the computer player's bonus included | Spec 02 §9: plus one turn of production only (colony output as delivered, minimum-generation rule); no bonus | L |
 | Where built units go (`economy_queue.cpp` `placeUnits`) | After the builder, the empire's other planets in the sector (object order), then its ships and bases (vehicle order) | Spec 02 §6.5: the other holders in the game's object order, planets and ships mixed. The engine keeps planets and vehicles in separate lists with no common order, so it cannot mix them (spec 02 §13 Q52) | L |
 
 ## Vehicles, movement and logistics (spec 03)
@@ -48,7 +48,7 @@ where the spec is silent are spec 03 §19 Q60–Q70. What is left:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Long-range scanning (`sight.cpp:431-458`) | Automatic every update; `Long Range Scanner - System` needs a populated colony and covers unit groups. Left for now: the same code is the "When a foreign design counts as seen" row of the research and turn-order section, changed separately | §3.3: takes effect when a player displays the target's details; any own object with the facility ability counts, no population; unit groups only by ordinary scanners within range | L |
+| Long-range scanning (`sight.cpp` `scannerReaches`) | A design is learned only when a human opens the report of a vehicle the scanners reach (`cmd::OpenVehicleReport`), as the spec says; but `Long Range Scanner - System` works only from a populated colony and also covers unit groups | §3.3: `Long Range Scanner - System` works from any own object in the system that has it (planet facilities without population) and does not cover unit groups | L |
 
 ## Combat (spec 04)
 
@@ -93,34 +93,12 @@ spec 04 §19 were settled from the executable; these rows are where the engine d
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
-The rules of this section follow the spec. What is left depends on other parts of the engine,
-or was found when spec 05's open questions were settled on 2026-09-30:
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Statistics and history files | Not written: every empire's statistics rows and history record (`Empire::history`, `Empire::historyEvents`) live in the save, and the windows read them there. The history record holds more events than the original's (spec 05 open question 30, an extension) | Human players' statistics, history and log text files are written at step 2 of their end-of-turn processing, per player number in a history folder of the installation (§3.4, §5, §8); the statistics file has rows only for the empires whose score the player may see | L |
-| Start of a player's turn in a turn-based game (`turn_based.cpp:190-205`) | Destruction check; the player's vehicles get their movement back and carry on with their orders; then the AI state, the political step and the ministers plan, and their orders are carried out | Humans: destruction check first. Then the start-of-turn step (AI state, Politics minister first, the other ministers give orders), and only then the movement refill and every vehicle's orders, the new ones included, at most 21 orders per vehicle. A computer player's destruction check comes after its start-of-turn step (§8 "Turn-based game") | M |
-| When colony ships found colonies (`movement.cpp:1010`, `turn.cpp:180`) | A Colonize order that has reached its planet waits, and the colony is founded after all 30 movement phases (simultaneous games) | Colonize is carried out like any order, on one of the ship's acting days with movement left, so the colony exists during later phases and a ship that arrives on its last acting day founds it next turn (§8 step 5; spec 03 §6.3, §8) | L |
-| A computer player's messages (`turn.cpp:166-167`) | Delivered after the empire's whole planning pass, so its other ministers plan with the old treaties | Sent and applied during the Politics minister, which acts first: the empire's other ministers already see the new treaties (§8 step 4) | L |
-| Political step in turn-based games (`turn_based.cpp:202-203`, `ai_anger.cpp:669`) | Counts the battles, reports and messages of the previous game turn | Counts every log entry not yet counted, dated this turn or the turn before: everything since the empire's previous political step, including the turns of the players before it in the current game turn (§7.3 "What it counts") | L |
-| The sector a vehicle came from, turn-based games (`combat.cpp:950`, `state.hpp:427`) | A vehicle that moved counts as coming from the sector it left for the whole game turn | Reset to its current sector at step 16 of its owner's end-of-turn processing, so it counts as an arrival only until its owner's turn ends (§8 step 16; spec 04 §3) | L |
-| When a foreign design counts as seen (`sight.cpp:459`, `diplomacy.cpp:526`, `diplomacy.cpp:629`, `combat_space.cpp:2749`) | Every design an empire's long-range scanners reach is renewed each turn; a master dates its subject's designs with the current turn; a surrender passes on the surrendered empire's knowledge with its own dates; battles renew the pieces' designs only; mine strikes renew nothing | Scanners teach a design only when a human opens the vehicle's report; a master's date is the design's creation date, only for designs it does not know and the subject can build; a surrender dates everything with the surrender turn; battles also renew the designs of units in the pieces' cargo, and a mine strike renews the mine's design (§8 "Design knowledge and step 12") | L |
-| Cargo damage (`events.cpp:756`, `:837`, `:1041`) | Amount kT of cargo destroyed, one unit or 1M at a time; an Amount of 1 or less destroys about half | Ship: the whole cargo, Amount unused. Planet: Amount damage points, to the people first, then a hull-damaging hit on the units (spec 05 §2.3) | L |
-| Facility damage (`events.cpp:1045`) | An Amount of 0 or less destroys one; each pick uniform among the facilities left | Nothing when the Amount is 0 or less; picks weighted by each kind's count at the start (spec 05 §2.3) | L |
-| Population change (`events.cpp:980`, `:202`) | No random spread; losses shared out over the races in proportion; a gain can create an owner group | A spread of ± trunc(\|Amount\| / 5); losses from the first group on; gains only to an existing owner group, capped at the planet's maximum (spec 05 §2.3) | L |
-| Conditions change (`events.cpp:946`) | Needs a colony; Amount in hundredths of the 0–1.5 scale | Any planet; Amount in tenths, so 10 times stronger (spec 05 §2.3, open question 20) | M |
-| Anger change (`events.cpp:1001`) | trunc(Amount / 10) percent | Amount in whole percent (spec 05 §2.3, open question 20) | M |
-| Value change (`events.cpp:967`) | Amount × 1,000 allowed up to ±500 × 1,000; values already outside the limits kept | Amount × 1,000 only strictly inside ±500,000, else the plain Amount; negative results become 0 and every value is pulled into the limits (spec 05 §2.3) | L |
-| Design theft (`events.cpp:916`) | A random design, preferring unknown ones, copied into the thief's designs | The newest built design the thief does not know and its owner can build, learned (dated as seen) but not copied; fails when there is none (spec 05 §2.3) | M |
-| Surrender (`diplomacy.cpp:505`) | Technology up to the surrenderer's levels; the whole map shared; the empire removed at once; every empire told; no Allow Surrender check | One level per area; only the systems of the transferred objects explored; destroyed at its next destruction check; empires in contact told; needs Allow Surrender (spec 05 §3.4) | M |
-| Tariff base (`diplomacy.cpp:728`) | Colony production only | Colony production after the income floor, remote mining and `Generate Points` income (spec 05 §3.3) | L |
-| Rebel empire (`events.cpp:665`) | The race of the largest group; named "Free <planet>"; only that race's people become its own; anger kept; empty stocks; in contact and at War with the former owner; its own system not explored | A copy of the former owner, named after the system; the whole population becomes its people; anger 25; stocks of 4 × production; no contact until detection, then None; its system explored (spec 05 §2.3) | M |
-| "Any" picks (`events.cpp:288`, `:481`, `:511`) | The handlers' checks filter the picks; a homeworld is never drawn for Population Rebel | Only the steal-level and bad-chance tests; a homeworld can rebel (spec 05 §2.3) | L |
-| Defense deleting a project (`intel.cpp:149`) | Compares the highest requirement level | Compares the sum of the requirement levels (spec 05 §2.4) | L |
-| Intercept Messages (`events.cpp:1236`) | "Nothing passed" counts as a success | The operation fails (spec 05 §2.3) | L |
-| System - Info (`events.cpp:570`, `:1294`) | A random system unknown to the thief, else a known one | The highest-numbered system the target explored and the thief did not; fails when there is none (spec 05 §2.3) | L |
-| Event targets (`events.cpp:1587`, `:1373`, `:1461`) | Ship events leave unit groups out; planet events include uncolonized planets; living empires only; a star is protected when a home planet is in its system; star presence counts vehicles | Ships, bases and unit groups in space; colonies only; every empire number; only the exact home planet location is protected; presence is a colony (spec 05 §4) | M |
-| Victory tests (`score.cpp:188`) | Exact integer comparisons | Floating-point comparisons (spec 05 §6) | L |
+Every rule of this section follows the spec (2026-09-30). Where the spec leaves a detail
+open, the engine's choices are spec 05 open questions 38–46: third empires for "Any"
+political operations, who hears of an operation that tells nobody, the place and layout
+of the players' statistics, history and log files, rebel empire details, home planet
+locations, when opening a report dates a design, how a turn-based political step knows
+what it counted, the 21-order limit and step 16.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -156,14 +134,15 @@ layers, the Research minister's gate and mine sweeping, facility upgrades, the b
 Attacking and Defending by the current player (`CombatRecord::currentPlayer`), the
 strength rating in tenths, every jump count over all links, candidate values, the defend
 list, the 4-jump test, design names (`Design::templateName`) and design typing, Allow
-Surrender (`GameOptions::allowSurrender`), colonization danger, the one-per-system list,
+Surrender (`GameOptions::allowSurrender`, also a check box of the Game Settings page and the
+server's `allow_surrender` key), colonization danger, the one-per-system list,
 the Repair, Resupply, Space Yard Ship and Stellar Manipulation ministers, trade item
 values, the replies and speech pools, and template entries of the vehicle list. The
 engine's own choices where the spec is silent are spec 05 open question 37. These rows
-remain: two for want of a command the AI could give, and the option's place in setup:
+remain, for want of a command the AI could give:
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
 | Queued facilities switched by an upgrade (`ai_economy.cpp` `planUpgrades`) | The older queued facility is removed and the newest queued in its place, so what was paid into it is lost | Spec 05 §7.5: the queued item switches to the newest version (a command that replaces a queued item in place is needed) | L |
 | A war declaration with an empty speech pool (`ai_diplomacy.cpp` `initiative`) | Nothing happens: anger changes only through the declaration the AI sends | Spec 05 §7.5 `AI_Speech`: anger still becomes 100, only the declaration is not made (a command that sets anger is needed) | L |
-| Allow Surrender in setup (`client/classic/screens/setup.cpp` `pageGameSettings`, `server/setup_file.cpp`) | `GameOptions::allowSurrender` exists and is on, but the Game Settings page and the server's setup file do not offer it yet | Spec 05 §7.4: the seventh check box of the Game Settings tab, on by default | L |
+

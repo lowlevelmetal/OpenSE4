@@ -169,6 +169,11 @@ struct Production {
     Resources depletion;      // finite games: stock drawn from the planets
 };
 Production empireProduction(const Rules& r, const GameState& s, EmpireId e);
+// The empire's whole non-trade income of the five kinds this turn, before
+// tariffs and the computer bonus: colony production after the income floor,
+// remote mining and `Generate Points`. What a subject's tariffs are cut from
+// (spec 05 §3.3, confirmed: binary); trade income is never taxed.
+Production nonTradeIncome(const Rules& r, const GameState& s, EmpireId e);
 
 // Spaceport rule: output of `sys` reaches the empire (a Spaceport facility on
 // any of its colonies there, or the No Spaceports trait).

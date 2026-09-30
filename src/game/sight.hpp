@@ -24,7 +24,7 @@ namespace opense4::game::sight {
 using SightVector = std::array<int, kSightTypes>;
 
 // Recomputes Knowledge::present / visibleVehicles / explored / lastSeen for
-// every empire and learns designs of vehicles scanned by long range scanners.
+// every empire.
 // A system is explored by the empire's own sensor sources; partners' maps are
 // shared by diplomacy. Omnipresence and the Galaxy Seen trait reveal every
 // system and link.
@@ -64,6 +64,21 @@ constexpr bool detects(const SightVector& sensors, const SightVector& obsc) {
 // Ships, bases, fighter, satellite and drone groups give sensors and presence;
 // mine fields (and troops) do not.
 bool isSensorSource(ruleset::VehicleType t);
+
+// Long-range scanning (spec 01 §6.6, spec 05 §8 "Design knowledge",
+// confirmed: binary): the viewer sees the foreign vehicle, it carries no
+// Scanner Jammer, and one of the viewer's vehicles with a Long Range Scanner
+// is in its system within range, or a populated colony of the viewer with a
+// system-wide scanner is in its system.
+bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target);
+// The designs a vehicle's report shows: every design of the group and of the
+// units in its cargo, sorted.
+std::vector<DesignId> reportDesigns(const GameState& s, const Vehicle& v);
+// A human player opens the report of a foreign vehicle its scanners reach:
+// the designs the report shows are dated as seen this turn. Nothing is
+// learned from scanners otherwise, and computer players never learn this
+// way. True when a date changed (cmd::OpenVehicleReport).
+bool learnFromReport(const Rules& r, GameState& s, EmpireId viewer, VehicleId vehicle);
 
 // End-of-turn step 12 (spec 05 §8, confirmed: binary): the empire forgets the
 // foreign designs it last saw more than kDesignMemoryTurns turns ago.

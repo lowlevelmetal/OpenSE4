@@ -135,6 +135,8 @@ struct Target {
 inline constexpr int kTargetDraws = 1000;
 // Empires the galaxy can hold; a rebel colony becomes a new empire only below it.
 inline constexpr size_t kMaxEmpires = 20;
+// A rebel empire's capital starts at this anger (spec 05 §2.3, confirmed: binary).
+inline constexpr int kRebelAnger = 25;
 
 // An intelligence project's target (spec 05 §2.1): a requested target is
 // validated; "Any" draws candidates of the right kind at random, up to
@@ -146,6 +148,7 @@ std::optional<Location> targetLocation(const GameState& s, const Target& t);
 
 struct Outcome {
     bool applied = false;
+    bool silent = false;              // applied, but nobody is told (Planet - Conditions Change)
     int64_t actual = 0;               // the realized amount ([%ActualAmount])
     Tokens tokens;                    // object tokens (vehicle, planet, system, ...)
     std::vector<std::string> report;  // espionage findings for the source
@@ -163,13 +166,18 @@ int64_t unownedChanceValue(const GameState& s, SystemId sys, AbilityKind k);
 // at most V. So it never matters in the stock data.
 bool chanceRejects(int64_t v, Rng& rng);
 
-// A colony breaks away as a new independent empire (spec 05 §2.3, spec 02
-// §4): a computer player with the race of the colony's largest population
-// group, the owner's technology and data lists, at War with its former owner
-// (inferred). The planet becomes its capital (anger capped at 80). The one
-// way a new empire is founded: the rebellion event and the intelligence
-// operation both use it. Invalid when kMaxEmpires are reached. Adding an
-// empire invalidates references into GameState::empires.
+// A colony breaks away as a new independent empire (spec 05 §2.3, confirmed:
+// binary), when fewer than kMaxEmpires empires exist (destroyed ones count). The
+// new empire is a copy of the former owner (race, technology, queues,
+// options), named after the system, a computer player at the highest computer
+// difficulty (ai::rebelDifficulty); the planet becomes its Homeworld and
+// capital with anger kRebelAnger, the whole population its own people, and
+// each of its five stocks starts at 4 × its production. It has explored only
+// its own system and is in contact with nobody: it meets the empires that
+// detect it (diplomacy::updateContacts). The one way a new empire is founded:
+// the rebellion event and the intelligence operation both use it. Invalid
+// when the limit is reached. Adding an empire invalidates references into
+// GameState::empires.
 EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 
 // Damage to a vehicle in the standard order: armor first (design order),
@@ -177,9 +185,6 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng);
 // Removes a vehicle from its fleet (empty fleets are deleted).
 void detachFromFleet(GameState& s, Vehicle& v);
-// Destroys cargo: `amount` kT of it, or half of everything when `amount` <= 1
-// (the stock records use 1 as "some"). Returns the kT destroyed.
-int64_t damageCargo(const Rules& r, const GameState& s, Cargo& c, int64_t amount, Rng& rng);
 
 } // namespace opense4::game::effects
 
@@ -207,11 +212,15 @@ std::optional<uint32_t> pickRecord(const Rules& r, const GameState& s, Rng& rng)
 // None: the type has no target list, so such a record never fires.
 enum class TargetKind : uint8_t { None, Ship, Planet, Empire, Star, WarpPoint };
 TargetKind targetKind(effects::Effect e);
-// Draws the target of event record `record` from the whole galaxy: up to
-// kTargetDraws draws, removing candidates that no longer exist, homeworlds
-// (and stars in their systems) for High and Catastrophic planet and star
-// events, candidates whose owner fails the luck roll, and candidates rejected
-// by `Change Bad Event Chance - System`. nullopt: no event.
+// Draws the target of event record `record` from the whole galaxy (spec 05
+// §4, confirmed: binary): ship types from every ship, base and unit group in
+// space, planet types from every colony, political types from every empire
+// number (destroyed ones included; they achieve nothing, having no third
+// empire), stars and warp points. Up to kTargetDraws draws, removing
+// candidates that no longer exist, those at an empire's home planet location
+// for High and Catastrophic planet and star events, those whose owner fails
+// the luck roll (for a star: every empire with a colony in its system), and
+// those rejected by `Change Bad Event Chance - System`. nullopt: no event.
 std::optional<effects::Target> pickEventTarget(const Rules& r, const GameState& s, uint32_t record, Rng& rng);
 // Whether an event's target still exists (a timed event whose target is gone
 // is dropped silently).

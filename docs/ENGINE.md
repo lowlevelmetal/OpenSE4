@@ -57,19 +57,24 @@ empires are skipped.
    get `turn + 1`.
 4. **Start of turn**, for each empire: `ai::updateAiState`, `ai::politicalStep` (it counts
    the turn processed before, whose battles `GameState::combats` still holds), then the
-   ministers that act while orders are given (`ai::planOrders`: every minister for a
-   computer player, the active ones for a human). Their messages take effect at once.
-   Afterwards `ai::recordAiDecisions` notes what was decided.
+   ministers that act while orders are given (every minister for a computer player, the
+   active ones for a human): the Politics minister alone first
+   (`ai::planPoliticsOrders`), whose messages take effect at once, then the others
+   (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Afterwards
+   `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
    vehicle, fleet and planet with orders carries out one order whenever its day counter
    reaches 1, and `combat::resolveSpaceCombat` runs in sectors where something acted and
-   hostiles meet (spec 03 §6.3). Colony ships waiting at their planets then found their
-   colonies (`movement::runColonization`), and sight and first contact are updated.
+   hostiles meet (spec 03 §6.3). A Colonize order founds its colony like any order, on an
+   acting day with movement left, so a colony can appear in any phase. Sight and first
+   contact are then updated.
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
       Intelligence and construction);
-   2. the statistics row (`score::recordStatistics`);
+   2. the statistics row (`score::recordStatistics`), and for a human player the lines of
+      its statistics, history and log text files, handed out in `TurnResult::records`
+      (the classic client appends them under `history/<game>/` in its user data folder);
    3. intelligence (`intel::intelStep`) and
    4. research (`research::researchStep`), each spending the pool the previous turn filled;
    5. income (`economy::collectIncome`): production, tariffs (the master receives its
@@ -85,11 +90,12 @@ empires are skipped.
    13. supply (`movement::supplyEmpire`);
    14. the storage cap, 15. system-wide abilities and training (`economy::applyStorageCap`,
       `applySystemAbilities`, `movement::trainEmpire`);
-   17. ground combat where the empire's troops invade (`combat::runGroundCombat`);
+   16. each ship, base, fighter group and drone group records its current sector as the
+      one it comes from (`Vehicle::cameFrom`);
+   17. ground combat (`combat::runGroundCombat`);
    18. the log keeps only this turn's entries; the long record of the History window is
       `Empire::historyEvents`, which is never pruned (`addHistory`).
 
-   Step 16's per-object upkeep is part of the supply step.
 7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`).
 8. **Victory check** (`score::checkVictory`).
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
@@ -101,8 +107,9 @@ empires are skipped.
 
 Mood events raised after an empire's happiness update (construction, ground combat, the
 other empires' processing, events) wait in `GameState::pendingMood` for that empire's next
-update. The game's research pool starts at Starting Resources plus one turn of research,
-and the intelligence pool at 0 (`research::openingPools`, called by `createGame`).
+update. The game's stockpile and research pool start at Starting Resources plus one turn
+of production (colony output with the minimum-generation rule, nothing else), and the
+intelligence pool at 0 (`research::openingPools`, called by `createGame`).
 
 ### Turn-based games
 
@@ -111,11 +118,14 @@ spec 05 §8 "Turn-based game"), players take their turns one after another in em
 order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, API in
 `turn.hpp`):
 
-1. **Start of the player's turn**: the empire's destruction check (`score::checkDestruction`);
-   its vehicles regain their movement (`movement::startTurn(ctx, empire)`) and first carry
-   on with their order lists; then its start-of-turn step as in step 4 above
-   (`ai::updateAiState`, `ai::politicalStep` counting the previous game turn,
-   `ai::planOrders` for a computer player or active ministers, `ai::recordAiDecisions`).
+1. **Start of the player's turn**: a human's destruction check (`score::checkDestruction`);
+   the start-of-turn step as in step 4 above (`ai::updateAiState`, `ai::politicalStep`
+   counting everything since the empire's previous step, `Empire::politicsMark`; the
+   Politics minister, then the other ministers, whose orders are given but not yet
+   carried out; `ai::recordAiDecisions`); then its vehicles regain their movement
+   (`movement::startTurn(ctx, empire)`) and every group carries out its order list, the
+   ministers' new orders included, at most 21 orders each; a computer player's
+   destruction check comes last.
 2. **The player's orders execute as they are given** (`applyLive`). `movement::runLive`
    carries out the orders of the vehicles, fleets or planets a command set, action after
    action until each has spent its movement points, waits or fails. A group that steps
@@ -132,7 +142,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    victory check and the event step run, the per-turn flags are cleared and the AI
    remembers the turn, as in steps 7 to 10. `GameState::combats` keeps the battles of the
    game turn in progress and of the one before, so each empire's political step counts
-   every battle of the previous game turn exactly once.
+   every battle since its previous step exactly once.
 
 In a turn-based game the end-of-turn processing sees the unadvanced date
 (`economy::processingTurn`). `processTurn` on a turn-based game plays the rest of the

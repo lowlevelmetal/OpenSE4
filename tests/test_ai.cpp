@@ -3025,14 +3025,18 @@ TEST_CASE("ai: Allow Surrender gates the computer's answer and the Surrender mes
     for (DiplomaticMessage& m : g.messages)
         if (m.id == gone) m.delivered = false;
     TurnContext ctx{r, g, {}, {}, {}};
+    auto owns = [&](EmpireId e) { return std::any_of(g.colonies.begin(), g.colonies.end(), [&](const auto& c) { return c && c->owner == e; }); };
+    REQUIRE(owns(cpu));
     diplomacy::deliverMessages(ctx);
     CHECK(g.empire(cpu).alive);
+    CHECK(owns(cpu));
     g.options.allowSurrender = true;
     const MessageId real = deliver(g, cpu, asker, MessageType::Surrender);
     for (DiplomaticMessage& m : g.messages)
         if (m.id == real) m.delivered = false;
     diplomacy::deliverMessages(ctx);
-    CHECK_FALSE(g.empire(cpu).alive);
+    // Everything passes; the empire is destroyed at its next destruction check (spec 05 §3.4).
+    CHECK_FALSE(owns(cpu));
 }
 
 TEST_CASE("ai: colonization danger: any object seen or not, and one per warp point to such a system") {

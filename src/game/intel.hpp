@@ -40,8 +40,9 @@ bool namesCulprit(const GameState& s, const LogEntry& entry, EmpireId culprit);
 
 // True for projects of Type `Intelligence Defense`.
 bool isDefense(const Rules& r, uint32_t project);
-// The technology a project needs: the highest level in its requirement block
-// (inferred reading of spec 05 §2.4).
+// The technology a project needs, which a finished defense compares with its
+// level: the sum of the levels in its requirement block (spec 05 §2.4,
+// confirmed: binary).
 int requirementLevel(const Rules& r, uint32_t project);
 // Counter-intelligence an empire holds right now (for display): the sum over
 // its defense projects of trunc(Amount × progress × `Intelligence Defense

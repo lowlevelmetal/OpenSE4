@@ -955,6 +955,7 @@ private:
         lamp(ctx, "Allow gifts and tributes", o.allowGifts);
         lamp(ctx, "Allow technology in gifts and trades", o.allowTechTrades);
         lamp(ctx, "Allow intelligence projects", o.allowIntel);
+        lamp(ctx, "Allow surrender", o.allowSurrender);
         lamp(ctx, "Team mode: computer players ally against the humans", o.teamMode);
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Colonization");

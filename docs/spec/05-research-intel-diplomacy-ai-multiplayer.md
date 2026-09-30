@@ -2037,12 +2037,13 @@ Two treaty rules copy dates at step 6 of the receiving empire:
   turns ago is forgotten again at once, and the master never has it during its turn.
 
 **OpenSE4 mapping**: `processTurn` (`turn.cpp`) follows this order for a simultaneous game,
-and `empireEndOfTurn` is one empire's end-of-turn processing. A turn-based game
-(`turn_based.cpp`) starts each player's turn with its destruction check, its vehicles'
-movement and continued orders and its start-of-turn step; `applyLive` carries out each
-order as it is given (`movement::runLive`), `endPlayerTurn` runs `empireEndOfTurn` and
-passes the turn on, and after the last player the date, design cleanup, victory check and
-event step run. Every step has a stable iteration order and draws its randomness from
+and `empireEndOfTurn` is one empire's end-of-turn processing; the lines of a human
+player's files (step 2) come back in `TurnResult::records`. A turn-based game
+(`turn_based.cpp`) starts each player's turn as listed above (a human's destruction
+check, the start-of-turn step, the movement refill and every group's orders, a computer
+player's destruction check); `applyLive` carries out each order as it is given
+(`movement::runLive`), `endPlayerTurn` runs `empireEndOfTurn` and passes the turn on, and
+after the last player the date, design cleanup, victory check and event step run. Every step has a stable iteration order and draws its randomness from
 `GameState::rng`. Open questions 24 (both styles) and 32 (turn-based games) record how
 each detail of this section was settled; where the engine still differs from the rules
 above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the same calls
@@ -2247,8 +2248,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
    real declaration of war. `Ship - Cargo Damage` destroys the whole cargo and ignores
    Amount; `Planet - Cargo Damage` deals Amount damage points, to the people first, then to
    the units. A stolen blueprint does not join the thief's designs: the thief only learns
-   (dates as seen) the newest built design it does not know. OpenSE4 differs
-   (PARITY_GAPS).
+   (dates as seen) the newest built design it does not know. OpenSE4 matches.
 7. **Score weights**: answered (confirmed: binary). The formula is in §5.
 8. **Treaty combat and trade**: answered (confirmed: binary). Subjugation and Protectorate
    allow no trade. Empires fight when their treaty is below Non-Aggression: War,
@@ -2334,46 +2334,43 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     subordinate's whole non-trade income of each kind (colony production after the income
     floor, remote mining and `Generate Points` income), at its income step before the
     computer-player bonus; trade income is never taxed. The race's trade bonus is the sum of
-    Value 1 of its traits of Trait Type `Trade` (none in the stock data). OpenSE4 taxes
-    colony production only (PARITY_GAPS).
+    Value 1 of its traits of Trait Type `Trade` (none in the stock data). OpenSE4 matches
+    (`economy::nonTradeIncome`).
 16. **Rebel colonies** (§2.3): answered (confirmed: binary). The new empire is a copy of
     the former owner (race, traits, technology, queues, options), named after the system,
     computer controlled at the highest computer difficulty, with the whole population as
     its own people, anger 25, stocks of 4 × its production, and no contact with anyone
     until detection makes it (at None). The 20-empire limit counts destroyed empires and
-    stops the intelligence variant too, which then does nothing. OpenSE4's choices differ
-    in most points (PARITY_GAPS).
+    stops the intelligence variant too, which then does nothing. OpenSE4 matches; its own
+    choices for what the text leaves open are question 41.
 17. **Intelligence details** (§2.1–§2.4): answered (confirmed: binary). The defense sum
     multiplies Amount × progress as whole numbers by the fraction modifier / 100, then
     truncates, as OpenSE4 does. A finished defense deletes, in the first other living empire
     (in random order) that has one, the first project in queue order aimed at its owner
-    whose summed requirement levels are at most Amount; OpenSE4 uses the highest level. An
+    whose summed requirement levels are at most Amount, as OpenSE4 does. An
     "Any" pick applies only the steal-level test and the bad-chance test, so a homeworld can
     rebel. `Change Bad Intelligence/Event Chance - System` is read only from objects that
     belong to no empire. `Ship - Orders Change` sends the ship to a random sector of a
     random system, its own included, and `Ship - Moved` may pick the ship's own system.
     `Politics - Intercept Messages` with nothing to report fails. `Planet - Value Change`
     uses Amount × 1,000 only strictly inside ±500,000, sets negative results to 0 and pulls
-    every value into the Minimum/Maximum limits. Where OpenSE4 differs: PARITY_GAPS.
+    every value into the Minimum/Maximum limits. OpenSE4 matches.
 18. **Event targets** (§4): answered (confirmed: binary). The political types draw from
     every empire number but act on no third empire, so they achieve nothing; the
     delete-project types and `System - Info` have no target list and never fire. Planet
     events draw only colonies; ship events draw ships, bases and unit groups in space. For
     star events the empires present are those with a colony in the system, and the High and
     Catastrophic protection applies only to the exact home planet location. An empire target
-    rolls with its own Luck. OpenSE4 differs in the planet list, the ship list, the empire
-    list, the star protection and the star presence (PARITY_GAPS).
+    rolls with its own Luck. OpenSE4 matches (the home planet locations are question 42).
 19. **Victory arithmetic** (§6): answered (confirmed: binary). "X % of second place" and
-    the tech share are compared in floating point (OpenSE4's exact integer tests differ
-    only on ties); with one living empire the second-place test passes. The peace counter
+    the tech share are compared in floating point, as OpenSE4 does (in extended precision); with one living empire the second-place test passes. The peace counter
     moves only while the peace condition is on and past the qualifier date, which makes no
     observable difference. A surrender itself clears nothing: the surrendered empire is
     destroyed at its next destruction check, which does the clearing (§3.4).
 20. **Event amounts on the spec 02 scales** (§2.3, §4): answered (confirmed: binary).
     `Planet - Conditions Change` is additive, Amount in tenths of the 0–1.5 scale, on any
     planet; `Planet - Population Anger Change` is Amount in whole percent, within 0 and 100
-    (80 on a capital). OpenSE4 reads hundredths and tenths, so its effects are 10 times
-    too weak (PARITY_GAPS).
+    (80 on a capital). OpenSE4 matches.
 21. **How much the AI spends** (§7.2, §7.5): answered (confirmed: binary). The original has
     no rule that spends surplus which OpenSE4 lacks. The computer player spends only through
     construction queues and retrofits; it never uses Emergency Build or Repeat Build, never
@@ -2412,11 +2409,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       ministers read the date they would see (`ai::aiDate`: the advanced date in a
       simultaneous game, the unadvanced one in a turn-based game).
     - Colony ships: the original carries out Colonize orders during the movement phases, on
-      the ship's acting days (§8 step 5). OpenSE4 founds the colonies after the 30 phases
-      (PARITY_GAPS).
+      the ship's acting days (§8 step 5). OpenSE4 matches.
     - Computer players' messages take effect the moment they are sent, during the Politics
       minister, which acts first; the empire's other ministers already see the new
-      treaties. OpenSE4 delivers them after the empire's whole planning pass (PARITY_GAPS).
+      treaties. OpenSE4 matches: the Politics minister plans alone, its messages are
+      delivered, then the other ministers plan.
     - The political step counts each log entry once, at the first political step after it
       was logged (§7.3 "What it counts"). In a simultaneous game that is the turn processed
       before plus the messages of this turn's step 2, as in OpenSE4; turn-based games differ
@@ -2424,8 +2421,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       holds the same things.
     - A player whose orders are missing is played with all ministers on (§7.1).
     - Statistics: the original writes, for each human player, one row per empire whose
-      score that player may see (§5). OpenSE4 keeps every empire's row in the save and its
-      windows show the visible ones: an OpenSE4 extension; engine choice stands.
+      score that player may see (§5). OpenSE4 writes those files too, and also keeps every
+      empire's row in the save for its windows, which show the visible ones: an OpenSE4
+      extension; engine choice stands.
     - Step 1's queue refresh only rebuilds a list (bookkeeping); OpenSE4 needs none. Step
       16 is not an upkeep: it only records each vehicle's current sector as the one it
       comes from (§8). Where unit and cloak upkeep belong is spec 03 open question 36.
@@ -2475,27 +2473,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     map positions (confirmed: binary, §3.4). OpenSE4's record keeps those events (a lost
     contact happens only when an empire is destroyed, §3.1) and more (colonies, ruins,
     captured planets, stellar manipulations, events, the end of the game), in the save, for
-    every empire. The files themselves stay unwritten (PARITY_GAPS, spec 06 question 12).
+    every empire. The files themselves are written for human players as §5 describes
+    (OpenSE4's layout and place: question 40).
 31. **When a foreign design was "seen"** (§8, §3.2): answered (confirmed: binary). §8
-    "Design knowledge and step 12" lists every event that dates a design. OpenSE4 differs in
-    four points (PARITY_GAPS): it renews every design its scanners reach each turn, where
-    the original needs a human to open the vehicle's report; a master dates its subject's
-    designs with the current turn instead of their creation date; a surrender passes on the
-    surrendered empire's knowledge with the old dates instead of the surrender turn; and
-    neither a mine strike nor a unit carried in a battle piece's cargo dates a design.
+    "Design knowledge and step 12" lists every event that dates a design. OpenSE4 matches:
+    scanners teach a design only when a human opens the report of a vehicle they reach
+    (`cmd::OpenVehicleReport`, question 43).
 32. **Turn-based details** (§8 "Turn-based game", spec 03 §6.3): answered (confirmed:
     binary) except the two extensions at the end:
     - Start of a player's turn: the original runs the start-of-turn step (AI state, the
       Politics minister first, the other ministers) before the vehicles get their movement
       back and carry out their orders, the new ones included; a computer player's
-      destruction check comes after its start-of-turn step. OpenSE4 refills and carries on
-      first and plans afterwards (PARITY_GAPS).
+      destruction check comes after its start-of-turn step. OpenSE4 matches.
     - The ministers only give orders; the vehicles carry them out afterwards, in object
       order, with the orders left from the previous turn. A human's orders execute as given.
       This matches OpenSE4.
     - A vehicle goes on until an order is not finished (no movement left, or waiting),
-      fails or its list is empty, completing at most 21 orders. OpenSE4 stops a repeating
-      list after one round without a step instead of after 21 orders (an edge case).
+      fails or its list is empty, completing at most 21 orders. OpenSE4 matches (question
+      45).
     - Battles start when a group moves into a sector or carries out an order there, never
       for groups that sit (spec 04 §2); combat on entry stops the move and clears the list
       (spec 03 §6.4). As in OpenSE4.
@@ -2503,15 +2498,13 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - One message per recipient per turn is read from the recipient's log by date, so it
       lasts the whole game turn (§8). As in OpenSE4.
     - The political step counts every log entry since the empire's previous political step
-      (§7.3). OpenSE4 counts the previous game turn's battles, so battles fought by the
-      players before an empire in the same game turn count one game turn later
-      (PARITY_GAPS).
+      (§7.3). OpenSE4 matches, with a mark of what each empire's step counted
+      (`Empire::politicsMark`, question 44).
     - The date stays unadvanced for the whole game turn (§8). As in OpenSE4.
     - An empire founded during the game turn plays when its number comes up (§8). As in
       OpenSE4.
     - The sector a vehicle came from is reset in its owner's end-of-turn processing (§8 step
-      16). OpenSE4 keeps it for the whole game turn, so a vehicle that moved in its owner's
-      turn still counts as an arrival in battles later in the game turn (PARITY_GAPS).
+      16). OpenSE4 matches (question 46).
     - OpenSE4 extensions, engine choice stands: `processTurn` for a turn-based game (orders
       given in advance, a missing human played by the computer) and an Attack Sector
       question kept open in the game. The original asks its questions at once, in a window,
@@ -2579,3 +2572,50 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       (or gifts are off) gets no reply.
     - Old saves: a battle recorded before `CombatRecord::currentPlayer` existed counts as
       Defending for everyone.
+38. **"Any" third empires** (§2.1, §2.3) [I]: for a political operation with target "Any",
+    OpenSE4 draws the third empire among every empire number other than the target and the
+    source, destroyed ones included, as events do (§4); the handler then needs it alive. Does
+    the original's candidate list leave destroyed empires out?
+39. **An operation that tells nobody** (§2.3) [I]: `Planet - Conditions Change` sends no
+    message. As an event OpenSE4 logs nothing; as an intelligence project it still sends the
+    source its message and leaves the victim unaware. Does the source hear of it, and does
+    the victim?
+40. **The players' files in OpenSE4** (§3.4, §5, §9.2) [I]: the classic client appends the
+    lines to `history/<game seed>/player<N>_stats.txt`, `_events.txt` and `_log.txt` in its
+    user data directory, for local and hotseat games; network and e-mail hosts write none.
+    The date written is the turn being processed (the unadvanced date). The column widths
+    are OpenSE4's. The log copy holds the log entries dated the turn before and follows
+    `Create Log Text Files for Players` (on when the key is missing). A destroyed empire gives
+    one history line: the engine logs no separate "contact lost" entry. To check: the
+    original's widths and date format, whether the log copy is gated by that key, and
+    whether a destruction also writes a contact-lost line.
+41. **Rebel empire details** (§2.3) [I]: "its home planet type and atmosphere are the
+    planet's" is read as the race's native surface and the gas it breathes; with no unused
+    neutral race left the rebels keep the former owner's pictures; a name is drawn from
+    `EmpireNames` only when the system's name is taken; its designs, log, record, AI memory
+    and experience start empty, while its queues and options are copies. For design theft,
+    "built at least once" reads the design's built count, which a statistics reset clears.
+42. **Home planet locations** (§4) [I]: High and Catastrophic planet and star events spare
+    "an empire's home planet location". OpenSE4 records only the home system
+    (`Empire::homeSystem`, spec 02 §2), not the sector, and uses where the capitals
+    (colonies with the Homeworld flag) lie. Does the original's location move when the
+    capital is lost, as its home system does not?
+43. **Opening a report** (§8 "Design knowledge") [I]: the classic client gives
+    `cmd::OpenVehicleReport` when its report panel shows a foreign vehicle that the player's
+    scanners reach and the report would date a design; the command checks the reach again.
+    In a simultaneous network game the host applies it with the player's orders, at the
+    start of the turn processing. When exactly does the original date the design: on opening
+    the report, or on showing its component tab?
+44. **What a turn-based political step counts** (§7.3) [I]: OpenSE4 marks, per empire, how
+    many battles, log entries (per empire) and messages of the step's turn existed when its
+    step ran (`Empire::politicsMark`), and the next step counts what came after, among what is
+    dated that turn or later. An empire whose step did not run (a player who forbade AI
+    changes) counts from the turn before on. The stellar-manipulation term reads the other
+    empire's log (spec 05 §7.3 term 2 in OpenSE4), which may be pruned before the step counts
+    it.
+45. **The 21-order limit** (§8 "Turn-based game") [I]: OpenSE4 counts the orders that leave
+    the head of the list (completed, or removed such as an ended Sentry) and applies the limit
+    to every run of a group's orders, the orders a human gives during the turn included.
+46. **Step 16** (§8) [I]: OpenSE4 resets the sector a ship, base, fighter group or drone
+    group comes from in both turn styles; satellites, mines and troops never move by
+    themselves and keep theirs.

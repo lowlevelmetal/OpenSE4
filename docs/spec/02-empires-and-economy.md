@@ -1444,7 +1444,7 @@ the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
     at Starting Resources plus one turn of the empire's production (colony output as
     delivered, with the minimum-generation rule), and the intelligence pool at 0. Neither
     part is multiplied by the computer bonus, and remote mining, `Generate Points`, trade
-    and tariffs are left out. Our engine includes them (PARITY_GAPS).
+    and tariffs are left out. OpenSE4 matches (`research::openingPools`).
 38. **No room at completion.** *Settled* (confirmed: binary, §6.3, §6.5): the facility item
     stays at the top with its progress cleared, as a ship item does at the ship limit, and
     no message is sent. With at least one free slot the whole count is added, even past the

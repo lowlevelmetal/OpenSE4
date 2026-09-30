@@ -59,6 +59,10 @@ public:
     bool facilityAvailable(const Empire& e, uint32_t f) const { return meets(e, data_.facilities[f].requirements); }
     bool hullAvailable(const Empire& e, uint32_t h) const { return meets(e, data_.vehicleSizes[h].requirements); }
     bool mountAvailable(const Empire& e, uint32_t m) const;
+    // The empire has the technology for the design's hull, every part and
+    // every mount: what "its owner can still build it" means for design
+    // knowledge (spec 05 §2.3, §8 "Design knowledge").
+    bool designTechnology(const Empire& e, const Design& d) const;
     // A tech area this empire may research at all (allowed, racial/unique checks, requirements).
     bool techVisible(const GameState& s, const Empire& e, ruleset::TechAreaId a) const;
     // The same without the requirements: allowed in this game and passing the

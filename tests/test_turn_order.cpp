@@ -4,6 +4,8 @@
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "game/ai.hpp"
+#include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
@@ -209,4 +211,33 @@ TEST_CASE("turn order: a player with missing orders is covered by every minister
     CHECK(minimal.empire(kA).research.empty());
     CHECK(research::totalLevels(r, minimal.empire(kA)) == before);
     CHECK(research::totalLevels(r, minimal.empire(kB)) > beforeB);  // B was covered as usual
+}
+
+TEST_CASE("turn order: the Politics minister plans alone and first; the other ministers send no messages") {
+    // Spec 05 §8 step 4: a computer player's messages take effect as its
+    // Politics minister sends them, before its other ministers give orders.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(11, 3, 12, false);
+    for (const Empire& e : s.empires) {
+        for (const Command& c : ai::planOrdersAfterPolitics(r, s, e.id)) {
+            CHECK_FALSE(std::holds_alternative<cmd::SendMessage>(c));
+            CHECK_FALSE(std::holds_alternative<cmd::AnswerMessage>(c));
+        }
+        for (const Command& c : ai::planPoliticsOrders(r, s, e.id)) CHECK_FALSE(std::holds_alternative<cmd::SetOrders>(c));
+    }
+    // A few turns: every processed turn keeps the rules.
+    for (int i = 0; i < 3; ++i) processTurn(r, s, {});
+    CHECK(s.turn == 3);
+}
+
+TEST_CASE("turn order: every vehicle comes from where it stands after its owner's processing") {
+    // Step 16 (spec 05 §8): the sector a vehicle came from is reset to its
+    // current sector, so nothing counts as an arrival between turns.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(11, 3, 12, false);
+    for (int i = 0; i < 4; ++i) processTurn(r, s, {});
+    for (const Vehicle& v : s.vehicles) {
+        const ruleset::VehicleType type = vehicleType(r, s, v);
+        if (type == ruleset::VehicleType::Ship || type == ruleset::VehicleType::Base) CHECK(v.cameFrom == v.location);
+    }
 }

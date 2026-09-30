@@ -563,7 +563,7 @@ TEST_CASE("economy: generated points, the minimum income and the opening researc
     GameState s = newGame(*r);
     // The opening pools are set when the game is created: Starting Resources
     // plus one turn of research, no intelligence (spec 05 §1.1).
-    CHECK(s.empire(kMe).researchPool == s.options.startingResources[Resource::Minerals] + s.empire(kMe).economy.research);
+    CHECK(s.empire(kMe).researchPool == s.options.startingResources[Resource::Minerals] + economy::empireProduction(*r, s, kMe).research);
     CHECK(s.empire(kMe).intelPool == 0);
     dropVehicles(s, kMe);
     Colony& home = plainHome(*r, s, {"Mint"});  // no spaceport: flat points need none
@@ -1792,10 +1792,11 @@ TEST_CASE("economy: a rebel planet founds a new computer empire and becomes its 
     CHECK(rebel.owner == id);
     CHECK(rebel.homeworld);
     CHECK(s.empire(id).homeSystem == s.galaxy.object(farId).system);  // its capital's system
-    CHECK(rebel.anger == 80);
+    CHECK(rebel.anger == effects::kRebelAnger);  // spec 05 §2.3
     CHECK(rebel.population[0].race == id);
     CHECK(s.empire(id).kind == PlayerKind::Computer);
-    CHECK(s.empire(id).relation(kMe).treaty == Treaty::War);
+    CHECK_FALSE(s.empire(id).relation(kMe).contact);  // it meets the empires that detect it
+    CHECK(s.empire(id).relation(kMe).treaty == Treaty::None);
     for (const Empire& e : s.empires) CHECK(e.relations.size() == s.empires.size());
     CHECK(countMood(ctx.moodEvents, "Any Planet Lost") == 1);
     std::vector<EmpireOrders> none;

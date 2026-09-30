@@ -1,4 +1,5 @@
-// Colonization at the end of the movement phase, and each empire's repair,
+// Colonization (founding a colony; runColonization for colony ships left
+// waiting at their planet), and each empire's repair,
 // supply and training steps (spec 05 §8): spec 02 §2, spec 03 §7, §8, §13,
 // spec 01 §5.3 (ruins).
 
@@ -455,6 +456,8 @@ void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
 }
 
 } // namespace
+
+void detail::foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet) { colonize(ctx, colonizer, planet); }
 
 void runColonization(TurnContext& ctx) { colonizeWaiting(ctx, std::nullopt); }
 

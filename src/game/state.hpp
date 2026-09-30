@@ -101,6 +101,18 @@ struct AiMemory {
     bool metMinefield = false;            // our ships have run into a mine field
 };
 
+// Turn-based games: how far an empire's last political step counted (spec 05
+// §7.3 "What it counts"): the game turn it ran in, how many battles
+// (GameState::combats) and log entries of each empire were dated that turn
+// then, and the next message id. The next step counts what came after.
+struct PoliticsMark {
+    bool set = false;
+    uint32_t turn = 0;
+    uint32_t battles = 0;
+    std::vector<uint32_t> logs;   // per EmpireId
+    uint32_t nextMessage = 0;
+};
+
 struct LogEntry {
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
@@ -229,6 +241,7 @@ struct Empire {
     bool aiMinimalChanges = false;
     AiMemory aiMemory;
     int aiDifficulty = -1;                  // kDifficulty*; -1 until the AI step assigns it (ai::difficultyOf)
+    PoliticsMark politicsMark;              // turn-based games: what its political steps have counted
 
     bool ministerAll = false;               // full minister control
     uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)
@@ -654,9 +667,9 @@ struct GameOptions {
     bool onlyBreathable = false;
     bool onlyHomeType = false;
     bool teamMode = false;
-    // "Allow Surrender" (spec 05 §7.4, confirmed: binary), on by default: with
-    // it off a computer player never considers a surrender demand and a
-    // Surrender message does nothing at all.
+    // "Allow Surrender" (spec 05 §3.4, §7.4, confirmed: binary), on by default:
+    // with it off a Surrender message does nothing at all, and a computer
+    // player never considers a surrender demand.
     bool allowSurrender = true;
     int scoreDisplay = 1;                // Score Display: 0 own, 1 own and Non-Aggression or better (the default), 2 all (spec 05 §5)
     int maxShipsPerPlayer = 200;

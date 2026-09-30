@@ -6,6 +6,8 @@
 
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
+#include "game/economy.hpp"
+#include "game/score.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
@@ -315,12 +317,13 @@ TEST_CASE("diplomacy: trade income, research and intelligence trade, tariffs") {
     const auto genB = diplomacy::generated(r, s, kB);
     const auto genC = diplomacy::generated(r, s, kC);
     REQUIRE(genC.research > 0);
-    // Tariffs: round(income × 40 %) on each of the five incomes.
+    // Tariffs: round(income × 40 %) on each of the five non-trade incomes.
+    const economy::Production incomeC = economy::nonTradeIncome(r, s, kC);
     Resources tariff;
-    for (Resource res : kResources) tariff[res] = xmath::pctRound(genC.resources[res], 40);
+    for (Resource res : kResources) tariff[res] = xmath::pctRound(incomeC.resources[res], 40);
     CHECK(diplomacy::tariffsPaid(r, s, kC) == tariff);
-    CHECK(diplomacy::tariffDue(r, s, kC).research == xmath::pctRound(genC.research, 40));
-    CHECK(diplomacy::tariffDue(r, s, kC).intelligence == xmath::pctRound(genC.intelligence, 40));
+    CHECK(diplomacy::tariffDue(r, s, kC).research == xmath::pctRound(incomeC.research, 40));
+    CHECK(diplomacy::tariffDue(r, s, kC).intelligence == xmath::pctRound(incomeC.intelligence, 40));
     CHECK(diplomacy::tariffsPaid(r, s, kA) == Resources{});
     CHECK(diplomacy::tariffsReceived(r, s, kA) == tariff);
     Resources expected = tariff;
@@ -331,6 +334,65 @@ TEST_CASE("diplomacy: trade income, research and intelligence trade, tariffs") {
     CHECK(diplomacy::researchTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.research, 7, f));
     CHECK(diplomacy::intelTradeIncome(r, s, kA) == diplomacy::tradeShare(genB.intelligence, 7, f));
     CHECK(diplomacy::intelTradeIncome(r, s, kC) == 0);
+}
+
+TEST_CASE("diplomacy: tariffs take the income floor and Generate Points too, never trade") {
+    // Spec 05 §3.3: the tariff base is the whole non-trade income of each kind.
+    ruleset::Ruleset rs = buildPoliticsRuleset();
+    ruleset::Facility mint;
+    mint.name = "Test Mint";
+    mint.group = "Test";
+    mint.family = 9000;
+    mint.romanNumeral = 1;
+    for (auto [kind, value] : {std::pair{AbilityKind::GeneratePointsMinerals, 1000}, std::pair{AbilityKind::GeneratePointsResearch, 300}}) {
+        ruleset::Ability a;
+        a.type = std::string(identifier(kind));
+        a.value1 = std::to_string(value);
+        mint.abilities.push_back(a);
+    }
+    rs.facilities.push_back(mint);
+    const Rules r{std::move(rs)};
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kC);
+    setContact(s, kB, kC);
+    TurnContext ctx = turnContext(r, s);
+    diplomacy::setTreaty(ctx, kA, kC, Treaty::Protectorate, true);  // a protectorate may trade with others
+    diplomacy::setTreaty(ctx, kB, kC, Treaty::TradeAlliance);
+    for (int i = 0; i < 5; ++i) diplomacy::treatyStep(ctx, kC);
+    Colony& home = homeworld(s, kC);
+    home.facilities.push_back(static_cast<uint32_t>(r.data().facilities.size() - 1));
+    const auto made = diplomacy::generated(r, s, kC);
+    const economy::Production income = economy::nonTradeIncome(r, s, kC);
+    CHECK(income.resources[Resource::Minerals] == made.resources[Resource::Minerals] + 1000);
+    CHECK(income.research == made.research + 300);
+    const auto due = diplomacy::tariffDue(r, s, kC);
+    CHECK(due.resources[Resource::Minerals] == xmath::pctRound(made.resources[Resource::Minerals] + 1000, 20));
+    CHECK(due.research == xmath::pctRound(made.research + 300, 20));
+    // Trade income comes later and is never taxed: the master gets the tariff
+    // alone at the subject's income step.
+    REQUIRE(diplomacy::tradePercent(r, s, kC, kB) > 0);
+    const Resources masterBefore = s.empire(kA).stockpile;
+    economy::collectIncome(ctx, kC);
+    CHECK(s.empire(kA).stockpile == masterBefore + due.resources);
+}
+
+TEST_CASE("diplomacy: a traded ship teaches its design and its cargo's") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    VehicleId scout;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA) scout = v.id;
+    const DesignId sat = addTestDesign(s, r, kA, "Cargo Sat", "Test Satellite Hull", {"Test Armor Plate"});
+    s.vehicle(scout)->cargo.units = {{sat, 1}};
+    PackageItem ship;
+    ship.kind = PackageItem::Kind::Vehicle;
+    ship.vehicle = scout;
+    s.turn = 7;
+    diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{ship});
+    CHECK(designSeenTurn(s.empire(kB).knowledge, s.vehicle(scout)->design) == std::optional<uint32_t>(7));
+    CHECK(designSeenTurn(s.empire(kB).knowledge, sat) == std::optional<uint32_t>(7));
 }
 
 TEST_CASE("diplomacy: trades move resources, technology, ships, charts and contacts") {
@@ -430,14 +492,48 @@ TEST_CASE("diplomacy: surrender and independence") {
     const Resources bBefore = s.empire(kB).stockpile;
     const ObjectId homeA = homeworld(s, kA).planet;
 
+    // With Allow Surrender off the message does nothing (spec 05 §3.4).
+    s.options.allowSurrender = false;
     send(s, kA, kB, MessageType::Surrender);
     diplomacy::deliverMessages(ctx);
-    CHECK_FALSE(s.empire(kA).alive);
+    CHECK(s.colony(homeA)->owner == kA);
+    CHECK(s.empire(kA).stockpile == Resources{100, 200, 300});
+    s.options.allowSurrender = true;
+    nextTurn(s);
+
+    // A design A knows whose owner can build it is learned too.
+    const DesignId cDesign = s.empire(kC).designs.front();
+    seeDesign(s.empire(kA).knowledge, cDesign, 0);
+    const DesignId aDesign = s.empire(kA).designs.front();
+    const SystemId homeSystemA = s.galaxy.object(homeA).system;
+    const SystemId homeSystemC = s.galaxy.object(homeworld(s, kC).planet).system;
+    s.empire(kA).knowledge.explored[homeSystemC.index()] = 1;
+    s.empire(kA).researchPool = 900;
+    send(s, kA, kB, MessageType::Surrender);
+    diplomacy::deliverMessages(ctx);
+    // Everything passes, but the empire lives on, owning nothing, until its
+    // next destruction check (spec 05 §6).
+    CHECK(s.empire(kA).alive);
     CHECK(s.colony(homeA)->owner == kB);
     for (const Vehicle& v : s.vehicles) CHECK(v.owner != kA);
     CHECK(s.empire(kB).stockpile == bBefore + Resources{100, 200, 300});
-    CHECK(s.empire(kB).techLevel(beams) == 7);
+    CHECK(s.empire(kA).stockpile == Resources{});
+    CHECK(s.empire(kA).researchPool == 900);  // research points do not pass
+    // Exactly one level where the recipient is behind.
+    CHECK(s.empire(kB).techLevel(beams) == 2);
+    // The systems of the objects become explored; nothing else of A's map.
+    CHECK(s.empire(kB).hasExplored(homeSystemA));
+    CHECK_FALSE(s.empire(kB).hasExplored(homeSystemC));
+    // Designs: A's own and those A knew, dated now.
+    CHECK(designSeenTurn(s.empire(kB).knowledge, aDesign) == std::optional<uint32_t>(s.turn));
+    CHECK(designSeenTurn(s.empire(kB).knowledge, cDesign) == std::optional<uint32_t>(s.turn));
+    // The empires in contact with either side are told.
+    CHECK(hasLog(s, kA, "Surrender"));
+    CHECK(hasLog(s, kB, "Surrender"));
     CHECK(hasLog(s, kC, "Surrender"));
+    score::checkDestruction(ctx, kA);
+    CHECK_FALSE(s.empire(kA).alive);
+    CHECK_FALSE(s.empire(kB).relation(kA).contact);
 
     // Grant independence: the sender abandons one of its planets.
     nextTurn(s);

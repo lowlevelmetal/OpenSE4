@@ -514,9 +514,10 @@ private:
     // chains into the next, up to 21 executions, until one waits or fails
     // (spec 03 §6.3, §8, confirmed: binary). The group is rebuilt for every
     // execution. Turn-based games stop the chain after a step or an order that
-    // acted, for the checks that follow them (runLive). `last` receives the
-    // last group.
-    std::optional<Exec> act(ActorRef ref, Group& last) {
+    // acted, for the checks that follow them (runLive), and count the orders
+    // completed into `completed`, stopping at 21 a run (kLiveOrderLimit).
+    // `last` receives the last group.
+    std::optional<Exec> act(ActorRef ref, Group& last, int* completed = nullptr) {
         std::optional<Exec> result;
         participants_.clear();
         for (int n = 0; n < kChainLimit; ++n) {
@@ -534,6 +535,7 @@ private:
             last = g;
             result = e;
             if (!g.stopped || e == Exec::Fail) settle(g, e, o);
+            if (completed && chains(e) && ++*completed >= kLiveOrderLimit) break;
             if (g.stopped || !chains(e)) break;
             if (live_ && e != Exec::Done && e != Exec::Removed) break;
         }
@@ -1109,7 +1111,13 @@ private:
             o.amount = 1;
         }
         const Travel t = travel(g, locationOf(s_.galaxy, o.object));
-        return t == Travel::Arrived ? Exec::Wait : afterTravel(g, o, t);  // colonized when the movement phase ends (runColonization)
+        if (t != Travel::Arrived) return afterTravel(g, o, t);
+        // Carried out like any order, on an acting day with movement left, so
+        // the colony exists during the later phases; without movement it
+        // waits (spec 05 §8 step 5, open question 24; spec 03 §8).
+        if (remaining(g) <= 0) return Exec::Wait;
+        foundColony(ctx_, colonizer, o.object);
+        return Exec::Done;
     }
 
     // Load, Launch and Recover are always done; Drop can fail (§8, confirmed: binary).
@@ -1455,12 +1463,17 @@ private:
         return it == steps_.end() ? 0 : it->second;
     }
 
+    // A group completes at most this many orders in one run (spec 05 §8
+    // "Turn-based game" step 3, confirmed: binary); an order that leaves the
+    // head of the list counts (inferred, spec 05 open question 45).
+    static constexpr int kLiveOrderLimit = 21;
+
     void liveActor(ActorRef ref) {
-        int idle = 0;  // orders done by acting in a row, without a step
+        int completed = 0;  // orders that left the head of the list, chained ones included
         for (int n = 0; n < kLiveActionLimit; ++n) {
             const size_t steps = entered_.size();
             Group g;
-            const std::optional<Exec> e = act(ref, g);
+            const std::optional<Exec> e = act(ref, g, &completed);
             if (!e) return;
             bool fought = false;
             if (entered_.size() > steps) fought = entryCombat(g);
@@ -1468,11 +1481,23 @@ private:
             entered_.clear();
             touched_.clear();
             if (fought || g.stopped) return;
-            // A step, or an order done by acting, goes on; anything else ends the
-            // run. A repeating list that goes round without a step stops after
-            // the chain's 21 executions (spec 03 §8).
-            if (*e == Exec::Moved || *e == Exec::MovedDone) idle = 0;
-            else if (*e != Exec::Acted || ++idle >= kChainLimit) return;
+            // A step, or a completed order, goes on until 21 orders are
+            // completed, so a repeating list stops too; anything else ends
+            // the run.
+            switch (*e) {
+                case Exec::Moved: break;
+                case Exec::MovedDone:
+                case Exec::Done:
+                case Exec::Acted:
+                case Exec::Removed:
+                    if (completed >= kLiveOrderLimit) return;
+                    break;
+                case Exec::ActedStay:
+                case Exec::Wait:
+                case Exec::Fail:
+                case Exec::Cleared:
+                case Exec::Gone: return;
+            }
         }
     }
 

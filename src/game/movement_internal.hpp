@@ -99,6 +99,11 @@ bool minefieldActs(const Rules& r, const GameState& s, Location where, std::span
 // a minefield acts: its cloaked members decloak first (spec 03 §12).
 void decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group);
 
+// ---- Colonization (spec 03 §8) --------------------------------------------------------------------
+// `colonizer` founds a colony on `planet`, which it has checked it may: the
+// ship is consumed and its people and cargo land (movement_upkeep.cpp).
+void foundColony(TurnContext& ctx, VehicleId colonizer, ObjectId planet);
+
 // ---- Cargo and units (spec 03 §11-12) ------------------------------------------------------------
 int64_t freeCargo(const Rules& r, const GameState& s, const Vehicle& v);
 // Cargo that no longer fits (hold destroyed) is lost: population first, 1M at a

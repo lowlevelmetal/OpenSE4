@@ -46,6 +46,11 @@ bool answerable(MessageType t) {
 // The empire sees design `d` now (spec 05 §8 step 12 counts from this turn).
 void learnDesign(const GameState& s, Empire& e, DesignId d) { seeDesign(e.knowledge, d, s.turn); }
 
+// The same for a design that may be the empire's own (then nothing changes).
+void learnForeign(GameState& s, EmpireId e, DesignId d) {
+    if (d.valid() && d.index() < s.designs.size() && s.design(d).owner != e) learnDesign(s, s.empire(e), d);
+}
+
 // Designs another empire has seen pass on with the turn that empire last
 // saw them (a design we already know keeps the later date), so shared
 // knowledge ages from the real sighting and two partners cannot keep a
@@ -339,11 +344,13 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
     if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || inContact(s, a, b)) return;
     s.empire(a).relation(b).contact = true;
     s.empire(b).relation(a).contact = true;
-    ctx.log(a, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, b)));
-    ctx.log(b, LogCategory::Politics, "First Contact", std::format("We have made contact with the {}.", nameOf(s, a)));
+    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b));
+    ctx.log(b, LogCategory::Politics, "First Contact", firstContactText(s, a));
     addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
     addHistory(s, b, a, std::format("First contact with the {}", nameOf(s, a)));
 }
+
+std::string firstContactText(const GameState& s, EmpireId other) { return std::format("We have made contact with the {}.", nameOf(s, other)); }
 
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
     GameState& s = ctx.state;
@@ -406,8 +413,6 @@ void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
     v->minister = false;
     v->targetVehicle = {};
     v->targetObject = {};
-    for (const UnitStack& st : groupStacks(*v))   // every design of a unit group
-        if (s.design(st.design).owner != to) learnDesign(s, s.empire(to), st.design);
     explore(s, to, v->location.system);
 }
 
@@ -456,14 +461,27 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
             }
             case PackageItem::Kind::Planet: {
                 const Colony* c = s.colony(item.planet);
-                if (!c || c->owner != giver) unavailable.push_back(describe(s, r, item));
-                else transferColony(s, item.planet, receiver);
+                if (!c || c->owner != giver) {
+                    unavailable.push_back(describe(s, r, item));
+                    break;
+                }
+                // The receiver learns the designs of the units in the planet's
+                // cargo (spec 05 §8 "Design knowledge", confirmed: binary).
+                for (const UnitStack& u : c->cargo.units) learnForeign(s, receiver, u.design);
+                transferColony(s, item.planet, receiver);
                 break;
             }
             case PackageItem::Kind::Vehicle: {
                 const Vehicle* v = s.vehicle(item.vehicle);
-                if (!v || v->owner != giver) unavailable.push_back(describe(s, r, item));
-                else transferVehicle(s, item.vehicle, receiver);
+                if (!v || v->owner != giver) {
+                    unavailable.push_back(describe(s, r, item));
+                    break;
+                }
+                // The ship's design (every design of a unit group) and the
+                // designs of the units in its cargo.
+                for (const UnitStack& st : groupStacks(*v)) learnForeign(s, receiver, st.design);
+                for (const UnitStack& u : v->cargo.units) learnForeign(s, receiver, u.design);
+                transferVehicle(s, item.vehicle, receiver);
                 break;
             }
             case PackageItem::Kind::StarChart: {
@@ -509,42 +527,60 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!living(s, from) || !living(s, to) || from == to) return;
+    // With Allow Surrender off the message does nothing (spec 05 §3.4, §7.4, confirmed: binary).
+    if (!s.options.allowSurrender) return;
+    // Every object passes, and every system where one lies becomes explored
+    // for the recipient; no other map knowledge passes.
     for (auto& c : s.colonies)
         if (c && c->owner == from) transferColony(s, c->planet, to);
     for (Fleet& f : s.fleets)
         if (f.owner == from) {
             f.owner = to;
             f.orders.clear();
+            f.repeatOrders = false;
         }
     for (Vehicle& v : s.vehicles)
         if (v.owner == from) {
             v.owner = to;
             v.orders.clear();
             v.repeatOrders = false;
+            explore(s, to, v.location.system);
         }
+    // The minerals, organics and radioactives pass; research and intelligence points do not.
     Empire& loser = s.empire(from);
     s.empire(to).stockpile += max(loser.stockpile, Resources{});
     loser.stockpile = {};
-    for (DesignId d : loser.designs) learnDesign(s, s.empire(to), d);
-    shareSeenDesigns(s, from, to);
-    shareMap(s, from, to);
-    // The surrendered empire's knowledge passes on as well (inferred).
-    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
-        research::grantLevel(ctx, to, ruleset::TechAreaId{i}, s.empire(from).techLevel(ruleset::TechAreaId{i}), "surrender");
-    Empire& gone = s.empire(from);
-    gone.alive = false;
-    gone.research.clear();
-    gone.intel.clear();
-    gone.researchPool = gone.intelPool = 0;
-    // Everyone else's intelligence projects aimed at it go (spec 05 §6, inferred for surrender).
-    for (Empire& e : s.empires) std::erase_if(e.intel, [&](const IntelProjectOrder& o) { return o.target == from; });
+    // Every design of the surrendering empire, and every design it knew whose
+    // owner can still build it, dated with the surrender turn (spec 05 §8).
+    for (DesignId d : s.empire(from).designs) learnForeign(s, to, d);
+    for (DesignId d : seenDesignIds(s.empire(from).knowledge)) {
+        if (d.index() >= s.designs.size()) continue;
+        const Design& design = s.design(d);
+        if (design.owner.valid() && design.owner.index() < s.empires.size() && r.designTechnology(s.empire(design.owner), design))
+            learnForeign(s, to, d);
+    }
+    // Exactly one level in every area where the recipient is behind, that is
+    // allowed and passes the racial and unique checks for both empires, and
+    // whose requirements the surrendering empire meets.
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) {
+        const ruleset::TechAreaId a{i};
+        const Empire& giver = s.empire(from);
+        const Empire& taker = s.empire(to);
+        if (taker.techLevel(a) >= giver.techLevel(a)) continue;
+        if (!research::canGainLevel(r, s, giver, a) || !research::canGainLevel(r, s, taker, a) || !r.meets(giver, r.tech(a).requirements))
+            continue;
+        research::grantLevel(ctx, to, a, taker.techLevel(a) + 1, "surrender");
+    }
+    // Both sides and the living third empires in contact with either side are
+    // told. Nothing else happens: the sender, owning nothing, is destroyed at
+    // its next destruction check (spec 05 §6).
     const std::string text = std::format("The {} has surrendered to the {}.", nameOf(s, from), nameOf(s, to));
-    for (const Empire& e : s.empires)
-        if (e.alive || e.id == from) {
-            ctx.log(e.id, LogCategory::Politics, "Surrender", text);
-            addHistory(s, e.id, e.id == from ? to : from, std::format("The {} surrendered to the {}", nameOf(s, from), nameOf(s, to)));
-        }
-    forgetEmpire(s, from);
+    for (const Empire& e : s.empires) {
+        const bool party = e.id == from || e.id == to;
+        if (!party && !(e.alive && (inContact(s, e.id, from) || inContact(s, e.id, to)))) continue;
+        ctx.log(e.id, LogCategory::Politics, "Surrender", text);
+        addHistory(s, e.id, e.id == from ? to : from, std::format("The {} surrendered to the {}", nameOf(s, from), nameOf(s, to)));
+    }
 }
 
 // ---- Turn phases ------------------------------------------------------------------------------------
@@ -624,12 +660,20 @@ void treatyStep(TurnContext& ctx, EmpireId id) {
         ours.dominant = theirs.dominant = false;
         ours.tradeTurns = theirs.tradeTurns = 0;
     });
-    // 2. A master sees every design of its subject.
+    // 2. A master learns every design of its subject that it does not know
+    // and the subject can build, dated with the design's creation date (spec
+    // 05 §8 "Design knowledge", confirmed: binary): one made more than 50
+    // turns ago is forgotten again at step 12.
     others([&](EmpireId other) {
         const Relation& rel = s.empire(id).relation(other);
         if (rel.treaty != Treaty::Subjugation || !rel.dominant) return;
-        const std::vector<DesignId> own = s.empire(other).designs;
-        for (DesignId d : own) learnDesign(s, s.empire(id), d);
+        const Empire& subject = s.empire(other);
+        Knowledge& known = s.empire(id).knowledge;
+        for (DesignId d : subject.designs) {
+            if (d.index() >= s.designs.size() || knowsDesign(known, d)) continue;
+            const Design& design = s.design(d);
+            if (ctx.rules.designTechnology(subject, design)) seeDesign(known, d, design.createdTurn);
+        }
     });
     // 3. Trade income from every partner, at the trade percentage the counters
     // give before they grow (spec 05 §3.3).
@@ -728,19 +772,24 @@ int64_t intelTradeIncome(const Rules& r, const GameState& s, EmpireId e) {
     return total;
 }
 
-Generated tariffDue(const Rules& r, const GameState& s, EmpireId e) {
+Generated tariffOn(const Rules& r, const GameState& s, EmpireId e, const Generated& income) {
     Generated due;
     const EmpireId master = masterOf(s, e);
     if (!master.valid() || !s.empire(master).alive) return due;
     const Treaty t = s.empire(e).relation(master).treaty;
     const int64_t pct = t == Treaty::Subjugation ? r.setting("Treaty Subjugated Resource Percentage", 40)
                                                  : r.setting("Treaty Protectorate Resource Percentage", 20);
-    auto cut = [&](int64_t income) { return income <= 0 ? int64_t{0} : std::clamp<int64_t>(xmath::pctRound(income, pct), 0, income); };
-    const Generated g = generated(r, s, e);
-    for (Resource res : kResources) due.resources[res] = cut(g.resources[res]);
-    due.research = cut(g.research);
-    due.intelligence = cut(g.intelligence);
+    auto cut = [&](int64_t amount) { return amount <= 0 ? int64_t{0} : std::clamp<int64_t>(xmath::pctRound(amount, pct), 0, amount); };
+    for (Resource res : kResources) due.resources[res] = cut(income.resources[res]);
+    due.research = cut(income.research);
+    due.intelligence = cut(income.intelligence);
     return due;
+}
+
+Generated tariffDue(const Rules& r, const GameState& s, EmpireId e) {
+    if (!masterOf(s, e).valid()) return {};
+    const economy::Production income = economy::nonTradeIncome(r, s, e);
+    return tariffOn(r, s, e, {income.resources, income.research, income.intelligence});
 }
 
 Resources tariffsPaid(const Rules& r, const GameState& s, EmpireId e) { return tariffDue(r, s, e).resources; }

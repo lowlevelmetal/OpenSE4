@@ -7,6 +7,7 @@
 #include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
+#include "game/sight.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -895,6 +896,17 @@ struct Applier {
         addLog(s, e, LogCategory::Misc, std::format("{}: orders cancelled", name), "It did not enter the sector with enemy forces.");
         return {};
     }
+
+    // ---- Reports -------------------------------------------------------------------------------------
+
+    R operator()(const cmd::OpenVehicleReport& c) {
+        const Vehicle* v = s.vehicle(c.vehicle);
+        if (!v || v->owner == e) return R::fail("Not a foreign vehicle");
+        if (emp().kind != PlayerKind::Human) return R::fail("Only a human player opens reports");
+        if (!sight::scannerReaches(r, s, e, *v)) return R::fail("Our scanners do not reach it");
+        sight::learnFromReport(r, s, e, c.vehicle);
+        return {};
+    }
 };
 
 template <class T>
@@ -942,6 +954,7 @@ OPENSE4_CMD_NAME(SetMinisters)
 OPENSE4_CMD_NAME(SetEncounterOptions)
 OPENSE4_CMD_NAME(EnterSector)
 OPENSE4_CMD_NAME(EditDesign)
+OPENSE4_CMD_NAME(OpenVehicleReport)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

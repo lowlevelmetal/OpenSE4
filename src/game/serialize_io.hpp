@@ -330,6 +330,8 @@ void io(Ar& ar, AiMemory& m) {
     fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield);
 }
 
+template <class Ar> void io(Ar& ar, PoliticsMark& m) { fields(ar, m.set, m.turn, m.battles, m.logs, m.nextMessage); }
+
 template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture); }
 
 template <class Ar> void io(Ar& ar, HistoryEntry& h) { fields(ar, h.turn, h.empire, h.text, h.location); }
@@ -367,6 +369,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
     fields(ar, e.chooseColonyType, e.colonyTypeChoices);
+    fields(ar, e.politicsMark);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -552,6 +555,7 @@ template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
 }
 
 template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
+template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

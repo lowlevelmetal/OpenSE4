@@ -2,6 +2,7 @@
 
 #include "game/ai.hpp"
 #include "game/combat.hpp"
+#include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
@@ -37,12 +38,23 @@ void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands) 
 
 bool living(const GameState& s, EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive; }
 
+void resetCameFrom(const Rules& r, GameState& s, EmpireId e) {
+    for (Vehicle& v : s.vehicles) {
+        if (v.owner != e || v.count <= 0) continue;
+        const ruleset::VehicleType type = vehicleType(r, s, v);
+        if (type == ruleset::VehicleType::Ship || type == ruleset::VehicleType::Base || type == ruleset::VehicleType::Fighter ||
+            type == ruleset::VehicleType::Drone)
+            v.cameFrom = v.location;
+    }
+}
+
 } // namespace detail
 
 using detail::applyCommands;
 using detail::Control;
 using detail::living;
 using detail::ministersPlan;
+using detail::resetCameFrom;
 
 void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::vector<std::pair<EmpireId, std::string>>& rejected) {
     for (const Command& c : orders.commands) {
@@ -61,9 +73,9 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // no refresh of their own: their rates are worked out when they run
     // (inferred).
     if (ministers) applyCommands(ctx, e, ai::planEconomyStep(r, s, e));
-    // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5).
-    // The original writes the files for human players; OpenSE4 keeps every
-    // empire's history (inferred).
+    // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
+    // OpenSE4 keeps every empire's in the save), and for a human player the
+    // lines of its statistics, history and log text files (TurnResult::records).
     score::recordStatistics(ctx, e);
     // 3-4. Intelligence, then research: each spends the pool the previous
     // turn's income and trade filled, then empties it (spec 05 §1.1, §2.1).
@@ -95,6 +107,11 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // 15. System-wide abilities and training.
     economy::applySystemAbilities(ctx, e);
     movement::trainEmpire(ctx, e);
+    // 16. Each ship, base, fighter group and drone group records its current
+    // sector as the one it comes from: in a turn-based game a vehicle that
+    // moved in its owner's turn counts as an arrival only until now (spec 05
+    // §8 step 16, spec 04 §3, confirmed: binary; which vehicles, open question 46).
+    resetCameFrom(ctx.rules, s, e);
     // 17. Ground combat where the empire's troops invade an enemy planet.
     combat::runGroundCombat(ctx, e);
     s.removeDeadVehicles();
@@ -155,7 +172,9 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     // ---- 4. Start of turn, empire by empire: the AI state update, the
     // political step (counting the turn processed before: its battles are
     // still in GameState::combats), then the ministers that act while orders
-    // are given. Their messages take effect as they are sent.
+    // are given. The Politics minister acts first and its messages take
+    // effect as they are sent, so the other ministers already see the
+    // treaties it changed (spec 05 §8 step 4, confirmed: binary).
     const std::optional<uint32_t> previousTurn = s.turn > 0 ? std::optional<uint32_t>(s.turn - 1) : std::nullopt;
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
@@ -163,21 +182,22 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         ai::updateAiState(ctx, id);
         if (controlOf(i) != Control::Absent) ai::politicalStep(ctx, id, previousTurn);
         if (ministersPlan(s, id, controlOf(i))) {
-            applyCommands(ctx, id, ai::planOrders(r, s, id));
+            applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
+            diplomacy::deliverMessages(ctx);
+            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id));
             diplomacy::deliverMessages(ctx);
         }
     }
     ai::recordAiDecisions(ctx);
 
     // ---- 5. Movement and space combat: 30 movement phases, each followed by
-    // combat where it applies. Colony ships waiting at their planet then
-    // found their colonies (inferred: at the end of the phase), and sight and
-    // first contact follow the new positions.
+    // combat where it applies. Colonize orders found their colonies during the
+    // phases, like any order (spec 05 §8 step 5). Sight and first contact
+    // then follow the new positions.
     s.combats.clear();  // from here on: this turn's battles
     movement::startTurn(ctx);
     movement::runMovementAndCombat(ctx);
     s.removeDeadVehicles();
-    movement::runColonization(ctx);
     sight::updateKnowledge(r, s);
     diplomacy::updateContacts(ctx);
 
@@ -222,7 +242,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     ++s.turn;
     economy::updateReports(r, s);
 
-    return TurnResult{std::move(ctx.rejected), {}};
+    return TurnResult{std::move(ctx.rejected), {}, {}, std::move(ctx.records)};
 }
 
 } // namespace opense4::game

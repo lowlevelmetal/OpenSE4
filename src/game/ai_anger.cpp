@@ -323,11 +323,30 @@ struct AngerInputs {
     std::vector<int64_t> scores;
     std::vector<std::vector<SystemId>> territory;   // per empire, sorted
     std::vector<EmpireId> mee;                      // per viewer
-    // The turn whose reports and messages count (GameState::combats holds its
-    // battles); none before the first turn has been processed.
-    std::optional<uint32_t> eventsTurn;
-    bool counts(uint32_t turn) const { return eventsTurn && *eventsTurn == turn; }
+    // What the step counts (spec 05 §7.3 "What it counts"): per battle of
+    // GameState::combats, per log entry of each empire, and the messages.
+    std::vector<uint8_t> battles;
+    std::vector<std::vector<uint8_t>> logs;
+    PoliticalWindow window;
+    bool counts(uint32_t turn) const {
+        return window.turn && (turn == *window.turn || (window.andLater && turn > *window.turn));
+    }
+    bool countsMessage(const DiplomaticMessage& m) const { return counts(m.sentTurn) && m.id.value >= window.firstMessage; }
 };
+
+// Marks the items of `list` (in order) that the window counts: those dated
+// its turn from position `skip` on among them, and later ones when it has them.
+template <class List, class TurnOf>
+std::vector<uint8_t> countedItems(const List& list, const AngerInputs& in, uint32_t skip, TurnOf&& turnOf) {
+    std::vector<uint8_t> out(list.size(), 0);
+    uint32_t atTurn = 0;
+    for (size_t i = 0; i < list.size(); ++i) {
+        const uint32_t turn = turnOf(list[i]);
+        if (in.window.turn && turn == *in.window.turn) out[i] = atTurn++ >= skip ? 1 : 0;
+        else out[i] = in.counts(turn) ? 1 : 0;
+    }
+    return out;
+}
 
 // Was the empire in that system when something happened there in `turn`?
 // It is still there, or it logged something located there (inferred).
@@ -352,11 +371,12 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     // 1. Combat. We are Attacking when we were the "current player" when the
     // battle was fought, wherever it was (confirmed: binary): in a turn-based
     // game the player whose turn it was, in a simultaneous one the highest
-    // player number. Only the battles of the counted turn: turn-based games
-    // keep two turns' battles.
+    // player number. Only the battles the political window counts (since
+    // Empire::politicsMark): turn-based games keep two turns' battles.
     if (belowNonAggression)
-        for (const CombatRecord& rec : s.combats) {
-            if (!in.counts(rec.turn) || !involves(rec, e.id) || !involves(rec, x.id)) continue;
+        for (size_t i = 0; i < s.combats.size(); ++i) {
+            const CombatRecord& rec = s.combats[i];
+            if (!in.battles[i] || !involves(rec, e.id) || !involves(rec, x.id)) continue;
             const bool attacking = rec.currentPlayer == e.id;  // a record from an old save names nobody (inferred)
             switch (outcomeFor(rec, e.id)) {
                 case Outcome::Won: add(attacking ? t.attackingWon : t.defendingWon); break;
@@ -365,18 +385,20 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
             }
         }
     // 2. Stellar manipulation reported to empires in that system.
-    for (const LogEntry& l : x.log)
-        if (in.counts(l.turn) && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
+    for (size_t i = 0; i < x.log.size(); ++i) {
+        const LogEntry& l = x.log[i];
+        if (in.logs[x.id.index()][i] && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
             presentIn(s, e, l.location->system, l.turn))
             add(int64_t{2} * t.defendingLost);
+    }
     // 3. Successful operations traced to them: the victim's log names the
     // culprit (intel::namesCulprit); blocked attempts and counter-intelligence never do.
-    for (const LogEntry& l : e.log)
-        if (in.counts(l.turn) && intel::namesCulprit(s, l, x.id)) add(t.intelligenceAgainstUs);
+    for (size_t i = 0; i < e.log.size(); ++i)
+        if (in.logs[e.id.index()][i] && intel::namesCulprit(s, e.log[i], x.id)) add(t.intelligenceAgainstUs);
     // 4. The earliest message from them that arrived this turn.
     const DiplomaticMessage* first = nullptr;
     for (const DiplomaticMessage& m : s.messages)
-        if (m.to == e.id && m.from == x.id && m.delivered && in.counts(m.sentTurn) && (!first || m.id < first->id)) first = &m;
+        if (m.to == e.id && m.from == x.id && m.delivered && in.countsMessage(m) && (!first || m.id < first->id)) first = &m;
     if (first) {
         int v = t.receive[static_cast<size_t>(first->type)];
         if (first->type == MessageType::AcceptGift || first->type == MessageType::RefuseGift)
@@ -599,7 +621,7 @@ void claimTerritory(const Rules& r, GameState& s, Empire& e) {
                                                         : EncounterClear::Never;
 }
 
-AngerInputs angerInputs(const Rules& r, const GameState& s, std::optional<uint32_t> eventsTurn) {
+AngerInputs angerInputs(const Rules& r, const GameState& s, PoliticalWindow window) {
     AngerInputs in;
     in.scores = politicalScores(r, s);
     in.territory.resize(s.empires.size());
@@ -608,8 +630,19 @@ AngerInputs angerInputs(const Rules& r, const GameState& s, std::optional<uint32
         in.territory[e.id.index()] = computeTerritory(s, e.id);
         in.mee[e.id.index()] = megaEvilEmpire(r, in.scores, s, e.id);
     }
-    in.eventsTurn = eventsTurn;
+    in.window = std::move(window);
+    in.battles = countedItems(s.combats, in, in.window.battles, [](const CombatRecord& c) { return c.turn; });
+    for (const Empire& e : s.empires) {
+        const size_t i = e.id.index();
+        in.logs.push_back(countedItems(e.log, in, i < in.window.logs.size() ? in.window.logs[i] : 0, [](const LogEntry& l) { return l.turn; }));
+    }
     return in;
+}
+
+PoliticalWindow turnWindow(std::optional<uint32_t> eventsTurn) {
+    PoliticalWindow w;
+    w.turn = eventsTurn;
+    return w;
 }
 
 // Anger toward every living empire in contact, when the Politics minister is
@@ -644,14 +677,16 @@ void updateAiState(TurnContext& ctx, EmpireId id) {
 
 void politicalStep(TurnContext& ctx) {
     GameState& s = ctx.state;
-    const AngerInputs in = angerInputs(ctx.rules, s, s.turn);
+    const AngerInputs in = angerInputs(ctx.rules, s, turnWindow(s.turn));
     for (Empire& e : s.empires) angerOf(ctx.rules, s, e, in);
 }
 
-void politicalStep(TurnContext& ctx, EmpireId id, std::optional<uint32_t> eventsTurn) {
+void politicalStep(TurnContext& ctx, EmpireId id, std::optional<uint32_t> eventsTurn) { politicalStep(ctx, id, turnWindow(eventsTurn)); }
+
+void politicalStep(TurnContext& ctx, EmpireId id, const PoliticalWindow& window) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
-    const AngerInputs in = angerInputs(ctx.rules, s, eventsTurn);
+    const AngerInputs in = angerInputs(ctx.rules, s, window);
     angerOf(ctx.rules, s, s.empire(id), in);
 }
 

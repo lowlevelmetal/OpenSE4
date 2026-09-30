@@ -433,37 +433,46 @@ void updateKnowledge(const Rules& r, GameState& s) {
         }
     }
 
-    // Long range scanning reveals designs (spec 01 §6.6).
-    std::vector<std::vector<DesignId>> scanned(nEmp);
-    auto visibleTo = [&](size_t ei, VehicleId id) {
-        const auto& list = s.empires[ei].knowledge.visibleVehicles;
-        return std::binary_search(list.begin(), list.end(), id);
-    };
+    // Long-range scanners teach nothing by themselves: a design is learned
+    // only when a human player opens the report of a vehicle they reach
+    // (learnFromReport, spec 05 §8 "Design knowledge", confirmed: binary).
+}
+
+bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target) {
+    if (!viewer.valid() || viewer.index() >= s.empires.size() || !alive(target) || target.owner == viewer) return false;
+    const auto& visible = s.empire(viewer).knowledge.visibleVehicles;
+    if (!std::binary_search(visible.begin(), visible.end(), target.id) || scannerJammed(r, s, target)) return false;
     for (const Vehicle& scanner : s.vehicles) {
-        if (!alive(scanner) || !scanner.owner.valid() || scanner.owner.index() >= nEmp) continue;
+        if (!alive(scanner) || scanner.owner != viewer || scanner.location.system != target.location.system) continue;
         const int64_t range = bestValue1(vehicleAbilities(r, s, scanner), AbilityKind::LongRangeScanner);
-        if (range <= 0) continue;
-        for (const Vehicle& t : s.vehicles) {
-            if (!alive(t) || t.owner == scanner.owner || t.location.system != scanner.location.system) continue;
-            if (chebyshev(t.location.sector, scanner.location.sector) > range) continue;
-            if (!visibleTo(scanner.owner.index(), t.id) || scannerJammed(r, s, t)) continue;
-            for (const UnitStack& st : groupStacks(t)) insertSorted(scanned[scanner.owner.index()], st.design);
-        }
+        if (range > 0 && chebyshev(target.location.sector, scanner.location.sector) <= range) return true;
     }
-    for (size_t i = 0; i < s.colonies.size(); ++i) {
-        const auto& c = s.colonies[i];
-        if (!c || !c->owner.valid() || c->owner.index() >= nEmp || c->totalPopulation() <= 0 || !inSystem(s.galaxy, c->planet)) continue;
-        if (!hasAbility(colonyAbilities(r, s, *c), AbilityKind::LongRangeScannerSystem)) continue;
-        const SystemId sys = s.galaxy.object(c->planet).system;
-        for (const Vehicle& t : s.vehicles)
-            if (alive(t) && t.owner != c->owner && t.location.system == sys && visibleTo(c->owner.index(), t.id) && !scannerJammed(r, s, t))
-                for (const UnitStack& st : groupStacks(t)) insertSorted(scanned[c->owner.index()], st.design);
+    for (ObjectId o : s.galaxy.system(target.location.system).objects)
+        if (const Colony* c = s.colony(o); c && c->owner == viewer && c->totalPopulation() > 0 &&
+                                           hasAbility(colonyAbilities(r, s, *c), AbilityKind::LongRangeScannerSystem))
+            return true;
+    return false;
+}
+
+std::vector<DesignId> reportDesigns(const GameState& s, const Vehicle& v) {
+    std::vector<DesignId> out;
+    for (const UnitStack& st : groupStacks(v)) insertSorted(out, st.design);
+    for (const UnitStack& u : v.cargo.units) insertSorted(out, u.design);
+    std::erase_if(out, [&](DesignId d) { return !d.valid() || d.index() >= s.designs.size(); });
+    return out;
+}
+
+bool learnFromReport(const Rules& r, GameState& s, EmpireId viewer, VehicleId vehicle) {
+    const Vehicle* v = s.vehicle(vehicle);
+    if (!v || !viewer.valid() || viewer.index() >= s.empires.size() || s.empire(viewer).kind != PlayerKind::Human) return false;
+    if (!scannerReaches(r, s, viewer, *v)) return false;
+    bool changed = false;
+    for (DesignId d : reportDesigns(s, *v)) {
+        if (s.design(d).owner == viewer) continue;
+        changed = changed || designSeenTurn(s.empire(viewer).knowledge, d) != std::optional<uint32_t>(s.turn);
+        seeDesign(s.empire(viewer).knowledge, d, s.turn);
     }
-    for (size_t ei = 0; ei < nEmp; ++ei) {
-        Empire& e = s.empires[ei];
-        for (DesignId d : scanned[ei])
-            if (d.valid() && d.index() < s.designs.size() && s.design(d).owner != e.id) seeDesign(e.knowledge, d, s.turn);
-    }
+    return changed;
 }
 
 } // namespace opense4::game::sight

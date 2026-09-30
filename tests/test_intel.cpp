@@ -295,6 +295,25 @@ TEST_CASE("intel: a finished defense deletes one hostile project within its leve
     CHECK(s.empire(kA).intel.size() + s.empire(kC).intel.size() == 1);
 }
 
+TEST_CASE("intel: a finished defense compares the sum of a project's requirement levels") {
+    // A project that needs two areas at level 1 has a requirement of 2 (spec
+    // 05 §2.4): a level-1 defense cannot delete it, a level-2 one can.
+    ruleset::Ruleset rs = buildPoliticsRuleset();
+    const uint32_t probe = projectFor(Effect::ShipDamage);
+    rs.intelProjects[probe].requirements = {{*rs.findTechArea("Test Physics"), 1}, {*rs.findTechArea("Test Espionage"), 1}};
+    const Rules r{std::move(rs)};
+    CHECK(intel::requirementLevel(r, probe) == 2);
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    for (int level : {1, 2}) {
+        s.empire(kA).intel = {order(Effect::ShipDamage, kB)};
+        s.empire(kB).intel = {defense(level, r.data().intelProjects[defenseProject(level)].cost)};
+        TurnContext ctx = turnContext(r, s);
+        intel::intelStep(ctx, kB);
+        CHECK(s.empire(kA).intel.size() == (level == 1 ? 1u : 0u));
+    }
+}
+
 TEST_CASE("intel: the bad-intelligence ability counts only unowned objects and positive values") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
@@ -376,22 +395,41 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     CHECK(s.empire(kB).stockpile == Resources{0, 19000, 0});
     CHECK(s.empire(kA).stockpile == before + Resources{500, 1000, 0});
 
-    // Ship Designs - Steal: a copy joins our designs; we know the original.
+    // Ship Designs - Steal: we learn the newest built design we do not know
+    // and they can build; nothing joins our own designs (spec 05 §2.3).
     const size_t designs = s.empire(kA).designs.size();
+    const size_t allDesigns = s.designs.size();
+    std::vector<DesignId> built;
+    for (DesignId d : s.empire(kB).designs)
+        if (s.design(d).built > 0 && !isUnitType(r.hull(s.design(d).hull).type)) built.push_back(d);
+    REQUIRE(built.size() >= 2);
+    const DesignId unbuilt = addTestDesign(s, r, kB, "Paper Ship", "Test Frigate", {"Test Bridge"});
     out = run(s, Effect::ShipDesignsSteal, {});
     REQUIRE(out.applied);
-    CHECK(s.empire(kA).designs.size() == designs + 1);
-    const Design& copy = s.design(s.empire(kA).designs.back());
-    CHECK(copy.owner == kA);
-    CHECK(copy.name.starts_with(out.tokens.designName));
-    CHECK_FALSE(s.empire(kA).knowledge.seenDesigns.empty());
+    CHECK(s.empire(kA).designs.size() == designs);
+    CHECK(s.designs.size() == allDesigns + 1);
+    CHECK(out.tokens.designName == s.design(built.back()).name);
+    CHECK(designSeenTurn(s.empire(kA).knowledge, built.back()) == std::optional<uint32_t>(s.turn));
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, unbuilt));
+    // The next theft takes the next newest; one they can no longer build is skipped.
+    const DesignId cruiser = addTestDesign(s, r, kB, "Big Ship", "Test Cruiser", {"Test Bridge"});
+    s.design(cruiser).built = 1;
+    s.empire(kB).techLevels[techArea(r, "Test Construction").index()] = 1;  // the cruiser hull needs level 2
+    out = run(s, Effect::ShipDesignsSteal, {});
+    REQUIRE(out.applied);
+    CHECK(out.tokens.designName == s.design(built[built.size() - 2]).name);
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, cruiser));
 
-    // Unit Designs - Steal needs a unit design.
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::UnitDesignsSteal, target(kB, kA), rng).has_value());
-    addTestDesign(s, r, kB, "Wasp", "Test Fighter Hull", {"Test Fighter Gun", "Test Fighter Engine"});
+    // Unit Designs - Steal needs a unit design that was built.
+    const DesignId wasp = addTestDesign(s, r, kB, "Wasp", "Test Fighter Hull", {"Test Fighter Gun", "Test Fighter Engine"});
+    s.empire(kB).techLevels = s.empire(kA).techLevels;
+    CHECK_FALSE(run(s, Effect::UnitDesignsSteal, {}).applied);
+    s.design(wasp).built = 3;
     out = run(s, Effect::UnitDesignsSteal, {});
     CHECK(out.applied);
     CHECK(out.tokens.designName == "Wasp");
+    CHECK(knowsDesign(s.empire(kA).knowledge, wasp));
+    CHECK_FALSE(run(s, Effect::UnitDesignsSteal, {}).applied);  // nothing left we do not know
 }
 
 TEST_CASE("intel: ships defect to the source") {
@@ -417,7 +455,8 @@ TEST_CASE("intel: ships defect to the source") {
     CHECK(v->orders.empty());
     CHECK(s.fleets.size() == 1);
     CHECK(std::find(s.fleets[0].members.begin(), s.fleets[0].members.end(), theirs[0]) == s.fleets[0].members.end());
-    CHECK(knowsDesign(s.empire(kA).knowledge, v->design));
+    // A defection is not one of the ways a design is learned (spec 05 §8).
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, v->design));
     CHECK(hasMood(ctx, kB, "Any Ship Lost"));
 }
 
@@ -452,8 +491,8 @@ TEST_CASE("intel: a rebel planet breaks away 25 %, joins the source 18.75 %, sta
             REQUIRE(s.empires.size() == 4);
             CHECK(owner == EmpireId{3u});
             CHECK(s.empire(owner).kind == PlayerKind::Computer);
-            CHECK(s.empire(owner).relation(kB).treaty == Treaty::War);
-            CHECK(s.empire(kB).relation(owner).contact);
+            CHECK(s.empire(owner).relation(kB).treaty == Treaty::None);
+            CHECK_FALSE(s.empire(kB).relation(owner).contact);
             for (const Empire& e : s.empires) CHECK(e.relations.size() == 4);
         }
     }
@@ -464,10 +503,27 @@ TEST_CASE("intel: a rebel planet breaks away 25 %, joins the source 18.75 %, sta
     CHECK(stayed > kRuns * 50 / 100);
     CHECK(stayed < kRuns * 62 / 100);
 
-    // The homeworld is never picked as "Any".
+    // "Any" can pick the homeworld: it is a colony like any other (spec 05 §2.3).
     GameState s = newPoliticsGame(5);
     Rng rng(1);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetPopulationRebel, target(kB, kA), rng).has_value());
+    const auto any = effects::pickTarget(r, s, Effect::PlanetPopulationRebel, target(kB, kA), rng);
+    REQUIRE(any.has_value());
+    CHECK(any->object == homeworld(s, kB).planet);
+
+    // With 20 empires (destroyed ones count) the operation does nothing, and
+    // no roll is made.
+    while (s.empires.size() < effects::kMaxEmpires) {
+        Empire extra = s.empire(kC);
+        extra.id = EmpireId{s.empires.size()};
+        extra.alive = false;
+        s.empires.push_back(extra);
+    }
+    for (Empire& e : s.empires) e.relations.resize(s.empires.size());
+    const Rng before = rng;
+    TurnContext ctx = context(s);
+    CHECK_FALSE(effects::apply(ctx, Effect::PlanetPopulationRebel, *any, 1, rng).applied);
+    CHECK(rng == before);
+    CHECK(s.colony(any->object)->owner == kB);
 }
 
 TEST_CASE("intel: ship sabotage takes supply and this turn's movement only") {
@@ -498,8 +554,11 @@ TEST_CASE("intel: ship sabotage takes supply and this turn's movement only") {
     REQUIRE(s.vehicle(id)->orders.size() == 1);
     CHECK(s.vehicle(id)->orders[0].kind == OrderKind::MoveTo);
     s.vehicle(id)->status = VehicleStatus::Mothballed;
+    s.vehicle(id)->orders.clear();
     Rng rng(4);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::ShipOrdersChange, request, rng).has_value());
+    CHECK(effects::pickTarget(r, s, Effect::ShipOrdersChange, request, rng).has_value());  // the handler checks
+    CHECK_FALSE(run(s, Effect::ShipOrdersChange, request).applied);
+    CHECK(s.vehicle(id)->orders.empty());
 }
 
 TEST_CASE("intel: political operations") {
@@ -515,9 +574,15 @@ TEST_CASE("intel: political operations") {
         return t;
     };
 
-    // Disrupt Trade needs trade between the target and a third empire; its counter restarts.
+    // Disrupt Trade needs trade between the target and a third empire; its
+    // counter restarts. "Any" draws any third empire; the handler checks.
     Rng rng(2);
-    CHECK_FALSE(effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, target(kB, kA), rng).has_value());
+    const auto any = effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, target(kB, kA), rng);
+    REQUIRE(any.has_value());
+    CHECK(any->other == kC);
+    CHECK_FALSE(run(s, Effect::PoliticsDisruptTrade, {}).applied);
+    // Intercept Messages with nothing to report fails.
+    CHECK_FALSE(run(s, Effect::PoliticsInterceptMessages, third(kC)).applied);
     diplomacy::setTreaty(ctx, kB, kC, Treaty::TradeAlliance);
     s.empire(kB).relation(kC).tradeTurns = s.empire(kC).relation(kB).tradeTurns = 12;
     auto out = run(s, Effect::PoliticsDisruptTrade, {});
@@ -581,10 +646,21 @@ TEST_CASE("intel: espionage reports") {
     CHECK(out.report.size() >= 4);
     CHECK(out.tokens.planetName == s.galaxy.object(homeworld(s, kB).planet).name);
 
+    // System - Info: the highest-numbered system they explored and we did not;
+    // the system drawn for the order does not matter (spec 05 §2.3).
     GameState t = newPoliticsGame();
-    out = run(t, Effect::SystemInfo, {});
+    std::optional<SystemId> highest;
+    for (const StarSystem& sys : t.galaxy.systems)
+        if (t.empire(kB).hasExplored(sys.id) && !t.empire(kA).hasExplored(sys.id)) highest = sys.id;
+    REQUIRE(highest);
+    effects::Target named = target(kB, kA);
+    named.system = SystemId{0u};
+    out = run(t, Effect::SystemInfo, named);
     CHECK(out.applied);
-    CHECK(t.empire(kA).hasExplored(t.galaxy.object(homeworld(t, kB).planet).system));
+    CHECK(t.empire(kA).hasExplored(*highest));
+    for (const StarSystem& sys : t.galaxy.systems)
+        if (t.empire(kB).hasExplored(sys.id)) t.empire(kA).knowledge.explored[sys.id.index()] = 1;
+    CHECK_FALSE(run(t, Effect::SystemInfo, {}).applied);  // nothing left to learn
 
     for (Effect e : {Effect::EmpireInfo, Effect::TechLevelInfo, Effect::ShipLocations, Effect::ShipConcentrations,
                      Effect::ShipConstructionInfo}) {

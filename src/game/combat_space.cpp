@@ -2773,14 +2773,25 @@ void Battle::finish() {
         ctx_.log(e, LogCategory::Combat, std::format("Battle at {}", sector), std::move(text), where_);
     }
 
-    // Each participant learns (or sees again) the designs it fought.
+    // Each participant learns (or sees again) the designs it fought: every
+    // piece's, and those of the units in a piece's cargo (spec 05 §8 "Design
+    // knowledge", confirmed: binary).
     for (EmpireId e : empires_) {
         Knowledge& known = s_.empire(e).knowledge;
+        auto see = [&](DesignId d) {
+            if (d.valid() && d.index() < s_.designs.size() && s_.design(d).owner != e) seeDesign(known, d, s_.turn);
+        };
         for (const Piece& p : pieces_) {
-            if (p.startOwner == e || p.kind == Kind::Seeker || p.kind == Kind::Planet || p.kind == Kind::Obstacle || !p.unit.design.valid()) continue;
+            if (p.startOwner == e || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) continue;
+            if (p.kind == Kind::Planet) {
+                if (const Colony* c = s_.colony(p.object))
+                    for (const UnitStack& u : c->cargo.units) see(u.design);
+                continue;
+            }
+            if (!p.unit.design.valid()) continue;
             const std::vector<UnitStack> designs = p.kind == Kind::UnitGroup ? p.stacks : std::vector<UnitStack>{{p.unit.design, 1}};
-            for (const UnitStack& st : designs)
-                if (s_.design(st.design).owner != e) seeDesign(known, st.design, s_.turn);
+            for (const UnitStack& st : designs) see(st.design);
+            for (const UnitStack& u : p.unit.cargo.units) see(u.design);
         }
     }
 

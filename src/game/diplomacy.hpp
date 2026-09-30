@@ -51,6 +51,9 @@ std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
 // Establishes contact both ways; logs first contact.
 void makeContact(TurnContext& ctx, EmpireId a, EmpireId b);
+// The log text of a first contact with `other` (the history file finds the
+// empire by it).
+std::string firstContactText(const GameState& s, EmpireId other);
 // Declare War (spec 05 §3.4): both sides are at War whatever the treaty was,
 // and both are told. Also used by `Politics - Fake Messages` (§2.3).
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);
@@ -72,15 +75,22 @@ void transferVehicle(GameState& s, VehicleId vehicle, EmpireId to);
 void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::span<const PackageItem> items);
 // True if an item is an unfilled "Any" placeholder (no specific tech, planet, ...).
 bool isPlaceholder(const PackageItem& item);
-// The whole empire of `from` passes to `to`; `from` is eliminated.
+// A Surrender message (spec 05 §3.4, confirmed: binary), only with the Allow
+// Surrender game option on: every object of `from` passes to `to`, and the
+// systems where they lie become explored for it; its minerals, organics and
+// radioactives pass; `to` learns its designs and the designs it knew that
+// their owners can still build (dated now), and gains exactly one level in
+// every area where it is behind (allowed, visible to both, requirements met
+// by `from`). Both sides and the living empires in contact with either are
+// told. `from` stays alive, owning nothing, until its next destruction check.
 void surrender(TurnContext& ctx, EmpireId from, EmpireId to);
 
 // ---- Trade and tariffs (the economy's income and trade steps use these) ------------------------
 
-// An empire's production of the five kinds this turn: the base of trade,
-// tariffs and the score (spec 05 §3.3, §5). What its colonies deliver to the
-// treasury (economy::empireProduction, spec 02 §5.5), without remote mining,
-// Generate Points or the income floor (inferred, spec 05 open question 15).
+// An empire's production of the five kinds this turn: the base of trade and
+// the score (spec 05 §3.3, §5). What its colonies deliver to the treasury
+// (economy::empireProduction, spec 02 §5.5), without remote mining, Generate
+// Points or the income floor. Tariffs are cut from more (tariffDue).
 struct Generated {
     Resources resources;
     int64_t research = 0;
@@ -106,12 +116,16 @@ Resources tariffsReceived(const Rules& r, const GameState& s, EmpireId e);
 int64_t researchTradeIncome(const Rules& r, const GameState& s, EmpireId e);
 // Intelligence points from Partnerships (the economy adds them to its IP).
 int64_t intelTradeIncome(const Rules& r, const GameState& s, EmpireId e);
-// What `e` owes its master this turn on each of its five incomes (spec 05
+// What `e` owes its master on each of its five incomes `income` (spec 05
 // §3.3, confirmed: binary): round(income × pct / 100), never more than the
 // income, with pct the treaty's `Treaty Subjugated/Protectorate Resource
 // Percentage`. The master receives the resources; the research and
 // intelligence parts are simply lost. The economy's income step takes it,
 // once, before the computer bonus (economy::collectIncome).
+Generated tariffOn(const Rules& r, const GameState& s, EmpireId e, const Generated& income);
+// The same on the empire's whole non-trade income this turn: colony
+// production after the income floor, remote mining and `Generate Points`
+// (economy::nonTradeIncome). Trade income is never taxed.
 Generated tariffDue(const Rules& r, const GameState& s, EmpireId e);
 // The resource part of tariffDue; the economy caps it at what the payer holds.
 Resources tariffsPaid(const Rules& r, const GameState& s, EmpireId e);

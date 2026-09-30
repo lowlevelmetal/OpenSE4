@@ -1174,6 +1174,10 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     }
                 }
                 ++struck[victim.id.value];
+                // Striking a mine field dates its design for the victim's empire
+                // (spec 05 §8 "Design knowledge", confirmed: binary).
+                if (s.design(mineDesign).owner != victim.owner && victim.owner.valid() && victim.owner.index() < s.empires.size())
+                    seeDesign(s.empire(victim.owner).knowledge, mineDesign, s.turn);
                 removeGroupUnits(s, *s.vehicle(mid), mineDesign, 1);   // the mine is used up
                 ++used;
             }

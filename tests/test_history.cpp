@@ -2,9 +2,11 @@
 // §5) and the memory of foreign designs, forgotten 50 turns after they were
 // last seen (spec 05 §8 step 12).
 
+#include "combat_fixture.hpp"
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "game/combat.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
@@ -114,7 +116,7 @@ TEST_CASE("turn order: a forgotten obsolete design can be purged at the new year
     CHECK(std::find(own.begin(), own.end(), fresh) != own.end());
 }
 
-TEST_CASE("history: shared designs keep the partner's date; a master sees its subject's designs this turn") {
+TEST_CASE("history: shared designs keep the partner's date; a master dates its subject's designs by their creation") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
@@ -126,11 +128,22 @@ TEST_CASE("history: shared designs keep the partner's date; a master sees its su
     s.turn = 40;
     seeDesign(s.empire(kB).knowledge, cDesign, 12);
     const DesignId cOther = spareDesign(s, r, kC, "Subject Hull");
+    s.design(cOther).createdTurn = 35;
+    const DesignId cBig = addTestDesign(s, r, kC, "Out Of Reach", "Test Cruiser", {"Test Bridge"});
+    s.empire(kC).techLevels[techArea(r, "Test Construction").index()] = 1;  // the cruiser hull needs level 2
     diplomacy::treatyStep(ctx, kA);
-    // From the partner: as old as the partner's own sighting, so partners cannot
-    // keep a design alive by passing it back and forth.
-    CHECK(designSeenTurn(s.empire(kA).knowledge, cDesign) == 40u);  // the master saw it itself
-    CHECK(designSeenTurn(s.empire(kA).knowledge, cOther) == 40u);
+    // A master learns the designs of its subject it does not know and the
+    // subject can build, dated with their creation (spec 05 §8). From the
+    // partner: as old as the partner's own sighting, so partners cannot keep a
+    // design alive by passing it back and forth; the later date wins.
+    CHECK(designSeenTurn(s.empire(kA).knowledge, cDesign) == 12u);
+    CHECK(designSeenTurn(s.empire(kA).knowledge, cOther) == 35u);
+    CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, cBig));
+    // Created more than 50 turns ago: forgotten again at step 12 of the same processing.
+    GameState old = s;
+    old.turn = 90;
+    sight::forgetOldDesigns(old, kA);
+    CHECK_FALSE(knowsDesign(old.empire(kA).knowledge, cOther));
 
     // Without the subjugation, only the partner's date remains.
     GameState t = newPoliticsGame();
@@ -145,6 +158,38 @@ TEST_CASE("history: shared designs keep the partner's date; a master sees its su
     t.turn = 63;
     CHECK(sight::forgetOldDesigns(t, kA) == 1);
     CHECK(sight::forgetOldDesigns(t, kB) == 1);
+}
+
+TEST_CASE("history: a battle dates the pieces' designs and their cargo's; a mine strike the mine's") {
+    // Spec 05 §8 "Design knowledge" (confirmed: binary).
+    using namespace opense4::ctest;
+    {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        s.turn = 9;
+        const DesignId hunter = frigate(s, ar.a, "Hunter", 3, {"CT Big Gun", "CT Big Armor"});
+        const DesignId carrier = frigate(s, ar.b, "Carrier", 1, {"Test Cargo Bay"});
+        const DesignId sat = ctest::design(s, ar.b, "Cargo Sat", "Test Satellite Hull", {"Test Armor Plate"});
+        spawn(s, hunter, ar.loc);
+        const VehicleId c = spawn(s, carrier, ar.loc);
+        s.vehicle(c)->cargo.units = {{sat, 1}};
+        TurnContext ctx = ctest::context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, carrier) == std::optional<uint32_t>(9));
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, sat) == std::optional<uint32_t>(9));
+        CHECK(designSeenTurn(s.empire(ar.b).knowledge, hunter) == std::optional<uint32_t>(9));
+    }
+    {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        s.turn = 4;
+        const DesignId mine = ctest::design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"});
+        spawn(s, mine, ar.loc, 1);
+        spawn(s, frigate(s, ar.a, "Victim", 1, {"Test Armor Plate", "Test Armor Plate", "Test Armor Plate"}), ar.loc);
+        TurnContext ctx = ctest::context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, mine) == std::optional<uint32_t>(4));
+    }
 }
 
 // ---- The history record ------------------------------------------------------------------------------

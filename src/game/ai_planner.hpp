@@ -153,7 +153,9 @@ SystemId homeSystem(const GameState& s, EmpireId e);
 class Planner {
 public:
     Planner(const Rules& rules, const GameState& s, EmpireId e, Mode mode, uint64_t salt);
-    void runOrders();    // group 1 (ai.hpp)
+    // Group 1 (ai.hpp); `politics` and `others` pick its parts: the Politics
+    // minister, then the ministers after it.
+    void runOrders(bool politics = true, bool others = true);
     void runEconomy();   // group 2
     PlanReport report() { return {std::move(out), std::move(dropped)}; }
 

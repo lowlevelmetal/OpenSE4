@@ -1740,6 +1740,35 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     CHECK(w.logged(kA, "cannot colonize"));
 }
 
+TEST_CASE("movement: colony ships found colonies during the phases, on an acting day with movement left") {
+    // Colonize is carried out like any order (spec 05 §8 step 5, spec 03 §8):
+    // a ship that arrives before its last acting day founds the colony that
+    // turn, one that arrives on its last acting day founds it next turn.
+    World w;
+    const SystemId a = w.system("A");
+    const ObjectId near = w.planet(a, {3, 6});
+    const ObjectId far = w.planet(a, {5, 6});
+    const VehicleId early = w.spawn(w.ship(kA, "Early", 4, {"Test Rock Pod"}), at(a, 1, 6));
+    const VehicleId late = w.spawn(w.ship(kA, "Late", 4, {"Test Rock Pod"}), at(a, 2, 6));
+    REQUIRE(movement::actionDays(vehicleMaxMovement(w.rules(), w.s, w.v(early)), movement::kDayCounterMode) == std::vector<int>{8, 16, 23});
+    fuel(w, early);
+    fuel(w, late);
+    w.v(early).cargo.population.push_back({kA, 1});
+    w.v(late).cargo.population.push_back({kA, 1});
+    w.order(early, mk(OrderKind::Colonize, {}, near));  // two steps, then colonizes on day 23
+    w.order(late, mk(OrderKind::Colonize, {}, far));    // three steps: arrives on day 23
+    w.move();
+    REQUIRE(w.s.colony(near));
+    CHECK(w.s.colony(near)->owner == kA);
+    CHECK(w.s.vehicle(early) == nullptr);
+    CHECK_FALSE(w.s.colony(far));
+    REQUIRE(w.s.vehicle(late));
+    CHECK(w.v(late).location == at(a, 5, 6));
+    w.move();
+    REQUIRE(w.s.colony(far));
+    CHECK(w.s.vehicle(late) == nullptr);
+}
+
 TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize with a member") {
     World w;
     const Rules& r = w.rules();
@@ -2982,10 +3011,10 @@ TEST_CASE("orders: composite orders are expanded into simple ones when they are 
     CHECK(w.v(ship).location == at(a, 4, 6));
     CHECK(w.v(ship).cargo.totalPopulation() == 2);
     CHECK(w.v(ship).orders.size() == 2);
+    // It arrives on its first acting day and colonizes on the next, during the
+    // movement phases (spec 05 §8 step 5).
     w.move();
-    CHECK(w.v(ship).location == at(a, 5, 6));
-    CHECK(w.v(ship).orders.size() == 1);
-    w.colonize();
+    CHECK(w.s.vehicle(ship) == nullptr);
     REQUIRE(w.s.colony(target));
     CHECK(w.s.colony(target)->owner == kA);
 
