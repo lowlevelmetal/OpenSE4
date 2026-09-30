@@ -1753,6 +1753,46 @@ TEST_CASE("ai: troop transports reload at the nearest colony with troops") {
     CHECK(applyAll(r, s, me, cmds).empty());
 }
 
+TEST_CASE("ai: sweepers sweep hostile mine fields and drones hunt war enemies in range") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(13, 2, 12, false);
+    exploreEverything(s);
+    const EmpireId enemy{0u}, cpu{1u};
+    meet(s, enemy, cpu);
+    s.empire(cpu).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(cpu).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, cpu).planet);
+    const DesignId mine = addTestDesign(s, r, enemy, "Mine", "Test Mine Hull", {"Test Warhead"});
+    const VehicleId field = addTestVehicle(s, r, mine, home).id;
+    const DesignId raider = addWarship(s, r, enemy, "Raider");
+    const VehicleId intruder = addTestVehicle(s, r, raider, home).id;
+    const DesignId sweeperDesign = addTestDesign(s, r, cpu, "Sweeper", "Test Frigate",
+                                                 {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Mine Sweeper"});
+    s.design(sweeperDesign).designType = "Mine Sweeper";
+    const VehicleId sweeper = addTestVehicle(s, r, sweeperDesign, home).id;
+    const DesignId droneDesign = addTestDesign(s, r, cpu, "Drone", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    s.design(droneDesign).designType = "Anti-Ship Drone";
+    const VehicleId drone = addTestVehicle(s, r, droneDesign, home).id;
+    sight::updateKnowledge(r, s);
+    Empire& e = s.empire(cpu);
+    for (VehicleId v : {field, intruder})
+        if (std::find(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end(), v) == e.knowledge.visibleVehicles.end())
+            e.knowledge.visibleVehicles.push_back(v);
+    std::sort(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end());
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 3);
+    REQUIRE(p.sit.enemyNearby.size() == 1);  // a mine field is "nearby", not "in territory"
+    ai::detail::planMinesSatellitesDrones(p);
+    const Vehicle* sw = p.st.vehicle(sweeper);
+    REQUIRE(sw);
+    REQUIRE_FALSE(sw->orders.empty());
+    CHECK(sw->orders.back().kind == OrderKind::SweepMines);
+    const Vehicle* d = p.st.vehicle(drone);
+    REQUIRE(d);
+    REQUIRE_FALSE(d->orders.empty());
+    CHECK(d->orders.front().kind == OrderKind::Attack);
+    CHECK(d->orders.front().vehicle == intruder);
+}
+
 TEST_CASE("ai: defenders answer a threat at home") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(13, 2, 12, true);
