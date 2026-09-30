@@ -1,0 +1,121 @@
+#pragma once
+
+// Rules-side helpers of the ship order windows (Ships\Units, Fleet Transfer,
+// Cargo Transfer, Launch\Recover Units, Scrap, View Orders, Stellar
+// Manipulation). Nothing here draws: it only reads the game state, so it is
+// unit tested on our own fixtures.
+
+#include "game/commands.hpp"
+#include "game/rules.hpp"
+#include "game/state.hpp"
+
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace opense4::client::classic::shipui {
+
+// ---- Orders ---------------------------------------------------------------------------------
+
+// Who holds the orders of a vehicle: its fleet when it is in one, else itself
+// (docs/spec/03 §8: an order given to a fleet goes to every member).
+struct OrderOwner {
+    game::VehicleId vehicle;
+    game::FleetId fleet;
+    bool valid() const { return vehicle.valid() || fleet.valid(); }
+};
+OrderOwner orderOwner(const game::GameState& s, game::VehicleId v);
+const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o);
+bool repeatOf(const game::GameState& s, OrderOwner o);
+game::cmd::SetOrders setOrders(OrderOwner o, std::vector<game::Order> orders, bool repeat);
+
+// Appends an order to the owner's list (keeps Repeat as it is).
+game::cmd::SetOrders withAppended(const game::GameState& s, OrderOwner o, const game::Order& order);
+// Orders the classic game carries out at once from a window (launch, recover,
+// stellar manipulation, self-destruct) run first here: they go to the head of
+// the list, after any such orders already given for `here` (the vehicle's
+// sector), so they execute where the vehicle is now.
+bool immediateKind(game::OrderKind k);
+void insertImmediate(std::vector<game::Order>& orders, const game::Order& order, game::Location here);
+// Where the owner is: the vehicle's sector, or the fleet leader's.
+std::optional<game::Location> ownerLocation(const game::GameState& s, OrderOwner o);
+game::cmd::SetOrders withImmediate(const game::GameState& s, OrderOwner o, const game::Order& order);
+
+// Moves an order up (delta < 0) or down; returns its new index.
+size_t moveOrder(std::vector<game::Order>& orders, size_t index, int delta);
+
+// ---- Transfer steps (Move One / Five / Ten / All) -------------------------------------------
+
+enum class Step { One, Five, Ten, All };
+int64_t stepAmount(Step step, int64_t available);
+const char* stepLabel(Step step);
+
+// ---- Units --------------------------------------------------------------------------------
+
+bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+bool isUnitDesign(const game::Rules& r, const game::GameState& s, game::DesignId d);
+// Units a vehicle can launch per game turn by unit kind (Val 2 of its intact
+// launchers, docs/spec/03 §12); -1 when it has no launcher for that kind.
+struct LaunchRates {
+    int fighters = -1, satellites = -1, mines = -1, drones = -1;
+    bool any() const { return fighters >= 0 || satellites >= 0 || mines >= 0 || drones >= 0; }
+};
+LaunchRates launchRates(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// Whether the vehicle has a launcher for units of this design.
+bool canLaunch(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, game::DesignId unit);
+
+// ---- Scrap window ---------------------------------------------------------------------------
+
+// Scrap refund for a vehicle (all units of a group) at its location (docs/spec/03 §15).
+game::Resources scrapValue(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+game::Resources unmothballCost(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& s, const game::Colony& c, size_t slot);
+// Design entry of an intact Self-Destruct component, if any.
+std::optional<size_t> selfDestructEntry(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// Another own vehicle in the sector, outside `selection`, has an intact weapon.
+bool canBeFiredOn(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::vector<game::VehicleId>& selection);
+// Components on the vehicles that the owner of the window cannot build yet.
+struct ResearchPotential {
+    int unknown = 0;
+    int total = 0;
+};
+ResearchPotential researchPotential(const game::Rules& r, const game::GameState& s, const game::Empire& e,
+                                    const std::vector<const game::Vehicle*>& vehicles);
+const char* researchPotentialLabel(ResearchPotential p);
+
+// Per-turn maintenance of one vehicle (docs/spec/02 §7): the engine reports
+// only the empire total, so the Ships window estimates rows with the same rule.
+game::Resources vehicleMaintenance(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+
+// Validates a command against a scratch copy of the state: the result and
+// what it would take from the stockpile (e.g. a retrofit's cost).
+struct DryRun {
+    game::CommandResult result;
+    game::Resources cost;
+};
+DryRun dryRun(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Command& c);
+
+// ---- Stellar manipulation -------------------------------------------------------------------
+
+struct StellarInfo {
+    game::StellarAction action;
+    const char* name;        // button label
+    game::AbilityKind ability;
+    const char* picture;     // film strip under Pictures/Stellar
+    int frames;              // 128×128 frames in the strip
+};
+const StellarInfo& stellarInfo(game::StellarAction a);
+
+struct StellarCheck {
+    bool hasAbility = false;
+    bool possible = false;   // ability and precondition
+    std::string reason;      // why not, or what will happen
+    game::ObjectId target;   // the object acted on, if any
+    bool destroysSystem = false;  // wipes out the system, the ship included
+    bool needsDestination = false;  // Open Warp Point: pick the other end
+};
+StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, game::StellarAction a);
+game::Order stellarOrder(const game::Vehicle& v, game::StellarAction a, game::ObjectId target);
+
+} // namespace opense4::client::classic::shipui
