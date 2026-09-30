@@ -1103,6 +1103,9 @@ is on (confirmed: binary).
 - The style is a personality set taken from `Ai/<Aggressive|Defensive|Neutral>/`.
 - With "Use Race Minister Style", the race's own AI files are used instead. These files
   are covered in the AI spec.
+- OpenSE4 choice: the Ministers window also offers the style and the race-style switch,
+  so a player can change them during a game. All minister settings belong to the empire
+  and travel with its orders.
 
 **Colony types**
 - A colony type is a label chosen at colonization or later. The defaults come from
