@@ -78,6 +78,9 @@ void addLog(GameState& s, EmpireId empire, LogCategory category, std::string tit
 
 Vehicle& GameState::addVehicle(Vehicle v) {
     v.id = VehicleId{nextVehicleId++};
+    // "Automatically use Individual Ministers for newly built vehicles": every
+    // new vehicle and launched unit group starts under minister control (spec 02 §10).
+    if (v.owner.valid() && v.owner.index() < empires.size() && empires[v.owner.index()].ministersForNewVehicles) v.minister = true;
     vehicles.push_back(std::move(v));  // ids are increasing: stays sorted
     return vehicles.back();
 }

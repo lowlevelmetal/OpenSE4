@@ -279,7 +279,7 @@ private:
         const DiplomaticMessage* newest = nullptr;
         for (const DiplomaticMessage& m : p_.st.messages)
             if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type) && (!newest || m.id > newest->id)) newest = &m;
-        if (!newest) return false;
+        if (!newest) return acknowledge(x);
         const DiplomaticMessage msg = *newest;  // copy: answering appends to the list
         switch (msg.type) {
             case MessageType::ProposeTreaty:
@@ -289,6 +289,50 @@ private:
             case MessageType::Gift:
             case MessageType::Tribute: return answerGift(msg);
             default: return answerDemand(msg);
+        }
+    }
+
+    // Acknowledgement messages (an answer to one of ours, a declaration, a
+    // surrender...) get a chatter reply from the friend or enemy response pool
+    // (spec 05 §7.4): the newest one from x that arrived since the last turn,
+    // when there is nothing to answer. The pool is `Response Friend <type>` or
+    // `Response Enemy <type>`; a broken treaty always uses the friend pool, a
+    // tribute's reply the Tribute pools. Plain chatter and the verdicts on our
+    // demands have no pool and get nothing, so two computers never chatter
+    // back and forth (inferred, open question 12).
+    bool acknowledge(EmpireId x) {
+        const DiplomaticMessage* newest = nullptr;
+        for (const DiplomaticMessage& m : p_.st.messages)
+            if (m.from == x && m.to == p_.id && m.delivered && !m.answered && m.sentTurn + 1 >= p_.st.turn && ackPool(m).size() > 0 &&
+                (!newest || m.id > newest->id))
+                newest = &m;
+        if (!newest) return false;
+        const DiplomaticMessage msg = *newest;
+        const std::string pool = std::format("Response {} {}", msg.type == MessageType::BreakTreaty || isFriend(x) ? "Friend" : "Enemy", ackPool(msg));
+        std::string text = speechLine(p_, pool, msg.from, msg.thirdEmpire, msg.treaty, msg.system, msg.planet);
+        if (text.empty()) return false;
+        return p_.emit(cmd::AnswerMessage{msg.id, true, std::move(text)});
+    }
+    // The type part of an acknowledgement's response pool, empty for anything else.
+    std::string_view ackPool(const DiplomaticMessage& m) const {
+        switch (m.type) {
+            case MessageType::AcceptGift:
+            case MessageType::RefuseGift: {
+                bool tribute = false;
+                for (const DiplomaticMessage& o : p_.st.messages)
+                    if (o.id == m.inReplyTo) tribute = o.type == MessageType::Tribute;
+                if (tribute) return m.type == MessageType::AcceptGift ? "Accept Tribute" : "Refuse Tribute";
+                return angerKeyName(m.type);
+            }
+            case MessageType::AcceptTreaty:
+            case MessageType::RefuseTreaty:
+            case MessageType::BreakTreaty:
+            case MessageType::DeclareWar:
+            case MessageType::AcceptTrade:
+            case MessageType::RefuseTrade:
+            case MessageType::Surrender:
+            case MessageType::GrantIndependence: return angerKeyName(m.type);
+            default: return {};
         }
     }
 

@@ -358,7 +358,8 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.history, e.experience);
-    fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle);
+    fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
+           e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -510,6 +511,10 @@ template <class Ar> void io(Ar& ar, cmd::SetRepairPriorities& c) { fields(ar, c.
 template <class Ar> void io(Ar& ar, cmd::SetDesignTypes& c) { fields(ar, c.designTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyTypes& c) { fields(ar, c.colonyTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash); }
+template <class Ar>
+void io(Ar& ar, cmd::SetMinisters& c) {
+    fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
+}
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

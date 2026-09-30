@@ -126,6 +126,25 @@ std::string_view moodLabel(int anger);
 // computer players, else Empire::ministerAll or the area's bit.
 bool ministerOn(const Empire& e, Minister m);
 
+// The minister style whose AI files the empire reads (spec 05 §7.1, §7.2):
+// Empire::ministerStyle unless "Use Race Minister Style" is ticked. Empty:
+// the race's own files.
+std::string_view ministerStyleOf(const Empire& e);
+
+// A human empire whose orders are missing is played by the computer for the
+// turn (spec 05 §7.1, §8 step 1). standIn() switches all its ministers on and
+// returns the player's own settings; restoreMinisters() puts them back after
+// the turn. In between, the AI state update, the political step and the
+// ministers treat the empire like a computer player (Empire::ministerAll).
+// The minimal-changes option (Empire::aiMinimalChanges) is the caller's to
+// honour: the stand-in then plans nothing.
+struct MinisterSettings {
+    bool all = false;
+    uint32_t areas = 0;
+};
+MinisterSettings standIn(Empire& e);
+void restoreMinisters(Empire& e, const MinisterSettings& saved);
+
 // Difficulty (spec 05 §7.1): the empire's level, kDifficultyLow..High.
 // Until the AI step assigns it (Empire::aiDifficulty < 0): the chosen level
 // for random AI players (GameOptions::randomAiPlayers), Medium otherwise.

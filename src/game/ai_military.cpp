@@ -548,9 +548,151 @@ void planSpaceYardShips(Planner&) {}
 // The Stellar Manipulation minister is open (spec 05 open questions): it does nothing.
 void planStellarManipulation(Planner&) {}
 
+namespace {
+
+using ruleset::VehicleType;
+
+// Units of one kind held by the empire: in space, and in the cargo of its
+// planets and vehicles.
+struct UnitTotals {
+    int64_t all = 0;
+    int64_t onPlanets = 0;
+};
+UnitTotals unitTotals(Planner& p, VehicleType kind) {
+    UnitTotals t;
+    auto ofKind = [&](DesignId d) { return p.info(d).stats.vehicleType == kind; };
+    for (const Vehicle& v : p.st.vehicles) {
+        if (v.owner != p.id) continue;
+        if (v.count > 0 && ofKind(v.design)) t.all += v.count;
+        for (const UnitStack& u : v.cargo.units)
+            if (ofKind(u.design)) t.all += u.count;
+    }
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id)
+            for (const UnitStack& u : c->cargo.units)
+                if (ofKind(u.design)) {
+                    t.all += u.count;
+                    t.onPlanets += u.count;
+                }
+    return t;
+}
+
+// Launches above the kept share: trunc(total x kept % / 100) stay in planet
+// cargo, counted over every unit of the kind the empire holds (inferred: the
+// spec does not say whether "total" is per planet or for the empire).
+int64_t launchQuota(const UnitTotals& t, int keptPercent) {
+    const int64_t kept = t.all * std::clamp(keptPercent, 0, 100) / 100;
+    return std::max<int64_t>(0, t.onPlanets - kept);
+}
+
+Order launchOrder(DesignId unit, int64_t amount) {
+    Order o;
+    o.kind = OrderKind::LaunchUnits;
+    o.design = unit;
+    o.amount = static_cast<int>(std::min<int64_t>(amount, INT32_MAX));
+    return o;
+}
+
+// Spec 05 §7.5: satellites and drones in planet cargo above the kept shares
+// are launched, as planet orders (spec 03 §12). Drones go half after ships and
+// half after planets of empires at War with us, each half capped at targets x
+// drones per target.
+void launchFromPlanets(Planner& p, bool roomForUnits) {
+    std::vector<ObjectId> planets;
+    for (const auto& c : p.st.colonies)
+        if (c && !c->cargo.units.empty() && p.controlsColony(*c, Minister::MinesSatellitesDrones)) planets.push_back(c->planet);
+    if (planets.empty() || !roomForUnits) return;
+    const SettingsTable& set = p.prof.settings;
+    std::map<ObjectId, std::vector<Order>> orders;
+    std::map<std::pair<ObjectId, DesignId>, int64_t> left;  // units still in each planet's cargo
+    for (ObjectId planet : planets)
+        for (const UnitStack& u : p.st.colony(planet)->cargo.units) left[{planet, u.design}] += u.count;
+
+    // Satellites, planet by planet, where each planet is (up to the sector cap).
+    int64_t satellites = launchQuota(unitTotals(p, VehicleType::Satellite), set.satellitesKeptPercent);
+    const int64_t perSector = p.r.setting("Maximum Satellites Per Player Per Sector", 100);
+    for (ObjectId planet : planets) {
+        if (satellites <= 0) break;
+        const Location at = locationOf(p.st.galaxy, planet);
+        int64_t room = perSector;
+        for (const Vehicle& v : p.st.vehicles)
+            if (v.owner == p.id && v.location == at && v.count > 0 && p.info(v.design).stats.vehicleType == VehicleType::Satellite) room -= v.count;
+        for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
+            if (satellites <= 0 || room <= 0) break;
+            if (u.count <= 0 || p.info(u.design).stats.vehicleType != VehicleType::Satellite) continue;
+            const int64_t n = std::min({int64_t{u.count}, satellites, room});
+            orders[planet].push_back(launchOrder(u.design, n));
+            left[{planet, u.design}] -= n;
+            satellites -= n;
+            room -= n;
+        }
+    }
+
+    // Drones: the quota split in two halves (the odd one goes after ships; inferred).
+    const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent);
+    if (drones <= 0) return;
+    std::vector<std::pair<SystemId, Order>> shipTargets, planetTargets;
+    for (const Threat& t : p.sit.enemyInTerritory) {
+        const Vehicle* v = t.vehicle.valid() ? p.st.vehicle(t.vehicle) : nullptr;
+        if (!v || !p.atWarWith(t.owner) || isUnitType(vehicleType(p.r, p.st, *v))) continue;
+        shipTargets.emplace_back(t.system, attackVehicle(*v));
+    }
+    for (const Candidate& c : p.sit.candidates)
+        if (p.atWarWith(c.owner)) planetTargets.emplace_back(c.system, attackPlanet(p.st, c.planet));
+    std::map<SystemId, std::vector<int>> jumps;
+    auto jumpsTo = [&](ObjectId planet, SystemId target) {
+        const SystemId from = p.st.galaxy.object(planet).system;
+        auto it = jumps.find(from);
+        if (it == jumps.end()) it = jumps.emplace(from, p.jumpsFrom(from)).first;
+        return it->second[target.index()];
+    };
+    auto sendHalf = [&](const std::vector<std::pair<SystemId, Order>>& targets, int64_t quota, int perTarget, int range,
+                        std::string_view preferred) {
+        quota = std::min<int64_t>(quota, static_cast<int64_t>(targets.size()) * std::max(0, perTarget));
+        for (const auto& [system, attack] : targets) {
+            int64_t want = std::min<int64_t>(perTarget, quota);
+            // Planets within range, nearest first; the drone type named for this half first (inferred).
+            std::vector<std::pair<int, ObjectId>> from;
+            for (ObjectId planet : planets)
+                if (const int j = jumpsTo(planet, system); j >= 0 && j <= range) from.emplace_back(j, planet);
+            std::sort(from.begin(), from.end());
+            for (int pass = 0; pass < 2 && want > 0; ++pass)
+                for (const auto& [j, planet] : from) {
+                    for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
+                        if (want <= 0) break;
+                        const DesignInfo& di = p.info(u.design);
+                        if (di.stats.vehicleType != VehicleType::Drone || keysEqual(di.aiType, preferred) != (pass == 0)) continue;
+                        int64_t& have = left[{planet, u.design}];
+                        const int64_t n = std::min(have, want);
+                        if (n <= 0) continue;
+                        Order o = launchOrder(u.design, n);
+                        o.vehicle = attack.vehicle;
+                        o.object = attack.object;
+                        orders[planet].push_back(o);
+                        have -= n;
+                        want -= n;
+                        quota -= n;
+                    }
+                    if (want <= 0) break;
+                }
+            if (quota <= 0) break;
+        }
+    };
+    sendHalf(shipTargets, (drones + 1) / 2, set.antiShipDronesPerTarget, set.antiShipDroneRange, "Anti-Ship Drone");
+    sendHalf(planetTargets, drones / 2, set.antiPlanetDronesPerTarget, set.antiPlanetDroneRange, "Anti-Planet Drone");
+
+    for (auto& [planet, list] : orders) {
+        if (list.empty() || p.st.colony(planet)->orders == list) continue;
+        p.emit(cmd::SetOrders{.orders = std::move(list), .planet = planet});
+    }
+}
+
+} // namespace
+
 void planMinesSatellitesDrones(Planner& p) {
     if (!p.on(Minister::MinesSatellitesDrones)) return;
     const bool roomForUnits = unitCount(p.r, p.st, p.id) < p.st.options.maxUnitsPerPlayer;
+    launchFromPlanets(p, roomForUnits);
     for (VehicleId id : p.ownVehicles(Minister::MinesSatellitesDrones)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || v->fleet.valid() || !p.idle(*v)) continue;

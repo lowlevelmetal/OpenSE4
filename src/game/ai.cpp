@@ -766,6 +766,20 @@ bool ministerOn(const Empire& e, Minister m) {
     return (e.ministers & ministerBit(m)) != 0;
 }
 
+std::string_view ministerStyleOf(const Empire& e) { return e.useRaceMinisterStyle ? std::string_view{} : std::string_view{e.ministerStyle}; }
+
+MinisterSettings standIn(Empire& e) {
+    const MinisterSettings saved{e.ministerAll, e.ministers};
+    e.ministerAll = true;
+    e.ministers = kAllMinisters;
+    return saved;
+}
+
+void restoreMinisters(Empire& e, const MinisterSettings& saved) {
+    e.ministerAll = saved.all;
+    e.ministers = saved.areas;
+}
+
 std::string_view moodLabel(int anger) {
     // Spec 05 §7.3 (confirmed: binary).
     if (anger < 10) return "Brotherly";

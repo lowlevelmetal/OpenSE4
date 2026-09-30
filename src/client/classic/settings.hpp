@@ -1,10 +1,10 @@
 #pragma once
 
 // Client-side preferences of the classic client: the Empire Options switches
-// (docs/spec/06 §1.2), the per-category minister switches (until the AI
-// supports categories) and a few window preferences. They belong to whoever
+// (docs/spec/06 §1.2) and a few window preferences. They belong to whoever
 // plays on this machine, not to the game, and live in
-// <userDataDir>/classic_settings.toml.
+// <userDataDir>/classic_settings.toml. The minister switches belong to the
+// empire (game::cmd::SetMinisters).
 
 #include <span>
 #include <string>
@@ -39,11 +39,6 @@ struct ClassicSettings {
     bool showWaypointMarkers = true;
     bool showColonizationMarkers = true;
 
-    // Ministers: names of the categories switched on (see ministerCategories()).
-    std::vector<std::string> ministers;
-    bool ministersForNewVehicles = false;
-    bool raceMinisterStyle = false;
-
     // Sound and music (docs/spec/06 §5.5).
     bool soundOn = true;
     bool musicOn = true;
@@ -53,9 +48,6 @@ struct ClassicSettings {
 
     // Combat Replay playback speed (1 = normal).
     float replaySpeed = 1.0f;
-
-    bool ministerOn(std::string_view category) const;
-    void setMinister(std::string_view category, bool on);
 };
 
 // The settings of this machine, loaded on first use.
@@ -71,14 +63,6 @@ struct BoolOption {
     bool ClassicSettings::*member;
 };
 std::span<const BoolOption> boolOptions();
-
-// Minister categories (docs/spec/02 §10): global ones take over a whole area,
-// individual ones act on objects whose minister flag is set.
-struct MinisterCategory {
-    const char* name;
-    bool global;
-};
-std::span<const MinisterCategory> ministerCategories();
 
 // TOML round trip (used by settings()/saveSettings(), exposed for tests).
 std::string settingsToToml(const ClassicSettings& s);

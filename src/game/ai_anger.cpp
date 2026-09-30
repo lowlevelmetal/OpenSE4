@@ -573,6 +573,14 @@ void updateAiStates(TurnContext& ctx) {
         e.claimedSystems = computeTerritory(s, e.id);
         e.systemsToAvoid = e.aiMemory.avoid;
         std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
+        // The AI_Settings movement flags become the empire's own options each
+        // turn (spec 05 §7.5). OpenSE4 has no per-empire minefield or
+        // avoided-system option yet (movement always routes around both), so
+        // only the clear-orders pair is copied.
+        const SettingsTable& set = profileFor(r, e).settings;
+        e.clearOrdersOnEncounter = set.clearOrdersOnAll     ? EncounterClear::Any
+                                   : set.clearOrdersOnEnemy ? EncounterClear::Enemy
+                                                            : EncounterClear::Never;
     }
     for (Empire& e : s.empires) {
         if (!e.alive) continue;

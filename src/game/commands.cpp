@@ -7,6 +7,7 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <map>
 
@@ -683,7 +684,13 @@ struct Applier {
             case MessageType::CounterTrade: reply.type = c.accept ? MessageType::AcceptTrade : MessageType::RefuseTrade; break;
             case MessageType::Gift:
             case MessageType::Tribute: reply.type = c.accept ? MessageType::AcceptGift : MessageType::RefuseGift; break;
-            default: reply.type = c.accept ? MessageType::AcceptDemand : MessageType::RefuseDemand; break;
+            default:
+                // A demand or request gets its verdict; anything else (an
+                // acknowledgement such as Accept Treaty) a plain chatter reply.
+                reply.type = it->type >= MessageType::DemandGift && it->type <= MessageType::DemandStopAttacks
+                                 ? (c.accept ? MessageType::AcceptDemand : MessageType::RefuseDemand)
+                                 : MessageType::General;
+                break;
         }
         s.messages.push_back(std::move(reply));
         return {};
@@ -765,6 +772,42 @@ struct Applier {
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
         return {};
     }
+
+    // ---- Ministers (spec 02 §10, spec 05 §7.1) ----------------------------------------------------
+
+    // The flag of every own vehicle, fleet and colony ("Indiv. Ministers On/Off").
+    void setIndividualMinisters(bool on) {
+        for (Vehicle& v : s.vehicles)
+            if (v.owner == e) v.minister = on;
+        for (Fleet& f : s.fleets)
+            if (f.owner == e) f.minister = on;
+        for (auto& c : s.colonies)
+            if (c && c->owner == e) c->minister = on;
+    }
+
+    R operator()(const cmd::SetMinisters& c) {
+        if (c.areas && (*c.areas & ~kAllMinisters) != 0) return R::fail("Unknown minister");
+        if (c.style) {
+            // A folder name under Ai/ (the lookup never leaves that folder).
+            if (c.style->size() > 64) return R::fail("Minister style name too long");
+            for (char ch : *c.style)
+                if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != ' ' && ch != '_' && ch != '-') return R::fail("Invalid minister style");
+        }
+        Empire& me = emp();
+        // Complete AI does all of the bulk buttons at once, then the single fields apply.
+        if (c.completeAi) {
+            me.ministers = *c.completeAi ? kAllMinisters : 0;
+            me.ministersForNewVehicles = *c.completeAi;
+            me.ministerAll = *c.completeAi;
+            setIndividualMinisters(*c.completeAi);
+        }
+        if (c.areas) me.ministers = *c.areas;
+        if (c.style) me.ministerStyle = *c.style;
+        if (c.useRaceStyle) me.useRaceMinisterStyle = *c.useRaceStyle;
+        if (c.newVehicles) me.ministersForNewVehicles = *c.newVehicles;
+        if (c.individual) setIndividualMinisters(*c.individual);
+        return {};
+    }
 };
 
 template <class T>
@@ -808,6 +851,7 @@ OPENSE4_CMD_NAME(SetRepairPriorities)
 OPENSE4_CMD_NAME(SetDesignTypes)
 OPENSE4_CMD_NAME(SetColonyTypes)
 OPENSE4_CMD_NAME(SetEmpireOptions)
+OPENSE4_CMD_NAME(SetMinisters)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

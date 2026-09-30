@@ -17,7 +17,17 @@ constexpr std::array<std::string_view, kCharacteristics> kCharacteristicNames{
     "Farming Aptitude",  "Refining Aptitude",   "Construction Aptitude", "Repair Aptitude",      "Maintenance Aptitude",
 };
 
+constexpr std::array<std::string_view, kMinisters> kMinisterNames{
+    "Design",       "Ship Construction", "Expenses",    "Production Output",       "Research",
+    "Intelligence", "Politics",          "Repair",      "Resupply",                "Scrap",
+    "Retrofit",     "Facility Construction", "Transports", "Carriers",             "Colonization",
+    "Attack",       "Defense",           "Exploration", "Patrol",                  "Mines/Satellites/Drones",
+    "Fleets",       "Stellar Manipulation", "Ship Cloaking", "Space Yard Ships",   "Troops",
+};
+
 } // namespace
+
+std::string_view displayName(Minister m) { return m < Minister::Count ? kMinisterNames[static_cast<size_t>(m)] : "?"; }
 
 Resources Resources::from(const ruleset::Cost& c) { return {c.minerals, c.organics, c.radioactives}; }
 

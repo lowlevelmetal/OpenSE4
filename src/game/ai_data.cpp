@@ -361,6 +361,13 @@ Speech defaultSpeech() {
     add("Send Stop espionage activities", {"Stop spying on [%OurEmpireName]."});
     add("Send Stop sabotage activities", {"Stop sabotaging [%OurEmpireName]."});
     add("Mega Evil Declarations", {"[%TargetEmpireName] has grown too powerful. [%OurEmpireName] will oppose it."});
+    // Chatter replies to acknowledgements (spec 05 §7.4).
+    add("Response Friend Accept Treaty", {"[%OurEmpireName] welcomes the agreement."});
+    add("Response Enemy Accept Treaty", {"Let us see whether this agreement holds."});
+    add("Response Friend Refuse Treaty", {"[%OurEmpireName] regrets your answer."});
+    add("Response Enemy Refuse Treaty", {"As you wish."});
+    add("Response Friend Break Treaty", {"[%OurEmpireName] will remember this."});
+    add("Response Enemy Declare War", {"[%OurEmpireName] accepts your challenge."});
     return s;
 }
 
@@ -856,7 +863,23 @@ const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::str
     return *it->second;
 }
 
-const AiProfile& profileFor(const Rules& r, const Empire& e) { return profileFor(r, e.race.style, e.ministerStyle); }
+const AiProfile& profileFor(const Rules& r, const Empire& e) { return profileFor(r, e.race.style, ministerStyleOf(e)); }
+
+std::vector<std::string> ministerStyles(const Rules& r) {
+    std::vector<std::string> out;
+    const auto aiDir = findChild(r.gameRoot(), "Ai", true);
+    std::error_code ec;
+    if (aiDir.empty() || !std::filesystem::is_directory(aiDir, ec)) return out;
+    for (const auto& dir : std::filesystem::directory_iterator(aiDir, ec)) {
+        if (!dir.is_directory(ec)) continue;
+        bool tables = false;
+        for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec))
+            tables = tables || (f.is_regular_file(ec) && lowerAscii(f.path().filename().string()).find("_ai_") != std::string::npos);
+        if (tables) out.push_back(dir.path().filename().string());
+    }
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return lowerAscii(a) < lowerAscii(b); });
+    return out;
+}
 
 const std::vector<std::string>& designNameList(const Rules& r, std::string_view file) {
     static const std::vector<std::string> kNone;

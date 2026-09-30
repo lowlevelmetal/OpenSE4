@@ -272,8 +272,13 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
 // Cached profile for this rules set (thread-safe; references stay valid for the
 // life of the program).
 const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::string_view ministerStyle = {});
-// The empire's own tables: its minister style when it has one, else its race's.
+// The empire's own tables: its minister style when it has one and does not
+// use its race's style (ministerStyleOf), else its race's.
 const AiProfile& profileFor(const Rules& r, const Empire& e);
+// The minister styles an install offers: the folders under Ai/ that hold AI
+// tables ("Aggressive", "Defensive" and "Neutral" in the stock install),
+// sorted. Empty without an install.
+std::vector<std::string> ministerStyles(const Rules& r);
 
 // The race's design-name file (Dsgnname/<file> in the install), one name per
 // line; empty without an install or file. Cached.
