@@ -372,6 +372,9 @@ bool Battle::setup() {
     rec_.turn = s_.turn;
     rec_.location = where_;
     rec_.participants = empires_;
+    // The "current player", who counts the battle as Attacking (spec 05 §7.3):
+    // whose turn it is, or in a simultaneous game the highest player number.
+    rec_.currentPlayer = !s_.options.simultaneous && s_.playerTurn.empire.valid() ? s_.playerTurn.empire : EmpireId{s_.empires.size() - 1};
     std::string names;
     for (EmpireId e : empires_) names += (names.empty() ? "" : ", ") + s_.empire(e).name;
     rec_.summary.push_back(std::format("Battle at {} between {}.", detail::sectorName(s_, where_), names));

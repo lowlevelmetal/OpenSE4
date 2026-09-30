@@ -36,15 +36,21 @@ void planResearch(Planner& p) {
     for (const ResearchProject& proj : e.research)
         if (proj.area.index() < areas.size() && e.techLevel(proj.area) < p.r.tech(proj.area).maxLevel) queue.push_back(proj);
 
-    const bool choose = (researchEventLastTurn(e, p.st.turn) || queue.size() < 4) && e.economy.research > 0 && queue.size() < 12;
+    // Never when the research pool (the points waiting to be spent) is 0.
+    const bool choose = (researchEventLastTurn(e, p.st.turn) || queue.size() < 4) && e.researchPool > 0 && queue.size() < 12;
     if (choose) {
-        // Mine sweeping: every fifth turn, once our ships have met a mine field.
-        if (p.st.turn % 5 == 0 && e.aiMemory.metMinefield) {
+        // Mine sweeping: every fifth turn, once our ships have met a mine
+        // field and when the research file has rows, the area of the first
+        // tech requirement of the first component with Mine Sweeping, if it
+        // can be researched now and is below the required level.
+        if (p.date % 5 == 0 && e.aiMemory.metMinefield && !p.prof.research.empty()) {
             for (uint32_t c = 0; c < p.r.data().components.size(); ++c) {
                 if (!hasAbility(p.r.componentAbilities(c), AbilityKind::MineSweeping)) continue;
-                for (const ruleset::TechRequirement& req : p.r.component(c).requirements)
-                    if (researchable(req.area) && e.techLevel(req.area) < req.level && !queued(queue, req.area) && queue.size() < 12)
-                        queue.push_back({req.area, 0});
+                const auto& reqs = p.r.component(c).requirements;
+                if (!reqs.empty()) {
+                    const ruleset::TechRequirement& req = reqs.front();
+                    if (researchable(req.area) && e.techLevel(req.area) < req.level && !queued(queue, req.area)) queue.push_back({req.area, 0});
+                }
                 break;  // the first component in the list with Mine Sweeping
             }
         }

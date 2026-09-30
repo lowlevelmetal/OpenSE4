@@ -56,8 +56,8 @@ void planColonization(Planner& p) {
         for (size_t i = 0; i < ships.size(); ++i) {
             const Vehicle* v = p.st.vehicle(ships[i]);
             if (!p.info(v->design).stats.canColonize(planet.surface)) continue;
-            const int j = jumps[ships[i].value][t.system.index()];
-            if (j < 0) continue;
+            const int j = jumps[ships[i].value][t.system.index()];  // over every link (spec 05 §7.2)
+            if (j == kUnreachable) continue;
             if (!best || j < bestJumps) {
                 best = i;
                 bestJumps = j;
@@ -82,8 +82,8 @@ void planColonization(Planner& p) {
 void planExploration(Planner& p) {
     if (!p.on(Minister::Exploration) || p.neutral) return;
     // Explorers: idle attack ships, and loaded carriers and drone carriers,
-    // outside fleets with fewer than 4 damaged components. Ships outside the
-    // AI's design types that can only move (premade scouts) explore too (inferred).
+    // outside fleets with fewer than 4 damaged components. A premade scout is
+    // an Attack Ship (spec 05 §7.5 design types).
     std::vector<VehicleId> explorers;
     for (VehicleId id : p.ownVehicles(Minister::Exploration)) {
         const Vehicle* v = p.st.vehicle(id);
@@ -91,8 +91,7 @@ void planExploration(Planner& p) {
         const DesignInfo& di = p.info(v->design);
         if (di.stats.movement <= 0) continue;
         const bool loaded = !v->cargo.units.empty();
-        const bool fits = di.role == Role::Attack || ((di.role == Role::Carrier || di.role == Role::DroneCarrier) && loaded) ||
-                          (di.role == Role::Other && !di.stats.armed() && di.stats.cargoCapacity == 0);
+        const bool fits = di.role == Role::Attack || ((di.role == Role::Carrier || di.role == Role::DroneCarrier) && loaded);
         if (!fits || damagedComponents(p.r, p.st, *v) >= 4) continue;
         explorers.push_back(id);
     }
@@ -117,7 +116,7 @@ void planExploration(Planner& p) {
             if (room[wp.value] <= 0) continue;
             const SpaceObject& obj = p.st.galaxy.object(wp);
             const int j = jumps[obj.system.index()];
-            if (j < 0) continue;
+            if (j == kUnreachable) continue;
             const int within = obj.system == at.system ? chebyshev(obj.sector, at.sector) : 0;
             const std::tuple<int, int, uint32_t> key{j, within, wp.value};
             if (!best || key < bestKey) {

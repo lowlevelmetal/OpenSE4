@@ -4,11 +4,14 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/movement.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <map>
 #include <tuple>
 
@@ -51,6 +54,14 @@ int damagedComponents(const Rules& r, const GameState& s, const Vehicle& v) {
 
 bool loaded(const Vehicle& v) { return !v.cargo.units.empty(); }
 
+// It lacks a part it needs to operate (spec 05 §7.5): control (a bridge, life
+// support and crew quarters, or a Master Computer), or engines on a hull that
+// uses them.
+bool lacksOperatingPart(const Planner& p, const Vehicle& v) {
+    if (!vehicleHasControl(p.r, p.st, v)) return true;
+    return p.r.hull(p.st.design(v.design).hull).usesEngines && vehicleMaxMovement(p.r, p.st, v) <= 0;
+}
+
 // The best known spot in a system: our most populous colony, else the centre.
 Location spotIn(const Planner& p, SystemId sys) {
     const Colony* best = nullptr;
@@ -68,7 +79,7 @@ bool unfit(Planner& p, const Vehicle& v) {
     // round(0.3 x the component count) for attack and defence ships, round(0.25 x) for other combat types.
     const int64_t allowed = ((di.role == Role::Attack || di.role == Role::Defense ? kPoint3 : kPoint25) * xmath::Ext(components)).round();
     if (damagedComponents(p.r, p.st, v) > allowed) return true;
-    if (!vehicleHasControl(p.r, p.st, v) || vehicleMaxMovement(p.r, p.st, v) <= 0) return true;
+    if (lacksOperatingPart(p, v)) return true;
     if (di.stats.armed() && vehicleRating(p.r, p.st, v) == 0) return true;
     return false;
 }
@@ -150,7 +161,7 @@ uint32_t strategyIndex(const Planner& p, std::string_view name) {
     return 0;
 }
 
-// The nearest own colony (by jumps from `from`) that passes `accept`.
+// The nearest own colony (by jumps from `from`, over every link) that passes `accept`.
 std::optional<ObjectId> nearestColony(Planner& p, SystemId from, auto&& accept) {
     const std::vector<int> jumps = p.jumpsFrom(from);
     std::optional<ObjectId> best;
@@ -158,7 +169,7 @@ std::optional<ObjectId> nearestColony(Planner& p, SystemId from, auto&& accept) 
     for (const auto& c : p.st.colonies) {
         if (!c || c->owner != p.id || !accept(*c)) continue;
         const int j = jumps[p.st.galaxy.object(c->planet).system.index()];
-        if (j < 0) continue;
+        if (j == kUnreachable) continue;
         if (!best || j < bestJ) {
             best = c->planet;
             bestJ = j;
@@ -219,7 +230,7 @@ void planFleets(Planner& p) {
             break;
         }
     }
-    if (static_cast<int>(p.st.turn) < t.dontUseForTurns) wanted = 0;
+    if (static_cast<int64_t>(p.date) < t.dontUseForTurns) wanted = 0;  // the date the ministers see
     wanted = std::max(0, wanted);
 
     // Disband fleets beyond the wanted number, and those whose leader is gone or unfit.
@@ -279,7 +290,7 @@ void planFleets(Planner& p) {
             if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v)) continue;
             if (defenceLed ? p.info(v->design).role != Role::Defense : !attackMaterial(p, *v)) continue;
             const int j = jumps[v->location.system.index()];
-            if (j < 0 || j > 3) continue;
+            if (j > 3) continue;
             if (v->location == at) {
                 if (p.emit(cmd::JoinFleet{keep[k], id})) ++size;
             } else if (p.setOrders(id, {moveOrder(at)})) {
@@ -303,7 +314,6 @@ void planFleets(Planner& p) {
                 if (done[k] || attack[k]) continue;
                 const Vehicle* leader = p.st.vehicle(p.st.fleet(keep[k])->leader);
                 const int j = p.jumpsFrom(leader->location.system)[threat.system.index()];
-                if (j < 0) continue;
                 if (!best || j < bestJ) {
                     best = k;
                     bestJ = j;
@@ -319,19 +329,18 @@ void planFleets(Planner& p) {
             for (size_t k : idleFleets)
                 if (attack[k] && !done[k] && p.setFleetOrders(keep[k], goal)) done[k] = 1;
     }
-    // Leftover fleets defend, then patrol (defence-led) or explore.
+    // Leftover fleets defend (the defend list's entries, strongest threat
+    // first), then patrol (defence-led) or explore.
+    std::vector<const DefendEntry*> toDefend;
+    for (const DefendEntry& d : p.sit.defendEntries)
+        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) toDefend.push_back(&d);
     size_t defendAt = 0;
     for (size_t k : idleFleets) {
         if (done[k]) continue;
         const Fleet* f = p.st.fleet(keep[k]);
         const Vehicle* leader = p.st.vehicle(f->leader);
-        if (defendAt < p.sit.defend.size()) {
-            const SystemId sys = p.sit.defend[defendAt++];
-            for (const Threat& threat : p.sit.enemyInTerritory)
-                if (threat.system == sys) {
-                    if (auto orders = engage(p, threat); !orders.empty() && p.setFleetOrders(keep[k], std::move(orders))) done[k] = 1;
-                    break;
-                }
+        if (defendAt < toDefend.size()) {
+            if (auto orders = engage(p, toDefend[defendAt++]->latest); !orders.empty() && p.setFleetOrders(keep[k], std::move(orders))) done[k] = 1;
             if (done[k]) continue;
         }
         if (p.info(leader->design).role == Role::Defense) {
@@ -362,42 +371,43 @@ void planFleets(Planner& p) {
 
 // ---- Defence and attack ------------------------------------------------------------------------
 
+// Spec 05 §7.5 "Defence" (confirmed: binary): only in Defend (Short Term).
+// Each defender in turn goes to the first entry, in the defend-list systems
+// and the Defense minister's order (§7.2: the weaker threat first), whose
+// assigned strength is at most round(its threat × 1.3) at Low difficulty or
+// round(its threat × 1.5) at Medium and High. The order is Attack when the
+// defender is already in that sector, otherwise a move there, or in a
+// simultaneous game a pursuit of the entry's latest object. The entry's
+// assigned strength then grows by the defender's rating, without the + 1.
 void planDefense(Planner& p) {
-    if (!p.on(Minister::Defense) || anyFleet(p) || p.sit.defend.empty()) return;
-    // Defenders keep going to a threat until they exceed round(1.3 x) it (Low) or round(1.5 x) it.
+    if (!p.on(Minister::Defense) || anyFleet(p) || p.state != AiState::DefendShortTerm || p.sit.defend.empty()) return;
     const xmath::Ext factor = p.difficulty == kDifficultyLow ? kOnePoint3 : kOnePoint5;
-    std::vector<VehicleId> defenders;
+    std::vector<DefendEntry> entries;
+    for (const DefendEntry& d : p.sit.defendEntries)
+        if (std::find(p.sit.defend.begin(), p.sit.defend.end(), d.where.system) != p.sit.defend.end()) entries.push_back(d);
+    sortDefendEntries(entries, true);  // ships outside fleets: the weakest threat first
+    std::vector<int64_t> assigned(entries.size(), 0);  // tenths
     for (VehicleId id : p.ownVehicles(Minister::Defense)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || v->fleet.valid() || !p.idle(*v)) continue;
         const Role role = p.info(v->design).role;
-        if ((role == Role::Attack || role == Role::Defense) && p.info(v->design).stats.movement > 0) defenders.push_back(id);
-    }
-    for (SystemId sys : p.sit.defend) {
-        // The threat: the strength of the listed enemies in that system (inferred reading).
-        int64_t strength = 0;
-        const Threat* threat = nullptr;
-        for (const Threat& t : p.sit.enemyInTerritory) {
-            if (t.system != sys) continue;
-            if (!threat) threat = &t;
-            const Vehicle* v = t.vehicle.valid() ? p.st.vehicle(t.vehicle) : nullptr;
-            strength += v ? vehicleRating(p.r, p.st, *v) + 1 : 1;
-        }
-        if (!threat) continue;
-        const int64_t need = (factor * xmath::Ext(strength)).round();
-        int64_t have = 0;
-        std::vector<std::pair<int, VehicleId>> byDistance;
-        for (VehicleId id : defenders) {
-            if (p.busy.contains(id)) continue;
-            const int j = p.jumpsFrom(p.st.vehicle(id)->location.system)[sys.index()];
-            if (j >= 0) byDistance.emplace_back(j, id);
-        }
-        std::sort(byDistance.begin(), byDistance.end());
-        for (const auto& [j, id] : byDistance) {
-            if (have > need) break;
-            auto orders = engage(p, *threat);
-            if (orders.empty() || !p.setOrders(id, std::move(orders))) continue;
-            have += p.strengthOf(*p.st.vehicle(id));
+        if ((role != Role::Attack && role != Role::Defense) || p.info(v->design).stats.movement <= 0) continue;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const int64_t limit = (factor * xmath::Ext(entries[i].threat) / xmath::Ext(kStrengthScale)).round() * kStrengthScale;
+            if (assigned[i] > limit) continue;
+            const Threat& latest = entries[i].latest;
+            Order order;
+            if (v->location == entries[i].where) {
+                const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
+                order = target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet);
+            } else if (p.st.options.simultaneous) {
+                const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
+                order = target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet);
+            } else {
+                order = moveOrder(entries[i].where);
+            }
+            if (p.setOrders(id, {order})) assigned[i] += vehicleRating(p.r, p.st, *p.st.vehicle(id));
+            break;
         }
     }
 }
@@ -415,7 +425,7 @@ void planAttack(Planner& p) {
     for (const Candidate& c : p.sit.candidates)
         if (c.system == target && hostileTo(p.emp(), c.owner)) candidates.push_back(&c);
     if (candidates.empty()) return;
-    std::vector<int64_t> assigned(candidates.size(), 0);
+    std::vector<int64_t> assigned(candidates.size(), 0);  // tenths
     for (VehicleId id : p.ownVehicles(Minister::Attack)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Attack || p.info(v->design).stats.movement <= 0) continue;
@@ -423,9 +433,10 @@ void planAttack(Planner& p) {
         for (size_t i = 0; i < candidates.size() && !pick; ++i) {
             if (p.rng.percent(25)) continue;
             const EmpireId owner = candidates[i]->owner;
-            // k = 1.5 when our score exceeds 1.5 times the owner's.
+            // At most round(value × k): k = 1.5 when our score exceeds 1.5 times the owner's.
             const bool strong = p.scores[p.id.index()] * 2 > p.scores[owner.index()] * 3;
-            const int64_t limit = strong ? (kOnePoint5 * xmath::Ext(candidates[i]->value)).round() : candidates[i]->value;
+            const xmath::Ext value = xmath::Ext(candidates[i]->value) / xmath::Ext(kStrengthScale);
+            const int64_t limit = (strong ? (kOnePoint5 * value).round() : value.round()) * kStrengthScale;
             if (assigned[i] <= limit) pick = i;
         }
         for (size_t i = 0; i < candidates.size() && !pick; ++i)
@@ -485,210 +496,541 @@ void planCarriers(Planner& p) {
     reload(p, Minister::Carriers, {Role::DroneCarrier}, [](ruleset::VehicleType t) { return t == ruleset::VehicleType::Drone; });
 }
 
-// Population transports (spec 02 §10, spec 05 §7.5).
+// Population transports (spec 02 §10, spec 05 §7.5 "Logistics ministers",
+// confirmed: binary unless marked).
 void planTransports(Planner& p) {
     if (!p.on(Minister::Transports) || p.neutral) return;
-    const int64_t popMass = std::max<int64_t>(1, p.r.setting("Population Mass", 5));
-    std::set<ObjectId> destinations;
+    std::set<ObjectId> dropTargets;  // other transports' drop targets
     for (const Vehicle& v : p.st.vehicles)
         if (v.owner == p.id)
             for (const Order& o : v.orders)
-                if (o.kind == OrderKind::DropCargo) destinations.insert(o.object);
+                if (o.kind == OrderKind::DropCargo && o.object.valid()) dropTargets.insert(o.object);
     auto safe = [&](const Colony& c) { return p.sit.hostile[p.st.galaxy.object(c.planet).system.index()] == 0; };
-    auto hosts = [&](const Colony& c, EmpireId race) {
-        return race.valid() && race.index() < p.st.empires.size() &&
-               keysEqual(p.st.galaxy.object(c.planet).atmosphere, p.st.empire(race).race.atmosphere);
+    auto atmosphereOf = [&](EmpireId race) -> std::string_view {
+        return race.valid() && race.index() < p.st.empires.size() ? std::string_view{p.st.empire(race).race.atmosphere} : std::string_view{};
     };
-    auto underPopulated = [&](const Colony& c, EmpireId race) {
-        return c.totalPopulation() < maxPopulation(p.r, p.st, c) && safe(c) && hosts(c, race) && !destinations.contains(c.planet);
+    auto underPopulated = [&](const Colony& c) { return c.totalPopulation() < maxPopulation(p.r, p.st, c); };  // the domed maximum when domed
+    // The one atmosphere the whole population breathes, if there is one.
+    auto sharedAtmosphere = [&](const Colony& c) -> std::optional<std::string_view> {
+        std::optional<std::string_view> one;
+        for (const PopulationGroup& g : c.population) {
+            if (g.millions <= 0) continue;
+            const std::string_view a = atmosphereOf(g.race);
+            if (one && !keysEqual(*one, a)) return std::nullopt;
+            one = a;
+        }
+        return one;
     };
     for (VehicleId id : p.ownVehicles(Minister::Transports)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Transport) continue;
+        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).aiType != "Population Transport") continue;
+        // A ship with a Medical Bay gets no order: the routine picks a planet and then drops it.
+        if (hasAbility(vehicleAbilities(p.r, p.st, *v), AbilityKind::MedicalBay)) continue;
         const int capacity = vehicleCargoCapacity(p.r, p.st, *v);
         if (capacity <= 0) continue;
-        const int64_t carried = v->cargo.totalPopulation();
-        if (carried * popMass * 2 > capacity) {
-            // Deliver to the least-populated planet that can take the race.
-            const EmpireId race = v->cargo.population.front().race;
+        std::vector<EmpireId> carried;
+        for (const PopulationGroup& g : v->cargo.population)
+            if (g.millions > 0) carried.push_back(g.race);
+        // Deliver: the own colony with the lowest population below its
+        // maximum, safe, nobody's drop target, where every carried race
+        // breathes, or already domed and hosting one of them.
+        auto deliver = [&]() {
+            if (carried.empty()) return false;  // nothing aboard to deliver (inferred)
             const Colony* to = nullptr;
-            for (const auto& c : p.st.colonies)
-                if (c && c->owner == p.id && underPopulated(*c, race) && (!to || c->totalPopulation() < to->totalPopulation())) to = &*c;
-            if (!to) continue;
+            for (const auto& c : p.st.colonies) {
+                if (!c || c->owner != p.id || !underPopulated(*c) || !safe(*c) || dropTargets.contains(c->planet)) continue;
+                const std::string_view atmosphere = p.st.galaxy.object(c->planet).atmosphere;
+                const bool everyone = std::all_of(carried.begin(), carried.end(), [&](EmpireId r) { return keysEqual(atmosphereOf(r), atmosphere); });
+                bool hosted = false;
+                if (!breathable(p.st, *c))
+                    for (const PopulationGroup& g : c->population)
+                        hosted = hosted || (g.millions > 0 && std::find(carried.begin(), carried.end(), g.race) != carried.end());
+                if (!everyone && !hosted) continue;
+                if (!to || c->totalPopulation() < to->totalPopulation()) to = &*c;
+            }
+            if (!to) return false;
             Order drop;
             drop.kind = OrderKind::DropCargo;
             drop.location = locationOf(p.st.galaxy, to->planet);
             drop.object = to->planet;
             drop.amount = -1;
-            destinations.insert(to->planet);
+            dropTargets.insert(to->planet);
             p.setOrders(id, {moveOrder(drop.location), drop});
-            continue;
-        }
-        // Load at the nearest safe planet with 1000M of a race some planet can take.
-        const auto source = nearestColony(p, v->location.system, [&](const Colony& c) {
-            if (!safe(c)) return false;
-            for (const PopulationGroup& g : c.population) {
-                if (g.millions < 1000) continue;
-                for (const auto& other : p.st.colonies)
-                    if (other && other->owner == p.id && other->planet != c.planet && underPopulated(*other, g.race)) return true;
+            return true;
+        };
+        // Load: the nearest safe own colony with at least 1000M whose own
+        // atmosphere is wanted and whose whole population breathes one same
+        // atmosphere. An atmosphere is wanted when it is that of an
+        // under-populated safe colony or, for a domed one, the one all its
+        // races breathe. The test reads the source planet's atmosphere.
+        auto load = [&]() {
+            std::vector<std::string_view> wanted;
+            for (const auto& c : p.st.colonies) {
+                if (!c || c->owner != p.id || !underPopulated(*c) || !safe(*c)) continue;
+                if (breathable(p.st, *c)) wanted.push_back(p.st.galaxy.object(c->planet).atmosphere);
+                else if (const auto a = sharedAtmosphere(*c)) wanted.push_back(*a);
             }
-            return false;
-        });
-        if (!source) continue;
-        Order load;
-        load.kind = OrderKind::LoadCargo;
-        load.location = locationOf(p.st.galaxy, *source);
-        load.amount = -1;
-        p.setOrders(id, {moveOrder(load.location), load});
+            const auto source = nearestColony(p, v->location.system, [&](const Colony& c) {
+                if (!safe(c) || c.totalPopulation() < 1000 || !sharedAtmosphere(c)) return false;
+                const std::string_view own = p.st.galaxy.object(c.planet).atmosphere;
+                return std::any_of(wanted.begin(), wanted.end(), [&](std::string_view a) { return keysEqual(a, own); });
+            });
+            if (!source) return false;
+            Order take;
+            take.kind = OrderKind::LoadCargo;
+            take.location = locationOf(p.st.galaxy, *source);
+            take.amount = -1;
+            p.setOrders(id, {moveOrder(take.location), take});
+            return true;
+        };
+        // The step the cargo calls for first; the other is tried once when it finds nothing.
+        if (cargoSpaceUsed(p.r, p.st, v->cargo) * 2 > capacity) {
+            if (!deliver()) load();
+        } else if (!load()) {
+            deliver();
+        }
     }
 }
 
-// Where Space Yard Ships go is open (spec 05 open questions): they stay put.
-void planSpaceYardShips(Planner&) {}
+namespace {
 
-// The Stellar Manipulation minister is open (spec 05 open questions): it does nothing.
-void planStellarManipulation(Planner&) {}
+// The travel distance and target of the nearest of `goals` (movement's routes).
+std::optional<movement::NearestPath> nearestByTravel(const Planner& p, Location from, const std::vector<Location>& goals) {
+    if (goals.empty()) return std::nullopt;
+    return movement::findPathToNearest(p.r, p.st, p.id, from, goals);
+}
+
+// A visible, armed, non-mothballed hostile vehicle in the sector.
+bool armedHostileSeenAt(Planner& p, Location where) {
+    for (VehicleId vid : p.emp().knowledge.visibleVehicles) {
+        const Vehicle* v = p.st.vehicle(vid);
+        if (!v || v->count <= 0 || v->location != where || !hostileTo(p.emp(), v->owner) || v->status == VehicleStatus::Mothballed) continue;
+        if (p.info(v->design).stats.armed()) return true;
+    }
+    return false;
+}
+
+// The Resupply minister's orders for a group at `from` (spec 05 §7.5,
+// confirmed: binary): a Move To the nearest own or allied depot, avoiding
+// sectors with a visible armed hostile (the Resupply order of spec 03 §8);
+// with no depot, a move to our nearest colony, or home when we have none.
+// Already there: no order.
+std::vector<Order> resupplyOrders(Planner& p, Location from) {
+    auto goTo = [&](Location where) { return where == from ? std::vector<Order>{} : std::vector<Order>{moveOrder(where)}; };
+    std::vector<Location> depots, colonies;
+    for (const auto& c : p.st.colonies) {
+        if (!c) continue;
+        const Location at = locationOf(p.st.galaxy, c->planet);
+        if (c->owner == p.id) colonies.push_back(at);
+        if (!p.st.options.omnipresent && !p.explored(at.system)) continue;
+        if (movement::resupplyDepotAt(p.r, p.st, p.id, at) && !armedHostileSeenAt(p, at)) depots.push_back(at);
+    }
+    if (const auto near = nearestByTravel(p, from, depots)) return goTo(depots[near->goal]);
+    if (const auto near = nearestByTravel(p, from, colonies)) return goTo(colonies[near->goal]);
+    return p.homeLocation.system.valid() ? goTo(p.homeLocation) : std::vector<Order>{};
+}
+
+} // namespace
+
+// Space Yard Ships (spec 05 §7.5, confirmed: binary): own yard ships with
+// normal status, movement left and no orders. One without a working yard
+// part gets the resupply orders. Otherwise it seeks the nearest own vehicle
+// that has a destroyed part, a maximum movement of at most 2 and no other own
+// yard in its sector, and waits when already there; with no such vehicle it
+// gets the resupply orders.
+void planSpaceYardShips(Planner& p) {
+    if (!p.on(Minister::SpaceYardShips)) return;
+    for (VehicleId id : p.ownVehicles(Minister::SpaceYardShips)) {
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->fleet.valid() || p.busy.contains(id) || v->status != VehicleStatus::Normal || v->movement <= 0 || !v->orders.empty()) continue;
+        if (p.info(v->design).role != Role::YardShip) continue;
+        if (!vehicleHasSpaceYard(p.r, p.st, *v)) {
+            p.setOrders(id, resupplyOrders(p, v->location));
+            continue;
+        }
+        auto otherYardAt = [&](Location where) {
+            for (const auto& c : p.st.colonies)
+                if (c && c->owner == p.id && locationOf(p.st.galaxy, c->planet) == where && colonyHasSpaceYard(p.r, *c)) return true;
+            for (const Vehicle& o : p.st.vehicles)
+                if (o.id != id && o.owner == p.id && o.count > 0 && o.location == where && vehicleHasSpaceYard(p.r, p.st, o)) return true;
+            return false;
+        };
+        std::vector<Location> goals;
+        for (const Vehicle& o : p.st.vehicles) {
+            if (o.id == id || o.owner != p.id || o.count <= 0 || isUnitType(vehicleType(p.r, p.st, o))) continue;
+            if (damagedComponents(p.r, p.st, o) == 0 || vehicleMaxMovement(p.r, p.st, o) > 2 || otherYardAt(o.location)) continue;
+            goals.push_back(o.location);
+        }
+        const auto near = nearestByTravel(p, v->location, goals);
+        if (!near) {
+            p.setOrders(id, resupplyOrders(p, v->location));
+            continue;
+        }
+        const Location at = goals[near->goal];
+        p.setOrders(id, at == v->location ? std::vector<Order>{} : std::vector<Order>{moveOrder(at)});
+    }
+}
+
+namespace {
+
+Order stellarOrder(StellarAction action, ObjectId object, Location where) {
+    Order o;
+    o.kind = OrderKind::StellarManipulation;
+    o.amount = static_cast<int>(action);
+    o.object = object;
+    o.location = where;
+    return o;
+}
+
+bool hasStar(const GameState& s, SystemId sys) {
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (s.galaxy.object(o).kind == ObjectKind::Star || s.galaxy.object(o).kind == ObjectKind::DestroyedStar) return true;
+    return false;
+}
+
+// A planet's PlanetSize record number: its position in PlanetSize.txt, from 1
+// (spec 01 §9 Destroy Planet).
+int64_t sizeRecordNumber(const Rules& r, const SpaceObject& obj) {
+    const auto& sizes = r.data().planetSizes;
+    for (size_t i = 0; i < sizes.size(); ++i)
+        if (keysEqual(sizes[i].physicalType, "Planet") && keysEqual(sizes[i].name, obj.size)) return static_cast<int64_t>(i) + 1;
+    for (size_t i = 0; i < sizes.size(); ++i)
+        if (keysEqual(sizes[i].name, obj.size)) return static_cast<int64_t>(i) + 1;
+    return 0;
+}
+
+bool isEdge(Sector s) { return s.x == 0 || s.y == 0 || s.x == kSystemSize - 1 || s.y == kSystemSize - 1; }
+
+// Any space object in the sector.
+bool objectAt(const GameState& s, Location where) {
+    for (ObjectId o : s.galaxy.system(where.system).objects)
+        if (s.galaxy.object(o).sector == where.sector) return true;
+    return false;
+}
+
+} // namespace
+
+// Stellar Manipulation (spec 05 §7.5, confirmed: binary): idle own ships of
+// the matching design type that are not in a fleet. "Nearest" means nearest
+// to our home system, by jumps over every link.
+void planStellarManipulation(Planner& p) {
+    if (!p.on(Minister::StellarManipulation)) return;
+    const Empire& e = p.emp();
+    const auto& jumps = p.sit.homeJumps;
+    auto nearer = [&](SystemId a, SystemId b) { return jumps[a.index()] < jumps[b.index()]; };
+    std::vector<uint8_t> ourColony(p.st.galaxy.systems.size(), 0), hostileColony(p.st.galaxy.systems.size(), 0);
+    for (const auto& c : p.st.colonies) {
+        if (!c) continue;
+        const size_t sys = p.st.galaxy.object(c->planet).system.index();
+        if (c->owner == p.id) ourColony[sys] = 1;
+        else if (c->owner.valid() && c->owner.index() < p.st.empires.size() && p.st.empire(c->owner).alive && hostileTo(e, c->owner)) hostileColony[sys] = 1;
+    }
+    auto armedHostileStrengthAt = [&](Location where) {
+        for (const Vehicle& o : p.st.vehicles)
+            if (o.count > 0 && o.location == where && hostileTo(e, o.owner) && vehicleRating(p.r, p.st, o) > 0) return true;
+        return false;
+    };
+    auto stopsPlanetDestroyer = [&](Location where) {
+        for (ObjectId o : planetsAt(p.st, where))
+            if (const Colony* c = p.st.colony(o); c && hasAbility(colonyAbilities(p.r, p.st, *c), AbilityKind::StopPlanetDestroyer)) return true;
+        for (const Vehicle& o : p.st.vehicles)
+            if (o.count > 0 && o.location == where && hasAbility(vehicleAbilities(p.r, p.st, o), AbilityKind::StopPlanetDestroyer)) return true;
+        return false;
+    };
+    std::set<ObjectId> headedFor;  // our ships' manipulation targets
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.owner == p.id)
+            for (const Order& o : v.orders)
+                if (o.kind == OrderKind::StellarManipulation && o.object.valid()) headedFor.insert(o.object);
+
+    for (VehicleId id : p.ownVehicles(Minister::StellarManipulation)) {
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Stellar) continue;
+        const std::string type = p.info(v->design).aiType;
+        const Location here = v->location;
+        auto goAndDo = [&](Location where, const Order& act) {
+            std::vector<Order> orders;
+            if (where != here) orders.push_back(moveOrder(where));
+            orders.push_back(act);
+            p.setOrders(id, std::move(orders));
+        };
+        // The nearest object of a kind in explored systems that passes `accept`.
+        auto nearestObject = [&](ObjectKind kind, auto&& accept) -> std::optional<ObjectId> {
+            std::optional<ObjectId> best;
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                if (!p.explored(SystemId{i})) continue;
+                for (ObjectId o : p.st.galaxy.system(SystemId{i}).objects) {
+                    if (p.st.galaxy.object(o).kind != kind || !accept(o)) continue;
+                    if (!best || nearer(SystemId{i}, p.st.galaxy.object(*best).system)) best = o;
+                }
+            }
+            return best;
+        };
+        if (type == "Open Warp Point") {
+            // Only when no free exploration frontier point is left.
+            if (!p.sit.freeFrontier.empty()) continue;
+            const int64_t range = bestValue1(vehicleAbilities(p.r, p.st, *v), AbilityKind::OpenWarpPointDistance);
+            std::optional<std::pair<SystemId, SystemId>> pick;  // source, target
+            std::tuple<int, int> pickKey{};
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                const SystemId from{i};
+                if (!p.explored(from) || static_cast<int>(p.st.galaxy.warpPoints(from).size()) >= kMaxWarpPoints) continue;
+                const std::vector<SystemId> linked = p.st.galaxy.neighbors(from);
+                std::vector<SystemId> targets;
+                for (size_t j = 0; j < p.st.galaxy.systems.size(); ++j) {
+                    const SystemId to{j};
+                    if (to == from || p.explored(to) || static_cast<int>(p.st.galaxy.warpPoints(to).size()) >= kMaxWarpPoints) continue;
+                    if (std::find(linked.begin(), linked.end(), to) != linked.end()) continue;
+                    if (galaxyDistance(p.st.galaxy.system(from).position, p.st.galaxy.system(to).position) > range) continue;
+                    targets.push_back(to);
+                }
+                if (targets.empty()) continue;
+                const SystemId to = targets[static_cast<size_t>(p.rng.below(targets.size()))];  // one random target per source
+                int colonies = 0;
+                for (const auto& c : p.st.colonies) colonies += c && c->owner == p.id && p.st.galaxy.object(c->planet).system == from;
+                const std::tuple<int, int> key{colonies, jumps[i]};
+                if (!pick || key < pickKey) {
+                    pick = std::pair{from, to};
+                    pickKey = key;
+                }
+            }
+            if (!pick) {
+                p.setOrders(id, resupplyOrders(p, here));
+                continue;
+            }
+            // A random empty edge sector of the source (up to 100 tries; the last draw otherwise, inferred).
+            std::vector<Sector> edges;
+            for (int y = 0; y < kSystemSize; ++y)
+                for (int x = 0; x < kSystemSize; ++x)
+                    if (isEdge(Sector{x, y})) edges.push_back(Sector{x, y});
+            Sector sector;
+            for (int tries = 0; tries < 100; ++tries) {
+                sector = edges[static_cast<size_t>(p.rng.below(edges.size()))];
+                if (!objectAt(p.st, {pick->first, sector})) break;
+            }
+            goAndDo({pick->first, sector}, stellarOrder(StellarAction::OpenWarpPoint, {}, {pick->second, Sector{kSystemCenter, kSystemCenter}}));
+        } else if (type == "Close Warp Point") {
+            // A random warp point from a system with one of our colonies into a
+            // system where we have no ship, base or colony but see a hostile empire.
+            std::vector<ObjectId> points;
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                if (!ourColony[i]) continue;
+                for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) {
+                    const SpaceObject& obj = p.st.galaxy.object(wp);
+                    if (!obj.destination.valid()) continue;
+                    const SystemId far = p.st.galaxy.object(obj.destination).system;
+                    if (ourColony[far.index()]) continue;
+                    bool ours = false, seen = false;
+                    for (const Vehicle& o : p.st.vehicles)
+                        if (o.count > 0 && o.location.system == far && o.owner == p.id && !isUnitType(vehicleType(p.r, p.st, o))) ours = true;
+                    for (VehicleId vid : e.knowledge.visibleVehicles)
+                        if (const Vehicle* o = p.st.vehicle(vid); o && o->location.system == far && hostileTo(e, o->owner)) seen = true;
+                    if (p.explored(far) && hostileColony[far.index()]) seen = true;
+                    if (!ours && seen) points.push_back(wp);
+                }
+            }
+            if (points.empty()) continue;
+            const ObjectId wp = points[static_cast<size_t>(p.rng.below(points.size()))];
+            goAndDo(locationOf(p.st.galaxy, wp), stellarOrder(StellarAction::CloseWarpPoint, wp, locationOf(p.st.galaxy, wp)));
+        } else if (type == "Create Planet") {
+            // The uncolonized asteroid field nearest home, in an explored system
+            // with a star, that no other ship of ours is heading for; ties random.
+            std::vector<ObjectId> best;
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                if (!p.explored(SystemId{i}) || !hasStar(p.st, SystemId{i})) continue;
+                for (ObjectId o : p.st.galaxy.system(SystemId{i}).objects) {
+                    if (p.st.galaxy.object(o).kind != ObjectKind::Asteroids || p.st.colony(o) || headedFor.contains(o)) continue;
+                    if (!best.empty() && jumps[i] > jumps[p.st.galaxy.object(best.front()).system.index()]) continue;
+                    if (!best.empty() && jumps[i] < jumps[p.st.galaxy.object(best.front()).system.index()]) best.clear();
+                    best.push_back(o);
+                }
+            }
+            if (best.empty()) continue;
+            const ObjectId field = best[static_cast<size_t>(p.rng.below(best.size()))];
+            headedFor.insert(field);
+            goAndDo(locationOf(p.st.galaxy, field), stellarOrder(StellarAction::CreatePlanet, field, locationOf(p.st.galaxy, field)));
+        } else if (type == "Destroy Planet") {
+            // The nearest planet colonized by a hostile empire, within the ship's
+            // size limit, with no armed hostile strength in its sector and no Stop Planet Destroyer.
+            const int64_t limit = bestValue1(vehicleAbilities(p.r, p.st, *v), AbilityKind::DestroyPlanetSize);
+            const auto target = nearestObject(ObjectKind::Planet, [&](ObjectId o) {
+                const Colony* c = p.st.colony(o);
+                if (!c || !c->owner.valid() || c->owner == p.id || !hostileTo(e, c->owner)) return false;
+                const Location at = locationOf(p.st.galaxy, o);
+                return sizeRecordNumber(p.r, p.st.galaxy.object(o)) <= limit && !armedHostileStrengthAt(at) && !stopsPlanetDestroyer(at);
+            });
+            if (target) goAndDo(locationOf(p.st.galaxy, *target), stellarOrder(StellarAction::DestroyPlanet, *target, locationOf(p.st.galaxy, *target)));
+        } else if (type == "Create Star") {
+            // The nearest explored system without a star whose centre sector
+            // holds no visible, armed, non-mothballed hostile.
+            std::optional<SystemId> best;
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                const SystemId sys{i};
+                if (!p.explored(sys) || hasStar(p.st, sys) || armedHostileSeenAt(p, {sys, Sector{kSystemCenter, kSystemCenter}})) continue;
+                if (!best || nearer(sys, *best)) best = sys;
+            }
+            if (best) {
+                const Location centre{*best, Sector{kSystemCenter, kSystemCenter}};
+                goAndDo(centre, stellarOrder(StellarAction::CreateStar, {}, centre));
+            }
+        } else if (type == "Destroy Star" || type == "Create Black Hole" || type == "Create Nebulae") {
+            // The nearest star in an explored system where we have no colony and a living hostile empire has one.
+            const StellarAction action = type == "Destroy Star" ? StellarAction::DestroyStar
+                                         : type == "Create Black Hole" ? StellarAction::CreateBlackHole
+                                                                       : StellarAction::CreateNebulae;
+            const auto star = nearestObject(ObjectKind::Star, [&](ObjectId o) {
+                const size_t sys = p.st.galaxy.object(o).system.index();
+                return !ourColony[sys] && hostileColony[sys];
+            });
+            if (star) goAndDo(locationOf(p.st.galaxy, *star), stellarOrder(action, *star, locationOf(p.st.galaxy, *star)));
+        } else if (type == "Destroy Storm") {
+            // The nearest storm whose sector holds no visible armed hostile.
+            const auto storm = nearestObject(ObjectKind::Storm, [&](ObjectId o) { return !armedHostileSeenAt(p, locationOf(p.st.galaxy, o)); });
+            if (storm) goAndDo(locationOf(p.st.galaxy, *storm), stellarOrder(StellarAction::DestroyStorm, *storm, locationOf(p.st.galaxy, *storm)));
+        } else if (type == "Destroy Black Hole" || type == "Destroy Nebulae") {
+            // The explored system of that kind nearest by jumps: the order at once
+            // when the ship is inside, otherwise a move to a fixed sector of it
+            // (the top-left corner, inferred).
+            const bool hole = type == "Destroy Black Hole";
+            std::optional<SystemId> best;
+            for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
+                const SystemId sys{i};
+                if (!p.explored(sys) || !keysEqual(p.st.galaxy.system(sys).physicalType, hole ? "Black Hole" : "Nebulae")) continue;
+                if (!best || nearer(sys, *best)) best = sys;
+            }
+            if (!best) continue;
+            if (here.system == *best)
+                p.setOrders(id, {stellarOrder(hole ? StellarAction::DestroyBlackHole : StellarAction::DestroyNebulae, {}, here)});
+            else
+                p.setOrders(id, {moveOrder({*best, Sector{0, 0}})});
+        }
+        // Create Storm is never used.
+    }
+}
 
 namespace {
 
 using ruleset::VehicleType;
 
-// Units of one kind held by the empire: in space, and in the cargo of its
-// planets and vehicles.
+// Units of one kind the empire holds (spec 05 §7.5): everywhere, in space and
+// in every planet's and vehicle's cargo, and those stored in any cargo.
 struct UnitTotals {
     int64_t all = 0;
-    int64_t onPlanets = 0;
+    int64_t stored = 0;
 };
 UnitTotals unitTotals(Planner& p, VehicleType kind) {
     UnitTotals t;
-    auto ofKind = [&](DesignId d) { return p.info(d).stats.vehicleType == kind; };
+    auto ofKind = [&](DesignId d) { return d.index() < p.st.designs.size() && p.info(d).stats.vehicleType == kind; };
     for (const Vehicle& v : p.st.vehicles) {
         if (v.owner != p.id) continue;
-        if (v.count > 0 && ofKind(v.design)) t.all += v.count;
-        for (const UnitStack& u : v.cargo.units)
+        for (const UnitStack& u : groupStacks(v))
             if (ofKind(u.design)) t.all += u.count;
+        for (const UnitStack& u : v.cargo.units)
+            if (ofKind(u.design)) {
+                t.all += u.count;
+                t.stored += u.count;
+            }
     }
     for (const auto& c : p.st.colonies)
         if (c && c->owner == p.id)
             for (const UnitStack& u : c->cargo.units)
                 if (ofKind(u.design)) {
                     t.all += u.count;
-                    t.onPlanets += u.count;
+                    t.stored += u.count;
                 }
     return t;
 }
 
-// Launches above the kept share: trunc(total x kept % / 100) stay in planet
-// cargo, counted over every unit of the kind the empire holds (inferred: the
-// spec does not say whether "total" is per planet or for the empire).
-int64_t launchQuota(const UnitTotals& t, int keptPercent) {
-    const int64_t kept = t.all * std::clamp(keptPercent, 0, 100) / 100;
-    return std::max<int64_t>(0, t.onPlanets - kept);
+// The excess above the kept share: when total > 0 and stored / total × 100
+// exceeds the kept percent, trunc((stored / total × 100 − kept %) / 100 × total).
+int64_t excessOf(const UnitTotals& t, int keptPercent) {
+    if (t.all <= 0) return 0;
+    const xmath::Ext share = xmath::Ext(t.stored) / xmath::Ext(t.all) * xmath::Ext(100);
+    const xmath::Ext kept(int64_t{keptPercent});
+    if (!(share > kept)) return 0;
+    return ((share - kept) / xmath::Ext(100) * xmath::Ext(t.all)).trunc();
 }
 
-Order launchOrder(DesignId unit, int64_t amount) {
-    Order o;
-    o.kind = OrderKind::LaunchUnits;
-    o.design = unit;
-    o.amount = static_cast<int>(std::min<int64_t>(amount, INT32_MAX));
-    return o;
+// Launch Units Remotely orders for every stack of a kind in a cargo: each
+// launches all it may, with no target (spec 03 §12, spec 05 §7.5).
+int64_t launchAll(Planner& p, const Cargo& cargo, VehicleType kind, std::vector<Order>& orders) {
+    int64_t n = 0;
+    for (const UnitStack& u : cargo.units) {
+        if (u.count <= 0 || p.info(u.design).stats.vehicleType != kind) continue;
+        n += u.count;
+        const bool already = std::any_of(orders.begin(), orders.end(), [&](const Order& o) { return o.kind == OrderKind::LaunchUnits && o.design == u.design; });
+        if (already) continue;
+        Order o;
+        o.kind = OrderKind::LaunchUnits;
+        o.design = u.design;
+        o.amount = -1;
+        orders.push_back(o);
+    }
+    return n;
 }
 
-// The drones of the planet launch: half after ships, half after planets of
-// empires at War with us, each half capped at targets x drones per target.
-// Each target in turn gets its share from the nearest planets within range,
-// the half's own drone type first (inferred). `left` is what each planet
-// still holds.
-void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& planets, std::map<ObjectId, std::vector<Order>>& orders,
-                  std::map<std::pair<ObjectId, DesignId>, int64_t>& left) {
-    const SettingsTable& set = p.prof.settings;
-    std::vector<std::pair<SystemId, Order>> shipTargets, planetTargets;
+bool holds(Planner& p, const Cargo& cargo, auto&& accept) {
+    return std::any_of(cargo.units.begin(), cargo.units.end(), [&](const UnitStack& u) { return u.count > 0 && accept(p.info(u.design)); });
+}
+
+// The targets of the drones (spec 05 §7.5): ships inside our territory of
+// empires at War with us, and those empires' planets among the attack candidates.
+std::vector<Order> antiShipTargets(const Planner& p) {
+    std::vector<Order> out;
     for (const Threat& t : p.sit.enemyInTerritory) {
         const Vehicle* v = t.vehicle.valid() ? p.st.vehicle(t.vehicle) : nullptr;
-        if (!v || !p.atWarWith(t.owner) || isUnitType(vehicleType(p.r, p.st, *v))) continue;
-        shipTargets.emplace_back(t.system, attackVehicle(*v));
+        if (v && p.atWarWith(t.owner) && !isUnitType(vehicleType(p.r, p.st, *v))) out.push_back(attackVehicle(*v));
     }
+    return out;
+}
+std::vector<Order> antiPlanetTargets(const Planner& p) {
+    std::vector<Order> out;
     for (const Candidate& c : p.sit.candidates)
-        if (p.atWarWith(c.owner)) planetTargets.emplace_back(c.system, attackPlanet(p.st, c.planet));
-    std::map<SystemId, std::vector<int>> jumps;
-    auto jumpsTo = [&](ObjectId planet, SystemId target) {
-        const SystemId from = p.st.galaxy.object(planet).system;
-        auto it = jumps.find(from);
-        if (it == jumps.end()) it = jumps.emplace(from, p.jumpsFrom(from)).first;
-        return it->second[target.index()];
-    };
-    auto sendHalf = [&](const std::vector<std::pair<SystemId, Order>>& targets, int64_t quota, int perTarget, int range,
-                        std::string_view preferred) {
-        quota = std::min<int64_t>(quota, static_cast<int64_t>(targets.size()) * std::max(0, perTarget));
-        for (const auto& [system, attack] : targets) {
-            int64_t want = std::min<int64_t>(perTarget, quota);
-            // Planets within range, nearest first; the drone type named for this half first (inferred).
-            std::vector<std::pair<int, ObjectId>> from;
-            for (ObjectId planet : planets)
-                if (const int j = jumpsTo(planet, system); j >= 0 && j <= range) from.emplace_back(j, planet);
-            std::sort(from.begin(), from.end());
-            for (int pass = 0; pass < 2 && want > 0; ++pass)
-                for (const auto& [j, planet] : from) {
-                    for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
-                        if (want <= 0) break;
-                        const DesignInfo& di = p.info(u.design);
-                        if (di.stats.vehicleType != VehicleType::Drone || keysEqual(di.aiType, preferred) != (pass == 0)) continue;
-                        int64_t& have = left[{planet, u.design}];
-                        const int64_t n = std::min(have, want);
-                        if (n <= 0) continue;
-                        Order o = launchOrder(u.design, n);
-                        o.vehicle = attack.vehicle;
-                        o.object = attack.object;
-                        orders[planet].push_back(o);
-                        have -= n;
-                        want -= n;
-                        quota -= n;
-                    }
-                    if (want <= 0) break;
-                }
-            if (quota <= 0) break;
-        }
-    };
-    sendHalf(shipTargets, (drones + 1) / 2, set.antiShipDronesPerTarget, set.antiShipDroneRange, "Anti-Ship Drone");
-    sendHalf(planetTargets, drones / 2, set.antiPlanetDronesPerTarget, set.antiPlanetDroneRange, "Anti-Planet Drone");
+        if (p.atWarWith(c.owner)) out.push_back(attackPlanet(p.st, c.planet));
+    return out;
 }
 
-// Spec 05 §7.5: satellites and drones in planet cargo above the kept shares
-// are launched, as planet orders (spec 03 §12).
-void launchFromPlanets(Planner& p, bool roomForUnits) {
+// Spec 05 §7.5 (confirmed: binary): satellites and drones in planet cargo
+// above the empire's kept shares are launched, colony by colony in planet
+// order, each colony launching its whole stock (planet orders, spec 03 §12).
+void launchFromPlanets(Planner& p) {
     std::vector<ObjectId> planets;
     for (const auto& c : p.st.colonies)
         if (c && !c->cargo.units.empty() && p.controlsColony(*c, Minister::MinesSatellitesDrones)) planets.push_back(c->planet);
-    if (planets.empty() || !roomForUnits) return;
+    if (planets.empty()) return;
     const SettingsTable& set = p.prof.settings;
     std::map<ObjectId, std::vector<Order>> orders;
-    std::map<std::pair<ObjectId, DesignId>, int64_t> left;  // units still in each planet's cargo
-    for (ObjectId planet : planets)
-        for (const UnitStack& u : p.st.colony(planet)->cargo.units) left[{planet, u.design}] += u.count;
 
-    // Satellites, planet by planet, where each planet is (up to the sector cap).
-    int64_t satellites = launchQuota(unitTotals(p, VehicleType::Satellite), set.satellitesKeptPercent);
-    const int64_t perSector = p.r.setting("Maximum Satellites Per Player Per Sector", 100);
-    for (ObjectId planet : planets) {
-        if (satellites <= 0) break;
-        const Location at = locationOf(p.st.galaxy, planet);
-        int64_t room = perSector;
-        for (const Vehicle& v : p.st.vehicles)
-            if (v.owner == p.id && v.location == at && v.count > 0 && p.info(v.design).stats.vehicleType == VehicleType::Satellite) room -= v.count;
-        for (const UnitStack& u : p.st.colony(planet)->cargo.units) {
-            if (satellites <= 0 || room <= 0) break;
-            if (u.count <= 0 || p.info(u.design).stats.vehicleType != VehicleType::Satellite) continue;
-            const int64_t n = std::min({int64_t{u.count}, satellites, room});
-            orders[planet].push_back(launchOrder(u.design, n));
-            left[{planet, u.design}] -= n;
-            satellites -= n;
-            room -= n;
+    // Satellites: while the excess is at least 1 each colony holding them
+    // launches all, the excess dropping by its whole satellite cargo; once it
+    // is used up, colonies holding a Recon Satellite still launch.
+    if (int64_t excess = excessOf(unitTotals(p, VehicleType::Satellite), set.satellitesKeptPercent); excess > 0)
+        for (ObjectId planet : planets) {
+            const Cargo& cargo = p.st.colony(planet)->cargo;
+            if (!holds(p, cargo, [](const DesignInfo& di) { return di.stats.vehicleType == VehicleType::Satellite; })) continue;
+            const bool recon = holds(p, cargo, [](const DesignInfo& di) { return di.aiType == "Recon Satellite"; });
+            if (excess < 1 && !recon) continue;
+            excess -= launchAll(p, cargo, VehicleType::Satellite, orders[planet]);
         }
-    }
 
-    // Drones: the quota split in two halves (the odd one goes after ships; inferred).
-    if (const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent); drones > 0)
-        launchDrones(p, drones, planets, orders, left);
+    // Drones: each half gets excess div 2, so an odd one stays; the ship half
+    // is capped at the ship targets × drones per target, the planet half at
+    // the planet targets × drones per target.
+    const int64_t half = excessOf(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent) / 2;
+    int64_t shipHalf = std::min<int64_t>(half, static_cast<int64_t>(antiShipTargets(p).size()) * std::max(0, set.antiShipDronesPerTarget));
+    int64_t planetHalf = std::min<int64_t>(half, static_cast<int64_t>(antiPlanetTargets(p).size()) * std::max(0, set.antiPlanetDronesPerTarget));
+    for (ObjectId planet : planets) {
+        if (shipHalf <= 0) break;
+        const Cargo& cargo = p.st.colony(planet)->cargo;
+        if (holds(p, cargo, [](const DesignInfo& di) { return di.aiType == "Anti-Ship Drone"; }))
+            shipHalf -= launchAll(p, cargo, VehicleType::Drone, orders[planet]);
+    }
+    for (ObjectId planet : planets) {
+        if (planetHalf <= 0) break;
+        const Cargo& cargo = p.st.colony(planet)->cargo;
+        if (holds(p, cargo, [](const DesignInfo& di) { return di.aiType == "Anti-Planet Drone"; }))
+            planetHalf -= launchAll(p, cargo, VehicleType::Drone, orders[planet]);
+    }
 
     for (auto& [planet, list] : orders) {
         if (list.empty() || p.st.colony(planet)->orders == list) continue;
@@ -696,127 +1038,300 @@ void launchFromPlanets(Planner& p, bool roomForUnits) {
     }
 }
 
+// Idle drones in space within the target distance are sent after the
+// targets, per-target times (spec 05 §7.5).
+void sendDrones(Planner& p) {
+    const SettingsTable& set = p.prof.settings;
+    std::map<SystemId, std::vector<int>> jumps;
+    auto jumpsTo = [&](SystemId from, SystemId to) {
+        auto it = jumps.find(from);
+        if (it == jumps.end()) it = jumps.emplace(from, p.jumpsFrom(from)).first;
+        return it->second[to.index()];
+    };
+    for (const bool antiPlanet : {false, true}) {
+        std::vector<VehicleId> drones;
+        for (VehicleId id : p.ownVehicles(Minister::MinesSatellitesDrones)) {
+            const Vehicle* v = p.st.vehicle(id);
+            if (v && !v->fleet.valid() && p.idle(*v) && p.info(v->design).aiType == (antiPlanet ? "Anti-Planet Drone" : "Anti-Ship Drone"))
+                drones.push_back(id);
+        }
+        const std::vector<Order> targets = antiPlanet ? antiPlanetTargets(p) : antiShipTargets(p);
+        const int perTarget = antiPlanet ? set.antiPlanetDronesPerTarget : set.antiShipDronesPerTarget;
+        const int range = antiPlanet ? set.antiPlanetDroneRange : set.antiShipDroneRange;
+        for (const Order& target : targets) {
+            int sent = 0;
+            for (VehicleId id : drones) {
+                if (sent >= perTarget) break;
+                const Vehicle* v = p.st.vehicle(id);
+                if (!v || p.busy.contains(id) || jumpsTo(v->location.system, target.location.system) > range) continue;
+                if (p.setOrders(id, {target})) ++sent;
+            }
+        }
+    }
+}
+
+// The warp-point sector a loaded mine or satellite layer lays at (spec 05
+// §7.5, confirmed: binary).
+std::optional<Location> layingSite(Planner& p, bool mines) {
+    const Empire& e = p.emp();
+    const size_t nSys = p.st.galaxy.systems.size();
+    // Every other empire owning any object in each system.
+    std::vector<std::vector<EmpireId>> others(nSys);
+    auto note = [&](SystemId sys, EmpireId owner) {
+        if (owner == p.id || !owner.valid() || sys.index() >= nSys) return;
+        auto& list = others[sys.index()];
+        if (std::find(list.begin(), list.end(), owner) == list.end()) list.push_back(owner);
+    };
+    for (const auto& c : p.st.colonies)
+        if (c) note(p.st.galaxy.object(c->planet).system, c->owner);
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.count > 0) note(v.location.system, v.owner);
+    std::vector<uint8_t> colonySystem(nSys, 0);
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id) colonySystem[p.st.galaxy.object(c->planet).system.index()] = 1;
+    const int64_t cap = p.r.setting("Maximum Mines Per Player Per Sector", 100);  // the mine limit, for satellites too
+    auto ourUnitsAt = [&](Location where) {
+        int64_t n = 0;
+        for (const Vehicle& v : p.st.vehicles)
+            if (v.owner == p.id && v.count > 0 && v.location == where && isUnitType(vehicleType(p.r, p.st, v))) n += v.count;
+        return n;
+    };
+    // Star-destroying designs among the enemy designs we have seen.
+    bool starDestroyers = false;
+    for (const SeenDesign& seen : e.knowledge.seenDesigns)
+        if (seen.design.index() < p.st.designs.size())
+            for (const DesignEntry& en : p.st.design(seen.design).entries)
+                starDestroyers = starDestroyers || hasAbility(p.r.componentAbilities(en.component), AbilityKind::DestroyStar);
+
+    std::vector<std::pair<Location, int>> weighted;
+    if (!(mines && starDestroyers))
+        for (size_t i = 0; i < nSys; ++i) {
+            if (!colonySystem[i]) continue;
+            for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) {
+                const SpaceObject& obj = p.st.galaxy.object(wp);
+                if (!obj.destination.valid()) continue;
+                const SystemId far = p.st.galaxy.object(obj.destination).system;
+                if (others[far.index()].empty() || ourUnitsAt({far, obj.sector}) >= cap) continue;
+                int weight = 1;
+                for (EmpireId x : others[far.index()]) {
+                    if (mines) weight = std::max(weight, p.atWarWith(x) ? 7 : hostileTo(e, x) ? 4 : 1);
+                    else weight = std::max(weight, hostileTo(e, x) ? 2 : 1);
+                }
+                weighted.emplace_back(obj.system == SystemId{i} ? Location{obj.system, obj.sector} : locationOf(p.st.galaxy, wp), weight);
+            }
+        }
+    if (!weighted.empty()) {
+        int64_t total = 0;
+        for (const auto& [where, w] : weighted) total += w;
+        int64_t roll = static_cast<int64_t>(p.rng.below(static_cast<uint64_t>(total)));
+        for (const auto& [where, w] : weighted) {
+            if (roll < w) return where;
+            roll -= w;
+        }
+    }
+    // Mine layers facing star destroyers: half the time a random star's
+    // sector of our colony systems (inferred which stars).
+    if (mines && starDestroyers && p.rng.percent(50)) {
+        std::vector<Location> stars;
+        for (size_t i = 0; i < nSys; ++i)
+            if (colonySystem[i])
+                for (ObjectId o : p.st.galaxy.system(SystemId{i}).objects)
+                    if (p.st.galaxy.object(o).kind == ObjectKind::Star) stars.push_back(locationOf(p.st.galaxy, o));
+        if (!stars.empty()) return stars[static_cast<size_t>(p.rng.below(stars.size()))];
+    }
+    // A random warp-point sector of a colony system where no other empire has any object.
+    std::vector<Location> fallback;
+    for (size_t i = 0; i < nSys; ++i)
+        if (colonySystem[i] && others[i].empty())
+            for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) fallback.push_back(locationOf(p.st.galaxy, wp));
+    if (fallback.empty()) return std::nullopt;
+    return fallback[static_cast<size_t>(p.rng.below(fallback.size()))];
+}
+
 } // namespace
 
 void planMinesSatellitesDrones(Planner& p) {
     if (!p.on(Minister::MinesSatellitesDrones)) return;
-    const bool roomForUnits = unitCount(p.r, p.st, p.id) < p.st.options.maxUnitsPerPlayer;
-    launchFromPlanets(p, roomForUnits);
+    // Layers, launches and the orders to idle drones work only while the
+    // empire has fewer placed units than the game's unit limit.
+    const bool roomForUnits = movement::unitsInSpace(p.r, p.st, p.id) < p.st.options.maxUnitsPerPlayer;
+    if (roomForUnits) launchFromPlanets(p);
     for (VehicleId id : p.ownVehicles(Minister::MinesSatellitesDrones)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || v->fleet.valid() || !p.idle(*v)) continue;
-        const DesignInfo& di = p.info(v->design);
-        switch (di.role) {
-            case Role::Sweeper:
-                // Sweepers sweep the hostile mine fields in our territory.
-                if (!p.sit.enemyNearby.empty()) {
-                    const Vehicle* field = p.st.vehicle(p.sit.enemyNearby.front().vehicle);
-                    if (field) p.setOrders(id, {moveOrder(field->location), simpleOrder(OrderKind::SweepMines)});
-                }
-                break;
-            case Role::MineLayer:
-            case Role::SatelliteLayer:
-                // Layers work only below the unit limit; they lay what they carry where they are (inferred).
-                if (roomForUnits && loaded(*v)) {
-                    Order launch;
-                    launch.kind = OrderKind::LaunchUnits;
-                    launch.location = v->location;
-                    launch.design = v->cargo.units.front().design;
-                    launch.amount = -1;
-                    p.setOrders(id, {launch});
-                }
-                break;
-            case Role::Unit: {
-                // Idle drones go after targets within range.
-                if (di.stats.vehicleType != ruleset::VehicleType::Drone) break;
-                const bool antiPlanet = keysEqual(di.aiType, "Anti-Planet Drone");
-                const int range = antiPlanet ? p.prof.settings.antiPlanetDroneRange : p.prof.settings.antiShipDroneRange;
-                const std::vector<int> jumps = p.jumpsFrom(v->location.system);
-                if (antiPlanet) {
-                    for (const Candidate& c : p.sit.candidates)
-                        if (p.atWarWith(c.owner) && jumps[c.system.index()] >= 0 && jumps[c.system.index()] <= range) {
-                            p.setOrders(id, {attackPlanet(p.st, c.planet)});
-                            break;
-                        }
-                } else {
-                    for (const Threat& t : p.sit.enemyInTerritory)
-                        if (t.vehicle.valid() && p.atWarWith(t.owner) && jumps[t.system.index()] >= 0 && jumps[t.system.index()] <= range)
-                            if (const Vehicle* target = p.st.vehicle(t.vehicle)) {
-                                p.setOrders(id, {attackVehicle(*target)});
-                                break;
-                            }
-                }
-                break;
-            }
-            default: break;
+        const Role role = p.info(v->design).role;
+        if (role == Role::Sweeper) {
+            // Sweepers sweep the hostile mine fields in our territory.
+            if (!p.sit.enemyNearby.empty())
+                if (const Vehicle* field = p.st.vehicle(p.sit.enemyNearby.front().vehicle))
+                    p.setOrders(id, {moveOrder(field->location), simpleOrder(OrderKind::SweepMines)});
+            continue;
         }
+        if ((role != Role::MineLayer && role != Role::SatelliteLayer) || !roomForUnits) continue;
+        const bool mines = role == Role::MineLayer;
+        const VehicleType kind = mines ? VehicleType::Mine : VehicleType::Satellite;
+        const auto ofKind = [&](const DesignInfo& di) { return di.stats.vehicleType == kind; };
+        if (!holds(p, v->cargo, ofKind)) {
+            // Empty: load at the nearest own colony holding such units.
+            std::optional<DesignId> unit;
+            const auto depot = nearestColony(p, v->location.system, [&](const Colony& c) { return holds(p, c.cargo, ofKind); });
+            if (!depot) continue;
+            for (const UnitStack& u : p.st.colony(*depot)->cargo.units)
+                if (!unit && u.count > 0 && ofKind(p.info(u.design))) unit = u.design;
+            Order take;
+            take.kind = OrderKind::LoadCargo;
+            take.location = locationOf(p.st.galaxy, *depot);
+            take.design = *unit;
+            take.amount = -1;
+            std::vector<Order> orders;
+            if (v->location != take.location) orders.push_back(moveOrder(take.location));
+            orders.push_back(take);
+            p.setOrders(id, std::move(orders));
+            continue;
+        }
+        const std::optional<Location> site = layingSite(p, mines);
+        if (!site) continue;
+        std::vector<Order> launches;
+        launchAll(p, v->cargo, kind, launches);
+        std::vector<Order> orders;
+        if (v->location != *site) orders.push_back(moveOrder(*site));
+        for (Order& o : launches) {
+            o.location = *site;
+            orders.push_back(o);
+        }
+        p.setOrders(id, std::move(orders));
     }
+    if (roomForUnits) sendDrones(p);
 }
 
 namespace {
 
-// What a Repair or Resupply order given now stands for: orders are stored
-// expanded (orders.hpp), so one given earlier is a Move To its target. Empty
-// when there is nowhere to go (or the ship is already there).
-std::vector<Order> expansionOf(const Planner& p, OrderContext ctx, OrderKind k) {
-    std::vector<Order> out;
-    expandOrder(p.r, p.st, ctx, simpleOrder(k), out);
-    return out;
+// Spec 05 §7.5 "Repair" (confirmed: binary): only a vehicle with a destroyed
+// part, and then by design type.
+bool needsRepair(Planner& p, const Vehicle& v) {
+    const int destroyed = damagedComponents(p.r, p.st, v);
+    if (destroyed == 0) return false;
+    const std::string& type = p.info(v.design).aiType;
+    const xmath::Ext parts(static_cast<int64_t>(p.st.design(v.design).entries.size()));
+    if (type == "Attack Ship" || type == "Defense Ship") {
+        if (vehicleRating(p.r, p.st, v) == 0 || destroyed > (kPoint3 * parts).round() || lacksOperatingPart(p, v)) return true;
+        if (const Fleet* f = p.st.fleet(v.fleet)) {
+            const int speed = vehicleMaxMovement(p.r, p.st, v);
+            int fastest = 0;
+            for (VehicleId m : f->members)
+                if (const Vehicle* o = p.st.vehicle(m); o && o->count > 0) fastest = std::max(fastest, vehicleMaxMovement(p.r, p.st, *o));
+            if (speed < 6 && speed < fastest - 1) return true;
+        }
+        return false;
+    }
+    static constexpr std::array<std::string_view, 6> kAlways{"Population Transport", "Mine Layer", "Mine Sweeper", "Boarding Ship",
+                                                             "Space Yard Ship", "Cargo Transport"};
+    if (p.info(v.design).role == Role::Stellar) return true;  // the warp-point and stellar-manipulation types
+    for (std::string_view t : kAlways)
+        if (type == t) return true;
+    return destroyed > (kPoint25 * parts).round() || lacksOperatingPart(p, v);
 }
 
-// The list already carries out that order: it starts with its expansion, or
-// still holds the order itself (given some other way, expanded when it comes up).
-bool headsFor(const std::vector<Order>& list, const std::vector<Order>& expansion, OrderKind k) {
-    if (list.empty()) return false;
-    if (list.front().kind == k) return true;
-    return !expansion.empty() && list.size() >= expansion.size() && std::equal(expansion.begin(), expansion.end(), list.begin());
+// Every turn a vehicle that needs repair loses all its orders (Colonize
+// included) and leaves its fleet. If it can move, it seeks the nearest of the
+// empire's space yards by travel (a colony with a Space Yard facility, or an
+// uncloaked ship with a working yard) and waits when already there or when a
+// yard ship is within that ship's own speed; with no yard it keeps no orders.
+void planRepair(Planner& p) {
+    for (VehicleId id : p.ownVehicles(Minister::Repair)) {
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->status == VehicleStatus::Mothballed || isUnitType(p.info(v->design).stats.vehicleType) || !needsRepair(p, *v)) continue;
+        if (v->fleet.valid()) p.emit(cmd::LeaveFleet{id});
+        v = p.st.vehicle(id);
+        std::vector<Order> orders;
+        if (vehicleMaxMovement(p.r, p.st, *v) > 0) {
+            std::vector<Location> goals;
+            std::vector<int> yardShipSpeed;  // -1 for a colony
+            for (const auto& c : p.st.colonies)
+                if (c && c->owner == p.id && colonyHasSpaceYard(p.r, *c)) {
+                    goals.push_back(locationOf(p.st.galaxy, c->planet));
+                    yardShipSpeed.push_back(-1);
+                }
+            for (const Vehicle& o : p.st.vehicles)
+                if (o.id != id && o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o)) {
+                    goals.push_back(o.location);
+                    yardShipSpeed.push_back(vehicleMaxMovement(p.r, p.st, o));
+                }
+            if (const auto near = nearestByTravel(p, v->location, goals)) {
+                const Location at = goals[near->goal];
+                const int speed = yardShipSpeed[near->goal];
+                const bool wait = at == v->location || (speed >= 0 && near->path.length <= speed);
+                if (!wait) orders.push_back(moveOrder(at));
+            }
+        }
+        p.setOrders(id, std::move(orders));
+    }
+}
+
+// Spec 05 §7.5 "Resupply" (confirmed: binary): each system's supply distance
+// is 13 × (1 + the warp jumps, over every link, to the nearest system holding
+// one of our colonies with Supply Generation), or 999,999 when there is none.
+void planResupply(Planner& p) {
+    const size_t nSys = p.st.galaxy.systems.size();
+    std::vector<int64_t> distance(nSys, 999'999);
+    {
+        std::vector<int> jumps(nSys, kUnreachable);
+        std::deque<SystemId> queue;
+        for (const auto& c : p.st.colonies) {
+            if (!c || c->owner != p.id || !hasAbility(colonyAbilities(p.r, p.st, *c), AbilityKind::SupplyGeneration)) continue;
+            const SystemId sys = p.st.galaxy.object(c->planet).system;
+            if (jumps[sys.index()] == 0) continue;
+            jumps[sys.index()] = 0;
+            queue.push_back(sys);
+        }
+        while (!queue.empty()) {
+            const SystemId at = queue.front();
+            queue.pop_front();
+            for (const Link& l : p.links[at.index()])
+                if (jumps[l.to.index()] == kUnreachable) {
+                    jumps[l.to.index()] = jumps[at.index()] + 1;
+                    queue.push_back(l.to);
+                }
+        }
+        for (size_t i = 0; i < nSys; ++i)
+            if (jumps[i] != kUnreachable) distance[i] = 13 * (1 + int64_t{jumps[i]});
+    }
+    // A fleet not on unlimited supply goes when its total supply ÷ its total
+    // supply cost per move is below the distance where it is; it takes the
+    // orders its leader would get.
+    for (const Fleet& f : p.st.fleets) {
+        if (!p.controlsFleet(f, Minister::Resupply) || f.members.empty()) continue;
+        const Vehicle* leader = p.st.vehicle(f.leader);
+        if (!leader) continue;
+        int64_t supply = 0, cost = 0;
+        bool unlimited = true;
+        for (VehicleId m : f.members)
+            if (const Vehicle* v = p.st.vehicle(m); v && v->count > 0) {
+                unlimited = unlimited && vehicleHasUnlimitedSupply(p.r, p.st, *v);
+                supply += v->supply;
+                cost += movement::moveSupplyCost(p.r, p.st, *v);
+            }
+        if (unlimited || cost <= 0 || supply >= distance[leader->location.system.index()] * cost) continue;
+        p.setFleetOrders(f.id, resupplyOrders(p, leader->location));
+    }
+    // A ship outside fleets goes on the same test or when its supply is 0;
+    // colony ships and Destroy Star ships are exempt.
+    for (VehicleId id : p.ownVehicles(Minister::Resupply)) {
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v || v->fleet.valid() || v->status == VehicleStatus::Mothballed || isUnitType(p.info(v->design).stats.vehicleType)) continue;
+        const DesignInfo& di = p.info(v->design);
+        if (di.role == Role::Colonizer || di.aiType == "Destroy Star" || vehicleHasUnlimitedSupply(p.r, p.st, *v)) continue;
+        const int64_t cost = movement::moveSupplyCost(p.r, p.st, *v);
+        const bool send = v->supply <= 0 || (cost > 0 && v->supply < distance[v->location.system.index()] * cost);
+        if (send) p.setOrders(id, resupplyOrders(p, v->location));
+    }
 }
 
 } // namespace
 
-// Damaged ships and ships low on supplies go to the nearest repair or supply
-// point. The thresholds are open: 30 % structure lost, 20 % supply left (inferred).
 void planRepairAndResupply(Planner& p, bool repair) {
-    for (const Fleet& f : p.st.fleets) {
-        if (!p.controlsFleet(f, repair ? Minister::Repair : Minister::Resupply) || f.members.empty()) continue;
-        bool need = false;
-        for (VehicleId m : f.members)
-            if (const Vehicle* v = p.st.vehicle(m)) {
-                if (repair) {
-                    const int structure = vehicleStructure(p.r, p.st, *v);
-                    need = need || (structure > 0 && int64_t{vehicleDamageTaken(p.st, *v)} * 100 > int64_t{structure} * 30);
-                } else {
-                    const int64_t cap = vehicleSupplyCapacity(p.r, p.st, *v);
-                    need = need || (cap > 0 && v->supply * 100 < cap * 20 && !vehicleHasQuantumReactor(p.r, p.st, *v));
-                }
-            }
-        const OrderKind k = repair ? OrderKind::Repair : OrderKind::Resupply;
-        if (!need) continue;
-        const std::vector<Order> expansion = expansionOf(p, orderContextOf(p.st, f), k);
-        if (expansion.empty() || headsFor(f.orders, expansion, k)) continue;
-        p.setFleetOrders(f.id, {simpleOrder(k)});
-    }
-    for (VehicleId id : p.ownVehicles(repair ? Minister::Repair : Minister::Resupply)) {
-        const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || v->status == VehicleStatus::Mothballed || p.info(v->design).stats.movement <= 0) continue;
-        if (isUnitType(p.info(v->design).stats.vehicleType)) continue;
-        const OrderKind k = repair ? OrderKind::Repair : OrderKind::Resupply;
-        const OrderKind other = repair ? OrderKind::Resupply : OrderKind::Repair;
-        bool need = false;
-        if (repair) {
-            const int structure = vehicleStructure(p.r, p.st, *v);
-            need = structure > 0 && int64_t{vehicleDamageTaken(p.st, *v)} * 100 > int64_t{structure} * 30;
-        } else {
-            const int64_t cap = vehicleSupplyCapacity(p.r, p.st, *v);
-            need = cap > 0 && v->supply * 100 < cap * 20 && !vehicleHasQuantumReactor(p.r, p.st, *v);
-        }
-        if (!need) continue;
-        // Already on its way for a repair or for supplies (the expanded form of either order).
-        const OrderContext ctx = orderContextOf(p.st, *v);
-        const std::vector<Order> expansion = expansionOf(p, ctx, k);
-        if (expansion.empty() || headsFor(v->orders, expansion, k) || headsFor(v->orders, expansionOf(p, ctx, other), other)) continue;
-        p.setOrders(id, {simpleOrder(k)});
-    }
+    if (repair) planRepair(p);
+    else planResupply(p);
 }
 
 void planScrap(Planner& p) {

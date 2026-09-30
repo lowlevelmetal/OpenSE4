@@ -139,6 +139,13 @@ EmpireId megaEvilEmpire(const Rules& r, const std::vector<int64_t>& scores, cons
 // The leader's mood word shown in the Empires window for an anger value (spec 05 §7.3).
 std::string_view moodLabel(int anger);
 
+// The date the ministers and the AI state step see (spec 05 §7.5 "The date",
+// confirmed: binary): the advanced date in a simultaneous game, whose date
+// advances before the ministers act (§8 step 3), and GameState::turn in a
+// turn-based game, whose date advances only after the last player. Every
+// "every N turns", "first 50 turns", fleet-delay and early size-cap rule reads it.
+uint32_t aiDate(const GameState& s);
+
 // Whether an empire's minister for an area acts this turn: always for
 // computer players, else Empire::ministerAll or the area's bit.
 bool ministerOn(const Empire& e, Minister m);

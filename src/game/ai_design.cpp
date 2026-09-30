@@ -139,7 +139,7 @@ bool colonizeAbility(std::string_view ability, AbilityKind& out) {
 bool majorityIs(const DesignTemplate& t, AbilityKind k) { return parseAbilityKind(t.majority.ability) == k; }
 
 // Candidate hulls (spec 05 §7.5), in data order.
-std::vector<uint32_t> candidateHulls(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t, const SettingsTable& settings) {
+std::vector<uint32_t> candidateHulls(const Rules& r, uint32_t date, const Empire& e, const DesignTemplate& t, const SettingsTable& settings) {
     std::vector<uint32_t> out;
     AbilityKind colonize;
     const bool colonyMajority = colonizeAbility(t.majority.ability, colonize);
@@ -153,7 +153,7 @@ std::vector<uint32_t> candidateHulls(const Rules& r, const GameState& s, const E
         if ((hull.maxPercentCargo > 0) != majorityIs(t, AbilityKind::CargoStorage)) continue;
         bool capped = false;
         for (const auto& [amount, turns] : settings.tonnageCaps)
-            if (amount > 0 && static_cast<int64_t>(s.turn) < turns && hull.tonnage > amount) capped = true;
+            if (amount > 0 && static_cast<int64_t>(date) < turns && hull.tonnage > amount) capped = true;  // the date the ministers see
         if (!capped) out.push_back(h);
     }
     return out;
@@ -410,52 +410,60 @@ bool improvable(const Rules& r, const Empire& e, const Design& d, const DesignTe
     return false;
 }
 
-std::string romanSuffix(int n) {
-    static constexpr std::array<std::string_view, 10> kRoman{"", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"};
-    if (n < static_cast<int>(kRoman.size())) return std::string(kRoman[static_cast<size_t>(n)]);
-    return std::to_string(n);
+// "II" .. "XV" for the name rounds.
+std::string roman(int n) {
+    static constexpr std::array<std::pair<int, std::string_view>, 4> kDigits{{{10, "X"}, {9, "IX"}, {5, "V"}, {4, "IV"}}};
+    std::string out;
+    for (const auto& [value, text] : kDigits)
+        while (n >= value) {
+            out += text;
+            n -= value;
+        }
+    out.append(static_cast<size_t>(std::max(0, n)), 'I');
+    return out;
 }
 
-// The first unused name of the race's design-name file past the number of
-// designs made so far; then the list again with "II", "III", ...; with no
-// file, "Design <n>" (spec 05 §7.5).
+// The name of a new design (spec 05 §7.5, confirmed: binary). The counter is
+// the number of designs this empire's Design minister has made (those with a
+// template name; saved with the game). The name is the first line of the
+// race's design-name file whose position is beyond the counter and that no
+// design of any empire uses; then rounds with "II" up to "XV", the position
+// count carrying on across the rounds. With no file the name is "Design
+// <counter + 1>", unchecked. With every name used the original leaves the
+// name empty; OpenSE4 refuses a design without a name, so it takes "Design
+// <counter + 1>" then (inferred, spec 05 open question 37).
 std::string designName(const Planner& p) {
-    auto taken = [&](const std::string& name) {
-        for (DesignId d : p.emp().designs)
-            if (p.st.design(d).name == name) return true;
-        return false;
-    };
+    int64_t counter = 0;
+    for (const Design& d : p.st.designs) counter += d.owner == p.id && !d.templateName.empty();
     const std::vector<std::string>& names = designNameList(p.r, p.emp().race.designNameFile);
-    const size_t made = p.emp().designs.size();  // designs made so far (inferred: all of the empire's)
-    if (!names.empty()) {
-        for (size_t i = made; i < names.size(); ++i)
-            if (!taken(names[i])) return names[i];
-        for (int round = 2; round < 100; ++round)
-            for (const std::string& n : names)
-                if (std::string name = std::format("{} {}", n, romanSuffix(round)); !taken(name)) return name;
-    }
-    for (size_t n = made + 1;; ++n)
-        if (std::string name = std::format("Design {}", n); !taken(name)) return name;
+    const int64_t n = static_cast<int64_t>(names.size());
+    for (int round = 1; round <= 15 && n > 0; ++round)
+        for (int64_t i = 0; i < n; ++i) {
+            if ((round - 1) * n + i + 1 <= counter) continue;
+            std::string name = round == 1 ? names[static_cast<size_t>(i)] : std::format("{} {}", names[static_cast<size_t>(i)], roman(round));
+            if (!designNameInUse(p.st, name)) return name;
+        }
+    return std::format("Design {}", counter + 1);
 }
 
 } // namespace
 
 std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t) {
-    const auto hull = largestHull(r, candidateHulls(r, s, e, t, profileFor(r, e).settings));
+    const auto hull = largestHull(r, candidateHulls(r, aiDate(s), e, t, profileFor(r, e).settings));
     if (!hull) return std::nullopt;
     return Builder(r, s, e, t, *hull).run();
 }
 
 void planDesigns(Planner& p) {
     const Empire& e = p.emp();
-    if (!researchEventLastTurn(e, p.st.turn) && !e.designs.empty() && p.st.turn % 10 != 0) return;
+    if (!researchEventLastTurn(e, p.st.turn) && !e.designs.empty() && p.date % 10 != 0) return;
     for (const DesignTemplate& t : p.prof.designs) {
         const Parts parts{p.r, p.emp(), t.vehicleType};
-        // The latest non-obsolete design of this template.
+        // The designer's latest non-obsolete design of this template.
         std::optional<DesignId> latest;
         for (DesignId d : p.emp().designs) {
             const Design& design = p.st.design(d);
-            if (design.obsolete || !keysEqual(design.designType, t.designType)) continue;
+            if (design.obsolete || !keysEqual(design.templateName, t.name)) continue;
             if (!latest || std::pair(design.createdTurn, d) > std::pair(p.st.design(*latest).createdTurn, *latest)) latest = d;
         }
         if (latest && p.st.design(*latest).createdTurn == p.st.turn) continue;
@@ -463,13 +471,14 @@ void planDesigns(Planner& p) {
         for (const std::string& a : t.mustHave)
             if (!parts.part(a, t.majorityFamilies)) partsExist = false;
         if (!partsExist) continue;
-        const std::vector<uint32_t> hulls = candidateHulls(p.r, p.st, p.emp(), t, p.prof.settings);
+        const std::vector<uint32_t> hulls = candidateHulls(p.r, p.date, p.emp(), t, p.prof.settings);
         if (hulls.empty()) continue;
         if (latest && !improvable(p.r, p.emp(), p.st.design(*latest), t, parts, hulls)) continue;
         auto design = Builder(p.r, p.st, p.emp(), t, *largestHull(p.r, hulls)).run();
         if (!design) continue;
         if (latest && p.st.design(*latest).hull == design->hull && p.st.design(*latest).entries == design->entries) continue;
         design->name = designName(p);
+        design->templateName = t.name;
         if (!p.emit(cmd::CreateDesign{std::move(*design)})) continue;
         const DesignId created = p.emp().designs.back();
         // Every older design of this player and design type becomes obsolete.

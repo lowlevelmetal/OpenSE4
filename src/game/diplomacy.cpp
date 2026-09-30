@@ -241,7 +241,10 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
             break;
         }
         case MessageType::DeclareWar: declareWar(ctx, m.from, m.to); break;
-        case MessageType::Surrender: surrender(ctx, m.from, m.to); break;
+        case MessageType::Surrender:
+            // With Allow Surrender off a Surrender message does nothing at all (spec 05 §7.4, confirmed: binary).
+            if (s.options.allowSurrender) surrender(ctx, m.from, m.to);
+            break;
         case MessageType::GrantIndependence: grantIndependence(ctx, m); break;
         default: break;
     }

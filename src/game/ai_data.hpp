@@ -210,18 +210,17 @@ struct VehicleQueue {
     std::vector<VehicleEntry> entries;
 };
 
-// `_AI_Construction_Units` rows (spec 05 §7.5; the stock install ships no
-// such file and the format is open). OpenSE4 reads records of `AI State`
-// (absent: every state), `Colony Type`, `Num Queue Entries` and `Entry N
-// Type` (a unit's AI design type) with `Entry N Amount` (units wanted in the
-// colony's cargo) (inferred).
+// `_AI_Construction_Units` rows (spec 05 §7.5 "Units file", confirmed:
+// binary; the stock install ships no such file). After the reserve record,
+// each record holds `Colony Type`, `Num Queue Entries`, `Entry N Type` (an AI
+// design type name) and `Entry N Maximum in kT` (above 65,000 reads as
+// 65,000). There is no `AI State` key: the rows apply in every state.
 struct UnitEntry {
     std::string type;
-    int amount = 0;
+    int maxKt = 0;
 };
 struct UnitQueue {
-    StateMask states = kAllStates;
-    std::string colonyType;            // "Homeworld" or a colony type
+    std::string colonyType;            // matched by containing the colony's type name
     std::vector<UnitEntry> entries;
 };
 
@@ -267,15 +266,18 @@ struct AiProfile {
     std::vector<DesignTemplate> designs;
     Speech speech;
     std::vector<ruleset::CombatStrategy> strategies;
-    int unitReservePercent = 0;           // `_AI_Construction_Units`: resources to reserve for units
-    std::vector<UnitQueue> units;         // `_AI_Construction_Units` rows
+    bool unitsFile = false;               // an `_AI_Construction_Units` file was found
+    int unitReservePercent = 0;           // its `Percentage of Resources To Reserve For Unit Construction`
+    std::vector<UnitQueue> units;         // its rows
     std::vector<std::string> sources;     // files read, for diagnostics ("built-in" when none)
 
     const DesignTemplate* design(std::string_view aiType) const;
     // The last table in the file whose states include `s` (no fallback row).
     const VehicleQueue* vehicleQueue(AiState s) const;
     const FacilityQueue* facilityQueue(AiState s, std::string_view queueType) const;
-    const UnitQueue* unitQueue(AiState s, std::string_view colonyType) const;  // as facilityQueue
+    // The last units record whose Colony Type text contains the colony's type
+    // name, ignoring case; nullptr for an empty name.
+    const UnitQueue* unitQueue(std::string_view colonyType) const;
 };
 
 // Built-in defaults: used when no install is present (tests, our own content).
