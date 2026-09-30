@@ -344,7 +344,9 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
 
     for (const Empire& x : s.empires) sit.contact = sit.contact || (x.id != id && x.alive && e.relation(x.id).contact);
 
-    // Colonization targets (spec 05 §7.5, confirmed: binary).
+    // Colonization targets (spec 05 §7.5, confirmed: binary): uncolonized
+    // planets in systems we know, plus hostile empires' colonies without
+    // population (a Colonize order at such a planet fails on arrival).
     const std::vector<uint8_t> present = presence(s);
     auto nonFriendlyPresent = [&](SystemId sys) {
         int n = 0;
@@ -376,7 +378,9 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         if (friendlyColony[i] && !ourColony[i]) continue;
         for (ObjectId o : s.galaxy.system(sys).objects) {
             const SpaceObject& planet = s.galaxy.object(o);
-            if (planet.kind != ObjectKind::Planet || s.colony(o) || targeted.contains(o)) continue;
+            if (planet.kind != ObjectKind::Planet || targeted.contains(o)) continue;
+            const Colony* taken = s.colony(o);
+            if (taken && (taken->owner == id || taken->totalPopulation() > 0 || !hostileTo(e, taken->owner))) continue;
             if (!notices(s, id, planetKey(o))) continue;
             if (danger[i] < 0) {
                 // 5 per non-friendly empire present here, 1 per warp point leading
@@ -394,6 +398,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             t.size = sizeRank(r, planet);
             t.value = int64_t{planet.value[0]} + planet.value[1] + planet.value[2];
             t.settleable = canSettle(r, s, e, planet);
+            t.colonized = taken != nullptr;
             sit.colonyTargets.push_back(t);
         }
     }
@@ -404,8 +409,8 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
 
     // The Not Connected test: the reachability counts the systems other than
     // home that home reaches over every link (spec 05 §7.2).
-    int settleable = 0;
-    for (const ColonyTarget& t : sit.colonyTargets) settleable += t.settleable;
+    int settleable = 0;  // uncolonized planets we could settle and have not targeted
+    for (const ColonyTarget& t : sit.colonyTargets) settleable += t.settleable && !t.colonized;
     int64_t reachable = 0;
     for (size_t i = 0; i < nSys; ++i) reachable += SystemId{i} != sit.home && sit.homeJumps[i] != kUnreachable;
     const int64_t others = static_cast<int64_t>(nSys) - (sit.home.valid() ? 1 : 0);

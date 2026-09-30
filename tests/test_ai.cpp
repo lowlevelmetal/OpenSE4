@@ -3090,6 +3090,30 @@ TEST_CASE("ai: colonization danger: any object seen or not, and one per warp poi
     }
 }
 
+TEST_CASE("ai: a hostile empire's colony without population is a colonization target") {
+    GameState s = computerGame(17, 2, 0, 12);
+    exploreEverything(s);
+    const Rules& r = engineRules();
+    const EmpireId me{0u}, enemy{1u};
+    researchEverything(r, s.empire(me));
+    const SystemId enemyHome = ai::detail::homeSystem(s, enemy);
+    const auto spare = freePlanetIn(s, enemyHome);
+    REQUIRE(spare);
+    addColony(s, *spare, enemy, {});  // no population
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    bool listed = false;
+    for (const ai::detail::ColonyTarget& t : p.sit.colonyTargets)
+        if (t.planet == *spare) {
+            listed = true;
+            CHECK(t.colonized);
+        }
+    CHECK(listed);
+    // A populated one, or one of an empire at Non-Aggression, is not.
+    s.colony(*spare)->population = {{enemy, 10}};
+    ai::detail::Planner q(r, s, me, ai::detail::Mode::Computer, 1);
+    for (const ai::detail::ColonyTarget& t : q.sit.colonyTargets) CHECK(t.planet != *spare);
+}
+
 TEST_CASE("ai: one-per-system facilities follow the fixed list") {
     TempTree t("onepersystem");
     t.write("Ai/Default_AI_Construction_Facilities.txt",

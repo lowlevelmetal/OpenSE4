@@ -100,6 +100,7 @@ struct ColonyTarget {
     int size = 0;
     int64_t value = 0;
     bool settleable = false;   // we have the colony module for its surface
+    bool colonized = false;    // a hostile empire's colony without population
 };
 
 struct Situation {

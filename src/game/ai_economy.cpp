@@ -267,7 +267,9 @@ void planUpgrades(Planner& p, const std::vector<ObjectId>& planets) {
             if (!latest || *latest == item.facility || p.r.facility(*latest).romanNumeral <= p.r.facility(item.facility).romanNumeral) continue;
             QueueItem newer = item;
             newer.facility = *latest;
-            if (p.emit(cmd::QueueRemove{target, static_cast<uint32_t>(i)})) p.emit(cmd::QueueAdd{target, newer, static_cast<int32_t>(i)});
+            // Should the newer version be refused, the old one goes back in its place.
+            if (p.emit(cmd::QueueRemove{target, static_cast<uint32_t>(i)}) && !p.emit(cmd::QueueAdd{target, newer, static_cast<int32_t>(i)}))
+                p.emit(cmd::QueueAdd{target, item, static_cast<int32_t>(i)});
         }
         c = p.st.colony(planet);
         std::vector<int> families;
