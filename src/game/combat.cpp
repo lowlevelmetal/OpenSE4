@@ -356,9 +356,9 @@ Strategy parseStrategy(const ruleset::CombatStrategy& src) {
         } else if (k.starts_with("breakformation")) {
             if (auto c = parseCategory(k.substr(14))) st.breakFormation[static_cast<size_t>(*c)] = flag(value, false);
         } else if (k == "fighterslaunchgroupamount") {
-            st.fighterLaunchGroup = std::max(1, number(value, st.fighterLaunchGroup));
+            st.fighterLaunchGroup = std::max(0, number(value, st.fighterLaunchGroup));   // 0: all in one group (spec 04 §10.4)
         } else if (k == "dronespertarget") {
-            st.dronesPerTarget = std::max(1, number(value, st.dronesPerTarget));
+            st.dronesPerTarget = std::max(0, number(value, st.dronesPerTarget));         // 0: all of them (spec 04 §10.7)
         } else if (k == "damagepercentpership") {
             st.damagePercentShip = number(value, st.damagePercentShip);
         } else if (k == "damagepercentperplanet") {
@@ -1366,6 +1366,17 @@ int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet,
     if (already.empty() || c->militia < 0) c->militia = militiaCount(loadSettings(r), c->population);
     return n;
 }
+
+std::string_view experienceLevel(int experience, int tenths) {
+    const int64_t value = int64_t{experience} * 10 + tenths;   // tenths of a point
+    if (value <= 50) return "Novice";
+    if (value <= 100) return "Experienced";
+    if (value <= 200) return "Veteran";
+    if (value <= 300) return "Elite";
+    return "Legendary";
+}
+
+std::string experienceLabel(int experience, int tenths) { return std::format("{} (+{}%)", experienceLevel(experience, tenths), experience); }
 
 int militiaCount(const CombatSettings& cs, int64_t populationMillions) {
     if (populationMillions <= 0) return 0;

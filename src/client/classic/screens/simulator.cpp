@@ -14,6 +14,7 @@
 #include "game/simulator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 namespace opense4::client::classic {
@@ -25,8 +26,10 @@ using game::combat::SimulatorItem;
 using game::combat::SimulatorSetup;
 using game::combat::SimulatorSide;
 
-constexpr size_t kMaxSides = 4;   // (inferred) the window's owner picker holds four virtual empires
-constexpr std::array<const char*, kMaxSides> kSideNames{"Blue", "Red", "Green", "Gold"};
+// Up to 10 virtual empires (confirmed: binary, spec 04 §17); the names are ours.
+constexpr size_t kMaxSides = size_t(game::combat::kSimulatorMaxSides);
+constexpr std::array<const char*, kMaxSides> kSideNames{"Side 1", "Side 2", "Side 3", "Side 4", "Side 5",
+                                                        "Side 6", "Side 7", "Side 8", "Side 9", "Side 10"};
 
 SimulatorSetup defaultSetup(game::EmpireId viewer) {
     SimulatorSetup s;
@@ -358,7 +361,7 @@ bool startDemoSimulation(UiContext& ui, bool tactical) {
     // A couple of turns in, played by the strategies, so there is something to see.
     TacticalFight* f = ui.session.tactical();
     for (int phase = 0; phase < 2 && f->battle->awaitingOrders(); ++phase)
-        f->battle->submit(game::combat::TacticalOrder{game::combat::TacticalOrder::Kind::Auto, f->battle->phaseEmpire()});
+        f->battle->submit(game::combat::TacticalOrder{game::combat::TacticalOrder::Kind::AutoPhase, f->battle->phaseEmpire()});
     f->seen = f->battle->record().events.size();
     return true;
 }

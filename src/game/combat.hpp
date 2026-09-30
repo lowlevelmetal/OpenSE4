@@ -215,10 +215,11 @@ struct Strategy {
     std::array<int, kTargetCategories> typePriority{};   // 1 = engage first
     std::array<bool, kTargetCategories> dontFireOn{};
     std::array<bool, kTargetCategories> breakFormation{};
-    int fighterLaunchGroup = 10;
+    int fighterLaunchGroup = 10;   // 0: all of a carrier's fighters in one group (spec 04 §10.4)
     // "Drones Per Target" (default 3): set in the strategies window and stored
     // with the game, not a DefaultStrategies.txt key (spec 04 §10.7). Read from
-    // the empire's strategy record when it holds that key.
+    // the empire's strategy record when it holds that key. The computer's drone
+    // launch batch and, times the hostile ships and bases, its limit; 0: all.
     int dronesPerTarget = 3;
     int damagePercentShip = 100;
     int damagePercentPlanet = 100;
@@ -276,6 +277,13 @@ bool isTroopDesign(const Rules& r, const GameState& s, DesignId d);
 // contested by another invader (spec 04 §13). The first landing gives the
 // colony its militia pool. Returns the number landed.
 int landTroops(const Rules& r, GameState& s, VehicleId carrier, ObjectId planet, DesignId design, int count);
+
+// The level name of crew or fleet experience (whole points and tenths), on one
+// scale (confirmed: binary, spec 04 §15): 5 or less Novice, up to 10
+// Experienced, up to 20 Veteran, up to 30 Elite, above 30 Legendary.
+std::string_view experienceLevel(int experience, int tenths = 0);
+// The label shown for it: the level name and the truncated experience as a to-hit bonus, "Veteran (+14%)".
+std::string experienceLabel(int experience, int tenths = 0);
 
 // Militia raised by one population group of `populationMillions` (spec 04 §13):
 // one per `Defending Units Per Population` million, truncated, no minimum.

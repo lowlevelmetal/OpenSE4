@@ -442,17 +442,23 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
 }
 
 void ClassicMode::drawBattleQuestion(UiContext& ui) {
+    // One question per battle, answered at the machine, for every human empire
+    // in it, hostile or not (spec 04 §3 step 1). When the player whose turn it
+    // is is a computer empire, a notice naming the system and the empires
+    // comes first.
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
-    if (battleChoiceKey_ != key || battleChoices_.size() != q.humans.size()) {
+    if (battleChoiceKey_ != key) {
         battleChoiceKey_ = key;
-        battleChoices_.assign(q.humans.size(), 1);
+        const game::EmpireId turn = game::activePlayer(s);
+        battleNotice_ = !s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() && s.empire(turn).kind != game::PlayerKind::Human;
     }
     std::string sides;
     for (size_t i = 0; i < q.participants.size(); ++i)
         sides += (i == 0 ? "" : i + 1 == q.participants.size() ? " and " : ", ") + s.empire(q.participants[i]).name;
-    const float h = 150.0f + (q.humans.size() > 1 ? 30.0f * float(q.humans.size()) : 0.0f);
+    const std::string system = q.where.system.index() < s.galaxy.systems.size() ? s.galaxy.system(q.where.system).name : std::string("?");
+    const float h = 150.0f;
     // A modal prompt: nothing else takes input until the battle is answered.
     constexpr const char* kPopup = "Combat##battlequestion";
     if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
@@ -463,8 +469,16 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
         ImGui::PopFont();
         return;
     }
+    if (battleNotice_) {
+        ImGui::TextWrapped("%s", std::format("Combat in the {} system between {}.", system, sides).c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) battleNotice_ = false;
+        ImGui::EndPopup();
+        ImGui::PopFont();
+        return;
+    }
     ImGui::TextWrapped("%s", std::format("Battle at {} between {}.", sectorName(s, q.where, session_->player()), sides).c_str());
-    ImGui::TextDisabled("Tactical: you give the orders. Strategic: the ships follow their strategies.");
+    ImGui::TextDisabled("Tactical: the players give the orders. Strategic: the ships follow their strategies.");
     ImGui::Spacing();
     auto fight = [&](std::vector<game::EmpireId> tactical) {
         ImGui::CloseCurrentPopup();
@@ -485,33 +499,9 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
         session_->startTactical(std::move(f));
         openScreen(ScreenId::TacticalCombat, {});
     };
-    if (q.humans.size() == 1) {
-        if (ImGui::Button("Tactical", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) fight(q.humans);
-        ImGui::SameLine();
-        if (ImGui::Button("Strategic", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) fight({});
-    } else {
-        // Hotseat: each human side chooses.
-        for (size_t i = 0; i < q.humans.size(); ++i) {
-            ImGui::PushID(int(i));
-            if (Sprite flag = art_->flag(s.empire(q.humans[i]).race.style, false)) {
-                image(ui, flag, {20, 14});
-                ImGui::SameLine();
-            }
-            ImGui::TextUnformatted(s.empire(q.humans[i]).name.c_str());
-            ImGui::SameLine(ui.px(200));
-            if (ImGui::RadioButton("Tactical", battleChoices_[i] == 1)) battleChoices_[i] = 1;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Strategic", battleChoices_[i] == 0)) battleChoices_[i] = 0;
-            ImGui::PopID();
-        }
-        ImGui::Spacing();
-        if (ImGui::Button("Begin", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
-            std::vector<game::EmpireId> tactical;
-            for (size_t i = 0; i < q.humans.size(); ++i)
-                if (battleChoices_[i]) tactical.push_back(q.humans[i]);
-            fight(std::move(tactical));
-        }
-    }
+    if (ImGui::Button("Tactical", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) fight(q.humans);
+    ImGui::SameLine();
+    if (ImGui::Button("Strategic", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) fight({});
     ImGui::EndPopup();
     ImGui::PopFont();
 }

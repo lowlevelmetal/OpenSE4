@@ -2272,7 +2272,13 @@ TEST_CASE("movement: cargo that no longer fits goes population first, then from 
     v.cargo.population = {{kA, 4}, {kB, 4}};  // 40 kT
     v.cargo.units = {{mine, 3}, {mine2, 3}};  // 60 kT
     v.damage[6] = 1000;                       // one bay gone: 50 kT left
+    // The owner's upkeep no longer cuts cargo: it is cut when the part is
+    // destroyed, at once (spec 04 §9.4), as hazards do (fitToCapacity).
+    const Cargo before = v.cargo;
     w.upkeep();
+    CHECK(w.v(hauler).cargo.units == before.units);
+    CHECK(w.v(hauler).cargo.population == before.population);
+    movement::fitToCapacity(r, w.s, w.v(hauler));
     // 50 kT over: 8M of people (40 kT), then one mine of the first stack.
     CHECK(w.v(hauler).cargo.population.empty());
     REQUIRE(w.v(hauler).cargo.units.size() == 2);
