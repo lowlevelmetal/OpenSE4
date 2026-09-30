@@ -58,6 +58,11 @@ void checkDestruction(TurnContext& ctx, EmpireId e);
 // Appends this turn's statistics to a living empire's history (spec 05 §5:
 // written at the start of the empire's end-of-turn processing).
 void recordStatistics(TurnContext& ctx, EmpireId e);
+// The victory tests' comparisons, in floating point (spec 05 §6, confirmed:
+// binary; xmath's extended precision): "X % of second place" is score >=
+// (X / 100) × other; "X % of tech" is levels >= maxLevels × X / 100.
+bool leadsBy(int64_t score, int64_t other, int percent);
+bool techShareMet(int64_t levels, int64_t maxLevels, int percent);
 // Whether the peace condition's pairs all hold: every two living empires have
 // contact and a treaty of Non-Aggression or better.
 bool galaxyAtPeace(const GameState& s);

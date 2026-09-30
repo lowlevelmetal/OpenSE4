@@ -8,6 +8,7 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
+#include "game/xmath.hpp"
 #include "game/turn.hpp"
 
 #include <doctest/doctest.h>
@@ -343,6 +344,26 @@ TEST_CASE("score: victory conditions end the game without naming a winner") {
         CHECK(s.gameOver);
         CHECK(s.peacefulTurns == 1);
     }
+}
+
+TEST_CASE("score: the victory comparisons are made in floating point") {
+    // score >= (X / 100) × other: X / 100 is rounded, so an exact tie can
+    // go either way, unlike an integer comparison (spec 05 §6).
+    int differs = 0;
+    for (int pct = 101; pct <= 400; ++pct) {
+        const bool fp = xmath::Ext(pct) >= xmath::percent(pct) * xmath::Ext(100);
+        CHECK(score::leadsBy(pct, 100, pct) == fp);
+        differs += fp ? 0 : 1;
+    }
+    CHECK(differs > 0);  // some exact ties fail in floating point
+    CHECK(score::leadsBy(301, 200, 150));
+    CHECK_FALSE(score::leadsBy(299, 200, 150));
+    CHECK(score::leadsBy(0, 0, 150));
+    // levels >= maxLevels × X / 100.
+    CHECK(score::techShareMet(15, 20, 75));
+    CHECK_FALSE(score::techShareMet(14, 20, 75));
+    CHECK(score::techShareMet(1, 3, 33));   // 0.99
+    CHECK_FALSE(score::techShareMet(0, 3, 33));
 }
 
 TEST_CASE("score: the turn pipeline keeps history and stops at game over") {

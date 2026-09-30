@@ -6,6 +6,7 @@
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
+#include "game/xmath.hpp"
 
 #include <algorithm>
 #include <format>
@@ -150,6 +151,12 @@ void recordStatistics(TurnContext& ctx, EmpireId e) {
     s.empire(e).history.push_back(std::move(t));
 }
 
+bool leadsBy(int64_t score, int64_t other, int percent) { return xmath::Ext(score) >= xmath::percent(percent) * xmath::Ext(other); }
+
+bool techShareMet(int64_t levels, int64_t maxLevels, int percent) {
+    return xmath::Ext(levels) >= xmath::Ext(maxLevels * percent) / xmath::Ext(100);
+}
+
 bool galaxyAtPeace(const GameState& s) {
     for (const Empire& a : s.empires)
         for (const Empire& b : s.empires)
@@ -181,19 +188,22 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
         scoreMet = std::any_of(scores.begin(), scores.end(), [&](const auto& row) { return row.second >= v.scoreValue; });
     if (v.years) yearsMet = now >= int64_t{v.yearsValue} * 10;
     if (v.percentOfSecond) {
-        // Some living empire has at least X % of every other living empire's
-        // score (exact integer comparison, inferred).
+        // Some living empire has score >= (X / 100) × the score of every other
+        // living empire, compared in floating point; with one living empire
+        // the test passes (confirmed: binary).
         for (const auto& [id, sc] : scores) {
             const bool leads = std::all_of(scores.begin(), scores.end(), [&](const auto& other) {
-                return other.first == id || sc * 100 >= int64_t{v.percentOfSecondValue} * other.second;
+                return other.first == id || leadsBy(sc, other.second, v.percentOfSecondValue);
             });
             if (leads) secondMet = true;
         }
     }
     if (v.techPercent)
+        // The capped level sum >= the sum of the maximum levels × X / 100, in
+        // floating point (confirmed: binary).
         for (const auto& [id, sc] : scores) {
             const Empire& e = s.empire(id);
-            if (int64_t{research::totalLevels(r, e)} * 100 >= int64_t{v.techPercentValue} * research::maxLevels(r, s, e)) techMet = true;
+            if (techShareMet(research::totalLevels(r, e), research::maxLevels(r, s, e), v.techPercentValue)) techMet = true;
         }
     if (v.peace) peaceMet = s.peacefulTurns >= static_cast<uint32_t>(std::max(0, v.peaceYears)) * 10;
 
