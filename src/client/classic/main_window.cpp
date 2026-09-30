@@ -13,6 +13,7 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <tuple>
 
 namespace opense4::client::classic {
 
@@ -142,6 +143,8 @@ void drawAt(UiContext& ui, ImDrawList* dl, const Sprite& s, Vec2 min, Vec2 size)
 }
 
 Vec2 sectorCenter(game::Sector s) { return geo.sectorOrigin + Vec2{kSectorSize * (float(s.x) + 0.5f), kSectorSize * (float(s.y) + 0.5f)}; }
+// A point on the system grid in sector units (ship_glides.hpp).
+Vec2 gridPoint(Vec2 cell) { return geo.sectorOrigin + cell * kSectorSize; }
 
 std::optional<game::Sector> sectorAt(Vec2 p) {
     if (!geo.systemBackground.contains(p)) return std::nullopt;
@@ -574,6 +577,7 @@ std::vector<MainWindow::OrderButton> MainWindow::availableOrders(UiContext& ui) 
 
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
+    trackMovement(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     // Selections can vanish when a turn is processed.
     if (vehicle_ && !ui.state().vehicle(*vehicle_)) clearSelection();
@@ -822,7 +826,7 @@ void MainWindow::overlayText(UiContext& ui) {
     // Ship counts in sectors with several visible vehicles.
     std::map<game::Sector, int> shipCounts;
     for (const game::Vehicle& v : s.vehicles)
-        if (v.location.system == shown_ && knownVehicle(ui, v)) ++shipCounts[v.location.sector];
+        if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id, ui.time)) ++shipCounts[v.location.sector];
     for (const auto& [sector, n] : shipCounts)
         if (n > 1) text(sectorCenter(sector) + Vec2{10, -22}, 11, IM_COL32(255, 230, 140, 255), std::to_string(n));
 
@@ -1002,6 +1006,7 @@ void MainWindow::hotkeys(UiContext& ui) {
 
 void MainWindow::render(gfx::Renderer2D& r, UiContext& ui) {
     layOut(ui.map.left, ui.map.right);
+    trackMovement(ui);
     r.rect(Rect{{geo.left, 0}, {geo.right, kFrameH}}, Color::hex(0x000000));
     drawSystem(r, ui);
     drawGalaxy(r, ui);
@@ -1072,6 +1077,18 @@ void MainWindow::drawFrame(gfx::Renderer2D& r, UiContext& ui) {
     }
 }
 
+// ---- Ship movement animation ---------------------------------------------------------------
+
+void MainWindow::trackMovement(UiContext& ui) {
+    // Once per frame: update() and render() both call this.
+    if (ui.time == trackedAt_) return;
+    trackedAt_ = ui.time;
+    std::vector<ShipGlides::Seen> visible;
+    for (const game::Vehicle& v : ui.state().vehicles)
+        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
+    glides_.track(ui.time, shown_, settings().animateShipMovement, visible);
+}
+
 void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     const game::GameState& s = ui.state();
     const game::Rules& rules = ui.rules();
@@ -1118,17 +1135,48 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     }
 
     // Vehicles: one sprite per sector (the largest hull), flags when several empires share it.
+    // A ship still gliding to its square is drawn on the way instead (trackMovement).
+    auto largestFirst = [&](std::vector<const game::Vehicle*>& list) {
+        std::sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
+            return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
+        });
+    };
+    // Where a ship sprite sits in a square, and its size: smaller and off-centre when
+    // the square also holds a planet or another object.
+    auto anchor = [&](Vec2 cell) {
+        const game::Sector sector{static_cast<int>(cell.x), static_cast<int>(cell.y)};
+        const bool hasObject = explored && sector.valid() && !objectsAt(ui, sector).empty();
+        return std::pair{hasObject ? cell + Vec2{-12, 12} / kSectorSize : cell, hasObject ? 24.0f : kSpriteSize};
+    };
+    const double now = ui.time;
     std::map<game::Sector, std::vector<const game::Vehicle*>> ships;
-    for (const game::Vehicle& v : s.vehicles)
-        if (v.location.system == shown_ && knownVehicle(ui, v)) ships[v.location.sector].push_back(&v);
+    std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
+    for (const game::Vehicle& v : s.vehicles) {
+        if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
+        if (const ShipGlides::Glide* g = glides_.find(v.id, now))
+            gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
+        else
+            ships[v.location.sector].push_back(&v);
+    }
+    for (auto& [key, list] : gliding) {
+        const ShipGlides::Glide& g = *glides_.find(list.front()->id, now);
+        // Offset and size follow the glide from the old square's look to the new one's.
+        const Vec2 p = ShipGlides::position(g, now);
+        const float e = distance(g.from, g.to) > 0.0f ? distance(g.from, p) / distance(g.from, g.to) : 1.0f;
+        const auto [fromAt, fromSize] = anchor(g.from);
+        const auto [toAt, toSize] = anchor(g.to);
+        const Vec2 at = gridPoint(p + lerp(fromAt - g.from, toAt - g.to, e));
+        const float size = fromSize + (toSize - fromSize) * e;
+        largestFirst(list);
+        if (!spriteAt(vehicleMini(ui, *list.front()), at, size))
+            r.triangle(at + Vec2{0, -9}, at + Vec2{-7, 7}, at + Vec2{7, 7}, colorOf(s.empire(list.front()->owner).color));
+    }
     for (auto& [sector, list] : ships) {
         const Vec2 c = sectorCenter(sector);
         const bool hasObject = explored && !objectsAt(ui, sector).empty();
         const Vec2 at = hasObject ? c + Vec2{-12, 12} : c;
         const float size = hasObject ? 24.0f : kSpriteSize;
-        std::sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
-            return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
-        });
+        largestFirst(list);
         bool multi = false;
         for (const game::Vehicle* v : list) multi = multi || v->owner != list.front()->owner;
         if (multi) {

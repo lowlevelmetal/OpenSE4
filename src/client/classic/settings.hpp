@@ -35,6 +35,7 @@ struct ClassicSettings {
     bool showMovementLines = true;
     bool showWaypointMarkers = true;
     bool showColonizationMarkers = true;
+    bool animateShipMovement = true;   // ships glide to their new square instead of jumping
 
     // Sound and music (docs/spec/06 §5.5).
     bool soundOn = true;

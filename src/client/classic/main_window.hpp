@@ -5,6 +5,7 @@
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
 #include "client/classic/reports.hpp"
+#include "client/classic/ship_glides.hpp"
 #include "client/classic/ui.hpp"
 #include "gfx/renderer2d.hpp"
 
@@ -67,6 +68,9 @@ private:
     void drawFrame(gfx::Renderer2D& r, UiContext& ui);
     void drawGalaxy(gfx::Renderer2D& r, UiContext& ui);
 
+    // Ship movement animation (ship_glides.hpp), updated once per frame.
+    void trackMovement(UiContext& ui);
+
     game::SystemId shown_;
     std::optional<game::Sector> sector_;
     std::optional<game::ObjectId> object_;
@@ -82,6 +86,9 @@ private:
     std::function<void(game::Location)> pickCallback_;
     game::DesignId pickDesign_;
     std::optional<game::Sector> hover_;
+
+    ShipGlides glides_;
+    double trackedAt_ = -1.0;
 };
 
 } // namespace opense4::client::classic

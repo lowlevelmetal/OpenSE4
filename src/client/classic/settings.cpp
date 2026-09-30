@@ -21,7 +21,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 18> kBoolOptions{{
+constexpr std::array<BoolOption, 19> kBoolOptions{{
     {"General", "show_log_at_turn_start", "Open the log when a turn starts", &S::showLogAtTurnStart},
     {"General", "confirm_end_turn", "Ask before ending the turn", &S::confirmEndTurn},
     {"General", "confirm_scrap", "Ask before scrapping", &S::confirmScrap},
@@ -37,6 +37,7 @@ constexpr std::array<BoolOption, 18> kBoolOptions{{
     {"System Display", "show_movement_lines", "Show movement lines", &S::showMovementLines},
     {"System Display", "show_waypoint_markers", "Show waypoint markers", &S::showWaypointMarkers},
     {"System Display", "show_colonization_markers", "Show colonization markers on planets", &S::showColonizationMarkers},
+    {"System Display", "animate_ship_movement", "Animate ship movement", &S::animateShipMovement},
     {"Sound", "sound_on", "Play sound effects", &S::soundOn},
     {"Sound", "music_on", "Play music", &S::musicOn},
     {"Sound", "remastered_sounds", "Use the remastered sound set when the game has it", &S::remasteredSounds},
