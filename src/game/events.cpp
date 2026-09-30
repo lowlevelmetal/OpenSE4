@@ -191,8 +191,9 @@ void applySectorType(const Rules& r, SpaceObject& obj, uint32_t index) {
 // Removes a colony (the planet becomes uncolonized) with the owner's mood events.
 void destroyVehicle(TurnContext& ctx, Vehicle& v) {
     if (v.count <= 0) return;
+    for (const UnitStack& st : groupStacks(v)) ctx.state.design(st.design).lost += st.count;   // every unit of a group
     v.count = 0;
-    ++ctx.state.design(v.design).lost;
+    v.mixed.clear();
     ctx.mood(v.owner, "Any Ship Lost");
     ctx.mood(v.owner, "Ship Lost in System", v.location.system);
 }
@@ -723,6 +724,8 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
 // ---- Damage helpers ------------------------------------------------------------------------------------
 
 int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng) {
+    // A unit group loses whole units (movement::damageUnitGroup records them).
+    if (isUnitType(vehicleType(r, s, v))) return movement::damageUnitGroup(r, s, v, amount, rng);
     const Design& d = s.design(v.design);
     if (v.damage.size() < d.entries.size()) v.damage.resize(d.entries.size(), 0);
     int64_t left = std::max<int64_t>(0, amount);
