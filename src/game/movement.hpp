@@ -233,7 +233,12 @@ int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner);
 // Applies `amount` normal damage outside combat (no shields): armor first, then
 // other components, picked at random. Unit groups take it once for all
 // members. Returns true when the vehicle was destroyed (count set to 0).
+// A survivor's supply and cargo are cut back at once (fitToCapacity).
 bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount);
+// After damage: supply clamped to the capacity that is left (spec 03 §7) and
+// cargo that no longer fits removed (§11). Unlimited supply is left alone
+// (a vehicle that lost its reactor drops back when it next moves).
+void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v);
 
 // Places a newly built vehicle (economy uses it); applies the queue's
 // automatic Move To waypoint.

@@ -86,14 +86,16 @@ std::optional<std::string> Settings::text(std::string_view key) const {
     return it->second;
 }
 
+// integer() and boolean() run in the engine's inner loops: they parse the
+// stored text in place instead of copying it.
 int64_t Settings::integer(std::string_view key, int64_t fallback) const {
-    if (auto v = text(key)) return datafile::parseInteger(*v).value_or(fallback);
-    return fallback;
+    const auto it = values_.find(normalize(key));
+    return it == values_.end() ? fallback : datafile::parseInteger(it->second).value_or(fallback);
 }
 
 bool Settings::boolean(std::string_view key, bool fallback) const {
-    if (auto v = text(key)) return datafile::parseBoolean(*v).value_or(fallback);
-    return fallback;
+    const auto it = values_.find(normalize(key));
+    return it == values_.end() ? fallback : datafile::parseBoolean(it->second).value_or(fallback);
 }
 
 std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem::path& hint) {

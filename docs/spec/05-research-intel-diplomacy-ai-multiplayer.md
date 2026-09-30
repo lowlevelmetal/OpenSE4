@@ -2172,3 +2172,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
     How does the original handle a player who does not pass the save file on, and does it
     check that the file a player loads is the latest one?
+34. **Transports and mixed races** (§7.5). A Load Cargo order names no race, so a
+    transport takes every race the source planet can spare, the owner's first. The
+    minister then checks only the first carried race against the destination, and the
+    drop can bring a race that cannot breathe there, which domes the colony (seen in a
+    long all-computer game: a Huge homeworld fell from 25 to 5 facility slots). The
+    original minister loads "a race": does its load take one race only, or check every
+    carried race at the destination?
+35. **Colony ships whose target is gone** (§7.5). When a planet becomes an asteroid field
+    (a destroyed star) while colony ships fly to it, OpenSE4's Colonization minister leaves
+    them on their way; the Colonize order fails on arrival and the ship is then planned
+    again. Does the original re-target them at once? (inferred: OpenSE4 does not)

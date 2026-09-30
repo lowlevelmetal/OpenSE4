@@ -1331,3 +1331,8 @@ remaining guesses; each is marked "(inferred)" in the code.
 47. **Bonus above High.** A computer bonus setting above High counts as High.
 48. **Turn number.** "Every 10th turn" and `Reproduction Check Frequency` test the turn
     number after the date has advanced (spec 05 §8): the first processed turn is turn 1.
+49. **Cargo and facilities over capacity.** Troops that take a planet keep their
+    survivors in its cargo even beyond its cargo space (spec 04 §11: all troops are
+    dropped), and a colony that becomes domed keeps facilities and cargo above the smaller
+    capacities (§2). The engine leaves such a surplus in place and only blocks new
+    additions. Does the original remove it, and when?

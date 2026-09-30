@@ -177,12 +177,11 @@ int characteristicPointCost(const Rules& r, Characteristic c, int value) {
 // ---- Modifier tables -------------------------------------------------------------------------------
 
 PopulationModifier populationModifier(const Rules& r, int64_t population) {
-    const int64_t rows = r.setting("Number Of Population Modifiers", 0);
-    for (int64_t row = 1; row <= rows; ++row) {
-        if (r.setting(std::format("Pop Modifier {} Population Amount", row), 0) < population) continue;
+    for (const Rules::PopulationRow& row : r.populationRows()) {
+        if (row.amount < population) continue;
         PopulationModifier m;
-        m.production = static_cast<int>(r.setting(std::format("Pop Modifier {} Production Modifier Percent", row), 100));
-        m.shipyard = static_cast<int>(r.setting(std::format("Pop Modifier {} SY Rate Modifier Percent", row), 100));
+        m.production = row.production;
+        m.shipyard = row.shipyard;
         return m;
     }
     return {};  // no row is large enough: 100 % (confirmed: binary)

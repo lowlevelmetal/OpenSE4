@@ -745,6 +745,8 @@ int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, 
         if (intact.empty()) break;
         hit(intact[rng.below(intact.size())]);
     }
+    // Storage lost to the damage takes supply and cargo with it (spec 03 §7, §11).
+    if (applied > 0 && !vehicleDestroyed(r, s, v)) movement::fitToCapacity(r, s, v);
     return applied;
 }
 

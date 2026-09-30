@@ -410,6 +410,7 @@ public:
                 const Design& d = s_.design(after->design);
                 if (after->damage.size() < d.entries.size()) after->damage.resize(d.entries.size(), 0);
                 after->damage[actor_.entry] = entryStructure(r_, d, actor_.entry);
+                fitToCapacity(r_, s_, *after);  // storage the device held goes with it (spec 03 §7, §11)
             }
         }
         return {};

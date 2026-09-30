@@ -38,9 +38,14 @@ void checkInvariants(const Rules& r, const GameState& s) {
         CHECK(v.location.sector.valid());
         CHECK(v.damage.size() == s.design(v.design).entries.size());
         CHECK(v.supply >= 0);
-        // Unlimited supply (bases, quantum reactors) is held at its marker (spec 03 §7).
+        // Unlimited supply (bases, quantum reactors) is held at its marker; other
+        // supply never exceeds what the vehicle can hold now, damage included
+        // (spec 03 §7). A ship that just lost its reactor keeps the marker until
+        // it next moves.
         if (vehicleHasUnlimitedSupply(r, s, v)) CHECK(v.supply == kUnlimitedSupply);
-        else CHECK(v.supply <= std::max<int64_t>(vehicleSupplyCapacity(r, s, v), computeDesignStats(r, nullptr, s.design(v.design)).supplyCapacity));
+        else if (v.supply != kUnlimitedSupply) CHECK(v.supply <= vehicleSupplyCapacity(r, s, v));
+        // Cargo that no longer fits is lost at once (spec 03 §11).
+        CHECK(cargoSpaceUsed(r, s, v.cargo) <= vehicleCargoCapacity(r, s, v));
         if (v.fleet.valid()) {
             const Fleet* f = s.fleet(v.fleet);
             REQUIRE(f);
@@ -146,6 +151,11 @@ TEST_CASE("integration: installed data set plays 60 turns (opt-in)") {
     GameSetup setup;
     setup.seed = 77;
     setup.options.systemCount = 30;
+    // Frequent events of any severity and finite resources: events strike
+    // after the empires' own upkeep (spec 05 §8), which the checks cover.
+    setup.options.eventFrequency = 3;
+    setup.options.maxEventSeverity = 3;
+    setup.options.finiteResources = true;
     for (size_t i = 0; i < 5; ++i) {
         EmpireSetup e;
         e.preset = r.racePresets()[i * 2 % r.racePresets().size()].folder;
@@ -158,6 +168,13 @@ TEST_CASE("integration: installed data set plays 60 turns (opt-in)") {
     for (int t = 0; t < 60 && !s.gameOver; ++t) {
         processTurn(r, s, {});
         checkInvariants(r, s);
+        CHECK(validateState(s, &r).empty());
+        if (t % 20 == 19) {  // save and load give back the same bytes
+            const std::vector<uint8_t> bytes = serializeState(s);
+            auto back = deserializeState(bytes);
+            REQUIRE(back.has_value());
+            CHECK(serializeState(*back) == bytes);
+        }
     }
     int colonies = 0;
     for (const auto& c : s.colonies) colonies += c.has_value();

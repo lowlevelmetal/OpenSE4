@@ -20,7 +20,8 @@ outcomes, **L** is an edge case.
 
 Every row of this section was implemented on 2026-09-29. The economy's end-of-turn work is
 one function per step of spec 02 §12 (`economy.hpp`), run inside each empire's end-of-turn
-processing (`turn.cpp`, spec 05 §8); open engine choices are spec 02 §13 items 37–48. Conditions are hundredths of the 0–1.5 scale
+processing (`turn.cpp`, spec 05 §8); open engine choices are spec 02 §13 items 37–49
+(49: a captured or newly domed colony may keep cargo and facilities above its capacity). Conditions are hundredths of the 0–1.5 scale
 everywhere (generation, events, combat, stellar manipulation), and setup's racial point
 cost sums `economy::characteristicPointCost`.
 
@@ -64,4 +65,5 @@ gap is left in this section.
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
+| Low | A population transport loads every race the source can spare (Load Cargo names no race) but checks only the first against the destination, so a drop can dome a colony; colony ships keep flying to a planet that became an asteroid field and fail on arrival | Open: spec 05 open questions 34 and 35 | L |
 | Low | Of the four AI_Settings movement flags only the clear-orders pair is copied (into `Empire::clearOrdersOnEncounter`, which movement reads); empires have no minefield or avoided-system option, and routes always go around both. The empire setup (`EmpireSetup`, `setup.cpp`) has no minister style or "Use Race Minister Style", so every empire starts without a style; only the Ministers window sets one | The four flags become the computer empire's own movement options each turn (§7.5, spec 03 §6.2, §6.4). A style chosen at setup also applies to an empire marked Computer Controlled, unless it uses its race's style (§7.1, spec 02 §9) | L |

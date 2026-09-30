@@ -1832,10 +1832,12 @@ void Battle::pdReact(int mover) {
     // Point-defense fires outside the budget, once per reload cycle, at categories in its set (confirmed: binary).
     auto shootPd = [&](int j, int target) {
         for (size_t wi = 0; wi < pieces_[j].weapons.size(); ++wi) {
+            // Other weapons never react (checked first: the supply test below is costly).
+            if (pieces_[j].weapons[wi].kind() != WeaponKind::PointDefense) continue;
             for (size_t k = 0;; ++k) {
                 if (!combatant(target) || !combatant(j) || !hasSupply(j)) return;
                 const Weapon& w = pieces_[j].weapons[wi];
-                if (w.kind() != WeaponKind::PointDefense || k >= static_cast<size_t>(instances(j, w))) break;
+                if (k >= static_cast<size_t>(instances(j, w))) break;
                 if (w.reload[k] > 0) continue;
                 if (!(w.targets & maskOf(target)) || weaponDamage(r_, w.de, dist(j, target)) <= 0 || !canAffect(w.type, target, j)) break;
                 shoot(j, wi, k, target);

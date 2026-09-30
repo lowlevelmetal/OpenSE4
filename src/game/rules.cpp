@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
+#include <format>
 
 namespace opense4::game {
 
@@ -12,6 +13,13 @@ Rules::Rules(ruleset::Ruleset data, std::filesystem::path gameRoot) : data_(std:
     for (const auto& h : data_.vehicleSizes) hulls_.push_back(parseAbilities(h.abilities));
     for (const auto& t : data_.systemTypes) systemTypes_.push_back(parseAbilities(t.abilities));
     if (!gameRoot_.empty()) races_ = ruleset::loadRacePresets(gameRoot_);
+    // Rows past the ones the file lists read as amount 0 at 100 %; a sane
+    // bound keeps a broken row count from filling memory.
+    const int64_t rows = std::min<int64_t>(setting("Number Of Population Modifiers", 0), 10'000);
+    for (int64_t row = 1; row <= rows; ++row)
+        populationRows_.push_back({setting(std::format("Pop Modifier {} Population Amount", row), 0),
+                                   static_cast<int>(setting(std::format("Pop Modifier {} Production Modifier Percent", row), 100)),
+                                   static_cast<int>(setting(std::format("Pop Modifier {} SY Rate Modifier Percent", row), 100))});
 }
 
 bool Rules::meets(const Empire& e, std::span<const ruleset::TechRequirement> reqs) const {

@@ -1500,3 +1500,10 @@ All rules in this section are (confirmed: binary).
     (inferred)
 56. **Fighter recovery in turn-based games (§12):** "full movement points" is read as the
     group's movement left being at least its maximum for the turn. (inferred)
+57. **Damage between upkeep steps:** supply and cargo are cut back to the capacity that is
+    left as soon as damage outside combat wrecks storage (events, sabotage, hazards, in
+    turn-based moves too, and a storage part used up by its own device), since
+    these strike after the owner's end-of-turn upkeep; after combat the owner's upkeep does
+    it later in the same turn (§7, §11). A `Ship - Lose Supply` on a vehicle with unlimited
+    supply takes from the marker value, which returns at the owner's next upkeep; it never
+    shows, since such a vehicle reads "Endless". (inferred)

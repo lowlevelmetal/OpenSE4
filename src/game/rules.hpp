@@ -44,6 +44,15 @@ public:
     int64_t setting(std::string_view key, int64_t fallback) const { return data_.settings.integer(key, fallback); }
     bool settingFlag(std::string_view key, bool fallback) const { return data_.settings.boolean(key, fallback); }
 
+    // The Settings population rows (spec 02 §5.2) in file order, read once:
+    // `Pop Modifier N Population Amount`, production and SY rate percent.
+    struct PopulationRow {
+        int64_t amount = 0;
+        int production = 100;
+        int shipyard = 100;
+    };
+    std::span<const PopulationRow> populationRows() const { return populationRows_; }
+
     // Technology gates.
     bool meets(const Empire& e, std::span<const ruleset::TechRequirement> reqs) const;
     bool componentAvailable(const Empire& e, uint32_t c) const { return meets(e, data_.components[c].requirements); }
@@ -76,6 +85,7 @@ private:
     std::filesystem::path gameRoot_;
     std::vector<ruleset::RacePreset> races_;
     std::vector<std::vector<ParsedAbility>> components_, facilities_, hulls_, systemTypes_;
+    std::vector<PopulationRow> populationRows_;
 };
 
 } // namespace opense4::game

@@ -571,6 +571,7 @@ int useComponent(TurnContext& ctx, VehicleId id, int entry) {
     if (hasAbility(abilities, AbilityKind::ComponentDestroyedOnUse)) {
         if (v->damage.size() < d.entries.size()) v->damage.resize(d.entries.size(), 0);
         v->damage[e] = entryStructure(r, d, e);
+        fitToCapacity(r, s, *v);  // storage the part held goes with it (§7, §11)
     }
     if (resupply > 0 && !vehicleHasUnlimitedSupply(r, s, *v))
         v->supply = std::max(v->supply, std::min(v->supply + resupply, vehicleSupplyCapacity(r, s, *v)));
@@ -707,9 +708,18 @@ bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount) {
             left -= take;
         }
     }
-    if (!vehicleDestroyed(r, s, v)) return false;
+    if (!vehicleDestroyed(r, s, v)) {
+        fitToCapacity(r, s, v);
+        return false;
+    }
     v.count = 0;
     return true;
+}
+
+void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {
+    if (v.supply != kUnlimitedSupply && vehicleUsesSupply(r, s, v) && !vehicleHasUnlimitedSupply(r, s, v))
+        v.supply = std::clamp<int64_t>(v.supply, 0, vehicleSupplyCapacity(r, s, v));
+    detail::trimCargo(r, s, v);
 }
 
 Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId design, Location where, int autoWaypoint) {

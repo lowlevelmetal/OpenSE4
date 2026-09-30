@@ -495,6 +495,38 @@ TEST_CASE("events: ship effects") {
     CHECK(s.vehicle(id) == nullptr);
 }
 
+TEST_CASE("events: a damaged ship keeps only the supply and cargo it still has room for") {
+    // Storage destroyed outside combat (events and sabotage strike after the
+    // owner's end of turn) takes supply and cargo with it at once (spec 03 §7, §11).
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    const Location home = locationOf(s.galaxy, homeworld(s, kA).planet);
+    const DesignId hauler = addTestDesign(s, r, kA, "Hauler", "Test Frigate",
+                                          {"Test Bridge", "Test Supply Pod", "Test Supply Pod", "Test Cargo Bay", "Test Cargo Bay"});
+    const VehicleId id = addTestVehicle(s, r, hauler, home).id;
+    auto intact = [&](size_t a, size_t b) { return int{entryIntact(r, s, *s.vehicle(id), a)} + int{entryIntact(r, s, *s.vehicle(id), b)}; };
+    const int64_t mass = r.setting("Population Mass", 5);
+    {
+        Vehicle& v = *s.vehicle(id);
+        v.damage[0] = entryStructure(r, s.design(hauler), 0);  // only the storage is left to hit
+        v.supply = vehicleSupplyCapacity(r, s, v);
+        v.cargo.population = {{kA, vehicleCargoCapacity(r, s, v) / mass}};
+    }
+    const int64_t fullSupply = s.vehicle(id)->supply;
+    const int64_t fullCargo = s.vehicle(id)->cargo.totalPopulation();
+    // Each 10-point hit wrecks one pod or bay; stop once one of each is gone.
+    for (uint64_t seed = 1; (intact(1, 2) == 2 || intact(3, 4) == 2) && seed < 10; ++seed) hit(s, Effect::ShipDamage, onShip(kA, id), 10, seed);
+    const Vehicle& v = *s.vehicle(id);
+    REQUIRE(v.count > 0);
+    REQUIRE(intact(1, 2) < 2);
+    REQUIRE(intact(3, 4) < 2);
+    CHECK(v.supply == vehicleSupplyCapacity(r, s, v));
+    CHECK(v.supply < fullSupply);
+    CHECK(cargoSpaceUsed(r, s, v.cargo) <= vehicleCargoCapacity(r, s, v));
+    CHECK(v.cargo.totalPopulation() == vehicleCargoCapacity(r, s, v) / mass);
+    CHECK(v.cargo.totalPopulation() < fullCargo);
+}
+
 TEST_CASE("events: planet effects") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
