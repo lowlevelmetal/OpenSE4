@@ -140,7 +140,7 @@ namespace {
 constexpr const char* kMainParts = "Pictures/Game/Dialogs/MainParts.bmp";
 
 // Lines in whole framebuffer pixels (at least one) so rails stay crisp when scaled.
-float lineWidth(const UiContext& ui) { return std::max(1.0f, std::floor(ui.map.scale)) / ui.fbScale; }
+float lineWidth(const Painter& ui) { return std::max(1.0f, std::floor(ui.map.scale)) / ui.fbScale; }
 
 void frameRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 c, float w) { dl->AddRect(a, b, c, 0.0f, w); }
 
@@ -152,7 +152,7 @@ const char* labelEnd(const char* label) {
 
 } // namespace
 
-bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int style, bool on, bool enabled) {
+bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int style, bool on, bool enabled) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 size = ui.size(frameSize);
     const ImVec2 b{a.x + size.x, a.y + size.y};
@@ -210,7 +210,7 @@ bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int style, 
     return clicked && enabled;
 }
 
-void emptySlot(UiContext& ui, Vec2 frameSize) {
+void emptySlot(const Painter& ui, Vec2 frameSize) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 size = ui.size(frameSize);
     const float lw = lineWidth(ui), h = lw * 0.5f;
@@ -218,7 +218,7 @@ void emptySlot(UiContext& ui, Vec2 frameSize) {
     ImGui::Dummy(size);
 }
 
-void drawWindowFrame(UiContext& ui, ImDrawList* dl, const Rect& r, const char* title, float buttonColumn) {
+void drawWindowFrame(const Painter& ui, ImDrawList* dl, const Rect& r, const char* title, float buttonColumn) {
     const float lw = lineWidth(ui), h = lw * 0.5f;
     const float w = r.size().x, ht = r.size().y;
     auto P = [&](float x, float y) { return ui.at(r.min + Vec2{x, y}); };
@@ -227,6 +227,12 @@ void drawWindowFrame(UiContext& ui, ImDrawList* dl, const Rect& r, const char* t
         frameRect(dl, {a.x + h, a.y + h}, {b.x - h, b.y - h}, imColor(c), lw);
     };
     dl->AddRectFilled(P(0, 0), P(w, ht), IM_COL32_BLACK);
+    if (!title && buttonColumn <= 0) {
+        // Menus without a title (the Game Menu) have a plain double box.
+        box(0, 0, w, ht, palette::kFrame);
+        box(3, 3, w - 3, ht - 3, palette::kFrameLight);
+        return;
+    }
 
     // Side pipes from the frame parts sheet: a top cap, a straight run, a bottom cap; the right side mirrored.
     auto piece = [&](float sx, float sy, float sw, float sh, float x, float y, float dh, bool mirror) {
@@ -246,13 +252,14 @@ void drawWindowFrame(UiContext& ui, ImDrawList* dl, const Rect& r, const char* t
     const ImU32 rail = imColor(palette::kFrameLight);
     dl->AddLine(P(12, 1), P(w - 12, 1), rail, lw);
     dl->AddLine(P(12, ht - 2), P(w - 12, ht - 2), rail, lw);
-    box(10, 4, w - 10, 31, palette::kFrame);
+    const float top = title ? 31.0f : 4.0f;
+    if (title) box(10, 4, w - 10, 31, palette::kFrame);
     if (buttonColumn > 0) {
         const float split = w - 15 - buttonColumn - 8;
-        box(10, 31, split - 3, ht - 4, palette::kFrame);
-        box(split + 2, 31, w - 10, ht - 4, palette::kFrame);
+        box(10, top, split - 3, ht - 4, palette::kFrame);
+        box(split + 2, top, w - 10, ht - 4, palette::kFrame);
     } else {
-        box(10, 31, w - 10, ht - 4, palette::kFrame);
+        box(10, top, w - 10, ht - 4, palette::kFrame);
     }
     if (title && *title) {
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
@@ -291,7 +298,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
                                                 ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     if (visible_) {
-        drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
+        drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     }
 }
@@ -299,6 +306,17 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
 Dialog::~Dialog() {
     endChild();
     ImGui::End();
+}
+
+void Dialog::titleText(float x, ImU32 color, std::string_view text) {
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ui_.at(rect_.min + Vec2{x, 12}), color, text.data(),
+                                        text.data() + text.size());
+}
+
+void Dialog::titleIcon(float x, const Sprite& icon) {
+    if (!icon) return;
+    ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), ui_.at(rect_.min + Vec2{x, 9}),
+                                         ui_.at(rect_.min + Vec2{x + 16, 25}), {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
 }
 
 void Dialog::endChild() {
@@ -353,7 +371,7 @@ bool Dialog::check(const char* label, bool on, bool enabled) { return slot(label
 void Dialog::spacer() {
     ImGui::SetCursorPos(ImVec2(0, ui_.px(float(nextSlot_) * pitch_)));
     ++nextSlot_;
-    emptySlot(ui_, {buttonColumn_, buttonH_});
+    emptySlot(ui_.painter(), {buttonColumn_, buttonH_});
 }
 
 bool Dialog::close() {

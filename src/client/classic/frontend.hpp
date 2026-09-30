@@ -40,6 +40,7 @@ struct MenuContext {
     }
     ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
     float px(float v) const { return v * k(); }
+    Painter painter() const;
 };
 
 class FrontScreen {

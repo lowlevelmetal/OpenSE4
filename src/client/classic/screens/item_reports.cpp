@@ -71,15 +71,18 @@ void section(UiContext& ui, const char* text) {
 // Picture on the left, then a group for the headline rows; call ImGui::EndGroup() after.
 void beginHeader(UiContext& ui, const Sprite& picture, DetailStyle st) {
     const float s = pictureSize(st);
+    // Beside the picture only when the rows still have room; narrow panels (the
+    // classic 780-pixel windows) put them below it.
+    const bool beside = ImGui::GetContentRegionAvail().x / ui.k() - s - 10 >= valueColumn(st) + 120;
     if (picture) {
         image(ui, picture, {s, s});
-        ImGui::SameLine(0, ui.px(10));
+        if (beside) ImGui::SameLine(0, ui.px(10));
     } else if (st != DetailStyle::Compact) {
         // Keep the layout even when the install lacks a picture.
         const ImVec2 p = ImGui::GetCursorScreenPos();
-        ImGui::GetWindowDrawList()->AddRect(p, ImVec2(p.x + ui.px(s), p.y + ui.px(s)), IM_COL32(44, 79, 158, 255));
+        ImGui::GetWindowDrawList()->AddRect(p, ImVec2(p.x + ui.px(s), p.y + ui.px(s)), imColor(palette::kFrame));
         ImGui::Dummy(ui.size({s, s}));
-        ImGui::SameLine(0, ui.px(10));
+        if (beside) ImGui::SameLine(0, ui.px(10));
     }
     ImGui::BeginGroup();
 }

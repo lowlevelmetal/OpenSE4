@@ -1,6 +1,7 @@
 // Game Menu (F2) and the save-file windows: Save Game, Load Game and
 // Delete Game (docs/spec/06 §1.1-§1.2).
 
+#include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
 
@@ -84,52 +85,54 @@ bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
 class GameMenuScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
-        // A narrow column of buttons in the middle of the frame.
-        const Vec2 size{230, 372};
+        // The original's 173×320 menu (here one row taller for Settings): a
+        // column of 150×26 buttons, one every 30 px, in the pipe frame.
+        const Vec2 size{173, 350};
         const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
-        ImGui::PushFont(ui.fonts.regular, ui.fontPx(kTextSize));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         bool keep = true;
-        if (ImGui::Begin("Game Menu", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar)) {
+        const bool open = ImGui::Begin("Game Menu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+        ImGui::PopStyleVar(2);
+        if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
-            const ImVec2 b(-FLT_MIN, ui.px(30));
-            auto gap = [&] { ImGui::Dummy(ImVec2(0, ui.px(2))); };
-            if (ImGui::Button("New", b)) ImGui::OpenPopup("New Game");
-            gap();
-            if (ImGui::Button("Load", b)) {
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
+            int row = 0;
+            auto button = [&](const char* label, bool enabled = true) {
+                ImGui::SetCursorPos(ImVec2(ui.px(12), ui.px(12 + 30 * float(row++))));
+                const bool clicked = classicButton(ui, label, {149, 26}, 0, false, enabled);
+                if (clicked) audio().play("button");
+                return clicked;
+            };
+            if (button("New")) ImGui::OpenPopup("New Game");
+            if (button("Load")) {
                 ui.open(ScreenId::LoadGame);
                 keep = false;
             }
-            gap();
-            if (ImGui::Button("Save Game", b)) {
+            if (button("Save Game")) {
                 ui.open(ScreenId::SaveGame);
                 keep = false;
             }
-            gap();
-            if (ImGui::Button("Players", b)) ImGui::OpenPopup("Player Computer Control");
-            gap();
-            if (ImGui::Button("Options", b)) {
+            button("Save Map", false);
+            button("Save Empire", false);
+            if (button("Players")) ImGui::OpenPopup("Player Computer Control");
+            if (button("Options")) {
                 ui.open(ScreenId::EmpireOptions);
                 keep = false;
             }
-            gap();
-            if (ImGui::Button("Settings", b)) {
+            if (button("Settings")) {
                 ui.open(ScreenId::Settings);
                 keep = false;
             }
-            gap();
-            if (ImGui::Button("Delete Game", b)) {
+            if (button("Delete Game")) {
                 ui.open(ScreenId::LoadGame, ScreenArgs{.index = 1});
                 keep = false;
             }
-            gap();
-            if (ImGui::Button("Quit", b)) ImGui::OpenPopup("Quit Game");
-            const float h = ui.px(30);
-            const float y = ImGui::GetWindowHeight() - h - ImGui::GetStyle().WindowPadding.y;
-            if (ImGui::GetCursorPosY() < y) ImGui::SetCursorPosY(y);
-            if (ImGui::Button("Close", b)) keep = false;
+            if (button("Quit")) ImGui::OpenPopup("Quit Game");
+            if (button("Close")) keep = false;
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                 !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
                 keep = false;
@@ -140,7 +143,6 @@ public:
             playersPopup(ui);
         }
         ImGui::End();
-        ImGui::PopFont();
         return keep;
     }
 

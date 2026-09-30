@@ -61,22 +61,37 @@ public:
         if (!d.open()) return d.keepOpen();
         const game::Empire& e = ui.me();
 
+        // The original's layout: points in the title strip, the full-width list of
+        // areas, then the current projects in four boxes side by side.
+        d.titleText(170, ImGui::GetColorU32(kTextBlue), "Research Points Available:");
+        const std::string points = std::to_string(e.economy.research);
+        d.titleText(356, IM_COL32_WHITE, points);
+        d.titleIcon(360 + ImGui::CalcTextSize(points.c_str()).x / ui.k(), ui.art.icon16(Icon::Research));
         d.beginContent();
-        header(ui);
-        const float bottom = ui.px(112);
-        const float listH = ImGui::GetContentRegionAvail().y - bottom - ImGui::GetStyle().ItemSpacing.y;
-        const float leftW = ImGui::GetContentRegionAvail().x * 0.52f;
+        status_.draw();
         hovered_.reset();
-        ImGui::BeginChild("##areas", ImVec2(leftW, listH), ImGuiChildFlags_None);
+        ImGui::TextColored(kTextBlue, "Research Areas");
+        ImGui::SameLine(ui.px(372));
+        ImGui::TextColored(kTextBlue, "Current Level");
+        ImGui::SameLine(ui.px(470));
+        image(ui, ui.art.icon16(Icon::Research), {12, 12});
+        ImGui::SameLine(0, ui.px(2));
+        ImGui::TextColored(kTextBlue, "Cost");
+        ImGui::BeginChild("##areas", ImVec2(0, ui.px(245)), ImGuiChildFlags_Borders);
         areaList(ui);
         ImGui::EndChild();
+        if (hovered_) {
+            ImGui::SetNextWindowSize(ui.size({380, 0}));
+            if (ImGui::BeginTooltip()) {
+                detail(ui);
+                ImGui::EndTooltip();
+            }
+        }
+        note(ui, "(click a research area to add it as a project)", false);
+        ImGui::TextColored(kTextBlue, "%zu Current Projects", e.research.size());
         ImGui::SameLine();
-        ImGui::BeginChild("##projects", ImVec2(0, listH), ImGuiChildFlags_None);
+        note(ui, "(click a project to cancel it)");
         projects(ui);
-        ImGui::EndChild();
-        ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        detail(ui);
-        ImGui::EndChild();
 
         d.beginButtons();
         projectPageButtons(d, page_);
@@ -157,91 +172,91 @@ private:
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& e = ui.me();
-        heading(ui, "Technology Areas");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "(click to research, right-click for details)");
         const auto areas = researchableAreas(r, s, e);
         if (areas.empty()) {
             ImGui::TextColored(kTextDim, "Every technology area is fully researched.");
             return;
         }
-        const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV;
-        if (!ImGui::BeginTable("##areaTable", 3, flags, ImVec2(0, 0))) return;
-        ImGui::TableSetupScrollFreeze(0, 1);
+        if (!ImGui::BeginTable("##areaTable", 3, ImGuiTableFlags_ScrollY, ImVec2(0, 0))) return;
         ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(56));
-        ImGui::TableSetupColumn("Next Level", ImGuiTableColumnFlags_WidthFixed, ui.px(88));
-        ImGui::TableHeadersRow();
+        ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(70));
+        ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, ui.px(96));
+        auto right = [](const std::string& text, ImVec4 color) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text.c_str()).x);
+            ImGui::TextColored(color, "%s", text.c_str());
+        };
         for (const auto& [group, list] : byGroup(r, areas)) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextColored(kTextWarn, "%s", group.empty() ? "Other" : group.c_str());
+            heading(ui, group.empty() ? "Other" : group.c_str());
             for (TechAreaId a : list) {
                 const ruleset::TechArea& t = r.tech(a);
                 const int level = e.techLevel(a);
                 const bool inQueue = queued(e, a);
+                const ImVec4 color = inQueue ? kTextDim : ImVec4(1, 1, 1, 1);
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(int(a.index()));
-                if (inQueue) ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-                const bool pinned = pinned_ && *pinned_ == a;
-                if (ImGui::Selectable(t.name.c_str(), pinned, ImGuiSelectableFlags_SpanAllColumns)) add(ui, a);
-                if (ImGui::IsItemHovered()) hovered_ = a;
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) pinned_ = a;
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                if (ImGui::Selectable(t.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) add(ui, a);
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = a;
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%d / %d", level, t.maxLevel);
+                right(std::to_string(level), color);
                 ImGui::TableSetColumnIndex(2);
-                if (inQueue) ImGui::TextUnformatted("Queued");
-                else ImGui::TextUnformatted(formatNumber(game::research::levelCost(r, s, a, level + 1)).c_str());
-                if (inQueue) ImGui::PopStyleColor();
+                right(inQueue ? std::string("Queued") : std::to_string(game::research::levelCost(r, s, a, level + 1)), color);
                 ImGui::PopID();
             }
         }
         ImGui::EndTable();
     }
 
+    // Small blue hint text, right-aligned on the current line.
+    static void note(UiContext& ui, const char* text, bool sameLine = true) {
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        const float w = ImGui::CalcTextSize(text).x;
+        if (sameLine) ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - w));
+        ImGui::TextColored(kTextBlue, "%s", text);
+        ImGui::PopFont();
+    }
+
     void projects(UiContext& ui) {
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& e = ui.me();
-        heading(ui, std::format("Current Projects {}-{}", page_ * kProjectsPerPage + 1, (page_ + 1) * kProjectsPerPage).c_str());
-        const float slotH = (ImGui::GetContentRegionAvail().y - 3 * ImGui::GetStyle().ItemSpacing.y) / kProjectsPerPage;
+        const float gap = ImGui::GetStyle().ItemSpacing.x;
+        const float boxW = (ImGui::GetContentRegionAvail().x - 3 * gap) / kProjectsPerPage;
+        const float boxH = ImGui::GetContentRegionAvail().y;
         std::optional<size_t> remove;
         for (int slot = 0; slot < kProjectsPerPage; ++slot) {
             const size_t i = size_t(page_ * kProjectsPerPage + slot);
+            if (slot > 0) ImGui::SameLine(0, gap);
             ImGui::PushID(slot);
-            ImGui::BeginChild("##slot", ImVec2(0, slotH), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+            ImGui::BeginChild("##slot", ImVec2(boxW, boxH), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+            auto centred = [](const std::string& text, ImVec4 color) {
+                ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text.c_str()).x) * 0.5f));
+                ImGui::TextColored(color, "%s", text.c_str());
+            };
             if (i >= e.research.size()) {
-                ImGui::TextColored(kTextDim, "%zu.", i + 1);
-                ImGui::SameLine();
-                ImGui::TextColored(kTextDim, "Empty: click an area to add a project.");
+                centred("None", ImVec4(1, 1, 1, 1));
             } else {
                 const game::ResearchProject& p = e.research[i];
                 const ruleset::TechArea& t = r.tech(p.area);
                 const int next = e.techLevel(p.area) + 1;
                 const int64_t cost = game::research::levelCost(r, s, p.area, next);
-                ImGui::Text("%zu.", i + 1);
-                ImGui::SameLine();
-                ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-                ImGui::Text("%s %d", t.name.c_str(), next);
-                ImGui::PopFont();
-                if (ImGui::IsItemHovered()) hovered_ = p.area;
-                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) pinned_ = p.area;
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ui.px(64));
-                if (ImGui::SmallButton("Remove")) remove = i;
+                ImGui::PushTextWrapPos(0.0f);
+                centred(std::format("{} {}", t.name, next), ImVec4(1, 1, 1, 1));
+                ImGui::PopTextWrapPos();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
+                centred(etaText(game::research::etaTurns(r, s, e, i)), kTextDim);
                 const float frac = cost > 0 ? float(double(p.progress) / double(cost)) : 0.0f;
-                progressBar(ui, frac, std::format("{} / {} RP", formatNumber(p.progress), formatNumber(cost)));
-                ImGui::TextColored(kTextBlue, "ETA");
-                ImGui::SameLine();
-                ImGui::TextUnformatted(etaText(game::research::etaTurns(r, s, e, i)).c_str());
-                const auto unlocks = unlockNames(r, p.area, next);
-                if (!unlocks.empty()) {
-                    ImGui::SameLine(0, ui.px(16));
-                    ImGui::TextColored(kTextBlue, "Unlocks");
-                    ImGui::SameLine();
-                    ImGui::TextColored(kTextDim, "%s", joined(unlocks, 2).c_str());
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", joined(unlocks).c_str());
-                }
+                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(24));
+                progressBar(ui, frac, std::format("{} / {}", p.progress, cost));
+                // Clicking a project cancels it, as in the original.
+                ImGui::SetCursorPos(ImVec2(0, 0));
+                if (ImGui::InvisibleButton("##cancel", ImVec2(boxW, boxH - ui.px(26)))) remove = i;
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
             }
             ImGui::EndChild();
             ImGui::PopID();

@@ -47,8 +47,8 @@ void portrait(UiContext& ui, const Sprite& s) {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const ImVec2 q(p.x + ui.px(128), p.y + ui.px(128));
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(p, q, IM_COL32(3, 7, 18, 255));
-    dl->AddRect(p, q, IM_COL32(44, 79, 158, 255));
+    dl->AddRectFilled(p, q, IM_COL32_BLACK);
+    dl->AddRect(p, q, imColor(palette::kFrame));
     image(ui, s, {128, 128});
 }
 
@@ -178,7 +178,7 @@ private:
     void designList(UiContext& ui, const std::vector<game::DesignId>& list) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
-        const float w = ui.px(330);
+        const float w = ui.px(240);  // the original's list is about 240 wide, the detail takes the rest
         ImGui::BeginGroup();
         ImGui::TextColored(kBlueText, "%s", kDesignTabs[static_cast<size_t>(tab_)]);
         ImGui::SameLine();
@@ -223,53 +223,41 @@ private:
             image(ui, ui.art.flag(style), {26, 18});
             ImGui::SameLine();
         }
-        title(ui, d.name);
+        // The original's detail: portrait, then the name with label lines and their
+        // values indented below; then one column of statistics.
         portrait(ui, ui.art.shipPortrait(style, hull));
         hullReportOnClick(ui, d.hull);
-        ImGui::SameLine(0, ui.px(12));
+        ImGui::SameLine(0, ui.px(8));
         ImGui::BeginGroup();
-        constexpr float kCol = 80.0f;
-        field(ui, "Size", std::format("{} ({} kT)", hull.name, hull.tonnage), kCol);
-        field(ui, "Class", std::string(ruleset::displayName(hull.type)), kCol);
+        title(ui, d.name);
+        auto stacked = [&](const char* label, const std::string& value, ImVec4 color = ImVec4(1, 1, 1, 1)) {
+            ImGui::TextColored(kBlueText, "%s", label);
+            ImGui::Indent(ui.px(10));
+            ImGui::TextColored(color, "%s", value.c_str());
+            ImGui::Unindent(ui.px(10));
+        };
+        stacked("Size", std::format("{} ({}kT)", hull.name, hull.tonnage));
         if (own) {
-            field(ui, "Type", d.designType.empty() ? std::string("-") : d.designType, kCol);
-            field(ui, "Created", formatDate(d.createdTurn), kCol);
-            if (d.obsolete) field(ui, "Status", "Obsolete", kCol, ImVec4(1.0f, 0.7f, 0.4f, 1.0f));
-            else field(ui, "Status", d.built > 0 ? "In service" : "Prototype (never built)", kCol);
+            stacked("Design Type", d.designType.empty() ? std::string("-") : d.designType);
+            stacked("Date Created", formatDate(d.createdTurn));
+            if (d.obsolete) stacked("Status", "Obsolete", ImVec4(1.0f, 0.7f, 0.4f, 1.0f));
         } else if (d.owner.valid()) {
-            field(ui, "Owner", s.empire(d.owner).name, kCol);
+            stacked("Owner", s.empire(d.owner).name);
         }
         ImGui::EndGroup();
 
-        ImGui::Spacing();
-        if (ImGui::BeginTable("##stats", 4, ImGuiTableFlags_SizingFixedFit)) {
-            ImGui::TableSetupColumn("a", ImGuiTableColumnFlags_WidthFixed, ui.px(72));
-            ImGui::TableSetupColumn("b", ImGuiTableColumnFlags_WidthFixed, ui.px(150));
-            ImGui::TableSetupColumn("c", ImGuiTableColumnFlags_WidthFixed, ui.px(72));
-            ImGui::TableSetupColumn("d", ImGuiTableColumnFlags_WidthStretch);
-            auto cell = [](const char* label, const std::string& value) {
-                ImGui::TableNextColumn();
-                ImGui::TextColored(kBlueText, "%s", label);
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(value.c_str());
-            };
-            ImGui::TableNextRow();
-            cell("Space", sizeText(st));
-            cell("Movement", std::to_string(st.movement));
-            ImGui::TableNextRow();
-            cell("Structure", std::to_string(st.structure));
-            cell("Supply", formatNumber(st.supplyCapacity));
-            ImGui::TableNextRow();
-            cell("Shields", shieldsText(st));
-            cell("Cargo", std::format("{} kT", st.cargoCapacity));
-            ImGui::TableNextRow();
-            cell("Weapons", weaponsText(st));
-            cell("Engines", std::to_string(st.engines));
-            ImGui::EndTable();
-        }
+        constexpr float kCol = 128.0f;
         ImGui::TextColored(kBlueText, "Cost");
-        ImGui::SameLine(ui.px(80));
-        resources(ui, st.cost);
+        ImGui::SameLine(ui.px(kCol));
+        resources(ui, st.cost, true);
+        field(ui, "Class", std::string(ruleset::displayName(hull.type)), kCol);
+        field(ui, "Space", sizeText(st), kCol);
+        field(ui, "Structure", std::to_string(st.structure), kCol);
+        field(ui, "Movement", std::to_string(st.movement), kCol);
+        field(ui, "Shields", shieldsText(st), kCol);
+        field(ui, "Weapons", weaponsText(st), kCol);
+        field(ui, "Cargo Space", std::to_string(st.cargoCapacity), kCol);
+        field(ui, "Supply Capacity", std::to_string(st.supplyCapacity), kCol);
         if (own && !st.problems.empty()) {
             ImGui::Spacing();
             for (const std::string& p : st.problems) ImGui::TextColored(kWarnText, "! %s", p.c_str());

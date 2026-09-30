@@ -1,57 +1,91 @@
 #include "client/classic/frontend.hpp"
 
+#include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
+#include <functional>
+
+#ifndef OPENSE4_CLIENT_VERSION
+#define OPENSE4_CLIENT_VERSION "0.0.0"
+#endif
 
 namespace opense4::client::classic {
 
 namespace {
 
+// The intro picture stretched over the whole window, as the original shows it.
 void background(MenuContext& ctx) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    const ImVec2 a = ctx.at({0, 0}), b = ctx.at({kFrameW, kFrameH});
+    const ImVec2 a{0, 0}, b = ImGui::GetIO().DisplaySize;
     if (Sprite bg = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
         dl->AddImage(ImTextureRef(static_cast<ImTextureID>(bg.tex.value)), a, b, ImVec2(bg.uv.min.x, bg.uv.min.y), ImVec2(bg.uv.max.x, bg.uv.max.y));
     else dl->AddRectFilled(a, b, IM_COL32(2, 4, 12, 255));
 }
 
-bool beginPanel(MenuContext& ctx, const char* id, Rect r) {
+// A classic window (pipe frame, title strip) with its content area as the ImGui window.
+bool beginPanel(MenuContext& ctx, const char* id, Rect r, const char* title = nullptr) {
     ImGui::SetNextWindowPos(ctx.at(r.min));
     ImGui::SetNextWindowSize(ctx.size(r.size()));
-    ImGui::PushFont(ctx.fonts.medium, kTextSize * ctx.k());
-    return ImGui::Begin(id, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ctx.size({16, title ? 38.0f : 12.0f}));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    const bool open = ImGui::Begin(id, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(2);
+    if (open) drawWindowFrame(ctx.painter(), ImGui::GetWindowDrawList(), r, title, 0);
+    return open;
 }
 
-void endPanel() {
-    ImGui::End();
-    ImGui::PopFont();
-}
+void endPanel() { ImGui::End(); }
 
 class IntroScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
         background(ctx);
-        if (beginPanel(ctx, "##intro", Rect{{212, 560}, {812, 700}})) {
-            const ImVec2 bs = ctx.size({138, 34});
-            if (ImGui::Button("Quick Start", bs)) ctx.go(FrontId::QuickStart);
-            ImGui::SameLine();
-            if (ImGui::Button("New Game", bs)) ctx.go(FrontId::GameSetup);
-            ImGui::SameLine();
-            if (ImGui::Button("Load Game", bs)) ctx.go(FrontId::LoadGame);
-            ImGui::SameLine();
-            if (ImGui::Button("Multiplayer", bs)) ctx.go(FrontId::Multiplayer);
-            if (ImGui::Button("Settings", bs)) ctx.go(FrontId::Settings);
-            ImGui::SameLine();
-            if (ImGui::Button("Quit Game", bs)) ctx.quit();
-            ImGui::SameLine();
-            ImGui::TextDisabled("OpenSE4 classic engine - data: %s", ctx.rules->data().dataDir.parent_path().filename().string().c_str());
-            if (!ctx.error.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", ctx.error.c_str());
+        // A black band along the bottom with two rows of four buttons across the
+        // full width, the version at the left and the loading state at the right.
+        const Painter p = ctx.painter();
+        const float left = ctx.map.left, right = ctx.map.right;
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ctx.at({left, 695}), ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y),
+                                                      IM_COL32_BLACK);
+        ImGui::SetNextWindowPos(ctx.at({left, 672}));
+        ImGui::SetNextWindowSize(ctx.size({right - left, 96}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        if (ImGui::Begin("##intro", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                ImGuiWindowFlags_NoBackground)) {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImGui::PushFont(ctx.fonts.small, p.fontPx(kSmallSize));
+            dl->AddText(ctx.at({left + 10, 682}), IM_COL32(220, 220, 220, 255), "Version: OpenSE4 " OPENSE4_CLIENT_VERSION);
+            const std::string data = "Data: " + ctx.rules->data().dataDir.parent_path().filename().string();
+            dl->AddText(ctx.at({right - 12 - ImGui::CalcTextSize(data.c_str()).x / ctx.k(), 682}), IM_COL32(220, 220, 220, 255), data.c_str());
+            ImGui::PopFont();
+            struct Entry {
+                const char* label;
+                std::function<void()> go;
+            };
+            const std::array<Entry, 8> entries{{
+                {"Quick Start", [&] { ctx.go(FrontId::QuickStart); }},
+                {"New Game", [&] { ctx.go(FrontId::GameSetup); }},
+                {"Resume Game", nullptr},
+                {"Load Game", [&] { ctx.go(FrontId::LoadGame); }},
+                {"Multiplayer", [&] { ctx.go(FrontId::Multiplayer); }},
+                {"Scenario", nullptr},
+                {"Settings", [&] { ctx.go(FrontId::Settings); }},
+                {"Quit Game", [&] { ctx.quit(); }},
+            }};
+            const float w = (right - left - 24 - 15) / 4;
+            for (size_t i = 0; i < entries.size(); ++i) {
+                ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % 4) * (w + 5), 700 + float(i / 4) * 30}));
+                if (classicButton(p, entries[i].label, {w, 26}, 0, false, entries[i].go != nullptr) && entries[i].go) entries[i].go();
+            }
+            if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
         }
-        endPanel();
+        ImGui::End();
+        ImGui::PopStyleVar(2);
     }
 };
 
@@ -60,9 +94,7 @@ public:
     void draw(MenuContext& ctx) override {
         background(ctx);
         const auto& presets = ctx.rules->racePresets();
-        if (beginPanel(ctx, "##quick", Rect{{112, 90}, {912, 690}})) {
-            ImGui::TextUnformatted("Pick Empire");
-            ImGui::Separator();
+        if (beginPanel(ctx, "##quick", Rect{{112, 90}, {912, 690}}, "Pick Empire")) {
             ImGui::BeginChild("##races", ImVec2(0, -ctx.px(46)));
             int col = 0;
             for (size_t i = 0; i < presets.size(); ++i) {
@@ -112,40 +144,43 @@ class SettingsFrontScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
         background(ctx);
-        ImGui::SetNextWindowPos(ctx.at({13, 80}));
-        ImGui::SetNextWindowSize(ctx.size({998, 608}));
-        ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
-        if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                                   ImGuiWindowFlags_NoSavedSettings)) {
-            if (ImGui::BeginTabBar("##pages")) {
-                if (ImGui::BeginTabItem("Graphics")) {
-                    ImGui::BeginChild("##g", ImVec2(0, -ctx.px(40)));
+        // The same 780×475 classic window as the in-game Settings.
+        const Painter p = ctx.painter();
+        const Rect r{{122, 146}, {902, 621}};
+        ImGui::SetNextWindowPos(ctx.at(r.min));
+        ImGui::SetNextWindowSize(ctx.size(r.size()));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+            drawWindowFrame(p, ImGui::GetWindowDrawList(), r, "Settings", 180);
+            ImGui::SetCursorPos(ctx.size({15, 35}));
+            ImGui::BeginChild("##page", ctx.size({556, 431}));
+            switch (page_) {
+                case 0:
                     if (ctx.app) graphicsSettingsPage(state_, *ctx.app, ctx.k());
-                    ImGui::EndChild();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Controls")) {
-                    ImGui::BeginChild("##c", ImVec2(0, -ctx.px(40)));
-                    controlsSettingsPage(state_, ctx.k());
-                    ImGui::EndChild();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Sound")) {
-                    ImGui::BeginChild("##s", ImVec2(0, -ctx.px(40)));
-                    soundSettingsPage(ctx.k());
-                    ImGui::EndChild();
-                    ImGui::EndTabItem();
-                }
-                ImGui::EndTabBar();
+                    break;
+                case 1: controlsSettingsPage(state_, ctx.k()); break;
+                default: soundSettingsPage(ctx.k()); break;
             }
-            if (ImGui::Button("Back", ctx.size({140, 30})) || (!state_.capturing && ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
-                ctx.go(FrontId::Intro);
+            ImGui::EndChild();
+            static constexpr std::array<const char*, 3> kPages{"Graphics", "Controls", "Sound"};
+            for (int i = 0; i < 3; ++i) {
+                ImGui::SetCursorPos(ctx.size({585, 35 + 31 * float(i)}));
+                if (classicButton(p, kPages[size_t(i)], {180, 28}, 1, page_ == i)) page_ = i;
+            }
+            for (int i = 3; i < 13; ++i) {
+                ImGui::SetCursorPos(ctx.size({585, 35 + 31 * float(i)}));
+                emptySlot(p, {180, 28});
+            }
+            ImGui::SetCursorPos(ctx.size({585, 438}));
+            if (classicButton(p, "Back", {180, 28}) || (!state_.capturing && ImGui::IsKeyPressed(ImGuiKey_Escape, false))) ctx.go(FrontId::Intro);
         }
         ImGui::End();
-        ImGui::PopFont();
+        ImGui::PopStyleVar(2);
     }
 
 private:
+    int page_ = 0;
     SettingsPanelState state_;
 };
 
@@ -154,9 +189,7 @@ public:
     void draw(MenuContext& ctx) override {
         background(ctx);
         if (!scanned_) scan();
-        if (beginPanel(ctx, "##load", Rect{{212, 120}, {812, 660}})) {
-            ImGui::TextUnformatted("Load Game");
-            ImGui::Separator();
+        if (beginPanel(ctx, "##load", Rect{{212, 120}, {812, 660}}, "Load Game")) {
             ImGui::BeginChild("##saves", ImVec2(0, -ctx.px(46)));
             if (saves_.empty()) ImGui::TextDisabled("No saved games in %s", savesDir().string().c_str());
             for (const auto& [name, path] : saves_)
@@ -191,6 +224,8 @@ private:
 };
 
 } // namespace
+
+Painter MenuContext::painter() const { return {art, fonts, map, fbScale, appSettings().graphics.textScale}; }
 
 std::expected<std::unique_ptr<ClassicSession>, std::string> startLocalGame(std::shared_ptr<const game::Rules> rules, const game::GameSetup& setup) {
     auto state = game::createGame(*rules, setup);

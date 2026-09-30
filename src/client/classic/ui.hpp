@@ -127,6 +127,25 @@ struct UiRequests {
     std::optional<std::filesystem::path> loadGame;
 };
 
+// What the classic widgets need to draw: the pictures, the fonts and the frame
+// scale. The in-game UiContext and the front end's MenuContext both provide one.
+struct Painter {
+    Art& art;
+    const Fonts& fonts;
+    FrameMapping map;
+    float fbScale = 1.0f;
+    float textScale = 1.0f;
+
+    float k() const { return map.scale / fbScale; }
+    float px(float framePixels) const { return framePixels * k(); }
+    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    ImVec2 at(Vec2 framePos) const {
+        const Vec2 p = map.toFb(framePos) / fbScale;
+        return {p.x, p.y};
+    }
+    ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
+};
+
 class UiContext;
 
 class Screen {
@@ -172,6 +191,7 @@ public:
     }
     ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
     float px(float framePixels) const { return framePixels * k(); }
+    Painter painter() const { return {art, fonts, map, fbScale, textScale}; }
 };
 
 // ---- Drawing helpers (ImGui, sizes in frame pixels) --------------------------------------
@@ -204,6 +224,9 @@ public:
     Dialog& operator=(const Dialog&) = delete;
 
     bool open() const { return visible_; }
+    // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
+    void titleText(float x, ImU32 color, std::string_view text);
+    void titleIcon(float x, const Sprite& icon);
     void beginContent();
     void beginButtons();
     // Right-column buttons (180 × 28, one slot per 31 px). A plain action button;
@@ -235,11 +258,15 @@ private:
 
 // A classic text button drawn at the cursor: 1 px outline and caption in the
 // button blue. `style` 0 plain, 1 tab (chamfer, lamp when on), 2 check box.
-bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int style = 0, bool on = false, bool enabled = true);
+bool classicButton(const Painter& p, const char* label, Vec2 frameSize, int style = 0, bool on = false, bool enabled = true);
+inline bool classicButton(UiContext& ui, const char* label, Vec2 frameSize, int style = 0, bool on = false, bool enabled = true) {
+    return classicButton(ui.painter(), label, frameSize, style, on, enabled);
+}
 // An empty button slot (the classic dark placeholder box).
-void emptySlot(UiContext& ui, Vec2 frameSize);
-// The classic frame around a window: pipes at the sides, double rails, a title strip.
-void drawWindowFrame(UiContext& ui, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn);
+void emptySlot(const Painter& p, Vec2 frameSize);
+// The classic frame around a window: pipes at the sides, rails, a title strip
+// (none when `title` is null) and, with a button column, a second box for it.
+void drawWindowFrame(const Painter& p, ImDrawList* dl, const Rect& frameRect, const char* title, float buttonColumn);
 
 // Applies the classic look (black, 1 px blue lines) to ImGui; call once.
 void applyClassicStyle();
