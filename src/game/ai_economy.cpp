@@ -503,6 +503,8 @@ void planFacilities(Planner& p, bool firstPass) {
             QueueItem item;
             item.kind = QueueItem::Kind::Facility;
             item.facility = *facility;
+            // The queue must accept it (a colony without population cannot build).
+            if (!queueItemProblem(p.r, p.st, p.id, {planet, {}}, item).empty()) continue;
             if (p.emit(cmd::QueueAdd{{planet, {}}, item, -1})) break;
         }
     }
