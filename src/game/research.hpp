@@ -64,10 +64,11 @@ std::vector<int64_t> allocate(int64_t pool, std::span<const int64_t> need, bool 
 int64_t availablePoints(const GameState& s, const Empire& e);
 // Adds income to the research and intelligence pools, capped at kPoolCap.
 void addToPools(Empire& e, int64_t research, int64_t intelligence);
-// The pools at game creation (spec 05 §1.1, confirmed: binary): research at
-// Starting Resources plus one turn of the empire's research income
-// (Empire::economy.research after the setup's economy report), intelligence
-// at 0.
+// The pools at game creation (spec 05 §1.1, spec 02 §9, confirmed: binary):
+// minerals, organics, radioactives and research at Starting Resources plus
+// one turn of the empire's production (colony output as delivered, with the
+// minimum-generation rule; no remote mining, Generate Points, trade, tariffs
+// or computer bonus), intelligence at 0. Sets Empire::stockpile too.
 void openingPools(const Rules& r, GameState& s);
 
 // ---- Levels ---------------------------------------------------------------------------------------

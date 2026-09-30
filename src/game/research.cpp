@@ -1,9 +1,11 @@
 #include "game/research.hpp"
 
+#include "game/economy.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
 
 namespace opense4::game::research {
@@ -157,11 +159,25 @@ void addToPools(Empire& e, int64_t research, int64_t intelligence) {
     e.intelPool = addCapped(e.intelPool, intelligence);
 }
 
-void openingPools(const Rules&, GameState& s) {
-    // Starting Resources is one amount for every kind (spec 02 §9).
+void openingPools(const Rules& r, GameState& s) {
+    // Starting Resources plus one turn of the empire's own production of each
+    // kind: its colonies' output as delivered, with the `Minimum Empire X
+    // Generation` rule for a resource delivered at exactly 0 (spec 02 §5.6,
+    // §9). No remote mining, `Generate Points`, trade, tariffs or computer
+    // bonus, and nothing is drawn from finite stocks (empireProduction only
+    // reads them). Intelligence starts at 0 (spec 05 §1.1, spec 02 §13 Q37,
+    // confirmed: binary). Starting Resources is one amount for every kind.
+    static constexpr std::array<std::string_view, 3> kMinimum{"Minimum Empire Minerals Generation", "Minimum Empire Organics Generation",
+                                                              "Minimum Empire Radioactives Generation"};
     const int64_t starting = std::max<int64_t>(0, s.options.startingResources[Resource::Minerals]);
     for (Empire& e : s.empires) {
-        e.researchPool = std::min(starting + std::max<int64_t>(0, e.economy.research), kPoolCap);
+        const economy::Production made = economy::empireProduction(r, s, e.id);
+        Resources opening = made.resources;
+        for (size_t k = 0; k < 3; ++k)
+            if (opening.v[k] == 0) opening.v[k] = r.setting(kMinimum[k], 200);
+        for (size_t k = 0; k < 3; ++k)
+            e.stockpile.v[k] = std::clamp<int64_t>(std::max<int64_t>(0, s.options.startingResources.v[k]) + opening.v[k], 0, kPoolCap);
+        e.researchPool = std::min(starting + std::max<int64_t>(0, made.research), kPoolCap);
         e.intelPool = 0;
     }
 }

@@ -542,7 +542,7 @@ TEST_CASE("economy: generated points, the minimum income and the opening researc
     GameState s = newGame(*r);
     // The opening pools are set when the game is created: Starting Resources
     // plus one turn of research, no intelligence (spec 05 §1.1).
-    CHECK(s.empire(kMe).researchPool == s.options.startingResources[Resource::Minerals] + s.empire(kMe).economy.research);
+    CHECK(s.empire(kMe).researchPool == s.options.startingResources[Resource::Minerals] + economy::empireProduction(*r, s, kMe).research);
     CHECK(s.empire(kMe).intelPool == 0);
     dropVehicles(s, kMe);
     Colony& home = plainHome(*r, s, {"Mint"});  // no spaceport: flat points need none

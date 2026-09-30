@@ -404,14 +404,8 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.claimedSystems.push_back(s.galaxy.object(home).system);
     }
 
-    // ---- The starting stockpile (spec 02 §9, confirmed: binary): Starting
-    // Resources plus one turn of the empire's income. The research and
-    // intelligence pools are set at the end (research::openingPools).
-    economy::updateReports(r, s);
-    for (Empire& e : s.empires) {
-        const EconomyReport& rep = e.economy;
-        e.stockpile = s.options.startingResources + rep.colonies + rep.trade + rep.tariffsIn + rep.remoteMining + rep.otherIncome;
-    }
+    // The starting stockpile and the research and intelligence pools are set
+    // at the end (research::openingPools, spec 02 §9).
 
     // ---- Starting designs and ships.
     for (size_t i = 0; i < n; ++i) {
@@ -449,10 +443,10 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     }
 
     sight::updateKnowledge(r, s);
-    economy::updateReports(r, s);
-    // Research starts at Starting Resources plus one turn of research,
-    // intelligence at 0 (spec 05 §1.1, confirmed: binary).
+    // Starting Resources plus one turn of production for the stockpile and
+    // research, intelligence at 0 (spec 02 §9, spec 05 §1.1, confirmed: binary).
     research::openingPools(r, s);
+    economy::updateReports(r, s);
     return s;
 }
 

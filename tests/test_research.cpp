@@ -8,6 +8,7 @@
 #include "game/commands.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
+#include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/turn.hpp"
 
@@ -229,7 +230,7 @@ TEST_CASE("research: points are spent the turn after they are produced") {
     // The opening pools (createGame): Starting Resources plus one turn of
     // research, and no intelligence (spec 05 §1.1).
     REQUIRE(s.turn == 0);
-    const int64_t opening = s.options.startingResources[Resource::Minerals] + s.empire(me).economy.research;
+    const int64_t opening = s.options.startingResources[Resource::Minerals] + economy::empireProduction(r, s, me).research;
     CHECK(s.empire(me).researchPool == opening);
     CHECK(s.empire(me).intelPool == 0);
     CHECK(research::availablePoints(s, s.empire(me)) == opening);
@@ -251,6 +252,45 @@ TEST_CASE("research: points are spent the turn after they are produced") {
     research::addToPools(s.empire(me), research::kPoolCap, research::kPoolCap);
     CHECK(s.empire(me).researchPool == research::kPoolCap);
     CHECK(s.empire(me).intelPool == research::kPoolCap);
+}
+
+TEST_CASE("research: the opening pools hold one turn of production only") {
+    // Spec 02 §9, §13 Q37: no computer bonus, Generate Points, trade or
+    // tariffs; a resource delivered at exactly 0 gets the Settings minimum.
+    ruleset::Ruleset rs = buildPoliticsRuleset();
+    ruleset::Facility mint;
+    mint.name = "Test Mint";
+    mint.group = "Test";
+    mint.family = 9000;
+    mint.romanNumeral = 1;
+    for (auto [kind, value] : {std::pair{AbilityKind::GeneratePointsMinerals, 1000}, std::pair{AbilityKind::GeneratePointsResearch, 300}}) {
+        ruleset::Ability a;
+        a.type = std::string(identifier(kind));
+        a.value1 = std::to_string(value);
+        mint.abilities.push_back(a);
+    }
+    rs.facilities.push_back(mint);
+    const Rules r{std::move(rs)};
+    GameState s = newPoliticsGame();
+    const EmpireId me{0u}, them{1u};
+    s.empire(me).kind = PlayerKind::Computer;
+    s.options.aiBonus = 3;
+    homeworld(s, me).facilities.push_back(static_cast<uint32_t>(r.data().facilities.size() - 1));
+    TurnContext ctx = context(r, s);
+    setContact(s, me, them);
+    diplomacy::setTreaty(ctx, me, them, Treaty::Partnership);
+    for (int i = 0; i < 5; ++i) diplomacy::treatyStep(ctx, me);
+    s.options.finiteResources = true;
+    const auto values = s.galaxy.object(homeworld(s, me).planet).value;
+    research::openingPools(r, s);
+    const economy::Production made = economy::empireProduction(r, s, me);
+    Resources opening = made.resources;
+    for (int64_t& v : opening.v)
+        if (v == 0) v = 200;
+    CHECK(s.empire(me).stockpile == s.options.startingResources + opening);
+    CHECK(s.empire(me).researchPool == s.options.startingResources[Resource::Minerals] + made.research);
+    CHECK(s.empire(me).intelPool == 0);
+    CHECK(s.galaxy.object(homeworld(s, me).planet).value == values);  // nothing drawn from finite stocks
 }
 
 TEST_CASE("research: a master's tariff takes part of the research income, and nobody gets it") {

@@ -4,6 +4,7 @@
 
 #include "game/commands.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
@@ -34,9 +35,12 @@ TEST_CASE("engine: setup creates homeworlds, tech, designs and ships") {
         CHECK(home.totalPopulation() == maxPopulation(r, s, home));
         CHECK_FALSE(home.facilities.empty());
         CHECK(colonyHasSpaceYard(r, home));
-        // Starting Resources plus one turn of income (spec 02 §9).
-        const EconomyReport& rep = e.economy;
-        CHECK(e.stockpile == s.options.startingResources + rep.colonies + rep.trade + rep.tariffsIn + rep.remoteMining + rep.otherIncome);
+        // Starting Resources plus one turn of production: colony output with
+        // the minimum-generation rule, nothing else (spec 02 §9).
+        Resources opening = economy::empireProduction(r, s, e.id).resources;
+        for (int64_t& v : opening.v)
+            if (v == 0) v = 200;
+        CHECK(e.stockpile == s.options.startingResources + opening);
         CHECK(e.stockpile[Resource::Minerals] > s.options.startingResources[Resource::Minerals]);
         CHECK(e.techLevel(techArea(r, "Test Construction")) == 1);
         CHECK(e.techLevel(techArea(r, "Test Rock Colonies")) == 1);  // home type colonization
