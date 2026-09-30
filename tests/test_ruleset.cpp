@@ -1,5 +1,6 @@
 #include "datafile/datafile.hpp"
 #include "ruleset/ability_names.hpp"
+#include "ruleset/races.hpp"
 #include "ruleset/ruleset.hpp"
 #include "temp_dir.hpp"
 
@@ -196,4 +197,27 @@ TEST_CASE("ruleset: ability names, the 20-ability cap, mount fields and the list
     CHECK(ruleset::abilityNameStatus("ai tag 07") == ruleset::AbilityNameStatus::Known);
     CHECK(ruleset::abilityNameStatus("Resupply Pod") == ruleset::AbilityNameStatus::Known);
     CHECK(ruleset::abilityNameStatus("System - Sensor Interference") == ruleset::AbilityNameStatus::Ignored);
+}
+
+TEST_CASE("ruleset: race presets list normal races, then neutral ones, in a fixed order") {
+    // The list's order must not depend on how the platform lists directories:
+    // setups and the data-set fingerprint pick presets by position.
+    const test::TempDir root("race_presets");
+    auto preset = [&](const char* group, const char* race, const char* name) {
+        const auto dir = root / "Pictures" / group / race;
+        std::filesystem::create_directories(dir);
+        std::ofstream(dir / (std::string(race) + "_AI_General.txt")) << "*BEGIN*\nName := " << name << "\n*END*\n";
+    };
+    preset("RaceNeutral", "Aneutral", "First Neutral");
+    preset("RaceNeutral", "Zneutral", "Last Neutral");
+    preset("Races", "Zulu", "Zulu");
+    preset("Races", "Alpha", "Alpha");
+    const auto presets = ruleset::loadRacePresets(root.path());
+    REQUIRE(presets.size() == 4);
+    CHECK(presets[0].name == "Alpha");
+    CHECK(presets[1].name == "Zulu");
+    CHECK(presets[2].name == "First Neutral");
+    CHECK(presets[3].name == "Last Neutral");
+    CHECK_FALSE(presets[1].neutral);
+    CHECK(presets[2].neutral);
 }

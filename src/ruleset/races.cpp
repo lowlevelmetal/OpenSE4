@@ -38,9 +38,10 @@ void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset
         // Case-insensitive search for *_AI_General.txt and *_AI_Settings.txt.
         std::filesystem::path general, settings;
         for (const auto& f : std::filesystem::directory_iterator(folder, ec)) {
+            // The first name in sorted order when a folder holds more than one.
             const std::string n = lower(f.path().filename().string());
-            if (n.ends_with("_ai_general.txt")) general = f.path();
-            if (n.ends_with("_ai_settings.txt")) settings = f.path();
+            if (n.ends_with("_ai_general.txt") && (general.empty() || f.path() < general)) general = f.path();
+            if (n.ends_with("_ai_settings.txt") && (settings.empty() || f.path() < settings)) settings = f.path();
         }
         if (general.empty()) continue;
         auto file = datafile::load(general);
@@ -86,13 +87,18 @@ void scan(const std::filesystem::path& dir, bool neutral, std::vector<RacePreset
 
 std::vector<RacePreset> loadRacePresets(const std::filesystem::path& gameRoot) {
     std::vector<RacePreset> out;
-    // Folder names differ in case between installs; accept any spelling.
+    // Folder names differ in case between installs; accept any spelling. Normal
+    // races come first, then neutral ones, whatever order the directory lists them
+    // in: the list's order must be the same on every platform.
     std::error_code ec;
+    std::filesystem::path races, neutral;
     for (const auto& e : std::filesystem::directory_iterator(gameRoot / "Pictures", ec)) {
         const std::string n = lower(e.path().filename().string());
-        if (n == "races") scan(e.path(), false, out);
-        if (n == "raceneutral") scan(e.path(), true, out);
+        if (n == "races" && (races.empty() || e.path() < races)) races = e.path();
+        if (n == "raceneutral" && (neutral.empty() || e.path() < neutral)) neutral = e.path();
     }
+    if (!races.empty()) scan(races, false, out);
+    if (!neutral.empty()) scan(neutral, true, out);
     return out;
 }
 
