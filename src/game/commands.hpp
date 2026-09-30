@@ -123,6 +123,11 @@ struct SetEncounterOptions {
     std::optional<bool> avoidRestrictedSystems;            // Empire::avoidRestrictedSystems
 };
 
+// ---- Reports (spec 05 §8 "Design knowledge") ------------------------------------------------------
+// A human player opened the report of a foreign vehicle: when its scanners
+// reach it, the designs the report shows are learned (sight::learnFromReport).
+struct OpenVehicleReport { VehicleId vehicle; };
+
 } // namespace cmd
 
 using Command = std::variant<
@@ -135,7 +140,7 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector>;
+    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::OpenVehicleReport>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

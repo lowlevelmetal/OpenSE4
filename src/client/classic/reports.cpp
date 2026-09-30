@@ -225,11 +225,35 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
     return chosen;
 }
 
+namespace {
+
+// A human player who opens the report of a foreign vehicle its long-range
+// scanners reach learns the designs the report shows (spec 05 §8 "Design
+// knowledge"): the command is given once a turn, when it would date one.
+void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
+    const game::GameState& s = ui.state();
+    const game::EmpireId me = ui.session.player();
+    if (!me.valid() || me.index() >= s.empires.size() || s.empire(me).kind != game::PlayerKind::Human) return;
+    if (!game::sight::scannerReaches(ui.rules(), s, me, v)) return;
+    for (game::DesignId d : game::sight::reportDesigns(s, v))
+        if (s.design(d).owner != me && game::designSeenTurn(s.empire(me).knowledge, d) != std::optional<uint32_t>(s.turn)) {
+            ui.session.issue(game::cmd::OpenVehicleReport{v.id});
+            return;
+        }
+}
+
+} // namespace
+
 void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     const game::Design& d = s.design(v.design);
     const bool own = v.owner == ui.session.player();
+    if (!own && v.owner.valid()) {
+        const game::VehicleId id = v.id;
+        noteForeignReport(ui, v);
+        if (!s.vehicle(id)) return;  // a turn-based command may change the game
+    }
     if (Sprite flag = ui.art.flag(v.owner.valid() ? s.empire(v.owner).race.style : "")) {
         image(ui, flag, {26, 18});
         ImGui::SameLine();

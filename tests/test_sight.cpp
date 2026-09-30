@@ -244,7 +244,9 @@ TEST_CASE("sight: knowledge tracks exploration, presence, last seen and visible 
     CHECK_FALSE(visibleIn(w.s, kA, other));
 }
 
-TEST_CASE("sight: long range scanners reveal designs; jammers block them") {
+TEST_CASE("sight: long range scanners reveal designs when a human opens the report; jammers block them") {
+    // Spec 05 §8 "Design knowledge": nothing is learned from scanners until a
+    // human player opens the vehicle's report; computer players never learn so.
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A"), b = w.system("B", 5, 0);
@@ -252,25 +254,43 @@ TEST_CASE("sight: long range scanners reveal designs; jammers block them") {
     const DesignId nearD = w.ship(kB, "Near", 1);
     const DesignId farD = w.ship(kB, "Far", 1);
     const DesignId jamD = w.ship(kB, "Jam", 1, {"Mv Jammer"});
-    w.spawn(nearD, at(a, 2, 2));
-    w.spawn(farD, at(a, 5, 5));
-    w.spawn(jamD, at(a, 1, 1));
+    const VehicleId nearV = w.spawn(nearD, at(a, 2, 2));
+    const VehicleId farV = w.spawn(farD, at(a, 5, 5));
+    const VehicleId jamV = w.spawn(jamD, at(a, 1, 1));
     sight::updateKnowledge(r, w.s);
+    CHECK_FALSE(seen(w.s, kA, nearD));  // scanners alone teach nothing
+    CHECK(sight::scannerReaches(r, w.s, kA, w.v(nearV)));
+    CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(farV)));
+    CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
+    CHECK_FALSE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
+    // The report shows the ship's design and the units in its cargo.
+    const DesignId sat = w.ship(kB, "Cargo Sat", 1);
+    w.v(nearV).cargo.units = {{sat, 2}};
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
     CHECK(seen(w.s, kA, nearD));
-    CHECK_FALSE(seen(w.s, kA, farD));
-    CHECK_FALSE(seen(w.s, kA, jamD));
+    CHECK(seen(w.s, kA, sat));
+    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
+    // Each opening dates the sighting anew (spec 05 §8 step 12 counts from it).
+    w.s.turn += 7;
+    sight::updateKnowledge(r, w.s);
+    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn - 7);
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
+    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
 
     // A system scanner on a populated colony covers the whole system.
     w.colony(w.planet(a, {9, 9}), kA, 100, {"Mv System Scanner"});
     sight::updateKnowledge(r, w.s);
+    CHECK(sight::scannerReaches(r, w.s, kA, w.v(farV)));
+    CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
     CHECK(seen(w.s, kA, farD));
     CHECK_FALSE(seen(w.s, kA, jamD));
-    CHECK_FALSE(seen(w.s, kB, nearD));  // never one's own designs
-    // Each scan dates the sighting anew (spec 05 §8 step 12 counts from it).
-    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
-    w.s.turn += 7;
-    sight::updateKnowledge(r, w.s);
-    CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
+    CHECK_FALSE(apply(r, w.s, kB, cmd::OpenVehicleReport{nearV}).ok);  // never one's own vehicles
+    // A computer player never learns this way.
+    w.s.empire(kA).kind = PlayerKind::Computer;
+    w.s.empire(kA).knowledge.seenDesigns.clear();
+    CHECK_FALSE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
+    CHECK_FALSE(seen(w.s, kA, nearD));
     (void)b;
 }
 
@@ -304,7 +324,8 @@ TEST_CASE("sight: partnerships share sensors one way, also through chains") {
     CHECK_FALSE(w.s.empire(kA).hasExplored(c));
     CHECK(w.s.empire(kA).knowledge.present[c.index()]);
     CHECK_FALSE(visibleIn(w.s, kA, target));
-    CHECK(seen(w.s, kC, stranger));
+    CHECK(sight::scannerReaches(r, w.s, kC, w.v(target)));
+    CHECK_FALSE(seen(w.s, kC, stranger));  // until a report is opened
     CHECK_FALSE(visibleIn(w.s, kC, partnerShip));  // C gets nothing from B
     // Once A has explored both systems, B's and C's sensors show A what is there.
     w.s.empire(kA).knowledge.explored[a.index()] = 1;

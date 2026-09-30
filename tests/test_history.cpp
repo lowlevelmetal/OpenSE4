@@ -2,9 +2,11 @@
 // §5) and the memory of foreign designs, forgotten 50 turns after they were
 // last seen (spec 05 §8 step 12).
 
+#include "combat_fixture.hpp"
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
 
+#include "game/combat.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
@@ -156,6 +158,38 @@ TEST_CASE("history: shared designs keep the partner's date; a master dates its s
     t.turn = 63;
     CHECK(sight::forgetOldDesigns(t, kA) == 1);
     CHECK(sight::forgetOldDesigns(t, kB) == 1);
+}
+
+TEST_CASE("history: a battle dates the pieces' designs and their cargo's; a mine strike the mine's") {
+    // Spec 05 §8 "Design knowledge" (confirmed: binary).
+    using namespace opense4::ctest;
+    {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        s.turn = 9;
+        const DesignId hunter = frigate(s, ar.a, "Hunter", 3, {"CT Big Gun", "CT Big Armor"});
+        const DesignId carrier = frigate(s, ar.b, "Carrier", 1, {"Test Cargo Bay"});
+        const DesignId sat = ctest::design(s, ar.b, "Cargo Sat", "Test Satellite Hull", {"Test Armor Plate"});
+        spawn(s, hunter, ar.loc);
+        const VehicleId c = spawn(s, carrier, ar.loc);
+        s.vehicle(c)->cargo.units = {{sat, 1}};
+        TurnContext ctx = ctest::context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, carrier) == std::optional<uint32_t>(9));
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, sat) == std::optional<uint32_t>(9));
+        CHECK(designSeenTurn(s.empire(ar.b).knowledge, hunter) == std::optional<uint32_t>(9));
+    }
+    {
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        s.turn = 4;
+        const DesignId mine = ctest::design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"});
+        spawn(s, mine, ar.loc, 1);
+        spawn(s, frigate(s, ar.a, "Victim", 1, {"Test Armor Plate", "Test Armor Plate", "Test Armor Plate"}), ar.loc);
+        TurnContext ctx = ctest::context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        CHECK(designSeenTurn(s.empire(ar.a).knowledge, mine) == std::optional<uint32_t>(4));
+    }
 }
 
 // ---- The history record ------------------------------------------------------------------------------
