@@ -1694,7 +1694,7 @@ void Battle::creditKill(int att, int victim) {
     if (big && v.kind == Kind::Vehicle && v.unit.design.valid()) creditDesignKills(att, 1, designTonnage(r_, s_.design(v.unit.design)));
     // Empire experience (spec 02 §9, confirmed: binary): the destroyer's empire gains
     // the tonnage div 10 of a ship (its hull) or of a whole unit group (its units'
-    // total, inferred: as the group was at the start); a planet gives nothing.
+    // total, as the group was at the start: inferred, spec 02 §13 Q55); a planet gives nothing.
     if (const EmpireId gainer = pieces_[k].owner; gainer.valid() && gainer.index() < s_.empires.size()) {
         if (v.kind == Kind::Vehicle && v.unit.design.valid()) economy::gainExperience(s_.empire(gainer), designTonnage(r_, s_.design(v.unit.design)) / 10);
         else if (v.kind == Kind::UnitGroup) economy::gainExperience(s_.empire(gainer), v.tonnageStart / 10);

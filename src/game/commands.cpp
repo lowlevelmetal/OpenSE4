@@ -1006,7 +1006,7 @@ std::string queueItemProblem(const Rules& r, const GameState& s, EmpireId empire
         case QueueItem::Kind::Upgrade: {
             // `facility` is the target (spec 02 §6.6). The Upgrades tab offers only
             // researched targets; we check that here too, since commands can come
-            // from anywhere.
+            // from anywhere (spec 02 §13 Q56).
             if (!col) return "Only planets upgrade facilities";
             if (item.facility >= r.data().facilities.size()) return "Unknown facility";
             if (!r.facilityAvailable(emp, item.facility)) return "Facility not yet researched";

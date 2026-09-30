@@ -20,36 +20,21 @@ outcomes, **L** is an edge case.
 
 The rows found on 2026-09-29 were implemented that day. The economy's end-of-turn work is
 one function per step of spec 02 §12 (`economy.hpp`), run inside each empire's end-of-turn
-processing (`turn.cpp`, spec 05 §8). Conditions are hundredths of the 0–1.5 scale
-everywhere (generation, events, combat, stellar manipulation), and setup's racial point
-cost sums `economy::characteristicPointCost`. On 2026-09-30 the engine's remaining guesses
-(spec 02 §13 items 33 and 37–50) and the other open items of spec 02 were settled from the
-executable. Two spec 02 differences are listed under "Galaxy, setup and sight" and not
-repeated here: the Min/Max Pct clamp inside `characteristicPointCost` (spec 02 §8.1) and
-the extra starting planets that are not capitals of type "Homeworld" (spec 02 §2, §9).
-These rows are where the engine differs:
+processing (`turn.cpp`, spec 05 §8). Conditions are the original's 64-bit double, kept as
+its bit pattern and changed in x87 arithmetic everywhere (`conditions.hpp`: generation,
+facilities, events, combat, stellar manipulation), and setup's racial point cost sums
+`economy::characteristicPointCost`, which costs each characteristic as stored. On
+2026-09-30 the engine's remaining guesses (spec 02 §13 items 33 and 37–50) and the other
+open items of spec 02 were settled from the executable, and the rows found then were
+implemented the same day, except the two below. The engine's own choices where the spec
+is silent are spec 02 §13 items 51–56. One spec 02 difference is listed under "Galaxy,
+setup and sight" and not repeated here: the extra starting planets that are not capitals
+of type "Homeworld" (spec 02 §2, §9). These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Surplus population (`economy_population.cpp:89-96` `overcrowding`) | A colony above its maximum (after a dome goes up, an atmosphere change or a capture) loses the surplus at once, with a message | Spec 02 §2, §13 Q33: nothing removes it; the colony has no room to grow or take in population until it drops below the maximum | M |
-| Upgrade items (`economy_queue.cpp:136-148`, `:345-361`; `commands.cpp:1000-1010`, `:386-392`) | The item stores no count: it is priced from the older facilities there at pricing time and the family's newest level; completion turns every older facility into the newest level known then, with no limit; a second upgrade of the same family is accepted, and the count can be edited | Spec 02 §6.6: target and count fixed when queued (every lower-level facility of the family); price from the target's cost × stored count; completion converts in stored facility order up to the count; a second upgrade to the same target is refused; the item is dropped at the start of a queue turn once nothing is left to upgrade | M |
-| Items the queue can no longer build (`economy_queue.cpp:290-296`) | A ship item on a planet that lost its yard stays at the top: it is paid for, fails at completion ("cannot build") and is paid for again, holding up the queue | Spec 02 §6.1: removed at the start of the queue's turn, like units or facilities the queue cannot build | M |
-| Units without room (`economy_queue.cpp:247-275` `placeUnits`, `:315-322`) | The item always leaves the queue; planets are tried before ships; one message for all the units lost | Spec 02 §6.5: the item stays at the top (full count, progress cleared) unless its last unit was placed; other holders in the game's object order; one "No Storage Available" per unit | L |
-| Facility completion (`economy_queue.cpp:328-341`) | A second space yard is dropped at completion; the count is added only up to the free slots; "cannot build" is logged when no slot is free | Spec 02 §6.5: no second-yard check at completion; with one free slot the whole count is added; no message when nothing is built | L |
-| Leaving emergency mode (`commands.cpp:400`) | Switching emergency off always starts at least one slow turn | Spec 02 §6.4: the counter is left as it is, so an emergency switched off before any turn passed costs nothing | L |
 | Opening pools (`setup.cpp:410-413`, `research.cpp:160-166`) | Starting Resources plus one turn of full income: remote mining, `Generate Points`, trade and the computer player's bonus included | Spec 02 §9: plus one turn of production only (colony output as delivered, minimum-generation rule); no bonus | L |
-| Home system (`economy.cpp:100-104`, `combat_ground.cpp:231`) | The system of the colony flagged as homeworld; after the homeworld is captured the empire has no home system, so the 25 % no-spaceport delivery stops there (and the AI and simulator lose their home) | Spec 02 §2, §5.5: recorded at game creation (for a rebel empire, at its founding) and never moves | L |
-| Minimum income (`economy.cpp:642-649`) | Only for an empire that holds a colony | Spec 02 §5.6: every living empire, also one left with ships only | L |
-| Abandoned ships (`economy.cpp:726-729`) | Log `Any Ship Lost` and `Ship Lost in System` | Spec 02 §7: no happiness event; only a ship destroyed by damage logs a loss | L |
-| Atmosphere counter (`economy_population.cpp:207-211`) | Reset to 0 on any turn without a converter or with the right atmosphere | Spec 02 §2: kept as it is on such turns; the count resumes later | L |
-| Happiness presence and troops (`economy_population.cpp:254-256`, `:312-320`) | Ships without an owner count as enemy ships; troops of a non-hostile foreign empire in the colony's cargo count as neither ours nor enemy | Spec 02 §4: ownerless ships never count; every troop unit in the colony's cargo counts as ours | L |
-| Reproduction Check Frequency (`economy.cpp:123`, `economy_population.cpp:369-370`) | Tested on the turn number (date − 24000) | Spec 02 §13 Q48: tested on the date itself, which differs for frequencies that do not divide 24000 (7, 9, …) | L |
-| Replicant shares (`economy_population.cpp:416-424`) | Exact `P × pop ÷ total`, rounded half to even | Spec 02 §3: the ratio `pop ÷ total` is stored as a 64-bit double before the multiplication; results differ when the exact product ends in one half | L |
-| Conditions (`economy_population.cpp:104-111` and every user of `SpaceObject::conditions`) | Hundredths; a multiplicative change is rounded and moves a growing value by at least 0.01 | Spec 02 §2, §13 Q46: a real number multiplied without rounding | L |
-| Cargo over capacity (no code) | A colony's cargo above its capacity (after a dome, a capture or a lost cargo facility) is never trimmed | Spec 02 §2: trimmed when the planet next takes damage or loses population to plague (cargo population first, then units from the first stack) | L |
-| Empire experience (`state.hpp:218`) | `Empire::experience` is never raised or shown; there is no race age | Spec 02 §9: gained from kills and construction, kept in the empire file, shown with the derived race age in Empire Setup and the Race Report; no gameplay effect | L |
-| Minister style in Empire Setup (`client/classic/screens/setup_empire.cpp:228-232`) | The list can go back to "(the race's own)" after a style was picked; a style name is kept when "Use Race Minister Style" is on | Spec 02 §10: once picked a style cannot be emptied again; ticking the box stores an empty style | L |
-| `General Type` of racial traits (`src/ruleset/load.cpp:390`) | Any text accepted | Spec 02 §1.6: only `Advantage`, `Disadvantage` or `Neither`; anything else is a data-file error (it has no other effect) | L |
+| Where built units go (`economy_queue.cpp` `placeUnits`) | After the builder, the empire's other planets in the sector (object order), then its ships and bases (vehicle order) | Spec 02 §6.5: the other holders in the game's object order, planets and ships mixed. The engine keeps planets and vehicles in separate lists with no common order, so it cannot mix them (spec 02 §13 Q52) | L |
 
 ## Vehicles, movement and logistics (spec 03)
 
@@ -193,7 +178,6 @@ These rows are where the engine differs:
 | Hostile objects for stellar manipulation (`movement_stellar.cpp:155`, `:203-211`) | Any visible vehicle of a hostile empire blocks, unit groups and mothballed ships included, and the check also applies to Destroy Planet | Spec 01 §9, §14 Q34: only visible ships and bases that are not mothballed, and colonies; Destroy Planet has no such check | L |
 | Create Planet on a colonized field (`movement_stellar.cpp:268-271`, `:473`) | Allowed; the colony is lost | Spec 01 §9: a colonized asteroid field is not a valid target | L |
 | Construct materials (`movement_stellar.cpp:357-376`) | Sums intact components only, over every vehicle in the sector (mothballed ships and unit groups included) | Spec 01 §9, §14 Q33: every component of the design, damaged or not; ships of any owner that are not mothballed; no unit groups | L |
-| Racial point cost (`economy.cpp:159` `characteristicPointCost`) | Each characteristic is clamped to its Min/Max Pct before costing | Spec 01 §14 Q35: costed as stored; only the race window's buttons keep a value in range, so an out-of-range value from a file costs what it says | L |
 | Save Map during a game (`map_file.cpp:349` `mapOfGame`) | Writes each living empire's capital as that player's starting point | Spec 01 §12, §14 Q37: writes the starting points the game still holds (a loaded map's specific points and unused common points; none for a generated game) | L |
 | Autosave slots (`client/classic/screens/setup_model.cpp:139-143` `autosaveName`) | Saves when the turn number is a multiple of N and cycles through ten slots whatever N is | Spec 01 §2.2, §14 Q38: the file is picked by the last digit of the turn count, so every 2, 5 or 10 turns keeps five, two or one files (names and format are ours) | L |
 | Generation edge cases (`generate.cpp:407-425`, `:554-588`, `:879`, `:1034-1055`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |

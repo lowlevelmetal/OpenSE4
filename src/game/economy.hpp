@@ -230,7 +230,8 @@ Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& 
 // `Cargo Storage` facility) stays until the planet next takes damage or loses
 // population to plague. Then cargo is removed until it fits: population held
 // as cargo first, 1M at a time, then units one at a time from the first stack
-// (confirmed: binary). Combat calls this for a planet that took damage.
+// (confirmed: binary). Combat calls this for a planet that a hit got through
+// to (inferred, spec 02 §13 Q54).
 void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c);
 
 // ---- Colonies ending ------------------------------------------------------------------------------

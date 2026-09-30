@@ -318,7 +318,7 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
 void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c) {
     const int64_t capacity = colonyCargoCapacity(r, s, c);
     while (cargoSpaceUsed(r, s, c.cargo) > capacity) {
-        // Population first, 1M at a time, from the first group (inferred: the spec names no group).
+        // Population first, 1M at a time, from the first group (inferred, spec 02 §13 Q54).
         if (auto g = std::find_if(c.cargo.population.begin(), c.cargo.population.end(), [](const PopulationGroup& p) { return p.millions > 0; });
             g != c.cargo.population.end()) {
             if (--g->millions <= 0) c.cargo.population.erase(g);
