@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/generate.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
 #include "game/setup.hpp"
@@ -770,6 +771,20 @@ bool ministerOn(const Empire& e, Minister m) {
     return (e.ministers & ministerBit(m)) != 0;
 }
 
+std::string_view ministerStyleOf(const Empire& e) { return e.useRaceMinisterStyle ? std::string_view{} : std::string_view{e.ministerStyle}; }
+
+MinisterSettings standIn(Empire& e) {
+    const MinisterSettings saved{e.ministerAll, e.ministers};
+    e.ministerAll = true;
+    e.ministers = kAllMinisters;
+    return saved;
+}
+
+void restoreMinisters(Empire& e, const MinisterSettings& saved) {
+    e.ministerAll = saved.all;
+    e.ministers = saved.areas;
+}
+
 std::string_view moodLabel(int anger) {
     // Spec 05 §7.3 (confirmed: binary).
     if (anger < 10) return "Brotherly";
@@ -835,8 +850,51 @@ const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral
     return draw([](const ruleset::RacePreset&) { return true; });
 }
 
-Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints) {
+namespace {
+
+// Spec 05 §7.1: a planet type and atmosphere pair that is not allowed is
+// replaced by random ones until it is. Allowed (inferred): some natural
+// planet record of the data set has that type and atmosphere, and it is not a
+// Gas Giant without atmosphere (spec 02 §2). The draws are uniform over the
+// types and atmospheres the planet records use, at most 1000 times.
+void settleEnvironment(const Rules& r, Race& race, Rng& rng) {
+    std::vector<std::string> surfaces, atmospheres;
+    auto addUnique = [](std::vector<std::string>& list, const std::string& v) {
+        if (!v.empty() && !datafile::keysEqual(v, "None") && std::none_of(list.begin(), list.end(), [&](const std::string& x) { return datafile::keysEqual(x, v); }))
+            list.push_back(v);
+    };
+    bool anyNone = false;
+    for (uint32_t i : naturalSectorTypes(r.data(), ObjectKind::Planet)) {
+        const ruleset::SectorObjectType& t = r.data().sectorObjectTypes[i];
+        addUnique(surfaces, t.planetPhysicalType);
+        if (datafile::keysEqual(t.planetAtmosphere, "None")) anyNone = true;
+        else addUnique(atmospheres, t.planetAtmosphere);
+    }
+    if (anyNone) atmospheres.insert(atmospheres.begin(), "None");
+    const bool fromData = !surfaces.empty() && !atmospheres.empty();
+    if (!fromData) {
+        surfaces = {"Rock", "Ice", "Gas Giant"};
+        atmospheres = {"None", "Methane", "Oxygen", "Hydrogen", "Carbon Dioxide"};
+    }
+    auto has = [](const std::vector<std::string>& list, std::string_view v) {
+        return std::any_of(list.begin(), list.end(), [&](const std::string& x) { return datafile::keysEqual(x, v); });
+    };
+    auto allowed = [&](const std::string& surface, const std::string& atmosphere) {
+        if (detail::surfaceKey(surface) == "Gas" && datafile::keysEqual(atmosphere, "None")) return false;
+        if (!fromData) return has(surfaces, surface) && has(atmospheres, atmosphere);
+        return !naturalSectorTypes(r.data(), ObjectKind::Planet, 0, surface, atmosphere).empty();
+    };
+    for (int tries = 0; tries < 1000 && !allowed(race.nativeSurface, race.atmosphere); ++tries) {
+        race.nativeSurface = surfaces[static_cast<size_t>(rng.below(surfaces.size()))];
+        race.atmosphere = atmospheres[static_cast<size_t>(rng.below(atmospheres.size()))];
+    }
+}
+
+} // namespace
+
+Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints, Rng& rng) {
     Race race = raceFromPreset(r, preset, 0);
+    settleEnvironment(r, race, rng);
     race.characteristics.fill(100);
     race.traits.clear();
     // Race Opt 1, 2 and 3 for 2000, 3000 and 5000 points; none for 0 (spec 05 §7.1).

@@ -128,7 +128,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         byEmpire[o.empire.index()] = &o;
     }
     std::vector<Control> control(s.empires.size(), Control::Computer);
-    std::vector<std::pair<EmpireId, bool>> ministerAllBefore;  // stand-ins, restored at the end
+    std::vector<std::pair<EmpireId, ai::MinisterSettings>> standIns;  // their own minister settings, restored at the end
     for (size_t i = 0; i < s.empires.size(); ++i) {
         Empire& e = s.empires[i];
         if (!e.alive || e.kind != PlayerKind::Human) continue;
@@ -140,9 +140,10 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         } else if (e.aiMinimalChanges) {
             control[i] = Control::Absent;
         } else {
+            // Planned once below (planOrders, planEconomyStep), and its
+            // political step runs with the Politics minister on (spec 05 §7.1).
             control[i] = Control::StandIn;
-            ministerAllBefore.emplace_back(e.id, e.ministerAll);
-            e.ministerAll = true;
+            standIns.emplace_back(e.id, ai::standIn(e));
         }
     }
     auto controlOf = [&](size_t i) { return i < control.size() ? control[i] : Control::Computer; };
@@ -219,7 +220,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     sight::updateKnowledge(r, s);
     diplomacy::updateContacts(ctx);
     ai::rememberAiEvents(ctx);
-    for (const auto& [id, all] : ministerAllBefore) s.empire(id).ministerAll = all;
+    for (const auto& [id, saved] : standIns) ai::restoreMinisters(s.empire(id), saved);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
     s.pendingMood = std::move(ctx.moodEvents);
     ++s.turn;

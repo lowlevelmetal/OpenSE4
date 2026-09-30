@@ -189,9 +189,17 @@ TEST_CASE("turn order: a player with missing orders is covered by every minister
     const int beforeB = research::totalLevels(r, s.empire(kB));
     GameState minimal = s;
     minimal.empire(kA).aiMinimalChanges = true;
+    // The player's own switches: only Research; Politics is off.
+    s.empire(kA).ministers = ministerBit(Minister::Research);
+    setContact(s, kA, kB);
+    s.empire(kA).relation(kB).anger = 50;
+    s.turn = 1;  // a turn with a previous one, so the political step counts it
 
     processTurn(r, s, {});
-    CHECK_FALSE(s.empire(kA).ministerAll);  // restored after the turn
+    CHECK_FALSE(s.empire(kA).ministerAll);  // restored after the turn (ai::standIn / ai::restoreMinisters)
+    CHECK(s.empire(kA).ministers == ministerBit(Minister::Research));
+    // The political step ran for the stand-in although the player's Politics minister is off (spec 05 §7.1).
+    CHECK(s.empire(kA).relation(kB).anger != 50);
     // The Research minister queued projects, and the research step spent the pool on them.
     CHECK(research::totalLevels(r, s.empire(kA)) > before);
 

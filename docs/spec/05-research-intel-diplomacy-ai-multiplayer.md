@@ -648,7 +648,8 @@ window, where the ranking shows the result.
   - Advanced traits are then added in order while each one's cost fits the remaining
     points.
   - Culture, planet type and atmosphere come from `AI_General`. A planet type and
-    atmosphere pair that is not allowed is replaced by random ones until it is.
+    atmosphere pair that is not allowed is replaced by random ones until it is. Which
+    pairs count as allowed is open question 28.
 - **Neutral empires** stay in their home system, never use warp points and cannot be
   played by humans [M]. Neutral is a per-empire flag. Its AI ignores every system except
   its home and claims only its colony systems, so its ships never leave (confirmed:
@@ -1124,6 +1125,7 @@ Team mates are always accepted, and team enemies always refused.
   - stop attacks in a system: nothing happens.
 - These queues are cleared every 10 turns.
 - Acknowledgement messages get a chatter reply from the friend or enemy response pool.
+  OpenSE4's reading of which message gets which pool is in open question 12.
 
 **Demands the AI starts**, the first that applies. Each needs the `Will Send To
 Friend/Enemy …` flag.
@@ -1247,7 +1249,7 @@ binary).
 - **Units file**: the game also looks for an `_AI_Construction_Units` file through the
   §7.2 rule (confirmed: binary). The stock install has none. When one exists, its rows
   (`Colony Type`, entries) fill the cargo of colonies whose queue is empty. The details
-  are open.
+  are open (open question 27 has OpenSE4's reading).
 - **`AI_Construction_Facilities`** (Facility Construction minister; confirmed: binary).
   Rows are (state set, `Construction Queue Type` = Homeworld or a colony type, ordered
   `Facility N Ability` + `Amount`).
@@ -1501,6 +1503,8 @@ binary).
     `Number Of Anti-Ship Drones Per Target` (or `Anti-Planet`).
   - Anti-ship targets are ships inside our territory of empires at War with us.
     Anti-planet targets are planets of such empires among the attack candidates.
+  - The launches are planet orders (spec 03 §12). How the kept share is counted and how
+    drones are shared out among targets is open question 29.
   - Idle drones within `Maximum Anti-Ship` (or `Anti-Planet`) `Drone Target System
     Distance` jumps are sent after them.
 - **`AI_Settings`** (confirmed: binary):
@@ -1851,7 +1855,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       - the repair and resupply thresholds;
       - where Space Yard Ships go;
       - the Stellar Manipulation minister;
-      - how each speech pool is tied to each reply;
+      - how each speech pool is tied to each reply. OpenSE4 (inferred): an acknowledgement
+        (Accept or Refuse Treaty, Break Treaty, Declare War, Accept or Refuse Trade, Accept or
+        Refuse Gift, Surrender, Grant Independence) that arrived since the previous turn gets
+        one General message in reply, from `Response Friend <type>` or `Response Enemy
+        <type>` by the current treaty, only when nothing from that empire waits for an
+        answer. A broken treaty always takes the Friend pool, and the answer to a tribute
+        the Accept or Refuse Tribute pool. Chatter and the answers to our own demands get
+        no reply, so two computer players never chatter back and forth;
       - which design text a non-type `Type` entry in `AI_Construction_Vehicles` matches.
     - Choices OpenSE4 makes where the rules above leave a detail open (inferred, to
       check):
@@ -2000,3 +2011,54 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       stand until the master's next cap (spec 02 §13 item 13).
 
     Which of these does the original do? (inferred)
+25. **How fast the AI researches** (§1.3, §7.5). In OpenSE4's all-computer games on the
+    stock data (5 empires, 30 systems, 120 turns, 5 seeds), an empire gains 5 to 37 tech
+    levels by turn 120, on top of the 16 it starts with. Its queue holds a single project
+    in 30 to 99 of the 120 turns. Every step follows the rules above:
+    - Most rows of the stock `AI_Research` tables have `Tech Area Min Percent` 100, and a
+      row of 100 closes the queue (the share total reaches 100), so one project at a time
+      is what those rows ask for.
+    - Projects are funded in queue order; at least 90 % of each empire's points reach a
+      project, so little is lost to the one-level-per-turn limit.
+    - The pace comes from the points: 6,000 to 23,000 per turn on average, against
+      Medium costs of max(LC × L, LC × L² / 2), where about half of the stock areas have a
+      `Level Cost` of 50,000 or more.
+
+    To check in the original with an all-computer game on the stock data: each empire's
+    tech levels and research points per turn at turns 40, 80 and 120, and how many
+    projects its queue holds.
+26. **Hazard systems** (§7.2, §7.5; spec 01 §7). §7 names no hazard test for the AI:
+    attack targets, the exploration frontier, patrol posts, defence and the fleets' goals
+    ignore black holes and storms. Spec 03 §6.2 only has paths avoid the squares near a
+    destructive centre. In one of five OpenSE4 all-computer games (5 empires, 30 systems,
+    120 turns), a black-hole system between two empires destroyed 26 to 30 ships: ships
+    that end a turn there (in transit, waiting in a fleet, or sent after an enemy ship
+    there) are pulled two sectors toward the centre each turn and are torn apart there
+    within about three turns. Does the original AI avoid black-hole and
+    storm systems when it picks destinations or routes, or keep its ships from ending a
+    turn in them? (inferred: OpenSE4 does not)
+27. **`_AI_Construction_Units` rows** (§7.5). OpenSE4 reads (inferred) records of `AI
+    State` (absent: every state), `Colony Type`, `Num Queue Entries`, then `Entry N Type` (a
+    unit's AI design type) and `Entry N Amount` (units wanted in the colony's cargo). A
+    new row starts where `AI State` or `Colony Type` repeats, so the reserve key may come
+    first in the file. The Ship Construction minister, after its vehicle list, gives each
+    colony it controls whose queue is empty the last row for the AI state and the colony's
+    type (Homeworld for an unknown type). The first entry whose newest design the colony
+    can build and holds fewer than `Amount` of is queued once: as many units as are
+    missing, fit the free cargo and the queue finishes in one turn, at least one. The
+    budget is the reserve plus what the vehicle list left. What is the original's format,
+    and when does it build units?
+28. **Allowed planet type and atmosphere** (§7.1, random race build). OpenSE4 (inferred)
+    allows a pair when some natural planet record of the data set has that type and
+    atmosphere, and it is not a Gas Giant without atmosphere (spec 02 §2). A pair that is
+    not allowed is replaced by a type and an atmosphere drawn uniformly from those the
+    planet records use, up to 1000 times. Which pairs does the original allow?
+29. **Planet launches** (§7.5). OpenSE4 (inferred): the kept share is trunc(total ×
+    percent / 100), where the total counts every satellite (or drone) of the empire, in
+    space, in planet cargo and in vehicle cargo; planet cargo above that is launched,
+    planet by planet in planet order. Satellites launch where the planet is, up to the
+    sector limit and only while the empire is below its unit limit. Of the drones, the
+    odd one goes to the anti-ship half. Each target in turn gets up to its per-target
+    number from the nearest planets within the target distance, taking drones of the
+    half's own type (`Anti-Ship Drone` or `Anti-Planet Drone`) first. Is "total" counted
+    per planet or for the empire, and how are drones matched to targets?

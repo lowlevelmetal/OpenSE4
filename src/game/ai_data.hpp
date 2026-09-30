@@ -210,6 +210,21 @@ struct VehicleQueue {
     std::vector<VehicleEntry> entries;
 };
 
+// `_AI_Construction_Units` rows (spec 05 §7.5; the stock install ships no
+// such file and the format is open). OpenSE4 reads records of `AI State`
+// (absent: every state), `Colony Type`, `Num Queue Entries` and `Entry N
+// Type` (a unit's AI design type) with `Entry N Amount` (units wanted in the
+// colony's cargo) (inferred).
+struct UnitEntry {
+    std::string type;
+    int amount = 0;
+};
+struct UnitQueue {
+    StateMask states = kAllStates;
+    std::string colonyType;            // "Homeworld" or a colony type
+    std::vector<UnitEntry> entries;
+};
+
 // ---- AI_DesignCreation -----------------------------------------------------------------------------
 struct DensityEntry {
     std::string ability;               // ability identifier, or "Weapon"
@@ -253,12 +268,14 @@ struct AiProfile {
     Speech speech;
     std::vector<ruleset::CombatStrategy> strategies;
     int unitReservePercent = 0;           // `_AI_Construction_Units`: resources to reserve for units
+    std::vector<UnitQueue> units;         // `_AI_Construction_Units` rows
     std::vector<std::string> sources;     // files read, for diagnostics ("built-in" when none)
 
     const DesignTemplate* design(std::string_view aiType) const;
     // The last table in the file whose states include `s` (no fallback row).
     const VehicleQueue* vehicleQueue(AiState s) const;
     const FacilityQueue* facilityQueue(AiState s, std::string_view queueType) const;
+    const UnitQueue* unitQueue(AiState s, std::string_view colonyType) const;  // as facilityQueue
 };
 
 // Built-in defaults: used when no install is present (tests, our own content).
@@ -272,8 +289,13 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
 // Cached profile for this rules set (thread-safe; references stay valid for the
 // life of the program).
 const AiProfile& profileFor(const Rules& r, std::string_view raceStyle, std::string_view ministerStyle = {});
-// The empire's own tables: its minister style when it has one, else its race's.
+// The empire's own tables: its minister style when it has one and does not
+// use its race's style (ministerStyleOf), else its race's.
 const AiProfile& profileFor(const Rules& r, const Empire& e);
+// The minister styles an install offers: the folders under Ai/ that hold AI
+// tables ("Aggressive", "Defensive" and "Neutral" in the stock install),
+// sorted. Empty without an install.
+std::vector<std::string> ministerStyles(const Rules& r);
 
 // The race's design-name file (Dsgnname/<file> in the install), one name per
 // line; empty without an install or file. Cached.

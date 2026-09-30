@@ -142,6 +142,7 @@ constexpr uint32_t ministerBit(Minister m) { return uint32_t{1} << static_cast<u
 inline constexpr uint32_t kAllMinisters = (uint32_t{1} << kMinisters) - 1;
 inline constexpr uint32_t kIndividualMinisters = kAllMinisters & ~(ministerBit(Minister::FacilityConstruction) - 1);
 constexpr bool isGlobalMinister(Minister m) { return m < Minister::FacilityConstruction; }
+std::string_view displayName(Minister m);  // "Ship Construction", "Mines/Satellites/Drones", ...
 
 // Computer Player Difficulty (spec 05 §7.1): stored per empire.
 inline constexpr int kDifficultyLow = 0;

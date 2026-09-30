@@ -98,6 +98,17 @@ struct SetDesignTypes { std::vector<std::string> designTypes; };
 struct SetColonyTypes { std::vector<std::string> colonyTypes; };
 struct SetEmpireOptions { std::optional<bool> aiMinimalChanges; std::optional<std::string> passwordHash; };
 
+// ---- Ministers (spec 02 §10, spec 05 §7.1) -----------------------------------------------------
+// The Ministers window's settings; fields left empty are not changed.
+struct SetMinisters {
+    std::optional<uint32_t> areas;          // Empire::ministers, bit i = Minister i (Select All / Select None)
+    std::optional<std::string> style;       // Empire::ministerStyle: a folder under Ai/, "" for none
+    std::optional<bool> useRaceStyle;       // "Use Race Minister Style"
+    std::optional<bool> newVehicles;        // new vehicles and launched units start under minister control
+    std::optional<bool> individual;         // "Indiv. Ministers On/Off": the flag on every own vehicle, fleet and colony
+    std::optional<bool> completeAi;         // "Complete AI On/Off": all areas, every flag, the new-vehicle option and ministerAll
+};
+
 } // namespace cmd
 
 using Command = std::variant<
@@ -109,7 +120,8 @@ using Command = std::variant<
     cmd::SetResearch, cmd::SetIntel,
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
-    cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions>;
+    cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
+    cmd::SetMinisters>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

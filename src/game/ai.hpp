@@ -141,6 +141,27 @@ std::string_view moodLabel(int anger);
 // computer players, else Empire::ministerAll or the area's bit.
 bool ministerOn(const Empire& e, Minister m);
 
+// The minister style whose AI files the empire reads (spec 05 §7.1, §7.2):
+// Empire::ministerStyle unless "Use Race Minister Style" is ticked. Empty:
+// the race's own files.
+std::string_view ministerStyleOf(const Empire& e);
+
+// A human empire whose orders are missing is played by the computer for the
+// turn (spec 05 §7.1, §8 step 1). standIn() switches all its ministers on and
+// returns the player's own settings; restoreMinisters() puts them back after
+// the turn. In between, the AI state update, the political step and the
+// ministers treat the empire like a computer player (Empire::ministerAll).
+// processTurn calls both around the turn and plans such an empire once
+// (planOrders, then planEconomyStep), never again through ministerCommands. The minimal-changes option
+// (Empire::aiMinimalChanges) is the caller's to honour: the stand-in then
+// plans nothing, but its bookkeeping (AI state, anger) still runs.
+struct MinisterSettings {
+    bool all = false;
+    uint32_t areas = 0;
+};
+MinisterSettings standIn(Empire& e);
+void restoreMinisters(Empire& e, const MinisterSettings& saved);
+
 // Difficulty (spec 05 §7.1): the empire's level, kDifficultyLow..High.
 // Until the AI step assigns it (Empire::aiDifficulty < 0): the chosen level
 // for random AI players (GameOptions::randomAiPlayers), Medium otherwise.
@@ -162,7 +183,8 @@ const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral
 // The race a random computer player plays: the preset's `Race Opt` set of the
 // racial-point level (1 for 2000, 2 for 3000, 3 for 5000; none for 0),
 // characteristics applied while they fit the budget, then traits that fit.
-Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints);
+// A planet type and atmosphere pair that is not allowed is redrawn from `rng`.
+Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints, Rng& rng);
 
 // Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
 // Low/Medium/High setting (0..2) brings, and a race preset folder for each.

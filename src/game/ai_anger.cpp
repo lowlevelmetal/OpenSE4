@@ -586,11 +586,19 @@ void decideState(const Rules& r, GameState& s, EmpireId id) {
 
 // Territory: computer players claim theirs anew; the systems they agreed to
 // leave are their systems to avoid.
-void claimTerritory(GameState& s, Empire& e) {
+void claimTerritory(const Rules& r, GameState& s, Empire& e) {
     if (!e.alive || e.kind == PlayerKind::Human) return;
     e.claimedSystems = computeTerritory(s, e.id);
     e.systemsToAvoid = e.aiMemory.avoid;
     std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
+    // The AI_Settings movement flags become the empire's own options each
+    // turn (spec 05 §7.5). OpenSE4 has no per-empire minefield or
+    // avoided-system option yet (movement always routes around both), so
+    // only the clear-orders pair is copied.
+    const SettingsTable& set = profileFor(r, e).settings;
+    e.clearOrdersOnEncounter = set.clearOrdersOnAll     ? EncounterClear::Any
+                               : set.clearOrdersOnEnemy ? EncounterClear::Enemy
+                                                        : EncounterClear::Never;
 }
 
 AngerInputs angerInputs(const Rules& r, const GameState& s, std::optional<uint32_t> eventsTurn) {
@@ -624,7 +632,7 @@ void angerOf(const Rules& r, GameState& s, Empire& e, const AngerInputs& in) {
 
 void updateAiStates(TurnContext& ctx) {
     GameState& s = ctx.state;
-    for (Empire& e : s.empires) claimTerritory(s, e);
+    for (Empire& e : s.empires) claimTerritory(ctx.rules, s, e);
     for (const Empire& e : s.empires)
         if (e.alive) decideState(ctx.rules, s, e.id);
 }
@@ -632,7 +640,7 @@ void updateAiStates(TurnContext& ctx) {
 void updateAiState(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
-    claimTerritory(s, s.empire(id));
+    claimTerritory(ctx.rules, s, s.empire(id));
     decideState(ctx.rules, s, id);
 }
 

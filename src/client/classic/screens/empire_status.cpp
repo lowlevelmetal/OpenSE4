@@ -7,6 +7,7 @@
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
+#include "game/ai_data.hpp"
 
 #include <algorithm>
 #include <array>
@@ -235,14 +236,15 @@ public:
 
 // ---- Ministers -------------------------------------------------------------------------------
 
+// The minister switches and style are part of the empire (spec 02 §10, spec
+// 05 §7.1): every change is a cmd::SetMinisters, so the host and the AI see it.
 class MinistersScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
         Dialog d(ui, "Ministers", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        ClassicSettings& s = settings();
-        const bool completeAi = ui.me().ministerAll;
-        bool changed = false;
+        const game::Empire& me = ui.me();
+        const bool completeAi = me.ministerAll;
         d.beginContent();
         ImGui::BeginGroup();
         lamp(ui, completeAi, 16);
@@ -252,48 +254,67 @@ public:
         ImGui::EndGroup();
         ImGui::Spacing();
         const float col = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        // Room below the lists for the new-vehicle switch, the style switch and picker, and a status line.
+        const float below = ImGui::GetFrameHeightWithSpacing() * 4 + ImGui::GetStyle().ItemSpacing.y * 2;
+        const float listHeight = std::max(ui.px(200), ImGui::GetContentRegionAvail().y - below);
         for (int pass = 0; pass < 2; ++pass) {
             if (pass == 1) ImGui::SameLine();
-            ImGui::BeginChild(pass == 0 ? "##global" : "##individual", ImVec2(col, ui.px(430)), ImGuiChildFlags_Borders);
+            ImGui::BeginChild(pass == 0 ? "##global" : "##individual", ImVec2(col, listHeight), ImGuiChildFlags_Borders);
             heading(ui, pass == 0 ? "Empire-wide ministers" : "Individual ministers");
-            dimText(pass == 0 ? "Each takes over its whole area." : "Each acts on ships and planets with the minister flag set.");
+            wrappedDim(pass == 0 ? "Each takes over its whole area." : "Each acts on ships and planets with the minister flag set.");
             ImGui::Spacing();
-            for (const MinisterCategory& m : ministerCategories()) {
-                if (m.global != (pass == 0)) continue;
-                bool on = s.ministerOn(m.name);
-                if (lampToggle(ui, m.name, &on)) {
-                    s.setMinister(m.name, on);
-                    changed = true;
-                }
+            for (size_t i = 0; i < game::kMinisters; ++i) {
+                const auto m = static_cast<game::Minister>(i);
+                if (game::isGlobalMinister(m) != (pass == 0)) continue;
+                const uint32_t bit = game::ministerBit(m);
+                bool on = (me.ministers & bit) != 0;
+                if (lampToggle(ui, std::string(game::displayName(m)).c_str(), &on))
+                    status_.issue(ui, cmd::SetMinisters{.areas = on ? (me.ministers | bit) : (me.ministers & ~bit)});
             }
             ImGui::EndChild();
         }
         ImGui::Spacing();
-        changed |= lampToggle(ui, "Put newly built vehicles and new colonies under their individual ministers", &s.ministersForNewVehicles);
-        changed |= lampToggle(ui, "Ministers follow our race's own style", &s.raceMinisterStyle);
-        wrappedDim("The area switches are remembered on this computer; the computer player does not act on them yet. "
-                   "Complete AI hands the whole empire to the computer.");
+        bool newVehicles = me.ministersForNewVehicles;
+        if (lampToggle(ui, "Put newly built vehicles and launched units under their individual ministers", &newVehicles))
+            status_.issue(ui, cmd::SetMinisters{.newVehicles = newVehicles});
+        styleChoice(ui, me);
         status_.draw();
 
         d.beginButtons();
-        if (d.button("Select All")) {
-            for (const MinisterCategory& m : ministerCategories()) s.setMinister(m.name, true);
-            changed = true;
-        }
-        if (d.button("Select None")) {
-            s.ministers.clear();
-            changed = true;
-        }
+        if (d.button("Select All")) status_.issue(ui, cmd::SetMinisters{.areas = game::kAllMinisters});
+        if (d.button("Select None")) status_.issue(ui, cmd::SetMinisters{.areas = 0u});
+        if (d.button("Indiv. On")) status_.issue(ui, cmd::SetMinisters{.individual = true});
+        if (d.button("Indiv. Off")) status_.issue(ui, cmd::SetMinisters{.individual = false});
         d.spacer();
-        if (d.tab("Complete AI On", completeAi, !completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = true});
-        if (d.tab("Complete AI Off", !completeAi, completeAi)) status_.issue(ui, cmd::SetMinister{.empireWide = true, .on = false});
-        if (changed) saveSettings();
+        if (d.tab("Complete AI On", completeAi, !completeAi)) status_.issue(ui, cmd::SetMinisters{.completeAi = true});
+        if (d.tab("Complete AI Off", !completeAi, completeAi)) status_.issue(ui, cmd::SetMinisters{.completeAi = false});
         d.close();
         return d.keepOpen();
     }
 
 private:
     CommandStatus status_;
+
+    // The personality set the ministers' AI files come from (spec 05 §7.2).
+    // OpenSE4 lets the player change it during the game.
+    void styleChoice(UiContext& ui, const game::Empire& me) {
+        bool raceStyle = me.useRaceMinisterStyle;
+        if (lampToggle(ui, "Ministers follow our race's own style", &raceStyle)) status_.issue(ui, cmd::SetMinisters{.useRaceStyle = raceStyle});
+        const std::vector<std::string> styles = game::ai::ministerStyles(ui.rules());
+        ImGui::BeginDisabled(me.useRaceMinisterStyle);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Minister style");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ui.px(220));
+        const std::string current = me.ministerStyle.empty() ? std::string("Race") : me.ministerStyle;
+        if (ImGui::BeginCombo("##ministerStyle", current.c_str())) {
+            if (ImGui::Selectable("Race", me.ministerStyle.empty())) status_.issue(ui, cmd::SetMinisters{.style = std::string{}});
+            for (const std::string& st : styles)
+                if (ImGui::Selectable(st.c_str(), st == me.ministerStyle)) status_.issue(ui, cmd::SetMinisters{.style = st});
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+    }
 };
 
 // ---- Systems To Avoid ------------------------------------------------------------------------

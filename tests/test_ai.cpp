@@ -14,6 +14,7 @@
 #include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/events.hpp"
+#include "game/generate.hpp"
 #include "game/intel.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
@@ -442,17 +443,18 @@ TEST_CASE("ai: a random computer player's race uses the Race Opt of the racial-p
     // 2000 points: Race Opt 1. Intelligence 250 costs 1500; Reproduction 300
     // would bring it to 3500 and goes back to 100. Day Eyes (400) fits, Night
     // Eyes (500) would pass 2000 and ends the list.
-    const Race low = ai::randomPlayerRace(rules, *preset, 2000);
+    Rng rng(3);
+    const Race low = ai::randomPlayerRace(rules, *preset, 2000, rng);
     CHECK(low.characteristic(Characteristic::Intelligence) == 250);
     CHECK(low.characteristic(Characteristic::Reproduction) == 100);
     CHECK(low.traits.size() == 1);
     CHECK(racialPointCost(rules, low) <= 2000);
     // 3000 points: Race Opt 2.
-    const Race mid = ai::randomPlayerRace(rules, *preset, 3000);
+    const Race mid = ai::randomPlayerRace(rules, *preset, 3000, rng);
     CHECK(mid.characteristic(Characteristic::Reproduction) == 300);
     CHECK(mid.characteristic(Characteristic::Intelligence) == 100);
     // No racial points: no set is used.
-    const Race none = ai::randomPlayerRace(rules, *preset, 0);
+    const Race none = ai::randomPlayerRace(rules, *preset, 0, rng);
     CHECK(none.characteristic(Characteristic::Intelligence) == 100);
     CHECK(none.traits.empty());
 }
@@ -1996,6 +1998,306 @@ const Rules* installedRules() {
 
 } // namespace
 
+// ---- Minister settings, planet launches, chatter and unit cargo --------------------------------------
+
+TEST_CASE("ai: the minister settings belong to the empire and are set by cmd::SetMinisters") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(11, 2, 12, true);
+    const EmpireId me{0u}, other{1u};
+    // One area switch at a time; the global Research minister then takes over research.
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.areas = ministerBit(Minister::Research)}).ok);
+    CHECK(s.empire(me).ministers == ministerBit(Minister::Research));
+    CHECK(ai::ministerOn(s.empire(me), Minister::Research));
+    CHECK_FALSE(ai::ministerOn(s.empire(me), Minister::Design));
+    CHECK(countOf<cmd::SetResearch>(ai::ministerCommands(r, s, me)) == 1);
+    CHECK_FALSE(apply(r, s, me, cmd::SetMinisters{.areas = uint32_t{1} << 30}).ok);
+    CHECK_FALSE(apply(r, s, me, cmd::SetMinisters{.style = std::string("../Default")}).ok);
+
+    // Indiv. Ministers On flags everything we own and nothing else.
+    const DesignId picket = addWarship(s, r, me, "Picket");
+    const DesignId theirs = addWarship(s, r, other, "Theirs");
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.individual = true}).ok);
+    for (const Vehicle& v : s.vehicles) CHECK(v.minister == (v.owner == me));
+    for (const auto& c : s.colonies)
+        if (c) CHECK(c->minister == (c->owner == me));
+
+    // With the new-vehicle option, new vehicles start under minister control.
+    CHECK_FALSE(movement::spawnVehicle(r, s, me, picket, home).minister);
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.newVehicles = true}).ok);
+    CHECK(movement::spawnVehicle(r, s, me, picket, home).minister);
+    CHECK_FALSE(movement::spawnVehicle(r, s, other, theirs, home).minister);
+
+    // Complete AI On and Off do all of the bulk buttons at once.
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.completeAi = false}).ok);
+    CHECK(s.empire(me).ministers == 0);
+    CHECK_FALSE(s.empire(me).ministerAll);
+    CHECK_FALSE(s.empire(me).ministersForNewVehicles);
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == me) CHECK_FALSE(v.minister);
+    CHECK(ai::ministerCommands(r, s, me).empty());
+    REQUIRE(apply(r, s, me, cmd::SetMinisters{.completeAi = true}).ok);
+    CHECK(s.empire(me).ministers == kAllMinisters);
+    CHECK(s.empire(me).ministerAll);
+    CHECK(s.empire(me).ministersForNewVehicles);
+    CHECK(homeworld(s, me).minister);
+    CHECK_FALSE(homeworld(s, other).minister);
+}
+
+TEST_CASE("ai: the minister style picks the AI files unless the race's style is used") {
+    TempTree t("style");
+    t.write("Ai/Default_AI_Anger.txt", "Regular Decrease := -9\n");
+    t.write("Ai/Aggressive/Aggressive_AI_Anger.txt", "Regular Decrease := -1\n");
+    t.write("Ai/Defensive/Defensive_AI_Settings.txt", "Personality Group := 2\n");
+    t.writePlain("Ai/Notes/readme.txt", "not a style folder");
+    t.write("Pictures/Races/Testian/Testian_AI_Anger.txt", "Regular Decrease := -4\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    CHECK(ai::ministerStyles(rules) == std::vector<std::string>{"Aggressive", "Defensive"});
+    CHECK(ai::ministerStyles(engineRules()).empty());  // no install
+
+    GameState s = newEngineGame(3, 2, 12, true);
+    const EmpireId me{0u};
+    s.empire(me).race.style = "Testian";
+    CHECK(ai::profileFor(rules, s.empire(me)).anger.regularDecrease == -4);  // no style: the race's files
+    REQUIRE(apply(rules, s, me, cmd::SetMinisters{.style = std::string("Aggressive")}).ok);
+    CHECK(ai::ministerStyleOf(s.empire(me)) == "Aggressive");
+    CHECK(ai::profileFor(rules, s.empire(me)).anger.regularDecrease == -1);
+    // Use Race Minister Style: the race's files again; the style choice is kept.
+    REQUIRE(apply(rules, s, me, cmd::SetMinisters{.useRaceStyle = true}).ok);
+    CHECK(ai::ministerStyleOf(s.empire(me)).empty());
+    CHECK(s.empire(me).ministerStyle == "Aggressive");
+    CHECK(ai::profileFor(rules, s.empire(me)).anger.regularDecrease == -4);
+    // A style folder without the table falls back to Ai/Default, never to the race.
+    REQUIRE(apply(rules, s, me, cmd::SetMinisters{.style = std::string("Defensive"), .useRaceStyle = false}).ok);
+    CHECK(ai::profileFor(rules, s.empire(me)).anger.regularDecrease == -9);
+    CHECK(ai::profileFor(rules, s.empire(me)).settings.personalityGroup == 2);
+}
+
+TEST_CASE("ai: a missed human turn is played with every minister on, the political step included") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u}, other{1u};
+    s.empire(me).kind = PlayerKind::Human;
+    meet(s, me, other);
+    s.empire(me).ministers = ministerBit(Minister::Research);  // the player's Politics minister is off
+    s.empire(me).relation(other).anger = 50;
+    s.turn = 1;
+    TurnContext ctx{r, s, {}, {}, {}};
+    ai::politicalStep(ctx);
+    CHECK(s.empire(me).relation(other).anger == 50);
+
+    const ai::MinisterSettings saved = ai::standIn(s.empire(me));
+    CHECK(ai::ministerOn(s.empire(me), Minister::Politics));
+    ai::politicalStep(ctx);
+    CHECK(s.empire(me).relation(other).anger == 50 + ai::builtinProfile().anger.regularDecrease);
+    CHECK_FALSE(ai::planOrders(r, s, me).empty());  // every minister acts on everything
+
+    ai::restoreMinisters(s.empire(me), saved);
+    CHECK(s.empire(me).ministers == ministerBit(Minister::Research));
+    CHECK_FALSE(s.empire(me).ministerAll);
+    CHECK_FALSE(ai::ministerOn(s.empire(me), Minister::Politics));
+}
+
+TEST_CASE("ai: computer players copy the clear-orders flags of AI_Settings each turn") {
+    TempTree t("clearorders");
+    t.write("Pictures/Races/Hasty/Hasty_AI_Settings.txt", "Clear orders on encounter enemy := True\n");
+    t.write("Pictures/Races/Wary/Wary_AI_Settings.txt", "Clear orders on encounter enemy := True\nClear orders on encounter all := True\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(4, 3, 0, 12);
+    s.empire(EmpireId{0u}).race.style = "Hasty";
+    s.empire(EmpireId{1u}).race.style = "Wary";
+    s.empire(EmpireId{2u}).kind = PlayerKind::Human;
+    s.empire(EmpireId{2u}).race.style = "Wary";
+    TurnContext ctx{rules, s, {}, {}, {}};
+    ai::updateAiStates(ctx);
+    CHECK(s.empire(EmpireId{0u}).clearOrdersOnEncounter == EncounterClear::Enemy);
+    CHECK(s.empire(EmpireId{1u}).clearOrdersOnEncounter == EncounterClear::Any);
+    CHECK(s.empire(EmpireId{2u}).clearOrdersOnEncounter == EncounterClear::Never);  // a human sets their own
+}
+
+TEST_CASE("ai: satellites and drones above the kept shares are launched from planet cargo") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(13, 2, 12, false);
+    exploreEverything(s);
+    const EmpireId enemy{0u}, cpu{1u};
+    REQUIRE(s.empire(cpu).kind == PlayerKind::Computer);
+    meet(s, enemy, cpu);
+    s.empire(cpu).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(cpu).treaty = Treaty::War;
+    const ObjectId planet = homeworld(s, cpu).planet;
+    const Location home = locationOf(s.galaxy, planet);
+    const DesignId sat = addTestDesign(s, r, cpu, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    const DesignId hunter = addTestDesign(s, r, cpu, "Hunter", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    s.design(hunter).designType = "Anti-Ship Drone";
+    const DesignId breaker = addTestDesign(s, r, cpu, "Breaker", "Test Drone Hull", {"Test Engine", "Test Warhead"});
+    s.design(breaker).designType = "Anti-Planet Drone";
+    homeworld(s, cpu).cargo.units = {{sat, 10}, {hunter, 10}, {breaker, 10}};
+    const DesignId raider = addWarship(s, r, enemy, "Raider");
+    const VehicleId intruder = addTestVehicle(s, r, raider, home).id;
+    sight::updateKnowledge(r, s);
+    Empire& e = s.empire(cpu);
+    if (std::find(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end(), intruder) == e.knowledge.visibleVehicles.end()) {
+        e.knowledge.visibleVehicles.push_back(intruder);
+        std::sort(e.knowledge.visibleVehicles.begin(), e.knowledge.visibleVehicles.end());
+    }
+
+    ai::detail::Planner p(r, s, cpu, ai::detail::Mode::Computer, 3);
+    const auto& set = p.prof.settings;
+    REQUIRE(set.satellitesKeptPercent == 40);
+    REQUIRE(set.dronesKeptPercent == 40);
+    // The enemy homeworld is the planet target when it is within range.
+    std::optional<ObjectId> planetTarget;
+    for (const ai::detail::Candidate& c : p.sit.candidates)
+        if (c.owner == enemy && p.jumpsFrom(home.system)[c.system.index()] <= set.antiPlanetDroneRange && !planetTarget) planetTarget = c.planet;
+    ai::detail::planMinesSatellitesDrones(p);
+    const Colony& after = *p.st.colony(planet);
+    // Satellites: 10 held, 40 % kept -> 6 launched where the planet is.
+    // Drones: 20 held, 8 kept -> 12, half after the one ship (capped at 3 per
+    // target), half after planets; each half takes its own drone type first.
+    int64_t satellites = 0, atShip = 0, atPlanet = 0;
+    for (const Order& o : after.orders) {
+        REQUIRE(o.kind == OrderKind::LaunchUnits);
+        if (o.design == sat) satellites += o.amount;
+        if (o.vehicle == intruder) {
+            CHECK(o.design == hunter);
+            atShip += o.amount;
+        }
+        if (o.object.valid()) {
+            CHECK(o.design == breaker);
+            CHECK(planetTarget == o.object);
+            atPlanet += o.amount;
+        }
+    }
+    CHECK(satellites == 6);
+    CHECK(atShip == set.antiShipDronesPerTarget);
+    CHECK(atPlanet == (planetTarget ? set.antiPlanetDronesPerTarget : 0));
+    CHECK(p.dropped.empty());
+
+    // Satellites alone are launched too.
+    homeworld(s, cpu).cargo.units = {{sat, 10}};
+    ai::detail::Planner only(r, s, cpu, ai::detail::Mode::Computer, 3);
+    ai::detail::planMinesSatellitesDrones(only);
+    REQUIRE(only.st.colony(planet)->orders.size() == 1);
+    CHECK(only.st.colony(planet)->orders.front().amount == 6);
+
+    // Launched satellites still count toward the total: 6 in space and 4 in
+    // cargo keep 4, so nothing more is launched.
+    homeworld(s, cpu).cargo.units = {{sat, 4}};
+    addTestVehicle(s, r, sat, home).count = 6;
+    ai::detail::Planner again(r, s, cpu, ai::detail::Mode::Computer, 3);
+    ai::detail::planMinesSatellitesDrones(again);
+    CHECK(again.st.colony(planet)->orders.empty());
+}
+
+TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId a{0u}, b{1u};
+    meet(s, a, b);
+    s.empire(a).relation(b).treaty = s.empire(b).relation(a).treaty = Treaty::NonAggression;
+    s.turn = 5;
+    auto message = [&](EmpireId from, EmpireId to, MessageType type, uint32_t sent) {
+        DiplomaticMessage m;
+        m.id = MessageId{s.nextMessageId++};
+        m.from = from;
+        m.to = to;
+        m.type = type;
+        m.treaty = Treaty::NonAggression;
+        m.sentTurn = sent;
+        m.delivered = true;
+        s.messages.push_back(m);
+        return m.id;
+    };
+    // Acknowledgements are marked answered on delivery (they need no answer).
+    const MessageId proposal = message(a, b, MessageType::ProposeTreaty, 3);
+    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // too old to reply to now
+    const MessageId chatter = message(b, a, MessageType::General, 4);      // plain chatter gets no reply
+    const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4);
+    s.messages.back().inReplyTo = proposal;
+    for (DiplomaticMessage& m : s.messages) m.answered = true;
+
+    auto replies = [&](const std::vector<Command>& cmds) {
+        std::vector<DiplomaticMessage> out;
+        for (const Command& c : cmds)
+            if (const auto* send = as<cmd::SendMessage>(c); send && send->message.to == b && send->message.inReplyTo.valid())
+                out.push_back(send->message);
+        return out;
+    };
+    const auto cmds = ai::planTurn(r, s, a);
+    const auto sent = replies(cmds);
+    REQUIRE(sent.size() == 1);
+    CHECK(sent[0].inReplyTo == accepted);
+    CHECK(sent[0].type == MessageType::General);
+    CHECK(sent[0].text == std::format("{} welcomes the agreement.", s.empire(a).name));
+    CHECK(applyAll(r, s, a, cmds).empty());
+    for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != stale);
+    for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != chatter);
+    // Acknowledged once: nothing more next turn.
+    for (Relation& rel : s.empire(a).relations) rel.messageSentThisTurn = false;
+    CHECK(replies(ai::planTurn(r, s, a)).empty());
+}
+
+TEST_CASE("ai: Construction_Units rows fill the cargo of colonies whose queue is empty") {
+    TempTree t("units");
+    // A leading reserve key, then one row per colony type (inferred format).
+    t.write("Ai/Default_AI_Construction_Units.txt",
+            "Percentage of Resources To Reserve For Unit Construction := 25\n"
+            "AI State := Exploration, Infrastructure\nColony Type := Homeworld\nNum Queue Entries := 2\n"
+            "Entry 1 Type := Mine\nEntry 1 Amount := 5\nEntry 2 Type := Satellite\nEntry 2 Amount := 3\n"
+            "AI State := Attack\nColony Type := Homeworld\nNum Queue Entries := 1\nEntry 1 Type := Satellite\nEntry 1 Amount := 50\n");
+    // No ship list outside Attack, so only the units rows build.
+    t.write("Ai/Default_AI_Construction_Vehicles.txt", "AI State := Attack\nNum Queue Entries := 1\nEntry 1 Type := Attack Ship\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    const ai::AiProfile prof = ai::loadProfile(t.root, "Nobody");
+    CHECK(prof.unitReservePercent == 25);
+    REQUIRE(prof.units.size() == 2);
+    CHECK(prof.units[0].colonyType == "Homeworld");
+    REQUIRE(prof.units[0].entries.size() == 2);
+    CHECK(prof.units[0].entries[1].type == "Satellite");
+    CHECK(prof.units[0].entries[1].amount == 3);
+    CHECK(prof.unitQueue(ai::AiState::Attack, "Homeworld") == &prof.units[1]);
+    CHECK(prof.unitQueue(ai::AiState::Exploration, "Mining Colony") == nullptr);
+
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).stockpile = {1'000'000, 1'000'000, 1'000'000};
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    Colony& home = homeworld(s, me);
+    home.queue.items.clear();
+    home.cargo.units = {{sat, 1}};
+    economy::updateReports(rules, s);
+    ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+    REQUIRE(p.state == ai::AiState::Exploration);
+    ai::detail::planShips(p);
+    // No mine design: the Mine entry is skipped. Two more satellites make three.
+    const ConstructionQueue& q = p.st.colony(home.planet)->queue;
+    const auto item = std::find_if(q.items.begin(), q.items.end(), [&](const QueueItem& i) { return i.design == sat; });
+    REQUIRE(item != q.items.end());
+    CHECK(item->count == 2);
+    CHECK(p.dropped.empty());
+}
+
+TEST_CASE("ai: a random player's planet type and atmosphere pair must be allowed") {
+    TempTree t("environment");
+    t.write("Pictures/Races/Floater/Floater_AI_General.txt", "Name := Floater\nPlanet Type := Gas Giant\nAtmosphere := None\n");
+    t.write("Pictures/Races/Digger/Digger_AI_General.txt", "Name := Digger\nPlanet Type := Rock\nAtmosphere := Oxygen\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    Rng rng(9);
+    const ruleset::RacePreset* floater = findPreset(rules, "Floater");
+    REQUIRE(floater);
+    const Race redrawn = ai::randomPlayerRace(rules, *floater, 2000, rng);
+    CHECK_FALSE((ai::detail::surfaceKey(redrawn.nativeSurface) == "Gas" && redrawn.atmosphere == "None"));
+    CHECK_FALSE(naturalSectorTypes(rules.data(), ObjectKind::Planet, 0, redrawn.nativeSurface, redrawn.atmosphere).empty());
+    const ruleset::RacePreset* digger = findPreset(rules, "Digger");
+    REQUIRE(digger);
+    const Race kept = ai::randomPlayerRace(rules, *digger, 2000, rng);
+    CHECK(kept.nativeSurface == "Rock");
+    CHECK(kept.atmosphere == "Oxygen");
+}
+
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {
     const Rules* r = installedRules();
     if (!r) return;
@@ -2012,6 +2314,7 @@ TEST_CASE("installed data set: AI files load and computer players play (opt-in)"
     for (const ai::DesignTemplate& t : def.designs) CHECK(ai::isAiDesignType(t.designType));
     const ai::AiProfile& race = ai::profileFor(*r, r->racePresets().front().folder);
     CHECK(race.sources.size() >= def.sources.size());
+    CHECK(ai::ministerStyles(*r).size() >= 3);  // the stock Aggressive, Defensive and Neutral folders
 
     GameSetup setup;
     setup.seed = 77;

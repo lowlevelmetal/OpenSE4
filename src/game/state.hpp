@@ -146,6 +146,10 @@ struct Knowledge {
     std::vector<std::string> notes;          // per SystemId, player notes
 };
 
+// Which empires met after a warp clear a vehicle's orders (spec 03 §6.4):
+// none, an enemy empire, or any other empire.
+enum class EncounterClear : uint8_t { Never, Enemy, Any };
+
 struct Empire {
     EmpireId id;
     std::string name;          // e.g. "Terran"
@@ -205,6 +209,13 @@ struct Empire {
     bool ministerAll = false;               // full minister control
     uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)
     std::string ministerStyle;              // "Aggressive", "Defensive", "Neutral"; empty: the race's own AI files
+    bool useRaceMinisterStyle = false;      // "Use Race Minister Style": the race's files even with a style (spec 05 §7.1)
+    bool ministersForNewVehicles = false;   // new vehicles and launched units start under minister control (spec 02 §10)
+
+    // Movement option (spec 03 §6.4): a Warp into a system holding such an
+    // empire's objects fails and clears the orders. Computer players copy it
+    // from their AI_Settings each turn (spec 05 §7.5).
+    EncounterClear clearOrdersOnEncounter = EncounterClear::Never;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
