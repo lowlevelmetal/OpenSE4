@@ -75,11 +75,10 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     combat::runGroundCombat(ctx);
     movement::runColonization(ctx);
 
-    // ---- 5-8. Economy, research, intelligence, population.
+    // ---- 5-7. Economy, research, intelligence.
     economy::runEconomy(ctx);
     research::runResearch(ctx);
     intel::runIntel(ctx);
-    economy::runPopulation(ctx);
 
     // ---- 9-10. Events, then supply and repair.
     events::runEvents(ctx);
@@ -91,6 +90,11 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     diplomacy::updateContacts(ctx);
     diplomacy::advanceTrade(ctx);
     game::ai::updateAnger(ctx);
+
+    // ---- 8. Population: growth, then mood from every event of this turn. It
+    // runs after events, upkeep, contact and anger (spec 05 §8 lists it
+    // earlier) so that mood events raised by those phases are not lost. (inferred)
+    economy::runPopulation(ctx);
 
     // ---- 13. End of turn.
     for (Empire& e : s.empires)

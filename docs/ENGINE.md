@@ -50,9 +50,12 @@ player / AI / network ─> game::Command ────┘         │
    phases, and `combat::resolveSpaceCombat` runs in any sector where hostiles meet.
 4. **Ground combat and capture**, then colonization.
 5. **Economy:** production, trade, maintenance, then construction.
-6. **Research.** 7. **Intelligence.** 8. **Population:** growth, mood, riots, plague.
-9. **Events.** 10. **Upkeep:** supply and repair.
-11. **Sight, contact and trade.** 12. **AI anger.**
+6. **Research.** 7. **Intelligence.**
+8. **Events.** 9. **Upkeep:** supply and repair.
+10. **Sight, contact and trade.** 11. **AI anger.**
+12. **Population:** growth, then mood from every event of the turn, riots and plague.
+    The spec places it earlier. It runs last so that mood events raised by the later
+    phases are not lost.
 13. **End of turn:** statistics, score, victory, then the date advances.
 
 ## Determinism
