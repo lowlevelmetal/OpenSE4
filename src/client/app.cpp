@@ -70,6 +70,7 @@ int App::run(const AppOptions& options) {
         co.race = options.classicRace;
         co.autoTurns = options.autoTurns;
         co.openWindow = options.classicWindow;
+        co.turnBased = options.classicTurnBased;
         mode_ = ClassicMode::create(platform, co, error);
     } else {
         PrototypeOptions po;

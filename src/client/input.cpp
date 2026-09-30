@@ -44,7 +44,7 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::Rename, "Orders", "Change name", "rename"},
     {Action::Cloak, "Orders", "Cloak", "cloak"},
     {Action::Decloak, "Orders", "Decloak", "decloak"},
-    {Action::NextIdleShip, "Selection", "Next ship without orders", "next_idle_ship"},
+    {Action::NextIdleShip, "Selection", "Next ship without orders (turn-based: with movement left)", "next_idle_ship"},
     {Action::NextShip, "Selection", "Next ship", "next_ship"},
     {Action::PreviousShip, "Selection", "Previous ship", "previous_ship"},
     {Action::NextFleet, "Selection", "Next fleet", "next_fleet"},

@@ -378,6 +378,7 @@ int pbemNew(std::span<char*> args) {
         gs.empires.push_back(std::move(es));
         info.players.push_back(e.player);
     }
+    if (!gs.options.simultaneous) return fail(std::string(net::kTurnBasedNotNetworked), 2);
     auto state = game::createGame(**rules, gs);
     if (!state) return fail("could not create the game: " + state.error(), 1);
     const std::filesystem::path out = o->get("out");

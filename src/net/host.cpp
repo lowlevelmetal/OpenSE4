@@ -125,6 +125,7 @@ LanGame HostSession::lanGame() const {
 std::expected<void, std::string> HostSession::start() {
     if (phase_ != HostPhase::Stopped) return std::unexpected(std::string("The host is already running."));
     if (config_.humanSlots < 1) return std::unexpected(std::string("A game needs at least one human player slot."));
+    if (!config_.setup.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
     if (config_.localPlayer && !proto::validPlayerName(config_.localPlayer->name))
         return std::unexpected(std::string("Choose a player name of 1 to 32 characters."));
     if (auto r = openPort(); !r) return r;
@@ -156,6 +157,7 @@ std::expected<void, std::string> HostSession::resume(game::GameState state, cons
     if (!info.dataSet.empty() && !game::sameDataSet(info.dataSet, config_.dataSet))
         return std::unexpected(std::format("This game was saved with data set {}, but the host has {}.", info.dataSet, config_.dataSet));
     if (state.empires.empty() || state.empires.size() > kMaxSlots) return std::unexpected(std::string("The saved game has no usable empires."));
+    if (!state.options.simultaneous) return std::unexpected(std::string(kTurnBasedNotNetworked));
     if (std::string problem = game::validateState(state, &rules_); !problem.empty())
         return std::unexpected("The saved game does not fit this data set: " + problem);
     if (!info.gameName.empty()) config_.gameName = info.gameName;

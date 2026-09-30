@@ -870,14 +870,15 @@ private:
         bool here = true, network = false;
         lamp(ctx, "Everyone on this computer", here);
         lamp(ctx, "Different computers", network, false);
-        note(humans > 1 ? "Several human players: each plays their turn in order on this computer, then the turn is processed (hotseat)."
+        note(humans > 1 ? "Several human players: each plays their turn in order on this computer (hotseat)."
                         : "One human player against the computer. Network games are set up from Multiplayer on the main menu.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Turn Style");
         int style = o.simultaneous ? 0 : 1;
         if (lampChoice(ctx, "##turns", style, {"Simultaneous", "One player after another"})) o.simultaneous = style == 0;
         note(o.simultaneous ? "Everyone gives orders, then all of them are carried out together."
-                            : "Each player's orders take effect before the next player moves.");
+                            : "Players move one after another. Orders are carried out as soon as they are given, and a ship "
+                              "that meets the enemy fights at once. Network games are always simultaneous.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Combat");
         int combat = o.noTacticalCombat ? 1 : 0;

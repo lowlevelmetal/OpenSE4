@@ -58,6 +58,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         game::GameSetup setup = quickStartSetup(*mode->rules_, race, options.seed, std::max(0, options.empireCount - 1));
         if (options.systemCount > 0) setup.options.systemCount = options.systemCount;
         setup.options.quadrantType = options.quadrantType;
+        setup.options.simultaneous = !options.turnBased;
         auto session = startLocalGame(mode->rules_, setup);
         if (!session) {
             error = session.error();
@@ -179,9 +180,18 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         return !ui.requests.quitGame;
     }
 
+    // Turn-based games: a battle the player's order started is shown at once.
+    if (auto battle = session_->takeNewBattle()) {
+        ScreenArgs args;
+        args.index = int(*battle);
+        openScreen(ScreenId::CombatReplay, std::move(args));
+    }
+    const bool asking = screens_.empty() && !session_->questions().empty();
+
     // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty());
+    main_.update(ui, !screens_.empty() || asking);
     drawNetwork(ui);
+    if (asking) drawEntryQuestion(ui);
 
     // Windows, oldest first; the newest draws on top.
     for (size_t i = 0; i < screens_.size();) {
@@ -281,6 +291,31 @@ void ClassicMode::drawNetwork(UiContext& ui) {
         }
         ImGui::End();
     }
+    ImGui::PopFont();
+}
+
+// Turn-based games: a move stopped before a sector with enemy forces; the
+// player decides whether to go in and fight (spec 03 §6.2, spec 06 §2.7).
+void ClassicMode::drawEntryQuestion(UiContext& ui) {
+    const game::GameState& s = ui.state();
+    const game::EntryQuestion q = session_->questions().front();
+    std::string who;
+    if (const game::Fleet* f = s.fleet(q.fleet)) who = f->name;
+    else if (const game::Vehicle* v = s.vehicle(q.vehicle)) who = v->name;
+    std::string where = "an adjacent sector";
+    if (q.where.system.valid() && q.where.system.index() < s.galaxy.systems.size())
+        where = std::format("{} ({}, {})", s.galaxy.system(q.where.system).name, q.where.sector.x, q.where.sector.y);
+    ImGui::SetNextWindowPos(ui.at({312, 290}));
+    ImGui::SetNextWindowSize(ui.size({400, 150}));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::TextWrapped("%s", std::format("Enemy forces are in {}. Should {} enter the sector and attack?", where, who.empty() ? "the ship" : who).c_str());
+    ImGui::TextDisabled("Declining stops the move and cancels its orders.");
+    ImGui::Spacing();
+    if (ImGui::Button("Attack", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) session_->answer(true);
+    ImGui::SameLine();
+    if (ImGui::Button("Stay Back", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) session_->answer(false);
+    ImGui::End();
     ImGui::PopFont();
 }
 
