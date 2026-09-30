@@ -65,14 +65,15 @@ void planColonization(Planner& p) {
         }
         if (!best) continue;
         const VehicleId ship = ships[*best];
+        // "Move there, then colonize" is the Colonize order itself: it loads
+        // colonists where it starts when the ship carries none, then travels
+        // (spec 03 §8). A separate Move To first would load them at the
+        // target instead, and the colony would start empty.
         Order colonize;
         colonize.kind = OrderKind::Colonize;
         colonize.object = t.planet;
         colonize.location = locationOf(p.st.galaxy, t.planet);
-        std::vector<Order> orders;
-        if (p.st.vehicle(ship)->location != colonize.location) orders.push_back(moveOrder(colonize.location));
-        orders.push_back(colonize);
-        if (p.setOrders(ship, std::move(orders))) p.reservedPlanets.insert(t.planet);
+        if (p.setOrders(ship, {colonize})) p.reservedPlanets.insert(t.planet);
         ships.erase(ships.begin() + static_cast<std::ptrdiff_t>(*best));
     }
 }

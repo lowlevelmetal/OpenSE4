@@ -638,9 +638,43 @@ TEST_CASE("ai: a colony ship moves to the best target and colonizes it") {
         CHECK(st.canColonize(target.surface));
         CHECK(s.empire(me).hasExplored(target.system));
         CHECK(o->orders.back().location == locationOf(s.galaxy, target.id));
-        if (o->orders.size() == 2) CHECK(o->orders.front().kind == OrderKind::MoveTo);
+        // The Colonize order travels itself; a Move To in front would make it
+        // take its colonists aboard at the target instead of at the yard.
+        CHECK(o->orders.size() == 1);
     }
     CHECK(found);
+}
+
+TEST_CASE("ai: a colony ship takes colonists aboard where it starts, so the new colony is populated") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, true);
+    exploreEverything(s);
+    const EmpireId me{0u};
+    s.empire(me).kind = PlayerKind::Computer;
+    const Colony& home = homeworld(s, me);
+    const SystemId homeSys = s.galaxy.object(home.planet).system;
+    // A settleable planet in the home system, away from the homeworld's sector.
+    ObjectId target;
+    for (ObjectId o : s.galaxy.system(homeSys).objects) {
+        SpaceObject& obj = s.galaxy.object(o);
+        if (obj.kind == ObjectKind::Planet && !s.colony(o) && obj.sector != s.galaxy.object(home.planet).sector) {
+            obj.surface = s.empire(me).race.nativeSurface;
+            target = o;
+            break;
+        }
+    }
+    REQUIRE(target.valid());
+    TurnOptions opts;
+    opts.aiForMissing = false;  // only the computer player acts
+    std::vector<EmpireOrders> none;
+    ObjectId founded;
+    for (int t = 0; t < 20 && !founded.valid(); ++t) {
+        processTurn(r, s, none, opts);
+        for (const auto& c : s.colonies)
+            if (c && c->owner == me && !c->homeworld) founded = c->planet;
+    }
+    REQUIRE(founded.valid());
+    CHECK(s.colony(founded)->totalPopulation() > 0);
 }
 
 // ---- Construction ---------------------------------------------------------------------------------
