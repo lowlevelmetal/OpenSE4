@@ -59,8 +59,6 @@ struct TurnOptions {
     bool aiForMissing = true;
 };
 
-using movement::EntryQuestion;
-
 struct TurnResult {
     std::vector<std::pair<EmpireId, std::string>> rejected;
     // Turn-based games: moves of a human player's groups that stopped before
@@ -113,6 +111,18 @@ void applyOrders(const Rules& r, GameState& s, const EmpireOrders& orders, std::
 
 inline bool turnBased(const GameState& s) { return !s.options.simultaneous; }
 
+// Who plays the human empires' turns in resumeTurnBased and endPlayerTurn.
+struct LiveOptions {
+    // Human empires the computer plays for now (network games: players who
+    // are gone or out of time, docs/MULTIPLAYER.md), the way processTurn plays
+    // a human whose orders are missing (spec 05 §7.1, §9.2): all ministers on
+    // for the turn, or only bookkeeping when the player asked for minimal
+    // changes (Empire::aiMinimalChanges) (inferred for turn-based games).
+    std::vector<EmpireId> computerPlays;
+
+    bool computerPlaysFor(EmpireId e) const;
+};
+
 // The empire whose turn it is (turn-based games): the one in progress, or
 // the first living empire when the next game turn has not started. Invalid
 // in simultaneous games, when the game is over or nobody is alive.
@@ -120,10 +130,11 @@ EmpireId activePlayer(const GameState& s);
 
 // Plays until a human player can act: starts the turn of the player whose
 // turn it is if it has not started, and plays the computer players' turns
-// in sequence (each started, its orders carried out, then ended). Stops once
-// a human player's turn has started, when the game is over, or, when no
-// living human is left to play, at the end of the game turn.
-TurnResult resumeTurnBased(const Rules& r, GameState& s);
+// in sequence (each started, its orders carried out, then ended), and those
+// of humans the computer plays for now (`options`). Stops once a human
+// player's turn has started, when the game is over, or, when no living human
+// is left to play, at the end of the game turn.
+TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& options = {});
 
 // Applies one command of the player whose turn it is and carries out at once
 // what it sets in motion: the vehicles, fleets or planets whose orders it
@@ -131,11 +142,19 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s);
 // with movement left found their colonies, and messages take effect. An
 // EnterSector answer carries the stopped group on into the sector. Other
 // empires' commands, and commands when the turn has not started, are refused.
+//
+// The Attack Sector questions still open stay in GameState::playerTurn
+// (questions): new orders for a group, or an answer, drop its question, and
+// so does the group's end (destroyed, or no orders left).
 TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c);
 
 // Ends `e`'s turn: its end-of-turn processing; the turn passes to the next
 // living empire, or after the last one the once-per-game-turn steps run.
-// Then resumeTurnBased. Refused when it is not `e`'s turn.
-TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e);
+// Then resumeTurnBased with `options`. When `options` has the computer play
+// for `e`, the computer first plays the rest of its turn: its ministers
+// (all of them, as a stand-in) plan once more and their orders are carried
+// out, and its end-of-turn processing runs with them (inferred). Refused
+// when it is not `e`'s turn.
+TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const LiveOptions& options = {});
 
 } // namespace opense4::game

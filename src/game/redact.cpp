@@ -114,6 +114,22 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
     std::erase_if(v.pendingEvents, [&](const PendingEvent& p) { return p.empire != viewer; });
     std::erase_if(v.pendingMood, [&](const MoodEvent& m) { return m.empire != viewer; });
 
+    // Turn-based games: whose turn it is is public; what that player's groups
+    // did during it, and the questions it has open, only for that player.
+    if (v.playerTurn.empire != viewer || spectator) {
+        auto own = [&](VehicleId id) {
+            const Vehicle* x = v.vehicle(id);
+            return x && x->owner == viewer;
+        };
+        std::erase_if(v.playerTurn.moves, [&](const TurnMoves& m) { return !own(m.vehicle); });
+        std::erase_if(v.playerTurn.launched, [&](const TurnLaunches& l) {
+            if (l.vehicle.valid()) return !own(l.vehicle);
+            const Colony* c = v.colony(l.planet);
+            return !c || c->owner != viewer;
+        });
+        v.playerTurn.questions.clear();
+    }
+
     // The random stream would let a client predict the next turn.
     v.rng = Rng(0);
     return v;

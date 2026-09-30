@@ -48,18 +48,51 @@ EmpireId firstLivingFrom(const GameState& s, size_t index) {
     return {};
 }
 
-bool anyLivingHuman(const GameState& s) {
-    return std::any_of(s.empires.begin(), s.empires.end(), [](const Empire& e) { return e.alive && e.kind == PlayerKind::Human; });
+// A living human who plays its own turns.
+bool anyHumanToPlay(const GameState& s, const LiveOptions& options) {
+    return std::any_of(s.empires.begin(), s.empires.end(),
+                       [&](const Empire& e) { return e.alive && e.kind == PlayerKind::Human && !options.computerPlaysFor(e.id); });
 }
 
-// Interactive play: humans play their own turns, the computer the others.
-Control interactiveControl(const GameState& s, EmpireId e) { return s.empire(e).kind == PlayerKind::Human ? Control::Player : Control::Computer; }
+// Interactive play: humans play their own turns, the computer the others and
+// the humans it plays for now, as a stand-in (spec 05 §7.1).
+Control liveControl(const GameState& s, EmpireId e, const LiveOptions& options) {
+    const Empire& emp = s.empire(e);
+    if (emp.kind != PlayerKind::Human) return Control::Computer;
+    if (!options.computerPlaysFor(e)) return Control::Player;
+    return emp.aiMinimalChanges ? Control::Absent : Control::StandIn;
+}
+
+// ---- Attack Sector questions --------------------------------------------------------------------
+
+bool sameGroup(const EntryQuestion& q, VehicleId vehicle, FleetId fleet) {
+    return fleet.valid() ? q.fleet == fleet : !q.fleet.valid() && q.vehicle == vehicle;
+}
+
+void dropQuestions(GameState& s, VehicleId vehicle, FleetId fleet) {
+    std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) { return sameGroup(q, vehicle, fleet); });
+}
+
+// A question stays while its group exists and still has orders to go on with.
+void pruneQuestions(GameState& s) {
+    std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) {
+        if (q.fleet.valid()) {
+            const Fleet* f = s.fleet(q.fleet);
+            return !f || f->orders.empty();
+        }
+        const Vehicle* v = s.vehicle(q.vehicle);
+        return !v || v->orders.empty();
+    });
+}
 
 // ---- Carrying orders out ------------------------------------------------------------------------
 
 void addQuestions(LiveContext& lc, const std::vector<EntryQuestion>& qs) {
-    for (const EntryQuestion& q : qs)
+    std::vector<EntryQuestion>& open = lc.ctx.state.playerTurn.questions;
+    for (const EntryQuestion& q : qs) {
         if (std::find(lc.questions.begin(), lc.questions.end(), q) == lc.questions.end()) lc.questions.push_back(q);
+        if (std::find(open.begin(), open.end(), q) == open.end()) open.push_back(q);
+    }
 }
 
 // The groups move and fight now; then colony ships at their planet found
@@ -70,6 +103,7 @@ void carryOut(LiveContext& lc, const movement::LiveMove& move) {
     addQuestions(lc, movement::runLive(ctx, move));
     movement::runColonization(ctx, move.empire);
     s.removeDeadVehicles();
+    pruneQuestions(s);
     sight::updateKnowledge(ctx.rules, s);
     diplomacy::updateContacts(ctx);
 }
@@ -107,6 +141,7 @@ void applyEach(LiveContext& lc, EmpireId e, std::span<const Command> commands, b
             continue;
         }
         if (const auto* answer = std::get_if<cmd::EnterSector>(&c)) {
+            dropQuestions(lc.ctx.state, answer->vehicle, answer->fleet);
             if (!answer->enter) continue;
             Effects fx;
             fx.move.empire = e;
@@ -117,6 +152,8 @@ void applyEach(LiveContext& lc, EmpireId e, std::span<const Command> commands, b
             settle(lc, fx);
             continue;
         }
+        // New orders replace the ones a question was about.
+        if (const auto* o = std::get_if<cmd::SetOrders>(&c); o && !o->planet.valid()) dropQuestions(lc.ctx.state, o->vehicle, o->fleet);
         Effects fx;
         fx.move.empire = e;
         fx.move.ask = ask;
@@ -145,6 +182,7 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     GameState& s = ctx.state;
     s.playerTurn.empire = e;
     s.playerTurn.started = true;
+    s.playerTurn.questions.clear();
     // The destruction check comes when the empire's turn comes up (spec 05 §6).
     score::checkDestruction(ctx, e);
     if (!living(s, e)) return false;
@@ -225,13 +263,39 @@ bool ensureRound(GameState& s) {
     return true;
 }
 
-void resume(LiveContext& lc) {
+// The computer plays `e`'s turn, or the rest of it when it has started (a
+// human's turn it takes over). A human's stand-in has all ministers on for
+// the turn, and the player's own settings come back after it.
+void computerTurn(LiveContext& lc, EmpireId e, Control control) {
+    TurnContext& ctx = lc.ctx;
+    GameState& s = ctx.state;
+    std::optional<ai::MinisterSettings> saved;
+    if (control == Control::StandIn) saved = ai::standIn(s.empire(e));
+    if (!s.playerTurn.started) {
+        if (!startPlayerTurn(lc, e, control)) {
+            if (saved) ai::restoreMinisters(s.empire(e), *saved);
+            passTurn(ctx, e);
+            return;
+        }
+    } else if (control != Control::Computer && ministersPlan(s, e, control)) {
+        // Taking over a human's turn in progress: the ministers plan the rest
+        // of it now, as at a start of turn (inferred).
+        applyBatch(lc, e, ai::planOrders(ctx.rules, s, e));
+        ai::recordAiDecisions(ctx, e);
+    }
+    s.playerTurn.questions.clear();
+    finishPlayerTurn(lc, e, control);
+    if (saved) ai::restoreMinisters(s.empire(e), *saved);
+}
+
+void resume(LiveContext& lc, const LiveOptions& options) {
     GameState& s = lc.ctx.state;
     bool turnEnded = false;
     while (!s.gameOver) {
         if (!s.playerTurn.empire.valid()) {
-            // An all-computer game plays one game turn per call.
-            if (turnEnded && !anyLivingHuman(s)) return;
+            // An all-computer game (or one whose humans the computer plays
+            // for now) plays one game turn per call.
+            if (turnEnded && !anyHumanToPlay(s, options)) return;
             if (!ensureRound(s)) return;
         }
         const EmpireId e = s.playerTurn.empire;
@@ -240,14 +304,16 @@ void resume(LiveContext& lc) {
             turnEnded = turnEnded || !s.playerTurn.empire.valid();
             continue;
         }
-        const Control control = interactiveControl(s, e);
-        if (!s.playerTurn.started && !startPlayerTurn(lc, e, control)) {
-            passTurn(lc.ctx, e);
-            turnEnded = turnEnded || !s.playerTurn.empire.valid();
-            continue;
+        const Control control = liveControl(s, e, options);
+        if (control == Control::Player) {
+            if (!s.playerTurn.started && !startPlayerTurn(lc, e, control)) {
+                passTurn(lc.ctx, e);
+                turnEnded = turnEnded || !s.playerTurn.empire.valid();
+                continue;
+            }
+            return;  // a human plays now
         }
-        if (control == Control::Player) return;  // a human plays now
-        finishPlayerTurn(lc, e, control);
+        computerTurn(lc, e, control);
         turnEnded = turnEnded || !s.playerTurn.empire.valid();
     }
 }
@@ -260,16 +326,18 @@ TurnResult refused(EmpireId e, std::string why) {
 
 } // namespace
 
+bool LiveOptions::computerPlaysFor(EmpireId e) const { return std::find(computerPlays.begin(), computerPlays.end(), e) != computerPlays.end(); }
+
 EmpireId activePlayer(const GameState& s) {
     if (!turnBased(s) || s.gameOver) return {};
     if (s.playerTurn.empire.valid()) return s.playerTurn.empire;
     return firstLivingFrom(s, 0);
 }
 
-TurnResult resumeTurnBased(const Rules& r, GameState& s) {
+TurnResult resumeTurnBased(const Rules& r, GameState& s, const LiveOptions& options) {
     if (!turnBased(s) || s.gameOver) return {};
     LiveContext lc(r, s);
-    resume(lc);
+    resume(lc, options);
     return lc.result();
 }
 
@@ -281,21 +349,23 @@ TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c)
     if (s.gameOver) return refused(e, "The game is over.");
     if (s.playerTurn.empire != e || !s.playerTurn.started) return refused(e, "It is not your turn.");
     LiveContext lc(r, s);
-    applyEach(lc, e, std::span<const Command>(&c, 1), interactiveControl(s, e) == Control::Player);
+    applyEach(lc, e, std::span<const Command>(&c, 1), s.empire(e).kind == PlayerKind::Human);
     return lc.result();
 }
 
-TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e) {
+TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const LiveOptions& options) {
     if (!turnBased(s) || s.gameOver) return {};
     LiveContext lc(r, s);
-    if (!s.playerTurn.started) resume(lc);  // the turn must have started before it can end
+    if (!s.playerTurn.started) resume(lc, options);  // the turn must have started before it can end
     if (s.gameOver) return lc.result();
     if (s.playerTurn.empire != e || !s.playerTurn.started) {
         lc.ctx.rejected.emplace_back(e, "It is not your turn.");
         return lc.result();
     }
-    finishPlayerTurn(lc, e, interactiveControl(s, e));
-    resume(lc);
+    const Control control = liveControl(s, e, options);
+    if (control == Control::Player) finishPlayerTurn(lc, e, control);
+    else computerTurn(lc, e, control);
+    resume(lc, options);
     return lc.result();
 }
 

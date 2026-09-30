@@ -623,6 +623,16 @@ struct TurnLaunches {
     int64_t count = 0;
 };
 
+// A human player's group stopped before a sector with enemy forces: the
+// player is asked whether to enter it (spec 03 §6.2) and answers with
+// cmd::EnterSector. `vehicle` is invalid when a fleet moves together.
+struct EntryQuestion {
+    VehicleId vehicle;
+    FleetId fleet;
+    Location where;
+    bool operator==(const EntryQuestion&) const = default;
+};
+
 // The player turn in progress in a turn-based game (spec 05 §8 "Turn-based
 // game"). Unused in simultaneous games.
 struct PlayerTurn {
@@ -630,6 +640,9 @@ struct PlayerTurn {
     bool started = false;               // its start of turn has run (movement, continued orders, ministers)
     std::vector<TurnMoves> moves;       // sorted by vehicle
     std::vector<TurnLaunches> launched;
+    // The player's Attack Sector questions still open, oldest first. Kept in
+    // the game so that a saved or network game asks them again (inferred).
+    std::vector<EntryQuestion> questions;
 };
 
 // ---- The game --------------------------------------------------------------------------------

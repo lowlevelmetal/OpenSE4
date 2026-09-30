@@ -6,6 +6,7 @@
 #include "movement_fixture.hpp"
 
 #include "game/commands.hpp"
+#include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "game/turn.hpp"
 
@@ -468,4 +469,90 @@ TEST_CASE("turn-based: an Attack order goes after its target without asking, fig
     // The pursuit stays while the target lives and is seen.
     if (d.s().vehicle(target)) CHECK(d.w.v(gunboat).orders.size() == 1);
     else CHECK(d.w.v(gunboat).orders.size() <= 1);
+}
+
+TEST_CASE("turn-based: open Attack Sector questions stay in the game until answered or overtaken") {
+    Duel d;
+    d.w.spawn(d.w.ship(kB, "Picket", 1, {"Test Laser"}), at(d.a, 1, 6));
+    resumeTurnBased(d.r(), d.s());
+    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 1, 6), moveTo(d.a, 6, 6)}));
+    REQUIRE(res.questions.size() == 1);
+    CHECK(d.s().playerTurn.questions == res.questions);
+
+    // Saved with the game, and only in the view of the player whose turn it is.
+    auto copy = deserializeState(serializeState(d.s()));
+    REQUIRE(copy.has_value());
+    CHECK(copy->playerTurn.questions == res.questions);
+    CHECK(redactForEmpire(d.s(), kA).playerTurn.questions == res.questions);
+    CHECK(redactForEmpire(d.s(), kB).playerTurn.questions.empty());
+    CHECK(redactForEmpire(d.s(), EmpireId{}).playerTurn.questions.empty());
+
+    // New orders for the group replace the question.
+    applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 0, 5)}));
+    CHECK(d.s().playerTurn.questions.empty());
+    CHECK(d.w.v(d.runner).location == at(d.a, 0, 5));
+    // A step records the move; only A's view shows it.
+    REQUIRE_FALSE(d.s().playerTurn.moves.empty());
+    CHECK_FALSE(redactForEmpire(d.s(), kA).playerTurn.moves.empty());
+    CHECK(redactForEmpire(d.s(), kB).playerTurn.moves.empty());
+
+    // Asked again, then answered: the question goes.
+    const TurnResult again = applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 1, 6)}));
+    REQUIRE(again.questions.size() == 1);
+    CHECK(d.s().playerTurn.questions.size() == 1);
+    applyLive(d.r(), d.s(), kA, cmd::EnterSector{d.runner, {}, at(d.a, 1, 6), false});
+    CHECK(d.s().playerTurn.questions.empty());
+
+    // A question left open ends with the player's turn.
+    applyLive(d.r(), d.s(), kA, ordersFor(d.runner, {moveTo(d.a, 1, 6)}));
+    REQUIRE(d.s().playerTurn.questions.size() == 1);
+    endPlayerTurn(d.r(), d.s(), kA);
+    CHECK(d.s().playerTurn.questions.empty());
+}
+
+TEST_CASE("turn-based: the computer plays a human's turn, or the rest of it, as a stand-in") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(11, 3, 12, true);
+    s.options.simultaneous = false;
+    const EmpireId a{0u}, b{1u}, c{2u};
+    for (const Empire& e : s.empires) REQUIRE(e.kind == PlayerKind::Human);
+    const bool bAll = s.empire(b).ministerAll;
+    const bool cAll = s.empire(c).ministerAll;
+    const uint32_t bAreas = s.empire(b).ministers;
+
+    const LiveOptions awayB{{b}};
+    resumeTurnBased(r, s, awayB);
+    CHECK(activePlayer(s) == a);
+    // A ends its turn; the computer plays B's; C's turn starts.
+    endPlayerTurn(r, s, a, awayB);
+    CHECK(activePlayer(s) == c);
+    CHECK(s.playerTurn.started);
+    CHECK(s.empire(b).history.size() == 1);  // B's end-of-turn processing ran
+    CHECK(s.empire(b).ministerAll == bAll);  // and its own minister settings are back
+    CHECK(s.empire(b).ministers == bAreas);
+    CHECK(s.empire(c).history.empty());
+
+    // C runs out of time: the computer plays the rest of its turn.
+    endPlayerTurn(r, s, c, LiveOptions{{c}});
+    CHECK(s.turn == 1);
+    CHECK(s.empire(c).history.size() == 1);
+    CHECK(s.empire(c).ministerAll == cAll);
+    CHECK(activePlayer(s) == a);
+    CHECK(s.playerTurn.started);
+
+    // With every human played by the computer, one game turn per call, then
+    // the game waits between game turns.
+    const LiveOptions everyone{{a, b, c}};
+    endPlayerTurn(r, s, a, everyone);
+    CHECK(s.turn == 2);
+    CHECK_FALSE(s.playerTurn.empire.valid());
+    CHECK(activePlayer(s) == a);
+    resumeTurnBased(r, s, everyone);
+    CHECK(s.turn == 3);
+    CHECK_FALSE(s.playerTurn.empire.valid());
+    // A player back at the controls: its turn starts.
+    resumeTurnBased(r, s);
+    CHECK(s.turn == 3);
+    CHECK(activePlayer(s) == a);
+    CHECK(s.playerTurn.started);
 }

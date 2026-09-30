@@ -121,15 +121,8 @@ void runColonization(TurnContext& ctx);
 
 // ---- The turn-based move (spec 03 §6.3 "Turn-based", spec 04 §2) --------------------------------
 
-// A human player's group stopped before a sector with enemy forces: the
-// player is asked whether to enter it (spec 03 §6.2) and answers with
-// cmd::EnterSector. `vehicle` is invalid when a fleet moves together.
-struct EntryQuestion {
-    VehicleId vehicle;
-    FleetId fleet;
-    Location where;
-    bool operator==(const EntryQuestion&) const = default;
-};
+// EntryQuestion (state.hpp): a human player's group stopped before a sector
+// with enemy forces, waiting for cmd::EnterSector.
 
 // What runLive carries out.
 struct LiveMove {

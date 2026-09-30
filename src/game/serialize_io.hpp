@@ -474,7 +474,8 @@ void io(Ar& ar, GameOptions& o) {
 
 template <class Ar> void io(Ar& ar, TurnMoves& m) { fields(ar, m.vehicle, m.steps, m.bonus); }
 template <class Ar> void io(Ar& ar, TurnLaunches& l) { fields(ar, l.vehicle, l.planet, l.kind, l.count); }
-template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.started, t.moves, t.launched); }
+template <class Ar> void io(Ar& ar, EntryQuestion& q) { fields(ar, q.vehicle, q.fleet, q.where); }
+template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.started, t.moves, t.launched, t.questions); }
 
 // ---- The game -----------------------------------------------------------------------------------------
 
