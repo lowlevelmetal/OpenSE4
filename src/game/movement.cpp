@@ -468,7 +468,9 @@ private:
         for (VehicleId id : g.own)
             if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders);
     }
-    // Replaces every list of the group and switches Repeat off.
+    // Replaces every list of the group and switches Repeat off. A fleet
+    // member's own list is cleared: in the original each member's list holds
+    // the fleet's orders (spec 03 §8, §9), so clearing them all clears it too.
     void setLists(const Group& g, const std::vector<Order>& list) {
         routes_.erase(routeKey(g));
         if (g.planet.valid()) {
@@ -480,9 +482,10 @@ private:
                 f->orders = list;
                 f->repeatOrders = false;
             }
-        for (VehicleId id : g.own)
+        for (VehicleId id : g.members)
             if (Vehicle* v = s_.vehicle(id)) {
-                v->orders = list;
+                const bool own = std::find(g.own.begin(), g.own.end(), id) != g.own.end();
+                v->orders = own ? list : std::vector<Order>{};
                 v->repeatOrders = false;
             }
     }

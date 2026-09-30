@@ -514,7 +514,7 @@ void Battle::place() {
             if (pieces_[i].armed && !pieces_[i].mothballed) members.push_back(i);
         }
         if (!chosen && members.empty()) continue;
-        const size_t leader = chosen.value_or(members.front());
+        const size_t leader = chosen ? *chosen : members.front();
         putRandom(leader);
         const ruleset::Formation* formation =
             fleet->formation < r_.data().formations.size() ? &r_.data().formations[fleet->formation] : nullptr;
@@ -733,8 +733,11 @@ void Battle::afterDamage(int i) {
     p.mp = std::min(p.mp, computeMp(i));
     refreshStats(i);
     // The group dissolves when the leader of an automated side is left with 0
-    // movement by damage (spec 03 §10, confirmed: binary).
-    if (p.isLeader && computeMp(i) <= 0 && !isPlayer(p.owner)) dissolve(i);
+    // movement by damage (spec 03 §10, confirmed: binary). OpenSE4 applies it
+    // to a player's side in tactical combat too, so that a tactical battle
+    // fought with the strategies' orders stays the strategic battle (inferred,
+    // spec 03 §19 Q60).
+    if (p.isLeader && computeMp(i) <= 0) dissolve(i);
 }
 
 void Battle::startRound() {

@@ -156,9 +156,10 @@ private:
     }
 
     bool tagged(Location l) const { return !tagged_.empty() && std::binary_search(tagged_.begin(), tagged_.end(), l); }
-    // In a system, tagged sectors are not entered unless they are the goal
-    // (the greedy step takes its target square untested).
-    bool obstacle(Location l) const { return tagged(l) && !isGoal(l) && l != from_; }
+    // In a system, a tagged sector is entered only as the last square of a leg
+    // (the destination or a warp point's square: the greedy step takes its
+    // target square untested), and never crossed (spec 03 §6.2).
+    bool obstacle(Location l) const { return tagged(l) && l != from_; }
     // A warp link whose warp-point sector on either side is tagged is not used,
     // even at the start or the goal, unless a Mine Sweeper leads (spec 03 §6.2, confirmed: binary).
     bool blockedLink(Location l) const { return tagged(l) && !options_.sweeper; }
@@ -221,11 +222,12 @@ private:
             open.pop();
             if (d != g.cost[static_cast<size_t>(c)]) continue;
             const Sector at = sectorOf(c);
+            if (at != from && obstacle({sys, at})) continue;  // reached as a leg's end, never crossed
             for (int dy = -1; dy <= 1; ++dy)
                 for (int dx = -1; dx <= 1; ++dx) {
                     if (dx == 0 && dy == 0) continue;
                     const Sector next{at.x + dx, at.y + dy};
-                    if (!next.valid() || obstacle({sys, next})) continue;
+                    if (!next.valid()) continue;
                     const int64_t nd = d + kStep + (dx != 0 && dy != 0 ? kDiagonal : kStraight) + (hazard({sys, next}) ? kHazard : 0);
                     const int nc = cell(next);
                     if (nd < g.cost[static_cast<size_t>(nc)]) {

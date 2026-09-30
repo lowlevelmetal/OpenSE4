@@ -11,6 +11,7 @@
 #include <doctest/doctest.h>
 
 #include <format>
+#include <map>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -95,7 +96,69 @@ TEST_CASE("movement: the day counter, exact and as the original's stored double"
     CHECK(movement::actionDays(1, DayCounterMode::Double).empty());
     CHECK(movement::actionDays(5, DayCounterMode::Double) == std::vector<int>{7, 13, 19, 25});
     CHECK(movement::actionDays(30, DayCounterMode::Double).size() == 30);
-    CHECK(movement::kDayCounterMode == DayCounterMode::Exact);  // the spec's recommendation until observed
+    CHECK(movement::kDayCounterMode == DayCounterMode::Double);  // the original's counter (confirmed: binary)
+}
+
+TEST_CASE("movement: the day counter gives every speed the acting days of spec 03 §6.3") {
+    using movement::DayCounterMode;
+    auto allBut = [](std::vector<int> skipped) {
+        std::vector<int> days;
+        for (int d = 1; d <= movement::kDaysPerTurn; ++d)
+            if (std::find(skipped.begin(), skipped.end(), d) == skipped.end()) days.push_back(d);
+        return days;
+    };
+    const std::map<int, std::vector<int>> table = {
+        {1, {}},
+        {2, {16}},
+        {3, {11, 21}},
+        {4, {8, 16, 23}},
+        {5, {7, 13, 19, 25}},
+        {6, {6, 11, 16, 21, 26}},
+        {7, {5, 9, 13, 18, 22, 26}},
+        {9, {4, 7, 11, 14, 17, 21, 24, 27}},
+        {11, {3, 6, 9, 11, 14, 17, 20, 22, 25, 28}},
+        {16, allBut({1, 3, 5, 7, 9, 11, 13, 15, 18, 20, 22, 24, 26, 28, 30})},
+        {17, allBut({1, 3, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 28, 30})},
+        {18, allBut({1, 3, 5, 8, 10, 13, 15, 18, 20, 23, 25, 28, 30})},
+        {19, allBut({1, 3, 6, 9, 11, 14, 17, 20, 22, 25, 28, 30})},
+        {20, allBut({1, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30})},
+        {21, allBut({1, 4, 7, 10, 14, 17, 20, 24, 27, 30})},
+        {22, allBut({1, 4, 8, 12, 15, 19, 23, 27, 30})},
+        {23, allBut({1, 5, 9, 13, 18, 22, 26, 30})},
+        {25, allBut({1, 6, 12, 18, 24, 30})},
+        {27, allBut({1, 10, 20, 30})},
+        {29, allBut({1, 30})},
+    };
+    for (const auto& [speed, days] : table) {
+        CAPTURE(speed);
+        CHECK(movement::actionDays(speed) == days);
+        CHECK(static_cast<int>(days.size()) == speed - 1);  // one action fewer than its movement points
+    }
+    for (int speed : {8, 10, 12, 13, 14, 15, 24, 26, 28, 30}) {
+        CAPTURE(speed);
+        CHECK(movement::actionDays(speed) == movement::actionDays(speed, DayCounterMode::Exact));
+    }
+    for (int speed : {31, 45, 100}) CHECK(movement::actionDays(speed).size() == 30);  // at most one action a day
+
+    // In a game: a speed-6 ship steps on days 6, 11, 16, 21 and 26, a speed-1 ship never.
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId six = w.spawn(w.ship(kA, "Six", 6), at(a, 0, 6));
+    const VehicleId one = w.spawn(w.ship(kA, "One", 1), at(a, 0, 8));
+    fuel(w, six);
+    fuel(w, one);
+    w.order(six, moveTo(a, 12, 6));
+    w.order(one, moveTo(a, 12, 8));
+    CombatSpy spy;
+    spy.fight = [](const GameState&, Location) { return false; };
+    w.move(spy.hooks());
+    CHECK(w.v(six).location == at(a, 5, 6));
+    CHECK(w.v(one).location == at(a, 0, 8));
+    CHECK(w.v(six).movement == 6);  // movement points are not spent in a simultaneous game
+    std::vector<Location> sixSteps;
+    for (const Location& l : spy.asked)
+        if (l.sector.y == 6) sixSteps.push_back(l);
+    CHECK(sixSteps == std::vector<Location>{at(a, 1, 6), at(a, 2, 6), at(a, 3, 6), at(a, 4, 6), at(a, 5, 6)});
 }
 
 TEST_CASE("movement: paths inside a system use king moves") {
@@ -227,13 +290,17 @@ TEST_CASE("movement: tagged minefields are never entered unless they are the des
     CHECK(safe->steps[0] != at(a, 4, 0));
 }
 
-TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine sweeper ignores tagged minefields") {
+TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine sweeper may use tagged warp links") {
     const Rules& r = mvtest::rules();
-    // New empires avoid both (inferred); the command changes only the fields it names.
+    // New empires avoid both and clear orders on meeting an enemy (spec 03 §6.2,
+    // §6.4, confirmed: binary); the command changes only the fields it names.
     {
         World w;
         CHECK(w.s.empire(kA).avoidTaggedMinefields);
         CHECK(w.s.empire(kA).avoidRestrictedSystems);
+        CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Never}).ok);
+        CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Never);
         REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Enemy}).ok);
         REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{.avoidTaggedMinefields = false}).ok);
         CHECK_FALSE(w.s.empire(kA).avoidTaggedMinefields);
@@ -289,7 +356,7 @@ TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine 
         p = movement::findPath(r, w.s, kA, from, to);
         REQUIRE(p);
         CHECK(p->length == 6 + 1 + 3);
-        // Option on, but led by a mine sweeper: straight through as well.
+        // Option on, but led by a mine sweeper: through the tagged link as well.
         w.s.empire(kA).avoidTaggedMinefields = true;
         movement::RouteOptions sweeper;
         sweeper.sweeper = true;
@@ -302,10 +369,16 @@ TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine 
         const VehicleId sv = w.spawn(sd, from);
         CHECK(movement::leadsSweeperGroup(w.s, w.v(sv)));
         CHECK_FALSE(movement::leadsSweeperGroup(w.s, w.v(w.spawn(w.ship(kA, "Plain", 3), from))));
-        CHECK(movement::etaTurns(r, w.s, w.v(sv), to) == 4);  // 10 steps at speed 3
+        CHECK(movement::etaTurns(r, w.s, w.v(sv), to) == 5);  // 10 steps at speed 3: 2 a turn (days 11 and 21)
+        // A tagged warp-point sector blocks a link even at the start (spec 03 §6.2).
+        w.s.empire(kA).taggedMinefields = {at(a, 12, 6)};
+        p = movement::findPath(r, w.s, kA, at(a, 12, 6), to);
+        REQUIRE(p);
+        CHECK(p->steps.front() != at(b, 0, 6));
     }
 
-    // In-system greedy steps: with the option off, or led by a sweeper, tagged squares are entered.
+    // In-system greedy steps: with the option off tagged squares are entered; a
+    // sweeper has no exemption inside a system (spec 03 §6.2, confirmed: binary).
     auto blocked = [&](bool option, bool sweeper) {
         World m;
         const SystemId ma = m.system("A");
@@ -321,7 +394,7 @@ TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine 
     };
     CHECK(blocked(true, false));
     CHECK_FALSE(blocked(false, false));
-    CHECK_FALSE(blocked(true, true));
+    CHECK(blocked(true, true));
 }
 
 TEST_CASE("movement: etaTurns uses the speed and the known route") {
@@ -330,7 +403,13 @@ TEST_CASE("movement: etaTurns uses the speed and the known route") {
     const SystemId a = w.system("A"), b = w.system("B", 10, 0);
     w.exploreAll(kA);
     const VehicleId ship = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
-    CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 7, 6)) == 3);
+    CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 7, 6)) == 4);  // speed 3 makes 2 steps a turn (spec 03 §6.3)
+    const VehicleId one = w.spawn(w.ship(kA, "Crawler", 1), at(a, 0, 6));
+    CHECK(movement::etaTurns(r, w.s, w.v(one), at(a, 1, 6)) == -1);   // speed 1 never moves in a simultaneous game
+    w.s.options.simultaneous = false;
+    CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 7, 6)) == 3);  // turn-based: its movement points
+    CHECK(movement::etaTurns(r, w.s, w.v(one), at(a, 1, 6)) == 1);
+    w.s.options.simultaneous = true;
     CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 0, 6)) == 0);
     CHECK(movement::etaTurns(r, w.s, w.v(ship), at(b, 0, 6)) == -1);  // no link
     const VehicleId base = w.spawn(w.design(kA, "Post", "Test Station", {"Test Bridge"}), at(a, 1, 1));
@@ -346,11 +425,12 @@ TEST_CASE("movement: a move order runs over several turns at the ship's speed") 
     fuel(w, ship);
     w.order(ship, moveTo(a, 12, 6));
     w.move();
-    CHECK(w.v(ship).location == at(a, 3, 6));
-    CHECK(w.v(ship).movement == 0);
-    CHECK(w.v(ship).supply == 1'000'000 - 3 * 30);  // 3 engines x 10 per step
+    // Speed 3 acts on days 11 and 21 (spec 03 §6.3).
+    CHECK(w.v(ship).location == at(a, 2, 6));
+    CHECK(w.v(ship).movement == 3);  // not spent in a simultaneous game
+    CHECK(w.v(ship).supply == 1'000'000 - 2 * 30);  // 3 engines x 10 per step
     CHECK(w.v(ship).orders.size() == 1);
-    for (int i = 0; i < 3; ++i) w.move();
+    for (int i = 0; i < 5; ++i) w.move();
     CHECK(w.v(ship).location == at(a, 12, 6));
     CHECK(w.v(ship).orders.empty());
 }
@@ -363,14 +443,14 @@ TEST_CASE("movement: vehicles held in place by sabotage keep their orders and wa
     fuel(w, ship);
     w.order(ship, moveTo(a, 6, 6));
     w.v(ship).immobileUntil = w.s.turn + 1;
-    CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 6, 6)) == 1 + 2);
+    CHECK(movement::etaTurns(r, w.s, w.v(ship), at(a, 6, 6)) == 1 + 3);
     w.move();
     CHECK(w.v(ship).location == at(a, 0, 6));
     CHECK(w.v(ship).movement == 0);
     CHECK(w.v(ship).orders.size() == 1);
     ++w.s.turn;
     w.move();
-    CHECK(w.v(ship).location == at(a, 3, 6));
+    CHECK(w.v(ship).location == at(a, 2, 6));
 
     // A held member holds its whole fleet.
     const VehicleId free = w.spawn(w.ship(kA, "Free", 3, {"Test Quantum Reactor"}), at(a, 9, 9));
@@ -393,9 +473,9 @@ TEST_CASE("movement: a warp order jumps an unknown link, learns it and explores 
     fuel(w, ship);
     w.order(ship, mk(OrderKind::Warp, {}, wa));
     w.move();
-    CHECK(w.v(ship).location == at(b, 0, 6));
+    CHECK(w.v(ship).location == at(b, 0, 6));  // a step on day 11, the jump on day 21
     CHECK(w.v(ship).orders.empty());
-    CHECK(w.v(ship).movement == 1);
+    CHECK(w.v(ship).movement == 3);
     CHECK(sight::knowsWarpLink(w.s, kA, wa));
     CHECK(sight::knowsWarpLink(w.s, kA, wb));
     CHECK(w.s.empire(kA).hasExplored(b));
@@ -425,6 +505,9 @@ TEST_CASE("movement: explore picks the nearest unexplored warp point and skips c
     CHECK(w.v(s2).orders[0] == moveTo(a, 6, 8));
     CHECK(w.v(s2).orders[1].object == toC);
     w.move();
+    CHECK(w.v(s1).location == at(a, 8, 6));  // two steps a turn at speed 3
+    CHECK(w.v(s2).location == at(a, 6, 8));
+    w.move();
     CHECK(w.v(s1).location == at(b, 0, 6));
     CHECK(w.v(s2).location == at(c, 0, 6));
     CHECK(w.v(s1).orders.empty());
@@ -449,16 +532,16 @@ TEST_CASE("movement: fleets move together at the slowest member's speed") {
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const VehicleId fast = w.spawn(w.ship(kA, "Fast", 5, {"Test Quantum Reactor"}), at(a, 0, 6));
-    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 2, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pack", {fast, slow}}).ok);
     const FleetId fleet = w.s.fleets.back().id;
     w.s.fleet(fleet)->orders = {moveTo(a, 10, 6)};
-    CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fleet)) == 2);
-    CHECK(movement::etaTurns(r, w.s, w.v(fast), at(a, 10, 6)) == 5);
+    CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fleet)) == 3);
+    CHECK(movement::etaTurns(r, w.s, w.v(fast), at(a, 10, 6)) == 5);  // 2 steps a turn at speed 3
     w.move();
     CHECK(w.v(fast).location == at(a, 2, 6));
     CHECK(w.v(slow).location == at(a, 2, 6));
-    CHECK(w.v(fast).movement == 0);  // every member starts with the fleet's lowest maximum (spec 03 §6.3)
+    CHECK(w.v(fast).movement == 3);  // every member starts with the fleet's lowest maximum (spec 03 §6.3)
     for (int i = 0; i < 4; ++i) w.move();
     CHECK(w.v(fast).location == at(a, 10, 6));
     CHECK(w.v(slow).location == at(a, 10, 6));
@@ -481,12 +564,13 @@ TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the tu
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {full, empty}}).ok);
     w.s.fleets.back().orders = {moveTo(a, 5, 6)};
     w.move();
-    CHECK(w.v(full).location == at(a, 1, 6));
-    CHECK(w.v(full).supply == 90);  // no pooling while moving
+    // Speed 1 (and a member out of supply has 1 MP) never moves in a simultaneous game (spec 03 §6.3).
+    CHECK(w.v(full).location == at(a, 0, 6));
+    CHECK(w.v(full).supply == 100);  // no pooling while moving
     CHECK(w.v(empty).supply == 0);
     w.upkeep();
-    CHECK(w.v(full).supply == 45);  // 90 shared by two
-    CHECK(w.v(empty).supply == 45);
+    CHECK(w.v(full).supply == 50);  // 100 shared by two
+    CHECK(w.v(empty).supply == 50);
 
     // The remainder of the division is lost.
     w.v(full).supply = 100;
@@ -516,7 +600,7 @@ TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the tu
     CHECK(w.v(reactor).supply == kUnlimitedSupply);
 }
 
-TEST_CASE("movement: supply is spent per step; without supply a ship makes one move per turn") {
+TEST_CASE("movement: supply is spent per step; without supply a ship has 1 movement point") {
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
@@ -524,15 +608,36 @@ TEST_CASE("movement: supply is spent per step; without supply a ship makes one m
     CHECK(movement::moveSupplyCost(r, w.s, w.v(ship)) == 20);
     w.v(ship).supply = 50;
     w.order(ship, moveTo(a, 12, 6));
+    w.move();  // speed 2: one step, on day 16
+    CHECK(w.v(ship).location == at(a, 1, 6));
+    CHECK(w.v(ship).supply == 30);
     w.move();
     CHECK(w.v(ship).location == at(a, 2, 6));
     CHECK(w.v(ship).supply == 10);
-    w.move();  // the first step empties the tanks: movement is capped at 1 for the turn
+    w.move();  // the step empties the tanks: the maximum drops to 1
     CHECK(w.v(ship).location == at(a, 3, 6));
     CHECK(w.v(ship).supply == 0);
-    w.move();
-    CHECK(w.v(ship).location == at(a, 4, 6));
     CHECK(vehicleMaxMovement(r, w.s, w.v(ship)) == 1);
+    w.move();  // speed 1 never moves in a simultaneous game (spec 03 §6.3)
+    CHECK(w.v(ship).location == at(a, 3, 6));
+    w.s.options.simultaneous = false;
+    TurnContext ctx{r, w.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    movement::runLive(ctx, movement::LiveMove{kA});
+    CHECK(w.v(ship).location == at(a, 4, 6));  // a turn-based game: one move a turn
+    w.s.options.simultaneous = true;
+
+    // A maximum that drops during the vehicle's own action stops it for the rest
+    // of the turn (spec 03 §6.3 step 4): speed 6 acts on days 6, 11, 16, 21 and 26,
+    // but its third step empties the tanks.
+    const VehicleId racer = w.spawn(w.ship(kA, "Racer", 6), at(a, 0, 8));
+    fuel(w, racer);
+    w.v(racer).supply = 130;  // 60 a step
+    w.order(racer, moveTo(a, 12, 8));
+    w.move();
+    CHECK(w.v(racer).location == at(a, 3, 8));
+    CHECK(w.v(racer).supply == 0);
+    CHECK(w.v(racer).movement == 0);
 
     // Racial Supply Cost -50 %.
     w.s.empire(kA).race.traits.push_back(traitIndex(r, "Mv Frugal"));
@@ -544,7 +649,7 @@ TEST_CASE("movement: supply is spent per step; without supply a ship makes one m
     CHECK(w.v(q).supply == kUnlimitedSupply);
     w.order(q, moveTo(a, 0, 12));
     w.move();
-    CHECK(w.v(q).location == at(a, 0, 2));
+    CHECK(w.v(q).location == at(a, 0, 1));
     CHECK(w.v(q).supply == kUnlimitedSupply);
     w.upkeep();
     CHECK(w.v(q).supply == kUnlimitedSupply);
@@ -552,6 +657,7 @@ TEST_CASE("movement: supply is spent per step; without supply a ship makes one m
     w.v(q).damage[6] = 1000;
     w.v(q).orders = {moveTo(a, 0, 3)};
     w.move();
+    CHECK(w.v(q).location == at(a, 0, 2));
     CHECK(w.v(q).supply == 100 - 10);  // one step at the Frugal race's half cost
     // Bases never run out either.
     const VehicleId base = w.spawn(w.design(kA, "Post", "Test Station", {"Test Bridge"}), at(a, 5, 5));
@@ -568,6 +674,7 @@ TEST_CASE("movement: resupply at own and allied depots, also when passing throug
     const VehicleId ship = w.spawn(w.ship(kA, "Tanker", 3), at(a, 0, 6));
     w.order(ship, mk(OrderKind::Resupply));
     w.move();
+    w.move();
     CHECK(w.v(ship).location == at(a, 3, 6));
     CHECK(w.v(ship).supply == 100);  // would be 10 without the depot
     CHECK(w.v(ship).orders.empty());
@@ -575,8 +682,9 @@ TEST_CASE("movement: resupply at own and allied depots, also when passing throug
     const VehicleId passer = w.spawn(w.ship(kA, "Passer", 3), at(a, 0, 6));
     w.order(passer, moveTo(a, 6, 6));
     w.move();
-    CHECK(w.v(passer).location == at(a, 3, 6));
-    CHECK(w.v(passer).supply == 100);
+    w.move();
+    CHECK(w.v(passer).location == at(a, 4, 6));
+    CHECK(w.v(passer).supply == 100 - 30);  // refilled at the depot on the way
 
     // An ally's depot works from Military Alliance up.
     const ObjectId foreign = w.planet(a, {9, 9});
@@ -644,7 +752,8 @@ TEST_CASE("movement: repair orders and repair by priority, aptitude and culture"
 TEST_CASE("movement: combat is offered once per sector and phase, only where orders were executed") {
     World w;
     const SystemId a = w.system("A");
-    const VehicleId raider = w.spawn(w.ship(kA, "Raider", 3), at(a, 0, 6));
+    // Speed 4 steps on days 8, 16 and 23 (spec 03 §6.3).
+    const VehicleId raider = w.spawn(w.ship(kA, "Raider", 4), at(a, 0, 6));
     const VehicleId guard = w.spawn(w.ship(kB, "Guard", 3), at(a, 3, 6));
     fuel(w, raider);
     w.order(raider, moveTo(a, 3, 6));
@@ -677,7 +786,7 @@ TEST_CASE("movement: combat is offered once per sector and phase, only where ord
     // Two ships entering the same sector on the same day: one offer.
     World t;
     const SystemId ta = t.system("T");
-    const DesignId d = t.ship(kA, "Twin", 3);
+    const DesignId d = t.ship(kA, "Twin", 4);
     for (int i = 0; i < 2; ++i) {
         const VehicleId id = t.spawn(d, at(ta, 0, 0));
         fuel(t, id);
@@ -731,7 +840,7 @@ TEST_CASE("movement: with the real combat module, meetings become battles and mi
 TEST_CASE("movement: combat neither stops a moving ship nor clears its orders") {
     World w;
     const SystemId a = w.system("A");
-    const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
+    const VehicleId runner = w.spawn(w.ship(kA, "Runner", 4), at(a, 0, 6));
     w.spawn(w.ship(kB, "Picket", 1), at(a, 1, 6));
     fuel(w, runner);
     w.order(runner, moveTo(a, 1, 6));  // into the picket's square on purpose (spec 03 §6.2)
@@ -747,7 +856,7 @@ TEST_CASE("movement: combat neither stops a moving ship nor clears its orders") 
     // At peace, the same ship passes by.
     World p;
     const SystemId pa = p.system("A");
-    const VehicleId friendly = p.spawn(p.ship(kA, "Runner", 3), at(pa, 0, 6));
+    const VehicleId friendly = p.spawn(p.ship(kA, "Runner", 4), at(pa, 0, 6));
     p.spawn(p.ship(kB, "Picket", 1), at(pa, 1, 6));
     p.setTreaty(kA, kB, Treaty::NonAggression);
     fuel(p, friendly);
@@ -764,7 +873,7 @@ TEST_CASE("movement: mined sectors are offered to combat; sweep orders clear hos
     const SystemId a = w.system("A");
     const VehicleId mines = w.spawn(w.design(kB, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(a, 1, 6));
     w.v(mines).count = 5;
-    const VehicleId sweeper = w.spawn(w.ship(kA, "Sweeper", 3, {"Mv Sweeper"}), at(a, 0, 6));
+    const VehicleId sweeper = w.spawn(w.ship(kA, "Sweeper", 3, {"Mv Sweeper", "Mv Armor", "Mv Armor", "Mv Armor", "Mv Armor"}), at(a, 0, 6));
     fuel(w, sweeper);
     w.order(sweeper, moveTo(a, 2, 6));
     CombatSpy spy;
@@ -776,7 +885,7 @@ TEST_CASE("movement: mined sectors are offered to combat; sweep orders clear hos
     World m;
     const SystemId ma = m.system("A");
     const VehicleId field = m.spawn(m.design(kB, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(ma, 1, 6));
-    const VehicleId runner = m.spawn(m.ship(kA, "Runner", 3), at(ma, 0, 6));
+    const VehicleId runner = m.spawn(m.ship(kA, "Runner", 4), at(ma, 0, 6));
     fuel(m, runner);
     m.order(runner, moveTo(ma, 3, 6));
     CombatSpy blast;
@@ -786,15 +895,19 @@ TEST_CASE("movement: mined sectors are offered to combat; sweep orders clear hos
     CHECK(m.v(runner).location == at(ma, 3, 6));
     (void)field;
 
-    // A sweep order sweeps in place.
+    // A Sweep Mines order runs the whole encounter again in place (spec 03 §8,
+    // §12): the sweeper clears 3 mines, then the 2 left strike it (60 damage
+    // each, straight to the armor) and are used up. The Move To that arrives and
+    // the sweep happen in one action.
     w.order(sweeper, moveTo(a, 1, 6));
     w.order(sweeper, mk(OrderKind::SweepMines));
     w.move();
-    CHECK(w.v(mines).count == 2);
-    CHECK(w.logged(kA, "swept 3 mines"));
-    w.order(sweeper, mk(OrderKind::SweepMines));
-    w.move();
     CHECK(w.s.vehicle(mines) == nullptr);
+    REQUIRE(w.s.vehicle(sweeper));
+    CHECK(w.v(sweeper).location == at(a, 1, 6));
+    CHECK(w.v(sweeper).orders.empty());
+    CHECK(totalDamage(w.v(sweeper)) >= 4 * 30);  // the four armor plates
+    CHECK(w.logged(kA, "cleared 3 enemy mines"));
 
     // Mines of a treaty partner are left alone.
     World p;
@@ -812,7 +925,7 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     World w;
     const SystemId a = w.system("A"), b = w.system("B", 10, 0);
     const auto [ab, ba] = w.link(a, {0, 6}, b, {12, 6});
-    const VehicleId watch = w.spawn(w.ship(kA, "Watch", 1), at(a, 10, 10));
+    const VehicleId watch = w.spawn(w.ship(kA, "Watch", 4), at(a, 10, 10));  // acts on days 8, 16 and 23
     fuel(w, watch);
     w.order(watch, mk(OrderKind::Sentry));
     w.order(watch, moveTo(a, 10, 9));
@@ -825,14 +938,15 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     fuel(w, intruder);
     w.order(intruder, mk(OrderKind::Warp, {}, ba));
     w.move();
-    CHECK(w.v(intruder).location == at(a, 0, 6));
-    // Only the Sentry order goes; the following orders run (spec 03 §8).
-    REQUIRE(w.v(watch).orders.size() == 1);
-    CHECK(w.v(watch).orders.front() == moveTo(a, 10, 9));
+    CHECK(w.v(intruder).location == at(a, 0, 6));  // on day 21
+    // On day 23 the Sentry counts as done and the Move To after it runs in the
+    // same action (spec 03 §6.3, §8).
+    CHECK(w.v(watch).orders.empty());
+    CHECK(w.v(watch).location == at(a, 10, 9));
     CHECK(w.logged(kA, "enemy sighted"));
 
     // Low supplies end it too.
-    const VehicleId thirsty = w.spawn(w.ship(kA, "Thirsty", 1), at(b, 3, 3));
+    const VehicleId thirsty = w.spawn(w.ship(kA, "Thirsty", 2), at(b, 3, 3));
     w.order(thirsty, mk(OrderKind::Sentry));
     w.move();
     CHECK(w.v(thirsty).orders.empty());
@@ -845,7 +959,7 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     fuel(f, guard);
     f.order(guard, mk(OrderKind::Sentry));
     f.order(guard, moveTo(fa, 6, 5));
-    const VehicleId raider = f.spawn(f.ship(kB, "Raider", 1), at(fa, 6, 7));
+    const VehicleId raider = f.spawn(f.ship(kB, "Raider", 2), at(fa, 6, 7));
     fuel(f, raider);
     f.order(raider, moveTo(fa, 6, 6));
     f.order(raider, moveTo(fa, 6, 8));
@@ -875,21 +989,46 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     // A cloaked enemy goes unnoticed.
     World c;
     const SystemId ca = c.system("A");
-    const VehicleId post = c.spawn(c.ship(kA, "Post", 1), at(ca, 10, 10));
+    const VehicleId post = c.spawn(c.ship(kA, "Post", 2), at(ca, 10, 10));
     fuel(c, post);
     c.order(post, mk(OrderKind::Sentry));
     const VehicleId ghost = c.spawn(c.ship(kB, "Ghost", 1, {"Mv Cloak"}), at(ca, 0, 0));
     c.v(ghost).status = VehicleStatus::Cloaked;
     c.move();
     CHECK(c.v(post).orders.size() == 1);
+
+    // With Repeat on, an ending Sentry stays in the list and execution moves past it (spec 03 §8).
+    World rp;
+    const SystemId ra = rp.system("A");
+    const VehicleId rover = rp.spawn(rp.ship(kA, "Rover", 2), at(ra, 5, 5));
+    rp.v(rover).supply = 10;  // low: the Sentry ends at once
+    rp.order(rover, mk(OrderKind::Sentry), true);
+    rp.order(rover, mk(OrderKind::Decloak), true);
+    rp.move();
+    REQUIRE(rp.v(rover).orders.size() == 2);
+    CHECK(rp.v(rover).repeatOrders);
+
+    // Only objects the owner sees count: an unseen enemy colony is no alarm (spec 03 §8).
+    World uc;
+    const SystemId ua = uc.system("A");
+    const VehicleId lookout = uc.spawn(uc.ship(kA, "Lookout", 2), at(ua, 1, 1));
+    fuel(uc, lookout);
+    uc.order(lookout, mk(OrderKind::Sentry));
+    const ObjectId hidden = uc.planet(ua, {9, 9});
+    uc.colony(hidden, kB);
+    const ObjectId storm = uc.object(ua, ObjectKind::Storm, {9, 9});
+    uc.s.galaxy.object(storm).abilities = {mvtest::ab(AbilityKind::SectorSightObscuration, 5)};
+    REQUIRE_FALSE(sight::canSeePlanet(uc.rules(), uc.s, kA, hidden));
+    uc.move();
+    CHECK(uc.v(lookout).orders.size() == 1);
     (void)ab;
 }
 
 TEST_CASE("movement: attack pursues a moving target and stays until it is gone") {
     World w;
     const SystemId a = w.system("A");
-    const VehicleId target = w.spawn(w.ship(kB, "Prey", 1), at(a, 6, 0));
-    const VehicleId hunter = w.spawn(w.ship(kA, "Hunter", 3), at(a, 0, 0));
+    const VehicleId target = w.spawn(w.ship(kB, "Prey", 2), at(a, 6, 0));      // steps on day 16
+    const VehicleId hunter = w.spawn(w.ship(kA, "Hunter", 4), at(a, 0, 0));    // on days 8, 16 and 23
     fuel(w, target);
     fuel(w, hunter);
     w.order(target, moveTo(a, 12, 0));
@@ -898,40 +1037,54 @@ TEST_CASE("movement: attack pursues a moving target and stays until it is gone")
     spy.fight = hostilesMeet;
     for (int turn = 0; turn < 5 && spy.fought.empty(); ++turn) w.move(spy.hooks());
     REQUIRE_FALSE(spy.fought.empty());
-    CHECK(spy.fought[0].second == at(a, 8, 0));
+    CHECK(spy.fought[0].second == at(a, 9, 0));
     // The pursuit goes on while the target lives (spec 03 §8): it follows the
     // target to its next sector and fights again there.
     CHECK(w.v(hunter).location == w.v(target).location);
     REQUIRE(w.v(hunter).orders.size() == 1);
     CHECK(w.v(hunter).orders.front().kind == OrderKind::Attack);
 
-    // A target that cannot be seen is lost.
+    // There is no visibility test: a cloaked target is still pursued (spec 03 §8).
     World l;
     const SystemId la = l.system("A");
     const VehicleId ghost = l.spawn(l.ship(kB, "Ghost", 1, {"Mv Cloak"}), at(la, 6, 0));
     l.v(ghost).status = VehicleStatus::Cloaked;
     const VehicleId seeker = l.spawn(l.ship(kA, "Seeker", 3), at(la, 0, 0));
+    fuel(l, seeker);
     l.order(seeker, mk(OrderKind::Attack, {}, {}, ghost));
     l.move();
+    CHECK(l.v(seeker).location == at(la, 2, 0));
+    CHECK(l.v(seeker).orders.size() == 1);
+    // A target that is gone ends the pursuit after the day (spec 03 §6.3 step 7).
+    l.v(ghost).count = 0;
+    l.s.removeDeadVehicles();
+    l.move();
     CHECK(l.v(seeker).orders.empty());
-    CHECK(l.v(seeker).location == at(la, 0, 0));
-    CHECK(l.logged(kA, "target lost"));
+    CHECK(l.v(seeker).location == at(la, 2, 0));
+    // So does a target that became the attacker's own.
+    const VehicleId turncoat = l.spawn(l.ship(kB, "Turncoat", 1), at(la, 12, 12));
+    l.order(seeker, mk(OrderKind::Attack, {}, {}, turncoat));
+    l.v(turncoat).owner = kA;
+    l.move();
+    CHECK(l.v(seeker).orders.empty());
 
-    // A cloaked attacker decloaks on reaching its target.
+    // A cloaked ship stays cloaked at its target: only drones decloak to attack (spec 03 §8).
     const VehicleId sneaky = l.spawn(l.ship(kA, "Sneaky", 3, {"Mv Cloak"}), at(la, 0, 0));
     const VehicleId plain = l.spawn(l.ship(kB, "Plain", 1), at(la, 3, 3));
+    fuel(l, sneaky);
     l.v(sneaky).status = VehicleStatus::Cloaked;
     l.order(sneaky, mk(OrderKind::Attack, {}, {}, plain));
     l.move();
+    l.move();
     CHECK(l.v(sneaky).location == at(la, 3, 3));
-    CHECK(l.v(sneaky).status == VehicleStatus::Normal);
+    CHECK(l.v(sneaky).status == VehicleStatus::Cloaked);
     CHECK(l.v(sneaky).orders.size() == 1);
 }
 
 TEST_CASE("movement: repeat orders cycle; a repeating list that never moves idles") {
     World w;
     const SystemId a = w.system("A");
-    const VehicleId patrol = w.spawn(w.ship(kA, "Patrol", 3), at(a, 0, 6));
+    const VehicleId patrol = w.spawn(w.ship(kA, "Patrol", 4), at(a, 0, 6));  // 3 steps a turn
     fuel(w, patrol);
     w.order(patrol, moveTo(a, 3, 6), true);
     w.order(patrol, moveTo(a, 0, 6), true);
@@ -994,14 +1147,16 @@ TEST_CASE("movement: load and drop cargo orders") {
 
     const VehicleId hauler = w.spawn(w.ship(kA, "Hauler", 3, {"Test Cargo Bay"}), at(a, 2, 6));
     fuel(w, hauler);
-    w.order(hauler, mk(OrderKind::LoadCargo, {}, {}, {}, {}, -1));
-    w.order(hauler, mk(OrderKind::DropCargo, at(a, 8, 6), {}, {}, {}, -1));
+    // Given as a player gives them: the Drop becomes Move To plus Drop (spec 03 §8).
+    w.give(hauler, {mk(OrderKind::LoadCargo, {}, {}, {}, {}, -1), mk(OrderKind::DropCargo, at(a, 8, 6), {}, {}, {}, -1)});
+    REQUIRE(w.v(hauler).orders.size() == 3);
     w.move();
     CHECK(w.v(hauler).cargo.totalPopulation() == 10);  // 50 kT at 5 kT per million
     CHECK(w.s.colony(home)->totalPopulation() == 990);
-    CHECK(w.v(hauler).location == at(a, 4, 6));  // loading took the first action of the turn
+    // Speed 3 acts on days 11 and 21; the load chains into the first step (spec 03 §6.3).
+    CHECK(w.v(hauler).location == at(a, 4, 6));
     w.move();
-    w.move();  // six steps, then the drop on the next action
+    w.move();  // the step that arrives and the drop come in one action
     CHECK(w.v(hauler).location == at(a, 8, 6));
     CHECK(w.v(hauler).cargo.empty());
     CHECK(w.s.colony(outpost)->totalPopulation() == 110);
@@ -1009,8 +1164,7 @@ TEST_CASE("movement: load and drop cargo orders") {
 
     const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 3, {"Mv Fighter Bay"}), at(a, 2, 6));
     fuel(w, carrier);
-    w.order(carrier, mk(OrderKind::LoadCargo, {}, {}, {}, fighter, 3));
-    w.order(carrier, mk(OrderKind::DropCargo, at(a, 8, 6), {}, {}, fighter, -1));
+    w.give(carrier, {mk(OrderKind::LoadCargo, {}, {}, {}, fighter, 3), mk(OrderKind::DropCargo, at(a, 8, 6), {}, {}, fighter, -1)});
     w.move();
     CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 1);
     CHECK(w.v(carrier).cargo.unitCount(fighter) == 3);
@@ -1069,17 +1223,30 @@ TEST_CASE("movement: launching and recovering units") {
     CHECK(group()->count == 5);  // joins the same group
     CHECK(group()->supply == 5 * 12);  // launching refills the whole group
     CHECK(w.v(carrier).cargo.unitCount(fighter) == 0);
-    // Recovery has no per-turn limit: cargo space is the only limit (spec 03 §12).
+    // Recover Units names a unit kind: every design of each own group of it in the
+    // sector; no per-turn limit, cargo space is the only limit (spec 03 §8, §12).
     w.order(carrier, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, 4));
     w.move();
-    CHECK(group()->count == 1);
-    CHECK(w.v(carrier).cargo.unitCount(fighter) == 4);
-    // Recovering from a named group leaves other groups alone.
-    const VehicleId other = w.spawn(fighter, at(a, 5, 5));
-    w.order(carrier, mk(OrderKind::RecoverUnits, {}, {}, other, fighter, -1));
+    CHECK(group() == nullptr);
+    CHECK(w.v(carrier).cargo.unitCount(fighter) == 5);
+    // Launched units join the last group of their kind in the sector's object
+    // order, and only that group is refilled (spec 03 §12, confirmed: binary).
+    const VehicleId first = w.spawn(fighter, at(a, 5, 5));
+    const VehicleId second = w.spawn(fighter, at(a, 5, 5));
+    REQUIRE(w.v(second).slot > w.v(first).slot);
+    w.v(first).supply = 1;
+    w.v(second).supply = 1;
+    w.order(carrier, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 2));
     w.move();
-    CHECK(w.s.vehicle(other) == nullptr);
-    CHECK(group()->count == 1);
+    CHECK(w.v(first).count == 1);
+    CHECK(w.v(first).supply == 1);
+    CHECK(w.v(second).count == 3);
+    CHECK(w.v(second).supply == 3 * 12);
+    // The Launch/Recover window may name one group and one design of it (inferred).
+    w.order(carrier, mk(OrderKind::RecoverUnits, {}, {}, second, fighter, 2));
+    w.move();
+    CHECK(w.v(second).count == 1);
+    CHECK(w.v(first).count == 1);
     CHECK(w.v(carrier).cargo.unitCount(fighter) == 5);
 
     // Mines: capped per player per sector; never recovered.
@@ -1102,16 +1269,13 @@ TEST_CASE("movement: launching and recovering units") {
     CHECK(w.v(layer).cargo.unitCount(mine) == 8);
     CHECK(w.v(field).count == 100);
 
-    // Drones need a target; troops never go into space.
+    // A drone launch takes no target and adds no order, every drone is its own
+    // group; troops never go into space (spec 03 §12, confirmed: binary).
     const DesignId drone = w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Test Warhead", "Mv Drone Tank"});
     const DesignId troop = w.design(kA, "Troop", "Test Troop Hull", {"Test Troop Rifle"});
     const VehicleId rack = w.spawn(w.ship(kA, "Rack", 3, {"Mv Drone Rack"}), at(a, 9, 9));
     w.v(rack).cargo.units = {{drone, 2}, {troop, 2}};
     w.order(rack, mk(OrderKind::LaunchUnits, {}, {}, {}, drone, -1));
-    w.move();
-    CHECK(w.v(rack).cargo.unitCount(drone) == 2);
-    const VehicleId prey = w.spawn(w.ship(kB, "Prey", 1), at(a, 12, 12));
-    w.order(rack, mk(OrderKind::LaunchUnits, {}, {}, prey, drone, 2));
     w.order(rack, mk(OrderKind::LaunchUnits, {}, {}, {}, troop, -1));
     w.move();
     CHECK(w.v(rack).cargo.unitCount(drone) == 0);
@@ -1120,27 +1284,72 @@ TEST_CASE("movement: launching and recovering units") {
     for (const Vehicle& v : w.s.vehicles)
         if (v.design == drone) {
             ++drones;
-            CHECK(v.count == 1);  // every drone is its own group
-            CHECK(v.targetVehicle == prey);
+            CHECK(v.count == 1);
+            CHECK_FALSE(v.targetVehicle.valid());
+            CHECK(v.orders.empty());
         }
     CHECK(drones == 2);
+
+    // A turn-based launch gives the new group its full movement at once (spec 03 §12).
+    World tb;
+    const SystemId ta = tb.system("A");
+    tb.s.options.simultaneous = false;
+    const DesignId quick = tb.design(kA, "Quick", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId deck = tb.spawn(tb.ship(kA, "Deck", 3, {"Mv Fighter Bay"}), at(ta, 5, 5));
+    tb.v(deck).cargo.units.push_back({quick, 2});
+    tb.order(deck, mk(OrderKind::LaunchUnits, {}, {}, {}, quick, -1));
+    TurnContext ctx{tb.rules(), tb.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    movement::runLive(ctx, movement::LiveMove{kA});
+    const Vehicle* launched = nullptr;
+    for (const Vehicle& v : tb.s.vehicles)
+        if (v.design == quick) launched = &v;
+    REQUIRE(launched);
+    CHECK(launched->movement == 2);
 }
 
-TEST_CASE("movement: drones chase their target on their own") {
+TEST_CASE("movement: drones move only by orders; an Attack order pursues its target") {
     World w;
     const SystemId a = w.system("A");
     const DesignId droneDesign = w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
     const VehicleId prey = w.spawn(w.ship(kB, "Prey", 1), at(a, 6, 0));
+    const VehicleId idle = w.spawn(droneDesign, at(a, 0, 3));
+    w.v(idle).targetVehicle = prey;  // a battle target is not an order
     const VehicleId drone = w.spawn(droneDesign, at(a, 0, 0));
-    w.v(drone).targetVehicle = prey;
+    w.order(drone, mk(OrderKind::Attack, {}, {}, prey));
     CombatSpy spy;
     spy.fight = hostilesMeet;
     w.move(spy.hooks());
-    CHECK(w.v(drone).location == at(a, 3, 0));
+    CHECK(w.v(drone).location == at(a, 2, 0));  // speed 3: days 11 and 21
+    CHECK(w.v(idle).location == at(a, 0, 3));
+    w.move(spy.hooks());
     w.move(spy.hooks());
     CHECK(w.v(drone).location == at(a, 6, 0));
     REQUIRE(spy.fought.size() == 1);
     CHECK(spy.fought[0].second == at(a, 6, 0));
+    // At its target a cloaked drone decloaks, takes the target for the battle and
+    // pays one move's supply; the order stays (spec 03 §8).
+    w.v(drone).status = VehicleStatus::Cloaked;
+    const int64_t before = w.v(drone).supply;
+    w.move(spy.hooks());
+    CHECK(w.v(drone).status == VehicleStatus::Normal);
+    CHECK(w.v(drone).targetVehicle == prey);
+    CHECK(w.v(drone).supply < before);
+    CHECK(w.v(drone).orders.size() == 1);
+
+    // A drone given a warp point as target gets Move To plus Warp (spec 03 §8).
+    World g;
+    const SystemId ga = g.system("A"), gb = g.system("B", 10, 0);
+    const auto [wa, wb] = g.link(ga, {6, 0}, gb, {0, 0});
+    g.exploreAll(kA);
+    const DesignId dd = g.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Test Warhead", "Mv Drone Tank"});
+    const VehicleId d = g.spawn(dd, at(ga, 0, 0));
+    g.give(d, {mk(OrderKind::Attack, {}, wa)});
+    REQUIRE(g.v(d).orders.size() == 2);
+    CHECK(g.v(d).orders[0] == moveTo(ga, 6, 0));
+    CHECK(g.v(d).orders[1].kind == OrderKind::Warp);
+    CHECK(g.v(d).orders[1].object == wa);
+    (void)wb;
 }
 
 TEST_CASE("movement: fighters cannot use warp points") {
@@ -1148,19 +1357,21 @@ TEST_CASE("movement: fighters cannot use warp points") {
     const SystemId a = w.system("A"), b = w.system("B", 10, 0);
     const auto [wa, wb] = w.link(a, {7, 6}, b, {0, 6});
     w.exploreAll(kA);
-    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
     const VehicleId group = w.spawn(fighter, at(a, 6, 6));
+    // A Move To into another system travels to the warp point and fails there (spec 03 §6.2).
     w.order(group, moveTo(b, 1, 6));
     w.move();
     CHECK(w.v(group).orders.empty());
-    CHECK(w.v(group).location == at(a, 6, 6));
+    CHECK(w.v(group).location == at(a, 7, 6));
+    CHECK(w.logged(kA, "Fighters cannot use warp points"));
+    // A Warp order fails at once.
+    w.s.empire(kA).log.clear();
     w.order(group, mk(OrderKind::Warp, {}, wa));
     w.move();
     CHECK(w.v(group).orders.empty());
-    CHECK(w.logged(kA, "Fighters cannot use warp points"));
-    w.order(group, moveTo(a, 7, 6));
-    w.move();
     CHECK(w.v(group).location == at(a, 7, 6));
+    CHECK(w.logged(kA, "Fighters cannot use warp points"));
     (void)wb;
 }
 
@@ -1210,7 +1421,7 @@ TEST_CASE("movement: units use supply every turn; drones are lost without it, fi
 TEST_CASE("movement: cloak and decloak orders") {
     World w;
     const SystemId a = w.system("A");
-    const VehicleId ship = w.spawn(w.ship(kA, "Shade", 1, {"Mv Cloak"}), at(a, 1, 1));
+    const VehicleId ship = w.spawn(w.ship(kA, "Shade", 2, {"Mv Cloak"}), at(a, 1, 1));
     w.v(ship).queue.items.push_back(QueueItem{});
     w.order(ship, mk(OrderKind::Cloak));
     w.move();
@@ -1239,7 +1450,7 @@ TEST_CASE("movement: cloak and decloak orders") {
     w.move();
     CHECK(w.v(weak).status == VehicleStatus::Normal);
 
-    const VehicleId plain = w.spawn(w.ship(kA, "Plain", 1), at(a, 1, 1));
+    const VehicleId plain = w.spawn(w.ship(kA, "Plain", 2), at(a, 1, 1));
     w.order(plain, mk(OrderKind::Cloak));
     w.move();
     CHECK(w.v(plain).status == VehicleStatus::Normal);
@@ -1256,61 +1467,92 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     w.order(ship, moveTo(a, 12, 6));
     const int64_t supplyBefore = w.v(ship).supply;
     w.move();
-    // The use takes one of the 2 actions; the energy adds 4 more (a day each).
+    // Speed 2 acts on day 16: the use chains into a step, and the energy's 4 on
+    // the day counter give 4 more actions on days 17 to 20 (spec 03 §6.3, §8).
     CHECK(w.v(ship).location == at(a, 5, 6));
     CHECK_FALSE(entryIntact(r, w.s, w.v(ship), 6));
     CHECK(w.v(ship).supply == supplyBefore - 5 * 20);  // the use itself costs nothing
+    CHECK(w.v(ship).movement == 2);                    // movement points untouched
     w.move();
-    CHECK(w.v(ship).location == at(a, 7, 6));
+    CHECK(w.v(ship).location == at(a, 6, 6));
 
-    const VehicleId tanker = w.spawn(w.ship(kA, "Reserve", 1, {"Mv Spare Tank"}), at(a, 3, 3));
+    // The second use chains into the same action and finds nothing left: it fails.
+    const VehicleId tanker = w.spawn(w.ship(kA, "Reserve", 2, {"Mv Spare Tank"}), at(a, 3, 3));
     w.v(tanker).supply = 10;
-    w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 5));
-    w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 5));
-    w.move();  // speed 1: one action a turn
-    CHECK(w.v(tanker).supply == 70);
-    CHECK_FALSE(entryIntact(r, w.s, w.v(tanker), 5));
-    CHECK(w.v(tanker).orders.size() == 1);
+    w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
+    w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
+    CHECK(w.v(tanker).supply == 70);
+    CHECK_FALSE(entryIntact(r, w.s, w.v(tanker), 6));
     CHECK(w.v(tanker).orders.empty());
     CHECK(w.logged(kA, "No usable component"));
 
     // Emergency resupply is capped at the maximum and does nothing for unlimited supply.
-    const VehicleId full = w.spawn(w.ship(kA, "Brimming", 1, {"Mv Spare Tank"}), at(a, 4, 4));
+    const VehicleId full = w.spawn(w.ship(kA, "Brimming", 2, {"Mv Spare Tank"}), at(a, 4, 4));
     w.v(full).supply = 90;
-    w.order(full, mk(OrderKind::UseComponent, {}, {}, {}, {}, 5));
+    w.order(full, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
     CHECK(w.v(full).supply == 100);
 }
 
-TEST_CASE("movement: self-destruct is a one-shot component order") {
+TEST_CASE("movement: self-destruct: ships and bases need the ability, satellites, mines and drones nothing, fighters never") {
     World w;
+    const Rules& r = w.rules();
     const SystemId a = w.system("A");
-    const DesignId design = w.ship(kA, "Bomb", 1, {"Test Self Destruct"});
+    const DesignId design = w.ship(kA, "Bomb", 2, {"Test Self Destruct"});
     const VehicleId bomb = w.spawn(design, at(a, 2, 2));
-    w.order(bomb, mk(OrderKind::UseComponent, {}, {}, {}, {}, 5));
+    w.order(bomb, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
     CHECK(w.s.vehicle(bomb) == nullptr);
     CHECK(w.s.design(design).lost == 1);
     CHECK(w.logged(kA, "self-destructed"));
+
+    // The Self-Destruct order (spec 03 §8, §15).
+    const VehicleId second = w.spawn(design, at(a, 2, 2));
+    const VehicleId plain = w.spawn(w.ship(kA, "Plain", 2), at(a, 3, 3));
+    const VehicleId sat = w.spawn(w.design(kA, "Sat", "Test Satellite Hull", {"Test Satellite Gun"}), at(a, 4, 4));
+    const VehicleId mine = w.spawn(w.design(kA, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(a, 5, 5));
+    const VehicleId drone = w.spawn(w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"}), at(a, 6, 6));
+    const VehicleId fighter = w.spawn(w.design(kA, "Fighter", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"}), at(a, 7, 7));
+    CHECK(movement::canSelfDestruct(r, w.s, w.v(second)));
+    CHECK_FALSE(movement::canSelfDestruct(r, w.s, w.v(plain)));
+    CHECK(movement::canSelfDestruct(r, w.s, w.v(sat)));
+    CHECK(movement::canSelfDestruct(r, w.s, w.v(mine)));
+    CHECK(movement::canSelfDestruct(r, w.s, w.v(drone)));
+    CHECK_FALSE(movement::canSelfDestruct(r, w.s, w.v(fighter)));
+    for (VehicleId id : {second, plain, sat, mine, drone, fighter}) w.order(id, mk(OrderKind::SelfDestruct));
+    w.move();
+    CHECK(w.s.vehicle(second) == nullptr);
+    CHECK(w.s.vehicle(sat) == nullptr);   // satellites and mines act on day 1
+    CHECK(w.s.vehicle(mine) == nullptr);
+    CHECK(w.s.vehicle(drone) == nullptr);
+    REQUIRE(w.s.vehicle(plain));
+    REQUIRE(w.s.vehicle(fighter));
+    CHECK(w.v(plain).orders.empty());   // failed
+    CHECK(w.v(fighter).orders.empty());
+    // A mothballed ship has no abilities, so no self-destruct.
+    const VehicleId laidUp = w.spawn(design, at(a, 8, 8));
+    w.v(laidUp).status = VehicleStatus::Mothballed;
+    CHECK_FALSE(movement::canSelfDestruct(r, w.s, w.v(laidUp)));
 }
 
-TEST_CASE("movement: fleet members still carry out their own orders that act in place") {
+TEST_CASE("movement: fleet members at the fleet's location carry out only the fleet's orders") {
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
-    const VehicleId lead = w.spawn(w.ship(kA, "Lead", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
-    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 3, {"Test Quantum Reactor", "Mv Cloak"}), at(a, 0, 6));
+    const VehicleId lead = w.spawn(w.ship(kA, "Lead", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 4, {"Test Quantum Reactor", "Mv Cloak"}), at(a, 0, 6));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {lead, shade}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 6, 6)};
+    w.s.fleets.back().orders = {moveTo(a, 3, 6)};
     w.order(shade, mk(OrderKind::Cloak));
-    w.order(shade, moveTo(a, 0, 0));  // needs travel: waits while the fleet moves it
+    w.order(shade, moveTo(a, 0, 0));
     w.move();
-    CHECK(w.v(shade).status == VehicleStatus::Cloaked);
+    // Members hold only the fleet's orders (spec 03 §6.3 step 5, confirmed: binary).
+    CHECK(w.v(shade).status == VehicleStatus::Normal);
     CHECK(w.v(shade).location == at(a, 3, 6));
     CHECK(w.v(lead).location == at(a, 3, 6));
-    REQUIRE(w.v(shade).orders.size() == 1);
-    CHECK(w.v(shade).orders[0].kind == OrderKind::MoveTo);
+    CHECK(w.s.fleets.back().orders.empty());
+    CHECK(w.v(shade).orders.size() == 2);
 }
 
 // ---- Hazards ------------------------------------------------------------------------------------------
@@ -1376,10 +1618,10 @@ TEST_CASE("movement: a storm may hit a group stepping in, stopping it; it never 
         World w;
         const SystemId a = w.system("A");
         const ObjectId storm = w.object(a, ObjectKind::Storm, {3, 6});
-        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 3));
-        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 2));  // they add up
+        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 20));
+        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 10));  // they add up
         const VehicleId stays = w.spawn(w.ship(kA, "Stays", 1, {"Mv Armor"}), at(a, 3, 6));
-        const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3, {"Mv Armor"}), at(a, 2, 6));
+        const VehicleId runner = w.spawn(w.ship(kA, "Runner", 4, {"Mv Armor"}), at(a, 2, 6));  // days 8, 16, 23
         fuel(w, runner);
         w.order(runner, moveTo(a, 3, 6));  // routes step around storms when they can: go into it
         w.order(runner, moveTo(a, 5, 6));
@@ -1388,8 +1630,9 @@ TEST_CASE("movement: a storm may hit a group stepping in, stopping it; it never 
         CHECK(totalDamage(w.v(stays)) == 0);
         if (totalDamage(w.v(runner)) > 0) {
             ++hits;
-            CHECK(totalDamage(w.v(runner)) == 5);
-            CHECK(w.v(runner).damage[7] == 5);  // armor takes it first
+            // 30 destroys the armor plate whole: the combat routine for Normal damage (spec 03 §6.2).
+            CHECK(totalDamage(w.v(runner)) == 30);
+            CHECK(w.v(runner).damage[8] == 30);
             CHECK(w.v(runner).location == at(a, 3, 6));  // stopped
             CHECK(w.v(runner).orders.empty());           // and the order failed
         } else {
@@ -1407,18 +1650,18 @@ TEST_CASE("movement: warp point turbulence hits half the transits and ends the m
         World t;
         const SystemId ta = t.system("A"), tb = t.system("B", 5, 0);
         const auto [wa, wb] = t.link(ta, {7, 6}, tb, {0, 6});
-        t.s.galaxy.object(wa).abilities.push_back(ab(AbilityKind::WarpPointTurbulence, 4));
-        t.s.galaxy.object(wa).abilities.push_back(ab(AbilityKind::WarpPointTurbulence, 3));
+        t.s.galaxy.object(wa).abilities.push_back(ab(AbilityKind::WarpPointTurbulence, 20));
+        t.s.galaxy.object(wa).abilities.push_back(ab(AbilityKind::WarpPointTurbulence, 10));
         t.s.galaxy.object(wb).abilities.push_back(ab(AbilityKind::WarpPointTurbulence, 100));  // the far end does not count
         t.exploreAll(kA);
-        const VehicleId jumper = t.spawn(t.ship(kA, "Jumper", 3, {"Mv Armor"}), at(ta, 7, 6));
+        const VehicleId jumper = t.spawn(t.ship(kA, "Jumper", 4, {"Mv Armor"}), at(ta, 7, 6));
         fuel(t, jumper);
         t.order(jumper, moveTo(tb, 2, 6));
         t.s.rng.reseed(seed);
         t.move();
         if (totalDamage(t.v(jumper)) > 0) {
             ++hits;
-            CHECK(totalDamage(t.v(jumper)) == 7);
+            CHECK(totalDamage(t.v(jumper)) == 30);
             CHECK(t.v(jumper).location == at(tb, 0, 6));  // arrives, then stops
             CHECK(t.v(jumper).orders.empty());
         } else {
@@ -1439,7 +1682,7 @@ TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     const ObjectId home = w.planet(a, {2, 6});
     const ObjectId target = w.planet(a, {5, 6});
     w.colony(home, kA, 1000);
-    const VehicleId ship = w.spawn(w.ship(kA, "Settler", 3, {"Test Rock Pod"}), at(a, 2, 6));
+    const VehicleId ship = w.spawn(w.ship(kA, "Settler", 4, {"Test Rock Pod"}), at(a, 2, 6));
     fuel(w, ship);
     w.order(ship, mk(OrderKind::Colonize, {}, target));
     w.move();
@@ -1505,8 +1748,8 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     CHECK(w.logged(kB, "colonization failed"));
 
     const ObjectId other = w.planet(a, {9, 9});
-    const VehicleId escort = w.spawn(w.ship(kA, "Escort", 3), at(a, 6, 6));
-    const VehicleId settler = w.spawn(w.ship(kA, "Settler", 3, {"Test Rock Pod"}), at(a, 6, 6));
+    const VehicleId escort = w.spawn(w.ship(kA, "Escort", 4), at(a, 6, 6));
+    const VehicleId settler = w.spawn(w.ship(kA, "Settler", 4, {"Test Rock Pod"}), at(a, 6, 6));
     fuel(w, escort);
     fuel(w, settler);
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Convoy", {escort, settler}}).ok);
@@ -1525,6 +1768,15 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
 TEST_CASE("movement: ruins give technology; automatic colonists are added") {
     ruleset::Ruleset rs = buildRuleset();
     rs.settings.set("Automatic Colonization Population", "5");
+    for (const char* name : {"Mv Relic Lore", "Mv Relic Craft"}) {
+        ruleset::TechArea relic;
+        relic.name = name;
+        relic.maxLevel = 2;
+        relic.levelCost = 1000;
+        relic.uniqueArea = 7;
+        rs.techAreas.push_back(relic);
+    }
+    rs.reindex();
     const Rules r{std::move(rs)};
     World w(r);
     const SystemId a = w.system("A");
@@ -1539,12 +1791,28 @@ TEST_CASE("movement: ruins give technology; automatic colonists are added") {
     int after = 0;
     for (int l : w.s.empire(kA).techLevels) after += l;
     CHECK(after == before + 2);
+    // Plain ruins come first and are used up; the unique ruins are then neither
+    // applied nor removed (spec 03 §3.3, confirmed: binary).
     const auto& unique = w.s.empire(kA).uniqueAreasUnlocked;
-    CHECK(std::find(unique.begin(), unique.end(), 7) != unique.end());
-    CHECK(w.s.galaxy.object(ruin).abilities.empty());
+    CHECK(std::find(unique.begin(), unique.end(), 7) == unique.end());
+    REQUIRE(w.s.galaxy.object(ruin).abilities.size() == 1);
+    CHECK(parseAbilityKind(w.s.galaxy.object(ruin).abilities[0].type) == AbilityKind::AncientRuinsUnique);
     REQUIRE(w.s.colony(ruin));
     CHECK(w.s.colony(ruin)->totalPopulation() == 1 + 5);
     CHECK(w.logged(kA, "Ancient ruins"));
+
+    // Unique ruins alone: the unique area is added and every area of that
+    // unique id gains a level, requirements unchecked; then they are used up.
+    const ObjectId relic = w.planet(a, {6, 6});
+    w.s.galaxy.object(relic).abilities = {ab(AbilityKind::AncientRuinsUnique, 7)};
+    const VehicleId second = w.spawn(w.ship(kA, "Digger", 3, {"Test Rock Pod"}), at(a, 6, 6));
+    w.v(second).cargo.population.push_back({kA, 1});
+    w.order(second, mk(OrderKind::Colonize, {}, relic));
+    w.colonize();
+    CHECK(std::find(unique.begin(), unique.end(), 7) != unique.end());
+    CHECK(w.s.galaxy.object(relic).abilities.empty());
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i)
+        if (r.data().techAreas[i].uniqueArea == 7) CHECK(w.s.empire(kA).techLevel(ruleset::TechAreaId{i}) == 1);
 }
 
 // ---- Upkeep -------------------------------------------------------------------------------------------
@@ -1958,6 +2226,8 @@ TEST_CASE("movement: a failed order clears every fleet member's list and switche
     f.repeatOrders = true;
     w.v(one).orders = {moveTo(a, 5, 5)};  // a member's own list goes too
     w.v(one).repeatOrders = true;
+    w.move();  // the step that arrives uses the action's movement point: the next order waits
+    CHECK(w.s.fleets.back().orders.size() == 3);
     w.move();
     CHECK(w.s.fleets.back().orders.empty());
     CHECK_FALSE(w.s.fleets.back().repeatOrders);
@@ -1976,21 +2246,27 @@ TEST_CASE("movement: a failed order clears every fleet member's list and switche
     CHECK(w.v(solo).orders.back() == moveTo(a, 7, 6));
 }
 
-TEST_CASE("movement: one order execution per action; a ship with no movement acts once, on day 1") {
+TEST_CASE("movement: done orders chain within one action; a vehicle with no movement acts on day 1 only") {
     World w;
     const SystemId a = w.system("A");
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
-    // A base (speed 0) with two in-place orders carries out one per turn.
+    // A base (speed 0) acts on day 1 and runs all of its orders that need no movement then (spec 03 §6.3).
     const VehicleId base = w.spawn(w.design(kA, "Hangar", "Test Station", {"Test Bridge", "Mv Fighter Bay"}), at(a, 4, 4));
     w.v(base).cargo.units.push_back({fighter, 2});
     w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
     w.order(base, mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, 1));
-    w.move();
-    CHECK(w.v(base).orders.size() == 1);
-    CHECK(w.v(base).cargo.unitCount(fighter) == 1);
+    w.order(base, moveTo(a, 5, 5));  // needs movement: fails (a base cannot move)
     w.move();
     CHECK(w.v(base).orders.empty());
     CHECK(w.v(base).cargo.unitCount(fighter) == 0);
+    CHECK(w.logged(kA, "It cannot move"));
+
+    // A repeating list of orders that complete goes round at most 21 executions an action.
+    const VehicleId looper = w.spawn(w.ship(kA, "Looper", 2), at(a, 8, 8));
+    w.order(looper, mk(OrderKind::Decloak), true);
+    w.order(looper, mk(OrderKind::Decloak), true);
+    w.move();
+    CHECK(w.v(looper).orders.size() == 2);
 }
 
 TEST_CASE("movement: planets launch and recover units by order, with no bay") {
@@ -2038,7 +2314,7 @@ TEST_CASE("movement: the units-in-space cap is checked at launch, not when build
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
-    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 1, {"Mv Fighter Bay"}), at(a, 5, 5));
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 2, {"Mv Fighter Bay"}), at(a, 5, 5));
     w.v(carrier).cargo.units.push_back({fighter, 9});
     w.s.options.maxUnitsPerPlayer = 5;
     const VehicleId group = w.spawn(fighter, at(a, 5, 5));
@@ -2069,29 +2345,42 @@ TEST_CASE("movement: a ship whose space yard is building cannot move") {
     CHECK(w.v(yard).location == at(a, 3, 3));
 }
 
-TEST_CASE("movement: a sector is not fought over again once everything there has fought this turn") {
-    World w;
-    const SystemId a = w.system("A");
-    const VehicleId guard = w.spawn(w.ship(kB, "Guard", 1), at(a, 3, 6));
-    const VehicleId raider = w.spawn(w.ship(kA, "Raider", 3, {"Mv Sweeper"}), at(a, 2, 6));
-    fuel(w, raider);
-    w.order(raider, moveTo(a, 3, 6));
-    w.order(raider, mk(OrderKind::SweepMines));  // acts in place: the sector is checked again
-    w.order(raider, mk(OrderKind::SweepMines));
-    CombatSpy spy;
-    spy.fight = hostilesMeet;
-    w.move(spy.hooks());
-    CHECK(spy.fought.size() == 1);
-    CHECK(std::count(spy.asked.begin(), spy.asked.end(), at(a, 3, 6)) == 3);
-    // A newcomer brings a new battle.
-    const VehicleId second = w.spawn(w.ship(kA, "Second", 1), at(a, 3, 5));
-    fuel(w, second);
-    w.order(second, moveTo(a, 3, 6));
-    CombatSpy again;
-    again.fight = hostilesMeet;
-    w.move(again.hooks());
-    CHECK(again.fought.size() == 1);
-    (void)guard;
+TEST_CASE("movement: a sector is fought over again only after a damaged survivor, a newcomer or a minefield") {
+    // Spec 03 §6.3 step 6: the latest battle at a location this turn decides.
+    auto run = [](bool damage, bool newcomer, bool minefield) {
+        World w;
+        const SystemId a = w.system("A");
+        const VehicleId guard = w.spawn(w.ship(kB, "Guard", 1, {"Mv Armor"}), at(a, 3, 6));
+        const VehicleId raider = w.spawn(w.ship(kA, "Raider", 4, {"Mv Sweeper"}), at(a, 2, 6));  // days 8, 16, 23
+        fuel(w, raider);
+        // Arrives on day 8, then sweeps in place every action: the sector is checked each time.
+        w.order(raider, moveTo(a, 3, 6), true);
+        w.order(raider, mk(OrderKind::SweepMines), true);
+        if (newcomer) {
+            const VehicleId late = w.spawn(w.ship(kA, "Late", 2), at(a, 3, 5));  // day 16
+            fuel(w, late);
+            w.order(late, moveTo(a, 3, 6));
+        }
+        if (minefield) w.spawn(w.design(kA, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(a, 3, 6));
+        CombatSpy spy;
+        spy.fight = hostilesMeet;
+        movement::CombatHooks hooks = spy.hooks();
+        if (damage) {
+            auto resolve = hooks.resolve;
+            hooks.resolve = [resolve, guard](TurnContext& ctx, Location l, std::span<const VehicleId> in) {
+                resolve(ctx, l, in);
+                // The guard loses its armor plate: a survivor below full structure.
+                if (Vehicle* g = ctx.state.vehicle(guard)) g->damage.back() = 30;
+            };
+        }
+        w.move(hooks);
+        CHECK(std::count(spy.asked.begin(), spy.asked.end(), at(a, 3, 6)) == 3);
+        return spy.fought.size();
+    };
+    CHECK(run(false, false, false) == 1);  // everyone there survived it undamaged
+    CHECK(run(true, false, false) == 3);   // a damaged survivor forces a new battle
+    CHECK(run(false, true, false) == 2);   // a newcomer on day 16 does
+    CHECK(run(false, false, true) == 3);   // a minefield is never a combat piece: always a new battle
 }
 
 TEST_CASE("movement: warp links work both ways; only the first 10 warp points of a system are used; neutrals never warp") {
@@ -2133,7 +2422,7 @@ TEST_CASE("movement: resupply skips guarded depots; repair prefers planets and b
     w.colony(near, kA, 100, {"Test Depot"});
     w.colony(far, kA, 100, {"Test Depot"});
     w.spawn(w.ship(kB, "Picket", 1, {"Test Laser"}), at(a, 2, 6));
-    const VehicleId tanker = w.spawn(w.ship(kA, "Tanker", 3), at(a, 1, 6));
+    const VehicleId tanker = w.spawn(w.ship(kA, "Tanker", 4), at(a, 1, 6));
     fuel(w, tanker);
     w.order(tanker, mk(OrderKind::Resupply));
     w.move();
@@ -2206,6 +2495,7 @@ TEST_CASE("movement: training sources stack; a cap of 0 trains nobody; fleets st
     const VehicleId m1 = w.spawn(w.ship(kA, "M1", 1), at(a, 3, 3));
     const VehicleId m2 = w.spawn(w.ship(kA, "M2", 1), at(a, 3, 3));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Drill", {m1, m2}}).ok);
+    w.s.empire(kA).knowledge.explored[a.index()] = 1;  // system-wide sources count in explored systems
     w.upkeep();
     CHECK(w.v(cadet).experience == 8);  // two sources of 4; the one with cap 0 gives nothing
     CHECK(w.v(rookie).experience == 20);  // one object is one source: its largest V1 (50) and V2 (20)
@@ -2447,12 +2737,28 @@ TEST_CASE("orders: composite orders are expanded into simple ones when they are 
     (void)ba;
 }
 
-TEST_CASE("movement: ships in one sector with the same head order move as one group") {
+TEST_CASE("movement: ad-hoc groups form at every execution: a computer player's vehicles with one head order, a human's drones") {
+    // Spec 03 §8 (confirmed: binary). A human player's ships never group.
+    World h;
+    const SystemId ha = h.system("A");
+    const VehicleId hFast = h.spawn(h.ship(kA, "Fast", 4), at(ha, 0, 6));
+    const VehicleId hSlow = h.spawn(h.ship(kA, "Slow", 2), at(ha, 0, 6));
+    for (VehicleId id : {hFast, hSlow}) {
+        fuel(h, id);
+        h.order(id, moveTo(ha, 4, 6));
+    }
+    h.move();
+    CHECK(h.v(hFast).location == at(ha, 3, 6));
+    CHECK(h.v(hSlow).location == at(ha, 1, 6));
+
+    // A computer player's group acts when its first member is due and carries
+    // the others along: the slow ship moves at the fast one's pace.
     World w;
     const SystemId a = w.system("A");
+    w.s.empire(kA).kind = PlayerKind::Computer;
     const VehicleId fast = w.spawn(w.ship(kA, "Fast", 4), at(a, 0, 6));
     const VehicleId slow = w.spawn(w.ship(kA, "Slow", 2), at(a, 0, 6));
-    const VehicleId apart = w.spawn(w.ship(kA, "Apart", 4), at(a, 0, 7));
+    const VehicleId apart = w.spawn(w.ship(kA, "Apart", 2), at(a, 0, 7));
     for (VehicleId id : {fast, slow, apart}) fuel(w, id);
     w.order(fast, moveTo(a, 4, 6));
     w.order(fast, moveTo(a, 4, 0));
@@ -2460,41 +2766,36 @@ TEST_CASE("movement: ships in one sector with the same head order move as one gr
     w.order(slow, moveTo(a, 4, 12));
     w.order(apart, moveTo(a, 4, 6));  // same order, another sector: on its own
     w.move();
-    // Together at the pace of the slowest.
-    CHECK(w.v(fast).location == at(a, 2, 6));
-    CHECK(w.v(slow).location == at(a, 2, 6));
-    CHECK(w.v(apart).location == at(a, 4, 6));
+    CHECK(w.v(fast).location == at(a, 3, 6));
+    CHECK(w.v(slow).location == at(a, 3, 6));
+    CHECK(w.v(apart).location == at(a, 1, 6));  // one diagonal step on day 16
+    // The shared order is done for both on day 8; their next orders differ, so
+    // each goes on alone from there, the same day's chain included.
     w.move();
-    CHECK(w.v(fast).location == at(a, 4, 6));
-    CHECK(w.v(slow).location == at(a, 4, 6));
-    // The shared order is done for both; their next orders differ, so they part.
+    CHECK(w.v(fast).location == at(a, 4, 4));
+    CHECK(w.v(slow).location == at(a, 4, 7));
     REQUIRE(w.v(fast).orders.size() == 1);
     REQUIRE(w.v(slow).orders.size() == 1);
-    w.move();
-    CHECK(w.v(fast).location == at(a, 4, 2));
-    CHECK(w.v(slow).location == at(a, 4, 8));
 
-    // A group that parts during a turn: each goes on at its own pace from the next action.
-    World p;
-    const SystemId pa = p.system("A");
-    const VehicleId quick = p.spawn(p.ship(kA, "Quick", 6), at(pa, 0, 0));
-    const VehicleId steady = p.spawn(p.ship(kA, "Steady", 3), at(pa, 0, 0));
-    for (VehicleId id : {quick, steady}) fuel(p, id);
-    p.order(quick, moveTo(pa, 1, 1));
-    p.order(quick, moveTo(pa, 12, 1));
-    p.order(steady, moveTo(pa, 1, 1));
-    p.order(steady, moveTo(pa, 1, 12));
-    p.move();
-    CHECK(p.v(steady).location == at(pa, 1, 3));  // 3 steps: one together, two alone
-    CHECK(p.v(quick).location.sector.y == 1);
-    CHECK(p.v(quick).location.sector.x > 2);
+    // A human player's drone groups outside fleets gather those with the same head order.
+    World d;
+    const SystemId da = d.system("A");
+    const DesignId three = d.design(kA, "Dart", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
+    const DesignId two = d.design(kA, "Bolt", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
+    const VehicleId dart = d.spawn(three, at(da, 0, 0));   // days 11 and 21
+    const VehicleId bolt = d.spawn(two, at(da, 0, 0));     // day 16
+    d.order(dart, moveTo(da, 6, 0));
+    d.order(bolt, moveTo(da, 6, 0));
+    d.move();
+    CHECK(d.v(dart).location == at(da, 3, 0));
+    CHECK(d.v(bolt).location == at(da, 3, 0));
 }
 
 TEST_CASE("movement: in-system steps are greedy and re-chosen around hazards and hostiles") {
     // A visible hostile's square is stepped around, unless it is where the ship goes.
     World w;
     const SystemId a = w.system("A");
-    const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
+    const VehicleId runner = w.spawn(w.ship(kA, "Runner", 4), at(a, 0, 6));
     w.spawn(w.ship(kB, "Picket", 1), at(a, 1, 6));
     fuel(w, runner);
     w.order(runner, moveTo(a, 6, 6));
@@ -2510,13 +2811,13 @@ TEST_CASE("movement: in-system steps are greedy and re-chosen around hazards and
     const SystemId sa = st.system("A");
     const ObjectId storm = st.object(sa, ObjectKind::Storm, {1, 1});
     st.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 5));
-    const VehicleId sailor = st.spawn(st.ship(kA, "Sailor", 1), at(sa, 0, 0));
+    const VehicleId sailor = st.spawn(st.ship(kA, "Sailor", 2), at(sa, 0, 0));
     fuel(st, sailor);
     st.order(sailor, moveTo(sa, 4, 4));
     st.move();
     CHECK((st.v(sailor).location == at(sa, 1, 0) || st.v(sailor).location == at(sa, 0, 1)));
     CHECK(totalDamage(st.v(sailor)) == 0);
-    const VehicleId straight = st.spawn(st.ship(kA, "Straight", 1), at(sa, 5, 5));
+    const VehicleId straight = st.spawn(st.ship(kA, "Straight", 2), at(sa, 5, 5));
     fuel(st, straight);
     st.order(straight, moveTo(sa, 9, 9));
     st.move();
@@ -2537,16 +2838,23 @@ TEST_CASE("movement: in-system steps are greedy and re-chosen around hazards and
 
 TEST_CASE("movement: the Ship Orders options clear orders after a warp into another empire's system") {
     const Rules& r = mvtest::rules();
-    auto run = [&](EncounterClear options, Treaty treaty, bool ownerHasColony) {
+    auto run = [&](EncounterClear options, Treaty treaty, bool ownerHasColony, bool hidden = false, bool drone = false) {
         World w;
         const SystemId a = w.system("A"), b = w.system("B", 10, 0);
         const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
         w.exploreAll(kA);
         if (ownerHasColony) w.colony(w.planet(b, {8, 8}), kB, 1000);
+        if (hidden) {
+            const ObjectId storm = w.object(b, ObjectKind::Storm, {8, 8});
+            w.s.galaxy.object(storm).abilities = {mvtest::ab(AbilityKind::SectorSightObscuration, 5)};
+        }
         w.setTreaty(kA, kB, treaty);
         w.setTreaty(kB, kA, treaty);
         REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{options}).ok);
-        const VehicleId ship = w.spawn(w.ship(kA, "Scout", 3), at(a, 11, 6));
+        // Speed 4: a step on day 8, the jump on day 16, a step on day 23.
+        const DesignId d = drone ? w.design(kA, "Drone", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Mv Engine", "Mv Drone Tank"})
+                                 : w.ship(kA, "Scout", 4);
+        const VehicleId ship = w.spawn(d, at(a, 11, 6));
         fuel(w, ship);
         w.order(ship, mk(OrderKind::Warp, {}, ab));
         w.order(ship, moveTo(b, 3, 6));
@@ -2554,10 +2862,10 @@ TEST_CASE("movement: the Ship Orders options clear orders after a warp into anot
         (void)ba;
         return std::pair{w.v(ship).location, w.v(ship).orders.size()};
     };
-    // Off (the default): the ship warps and goes on.
-    CHECK(World{}.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Never);
+    // Off: the ship warps and goes on. On for meeting an enemy is the default (spec 03 §6.4).
+    CHECK(World{}.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
     CHECK(run(EncounterClear::Never, Treaty::War, true).first == Location{SystemId{1u}, Sector{1, 6}});
-    // Meeting an enemy: the Warp fails on arrival and the list is cleared.
+    // Meeting an enemy: the jump does not fail, the Warp just ends and the list is cleared.
     const auto enemy = run(EncounterClear::Enemy, Treaty::War, true);
     CHECK(enemy.first == Location{SystemId{1u}, Sector{0, 6}});
     CHECK(enemy.second == 0);
@@ -2568,6 +2876,10 @@ TEST_CASE("movement: the Ship Orders options clear orders after a warp into anot
     const auto any = run(EncounterClear::Any, Treaty::NonAggression, true);
     CHECK(any.first == Location{SystemId{1u}, Sector{0, 6}});
     CHECK(any.second == 0);
+    // Only objects the owner sees count: a colony hidden by a storm does not.
+    CHECK(run(EncounterClear::Enemy, Treaty::War, true, true).first == Location{SystemId{1u}, Sector{1, 6}});
+    // Groups made only of drones are exempt.
+    CHECK(run(EncounterClear::Enemy, Treaty::War, true, false, true).first == Location{SystemId{1u}, Sector{1, 6}});
     // Unknown values are refused.
     World w;
     CHECK_FALSE(apply(r, w.s, kA, cmd::SetEncounterOptions{static_cast<EncounterClear>(3)}).ok);
