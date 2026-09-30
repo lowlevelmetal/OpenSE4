@@ -9,7 +9,8 @@ running game.
 On 2026-09-29 the generation, setup, sight, hazard, warp point and stellar manipulation
 rules were checked against the original executable. Rules marked **(confirmed: binary)**
 describe what it does, quirks included; the engine should reproduce them unless a rule
-says otherwise.
+says otherwise. On 2026-09-30 the remaining questions of §14 were settled the same way;
+where the engine still differs, docs/PARITY_GAPS.md lists it.
 
 Notation used for the confirmed rules: `R(n)` is a uniform random integer in 0..n−1,
 `R[a,b]` a uniform random integer in a..b inclusive, `div` and `mod` are integer division
@@ -152,9 +153,14 @@ The choices and defaults below are confirmed: binary.
 **Game Settings tab**
 
 - The master password and the maximum units and ships per player. The caps default to
-  `Default Number Of Units/Ships Per Player`.
-- Cheat codes; No Tactical Combat; Show complete tech tree; Allow gifts/tributes;
-  Allow technology trades.
+  `Default Number Of Units/Ships Per Player`. The window checks neither cap: each is read as
+  a whole number and held in 16 bits (confirmed: binary).
+- A list of twelve check boxes, in this order (confirmed: binary): Cheat codes allowed;
+  Team Mode; No Tactical Combat; Players can see the complete tech tree; Allow
+  gifts/tributes; Allow technology gifts, tributes and trades; Allow surrender; Allow
+  intelligence projects; No Ruins; Only breathable atmosphere; Only home planet type;
+  Players can save the map during the game. A new game starts with the four "Allow ..."
+  boxes checked and all the others clear, so No Tactical Combat is off.
 - **Team Mode** allies every computer player against the humans.
 - **Allow intel projects**. The intel techs remain even when this is off, but are useless.
 - **No Ruins** discards an `Ancient Ruins` or `Ancient Ruins Unique` result of the
@@ -167,13 +173,20 @@ The choices and defaults below are confirmed: binary.
 
 **Mechanics tab**
 
-- Play style: Hotseat or Different Machines.
-- Turn style: Turn-Based (sequential) or Simultaneous.
+The defaults below are confirmed: binary.
+
+- Play style: Hotseat (the default) or Different Machines.
+- Turn style: Turn-Based (sequential, the default) or Simultaneous.
 - Multiplayer filename and save directory.
-- Autosave every N turns, rotating through ten slots.
+- Autosave: None (the default), or every 1, 2, 3, 5 or 10 turns; it can also be changed
+  during the game. The save is made after a turn is processed, whenever the number of turns
+  since 2400.0 (the game date in tenths of a year) is a multiple of N. The file is named
+  after the last digit of that number, into the save directory, so there are at most ten
+  autosave files: every 2 turns uses five of them, every 5 turns two, every 10 turns one.
+  Because the rule follows the game date, loading a game changes nothing about it.
 - Connection type, enabled only for Different Machines with Simultaneous: manual file
-  moving, TCP/IP Host or TCP/IP Player. Simultaneous games on different machines
-  require a master password.
+  moving (the default), TCP/IP Host or TCP/IP Player. Simultaneous games on different
+  machines require a master password.
 
 ### 2.3 Settings.txt keys owned by this spec
 
@@ -184,7 +197,7 @@ The choices and defaults below are confirmed: binary.
 | `Plr Planet Value {Low,Medium,High} Percent/Resources` | Starting-planet value for each Home Planet Value setting (Bad, Average, Good). Percent values get a small random spread (§3.6) (confirmed: binary). |
 | `Maximum/Minimum Planet Percent/Resource Value` | Clamps on value changes during play. |
 | `Remote Mining Decreases Asteroid Value` | Whether remote mining depletes asteroids. |
-| `Planet Value Percent Loss After Owner Death` | Value lost when a colony's owner is eliminated **(inferred)**. |
+| `Planet Value Percent Loss After Owner Death` | Value lost when a colony's population dies out and the colony is removed, not when its owner is eliminated: each value drops by this many points, or by this percentage of the stock in finite games (spec 02 §1.2) (confirmed: binary). |
 | `Event Percent Chance Low/Medium/High` | Per-turn event chance for each frequency (§10). |
 | `Created Storm Maximum {Obscuration Level, Turbulence Damage, Shield Disruption}` | Caps on the abilities of a manufactured storm (§9). |
 | `Min/Max {Computer,Neutral} Player L/M/H Setting` | Ranges for the random AI counts. |
@@ -267,8 +280,8 @@ The five algorithms (confirmed: binary):
    The non-empty lines of `SystemNames.txt` form the pool. For each system in order, a
    random start position R(n) is drawn and the first unused name from there (wrapping
    round) is taken, so names never repeat. Systems beyond the number of names get **no
-   name** (an empty string). The engine should instead fall back to generated names and
-   warn **(OpenSE4 choice)**.
+   name** (an empty string). The engine instead falls back to generated names and warns
+   **(OpenSE4 choice)**; the difference is listed in PARITY_GAPS.
 2. **System type** (confirmed: binary): each system draws one entry from its quadrant's
    weighted list, in system order, after placement and the warp network. Draw
    r = R[1,1000]. Walk the entries in order, wrapping round to the first entry after the
@@ -310,8 +323,13 @@ order. For system i:
    links: find the marked system c with fewer than 10 links at the smallest distance from
    b (ties go to the highest-numbered system), link b and c, ignoring the angle rule, then
    mark everything now reachable from b. Repeat passes until every system is marked.
-   (Quirk: an unmarked system that already has 10 links is treated as marked without a
-   new link.)
+   The search for c only looks up to distance 68, although two systems can be up to about
+   80 squares apart.
+3. Quirks. An unmarked system b that gets no link, because it already has 10 links or
+   because no marked system with room lies within 68 squares, is still queued for marking:
+   the next marking step marks it **and everything linked to it**, without a new link. If a
+   whole pass ends with only such systems waiting and no marking step ran after them, the
+   original never finishes (it loops forever). OpenSE4 stops instead.
 
 **Placing the warp points** (confirmed: binary). After a system's objects are placed
 (§4), it gets one warp point per link, in the order the links were made. The sector is
@@ -337,15 +355,22 @@ found from the bearing a from this system to the destination:
 - **Edge placement** (the default): start from outline(a, 6.5). Then nudge the coordinate
   that runs along the edge by half a square and round it half to even: x for bearings from
   315 up to 45, y for 45 < a < 135, x for 135 ≤ a ≤ 215, y for 215 < a < 315. The nudge is
-  +½ in the first two ranges and −½ in the last two. It is reversed when this system
-  already has a warp point on the same sector and a is smaller than the bearing toward that
-  warp point's destination. Because of the half-to-even rounding, the nudge moves an odd
+  +½ in the first two ranges and −½ in the last two. It is reversed when one of this
+  system's earlier warp points stands on the outline sector (the sector before the nudge,
+  compared with where the earlier warp points actually ended up) and a is smaller than the
+  bearing toward that warp point's destination; with several such warp points, the one
+  made last counts. Because of the half-to-even rounding, the nudge moves an odd
   coordinate one square to an even neighbour and leaves an even one where it is, so warp
-  points can share a sector.
+  points can share a sector. The reversal therefore only matters in one case: a warp point
+  with a bearing from 216 to 220 sits on the bottom edge at x = 3 but is nudged along y,
+  so it keeps that odd x; a later warp point of the same system whose outline sector is
+  that same square (a bearing from about 209 to 215) is then pushed right to x = 4 instead
+  of left to x = 2.
 - **With *Warp Points located anywhere in system***: start from outline(a, 6.5) and move
   R[0,4] squares straight inward (down for bearings up to 45 or from 315, left for
   45 < a ≤ 135, up for 135 < a ≤ 225, right for 225 < a < 315). Redraw until the sector
-  holds no object.
+  holds no object; there is no limit on the redraws, so the original hangs if all five
+  squares are taken (OpenSE4 stops after 1,000 draws).
 
 **Warp point type and ability** (confirmed: binary). The two ends of a link share their
 SectType record and their rolled ability. The end created first (in the lower-numbered
@@ -364,11 +389,18 @@ two-way (confirmed: binary). Only the Close Warp Point stellar manipulation coul
 Home systems may only be system types with `Empires Can Start In = TRUE`. This rule was
 added because players were starting in nebulae, black holes and asteroid systems.
 
-**Map starting points** (§12) come first (confirmed: binary): a player's specific point,
-else a random remaining common point. If the planet there does not have the player's
-atmosphere, it is replaced by a random Planet SectType record with the player's
-atmosphere and planet type and the same size. If there is no planet, one is created
-there (below).
+**Map starting points** (§12) come first (confirmed: binary). In player order, every
+player gets its specific point (if several are listed for it, the last one), else a
+random remaining common point, which is then used up; players left without a point are
+placed at random afterwards (below). The planet at a point is the first planet (not
+asteroid field) in that sector. If its atmosphere is not the player's, it takes a random
+Planet SectType record with the player's atmosphere and planet type and the same stellar
+size, and keeps its name, values and conditions; a planet with the right atmosphere but
+another physical type stays as it is. If no record fits, the original has no defined
+result. If the sector holds no planet (it may be empty or hold an asteroid field), a
+homeworld is created in that very sector, as described below. Nothing checks whether an
+earlier player already took the same sector: two players could then share one
+homeworld. OpenSE4 skips such a point instead (§14 Q36).
 
 **Random placement** (confirmed: binary). Players are placed in player order. The
 **home size** is Small, Medium or Large for Home Planet Value Bad, Average or Good, raised
@@ -391,25 +423,44 @@ candidate wins, and the home is drawn uniformly from it:
 
 If no attempt finds a candidate, the game draws up to 2,000 random systems looking for a
 start-eligible one not used by another player (if none turns up, one more random system is
-used whatever its type) and **creates** a homeworld there: a random empty sector (any of
-the 169), a random Planet SectType record with the player's atmosphere and planet type
-(and the home size when *All player planets the same size* is on), random values and
-conditions as for a natural planet, and a name made of the system name and the Roman
-numeral one above the number of occupied sectors in that system.
+used whatever its type) and **creates** a homeworld there: a random sector without a
+planet (any of the 169, redrawn until one has no planet; a star, storm, warp point or
+asteroid field may share it), a random Planet SectType record with the player's
+atmosphere and planet type (and the home size when *All player planets the same size* is
+on), random values and conditions as for a natural planet, and a name made of the system
+name and the Roman numeral one above the number of sectors that hold a planet (asteroid
+fields do not count).
 
 **Starting planets** (confirmed: binary; the full homeworld setup is in spec 02 §9). With
 more than one starting planet (a neutral empire always gets one), further planets are
 taken from the home system and systems up to one warp jump away (two jumps when the
-quadrant has more than 60 % of `Maximum Number Of Systems`). Systems that are not
-start-eligible are skipped (the home system always counts), and so are systems where
-another empire is present, unless *Allowed to start in the same system* is on. Within
-those systems, sectors are scanned in order for unowned planets with the player's
-atmosphere and type (and the home size with *All player planets the same size*) that are
-not another player's homeworld. If there are not enough, the remainder are created in
-random candidate systems, on a random empty sector of the inner 11 × 11 area.
+quadrant has more than 60 % of `Maximum Number Of Systems`, compared exactly).
 
-Every starting planet's system is explored for its owner at turn 0. Neutral empires cannot
-use warp points at all (§8), so they never leave their home system.
+1. **Candidate systems, in order.** The list starts with the home system. Each round (one
+   or two) goes through the list as it stands and appends, for each system in turn, the
+   destinations of its warp points in the order of those warp points, skipping systems
+   already listed. So the order is the home system, then its neighbours in the order of
+   its warp points, then their neighbours.
+2. **Filter.** Systems that are not start-eligible are dropped (the home system always
+   stays). Unless *Allowed to start in the same system* is on, so are systems where
+   another empire has a colony and systems that are another player's home system, even
+   when that player's homeworld has not been set up yet. Every system left in the list is
+   marked explored for the player, whether or not it receives a planet.
+3. **Existing planets.** For each candidate system in order, sectors are scanned in order
+   0..168; in each sector only the first planet (not asteroid field) is looked at. It is
+   taken if it has no colony, has the player's atmosphere and planet type (and the home
+   size with *All player planets the same size*), and is nobody's homeworld, until enough
+   planets are found.
+4. **Created planets.** Each missing planet is created in a random candidate system, on a
+   random sector of the inner 11 × 11 area that holds no object at all (redrawn until one
+   is found, without limit), named with the Roman numeral one above the number of sectors
+   that hold a planet.
+
+Every starting planet, the homeworld included, is then set up the same way (spec 02 §9):
+its system is explored, ruins are removed, the values are set, any old colony is removed,
+and it becomes a colony of the player's race at maximum population that is a **capital**
+of colony type "Homeworld". Neutral empires cannot use warp points at all (§8), so they
+never leave their home system.
 
 ### 3.7 Pipeline
 
@@ -541,9 +592,11 @@ matches, so the frequency of an attribute follows how many records carry it. Whe
 matches the original has no defined result; the engine warns and relaxes the constraints
 **(OpenSE4 choice)**.
 
-**Star attributes.** Age, colour and luminosity appear to be descriptive only. The number
-of stars matters, because the "Solar ..." abilities (solar supply and solar resource
-generation) scale per star in the system.
+**Star attributes.** Age, colour and luminosity are descriptive only: besides the
+generation filter above, the game only turns them into text for the star's report; no rule
+reads them (confirmed: binary). The number of stars matters, because the "Solar ..."
+abilities (solar supply and solar resource generation) scale per star in the system, and
+destroyed stars count as stars there (§5.4).
 
 ### 5.2 StellarAbilityTypes.txt and the ability roll
 
@@ -586,19 +639,21 @@ binary).
 - **Destroyed Star.** A dead stellar core, created only by generation; Destroy Star does
   not leave one (§9). Once generated the game makes no difference between it and a star:
   same object kind and naming, so star manipulations can target it and it counts for the
-  one-star limit of Create Star (confirmed: binary). Whether solar generation counts it
-  was not checked.
+  one-star limit of Create Star and the star that Create Planet needs. Ship solar supply
+  and planet solar resource generation count it as a star too (confirmed: binary).
 - **Planet.** Colonizable (§5.5 and §5.6).
 - **Asteroids.** Cannot be colonized in stock (there is no asteroid colonize ability) but
   can be remotely mined. They are the required input for Create Planet. A destroyed planet
   becomes an asteroid field.
-- **Storm.** A sector hazard with its rolled ability. It has no owner and does not move
-  **(inferred)**. Every storm is simply called "Storm" (confirmed: binary). The Storm report
-  shows the picture, name, size, description and ability list.
+- **Storm.** A sector hazard with its rolled ability. It has no owner and never moves: the
+  pull and drift of §7 only move ships, bases and unit groups, and nothing else relocates a
+  storm (confirmed: binary). Every storm is simply called "Storm" (confirmed: binary). The
+  Storm report shows the picture, name, size, description and ability list.
 - **Warp Point** (§8). Its name is the word for warp point, followed by the destination
   system's name when the viewer has explored that system (confirmed: binary).
 - **Comet.** A legal physical type that generation never creates (confirmed: binary).
-  Treat it as inert scenery.
+  Treat it as inert scenery. (Quirk: the original would name a comet with the word for
+  storm.)
 
 ### 5.5 PlanetSize.txt: capacity by size
 
@@ -623,9 +678,18 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
   its sector gets the system name plus the next Roman numeral ("Xyz IV"). A planet placed
   in a sector that an earlier object of the template already uses (a moon) does not take a
   numeral: it gets the first object's name plus a letter, A for the second object in that
-  sector, B for the third. Asteroid fields are always named "*system* Asteroid Belt" plus
-  their own Roman numeral, even when there is only one. The owner may rename a colonized
-  planet.
+  sector, B for the third. That first object may be a star, which gives names such as
+  "Xyz Star A". (Quirk: a `Comet` or `Warp Point` template entry creates nothing but still
+  claims its sector with an empty name, so a planet placed on it would be named with a
+  space and a letter only.) Asteroid fields are always named "*system* Asteroid Belt" plus
+  their own Roman numeral, even when there is only one; they count separately from the
+  planets, so "Xyz II" can sit next to "Xyz Asteroid Belt I" (confirmed: binary).
+- **Names of made planets** (confirmed: binary). Create Planet and Construct (§9) name
+  the new planet with the system name and the Roman numeral one above the highest numeral
+  that ends a planet's name in that system. Only real planets count (asteroid fields do
+  not), only the first planet in each sector is looked at, and only the numerals I to XXX
+  are recognised. The homeworlds and starting planets that setup creates use their own
+  rule (§3.6). The owner may rename a colonized planet.
 - **Physical type.** Rock, Ice or Gas (giant). Colonizing a type requires the matching
   `Colonize Planet - X` ability. Each empire starts able to colonize its home type.
 - **Atmosphere.** A race breathes exactly one of the four gases. A planet with any other
@@ -665,9 +729,11 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
    empire's ships enters it. Stellar bodies (stars, planets, asteroids, storms, warp
    points) are remembered from then on. Enemy vehicles are invisible.
 3. **Present.** The empire has a **sensor source** in the system: a ship or base, a
-   fighter, satellite or drone group, or an owned planet (populated or not). Mine fields
-   are not sensor sources (confirmed: binary). The empire then sees the live system through
-   the sight rules below.
+   fighter, satellite or drone group, or an owned planet (populated or not). An owned
+   planet's sensor levels come from its colony's facilities (and its own rolled
+   abilities), whether or not anyone lives there. Mine fields are not sensor sources
+   (confirmed: binary). The empire then sees the live system through the sight rules
+   below.
 
 *All systems seen* marks every system explored for every empire at the start (level 2)
 (confirmed: binary). A **Partnership** treaty shares sight: in each system, an empire's
@@ -694,7 +760,10 @@ The rules of this section are confirmed: binary.
   - The **environment**: the largest `Sector - Sight Obscuration` among the storms, ships
     and planets in the object's sector, and the system-wide value (at least 1). It raises
     all five types alike. It applies to planets, asteroid fields, ships, unit groups and
-    comets, but never to stars, storms or warp points.
+    comets, but never to stars, storms or warp points. What counts in the sector: a
+    storm's rolled ability, a planet's or asteroid field's own rolled abilities (not its
+    colony's facilities), and a ship's or base's abilities. Unit groups, stars, warp points
+    and comets never obscure a sector, whatever abilities they carry.
 - Several sources are combined by taking the **maximum**, never the sum.
 
 ### 6.3 Detection rule
@@ -811,8 +880,10 @@ the group takes that much normal damage, and if it does, the group stops moving 
 turn. Ships that stay in a storm are not harmed. The movement pathfinding of empire ships
 also steps around damaging sectors when it can (movement spec).
 
-Displacement does not start combat by itself; combat only happens in the movement phases
-(inferred from the order above).
+Displacement does not start combat by itself: the hazard step runs no battle check
+(confirmed: binary). A ship pulled or drifted into a sector with enemies fights only when a
+later battle check runs there, that is when a group moves into that sector or carries out
+an order there (spec 04 §2).
 
 Shield disruption and sensor interference apply only inside combat in the affected sector
 or system: the system-wide value plus the values of the objects in that sector.
@@ -823,8 +894,9 @@ or system: the system-wide value plus the values of the objects in that sector.
 
 - Warp points are the normal way to travel between systems. A jump is instantaneous and
   lands on the paired warp point in the destination system.
-- Tutorial evidence suggests a ship must stand on the warp point, and the jump itself
-  costs 1 movement point. Movement details belong in the movement spec.
+- A ship must stand in the warp point's sector, and the jump itself costs 1 movement point
+  and one step's supply (confirmed: binary; spec 03 §6.2 and the Warp order in §8).
+  Reaching the sector is an ordinary step; no extra stop is needed.
 - A Move To order across systems routes through known links. The explicit Warp order is
   needed only when the link leads to an unexplored system.
 - **Turbulence** (confirmed: binary). On each jump there is a 50 % chance that every ship
@@ -855,9 +927,13 @@ orders can also reach it through Use Component or Use Facility. Common rules:
 - Every action except Construct needs movement remaining; the movement is not spent
   (confirmed: binary).
 - Every action needs a working component with the ability, enough supply for it (which is
-  then spent), **no visible hostile object** in the target sector (owned by an empire with
-  which it has no treaty of Non-Aggression or better: war, non-intercourse, no treaty or
-  no contact), and the ship **not cloaked** (confirmed: binary).
+  then spent), and the ship **not cloaked** (confirmed: binary).
+- Every action except Destroy Planet also needs **no visible hostile object** in the target
+  sector (confirmed: binary). A hostile object is a ship or base that is not mothballed, or
+  a colonized planet or asteroid field, that the acting empire can see and whose owner
+  has no treaty of Non-Aggression or better with it (war, non-intercourse, no treaty or no
+  contact). Unit groups (fighters, mines, satellites, drones) never block. Destroy Planet
+  has no such check at all: its "enemies present" refusal can never happen.
 - Components with `Component Destroyed On Use` are consumed. Those whose effect destroys
   the ship itself carry no such flag.
 - A button is enabled only when the ship has the matching ability and the precondition
@@ -877,7 +953,7 @@ bases, unit groups, comets) is destroyed, the acting ship included.
 
 | Action (ability) | Precondition | Result |
 |---|---|---|
-| Create Planet (`Create Planet Size` = max size) | A visible asteroid field in the sector, and at least one star in the system. | The asteroid field is replaced by a planet of stellar size exactly min(Val1, the field's size): a random Planet record of that size (so its atmosphere and type are random). It keeps the field's values and name numbering continues (the next free numeral); conditions are rolled as for a natural planet. A colony on the field is lost. |
+| Create Planet (`Create Planet Size` = max size) | A visible asteroid field **without a colony** in the sector, and at least one star (destroyed stars count) in the system. A colonized asteroid field is not a valid target. | The asteroid field is replaced by a planet of stellar size exactly min(Val1, the field's size): a random Planet record of that size (so its atmosphere and type are random). It keeps the field's values and is named with the next numeral (§5.6); conditions are rolled as for a natural planet. |
 | Destroy Planet (`Destroy Planet Size` = max size) | A visible planet in the sector whose PlanetSize record number (its position in PlanetSize.txt; stock Tiny..Huge are 1..5, the constructed worlds come after) is at most Val1. Blocked by `Stop Planet Destroyer` on any owned object in that sector. | The planet is replaced by a random natural asteroid field of the same stellar size that keeps its name, values and conditions. The colony is lost. |
 | Create Star (`Create Star`) | The system is neither Nebulae nor Black Hole, has no star (destroyed stars count) and no constructed planet. The centre sector is **not** required. | A random natural star record is placed in the ship's sector and named after the system. |
 | Destroy Star (`Destroy Star`) | A visible star in the sector. Blocked by `Stop Star Destroyer` in the system. | Shockwave (above). The system type and its abilities do not change, and no destroyed star remains. |
@@ -889,7 +965,7 @@ bases, unit groups, comets) is destroyed, the acting ship included.
 | Destroy Nebulae (`Destroy Nebulae`) | The system is type Nebulae | The system becomes a Normal, start-eligible standard system with no system abilities. Its objects are untouched. |
 | Create Black Hole (`Create Black Hole`) | A visible star in the sector. Blocked by `Stop Black Hole Creator` in the system. | Shockwave, then the system becomes physical type Black Hole, with system abilities `System - Movement Towards Center` 2, `System - Destructive Center` 5000 and `Sector - Shield Disruption` 5000. Existing warp points keep their abilities. |
 | Destroy Black Hole (`Destroy Black Hole`) | The system is type Black Hole | As Destroy Nebulae: a Normal, start-eligible system with no system abilities. |
-| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` equals Val1. Every `Constructed Planet Requirements` entry must be met: the ships in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists, else a random one of that size. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games) and its conditions to 1.5 (Optimal). The **star is removed**. Every ship of the builder in the sector that carries the construction component or any component of a required group is destroyed, whole ship included. |
+| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` equals Val1. Every `Constructed Planet Requirements` entry must be met: the ships in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. The requirements are read from the acting ship's abilities. The count goes by design: every such component of the design counts with its mounted size, damaged or destroyed or not; mothballed ships and unit groups do not count. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists (the last such record), else a random one of that size; if no Planet record has that size, no planet is made but everything else still happens. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games), its conditions to 1.5 (Optimal), and it is named with the next numeral (§5.6). The **star is removed**. Every object of the builder in the sector that carries the construction ability or whose design has any component of a required group is destroyed, whole ship included, mothballed ships too. |
 
 ---
 
@@ -910,8 +986,10 @@ The record fields:
   a percentage change for value or conditions, and a sector count for ship moved.
 - `Message To` is None, Owner, Sector, System or All.
 - `Num Messages` with `Message Title N` / `Message N`, and `Num Start Messages` with
-  `Start Message Title N` / `Start Message N`, define the texts. Pick one at random
-  **(inferred)**.
+  `Start Message Title N` / `Start Message N`, define the texts. Each time a message is
+  sent, one number N is drawn uniformly among the record's messages (start messages for
+  the start of a timed event), and title N goes with text N. A record without messages
+  sends none (confirmed: binary).
 - `Picture` names the event image.
 - `Time Till Completion`: when above 0, the event is timed. The start message is sent
   immediately, and the effect plus the final message follow after about that many turns.
@@ -991,8 +1069,16 @@ highlighted, and an X marks each empire that has met one.
     theirs has that planet converted to their atmosphere and planet type at the same size
     (confirmed: binary, §3.6).
   - Loading a map must clear the previous starting points.
+  - **Save Map during a game** (confirmed: binary) is offered only when the game's
+    *Players can save the map during the game* box was checked (off by default, §2.2). It
+    writes the systems, their stellar objects (stars, planets and asteroid fields, storms,
+    warp points; no ships or units, no per-empire knowledge) and the starting points the
+    game still holds: for a game started from a map, all its specific points and the
+    common points that no player used; for a generated game, none. The empires' capitals
+    are not written as starting points.
   - OpenSE4's map format is described in [docs/MAPS.md](../MAPS.md). Maps live in the
-    user's data folder, never in the install.
+    user's data folder, never in the install. The file layout is an OpenSE4 extension; the
+    original writes its own binary format.
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
     the filename of a prepared savegame in the same folder.
@@ -1024,7 +1110,8 @@ highlighted, and an X marks each empire that has met one.
 
 1. **System grid.** *Answered* (confirmed: binary): 13×13 (§4.1). The warp-point edge is
    the outer ring, reached through the bearing mapping of §3.5 (corners are almost never
-   used). Rings are square (Chebyshev) rings (§4.3). Movement was not checked here.
+   used). Rings are square (Chebyshev) rings (§4.3). Movement inside a system is in
+   spec 03 §6.2: a step goes to any of the eight neighbours at the same cost.
 2. **Galaxy grid.** *Answered* (confirmed: binary): Small, Medium and Large with the
    counts of §2.2; the grid is 67 × 46 squares (§3.2).
 3. **Placement.** *Answered* (confirmed: binary): exact rules in §3.3.
@@ -1065,12 +1152,16 @@ highlighted, and an X marks each empire that has met one.
     the name list get no name (§3.4).
 15. **Conditions.** *Answered* (confirmed: binary): six bands on a 0–1.5 scale (spec 02 §2)
     and the generation of §5.6.
-16. **Victory.** *Mostly answered* (confirmed: binary): the initial values are in §11, and
+16. **Victory.** *Answered* (confirmed: binary): the initial values are in §11, and
     the full rules are in spec 05 §6. Research share counts levels, not areas. The original
     never names a winner: meeting any condition, "at peace" included, ends the game, and
     the Scores ranking shows the result, so there are no ties to break. An empire is
-    eliminated when it has no populated planet and no ship or base (spec 05 §6). Still
-    open: the minimum and maximum each setup field accepts.
+    eliminated when it has no populated planet and no ship or base (spec 05 §6). The setup
+    window enforces no minimum or maximum on any victory value (confirmed: binary): each is
+    read as a decimal number (the two percentages without their % sign) and truncated to a
+    whole number, the year values after multiplying by ten (whole turns); the research
+    share is held in 16 bits. Text that is not a number is refused by the conversion
+    itself. The unit and ship caps are not checked either (§2.2).
 17. **Starting year.** *Answered* (confirmed: binary): the game date starts at 2400.0.
 18. **Option lists.** *Answered* for most (confirmed: binary): Starting Resources 5,000 /
     20,000 / 100,000; Racial Points 0 / 2,000 / 3,000 / 5,000; Tech Level Low / Medium /
@@ -1087,65 +1178,102 @@ highlighted, and an X marks each empire that has met one.
 21. **Warp variants.** *Answered* (confirmed: binary): the one-way flag is never used;
     generated links use a plain record unless they carry an ability (then an Unusual one);
     opened links always use the first plain record (§3.5, §9).
-22. **Warp cost.** Is a jump 1 movement point, and must the ship first stop on the warp
-    point?
+22. **Warp cost.** *Answered* (confirmed: binary; settled by spec 03 open question 5 and the
+    Warp order in spec 03 §8): a jump costs 1 movement point and one step's supply, and
+    the ship must be in the warp point's sector. Reaching that sector is an ordinary step;
+    there is no separate stop (§8).
 23. **One-way links.** *Answered* (confirmed: binary): neither; the original ignores the
     flag and every link is two-way. The engine's one-way handling should be removed.
-24. **Learning links.** The engine treats a traversed link as known in both directions. Does
-    travelling A to B also reveal where B's end leads?
+24. **Learning links.** *Answered* (settled by the knowledge rule of §8): a warp point shows
+    its destination once the viewer has explored the destination system. Travelling from A
+    to B explores B, and A is already explored, so both ends are known and B's end shows
+    that it leads to A. The engine's reading (a traversed link is known in both
+    directions) matches.
 25. **Hazard order.** *Answered* (confirmed: binary): see §7. The pull and drift move every
     ship, base and unit group, drift heads for one random sector per turn, centre damage
     follows, and sector damage only hits ships moving into the sector (50 %).
-26. **Sensors.** *Partly answered* (confirmed: binary): every owned planet and every ship,
-    base, fighter, satellite and drone group is a sensor source; mine fields are not. Still
-    open: whether an unpopulated colony's facilities contribute their sensor levels.
-27. **Edge placement reversal.** The engine compares the outline sector with the sectors the
-    system's earlier warp points ended up on (the reading of §3.5). Nudged coordinates are
-    always even, so with that reading the reversal never moves a warp point. Does the original
-    compare with the earlier warp points' outline sectors instead? **(inferred)**
-28. **Asteroid numerals.** The engine numbers planets and asteroid fields in one sequence, so
-    "Xyz II" can be followed by "Xyz Asteroid Belt III". Do asteroid fields count their own
-    numerals? **(inferred)**
-29. **Numerals of made planets.** Create Planet and Construct name the new planet with one
-    above the highest numeral the system's planets and asteroid fields carry. **(inferred)**
-30. **Order of the extra starting planets.** The engine scans the home system first, then the
-    systems one jump away, then two, each group in system order. **(inferred)**
-31. **Missing records.** When no natural planet record has the home size for a race's
-    atmosphere and type, a created homeworld or starting planet uses a record of another size
-    (and is given the race's atmosphere and type if no record has them). Placement with
-    *Warp Points located anywhere* stops redrawing after 1,000 draws, and the connectivity pass
-    marks a system it cannot link because every marked system is full. **(OpenSE4 choice)**
-32. **What obscures a sector.** The engine counts the rolled abilities of the objects in the
-    sector, the facilities of colonies there, and the abilities of ships and bases (not unit
-    groups) there. **(inferred)**
-33. **Construct materials.** The engine sums the intact components of the required group over
-    all ships in the sector, and destroys every ship of the builder there that carries the
-    device or a component of a required group. **(inferred)**
-34. **Hostile objects for stellar manipulation.** The engine counts visible ships and unit
-    groups, and colonies it can see, of empires below Non-Aggression or without contact. The
-    asteroid field's own rolled ability does not carry over to a planet made from it.
-    **(inferred)**
-35. **Setup details.** The racial point cost uses each characteristic clamped to its Min/Max
-    Pct. Extra starting planets are ordinary colonies (not capitals) of colony type
-    "Balanced". "More than 60 %" of Maximum Number Of Systems is compared exactly.
-    **(inferred)**
-36. **Map starting points.** The engine gives every empire its map point first (its own
-    point, else a random remaining common one, in player order), then places the others at
-    random. A point on a sector an earlier empire took is skipped. A converted planet keeps
-    its name and size (when no record of the empire's atmosphere and type has that size,
-    another size's record is used). Only an atmosphere that differs triggers the
-    conversion, as the text says; a planet of the right atmosphere but another type stays
-    as it is. **(inferred)**
-37. **Save Map during a game.** The engine writes each living empire's capital as that
-    player's starting point. *Players can save map during a game* is off by default.
-    **(inferred)**
-38. **Autosave.** The engine names the ten slots "Autosave 1" to "Autosave 10" and uses
-    slot ((turn ÷ N) − 1) mod 10 + 1 after turn processing, in local and hotseat games;
-    network hosts have their own setting. Which files the original writes, and whether
-    the count restarts on loading, are open. **(inferred)**
-39. **Default turn style.** §2.2 names the two turn styles but not which one a new game
-    starts with. OpenSE4 starts simultaneous (also for Quick Start). Which one does the
-    original's Mechanics tab select by default? **(inferred)**
-40. **No Tactical Combat default.** Is the Game Settings check box set for a new game?
-    OpenSE4 leaves it clear, so turn-based games ask each human side Tactical or
-    Strategic (spec 04 §3). **(inferred)**
+26. **Sensors.** *Answered* (confirmed: binary): every owned planet and every ship, base,
+    fighter, satellite and drone group is a sensor source; mine fields are not. An
+    unpopulated colony's facilities do give their sensor levels: nothing in the sensor
+    rule looks at population (§6.1). The engine counts them only while the colony is
+    populated (PARITY_GAPS).
+27. **Edge placement reversal.** *Answered* (confirmed: binary): the original compares the
+    outline sector with the sectors the earlier warp points actually ended up on, as the
+    engine does, and takes the last matching warp point. The reversal is not dead: it
+    moves a bottom-edge warp point in the one case described in §3.5. The engine takes the
+    first match instead of the last, which gives the same result in that case.
+28. **Asteroid numerals.** *Answered* (confirmed: binary): asteroid fields have their own
+    count, separate from the planets' (§5.6). The engine's single sequence differs
+    (PARITY_GAPS).
+29. **Numerals of made planets.** *Answered* (confirmed: binary): one above the highest
+    numeral from I to XXX that ends the name of the first planet in each sector; asteroid
+    fields are ignored (§5.6). Homeworlds and starting planets that setup creates use the
+    number of sectors that hold a planet instead (§3.6). The engine also counts asteroid
+    fields, any numeral, and every occupied sector for created homeworlds (PARITY_GAPS).
+30. **Order of the extra starting planets.** *Answered* (confirmed: binary): the home system,
+    then its neighbours in the order of its warp points, then their neighbours in the same
+    way; other players' home systems are excluded unless systems may be shared; every
+    candidate system starts explored (§3.6). The engine orders by jump distance then system
+    number, only checks existing colonies, and explores only the systems that receive a
+    planet (PARITY_GAPS).
+31. **Missing records.** *Answered* (confirmed: binary). The home size is raised to the
+    smallest natural size that exists for the race's atmosphere and type, so with *All player
+    planets the same size* a record always exists when any record of that atmosphere and
+    type exists; when none exists, or when a map point's planet has no record of its size,
+    the original draws from an empty list and the result is undefined. The engine's
+    fallbacks there (another size, then any planet record given the race's atmosphere and
+    type) are an OpenSE4 choice and stand. With *Warp Points located anywhere* the original
+    redraws without limit and hangs when the five squares are full; the engine stops after
+    1,000 draws. In the connectivity pass the original marks a system it cannot link
+    together with everything linked to it, never looks beyond 68 squares, and can loop
+    forever (§3.5); the engine marks only that system, searches any distance and always
+    finishes (PARITY_GAPS).
+32. **What obscures a sector.** *Answered* (confirmed: binary): storms, planets and asteroid
+    fields (their own rolled abilities only, not their colonies' facilities) and ships and
+    bases (§6.2). Unit groups, stars, warp points and comets never count. The engine also
+    counts colony facilities and the abilities of stars, warp points and comets
+    (PARITY_GAPS).
+33. **Construct materials.** *Answered* (confirmed: binary): the sum goes by design, so every
+    component of the group counts, damaged or not, with its mounted size; ships of any
+    owner count, mothballed ships and unit groups do not. Every object of the builder in the
+    sector that carries the construction ability or a component of a required group is
+    destroyed, mothballed ships included (§9). The engine counts intact components only and
+    includes mothballed ships and unit groups (PARITY_GAPS).
+34. **Hostile objects for stellar manipulation.** *Answered* (confirmed: binary): visible ships
+    and bases that are not mothballed, and visible colonized planets and asteroid fields, of
+    empires below Non-Aggression or without contact; unit groups never block, and Destroy
+    Planet makes no such check at all (§9). The asteroid field's rolled ability does not
+    carry over to a planet made from it, and the new planet rolls none. Create Planet also
+    refuses a colonized asteroid field. The engine counts unit groups and mothballed ships,
+    checks Destroy Planet too, and accepts a colonized field (PARITY_GAPS).
+35. **Setup details.** *Answered* (confirmed: binary). The racial point cost uses each
+    characteristic as stored, without clamping; only the race window's up and down buttons
+    keep a value within its Min/Max Pct, so a race read from a file with a value outside
+    them is costed at that value. Every starting planet, extra ones included, is a capital
+    of colony type "Homeworld" (§3.6). "More than 60 %" is compared exactly (the original's
+    floating-point test gives the same answer for every count). The engine clamps the
+    cost and makes extra planets ordinary "Balanced" colonies (PARITY_GAPS).
+36. **Map starting points.** *Answered* (confirmed: binary): the order and the conversion are
+    as the engine does them (§3.6): only a different atmosphere triggers the conversion, and
+    the converted planet keeps its name, values, conditions and stellar size. With no
+    record of that size the original's result is undefined, so the engine's fallback (a
+    record of another size) stands. The original does not check whether a point's sector
+    was already taken; the engine's skip is an OpenSE4 choice (PARITY_GAPS).
+37. **Save Map during a game.** *Answered* (confirmed: binary): the option is off by default
+    and the menu entry is disabled without it. The original writes the starting points the
+    game still holds (a loaded map's specific points and unused common points; none for a
+    generated game), not the capitals (§12). The map file layout is an OpenSE4 extension.
+    The engine writes the capitals (PARITY_GAPS).
+38. **Autosave.** *Answered* (confirmed: binary): after a turn is processed, when the number
+    of turns since 2400.0 is a multiple of N, into a file named after that number's last
+    digit, so at most ten files, and fewer for N = 2, 5 or 10 (§2.2). It follows the game
+    date, so nothing restarts on loading. The engine's slot rule differs (PARITY_GAPS).
+    Its file names, its save format and the network host's own autosave setting are OpenSE4
+    extensions.
+39. **Default turn style.** *Answered* (confirmed: binary): Turn-Based. The Mechanics tab
+    selects it for a new game. Quick Start sets no turn style of its own, and the game
+    options the program starts with are turn-based too. OpenSE4 starts simultaneous
+    (PARITY_GAPS).
+40. **No Tactical Combat default.** *Answered* (confirmed: binary): the box is clear for a new
+    game (§2.2), as in OpenSE4, so turn-based games ask each human side Tactical or
+    Strategic (spec 04 §3).

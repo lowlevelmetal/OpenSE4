@@ -37,8 +37,14 @@ not copy SE4 content. The engine reads the user's own `Data/*.txt` files at runt
   product that is mathematically whole can come out a hair below it and truncate one lower
   (for example 100 × 53 % gives 52, 90 × 130 % gives 116). An exact engine reproduces
   this: round `p / 100` to a 64-bit mantissa, multiply, round again to 64 bits, then
-  truncate or round (inferred: precision mode, which the game never changes as far as we
-  found).
+  truncate or round.
+- The precision is fixed (confirmed: binary). At start-up, in every new thread and after
+  every handled exception the game sets the x87 to 64-bit-mantissa precision with
+  round-to-nearest. The only other changes are temporary and keep that precision: a
+  truncation switches to round-towards-zero and back, and converting text to a number
+  masks the exceptions and restores them. The game loads no Direct3D, which is what
+  usually switches a program to single precision. It only loads DirectSound and
+  DirectShow, for sound.
 - Plain integer divisions truncate towards zero.
 
 ---
@@ -146,8 +152,8 @@ There is one record for each physical class and size.
 
 Capacities roughly double with each size step. Domed capacities are about a fifth of the
 normal facility slots and a tenth of the normal population and cargo. Constructed worlds
-are the exception and keep half. Asteroid rows also have capacities, although the manual
-says asteroids cannot be colonized (§13).
+are the exception and keep half. Asteroid rows also have capacities, but the game never
+uses them: an asteroid field can never be colonized (§2) (confirmed: binary).
 
 ### 1.4 Facility.txt [D]
 
@@ -188,7 +194,7 @@ says asteroids cannot be colonized (§13).
 | `Solar Resource Generation - X` | Val1 × stars in the system, added after the colony's own modifiers and not limited by a finite stock; the system modifier still applies, and a rioting, blockaded or empty colony makes none (§5.1). | Sum per colony |
 | `Generate Points <Minerals…Intelligence>` | Flat points per turn from every object the empire owns (planets and their facilities, ships). No modifiers and no spaceport rule [H]. | Sum |
 | `Spaceport` | Delivers the system's output (§5.5). | Any facility on any of the owner's colonies in the system |
-| `Palace` | Defined, but no stock item uses it. Treat it as the homeworld marker [I]. | — |
+| `Palace` | Defined, but no stock item uses it, and no game rule reads it: it does **not** mark the homeworld (§2). Only the Facility Construction minister looks at it, counting it among the facilities a system needs only once (confirmed: binary). | — |
 | `Resource Storage - Mineral/Organics/Radioactives` | Adds to the empire's storage cap (§5.6). | Sum |
 | `Cargo Storage` | Extra cargo kT on the planet, before the storage trait (§2). | Sum (planet and facilities) |
 | `Space Yard` | Val1 is the resource (1 = minerals, 2 = organics, 3 = radioactives), Val2 is the rate. A yard has three entries. Enables building ships. | Sum of Val2 per resource; one yard facility per planet [H] |
@@ -216,9 +222,12 @@ Combat, sensor and shield facility abilities are covered in other specs.
 
 **Fields**
 - `Name`, `Description`, `Pic Num`.
-- `General Type`: all stock traits are `Advantage`. The engine should also allow
-  disadvantages, meaning a negative cost [I].
-- `Cost`: in racial points.
+- `General Type`: `Advantage`, `Disadvantage` or `Neither`; any other value is a data-file
+  error, and a missing key is fine. All stock traits are `Advantage`. The game never uses
+  the value otherwise (confirmed: binary).
+- `Cost`: in racial points, a signed number. A negative cost is allowed and gives points
+  back: the setup's points left, its final check and the computer's random trait picks all
+  add the costs with their sign, and nothing clamps them (confirmed: binary).
 - `Trait Type` and `Value 1`/`Value 2`.
 - `Required Trait 1..3` and `Restricted Trait 1..3`: trait names or `None`. These are
   prerequisites and exclusions.
@@ -332,7 +341,7 @@ rules forbid it and we do not need them. Our engine defines its own TOML empire 
 
 A saved empire holds:
 - everything in §9;
-- experience and race age;
+- experience, from which the race age is derived (§9);
 - its strategies, designs and minister settings [H].
 
 When an empire is loaded, it is checked against the current game's rules, such as the
@@ -382,28 +391,51 @@ Trim values, since some have trailing spaces.
 - Game options can limit colonization to breathable atmospheres, or to the home planet
   type. Otherwise tech decides which types are allowed. The colonization tech levels at
   game start depend on the home planet type [D].
+- An asteroid field can never be colonized (confirmed: binary). Colonize orders refuse
+  it, and the Planets window, the colony-ship target list, the computer players and
+  starting-planet placement all skip it. A planet that is destroyed becomes a new
+  asteroid field without a colony.
 - A new colony starts at anger 25 (Happy). Recolonizing an abandoned planet does not
   inherit the old anger (confirmed: binary).
 - The colony starts with `Automatic Colonization Population` of the colonizer's race
   (confirmed: binary); the ship's cargo and population are then added to it [M].
-- The homeworlds placed at game start, and a planet that rebels and founds a new empire,
-  are **capitals**: their anger can never rise above 80, so a capital never riots
-  (confirmed: binary). Ordinary colonies are not capitals.
+- Every planet an empire starts the game with (the homeworld and any extra starting
+  planets, §9), and a planet that rebels and founds a new empire, are **capitals**: their
+  anger can never rise above 80, so a capital never riots (confirmed: binary). Ordinary
+  colonies are not capitals.
+- **No single homeworld marker** (confirmed: binary). Three separate things play that
+  part:
+  - the capital flag above;
+  - the colony type, which decides `Homeworld Lost` (see below);
+  - the empire's recorded **home system**, which the no-spaceport rule uses (§5.5). It is
+    set when the game is created (for a rebel empire, when it is founded: its capital's
+    system) and never moves afterwards, even if the homeworld is lost or captured.
+
+  The `Palace` ability plays no part (§1.5).
 - When a colony's population dies out (for example to plague), the colony is removed.
   Each planet value then drops by `Planet Value Percent Loss After Owner Death` (§1.2),
-  and the owner gets `Homeworld Lost` if the colony's type was the first default colony
-  type, else `Any Planet Lost` (confirmed: binary).
+  and the owner gets `Homeworld Lost` if the colony's type is `Homeworld` (the first of
+  the game's built-in colony types, §10), else `Any Planet Lost` (confirmed: binary).
 
 **Domes.** A colony is domed if any race on it cannot breathe the atmosphere. A domed
 colony uses the `… Domed` capacities [M/D]. Edge cases:
-- If a non-breathing race arrives (by transfer or capture), capacities shrink.
-  - Existing facilities stay, but no new ones can be built.
-  - What happens to surplus population and cargo is open (§13).
-- Atmosphere converters (confirmed: binary): each turn that the planet's atmosphere
-  differs from the one breathed by the majority race (the owner's race when it has no
-  population), a counter goes up by 1. When it exceeds the best `Planet - Change
-  Atmosphere` Val1, the counter resets and the planet takes that atmosphere, which can
-  remove the dome. So a converter with Val1 = N needs N + 1 turns.
+- If a non-breathing race arrives (by transfer or capture), capacities shrink. Nothing
+  is removed for that (confirmed: binary):
+  - Facilities above the new slot count stay, but no new ones can be built (§6.5).
+  - Population above the new maximum stays. The colony has no room left, so it neither
+    grows nor takes in population until it drops below the maximum.
+  - Cargo above the new capacity stays until the planet next takes damage (in combat, for
+    example) or loses population to plague. Then cargo is removed until it fits: first any
+    population held as cargo, 1M at a time, then units one at a time from the first stack
+    in cargo. A colony whose cargo capacity shrinks for another reason (a lost `Cargo
+    Storage` facility, for example) is treated the same way.
+- Atmosphere converters (confirmed: binary): each turn the colony has a converter (best
+  `Planet - Change Atmosphere` Val1 above 0) and the planet's atmosphere differs from the
+  one breathed by the majority race (the owner's race when it has no population), a
+  counter goes up by 1, to at most 200. When it exceeds that Val1, the counter resets and
+  the planet takes that atmosphere, which can remove the dome. So a converter with Val1 =
+  N needs N + 1 turns. On other turns (no converter, or the atmosphere already right) the
+  counter keeps its value; it is not reset, so the count resumes later.
 
 **Capacities** (confirmed: binary)
 - Facility slots and maximum population come from PlanetSize, using the normal or domed
@@ -455,8 +487,11 @@ colony uses the `… Domed` capacities [M/D]. Edge cases:
 
 ## 3. Population
 
-Population is stored per race as an ordered list (new races are appended [I]). The
-planet's maximum caps the total across all races (confirmed: binary).
+Population is stored per race as an ordered list: a race that arrives is appended at the
+end, and population added to a race already there joins its entry, which holds at most
+60,000M (confirmed: binary). The planet's maximum caps the total across all races for
+growth and for arrivals; population already above it is not removed (§2) (confirmed:
+binary).
 
 **Growth rate** (confirmed: binary). One rate, in % per year, for the whole colony, taken
 from the owner's race:
@@ -483,10 +518,15 @@ from the owner's race:
   the race, and taken off the room. So earlier races fill the room first.
 - Population never shrinks by growth: the rate is never negative.
 
-**Replicants** (confirmed: binary): the best `Change Population - System` Val1 in the
-system is added each turn to every colony of the owner there. Each race gets its share of
-Val1 in proportion to its size, rounded, and the colony stops at its maximum. Negative
-values do nothing.
+**Replicants** (confirmed: binary): the best `Change Population - System` Val1 `P` in the
+system is added each turn to every colony of the owner there. Negative values do nothing.
+- `T` is the colony's population before anything is added.
+- For each race in list order, its share is `round(P × q)`, rounded half to even, where
+  `q = P_race / T` is computed first and stored as a 64-bit double. The product itself is
+  in extended precision.
+- The share is then capped by the room left at that moment (maximum − current total;
+  nothing once the colony is full) and added to the race. Earlier races therefore fill the
+  room first. A colony without population has no races and gets nothing.
 
 **Moving and removing population** [M/H]
 - Each 1M of population takes `Population Mass` kT of cargo.
@@ -550,14 +590,22 @@ logged since the last update (each event carries a count):
    and ship losses `count × v[Ship Lost in System]`. A battle in the colony's own sector
    therefore counts twice (sector and system values).
 4. **Ships present.** Count the ships and bases in the system that are not destroyed,
-   not cloaked and not mothballed; fighters, satellites, mines and drones never count.
-   Ships of empires below Non-Aggression with the owner are *enemy*; the owner's own
-   ships and those of empires at Non-Aggression or better are *ours*.
+   not cloaked and not mothballed; fighters, satellites, mines and drones never count,
+   and neither does a ship without an owner. Ships of empires below Non-Aggression with
+   the owner are *enemy*; the owner's own ships and those of empires at Non-Aggression or
+   better are *ours*.
    - Enemy: if any are in the colony's sector, add `v[Enemy Ship in Sector] × that
      number`; else add `v[Enemy Ship in System] × the number in the system`.
    - Ours: the same with `v[Our Ship in Sector]` and `v[Our Ship in System]`.
-5. **Troops.** `v[Enemy Troops on Planet]` once if enemy troops are on the planet;
-   `v[Our Troops on Planet] × the number of our troop units` in the colony's cargo.
+5. **Troops.**
+   - `v[Enemy Troops on Planet]`, once, while troops that another empire landed in a space
+     battle are still on the planet with their ground combat unfinished (spec 04 §13).
+     The treaty with that empire does not matter here.
+   - `v[Our Troops on Planet] × n`, truncated, where `n` is the number of troop units in
+     the colony's cargo, whoever owns them.
+   - The landed troops are kept apart from the cargo. At the colony owner's end-of-turn
+     processing, the fight resumes if their empire is still below Non-Aggression with the
+     owner; otherwise the landed troops move into the colony's cargo.
 6. **Plague.** `v[Planet Plagued]` while the colony is plagued.
 
 **Applying it**
@@ -666,7 +714,9 @@ Check against the Quick Start homeworld (07-observations): organics 800 at 98 % 
     Partnership.
   - Trade starts at 1 % of the partner's output and grows 1 % per turn, up to `Maximum
     Trade Percentage`.
-  - Political Savvy and culture Trade modify it [I].
+  - The amount is scaled by one factor: 100 + (Political Savvy − 100) + the race's
+    `Trade` trait values + the culture's `Trade` value, in percent (confirmed: binary,
+    spec 05 §3.3).
   - Switching between treaties of Trade Alliance or better keeps the current percentage
     [H]. Breaking the treaty resets it.
 - **Tariffs** (confirmed: binary): a subjugated empire pays 40 %, a protectorate 20 %,
@@ -695,7 +745,10 @@ each of the five kinds:
 3. **Spaceport rule:** if none of the empire's colonies in the system has a `Spaceport`
    facility and the empire lacks the `No Spaceports` trait, the system delivers nothing,
    except the empire's home system, which delivers `trunc(T × Home System Percentage
-   Value With No Spaceport / 100)`. The rule covers research and intelligence too.
+   Value With No Spaceport / 100)`. The rule covers research and intelligence too. The
+   home system is the one recorded for the empire (§2); it stays the same after the
+   homeworld is lost, so the empire's colonies there keep the 25 %, and colonies anywhere
+   else never get it.
 4. Otherwise the whole `T` is delivered.
 
 Rioting and blockaded colonies already produce 0 (§5.1). Undelivered output is lost, not
@@ -705,6 +758,8 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
 
 - **Income floor:** after summing all systems, a resource whose delivered total is exactly
   0 is set to `Minimum Empire X Generation`. A positive total is kept even if smaller.
+  Every living empire gets it, including one that holds no colony and survives on its
+  ships alone.
 - **Storage:** minerals, organics and radioactives are each capped at `Minimum Empire Point
   Storage` plus, for every colony, `round(its Resource Storage - X × (100 + X Storage
   trait)/100)`. Colonies need no population for this. The cap is applied once, late in the
@@ -734,7 +789,10 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
 
 **Blocking rules** [H]
 - A cloaked planet or ship cannot build. Cloaking a ship clears its queue.
-- Scrapping a planet's space yard removes the ships from its queue.
+- Scrapping a planet's space yard removes the ships from its queue. In the game
+  (confirmed: binary), at the start of each queue's turn, every item the queue can no
+  longer build is removed: ships once the queue has no yard, units or facilities in a
+  queue that cannot build that kind, and upgrades with nothing left to upgrade (§6.6).
 
 ### 6.2 Rate (per resource r) (confirmed: binary)
 
@@ -774,8 +832,11 @@ and `Supply Generation`; then all other queues in the empire's queue order.
   Otherwise nothing is paid, no progress is made, and the owner gets a "Lack of
   Resources" message for that queue.
 - When the top item's progress covers its cost, its progress is cleared and it is built
-  (§6.5). It then leaves the queue, unless Repeat Build is on and the item can still be
-  built. Any overshoot is lost.
+  (§6.5). Any overshoot is lost.
+  - If the completion builds nothing (no free facility slot, the ship limit, or a unit
+    without room), the item stays at the top of the queue and must be paid for again.
+  - Otherwise it leaves the queue, unless Repeat Build is on and the item can still be
+    built. Upgrades never repeat.
 - So at most one item finishes per queue per turn, and unused rate never flows to the
   next item.
 - The UI estimates the build time as `max_r ceil(cost_r / rate_r)`; for example, 6000 at
@@ -799,8 +860,11 @@ queues that cannot build):
 So emergency runs at 150 % for `Maximum Emergency Build Turns` + 1 turns if left on (the
 rate is chosen before the counter moves), then slow mode at 25 % lasts as many turns as
 the counter shows. Switching emergency off early leaves the counter as it is, so slow mode
-lasts as long as the emergency did [H]. Whether switching it on resets the counter was not
-checked [I].
+lasts as long as the emergency did [H]. Emergency mode can be switched on only while the
+counter is 0; during slow mode the control does nothing. So an emergency always starts
+from 0, and switching it off before a turn has passed costs no slow turns. Only the player
+switches it on, in the Set Construction Queue window: computer players and ministers never
+use emergency build (confirmed: binary).
 - Slow mode cannot be avoided by clearing the queue.
 - It cannot be avoided by handing over the planet.
 - It cannot be avoided by mothballing and unmothballing the ship.
@@ -824,33 +888,58 @@ once (confirmed: binary).
 **Ships**
 - A ship appears at the queue's location when finished. It is invisible while being built.
 - Each ship built logs a `Ship Constructed` event in that sector (§4) (confirmed: binary).
-- If the empire is at its ship limit, nothing is built and the owner is told; the
-  progress was already cleared, so the item must be paid for again (confirmed: binary).
+- If the empire is at its ship limit, nothing is built and the owner gets "Maximum Ships
+  Reached"; the progress was already cleared, and the item stays, so it must be paid for
+  again (confirmed: binary). The limit is checked once per item, so an item of several
+  ships can go past it.
 
 **Facilities**
 - Only as many facilities can be queued as there are free slots, counting ones already
   queued. The game warns when this is exceeded.
 - Adding a system-wide facility that is already present in the system shows a notice [H].
-- On completion the facilities are added if the colony has fewer facilities than slots;
-  otherwise nothing is built and the progress is lost (confirmed: binary).
+- On completion (confirmed: binary):
+  - If the colony has fewer facilities than slots, the item's whole count is added, even
+    if that goes past the slots.
+  - Otherwise nothing is built, no message is sent, and the item stays at the top with
+    its progress lost.
+  - A second space yard is not checked for again at this point.
 - A finished facility fires `Facility Constructed`, once per facility (confirmed: binary).
 
 **Units** (confirmed: binary unless marked)
 - The player picks how many to build.
 - Each unit is placed on its own: in the builder's cargo if it fits, else in the cargo of
-  another planet or ship of the empire **in the same sector**.
-- A unit that finds no room is not built, and a "No Storage Available" message is sent.
-- Player caps on ship and unit counts apply [M].
+  another planet or ship of the empire **in the same sector**, taken in the game's object
+  order (planets and ships mixed).
+- A unit that finds no room is not built, and a "No Storage Available" message is sent
+  for it.
+- The item leaves the queue only if its last unit found room. All units of an item are
+  the same size, so in practice: if any unit found no room, the item stays at the top with
+  its full count and its progress cleared, and the units already placed are kept.
+- Units have no cap at completion (confirmed: binary); the units-per-player limit is
+  checked when units are launched (spec 03).
 
 ### 6.6 Upgrades and scrapping
 
-**Upgrades**
-- An upgrade item names the new facility and a count. Its cost per resource is
-  `trunc(cost of the new facility × Upgrade % / 100) × count` (confirmed: binary). On
-  completion, that many older facilities of the family become the new one [I: the
-  selection was not traced]. The count is set when the item is queued: the number of
-  older facilities of the family on the planet [D/M].
-- The "Upgrade Facilities" button queues every possible upgrade across the empire.
+**Upgrades** (confirmed: binary)
+- An upgrade item stores a target facility and a count. Both are fixed when the item is
+  queued. The count is the number of facilities of the target's family on the colony
+  whose level (`Roman Numeral`) is below the target's. The player cannot choose a
+  smaller count. With no such facility, the Upgrades tab says there is nothing to
+  upgrade.
+- A queue refuses a second upgrade to the same target. There is no tech check at that
+  point.
+- Cost per resource: `trunc(current cost of the target × Upgrade % / 100) × stored
+  count`.
+- At the start of each queue's turn, an upgrade item is removed once the colony has no
+  lower-level facility of that family left (§6.1). Its count is never lowered.
+- On completion, the colony's facilities are taken in their stored order (the order in
+  which each facility type was first added). Every lower level of the family is
+  converted to the target until the count is used up, in that order and not lowest level
+  first. If fewer are left than the count, only those change, and the full price was
+  still paid.
+- The "Upgrade Facilities" button does this for every colony and every facility type on
+  it. The target is the empire's highest researched level of that family. Facility items
+  already in the queues are also moved to that newest level, keeping their counts.
 
 **Scrapping** (confirmed: binary)
 - Facilities can be scrapped on one planet, or one type everywhere.
@@ -898,7 +987,8 @@ once (confirmed: binary).
   If there are none, every ship and unit group of the empire is a candidate.
 - Each victim is picked at random among the remaining candidates and destroyed whole (a
   unit group loses all its units). The owner gets a "Ship Abandoned" or "Unit Group
-  Abandoned" message.
+  Abandoned" message. The loss fires no happiness event: `Ship Lost in System` (and so
+  `Any Ship Lost`) is logged only for a ship destroyed by damage.
 
 ---
 
@@ -911,7 +1001,11 @@ There are 15 characteristics, all integer percents defaulting to 100 [D]:
 - Happiness, Aggressiveness, Defensiveness, Political Savvy;
 - Mining, Farming, Refining, Construction, Repair and Maintenance Aptitude.
 
-Each is clamped to its `Min/Max Pct`. With `d = v − 100`, `c = Pct Cost`, `T = Threshold`,
+`Min/Max Pct` limit a characteristic only in the race window of Empire Setup, whose
+buttons keep the value in range. Nothing else reads the limits (confirmed: binary): the
+cost below and every racial effect use the stored value as it is, so a value from a race
+preset or an empire file outside the range is costed and applied as it stands.
+With `d = v − 100`, `c = Pct Cost`, `T = Threshold`,
 `P = Threshhold Pct Cost Pos` and `N = Threshhold Pct Cost Neg` (confirmed: binary):
 - If `|d| ≤ T`, or `T < 1`: the characteristic costs `c × d` (negative `d` is a refund).
 - If `d > T`: it costs `c × T + P × (d − T)`.
@@ -996,6 +1090,22 @@ Racial combat bonuses also apply to fighter groups [H].
 Create Empire is refused while the point balance is negative. A password-protected empire
 also needs its password before it can be edited [H].
 
+**Experience and race age** (confirmed: binary)
+- Experience is a whole number kept with the empire. It starts at 0 and is saved in games
+  and in the empire file, so it builds up over several games while the player keeps
+  saving the same empire.
+- It grows during play (the total never goes above 500,000,000):
+  - when a ship or unit group is destroyed in combat, the empire that destroyed it gains
+    its tonnage div 10: the hull's tonnage for a ship, the units' total for a group, and
+    nothing for a planet. Battles in the combat simulator give nothing;
+  - each finished facility item adds its count;
+  - each ship built adds its hull's tonnage div 10; units add nothing.
+- Race age is not stored; it is a label read off the experience: up to 5,000 Newborn,
+  10,000 Infantile, 50,000 Young, 200,000 Moderate, 1,000,000 Old, 10,000,000 Ancient,
+  100,000,000 God-like, 400,000,000 Stellar Ancients, and above that First Ones.
+- Neither has any gameplay effect. They are only shown: on the Empire Setup General tab,
+  and in the Race Report (the points for one's own empire only, the age for every race).
+
 **Player settings** (choices and defaults confirmed: binary; details in spec 01 §2.2)
 - Starting resources: 5,000, 20,000 (the default) or 100,000.
 - Home Planet Value: Bad, Average (the default) or Good. It selects the
@@ -1032,7 +1142,9 @@ homeworld and the extra ones alike, is set up the same way:
   / 102 % fits). In a finite game each value is exactly the matching `... Resources` key.
 - Conditions are not changed: they stay as generated (spec 01 §5.6).
 - **Colony.** Any previous owner is removed. The planet becomes a colony of the empire's
-  race at its **maximum population**.
+  race at its **maximum population**. Every starting planet, the extra ones included, is a
+  capital (anger at most 80, §2) with colony type `Homeworld`, so losing any of them logs
+  `Homeworld Lost`.
 - **Facilities.** For each role the empire's best known facility is used (the facility
   whose ability value, or tech level, is highest). They are added in this order while the
   planet has free facility slots:
@@ -1050,8 +1162,11 @@ homeworld and the extra ones alike, is set up the same way:
 
 **Starting stockpile** (confirmed: binary). After the planets are set up, each of the
 empire's pools of minerals, organics, radioactives and research is set to the Starting
-Resources amount **plus one turn of that empire's income** of that kind (computed as in
-§5, including its rule for `Minimum Empire X Generation`). The intelligence pool starts at 0.
+Resources amount **plus one turn of that empire's production** of that kind: its colonies'
+output delivered as in §5.1 and §5.5, with the rule for `Minimum Empire X Generation`
+(§5.6). Remote mining, `Generate Points`, trade, tariffs and the computer player's bonus
+are not included, so Starting Resources and that turn are never multiplied by the bonus.
+Nothing is drawn from finite stocks for it. The intelligence pool starts at 0.
 This matches the observed 20000 plus one turn of production (07-observations).
 
 **Starting technology** (confirmed: binary): Low keeps the tech areas' start levels,
@@ -1106,10 +1221,21 @@ is on (confirmed: binary).
 - OpenSE4 choice: the Ministers window also offers the style and the race-style switch,
   so a player can change them during a game. All minister settings belong to the empire
   and travel with its orders.
-- In Empire Setup (§9) the style list holds the style folders of the install plus "the
-  race's own" (no style), which a new empire starts with; "Use Race Minister Style" starts
-  off (inferred, §13 Q50). The empire starts the game with both, whether it is played by a
-  human or marked Computer Controlled. Random computer players never get a style.
+- In the game's Empire Setup (§9) (confirmed: binary):
+  - A new empire starts with an empty style, and "Use Race Minister Style" and "Computer
+    Controlled" unticked.
+  - The style picker lists every folder under `Ai\`. Picking nothing, or cancelling,
+    leaves the field as it was, so once a style is chosen it cannot be emptied again.
+  - The empire can be created with the style left empty, which means the race's own AI
+    files.
+  - Ticking "Use Race Minister Style" disables the field and stores an empty style.
+  - At run time an empty style loads the race's own files, and a named style loads that
+    folder's. A missing file falls back to a default under `Ai\`.
+  - Random computer players and rebel empires always get an empty style.
+- OpenSE4's Empire Setup offers the style folders plus "the race's own" (no style), which
+  a new empire starts with, and "Use Race Minister Style" starts off, as in the game. The
+  empire starts the game with both, whether it is played by a human or marked Computer
+  Controlled.
 
 **Colony types**
 - A colony type is a label chosen at colonization or later. The defaults come from
@@ -1239,8 +1365,8 @@ section named.
     trade, tariffs and maintenance.
 12. **Home system.** *Answered* (confirmed: binary, §5.5): yes, the empire's home system
     delivers 25 % (truncated) without a spaceport, research and intelligence included.
-    Whether the recorded home system ever moves after the homeworld is lost was not
-    checked.
+    The recorded home system never moves: it is set when the game is created (or when a
+    rebel empire is founded) and stays after the homeworld is lost (§2).
 13. **Storage timing.** *Answered* (confirmed: binary, §5.6, §12): the cap is applied once
     per turn after construction; income, scrap refunds and tariffs received are not capped
     when they arrive.
@@ -1253,11 +1379,13 @@ section named.
 16. **Finite games.** *Answered* (confirmed: binary, §5.1, §1.2): value % does not apply;
     output is capped by the stock and drawn from it. `Planet Value Percent Loss After
     Owner Death` lowers the values when a colony dies out.
-17. **Asteroids.** Can asteroids ever be colonized, given that PlanetSize has asteroid
-    rows? Not checked.
-18. **Upgrades.** *Partly answered* (confirmed: binary, §6.6): an upgrade item carries a
-    count and is priced per facility. Whether the UI can queue a count smaller than the
-    whole family was not checked.
+17. **Asteroids.** *Answered* (confirmed: binary, §2): never. Every colonization path
+    refuses an asteroid field, so the asteroid rows of PlanetSize are never used.
+18. **Upgrades.** *Answered* (confirmed: binary, §6.6): an upgrade item stores its target
+    and a count fixed when queued, and is priced per facility. The count is always every
+    lower-level facility of the family on the colony, so the player cannot choose fewer.
+    On completion, facilities are converted in their stored order until the count is
+    used up.
 19. **Unit overflow.** *Answered* (confirmed: binary, §6.5): only into the empire's other
     planets and ships in the same sector.
 20. **Plague.** *Answered* (confirmed: binary, §3): 10/50/100/150/300/500M (plus up to a
@@ -1266,15 +1394,18 @@ section named.
     the homeworld size (Small, Medium or Large) and the value keys, each value within −4 to
     +5 of the setting. Every starting planet gets full population and facilities in a fixed
     order, and the resupply depot is the third facility placed. The stockpile is Starting
-    Resources plus one turn of income. Homeworlds are capitals (anger capped at 80).
+    Resources plus one turn of production. Every starting planet is a capital (anger
+    capped at 80) of colony type `Homeworld`.
 22. **Setup ranges.** *Answered* (confirmed: binary): racial points 0, 2,000 (the
     default), 3,000 or 5,000; starting resources 5,000, 20,000 (the default) or 100,000
     (§9).
-23. **Experience and race age.** What gameplay effect, if any, do they have?
+23. **Experience and race age.** *Answered* (confirmed: binary, §9): none. Experience
+    grows from kills and construction and carries across games in the empire file, and
+    the race age is a label derived from it. Both are only shown.
 
-Items 24–36 were the engine's earlier guesses. They are settled by the executable, and
-`src/game/economy*.cpp` follows the sections named. Items 37 onward are the engine's
-remaining guesses; each is marked "(inferred)" in the code.
+Items 24 onward were the engine's guesses. They are settled by the executable, and
+`src/game/economy*.cpp` follows the sections named. Where the engine still differs from
+the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
 
 24. **Mood and reproduction.** *Settled* (confirmed: binary, §3): Angry −5, Unhappy −2,
     Indifferent 0, Happy +2, Jubilant +5, and no growth at all while rioting. The rate is
@@ -1301,46 +1432,66 @@ remaining guesses; each is marked "(inferred)" in the code.
 32. **Remote mining.** *Settled* (confirmed: binary, §5.3): the first miner in each
     sector, all minable objects there, `round(Val1 × value %)`, and 1 point of value per
     turn.
-33. **Overcrowding.** Our engine removes the surplus of a colony over its maximum at
-    once. Not checked in the executable; growth itself never exceeds the maximum.
+33. **Overcrowding.** *Settled* (confirmed: binary, §2): nothing removes population above
+    the maximum, whether a dome went up or not. The colony just has no room to grow or take
+    in people until it falls below. Our engine removes the surplus at once (PARITY_GAPS).
 34. **Rebellion.** *Settled* (confirmed: binary, §4): no riot counter; see answer 10.
 35. **Plague.** *Settled* (confirmed: binary, §3): see answer 20.
 36. **Maintenance victims.** *Settled* (confirmed: binary, §7): `unpaid div amount + 1`
     whole vehicles or unit groups, preferring ships out of supply.
-37. **Opening research pool.** *Settled* (confirmed: binary, spec 05 §1.1): the game's
-    creation sets the research pool to Starting Resources plus one turn of research, and
-    the intelligence pool to 0. The one turn of research is the income step's figure, with
-    the computer bonus; Starting Resources are not multiplied (inferred).
-38. **No room at completion.** When a finished facility finds no free slot, we keep the item
-    at the top of the queue with its progress cleared, as the original does for a ship at the
-    ship limit. Does the original drop the facility item instead?
-39. **Units without room.** Units that find no cargo space are lost and the item leaves the
-    queue. Does it stay when none of its units could be placed?
-40. **Upgrade count.** The original fixes the count when the item is queued; our queue items
-    do not record it yet, so we count the older facilities each time the item is priced.
-41. **Atmosphere counter.** Our counter runs only while a converter works and resets
-    otherwise. Does the original count turns without a converter too?
-42. **Replicant shares.** We give each race round(Val1 × its population ÷ total), ties to
-    even, in list order, each capped by the room left; an empty colony gets nothing. The
-    original's order of operations for the share was not traced.
-43. **Minimum income.** We give the Settings amount only to an empire that still holds a
-    colony.
-44. **Abandoned ships.** We log `Any Ship Lost` and `Ship Lost in System` for each ship
-    abandoned for unpaid maintenance. Does the original log a ship loss there?
-45. **Troops and strangers.** Troop units of a hostile empire in a colony's cargo count as
-    enemy troops on the planet; ships without an owner count as enemy ships.
-46. **Conditions in the engine.** We keep conditions in hundredths (1.0 = 100). A
-    multiplicative change is rounded to the nearest hundredth and moves a growing value by at
-    least 0.01, so that 1 % changes do not stall where a rounded hundredth would.
-47. **Bonus above High.** A computer bonus setting above High counts as High.
-48. **Turn number.** "Every 10th turn" and `Reproduction Check Frequency` test the turn
-    number after the date has advanced (spec 05 §8): the first processed turn is turn 1.
-49. **Cargo and facilities over capacity.** Troops that take a planet keep their
-    survivors in its cargo even beyond its cargo space (spec 04 §11: all troops are
-    dropped), and a colony that becomes domed keeps facilities and cargo above the smaller
-    capacities (§2). The engine leaves such a surplus in place and only blocks new
-    additions. Does the original remove it, and when?
-50. **Minister style at setup.** A new empire in Empire Setup starts with no minister style
-    (the race's own AI files) and "Use Race Minister Style" off, and the style list offers
-    that choice besides the style folders. Which style, if any, does the original preselect,
-    and can it be left empty? (inferred)
+37. **Opening pools.** *Settled* (confirmed: binary, §9, spec 05 §1.1): each pool starts
+    at Starting Resources plus one turn of the empire's production (colony output as
+    delivered, with the minimum-generation rule), and the intelligence pool at 0. Neither
+    part is multiplied by the computer bonus, and remote mining, `Generate Points`, trade
+    and tariffs are left out. Our engine includes them (PARITY_GAPS).
+38. **No room at completion.** *Settled* (confirmed: binary, §6.3, §6.5): the facility item
+    stays at the top with its progress cleared, as a ship item does at the ship limit, and
+    no message is sent. With at least one free slot the whole count is added, even past the
+    slots.
+39. **Units without room.** *Settled* (confirmed: binary, §6.5): each unit without room is
+    lost with its own message. The item stays at the top, with its full count, unless the
+    last unit was placed; the units already placed are kept. Our engine always removes the
+    item (PARITY_GAPS).
+40. **Upgrade count.** *Settled* (confirmed: binary, §6.6): the target and the count are
+    stored when the item is queued, and both price and completion use them. Our queue
+    items do not store them yet (PARITY_GAPS).
+41. **Atmosphere counter.** *Settled* (confirmed: binary, §2): the counter moves only on
+    turns with a converter and the wrong atmosphere. It is not reset on other turns and
+    resumes where it stopped. Our engine resets it (PARITY_GAPS).
+42. **Replicant shares.** *Settled* (confirmed: binary, §3): the share is
+    `round(P × q)`, ties to even, with `q = P_race / T` first stored as a 64-bit double.
+    That differs from our exact rational rounding only when the exact product ends in one
+    half (PARITY_GAPS).
+43. **Minimum income.** *Settled* (confirmed: binary, §5.6): every living empire gets it,
+    with or without colonies. Our engine requires a colony (PARITY_GAPS).
+44. **Abandoned ships.** *Settled* (confirmed: binary): no happiness event at all. Only a
+    ship destroyed by damage logs `Ship Lost in System`, which also feeds `Any Ship Lost`
+    (§4). Our engine logs both for abandoned ships (PARITY_GAPS).
+45. **Troops and strangers.** *Settled* (confirmed: binary, §4): `Enemy Troops on Planet`
+    counts once while another empire's landed troops still contest the planet;
+    `Our Troops on Planet` counts every troop unit in the colony's cargo, whoever owns it;
+    ships without an owner never count. Our engine counts ownerless ships as enemies
+    (PARITY_GAPS).
+46. **Conditions in the engine.** *Settled* (confirmed: binary, §2): the original keeps
+    conditions as a real number (a 64-bit double) and multiplies it without rounding.
+    Our hundredths, with the rounded product and the 0.01 minimum step, are an
+    approximation (PARITY_GAPS).
+47. **Bonus above High.** *Closed:* the original offers only None, Low, Medium and High,
+    so no value above High can occur. Treating an out-of-range value as High is our own
+    input handling (an OpenSE4 extension); the engine's choice stands.
+48. **Turn number.** *Settled* (confirmed: binary): both tests use the game date in tenths
+    of a year (2400.0 = 24000). "Every 10th turn" is `date mod 10 = 0`, and growth happens
+    when `date mod Reproduction Check Frequency = 0`. In a simultaneous game the date has
+    already advanced when an empire's turn is processed (the first processed turn is
+    24001). In a turn-based game the date advances after the last player, so the first
+    round is processed at 24000 and gets the every-10th-turn effects. Our turn number is
+    the date minus 24000. That is the same for every frequency that divides 24000 (1–6,
+    8, 10, …) but not for others such as 7 or 9 (PARITY_GAPS).
+49. **Cargo and facilities over capacity.** *Settled* (confirmed: binary, §2): facilities
+    above the slots and population above the maximum are never removed. Cargo above the
+    capacity stays until the planet next takes damage or loses population to plague;
+    then cargo population, then units from the first stack, are removed until it fits.
+    Our engine never trims cargo (PARITY_GAPS).
+50. **Minister style at setup.** *Settled* (confirmed: binary, §10): the style starts empty
+    (the race's own files) and can be left empty; "Use Race Minister Style" starts
+    unticked. Our setup matches; it differs only in small ways (PARITY_GAPS).
