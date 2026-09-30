@@ -182,6 +182,59 @@ TEST_CASE("tactical: the same orders give the same battle") {
     CHECK(scriptX.size() > 10);
 }
 
+TEST_CASE("tactical: random orders are checked, never break the battle, and replay the same") {
+    // Arbitrary orders, most of them invalid: refused ones change nothing, accepted ones
+    // are the script, and the script replays to the same battle.
+    for (int variant : {1, 4, 9, 14}) {
+        CAPTURE(variant);
+        auto [start, where] = battleScenario(variant, 2);
+        const TacticalBattle::Setup setup{where, std::nullopt, {EmpireId{0u}, EmpireId{1u}}};
+        TacticalBattle b(combatRules(), start, setup);
+        Rng dice(static_cast<uint64_t>(variant) * 977u);
+        int accepted = 0, refused = 0;
+        for (int n = 0; n < 4000 && b.awaitingOrders(); ++n) {
+            TacticalOrder o;
+            o.kind = static_cast<OK>(dice.rangeInt(0, static_cast<int>(OK::ResolveCombat)));
+            if (o.kind == OK::ResolveCombat && dice.rangeInt(0, 20) != 0) o.kind = OK::EndPhase;
+            o.empire = dice.rangeInt(0, 9) == 0 ? EmpireId{static_cast<uint32_t>(dice.rangeInt(0, 2))} : b.phaseEmpire();
+            const int pieces = static_cast<int>(b.pieces().size());
+            o.piece = dice.rangeInt(-1, pieces);
+            o.target = dice.rangeInt(-1, pieces);
+            o.weapon = dice.rangeInt(-1, 4);
+            o.instance = dice.rangeInt(-1, 3);
+            o.x = dice.rangeInt(-2, combat::kCombatMapWidth + 1);
+            o.y = dice.rangeInt(-2, combat::kCombatMapHeight + 1);
+            if (dice.rangeInt(0, 3) == 0)
+                for (int k = dice.rangeInt(1, 4); k > 0; --k)
+                    o.path.push_back(combat::Square{static_cast<int16_t>(dice.rangeInt(0, 71)), static_cast<int16_t>(dice.rangeInt(0, 62))});
+            if (o.piece >= 0 && o.piece < pieces && !b.pieces()[static_cast<size_t>(o.piece)].cargo.empty())
+                o.design = b.pieces()[static_cast<size_t>(o.piece)].cargo.front().design;
+            o.count = dice.rangeInt(-1, 12);
+            o.group = dice.rangeInt(-1, 11);
+            o.on = dice.rangeInt(0, 1) == 1;
+            o.alone = dice.rangeInt(0, 1) == 1;
+            const std::string predicted = b.check(o);
+            const size_t script = b.script().size();
+            const std::string why = b.submit(o);
+            CHECK(why == predicted);   // check() says exactly what submit() does
+            if (why.empty()) {
+                ++accepted;
+                CHECK(b.script().size() == script + 1);
+            } else {
+                ++refused;
+                CHECK(b.script().size() == script);
+            }
+        }
+        b.finish();
+        CHECK(accepted > 20);
+        CHECK(refused > 50);
+        TacticalBattle replay(combatRules(), start, setup);
+        for (const TacticalOrder& o : b.script()) CHECK(replay.submit(o).empty());
+        replay.finish();
+        CHECK(stateChecksum(replay.state()) == stateChecksum(b.state()));
+    }
+}
+
 // ---- Orders and their checks ---------------------------------------------------------------------------
 
 namespace {

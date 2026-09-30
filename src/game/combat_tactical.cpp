@@ -506,9 +506,18 @@ std::vector<Square> TacticalBattle::pathTo(int piece, int x, int y) const {
     return out;
 }
 
-int TacticalBattle::distance(int a, int b) const { return battle_->dist(a, b); }
+namespace {
+
+bool validPiece(const std::vector<TacticalPiece>& views, int i) { return i >= 0 && static_cast<size_t>(i) < views.size(); }
+
+} // namespace
+
+int TacticalBattle::distance(int a, int b) const { return validPiece(views_, a) && validPiece(views_, b) && !applied_ ? battle_->dist(a, b) : 0; }
 
 int TacticalBattle::hitChance(int piece, int weapon, int target) const {
+    if (applied_ || !validPiece(views_, piece) || !validPiece(views_, target) || weapon < 0 ||
+        static_cast<size_t>(weapon) >= battle_->pieces()[static_cast<size_t>(piece)].weapons.size())
+        return 0;
     const detail::Piece& p = battle_->pieces()[static_cast<size_t>(piece)];
     const detail::Weapon& w = p.weapons[static_cast<size_t>(weapon)];
     if (w.kind() == ruleset::WeaponKind::Seeking) return 100;   // seekers never roll
@@ -516,13 +525,17 @@ int TacticalBattle::hitChance(int piece, int weapon, int target) const {
 }
 
 int TacticalBattle::damageAt(int piece, int weapon, int target) const {
+    if (applied_ || !validPiece(views_, piece) || !validPiece(views_, target) || weapon < 0 ||
+        static_cast<size_t>(weapon) >= battle_->pieces()[static_cast<size_t>(piece)].weapons.size())
+        return 0;
     const detail::Piece& p = battle_->pieces()[static_cast<size_t>(piece)];
     const detail::Weapon& w = p.weapons[static_cast<size_t>(weapon)];
     return weaponDamage(rules_, w.de, battle_->dist(piece, target)) * battle_->firedTogether(piece, w);
 }
 
 std::string TacticalBattle::fireProblem(int piece, int weapon, int target) const {
-    if (!started_ || applied_ || piece < 0 || static_cast<size_t>(piece) >= views_.size() || weapon < 0) return "No such weapon.";
+    if (!started_ || applied_ || !validPiece(views_, piece) || weapon < 0) return "No such weapon.";
+    if (!battle_->pieces()[static_cast<size_t>(piece)].alive) return "That piece is gone.";
     return battle_->fireProblem(piece, static_cast<size_t>(weapon), -1, target);
 }
 
