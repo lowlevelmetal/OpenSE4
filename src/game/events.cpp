@@ -195,17 +195,6 @@ void applySectorType(const Rules& r, SpaceObject& obj, uint32_t index) {
 }
 
 // Removes a colony (the planet becomes uncolonized) with the owner's mood events.
-void loseColony(TurnContext& ctx, ObjectId planet) {
-    GameState& s = ctx.state;
-    Colony* c = s.colony(planet);
-    if (!c) return;
-    const EmpireId owner = c->owner;
-    const bool home = c->homeworld;
-    s.colonies[planet.index()].reset();
-    ctx.mood(owner, "Any Planet Lost");
-    if (home) ctx.mood(owner, "Homeworld Lost");
-}
-
 void destroyVehicle(TurnContext& ctx, Vehicle& v) {
     if (v.count <= 0) return;
     v.count = 0;
@@ -1146,29 +1135,9 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
         case Effect::StarDestroyed: {
             // The result of the Destroy Star manipulation (spec 05 §4, spec 01
-            // §9, confirmed: binary): the shockwave. Every planet and asteroid
-            // field becomes a new asteroid field (a random Asteroids record of
-            // any size) that keeps its name, values and conditions, and its
-            // colony is lost; every other object but warp points (stars,
-            // storms, comets) is gone, and so is every vehicle in the system.
-            // No destroyed star remains.
+            // §9, confirmed: binary): the shockwave.
             if (!inSystem(s, t.object) || s.galaxy.object(t.object).kind != ObjectKind::Star) return out;
-            const SystemId sys = s.galaxy.object(t.object).system;
-            const std::vector<ObjectId> objects = s.galaxy.system(sys).objects;
-            for (ObjectId o : objects) {
-                SpaceObject& obj = s.galaxy.object(o);
-                if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
-                    loseColony(ctx, o);
-                    SpaceObject& rock = s.galaxy.object(o);
-                    rock.kind = ObjectKind::Asteroids;
-                    rock.atmosphere = "None";
-                    if (auto st = pickSectorType(r, "Asteroids", {}, rng)) applySectorType(r, rock, *st);
-                } else if (obj.kind != ObjectKind::WarpPoint) {
-                    std::erase(s.galaxy.system(sys).objects, o);
-                }
-            }
-            for (Vehicle& x : s.vehicles)
-                if (x.location.system == sys) destroyVehicle(ctx, x);
+            movement::destroyStar(ctx, t.object, "The star exploded.", rng);
             out.actual = 1;
             break;
         }
@@ -1196,15 +1165,9 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             break;
         }
         case Effect::WarpPointClosed: {
+            // The result of the Close Warp Point manipulation: both ends disappear (spec 01 §8, §9).
             if (!validObject(s, t.object) || s.galaxy.object(t.object).kind != ObjectKind::WarpPoint) return out;
-            // Both ends disappear from their systems (spec 01 §8).
-            const ObjectId ends[2] = {t.object, s.galaxy.object(t.object).destination};
-            for (ObjectId o : ends) {
-                if (!validObject(s, o)) continue;
-                SpaceObject& wp = s.galaxy.object(o);
-                std::erase(s.galaxy.system(wp.system).objects, o);
-                wp.destination = ObjectId{};
-            }
+            movement::closeWarpPoint(s, t.object);
             out.actual = 1;
             break;
         }

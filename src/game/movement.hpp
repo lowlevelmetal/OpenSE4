@@ -153,6 +153,15 @@ std::string stellarProblem(const Rules& r, const GameState& s, VehicleId vehicle
 // asteroid field of the same stellar size that keeps its name, values and
 // conditions. The `Planet - Destroyed` event has the same result (spec 05 §4).
 void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng);
+// The Destroy Star result (spec 01 §9, confirmed: binary): the shockwave. Every
+// planet and asteroid field of the star's system becomes a random natural
+// asteroid field of any size that keeps its name, values and conditions, its
+// colony lost; every other object but warp points is gone, and so is every
+// vehicle there. No destroyed star remains. Also `Star - Destroyed` (spec 05 §4).
+void destroyStar(TurnContext& ctx, ObjectId star, std::string_view cause, Rng& rng);
+// The Close Warp Point result (spec 01 §8, §9): both ends leave their systems.
+// Also `Warp Point - Closed` (spec 05 §4).
+void closeWarpPoint(GameState& s, ObjectId warpPoint);
 
 // ---- Shared helpers (AI, UI, other subsystems) --------------------------------------------------
 

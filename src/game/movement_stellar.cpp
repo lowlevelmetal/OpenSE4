@@ -81,6 +81,34 @@ void toAsteroids(const Rules& r, SpaceObject& obj, int size, Rng& rng) {
     if (!types.empty()) applySectorType(r.data(), obj, types[rng.below(types.size())]);
 }
 
+// An object leaves its system's object list; its record stays (ids are stable).
+void removeObject(GameState& s, ObjectId id) {
+    SpaceObject& obj = s.galaxy.object(id);
+    std::erase(s.galaxy.system(obj.system).objects, id);
+    if (obj.kind == ObjectKind::WarpPoint) obj.destination = {};
+}
+
+// The shockwave of a destroyed star (spec 01 §9): every planet and asteroid
+// field becomes a new asteroid field of any size that keeps its name, values
+// and conditions (colonies lost); everything else except warp points is
+// destroyed, ships and unit groups included.
+void shockwave(TurnContext& ctx, SystemId sys, std::string_view cause, Rng& rng) {
+    GameState& s = ctx.state;
+    for (Vehicle& v : s.vehicles)
+        if (alive(v) && v.location.system == sys) vehicleLost(ctx, v, cause);
+    const std::vector<ObjectId> objects = s.galaxy.system(sys).objects;
+    for (ObjectId o : objects) {
+        SpaceObject& obj = s.galaxy.object(o);
+        if (obj.kind == ObjectKind::WarpPoint) continue;
+        if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
+            loseColony(ctx, o, cause);
+            toAsteroids(ctx.rules, s.galaxy.object(o), 0, rng);
+        } else {
+            removeObject(s, o);
+        }
+    }
+}
+
 struct Actor {
     VehicleId vehicle;
     size_t entry = 0;
@@ -400,30 +428,7 @@ private:
         return s_.galaxy.objects.back().id;
     }
 
-    void remove(ObjectId id) {
-        SpaceObject& obj = s_.galaxy.object(id);
-        std::erase(s_.galaxy.system(obj.system).objects, id);
-        if (obj.kind == ObjectKind::WarpPoint) obj.destination = {};
-    }
-
-    // The shockwave of a destroyed star: every planet and asteroid field
-    // becomes a new asteroid field (colonies lost); everything else except
-    // warp points is destroyed, ships and unit groups included.
-    void shockwave(SystemId sys, std::string_view cause) {
-        for (Vehicle& v : s_.vehicles)
-            if (alive(v) && v.location.system == sys) vehicleLost(ctx_, v, cause);
-        const std::vector<ObjectId> objects = s_.galaxy.system(sys).objects;
-        for (ObjectId o : objects) {
-            SpaceObject& obj = s_.galaxy.object(o);
-            if (obj.kind == ObjectKind::WarpPoint) continue;
-            if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
-                loseColony(ctx_, o, cause);
-                toAsteroids(r_, obj, 0, s_.rng);
-            } else {
-                remove(o);
-            }
-        }
-    }
+    void remove(ObjectId id) { removeObject(s_, id); }
 
     // Created nebulae and black holes use no system type: the type is set
     // directly; we keep a matching record's backdrop when there is one.
@@ -488,15 +493,12 @@ private:
             }
             case StellarAction::DestroyStar:
                 announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
-                shockwave(sys.id, "A star exploded in the system.");
+                destroyStar(ctx_, *plan_.object, "A star exploded in the system.", s_.rng);
                 return;
             case StellarAction::OpenWarpPoint: openWarpPoint(); return;
             case StellarAction::CloseWarpPoint: {
-                const ObjectId wp = *plan_.object;
-                const ObjectId far = s_.galaxy.object(wp).destination;
-                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, wp)));
-                if (far.valid() && inSystem(s_.galaxy, far)) remove(far);
-                remove(wp);
+                announce(std::format("Warp Point Closed: {}", sight::warpPointName(s_, owner_, *plan_.object)));
+                closeWarpPoint(s_, *plan_.object);
                 return;
             }
             case StellarAction::CreateStorm: {
@@ -531,7 +533,7 @@ private:
                 const bool nebula = action_ == StellarAction::CreateNebulae;
                 announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
                 announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name));
-                shockwave(sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.");
+                shockwave(ctx_, sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.", s_.rng);
                 if (nebula) setSystemKind(system(), "Nebulae", {ability(AbilityKind::SectorSightObscuration, 3)});
                 else
                     setSystemKind(system(), "Black Hole",
@@ -662,6 +664,19 @@ std::string stellarProblem(const Rules& r, const GameState& s, VehicleId vehicle
     std::string why = checks.check(members);
     if (why.empty() && target && checks.plan().object) *target = *checks.plan().object;
     return why;
+}
+
+void destroyStar(TurnContext& ctx, ObjectId star, std::string_view cause, Rng& rng) {
+    GameState& s = ctx.state;
+    if (!star.valid() || star.index() >= s.galaxy.objects.size() || !detail::inSystem(s.galaxy, star)) return;
+    detail::shockwave(ctx, s.galaxy.object(star).system, cause, rng);
+}
+
+void closeWarpPoint(GameState& s, ObjectId warpPoint) {
+    if (!warpPoint.valid() || warpPoint.index() >= s.galaxy.objects.size() || s.galaxy.object(warpPoint).kind != ObjectKind::WarpPoint) return;
+    const ObjectId far = s.galaxy.object(warpPoint).destination;
+    if (far.valid() && far.index() < s.galaxy.objects.size() && detail::inSystem(s.galaxy, far)) detail::removeObject(s, far);
+    if (detail::inSystem(s.galaxy, warpPoint)) detail::removeObject(s, warpPoint);
 }
 
 void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng) {
