@@ -1430,8 +1430,6 @@ TEST_CASE("movement: training facilities raise ship and fleet experience up to t
     const ObjectId camp = w.planet(a, {6, 6});
     w.colony(camp, kA, 1000, {"Mv Trainer", "Mv Fleet Trainer"});
     const VehicleId cadet = w.spawn(w.ship(kA, "Cadet", 1), at(a, 6, 6));
-    w.colony(w.planet(a, {9, 9}), kA, 100, {"Mv Camp", "Mv Broken Camp"});
-    const VehicleId rookie = w.spawn(w.ship(kA, "Rookie", 1), at(a, 9, 9));
     const VehicleId away = w.spawn(w.ship(kA, "Away", 1), at(a, 1, 1));
     const VehicleId m1 = w.spawn(w.ship(kA, "M1", 1), at(a, 6, 6));
     const VehicleId m2 = w.spawn(w.ship(kA, "M2", 1), at(a, 6, 6));
