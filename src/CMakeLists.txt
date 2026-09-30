@@ -56,6 +56,7 @@ add_library(opense4_game STATIC
     game/score.cpp
     game/serialize.cpp
     game/setup.cpp
+    game/simulator.cpp
     game/sight.cpp
     game/state.cpp
     game/turn.cpp

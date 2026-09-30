@@ -1,14 +1,15 @@
 // Tactical combat (docs/spec/04 §3, §4, §16; game/tactical.hpp): the battle
 // stepped one phase at a time with orders for player sides, the same rules as
 // strategic resolution, validated orders, scripts that replay a battle, and
-// tactical battles in turn-based games (turn.hpp). All content is invented
-// for the tests.
+// tactical battles in turn-based games (turn.hpp), and the combat simulator
+// (game/simulator.hpp). All content is invented for the tests.
 
 #include "combat_fixture.hpp"
 
 #include "game/combat.hpp"
 #include "game/query.hpp"
 #include "game/serialize.hpp"
+#include "game/simulator.hpp"
 #include "game/tactical.hpp"
 #include "game/turn.hpp"
 #include "game/turn_internal.hpp"
@@ -772,4 +773,150 @@ TEST_CASE("turn-based tactical: answers are taken in the order the battles come 
         CHECK(q.question.state->combats.size() == 1);   // the game as the second battle begins
     }
     CHECK(asked);
+}
+
+// ---- The combat simulator -----------------------------------------------------------------------------
+
+namespace {
+
+struct SimWorld {
+    Arena ar = makeArena(19);
+    DesignId lancer, raider, unseen, fighter, platform, mine;
+
+    SimWorld() {
+        GameState& s = ar.s;
+        lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser", "Test Laser", "Test Armor Plate"});
+        fighter = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "CT Fighter Fuel"});
+        platform = design(s, ar.a, "Bastion", "CT Platform Hull", {"CT Platform Gun", "CT Platform Core"});
+        mine = design(s, ar.a, "Mine", "Test Mine Hull", {"Test Warhead"});
+        raider = frigate(s, ar.b, "Raider", 3, {"CT Torpedo", "Test Laser", "Test Armor Plate"});
+        unseen = frigate(s, ar.b, "Secret", 3, {"Test Laser"});
+        seeDesign(s.empire(ar.a).knowledge, raider, s.turn);
+    }
+
+    combat::SimulatorSetup duel(bool playerSide) const {
+        combat::SimulatorSetup setup;
+        setup.viewer = ar.a;
+        setup.sides = {{"Blue", !playerSide}, {"Red", true}};
+        setup.items.push_back({combat::SimulatorItem::Kind::Design, lancer, {}, 0, 2});
+        setup.items.push_back({combat::SimulatorItem::Kind::Design, raider, {}, 1, 2});
+        return setup;
+    }
+};
+
+} // namespace
+
+TEST_CASE("simulator: the designs and planets on offer") {
+    SimWorld w;
+    const auto designs = combat::simulatorDesigns(combatRules(), w.ar.s, w.ar.a, false);
+    CHECK(std::find(designs.begin(), designs.end(), w.lancer) != designs.end());
+    CHECK(std::find(designs.begin(), designs.end(), w.fighter) != designs.end());
+    CHECK(std::find(designs.begin(), designs.end(), w.raider) != designs.end());    // seen
+    CHECK(std::find(designs.begin(), designs.end(), w.unseen) == designs.end());    // never seen
+    CHECK(std::find(designs.begin(), designs.end(), w.mine) == designs.end());      // no minefields
+    CHECK(std::find(designs.begin(), designs.end(), w.platform) == designs.end());  // cargo only
+    w.ar.s.design(w.lancer).obsolete = true;
+    const auto current = combat::simulatorDesigns(combatRules(), w.ar.s, w.ar.a, true);
+    CHECK(std::find(current.begin(), current.end(), w.lancer) == current.end());
+    const auto cargo = combat::simulatorCargoDesigns(combatRules(), w.ar.s, w.ar.a, false);
+    CHECK(std::find(cargo.begin(), cargo.end(), w.fighter) != cargo.end());
+    CHECK(std::find(cargo.begin(), cargo.end(), w.platform) != cargo.end());
+    CHECK(std::find(cargo.begin(), cargo.end(), w.mine) == cargo.end());
+    const auto planets = combat::simulatorPlanets(w.ar.s, w.ar.a);
+    REQUIRE_FALSE(planets.empty());
+    CHECK(std::find(planets.begin(), planets.end(), homeworld(w.ar.s, w.ar.a).planet) != planets.end());
+    CHECK(std::find(planets.begin(), planets.end(), homeworld(w.ar.s, w.ar.b).planet) == planets.end());
+}
+
+TEST_CASE("simulator: setups that cannot be fought") {
+    SimWorld w;
+    const Rules& r = combatRules();
+    const GameState& s = w.ar.s;
+    CHECK(combat::simulatorProblem(r, s, w.duel(false)).empty());
+    combat::SimulatorSetup lonely = w.duel(false);
+    lonely.items[1].side = 0;
+    CHECK(combat::simulatorProblem(r, s, lonely) == "At least two sides need something to fight with.");
+    combat::SimulatorSetup secret = w.duel(false);
+    secret.items[1].design = w.unseen;
+    CHECK(combat::simulatorProblem(r, s, secret) == "Only your designs and enemy designs you have seen can be used.");
+    combat::SimulatorSetup mines = w.duel(false);
+    mines.items[0].design = w.mine;
+    CHECK(combat::simulatorProblem(r, s, mines) == "Minefields cannot be added.");
+    combat::SimulatorSetup crammed = w.duel(false);
+    crammed.items[0].cargo = {{w.fighter, 50}};   // a frigate without cargo space
+    CHECK(combat::simulatorProblem(r, s, crammed) == "The cargo does not fit.");
+    combat::SimulatorSetup elsewhere = w.duel(false);
+    elsewhere.items.push_back({combat::SimulatorItem::Kind::Planet, {}, homeworld(w.ar.s, w.ar.b).planet, 1});
+    CHECK(combat::simulatorProblem(r, s, elsewhere) == "Sample planets come from the home system.");
+    combat::SimulatorSetup oneSide = w.duel(false);
+    oneSide.sides.resize(1);
+    CHECK(combat::simulatorProblem(r, s, oneSide) == "A battle needs at least two sides.");
+}
+
+TEST_CASE("simulator: the battle is fought on a sandbox and the real game never changes") {
+    SimWorld w;
+    const Rules& r = combatRules();
+    const uint64_t before = stateChecksum(w.ar.s);
+    for (const bool player : {false, true}) {
+        CAPTURE(player);
+        combat::SimulatorSetup setup = w.duel(player);
+        setup.items.push_back({combat::SimulatorItem::Kind::Planet, {}, homeworld(w.ar.s, w.ar.a).planet, 0, 1, {{w.platform, 3}}, true});
+        setup.fleets.push_back({0, "Home Guard", 0, 0});
+        setup.items[0].fleet = 0;
+        REQUIRE(combat::simulatorProblem(r, w.ar.s, setup).empty());
+        combat::Simulation sim = combat::buildSimulation(r, w.ar.s, setup);
+        REQUIRE(sim.sides.size() == 2);
+        const GameState& sb = sim.state;
+        // Virtual empires, at war with each other, copies of the viewer's.
+        CHECK(sb.empires.size() == w.ar.s.empires.size() + 2);
+        CHECK(sb.empire(sim.sides[0]).name == "Blue");
+        CHECK(sb.empire(sim.sides[0]).race.name == w.ar.s.empire(w.ar.a).race.name);
+        CHECK(hostile(sb, sim.sides[0], sim.sides[1]));
+        CHECK(sim.players == (player ? std::vector<EmpireId>{sim.sides[0]} : std::vector<EmpireId>{}));
+        // A new, empty system holds the battle: two ships a side, the planet, the fleet.
+        CHECK(sim.where.system.index() == w.ar.s.galaxy.systems.size());
+        int ships = 0;
+        for (const Vehicle& v : sb.vehicles)
+            if (v.location == sim.where) {
+                ++ships;
+                CHECK((v.owner == sim.sides[0] || v.owner == sim.sides[1]));
+                CHECK(sb.design(v.design).owner == v.owner);
+                CHECK(v.supply > 0);
+            }
+        CHECK(ships == 4);
+        const auto planets = planetsAt(sb, sim.where);
+        REQUIRE(planets.size() == 1);
+        CHECK(sb.colony(planets[0])->owner == sim.sides[0]);
+        CHECK(sb.colony(planets[0])->cargo.units.size() == 1);
+        CHECK(sb.design(sb.colony(planets[0])->cargo.units[0].design).owner == sim.sides[0]);
+        REQUIRE(sb.fleets.size() == w.ar.s.fleets.size() + 1);
+        CHECK(sb.fleets.back().members.size() == 2);
+
+        combat::TacticalBattle battle = combat::startSimulation(r, std::move(sim));
+        REQUIRE(battle.started());
+        CHECK(battle.participants().size() == 2);
+        if (player) {
+            CHECK(battle.awaitingOrders());
+            playByHand(battle, battle.phaseEmpire());
+        } else {
+            CHECK(battle.finished());
+            battle.finish();
+        }
+        CHECK(battle.applied());
+        REQUIRE_FALSE(battle.state().combats.empty());
+        CHECK_FALSE(battle.record().events.empty());
+        CHECK(stateChecksum(w.ar.s) == before);
+    }
+}
+
+TEST_CASE("simulator: the same setup and seed give the same battle") {
+    SimWorld w;
+    combat::SimulatorSetup setup = w.duel(false);
+    setup.seed = 1234;
+    auto run = [&] {
+        combat::TacticalBattle b = combat::startSimulation(combatRules(), combat::buildSimulation(combatRules(), w.ar.s, setup));
+        b.finish();
+        return stateChecksum(b.state());
+    };
+    CHECK(run() == run());
 }
