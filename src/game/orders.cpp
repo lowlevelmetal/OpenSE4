@@ -248,8 +248,9 @@ void expandOrder(const Rules& r, const GameState& s, OrderContext& ctx, const Or
             travelThen(s, ctx, validObject(s, o.object) ? locationOf(s.galaxy, o.object) : Location{}, o, out);
             return;
         case OrderKind::Colonize: {
-            // Colonists come aboard where the order is given, when the ship carries none.
-            if (!ctx.carriesPopulation) {
+            // Colonists come aboard where the order is given, when the ship carries
+            // none; a Colonize expanded before already had its Load Cargo.
+            if (!ctx.carriesPopulation && o.amount != kColonizeExpanded) {
                 Order load;
                 load.kind = OrderKind::LoadCargo;
                 load.location = ctx.at;
