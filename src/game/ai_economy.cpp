@@ -8,6 +8,8 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <map>
+#include <optional>
 #include <tuple>
 
 namespace opense4::game::ai {
@@ -287,6 +289,30 @@ public:
 private:
     Planner& p_;
     Resources budget_;
+    // Own vehicles with a working space yard under this minister, found once
+    // per turn: queueing ships changes neither (place() asks for every item).
+    std::optional<std::vector<VehicleId>> yardShips_;
+    // Whether a design may be queued at a target. Nothing the builder does
+    // changes the answer during its turn (queueing builds no ship yet).
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, bool> queueable_;
+
+    bool queueable(DesignId design, const cmd::QueueTarget& target) {
+        const auto key = std::tuple(design.value, target.planet.value, target.vehicle.value);
+        if (auto it = queueable_.find(key); it != queueable_.end()) return it->second;
+        QueueItem probe;
+        probe.kind = QueueItem::Kind::Vehicle;
+        probe.design = design;
+        return queueable_[key] = queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty();
+    }
+
+    const std::vector<VehicleId>& yardShips() {
+        if (!yardShips_) {
+            yardShips_.emplace();
+            for (const Vehicle& v : p_.st.vehicles)
+                if (p_.controlsVehicle(v, Minister::ShipConstruction) && vehicleHasSpaceYard(p_.r, p_.st, v)) yardShips_->push_back(v.id);
+        }
+        return *yardShips_;
+    }
 
     // The vehicle list of the AI state (spec 05 §7.5).
     void vehicles(const VehicleQueue& table) {
@@ -455,10 +481,7 @@ private:
         };
         std::vector<Option> options;
         auto consider = [&](const cmd::QueueTarget& target, const ConstructionQueue& q) {
-            QueueItem probe;
-            probe.kind = QueueItem::Kind::Vehicle;
-            probe.design = design;
-            if (!queueItemProblem(p_.r, p_.st, p_.id, target, probe).empty()) return;
+            if (!queueable(design, target)) return;
             const Resources rate = economy::constructionRate(p_.r, p_.st, p_.id, target);
             const Resources left = remaining(target, q);
             if (!underFive(left, rate)) return;
@@ -477,8 +500,8 @@ private:
         for (const auto& c : p_.st.colonies)
             if (c && p_.controlsColony(*c, Minister::ShipConstruction) && (unit || colonyHasSpaceYard(p_.r, *c))) consider({c->planet, {}}, c->queue);
         if (!unit)
-            for (const Vehicle& v : p_.st.vehicles)
-                if (p_.controlsVehicle(v, Minister::ShipConstruction) && vehicleHasSpaceYard(p_.r, p_.st, v)) consider({{}, v.id}, v.queue);
+            for (VehicleId id : yardShips())
+                if (const Vehicle* v = p_.st.vehicle(id)) consider({{}, id}, v->queue);
         if (options.empty()) return false;
         std::sort(options.begin(), options.end(), [&](const Option& a, const Option& b) {
             if (base) return std::tuple(a.bases, -a.value, a.target.planet) < std::tuple(b.bases, -b.value, b.target.planet);
