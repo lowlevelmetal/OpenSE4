@@ -62,6 +62,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
         if (!options.openWindow.empty()) {
+            mode->openLogOnTurn_ = false;  // the requested window stays in front
             const auto id = screenFromName(options.openWindow);
             if (!id) {
                 error = std::format("Unknown window '{}'", options.openWindow);
