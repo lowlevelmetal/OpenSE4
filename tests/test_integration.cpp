@@ -90,9 +90,15 @@ GameState playAllAi(uint64_t seed, int empires, int turns, std::vector<uint64_t>
 TEST_CASE("integration: computer players run a full game on the test rules") {
     const GameState s = playAllAi(21, 4, 120);
     // The game went somewhere: colonies were founded, ships built, research done.
-    int colonies = 0;
-    for (const auto& c : s.colonies) colonies += c.has_value();
+    int colonies = 0, settled = 0;
+    for (const auto& c : s.colonies) {
+        colonies += c.has_value();
+        settled += c && !c->homeworld && c->totalPopulation() > 0;
+    }
     CHECK(colonies > 4);
+    // The computer players expand: colony ships are designed, built and
+    // flown, and the colonies they found have people.
+    CHECK(settled >= 20);
     CHECK(s.vehicles.size() > 8);
     int levels = 0;
     for (const Empire& e : s.empires)
