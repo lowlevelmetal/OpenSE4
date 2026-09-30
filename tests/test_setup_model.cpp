@@ -6,6 +6,7 @@
 #include "temp_dir.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/session.hpp"
 #include "datafile/datafile.hpp"
 #include "game/economy.hpp"
 
@@ -652,4 +653,19 @@ TEST_CASE("setup model: autosave every N turns, named after the last digit of th
     CHECK(files(3) == 10);
     CHECK(files(5) == 2);
     CHECK(files(10) == 1);
+}
+
+TEST_CASE("setup model: the autosave choice can be changed during a local or hotseat game") {
+    // Spec 01 §2.2: it can also be changed during the game; the host keeps
+    // network and e-mail games.
+    auto rules = std::make_shared<const game::Rules>(test::buildEngineRuleset());
+    for (const auto kind : {client::classic::SessionKind::Local, client::classic::SessionKind::Hotseat,
+                            client::classic::SessionKind::NetworkClient}) {
+        client::classic::ClassicSession session(rules, test::newEngineGame(), game::EmpireId{0u}, kind);
+        const bool local = kind != client::classic::SessionKind::NetworkClient;
+        CHECK(session.setAutosaveTurns(5) == local);
+        CHECK(session.state().options.autosaveTurns == (local ? 5 : 0));
+        CHECK_FALSE(session.setAutosaveTurns(4));  // not one of the choices
+        CHECK(session.state().options.autosaveTurns == (local ? 5 : 0));
+    }
 }

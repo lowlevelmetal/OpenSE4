@@ -418,6 +418,14 @@ void ClassicSession::beginTurn() {
     if (onNewTurn) onNewTurn();
 }
 
+bool ClassicSession::setAutosaveTurns(int everyTurns) {
+    if (kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) return false;
+    if (std::find(setup::kAutosaveTurns.begin(), setup::kAutosaveTurns.end(), everyTurns) == setup::kAutosaveTurns.end()) return false;
+    state_.options.autosaveTurns = everyTurns;
+    ++revision_;
+    return true;
+}
+
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;
     ++revision_;

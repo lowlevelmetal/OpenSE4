@@ -183,6 +183,12 @@ public:
     std::optional<std::filesystem::path> autosave();
     // Where the last autosave went, or why it failed (for the status line).
     const std::string& autosaveNote() const { return autosaveNote_; }
+    // The Autosave choice can be changed during the game (spec 01 §2.2): in a
+    // local or hotseat game it is kept with this computer's copy of the game
+    // (GameOptions::autosaveTurns, saved with it). False, changing nothing,
+    // in network and PBEM games (their host keeps the game) and for a value
+    // that is not one of the choices (setup::kAutosaveTurns).
+    bool setAutosaveTurns(int everyTurns);
     static std::expected<std::unique_ptr<ClassicSession>, std::string> load(std::shared_ptr<const game::Rules> rules,
                                                                             const std::filesystem::path& file);
 

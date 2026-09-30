@@ -5,6 +5,7 @@
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
@@ -276,6 +277,18 @@ private:
         bool choose = me.chooseColonyType;
         if (lampToggle(ui, "Choose the colony type when a colony is founded (turn-based games)", &choose))
             status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = choose});
+        // The game's Autosave choice can be changed during the game (spec 01
+        // §2.2); network and e-mail games are saved by their host.
+        if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {
+            ImGui::Spacing();
+            heading(ui, "Autosave (this game)");
+            const int current = ui.state().options.autosaveTurns;
+            for (const int n : setup::kAutosaveTurns) {
+                bool on = n == current;
+                const std::string label = n == 0 ? std::string("None") : n == 1 ? std::string("Every turn") : std::format("Every {} turns", n);
+                if (lampToggle(ui, label.c_str(), &on) && on) ui.session.setAutosaveTurns(n);
+            }
+        }
         status_.draw();
     }
 
