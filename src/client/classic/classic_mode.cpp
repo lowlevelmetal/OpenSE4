@@ -1,5 +1,6 @@
 #include "client/classic/classic_mode.hpp"
 
+#include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/classic/net_transport.hpp"
 #include "client/classic/settings.hpp"
@@ -90,6 +91,7 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     screens_.clear();
     session_ = std::move(session);
     ui_ = std::make_unique<UiContext>(*session_, *art_, *platform_.fonts);
+    ui_->app = platform_.app;
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] { openLogOnTurn_ = true; };
     main_ = MainWindow{};
@@ -130,12 +132,11 @@ void ClassicMode::updateAudio() {
 
 bool ClassicMode::update(const FrameState& fs) {
     updateAudio();
-    const float fw = float(fs.frame.width), fh = float(fs.frame.height);
-    mapping_.scale = std::min(fw / kFrameW, fh / kFrameH);
-    mapping_.offset = {(fw - kFrameW * mapping_.scale) * 0.5f, (fh - kFrameH * mapping_.scale) * 0.5f};
+    mapping_ = frameMappingFor(float(fs.frame.width), float(fs.frame.height));
+    art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
     if (!session_) {
-        MenuContext ctx{rules_, *art_, *platform_.fonts, mapping_, fs.fbScale, fs.time, options_.seed, {}, {}, {}, frontError_};
+        MenuContext ctx{rules_, *art_, *platform_.fonts, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, frontError_};
         ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
@@ -149,6 +150,7 @@ bool ClassicMode::update(const FrameState& fs) {
 
     UiContext& ui = *ui_;
     ui.map = mapping_;
+    ui.textScale = appSettings().graphics.textScale;
     ui.fbScale = fs.fbScale;
     ui.time = fs.time;
     ui.dt = fs.dt;
@@ -318,7 +320,7 @@ void ClassicMode::render(gfx::Renderer2D& r, const FrameState& fs) {
     const Vec2 bottomRight = mapping_.fromFb({fw, fh});
     r.begin(Mat4::ortho2D(topLeft.x, bottomRight.x, topLeft.y, bottomRight.y), fs.frame, mapping_.scale);
     if (session_ && ui_ && !handoff_) main_.render(r, *ui_);
-    else r.rect(Rect{{0, 0}, {kFrameW, kFrameH}}, Color::hex(0x000000));
+    else r.rect(Rect{{mapping_.left, 0}, {mapping_.right, kFrameH}}, Color::hex(0x000000));
     r.flush();
 }
 

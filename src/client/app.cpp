@@ -55,7 +55,9 @@ int App::run(const AppOptions& options) {
     }
     initImGui();
 
-    const Platform platform{window_, device_.get(), &fonts_, assetsDir_, rendererInfo_};
+    const Platform platform{window_, device_.get(), &fonts_, assetsDir_, rendererInfo_, this};
+    // Saved display settings (a screenshot run keeps the plain window it asked for).
+    if (options.screenshotPath.empty()) applyGraphics();
     std::string error;
     if (options.classic) {
         ClassicOptions co;
@@ -149,6 +151,45 @@ bool App::createWindowAndDevice() {
     return true;
 }
 
+void App::applyGraphics() {
+    const GraphicsSettings& g = appSettings().graphics;
+    device_->setVSync(g.vsync);
+    switch (g.displayMode) {
+        case DisplayMode::Windowed:
+            SDL_SetWindowFullscreen(window_, false);
+            SDL_SetWindowSize(window_, g.windowWidth, g.windowHeight);
+            break;
+        case DisplayMode::Borderless:
+            SDL_SetWindowFullscreenMode(window_, nullptr);  // the desktop mode
+            SDL_SetWindowFullscreen(window_, true);
+            break;
+        case DisplayMode::Fullscreen: {
+            SDL_DisplayMode mode{};
+            const SDL_DisplayID display = SDL_GetDisplayForWindow(window_);
+            const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
+            const int w = g.fullscreenWidth > 0 ? g.fullscreenWidth : desktop ? desktop->w : g.windowWidth;
+            const int h = g.fullscreenHeight > 0 ? g.fullscreenHeight : desktop ? desktop->h : g.windowHeight;
+            if (SDL_GetClosestFullscreenDisplayMode(display, w, h, g.fullscreenRefresh, true, &mode))
+                SDL_SetWindowFullscreenMode(window_, &mode);
+            else
+                SDL_SetWindowFullscreenMode(window_, nullptr);
+            SDL_SetWindowFullscreen(window_, true);
+            break;
+        }
+    }
+    SDL_SyncWindow(window_);
+}
+
+std::vector<DisplayModeInfo> App::displayModes() const {
+    std::vector<DisplayModeInfo> out;
+    int count = 0;
+    SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(SDL_GetDisplayForWindow(window_), &count);
+    if (!modes) return out;
+    for (int i = 0; i < count; ++i) out.push_back({modes[i]->w, modes[i]->h, modes[i]->refresh_rate});
+    SDL_free(modes);
+    return out;
+}
+
 void App::initImGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -178,9 +219,6 @@ bool App::frame() {
         if (event.type == SDL_EVENT_QUIT) running = false;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
         if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
-        // Alt+Enter toggles fullscreen (function keys belong to the game's own hotkeys).
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT) && !event.key.repeat)
-            SDL_SetWindowFullscreen(window_, (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN) == 0);
     }
     if (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED) {
         SDL_Delay(50);
@@ -195,6 +233,20 @@ bool App::frame() {
 
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
+    const AppSettings& prefs = appSettings();
+    ImGui::GetIO().MouseDoubleClickTime = prefs.controls.doubleClickSeconds;
+    // The fullscreen toggle (Alt+Enter by default) switches between the window and borderless fullscreen.
+    if (prefs.controls.bindings.pressed(Action::ToggleFullscreen))
+        SDL_SetWindowFullscreen(window_, (SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN) == 0);
+    // Frame rate, for the optional counter.
+    ++fpsFrames_;
+    if (now - fpsWindowStart_ >= 500'000'000ull) {
+        fps_ = static_cast<float>(fpsFrames_) * 1e9f / static_cast<float>(now - fpsWindowStart_);
+        fpsFrames_ = 0;
+        fpsWindowStart_ = now;
+    }
+    if (prefs.graphics.showFps)
+        ImGui::GetForegroundDrawList()->AddText(ImVec2(6, 4), IM_COL32(255, 230, 120, 230), std::format("{:.0f} fps", fps_).c_str());
     int ww = 0, wh = 0, pw = 0, ph = 0;
     SDL_GetWindowSize(window_, &ww, &wh);
     SDL_GetWindowSizeInPixels(window_, &pw, &ph);
@@ -203,6 +255,14 @@ bool App::frame() {
 
     if (!mode_->update(fs)) running = false;
     ImGui::Render();
+
+    // Frame limit when vsync is off.
+    if (const int limit = prefs.graphics.frameLimit; limit > 0 && !prefs.graphics.vsync) {
+        const uint64_t period = 1'000'000'000ull / static_cast<uint64_t>(limit);
+        const uint64_t t = SDL_GetTicksNS();
+        if (nextFrameNs_ > t) SDL_DelayPrecise(nextFrameNs_ - t);
+        nextFrameNs_ = std::max(nextFrameNs_ + period, SDL_GetTicksNS());
+    }
 
     if (auto frameInfo = device_->beginFrame(mode_->clearColor())) {
         fs.frame = *frameInfo;

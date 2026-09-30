@@ -8,6 +8,7 @@
 
 #include "client/classic/art.hpp"
 #include "client/classic/session.hpp"
+#include "client/mode.hpp"
 #include "client/view_context.hpp"
 #include "game/state.hpp"
 
@@ -24,13 +25,22 @@ namespace opense4::client::classic {
 inline constexpr float kFrameW = 1024.0f;
 inline constexpr float kFrameH = 768.0f;
 
-// Frame (1024×768) <-> framebuffer pixels, recomputed each frame.
+// Frame <-> framebuffer pixels, recomputed each frame. The classic screens
+// are laid out in a 1024×768 frame; on a wider window the frame extends
+// equally to the left and right (x from `left` to `right`), so centred
+// windows stay centred and the main window can use the extra width.
 struct FrameMapping {
     float scale = 1.0f;
     Vec2 offset;
+    float left = 0.0f;
+    float right = kFrameW;
     Vec2 toFb(Vec2 p) const { return offset + p * scale; }
     Vec2 fromFb(Vec2 p) const { return (p - offset) / scale; }
+    float width() const { return right - left; }
 };
+
+// Scale and extent for a framebuffer, per the Graphics settings.
+FrameMapping frameMappingFor(float framebufferWidth, float framebufferHeight);
 
 // Every window of the classic client. The main window is not a Screen.
 enum class ScreenId {
@@ -47,6 +57,8 @@ enum class ScreenId {
     CombatReplay,
     // Files.
     SaveGame, LoadGame,
+    // Graphics, controls and sound.
+    Settings,
     Count
 };
 
@@ -100,6 +112,7 @@ public:
     float dt = 0.0f;
     UiRequests requests;
     std::function<void(ScreenId, ScreenArgs)> opener;
+    AppControl* app = nullptr;
 
     UiContext(ClassicSession& s, Art& a, const Fonts& f) : session(s), art(a), fonts(f) {}
 
@@ -113,6 +126,9 @@ public:
 
     // Frame pixels -> ImGui units.
     float k() const { return map.scale / fbScale; }
+    // A font size in frame pixels, with the Text size setting applied.
+    float fontPx(float framePixels) const { return framePixels * k() * textScale; }
+    float textScale = 1.0f;
     ImVec2 at(Vec2 framePos) const {
         const Vec2 p = map.toFb(framePos) / fbScale;
         return {p.x, p.y};

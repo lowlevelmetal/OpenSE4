@@ -32,13 +32,21 @@ Art::~Art() {
         if (t.id) device_.destroyTexture(t.id);
 }
 
+void Art::setFilter(gfx::Filter filter) {
+    if (filter == filter_) return;
+    filter_ = filter;
+    for (auto& [key, t] : textures_)
+        if (t.id) device_.destroyTexture(t.id);
+    textures_.clear();
+}
+
 const Art::Texture* Art::load(std::string_view relative, bool colorKey) {
     const std::string key = lower(relative) + (colorKey ? "#k" : "#o");
     if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? &it->second : nullptr;
     Texture t;
     if (auto path = files_.find(relative))
         if (auto img = assets::loadImage(*path, colorKey); img && !img->empty()) {
-            t.id = device_.createTexture(gfx::TextureDesc{img->width, img->height, gfx::Filter::Linear, key.c_str()}, img->rgba.data());
+            t.id = device_.createTexture(gfx::TextureDesc{img->width, img->height, filter_, key.c_str()}, img->rgba.data());
             t.width = img->width;
             t.height = img->height;
         }

@@ -116,6 +116,11 @@ public:
                 keep = false;
             }
             gap();
+            if (ImGui::Button("Settings", b)) {
+                ui.open(ScreenId::Settings);
+                keep = false;
+            }
+            gap();
             if (ImGui::Button("Delete Game", b)) {
                 ui.open(ScreenId::LoadGame, ScreenArgs{.index = 1});
                 keep = false;

@@ -1,7 +1,10 @@
 #include "client/classic/ui.hpp"
 
+#include "client/app_settings.hpp"
 #include "client/audio.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace opense4::client::classic {
@@ -93,13 +96,30 @@ ImU32 empireColor(const game::GameState& s, game::EmpireId e) {
     return IM_COL32((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff, 255);
 }
 
+FrameMapping frameMappingFor(float fw, float fh) {
+    const GraphicsSettings& g = appSettings().graphics;
+    constexpr float kMaxWide = kFrameH * 21.0f / 9.0f;  // wider screens get bars
+    const bool extended = g.widescreen == WidescreenLayout::Extended;
+    FrameMapping m;
+    float width = extended ? std::clamp(kFrameH * fw / std::max(1.0f, fh), kFrameW, kMaxWide) : kFrameW;
+    m.scale = std::min(fw / width, fh / kFrameH);
+    if (g.integerScaling && m.scale >= 1.0f) {
+        m.scale = std::floor(std::min(fw / kFrameW, fh / kFrameH));
+        if (extended) width = std::clamp(fw / m.scale, kFrameW, kMaxWide);
+    }
+    m.left = (kFrameW - width) * 0.5f;
+    m.right = kFrameW - m.left;
+    m.offset = {(fw - width * m.scale) * 0.5f - m.left * m.scale, (fh - kFrameH * m.scale) * 0.5f};
+    return m;
+}
+
 // ---- Dialog --------------------------------------------------------------------------------
 
 Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn) : ui_(ui), buttonColumn_(buttonColumn) {
     const Rect r = dialogRect(size);
     ImGui::SetNextWindowPos(ui.at(r.min), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ui.size(r.size()), ImGuiCond_Always);
-    ImGui::PushFont(ui.fonts.regular, 14.0f * ui.k());
+    ImGui::PushFont(ui.fonts.regular, ui.fontPx(14.0f));
     visible_ = ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
     if (visible_ && ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();

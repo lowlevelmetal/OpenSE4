@@ -1,5 +1,7 @@
 #include "client/classic/frontend.hpp"
 
+#include "client/classic/screens/screens.hpp"
+#include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
@@ -42,6 +44,8 @@ public:
             if (ImGui::Button("Load Game", bs)) ctx.go(FrontId::LoadGame);
             ImGui::SameLine();
             if (ImGui::Button("Multiplayer", bs)) ctx.go(FrontId::Multiplayer);
+            if (ImGui::Button("Settings", bs)) ctx.go(FrontId::Settings);
+            ImGui::SameLine();
             if (ImGui::Button("Quit Game", bs)) ctx.quit();
             ImGui::SameLine();
             ImGui::TextDisabled("OpenSE4 classic engine - data: %s", ctx.rules->data().dataDir.parent_path().filename().string().c_str());
@@ -102,6 +106,47 @@ public:
 private:
     int chosen_ = -1;
     std::string error_;
+};
+
+class SettingsFrontScreen final : public FrontScreen {
+public:
+    void draw(MenuContext& ctx) override {
+        background(ctx);
+        ImGui::SetNextWindowPos(ctx.at({13, 80}));
+        ImGui::SetNextWindowSize(ctx.size({998, 608}));
+        ImGui::PushFont(ctx.fonts.regular, 14.0f * ctx.k());
+        if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                                   ImGuiWindowFlags_NoSavedSettings)) {
+            if (ImGui::BeginTabBar("##pages")) {
+                if (ImGui::BeginTabItem("Graphics")) {
+                    ImGui::BeginChild("##g", ImVec2(0, -ctx.px(40)));
+                    if (ctx.app) graphicsSettingsPage(state_, *ctx.app, ctx.k());
+                    ImGui::EndChild();
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Controls")) {
+                    ImGui::BeginChild("##c", ImVec2(0, -ctx.px(40)));
+                    controlsSettingsPage(state_, ctx.k());
+                    ImGui::EndChild();
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Sound")) {
+                    ImGui::BeginChild("##s", ImVec2(0, -ctx.px(40)));
+                    soundSettingsPage(ctx.k());
+                    ImGui::EndChild();
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+            if (ImGui::Button("Back", ctx.size({140, 30})) || (!state_.capturing && ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
+                ctx.go(FrontId::Intro);
+        }
+        ImGui::End();
+        ImGui::PopFont();
+    }
+
+private:
+    SettingsPanelState state_;
 };
 
 class LoadGameScreen final : public FrontScreen {
@@ -191,6 +236,7 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
         case FrontId::GameSetup: return makeGameSetupScreen();
         case FrontId::LoadGame: return std::make_unique<LoadGameScreen>();
         case FrontId::Multiplayer: return makeMultiplayerScreen({});
+        case FrontId::Settings: return std::make_unique<SettingsFrontScreen>();
     }
     return nullptr;
 }
@@ -200,6 +246,7 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
     const std::string_view screen = name.substr(0, colon);
     const std::string_view page = colon == std::string_view::npos ? std::string_view{} : name.substr(colon + 1);
     if (datafile::keysEqual(screen, "intro")) return makeFrontScreen(FrontId::Intro);
+    if (datafile::keysEqual(screen, "settings")) return makeFrontScreen(FrontId::Settings);
     if (datafile::keysEqual(screen, "quickstart")) return makeFrontScreen(FrontId::QuickStart);
     if (datafile::keysEqual(screen, "setup") || datafile::keysEqual(screen, "newgame")) return makeGameSetupScreen(page);
     if (datafile::keysEqual(screen, "empiresetup")) return makeGameSetupScreen(std::string("empire:") + std::string(page));

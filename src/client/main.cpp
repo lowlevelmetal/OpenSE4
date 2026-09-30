@@ -69,6 +69,14 @@ int main(int argc, char** argv) {
     bool prototype = false;  // --prototype, or a prototype-only option was given
     using namespace opense4;
     client::AppOptions options;
+    // Start from the saved settings; command-line options override them for this run.
+    client::GraphicsSettings& saved = client::appSettings().graphics;
+    options.renderer = saved.renderer == client::RendererChoice::Vulkan   ? client::AppOptions::Renderer::Vulkan
+                       : saved.renderer == client::RendererChoice::OpenGL ? client::AppOptions::Renderer::OpenGL
+                                                                          : client::AppOptions::Renderer::Auto;
+    options.vsync = saved.vsync;
+    options.width = saved.windowWidth;
+    options.height = saved.windowHeight;
     options.setup.galaxy.seed = 0;
     options.setup.galaxy.systemCount = 0;  // 0 = rules default
 
@@ -91,11 +99,16 @@ int main(int argc, char** argv) {
             options.validation = true;
         } else if (key == "--no-vsync") {
             options.vsync = false;
+            saved.vsync = false;
         } else if (key == "--fullscreen") {
             options.fullscreen = true;
+            saved.displayMode = client::DisplayMode::Borderless;
         } else if (key == "--size") {
             const auto x = value.find('x');
             ok = x != std::string_view::npos && parseInt(value.substr(0, x), options.width) && parseInt(value.substr(x + 1), options.height);
+            saved.displayMode = client::DisplayMode::Windowed;
+            saved.windowWidth = options.width;
+            saved.windowHeight = options.height;
         } else if (key == "--seed") {
             ok = parseInt(value, options.setup.galaxy.seed);
         } else if (key == "--systems") {

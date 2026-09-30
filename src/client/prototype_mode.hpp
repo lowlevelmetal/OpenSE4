@@ -5,6 +5,7 @@
 
 #include "client/game_session.hpp"
 #include "client/mode.hpp"
+#include "client/settings_window.hpp"
 #include "client/ui/hud.hpp"
 #include "client/views/galaxy_view.hpp"
 #include "client/views/starfield.hpp"
@@ -38,6 +39,8 @@ private:
     Vec2 viewport() const;
 
     Platform platform_;
+    bool settingsOpen_ = false;
+    SettingsPanelState settingsState_;
     std::unique_ptr<GameSession> session_;
     Selection selection_;
     GalaxyView galaxy_;

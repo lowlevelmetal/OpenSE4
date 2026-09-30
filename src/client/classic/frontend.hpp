@@ -15,7 +15,7 @@
 
 namespace opense4::client::classic {
 
-enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer };
+enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Settings };
 
 struct MenuContext {
     std::shared_ptr<const game::Rules> rules;
@@ -25,6 +25,7 @@ struct MenuContext {
     float fbScale = 1.0f;
     double time = 0.0;
     uint64_t seed = 1;
+    AppControl* app = nullptr;
 
     // Starts a game (the mode switches to the main window).
     std::function<void(std::unique_ptr<ClassicSession>)> startGame;

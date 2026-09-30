@@ -71,6 +71,11 @@ std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs& args);
 // combat_replay.cpp
 std::unique_ptr<Screen> makeCombatReplay(const ScreenArgs& args);
 
+// settings_screen.cpp
+std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
+// The Sound page (classic sound and music preferences), shared with the front end.
+void soundSettingsPage(float px);
+
 // A stand-in for windows that are not written yet.
 std::unique_ptr<Screen> makePlaceholder(ScreenId id);
 

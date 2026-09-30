@@ -11,10 +11,30 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 struct SDL_Window;
 
 namespace opense4::client {
+
+struct DisplayModeInfo {
+    int width = 0;
+    int height = 0;
+    float refresh = 0.0f;
+};
+
+// What windows may ask of the application shell (the Settings window).
+class AppControl {
+public:
+    virtual ~AppControl() = default;
+    // Applies the display settings of appSettings() (window mode and size, vsync, limits).
+    virtual void applyGraphics() = 0;
+    // Exclusive fullscreen modes of the window's display, best first.
+    virtual std::vector<DisplayModeInfo> displayModes() const = 0;
+    virtual std::string rendererInfo() const = 0;
+    virtual gfx::Backend backend() const = 0;
+    virtual float fps() const = 0;
+};
 
 // Shell services available to a mode.
 struct Platform {
@@ -23,6 +43,7 @@ struct Platform {
     const Fonts* fonts = nullptr;
     std::filesystem::path assetsDir;  // our own assets (fonts)
     std::string rendererInfo;
+    AppControl* app = nullptr;
 };
 
 struct FrameState {

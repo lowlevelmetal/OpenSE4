@@ -18,6 +18,7 @@ set_source_files_properties(gfx/vulkan/vma_impl.cpp PROPERTIES COMPILE_OPTIONS "
 # --- the game executable --------------------------------------------------------------
 add_executable(opense4
     client/app.cpp
+    client/app_settings.cpp
     client/audio.cpp
     client/audio_playlist.cpp
     client/classic/art.cpp
@@ -53,6 +54,7 @@ add_executable(opense4
     client/classic/screens/registry.cpp
     client/classic/screens/research.cpp
     client/classic/screens/scrap.cpp
+    client/classic/screens/settings_screen.cpp
     client/classic/screens/setup.cpp
     client/classic/screens/setup_empire.cpp
     client/classic/screens/setup_model.cpp
@@ -67,6 +69,8 @@ add_executable(opense4
     client/classic/ui.cpp
     client/classic/widgets.cpp
     client/game_session.cpp
+    client/input.cpp
+    client/settings_window.cpp
     client/main.cpp
     client/prototype_mode.cpp
     client/ui/hud.cpp

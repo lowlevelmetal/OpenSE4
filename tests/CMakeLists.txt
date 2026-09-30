@@ -2,6 +2,7 @@ add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
     test_ai.cpp
+    test_app_settings.cpp
     test_audio.cpp
     test_classic_colony_logic.cpp
     test_client_logic.cpp
@@ -34,7 +35,9 @@ add_executable(opense4_tests
 # Code outside the libraries, tested directly: the server setup-file parser and
 # classic client logic without UI dependencies.
 target_sources(opense4_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/client/app_settings.cpp
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
@@ -42,7 +45,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game opense4_net doctest tomlplusplus opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game opense4_net doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

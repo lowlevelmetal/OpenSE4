@@ -1,5 +1,6 @@
 #pragma once
 
+#include "client/app_settings.hpp"
 #include "client/mode.hpp"
 #include "client/view_context.hpp"
 #include "gfx/device.hpp"
@@ -45,9 +46,16 @@ struct AppOptions {
 
 // The application shell: window, render device (Vulkan with OpenGL fallback),
 // Dear ImGui, the frame loop and screenshots. The game itself is a Mode.
-class App {
+class App final : public AppControl {
 public:
     int run(const AppOptions& options);
+
+    // AppControl.
+    void applyGraphics() override;
+    std::vector<DisplayModeInfo> displayModes() const override;
+    std::string rendererInfo() const override { return rendererInfo_; }
+    gfx::Backend backend() const override { return device_->backend(); }
+    float fps() const override { return fps_; }
 
 private:
     bool createWindowAndDevice();
@@ -66,6 +74,10 @@ private:
     bool imguiReady_ = false;
     Fonts fonts_;
     float uiScale_ = 1.0f;
+    float fps_ = 0.0f;
+    uint64_t fpsWindowStart_ = 0;
+    int fpsFrames_ = 0;
+    uint64_t nextFrameNs_ = 0;  // frame limiter
     std::string rendererInfo_;
 
     std::unique_ptr<Mode> mode_;

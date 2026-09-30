@@ -38,6 +38,8 @@ public:
     Art& operator=(const Art&) = delete;
 
     const assets::InstallFiles& files() const { return files_; }
+    // Texture filtering for everything loaded from now on; a change reloads the cache.
+    void setFilter(gfx::Filter filter);
 
     // A whole picture ("Pictures/Game/General.bmp"), black as transparent if colorKey.
     Sprite image(std::string_view relative, bool colorKey = true);
@@ -87,6 +89,7 @@ private:
     gfx::Device& device_;
     assets::InstallFiles files_;
     std::map<std::string, Texture> textures_;  // key: lowercase path + color-key flag; misses cached too
+    gfx::Filter filter_ = gfx::Filter::Linear;
 };
 
 } // namespace opense4::client::classic

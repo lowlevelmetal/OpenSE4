@@ -1,5 +1,8 @@
 #include "client/prototype_mode.hpp"
 
+#include "client/app_settings.hpp"
+#include "client/settings_window.hpp"
+
 #include "client/palette.hpp"
 #include "core/log.hpp"
 
@@ -119,13 +122,33 @@ bool PrototypeMode::update(const FrameState& fs) {
     hud_.draw(ctx, nav, screen_ == Screen::System);
 
     if (!io.WantCaptureKeyboard && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) nav.endTurn = true;
+        if (!io.KeyAlt && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))) nav.endTurn = true;
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
             if (screen_ == Screen::System) nav.toGalaxy = true;
             else selection_ = {};
         }
         if (ImGui::IsKeyPressed(ImGuiKey_G, false)) nav.toGalaxy = true;
         if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) nav.nextIdleShip = true;
+    }
+
+    // Settings (Ctrl+, by default): graphics and controls.
+    if (appSettings().controls.bindings.pressed(Action::Settings)) settingsOpen_ = !settingsOpen_;
+    if (settingsOpen_ && platform_.app) {
+        ImGui::SetNextWindowSize(ImVec2(720 * fs.uiScale, 560 * fs.uiScale), ImGuiCond_Appearing);
+        if (ImGui::Begin("Settings", &settingsOpen_, ImGuiWindowFlags_NoCollapse)) {
+            if (ImGui::BeginTabBar("##settings")) {
+                if (ImGui::BeginTabItem("Graphics")) {
+                    graphicsSettingsPage(settingsState_, *platform_.app, fs.uiScale);
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Controls")) {
+                    controlsSettingsPage(settingsState_, fs.uiScale);
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
     }
 
     if (screen_ == Screen::Galaxy) galaxy_.update(ctx, nav);

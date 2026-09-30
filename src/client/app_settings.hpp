@@ -1,0 +1,59 @@
+#pragma once
+
+// Preferences of this machine that are not about one game: graphics, display
+// and controls. Stored in <user data>/settings.toml. Command-line options
+// override them for one run without being saved.
+
+#include "client/input.hpp"
+
+#include <filesystem>
+#include <string>
+
+namespace opense4::client {
+
+enum class RendererChoice { Auto, Vulkan, OpenGL };
+enum class DisplayMode { Windowed, Borderless, Fullscreen };
+// How the classic 4:3 screens use a wider window.
+enum class WidescreenLayout { Extended, Classic };
+
+struct GraphicsSettings {
+    RendererChoice renderer = RendererChoice::Auto;  // applies when the game starts
+    DisplayMode displayMode = DisplayMode::Windowed;
+    int windowWidth = 1600;
+    int windowHeight = 900;
+    int fullscreenWidth = 0;     // exclusive fullscreen mode; 0 = the desktop mode
+    int fullscreenHeight = 0;
+    float fullscreenRefresh = 0.0f;
+    bool vsync = true;
+    int frameLimit = 0;          // frames per second without vsync; 0 = unlimited
+    WidescreenLayout widescreen = WidescreenLayout::Extended;
+    bool sharpPixels = false;    // nearest-neighbour scaling of the classic art
+    bool integerScaling = false; // scale the classic screens by whole multiples only
+    float textScale = 1.0f;      // text size in the classic windows
+    bool showFps = false;
+};
+
+struct ControlSettings {
+    Bindings bindings;
+    bool rightClickMoves = true;      // right-click on a sector gives Move To (not in the classic game)
+    float doubleClickSeconds = 0.30f;
+};
+
+struct AppSettings {
+    GraphicsSettings graphics;
+    ControlSettings controls;
+};
+
+AppSettings& appSettings();
+bool saveAppSettings();
+std::filesystem::path appSettingsFile();
+
+// TOML round trip (exposed for tests).
+std::string appSettingsToToml(const AppSettings& s);
+AppSettings appSettingsFromToml(std::string_view text, std::string* error = nullptr);
+
+const char* displayName(RendererChoice r);
+const char* displayName(DisplayMode m);
+const char* displayName(WidescreenLayout w);
+
+} // namespace opense4::client
