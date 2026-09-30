@@ -214,7 +214,7 @@ std::string Battle::check(const TacticalOrder& o) const {
             if (std::string e = checkPiece(o, true); !e.empty()) return e;
             if (o.group < 0 || o.group >= kGroups) return "Groups are numbered 0 to 9.";
             const Piece& p = pieces_[static_cast<size_t>(o.piece)];
-            if (p.isLeader || p.group >= 0 || leaderOf(o.piece) >= 0) return "It already belongs to a group.";
+            if (p.isLeader || p.group >= 0 || leaderOf(o.piece) >= 0 || p.fleetMember) return "It already belongs to a group.";
             int leader = -1;
             for (size_t k = 0; k < pieces_.size(); ++k)
                 if (pieces_[k].alive && pieces_[k].owner == o.empire && pieces_[k].isLeader && pieces_[k].group == o.group) leader = static_cast<int>(k);
@@ -228,7 +228,7 @@ std::string Battle::check(const TacticalOrder& o) const {
         case OK::ClearGroup: {
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
             const Piece& p = pieces_[static_cast<size_t>(o.piece)];
-            if (!p.isLeader && p.group < 0 && p.leader < 0) return "It is in no group.";
+            if (!p.isLeader && p.group < 0 && p.leader < 0 && !p.fleetMember) return "It is in no group.";
             return {};
         }
         case OK::ClearAllGroups: return {};
@@ -356,7 +356,8 @@ void Battle::execute(const TacticalOrder& o) {
         case OK::ClearGroup: leaveGroup(o.piece); return;
         case OK::ClearAllGroups:
             for (size_t k = 0; k < pieces_.size(); ++k)
-                if (pieces_[k].owner == e && (pieces_[k].isLeader || pieces_[k].group >= 0 || pieces_[k].leader >= 0)) leaveGroup(static_cast<int>(k));
+                if (pieces_[k].owner == e && (pieces_[k].isLeader || pieces_[k].group >= 0 || pieces_[k].leader >= 0 || pieces_[k].fleetMember))
+                    leaveGroup(static_cast<int>(k));
             return;
     }
 }
@@ -414,15 +415,15 @@ void Battle::launchOrder(const TacticalOrder& o) {
 void Battle::leaveGroup(int i) {
     // Clear Group Assignment clears only that piece: members of a cleared leader
     // keep their number and follow whichever piece leads it later (spec 04 §5).
-    // A fleet's group has no number: its members lose their leader (inferred).
-    Piece& p = pieces_[static_cast<size_t>(i)];
-    if (p.isLeader && !p.tacticalGroup) dissolve(i);
+    // A fleet's members keep the fleet's group, with no leader to follow, as
+    // when the leader leaves the formation (spec 03 §10).
     Piece& q = pieces_[static_cast<size_t>(i)];
     q.isLeader = false;
     q.leader = -1;
     q.group = -1;
     q.tacticalGroup = false;
     q.hasSlot = false;
+    q.fleetMember = false;
 }
 
 void Battle::setGroup(int i, int group, bool asLeader, int formation) {

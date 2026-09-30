@@ -607,6 +607,7 @@ void Battle::place() {
             pieces_[i].slotDx = dx;
             pieces_[i].slotDy = dy;
             pieces_[i].hasSlot = true;
+            pieces_[i].fleetMember = true;
             pieces_[leader].isLeader = true;
         }
     }
@@ -630,10 +631,10 @@ const Strategy& Battle::strategy(EmpireId e, uint32_t index) const {
 uint32_t Battle::strategyIndex(int i) const {
     const Piece& p = pieces_[i];
     // While in its fleet's combat group a ship uses the fleet strategy, afterwards its design's (history 1.84).
-    // A group a player formed in tactical combat is no fleet group (spec 04 §19.1).
+    // A member whose leader left the formation stays in the group, with the fleet
+    // strategy (spec 03 §10). A group a player formed in tactical combat is no fleet group (spec 04 §19.1).
     if (p.isLeader) return p.tacticalGroup ? p.designStrategy : p.fleetStrategy;
-    if (p.group < 0 && p.leader >= 0 && pieces_[p.leader].alive && pieces_[p.leader].isLeader && !pieces_[p.leader].tacticalGroup)
-        return p.fleetStrategy;
+    if (p.fleetMember) return p.fleetStrategy;
     return p.designStrategy;
 }
 
@@ -827,8 +828,11 @@ void Battle::afterDamage(int i) {
     if (!p.alive || p.kind == Kind::Obstacle || p.kind == Kind::Seeker) return;
     if (p.kind == Kind::Vehicle) detail::refreshShields(r_, s_, p.unit, shieldBonus(p.owner), disruption_, p.sh, false);
     else if (p.kind == Kind::Planet) planetShields(p, false);
-    p.mp = std::min(p.mp, computeMp(i));
+    const int allowance = computeMp(i);
+    p.mp = std::min(p.mp, allowance);
     refreshStats(i);
+    // The leader of an automated side left with 0 movement by damage dissolves its group (spec 03 §10).
+    if (pieces_[i].isLeader && allowance == 0 && pieces_[i].reach > 0 && (!isPlayer(pieces_[i].owner) || autoAll_)) dissolve(i);
 }
 
 void Battle::startRound() {
@@ -1386,6 +1390,13 @@ void Battle::act(int i) {
         pieces_[i].leader = -1;
         pieces_[i].group = -1;
         pieces_[i].hasSlot = false;
+        pieces_[i].fleetMember = false;
+    } else if (pieces_[i].isLeader && !pieces_[i].tacticalGroup && leavesFormation(i)) {
+        // A fleet's leader that leaves the formation clears only its own marks: its
+        // members stay in the group with the fleet strategy, but have no leader to
+        // follow and move on their own (spec 03 §10).
+        if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[i].owner, i});
+        pieces_[i].isLeader = false;
     }
     // Each piece: chooses a destination; fires first if that square is farther
     // (aim distance) from the target of its first ready weapon than its current
@@ -1416,8 +1427,11 @@ void Battle::act(int i) {
     logMove(i, mv.path);
     walk(i, mv.path);
     if (!pieces_[i].alive) return;
-    // The members follow, each toward its slot around the leader's new square (spec 04 §5).
-    if (leads)
+    // After the leader's move the group dissolves when every square on the map
+    // around it is taken (spec 03 §10); otherwise the members follow, each toward
+    // its slot around the leader's new square (spec 04 §5).
+    if (leads && pieces_[i].isLeader && surrounded(i)) dissolveByStrategy(i);
+    if (leads && pieces_[i].isLeader)
         for (size_t m = 0; m < pieces_.size(); ++m)
             if (pieces_[m].alive && leaderOf(static_cast<int>(m)) == i && pieces_[m].hasSlot && pieces_[m].mp > 0 && !acted_[m] &&
                 !leavesFormation(static_cast<int>(m)))
@@ -1911,9 +1925,34 @@ void Battle::kill(int t, int att) {
 }
 
 void Battle::dissolve(int leader) {
+    // The whole group: its members leave the fleet's group too (spec 03 §10).
     pieces_[leader].isLeader = false;
     for (Piece& p : pieces_)
-        if (p.leader == leader) p.leader = -1;
+        if (p.leader == leader) {
+            p.leader = -1;
+            p.hasSlot = false;
+            p.fleetMember = false;
+        }
+}
+
+void Battle::dissolveByStrategy(int leader) {
+    if (logging(leader))
+        for (size_t m = 0; m < pieces_.size(); ++m)
+            if (pieces_[m].leader == leader && pieces_[m].alive) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[leader].owner, static_cast<int>(m)});
+    if (logging(leader)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[leader].owner, leader});
+    dissolve(leader);
+}
+
+bool Battle::surrounded(int i) const {
+    const Piece& p = pieces_[i];
+    bool any = false;
+    for (int y = p.y - 1; y <= p.y + p.size; ++y)
+        for (int x = p.x - 1; x <= p.x + p.size; ++x) {
+            if ((x >= p.x && x < p.x + p.size && y >= p.y && y < p.y + p.size) || !onMap(x, y)) continue;
+            any = true;
+            if (isFree(x, y, i)) return false;
+        }
+    return any;
 }
 
 void Battle::capture(int t, int capturer, bool boarding) {
@@ -1937,6 +1976,7 @@ void Battle::capture(int t, int capturer, bool boarding) {
     pieces_[t].leader = -1;
     pieces_[t].group = -1;
     pieces_[t].hasSlot = false;
+    pieces_[t].fleetMember = false;
     pieces_[t].designStrategy = 0;   // (inferred) the captor's first strategy
     pieces_[t].fleetStrategy = 0;
     pieces_[t].droneTarget = -1;
@@ -2977,8 +3017,10 @@ void Battle::beginRound() {
 void Battle::endPhase() {
     ++phaseIndex_;
     dangerFor_ = {};   // the next side builds its own danger map
-    // The battle's end is checked only after a phase (confirmed: binary).
-    stage_ = over() ? Stage::Finished : Stage::Between;
+    // The battle's end is checked only after a phase (confirmed: binary); in the
+    // strategic window only after a whole combat turn, as for every battle
+    // without player sides (inferred, spec 04 §19.2 Q70).
+    stage_ = !strategic_ && over() ? Stage::Finished : Stage::Between;
 }
 
 bool Battle::isPlayer(EmpireId e) const { return std::find(players_.begin(), players_.end(), e) != players_.end(); }
@@ -2986,6 +3028,7 @@ bool Battle::isPlayer(EmpireId e) const { return std::find(players_.begin(), pla
 void Battle::setPlayers(std::vector<EmpireId> players, std::optional<std::vector<EmpireId>> release) {
     players_ = std::move(players);
     release_ = std::move(release);
+    strategic_ = players_.empty();
 }
 
 void Battle::advance() {
@@ -3005,6 +3048,10 @@ void Battle::advance() {
         }
         if (phaseIndex_ >= order_.size()) {
             roundOpen_ = false;
+            if (strategic_ && over()) {
+                stage_ = Stage::Finished;
+                return;
+            }
             ++round_;
             continue;
         }
@@ -3035,6 +3082,7 @@ void Battle::advance() {
 void Battle::run() {
     players_.clear();
     autoAll_ = false;
+    strategic_ = true;
     advance();
 }
 

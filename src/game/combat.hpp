@@ -19,8 +19,8 @@
 //   vehicles that moved into the sector this turn (Vehicle::cameFrom), one
 //   group per empire, or every vehicle there when none is marked (inferred
 //   fallback).
-//   combatPossible() is also true when only mines face a vehicle they can
-//   hurt, so the same call pair handles "a vehicle enters a mined sector".
+//   combatPossible() is also true when only mines face a vehicle they may
+//   strike, so the same call pair handles "a vehicle enters a mined sector".
 //   Destroyed vehicles get count = 0; the caller runs removeDeadVehicles().
 //   Combat does not clear orders (spec 03 §6.3): only ships that change owner
 //   lose theirs. Removing a leading Sentry order is movement's job. The
@@ -70,7 +70,8 @@
 //              seeker expires). A planet whose colony dies stays on the map as
 //              an unowned obstacle.
 //   Captured   piece changed owner; target = the capturer; amount = new owner id
-//   Launch     piece = new unit group, target = its carrier, amount = units;
+//   Launch     piece = a unit group, target = its carrier, amount = units launched
+//              (again for units that join it from the same Launch Units window);
 //              or piece = a troop ship, target = the planet, amount = troops landed
 //   Seeker     piece = new seeker, target = its target, amount = members, component
 // With Settings `Create Combat Replay` off, events are left out (pieces and

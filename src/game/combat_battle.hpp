@@ -98,6 +98,7 @@ struct Piece {
     bool tacticalGroup = false;       // leaders: a group a player formed (no fleet strategy)
     int slotDx = 0, slotDy = 0;       // formation offset before turning to the leader's facing
     bool hasSlot = false;             // members: a formation position to keep
+    bool fleetMember = false;         // in its fleet's combat group: it uses the fleet strategy (spec 03 §9)
     bool arrived = false;             // moved into the sector this turn: an attacker's piece
     bool warped = false;              // came through a warp point (another system)
     int boxDx = 0, boxDy = 0;         // the neighbouring sector it came from (start box)
@@ -291,6 +292,8 @@ private:
     void capture(int t, int capturer, bool boarding);
     void convertPlanet(int t, int converter);
     void dissolve(int leader);
+    void dissolveByStrategy(int leader);   // the same, as the strategies' orders (logged for player sides)
+    bool surrounded(int i) const;          // every square on the map around it is taken
     void pdReact(int mover);
     void moveSeekers(EmpireId e);
     void expire(int i);
@@ -397,6 +400,7 @@ private:
     std::vector<EmpireId> players_;
     std::optional<std::vector<EmpireId>> release_;
     bool autoAll_ = false;           // Auto: every empire by its strategies from the next phase on (spec 04 §4)
+    bool strategic_ = true;          // no player sides: the end is checked after whole combat turns
     std::vector<TacticalOrder>* strategyLog_ = nullptr;
 };
 

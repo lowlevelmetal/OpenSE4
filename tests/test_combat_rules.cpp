@@ -199,6 +199,36 @@ TEST_CASE("combat rules: cargo that no longer fits is lost at once, population f
     CHECK(cargoSpaceUsed(r, s, v.cargo) <= vehicleCargoCapacity(r, s, v));
 }
 
+// ---- Formations ------------------------------------------------------------------------------------------------
+
+TEST_CASE("combat rules: a fleet's first armed member anchors its group when the leader is away") {
+    // Spec 03 §9, §10: only armed members form the combat group; with the leader
+    // elsewhere, the first armed member in piece order anchors it.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const DesignId armed = frigate(s, ar.a, "Liner", 1, {"CT Gun"});
+    const DesignId unarmed = frigate(s, ar.a, "Tender", 1, {"Test Cargo Bay"});
+    const Location away{ar.loc.system, Sector{ar.loc.sector.x + 1, ar.loc.sector.y}};
+    const VehicleId absent = spawn(s, armed, away);
+    const VehicleId tender = spawn(s, unarmed, ar.loc);
+    const VehicleId first = spawn(s, armed, ar.loc), second = spawn(s, armed, ar.loc);
+    Fleet f;
+    f.owner = ar.a;
+    f.members = {absent, tender, first, second};
+    f.leader = absent;
+    f.formation = 0;
+    const FleetId fid = s.addFleet(f).id;
+    for (VehicleId v : f.members) s.vehicle(v)->fleet = fid;
+    warpIn(s, spawn(s, design(s, ar.b, "Target", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc));
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{ar.loc, std::vector<VehicleId>{}, {ar.a}});
+    REQUIRE(b.started());
+    const combat::TacticalPiece& lead = b.pieces()[static_cast<size_t>(pieceIndex(b, first))];
+    CHECK(lead.isLeader);
+    CHECK(b.pieces()[static_cast<size_t>(pieceIndex(b, second))].leader == pieceIndex(b, first));
+    CHECK(b.pieces()[static_cast<size_t>(pieceIndex(b, tender))].leader == -1);
+    CHECK_FALSE(b.pieces()[static_cast<size_t>(pieceIndex(b, tender))].isLeader);
+}
+
 // ---- Mines ---------------------------------------------------------------------------------------------------
 
 TEST_CASE("combat rules: mines strike unit groups by the unit group rule") {

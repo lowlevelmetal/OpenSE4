@@ -106,10 +106,13 @@ void playByHand(TacticalBattle& b, EmpireId me) {
 // ---- One set of rules, two kinds of control ------------------------------------------------------
 
 TEST_CASE("tactical: a battle stepped with the strategies' orders is the strategic battle") {
-    // For each battle: (1) strategic resolution; (2) the player sides on Auto,
-    // which records the strategies' orders; (3) those orders given by hand;
-    // (4) the accepted orders replayed as a script. All four end in the same state.
-    int battles = 0, orders = 0;
+    // For each battle: (1) strategic resolution; (2) the player sides played by
+    // the strategies (AutoPhase), which records their orders; (3) those orders
+    // given by hand; (4) the accepted orders replayed as a script. (2) to (4) end
+    // in the same state. So does (1), except that a battle with player sides ends
+    // after the phase in which the last enemy falls, a strategic one only after
+    // the whole combat turn (spec 04 §4): up to then both record the same events.
+    int battles = 0, orders = 0, whole = 0;
     for (int variant = 0; variant < 20; ++variant)
         for (uint64_t seed = 1; seed <= 3; ++seed) {
             CAPTURE(variant);
@@ -119,13 +122,27 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
                                             : control == 1 ? std::vector<EmpireId>{EmpireId{1u}}
                                                            : std::vector<EmpireId>{EmpireId{0u}, EmpireId{1u}};
             auto [start, where] = battleScenario(variant, seed);
-            const uint64_t expected = stateChecksum(strategic(start, where));
+            const GameState resolved = strategic(start, where);
             const TacticalBattle::Setup setup{where, std::nullopt, players};
 
             TacticalBattle autoBattle(combatRules(), start, setup);
             REQUIRE(autoBattle.started());
             const std::vector<std::vector<TacticalOrder>> phases = playAuto(autoBattle);
-            CHECK(stateChecksum(autoBattle.state()) == expected);
+            const uint64_t expected = stateChecksum(autoBattle.state());
+            {
+                const std::vector<CombatEvent>& mine = autoBattle.record().events;
+                const std::vector<CombatEvent>& theirs = resolved.combats.back().events;
+                REQUIRE(mine.size() <= theirs.size());
+                bool prefix = true;
+                for (size_t i = 0; i < mine.size() && prefix; ++i)
+                    prefix = mine[i].kind == theirs[i].kind && mine[i].piece == theirs[i].piece && mine[i].target == theirs[i].target &&
+                             mine[i].amount == theirs[i].amount && mine[i].x == theirs[i].x && mine[i].y == theirs[i].y;
+                CHECK(prefix);
+                if (mine.size() == theirs.size()) {
+                    CHECK(expected == stateChecksum(resolved));
+                    ++whole;
+                }
+            }
 
             TacticalBattle byHand(combatRules(), start, setup);
             size_t phase = 0;
@@ -158,6 +175,7 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
         }
     CHECK(battles == 60);
     CHECK(orders > 1000);
+    CHECK(whole > 30);
 }
 
 TEST_CASE("tactical: without player sides the battle is fought at once, as strategic resolution fights it") {
