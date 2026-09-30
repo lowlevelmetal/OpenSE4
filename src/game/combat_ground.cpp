@@ -213,7 +213,7 @@ GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs
     settle(def, out.defendersLost);
     for (const Stack& st : def)
         if (st.cargo == SIZE_MAX) *f.militia = st.count;   // the survivors are the new pool
-    std::erase_if(cargo.units, [](const UnitStack& u) { return u.count <= 0; });
+    // Empty stacks stay in the cargo so that stack indices remain valid for the caller.
 
     out.attackersGone = alive(att, true) == 0;
     out.captured = !out.attackersGone && alive(def, true) == 0;
@@ -290,6 +290,7 @@ void runGroundCombat(TurnContext& ctx) {
             fight.militia = &c->militia;
             fight.groundDefensePercent = sumValue1(colonyAbilities(r, s, *c), AbilityKind::PlanetChangeGroundDefense);
             const detail::GroundOutcome o = detail::fightGround(r, s, *cs, fight, *rng);
+            std::erase_if(c->cargo.units, [](const UnitStack& u) { return u.count <= 0; });
             logGround(ctx, *c, e, defender, o);
             if (o.captured) detail::capturePlanet(ctx, *c, e);
         }

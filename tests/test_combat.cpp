@@ -122,6 +122,7 @@ ruleset::Ruleset buildCombatRuleset() {
     gun(rs, "CT Odd Gun", WK::DirectFire, {15, 25}, "Normal");
     gun(rs, "CT Puller", WK::DirectFire, {6, 6, 6, 6, 6, 6, 6, 6}, "Pulls Target");
     gun(rs, "CT Quad Gun", WK::DirectFire, {15, 15, 15}, "Quad Damage To Shields");
+    gun(rs, "CT Slow Gun", WK::DirectFire, std::vector<int>(20, 4), "Normal").weapon.reloadRate = 3;
 
     ruleset::VehicleSize platform;
     platform.name = platform.shortName = "CT Platform Hull";
@@ -1231,6 +1232,30 @@ TEST_CASE("combat: platforms shield the population until destroyed") {
     CHECK(s.colony(planet)->cargo.unitCount(fortress) == 2);
     CHECK(s.colony(planet)->totalPopulation() == 1000);
     CHECK(moodCount(ctx, ar.b, "1M Population Killed") == 0);
+}
+
+TEST_CASE("combat: each platform weapon fires on its own and keeps its reload") {
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& home = homeworld(s, ar.b);
+    home.population = {{ar.b, 1000}};
+    const DesignId platform = design(s, ar.b, "Mortar", "CT Platform Hull", {"CT Big Armor", "CT Slow Gun"});
+    home.cargo.units.push_back({platform, 2});
+    spawn(s, frigate(s, ar.a, "Tank", 2, {"CT Big Armor", "CT Big Armor", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+    REQUIRE(s.combats.size() == 1);
+    const CombatRecord& rec = s.combats.front();
+    std::map<int, int> perRound;
+    for (const CombatEvent& e : rec.events)
+        if (e.kind == CombatEvent::Kind::Fire && rec.pieces[e.piece].kind == CombatPiece::Kind::Planet) ++perRound[e.round];
+    REQUIRE_FALSE(perRound.empty());
+    // Two platforms, one gun each: two shots in a turn, then two turns of reloading.
+    for (const auto& [round, n] : perRound) {
+        CHECK(n == 2);
+        CHECK(perRound.count(round + 1) == 0);
+        CHECK(perRound.count(round + 2) == 0);
+    }
 }
 
 TEST_CASE("combat: planet-only weapons") {

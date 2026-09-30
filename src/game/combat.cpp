@@ -1049,13 +1049,13 @@ std::vector<std::vector<VehicleId>> enteringGroups(const Rules& r, const GameSta
         if (!g.empty()) groups.push_back(std::move(g));
         return groups;
     }
-    std::vector<const Vehicle*> all, moved;
+    // Once movement records arrivals (any vehicle moved this turn), only the
+    // vehicles that moved into this sector are struck. Without any record
+    // (a battle outside the movement phase), every vehicle there counts (inferred).
+    const bool recorded = std::any_of(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.count > 0 && arrivedThisTurn(s, v); });
+    std::vector<const Vehicle*> base;
     for (const Vehicle& v : s.vehicles)
-        if (eligible(v)) {
-            all.push_back(&v);
-            if (arrivedThisTurn(s, v)) moved.push_back(&v);
-        }
-    const std::vector<const Vehicle*>& base = moved.empty() ? all : moved;
+        if (eligible(v) && (!recorded || arrivedThisTurn(s, v))) base.push_back(&v);
     std::map<uint32_t, std::vector<VehicleId>> byOwner;
     for (const Vehicle* v : base) byOwner[v->owner.value].push_back(v->id);
     for (auto& [owner, ids] : byOwner) groups.push_back(std::move(ids));

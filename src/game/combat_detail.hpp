@@ -174,6 +174,7 @@ bool hasDestroyedRegeneratingArmor(const Rules& r, const GameState& s, const Veh
 struct GroundFight {
     EmpireId attacker, defender;
     Cargo* cargo = nullptr;                               // the planet's cargo: invaders, defending troops, other units
+                                                          // (losses lower the counts; empty stacks are left in place)
     const std::vector<PopulationGroup>* population = nullptr;
     int* militia = nullptr;                               // the colony's militia pool (-1: raise it now)
     int64_t groundDefensePercent = 0;                     // Planet - Change Ground Defense
@@ -195,7 +196,8 @@ int groundModifier(const Rules& r, const Empire& e);
 
 // The groups that entered a sector for the mines: the given vehicles as one
 // group, or (none given) the vehicles that moved in this turn, one group per
-// empire, or every vehicle there by empire when none is marked (inferred).
+// empire; when no vehicle anywhere is marked as moved this turn, every
+// vehicle there, by empire (inferred).
 std::vector<std::vector<VehicleId>> enteringGroups(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering);
 bool minesCanStrike(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> entering);
 void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> entering, Rng& rng);

@@ -1391,7 +1391,10 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
         Piece& a = pieces_[i];
         if ((a.kind == Kind::Vehicle || a.kind == Kind::UnitGroup) && detail::usesSupply(r_, s_, a.unit)) {
             if (a.unit.supply <= 0) return;   // zero supplies: cannot fire (confirmed: binary)
-            a.unit.supply = std::max<int64_t>(0, a.unit.supply - int64_t{detail::supplyPerShot(r_, w.de)} * n);
+            // Supply Amount Used times the weapons fired together (confirmed: binary). A
+            // group's supply is kept per unit here, so each fighter pays for its own guns.
+            const int perHolder = a.kind == Kind::UnitGroup ? w.perUnit : n;
+            a.unit.supply = std::max<int64_t>(0, a.unit.supply - int64_t{detail::supplyPerShot(r_, w.de)} * perHolder);
         }
         a.weapons[wi].reload[k] = w.reloadRate;
         a.fired = true;
@@ -1930,7 +1933,6 @@ void Battle::launchUnits(EmpireId e) {
                 *rate -= count;
             }
         }
-        if (kind == Kind::Planet) buildPlanetWeapons(pieces_[k]);
         refreshStats(i);
     }
 }
@@ -2420,7 +2422,6 @@ void Battle::dropTroops(int i, int t) {
                                          pl.name, o.rounds, o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost,
                                          o.captured ? "; the planet fell" : o.attackersGone ? "; the invasion failed" : ""));
     if (!o.captured) {
-        buildPlanetWeapons(pieces_[t]);
         afterDamage(t);
         return;
     }
@@ -2431,7 +2432,6 @@ void Battle::dropTroops(int i, int t) {
     won.capturedBy = attacker;
     won.militia = -1;
     if (won.isLeader) dissolve(t);
-    buildPlanetWeapons(won);
     planetShields(won, false);
     refreshStats(t);
     event(Ev::Captured, t, i, static_cast<int>(attacker.value));

@@ -238,3 +238,30 @@ TEST_CASE("replay: shots, hits and odd records") {
     CHECK(b.atEnd());
     CHECK(b.round() == 6);
 }
+
+TEST_CASE("replay: planets and obstacles cover 4x4 squares; a lost colony stays on the map") {
+    CombatRecord r;
+    r.participants = {EmpireId{0u}, EmpireId{1u}};
+    CombatPiece star = piece(CombatPiece::Kind::Obstacle, 0, 40, 40);
+    star.owner = EmpireId{};
+    r.pieces = {piece(CombatPiece::Kind::Vehicle, 0, 30, 31), piece(CombatPiece::Kind::Planet, 1, 37, 29), star};
+    r.events = {ev(K::Fire, 1, 0, 1), ev(K::Hit, 1, 0, 1, 30, 31, 100), ev(K::Destroyed, 1, 1, 0, 37, 29)};
+    CombatPlayback p(r);
+    const auto& pc = p.pieces();
+    CHECK(pc[0].size == 1);
+    CHECK(pc[1].size == 4);
+    CHECK(pc[2].size == 4);
+    CHECK(pc[2].neutral);
+    CHECK_FALSE(pc[1].neutral);
+    // The bounds hold the whole footprint of the big pieces.
+    CHECK(p.bounds().minX == 30);
+    CHECK(p.bounds().maxX == 43);
+    CHECK(p.bounds().maxY == 43);
+    // The ship faces the planet, not the neutral star.
+    CHECK(pc[0].heading == doctest::Approx(std::atan2(7.0f, 2.0f)));
+    p.seekEvent(p.eventCount());
+    CHECK(pc[1].onMap);   // the planet stays as an unowned obstacle
+    CHECK(pc[1].neutral);
+    CHECK_FALSE(pc[1].owner.valid());
+    CHECK_FALSE(pc[1].destroyed);
+}
