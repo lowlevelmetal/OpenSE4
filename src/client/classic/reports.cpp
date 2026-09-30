@@ -229,7 +229,8 @@ namespace {
 
 // A human player who opens the report of a foreign vehicle its long-range
 // scanners reach learns the designs the report shows (spec 05 §8 "Design
-// knowledge"): the command is given once a turn, when it would date one.
+// knowledge"): the command is given once a turn, when it would date one
+// (inferred, spec 05 open question 42).
 void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();

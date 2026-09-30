@@ -1286,7 +1286,8 @@ private:
     }
 
     // A group completes at most this many orders in one run (spec 05 §8
-    // "Turn-based game" step 3, confirmed: binary).
+    // "Turn-based game" step 3, confirmed: binary); an order that leaves the
+    // head of the list counts (inferred, spec 05 open question 44).
     static constexpr int kLiveOrderLimit = 21;
 
     void liveActor(Actor& a) {

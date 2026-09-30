@@ -192,7 +192,8 @@ void giveOrders(LiveContext& lc, EmpireId e, std::vector<Command> commands) {
 // Everything logged since the empire's previous political step, among what
 // is dated this game turn or the one before: the rest of its own last turn,
 // the turns of the players after it and those of the players before it in
-// this game turn (confirmed: binary).
+// this game turn (confirmed: binary). The marks are OpenSE4's way of knowing
+// what was counted (spec 05 open question 43).
 ai::PoliticalWindow politicalWindow(const GameState& s, EmpireId e) {
     ai::PoliticalWindow w;
     w.andLater = true;

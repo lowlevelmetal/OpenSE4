@@ -665,7 +665,7 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     const auto& names = r.data().names;
     if (taken(e.name) && !names.empireNames.empty()) e.name = names.empireNames[rng.below(names.empireNames.size())];
     // A new leader name and the pictures of an unused neutral race (the
-    // former owner's when none is left, inferred).
+    // former owner's when none is left, inferred, spec 05 open question 40).
     if (!names.emperorNames.empty()) e.leaderName = names.emperorNames[rng.below(names.emperorNames.size())];
     std::vector<const ruleset::RacePreset*> pictures;
     for (const ruleset::RacePreset& p : r.racePresets())
@@ -911,7 +911,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // owner can still build. It is dated as seen this turn and is not
             // copied into the thief's designs; with no such design the
             // operation fails (spec 05 §2.3, §8, confirmed: binary). "Built at
-            // least once" reads Design::built (inferred).
+            // least once" reads Design::built (inferred, spec 05 open question 40).
             if (!victim || !living(s, t.source)) return out;
             const bool units = e == Effect::UnitDesignsSteal;
             const Knowledge& known = s.empire(t.source).knowledge;
@@ -1398,7 +1398,7 @@ bool inSystem(const GameState& s, ObjectId o) {
 
 // An empire's home planet location, system and sector (spec 05 §4): where a
 // capital colony (Colony::homeworld) lies (inferred: the engine keeps no other
-// home location).
+// home location; spec 05 open question 41).
 bool atHomeLocation(const GameState& s, Location where) {
     for (const auto& c : s.colonies)
         if (c && c->homeworld && inSystem(s, c->planet) && locationOf(s.galaxy, c->planet) == where) return true;

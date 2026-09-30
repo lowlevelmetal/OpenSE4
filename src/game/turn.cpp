@@ -110,7 +110,7 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // 16. Each ship, base, fighter group and drone group records its current
     // sector as the one it comes from: in a turn-based game a vehicle that
     // moved in its owner's turn counts as an arrival only until now (spec 05
-    // §8 step 16, spec 04 §3, confirmed: binary).
+    // §8 step 16, spec 04 §3, confirmed: binary; which vehicles, open question 45).
     resetCameFrom(ctx.rules, s, e);
     // 17. Ground combat where the empire's troops invade an enemy planet.
     combat::runGroundCombat(ctx, e);
