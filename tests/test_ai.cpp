@@ -2148,6 +2148,13 @@ TEST_CASE("ai: satellites and drones above the kept shares are launched from pla
     CHECK(atPlanet == (planetTarget ? set.antiPlanetDronesPerTarget : 0));
     CHECK(p.dropped.empty());
 
+    // Satellites alone are launched too.
+    homeworld(s, cpu).cargo.units = {{sat, 10}};
+    ai::detail::Planner only(r, s, cpu, ai::detail::Mode::Computer, 3);
+    ai::detail::planMinesSatellitesDrones(only);
+    REQUIRE(only.st.colony(planet)->orders.size() == 1);
+    CHECK(only.st.colony(planet)->orders.front().amount == 6);
+
     // Launched satellites still count toward the total: 6 in space and 4 in
     // cargo keep 4, so nothing more is launched.
     homeworld(s, cpu).cargo.units = {{sat, 4}};
@@ -2176,29 +2183,33 @@ TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
         s.messages.push_back(m);
         return m.id;
     };
+    // Acknowledgements are marked answered on delivery (they need no answer).
     const MessageId proposal = message(a, b, MessageType::ProposeTreaty, 3);
-    s.messages.back().answered = true;
-    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // too old to answer now
+    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // too old to reply to now
     const MessageId chatter = message(b, a, MessageType::General, 4);      // plain chatter gets no reply
     const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4);
     s.messages.back().inReplyTo = proposal;
+    for (DiplomaticMessage& m : s.messages) m.answered = true;
 
-    std::vector<cmd::AnswerMessage> answers;
+    auto replies = [&](const std::vector<Command>& cmds) {
+        std::vector<DiplomaticMessage> out;
+        for (const Command& c : cmds)
+            if (const auto* send = as<cmd::SendMessage>(c); send && send->message.to == b && send->message.inReplyTo.valid())
+                out.push_back(send->message);
+        return out;
+    };
     const auto cmds = ai::planTurn(r, s, a);
-    for (const Command& c : cmds)
-        if (const auto* ans = as<cmd::AnswerMessage>(c)) answers.push_back(*ans);
-    REQUIRE(answers.size() == 1);
-    CHECK(answers[0].message == accepted);
-    CHECK(answers[0].text == std::format("{} welcomes the agreement.", s.empire(a).name));
+    const auto sent = replies(cmds);
+    REQUIRE(sent.size() == 1);
+    CHECK(sent[0].inReplyTo == accepted);
+    CHECK(sent[0].type == MessageType::General);
+    CHECK(sent[0].text == std::format("{} welcomes the agreement.", s.empire(a).name));
     CHECK(applyAll(r, s, a, cmds).empty());
-    const auto reply = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& m) { return m.inReplyTo == accepted; });
-    REQUIRE(reply != s.messages.end());
-    CHECK(reply->type == MessageType::General);
-    CHECK(reply->from == a);
-    for (const DiplomaticMessage& m : s.messages)
-        if (m.id == stale || m.id == chatter) CHECK_FALSE(m.answered);
-    // Answered once: nothing more next time.
-    for (const Command& c : ai::planTurn(r, s, a)) CHECK(as<cmd::AnswerMessage>(c) == nullptr);
+    for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != stale);
+    for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != chatter);
+    // Acknowledged once: nothing more next turn.
+    for (Relation& rel : s.empire(a).relations) rel.messageSentThisTurn = false;
+    CHECK(replies(ai::planTurn(r, s, a)).empty());
 }
 
 TEST_CASE("ai: Construction_Units rows fill the cargo of colonies whose queue is empty") {

@@ -593,6 +593,9 @@ Order launchOrder(DesignId unit, int64_t amount) {
     return o;
 }
 
+void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& planets, std::map<ObjectId, std::vector<Order>>& orders,
+                  std::map<std::pair<ObjectId, DesignId>, int64_t>& left);
+
 // Spec 05 §7.5: satellites and drones in planet cargo above the kept shares
 // are launched, as planet orders (spec 03 §12). Drones go half after ships and
 // half after planets of empires at War with us, each half capped at targets x
@@ -629,8 +632,18 @@ void launchFromPlanets(Planner& p, bool roomForUnits) {
     }
 
     // Drones: the quota split in two halves (the odd one goes after ships; inferred).
-    const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent);
-    if (drones <= 0) return;
+    if (const int64_t drones = launchQuota(unitTotals(p, VehicleType::Drone), set.dronesKeptPercent); drones > 0)
+        launchDrones(p, drones, planets, orders, left);
+
+    for (auto& [planet, list] : orders) {
+        if (list.empty() || p.st.colony(planet)->orders == list) continue;
+        p.emit(cmd::SetOrders{.orders = std::move(list), .planet = planet});
+    }
+}
+
+void launchDrones(Planner& p, int64_t drones, const std::vector<ObjectId>& planets, std::map<ObjectId, std::vector<Order>>& orders,
+                  std::map<std::pair<ObjectId, DesignId>, int64_t>& left) {
+    const SettingsTable& set = p.prof.settings;
     std::vector<std::pair<SystemId, Order>> shipTargets, planetTargets;
     for (const Threat& t : p.sit.enemyInTerritory) {
         const Vehicle* v = t.vehicle.valid() ? p.st.vehicle(t.vehicle) : nullptr;
@@ -680,11 +693,6 @@ void launchFromPlanets(Planner& p, bool roomForUnits) {
     };
     sendHalf(shipTargets, (drones + 1) / 2, set.antiShipDronesPerTarget, set.antiShipDroneRange, "Anti-Ship Drone");
     sendHalf(planetTargets, drones / 2, set.antiPlanetDronesPerTarget, set.antiPlanetDroneRange, "Anti-Planet Drone");
-
-    for (auto& [planet, list] : orders) {
-        if (list.empty() || p.st.colony(planet)->orders == list) continue;
-        p.emit(cmd::SetOrders{.orders = std::move(list), .planet = planet});
-    }
 }
 
 } // namespace

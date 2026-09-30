@@ -684,13 +684,7 @@ struct Applier {
             case MessageType::CounterTrade: reply.type = c.accept ? MessageType::AcceptTrade : MessageType::RefuseTrade; break;
             case MessageType::Gift:
             case MessageType::Tribute: reply.type = c.accept ? MessageType::AcceptGift : MessageType::RefuseGift; break;
-            default:
-                // A demand or request gets its verdict; anything else (an
-                // acknowledgement such as Accept Treaty) a plain chatter reply.
-                reply.type = it->type >= MessageType::DemandGift && it->type <= MessageType::DemandStopAttacks
-                                 ? (c.accept ? MessageType::AcceptDemand : MessageType::RefuseDemand)
-                                 : MessageType::General;
-                break;
+            default: reply.type = c.accept ? MessageType::AcceptDemand : MessageType::RefuseDemand; break;
         }
         s.messages.push_back(std::move(reply));
         return {};
