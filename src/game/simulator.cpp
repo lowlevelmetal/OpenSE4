@@ -5,12 +5,15 @@
 #include "game/simulator.hpp"
 
 #include "game/combat.hpp"
+#include "game/combat_detail.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/setup.hpp"
 
 #include <algorithm>
+#include <array>
 #include <format>
+#include <optional>
 #include <map>
 #include <tuple>
 
@@ -38,6 +41,18 @@ SystemId homeSystem(const GameState& s, EmpireId viewer) {
         if (c && c->owner == viewer && c->homeworld) return s.galaxy.object(c->planet).system;
     return {};
 }
+
+// The home planet's sector, where the battle stands (spec 04 §17).
+std::optional<Location> homeSector(const GameState& s, EmpireId viewer) {
+    for (const auto& c : s.colonies)
+        if (c && c->owner == viewer && c->homeworld) return locationOf(s.galaxy, c->planet);
+    return std::nullopt;
+}
+
+// Start positions by side number, as if arriving from a neighbouring sector
+// (confirmed: binary): 1 north, 2 south, 3 west, 4 east, 5 north-west, 6
+// south-west, 7 north-east, 8 south-east; sides 9 and 10 start in the middle.
+constexpr std::array<std::pair<int, int>, 8> kSideArrival{{{0, -1}, {0, 1}, {-1, 0}, {1, 0}, {-1, -1}, {-1, 1}, {1, -1}, {1, 1}}};
 
 } // namespace
 
@@ -99,6 +114,7 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
     const EmpireId viewer = setup.viewer;
     if (!viewer.valid() || viewer.index() >= s.empires.size()) return "No empire to simulate for.";
     if (setup.sides.size() < 2) return "A battle needs at least two sides.";
+    if (setup.sides.size() > static_cast<size_t>(kSimulatorMaxSides)) return std::format("At most {} sides.", kSimulatorMaxSides);
     const std::vector<ObjectId> samples = simulatorPlanets(s, viewer);
     const size_t strategies = std::max<size_t>(1, s.empire(viewer).strategies.size());
     std::vector<int> used(setup.sides.size(), 0);
@@ -152,7 +168,14 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
     const EmpireId viewer = setup.viewer;
     if (setup.seed != 0) sb.rng = Rng(setup.seed);
 
-    // An empty system for the battle: the home system's type (for its picture), nothing else.
+    // The home sector's interference and disruption apply; the system modifier
+    // totals are never worked out (spec 04 §17). The battle itself is fought in
+    // an empty system of the home system's type (for its picture), so that
+    // nothing else in the home sector takes part (inferred).
+    if (const std::optional<Location> home = homeSector(real, viewer)) {
+        sim.interference = detail::sensorInterference(real, *home);
+        sim.disruption = detail::shieldDisruption(real, *home);
+    }
     StarSystem arena;
     arena.id = SystemId{sb.galaxy.systems.size()};
     arena.name = "Combat Simulator";
@@ -162,10 +185,20 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
     sb.galaxy.systems.push_back(arena);
     sim.where = Location{arena.id, Sector{kSystemCenter, kSystemCenter}};
 
-    // One empire per side: a copy of the viewer's, at war with every other side.
-    const Empire& model = real.empire(viewer);
+    // One empire per side: a copy of the real empire that owns the side's first
+    // item (the viewer's for a planet or an empty side), at war with every
+    // other side. Every side uses the viewer's strategies (inferred).
     for (size_t k = 0; k < setup.sides.size(); ++k) {
-        Empire e = model;
+        EmpireId owner = viewer;
+        for (const SimulatorItem& item : setup.items)
+            if (item.side == static_cast<int>(k)) {
+                if (item.kind == SimulatorItem::Kind::Design && validDesign(real, item.design) && real.design(item.design).owner.valid() &&
+                    real.design(item.design).owner.index() < real.empires.size())
+                    owner = real.design(item.design).owner;
+                break;
+            }
+        Empire e = real.empire(owner);
+        e.strategies = real.empire(viewer).strategies;
         e.id = EmpireId{sb.empires.size()};
         e.name = setup.sides[k].name.empty() ? std::format("Side {}", k + 1) : setup.sides[k].name;
         e.kind = setup.sides[k].computer ? PlayerKind::Computer : PlayerKind::Human;
@@ -206,7 +239,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
         c.owner = sim.sides[side];
         c.strategy = strategy;
         c.obsolete = false;
-        c.built = c.lost = c.kills = 0;
+        c.built = c.lost = 0;
         c.enemyTonnageDestroyed = 0;
         const DesignId id = addDesign(sb, std::move(c));
         copies.emplace(key, id);
@@ -282,6 +315,21 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             if (item.fleet >= 0) fleetMembers[static_cast<size_t>(item.fleet)].push_back(id);
         }
     }
+    // Start positions by side number; a side that owns a planet or a base starts in the middle.
+    for (size_t k = 0; k < sim.sides.size() && k < kSideArrival.size(); ++k) {
+        bool middle = false;
+        for (const SimulatorItem& item : setup.items)
+            if (item.side == static_cast<int>(k) &&
+                (item.kind == SimulatorItem::Kind::Planet || r.hull(real.design(item.design).hull).type == VehicleType::Base))
+                middle = true;
+        if (middle) continue;
+        const auto [dx, dy] = kSideArrival[k];
+        for (Vehicle& v : sb.vehicles)
+            if (v.owner == sim.sides[k] && v.location == sim.where) {
+                v.cameFrom = Location{sim.where.system, Sector{sim.where.sector.x + dx, sim.where.sector.y + dy}};
+                v.cameFromTurn = sb.turn;
+            }
+    }
     for (size_t f = 0; f < setup.fleets.size(); ++f) {
         if (fleetMembers[f].empty()) continue;
         const SimulatorFleet& spec = setup.fleets[f];
@@ -299,8 +347,12 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
 }
 
 TacticalBattle startSimulation(const Rules& r, Simulation sim) {
-    // No minefields in the simulator: nobody entered, so no mines strike.
+    // No minefields in the simulator: nobody entered, so no mines strike. Only
+    // side 1 gets hand control back when Auto is released (spec 04 §4).
     TacticalBattle::Setup setup{sim.where, std::vector<VehicleId>{}, sim.players};
+    if (!sim.sides.empty()) setup.release = std::vector<EmpireId>{sim.sides.front()};
+    setup.interference = sim.interference;
+    setup.disruption = sim.disruption;
     return TacticalBattle(r, std::move(sim.state), std::move(setup));
 }
 

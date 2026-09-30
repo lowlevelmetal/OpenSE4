@@ -44,7 +44,7 @@ constexpr float kSideX = 684;
 constexpr float kSideW = 310;
 constexpr std::array<float, 5> kSpeeds{0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
 
-constexpr const char* kLaunchHint = "Launch step: launch units now (L), before your drones and seekers move. Begin Phase, or any other order, goes on.";
+constexpr const char* kPausedHint = "Auto is on: every empire follows its strategies. End Turn goes on; switch Auto off to give orders again.";
 
 // A target picked on the map for an order armed in the Orders window (or R, C, T).
 enum class Aim { None, Ram, Capture, DropTroops };
@@ -55,8 +55,10 @@ struct TacticalUi {
     int selected = -1;
     int target = -1;             // the enemy last hovered or fired at
     Aim aim = Aim::None;
-    int groupSize = 10;          // Launch Fighters in Groups
+    int groupSize = 10;          // Launch Fighters in Groups (one of kFighterGroupSizes)
     int groupNumber = 1;         // for Set Group Leader / Member
+    int formation = 0;           // Formations.txt index for Set Group Leader
+    int launchWindow = 0;        // the Launch Units window's session (spec 04 §10.4)
     std::string message;         // the last refusal or hint
     float cx = 36, cy = 31;      // squares at the map's centre
     float cellFrame = 30;        // zoom: frame pixels per square
@@ -66,8 +68,6 @@ struct TacticalUi {
     // results then.
     std::vector<TacticalOrder> queue;
     bool finishNow = false;
-    int launchRound = -1;        // the launch step the window last stopped at
-    game::EmpireId launchSide;
 };
 
 TacticalUi& state() {
@@ -93,8 +93,7 @@ void flush(TacticalFight& f) {
     std::vector<TacticalOrder> queue = std::move(u.queue);
     u.queue.clear();
     for (const TacticalOrder& o : queue) {
-        const std::string why = f.battle->submit(o);
-        if (!why.empty() || o.kind != OK::Begin) u.message = why;
+        u.message = f.battle->submit(o);
     }
     if (u.finishNow && f.battle->finished() && !f.battle->applied()) f.battle->finish();
     u.finishNow = false;
@@ -138,27 +137,6 @@ int directionOf(int dx, int dy) {
 }
 
 float angleOf(int dx, int dy) { return std::atan2(float(dx), float(-dy)); }
-
-// Piece i of the side can launch some of its units now: fighters, satellites or
-// drones in its cargo, with launches of that kind left this combat turn.
-bool canLaunchNow(const TacticalBattle& b, int i, game::EmpireId side) {
-    if (i < 0 || size_t(i) >= b.pieces().size()) return false;
-    const TacticalPiece& p = b.pieces()[size_t(i)];
-    if (!commandable(p, side) || (p.kind != PieceKind::Vehicle && p.kind != PieceKind::Planet)) return false;
-    for (const game::UnitStack& st : p.cargo) {
-        TacticalOrder o{OK::Launch, side, i};
-        o.design = st.design;
-        o.count = o.group = 1;
-        if (st.count > 0 && b.check(o).empty()) return true;
-    }
-    return false;
-}
-
-int firstLauncher(const TacticalBattle& b, game::EmpireId side) {
-    for (size_t i = 0; i < b.pieces().size(); ++i)
-        if (canLaunchNow(b, int(i), side)) return int(i);
-    return -1;
-}
 
 // A unit group's units: "Wasp x5", or each design of a group that mixes them (spec 03 §12).
 std::string unitsText(const game::GameState& s, const TacticalPiece& p) {
@@ -253,9 +231,8 @@ private:
     bool animating() const { return playback_.playing() && !playback_.atEnd(); }
     void skipAnimation() { playback_.seekEvent(playback_.eventCount()); }
 
-    // The steps nobody needs to click: a launch step with nothing to launch
-    // ends at once (the side's drones and seekers then move, spec 04 §4), and a
-    // phase with nothing left to fight ends.
+    // The steps nobody needs to click: a phase with nothing left to fight ends.
+    // The side's drones and seekers have moved before the player gets control (spec 04 §4).
     void automatic(UiContext& ui, TacticalFight& f) {
         TacticalBattle& b = *f.battle;
         TacticalUi& u = state();
@@ -264,27 +241,11 @@ private:
         if (b.finished() && !b.applied() && !animating()) u.finishNow = true;
         if (!b.awaitingOrders() || animating()) return;
         const game::EmpireId side = b.phaseEmpire();
-        if (b.launchStep()) {
-            // Launches come first in a phase, as a computer side's do: the window
-            // waits while a piece of the side can launch (spec 04 §19.1 Q49; an option).
-            const int launcher = settings().tacticalLaunchStep ? firstLauncher(b, side) : -1;
-            if (launcher < 0) {
-                submit(f, TacticalOrder{OK::Begin, side});
-                return;
-            }
-            // On entering the step, a piece that can launch is selected (once, so the player may look around).
-            if (u.launchRound != b.round() || u.launchSide != side) {
-                u.launchRound = b.round();
-                u.launchSide = side;
-                if (!canLaunchNow(b, u.selected, side)) {
-                    u.selected = launcher;
-                    centreOn(b, launcher);
-                }
-            }
-            if (u.message.empty()) u.message = kLaunchHint;
+        if (b.paused()) {
+            if (u.message.empty()) u.message = kPausedHint;
             return;
         }
-        if (u.message == kLaunchHint) u.message.clear();
+        if (u.message == kPausedHint) u.message.clear();
         bool any = false;
         for (const TacticalPiece& p : b.pieces()) any = any || commandable(p, side);
         if (!any || (b.over() && settings().tacticalAutoEnd)) {
@@ -335,7 +296,7 @@ private:
         ImGui::SameLine(ui.px(kSideX));
         if (b.awaitingOrders()) {
             const std::string who = paint.empireName(b.phaseEmpire());
-            const std::string what = animating() ? "wait for orders" : b.launchStep() ? "launch step" : "give orders";
+            const std::string what = animating() ? "wait for orders" : b.paused() ? "paused (Auto)" : "give orders";
             ImGui::TextColored(ImVec4(0.55f, 1, 0.55f, 1), "%s", std::format("{}: {}", who, what).c_str());
         } else {
             dimText(b.finished() ? "Results are ready" : "Watching");
@@ -831,17 +792,12 @@ private:
         const game::EmpireId side = b.phaseEmpire();
         const bool orders = side.valid() && !animating();
         if (classicButton(ui, "Options", {150, 28})) ui.open(ScreenId::TacticalOptions);
-        if (classicButton(ui, "Orders", {150, 28}, 0, false, orders)) ui.open(ScreenId::TacticalOrders);
-        if (classicButton(ui, "Auto", {150, 28}, 0, false, orders)) {
-            // The strategies play the rest of this phase (spec 04 §4).
-            submit(f, TacticalOrder{OK::Auto, side});
-        }
-        if (orders && b.launchStep()) {
-            // The launch step: the side's drones and seekers move when it ends (spec 04 §4).
-            if (classicButton(ui, "Begin Phase", {150, 28})) submit(f, TacticalOrder{OK::Begin, side});
-        } else if (classicButton(ui, b.over() ? "End Battle" : "End Turn", {150, 28}, 0, false, orders)) {
-            submit(f, TacticalOrder{OK::EndPhase, side});
-        }
+        if (classicButton(ui, "Orders", {150, 28}, 0, false, orders && !b.paused())) ui.open(ScreenId::TacticalOrders);
+        // Auto: one toggle for every empire, from the next phase on (spec 04 §4).
+        TacticalOrder toggle{OK::Auto, side};
+        toggle.on = !b.autoOn();
+        if (classicButton(ui, b.autoOn() ? "Auto: On" : "Auto: Off", {150, 28}, 0, false, orders)) submit(f, toggle);
+        if (classicButton(ui, b.over() ? "End Battle" : "End Turn", {150, 28}, 0, false, orders)) submit(f, TacticalOrder{OK::EndPhase, side});
         ImGui::EndGroup();
         ImGui::Spacing();
         if (u.aim != Aim::None) {
@@ -880,6 +836,7 @@ private:
             if (io.KeyAlt || io.KeyCtrl) {
                 TacticalOrder o{io.KeyAlt ? OK::SetLeader : OK::SetMember, side, u.selected};
                 o.group = n;
+                if (io.KeyAlt) o.formation = ui.rules().data().formations.empty() ? -1 : std::clamp(u.formation, 0, int(ui.rules().data().formations.size()) - 1);
                 submit(f, o);
             }
         }
@@ -964,6 +921,7 @@ private:
 
 class TacticalOrdersScreen final : public Screen {
 public:
+    TacticalOrdersScreen() { window_ = ++state().launchWindow; }   // each opening is a new Launch Units session
     bool modal() const override { return true; }
 
     bool draw(UiContext& ui) override {
@@ -977,11 +935,13 @@ public:
         d.beginContent();
         const game::GameState& s = b.state();
         const TacticalPiece* p = u.selected >= 0 && size_t(u.selected) < b.pieces().size() ? &b.pieces()[size_t(u.selected)] : nullptr;
-        const bool ours = p && side.valid() && commandable(*p, side);
+        const bool ours = p && side.valid() && commandable(*p, side) && !b.paused();
         heading(ui, ours ? std::format("Orders for {}", p->name).c_str() : "Select one of your pieces first");
-        launchable_ = false;
 
-        // Launch Units: the units it carries, how many it may still launch this turn.
+        // Launch Units (spec 04 §10.4): 1, 5, 10 or all units of a stack at a time.
+        // While this window stays open, units of one kind launched from the piece
+        // join the group made first in it, whatever their design; drones are one
+        // per group. Drones you launch first act at your next phase.
         ImGui::Spacing();
         heading(ui, "Launch Units");
         const std::array<const char*, 3> kinds{"fighters", "satellites", "drones"};
@@ -992,64 +952,100 @@ public:
             for (const game::UnitStack& st : p->cargo) {
                 if (st.design.index() >= s.designs.size()) continue;
                 const ruleset::VehicleType t = ui.rules().hull(s.design(st.design).hull).type;
-                const int kind = t == ruleset::VehicleType::Fighter ? 0 : t == ruleset::VehicleType::Satellite ? 1 : t == ruleset::VehicleType::Drone ? 2 : -1;
-                if (kind < 0) continue;
+                if (t != ruleset::VehicleType::Fighter && t != ruleset::VehicleType::Satellite && t != ruleset::VehicleType::Drone) continue;
                 any = true;
                 ImGui::PushID(int(st.design.value));
                 ImGui::TextUnformatted(std::format("{} x{}", s.design(st.design).name, st.count).c_str());
-                ImGui::SameLine(ui.px(260));
-                const int n = std::min(st.count, p->launchLeft[size_t(kind)]);
-                TacticalOrder o{OK::Launch, side, u.selected};
-                o.design = st.design;
-                o.count = n;
-                o.group = kind == 1 ? n : u.groupSize;
-                if (classicButton(ui, std::format("Launch {}", n).c_str(), {110, 22}, 0, false, n > 0 && b.check(o).empty())) submit(*f, o);
+                ImGui::SameLine(ui.px(230));
+                for (const int n : {1, 5, 10, 0}) {
+                    TacticalOrder o{OK::Launch, side, u.selected};
+                    o.design = st.design;
+                    o.count = n > 0 ? n : st.count;
+                    o.group = window_;
+                    ImGui::PushID(n);
+                    if (classicButton(ui, n > 0 ? std::format("{}", n).c_str() : "All", {40, 22}, 0, false, b.check(o).empty())) submit(*f, o);
+                    ImGui::PopID();
+                    ImGui::SameLine(0, ui.px(3));
+                }
+                ImGui::NewLine();
                 ImGui::PopID();
             }
             if (!any) wrappedDim(std::format("It carries no {}, {} or {}.", kinds[0], kinds[1], kinds[2]));
-            launchable_ = any;
         }
+        // Launch Fighters in Groups: fighters only, single-design groups of 5 to 50.
         ImGui::Spacing();
         heading(ui, "Launch Fighters in Groups");
-        ImGui::SetNextItemWidth(ui.px(120));
-        ImGui::SliderInt("fighters (and drones) a group", &u.groupSize, 1, 20);
+        ImGui::SetNextItemWidth(ui.px(80));
+        if (ImGui::BeginCombo("fighters a group", std::format("{}", u.groupSize).c_str())) {
+            for (int size : game::combat::kFighterGroupSizes)
+                if (ImGui::Selectable(std::format("{}", size).c_str(), size == u.groupSize)) u.groupSize = size;
+            ImGui::EndCombo();
+        }
+        if (ours)
+            for (const game::UnitStack& st : p->cargo) {
+                if (st.design.index() >= s.designs.size() || ui.rules().hull(s.design(st.design).hull).type != ruleset::VehicleType::Fighter) continue;
+                TacticalOrder o{OK::LaunchFighters, side, u.selected};
+                o.design = st.design;
+                o.count = st.count;
+                o.group = u.groupSize;
+                ImGui::PushID(int(st.design.value) + 100000);
+                if (classicButton(ui, std::format("Launch {} in groups", s.design(st.design).name).c_str(), {230, 22}, 0, false, b.check(o).empty()))
+                    submit(*f, o);
+                ImGui::PopID();
+            }
+        // Combat groups (spec 04 §5): a leader picks the formation its members take places in.
         ImGui::Spacing();
         heading(ui, "Combat Groups");
         ImGui::SetNextItemWidth(ui.px(120));
         ImGui::SliderInt("group number", &u.groupNumber, 0, 9);
-        wrappedDim("Members follow their leader when it moves. On the map, Alt+number makes the selected piece a leader, Ctrl+number a member.");
+        const auto& formations = ui.rules().data().formations;
+        if (!formations.empty()) {
+            u.formation = std::clamp(u.formation, 0, int(formations.size()) - 1);
+            ImGui::SetNextItemWidth(ui.px(200));
+            if (ImGui::BeginCombo("formation", formations[size_t(u.formation)].name.c_str())) {
+                for (size_t k = 0; k < formations.size(); ++k)
+                    if (ImGui::Selectable(formations[k].name.c_str(), int(k) == u.formation)) u.formation = int(k);
+                ImGui::EndCombo();
+            }
+        }
+        wrappedDim("Members take the next place of their leader's formation and follow it when it moves. On the map, Alt+number makes the "
+                   "selected piece a leader, Ctrl+number a member.");
         if (!u.message.empty()) ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", u.message.c_str());
 
         d.beginButtons();
         const bool can = ours && b.awaitingOrders();
-        if (d.button("Launch Units", can && launchable_)) {
-            // Everything it may launch, in groups of the chosen size.
-            for (const game::UnitStack& st : std::vector<game::UnitStack>(p->cargo)) {
-                TacticalOrder o{OK::Launch, side, u.selected};
-                o.design = st.design;
-                o.count = st.count;
-                o.group = u.groupSize;
-                if (b.check(o).empty()) submit(*f, o);
-            }
-        }
         if (d.button("Drop Troops", can && p->troops)) aim(u, Aim::DropTroops, d);
         if (d.button("Ram Ship", can && p->movement > 0)) aim(u, Aim::Ram, d);
         if (d.button("Capture Ship", can && p->boardingAttack > 0)) aim(u, Aim::Capture, d);
         d.spacer();
         TacticalOrder leader{OK::SetLeader, side, u.selected};
         leader.group = u.groupNumber;
+        leader.formation = formations.empty() ? -1 : u.formation;
         TacticalOrder member{OK::SetMember, side, u.selected};
         member.group = u.groupNumber;
         if (d.button(std::format("Group {} Leader", u.groupNumber).c_str(), can && b.check(leader).empty())) submit(*f, leader);
         if (d.button(std::format("Group {} Member", u.groupNumber).c_str(), can && b.check(member).empty())) submit(*f, member);
         if (d.button("Clear Group", can && b.check(TacticalOrder{OK::ClearGroup, side, u.selected}).empty()))
             submit(*f, TacticalOrder{OK::ClearGroup, side, u.selected});
-        if (d.button("Clear All Groups", side.valid() && b.awaitingOrders())) submit(*f, TacticalOrder{OK::ClearAllGroups, side});
+        if (d.button("Clear All Groups", side.valid() && b.awaitingOrders() && !b.paused())) submit(*f, TacticalOrder{OK::ClearAllGroups, side});
         d.spacer();
-        if (d.button("Resolve Combat", side.valid() && b.awaitingOrders())) {
-            // The strategies play this side for the rest of the battle (spec 04 §4).
-            submit(*f, TacticalOrder{OK::ResolveCombat, side});
+        // An OpenSE4 extension: the strategies play the rest of this phase.
+        if (d.button("Auto This Phase", side.valid() && b.awaitingOrders() && !b.paused())) {
+            submit(*f, TacticalOrder{OK::AutoPhase, side});
             d.requestClose();
+        }
+        if (d.button("Resolve Combat", side.valid() && b.awaitingOrders())) ImGui::OpenPopup("##resolve");
+        if (ImGui::BeginPopup("##resolve")) {
+            // Every empire follows its strategies until the battle ends (spec 04 §4).
+            ImGui::TextUnformatted("Let every empire's strategies fight the rest of the battle?");
+            if (classicButton(ui, "Resolve", {100, 24})) {
+                submit(*f, TacticalOrder{OK::ResolveCombat, side});
+                ImGui::CloseCurrentPopup();
+                d.requestClose();
+            }
+            ImGui::SameLine();
+            if (classicButton(ui, "Cancel", {100, 24})) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
         }
         d.close();
         flush(*f);
@@ -1062,7 +1058,7 @@ private:
         d.requestClose();
     }
 
-    bool launchable_ = false;
+    int window_ = 0;
 };
 
 // ---- Tactical Combat Options ----------------------------------------------------------------------------------
@@ -1084,7 +1080,6 @@ public:
         changed |= lampToggle(ui, "Show piece names", &prefs.tacticalNames);
         heading(ui, "Turns");
         changed |= lampToggle(ui, "End my phase when no enemy is left", &prefs.tacticalAutoEnd);
-        changed |= lampToggle(ui, "Stop for launches before my drones and seekers move", &prefs.tacticalLaunchStep);
         heading(ui, "Animation speed");
         for (float sp : kSpeeds) {
             bool on = prefs.tacticalSpeed == sp;

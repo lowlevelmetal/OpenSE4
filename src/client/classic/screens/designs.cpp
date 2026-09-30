@@ -304,7 +304,6 @@ private:
         field(ui, "Built", std::to_string(d.built), kCol);
         field(ui, "In service", std::to_string(inService(s, d.id)), kCol);
         field(ui, "Lost", std::to_string(d.lost), kCol);
-        field(ui, "Kills", std::to_string(d.kills), kCol);
         field(ui, "Enemy tonnage", std::format("{} kT destroyed", d.enemyTonnageDestroyed), kCol);
         ImGui::Spacing();
         heading(ui, "Default Strategy");

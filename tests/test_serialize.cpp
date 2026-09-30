@@ -287,7 +287,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     QueueItem item{QueueItem::Kind::Upgrade, DesignId{2u}, 17, 3, Resources{1, 2, 3}};
     Design design = warbirdDesign(r);
     design.obsolete = true;
-    design.kills = 4;
+    design.lost = 4;
     DiplomaticMessage message;
     message.id = MessageId{8u};
     message.from = EmpireId{0u};
@@ -569,8 +569,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x68065dc11ddbb7dcull;
-    constexpr size_t kGoldenSize = 1620;
+    constexpr uint64_t kGoldenChecksum = 0xa05b637f04707298ull;
+    constexpr size_t kGoldenSize = 1624;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

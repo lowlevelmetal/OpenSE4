@@ -9,16 +9,23 @@
 // be added. The battle is fought on a sandbox copy of the game, so the real
 // game never changes.
 //
-// The sandbox (inferred where the spec is silent): a copy of the game with
-// one new empire per side, each a copy of the viewer's empire (race, culture,
-// technology and strategies) under the side's name, at war with every other
-// side. The battle is in the middle of a new, empty system (the viewer's home
-// system's type, no system abilities), so nothing else takes part and no
-// system modifier applies but the sides' own. Each design used is copied for
-// the side that uses it, with the item's strategy; vehicles start undamaged
-// with full supplies and no experience. Sample planets are copies of the
-// colonies (population, facilities and stored units) moved into the battle
-// sector. Nobody arrives from outside: every side starts beside the centre.
+// The sandbox (spec 04 §17, confirmed: binary unless marked): a copy of the
+// game with one new empire per side (up to 10), each a copy of the real
+// empire that owns the side's first item (race, culture, technology), at war
+// with every other side. The battle stands for one in the viewer's home
+// sector: that sector's `Sector - Sensor Interference` and `Sector - Shield
+// Disruption` apply, and no system modifier totals are worked out (they are
+// 0). (inferred) It is fought in a new, empty system of the home system's
+// type, so that nothing else in the home sector takes part, and every side
+// uses the viewer's strategies, which the simulator's items and fleets pick
+// from. Each design used is copied for the side that uses it, with the item's
+// strategy; vehicles start undamaged with full supplies and no experience.
+// Sample planets are copies of the colonies (population, facilities and
+// stored units) moved into the battle sector. Start positions go by side
+// number, as if arriving from a neighbouring sector: 1 north, 2 south, 3
+// west, 4 east, 5 north-west, 6 south-west, 7 north-east, 8 south-east;
+// sides 9 and 10, and a side that owns a planet or a base, start in the
+// middle. Side 1 alone gets hand control back when Auto is released.
 
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -64,6 +71,7 @@ struct SimulatorSetup {
     uint64_t seed = 0;             // 0: the game's random numbers
 };
 
+inline constexpr int kSimulatorMaxSides = 10;        // virtual empires (confirmed: binary)
 inline constexpr int kSimulatorMaxCount = 100;       // per item
 inline constexpr int kSimulatorMaxVehicles = 250;    // in all (inferred)
 
@@ -89,6 +97,8 @@ struct Simulation {
     Location where;                  // the battle sector
     std::vector<EmpireId> sides;     // the virtual empire of each side
     std::vector<EmpireId> players;   // the sides the player controls
+    int interference = 0;            // the home sector's, applied to the battle
+    int disruption = 0;
 };
 // The sandbox for a valid setup (see simulatorProblem). `real` is not changed.
 Simulation buildSimulation(const Rules& r, const GameState& real, const SimulatorSetup& setup);

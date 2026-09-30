@@ -1026,7 +1026,9 @@ TEST_CASE("movement: load and drop cargo orders") {
     w.v(lander).cargo.units.push_back({troop, 2});
     w.order(lander, mk(OrderKind::DropCargo, {}, {}, {}, troop, -1));
     w.move();
-    CHECK(w.s.colony(enemy)->cargo.unitCount(troop) == 2);
+    // Landed troops are kept apart from the colony's cargo and fight for the lander's owner (spec 04 §13).
+    CHECK(w.s.colony(enemy)->landedTroops == std::vector<UnitStack>{{troop, 2}});
+    CHECK(w.s.colony(enemy)->invader == kA);
     CHECK(w.v(lander).cargo.unitCount(troop) == 0);
 
     // Loading is always done, even when nothing loads; a drop with nowhere to go fails (spec 03 §8).

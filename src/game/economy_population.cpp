@@ -317,6 +317,8 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
         if (d.owner == c.owner) ourTroops += u.count;
         else if (hostile(s, c.owner, d.owner)) enemyTroops = true;
     }
+    // Troops landed by an invader are kept apart from the cargo (spec 04 §13).
+    if (!c.landedTroops.empty() && hostile(s, c.owner, c.invader)) enemyTroops = true;
     if (enemyTroops) total += v("Enemy Troops on Planet");
     total += v("Our Troops on Planet") * ourTroops;
 

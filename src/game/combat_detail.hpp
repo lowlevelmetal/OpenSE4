@@ -8,6 +8,8 @@
 #include "game/design.hpp"
 
 #include <optional>
+#include <span>
+#include <vector>
 
 namespace opense4::game {
 struct TurnContext;
@@ -36,10 +38,12 @@ struct Forces {
 };
 Forces battleForces(const Rules& r, const GameState& s, Location where);
 
-// Whether a vehicle moved into its sector this turn (spec 04 §3), and the
-// direction it came from: (dx, dy) in -1..1 each, (0, 0) when it was already
-// there or came from a sector that is not a neighbour (a warp jump).
+// Whether a vehicle moved into its sector this turn (spec 04 §3), whether it
+// came through a warp point (the sector it left is in another system), and
+// the direction of the neighbouring sector it came from: (dx, dy) in -1..1
+// each, (0, 0) when it was already there or came through a warp point.
 bool arrivedThisTurn(const GameState& s, const Vehicle& v);
+bool arrivedByWarp(const GameState& s, const Vehicle& v);
 std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v);
 
 // ---- Component and hull ability lookups ----------------------------------------------------------
@@ -159,13 +163,43 @@ HitResult hitVehicle(const Rules& r, const GameState& s, Vehicle& v, ShieldState
 // Whether a hit of this type can change anything on this vehicle (mines and targeting skip it otherwise).
 bool canAffectVehicle(const Rules& r, const GameState& s, const Vehicle& v, const ShieldState& sh, DamageType type);
 
-// Unit hit points (spec 04 §9.4): structure plus shields; fighters, troops
-// and weapon platforms count their shields twice, once less when the type
-// skips shields. `shielded` = false leaves shields out (a fighter without supplies).
-int64_t unitHitPoints(const Rules& r, const Design& d, DamageType type, bool shielded = true);
+// A unit's toughness (spec 04 §9.4): its design's structure and shields X.
+// Its hit points H are structure + X, where fighters, troops and weapon
+// platforms count X twice (their structure already includes X once).
+struct UnitToughness {
+    int64_t structure = 0;
+    int64_t shields = 0;
+    bool doubled = false;
+    ShieldState::Kind kind = ShieldState::Kind::None;
+    int64_t hitPoints() const { return structure + shields * (doubled ? 2 : 1); }
+};
+UnitToughness unitToughness(const Rules& r, const Design& d);
+int64_t unitHitPoints(const Rules& r, const Design& d);   // H
+
+// A unit group's damage pool never exceeds this; a hit tries up to this many draws (spec 04 §9.4).
+inline constexpr int64_t kMaxUnitPool = 50000;
+inline constexpr int kMaxUnitDraws = 20;
+// Spec 04 §9.4: one hit of `damage` on units kept as stacks (a unit group, or
+// the units stored on a planet), with the group's damage pool P (`pool`) and
+// shield pool Q (`shieldPool`). `entries` are the stacks that form the group.
+// A Shields Only hit adds to Q; a hull-damaging hit joins P (at most
+// kMaxUnitPool); any other type is judged on its own damage and leaves P as it
+// was. Then up to 20 draws, each of an entry at random (a dead one wastes the
+// draw): a unit dies when P + Q reaches H (P alone reaching H − X when the type
+// skips its shields); then H leaves P, or, with Q above 0, H − X leaves P and X
+// leaves Q. Returns the units killed; `killed` counts them per stack.
+int hitUnits(const Rules& r, const GameState& s, std::vector<UnitStack>& stacks, std::span<const size_t> entries, int64_t& pool,
+             int64_t& shieldPool, int64_t damage, DamageType type, Rng& rng, std::vector<int>& killed);
+
+// Cargo that no longer fits after a part is destroyed is lost at once:
+// population first, 1M at a time from the first group, then units one at a
+// time from the first stack (spec 04 §9.4, spec 03 §11). Restoring the part
+// does not bring it back.
+void cutCargo(const Rules& r, const GameState& s, Vehicle& v);
 
 // Restores destroyed components with Armor Regeneration in design order, each
-// costing its structure, while `budget` lasts (spec 04 §9.3). Returns what was used.
+// costing its structure, while `budget` lasts; a part that costs more than is
+// left is skipped (spec 04 §9.3). Returns what was used.
 int64_t restoreRegeneratingArmor(const Rules& r, const GameState& s, Vehicle& v, int64_t budget);
 bool hasDestroyedRegeneratingArmor(const Rules& r, const GameState& s, const Vehicle& v);
 
@@ -173,8 +207,10 @@ bool hasDestroyedRegeneratingArmor(const Rules& r, const GameState& s, const Veh
 
 struct GroundFight {
     EmpireId attacker, defender;
-    Cargo* cargo = nullptr;                               // the planet's cargo: invaders, defending troops, other units
-                                                          // (losses lower the counts; empty stacks are left in place)
+    // The landed troops, fighting for `attacker` (losses lower the counts; empty stacks are left in place).
+    std::vector<UnitStack>* invaders = nullptr;
+    // The planet's stored units, all serving `defender`: its troops and other units (the same).
+    Cargo* cargo = nullptr;
     const std::vector<PopulationGroup>* population = nullptr;
     int* militia = nullptr;                               // the colony's militia pool (-1: raise it now)
     int64_t groundDefensePercent = 0;                     // Planet - Change Ground Defense
@@ -187,8 +223,14 @@ struct GroundOutcome {
     bool attackersGone = false;
 };
 GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs, const GroundFight& f, Rng& rng);
-// The captor takes the colony with its facilities, stored units and population: logs and mood events.
+// The captor takes the colony with its facilities, stored units and
+// population, and its surviving landed troops join the cargo: logs and mood events.
 void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor);
+// Adds units to a list of stacks (merging by design; empty stacks are skipped).
+void joinUnits(std::vector<UnitStack>& into, std::span<const UnitStack> units);
+// The invasion of a colony is over: its landed troops go (with `joinCargo`,
+// into its cargo, where they serve the owner), and so does its militia pool.
+void endInvasion(Colony& c, bool joinCargo);
 // Culture Ground Combat + (Physical Strength − 100).
 int groundModifier(const Rules& r, const Empire& e);
 

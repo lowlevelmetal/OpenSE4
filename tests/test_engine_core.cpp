@@ -164,7 +164,7 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     Design used = d;
     used.name = "Veteran";
     used.built = 4;
-    used.kills = 2;
+    used.lost = 2;
     used.enemyTonnageDestroyed = 900;
     REQUIRE(apply(r, s, me, cmd::CreateDesign{used}).ok);
     CHECK(s.design(s.empires[0].designs.back()).enemyTonnageDestroyed == 0);

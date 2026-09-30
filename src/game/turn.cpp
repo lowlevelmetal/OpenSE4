@@ -95,7 +95,8 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // 15. System-wide abilities and training.
     economy::applySystemAbilities(ctx, e);
     movement::trainEmpire(ctx, e);
-    // 17. Ground combat where the empire's troops invade an enemy planet.
+    // 17. Ground combat on the empire's colonies where landed troops still
+    // fight (spec 04 §13: the colony owner's step).
     combat::runGroundCombat(ctx, e);
     s.removeDeadVehicles();
     // 18. The log keeps only this turn's entries (spec 05 §3.4).
