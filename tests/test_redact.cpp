@@ -1,0 +1,66 @@
+// Fog of war for network games (game/redact.hpp).
+
+#include "engine_fixture.hpp"
+
+#include "game/redact.hpp"
+#include "game/serialize.hpp"
+#include "game/turn.hpp"
+
+#include <doctest/doctest.h>
+
+using namespace opense4;
+using namespace opense4::game;
+
+TEST_CASE("redact: an empire's view hides what it does not know") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(13, 3, 12);
+    for (int t = 0; t < 5; ++t) processTurn(r, s, {});
+    const EmpireId me{0u}, other{1u};
+    s.empire(other).research.push_back({ruleset::TechAreaId{0u}, 10});
+    s.empire(other).stockpile = {123, 456, 789};
+
+    const GameState v = redactForEmpire(s, me);
+    CHECK(validateState(v, &r).empty());
+    // Our own things are untouched.
+    CHECK(v.empire(me).stockpile == s.empire(me).stockpile);
+    CHECK(v.empire(me).research.size() == s.empire(me).research.size());
+    size_t ownVehicles = 0;
+    for (const Vehicle& x : s.vehicles) ownVehicles += x.owner == me;
+    size_t viewOwn = 0;
+    for (const Vehicle& x : v.vehicles) viewOwn += x.owner == me;
+    CHECK(viewOwn == ownVehicles);
+    // Other empires' plans and treasury are gone.
+    CHECK(v.empire(other).research.empty());
+    CHECK(v.empire(other).stockpile.isZero());
+    CHECK(v.empire(other).log.empty());
+    CHECK(v.empire(other).passwordHash.empty());
+    // Foreign vehicles only when visible, and without their orders or cargo.
+    for (const Vehicle& x : v.vehicles) {
+        if (x.owner == me) continue;
+        const auto& vis = s.empire(me).knowledge.visibleVehicles;
+        CHECK(std::find(vis.begin(), vis.end(), x.id) != vis.end());
+        CHECK(x.orders.empty());
+        CHECK(x.cargo.empty());
+    }
+    // Foreign colonies only in explored systems, without facilities or queues.
+    for (const auto& c : v.colonies) {
+        if (!c || c->owner == me) continue;
+        CHECK(s.empire(me).hasExplored(s.galaxy.object(c->planet).system));
+        CHECK(c->facilities.empty());
+        CHECK(c->queue.items.empty());
+    }
+    // Serializes and loads like any state.
+    auto back = deserializeState(serializeState(v));
+    REQUIRE(back.has_value());
+    CHECK(stateChecksum(*back) == stateChecksum(v));
+}
+
+TEST_CASE("redact: spectators see no empire's private data") {
+    const Rules& r = test::engineRules();
+    GameState s = test::newEngineGame(3, 2, 10);
+    const GameState v = redactForEmpire(s, EmpireId{});
+    CHECK(validateState(v, &r).empty());
+    CHECK(v.vehicles.empty());
+    CHECK(v.fleets.empty());
+    for (const Empire& e : v.empires) CHECK(e.stockpile.isZero());
+}

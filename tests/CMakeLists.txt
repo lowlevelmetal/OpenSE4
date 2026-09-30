@@ -18,6 +18,7 @@ add_executable(opense4_tests
     test_intel.cpp
     test_net.cpp
     test_pathfinding.cpp
+    test_redact.cpp
     test_research.cpp
     test_ruleset.cpp
     test_score.cpp

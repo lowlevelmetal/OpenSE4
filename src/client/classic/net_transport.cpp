@@ -1,6 +1,7 @@
 #include "client/classic/net_transport.hpp"
 
 #include "core/log.hpp"
+#include "game/redact.hpp"
 
 #include <format>
 
@@ -59,7 +60,8 @@ std::optional<game::GameState> HostTransport::pollState() {
     std::optional<game::GameState> fresh;
     for (const net::Event& e : host_->poll(0)) {
         if (worthShowing(e.type)) log_.add(net::describe(e));
-        if (e.type == net::EventType::NewTurn && host_->state()) fresh = *host_->state();
+        // The hosting player sees the same fog of war as everyone else.
+        if (e.type == net::EventType::NewTurn && host_->state()) fresh = game::redactForEmpire(*host_->state(), host_->localEmpire());
     }
     return fresh;
 }

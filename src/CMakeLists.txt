@@ -43,6 +43,7 @@ add_library(opense4_game STATIC
     game/intel.cpp
     game/movement.cpp
     game/query.cpp
+    game/redact.cpp
     game/research.cpp
     game/rules.cpp
     game/score.cpp

@@ -1,5 +1,7 @@
 #include "net/host.hpp"
 
+#include "game/redact.hpp"
+
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/turn.hpp"
@@ -764,11 +766,14 @@ game::EmpireId HostSession::empireOfSlot(uint32_t id) const {
     return {};
 }
 
-std::vector<uint8_t> HostSession::redactedState() const {
-    // Password verifiers stay on the host.
-    game::GameState copy = *state_;
-    for (game::Empire& e : copy.empires) e.passwordHash.clear();
-    return game::serializeState(copy);
+std::vector<std::vector<uint8_t>> HostSession::redactedState() const {
+    // Every empire gets its own view (fog of war, game/redact.hpp); the last
+    // entry is the spectator view for peers without an empire. Password
+    // verifiers never leave the host.
+    std::vector<std::vector<uint8_t>> views;
+    for (const game::Empire& e : state_->empires) views.push_back(game::serializeState(game::redactForEmpire(*state_, e.id)));
+    views.push_back(game::serializeState(game::redactForEmpire(*state_, game::EmpireId{})));
+    return views;
 }
 
 void HostSession::sendState(Peer& peer, bool gameStart) {
@@ -776,7 +781,8 @@ void HostSession::sendState(Peer& peer, bool gameStart) {
     m.turn = state_->turn;
     m.empire = empireOfSlot(peer.slot);
     m.gameStart = gameStart;
-    m.state = stateCache_;
+    const size_t view = m.empire.valid() && m.empire.index() + 1 < stateCache_.size() ? m.empire.index() : stateCache_.size() - 1;
+    m.state = stateCache_[view];
     peer.conn.send(MsgType::State, m);
 }
 

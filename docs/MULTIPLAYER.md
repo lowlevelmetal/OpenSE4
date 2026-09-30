@@ -283,12 +283,23 @@ Setup files hold passwords in plain text. To avoid that, a player can run
   game. The host also refuses oversized messages (64 KiB before the handshake,
   16 MiB after), malformed messages, unknown message types and anything before a
   valid greeting. Connections that go silent are dropped.
-- **Full game state goes to every player.** Each turn the host currently sends the
-  complete game to everyone, with only the password verifiers removed, and a PBEM
-  `.gam` is the complete game too. A modified client could therefore show a player
-  things their empire has not discovered. Sending each player only what their
-  empire knows (fog-of-war redaction) is future work. Until then, play with people
-  you trust not to peek.
+- **Each network player gets only their own view.** Each turn, the host sends every
+  player the game as their empire knows it (`game::redactForEmpire`):
+  - Removed:
+    - other empires' treasuries, research and intelligence queues, logs and plans;
+    - ships the player cannot see this turn;
+    - colonies in systems the player has not explored;
+    - the contents of foreign colonies;
+    - the details of designs the player has never seen;
+    - other empires' messages;
+    - battles the player was not in;
+    - the random-number state.
+  - Kept: what diplomacy and the score screens show.
+  - Shared: a Partnership gives its partner the maps and tech levels, as in the rules.
+
+  The host's own player sees the same view. A PBEM `.gam`, however, is the complete
+  game, because every player processes it with the same program. Play PBEM with
+  people you trust not to peek.
 - **The host itself must be trusted.** It sees and decides everything.
 - **Files are checked before use.** Save, orders and `.plr` files start with a type
   tag, a format version and a checksum. Loading rejects wrong types, newer or
@@ -299,8 +310,7 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 
 ## Future work
 
-- Per-player redaction of the game state: send each player only what their empire
-  knows.
+- Per-player views for PBEM (a `.gam` per empire).
 - Encrypted connections.
 - IPv6 hosting, and automatic discovery of games on the local network. The classic
   game used UDP port 6716 for this.

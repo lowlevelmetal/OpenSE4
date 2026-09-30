@@ -6,6 +6,7 @@
 
 #include "engine_fixture.hpp"
 
+#include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
 #include "net/client.hpp"
@@ -352,10 +353,11 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     CHECK(loop.hostSaw(EventType::OrdersReceived));
     CHECK(loop.hostSaw(EventType::NewTurn));
     CHECK_FALSE(g.alice.ordersAccepted());
-    // The clients' copies match the host's (apart from the redacted verifiers).
-    game::GameState redacted = *host.state();
-    for (auto& e : redacted.empires) e.passwordHash.clear();
-    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(redacted));
+    // Each client holds its own fog-of-war view of the host's state.
+    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.alice.empire())));
+    CHECK(game::stateChecksum(*g.bob.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.bob.empire())));
+    CHECK(noteOf(*g.bob.state(), game::EmpireId{0u}).empty());  // Alice's notes are hers
+    CHECK(g.bob.state()->empire(game::EmpireId{0u}).stockpile.isZero());
 
     // A second turn; resubmitting replaces earlier orders.
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "first try")).has_value());

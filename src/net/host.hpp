@@ -144,7 +144,7 @@ private:
     void broadcastState(bool gameStart);
     void beginTurn();
     bool allOrdersIn() const;
-    std::vector<uint8_t> redactedState() const;
+    std::vector<std::vector<uint8_t>> redactedState() const;
     void notifyPlayer(game::EmpireId empire, const std::string& text);
 
     const game::Rules& rules_;
@@ -164,7 +164,7 @@ private:
     std::optional<game::GameState> state_;
     std::vector<std::optional<game::EmpireOrders>> orders_;
     std::optional<std::chrono::steady_clock::time_point> deadline_;
-    std::vector<uint8_t> stateCache_;  // redacted state of the current turn
+    std::vector<std::vector<uint8_t>> stateCache_;  // per-empire views of the current turn (+ spectator)
     std::vector<Event> events_;
 };
 
