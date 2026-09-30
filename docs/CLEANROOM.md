@@ -106,6 +106,29 @@ may not.
   `rizin`/`cutter`, `gdb` with `wine`. Keep projects and output in
   `reference/re/`.
 
+### Rebuilding the analysis workspace
+
+The scripts in `tools/re/` turn the executable into searchable text under
+`reference/re/`. They need a Python virtual environment with `pyghidra`
+(`reference/re/venv`), `pefile` for the system Python, and
+`GHIDRA_INSTALL_DIR=/opt/ghidra`.
+
+```sh
+EXE=".../Space Empires IV Deluxe/se4/Se4.exe"; RE=reference/re
+/opt/ghidra/support/analyzeHeadless $RE/ghidra se4 -import "$EXE"   # import and analyse
+tools/re/delphi_classes.py "$EXE" $RE/out/classes.json              # Delphi class records
+$RE/venv/bin/python tools/re/ghidra_delphi.py $RE/ghidra se4 $RE/out/classes.json [$RE/out/names.tsv]
+$RE/venv/bin/python tools/re/ghidra_types.py $RE/ghidra se4 $RE/out/types.tsv
+$RE/venv/bin/python tools/re/ghidra_export.py $RE/ghidra se4 $RE/decomp
+```
+
+`ghidra_delphi.py` finds the methods that only class records point to, applies
+Delphi's register calling convention, names methods after their classes and
+marks string literals. `ghidra_types.py` applies structure layouts that we
+write by hand from the data-file loaders. `ghidra_export.py` writes the
+decompiled functions, an index of callers and strings, and the class tables.
+All of this output stays in `reference/re/`.
+
 ## Testing against the player's data
 
 Tests use only our own fixture content. The opt-in test

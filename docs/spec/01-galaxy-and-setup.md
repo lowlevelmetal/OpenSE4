@@ -6,6 +6,16 @@ text. Everything is paraphrased. Where the sources are silent we say so and give
 recommended behaviour marked **(inferred)**. Section 14 lists the points to check in the
 running game.
 
+On 2026-09-29 the generation, setup, sight, hazard, warp point and stellar manipulation
+rules were checked against the original executable. Rules marked **(confirmed: binary)**
+describe what it does, quirks included; the engine should reproduce them unless a rule
+says otherwise.
+
+Notation used for the confirmed rules: `R(n)` is a uniform random integer in 0..n−1,
+`R[a,b]` a uniform random integer in a..b inclusive, `div` and `mod` are integer division
+and remainder, and `round(x)` rounds to the nearest integer with halves going to the even
+neighbour. `trunc(x)` drops the fraction.
+
 Conventions used throughout:
 
 - **Turn length.** One turn is 0.1 game year. The tutorial treats a 0.2-year build as
@@ -64,29 +74,39 @@ Conventions used throughout:
 **Quadrant tab**
 
 - **Quadrant Type.** Picks one record from `QuadrantTypes.txt` (§3.1).
-- **Quadrant Size.** The number of systems. The concrete choices are not documented. The
-  hard cap is `Settings: Maximum Number Of Systems` (stock 100; the file allows up to 255).
+- **Quadrant Size.** Small, Medium (the default) or Large. With M = `Settings: Maximum
+  Number Of Systems` (stock 100) and q = M div 5, the number of systems is (confirmed:
+  binary):
+  - Small: q + R(q), so q..2q−1 (stock 20–39);
+  - Medium: 2q + R(2q), so 2q..4q−1 (stock 40–79);
+  - Large: 4q + R(q), so 4q..5q−1 (stock 80–99).
+
+  Placement can end with fewer systems when it runs out of room (§3.3).
 - **Generate Map Now.** Builds and previews a quadrant. Pressing it again rerolls. The
   previewed map is the one the game starts with.
 - **Load Map.** Uses a saved map (§12). **Save Map** writes the previewed map.
-- **General options** (booleans):
-  - *All Warp Points Connected*: the warp graph must be a single connected component.
-    With it off, isolated clusters can exist.
+- **General options** (a list of seven checkboxes, confirmed: binary):
+  - *All Warp Points connected* (on by default): adds the connectivity pass of §3.5, and
+    each system considers the full `Max Warp Points per Sys` nearest systems instead of
+    half as many. With it off, isolated clusters can exist.
   - *No Warp Points*: no warp points are generated. Travel then needs the Open Warp Point
     stellar manipulation (§9).
-  - *Warp Points located anywhere in system*: warp points go on any sector instead of
-    only the outer edge.
+  - *Warp Points located anywhere in system*: each warp point moves up to 4 sectors inward
+    from its edge position, onto an empty sector (§3.5). It does not mean any sector.
   - *All systems seen by all players*: every system starts explored for every empire
     (static contents known) without granting presence (§6).
   - *Omnipresent view of all systems*: every empire sees every system as if present.
     See §6.5 for how this interacts with cloaking.
   - *Finite resources*: planet value becomes a stock of resources that production
     depletes (§5.6).
+  - *All player planets the same size* (on by default): homeworlds must have the size set
+    by Home Planet Value (§3.6).
 
 **Events tab**
 
-- **Event Frequency** maps to `Settings: Event Percent Chance Low/Medium/High` (stock 5,
-  10 and 25). A "none" choice probably also exists.
+- **Event Frequency** is None, Low (the default), Medium or High. Low, Medium and High map
+  to `Settings: Event Percent Chance Low/Medium/High` (stock 5, 10 and 25); None disables
+  new events (confirmed: binary).
 - **Maximum Event Severity** is one of Low, Medium, High or Catastrophic. It filters
   `Events.txt` by `Severity` (§10).
 
@@ -98,30 +118,34 @@ Conventions used throughout:
 
 **Player Settings tab**
 
-- **Starting Resources** sets the initial stockpile, and **Racial Points** sets the budget
-  for race creation.
-- **Home Planet Value** (Low, Medium or High) sets the homeworld's value from
-  `Plr Planet Value {Low,Medium,High} Percent`, or from the matching `... Resources` key
-  in finite-resource games.
-- **Number of Starting Planets.** Above 1, the extra planets usually sit in nearby
-  systems.
-- **Empire Placement.** *Allowed to start in the same system* is off by default, which
-  keeps home systems distinct. *Evenly distributed* is on by default and spreads empires
-  as far apart as it can.
-- **Score Display** controls whose scores you see. The default is yourself plus allies;
-  you can also allow everyone's.
-- **Technology Level for New Player** runs from Low (the default: base techs) to High
-  (every tech).
+The choices and defaults below are confirmed: binary.
+
+- **Starting Resources**: Low 5,000, Medium 20,000 (the default) or High 100,000 (see
+  spec 02 §9 for how the stockpile is filled).
+- **Racial Points**: None (0), Low (2,000, the default), Medium (3,000) or High (5,000).
+- **Home Planet Value**: Bad, Average (the default) or Good. It selects the
+  `Plr Planet Value {Low,Medium,High} Percent` key (or the matching `... Resources` key in
+  finite-resource games) and also the homeworld size: Small, Medium or Large (§3.6).
+- **Number of Starting Planets**: 1 (the default), 3, 5 or 10. The extra planets sit in
+  nearby systems (§3.6).
+- **Empire Placement**: two checkboxes. *Allowed to start in the same system* (off by
+  default) and *Evenly distributed through the quadrant* (on by default).
+- **Score Display**: own score only, own plus allies (the default), or everyone's.
+- **Technology Level for New Player**: Low (the default: base techs), Medium or High
+  (every allowed area at its maximum). Medium raises every allowed area to a middle
+  starting level taken from the tech area data (see spec 05).
 
 **Players tab**
 
 - The list of explicit empires, with Add New, Add Existing, Edit, Remove and Save.
 - **Random computer players** has two checkboxes. *Regular* AIs are full empires;
   *neutral* AIs stay in their home system.
-- **Number of Computer Players** (Low, Medium or High) rolls the count within
-  `Minimum/Maximum Computer Player {L,M,H} Setting`. Neutrals use the parallel neutral
-  keys.
-- **Difficulty** and **Bonus** handicap the AI.
+- **Number of Computer Players** (Low, Medium or High; Medium is the default) rolls the
+  count within `Minimum/Maximum Computer Player {L,M,H} Setting`. Neutrals use the
+  parallel neutral keys.
+- **Difficulty** (Low, Medium or High, default Medium) and **Bonus** (None, Low, Medium or
+  High, default None) handicap the AI (confirmed: binary for the lists; the bonus effect
+  is in spec 05 §8).
 
 **Victory Conditions tab**: see §11.
 
@@ -133,7 +157,9 @@ Conventions used throughout:
   Allow technology trades.
 - **Team Mode** allies every computer player against the humans.
 - **Allow intel projects**. The intel techs remain even when this is off, but are useless.
-- **No Ruins** suppresses Ancient Ruins rolls.
+- **No Ruins** discards an `Ancient Ruins` or `Ancient Ruins Unique` result of the
+  stellar ability roll (the roll itself still happens) (confirmed: binary). Starting
+  planets never keep ruins, whatever this option says (§3.6).
 - **Only breathable atmosphere** allows no domed colonies.
 - **Only home planet type** limits colonization to the homeworld's physical type, even
   when the empire has the technology for others.
@@ -153,9 +179,9 @@ Conventions used throughout:
 
 | Key(s) | Meaning |
 |---|---|
-| `Maximum Number Of Systems` | Hard cap on systems in a quadrant (at most 255). |
-| `Planet Value Low/High Percent`, `... Resources` | Range for rolling each resource value of a natural planet: a percentage, or a stock in finite mode. `Asteroids Value ...` gives the same for asteroid fields. |
-| `Plr Planet Value {Low,Medium,High} Percent/Resources` | Homeworld value for each Home Planet Value setting. |
+| `Maximum Number Of Systems` | Hard cap on systems in a quadrant (at most 255); also sets the Quadrant Size counts (§2.2). |
+| `Planet Value Low/High Percent`, `... Resources` | Inclusive range for rolling each resource value of a natural planet: a percentage, or a stock in finite mode. `Asteroids Value ...` gives the same for asteroid fields (confirmed: binary). |
+| `Plr Planet Value {Low,Medium,High} Percent/Resources` | Starting-planet value for each Home Planet Value setting (Bad, Average, Good). Percent values get a small random spread (§3.6) (confirmed: binary). |
 | `Maximum/Minimum Planet Percent/Resource Value` | Clamps on value changes during play. |
 | `Remote Mining Decreases Asteroid Value` | Whether remote mining depletes asteroids. |
 | `Planet Value Percent Loss After Owner Death` | Value lost when a colony's owner is eliminated **(inferred)**. |
@@ -174,12 +200,12 @@ Conventions used throughout:
 | Field | Semantics |
 |---|---|
 | `Name`, `Description` | Shown in the Quadrant Type list. |
-| `Min Dist Between Systems` | Number of **empty** galaxy squares required between any two systems. A value of 1 means no two systems occupy adjacent squares, so the Chebyshev distance is at least 2 **(inferred metric)**. |
-| `System Placement` | One of `Random`, `Clusters`, `Spiral`, `Diffuse`, `Grid`. |
-| `Max Warp Points per Sys` | Cap on warp points per system in the first pass. It may be exceeded to guarantee connectivity. |
-| `Min Angle Between WP` | Minimum angle in degrees between two warp links leaving the same system, measured as galaxy-map bearings. The connectivity pass may break it. |
+| `Min Dist Between Systems` | D. A new system is rejected when some earlier system lies within D squares on **both** axes (\|dx\| ≤ D and \|dy\| ≤ D). So the Chebyshev distance between systems is at least D + 1: with D = 1, no two systems occupy adjacent squares (confirmed: binary). |
+| `System Placement` | One of `Random`, `Clusters`, `Spiral`, `Diffuse`, `Grid` (§3.3). |
+| `Max Warp Points per Sys` | K. Despite the name, K is the number of **nearest systems each system considers** as link candidates (§3.5), halved when *All Warp Points connected* is off. It is not a cap: a system can end up with more links, up to the hard limit of 10 warp points per system (confirmed: binary). |
+| `Min Angle Between WP` | Minimum difference in degrees between the galaxy bearings of two links leaving the same system (§3.5). The connectivity pass ignores it (confirmed: binary). |
 | `Number of System Types` | Count of weighted entries. The loader must support at least 300. |
-| `Type N Name` / `Type N Chance` | A SystemTypes.txt name and its weight in tenths of a percent. The weights should sum to 1000; renormalize with a warning if they do not. |
+| `Type N Name` / `Type N Chance` | A SystemTypes.txt name and its weight in tenths of a percent. See §3.4 for how weights that do not sum to 1000 behave. |
 
 The stock file has six quadrant types. For example, "Mid-Life" pairs `Random`
 placement with 5 warp points per system and a 60° minimum angle, and "Spiral Arm"
@@ -187,102 +213,220 @@ uses `Spiral`.
 
 ### 3.2 Galaxy coordinates
 
-- Systems sit on an integer galaxy grid. One grid square is about **10 light years**.
-- Distances shown in the UI and used by Open Warp Point are Euclidean distances between
-  system positions, times 10 ly. Evidence: the stock warp-opening components use 10, 20,
-  ... 50 for descriptions reading 100 to 500 ly, while Abilities.txt claims the value is
-  in light years. Treat the value as grid squares **(inferred)**.
+- Systems sit on an integer galaxy grid of **67 × 46 squares**: x runs 1..67 and y runs
+  1..46, and y grows downward on the map (confirmed: binary). One grid square is about
+  **10 light years**.
+- **Distance** between two systems is round(√(dx² + dy²)) in squares (confirmed: binary).
+  Open Warp Point compares this distance with its Val 1, so that value is in squares
+  (§9); the UI shows ten times it as light years.
+- **Bearing** from system A to system B is a whole number of degrees, 0 pointing toward
+  smaller y (up the map) and growing clockwise, so 90 points toward larger x (confirmed:
+  binary). With dx = |xB − xA| and dy = |yB − yA|: if dy > 0, a = round(atan(dx / dy) in
+  degrees); if dy = 0, a is 90 when B is to the right, 270 when to the left, 0 when the
+  positions coincide. Then a becomes 180 − a when B is below-right or straight below
+  (xA ≤ xB and yA < yB), a + 180 when below-left, 360 − a when above-left, and 360 becomes 0.
+- **Angle difference** between two bearings a and b is |a − b|, except that when one is
+  above 270 and the other below 90 it is measured across north (360 − the larger + the
+  smaller) (confirmed: binary). Two bearings such as 260 and 10 therefore differ by 250.
 - Every empire knows every system's position from turn 0. Names and contents stay hidden
   until the system is explored.
-- The galaxy grid's dimensions are not documented. Choose them so that the system count
-  fits at the requested minimum distance.
 
 ### 3.3 Placement algorithms
 
-Only the names and the minimum-distance constraint are documented. Implement each as a
-generator that honours `Min Dist Between Systems` and the requested count, retrying or
-shrinking when it runs out of room:
+Systems are placed one at a time, in index order (confirmed: binary). For system number
+i (counting from 1), the chosen algorithm proposes a position; x is then clamped into
+1..67 and y into 1..46 (values of 0 or less become 1). The proposal is rejected if it is
+too close to an earlier system (§3.1). Up to 1,001 proposals are tried. If all fail, the
+quadrant keeps only the systems placed so far and generation continues with that smaller
+count.
 
-- `Random`: uniform rejection sampling.
-- `Clusters`: several groups of nearby systems with gaps between them. The history notes
-  that this mode must scale beyond 200 systems.
-- `Spiral`: points along logarithmic arms.
-- `Diffuse`: sparse, even coverage (a galactic-edge feel), for example Poisson-disc
-  sampling with a large radius.
-- `Grid`: a regular lattice with optional jitter.
+The five algorithms (confirmed: binary):
+
+- **Random**: x = R(67), y = R(46). Because of the clamp, x = 1 and y = 1 are twice as
+  likely as other values.
+- **Diffuse**: like Random, but the minimum distance D is increased by 2.
+- **Grid**: x = 5·R(13) + 2, y = 5·R(9) + 2, a random point of a 13 × 9 lattice with a
+  spacing of 5.
+- **Clusters**: with N the system count, pick a cluster width c and a gap g: c = 7, g = 8
+  normally; c = 10, g = 5 when N > 80; c = 12, g = 3 when N > 150. With s = c + g, the
+  quadrant is cut into cellsX = 67 div s columns and cellsY = 46 div s rows. Each cluster
+  takes per = N div (cellsX · cellsY) + 1 consecutive systems: system i goes to cluster
+  k = i div per, at column k mod cellsX and row k div cellsX, and
+  x = R(c) + g div 2 + s · column + 4, y = R(c) + g div 2 + s · row + 1.
+  The first cluster therefore gets one system fewer than the others, and the last
+  clusters may stay empty.
+- **Spiral**: systems lie on the outline of concentric squares centred near (34, 23).
+  The size r = 6 + 3 · (i div 10) grows every ten systems. Draw a direction
+  a = R(360) + 1 (degrees) and map it onto the outline with the square-outline function
+  of §3.5 for size r: (ox, oy) = outline(a, r), then x = 34 − r + ox and y = 23 − r + oy.
+  Large quadrants run off the grid edge and are clamped there.
 
 ### 3.4 System type, names and contents
 
-1. For each system, draw one entry from the quadrant's weighted list.
-2. Instantiate the chosen SystemTypes record (§4).
-3. **System names** are drawn from `SystemNames.txt` without replacement **(inferred)**.
-   The stock list is only slightly longer than the default system cap. Behaviour once
-   names run out is unknown, so fall back to generated names.
-4. **Ruins.** When *No Ruins* is set, drop the `Ancient Ruins` and `Ancient Ruins Unique`
-   entries before rolling (§5.2).
+1. **System names** are assigned when the system list is created (confirmed: binary).
+   The non-empty lines of `SystemNames.txt` form the pool. For each system in order, a
+   random start position R(n) is drawn and the first unused name from there (wrapping
+   round) is taken, so names never repeat. Systems beyond the number of names get **no
+   name** (an empty string). The engine should instead fall back to generated names and
+   warn **(OpenSE4 choice)**.
+2. **System type** (confirmed: binary): each system draws one entry from its quadrant's
+   weighted list, in system order, after placement and the warp network. Draw
+   r = R[1,1000]. Walk the entries in order, wrapping round to the first entry after the
+   last, and keep the total T of the chances already passed; the first entry with
+   T ≤ r < T + chance is chosen. When the chances sum to 1000, each entry is chosen with
+   probability chance/1000. When they sum to less, the list effectively repeats (early
+   entries are slightly favoured when the sum does not divide 1000). When they sum to
+   more, entries beyond a running total of 1000 are never chosen. If all chances are 0,
+   the system gets the first record of SystemTypes.txt. The name is looked up in
+   SystemTypes.txt (the last record with that name wins).
+3. The chosen SystemTypes record is instantiated (§4).
+4. **Ruins.** With *No Ruins*, a rolled `Ancient Ruins` or `Ancient Ruins Unique` result
+   is discarded (§5.2).
 
 ### 3.5 Warp network
 
-Documented facts:
+Links come in **pairs**: a warp point in each of the two systems, each leading to the
+other. The galaxy map draws a line only when both ends are known. Politics depends on
+connectivity: contact between two empires ends when no path links their planets.
 
-- Links come in **pairs**: a warp point in each of the two systems, each leading to the
-  other. The galaxy map draws a line only when both ends are known.
-- Warp points normally sit on the **outermost edge** of the system grid. The tutorial
-  shows them at positions such as (0,10), on the left edge.
-- Each system has at most `Max Warp Points per Sys` links in the first pass, with at
-  least `Min Angle Between WP` degrees between links. A second pass adds links to make
-  the graph connected when *All Warp Points Connected* is set, even if that breaks the
-  caps.
-- Every warp point in a system receives the stellar ability set named in that system
-  type's `WP Stellar Abil Type`. For example, black-hole systems use an "unstable" set
-  that adds turbulence damage.
-- Politics depends on connectivity: contact between two empires ends when no path links
-  their planets.
+**Building the links** (confirmed: binary). Nothing is built with *No Warp Points*. Let K
+be `Max Warp Points per Sys`, replaced by max(1, K div 2) when *All Warp Points connected*
+is off. Every system may hold at most **10** warp points. Systems are processed in index
+order. For system i:
 
-Recommended algorithm **(inferred)**:
+1. **Candidates.** For d = 1, 2, 3, ... collect, in index order, every system j ≠ i not
+   collected yet whose distance from i (§3.2) is exactly d. Stop after the round in which
+   the list reaches at least K systems, or after d = 68.
+2. **Linking.** If i has fewer than 10 links, take the candidates in list order and link
+   i with j unless: i and j are already linked; the bearing from i to j differs by less
+   than `Min Angle Between WP` from the bearing of any existing link of i; the bearing from
+   j to i differs by less than the minimum from any existing link of j; or either system
+   already has 10 links.
 
-1. Build candidate edges between near neighbours, sorted by length.
-2. Greedily accept an edge if both endpoints are under the cap and its bearing is at
-   least the minimum angle from every existing link at both endpoints.
-3. If connectivity is required, join components with the shortest inter-component edges,
-   ignoring the caps.
-4. Place each end on the edge sector nearest the bearing toward the other system. With
-   "anywhere", use a random free sector instead.
-5. Pick each warp point's SectType record from the `Warp Point` entries (§5.1),
-   preferring `Unusual = FALSE` for natural links.
+**Connectivity pass**, only with *All Warp Points connected* (confirmed: binary):
+
+1. Pick a random system and mark every system reachable from it through the links.
+2. Take the unmarked systems in index order. For each one, b, that has fewer than 10
+   links: find the marked system c with fewer than 10 links at the smallest distance from
+   b (ties go to the highest-numbered system), link b and c, ignoring the angle rule, then
+   mark everything now reachable from b. Repeat passes until every system is marked.
+   (Quirk: an unmarked system that already has 10 links is treated as marked without a
+   new link.)
+
+**Placing the warp points** (confirmed: binary). After a system's objects are placed
+(§4), it gets one warp point per link, in the order the links were made. The sector is
+found from the bearing a from this system to the destination:
+
+- **Square-outline function.** outline(a, r) maps a bearing onto the outline of a square
+  of side 2r whose top-left corner is (0, 0). With t(u) = atan(u · π / 180) (the arctangent
+  of the angle in radians, a quirk of the original, so corners are never reached):
+
+  | Bearing a | x | y |
+  |---|---|---|
+  | 0 ≤ a < 45 | round(r + r·t(a)) | 0 |
+  | 45 ≤ a < 90 | 2r − 1 | round(r − r·t(90 − a)) |
+  | 90 ≤ a < 135 | 2r − 1 | round(r + r·t(a − 90)) |
+  | 135 ≤ a < 180 | round(r + r·t(180 − a)) | 2r − 1 |
+  | 180 ≤ a < 225 | round(r − r·t(a − 180)) | 2r − 1 |
+  | 225 ≤ a < 270 | 0 | round(r + r·t(270 − a)) |
+  | 270 ≤ a < 315 | 0 | round(r − r·t(a − 270)) |
+  | 315 ≤ a ≤ 360 | round(r − r·t(360 − a)) | 0 |
+
+  Warp points use r = 6.5, which gives the edge of the 13 × 13 system grid (2r − 1 = 12).
+  A destination straight up the map gives (6, 0), the top edge's centre.
+- **Edge placement** (the default): start from outline(a, 6.5). Then nudge the coordinate
+  that runs along the edge by half a square and round it half to even: x for bearings from
+  315 up to 45, y for 45 < a < 135, x for 135 ≤ a ≤ 215, y for 215 < a < 315. The nudge is
+  +½ in the first two ranges and −½ in the last two. It is reversed when this system
+  already has a warp point on the same sector and a is smaller than the bearing toward that
+  warp point's destination. Because of the half-to-even rounding, the nudge moves an odd
+  coordinate one square to an even neighbour and leaves an even one where it is, so warp
+  points can share a sector.
+- **With *Warp Points located anywhere in system***: start from outline(a, 6.5) and move
+  R[0,4] squares straight inward (down for bearings up to 45 or from 315, left for
+  45 < a ≤ 135, up for 135 < a ≤ 225, right for 225 < a < 315). Redraw until the sector
+  holds no object.
+
+**Warp point type and ability** (confirmed: binary). The two ends of a link share their
+SectType record and their rolled ability. The end created first (in the lower-numbered
+system, since systems are processed in order) rolls the ability from **its own system
+type's** `WP Stellar Abil Type` (§5.2). The other end copies the first end's type and
+ability. The type is the first `Warp Point` SectType record whose `Unusual` is FALSE; when
+the roll grants an ability, a random `Warp Point` record is drawn instead, redrawn up to
+100 times until one with `Unusual` TRUE comes up.
+
+The `Warp Point One-Way` flag of SectType is read but never used: all warp points are
+two-way (confirmed: binary). Only the Close Warp Point stellar manipulation could look at
+`Warp Point Size`, and stock closers work on any size.
 
 ### 3.6 Empire placement
 
-- Home systems may only be system types with `Empires Can Start In = TRUE`. This rule was
-  added because players were starting in nebulae, black holes and asteroid systems.
-- With *Evenly distributed*, spread empires to maximize separation, measured in warp jumps
-  or galaxy distance (for example, iterative farthest-point selection).
-- Without *Allowed same system*, home systems must be distinct.
-- The homeworld is a planet in the home system, converted to match the race: its
-  breathable atmosphere and its native physical type from the Environment setup. Its size
-  is kept. The version history documents this conversion for map starting points; applying
-  it to random maps is **(inferred)**. Among the candidates, the engine prefers the planet
-  whose size is closest to Medium, the size of the homeworld observed in a stock Quick Start
-  game **(inferred)**.
-- Some start-eligible stock types, such as one trinary layout, contain no planets. The
-  generator must then create or convert a planet, or reject that system.
-- The homeworld value comes from the Home Planet Value setting (§2.2).
-- Extra starting planets go in nearby start-eligible systems, or in the same system.
-- Neutral empires get a single home system and never leave it.
-- A home system is explored for its owner at turn 0.
+Home systems may only be system types with `Empires Can Start In = TRUE`. This rule was
+added because players were starting in nebulae, black holes and asteroid systems.
+
+**Map starting points** (§12) come first (confirmed: binary): a player's specific point,
+else a random remaining common point. If the planet there does not have the player's
+atmosphere, it is replaced by a random Planet SectType record with the player's
+atmosphere and planet type and the same size. If there is no planet, one is created
+there (below).
+
+**Random placement** (confirmed: binary). Players are placed in player order. The
+**home size** is Small, Medium or Large for Home Planet Value Bad, Average or Good, raised
+to the smallest `Stellar Size` that any natural Planet SectType record with the player's
+atmosphere and planet type has (so a combination that only exists in large sizes forces a
+large homeworld). Up to three attempts build a candidate list; the first attempt with any
+candidate wins, and the home is drawn uniformly from it:
+
+- A candidate is an existing **planet** (not an asteroid field) whose atmosphere is the
+  player's breathable atmosphere and whose physical type is the player's planet type. No
+  planet is converted.
+- Its system must be start-eligible, and not already another player's home system unless
+  *Allowed to start in the same system* is on. It must not be another player's homeworld.
+- In attempts 1 and 2, and in attempt 3 when *All player planets the same size* is on, its
+  size must equal the home size.
+- In attempts 1 and 2, with *Evenly distributed*: with S systems and P players, its system
+  must be more than trunc(0.8 · (S div P)) warp jumps (attempt 1) or trunc(0.5 · (S div P))
+  jumps (attempt 2) from the home system of every player placed before. Systems with no
+  warp path count as very far.
+
+If no attempt finds a candidate, the game draws up to 2,000 random systems looking for a
+start-eligible one not used by another player (if none turns up, one more random system is
+used whatever its type) and **creates** a homeworld there: a random empty sector (any of
+the 169), a random Planet SectType record with the player's atmosphere and planet type
+(and the home size when *All player planets the same size* is on), random values and
+conditions as for a natural planet, and a name made of the system name and the Roman
+numeral one above the number of occupied sectors in that system.
+
+**Starting planets** (confirmed: binary; the full homeworld setup is in spec 02 §9). With
+more than one starting planet (a neutral empire always gets one), further planets are
+taken from the home system and systems up to one warp jump away (two jumps when the
+quadrant has more than 60 % of `Maximum Number Of Systems`). Systems that are not
+start-eligible are skipped (the home system always counts), and so are systems where
+another empire is present, unless *Allowed to start in the same system* is on. Within
+those systems, sectors are scanned in order for unowned planets with the player's
+atmosphere and type (and the home size with *All player planets the same size*) that are
+not another player's homeworld. If there are not enough, the remainder are created in
+random candidate systems, on a random empty sector of the inner 11 × 11 area.
+
+Every starting planet's system is explored for its owner at turn 0. Neutral empires cannot
+use warp points at all (§8), so they never leave their home system.
 
 ### 3.7 Pipeline
 
-```
-generateQuadrant(setup):
-  positions  = place(setup.quadrantType.placement, setup.size, minDist)
-  for each pos: sys = instantiate(weightedPick(quadrantType.types)); sys.name = drawName()
-  if !noWarpPoints: buildWarpNetwork(); placeWarpPoints(anywhere?)
-  rollStellarAbilities(all objects, noRuins)
-  assignPlanetValues(finite?)
-  placeEmpires(); convertHomeworlds(); applyHomeValue()
-  initKnowledge(allSeen?, omnipresent?)
-```
+The original generates a quadrant in this order (confirmed: binary):
+
+1. Roll the number of systems for the quadrant size (§2.2).
+2. Draw the system names (§3.4).
+3. Place the systems. Placement may end with fewer systems than rolled (§3.3).
+4. Unless the game has no warp points, choose the links. If "all systems connected" is
+   on, run the connectivity pass (§3.5).
+5. For each system in order: roll its type (§3.4); place its objects and roll their
+   abilities and values (§4, §5); then place its warp points, each pair sharing one type
+   and one ability (§3.5).
+6. Set each warp point's destination.
+7. Place the players (§3.6).
+8. Set up the players: technology, the all-seen option, starting planets and the
+   stockpile (spec 02 §9).
 
 ---
 
@@ -290,10 +434,10 @@ generateQuadrant(setup):
 
 ### 4.1 Sector grid
 
-- Each system is a square grid. The SystemTypes header says X and Y both run **0..12**,
-  so the grid is 13×13 and the centre is (6,6). X grows to the right and Y grows downward:
-  (0,10) is near the bottom left. The Deluxe manual instead says 196 sectors, which would
-  be 14×14. See §14.
+- Each system is a square grid of **13×13** sectors, x and y both 0..12, with the centre
+  at (6,6) (confirmed: binary; the Deluxe manual's 196 sectors is wrong). X grows to the
+  right and Y grows downward: (0,10) is near the bottom left. The original numbers the
+  sectors y·13 + x, so the centre is sector 84.
 - Any number of objects can share a sector. Stock types stack moons on a planet's sector.
 - Clicking an empty sector opens the whole-system report: its type, description and
   system abilities.
@@ -309,25 +453,34 @@ generateQuadrant(setup):
 | `Number of Abilities` + `Ability N Type/Descr/Val 1/Val 2` | **System-wide abilities, always present with no roll.** They apply to every sector. |
 | `WP Stellar Abil Type` | StellarAbilityTypes name applied to every warp point in this system. |
 | `Number of System Objs` | Non-warp-point objects. The value 0 is legal and common: "scenic" systems such as giants, comets or star-forming regions are just a backdrop plus warp points. |
-| `Obj N Physical Type` | `Planet`, `Asteroids`, `Storm`, `Star`/`Sun`, `Destroyed Star` or `Comet`. |
+| `Obj N Physical Type` | `Planet`, `Asteroids`, `Storm`, `Star`/`Sun`, `Destroyed Star` or `Comet`. Generation creates planets, asteroid fields, storms, stars and destroyed stars; a `Comet` (or `Warp Point`) template entry creates **nothing**, though it still occupies its template index for `Same As` (confirmed: binary). |
 | `Obj N Position` | See §4.3. |
 | `Obj N Stellar Abil Type` | StellarAbilityTypes name to roll for this object. |
-| `Obj N Size` | `Any` or Tiny..Huge. |
+| `Obj N Size` | `Any` or Tiny..Huge. For planets and asteroids it is compared with the PlanetSize record's `Stellar Size`. |
 | `Obj N Atmosphere`, `Obj N Composition` | Planets and asteroids only. `Any` or a specific value. |
 | `Obj N Age`, `Obj N Color`, `Obj N Luminosity` | Stars only. `Any` or a specific value. |
 
 ### 4.3 Position specifiers
 
+Objects are placed in template order; "occupied" below means a sector already used by
+an earlier object of the same system (warp points come later). The rules are confirmed:
+binary.
+
+- The specifier is recognised by the word it contains: `Ring`, then `Coord`, then `Same`,
+  then `Circle Radius`. Anything else has no defined result in the original; the engine
+  places the object on a random sector and warns **(OpenSE4 choice)**.
 - `Ring 1`: the centre sector.
-- `Ring k` for k = 2..7: a random sector exactly k−1 squares from the centre. Use
-  Chebyshev distance, meaning square rings **(inferred)**.
-- `Circle Radius R`: a random sector whose rounded Euclidean distance from the centre
-  equals R. The header calls it a "true circle", in contrast to the square rings.
-- `Coord X,Y`: a fixed sector with no randomness.
-- `Same As N`: the same sector as object N, which must come earlier in the record. Used
-  for moons.
-- Random placements should avoid sectors already holding an object unless the specifier
-  is `Same As` **(inferred)**. Warp points should also avoid occupied sectors.
+- `Ring k` for k = 2..7 (a single digit): a sector on the square ring k−1 squares from the
+  centre (Chebyshev distance). With side s = 2k − 1 and o = 7 − k: a coin picks a
+  horizontal or a vertical side, a second coin picks which one, and the position along it
+  is o + R(s). Corners can be reached from two sides, so they are twice as likely. The draw
+  is repeated while the sector is occupied, up to 101 draws, after which the last one is
+  kept anyway.
+- `Circle Radius R`: a uniformly random unoccupied sector whose Euclidean distance from
+  the centre, **truncated**, equals R. If there is none, the object goes to sector (0,0).
+- `Coord X,Y`: a fixed sector with no randomness and no occupancy check.
+- `Same As N`: the same sector as object N. If N has not been placed yet, the result is
+  sector (0,0). Used for moons.
 
 ### 4.4 System-wide ability types
 
@@ -336,20 +489,23 @@ data.
 
 | Ability | Effect |
 |---|---|
-| `Sector - Sight Obscuration` | Every object in the system gets obscuration Val1 in **all five** sight types (§6). This is what makes a nebula. |
+| `Sector - Sight Obscuration` | Every affected object in the system gets obscuration Val1 in **all five** sight types (§6). This is what makes a nebula. The system value is at least 1. |
 | `Sector - Shield Disruption` | Val1 shield points lost in combat. Stock uses a huge value, so shields are useless. |
-| `System - Movement Towards Center` | Each turn, every ship is pulled Val1 sectors toward the centre (black holes). |
-| `System - Destructive Center` | Val1 normal damage to ships in the centre sector (black holes). |
-| `System - Movement Random` | Each turn, ships are displaced Val1 sectors in a random direction (spatial ruptures). |
-| `Sector - Damage`, `Sector - Sensor Interference` | May also appear at system level, with the same meaning as at sector level (§5.3). |
+| `System - Movement Towards Center` | Each turn, every ship and unit group is pulled Val1 sectors toward the centre (black holes) (§7). |
+| `System - Destructive Center` | Val1 normal damage each turn to every ship and unit group in the centre sector (black holes) (§7). |
+| `System - Movement Random` | Each turn, every ship and unit group moves Val1 steps toward one random sector (spatial ruptures) (§7). |
+| `Sector - Damage`, `Sector - Sensor Interference` | May also appear at system level, with the same meaning as at sector level, added to the value of the sector (§5.3). |
+
+Several abilities of the same kind add up, except sight obscuration, where the largest
+value counts (confirmed: binary).
 
 The header also lists `System - Sensor Interference`, `System - Damage` and
-`System - Ability Required`. Stock data does not use them. Accept them as aliases. The
-meaning of `Ability Required` is unknown.
+`System - Ability Required`. They are not in the game's list of ability names, so they
+have no effect (confirmed: binary). Stock data does not use them. The engine should load
+them with a warning and ignore them.
 
-Timing **(inferred)**: apply the movement effects in the turn's movement phase, after
-orders execute. Apply centre damage whenever a ship ends a move in the centre or is pulled
-into it.
+Timing: the movement effects and the centre damage happen once per turn in the event
+step at the end of the turn (§7) (confirmed: binary).
 
 ---
 
@@ -372,14 +528,18 @@ most 1000 records.
 | `Storm Size` | Storm | Tiny..Huge. |
 | `Combat Tile` | Storm, Asteroids | Name of the tactical-map fill tile. Asteroid and storm sectors fill the combat map. |
 | `Warp Point Size` | Warp Point | `Small` or `Large`. |
-| `Warp Point One-Way` | Warp Point | Boolean. |
-| `Unusual` | Warp Point | Boolean. |
+| `Warp Point One-Way` | Warp Point | Boolean. Read but never used by the game (confirmed: binary). |
+| `Unusual` | Warp Point | Boolean. Natural warp points with a rolled ability use an Unusual record, the others a plain one (§3.5). |
 
-**Instantiation.** For each SystemTypes object, filter SectType by physical type and by
-every constraint that is not `Any`. Constructed sizes are excluded from natural rolls.
-Pick uniformly among the matching records **(inferred)**, so the frequency of an
-attribute follows how many records carry it. If nothing matches, warn and relax the
-constraints.
+**Instantiation** (confirmed: binary). The candidates for a SystemTypes object are the
+SectType records of its physical type, excluding planet and asteroid records whose
+PlanetSize is `Constructed`. When the object's size **and** atmosphere are both `Any`, the
+record is drawn uniformly among all candidates and the other constraints (composition,
+age, colour, luminosity) are **ignored** (a quirk; stock data never combines them). Otherwise
+every constraint that is not `Any` must match, and the record is drawn uniformly among the
+matches, so the frequency of an attribute follows how many records carry it. When nothing
+matches the original has no defined result; the engine warns and relaxes the constraints
+**(OpenSE4 choice)**.
 
 **Star attributes.** Age, colour and luminosity appear to be descriptive only. The number
 of stars matters, because the "Solar ..." abilities (solar supply and solar resource
@@ -394,10 +554,10 @@ generation) scale per star in the system.
 | `Ability N Chance` | 0..1000, in tenths of a percent. The chances in one record should total at most 1000. |
 | `Ability N Type/Descr/Val 1/Val 2` | The ability granted if this entry is chosen. |
 
-**Roll.** Draw one value r in [0,1000) and walk the entries, accumulating their chances.
-The first entry whose running total exceeds r is granted; if r lands past the total,
-nothing is granted. So each object gets **at most one** rolled ability **(inferred from
-the ≤1000 rule)**. Two stock examples show the consequence. The storm set splits the
+**Roll** (confirmed: binary). Draw r = R[1,1000] and walk the entries, accumulating their
+chances. The entry whose running total first reaches r is granted (so each entry wins
+with probability chance/1000); if r lies past the total, nothing is granted. Each object
+gets **at most one** rolled ability. Two stock examples show the consequence. The storm set splits the
 full 1000 among four effects, so every natural storm has exactly one. The planet set
 totals only a few percent, and all of it is ruins.
 
@@ -405,33 +565,40 @@ totals only a few percent, and all of it is ruins.
 
 | Ability | Val 1 (Val 2) |
 |---|---|
-| `Sector - Damage` | Normal damage per turn to every object in the sector. Stock storms carry Val2 = 1 with no documented meaning. |
-| `Sector - Sight Obscuration` | Obscuration level in all sight types for objects in the sector. Units do not benefit from it **(interpretation)**. |
+| `Sector - Damage` | Normal damage to ships **moving into** the sector, not to ships that stay there (§7) (confirmed: binary). Stock storms carry Val2 = 1, which the game ignores. |
+| `Sector - Sight Obscuration` | Obscuration level in all sight types for affected objects in the sector: planets, asteroid fields, ships, unit groups and comets, but not stars, storms or warp points (§6) (confirmed: binary). A ship or planet carrying this ability obscures its sector too. |
 | `Sector - Sensor Interference` | Modifier to combat to-hit rolls in the sector. Stock uses a negative value. It does not affect detection. |
 | `Sector - Shield Disruption` | Shield points lost in combat in the sector. |
-| `Star - Unstable` | Chance that the star explodes **per year**. Stock uses 0 with only descriptive text. See §10 and §14. |
-| `Warp Point - Turbulence` | Normal damage to each object that passes through this warp point. |
+| `Star - Unstable` | No game logic reads it (confirmed: binary); it is descriptive only. The same holds for `Warp Point - Unstable`, `Warp Point - Periodic`, `Warp Point - Ability Required` and `Sector - Ability Required`. |
+| `Warp Point - Turbulence` | Damage to ships that jump through this warp point: a 50 % chance per jump (§8) (confirmed: binary). |
 | `Ancient Ruins` | On colonization, the colonizer receives Val1 random tech areas. |
 | `Ancient Ruins Unique` | On colonization, the colonizer receives the unique tech area with id Val1. |
 
-Stars are never hidden by storm or nebula obscuration (version history).
+Stars, storms and warp points are never hidden by storm or nebula obscuration (confirmed:
+binary).
 
 ### 5.4 Object kinds
 
 - **Star.** Anchors the system and is the target for Destroy Star, Create Nebulae, Create
-  Black Hole and constructed planets.
-- **Destroyed Star.** A dead stellar core. It is star-like in data, but assume it is not
-  a valid target for star manipulations or solar generation **(inferred)**.
+  Black Hole and constructed planets. Every generated star is named after its system plus
+  the word for star, so all stars of a multi-star system share one name (confirmed:
+  binary).
+- **Destroyed Star.** A dead stellar core, created only by generation; Destroy Star does
+  not leave one (§9). Once generated the game makes no difference between it and a star:
+  same object kind and naming, so star manipulations can target it and it counts for the
+  one-star limit of Create Star (confirmed: binary). Whether solar generation counts it
+  was not checked.
 - **Planet.** Colonizable (§5.5 and §5.6).
 - **Asteroids.** Cannot be colonized in stock (there is no asteroid colonize ability) but
   can be remotely mined. They are the required input for Create Planet. A destroyed planet
   becomes an asteroid field.
 - **Storm.** A sector hazard with its rolled ability. It has no owner and does not move
-  **(inferred)**. The Storm report shows the picture, name, size, description and ability
-  list.
-- **Warp Point** (§8).
-- **Comet.** A legal physical type that stock data never places. Treat it as inert
-  scenery.
+  **(inferred)**. Every storm is simply called "Storm" (confirmed: binary). The Storm report
+  shows the picture, name, size, description and ability list.
+- **Warp Point** (§8). Its name is the word for warp point, followed by the destination
+  system's name when the viewer has explored that system (confirmed: binary).
+- **Comet.** A legal physical type that generation never creates (confirmed: binary).
+  Treat it as inert scenery.
 
 ### 5.5 PlanetSize.txt: capacity by size
 
@@ -440,7 +607,7 @@ Records are keyed by (`Physical Type`, `Name`). `Physical Type` is `Planet` or
 
 | Field | Semantics |
 |---|---|
-| `Stellar Size` | The Tiny..Huge category used by generation filters and by size comparisons, such as a destroy-planet limit. A constructed world is size Huge. |
+| `Stellar Size` | The Tiny..Huge category used by generation filters, homeworld sizes and Create Planet. A constructed world is size Huge. Destroy Planet instead compares the record's position in the file (§9). |
 | `Max Facilities`, `Max Population`, `Max Cargo Spaces` | Capacity of a normal colony. |
 | `Max Facilities Domed`, `Max Population Domed`, `Max Cargo Spaces Domed` | Capacity when any resident race cannot breathe the atmosphere. |
 | `Constructed` | TRUE for manufactured worlds, which natural generation never creates. |
@@ -452,9 +619,13 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
 
 ### 5.6 Other planet properties
 
-- **Name.** The system name plus a Roman numeral ("Xyz IV"). The owner may rename a
-  colonized planet. The numbering order (object index or distance from the star) is
-  unconfirmed.
+- **Name** (confirmed: binary). Planets are numbered in template order: a planet alone in
+  its sector gets the system name plus the next Roman numeral ("Xyz IV"). A planet placed
+  in a sector that an earlier object of the template already uses (a moon) does not take a
+  numeral: it gets the first object's name plus a letter, A for the second object in that
+  sector, B for the third. Asteroid fields are always named "*system* Asteroid Belt" plus
+  their own Roman numeral, even when there is only one. The owner may rename a colonized
+  planet.
 - **Physical type.** Rock, Ice or Gas (giant). Colonizing a type requires the matching
   `Colonize Planet - X` ability. Each empire starts able to colonize its home type.
 - **Atmosphere.** A race breathes exactly one of the four gases. A planet with any other
@@ -462,14 +633,18 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
   A colony counts as domed if any resident race cannot breathe the air.
   `Planet - Change Atmosphere` switches the atmosphere after Val1 turns to what most of the
   population breathes.
-- **Conditions.** An ordinal from Pleasant (best) to Deadly (worst). Worse conditions
-  lower happiness and reproduction. The generation distribution and intermediate labels
-  are unknown. Conditions change through events and abilities, by a percentage per turn.
+- **Conditions** (confirmed: binary). A real number shown as a band from Optimal (best)
+  down to Deadly; the bands and their effect are in spec 02 §2. A natural planet rolls
+  R[0,10]/10 + 0.5, one of 0.5, 0.6, ... 1.5 with equal chance (Unpleasant 5 in 11, Mild
+  3 in 11, Good 2 in 11, Optimal 1 in 11). An asteroid field rolls half of that, 0.25 to
+  0.75. Conditions change through events and abilities.
 - **Value.** Three numbers, one each for minerals, organics and radioactives.
   - *Normal mode*: a percentage multiplier on production at that planet. Roll it per
-    resource, uniformly in `Planet Value Low..High Percent` (asteroids use their own keys),
-    and clamp later changes to `Min..Max Planet Percent Value`.
-  - *Finite mode*: the remaining resource stock. Roll it in `... Low..High Resources`.
+    resource, uniformly in `Planet Value Low..High Percent`, both ends included
+    (asteroids use their own keys) (confirmed: binary), and clamp later changes to
+    `Min..Max Planet Percent Value`.
+  - *Finite mode*: the remaining resource stock. Roll it in `... Low..High Resources`
+    (confirmed: binary).
     Production subtracts from the stock, and output stops at 0. Solar generators neither
     use nor depend on the stock (version history).
 - **Ruins** come from the roll in §5.2.
@@ -489,43 +664,57 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
 2. **Explored, no presence.** The system becomes explored the first time any of the
    empire's ships enters it. Stellar bodies (stars, planets, asteroids, storms, warp
    points) are remembered from then on. Enemy vehicles are invisible.
-3. **Present.** The empire owns a colony, ship, base or unit in the system. The empire
-   then sees the live system through the sight rules below. Whether mines or other units
-   grant presence is unconfirmed.
+3. **Present.** The empire has a **sensor source** in the system: a ship or base, a
+   fighter, satellite or drone group, or an owned planet (populated or not). Mine fields
+   are not sensor sources (confirmed: binary). The empire then sees the live system through
+   the sight rules below.
 
-*All systems seen* starts every system at level 2. A **Partnership** treaty shares sight:
-you see every system your partner sees as if you were present, and you learn every
-system they explore. Sharing is transitive across chains of partnerships (A–B plus B–C
-lets A see what C sees).
+*All systems seen* marks every system explored for every empire at the start (level 2)
+(confirmed: binary). A **Partnership** treaty shares sight: in each system, an empire's
+sensor levels are raised to those of every empire it holds a Partnership with, and this is
+repeated five times, so chains of partnerships (A–B plus B–C) pass sight along (confirmed:
+binary). The check is one-way: A gets B's sensors when A's treaty with B is a Partnership.
+Partners also exchange their maps (spec 05).
 
 ### 6.2 Sight types
 
 There are five types: `EM Active`, `EM Passive`, `Psychic`, `Gravitic`, `Temporal`.
 
-- **Sensor level per type.** Every object has a baseline of EM Active 1 and 0 in the other
-  types. `Sensor Level` abilities (Val1 = type name, Val2 = level) raise it.
+The rules of this section are confirmed: binary.
+
+- **Sensor level per type.** Every sensor source has a baseline of EM Active 1 and 0 in the
+  other types. `Sensor Level` abilities (Val1 = type name, Val2 = level) raise it; the
+  highest value per type counts.
 - **Obscuration per type.** Every object's baseline is 1 in all types, so a sensor level
   of 1 in any type sees it. Obscuration can be raised by:
-  - `Cloak Level` abilities (Val1 = type, Val2 = level) from components, armour or hulls.
-    These count **only while the object is cloaked**. Hull cloak levels, such as those on
-    mines, act as always-on **(inferred)**.
-  - `Sector - Sight Obscuration` from a storm in the object's sector or from a system-wide
-    nebula. It raises all five types. It never applies to stars.
-- Combine several sources per type by taking the **maximum** **(inferred)**.
+  - `Cloak Level` abilities (Val1 = type, Val2 = level), highest value per type. A ship's
+    cloak levels count **only while the ship is cloaked**. Unit groups (mines, satellites,
+    fighters, drones) always use theirs. A planet uses its colony's cloak levels only while
+    the colony is cloaked.
+  - The **environment**: the largest `Sector - Sight Obscuration` among the storms, ships
+    and planets in the object's sector, and the system-wide value (at least 1). It raises
+    all five types alike. It applies to planets, asteroid fields, ships, unit groups and
+    comets, but never to stars, storms or warp points.
+- Several sources are combined by taking the **maximum**, never the sum.
 
 ### 6.3 Detection rule
 
-Sight is resolved **per system**, not per sector. The empire's sensor vector in system S
-is the per-type maximum over everything it has in S. Planets count, since they carry the
-baseline, and so do partners' assets. A foreign object is visible when there is **any**
-type t with sensor[t] ≥ obscuration[t].
+Sight is resolved **per system**, not per sector (confirmed: binary). The empire's sensor
+vector in system S is the per-type maximum over its sensor sources in S, raised by its
+partners' (§6.1). An object the empire owns is always visible to it. Any other object is
+visible when the empire has explored the system and there is **any** type t with
+sensor[t] ≥ obscuration[t]. Objects of partners get no exception.
 
 ```
-visible(E, obj) = present(E, sys) &&
-                  exists t in 5 types: sensor(E, sys)[t] >= obsc(obj)[t]
-obsc(obj)[t] = max(1, obj.cloaked ? cloak[t] : 0,
-                   obj.isStar ? 0 : max(sectorObsc(obj.sector), systemObsc(sys)))
+visible(E, obj) = owner(obj) == E ||
+                  (explored(E, sys) && exists t: sensor(E, sys)[t] >= obsc(obj)[t])
+obsc(obj)[t] = max(cloakedLevel(obj)[t],                       # 1 when not cloaked
+                   affected(obj) ? max(sectorObsc(obj.sector), systemObsc(sys)) : 0)
 ```
+
+With no sensor source in the system, every sensor level is 0 and nothing is visible, so
+the explored test only matters together with presence. Storms are an exception: a storm is
+visible to an empire that has explored the system and has any sensor level above 0 there.
 
 Worked example: a stock level-1 cloak sets 2 in all types. Base sensors (EM Active 1)
 miss the ship, and a level-2 sensor in any one type reveals it. A cloak that raises only
@@ -533,6 +722,10 @@ EM Active and EM Passive to 3 is still seen by Psychic, Gravitic or Temporal lev
 
 Stock mine hulls carry cloak level 5 in every type, which is above the best stock sensor
 (level 4). Mines are therefore undetectable and are found by sweeping.
+
+Observers inside the same storm are treated like any other observer: the storm raises
+their own obscuration, not their sensors, so they see each other when their sensors
+reach the storm's level.
 
 Sight should be recomputed whenever the inputs change: facilities built or lost,
 components destroyed, cloak toggled, movement, or a nebula created or destroyed.
@@ -552,9 +745,11 @@ components destroyed, cloak toggled, movement, or a nebula created or destroyed.
 ### 6.5 Omnipresent view
 
 The manual says omnipresent view shows everything, cloaked objects included. The version
-history later *fixed* omnipresent view revealing cloaked ships. Recommendation: give
-presence (baseline sensors) in every system, but reveal cloaked objects only through
-real sensors. Check this in the game.
+history later *fixed* omnipresent view revealing cloaked ships. The executable does this
+(confirmed: binary): with omnipresent view, the explored test is dropped and every
+empire's EM Active sensor level is at least 1 in every system. Uncloaked objects outside
+obscuring storms and nebulae are therefore visible everywhere, while cloaked or obscured
+objects still need real sensors.
 
 ### 6.6 Scanning (detail, not detection)
 
@@ -591,14 +786,36 @@ explored systems only.
 
 ## 7. Hazards per turn (storms, nebulae, black holes, ruptures)
 
-Order within the turn **(inferred)**: after movement, apply displacements (pull toward
-the centre, random moves), then centre damage, then `Sector - Damage` to objects in hazard
-sectors. Resolve these deterministically in ship-id order.
+The rules of this section are confirmed: binary.
 
-- A ship displaced into a sector with visible hostiles should trigger combat as normal
-  movement would **(inferred)**.
-- Shield disruption and sensor interference apply only inside combat that takes place in
-  the affected sector or system.
+**Once per turn**, at the start of the event step at the end of the turn (after movement,
+combat, the empires' end-of-turn processing and the victory check, spec 05 §8), each
+system is processed in system order:
+
+1. **Pull.** With P = the sum of the system's `System - Movement Towards Center` values,
+   every ship (bases included) and every unit group (fighters, mines, satellites, drones)
+   in the system takes P steps toward the centre. A step changes x and y by at most one
+   each, toward the target (a king's move), and stops at the target.
+2. **Random drift.** With D = the sum of `System - Movement Random`, every ship and unit
+   group takes D steps toward one random target sector. The target is drawn once per turn,
+   for all systems, as sector number R[0,144] (y·13 + x, so rows 0 to 10 and the first two
+   squares of row 11). Drift therefore never leaves the grid.
+3. **Centre damage.** With C = the sum of `System - Destructive Center`, every ship and unit
+   group in the centre sector takes C normal damage. Each empire is told which of its
+   ships were damaged or destroyed by natural events.
+
+**Sector damage is not a per-turn effect.** `Sector - Damage` (a storm's value plus any
+system-wide value in that system) hits ships **as they move**: each time a moving ship or
+fleet steps into a sector with a total above 0, there is a 50 % chance that every ship in
+the group takes that much normal damage, and if it does, the group stops moving for the
+turn. Ships that stay in a storm are not harmed. The movement pathfinding of empire ships
+also steps around damaging sectors when it can (movement spec).
+
+Displacement does not start combat by itself; combat only happens in the movement phases
+(inferred from the order above).
+
+Shield disruption and sensor interference apply only inside combat in the affected sector
+or system: the system-wide value plus the values of the objects in that sector.
 
 ---
 
@@ -610,14 +827,21 @@ sectors. Resolve these deterministically in ship-id order.
   costs 1 movement point. Movement details belong in the movement spec.
 - A Move To order across systems routes through known links. The explicit Warp order is
   needed only when the link leads to an unexplored system.
-- `Warp Point - Turbulence` on the departure warp point damages every object that passes
-  through. Whether arrivals through the paired end take damage is unknown.
-- Knowledge: an empire that has seen a warp point knows it exists. It learns the
-  destination only by traversing it, or through partner sharing or omnipresence.
-- The data allows `One-Way` warp points (travel in one direction only) and `Size`
-  (Small/Large). Stock generation does not appear to use either. Only `Close` checks size,
-  and stock closers work on any size.
-- Opening or closing a warp point creates or removes **both** ends (§9).
+- **Turbulence** (confirmed: binary). On each jump there is a 50 % chance that every ship
+  of the jumping group takes damage equal to the sum of the `Warp Point - Turbulence`
+  values of the warp point it leaves. The group still arrives, but its movement ends for
+  the turn. Both ends of a natural link carry the same ability (§3.5), so the direction
+  does not matter for generated links.
+- **Neutral empires** cannot jump through warp points at all (confirmed: binary).
+- Knowledge: an empire that has seen a warp point knows it exists. Arriving in a system
+  explores it (confirmed: binary). The warp point's name shows its destination once the
+  viewer has explored the destination system. Partner sharing and omnipresence also
+  reveal destinations.
+- The data allows `One-Way` warp points and `Size` (Small/Large). The game never reads
+  the one-way flag, so every link can be used in both directions (confirmed: binary).
+  Only `Close` could check size, and stock closers work on any size.
+- Opening or closing a warp point creates or removes **both** ends (§9). A system can hold
+  at most 10 warp points.
 
 ---
 
@@ -628,33 +852,44 @@ orders can also reach it through Use Component or Use Facility. Common rules:
 
 - The ship must be **at the target location** when the order executes. The history fixed
   execution after the ship had moved away.
-- The ship needs movement remaining (confirmed at least for Create Storm) and the
-  component's supply cost.
+- Every action except Construct needs movement remaining; the movement is not spent
+  (confirmed: binary).
+- Every action needs a working component with the ability, enough supply for it (which is
+  then spent), **no visible hostile object** in the target sector (owned by an empire with
+  which it has no treaty of Non-Aggression or better: war, non-intercourse, no treaty or
+  no contact), and the ship **not cloaked** (confirmed: binary).
 - Components with `Component Destroyed On Use` are consumed. Those whose effect destroys
   the ship itself carry no such flag.
 - A button is enabled only when the ship has the matching ability and the precondition
   holds.
-- Blocking abilities (`Stop ...`) on a facility in the target system prevent the action.
-  For warp points, a blocker at either end prevents it, and it blocks everyone, including
-  its owner.
+- Blocking abilities (`Stop ...`) count on **any owned object** in the target system: a
+  ship's own abilities or a planet's colony abilities (facilities), whoever the owner, the
+  acting empire included (confirmed: binary). For warp points, a blocker in either system
+  prevents it. `Stop Planet Destroyer` only counts in the planet's own sector.
 - Each outcome raises the matching log event: Planet/Star Created or Destroyed, Warp Point
   Opened or Closed.
 
+The results below are confirmed: binary. "Shockwave" in the table means: every planet and
+asteroid field in the system is replaced by a new asteroid field (a random natural
+Asteroids record of any size) that keeps its name, values and conditions, and every
+colony on them is lost; every other object except warp points (stars, storms, ships and
+bases, unit groups, comets) is destroyed, the acting ship included.
+
 | Action (ability) | Precondition | Result |
 |---|---|---|
-| Create Planet (`Create Planet Size` = max size) | Asteroids in the sector | The asteroid field becomes a planet no larger than Val1, with random atmosphere and type. |
-| Destroy Planet (`Destroy Planet Size` = max size) | A planet of size ≤ Val1 in the sector. Blocked by `Stop Planet Destroyer` on that planet (only one such facility per planet counts). | The planet becomes an asteroid field. Its colony is lost **(inferred)**. |
-| Create Star (`Create Star`) | Not allowed in Nebulae or Black Hole systems | A random star is created in the sector. |
-| Destroy Star (`Destroy Star`) | A star in the sector. Blocked by `Stop Star Destroyer`. | A shockwave destroys **everything in the system except warp points**, the acting ship included. |
-| Open Warp Point (`Open Warp Point Distance`) | The target is another system within Val1 × 10 ly and not the origin itself. Blocked by `Stop Open Warp Point` at either end. | A new warp point is added at this sector, and its pair in the target system. The target is picked on the galaxy map. |
-| Close Warp Point (`Close Warp Point`) | A warp point in the sector. Blocked by `Stop Close Warp Point` at either end. | Both ends are removed. Closing an already-closed link must be a harmless no-op (a simultaneous-turn race). |
-| Create Storm (`Create Storm`) | Movement remaining | A random storm whose abilities are capped by the `Created Storm Maximum ...` settings. |
+| Create Planet (`Create Planet Size` = max size) | A visible asteroid field in the sector, and at least one star in the system. | The asteroid field is replaced by a planet of stellar size exactly min(Val1, the field's size): a random Planet record of that size (so its atmosphere and type are random). It keeps the field's values and name numbering continues (the next free numeral); conditions are rolled as for a natural planet. A colony on the field is lost. |
+| Destroy Planet (`Destroy Planet Size` = max size) | A visible planet in the sector whose PlanetSize record number (its position in PlanetSize.txt; stock Tiny..Huge are 1..5, the constructed worlds come after) is at most Val1. Blocked by `Stop Planet Destroyer` on any owned object in that sector. | The planet is replaced by a random natural asteroid field of the same stellar size that keeps its name, values and conditions. The colony is lost. |
+| Create Star (`Create Star`) | The system is neither Nebulae nor Black Hole, has no star (destroyed stars count) and no constructed planet. The centre sector is **not** required. | A random natural star record is placed in the ship's sector and named after the system. |
+| Destroy Star (`Destroy Star`) | A visible star in the sector. Blocked by `Stop Star Destroyer` in the system. | Shockwave (above). The system type and its abilities do not change, and no destroyed star remains. |
+| Open Warp Point (`Open Warp Point Distance`) | The target is another system at distance (§3.2) at most Val1, with no link to it yet, and both systems have fewer than 10 warp points. Blocked by `Stop Open Warp Point` in either system. | A new warp point is added at this sector, and its pair on the target system's edge facing the origin (edge placement of §3.5). Both ends use the first plain (not `Unusual`) warp point record and carry no ability. The target is picked on the galaxy map. |
+| Close Warp Point (`Close Warp Point`) | A warp point in the sector. Blocked by `Stop Close Warp Point` in either system. | Both ends are removed. Closing an already-closed link must be a harmless no-op (a simultaneous-turn race). |
+| Create Storm (`Create Storm`) | The common checks only; the sector need not be empty. | A storm of a random natural storm record, named "Storm", with **one** ability: draw one of obscuration, damage or shield disruption uniformly, redrawing any whose `Created Storm Maximum ...` setting is 0 or less (none at all if all three are). The ability is `Sector - Sight Obscuration`, `Sector - Damage` or `Sector - Shield Disruption` with Val1 **equal to** the matching setting (Obscuration Level, Turbulence Damage or Shield Disruption), not a random value. |
 | Destroy Storm (`Destroy Storm`) | A storm in the sector | The storm is removed. |
-| Create Nebulae (`Create Nebulae`) | A star in the sector. Blocked by `Stop Nebulae Creator`. | Everything in the system is destroyed, and the system becomes type Nebulae with system-wide obscuration **(inferred: pick a Nebulae SystemType)**. |
-| Destroy Nebulae (`Destroy Nebulae`) | The system is type Nebulae | Obscuration and the nebula are removed completely, leaving no residual hiding. |
-| Create Black Hole (`Create Black Hole`) | A star in the sector. Blocked by `Stop Black Hole Creator`. | Everything in the system is destroyed, and the system becomes a black hole with pull, centre damage, shield disruption and unstable warp points **(inferred)**. |
-| Destroy Black Hole (`Destroy Black Hole`) | The system is type Black Hole | The black hole's system abilities are removed. |
-| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A star in the sector. Every `Constructed Planet Requirements` entry must be met: at least Val2 kT of components whose `Custom Group` equals Val1 must be present **in this sector** (not the whole system). | A ringworld or sphereworld is created around the star. The required materials are consumed **(inferred)**. |
+| Create Nebulae (`Create Nebulae`) | A visible star in the sector. Blocked by `Stop Nebulae Creator` in the system. | Shockwave, then the system becomes physical type Nebulae with a random nebula backdrop, is no longer start-eligible, and its system abilities are replaced by `Sector - Sight Obscuration` with Val1 = 3. |
+| Destroy Nebulae (`Destroy Nebulae`) | The system is type Nebulae | The system becomes a Normal, start-eligible standard system with no system abilities. Its objects are untouched. |
+| Create Black Hole (`Create Black Hole`) | A visible star in the sector. Blocked by `Stop Black Hole Creator` in the system. | Shockwave, then the system becomes physical type Black Hole, with system abilities `System - Movement Towards Center` 2, `System - Destructive Center` 5000 and `Sector - Shield Disruption` 5000. Existing warp points keep their abilities. |
+| Destroy Black Hole (`Destroy Black Hole`) | The system is type Black Hole | As Destroy Nebulae: a Normal, start-eligible system with no system abilities. |
+| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` equals Val1. Every `Constructed Planet Requirements` entry must be met: the ships in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists, else a random one of that size. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games) and its conditions to 1.5 (Optimal). The **star is removed**. Every ship of the builder in the sector that carries the construction component or any component of a required group is destroyed, whole ship included. |
 
 ---
 
@@ -687,17 +922,21 @@ Message placeholders: `[%SystemName]`, `[%SectorName]`, `[%SourceEmperorName]`,
 `[%WarpPointName]`, `[%ActualAmount]`. `[%ActualAmount]` is not available in start
 messages.
 
-Proposed resolution **(inferred)**:
+**Resolution** (confirmed: binary; the full rules are in spec 05 §4). The event step runs
+once per turn for the whole quadrant, after the hazards of §7 and the timed events that
+are due:
 
-1. Each turn, for each empire, roll the frequency's percentage chance, modified by
-   bad-event reducers.
-2. On success, choose uniformly among the records whose severity is at most the maximum
-   and that have a valid target the empire owns.
-3. Apply the effect, or schedule it if the event is timed.
+1. **One roll for the whole galaxy**, not one per empire: R[1,100] ≤ the chance of the
+   chosen frequency (None never rolls). There are no new events before the date 2402.0
+   (the first 20 turns).
+2. One record is drawn among those allowed by Maximum Event Severity (with the quirk
+   described in spec 05 §4), then a target of the right kind is drawn from the whole
+   quadrant, retrying up to 1,000 times; luck and the homeworld protection are checked per
+   candidate.
+3. The effect applies at once, or is scheduled if the event is timed.
 
 Bad-event reducers: the `Luck` racial trait (stock "Lucky" is −50%) and
-`Change Bad Event Chance - System` (a system facility; only one per system counts). Luck
-can also avert a star explosion.
+`Change Bad Event Chance - System`; see spec 05 §4 for exactly how they act.
 
 Stock timed catastrophes include a star destruction on a long timer and a planet
 destruction on a shorter one.
@@ -706,23 +945,35 @@ destruction on a shorter one.
 
 ## 11. Victory conditions
 
-Setup offers these; any number can be enabled, each with its own value:
+Setup offers these; any number can be enabled, each with its own value. The full rules are
+in spec 05 §6; in short (confirmed: binary):
 
-1. **Score threshold.** The first empire to reach score X wins. Default 50,000.
-2. **Years elapsed.** After N years the game ends and the highest score wins.
-3. **Lead over second place.** An empire whose score is at least P% of the second-place
-   score wins. The minimum P is 100.
-4. **Research share.** An empire that has researched at least P% of all tech (areas or
-   levels; the sources disagree) wins.
-5. **Quadrant at peace** for N consecutive years. The winner is undefined; see §14.
-6. **Qualifier.** Victory checks are suppressed until year N. This is not a condition by
-   itself.
+1. **Score threshold.** The game ends when some living empire's score reaches X. Initial
+   value 100,000.
+2. **Years elapsed.** The game ends when the date reaches 2400.0 + N years. Initial value
+   10 years.
+3. **Lead over second place.** The game ends when some living empire's score is at least
+   P % of every other living empire's score. Initial value 150 %. When enabled, this test
+   overrides the results of conditions 1 and 2 in the same check (a quirk of the original).
+4. **Research share.** The game ends when some living empire's tech levels (each capped at
+   its maximum) add up to at least P % of the maximum levels of the allowed areas its race
+   can see. It counts levels, not areas. Initial value 10 %.
+5. **Quadrant at peace** for N consecutive years: every pair of living empires holds
+   Non-Aggression or better (having no contact or no treaty breaks the peace). Initial
+   value 2 years.
+6. **Qualifier.** Nothing is checked before 2400.0 + N years. This is not a condition by
+   itself. Initial value 5 years.
 
-With nothing enabled, the game runs until one empire remains. Evaluate at the end of
-turn processing, including in simultaneous games, where the history notes the check
-could be skipped. The status window shows a grid of conditions against empires, in
-pages of ten, up to 20 empires. Active conditions are highlighted, and an X marks each
-empire that has met one.
+The setup stores every "years" value as a number of turns (years × 10). The values above
+are the original's initial values; the setup window may show its own.
+
+Meeting any condition ends the game after that turn; the original does not pick a winner,
+and the Scores window's ranking shows the result. With nothing enabled, nothing ends the
+game automatically (the manual speaks of playing until one empire remains). The check runs
+once per game turn, after every empire's end-of-turn processing and before the random event
+(spec 05 §8), in turn-based and simultaneous games alike. The status window shows a grid of
+conditions against empires, in pages of ten, up to 20 empires. Active conditions are
+highlighted, and an X marks each empire that has met one.
 
 ---
 
@@ -735,9 +986,10 @@ empire that has met one.
     SectType, abilities and name, the warp links, and optional **starting points**.
   - A *specific* starting point belongs to one player slot. A *common* one can take
     anyone.
-  - Placement order: a player's specific point first, then the next free common point,
-    then random placement. A player starting on a planet has that planet converted to
-    their atmosphere at the same size.
+  - Placement order: a player's specific point first, then a random remaining common
+    point, then random placement. A player starting on a planet whose atmosphere is not
+    theirs has that planet converted to their atmosphere and planet type at the same size
+    (confirmed: binary, §3.6).
   - Loading a map must clear the previous starting points.
 - **Scenarios/.** Each scenario is a triple:
   - `<Name>_Settings.txt`: one record with `Name`, `Description` and `Starting Game`,
@@ -757,8 +1009,8 @@ empire that has met one.
 - **System**: id, name, galaxy position, SystemType, physical type, system-wide abilities
   and objects.
 - **Object**: id, kind, sector, SectType, name and abilities. A planet adds size, type,
-  atmosphere, conditions, three values and ruins. A warp point adds its link, one-way
-  flag and size.
+  atmosphere, conditions (a real number, §5.6), three values and ruins. A warp point adds
+  its link and size (the one-way flag has no effect, §8).
 - **Link**: the two (system, object) ends.
 - **Per-empire knowledge**: explored systems, known links, seen warp points, a last-seen
   snapshot of each system, claims, avoid list and notes.
@@ -768,59 +1020,80 @@ empire that has met one.
 
 ## 14. Open questions to verify in the running game
 
-1. **System grid.** Is it 13×13 (header: 0..12) or 14×14 (manual: 196 sectors)? Which
-   sectors form the warp-point "edge"? Do the rings and movement use Chebyshev distance?
-2. **Galaxy grid.** What are the Quadrant Size choices, their system counts, and the
-   galaxy grid dimensions?
-3. **Placement.** What do Clusters, Spiral and Diffuse produce? Screenshot several
-   generations of each.
-4. **Warp placement.** Does edge position follow the galaxy bearing to the destination,
-   and is Min Angle measured on galaxy bearings?
-5. **Ability roll.** Is it exclusive or independent per entry? Does any natural storm
-   carry two abilities?
-6. **Unstable stars.** Stock Val1 is 0. Do they ever explode on their own, or only
-   through the Star - Destroyed event? Can that event hit stable stars?
-7. **Events.** Is the roll per empire or global? How is the target chosen? How much does
-   the timer vary? Which frequency options exist (is there "None")?
-8. **Obscuration.** Do cloak and storm combine by max or by sum? Do storms and nebulae
-   hide warp points and asteroids? Can observers inside the same storm see each other?
-9. **Omnipresent view.** Does it reveal cloaked objects? The manual and the history
-   disagree.
-10. **Presence.** Do mines, satellites, fighters or drones grant presence and sensors?
-    Do unpopulated owned planets?
-11. **Black holes.** In what order do the pull and centre damage apply? Is the centre
-    damage lethal outright? Do pulled or randomly moved ships stop at warp points or the
-    grid edge?
-12. **Turbulence.** Does it hit departures, arrivals or both?
-13. **Homeworld.** Which planet is chosen, with what size and conditions? What happens in
-    a start-eligible system with no planets?
-14. **Names.** How are planets numbered? How are stars and warp points named in
-    multi-star systems? What happens when system names run out?
-15. **Conditions.** What is the full label scale, and the generation distribution?
-16. **Victory.** What are each condition's min, max and default? Is research share by
-    areas or levels? Who wins "at peace"? How are ties broken? What exactly eliminates an
-    empire?
-17. **Starting year.** Commonly remembered as 2400; not in our sources.
-18. **Option lists.** What choices exist for Starting Resources, Racial Points, Tech
-    Cost, Tech Level (is there a Medium?), AI Difficulty, AI Bonus, Score Display and
-    Autosave? Until observed, our Game Setup offers free numbers for resources and racial
-    points, cost growth of 0/50/100/150/200 % per level, difficulty Easy to Expert (0-3)
-    and bonus None to High (0-3) **(inferred)**.
-19. **Manipulation aftermath.** What does a system look like after Destroy Star? Which
-    SystemType do created nebulae and black holes use? Does Destroy Planet kill the
-    colony's population and facilities?
-20. **Scenic systems.** Are the zero-object types free of planets and without hidden
-    effects?
-21. **Warp variants.** Do one-way or small warp points ever appear in generated or
-    opened links?
+1. **System grid.** *Answered* (confirmed: binary): 13×13 (§4.1). The warp-point edge is
+   the outer ring, reached through the bearing mapping of §3.5 (corners are almost never
+   used). Rings are square (Chebyshev) rings (§4.3). Movement was not checked here.
+2. **Galaxy grid.** *Answered* (confirmed: binary): Small, Medium and Large with the
+   counts of §2.2; the grid is 67 × 46 squares (§3.2).
+3. **Placement.** *Answered* (confirmed: binary): exact rules in §3.3.
+4. **Warp placement.** *Answered* (confirmed: binary): yes to both; edge position follows
+   the bearing to the destination and Min Angle compares galaxy bearings (§3.5).
+5. **Ability roll.** *Answered* (confirmed: binary): exclusive, at most one ability per
+   object; no natural storm has two (§5.2).
+6. **Unstable stars.** *Answered* (confirmed: binary): `Star - Unstable` is never read, so
+   stars only explode through the Star - Destroyed event or the Destroy Star manipulation.
+   The event can target any star (spec 05 §4).
+7. **Events.** *Answered* (confirmed: binary): one roll per turn for the whole galaxy; the
+   target is drawn from the whole quadrant; a timed event strikes exactly
+   `Time Till Completion` turns later; the frequency list is None, Low, Medium, High (§10,
+   spec 05 §4).
+8. **Obscuration.** *Answered* (confirmed: binary): maximum, never sum. Storms and nebulae
+   hide planets and asteroid fields (and ships, units, comets) but never warp points, stars
+   or storms. Observers in the same storm see each other when their sensors reach the
+   storm's level (§6.2, §6.3).
+9. **Omnipresent view.** *Answered* (confirmed: binary): no. It gives baseline sensors in
+   every system; cloaked or obscured objects still need real sensors (§6.5).
+10. **Presence.** *Answered* (confirmed: binary): ships, bases, fighter, satellite and
+    drone groups and owned planets (populated or not) give sensors and so presence; mine
+    fields do not (§6.1).
+11. **Black holes.** *Answered* (confirmed: binary): pull, then random drift, then centre
+    damage, once per turn in the event step. The centre damage is ordinary damage (5,000 for
+    a created black hole, so lethal in practice). Pulled ships stop at the centre and
+    drifting ships at their random target; nothing stops at warp points (§7).
+12. **Turbulence.** *Answered* (confirmed: binary): it is rolled on departure (50 %) from
+    the departure warp point's ability, and both ends of a generated link carry the same
+    ability (§3.5, §8).
+13. **Homeworld.** *Answered* (confirmed: binary): a natural planet that already has the
+    player's atmosphere and planet type, of the Home Planet Value size, chosen as in §3.6;
+    its conditions stay as generated. If none fits, a new planet is created in a
+    start-eligible system (§3.6).
+14. **Names.** *Answered* (confirmed: binary): planets are numbered in template order and
+    moons get letters (§5.6); every star is "system + Star" whatever the number of stars; a
+    warp point is named after its destination once that is explored (§5.4); systems beyond
+    the name list get no name (§3.4).
+15. **Conditions.** *Answered* (confirmed: binary): six bands on a 0–1.5 scale (spec 02 §2)
+    and the generation of §5.6.
+16. **Victory.** *Mostly answered* (confirmed: binary): the initial values are in §11, and
+    the full rules are in spec 05 §6. Research share counts levels, not areas. The original
+    never names a winner: meeting any condition, "at peace" included, ends the game, and
+    the Scores ranking shows the result, so there are no ties to break. An empire is
+    eliminated when it has no populated planet and no ship or base (spec 05 §6). Still
+    open: the minimum and maximum each setup field accepts.
+17. **Starting year.** *Answered* (confirmed: binary): the game date starts at 2400.0.
+18. **Option lists.** *Answered* for most (confirmed: binary): Starting Resources 5,000 /
+    20,000 / 100,000; Racial Points 0 / 2,000 / 3,000 / 5,000; Tech Level Low / Medium /
+    High; AI Difficulty Low / Medium / High; AI Bonus None / Low / Medium / High; Score
+    Display own / allies / all; Autosave None (the default) or every 1, 2, 3, 5 or 10 turns
+    (§2.2). Technology Cost is Low / Medium (the default) / High; the cost formulas are in
+    spec 05 §1.3 (confirmed: binary).
+19. **Manipulation aftermath.** *Answered* (confirmed: binary): see the shockwave and the
+    table in §9. No SystemType record is used for created nebulae and black holes; the
+    system's type and abilities are set directly. Destroy Planet removes the colony with
+    its population and facilities.
+20. **Scenic systems.** *Answered* (confirmed: binary): a zero-object type gets no objects
+    other than its warp points; only its system-wide abilities, if any, apply.
+21. **Warp variants.** *Answered* (confirmed: binary): the one-way flag is never used;
+    generated links use a plain record unless they carry an ability (then an Unusual one);
+    opened links always use the first plain record (§3.5, §9).
 22. **Warp cost.** Is a jump 1 movement point, and must the ship first stop on the warp
     point?
-23. **One-way links.** The engine lets ships leave through an unflagged end only when the far
-    end is not flagged either. Which end does the `One-Way` flag mark?
+23. **One-way links.** *Answered* (confirmed: binary): neither; the original ignores the
+    flag and every link is two-way. The engine's one-way handling should be removed.
 24. **Learning links.** The engine treats a traversed link as known in both directions. Does
     travelling A to B also reveal where B's end leads?
-25. **Hazard order.** The engine applies black-hole pull and random drift to ships, fighters and
-    drones after the 30 movement phases, stops drift at the grid edge, then applies centre
-    damage and summed sector damage. Ships displaced next to hostiles are offered to combat.
-26. **Sensors.** The engine counts sensor facilities only on populated colonies, while every
-    colony (even an empty one) and every vehicle, units included, gives presence.
+25. **Hazard order.** *Answered* (confirmed: binary): see §7. The pull and drift move every
+    ship, base and unit group, drift heads for one random sector per turn, centre damage
+    follows, and sector damage only hits ships moving into the sector (50 %).
+26. **Sensors.** *Partly answered* (confirmed: binary): every owned planet and every ship,
+    base, fighter, satellite and drone group is a sensor source; mine fields are not. Still
+    open: whether an unpopulated colony's facilities contribute their sensor levels.

@@ -41,7 +41,10 @@ player / AI / network ─> game::Command ────┘         │
 
 ## Turn order
 
-`processTurn` (`turn.cpp`) follows spec 05 §8:
+`processTurn` (`turn.cpp`) currently runs the phases below. The original's order,
+checked in the executable, is in spec 05 §8. It differs: for example, it spends
+research and intelligence points before income, and runs each empire's end-of-turn
+steps one empire at a time. The engine still has to be brought in line with it.
 
 1. **Orders.** Each human's `EmpireOrders` are applied. Computer empires, and humans
    who sent nothing, are played by `ai::planTurn`. Then ministers act.

@@ -18,6 +18,10 @@ distributed, without the original.
 4. **Side-by-side checks.** Set up the same situation in both games and compare what
    the screens show: production numbers, research costs, growth, and combat statistics
    over many runs.
+5. **The executable** (since 2026-09-29, see [CLEANROOM.md](CLEANROOM.md)). Every rule in
+   specs 01–05 has been checked against it and marked "(confirmed: binary)". Most open
+   questions are now answered. The engine's remaining differences are listed in
+   [PARITY_GAPS.md](PARITY_GAPS.md).
 
 The prototype game (`src/sim`, the default `opense4` mode) stays playable until the
 classic engine can replace it.
@@ -124,10 +128,15 @@ questions are what the observation sessions still have to settle.
 
 ## Next steps
 
-1. Observation sessions to settle the open questions, starting with the ones that
-   affect play the most:
-   - combat to-hit and damage;
-   - growth and the mood numbers;
-   - AI thresholds.
-2. The tactical combat screen.
-3. Encrypted connections, and per-player views for PBEM.
+1. Close the gaps in [PARITY_GAPS.md](PARITY_GAPS.md), high-impact items first:
+   - combat movement and whole-component damage;
+   - mood scale, queue payment and the computer-player bonus;
+   - the turn order, tech cost, intelligence, events and score;
+   - the warp network and homeworld placement;
+   - the AI's anger, states and politics.
+
+   Implement from the corrected specs, not from any listing.
+2. Observation sessions for what the executable could not settle, such as the
+   simultaneous-movement day schedule (spec 03 Q8) and the questions still marked open.
+3. The tactical combat screen.
+4. Encrypted connections, and per-player views for PBEM.
