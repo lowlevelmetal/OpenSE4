@@ -123,6 +123,7 @@ ruleset::Ruleset buildCombatRuleset() {
     gun(rs, "CT Puller", WK::DirectFire, {6, 6, 6, 6, 6, 6, 6, 6}, "Pulls Target");
     gun(rs, "CT Quad Gun", WK::DirectFire, {15, 15, 15}, "Quad Damage To Shields");
     gun(rs, "CT Slow Gun", WK::DirectFire, std::vector<int>(20, 4), "Normal").weapon.reloadRate = 3;
+    gun(rs, "CT Climate Bomb", WK::DirectFire, {1, 1, 1, 1, 1}, "Only Planet Conditions", {"Planets"});
 
     part(rs, "CT Battle Computer", 10, {ab(AbilityKind::CombatModifierSystem, 7)});
     for (int value : {10, 4}) {
@@ -1305,6 +1306,22 @@ TEST_CASE("combat: planet-only weapons") {
     CHECK(killed > 0);
     CHECK(killed % 5 == 0);   // 50 / 10 per hit
     CHECK(s.colony(planet)->plagueLevel == 2);
+}
+
+TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& home = homeworld(s, ar.b);
+    home.population = {{ar.b, 1000}};
+    s.galaxy.object(home.planet).conditions = 120;   // hundredths of the 0-1.5 scale
+    spawn(s, frigate(s, ar.a, "Polluter", 3, {"CT Climate Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+    const int after = s.galaxy.object(home.planet).conditions;
+    CHECK(after < 120);
+    CHECK(after >= 0);
+    CHECK((120 - after) % 10 == 0);   // each 1-point hit costs 0.1
+    CHECK(s.colony(home.planet)->totalPopulation() == 1000);
 }
 
 TEST_CASE("combat: bombardment can wipe out a colony; the planet stays on the map") {

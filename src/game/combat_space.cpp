@@ -164,7 +164,7 @@ struct Piece {
     bool colonyLost = false;
     EmpireId capturedBy;              // planets taken by troops during the battle
     int plague = 0;
-    int64_t conditionsLost = 0;       // hundredths of the conditions scale (inferred)
+    int64_t conditionsLost = 0;       // hundredths of the 0-1.5 conditions scale
     // Bookkeeping.
     bool fired = false, damaged = false, captured = false, pushed = false;
     int unitsLost = 0, startCount = 1;
@@ -1601,7 +1601,8 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
                 return;
             case DamageType::OnlyPlanetPopulation: populationLoss(att, t, std::max<int64_t>(1, rem / cs_.damagePerPopulation)); return;
             case DamageType::OnlyPlanetConditions:
-                // D × 0.1 of the 0-1.5 conditions scale; SpaceObject::conditions counts hundredths of it (inferred).
+                // D × 0.1 on the 0-1.5 conditions scale (confirmed: binary); SpaceObject::conditions
+                // holds hundredths of that scale (spec 02 §2), so the loss is D × 10.
                 p.conditionsLost += rem * 10;
                 return;
             case DamageType::OnlyResupplyDepots:
@@ -2609,7 +2610,7 @@ void Battle::finish() {
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
         if (p.conditionsLost > 0) {
             SpaceObject& obj = s_.galaxy.object(p.object);
-            obj.conditions = static_cast<int>(std::max<int64_t>(0, obj.conditions - p.conditionsLost));
+            obj.conditions = static_cast<int>(std::clamp<int64_t>(obj.conditions - p.conditionsLost, 0, 150));   // 0-1.5 in hundredths
         }
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);
         if (invaders(r_, s_, *c).empty()) c->militia = -1;

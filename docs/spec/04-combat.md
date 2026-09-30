@@ -993,8 +993,8 @@ confirmed rules above take precedence over any older engine behaviour.
   are taken from the step 4 total. An invasion that ends resets the militia pool.
 - **Organic armor (Q42).** Restoration stops at the first component the pool cannot pay.
 - **System modifiers (Q43).** Taken once, when the battle starts.
-- **Conditions (Q44).** `SpaceObject::conditions` counts hundredths of the 0–1.5 scale, so
-  a hit lowers it by D × 10.
+- **Conditions (Q44).** `SpaceObject::conditions` holds hundredths of the 0–1.5 scale
+  (spec 02 §2), so a hit lowers it by D × 10, never below 0.
 - **Mines (Q45).** A warhead strikes the components of the group's front unit; a unit
   destroyed is removed and the next warhead hits the next unit. Only the damage type is
   checked. Without a record of the entering group (a battle outside the movement phase),
