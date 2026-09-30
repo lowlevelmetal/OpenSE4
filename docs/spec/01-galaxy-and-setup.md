@@ -261,7 +261,9 @@ Recommended algorithm **(inferred)**:
 - The homeworld is a planet in the home system, converted to match the race: its
   breathable atmosphere and its native physical type from the Environment setup. Its size
   is kept. The version history documents this conversion for map starting points; applying
-  it to random maps is **(inferred)**.
+  it to random maps is **(inferred)**. Among the candidates, the engine prefers the planet
+  whose size is closest to Medium, the size of the homeworld observed in a stock Quick Start
+  game **(inferred)**.
 - Some start-eligible stock types, such as one trinary layout, contain no planets. The
   generator must then create or convert a planet, or reject that system.
 - The homeworld value comes from the Home Planet Value setting (§2.2).

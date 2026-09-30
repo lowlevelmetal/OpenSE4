@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -664,15 +665,22 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
     for (size_t i = 0; i < empires.size(); ++i) {
         StarSystem& sys = galaxy.system(homes[i]);
         const EmpireStart& e = empires[i];
-        // Prefer a planet of the native type, then any planet not already a homeworld.
+        // Prefer a planet of the native type, then any planet not already a
+        // homeworld; among those, the one whose size is closest to Medium, the
+        // size of the observed stock homeworld (inferred, spec 01 §3.6).
+        auto sizeDistance = [](const std::string& size) {
+            static constexpr std::array<std::string_view, 5> kOrder{"Tiny", "Small", "Medium", "Large", "Huge"};
+            for (size_t k = 0; k < kOrder.size(); ++k)
+                if (keysEqual(size, kOrder[k])) return k > 2 ? int(k) - 2 : 2 - int(k);
+            return 9;  // constructed or unknown sizes last
+        };
         std::optional<ObjectId> chosen;
         for (int pass = 0; pass < 2 && !chosen; ++pass)
             for (ObjectId id : sys.objects) {
                 const SpaceObject& o = galaxy.object(id);
                 if (o.kind != ObjectKind::Planet || std::find(homeworlds.begin(), homeworlds.end(), id) != homeworlds.end()) continue;
                 if (pass == 0 && !surfaceEqual(o.surface, e.surface)) continue;
-                chosen = id;
-                break;
+                if (!chosen || sizeDistance(o.size) < sizeDistance(galaxy.object(*chosen).size)) chosen = id;
             }
         if (!chosen) {
             // Start-eligible but planetless (some stock layouts): create one.

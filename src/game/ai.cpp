@@ -3,6 +3,7 @@
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <array>
@@ -119,15 +120,9 @@ bool Planner::controlsVehicle(const Vehicle& v) const {
     return false;
 }
 
-bool Planner::knownLink(ObjectId wp) const {
-    const Knowledge& k = emp().knowledge;
-    if (wp.index() < k.knownWarpLink.size() && k.knownWarpLink[wp.index()]) return true;
-    // A link between two explored systems is treated as known (inferred: the
-    // sight module records travelled links; charts of both ends show the pair).
-    const SpaceObject& o = st.galaxy.object(wp);
-    if (!o.destination.valid()) return false;
-    return explored(o.system) && explored(st.galaxy.object(o.destination).system);
-}
+// The same knowledge movement plans with (sight::knowsWarpLink), so every
+// route the computer picks is one its ships can actually fly.
+bool Planner::knownLink(ObjectId wp) const { return sight::knowsWarpLink(st, id, wp); }
 
 std::vector<int> Planner::jumpsFrom(SystemId from) const {
     std::vector<int> dist(st.galaxy.systems.size(), -1);

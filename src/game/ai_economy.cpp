@@ -175,6 +175,48 @@ void relieveShortage(Planner& p, const std::vector<ObjectId>& planets) {
     p.emit(cmd::QueueAdd{{*best, {}}, item, -1});
 }
 
+// Income outgrowing the yards: resources pile up against the storage cap
+// while every yard is busy. Add one space yard at a time, on the most
+// populous colony without one that has a free slot (inferred).
+void expandYards(Planner& p, const std::vector<ObjectId>& planets) {
+    const EconomyReport& eco = p.emp().economy;
+    const int64_t cap = eco.storageCap.total();
+    if (cap <= 0 || p.emp().stockpile.total() * 100 < cap * 70) return;
+    // More yards only help while we may still add ships under the maintenance cap.
+    const int64_t income = eco.colonies.total();
+    if (income <= 0 || eco.maintenance.total() * 100 >= income * p.prof.settings.maxMaintenancePercent) return;
+    int yards = 0, populated = 0;
+    for (ObjectId o : planets)
+        if (const Colony* c = p.st.colony(o); c && c->totalPopulation() > 0) {
+            ++populated;
+            yards += colonyHasSpaceYard(p.r, *c);
+        }
+    if (yards >= std::max(2, populated / 3)) return;
+    const auto yard = p.r.bestFacilityWith(p.emp(), AbilityKind::SpaceYard);
+    if (!yard) return;
+    std::optional<ObjectId> best;
+    int64_t bestPop = 0;
+    for (ObjectId o : planets) {
+        const Colony* c = p.st.colony(o);
+        if (!c || c->totalPopulation() == 0) continue;
+        for (const QueueItem& q : c->queue.items)
+            if (q.kind == QueueItem::Kind::Facility && hasAbility(p.r.facilityAbilities(q.facility), AbilityKind::SpaceYard)) return;
+        if (colonyHasSpaceYard(p.r, *c)) continue;
+        int queued = 0;
+        for (const QueueItem& q : c->queue.items) queued += q.kind == QueueItem::Kind::Facility;
+        if (static_cast<int>(c->facilities.size()) + queued >= facilitySlots(p.r, p.st, *c)) continue;
+        if (!best || c->totalPopulation() > bestPop) {
+            best = o;
+            bestPop = c->totalPopulation();
+        }
+    }
+    if (!best) return;
+    QueueItem item;
+    item.kind = QueueItem::Kind::Facility;
+    item.facility = *yard;
+    p.emit(cmd::QueueAdd{{*best, {}}, item, 0});
+}
+
 // ---- Vehicles ------------------------------------------------------------------------------
 
 struct Builder {
@@ -450,7 +492,10 @@ void planConstruction(Planner& p) {
     std::vector<ObjectId> planets;
     for (const auto& c : p.st.colonies)
         if (c && p.controlsColony(*c)) planets.push_back(c->planet);
-    if (p.fullControl() && p.mode != Mode::Minimal) relieveShortage(p, planets);
+    if (p.fullControl() && p.mode != Mode::Minimal) {
+        relieveShortage(p, planets);
+        expandYards(p, planets);
+    }
     for (ObjectId o : planets) planFacilities(p, o);
     if (p.mode == Mode::Minimal) {
         refillEmptyYards(p);
