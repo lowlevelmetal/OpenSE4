@@ -248,8 +248,9 @@ void planRetrofit(Planner& p);
 void planStellarManipulation(Planner& p);
 
 // ---- Shared helpers ------------------------------------------------------------------------------
-// The AI design type of a design: its Design Type when that is one of the 39,
-// else a type inferred from what it can do (inferred), else empty.
+// The AI design type of a design (spec 05 §7.5 "Design types of other
+// designs", confirmed: binary): its type label when that is exactly one of the
+// 39, else the first of the fixed tests on what it carries. Never empty.
 std::string aiTypeOf(const Rules& r, const Design& d, const DesignStats& st);
 Role roleOf(std::string_view aiType, const DesignStats& st);
 // Roles that fight: attack and defence ships and the other combat types (spec 05 §7.5 fleets).

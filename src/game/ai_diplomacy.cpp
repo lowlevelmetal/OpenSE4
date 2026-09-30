@@ -249,7 +249,8 @@ private:
             return;
         }
         if (answerNewest(x)) return;  // it sent x something
-        // In a simultaneous game nothing is started while a message from x waits.
+        // In a simultaneous game nothing is started while a message from x waits
+        // (dated this turn or the turn before, inferred).
         if (p_.st.options.simultaneous)
             for (const DiplomaticMessage& m : p_.st.messages)
                 if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && !m.answered && answerable(m.type)) return;

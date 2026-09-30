@@ -357,7 +357,7 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     if (belowNonAggression)
         for (const CombatRecord& rec : s.combats) {
             if (!in.counts(rec.turn) || !involves(rec, e.id) || !involves(rec, x.id)) continue;
-            const bool attacking = rec.currentPlayer == e.id;
+            const bool attacking = rec.currentPlayer == e.id;  // a record from an old save names nobody (inferred)
             switch (outcomeFor(rec, e.id)) {
                 case Outcome::Won: add(attacking ? t.attackingWon : t.defendingWon); break;
                 case Outcome::Lost: add(attacking ? t.attackingLost : t.defendingLost); break;

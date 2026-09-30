@@ -56,7 +56,7 @@ bool loaded(const Vehicle& v) { return !v.cargo.units.empty(); }
 
 // It lacks a part it needs to operate (spec 05 §7.5): control (a bridge, life
 // support and crew quarters, or a Master Computer), or engines on a hull that
-// uses them.
+// uses them (inferred, spec 05 open question 37).
 bool lacksOperatingPart(const Planner& p, const Vehicle& v) {
     if (!vehicleHasControl(p.r, p.st, v)) return true;
     return p.r.hull(p.st.design(v.design).hull).usesEngines && vehicleMaxMovement(p.r, p.st, v) <= 0;
@@ -395,17 +395,12 @@ void planDefense(Planner& p) {
         for (size_t i = 0; i < entries.size(); ++i) {
             const int64_t limit = (factor * xmath::Ext(entries[i].threat) / xmath::Ext(kStrengthScale)).round() * kStrengthScale;
             if (assigned[i] > limit) continue;
+            // Attack there (a pursuit in a simultaneous game), else a move there.
             const Threat& latest = entries[i].latest;
-            Order order;
-            if (v->location == entries[i].where) {
-                const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
-                order = target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet);
-            } else if (p.st.options.simultaneous) {
-                const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
-                order = target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet);
-            } else {
-                order = moveOrder(entries[i].where);
-            }
+            const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
+            const Order order = v->location == entries[i].where || p.st.options.simultaneous
+                                    ? (target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet))
+                                    : moveOrder(entries[i].where);
             if (p.setOrders(id, {order})) assigned[i] += vehicleRating(p.r, p.st, *p.st.vehicle(id));
             break;
         }
@@ -636,8 +631,8 @@ std::vector<Order> resupplyOrders(Planner& p, Location from) {
 // normal status, movement left and no orders. One without a working yard
 // part gets the resupply orders. Otherwise it seeks the nearest own vehicle
 // that has a destroyed part, a maximum movement of at most 2 and no other own
-// yard in its sector, and waits when already there; with no such vehicle it
-// gets the resupply orders.
+// yard in its sector (the yard ship itself does not count, inferred), and waits
+// when already there; with no such vehicle it gets the resupply orders.
 void planSpaceYardShips(Planner& p) {
     if (!p.on(Minister::SpaceYardShips)) return;
     for (VehicleId id : p.ownVehicles(Minister::SpaceYardShips)) {
@@ -811,7 +806,8 @@ void planStellarManipulation(Planner& p) {
             goAndDo({pick->first, sector}, stellarOrder(StellarAction::OpenWarpPoint, {}, {pick->second, Sector{kSystemCenter, kSystemCenter}}));
         } else if (type == "Close Warp Point") {
             // A random warp point from a system with one of our colonies into a
-            // system where we have no ship, base or colony but see a hostile empire.
+            // system where we have no ship, base or colony but see a hostile empire
+            // (one of its vehicles we see, or its colony in an explored system; inferred).
             std::vector<ObjectId> points;
             for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
                 if (!ourColony[i]) continue;
@@ -1090,13 +1086,14 @@ std::optional<Location> layingSite(Planner& p, bool mines) {
     for (const auto& c : p.st.colonies)
         if (c && c->owner == p.id) colonySystem[p.st.galaxy.object(c->planet).system.index()] = 1;
     const int64_t cap = p.r.setting("Maximum Mines Per Player Per Sector", 100);  // the mine limit, for satellites too
+    // The cap counts every unit group of ours at that sector (inferred).
     auto ourUnitsAt = [&](Location where) {
         int64_t n = 0;
         for (const Vehicle& v : p.st.vehicles)
             if (v.owner == p.id && v.count > 0 && v.location == where && isUnitType(vehicleType(p.r, p.st, v))) n += v.count;
         return n;
     };
-    // Star-destroying designs among the enemy designs we have seen.
+    // Star-destroying designs among the enemy designs we have seen: those with Destroy Star (inferred).
     bool starDestroyers = false;
     for (const SeenDesign& seen : e.knowledge.seenDesigns)
         if (seen.design.index() < p.st.designs.size())
@@ -1112,7 +1109,7 @@ std::optional<Location> layingSite(Planner& p, bool mines) {
                 if (!obj.destination.valid()) continue;
                 const SystemId far = p.st.galaxy.object(obj.destination).system;
                 if (others[far.index()].empty() || ourUnitsAt({far, obj.sector}) >= cap) continue;
-                int weight = 1;
+                int weight = 1;  // the largest weight among the empires there (inferred)
                 for (EmpireId x : others[far.index()]) {
                     if (mines) weight = std::max(weight, p.atWarWith(x) ? 7 : hostileTo(e, x) ? 4 : 1);
                     else weight = std::max(weight, hostileTo(e, x) ? 2 : 1);
@@ -1240,6 +1237,7 @@ bool needsRepair(Planner& p, const Vehicle& v) {
 void planRepair(Planner& p) {
     for (VehicleId id : p.ownVehicles(Minister::Repair)) {
         const Vehicle* v = p.st.vehicle(id);
+        // Mothballed vehicles are left alone (inferred).
         if (!v || v->status == VehicleStatus::Mothballed || isUnitType(p.info(v->design).stats.vehicleType) || !needsRepair(p, *v)) continue;
         if (v->fleet.valid()) p.emit(cmd::LeaveFleet{id});
         v = p.st.vehicle(id);
@@ -1304,7 +1302,7 @@ void planResupply(Planner& p) {
         const Vehicle* leader = p.st.vehicle(f.leader);
         if (!leader) continue;
         int64_t supply = 0, cost = 0;
-        bool unlimited = true;
+        bool unlimited = true;  // on unlimited supply when every member is (inferred)
         for (VehicleId m : f.members)
             if (const Vehicle* v = p.st.vehicle(m); v && v->count > 0) {
                 unlimited = unlimited && vehicleHasUnlimitedSupply(p.r, p.st, *v);
