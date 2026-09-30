@@ -1,5 +1,7 @@
 #include "sim/content.hpp"
 
+#include "core/embedded.hpp"
+
 #include <toml++/toml.hpp>
 
 #include <algorithm>
@@ -242,6 +244,14 @@ private:
     std::optional<toml::table> parse(const char* fileName) {
         const auto path = dir_ / fileName;
         try {
+            // A file on disk wins; otherwise the copy built into the executable.
+            std::error_code ec;
+            if (!std::filesystem::exists(path, ec)) {
+                const std::string builtIn = std::string("data/") + fileName;
+                if (const auto bytes = embeddedResource(builtIn); !bytes.empty())
+                    return toml::parse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()),
+                                       "(built-in) " + builtIn);
+            }
             return toml::parse_file(path.string());
         } catch (const toml::parse_error& e) {
             const auto& begin = e.source().begin;

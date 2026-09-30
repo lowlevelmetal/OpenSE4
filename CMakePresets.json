@@ -29,15 +29,36 @@
                 "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
                 "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
             }
+        },
+        {
+            "name": "dist-linux",
+            "displayName": "Release package for Linux (static, resources built in)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "OPENSE4_STATIC": "ON",
+                "OPENSE4_EMBED_RESOURCES": "ON",
+                "OPENSE4_DEV_PATHS": "OFF"
+            }
+        },
+        {
+            "name": "dist-windows",
+            "displayName": "Release package for Windows (MinGW-w64 cross build, static, resources built in)",
+            "inherits": "dist-linux",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake"
         }
     ],
     "buildPresets": [
         { "name": "debug", "configurePreset": "debug" },
         { "name": "release", "configurePreset": "release" },
-        { "name": "asan", "configurePreset": "asan" }
+        { "name": "asan", "configurePreset": "asan" },
+        { "name": "dist-linux", "configurePreset": "dist-linux" },
+        { "name": "dist-windows", "configurePreset": "dist-windows" }
     ],
     "testPresets": [
         { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
-        { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+        { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+        { "name": "dist-linux", "configurePreset": "dist-linux", "output": { "outputOnFailure": true } },
+        { "name": "dist-windows", "configurePreset": "dist-windows", "output": { "outputOnFailure": true } }
     ]
 }

@@ -8,9 +8,18 @@
 include(FetchContent)
 
 # --- SDL3 --------------------------------------------------------------------
-find_package(SDL3 3.2 CONFIG QUIET COMPONENTS SDL3-shared)
+# OPENSE4_STATIC always builds SDL3 from source as a static library. SDL still
+# loads the platform's windowing, audio and GPU libraries at run time.
+if(OPENSE4_STATIC)
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+else()
+    find_package(SDL3 3.2 CONFIG QUIET COMPONENTS SDL3-shared)
+endif()
 if(NOT SDL3_FOUND)
-    message(STATUS "SDL3 not found on the system; fetching it")
+    if(NOT OPENSE4_STATIC)
+        message(STATUS "SDL3 not found on the system; fetching it")
+    endif()
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(SDL3
@@ -18,6 +27,9 @@ if(NOT SDL3_FOUND)
         GIT_TAG release-3.4.16
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(SDL3)
+    if(NOT TARGET SDL3::SDL3 AND TARGET SDL3::SDL3-static)
+        add_library(SDL3::SDL3 ALIAS SDL3-static)
+    endif()
 endif()
 
 # --- Vulkan headers + shader compiler -----------------------------------------

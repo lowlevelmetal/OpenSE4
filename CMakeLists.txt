@@ -16,6 +16,25 @@ endif()
 
 option(OPENSE4_BUILD_TESTS "Build unit tests" ON)
 option(OPENSE4_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+# Redistributable builds (the dist-* presets, docs/BUILDING.md "Release packages").
+option(OPENSE4_STATIC "Link statically for redistribution: SDL3 is built as a static library, and so are the C++ runtime (and on Windows everything else)" OFF)
+option(OPENSE4_EMBED_RESOURCES "Build our own fonts and prototype data into the executable (files on disk still win)" ON)
+option(OPENSE4_DEV_PATHS "Let the client fall back to assets/ and data/ in the source tree" ON)
+
+if(OPENSE4_STATIC AND NOT MSVC)
+    if(WIN32)
+        # MinGW: static libgcc, libstdc++ and winpthreads; only system DLLs remain.
+        add_link_options(-static)
+    else()
+        # Linux: everything but the C library, which must stay shared so SDL can load
+        # the system's X11/Wayland, audio and GPU driver libraries at run time.
+        add_link_options(-static-libstdc++ -static-libgcc)
+    endif()
+endif()
+if(NOT OPENSE4_DEV_PATHS AND NOT MSVC)
+    # Keep the build machine's paths out of the binary (source file names in logs).
+    add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Dependencies)
@@ -42,4 +61,10 @@ add_subdirectory(tools)
 if(OPENSE4_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Linux release builds run on glibc 2.34 and later (cmake/GlibcCompat.cmake).
+if(OPENSE4_STATIC AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT MSVC)
+    include(GlibcCompat)
+    opense4_apply_glibc_compat("${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_SOURCE_DIR}/tests")
 endif()

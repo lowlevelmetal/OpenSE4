@@ -101,15 +101,51 @@ use `--renderer=opengl`.
 | `debug` | Debug | The default for development |
 | `release` | RelWithDebInfo | Optimized, with symbols |
 | `asan` | Debug | AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang) |
+| `dist-linux` | Release | Redistributable Linux build (see "Release packages") |
+| `dist-windows` | Release | Redistributable Windows build, cross-compiled with MinGW-w64 |
 
 | CMake option | Default | Effect |
 |---|---|---|
 | `OPENSE4_BUILD_TESTS` | ON | Build `opense4_tests` and fetch doctest |
 | `OPENSE4_WARNINGS_AS_ERRORS` | OFF | Treat warnings as errors (CI uses this) |
 | `OPENSE4_ENABLE_UPNP` | ON | Build with miniupnpc. OFF compiles a no-op port mapper |
+| `OPENSE4_STATIC` | OFF | Link statically for redistribution (the `dist-*` presets) |
+| `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts and prototype data into the executable; files on disk still win |
+| `OPENSE4_DEV_PATHS` | ON | Let the client find `assets/` and `data/` in the source tree. The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
 
 The code must compile without warnings under
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` on MSVC).
+
+## Release packages
+
+`tools/package_release.sh [linux] [windows]` builds, tests and packages both
+platforms from one Linux machine:
+
+- `dist/OpenSE4-<version>-linux-x86_64.tar.gz`
+- `dist/OpenSE4-<version>-windows-x86_64.zip`
+
+Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
+with the README and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
+Font License) and the prototype's data files are built into the executables, so
+nothing else needs to sit next to them. Nothing from the original game is included:
+players point OpenSE4 at their own installed copy.
+
+- **Linux** (`dist-linux`): SDL3, the C++ runtime and every other library are linked
+  statically. Only the C library stays shared, because SDL loads the system's
+  X11/Wayland, audio and GPU driver libraries at run time. The binaries run on
+  glibc 2.34 and later (Ubuntu 22.04, Debian 12, Fedora 35, RHEL 9, SteamOS 3 and
+  newer), even when built on a newer distribution: `cmake/GlibcCompat.cmake` routes
+  the few newer glibc functions to older versions or small built-in
+  implementations. `tools/check_glibc.sh` reports what a binary needs.
+- **Windows** (`dist-windows`): cross-built with MinGW-w64 (`mingw-w64-gcc`) and
+  linked with `-static`. The executables need only Windows' own DLLs and the
+  Universal C Runtime, which ships with Windows 10 and 11. The game is a windowed
+  application; started from a console it still prints `--help` and its log there.
+  With Wine installed, the script runs the Windows tests through it.
+
+Requirements beyond a normal build: network access the first time (SDL3 is fetched
+and built as a static library), `mingw-w64-gcc` for Windows, and `bsdtar` for the
+zip file. Pass `--skip-tests` to package without running the tests.
 
 ## Offline builds
 

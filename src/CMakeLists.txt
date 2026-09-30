@@ -4,6 +4,29 @@ add_library(opense4_core STATIC
 target_include_directories(opense4_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_core PRIVATE opense4_warnings)
 
+# --- embedded: our own fonts and prototype data built into the executable -----------
+# (core/embedded.hpp). Only our own files: nothing from the original game.
+if(OPENSE4_EMBED_RESOURCES)
+    file(GLOB embedded_files RELATIVE "${CMAKE_SOURCE_DIR}" CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/assets/fonts/*.ttf"
+        "${CMAKE_SOURCE_DIR}/data/*.toml")
+    list(SORT embedded_files)
+    list(TRANSFORM embedded_files PREPEND "${CMAKE_SOURCE_DIR}/" OUTPUT_VARIABLE embedded_paths)
+    list(JOIN embedded_files "|" embedded_arg)
+    set(embedded_cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/embedded_resources.cpp")
+    add_custom_command(
+        OUTPUT "${embedded_cpp}"
+        COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${embedded_cpp}" "-DROOT=${CMAKE_SOURCE_DIR}" "-DFILES=${embedded_arg}"
+                -P "${CMAKE_SOURCE_DIR}/cmake/EmbedResources.cmake"
+        DEPENDS ${embedded_paths} "${CMAKE_SOURCE_DIR}/cmake/EmbedResources.cmake"
+        COMMENT "Embedding fonts and prototype data"
+        VERBATIM)
+    add_library(opense4_embedded STATIC "${embedded_cpp}")
+else()
+    add_library(opense4_embedded STATIC core/embedded_none.cpp)
+endif()
+target_link_libraries(opense4_embedded PUBLIC opense4_core)
+
 # --- datafile + ruleset: the classic "Key := Value" data format and its typed model ---
 add_library(opense4_datafile STATIC
     datafile/datafile.cpp
@@ -114,7 +137,7 @@ add_library(opense4_sim STATIC
     sim/setup.cpp
     sim/turn.cpp
     sim/types.cpp)
-target_link_libraries(opense4_sim PUBLIC opense4_core PRIVATE tomlplusplus opense4_warnings)
+target_link_libraries(opense4_sim PUBLIC opense4_core PRIVATE opense4_embedded tomlplusplus opense4_warnings)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gfx/device.hpp")
     include(Client.cmake)

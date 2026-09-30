@@ -25,12 +25,16 @@ std::filesystem::path findDir(const std::string& override, const char* name, con
         const fs::path b(base);
         candidates = {b / name, b / ".." / name, b / ".." / ".." / name, b / ".." / ".." / ".." / name};
     }
+#ifdef OPENSE4_SOURCE_DIR
     candidates.push_back(fs::path(OPENSE4_SOURCE_DIR) / name);
+#endif
     for (const fs::path& c : candidates) {
         std::error_code ec;
         if (fs::exists(c / marker, ec)) return fs::weakly_canonical(c, ec);
     }
-    return fs::path(OPENSE4_SOURCE_DIR) / name;
+    // Not found: the fonts and data built into the executable are used instead
+    // (core/embedded.hpp), so a missing directory is not an error.
+    return candidates.empty() ? fs::path(name) : candidates.front();
 }
 
 void fatal(const std::string& message) {
@@ -84,7 +88,11 @@ int App::run(const AppOptions& options) {
         po.dataDir = findDir(options.dataDir, "data", "rules.toml");
         po.startInSystemView = options.startInSystemView;
         po.autoTurns = options.autoTurns;
-        log::info("Data: {}  Assets: {}", po.dataDir.string(), assetsDir_.string());
+        auto where = [](const std::filesystem::path& dir) {
+            std::error_code ec;
+            return std::filesystem::exists(dir, ec) ? dir.string() : std::string("built in");
+        };
+        log::info("Data: {}  Assets: {}", where(po.dataDir), where(assetsDir_));
         mode_ = PrototypeMode::create(platform, po, error);
     }
     if (!mode_) {

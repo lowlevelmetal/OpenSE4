@@ -86,6 +86,16 @@ add_executable(opense4
     client/views/galaxy_view.cpp
     client/views/starfield.cpp
     client/views/system_view.cpp)
-target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_net opense4_assets opense4_gfx imgui tomlplusplus drlibs opense4_warnings)
-target_compile_definitions(opense4 PRIVATE OPENSE4_SOURCE_DIR="${CMAKE_SOURCE_DIR}" OPENSE4_CLIENT_VERSION="${PROJECT_VERSION}")
+target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_net opense4_assets opense4_gfx opense4_embedded imgui tomlplusplus drlibs opense4_warnings)
+target_compile_definitions(opense4 PRIVATE OPENSE4_CLIENT_VERSION="${PROJECT_VERSION}")
+if(OPENSE4_DEV_PATHS)
+    # Developer convenience: find assets/ and data/ in the source tree. Release
+    # builds leave it out so the build machine's paths stay out of the binary.
+    target_compile_definitions(opense4 PRIVATE OPENSE4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+endif()
 set_target_properties(opense4 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+if(WIN32)
+    # A windowed application: no console window next to the game. main.cpp attaches
+    # to the parent console when started from one, so --help still prints.
+    set_target_properties(opense4 PROPERTIES WIN32_EXECUTABLE ON)
+endif()

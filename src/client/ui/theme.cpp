@@ -1,5 +1,6 @@
 #include "client/ui/theme.hpp"
 
+#include "core/embedded.hpp"
 #include "core/log.hpp"
 
 #include <imgui.h>
@@ -11,11 +12,15 @@ Fonts loadFonts(const std::filesystem::path& assetsDir) {
     Fonts fonts;
     auto load = [&](const char* file) -> ImFont* {
         const auto path = assetsDir / "fonts" / file;
-        if (!std::filesystem::exists(path)) {
-            log::warn("Font not found: {}", path.string());
-            return nullptr;
+        if (std::error_code ec; std::filesystem::exists(path, ec)) return io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f);
+        // Not on disk: the copy built into the executable (core/embedded.hpp).
+        if (const auto bytes = embeddedResource(std::string("assets/fonts/") + file); !bytes.empty()) {
+            ImFontConfig config;
+            config.FontDataOwnedByAtlas = false;  // static data: the atlas must not free it
+            return io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(bytes.data()), static_cast<int>(bytes.size()), 16.0f, &config);
         }
-        return io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f);
+        log::warn("Font not found: {}", path.string());
+        return nullptr;
     };
     fonts.regular = load("NotoSans-Regular.ttf");
     fonts.medium = load("NotoSans-Medium.ttf");

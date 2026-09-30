@@ -8,7 +8,32 @@
 #include <cstring>
 #include <string_view>
 
+// SDL's entry point: on Windows it provides WinMain for the windowed build and
+// calls main() below; elsewhere it changes nothing.
+#include <SDL3/SDL_main.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+// The windowed build has no console of its own. Started from a terminal, write
+// --help, logs and errors there.
+void attachParentConsole() {
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+    FILE* f = nullptr;
+    freopen_s(&f, "CONOUT$", "w", stdout);
+    freopen_s(&f, "CONOUT$", "w", stderr);
+}
+#endif
 
 constexpr const char* kUsage = R"(OpenSE4 - an open-source engine reimplementation for Space Empires IV Deluxe
 (requires your own copy of the game; not affiliated with its publishers)
@@ -79,6 +104,9 @@ bool parseInt(std::string_view s, auto& out) {
 } // namespace
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    attachParentConsole();
+#endif
     bool prototype = false;  // --prototype, or a prototype-only option was given
     using namespace opense4;
     client::AppOptions options;
