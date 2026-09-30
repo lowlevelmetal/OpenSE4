@@ -572,7 +572,10 @@ struct GameOptions {
     bool sameSystemAllowed = false;
     bool evenlyDistributed = true;
     // Game settings.
-    bool noTacticalCombat = true;
+    // "No Tactical Combat" (spec 04 §2): every battle strategic. Off by
+    // default, so turn-based games ask (inferred: an opt-out check box).
+    // Simultaneous games never offer tactical combat either way.
+    bool noTacticalCombat = false;
     bool allowGifts = true;
     bool allowTechTrades = true;
     bool allowIntel = true;

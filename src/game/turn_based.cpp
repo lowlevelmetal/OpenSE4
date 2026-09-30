@@ -28,9 +28,10 @@ namespace {
 // Pending mood events live in the state between calls (spec 02 §4).
 class LiveContext {
 public:
-    LiveContext(const Rules& r, GameState& s) : ctx{r, s, {}, {}, {}} {
+    LiveContext(const Rules& r, GameState& s, TurnContext::Battles* battles = nullptr) : ctx{r, s, {}, {}, {}} {
         ctx.moodEvents = std::move(s.pendingMood);
         s.pendingMood.clear();
+        ctx.battles = battles;
     }
     ~LiveContext() { ctx.state.pendingMood = std::move(ctx.moodEvents); }
     LiveContext(const LiveContext&) = delete;
@@ -258,7 +259,27 @@ TurnResult refused(EmpireId e, std::string why) {
     return out;
 }
 
+// Runs a turn-based call with the answers of its battles (turn.hpp). A
+// battle whose answer is missing stops the call: the state goes back to
+// what it was before, and the result asks the question.
+template <class Body>
+TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, Body&& body) {
+    if (!answers || !tacticalOffered(s)) return body(nullptr);
+    GameState before = s;
+    TurnContext::Battles battles{answers, 0};
+    try {
+        return body(&battles);
+    } catch (detail::BattleQuestionRaised& raised) {
+        s = std::move(before);
+        TurnResult out;
+        out.battle = std::move(raised.question);
+        return out;
+    }
+}
+
 } // namespace
+
+bool tacticalOffered(const GameState& s) { return turnBased(s) && !s.options.noTacticalCombat; }
 
 EmpireId activePlayer(const GameState& s) {
     if (!turnBased(s) || s.gameOver) return {};
@@ -266,37 +287,43 @@ EmpireId activePlayer(const GameState& s) {
     return firstLivingFrom(s, 0);
 }
 
-TurnResult resumeTurnBased(const Rules& r, GameState& s) {
+TurnResult resumeTurnBased(const Rules& r, GameState& s, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s) || s.gameOver) return {};
-    LiveContext lc(r, s);
-    resume(lc);
-    return lc.result();
+    return withBattles(s, battles, [&](TurnContext::Battles* b) {
+        LiveContext lc(r, s, b);
+        resume(lc);
+        return lc.result();
+    });
 }
 
-TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c) {
+TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s)) {
         const CommandResult res = apply(r, s, e, c);
         return res.ok ? TurnResult{} : refused(e, std::format("{}: {}", commandName(c), res.error));
     }
     if (s.gameOver) return refused(e, "The game is over.");
     if (s.playerTurn.empire != e || !s.playerTurn.started) return refused(e, "It is not your turn.");
-    LiveContext lc(r, s);
-    applyEach(lc, e, std::span<const Command>(&c, 1), interactiveControl(s, e) == Control::Player);
-    return lc.result();
+    return withBattles(s, battles, [&](TurnContext::Battles* b) {
+        LiveContext lc(r, s, b);
+        applyEach(lc, e, std::span<const Command>(&c, 1), interactiveControl(s, e) == Control::Player);
+        return lc.result();
+    });
 }
 
-TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e) {
+TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const std::vector<BattleAnswer>* battles) {
     if (!turnBased(s) || s.gameOver) return {};
-    LiveContext lc(r, s);
-    if (!s.playerTurn.started) resume(lc);  // the turn must have started before it can end
-    if (s.gameOver) return lc.result();
-    if (s.playerTurn.empire != e || !s.playerTurn.started) {
-        lc.ctx.rejected.emplace_back(e, "It is not your turn.");
+    return withBattles(s, battles, [&](TurnContext::Battles* b) {
+        LiveContext lc(r, s, b);
+        if (!s.playerTurn.started) resume(lc);  // the turn must have started before it can end
+        if (s.gameOver) return lc.result();
+        if (s.playerTurn.empire != e || !s.playerTurn.started) {
+            lc.ctx.rejected.emplace_back(e, "It is not your turn.");
+            return lc.result();
+        }
+        finishPlayerTurn(lc, e, interactiveControl(s, e));
+        resume(lc);
         return lc.result();
-    }
-    finishPlayerTurn(lc, e, interactiveControl(s, e));
-    resume(lc);
-    return lc.result();
+    });
 }
 
 namespace detail {

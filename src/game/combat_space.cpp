@@ -11,11 +11,13 @@
 
 #include "game/combat.hpp"
 
+#include "game/combat_battle.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
+#include "game/turn_internal.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -23,20 +25,20 @@
 #include <climits>
 #include <format>
 #include <map>
+#include <memory>
 #include <tuple>
 
 namespace opense4::game::combat {
 
+namespace detail {
+
 namespace {
 
-using detail::ShieldState;
 using ruleset::VehicleType;
 using ruleset::WeaponKind;
 using Kind = CombatPiece::Kind;
 using Ev = CombatEvent::Kind;
 
-constexpr int kW = kCombatMapWidth;
-constexpr int kH = kCombatMapHeight;
 constexpr int kCentreX = 36;                     // the map centre (confirmed: binary)
 constexpr int kCentreY = 31;
 constexpr int kPlanetTargets = 10;               // a planet engages up to 10 targets per turn
@@ -48,7 +50,6 @@ constexpr int64_t kSelfDestruct = 10000;
 constexpr int64_t kRegenerationCap = 10000;      // organic armor pool, and the end-of-battle restore
 constexpr int kShipKillTenths = 10;              // +1.0 for a ship, base or planet
 constexpr int kUnitKillTenths = 1;               // +0.1 for a whole unit group or a seeker
-constexpr int kRangeTable = kCombatMapWidth;     // longest range the movement logic considers
 constexpr int64_t kPlanetSizeRank = 1'000'000;   // planets rank as the largest targets
 constexpr uint8_t kDroneTargets = kTargetShips | kTargetPlanets | kTargetSatellites;
 
@@ -58,9 +59,7 @@ constexpr std::array<std::pair<int, int>, 8> kDirs{{{1, 0}, {-1, 0}, {0, 1}, {0,
 // Boxes of several empires starting in the middle, beside the centre (inferred order).
 constexpr std::array<std::pair<int, int>, 8> kBeside{{{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {-1, -1}, {1, 1}, {1, -1}, {-1, 1}}};
 
-int sgn(int v) { return (v > 0) - (v < 0); }
 int gap(int a0, int aSize, int b0, int bSize) { return std::max({0, a0 - (b0 + bSize - 1), b0 - (a0 + aSize - 1)}); }
-bool onMap(int x, int y) { return x >= 0 && y >= 0 && x < kW && y < kH; }
 
 int facingOf(int dx, int dy) {
     for (size_t f = 0; f < kFacing.size(); ++f)
@@ -97,242 +96,16 @@ bool warheadExplodes(DamageType t) {
     }
 }
 
-struct Weapon {
-    size_t entry = 0;        // design entry index (planets: in the platform design)
-    DesignEntry de;
-    const ruleset::Component* comp = nullptr;
-    DamageType type = DamageType::Normal;
-    uint8_t targets = 0;
-    int reloadRate = 1;
-    int reach = 0;           // longest range with damage (seekers: travel)
-    int perUnit = 1;         // fighter groups: identical entries on one unit, fired together
-    int stack = -1;          // planets: the platform stack in the planet's cargo
-    std::vector<int> reload; // one counter per instance (0 = ready)
-
-    WeaponKind kind() const { return comp->weapon.kind; }
-};
-
-struct Piece {
-    Kind kind = Kind::Vehicle;
-    EmpireId owner, startOwner;
-    VehicleId source;                 // the vehicle this piece stands for (invalid for launched units)
-    ObjectId object;                  // planets and obstacles
-    Vehicle unit;                     // working copy: one ship, or a unit group (count units, no partial damage)
-    VehicleType vtype = VehicleType::Ship;
-    std::string name;
-    int x = 0, y = 0, size = 1;
-    int facing = 0;
-    bool alive = true;
-    bool mothballed = false;
-    ShieldState sh;
-    int64_t pool = 0;                 // damage too small to destroy anything (spec 04 §9.1)
-    int64_t shieldPool = 0;           // unit groups: Shields Only damage (spec 04 §9.4)
-    int64_t regenPool = 0;            // organic armor (spec 04 §9.3)
-    int mp = 0;
-    int reach = 0;                    // movement points at the start of the combat turn
-    std::vector<Weapon> weapons;
-    std::vector<int> engaged;         // distinct targets engaged this combat turn
-    int budget = 1;
-    int offense = 0, defense = 0;     // offense includes the system bonus
-    bool alwaysHit = false;
-    bool armed = false;
-    int64_t strength = 0;
-    std::array<int64_t, kRangeTable + 1> firepower{};
-    TargetCategory category = TargetCategory::Ships;
-    FleetId fleet;                    // for fleet experience while the ship stays in it
-    uint32_t designStrategy = 0, fleetStrategy = 0;
-    int leader = -1;
-    bool isLeader = false;
-    int slotDx = 0, slotDy = 0;       // formation offset before turning to the leader's facing
-    bool slotFixed = false;           // an offset that does not turn with the leader
-    bool arrived = false;             // moved into the sector this turn: an attacker's piece
-    int boxDx = 0, boxDy = 0;         // start box direction
-    // Seekers.
-    int seekTarget = -1, launcher = -1, travelled = 0, speed = 0, members = 1, launchRound = 0;
-    int64_t hp = 0;
-    Weapon seekWeapon;
-    // Launched units and drones.
-    int carrier = -1;
-    bool launched = false;
-    int droneTarget = -1;
-    EmpireId droneTargetOwner;
-    // Planets.
-    std::vector<PopulationGroup> population;
-    std::vector<uint32_t> facilities;
-    size_t facilitiesStart = 0;
-    int militia = -1;
-    int64_t popKilled = 0, hpStart = 0;
-    bool colonyLost = false;
-    EmpireId capturedBy;              // planets taken by troops during the battle
-    int plague = 0;
-    int64_t conditionsLost = 0;       // hundredths of the 0-1.5 conditions scale
-    // Bookkeeping.
-    bool fired = false, damaged = false, captured = false, pushed = false;
-    int unitsLost = 0, startCount = 1;
-};
-
 enum class Result : uint8_t { Win, Loss, Stalemate };
 
-struct MovePlan {
-    MoveStrategy mode = MoveStrategy::DontGetHurt;
-    int target = -1;
-    std::vector<std::pair<int, int>> path;
-};
-
-class Battle {
-public:
-    Battle(TurnContext& ctx, Location where, Rng& rng)
-        : r_(ctx.rules), s_(ctx.state), ctx_(ctx), where_(where), rng_(rng), cs_(loadSettings(ctx.rules)) {
-        occ_.assign(static_cast<size_t>(kW * kH), -1);
-    }
-
-    bool setup();
-    void run();
-    void finish();
-
-private:
-    // ---- Setup.
-    void addVehiclePiece(const Vehicle& v);
-    void addPlanetPiece(const Colony& c);
-    void addObstaclePiece(ObjectId o);
-    Weapon makeWeapon(const DesignEntry& de, size_t entry) const;
-    void buildWeapons(Piece& p) const;
-    void buildPlanetWeapons(Piece& p) const;
-    void place();
-    std::pair<int, int> randomIn(const std::array<int, 4>& box, int size);
-    std::pair<int, int> freeNear(int cx, int cy, int size, int self) const;
-    bool fits(int x, int y, int size, int self) const;
-    void occupy(int i);
-    void vacate(int i);
-    int addPiece(Piece p);
-
-    // ---- Per-round state.
-    void startRound();
-    void refreshPiece(int i);
-    void refreshCombatValues(int i);
-    void refreshStats(int i);
-    void afterDamage(int i);
-    int computeMp(int i) const;
-    void planetShields(Piece& p, bool fill) const;
-    bool hasPieces(EmpireId e) const;
-    bool over() const;
-    const Strategy& strategy(EmpireId e, uint32_t index) const;
-    uint32_t strategyIndex(int i) const;
-    const Strategy& strategyOf(int i) const { return strategy(pieces_[i].owner, strategyIndex(i)); }
-    bool combatant(int i) const;
-    int bestCrewExperience(EmpireId e) const;
-    int fleetExp(const Piece& p) const;
-
-    // ---- Queries.
-    int dist(int a, int b) const;          // range distance: nearest footprint squares
-    int aimDist(int a, int b) const;       // aim distance: top-left squares
-    int distAt(int x, int y, int b) const;
-    std::pair<int, int> centreOf(int i) const;
-    bool isFree(int x, int y, int self) const;
-    uint8_t maskOf(int i) const;
-    TargetCategory categoryFor(int j, EmpireId viewer) const;
-    int damagePercent(int j) const;
-    int64_t sizeOf(int j) const;
-    int64_t hitPoints(int j) const;
-    int64_t planetHp(const Piece& p) const;
-    bool invaderStack(const Piece& p, size_t k) const;
-    bool hasSupply(int i) const;
-    int instances(int i, const Weapon& w) const;
-    int firedTogether(int i, const Weapon& w) const;
-    bool canAffect(DamageType type, int t, int att) const;
-    bool canMove(int att, int t) const;
-    int damageBonus(EmpireId e) const;
-    int hitChance(int i, const Weapon& w, int t) const;
-    int64_t exposureAt(int i, int x, int y, bool reach) const;
-    int nearestThreat(int i, int x, int y) const;
-    int seekerDistance(int i, int x, int y) const;
-    int64_t ourDamage(int i, int t, int d) const;
-    bool hasTroops(int i) const;
-    bool contestedBy(const Piece& planet, EmpireId e) const;
-    bool overkill(int i, int t, bool seeker) const;
-
-    // ---- Targeting.
-    std::vector<int> sortedTargets(int i, const Strategy& S);
-    int pickTarget(int i, const Weapon& w, const std::vector<int>& targets);
-    int64_t incomingSeekerDamage(int t) const;
-
-    // ---- Actions.
-    void phase(EmpireId e);
-    void act(int i);
-    void fire(int i);
-    void shoot(int i, size_t wi, size_t k, int t);
-    void launchSeeker(int i, const Weapon& w, int t, int count);
-    void applyHit(int att, int t, DamageType type, int64_t damage);
-    void shipHit(int att, int t, DamageType type, int64_t damage);
-    void groupHit(int att, int t, DamageType type, int64_t damage);
-    void seekerHit(int att, int t, DamageType type, int64_t damage);
-    void planetHit(int att, int t, DamageType type, int64_t damage);
-    int64_t cargoHit(int att, int t, DamageType type, int64_t pool, bool platforms);
-    void populationLoss(int att, int t, int64_t millions);
-    void facilityLoss(int t);
-    void forcedMove(int t, int att, int64_t squares, bool push);
-    void randomMove(int t);
-    void kill(int t, int att);
-    void creditKill(int att, int victim);
-    void creditDesignKills(int att, int kills, int64_t tonnage);
-    void capture(int t, int capturer, bool boarding);
-    void dissolve(int leader);
-    void pdReact(int mover);
-    void moveSeekers(EmpireId e);
-    void expire(int i);
-    void launchUnits(EmpireId e);
-    bool spawnUnit(int carrier, DesignId design, int count, uint32_t strategyIndex);
-
-    // ---- Movement.
-    MovePlan plan(int i);
-    std::pair<MoveStrategy, int> chooseMode(int i, const Strategy& S);
-    int desiredRange(int i, int t, MoveStrategy m) const;
-    std::vector<std::pair<int, int>> pathToward(int i, int t, int range, bool avoidFire, bool& blocked) const;
-    std::vector<std::pair<int, int>> pathToSquare(int i, int tx, int ty) const;
-    std::vector<std::pair<int, int>> pathDontGetHurt(int i) const;
-    void walk(int i, const std::vector<std::pair<int, int>>& path);
-    void moveTo(int i, int x, int y);
-    void step(int i, int x, int y);
-    void followLeader(int i);
-    void droneAct(int i);
-    void board(int i, int t);
-    void ram(int i, int t);
-    void dropTroops(int i, int t);
-    int boardTarget(int i) const;
-    int troopTarget(int i) const;
-
-    // ---- Records.
-    void event(Ev k, int piece, int target, int amount = 0, uint32_t component = 0);
-    void note(std::string line) { rec_.summary.push_back(std::format("Turn {}: {}", round_, std::move(line))); }
-    std::string label(int i) const;
-
-    const Rules& r_;
-    GameState& s_;
-    TurnContext& ctx_;
-    Location where_;
-    Rng& rng_;
-    CombatSettings cs_;
-    CombatRecord rec_;
-    std::vector<Piece> pieces_;
-    std::vector<char> acted_;
-    std::vector<EmpireId> empires_;
-    std::vector<EmpireId> order_;                                     // phase order, drawn once
-    std::vector<EmpireId> defenders_;
-    std::vector<int> occ_;
-    mutable std::map<uint32_t, std::vector<Strategy>> strategies_;   // parsed lazily
-    std::map<uint32_t, bool> holdFire_;
-    std::map<uint32_t, int> troopsLanded_;
-    std::map<uint32_t, int> combatBonus_, damageBonus_, shieldBonus_;   // system totals at the start
-    std::map<uint32_t, std::pair<int, int>> fleetExp_;                // fleet -> (whole, tenths)
-    std::map<std::pair<uint32_t, int>, int64_t> assigned_;            // (empire, target) -> direct damage this turn
-    std::vector<std::string> groundReports_;
-    int round_ = 1;
-    int satelliteCap_ = 100;
-    int interference_ = 0;
-    int disruption_ = 0;
-};
+} // namespace
 
 // ---- Setup ----------------------------------------------------------------------------------------
+
+Battle::Battle(TurnContext& ctx, Location where, Rng& rng)
+    : r_(ctx.rules), s_(ctx.state), ctx_(ctx), where_(where), rng_(rng), cs_(loadSettings(ctx.rules)) {
+    occ_.assign(static_cast<size_t>(kW * kH), -1);
+}
 
 Weapon Battle::makeWeapon(const DesignEntry& de, size_t entry) const {
     Weapon w;
@@ -729,7 +502,9 @@ const Strategy& Battle::strategy(EmpireId e, uint32_t index) const {
 uint32_t Battle::strategyIndex(int i) const {
     const Piece& p = pieces_[i];
     // While in its fleet's combat group a ship uses the fleet strategy, afterwards its design's (history 1.84).
-    if (p.isLeader || (p.leader >= 0 && pieces_[p.leader].alive && pieces_[p.leader].isLeader)) return p.fleetStrategy;
+    // A group a player formed in tactical combat is no fleet group.
+    if (p.isLeader) return p.tacticalGroup ? p.designStrategy : p.fleetStrategy;
+    if (p.leader >= 0 && pieces_[p.leader].alive && pieces_[p.leader].isLeader && !pieces_[p.leader].tacticalGroup) return p.fleetStrategy;
     return p.designStrategy;
 }
 
@@ -882,6 +657,7 @@ void Battle::refreshPiece(int i) {
     if (!p.alive || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) return;
     p.engaged.clear();
     p.pushed = false;
+    p.launchedNow = {};
     p.mp = computeMp(i);
     p.reach = p.mp;
     refreshStats(i);
@@ -941,6 +717,57 @@ bool Battle::over() const {
 }
 
 // ---- Queries ----------------------------------------------------------------------------------------
+
+std::vector<EmpireId> Battle::fighting() const {
+    std::vector<EmpireId> out;
+    for (EmpireId e : empires_)
+        for (EmpireId o : empires_)
+            if (o != e && detail::enemies(s_, e, o)) {
+                out.push_back(e);
+                break;
+            }
+    return out;
+}
+
+bool Battle::hostileTo(int i, int t) const {
+    const Piece& a = pieces_[i];
+    const Piece& b = pieces_[t];
+    return a.owner.valid() && b.owner.valid() && a.owner != b.owner && detail::enemies(s_, a.owner, b.owner);
+}
+
+int Battle::occupant(int x, int y) const { return onMap(x, y) ? occ_[static_cast<size_t>(y * kW + x)] : -1; }
+
+std::array<int, 3> Battle::launchLeft(int i) const {
+    const Piece& p = pieces_[i];
+    std::array<int, 3> left{};
+    if (!p.alive || p.mothballed) return left;
+    if (p.kind == Kind::Planet) {
+        // Up to 100 of each kind per combat turn (confirmed: binary).
+        left = {kPlanetLaunch, kPlanetLaunch, kPlanetLaunch};
+    } else if (p.kind == Kind::Vehicle) {
+        left[kLaunchFighters] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchRecoverFighters));
+        left[kLaunchSatellites] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchRecoverSatellites));
+        left[kLaunchDrones] = static_cast<int>(detail::componentSum(r_, s_, p.unit, AbilityKind::LaunchDrones));
+    }
+    for (size_t k = 0; k < left.size(); ++k) left[k] = std::max(0, left[k] - p.launchedNow[k]);
+    return left;
+}
+
+int Battle::launchKindOf(DesignId design) const {
+    switch (r_.hull(s_.design(design).hull).type) {
+        case VehicleType::Fighter: return kLaunchFighters;
+        case VehicleType::Satellite: return kLaunchSatellites;
+        case VehicleType::Drone: return kLaunchDrones;
+        default: return -1;
+    }
+}
+
+// Troops of its own side (a troop stack belongs to the empire owning its design).
+bool Battle::ownTroops(int i) const {
+    for (const UnitStack& u : pieces_[i].unit.cargo.units)
+        if (u.count > 0 && isTroopDesign(r_, s_, u.design) && s_.design(u.design).owner == pieces_[i].owner) return true;
+    return false;
+}
 
 int Battle::dist(int a, int b) const {
     const Piece& p = pieces_[a];
@@ -1267,7 +1094,8 @@ int Battle::pickTarget(int i, const Weapon& w, const std::vector<int>& targets) 
     const bool moves = w.type == DamageType::PushesTarget || w.type == DamageType::PullsTarget || w.type == DamageType::RandomTargetMovement;
     for (int t : targets) {
         const Piece& b = pieces_[t];
-        if (!combatant(t) || !(w.targets & maskOf(t))) continue;
+        // A target converted by an earlier shot of this volley is no longer hostile (spec 04 §2).
+        if (!combatant(t) || !hostileTo(i, t) || !(w.targets & maskOf(t))) continue;
         if (seeking) {
             // A seeker needs its target within travel range (inferred: straight to the centre square).
             const auto [cx, cy] = centreOf(t);
@@ -1310,15 +1138,24 @@ std::string Battle::label(int i) const {
 }
 
 void Battle::phase(EmpireId e) {
+    // A computer side launches first, so the new drones act with the others (inferred);
+    // then drones move and attack, then seekers, then everything else (confirmed: binary).
     launchUnits(e);
-    // Drones move and attack first, then seekers, then everything else (confirmed: binary).
+    phaseDrones(e);
+    moveSeekers(e);
+    phasePieces(e);
+}
+
+void Battle::phaseDrones(EmpireId e) {
     for (size_t k = 0; k < pieces_.size(); ++k)
         if (pieces_[k].alive && pieces_[k].owner == e && pieces_[k].kind == Kind::UnitGroup && pieces_[k].vtype == VehicleType::Drone &&
             !acted_[k]) {
             acted_[k] = 1;
             droneAct(static_cast<int>(k));
         }
-    moveSeekers(e);
+}
+
+void Battle::phasePieces(EmpireId e) {
     auto ready = [&](size_t k) {
         return !acted_[k] && pieces_[k].alive && pieces_[k].owner == e && pieces_[k].kind != Kind::Seeker && pieces_[k].kind != Kind::Obstacle;
     };
@@ -1347,7 +1184,7 @@ void Battle::act(int i) {
     }
     const Piece& p = pieces_[i];
     if (p.leader >= 0 && pieces_[p.leader].alive && pieces_[p.leader].isLeader && pieces_[p.leader].owner == p.owner) {
-        followLeader(i);
+        followLeader(i, true);
         if (pieces_[i].alive) fire(i);
         pieces_[i].mp = 0;
         return;
@@ -1360,6 +1197,7 @@ void Battle::act(int i) {
     if (t >= 0 && !mv.path.empty()) fireFirst = distAt(mv.path.back().first, mv.path.back().second, t) > dist(i, t);
     if (fireFirst) fire(i);
     if (!pieces_[i].alive) return;
+    logMove(i, mv.path);
     walk(i, mv.path);
     if (!pieces_[i].alive) return;
     if (t >= 0 && pieces_[t].alive && dist(i, t) <= 1) {
@@ -1390,6 +1228,12 @@ void Battle::fire(int i) {
             if (w.reload[k] > 0) continue;
             const int t = pickTarget(i, w, targets);
             if (t < 0) break;
+            if (logging(i)) {
+                TacticalOrder o{TacticalOrder::Kind::Fire, pieces_[i].owner, i, t};
+                o.weapon = static_cast<int>(wi);
+                o.instance = static_cast<int>(k);
+                logOrder(std::move(o));
+            }
             shoot(i, wi, k, t);
         }
     }
@@ -1917,15 +1761,11 @@ void Battle::launchUnits(EmpireId e) {
         const Kind kind = pieces_[k].kind;
         if (kind != Kind::Vehicle && kind != Kind::Planet) continue;
         if (pieces_[k].unit.cargo.units.empty()) continue;
-        int fighters = 0, satellites = 0, drones = 0;
-        if (kind == Kind::Planet) {
-            // Up to 100 of each kind per combat turn (confirmed: binary).
-            fighters = satellites = drones = kPlanetLaunch;
-        } else {
-            fighters = static_cast<int>(detail::componentSum(r_, s_, pieces_[k].unit, AbilityKind::LaunchRecoverFighters));
-            satellites = static_cast<int>(detail::componentSum(r_, s_, pieces_[k].unit, AbilityKind::LaunchRecoverSatellites));
-            drones = static_cast<int>(detail::componentSum(r_, s_, pieces_[k].unit, AbilityKind::LaunchDrones));
-        }
+        // What it may still launch this combat turn (a player may have launched some already).
+        std::array<int, 3> left = launchLeft(i);
+        int& fighters = left[kLaunchFighters];
+        int& satellites = left[kLaunchSatellites];
+        int& drones = left[kLaunchDrones];
         if (fighters + satellites + drones <= 0) continue;
         const uint32_t sIndex = strategyIndex(i);
         const Strategy& S = strategy(e, sIndex);
@@ -1958,7 +1798,14 @@ void Battle::launchUnits(EmpireId e) {
             while (rate && *rate > 0 && pieces_[k].unit.cargo.units[u].count > 0) {
                 const int count = std::min({group, *rate, pieces_[k].unit.cargo.units[u].count});
                 if (!spawnUnit(i, st.design, count, sIndex)) break;
+                if (logging(i)) {
+                    TacticalOrder o{TacticalOrder::Kind::Launch, e, i};
+                    o.design = st.design;
+                    o.count = o.group = count;
+                    logOrder(std::move(o));
+                }
                 pieces_[k].unit.cargo.units[u].count -= count;
+                pieces_[k].launchedNow[static_cast<size_t>(launchKindOf(st.design))] += count;
                 *rate -= count;
             }
         }
@@ -2121,7 +1968,10 @@ MovePlan Battle::plan(int i) {
             break;
     }
     // A leader blocked in its movement dissolves its group (history 1.03).
-    if (blocked && pieces_[i].isLeader) dissolve(i);
+    if (blocked && pieces_[i].isLeader) {
+        if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[i].owner, i});
+        dissolve(i);
+    }
     return mv;
 }
 
@@ -2240,14 +2090,24 @@ std::vector<std::pair<int, int>> Battle::pathDontGetHurt(int i) const {
     return path;
 }
 
-void Battle::followLeader(int i) {
+void Battle::followLeader(int i, bool logMoves) {
     // Members move toward their formation slot, turned to the leader's facing (spec 03 §10; spec 04 §5, inferred).
     const Piece& leader = pieces_[pieces_[i].leader];
     const auto [dx, dy] = pieces_[i].slotFixed ? std::pair{pieces_[i].slotDx, pieces_[i].slotDy}
                                                : rotateSlot(leader.facing, pieces_[i].slotDx, pieces_[i].slotDy);
     const int tx = std::clamp(leader.x + dx, 0, kW - 1);
     const int ty = std::clamp(leader.y + dy, 0, kH - 1);
-    walk(i, pathToSquare(i, tx, ty));
+    const std::vector<std::pair<int, int>> path = pathToSquare(i, tx, ty);
+    if (logMoves) logMove(i, path);
+    walk(i, path);
+}
+
+void Battle::logMove(int i, const std::vector<std::pair<int, int>>& path) {
+    if (!logging(i) || path.empty()) return;
+    TacticalOrder o{TacticalOrder::Kind::Move, pieces_[i].owner, i};
+    o.alone = true;
+    for (const auto& [x, y] : path) o.path.push_back(Square{static_cast<int16_t>(x), static_cast<int16_t>(y)});
+    logOrder(std::move(o));
 }
 
 void Battle::droneAct(int i) {
@@ -2334,6 +2194,7 @@ void Battle::board(int i, int t) {
     // Boarding parties defend as well as attack; each crew quarters adds 4 (confirmed: binary).
     const int64_t defense = detail::componentSum(r_, s_, b.unit, AbilityKind::BoardingDefense) + 4 * crew +
                             detail::componentSum(r_, s_, b.unit, AbilityKind::BoardingAttack);
+    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::Capture, pieces_[i].owner, i, t});
     pieces_[i].fired = true;
     event(Ev::Fire, i, t);
     if (offense > defense) {
@@ -2356,6 +2217,7 @@ void Battle::board(int i, int t) {
 
 void Battle::ram(int i, int t) {
     // Spec 04 §10.3 (confirmed: binary).
+    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::Ram, pieces_[i].owner, i, t});
     const Piece& a = pieces_[i];
     const Piece& b = pieces_[t];
     const bool drone = a.vtype == VehicleType::Drone && a.kind == Kind::UnitGroup;
@@ -2432,6 +2294,7 @@ void Battle::dropTroops(int i, int t) {
         else pl.unit.cargo.units.push_back({st.design, n});
     }
     if (landed <= 0) return;
+    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::DropTroops, attacker, i, t});
     std::erase_if(pieces_[i].unit.cargo.units, [](const UnitStack& u) { return u.count <= 0; });
     Piece& pl = pieces_[t];
     if (!invaded || pl.militia < 0) pl.militia = militiaCount(cs_, pl.population);
@@ -2469,33 +2332,68 @@ void Battle::dropTroops(int i, int t) {
     note(std::format("{} fell to {} troops", won.name, s_.empire(attacker).name));
 }
 
-// ---- Round loop --------------------------------------------------------------------------------------------
+// ---- The turn sequence (spec 04 §4) ------------------------------------------------------------------
+
+void Battle::beginRound() {
+    if (round_ > 1) startRound();
+    acted_.assign(pieces_.size(), 0);
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (pieces_[k].kind == Kind::Seeker) acted_[k] = 1;
+    // (inferred) An empire landing troops holds fire on planets whose guns are silenced (history 1.43).
+    holdFire_.clear();
+    for (size_t k = 0; k < pieces_.size(); ++k) {
+        const Piece& p = pieces_[k];
+        if (!p.alive || p.kind != Kind::Vehicle || !hasTroops(static_cast<int>(k))) continue;
+        const Strategy& S = strategyOf(static_cast<int>(k));
+        if (S.primary == MoveStrategy::DropTroops || S.secondary == MoveStrategy::DropTroops) holdFire_[p.owner.value] = true;
+    }
+}
+
+void Battle::endPhase() {
+    ++phaseIndex_;
+    stage_ = over() ? Stage::Finished : Stage::Between;
+}
+
+bool Battle::isPlayer(EmpireId e) const { return std::find(players_.begin(), players_.end(), e) != players_.end(); }
+
+void Battle::advance() {
+    // The counter starts at 1 and the battle ends when it reaches the setting:
+    // one turn fewer than `Number Of Space Combat Turns` (confirmed: binary). It
+    // also ends as soon as no two empires that still have pieces are hostile.
+    while (stage_ == Stage::Between) {
+        if (!roundOpen_) {
+            if (round_ >= cs_.spaceTurns) {
+                round_ = lastRound();
+                stage_ = Stage::Finished;
+                return;
+            }
+            beginRound();
+            roundOpen_ = true;
+            phaseIndex_ = 0;
+        }
+        if (phaseIndex_ >= order_.size()) {
+            roundOpen_ = false;
+            ++round_;
+            continue;
+        }
+        const EmpireId e = order_[phaseIndex_];
+        if (!hasPieces(e)) {
+            ++phaseIndex_;
+            continue;
+        }
+        phaseEmpire_ = e;
+        if (isPlayer(e)) {
+            stage_ = Stage::Launch;   // the player's phase waits for orders
+            return;
+        }
+        phase(e);
+        endPhase();
+    }
+}
 
 void Battle::run() {
-    // The counter starts at 1 and the battle ends when it reaches the setting:
-    // one turn fewer than `Number Of Space Combat Turns` (confirmed: binary).
-    for (round_ = 1; round_ < cs_.spaceTurns; ++round_) {
-        if (round_ > 1) startRound();
-        acted_.assign(pieces_.size(), 0);
-        for (size_t k = 0; k < pieces_.size(); ++k)
-            if (pieces_[k].kind == Kind::Seeker) acted_[k] = 1;
-        {
-            // (inferred) An empire landing troops holds fire on planets whose guns are silenced (history 1.43).
-            holdFire_.clear();
-            for (size_t k = 0; k < pieces_.size(); ++k) {
-                const Piece& p = pieces_[k];
-                if (!p.alive || p.kind != Kind::Vehicle || !hasTroops(static_cast<int>(k))) continue;
-                const Strategy& S = strategyOf(static_cast<int>(k));
-                if (S.primary == MoveStrategy::DropTroops || S.secondary == MoveStrategy::DropTroops) holdFire_[p.owner.value] = true;
-            }
-        }
-        for (EmpireId e : order_) {
-            if (!hasPieces(e)) continue;
-            phase(e);
-            if (over()) return;
-        }
-    }
-    round_ = std::max(1, cs_.spaceTurns - 1);
+    players_.clear();
+    advance();
 }
 
 // ---- Results ----------------------------------------------------------------------------------------------------
@@ -2747,19 +2645,59 @@ void Battle::finish() {
     }
 }
 
-} // namespace
+} // namespace detail
 
 namespace {
+
+// Whether a human empire has a vehicle or colony in the sector (only then can a battle there ask).
+bool humanPresent(const GameState& s, Location where) {
+    auto human = [&](EmpireId e) { return e.valid() && e.index() < s.empires.size() && s.empire(e).alive && s.empire(e).kind == PlayerKind::Human; };
+    for (const Vehicle& v : s.vehicles)
+        if (v.location == where && v.count > 0 && human(v.owner)) return true;
+    for (ObjectId o : planetsAt(s, where))
+        if (const Colony* c = s.colony(o); c && human(c->owner)) return true;
+    return false;
+}
 
 // `entering` null: the vehicles that moved in this turn (the fallback of
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering) {
+    // A turn-based game with tactical combat asks the human sides (turn.hpp):
+    // keep the game as the battle begins, in case the answer is missing.
+    TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
+    std::shared_ptr<GameState> before;
+    if (ask && ask->next >= ask->answers->size() && humanPresent(ctx.state, where)) before = std::make_shared<GameState>(ctx.state);
     Rng rng = ctx.state.rng.fork();
     // Mines strike first, then the battle check runs (confirmed: binary).
     if (!entering) detail::resolveMines(ctx, where, {}, rng);
     else if (!entering->empty()) detail::resolveMines(ctx, where, *entering, rng);
-    Battle battle(ctx, where, rng);
+    detail::Battle battle(ctx, where, rng);
     if (!battle.setup()) return;
+    if (ask) {
+        std::vector<EmpireId> humans;
+        for (EmpireId e : battle.fighting())
+            if (ctx.state.empire(e).alive && ctx.state.empire(e).kind == PlayerKind::Human) humans.push_back(e);
+        if (!humans.empty()) {
+            if (ask->next >= ask->answers->size()) {
+                BattleQuestion q;
+                q.where = where;
+                if (entering) q.entering = std::vector<VehicleId>(entering->begin(), entering->end());
+                q.humans = std::move(humans);
+                q.participants = battle.empires();
+                q.state = std::move(before);
+                q.index = ask->next;
+                throw game::detail::BattleQuestionRaised{std::move(q)};
+            }
+            const BattleAnswer& answer = (*ask->answers)[ask->next++];
+            std::vector<EmpireId> players;
+            for (EmpireId e : answer.tactical)
+                if (std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
+            battle.setPlayers(std::move(players));
+            battle.play(answer.orders);
+            battle.finish();
+            return;
+        }
+    }
     battle.run();
     battle.finish();
 }

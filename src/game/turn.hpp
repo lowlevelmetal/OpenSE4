@@ -26,12 +26,52 @@
 #include "game/movement.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
+#include "game/tactical.hpp"
 
+#include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
 namespace opense4::game {
+
+// ---- Tactical combat in turn-based games (spec 04 §2, §3 step 1) ------------------------------
+//
+// Each human participant of a battle chooses Tactical or Strategic. The
+// engine cannot wait for the choice in the middle of a turn, so the calls
+// that play a turn-based game (resumeTurnBased, applyLive, endPlayerTurn)
+// take the answers in advance, one per battle that asks, in the order the
+// battles come up. When they run out, the call stops at the battle: the
+// state is left as it was before the call and TurnResult::battle holds the
+// question with the game as the battle begins. The player fights it (a
+// combat::TacticalBattle on that copy) or chooses Strategic; the same call is
+// made again with the answer added and replays, deterministically, to the
+// same battle, which it now fights with the answer: the tactical sides'
+// orders are the battle's script, and its results are applied by the same
+// code as a strategic battle's.
+
+// How one battle is fought.
+struct BattleAnswer {
+    std::vector<EmpireId> tactical;               // human sides that fight it tactically (none: strategic)
+    std::vector<combat::TacticalOrder> orders;    // their orders (combat::TacticalBattle::script())
+};
+
+// A battle about to start with human participants.
+struct BattleQuestion {
+    Location where;
+    // The vehicles that entered the sector (the mines' targets; see TacticalBattle::Setup).
+    std::optional<std::vector<VehicleId>> entering;
+    std::vector<EmpireId> humans;                 // human sides that fight in it, each asked
+    std::vector<EmpireId> participants;           // every side with pieces
+    std::shared_ptr<const GameState> state;       // the game just before the battle (before the mines)
+    size_t index = 0;                             // its place among the call's battles that ask
+};
+
+// Whether battles ask their human participants: turn-based games without
+// the "No Tactical Combat" game option (simultaneous games never offer
+// tactical combat, spec 04 §2).
+bool tacticalOffered(const GameState& s);
 
 // Transient data passed between the phases of one turn. Persistent results
 // go into GameState; mood events that no happiness update used this turn
@@ -44,6 +84,13 @@ struct TurnContext {
     std::vector<MoodEvent> moodEvents;
     std::vector<Location> battleSites;          // sectors where space combat happened
     std::vector<std::pair<EmpireId, std::string>> rejected;  // commands refused
+    // Turn-based games with tactical combat: the answers of this call's
+    // battles (null: every battle is strategic, nobody is asked).
+    struct Battles {
+        const std::vector<BattleAnswer>* answers = nullptr;
+        size_t next = 0;
+    };
+    Battles* battles = nullptr;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
@@ -66,6 +113,9 @@ struct TurnResult {
     // Turn-based games: moves of a human player's groups that stopped before
     // a sector with enemies, waiting for the answer (cmd::EnterSector).
     std::vector<EntryQuestion> questions;
+    // Turn-based games with tactical combat: the battle whose answer is
+    // missing. The call changed nothing; call it again with the answer.
+    std::optional<BattleQuestion> battle;
 };
 
 // Processes one full turn: applies orders, runs every phase, advances the date.
@@ -123,7 +173,9 @@ EmpireId activePlayer(const GameState& s);
 // in sequence (each started, its orders carried out, then ended). Stops once
 // a human player's turn has started, when the game is over, or, when no
 // living human is left to play, at the end of the game turn.
-TurnResult resumeTurnBased(const Rules& r, GameState& s);
+// `battles`: see "Tactical combat in turn-based games" above (null: every
+// battle is strategic).
+TurnResult resumeTurnBased(const Rules& r, GameState& s, const std::vector<BattleAnswer>* battles = nullptr);
 
 // Applies one command of the player whose turn it is and carries out at once
 // what it sets in motion: the vehicles, fleets or planets whose orders it
@@ -131,11 +183,11 @@ TurnResult resumeTurnBased(const Rules& r, GameState& s);
 // with movement left found their colonies, and messages take effect. An
 // EnterSector answer carries the stopped group on into the sector. Other
 // empires' commands, and commands when the turn has not started, are refused.
-TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c);
+TurnResult applyLive(const Rules& r, GameState& s, EmpireId e, const Command& c, const std::vector<BattleAnswer>* battles = nullptr);
 
 // Ends `e`'s turn: its end-of-turn processing; the turn passes to the next
 // living empire, or after the last one the once-per-game-turn steps run.
 // Then resumeTurnBased. Refused when it is not `e`'s turn.
-TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e);
+TurnResult endPlayerTurn(const Rules& r, GameState& s, EmpireId e, const std::vector<BattleAnswer>* battles = nullptr);
 
 } // namespace opense4::game

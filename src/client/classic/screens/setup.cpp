@@ -998,7 +998,9 @@ private:
         heading(ctx, "Combat");
         int combat = o.noTacticalCombat ? 1 : 0;
         if (lampChoice(ctx, "##combat", combat, {"Tactical combat", "Strategic combat only"})) o.noTacticalCombat = combat == 1;
-        note("Strategic combat is resolved automatically; tactical combat lets players steer their ships in battle.");
+        note(o.simultaneous ? "Simultaneous games resolve every battle automatically; tactical combat needs one player after another."
+                            : "Strategic combat is resolved automatically; with tactical combat each player in a battle may steer "
+                              "their ships or leave them to their strategies.");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Autosave");
         {

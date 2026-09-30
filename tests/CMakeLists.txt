@@ -9,6 +9,7 @@ add_executable(opense4_tests
     test_client_logic.cpp
     test_combat.cpp
     test_combat_replay.cpp
+    test_tactical.cpp
     test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp

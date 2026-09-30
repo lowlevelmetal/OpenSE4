@@ -1,0 +1,775 @@
+// Tactical combat (docs/spec/04 §3, §4, §16; game/tactical.hpp): the battle
+// stepped one phase at a time with orders for player sides, the same rules as
+// strategic resolution, validated orders, scripts that replay a battle, and
+// tactical battles in turn-based games (turn.hpp). All content is invented
+// for the tests.
+
+#include "combat_fixture.hpp"
+
+#include "game/combat.hpp"
+#include "game/query.hpp"
+#include "game/serialize.hpp"
+#include "game/tactical.hpp"
+#include "game/turn.hpp"
+#include "game/turn_internal.hpp"
+
+#include <doctest/doctest.h>
+
+#include <algorithm>
+#include <format>
+#include <optional>
+
+using namespace opense4;
+using namespace opense4::game;
+using namespace opense4::ctest;
+using opense4::test::homeworld;
+namespace combat = opense4::game::combat;
+using combat::TacticalBattle;
+using combat::TacticalOrder;
+using OK = combat::TacticalOrder::Kind;
+
+namespace {
+
+TacticalOrder order(OK kind, EmpireId e, int piece = -1, int target = -1) { return TacticalOrder{kind, e, piece, target}; }
+
+int pieceIndex(const TacticalBattle& b, VehicleId v) {
+    for (size_t i = 0; i < b.pieces().size(); ++i)
+        if (b.pieces()[i].vehicle == v) return static_cast<int>(i);
+    FAIL("no piece for vehicle " << v.value);
+    return -1;
+}
+
+GameState strategic(GameState s, Location where) {
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, where);
+    return s;
+}
+
+// The player side's phases played by the strategies (Auto in the launch step),
+// with the strategies' orders recorded phase by phase.
+std::vector<std::vector<TacticalOrder>> playAuto(TacticalBattle& b) {
+    std::vector<TacticalOrder> log;
+    std::vector<std::vector<TacticalOrder>> phases;
+    b.recordStrategies(&log);
+    while (b.awaitingOrders()) {
+        const size_t before = log.size();
+        REQUIRE(b.submit(order(OK::Auto, b.phaseEmpire())).empty());
+        phases.emplace_back(log.begin() + static_cast<std::ptrdiff_t>(before), log.end());
+    }
+    b.recordStrategies(nullptr);
+    b.finish();
+    return phases;
+}
+
+// Plays A's phases with a simple hand policy: close on the nearest enemy, then fire everything at it.
+void playByHand(TacticalBattle& b, EmpireId me) {
+    while (b.awaitingOrders()) {
+        REQUIRE(b.phaseEmpire() == me);
+        REQUIRE(b.submit(order(OK::Begin, me)).empty());
+        for (size_t i = 0; i < b.pieces().size(); ++i) {
+            const combat::TacticalPiece& p = b.pieces()[i];
+            if (!p.alive || p.owner != me || p.kind == CombatPiece::Kind::Seeker || p.type == ruleset::VehicleType::Drone) continue;
+            int nearest = -1;
+            for (size_t j = 0; j < b.pieces().size(); ++j) {
+                const combat::TacticalPiece& q = b.pieces()[j];
+                if (!q.alive || q.kind == CombatPiece::Kind::Seeker || q.kind == CombatPiece::Kind::Obstacle || !b.hostile(me, q.owner)) continue;
+                if (nearest < 0 || b.distance(static_cast<int>(i), static_cast<int>(j)) < b.distance(static_cast<int>(i), nearest))
+                    nearest = static_cast<int>(j);
+            }
+            if (nearest < 0) break;
+            const combat::TacticalPiece& t = b.pieces()[static_cast<size_t>(nearest)];
+            TacticalOrder mv = order(OK::Move, me, static_cast<int>(i));
+            mv.x = t.x;
+            mv.y = t.y;
+            if (b.check(mv).empty()) b.submit(mv);
+            TacticalOrder fire = order(OK::Fire, me, static_cast<int>(i), nearest);
+            if (b.check(fire).empty()) b.submit(fire);
+        }
+        if (b.awaitingOrders()) REQUIRE(b.submit(order(OK::EndPhase, me)).empty());
+    }
+    b.finish();
+}
+
+} // namespace
+
+// ---- One set of rules, two kinds of control ------------------------------------------------------
+
+TEST_CASE("tactical: a battle stepped with the strategies' orders is the strategic battle") {
+    // For each battle: (1) strategic resolution; (2) the player sides on Auto,
+    // which records the strategies' orders; (3) those orders given by hand;
+    // (4) the accepted orders replayed as a script. All four end in the same state.
+    int battles = 0, orders = 0;
+    for (int variant = 0; variant < 20; ++variant)
+        for (uint64_t seed = 1; seed <= 3; ++seed) {
+            CAPTURE(variant);
+            CAPTURE(seed);
+            const int control = (variant + static_cast<int>(seed)) % 3;
+            std::vector<EmpireId> players = control == 0   ? std::vector<EmpireId>{EmpireId{0u}}
+                                            : control == 1 ? std::vector<EmpireId>{EmpireId{1u}}
+                                                           : std::vector<EmpireId>{EmpireId{0u}, EmpireId{1u}};
+            auto [start, where] = battleScenario(variant, seed);
+            const uint64_t expected = stateChecksum(strategic(start, where));
+            const TacticalBattle::Setup setup{where, std::nullopt, players};
+
+            TacticalBattle autoBattle(combatRules(), start, setup);
+            REQUIRE(autoBattle.started());
+            const std::vector<std::vector<TacticalOrder>> phases = playAuto(autoBattle);
+            CHECK(stateChecksum(autoBattle.state()) == expected);
+
+            TacticalBattle byHand(combatRules(), start, setup);
+            size_t phase = 0;
+            while (byHand.awaitingOrders()) {
+                REQUIRE(phase < phases.size());
+                for (const TacticalOrder& o : phases[phase]) {
+                    const std::string why = byHand.submit(o);
+                    CHECK_MESSAGE(why.empty(), identifier(o.kind) << ": " << why);
+                    ++orders;
+                }
+                REQUIRE(byHand.submit(order(OK::EndPhase, byHand.phaseEmpire())).empty());
+                ++phase;
+            }
+            CHECK(phase == phases.size());
+            byHand.finish();
+            CHECK(stateChecksum(byHand.state()) == expected);
+            CHECK(byHand.record().events.size() == autoBattle.record().events.size());
+
+            TacticalBattle replay(combatRules(), start, setup);
+            for (const TacticalOrder& o : byHand.script()) CHECK(replay.submit(o).empty());
+            CHECK(replay.finished());
+            replay.finish();
+            CHECK(stateChecksum(replay.state()) == expected);
+            ++battles;
+        }
+    CHECK(battles == 60);
+    CHECK(orders > 1000);
+}
+
+TEST_CASE("tactical: without player sides the battle is fought at once, as strategic resolution fights it") {
+    auto [start, where] = battleScenario(4, 2);
+    TacticalBattle b(combatRules(), start, TacticalBattle::Setup{where, std::nullopt, {}});
+    CHECK(b.started());
+    CHECK_FALSE(b.awaitingOrders());
+    CHECK(b.finished());
+    b.finish();
+    CHECK(stateChecksum(b.state()) == stateChecksum(strategic(start, where)));
+    CHECK(b.applied());
+    CHECK(b.submit(order(OK::EndPhase, EmpireId{0u})) == "The battle is over.");
+}
+
+TEST_CASE("tactical: no battle where nobody hostile sees anyone") {
+    Arena ar = makeArena();
+    spawn(ar.s, frigate(ar.s, ar.a, "Alone", 2, {"Test Laser"}), ar.loc);
+    TacticalBattle b(combatRules(), ar.s, TacticalBattle::Setup{ar.loc, std::nullopt, {ar.a}});
+    CHECK_FALSE(b.started());
+    CHECK_FALSE(b.awaitingOrders());
+    CHECK(b.submit(order(OK::EndPhase, ar.a)) == "The battle is over.");
+}
+
+TEST_CASE("tactical: the same orders give the same battle") {
+    auto run = [] {
+        auto [start, where] = battleScenario(10, 5);
+        TacticalBattle b(combatRules(), start, TacticalBattle::Setup{where, std::nullopt, {EmpireId{0u}}});
+        playByHand(b, EmpireId{0u});
+        return std::pair{stateChecksum(b.state()), b.script()};
+    };
+    const auto [x, scriptX] = run();
+    const auto [y, scriptY] = run();
+    CHECK(x == y);
+    CHECK(scriptX == scriptY);
+    CHECK(scriptX.size() > 10);
+}
+
+// ---- Orders and their checks ---------------------------------------------------------------------------
+
+namespace {
+
+struct Skirmish {
+    Arena ar = makeArena(11);
+    VehicleId gunner, boarder, carrier, target, shielded;
+    DesignId fighter;
+
+    Skirmish() {
+        GameState& s = ar.s;
+        fighter = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "CT Fighter Fuel"});
+        gunner = spawn(s, frigate(s, ar.a, "Gunner", 4, {"CT Short Gun", "Test Laser", "CT Combat Thruster"}), ar.loc);
+        boarder = spawn(s, frigate(s, ar.a, "Boarder", 4, {"Test Boarding Party", "Test Boarding Party", "CT Combat Thruster"}), ar.loc);
+        carrier = spawn(s, frigate(s, ar.a, "Carrier", 1, {"Test Fighter Bay", "Test Fighter Bay", "CT Big Armor"}), ar.loc);
+        s.vehicle(carrier)->cargo.units.push_back({fighter, 7});
+        // Unarmed bases: they neither shoot nor run away.
+        target = spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "CT Big Armor"}), ar.loc);
+        shielded = spawn(s, design(s, ar.b, "Shielded", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Shield",
+                                                                         "CT Big Armor"}),
+                         ar.loc);
+    }
+};
+
+// Plays until it is A's phase (B is on its strategies) and returns the battle.
+TacticalBattle startSkirmish(const Skirmish& k) {
+    TacticalBattle b(combatRules(), k.ar.s, TacticalBattle::Setup{k.ar.loc, std::nullopt, {k.ar.a}});
+    REQUIRE(b.started());
+    REQUIRE(b.awaitingOrders());
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    return b;
+}
+
+} // namespace
+
+TEST_CASE("tactical: orders are refused out of turn and for pieces that are not the player's") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const int gunner = pieceIndex(b, k.gunner), target = pieceIndex(b, k.target);
+    CHECK(b.launchStep());
+    CHECK(b.check(order(OK::EndPhase, k.ar.b)) == "It is not that side's phase.");
+    TacticalOrder mv = order(OK::Move, k.ar.a, target);
+    mv.x = 1;
+    mv.y = 1;
+    CHECK(b.check(mv) == "That piece is not yours.");
+    CHECK(b.check(order(OK::Fire, k.ar.a, gunner, pieceIndex(b, k.boarder))) == "That is not an enemy.");
+    CHECK(b.check(order(OK::Begin, k.ar.a)).empty());
+    // A refused order changes nothing and is not part of the script.
+    CHECK_FALSE(b.submit(mv).empty());
+    CHECK(b.script().empty());
+    CHECK(b.launchStep());
+    // Begin ends the launch step; it is refused afterwards.
+    CHECK(b.submit(order(OK::Begin, k.ar.a)).empty());
+    CHECK_FALSE(b.launchStep());
+    CHECK(b.check(order(OK::Begin, k.ar.a)) == "The phase has already begun.");
+    CHECK(b.script().size() == 1);
+}
+
+TEST_CASE("tactical: movement spends movement points square by square") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const int gunner = pieceIndex(b, k.gunner);
+    const combat::TacticalPiece start = b.pieces()[static_cast<size_t>(gunner)];
+    REQUIRE(start.movement > 0);
+    CHECK(start.movement == start.movementMax);
+    // Toward a far corner: it goes as far as its movement points allow.
+    TacticalOrder mv = order(OK::Move, k.ar.a, gunner);
+    mv.x = 0;
+    mv.y = 0;
+    const std::vector<combat::Square> preview = b.pathTo(gunner, 0, 0);
+    CHECK(static_cast<int>(preview.size()) == std::min(start.movement, std::max(start.x, start.y)));
+    CHECK(b.submit(mv).empty());
+    const combat::TacticalPiece& moved = b.pieces()[static_cast<size_t>(gunner)];
+    CHECK(moved.x == preview.back().x);
+    CHECK(moved.y == preview.back().y);
+    CHECK(moved.movement == 0);
+    CHECK(b.check(mv) == "No movement left this turn.");
+    // A path must go square by square.
+    const int boarder = pieceIndex(b, k.boarder);
+    TacticalOrder jump = order(OK::Move, k.ar.a, boarder);
+    jump.path = {combat::Square{static_cast<int16_t>(b.pieces()[static_cast<size_t>(boarder)].x + 2),
+                                static_cast<int16_t>(b.pieces()[static_cast<size_t>(boarder)].y)}};
+    CHECK(b.check(jump) == "The path must go square by square.");
+    // Movement points come back at the start of the next combat turn (spec 04 §4).
+    const int round = b.round();
+    CHECK(b.submit(order(OK::EndPhase, k.ar.a)).empty());
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    CHECK(b.round() == round + 1);
+    CHECK(b.pieces()[static_cast<size_t>(gunner)].movement == b.pieces()[static_cast<size_t>(gunner)].movementMax);
+}
+
+TEST_CASE("tactical: weapons fire when ready, in range and within the target budget") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int gunner = pieceIndex(b, k.gunner), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
+    // Weapon 0 is the short gun (2 squares), weapon 1 the laser (6 squares).
+    TacticalOrder shortGun = order(OK::Fire, a, gunner, target);
+    shortGun.weapon = 0;
+    TacticalOrder laser = shortGun;
+    laser.weapon = 1;
+    // Close in until the short gun reaches (the battle starts with the sides a few squares apart).
+    for (int round = 0; round < 6 && b.distance(gunner, target) > 2; ++round) {
+        if (b.phaseEmpire() != a) break;
+        if (b.distance(gunner, target) > 2) CHECK(b.check(shortGun) == "Out of range.");
+        TacticalOrder mv = order(OK::Move, a, gunner);
+        mv.x = b.pieces()[static_cast<size_t>(target)].x;
+        mv.y = b.pieces()[static_cast<size_t>(target)].y;
+        if (b.check(mv).empty()) b.submit(mv);
+        if (b.distance(gunner, target) > 2) REQUIRE(b.submit(order(OK::EndPhase, a)).empty());
+    }
+    REQUIRE(b.phaseEmpire() == a);
+    REQUIRE(b.distance(gunner, target) <= 2);
+    CHECK(b.fireProblem(gunner, 0, target).empty());
+    const size_t events = b.record().events.size();
+    CHECK(b.submit(shortGun).empty());
+    CHECK(b.record().events.size() > events);
+    CHECK(b.record().events[events].kind == CombatEvent::Kind::Fire);
+    CHECK(b.check(shortGun) == "The weapon is reloading.");
+    CHECK(b.pieces()[static_cast<size_t>(gunner)].weapons[0].reload[0] > 0);
+    // One target per turn without Multiplex Tracking (spec 04 §6): the laser may join in on
+    // the same target but not take a second one.
+    TacticalOrder other = laser;
+    other.target = shielded;
+    if (b.fireProblem(gunner, 1, shielded) != "Out of range.") CHECK(b.check(other) == "It has engaged its one target this turn.");
+    CHECK(b.check(laser).empty());
+    CHECK(b.hitChance(gunner, 1, target) >= 1);
+    CHECK(b.damageAt(gunner, 1, target) > 0);
+}
+
+TEST_CASE("tactical: weapons can be switched off, and Fire uses the ones left on") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int gunner = pieceIndex(b, k.gunner), target = pieceIndex(b, k.target);
+    TacticalOrder off = order(OK::ToggleWeapon, a, gunner);
+    off.on = false;
+    CHECK(b.submit(off).empty());   // all weapons off (a launch-step order)
+    CHECK(b.launchStep());
+    CHECK(b.check(order(OK::Fire, a, gunner, target)) == "No weapon is selected.");
+    TacticalOrder laserOn = order(OK::ToggleWeapon, a, gunner);
+    laserOn.weapon = 1;
+    CHECK(b.submit(laserOn).empty());
+    CHECK_FALSE(b.pieces()[static_cast<size_t>(gunner)].weapons[0].enabled);
+    CHECK(b.pieces()[static_cast<size_t>(gunner)].weapons[1].enabled);
+    // Close to laser range if needed, then fire: only the laser shoots.
+    for (int round = 0; round < 6 && !b.fireProblem(gunner, 1, target).empty(); ++round) {
+        TacticalOrder mv = order(OK::Move, a, gunner);
+        mv.x = b.pieces()[static_cast<size_t>(target)].x;
+        mv.y = b.pieces()[static_cast<size_t>(target)].y;
+        if (b.check(mv).empty()) b.submit(mv);
+        if (!b.fireProblem(gunner, 1, target).empty()) REQUIRE(b.submit(order(OK::EndPhase, a)).empty());
+    }
+    REQUIRE(b.fireProblem(gunner, 1, target).empty());
+    const size_t events = b.record().events.size();
+    CHECK(b.submit(order(OK::Fire, a, gunner, target)).empty());
+    const uint32_t laser = b.pieces()[static_cast<size_t>(gunner)].weapons[1].component;
+    int fires = 0;
+    for (size_t i = events; i < b.record().events.size(); ++i)
+        if (b.record().events[i].kind == CombatEvent::Kind::Fire && b.record().events[i].piece == static_cast<uint32_t>(gunner)) {
+            CHECK(b.record().events[i].component == laser);
+            ++fires;
+        }
+    CHECK(fires == 1);
+}
+
+TEST_CASE("tactical: carriers launch fighters in groups of the chosen size, up to their bays") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int carrier = pieceIndex(b, k.carrier);
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 8);   // two bays of 4
+    TacticalOrder launch = order(OK::Launch, a, carrier);
+    launch.design = k.fighter;
+    launch.count = 7;
+    launch.group = 2;
+    const size_t before = b.pieces().size();
+    CHECK(b.submit(launch).empty());
+    CHECK(b.launchStep());   // launching keeps the launch step
+    std::vector<int> groups;
+    for (size_t i = before; i < b.pieces().size(); ++i) {
+        CHECK(b.pieces()[i].kind == CombatPiece::Kind::UnitGroup);
+        CHECK(b.pieces()[i].design == k.fighter);
+        CHECK(b.pieces()[i].carrier == carrier);
+        CHECK(b.pieces()[i].movement > 0);   // full movement at once (spec 04 §5)
+        groups.push_back(b.pieces()[i].count);
+    }
+    CHECK(groups == std::vector<int>{2, 2, 2, 1});
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].launchLeft[0] == 1);
+    CHECK(b.pieces()[static_cast<size_t>(carrier)].cargo.empty());
+    CHECK(b.check(launch) == "It carries no such units.");
+    // The new groups take orders like any piece.
+    TacticalOrder mv = order(OK::Move, a, static_cast<int>(before));
+    mv.x = b.pieces()[before].x > 36 ? 0 : 71;
+    mv.y = b.pieces()[before].y;
+    CHECK(b.check(mv).empty());
+    // Launched units that survive land on their carrier after the battle.
+    b.submit(order(OK::ResolveCombat, a));
+    CHECK(b.finished());
+    b.finish();
+    const Vehicle* carrierAfter = b.state().vehicle(k.carrier);
+    REQUIRE(carrierAfter);
+    if (carrierAfter->count > 0) CHECK(carrierAfter->cargo.unitCount(k.fighter) > 0);
+}
+
+TEST_CASE("tactical: drones launched by a player act on their own") {
+    Arena ar = makeArena(5);
+    GameState& s = ar.s;
+    const DesignId drone = design(s, ar.a, "Dart", "Test Drone Hull", {"Test Engine", "Test Engine", "Test Warhead"});
+    const VehicleId rack = spawn(s, frigate(s, ar.a, "Drone Carrier", 1, {"CT Drone Bay", "CT Big Armor"}), ar.loc);
+    s.vehicle(rack)->cargo.units.push_back({drone, 2});
+    spawn(s, frigate(s, ar.b, "Hulk", 1, {"CT Big Armor"}), ar.loc);
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{ar.loc, std::nullopt, {ar.a}});
+    while (b.awaitingOrders() && b.phaseEmpire() != ar.a) b.submit(order(OK::EndPhase, b.phaseEmpire()));
+    REQUIRE(b.phaseEmpire() == ar.a);
+    TacticalOrder launch = order(OK::Launch, ar.a, pieceIndex(b, rack));
+    launch.design = drone;
+    launch.count = 2;
+    launch.group = 1;
+    const size_t before = b.pieces().size();
+    CHECK(b.submit(launch).empty());
+    REQUIRE(b.pieces().size() == before + 2);
+    // In the launch step they wait for the side's drone step, like a computer side's launches.
+    CHECK_FALSE(b.pieces()[before].acted);
+    TacticalOrder mv = order(OK::Move, ar.a, static_cast<int>(before));
+    mv.x = 0;
+    mv.y = 0;
+    CHECK(b.check(mv) == "Drones act on their own.");
+    CHECK(b.submit(order(OK::Begin, ar.a)).empty());
+    CHECK(b.pieces()[before].acted);
+    CHECK(b.pieces()[before + 1].acted);
+}
+
+TEST_CASE("tactical: combat groups follow their leader") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int gunner = pieceIndex(b, k.gunner), boarder = pieceIndex(b, k.boarder);
+    TacticalOrder member = order(OK::SetMember, a, boarder);
+    member.group = 3;
+    CHECK(b.check(member) == "Group 3 has no leader.");
+    TacticalOrder leader = order(OK::SetLeader, a, gunner);
+    leader.group = 3;
+    CHECK(b.submit(leader).empty());
+    CHECK(b.submit(member).empty());
+    CHECK(b.pieces()[static_cast<size_t>(gunner)].isLeader);
+    CHECK(b.pieces()[static_cast<size_t>(gunner)].group == 3);
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == gunner);
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].group == 3);
+    const int dx = b.pieces()[static_cast<size_t>(boarder)].x - b.pieces()[static_cast<size_t>(gunner)].x;
+    const int dy = b.pieces()[static_cast<size_t>(boarder)].y - b.pieces()[static_cast<size_t>(gunner)].y;
+    // The leader moves two squares; the member keeps its place beside it.
+    const combat::TacticalPiece lead = b.pieces()[static_cast<size_t>(gunner)];
+    TacticalOrder mv = order(OK::Move, a, gunner);
+    const int sx = lead.x > 36 ? -1 : 1;   // toward the middle of the map: room to move
+    mv.path = {combat::Square{static_cast<int16_t>(lead.x + sx), static_cast<int16_t>(lead.y)},
+               combat::Square{static_cast<int16_t>(lead.x + 2 * sx), static_cast<int16_t>(lead.y)}};
+    REQUIRE(b.check(mv).empty());
+    CHECK(b.submit(mv).empty());
+    const combat::TacticalPiece& l = b.pieces()[static_cast<size_t>(gunner)];
+    const combat::TacticalPiece& m = b.pieces()[static_cast<size_t>(boarder)];
+    CHECK(l.x == lead.x + 2 * sx);
+    if (std::max(std::abs(l.x + dx - m.x), std::abs(l.y + dy - m.y)) != 0) {
+        // Blocked on the way: it got as close as it could.
+        CHECK(std::max(std::abs(l.x + dx - m.x), std::abs(l.y + dy - m.y)) <= 2);
+    }
+    CHECK(m.movement < m.movementMax);
+    // Clearing the leader dissolves the group.
+    CHECK(b.submit(order(OK::ClearGroup, a, gunner)).empty());
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].leader == -1);
+    CHECK(b.pieces()[static_cast<size_t>(boarder)].group == -1);
+    CHECK(b.check(order(OK::ClearGroup, a, boarder)) == "It is in no group.");
+}
+
+TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding needs its shields down") {
+    Skirmish k;
+    TacticalBattle b = startSkirmish(k);
+    const EmpireId a = k.ar.a;
+    const int boarder = pieceIndex(b, k.boarder), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
+    CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "It has no boarding parties.");
+    CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "It carries no troops.");
+    // Close on the shielded ship: boarding waits for its shields, ramming only for adjacency.
+    for (int round = 0; round < 10 && b.distance(boarder, shielded) > 1 && b.phaseEmpire() == a; ++round) {
+        if (b.distance(boarder, shielded) > 1) {
+            CHECK(b.check(order(OK::Ram, a, boarder, shielded)) == "The target must be adjacent.");
+            CHECK(b.check(order(OK::Capture, a, boarder, shielded)) == "The target must be adjacent.");
+        }
+        TacticalOrder mv = order(OK::Move, a, boarder);
+        mv.x = b.pieces()[static_cast<size_t>(shielded)].x;
+        mv.y = b.pieces()[static_cast<size_t>(shielded)].y;
+        if (b.check(mv).empty()) b.submit(mv);
+        if (b.distance(boarder, shielded) > 1) REQUIRE(b.submit(order(OK::EndPhase, a)).empty());
+    }
+    REQUIRE(b.phaseEmpire() == a);
+    REQUIRE(b.distance(boarder, shielded) <= 1);
+    REQUIRE(b.pieces()[static_cast<size_t>(shielded)].shields > 0);
+    CHECK(b.check(order(OK::Capture, a, boarder, shielded)) == "Its shields must be down first.");
+    if (b.pieces()[static_cast<size_t>(boarder)].movement > 0) CHECK(b.check(order(OK::Ram, a, boarder, shielded)).empty());
+    CHECK(b.check(order(OK::Ram, a, boarder, pieceIndex(b, k.gunner))) == "Only an enemy ship, unit group or planet can be rammed.");
+}
+
+TEST_CASE("tactical: a boarding party takes an unshielded ship") {
+    Arena ar = makeArena(3);
+    GameState& s = ar.s;
+    const VehicleId boarder = spawn(s, frigate(s, ar.a, "Boarder", 4, {"Test Boarding Party", "Test Boarding Party", "CT Combat Thruster"}), ar.loc);
+    const VehicleId prize = spawn(s, design(s, ar.b, "Prize", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters"}), ar.loc);
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{ar.loc, std::nullopt, {ar.a}});
+    const int i = pieceIndex(b, boarder), t = pieceIndex(b, prize);
+    for (int round = 0; round < 10 && b.awaitingOrders(); ++round) {
+        REQUIRE(b.phaseEmpire() == ar.a);
+        if (b.distance(i, t) > 1) {
+            TacticalOrder mv = order(OK::Move, ar.a, i);
+            mv.x = b.pieces()[static_cast<size_t>(t)].x;
+            mv.y = b.pieces()[static_cast<size_t>(t)].y;
+            if (b.check(mv).empty()) b.submit(mv);
+        }
+        if (b.distance(i, t) <= 1) {
+            CHECK(b.submit(order(OK::Capture, ar.a, i, t)).empty());
+            break;
+        }
+        b.submit(order(OK::EndPhase, ar.a));
+    }
+    CHECK(b.pieces()[static_cast<size_t>(t)].owner == ar.a);
+    CHECK(b.pieces()[static_cast<size_t>(t)].captured);
+    CHECK(b.over());
+    b.submit(order(OK::EndPhase, ar.a));
+    CHECK(b.finished());
+    b.finish();
+    CHECK(b.state().vehicle(prize)->owner == ar.a);
+}
+
+TEST_CASE("tactical: troops land on an adjacent enemy planet and fight at once") {
+    Arena ar = makeArena(9);
+    GameState& s = ar.s;
+    Colony& colony = homeworld(s, ar.b);
+    colony.population = {{ar.b, 10}};   // no militia below 20M
+    colony.cargo = {};
+    const Location there = locationOf(s.galaxy, colony.planet);
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 4, {"Test Cargo Bay", "Test Cargo Bay", "CT Combat Thruster"}), there);
+    s.vehicle(transport)->cargo.units.push_back({trooper, 4});
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{there, std::nullopt, {ar.a}});
+    REQUIRE(b.started());
+    int planet = -1;
+    for (size_t j = 0; j < b.pieces().size(); ++j)
+        if (b.pieces()[j].kind == CombatPiece::Kind::Planet && b.pieces()[j].planet == colony.planet) planet = static_cast<int>(j);
+    REQUIRE(planet >= 0);
+    const int i = pieceIndex(b, transport);
+    CHECK(b.pieces()[static_cast<size_t>(i)].troops);
+    bool landed = false;
+    for (int round = 0; round < 12 && b.awaitingOrders() && !landed; ++round) {
+        REQUIRE(b.phaseEmpire() == ar.a);
+        if (b.distance(i, planet) > 1) {
+            CHECK(b.check(order(OK::DropTroops, ar.a, i, planet)) == "The planet must be adjacent.");
+            TacticalOrder mv = order(OK::Move, ar.a, i);
+            mv.x = b.pieces()[static_cast<size_t>(planet)].x + 1;
+            mv.y = b.pieces()[static_cast<size_t>(planet)].y + 1;
+            if (b.check(mv).empty()) b.submit(mv);
+        }
+        if (b.distance(i, planet) <= 1) {
+            CHECK(b.submit(order(OK::DropTroops, ar.a, i, planet)).empty());
+            landed = true;
+        } else {
+            b.submit(order(OK::EndPhase, ar.a));
+        }
+    }
+    REQUIRE(landed);
+    CHECK_FALSE(b.pieces()[static_cast<size_t>(i)].troops);
+    // The ground fight ran at once: ten million people, no militia, four troops.
+    CHECK(b.pieces()[static_cast<size_t>(planet)].owner == ar.a);
+    b.finish();
+    CHECK(b.state().colony(colony.planet)->owner == ar.a);
+}
+
+TEST_CASE("tactical: Resolve Combat hands the side to its strategies for the rest of the battle") {
+    auto [start, where] = battleScenario(0, 3);
+    TacticalBattle b(combatRules(), start, TacticalBattle::Setup{where, std::nullopt, {EmpireId{0u}}});
+    REQUIRE(b.awaitingOrders());
+    CHECK(b.isPlayer(EmpireId{0u}));
+    CHECK(b.submit(order(OK::ResolveCombat, EmpireId{0u})).empty());
+    CHECK_FALSE(b.isPlayer(EmpireId{0u}));
+    CHECK_FALSE(b.awaitingOrders());
+    CHECK(b.finished());
+    b.finish();
+    // Resolve Combat in the launch step of the first phase is the strategic battle.
+    CHECK(stateChecksum(b.state()) == stateChecksum(strategic(start, where)));
+}
+
+TEST_CASE("tactical: finishing early lets the strategies play the phases left, as a script that runs out") {
+    auto [start, where] = battleScenario(7, 1);
+    const TacticalBattle::Setup setup{where, std::nullopt, {EmpireId{0u}}};
+    TacticalBattle b(combatRules(), start, setup);
+    REQUIRE(b.awaitingOrders());
+    REQUIRE(b.submit(order(OK::Begin, EmpireId{0u})).empty());
+    REQUIRE(b.submit(order(OK::EndPhase, EmpireId{0u})).empty());
+    b.finish();
+    CHECK(b.applied());
+    TacticalBattle replay(combatRules(), start, setup);
+    for (const TacticalOrder& o : b.script()) CHECK(replay.submit(o).empty());
+    replay.finish();
+    CHECK(stateChecksum(replay.state()) == stateChecksum(b.state()));
+    CHECK(replay.record().events.size() == b.record().events.size());
+}
+
+// ---- Turn-based games ---------------------------------------------------------------------------------
+
+namespace {
+
+// A turn-based game in which A's warship stands one sector from B's picket.
+struct TurnBasedDuel {
+    Arena ar = makeArena(13);
+    VehicleId warship, picket;
+    Location from, to;
+
+    TurnBasedDuel() {
+        GameState& s = ar.s;
+        s.options.simultaneous = false;
+        s.options.noTacticalCombat = false;
+        for (Empire& e : s.empires) e.kind = PlayerKind::Human;
+        to = ar.loc;
+        from = {to.system, Sector{to.sector.x - 1, to.sector.y}};
+        warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "Test Laser", "CT Big Armor"}), from);
+        picket = spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser", "Test Armor Plate"}), to);
+        for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+        resumeTurnBased(combatRules(), s);
+        REQUIRE(activePlayer(s) == ar.a);
+    }
+
+    // Moves the warship into the picket's sector: the Attack Sector question, then the answer.
+    TurnResult attack(const std::vector<BattleAnswer>* answers) {
+        GameState& s = ar.s;
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = to;
+        const TurnResult asked = applyLive(combatRules(), s, ar.a, cmd::SetOrders{warship, {}, {o}}, answers);
+        REQUIRE(asked.questions.size() == 1);
+        return applyLive(combatRules(), s, ar.a, cmd::EnterSector{warship, {}, to, true}, answers);
+    }
+};
+
+} // namespace
+
+TEST_CASE("turn-based tactical: a battle with human sides asks, and the state stays as it was") {
+    TurnBasedDuel d;
+    const std::vector<BattleAnswer> none;
+    GameState& s = d.ar.s;
+    Order o;
+    o.kind = OrderKind::MoveTo;
+    o.location = d.to;
+    REQUIRE(applyLive(combatRules(), s, d.ar.a, cmd::SetOrders{d.warship, {}, {o}}, &none).questions.size() == 1);
+    const uint64_t before = stateChecksum(s);
+    const TurnResult res = applyLive(combatRules(), s, d.ar.a, cmd::EnterSector{d.warship, {}, d.to, true}, &none);
+    REQUIRE(res.battle.has_value());
+    CHECK(stateChecksum(s) == before);
+    CHECK(s.combats.empty());
+    const BattleQuestion& q = *res.battle;
+    CHECK(q.where == d.to);
+    CHECK(q.humans == std::vector<EmpireId>{d.ar.a, d.ar.b});
+    CHECK(q.participants == std::vector<EmpireId>{d.ar.a, d.ar.b});
+    CHECK(q.index == 0);
+    REQUIRE(q.state);
+    REQUIRE(q.entering.has_value());
+    CHECK(std::find(q.entering->begin(), q.entering->end(), d.warship) != q.entering->end());
+    // The copy is the game as the battle begins: the warship has entered the sector.
+    CHECK(q.state->vehicle(d.warship)->location == d.to);
+}
+
+TEST_CASE("turn-based tactical: a strategic answer fights the battle as if nobody was asked") {
+    TurnBasedDuel asked, silent;
+    const std::vector<BattleAnswer> strategicAnswer{BattleAnswer{}};
+    const TurnResult res = asked.attack(&strategicAnswer);
+    CHECK_FALSE(res.battle.has_value());
+    silent.attack(nullptr);
+    REQUIRE(asked.ar.s.combats.size() == 1);
+    CHECK(stateChecksum(asked.ar.s) == stateChecksum(silent.ar.s));
+}
+
+TEST_CASE("turn-based tactical: a battle fought in the client applies exactly like its sandbox") {
+    TurnBasedDuel d;
+    const std::vector<BattleAnswer> none;
+    GameState& s = d.ar.s;
+    Order o;
+    o.kind = OrderKind::MoveTo;
+    o.location = d.to;
+    applyLive(combatRules(), s, d.ar.a, cmd::SetOrders{d.warship, {}, {o}}, &none);
+    const TurnResult asked = applyLive(combatRules(), s, d.ar.a, cmd::EnterSector{d.warship, {}, d.to, true}, &none);
+    REQUIRE(asked.battle);
+    const BattleQuestion& q = *asked.battle;
+
+    // A fights tactically by hand; B leaves it to its strategies.
+    TacticalBattle sandbox(combatRules(), *q.state, TacticalBattle::Setup{q.where, q.entering, {d.ar.a}});
+    REQUIRE(sandbox.started());
+    playByHand(sandbox, d.ar.a);
+    REQUIRE(sandbox.applied());
+    CHECK_FALSE(sandbox.script().empty());
+
+    const std::vector<BattleAnswer> answers{BattleAnswer{{d.ar.a}, sandbox.script()}};
+    const TurnResult res = applyLive(combatRules(), s, d.ar.a, cmd::EnterSector{d.warship, {}, d.to, true}, &answers);
+    CHECK_FALSE(res.battle.has_value());
+    REQUIRE(s.combats.size() == 1);
+    const CombatRecord& real = s.combats.back();
+    const CombatRecord& fought = sandbox.state().combats.back();
+    REQUIRE(real.events.size() == fought.events.size());
+    for (size_t i = 0; i < real.events.size(); ++i) {
+        CHECK(real.events[i].kind == fought.events[i].kind);
+        CHECK(real.events[i].piece == fought.events[i].piece);
+        CHECK(real.events[i].target == fought.events[i].target);
+        CHECK(real.events[i].amount == fought.events[i].amount);
+        CHECK(real.events[i].x == fought.events[i].x);
+    }
+    CHECK(real.summary == fought.summary);
+    // The results are the sandbox's: the same damage, supplies and losses.
+    for (VehicleId id : {d.warship, d.picket}) {
+        const Vehicle* after = s.vehicle(id);
+        const Vehicle* inSandbox = sandbox.state().vehicle(id);
+        REQUIRE(inSandbox);
+        if (inSandbox->count <= 0) {
+            CHECK(after == nullptr);
+            continue;
+        }
+        REQUIRE(after);
+        CHECK(after->damage == inSandbox->damage);
+        CHECK(after->supply == inSandbox->supply);
+        CHECK(after->owner == inSandbox->owner);
+        CHECK(after->experience == inSandbox->experience);
+    }
+    // Both empires' logs report the battle.
+    for (EmpireId e : {d.ar.a, d.ar.b})
+        CHECK(std::any_of(s.empire(e).log.begin(), s.empire(e).log.end(), [](const LogEntry& l) { return l.title.starts_with("Battle at"); }));
+}
+
+TEST_CASE("turn-based tactical: No Tactical Combat and simultaneous games never ask") {
+    {
+        TurnBasedDuel d, silent;
+        d.ar.s.options.noTacticalCombat = true;
+        silent.ar.s.options.noTacticalCombat = true;
+        const std::vector<BattleAnswer> none;
+        const TurnResult res = d.attack(&none);
+        CHECK_FALSE(res.battle.has_value());
+        silent.attack(nullptr);
+        REQUIRE(d.ar.s.combats.size() == 1);
+        CHECK(stateChecksum(d.ar.s) == stateChecksum(silent.ar.s));
+    }
+    CHECK_FALSE(tacticalOffered(makeArena().s));   // simultaneous by default
+    GameState s = makeArena().s;
+    s.options.simultaneous = false;
+    CHECK(tacticalOffered(s));
+    s.options.noTacticalCombat = true;
+    CHECK_FALSE(tacticalOffered(s));
+}
+
+TEST_CASE("turn-based tactical: a battle between computer players asks nobody") {
+    TurnBasedDuel d;
+    for (Empire& e : d.ar.s.empires) e.kind = PlayerKind::Computer;
+    TurnContext::Battles battles{nullptr, 0};
+    const std::vector<BattleAnswer> none;
+    battles.answers = &none;
+    TurnContext ctx = context(d.ar.s);
+    ctx.battles = &battles;
+    // The picket's sector with the warship moved in: fought at once, no question.
+    d.ar.s.vehicle(d.warship)->location = d.to;
+    CHECK_NOTHROW(combat::resolveSpaceCombat(ctx, d.to));
+    CHECK(d.ar.s.combats.size() == 1);
+}
+
+TEST_CASE("turn-based tactical: answers are taken in the order the battles come up") {
+    Arena ar = makeArena(17);
+    GameState& s = ar.s;
+    s.options.simultaneous = false;
+    for (Empire& e : s.empires) e.kind = PlayerKind::Human;
+    const Location second{ar.loc.system, Sector{ar.loc.sector.x, ar.loc.sector.y + 1}};
+    spawn(s, frigate(s, ar.a, "First A", 2, {"Test Laser"}), ar.loc);
+    spawn(s, frigate(s, ar.b, "First B", 2, {"Test Laser"}), ar.loc);
+    spawn(s, frigate(s, ar.a, "Second A", 2, {"Test Laser"}), second);
+    spawn(s, frigate(s, ar.b, "Second B", 2, {"Test Laser"}), second);
+    const std::vector<BattleAnswer> one{BattleAnswer{}};
+    TurnContext::Battles battles{&one, 0};
+    TurnContext ctx = context(s);
+    ctx.battles = &battles;
+    combat::resolveSpaceCombat(ctx, ar.loc);   // takes the first answer
+    CHECK(battles.next == 1);
+    CHECK(s.combats.size() == 1);
+    bool asked = false;
+    try {
+        combat::resolveSpaceCombat(ctx, second);
+    } catch (const game::detail::BattleQuestionRaised& q) {
+        asked = true;
+        CHECK(q.question.index == 1);
+        CHECK(q.question.where == second);
+        REQUIRE(q.question.state);
+        CHECK(q.question.state->combats.size() == 1);   // the game as the second battle begins
+    }
+    CHECK(asked);
+}
