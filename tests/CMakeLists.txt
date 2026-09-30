@@ -1,6 +1,7 @@
 add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
+    test_client_logic.cpp
     test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
@@ -20,6 +21,7 @@ add_executable(opense4_tests
 # Classic client logic without UI dependencies, tested directly.
 target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp)
 target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game doctest tomlplusplus opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
