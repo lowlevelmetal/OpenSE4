@@ -190,7 +190,7 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
         case FrontId::QuickStart: return std::make_unique<QuickStartScreen>();
         case FrontId::GameSetup: return makeGameSetupScreen();
         case FrontId::LoadGame: return std::make_unique<LoadGameScreen>();
-        case FrontId::Multiplayer: return makeMultiplayerScreen();
+        case FrontId::Multiplayer: return makeMultiplayerScreen({});
     }
     return nullptr;
 }
@@ -203,7 +203,7 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
     if (datafile::keysEqual(screen, "quickstart")) return makeFrontScreen(FrontId::QuickStart);
     if (datafile::keysEqual(screen, "setup") || datafile::keysEqual(screen, "newgame")) return makeGameSetupScreen(page);
     if (datafile::keysEqual(screen, "empiresetup")) return makeGameSetupScreen(std::string("empire:") + std::string(page));
-    if (datafile::keysEqual(screen, "multiplayer")) return makeFrontScreen(FrontId::Multiplayer);
+    if (datafile::keysEqual(screen, "multiplayer")) return makeMultiplayerScreen(page);
     return nullptr;
 }
 

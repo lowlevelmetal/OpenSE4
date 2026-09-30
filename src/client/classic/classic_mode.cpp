@@ -1,5 +1,6 @@
 #include "client/classic/classic_mode.hpp"
 
+#include "client/classic/net_transport.hpp"
 #include "client/classic/settings.hpp"
 #include "game/setup.hpp"
 
@@ -152,6 +153,7 @@ bool ClassicMode::update(const FrameState& fs) {
 
     // Classic windows are modal: while one is open the main window takes no input.
     main_.update(ui, !screens_.empty());
+    drawNetwork(ui);
 
     // Windows, oldest first; the newest draws on top.
     for (size_t i = 0; i < screens_.size();) {
@@ -211,6 +213,47 @@ bool ClassicMode::update(const FrameState& fs) {
         return true;
     }
     return !ui.requests.quitGame;
+}
+
+void ClassicMode::drawNetwork(UiContext& ui) {
+    auto* net = dynamic_cast<NetTransport*>(session_->transport());
+    if (!net) return;
+    // A status strip at the bottom of the system panel: who we wait for, the latest line.
+    ImGui::SetNextWindowPos(ui.at({8, 712}));
+    ImGui::SetNextWindowSize(ui.size({650, 50}));
+    ImGui::PushFont(platform_.fonts->regular, 13.0f * ui.k());
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
+    ImGui::Begin("##netstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                             ImGuiWindowFlags_NoBringToFrontOnFocus);
+    if (ImGui::SmallButton(chatOpen_ ? "Hide Chat" : "Chat")) chatOpen_ = !chatOpen_;
+    ImGui::SameLine();
+    const std::string status = net->status();
+    ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", status.empty() ? (session_->waitingForOthers() ? "Orders sent." : "Your turn.") : status.c_str());
+    if (!net->log().lines().empty()) ImGui::TextDisabled("%s", net->log().lines().back().c_str());
+    ImGui::End();
+    ImGui::PopStyleColor();
+
+    if (chatOpen_) {
+        ImGui::SetNextWindowPos(ui.at({8, 470}), ImGuiCond_Appearing);
+        ImGui::SetNextWindowSize(ui.size({480, 236}), ImGuiCond_Appearing);
+        if (ImGui::Begin("Chat", &chatOpen_, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::BeginChild("##chatlog", ImVec2(0, -ui.px(34)));
+            for (const std::string& line : net->log().lines()) ImGui::TextWrapped("%s", line.c_str());
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4) ImGui::SetScrollHereY(1.0f);
+            ImGui::EndChild();
+            char buffer[512] = {};
+            std::snprintf(buffer, sizeof buffer, "%s", chatInput_.c_str());
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::InputText("##say", buffer, sizeof buffer, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (buffer[0]) net->chat(buffer);
+                buffer[0] = 0;
+                ImGui::SetKeyboardFocusHere(-1);
+            }
+            chatInput_ = buffer;
+        }
+        ImGui::End();
+    }
+    ImGui::PopFont();
 }
 
 void ClassicMode::drawHandoff(UiContext& ui) {

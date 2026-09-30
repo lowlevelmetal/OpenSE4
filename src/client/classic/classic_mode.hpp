@@ -62,6 +62,11 @@ private:
     bool openLogOnTurn_ = false;
     bool confirmEndTurn_ = false;
 
+    // Network games: status strip and chat.
+    void drawNetwork(classic::UiContext& ui);
+    bool chatOpen_ = false;
+    std::string chatInput_;
+
     // Hotseat hand-over between human players.
     void drawHandoff(classic::UiContext& ui);
     game::EmpireId handoffPlayer_;

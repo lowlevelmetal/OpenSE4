@@ -63,6 +63,7 @@ public:
     void poll();
     void setTransport(std::unique_ptr<TurnTransport> transport) { transport_ = std::move(transport); }
     const TurnTransport* transport() const { return transport_.get(); }
+    TurnTransport* transport() { return transport_.get(); }
 
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }

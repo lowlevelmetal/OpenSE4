@@ -50,7 +50,8 @@ public:
 std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
 // Automation (--open=NAME): a front-end screen by name: intro, quickstart,
 // setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
-// (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer.
+// (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer,
+// multiplayer:host, multiplayer:join=ADDR[:PORT].
 // Returns nullptr if NAME is not a front-end screen.
 std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 
@@ -63,6 +64,8 @@ game::GameSetup quickStartSetup(const game::Rules& rules, std::string_view playe
 // Game Setup / Empire Setup windows (setup.cpp in screens/), Multiplayer lobby (multiplayer.cpp).
 // `startPage`: a Game Setup page name, or "empire[:page]" to open Empire Setup at once.
 std::unique_ptr<FrontScreen> makeGameSetupScreen(std::string_view startPage = {});
-std::unique_ptr<FrontScreen> makeMultiplayerScreen();
+// `automation`: "host" opens a lobby at once (no UPnP), "join=ADDR[:PORT]"
+// connects at once; the player is named "Player" (for screenshots/tests).
+std::unique_ptr<FrontScreen> makeMultiplayerScreen(std::string_view automation);
 
 } // namespace opense4::client::classic

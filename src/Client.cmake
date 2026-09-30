@@ -22,6 +22,7 @@ add_executable(opense4
     client/classic/classic_mode.cpp
     client/classic/frontend.cpp
     client/classic/main_window.cpp
+    client/classic/net_transport.cpp
     client/classic/quadrant_map.cpp
     client/classic/replay.cpp
     client/classic/reports.cpp
@@ -71,6 +72,6 @@ add_executable(opense4
     client/views/galaxy_view.cpp
     client/views/starfield.cpp
     client/views/system_view.cpp)
-target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_assets opense4_gfx imgui tomlplusplus opense4_warnings)
+target_link_libraries(opense4 PRIVATE opense4_sim opense4_game opense4_net opense4_assets opense4_gfx imgui tomlplusplus opense4_warnings)
 target_compile_definitions(opense4 PRIVATE OPENSE4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 set_target_properties(opense4 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
