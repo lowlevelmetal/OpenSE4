@@ -24,6 +24,7 @@ add_executable(opense4_tests
 # Classic client logic without UI dependencies, tested directly.
 target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
