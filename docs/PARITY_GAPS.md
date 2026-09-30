@@ -97,7 +97,7 @@ outcomes, **L** is an edge case.
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| `turn.cpp:39-104` | The AI plans both minister groups while orders are applied (`ai::planTurn`); anger and the state machine run at the end of the turn (`ai::updateAnger`) | Design, Research, Intelligence and the construction ministers run at the start of each empire's economy step (§7.1, §8). `ai::planOrders` and `ai::planEconomyStep` are the two groups, ready for the §8 turn order | M |
+| `turn.cpp:39-104` | The AI plans both minister groups while orders are applied (`ai::planTurn`); anger and the state machine run at the end of the turn (`ai::updateAnger`) | Design, Research, Intelligence and the construction ministers run at the start of each empire's economy step (§7.1, §8). `ai::planOrders` and `ai::planEconomyStep` are the two groups, and `updateAnger`'s parts (`recordAiDecisions`, `updateAiStates`, `politicalStep`, `rememberAiEvents`) are separate, ready for the §8 turn order | M |
 | `movement_upkeep.cpp` (colonize) | A new colony gets the empire's first colony type; the AI retypes its own colonies on its next turn | Every empire's new colony gets `ai::colonyTypeAtColonization` at colonization, unless the player is asked (§7.5) | L |
 | Commands | No command sets `Empire::ministers` or `Empire::ministerStyle`; the Ministers window keeps its switches on this computer | The per-area minister switches and the minister style are part of the player's settings (§7.1) | L |
 | Commands | No command launches units from a planet's cargo | Satellites and drones above the kept percentages are launched from planets, drones half anti-ship and half anti-planet (§7.5) | L |
