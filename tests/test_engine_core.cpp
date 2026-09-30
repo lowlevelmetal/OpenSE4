@@ -162,6 +162,7 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     fac.facility = facilityIndex(r, "Test Space Yard");
     CHECK_FALSE(apply(r, s, me, cmd::QueueAdd{q, fac}).ok);  // one yard per planet
     fac.facility = facilityIndex(r, "Test Lab");
+    home.facilities.resize(home.facilities.size() - 2);  // homeworlds start full: make room
     const auto slotsLeft = facilitySlots(r, s, home) - static_cast<int>(home.facilities.size());
     for (int i = 0; i < slotsLeft; ++i) CHECK(apply(r, s, me, cmd::QueueAdd{q, fac}).ok);
     CHECK_FALSE(apply(r, s, me, cmd::QueueAdd{q, fac}).ok);  // no free slots

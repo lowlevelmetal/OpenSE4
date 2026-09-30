@@ -87,6 +87,51 @@ Begin Game and Cancel buttons sit below the grid. The stock empires come from
   This matches the SystemTypes header (0..12). The manual's "196 sectors" is wrong for
   this version.
 
+## Calibration: the Quick Start homeworld
+
+**What was seen.** A Quick Start game (medium Rock homeworld, default
+setup) showed this on the homeworld's detail panel on the first turn:
+- Population 2000M of 2000M; reproduction 10% per year; mood Happy.
+- Resource production: minerals 6000, organics 1097, radioactives 1142.
+- Research 3950.
+- Planet value 100% / 98% / 102% (minerals / organics / radioactives).
+- Conditions "Unpleasant".
+- Treasury 20000 of each resource.
+
+**How it fits the data.** Read against the installed data set with a
+Terran empire (first preset tier; Merchants culture: research −2, production
+0; Mining Aptitude 110, Intelligence 120, other characteristics 100):
+- 2000M falls in the population row worth +30 % (the first row whose
+  amount is at least the population); Happy is +10 % per the Settings `Mood
+  Happy Modifier` (110), not the 120 % of the Happiness.txt header.
+- The terms **add** (spec 02 §5.1): organics 800 × 98 % × (100 + 30 + 10) %
+  = 1097, radioactives 800 × 102 % × 140 % = 1142, both truncated. Multiplying
+  (130 % × 110 %) would give 1121 and 1166.
+- Minerals: five 800-point miners with Mining Aptitude +10: 4000 × 100 % ×
+  150 % = 6000.
+- Research: five 500-point research facilities, value not applied:
+  2500 × (100 + 30 + 10 + 20 − 2) % = 3950.
+- So the homeworld holds 5 mineral, 1 organic, 1 radioactive and 5 research
+  facilities, plus the space yard and spaceport; the 15th of the medium
+  planet's 15 slots is taken to be the resupply depot, which the stock
+  tutorial also names as a standard homeworld facility. No intelligence
+  facility (its technology starts at level 0).
+- Reproduction shows 10 %: the Happy bonus and the Unpleasant penalty cancel
+  (the planet report says the shown rate includes both).
+- Construction rate at the start: 2000 × 130 % = 2600 per resource;
+  maintenance rate 25 − 10 (aptitude) − 5 (culture) = 10 %.
+
+**Residual differences.** Our homeworld generator gives every homeworld
+exactly the setup value (100 %) and random conditions; the original spreads
+the three values by a couple of points and showed Unpleasant conditions. The
+opt-in test sets those two observed inputs and then reproduces every number
+above exactly (`tests/test_economy.cpp`, `OPENSE4_CLASSIC_DATA`).
+
+**Related note.** The stock tutorial expects a brand-new colony of a few
+million people to start producing as soon as mining facilities are built on
+it, so facility output is not limited by `Population Required to Operate One
+Facility` (spec 02 §13 Q3).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.

@@ -26,6 +26,8 @@ add_library(opense4_game STATIC
     game/design.cpp
     game/diplomacy.cpp
     game/economy.cpp
+    game/economy_population.cpp
+    game/economy_queue.cpp
     game/events.cpp
     game/generate.cpp
     game/intel.cpp

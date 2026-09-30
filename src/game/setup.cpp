@@ -31,21 +31,29 @@ AbilityKind colonizeKind(std::string_view surface) {
     return AbilityKind::ColonizeRock;
 }
 
-// Facilities a homeworld starts with (spec 02 §9: the stock set is unknown;
-// this is our calibrated choice, see docs/spec/07). Each entry is an ability
-// and how many facilities with it to place.
-constexpr std::array<std::pair<AbilityKind, int>, 11> kHomeFacilities{{
+// Facilities a homeworld starts with (spec 02 §9: the stock set is not
+// documented). Calibrated against the observed Quick Start homeworld, which
+// fills a medium planet's 15 slots (docs/spec/07, Calibration): a yard, a
+// spaceport, a depot, 5 mineral, 1 organic and 1 radioactive producer and 5
+// research facilities. Placed in this order until the slots run out, so
+// smaller homeworlds keep a balanced mix. Each entry is an ability and how
+// many facilities with it to place.
+constexpr std::array<std::pair<AbilityKind, int>, 15> kHomeFacilities{{
     {AbilityKind::SpaceYard, 1},
     {AbilityKind::Spaceport, 1},
     {AbilityKind::SupplyGeneration, 1},
-    {AbilityKind::ResourceStorageMinerals, 1},
-    {AbilityKind::ResourceGenMinerals, 3},
+    {AbilityKind::ResourceGenMinerals, 1},
     {AbilityKind::ResourceGenOrganics, 1},
     {AbilityKind::ResourceGenRadioactives, 1},
-    {AbilityKind::PointGenResearch, 2},
-    {AbilityKind::PointGenIntelligence, 1},
-    {AbilityKind::ResourceStorageOrganics, 0},
-    {AbilityKind::ResourceStorageRadioactives, 0},
+    {AbilityKind::PointGenResearch, 1},
+    {AbilityKind::ResourceGenMinerals, 1},
+    {AbilityKind::PointGenResearch, 1},
+    {AbilityKind::ResourceGenMinerals, 1},
+    {AbilityKind::PointGenResearch, 1},
+    {AbilityKind::ResourceGenMinerals, 1},
+    {AbilityKind::PointGenResearch, 1},
+    {AbilityKind::ResourceGenMinerals, 1},
+    {AbilityKind::PointGenResearch, 1},
 }};
 
 Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location where, int number) {
