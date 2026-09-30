@@ -38,6 +38,90 @@ void replaceAll(std::string& text, std::string_view token, std::string_view valu
         text.replace(pos, token.size(), value);
 }
 
+} // namespace
+
+// A planet's worth (spec 05 §7.4, confirmed: binary): its three resource
+// values × 1000 (× 1 in finite-resource games), plus, when colonized, 100
+// × its population in millions, 1,000,000 per facility, 10,000 per unit
+// of cargo (each million people and each unit) and 1,000,000,000 for a
+// capital. A colony the giver no longer holds counts 0.
+static int64_t planetWorth(const Planner& p_, ObjectId planet, EmpireId giver) {
+    const GameState& s = p_.st;
+    if (!planet.valid() || planet.index() >= s.galaxy.objects.size()) return 0;
+    const SpaceObject& obj = s.galaxy.object(planet);
+    if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return 0;
+    const int64_t scale = s.options.finiteResources ? 1 : 1000;
+    int64_t worth = (int64_t{obj.value[0]} + obj.value[1] + obj.value[2]) * scale;
+    if (const Colony* c = s.colony(planet)) {
+        if (c->owner != giver) return 0;
+        worth += 100 * c->totalPopulation();
+        worth += 1'000'000 * static_cast<int64_t>(c->facilities.size());
+        int64_t cargo = c->cargo.totalPopulation();
+        for (const UnitStack& u : c->cargo.units) cargo += std::max(0, u.count);
+        worth += 10'000 * cargo;
+        if (c->homeworld) worth += 1'000'000'000;
+    }
+    return worth;
+}
+
+// Spec 05 §7.4 item values, for the receiving side (confirmed: binary).
+int64_t tradeItemValue(const Planner& p_, const PackageItem& item, EmpireId giver, EmpireId receiver) {
+    if (diplomacy::isPlaceholder(item)) return 0;
+    const GameState& s = p_.st;
+    switch (item.kind) {
+        case PackageItem::Kind::Resources: return std::max<int64_t>(0, item.resources.total()) / 1000;
+        case PackageItem::Kind::Technology: {
+            if (item.tech.index() >= p_.r.data().techAreas.size()) return 0;
+            const Empire& rcv = s.empire(receiver);
+            const int have = rcv.techLevel(item.tech);
+            if (s.empire(giver).techLevel(item.tech) <= have || !p_.r.techVisible(s, rcv, item.tech) ||
+                have >= p_.r.tech(item.tech).maxLevel)
+                return 0;
+            return int64_t{have + 1} * p_.r.tech(item.tech).levelCost;
+        }
+        case PackageItem::Kind::Planet: return planetWorth(p_, item.planet, giver) / 100000;
+        case PackageItem::Kind::Vehicle: {
+            // A ship: 100 × its scrap value (spec 03 §15, reclamation in its
+            // sector included), each resource / 4 without weapon parts; 0
+            // when mothballed or without an owner, a design or a position.
+            // A unit group: 100 × the units' scrap value at the ship percentage.
+            const Vehicle* v = s.vehicle(item.vehicle);
+            if (!v || v->count <= 0 || !v->owner.valid() || !v->design.valid() || v->design.index() >= s.designs.size() ||
+                !v->location.system.valid() || v->status == VehicleStatus::Mothballed)
+                return 0;
+            if (isUnitType(vehicleType(p_.r, s, *v))) {
+                const int64_t pctShip = p_.r.setting("Scrap Ship Percent Returned", 30);
+                int64_t total = 0;
+                for (const UnitStack& st : groupStacks(*v)) {
+                    const Resources cost = computeDesignStats(p_.r, nullptr, s.design(st.design)).cost;
+                    for (Resource k : kResources) total += xmath::pctRound(cost[k], pctShip) * std::max(0, st.count);
+                }
+                return total * 100;
+            }
+            const Resources scrap = scrapRefund(p_.r, s, *v);
+            if (computeDesignStats(p_.r, nullptr, s.design(v->design)).armed()) return scrap.total() * 100;
+            return (scrap[Resource::Minerals] / 4 + scrap[Resource::Organics] / 4 + scrap[Resource::Radioactives] / 4) * 100;
+        }
+        case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
+        case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;
+        case PackageItem::Kind::CommChannel: return 50000;
+        case PackageItem::Kind::System: {
+            // 100,000 per planet in it (asteroid fields excluded, colonized or
+            // not) the receiver could colonize, only when the giver claims it.
+            if (!item.system.valid() || item.system.index() >= s.galaxy.systems.size()) return 0;
+            const auto& claimed = s.empire(giver).claimedSystems;
+            if (std::find(claimed.begin(), claimed.end(), item.system) == claimed.end()) return 0;
+            int64_t planets = 0;
+            for (ObjectId o : s.galaxy.system(item.system).objects)
+                planets += canSettle(p_.r, s, s.empire(receiver), s.galaxy.object(o));
+            return planets * 100000;
+        }
+    }
+    return 0;
+}
+
+namespace {
+
 class Politician {
 public:
     explicit Politician(Planner& p)
@@ -102,7 +186,7 @@ private:
         T = std::max(T, pol_.acceptMinimumChance);
         T += pol_.accept.perOtherWars * wars();
         if (t >= Treaty::TradeResearchAlliance && rel(x).treatyAge < pol_.acceptMinimumTurnsSinceTreaty) T = -1;
-        if (p_.st.turn < 50) T += pol_.accept.first50Turns;
+        if (p_.date < 50) T += pol_.accept.first50Turns;  // the first 50 turns, by the date the ministers see
         T += strongerWeaker(pol_.accept, pol_.accept, p);
         if (mee_.valid()) T = x == mee_ ? -1 : T + 60;
         if (t == Treaty::Subjugation && p < pol_.acceptSubjugationPercent) T = -1;
@@ -110,7 +194,7 @@ private:
         return team(x, T);
     }
     int proposeThreshold(EmpireId x) const {
-        int T = pol_.propose.baseAnger + pol_.propose.perOtherWars * wars() + (p_.st.turn < 50 ? pol_.propose.first50Turns : 0) +
+        int T = pol_.propose.baseAnger + pol_.propose.perOtherWars * wars() + (p_.date < 50 ? pol_.propose.first50Turns : 0) +
                 strongerWeaker(pol_.propose, pol_.propose, pct(x));
         if (mee_.valid()) T = x == mee_ ? -1 : T + 70;
         return team(x, T);
@@ -165,10 +249,10 @@ private:
             return;
         }
         if (answerNewest(x)) return;  // it sent x something
-        // In a simultaneous game nothing is started while x's messages wait.
+        // In a simultaneous game nothing is started while a message from x waits.
         if (p_.st.options.simultaneous)
             for (const DiplomaticMessage& m : p_.st.messages)
-                if (m.from == x && m.to == p_.id && m.delivered && !m.answered && answerable(m.type)) return;
+                if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && !m.answered && answerable(m.type)) return;
         initiative(x);
     }
 
@@ -381,85 +465,7 @@ private:
         return true;
     }
 
-    // Spec 05 §7.4 item values, for the receiving side.
-    int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const {
-        if (diplomacy::isPlaceholder(item)) return 0;
-        const GameState& s = p_.st;
-        switch (item.kind) {
-            case PackageItem::Kind::Resources: return std::max<int64_t>(0, item.resources.total()) / 1000;
-            case PackageItem::Kind::Technology: {
-                if (item.tech.index() >= p_.r.data().techAreas.size()) return 0;
-                const Empire& rcv = s.empire(receiver);
-                const int have = rcv.techLevel(item.tech);
-                if (s.empire(giver).techLevel(item.tech) <= have || !p_.r.techVisible(s, rcv, item.tech) ||
-                    have >= p_.r.tech(item.tech).maxLevel)
-                    return 0;
-                return int64_t{have + 1} * p_.r.tech(item.tech).levelCost;
-            }
-            case PackageItem::Kind::Planet: return planetWorth(item.planet, giver) / 100000;
-            case PackageItem::Kind::Vehicle: {
-                // A ship: 100 × its scrap value (spec 03 §15, reclamation in its
-                // sector included), each resource / 4 without weapon parts; 0
-                // when mothballed or without an owner, a design or a position.
-                // A unit group: 100 × the units' scrap value at the ship percentage.
-                const Vehicle* v = s.vehicle(item.vehicle);
-                if (!v || v->count <= 0 || !v->owner.valid() || !v->design.valid() || v->design.index() >= s.designs.size() ||
-                    !v->location.system.valid() || v->status == VehicleStatus::Mothballed)
-                    return 0;
-                if (isUnitType(vehicleType(p_.r, s, *v))) {
-                    const int64_t pctShip = p_.r.setting("Scrap Ship Percent Returned", 30);
-                    int64_t total = 0;
-                    for (const UnitStack& st : groupStacks(*v)) {
-                        const Resources cost = computeDesignStats(p_.r, nullptr, s.design(st.design)).cost;
-                        for (Resource k : kResources) total += xmath::pctRound(cost[k], pctShip) * std::max(0, st.count);
-                    }
-                    return total * 100;
-                }
-                const Resources scrap = scrapRefund(p_.r, s, *v);
-                if (computeDesignStats(p_.r, nullptr, s.design(v->design)).armed()) return scrap.total() * 100;
-                return (scrap[Resource::Minerals] / 4 + scrap[Resource::Organics] / 4 + scrap[Resource::Radioactives] / 4) * 100;
-            }
-            case PackageItem::Kind::StarChart: return s.empire(receiver).hasExplored(item.system) ? 0 : 20000;
-            case PackageItem::Kind::Treaty: return int64_t{treatyNumber(item.treaty)} * 100000;
-            case PackageItem::Kind::CommChannel: return 50000;
-            case PackageItem::Kind::System: {
-                // 100,000 per planet in it (asteroid fields excluded, colonized or
-                // not) the receiver could colonize, only when the giver claims it.
-                if (!item.system.valid() || item.system.index() >= s.galaxy.systems.size()) return 0;
-                const auto& claimed = s.empire(giver).claimedSystems;
-                if (std::find(claimed.begin(), claimed.end(), item.system) == claimed.end()) return 0;
-                int64_t planets = 0;
-                for (ObjectId o : s.galaxy.system(item.system).objects)
-                    planets += canSettle(p_.r, s, s.empire(receiver), s.galaxy.object(o));
-                return planets * 100000;
-            }
-        }
-        return 0;
-    }
-
-    // A planet's worth (spec 05 §7.4, confirmed: binary): its three resource
-    // values × 1000 (× 1 in finite-resource games), plus, when colonized, 100
-    // × its population in millions, 1,000,000 per facility, 10,000 per unit
-    // of cargo (each million people and each unit) and 1,000,000,000 for a
-    // capital. A colony the giver no longer holds counts 0.
-    int64_t planetWorth(ObjectId planet, EmpireId giver) const {
-        const GameState& s = p_.st;
-        if (!planet.valid() || planet.index() >= s.galaxy.objects.size()) return 0;
-        const SpaceObject& obj = s.galaxy.object(planet);
-        if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return 0;
-        const int64_t scale = s.options.finiteResources ? 1 : 1000;
-        int64_t worth = (int64_t{obj.value[0]} + obj.value[1] + obj.value[2]) * scale;
-        if (const Colony* c = s.colony(planet)) {
-            if (c->owner != giver) return 0;
-            worth += 100 * c->totalPopulation();
-            worth += 1'000'000 * static_cast<int64_t>(c->facilities.size());
-            int64_t cargo = c->cargo.totalPopulation();
-            for (const UnitStack& u : c->cargo.units) cargo += std::max(0, u.count);
-            worth += 10'000 * cargo;
-            if (c->homeworld) worth += 1'000'000'000;
-        }
-        return worth;
-    }
+    int64_t itemValue(const PackageItem& item, EmpireId giver, EmpireId receiver) const { return tradeItemValue(p_, item, giver, receiver); }
     int64_t packageValue(const std::vector<PackageItem>& items, EmpireId giver, EmpireId receiver) const {
         int64_t v = 0;
         for (const PackageItem& i : items) v += itemValue(i, giver, receiver);

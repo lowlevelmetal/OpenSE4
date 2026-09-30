@@ -271,6 +271,9 @@ bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability);
 // is not sent at all (spec 05 §7.5 AI_Speech, confirmed: binary).
 std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireId target, EmpireId other = {}, Treaty proposed = Treaty::None,
                                       SystemId system = {}, ObjectId planet = {});
+// What an item of a trade, gift or tribute is worth to the receiving side
+// (spec 05 §7.4 item values).
+int64_t tradeItemValue(const Planner& p, const PackageItem& item, EmpireId giver, EmpireId receiver);
 // Order helpers.
 Order moveOrder(Location where);
 Order simpleOrder(OrderKind k);

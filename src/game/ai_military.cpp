@@ -1348,7 +1348,7 @@ void planScrap(Planner& p) {
             if (spaceYardAt(p.r, p.st, p.id, p.st.vehicle(id)->location) && p.emit(cmd::Scrap{id, {}, -1})) break;
     }
     // Every 10 turns: useless facilities.
-    if (p.st.turn % 10 != 0) return;
+    if (p.date % 10 != 0) return;  // the date the ministers see
     for (const auto& c : p.st.colonies) {
         if (!c || !p.controlsColony(*c, Minister::Scrap)) continue;
         const ObjectId planet = c->planet;
