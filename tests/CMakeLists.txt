@@ -1,6 +1,8 @@
 add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
+    test_client_logic.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     test_content.cpp
     test_engine_core.cpp
     test_engine_install.cpp

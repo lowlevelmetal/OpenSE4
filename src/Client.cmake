@@ -24,12 +24,16 @@ add_executable(opense4
     client/classic/main_window.cpp
     client/classic/reports.cpp
     client/classic/screens/combat_replay.cpp
+    client/classic/screens/communicate.cpp
     client/classic/screens/designs.cpp
     client/classic/screens/empire_status.cpp
+    client/classic/screens/empire_logic.cpp
+    client/classic/screens/empire_widgets.cpp
     client/classic/screens/empires.cpp
     client/classic/screens/galaxy_map.cpp
     client/classic/screens/game_menu.cpp
     client/classic/screens/help.cpp
+    client/classic/screens/intelligence.cpp
     client/classic/screens/log.cpp
     client/classic/screens/multiplayer.cpp
     client/classic/screens/planets.cpp
