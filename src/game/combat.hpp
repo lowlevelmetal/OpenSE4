@@ -1,7 +1,9 @@
 #pragma once
 
 // Space and ground combat (docs/spec/04). Strategic (auto-resolved) combat
-// with a recorded replay in GameState::combats.
+// with a recorded replay in GameState::combats. Tactical combat, the same
+// battle stepped with a player's orders, is in tactical.hpp; the combat
+// simulator in simulator.hpp.
 //
 // Cross-module contracts
 // ----------------------
@@ -22,7 +24,9 @@
 //   Destroyed vehicles get count = 0; the caller runs removeDeadVehicles().
 //   Combat does not clear orders (spec 03 §6.3): only ships that change owner
 //   lose theirs. Removing a leading Sentry order is movement's job. The
-//   battle's sector is appended to TurnContext::battleSites.
+//   battle's sector is appended to TurnContext::battleSites. With
+//   TurnContext::battles set (turn-based games with tactical combat, turn.hpp)
+//   a battle with human sides takes the next answer, or raises the question.
 //
 // * Attackers and start boxes (spec 04 §3). A vehicle that moved into the
 //   battle sector this turn has Vehicle::cameFrom set to the sector it left

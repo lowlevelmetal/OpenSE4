@@ -1,8 +1,10 @@
-// Strategic space combat (docs/spec/04 §3-§12, §14-§16): the combat map,
-// start boxes and formations, strategy-driven movement and targeting, direct
-// fire, seekers, point defense, launched units, planets, boarding, ramming,
-// troop drops with their ground combat, and the battle's results, replay
-// record and logs.
+// Space combat (docs/spec/04 §3-§12, §14-§16): the combat map, start boxes
+// and formations, the turn sequence (strategic resolution and the phases of
+// tactical combat, see combat_battle.hpp), strategy-driven movement and
+// targeting, direct fire, seekers, point defense, launched units, planets,
+// boarding, ramming, troop drops with their ground combat, and the battle's
+// results, replay record and logs. The player's orders of tactical combat
+// are checked and carried out in combat_tactical.cpp.
 //
 // Every piece works on a copy of its vehicle or colony; the results are
 // written back once the battle ends. Randomness comes from a fork of
