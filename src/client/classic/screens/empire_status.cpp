@@ -202,8 +202,8 @@ public:
         if (!d.open()) return d.keepOpen();
         ClassicSettings& s = settings();
         d.beginContent();
-        dimText("These switches are kept on this computer and apply to every game played here; the Ship Movement and Ship Orders "
-                "ones belong to your empire in this game.");
+        wrappedDim("These switches are kept on this computer and apply to every game played here; the Ship Movement and Ship "
+                   "Orders ones belong to your empire in this game.");
         ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_None);
         const char* group = nullptr;
         bool changed = false;

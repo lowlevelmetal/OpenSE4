@@ -80,6 +80,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 return nullptr;
             }
             std::printf("Orders saved to %s\n", mode->session_->ordersFile().string().c_str());
+            if (options.pbemExit) mode->ui_->requests.quitGame = true;
         }
         if (!options.openWindow.empty() && !frontScreenByName(options.openWindow)) {
             mode->openLogOnTurn_ = false;

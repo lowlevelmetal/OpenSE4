@@ -233,7 +233,8 @@ void EmpireEditor::pageGeneral(MenuContext& ctx) {
         ImGui::EndCombo();
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(0, 0));
+    ImGui::SameLine(label);
     bool raceStyle = draft_.setup.useRaceMinisterStyle;
     if (lamp(ctx, "Use Race Minister Style", raceStyle)) draft_.setup.useRaceMinisterStyle = raceStyle;
     ImGui::Dummy(ImVec2(0, ctx.px(4)));

@@ -52,7 +52,8 @@ Play by e-mail (see docs/MULTIPLAYER.md):
   --pbem-empire=N                 Your empire's number (default: the only one that can play now)
   --pbem-password=PW              Your empire's password
   --pbem-orders=DIR               Where to save the orders file (default: the game file's folder)
-  --pbem-end-turn                 End the turn at once (writes the orders file; for automation)
+  --pbem-end-turn                 End the turn at once, write the orders file and quit
+                                  (with --screenshot: quit after the screenshot)
 
 Paths:
   --data=DIR                      Game data directory (default: auto-detect)

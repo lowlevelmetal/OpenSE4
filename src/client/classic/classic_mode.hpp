@@ -32,6 +32,7 @@ struct ClassicOptions {
     std::string pbemPassword;
     std::string pbemOrdersDir;
     bool pbemEndTurn = false;  // automation: end the turn at once, writing the .plr
+    bool pbemExit = false;     // and quit then (no screenshot asked for)
 };
 
 class ClassicMode final : public Mode {

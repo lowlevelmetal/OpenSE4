@@ -5,7 +5,10 @@
 #   2. a turn-based game with two bots and a computer empire, each bot playing
 #      one command in each of its turns (commands carried out at once);
 #   3. a turn-based play-by-e-mail game: each player's (empty) turn file is
-#      processed in turn, and the game goes on to the next player.
+#      processed in turn, and the game goes on to the next player;
+#   4. when the game client was built (and SMOKE_CLIENT is not 0), it plays the
+#      next turn of that game offscreen (--pbem ... --pbem-end-turn), and the
+#      server processes the .plr it wrote.
 # Needs a data set (the installed classic game is found automatically, or pass
 # --data=DIR).
 #
@@ -99,4 +102,19 @@ grep -q "Next: empire 2" "$WORK/process1.log"
 grep -q "the game is now at turn 1" "$WORK/process2.log"
 grep -q "Next: empire 1" "$WORK/process2.log"
 "$SERVER" pbem info --game="$WORK/mail.gam"
+
+# 4. The game client plays a turn of the e-mail game.
+CLIENT="$BUILD/opense4"
+if [[ -x $CLIENT && ${SMOKE_CLIENT:-1} != 0 ]]; then
+    CLIENT_ARGS=()
+    for a in "$@"; do
+        [[ $a == --data=* ]] && CLIENT_ARGS+=("--classic-dir=${a#--data=}")
+    done
+    SDL_VIDEO_DRIVER=offscreen "$CLIENT" --no-audio --pbem="$WORK/mail.gam" --pbem-password=a --pbem-orders="$WORK/inbox" \
+        --pbem-end-turn "${CLIENT_ARGS[@]}" | tee "$WORK/client.log"
+    grep -q "Orders saved to .*Mail_Relay_01.plr" "$WORK/client.log"
+    "$SERVER" pbem process --game="$WORK/mail.gam" --orders="$WORK/inbox" "$@" | tee "$WORK/process3.log"
+    grep -q "orders: " "$WORK/process3.log"
+    grep -q "Next: empire 2" "$WORK/process3.log"
+fi
 echo "server smoke test passed"

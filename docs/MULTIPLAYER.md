@@ -348,8 +348,8 @@ opense4 --pbem=campaign.gam --pbem-empire=2 --pbem-password=PW [--pbem-orders=DI
 ```
 
 `--pbem-empire` may be left out when only one empire can play (a turn-based game), and
-`--pbem-end-turn` ends the turn at once (for scripts: it writes the `.plr` and prints
-where). `--open=pbem:campaign.gam` opens the Play by E-mail window with that file.
+`--pbem-end-turn` ends the turn at once, writes the `.plr`, prints where and quits (for
+scripts). `--open=pbem:campaign.gam` opens the Play by E-mail window with that file.
 The choices the rules leave open are listed in spec 05 open question 34.
 
 ## Setup files

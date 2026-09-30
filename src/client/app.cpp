@@ -76,6 +76,7 @@ int App::run(const AppOptions& options) {
         co.pbemPassword = options.pbemPassword;
         co.pbemOrdersDir = options.pbemOrdersDir;
         co.pbemEndTurn = options.pbemEndTurn;
+        co.pbemExit = options.pbemEndTurn && options.screenshotPath.empty();
         mode_ = ClassicMode::create(platform, co, error);
     } else {
         PrototypeOptions po;
