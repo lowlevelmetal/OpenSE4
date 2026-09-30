@@ -104,6 +104,15 @@ each advance is remains open.
 - **Completion messages**: finishing a level logs "New Tech Level", then "<item>
   Discovered" for each newly available item. An empty queue logs "All Projects Completed"
   [T].
+- **OpenSE4 choices** [I]:
+  - A project completes at most one level per turn; points it cannot absorb are lost,
+    also in Divide Evenly mode.
+  - Several entries for one area stand for successive levels: the n-th entry works toward
+    current level + n. Entries beyond the maximum are dropped.
+  - The ETA simulates the queue with this turn's points, so projects waiting behind others
+    in in-order mode get a real estimate.
+  - Every level a subject gains (research, gifts, theft) is also granted to a Subjugation
+    master. A Protectorate passes nothing.
 
 ### 1.5 Unlocking and other tech sources
 
@@ -202,6 +211,48 @@ order:
 
 **AI reaction**: a detected attack adds `Intelligence Against Us` anger (§7.3).
 
+**OpenSE4 choices** [I]:
+
+- Defense projects never finish. Their progress stops at `Cost`, and a block drains the
+  attack strength from it, so the queue refills them.
+- Points are allocated for every empire first, then projects run empire by empire, so
+  each defense holds this turn's points when attacks arrive.
+- The "Any" target raises attack strength by 25 %.
+- `Change Bad Intelligence Chance - System` sets the success chance to 100 % plus the
+  system abilities plus the best (lowest) facility value of the target's colonies in the
+  target's system. Empire-wide projects ignore it.
+- The victim learns the source with a 50 % chance.
+- A project that fails (no contact, no valid target, a failed roll) is used up like a
+  successful one; Repeat restarts it in place.
+
+**Handler readings** [I] (the stock amounts are often a placeholder 1):
+
+- `Ship - Lose Movement`: the ship cannot move for Amount turns (at least one), starting
+  next turn (`Vehicle::immobileUntil`).
+- `Ship - Lose Supply`: Amount supply, or all of it when Amount ≤ 0.
+- `Ship - Cargo Damage`, `Planet - Cargo Damage`: Amount kT of cargo, picked a unit or
+  1M at a time; an Amount of 1 or less destroys about half.
+- `Ship - Orders Change`: the ship leaves its fleet and gets one Move To a random sector
+  of its system.
+- `Planet - Value Change`: percentage points on every resource, clamped to the Settings
+  range but never pushed back into it; in finite games, a percentage of the stock.
+- `Planet - Population Anger Change`: tenths of a percent, like Happiness.txt.
+- `Planet - Population Rebel`: the colony joins the source. As "Any", homeworlds are
+  never picked. As an event (no source), the colony is lost.
+- `Points - Change`, `Points - Steal`: Amount of each resource.
+- `Research - Steal`: one level above ours in a random area where the target leads and
+  that we can research.
+- `Ship Designs - Steal`, `Unit Designs - Steal`: a copy joins our designs (building it
+  still needs the technology), preferring designs we have not seen.
+- `Politics - Disrupt Trade`: the trade percentage restarts from 0.
+- `Politics - Prevent Messages`: for Amount turns, messages between the two are lost;
+  war declarations, broken treaties and surrenders still get through
+  (`Relation::messagesBlockedUntil`).
+- `Politics - Fake Messages`: a forged tribute demand from the target reaches the third
+  empire.
+- `Politics - Intercept Messages`: a report of their messages from the last 10 turns.
+- `System - Info`: prefers a system the target knows and we do not.
+
 ## 3. Diplomacy
 
 ### 3.1 Contact [M]
@@ -213,6 +264,10 @@ order:
   We assume this resets the treaty [I].
 - **Buying contact**: a package item **Comm Channels** grants contact with a third
   empire.
+- **OpenSE4** [I]: contact begins when one empire sees a vehicle of the other, or has
+  presence in a system where the other has a colony. Contact loss is checked only
+  between empires that both have colonies and did not see each other this turn, and not
+  in games without warp points.
 
 ### 3.2 Treaties
 
@@ -238,6 +293,14 @@ trade chain [M].
   Non-Intercourse, Subjugation and Protectorate displease it [M].
 - **Treaty grid**: treaties between third parties are visible only for empires we are
   allied with [M], or through `Politics - Treaty Info`.
+- **OpenSE4 choices** [I]:
+  - In a Subjugation or Protectorate proposal the proposer is the master, unless the
+    message names the dominant side in its third-empire field. A Treaty package item
+    makes the receiver the master unless it names the giver.
+  - Becoming a subject ends every treaty better than None with other empires; War and
+    Non-Intercourse stay. A subject cannot sign new treaties with third empires.
+  - Break Treaty does not end a war.
+  - Partnership shares explored systems, known warp links and scanned designs each turn.
 
 ### 3.3 Trade and tariffs
 
@@ -257,6 +320,9 @@ trade chain [M].
   spends anything, and the master receives that amount [M]. Receipts are capped at the
   receiver's storage [H]. An old bug capped the subject's RP, which hints that tariffs may
   also touch RP (open).
+- **OpenSE4 choices** [I]: the trade base is the output of the partner's colonies that
+  reaches its treasury; Political Savvy (− 100) and culture Trade add to the percentage
+  multiplier; tariffs take resources only.
 
 ### 3.4 Messages [M]
 
@@ -300,6 +366,14 @@ trade chain [M].
 - **History window**: dated events per empire, plus a "General" list with optional map
   locations.
 - **Log categories**: Construction, Research, Intelligence, Events, Politics, Combat, Misc.
+- **OpenSE4 choices** [I]:
+  - Replies are checked against the message they answer: an acceptance only works for a
+    proposal the recipient really sent. Accepting a counter-proposal (an Accept Demand
+    reply) applies the counter.
+  - Messages are kept 10 turns after sending, then dropped, together with any message
+    whose sender or recipient is gone.
+  - Surrender also hands over the stockpile, the technology levels and the maps.
+    Granting independence removes the colony at once.
 
 ## 4. Random events
 
@@ -328,6 +402,20 @@ trade chain [M].
     and applies the effect about N turns later. Stock catastrophes take 10 to 30 turns.
 - **Selection [I]**: pick uniformly among the eligible records, then pick a valid target
   in the affected empire.
+- **OpenSE4 choices** [I]:
+  - For a bad event, Luck and the target system's `Change Bad Event Chance - System`
+    (system abilities plus the best facility) give a keep chance of
+    (100 + luck) × (100 + modifier) / 100 %.
+  - A timed event strikes after exactly `Time Till Completion` turns, and fizzles if its
+    target is gone by then.
+  - `Ship - Moved` sends the ship to a random system at most Amount warp jumps away (the
+    stock text speaks of another system, not of sectors).
+  - `Planet - Destroyed` leaves an asteroid field; `Star - Destroyed` leaves a destroyed
+    star, turns the system's planets into asteroid fields and destroys every vehicle
+    there. Homeworlds, and for stars their systems, are never chosen.
+  - `Planet - Population Riot` raises anger to the Rioting band.
+  - Sector and System messages also go to the owner. A record with a blank text names
+    what was hit.
 
 ## 5. Scores and history
 
@@ -347,6 +435,11 @@ trade chain [M].
   there was no treaty and the data was unknown. So record every empire's statistics every
   turn with a per-viewer "known" flag. SE4 stores this per player in `<game>_stats.txt`,
   and the History window's data in `<game>_events.txt`.
+- **OpenSE4 weights** [I]: the score is Σ statistic × weight / 1000, with Settings keys
+  `Score Weight Resources`, `Research`, `Intelligence`, `Tech Levels`, `Systems`,
+  `Planets`, `Population`, `Units`, `Ships` and `Bases` (defaults 100, 100, 100, 100000,
+  100000, 200000, 1000, 5000, 50000, 50000). The resource columns are the turn's income,
+  population counts in millions.
 
 ## 6. Victory
 
@@ -361,6 +454,13 @@ empire is left [M]. Victory is checked at the end of each turn [I].
 | X % of tech | Owned levels ÷ Σ max levels ≥ X %. It counts levels, not areas [H]. |
 | Peace for X years | No War treaty between any two empires for X consecutive years. The winner rule is open. |
 | After X years | A qualifier: suppresses all checks until start + X years. |
+
+**OpenSE4 choices** [I]: an empire is eliminated when it has no populated colony and no
+ship or base; its last turn is still recorded, and its empty colonies and units vanish.
+Neutral empires neither win nor count toward the last empire standing, which needs at
+least two empires at the start. Ties go to the lower empire number, and a peace victory
+goes to the best score. The tech percentage leaves out racial and unique areas and areas
+not allowed in the game.
 
 ## 7. Computer player
 
@@ -734,25 +834,28 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
    (L = 2, 3, 5, 10) in an area with `Level Cost` 5000 under each option: linear, a
    multiplier, or geometric?
 2. **Research leftovers**: in Divide Evenly mode, does unused share go to other projects
-   or is it lost? Can the same area be queued twice?
+   or is it lost? Can the same area be queued twice, and does a second entry work on the
+   next level at the same time? Can a project finish two levels in one turn?
 3. **Opening RP/IP pool**: its size, and how it depends on Starting Resources.
 4. **RP/IP modifiers**: how population, mood, characteristics, culture and planet/system
    modifiers stack. What exactly does Cunning change?
 5. **Intel success**: the base success chance, the "Any" bonus, the counter-intel
    strength formula, how much progress a block removes, and the detection (naming)
-   chance.
+   chance. Does a counter-intelligence project ever finish?
 6. **Intel details**: which level Research - Steal takes, who gets a rebel planet, whether
    Lose Supply drains the amount or everything, whether Disrupt Trade resets the
-   percentage, and how long Lose Movement lasts.
+   percentage, and how long Lose Movement lasts. What do the cargo-damage amounts mean,
+   do stolen blueprints join our design list, and what do faked messages say?
 7. **Score weights**: log Score and all columns over several turns, then fit the weights.
 8. **Treaty combat and trade**: do None and Non-Intercourse fight on contact? Do
    Subjugation and Protectorate stop combat, and do they allow trade?
 9. **Trade base**: gross or net production? How do Political Savvy and culture apply? Do
    tariffs take RP?
 10. **Events**: the scope of the roll (per empire, per planet or global) and how targets
-    are chosen.
+    are chosen. How far does `Ship - Moved` send a ship? What does a destroyed star do
+    to its system, and can events strike homeworlds?
 11. **Victory**: who wins a peace victory, whether tech % counts only allowed areas, and
-    how ties resolve.
+    how ties resolve. When exactly is an empire eliminated (ships only, empty colonies)?
 12. **AI**:
     - the anger range and the mood labels;
     - how anger turns into an acceptance probability;
