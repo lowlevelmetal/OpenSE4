@@ -59,11 +59,6 @@ namespace opense4::game::economy {
 
 // ---- Scales and dates -------------------------------------------------------------------------------
 
-// Planet conditions are a real number from 0 to 1.5 in the original (spec 02 §2).
-// SpaceObject::conditions holds them in hundredths: 100 = 1.0, 150 = 1.5.
-inline constexpr int kConditionsOne = 100;
-inline constexpr int kConditionsMax = 150;
-
 // The turn number the original tests for "every N turns" rules. A simultaneous
 // turn advances the date before the end-of-turn steps (spec 05 §8), while
 // processTurn increments GameState::turn at the very end, so during a turn this
@@ -113,9 +108,9 @@ int moodReproduction(Mood m);
 
 // ---- Planet conditions (spec 02 §2) -----------------------------------------------------------
 
+// SpaceObject::conditions is the real number itself (conditions.hpp).
 enum class ConditionsBand : uint8_t { Optimal, Good, Mild, Unpleasant, Harsh, Deadly };
-// `conditions` in hundredths (SpaceObject::conditions).
-ConditionsBand conditionsBand(int conditions);
+ConditionsBand conditionsBand(Conditions conditions);
 std::string_view conditionsName(ConditionsBand b);
 // Reproduction points of a band: -20 (Deadly) to +5 (Optimal).
 int conditionsReproduction(ConditionsBand b);

@@ -80,7 +80,7 @@ required.
 | `x`, `y` | The sector. |
 | `size` | Optional. The planet, star or storm size. The default comes from the SectType record. |
 | `surface`, `atmosphere` | Optional, for planets and asteroid fields: the physical type (`"Rock"`, `"Ice"`, `"Gas Giant"`) and the atmosphere. |
-| `conditions` | Optional, for planets and asteroid fields: hundredths of the 0 to 1.5 scale (100 means 1.0). Default 100. |
+| `conditions` | Optional, for planets and asteroid fields: hundredths of the 0 to 1.5 scale (100 means 1.0), at most 150. Default 100. A saved map rounds conditions to the nearest hundredth. |
 | `values` | Optional, for planets and asteroid fields: `[minerals, organics, radioactives]`, as percentages (or remaining stock in finite-resource games). Default `[100, 100, 100]`. |
 | `star_age`, `star_color`, `star_luminosity` | Optional, for stars and destroyed stars. |
 | `abilities` | Optional. The object's own abilities (see Abilities). |

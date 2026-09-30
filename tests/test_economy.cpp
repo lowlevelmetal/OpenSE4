@@ -107,7 +107,7 @@ Colony& plainHome(const Rules& r, GameState& s, std::initializer_list<std::strin
     c.anger = 35;
     SpaceObject& p = s.galaxy.object(c.planet);
     p.value = {100, 100, 100};
-    p.conditions = 100;
+    p.conditions = Conditions::hundredths(100);
     return c;
 }
 
@@ -162,7 +162,7 @@ Colony& addColony(GameState& s, EmpireId e, ObjectId planet, int64_t population)
     SpaceObject& p = s.galaxy.object(planet);
     p.atmosphere = s.empire(e).race.atmosphere;
     p.value = {100, 100, 100};
-    p.conditions = 100;
+    p.conditions = Conditions::hundredths(100);
     return *s.colonies[planet.index()];
 }
 
@@ -273,18 +273,24 @@ TEST_CASE("economy: population modifier rows, mood percentages and condition ban
 
     // Conditions are hundredths of the 0-1.5 scale.
     using economy::ConditionsBand;
-    using economy::conditionsBand;
-    CHECK(conditionsBand(150) == ConditionsBand::Optimal);
-    CHECK(conditionsBand(149) == ConditionsBand::Good);
-    CHECK(conditionsBand(130) == ConditionsBand::Good);
-    CHECK(conditionsBand(129) == ConditionsBand::Mild);
-    CHECK(conditionsBand(100) == ConditionsBand::Mild);
-    CHECK(conditionsBand(99) == ConditionsBand::Unpleasant);
-    CHECK(conditionsBand(50) == ConditionsBand::Unpleasant);
-    CHECK(conditionsBand(49) == ConditionsBand::Harsh);
-    CHECK(conditionsBand(30) == ConditionsBand::Harsh);
-    CHECK(conditionsBand(29) == ConditionsBand::Deadly);
-    CHECK(conditionsBand(0) == ConditionsBand::Deadly);
+    const auto band = [](int64_t hundredths) { return economy::conditionsBand(Conditions::hundredths(hundredths)); };
+    CHECK(band(150) == ConditionsBand::Optimal);
+    CHECK(band(149) == ConditionsBand::Good);
+    CHECK(band(130) == ConditionsBand::Good);
+    CHECK(band(129) == ConditionsBand::Mild);
+    CHECK(band(100) == ConditionsBand::Mild);
+    CHECK(band(99) == ConditionsBand::Unpleasant);
+    CHECK(band(50) == ConditionsBand::Unpleasant);
+    CHECK(band(49) == ConditionsBand::Harsh);
+    CHECK(band(31) == ConditionsBand::Harsh);
+    CHECK(band(29) == ConditionsBand::Deadly);
+    CHECK(band(0) == ConditionsBand::Deadly);
+    // The edges are x87 constants (inferred): the double nearest 1.3 lies above
+    // 1.3 and is Good, the double nearest 0.3 lies below 0.3 and is Deadly.
+    CHECK(Conditions::hundredths(130).value() > xmath::Ext(13) / xmath::Ext(10));
+    CHECK(Conditions::hundredths(30).value() < xmath::Ext(3) / xmath::Ext(10));
+    CHECK(band(30) == ConditionsBand::Deadly);
+    CHECK(economy::conditionsBand(Conditions::of(xmath::Ext(3) / xmath::Ext(10) + xmath::Ext(1) / xmath::Ext(1'000'000))) == ConditionsBand::Harsh);
     CHECK(economy::conditionsName(ConditionsBand::Good) == "Good");
     CHECK(economy::conditionsReproduction(ConditionsBand::Optimal) == 5);
     CHECK(economy::conditionsReproduction(ConditionsBand::Good) == 2);
@@ -1066,11 +1072,11 @@ TEST_CASE("economy: growth rate from race, mood, conditions and resistance") {
     home.anger = 70;  // Angry: -5
     CHECK(economy::reproductionPercent(*r, s, home) == 5);
     home.anger = 20;
-    planet.conditions = 140;  // Good: +2
+    planet.conditions = Conditions::hundredths(140);  // Good: +2
     CHECK(economy::reproductionPercent(*r, s, home) == 14);
-    planet.conditions = 60;  // Unpleasant: -2 (the observed Quick Start homeworld shows 10 %)
+    planet.conditions = Conditions::hundredths(60);  // Unpleasant: -2 (the observed Quick Start homeworld shows 10 %)
     CHECK(economy::reproductionPercent(*r, s, home) == 10);
-    planet.conditions = 10;  // Deadly: -20, and the rate never goes below 0
+    planet.conditions = Conditions::hundredths(10);  // Deadly: -20, and the rate never goes below 0
     CHECK(economy::reproductionPercent(*r, s, home) == 0);
     setChar(s, kMe, Characteristic::EnvironmentalResistance, 154);  // + trunc(54 / 5)
     CHECK(economy::reproductionPercent(*r, s, home) == 2);
@@ -1309,7 +1315,7 @@ TEST_CASE("economy: happiness events by scope, truncated to whole percent") {
 
     // Conditions do not change anger.
     w.far->anger = 40;
-    w.s.galaxy.object(w.far->planet).conditions = 0;
+    w.s.galaxy.object(w.far->planet).conditions = Conditions{};
     const int farBefore = w.far->anger;
     populationTurn(r, w.s);
     CHECK(w.far->anger == farBefore);
@@ -1556,33 +1562,47 @@ TEST_CASE("economy: every 10th turn: planet values sum, conditions multiply") {
     GameState s = newGame(*r);
     Colony& home = plainHome(*r, s, {"Test Climate Station", "Deep Core", "Deep Core"});
     SpaceObject& p = s.galaxy.object(home.planet);
-    p.conditions = 50;
+    using xmath::Ext;
+    p.conditions = Conditions::hundredths(50);
     s.turn = 8;  // processed as turn 9
     populationTurn(*r, s);
-    CHECK(p.conditions == 50);
+    CHECK(p.conditions == Conditions::hundredths(50));
     CHECK(p.value[0] == 100);
     s.turn = 9;  // turn 10
     populationTurn(*r, s);
-    CHECK(p.conditions == 51);  // × 1.01, and at least 0.01 in our hundredths
+    // × (1 + 1 / 100), kept as the real number: no rounding, no minimum step (spec 02 §13 Q46).
+    const Conditions grown = Conditions::of(Conditions::hundredths(50).value() * (Ext(1) + Ext(1) / Ext(100)));
+    CHECK(p.conditions == grown);
+    CHECK(p.conditions > Conditions::hundredths(50));
+    CHECK(p.conditions < Conditions::hundredths(51));
     CHECK(p.value[0] == 104);  // both facilities count
+    s.turn = 19;
+    populationTurn(*r, s);
+    CHECK(p.conditions == Conditions::of(grown.value() * (Ext(1) + Ext(1) / Ext(100))));
+    // A product of exactly 0 gives 0.1.
+    p.conditions = Conditions{};
+    s.turn = 29;
+    populationTurn(*r, s);
+    CHECK(p.conditions == Conditions::of(Ext(1) / Ext(10)));
+    p.value = {104, 100, 100};
 
     // A negative sum does nothing; system changes take the best and multiply.
     home.facilities = {facilityIndex(*r, "Polluter"), facilityIndex(*r, "Terraformer"), facilityIndex(*r, "Seeder")};
-    p.conditions = 100;
-    s.turn = 19;
+    p.conditions = Conditions::hundredths(100);
+    s.turn = 39;
     populationTurn(*r, s);
-    CHECK(p.conditions == 110);
+    CHECK(p.conditions == Conditions::of(Ext(1) * Ext(110) / Ext(100)));  // × (100 + 10) / 100
     CHECK(p.value == std::array<int, 3>{109, 105, 105});
-    p.conditions = 140;
-    s.turn = 29;
+    p.conditions = Conditions::hundredths(140);
+    s.turn = 49;
     populationTurn(*r, s);
-    CHECK(p.conditions == 150);  // never above 1.5
+    CHECK(p.conditions == kOptimalConditions);  // never above 1.5
     CHECK(logged(s, kMe, "optimal conditions"));
 
     // Finite games: the system change is a percentage of the stock, truncated.
     s.options.finiteResources = true;
     p.value = {1001, 0, 50};
-    s.turn = 39;
+    s.turn = 59;
     populationTurn(*r, s);
     CHECK(p.value == std::array<int, 3>{pctTrunc(1001, 105), 0, pctTrunc(50, 105)});
 }
@@ -1698,7 +1718,7 @@ TEST_CASE("economy: installed data set reproduces the observed Quick Start homew
     planet.value = {102, 99, 103};
     CHECK(Resources{20000, 20000, 20000} + economy::empireProduction(*r, s, kMe).resources == Resources{26120, 21108, 21153});
     planet.value = {100, 98, 102};  // as observed in the first game
-    planet.conditions = 50;         // "Unpleasant"
+    planet.conditions = Conditions::hundredths(50);  // "Unpleasant"
     CHECK(economy::conditionsName(economy::conditionsBand(planet.conditions)) == "Unpleasant");
 
     CHECK(home.totalPopulation() == 2000);

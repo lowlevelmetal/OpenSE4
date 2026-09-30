@@ -65,14 +65,14 @@ void checkInvariants(const ruleset::Ruleset& rs, const Generated& gen, const Qua
             CHECK(o.sectorType < rs.sectorObjectTypes.size());
             CHECK(parseObjectKind(rs.sectorObjectTypes[o.sectorType].physicalType) == o.kind);
             if (o.kind == ObjectKind::Planet) {
-                CHECK(o.conditions >= 50);
-                CHECK(o.conditions <= 150);
-                CHECK(o.conditions % 10 == 0);
+                CHECK(o.conditions.inHundredths() >= 50);
+                CHECK(o.conditions.inHundredths() <= 150);
+                CHECK(o.conditions.inHundredths() % 10 == 0);
             }
             if (o.kind == ObjectKind::Asteroids) {
-                CHECK(o.conditions >= 25);
-                CHECK(o.conditions <= 75);
-                CHECK(o.conditions % 5 == 0);
+                CHECK(o.conditions.inHundredths() >= 25);
+                CHECK(o.conditions.inHundredths() <= 75);
+                CHECK(o.conditions.inHundredths() % 5 == 0);
             }
             if (o.kind == ObjectKind::WarpPoint) {
                 REQUIRE(o.destination.valid());
@@ -591,16 +591,26 @@ TEST_CASE("quadrant generation: planet values and conditions") {
     QuadrantOptions opt;
     opt.systemCount = 60;
     const Generated gen = generate(rs, opt, 21);
-    std::set<int> planetConditions, asteroidConditions;
+    std::set<uint64_t> planetConditions, asteroidConditions;
     for (const SpaceObject& o : gen.galaxy.objects) {
-        if (o.kind == ObjectKind::Planet) planetConditions.insert(o.conditions);
-        if (o.kind == ObjectKind::Asteroids) asteroidConditions.insert(o.conditions);
+        if (o.kind == ObjectKind::Planet) planetConditions.insert(o.conditions.bits);
+        if (o.kind == ObjectKind::Asteroids) asteroidConditions.insert(o.conditions.bits);
     }
-    // 0.5, 0.6 ... 1.5 (hundredths), all eleven values; asteroid fields half of that.
+    // 0.5, 0.6 ... 1.5 as doubles (R / 10 + 0.5), all eleven values; asteroid
+    // fields half of that. Non-negative doubles order like their bit patterns.
     CHECK(planetConditions.size() == 11);
-    CHECK(*planetConditions.begin() == 50);
-    CHECK(*planetConditions.rbegin() == 150);
-    for (int c : asteroidConditions) CHECK(c % 5 == 0);
+    CHECK(Conditions{*planetConditions.begin()} == Conditions::hundredths(50));
+    CHECK(Conditions{*planetConditions.rbegin()} == kOptimalConditions);
+    for (uint64_t b : planetConditions) {
+        const Conditions c{b};
+        CHECK(c.inHundredths() % 10 == 0);
+        CHECK(c == Conditions::of(xmath::Ext(c.inHundredths() / 10 - 5) / xmath::Ext(10) + xmath::Ext(1) / xmath::Ext(2)));
+    }
+    for (uint64_t b : asteroidConditions) {
+        const Conditions c{b};
+        CHECK(c.inHundredths() % 5 == 0);
+        CHECK(Conditions::of(c.value() * xmath::Ext(2)).inHundredths() % 10 == 0);
+    }
 }
 
 // ---- Empire placement (spec 01 §3.6) -------------------------------------------------------------------------
@@ -639,7 +649,7 @@ TEST_CASE("homeworld placement") {
     // in a start-eligible system, with natural conditions and a numeral name.
     const SpaceObject& ice = gen.galaxy.object((*homes)[0]);
     CHECK(ice.id.index() >= before);
-    CHECK(ice.conditions >= 50);
+    CHECK(ice.conditions >= Conditions::hundredths(50));
     CHECK(ice.name.starts_with(gen.galaxy.system(ice.system).name + " "));
 }
 

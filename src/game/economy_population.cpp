@@ -19,7 +19,6 @@ namespace opense4::game::economy {
 
 using namespace detail;
 using xmath::Ext;
-using xmath::pctRound;
 using xmath::pctTrunc;
 
 namespace {
@@ -97,19 +96,17 @@ void overcrowding(const Rules& r, GameState& s, Colony& c) {
 
 // ---- Planet value and conditions (spec 02 §1.5, §2) ------------------------------------------------------
 
-// Multiplies a planet's conditions by pct %. Our conditions are hundredths of
-// the original's real number, so the product is rounded to a hundredth, and a
-// growing value moves by at least 0.01 so that small changes do not stall
-// (inferred; spec 02 §13). Never above 1.5; a result of exactly 0 gives 0.1.
-void scaleConditions(TurnContext& ctx, const Colony& c, int64_t pct) {
+// Stores a facility's product as the planet's new conditions (spec 02 §1.5, §2,
+// confirmed: binary): never above 1.5, and the owner is told when they reach
+// it; a product of exactly 0 gives 0.1. The product is the real number itself,
+// not rounded (spec 02 §13 Q46).
+void setMultipliedConditions(TurnContext& ctx, const Colony& c, Ext product) {
     SpaceObject& p = ctx.state.galaxy.object(c.planet);
-    const int before = p.conditions;
-    int64_t v = pctRound(before, pct);
-    if (pct > 100 && v <= before) v = before + 1;
-    v = std::min<int64_t>(v, kConditionsMax);
-    if (v == 0) v = 10;
-    p.conditions = static_cast<int>(v);
-    if (p.conditions == kConditionsMax && before < kConditionsMax)
+    const Conditions before = p.conditions;
+    if (product > kOptimalConditions.value()) p.conditions = kOptimalConditions;
+    else if (product.isZero()) p.conditions = Conditions::of(Ext(1) / Ext(10));
+    else p.conditions = Conditions::of(product);
+    if (p.conditions == kOptimalConditions && before < kOptimalConditions)
         ctx.log(c.owner, LogCategory::Misc, std::format("{} has optimal conditions", p.name), {}, locationOf(ctx.state.galaxy, c.planet));
 }
 
@@ -135,7 +132,9 @@ void planetChanges(TurnContext& ctx, Colony& c) {
     SpaceObject& p = s.galaxy.object(c.planet);
     for (size_t k = 0; k < 3; ++k)
         if (const int64_t v = sumValue1(own, kValueChange[k]); v != 0) changeValue(r, s, p, k, v, false);
-    if (const int64_t v = sumValue1(own, AbilityKind::PlanetChangeConditions); v > 0) scaleConditions(ctx, c, 100 + v);
+    // conditions × (1 + Val1 / 100), Val1 being the colony's sum.
+    if (const int64_t v = sumValue1(own, AbilityKind::PlanetChangeConditions); v > 0)
+        setMultipliedConditions(ctx, c, p.conditions.value() * (Ext(1) + Ext(v) / Ext(100)));
 }
 
 // ---- Plague (spec 02 §3) ------------------------------------------------------------------------------
@@ -428,7 +427,9 @@ void applySystemAbilities(TurnContext& ctx, EmpireId e) {
             SpaceObject& p = s.galaxy.object(planet);
             if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetValueChangeSystem); v > 0)
                 for (size_t k = 0; k < 3; ++k) changeValue(r, s, p, k, v, true);
-            if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetConditionsChangeSystem); v > 0) scaleConditions(ctx, c, 100 + v);
+            // conditions × (100 + Val1) / 100.
+            if (const int64_t v = bestInSystem(r, s, e, sys, AbilityKind::PlanetConditionsChangeSystem); v > 0)
+                setMultipliedConditions(ctx, c, p.conditions.value() * Ext(100 + v) / Ext(100));
         }
     }
 }

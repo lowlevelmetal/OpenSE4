@@ -4,6 +4,7 @@
 // See docs/spec/01-galaxy-and-setup.md. Plain data; behavior lives in
 // free functions (generate.hpp, ...).
 
+#include "game/conditions.hpp"
 #include "game/types.hpp"
 #include "ruleset/ruleset.hpp"
 
@@ -115,7 +116,7 @@ struct SpaceObject {
     std::string size;           // PlanetSize name: "Tiny".."Huge" or a constructed size
     std::string surface;        // "Rock", "Ice", "Gas Giant"
     std::string atmosphere;     // "None", "Oxygen", ...
-    int conditions = 50;        // hundredths of the 0-1.5 scale (100 = 1.0), higher is better (spec 02 §2)
+    Conditions conditions = Conditions::hundredths(50);  // 0 to 1.5, higher is better (conditions.hpp, spec 02 §2)
     std::array<int, 3> value{}; // per resource: percent, or remaining stock in finite games
 
     // Stars.

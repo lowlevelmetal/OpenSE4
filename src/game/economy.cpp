@@ -213,13 +213,18 @@ int moodReproduction(Mood m) {
 
 // ---- Conditions -------------------------------------------------------------------------------------
 
-ConditionsBand conditionsBand(int conditions) {
-    // Edges 0.3, 0.5, 1.0, 1.3 and 1.5 (confirmed: binary).
-    if (conditions >= 150) return ConditionsBand::Optimal;
-    if (conditions >= 130) return ConditionsBand::Good;
-    if (conditions >= 100) return ConditionsBand::Mild;
-    if (conditions >= 50) return ConditionsBand::Unpleasant;
-    if (conditions >= 30) return ConditionsBand::Harsh;
+ConditionsBand conditionsBand(Conditions conditions) {
+    // Edges 0.3, 0.5, 1.0, 1.3 and 1.5 (confirmed: binary). The stored double is
+    // compared with each edge as an x87 constant (inferred, spec 02 §13 Q51), so
+    // a double just below an edge, such as the double nearest 0.3, is in the
+    // band below it.
+    const xmath::Ext c = conditions.value();
+    const auto atLeast = [&](int tenths) { return c >= xmath::Ext(tenths) / xmath::Ext(10); };
+    if (atLeast(15)) return ConditionsBand::Optimal;
+    if (atLeast(13)) return ConditionsBand::Good;
+    if (atLeast(10)) return ConditionsBand::Mild;
+    if (atLeast(5)) return ConditionsBand::Unpleasant;
+    if (atLeast(3)) return ConditionsBand::Harsh;
     return ConditionsBand::Deadly;
 }
 

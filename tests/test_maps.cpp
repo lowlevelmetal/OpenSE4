@@ -224,7 +224,7 @@ TEST_CASE("maps: broken map files are refused with a reason") {
     CHECK(odd->warnings.size() == 2);
     const SpaceObject& planet = odd->map.galaxy.objects.front();
     CHECK(planet.sectorType == kRockOxygenLarge);  // record 1 is a star; the Large Rock/Oxygen planet matches
-    CHECK(planet.conditions == 100);                // defaults when the file gives none
+    CHECK(planet.conditions == Conditions::hundredths(100));  // defaults when the file gives none
     CHECK(planet.value == std::array<int, 3>{100, 100, 100});
 }
 
@@ -413,7 +413,7 @@ TEST_CASE("maps: the example in docs/MAPS.md loads") {
     const Galaxy& g = m->map.galaxy;
     REQUIRE(g.systems.size() == 2);
     REQUIRE(g.objects.size() == 3);
-    CHECK(g.objects[0].conditions == 90);
+    CHECK(g.objects[0].conditions == Conditions::hundredths(90));
     CHECK(g.objects[1].destination == ObjectId{2u});
     CHECK(g.objects[2].destination == ObjectId{1u});
     REQUIRE(m->map.startingPoints.size() == 2);

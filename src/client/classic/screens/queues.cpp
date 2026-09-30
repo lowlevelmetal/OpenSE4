@@ -292,7 +292,7 @@ private:
                 switch (tab_) {
                     case QueueTab::Rate: return i == 0 ? r.rate.total() : 0;
                     case QueueTab::Usage: return i == 0 ? r.usage.total() : r.rate.total() > 0 ? r.usage.total() * 100 / r.rate.total() : 0;
-                    case QueueTab::PlanetValue: return !o ? -1 : i == 0 ? o->conditions : o->value[i - 1];
+                    case QueueTab::PlanetValue: return !o ? -1 : i == 0 ? o->conditions.inHundredths() : o->value[i - 1];
                     case QueueTab::Facilities: return i == 0 ? r.facilities : r.freeSlots;
                     case QueueTab::Cargo: return i == 0 ? r.cargoUsed : r.cargoCapacity - r.cargoUsed;
                 }

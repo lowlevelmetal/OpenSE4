@@ -286,6 +286,7 @@ template <class Ar> void io(Ar& ar, Resources& r) { fields(ar, r.v); }
 template <class Ar> void io(Ar& ar, Sector& s) { fields(ar, s.x, s.y); }
 template <class Ar> void io(Ar& ar, Location& l) { fields(ar, l.system, l.sector); }
 template <class Ar> void io(Ar& ar, GalaxyPos& p) { fields(ar, p.x, p.y); }
+template <class Ar> void io(Ar& ar, Conditions& c) { fields(ar, c.bits); }
 
 template <class Ar>
 void io(Ar& ar, SpaceObject& o) {

@@ -1532,11 +1532,12 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
                     p.plague = std::max(p.plague, 1 + static_cast<int>(type) - static_cast<int>(DamageType::PlagueLevel1));
                 return;
             case DamageType::OnlyPlanetPopulation: populationLoss(att, t, std::max<int64_t>(1, rem / cs_.damagePerPopulation)); return;
-            case DamageType::OnlyPlanetConditions:
-                // D × 0.1 on the 0-1.5 conditions scale (confirmed: binary); SpaceObject::conditions
-                // holds hundredths of that scale (spec 02 §2), so the loss is D × 10.
-                p.conditionsLost += rem * 10;
+            case DamageType::OnlyPlanetConditions: {
+                // Conditions drop by D × 0.1, never below 0 (confirmed: binary), hit by hit.
+                SpaceObject& obj = s_.galaxy.object(p.object);
+                obj.conditions = conditionsPlus(obj.conditions, -(xmath::Ext(rem) * (xmath::Ext(1) / xmath::Ext(10))));
                 return;
+            }
             case DamageType::OnlyResupplyDepots:
             case DamageType::OnlySpaceports: {
                 const AbilityKind k = type == DamageType::OnlySpaceports ? AbilityKind::Spaceport : AbilityKind::SupplyGeneration;
@@ -2622,7 +2623,7 @@ void Battle::finish() {
         }
     }
 
-    // Planets: cargo, population, facilities, plague, conditions, lost and captured colonies.
+    // Planets: cargo, population, facilities, plague, lost and captured colonies.
     for (Piece& p : pieces_) {
         if (p.kind != Kind::Planet && !p.colonyLost) continue;
         Colony* c = s_.colony(p.object);
@@ -2647,10 +2648,6 @@ void Battle::finish() {
         c->facilities = p.facilities;
         c->militia = p.militia;
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
-        if (p.conditionsLost > 0) {
-            SpaceObject& obj = s_.galaxy.object(p.object);
-            obj.conditions = static_cast<int>(std::clamp<int64_t>(obj.conditions - p.conditionsLost, 0, economy::kConditionsMax));   // 0-1.5 in hundredths
-        }
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);
         if (invaders(r_, s_, *c).empty()) c->militia = -1;
     }

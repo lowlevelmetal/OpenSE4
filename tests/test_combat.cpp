@@ -1079,11 +1079,11 @@ TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
     GameState& s = ar.s;
     Colony& home = homeworld(s, ar.b);
     home.population = {{ar.b, 1000}};
-    s.galaxy.object(home.planet).conditions = 120;   // hundredths of the 0-1.5 scale
+    s.galaxy.object(home.planet).conditions = Conditions::hundredths(120);
     spawn(s, frigate(s, ar.a, "Polluter", 3, {"CT Climate Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
     TurnContext ctx = context(s);
     combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
-    const int after = s.galaxy.object(home.planet).conditions;
+    const int64_t after = s.galaxy.object(home.planet).conditions.inHundredths();
     CHECK(after < 120);
     CHECK(after >= 0);
     CHECK((120 - after) % 10 == 0);   // each 1-point hit costs 0.1

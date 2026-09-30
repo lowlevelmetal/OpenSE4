@@ -1597,8 +1597,8 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     CHECK(made.kind == ObjectKind::Planet);
     CHECK(made.size == "Small");
     CHECK(made.value == std::array<int, 3>{70, 80, 90});
-    CHECK(made.conditions >= 50);
-    CHECK(made.conditions <= 150);
+    CHECK(made.conditions >= Conditions::hundredths(50));
+    CHECK(made.conditions <= kOptimalConditions);
     CHECK(made.name == "A I");                    // the next free numeral
     CHECK(w.s.galaxy.objects.size() == objects);  // converted in place
     CHECK_FALSE(entryIntact(r, w.s, w.v(maker), 7));
@@ -1676,7 +1676,7 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
     const ObjectId planet = w.planet(a, {3, 3});
     w.s.galaxy.object(planet).value = {11, 22, 33};
-    w.s.galaxy.object(planet).conditions = 70;
+    w.s.galaxy.object(planet).conditions = Conditions::hundredths(70);
     w.colony(planet, kA, 500);
     const ObjectId storm = w.object(a, ObjectKind::Storm, {9, 9});
     const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
@@ -1723,7 +1723,7 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     REQUIRE(inSystemList(w.s, planet));
     CHECK(w.s.galaxy.object(planet).kind == ObjectKind::Asteroids);
     CHECK(w.s.galaxy.object(planet).value == std::array<int, 3>{11, 22, 33});
-    CHECK(w.s.galaxy.object(planet).conditions == 70);
+    CHECK(w.s.galaxy.object(planet).conditions == Conditions::hundredths(70));
     CHECK_FALSE(inSystemList(w.s, storm));
     CHECK(inSystemList(w.s, ab));
     CHECK(w.logged(kA, "Star Destroyed"));
@@ -1934,7 +1934,7 @@ TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
     CHECK(world.size == "Ringworld");
     CHECK(world.sector == Sector{6, 6});
     CHECK(world.value == std::array<int, 3>{160, 160, 160});  // Planet Value High Percent
-    CHECK(world.conditions == 150);                            // Optimal
+    CHECK(world.conditions == kOptimalConditions);             // Optimal
     CHECK(world.surface == "Rock");                            // the builder's type and atmosphere
     CHECK(world.atmosphere == "Oxygen");
     CHECK_FALSE(inSystemList(w.s, star));  // the star is used up

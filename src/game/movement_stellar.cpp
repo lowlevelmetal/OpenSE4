@@ -609,7 +609,7 @@ private:
         const bool finite = s_.options.finiteResources;
         const int value = static_cast<int>(r_.setting(finite ? "Planet Value High Resources" : "Planet Value High Percent", finite ? 50000 : 150));
         world.value = {value, value, value};
-        world.conditions = 150;  // Optimal (1.5)
+        world.conditions = kOptimalConditions;  // 1.5
         world.name = planetName(sysId);
         announce(std::format("Planet Created: {}", world.name));
         remove(*plan_.object);  // the star is used up

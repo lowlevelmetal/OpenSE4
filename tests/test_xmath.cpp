@@ -223,6 +223,28 @@ TEST_CASE("xmath: out-of-range values are defined") {
     CHECK(small.trunc() == 0);
 }
 
+TEST_CASE("xmath: doubles kept as bit patterns") {
+    // The rules never use host floating point; the test may, to name doubles.
+    for (const double d : {0.0, 0.1, 0.3, 0.5, 1.0, 1.3, 1.5, 123456.789, -2.5, 1e-300, 1e300}) {
+        const auto bits = std::bit_cast<uint64_t>(d);
+        CHECK(toDoubleBits(fromDoubleBits(bits)) == bits);
+    }
+    CHECK(fromDoubleBits(std::bit_cast<uint64_t>(0.5)) == Ext(1) / Ext(2));
+    CHECK(fromDoubleBits(std::bit_cast<uint64_t>(-3.0)) == Ext(-3));
+    // Storing an extended value keeps the nearest double.
+    CHECK(toDoubleBits(Ext(1) / Ext(10)) == std::bit_cast<uint64_t>(0.1));
+    CHECK(toDoubleBits(Ext(13) / Ext(10)) == std::bit_cast<uint64_t>(1.3));
+    CHECK(toDoubleBits(Ext(1) / Ext(10) + Ext(1) / Ext(2)) == std::bit_cast<uint64_t>(0.6));
+    CHECK(toDoubleBits(Ext(1) / Ext(3)) == std::bit_cast<uint64_t>(1.0 / 3.0));
+    // The double nearest 0.3 lies below the extended 0.3.
+    CHECK(fromDoubleBits(std::bit_cast<uint64_t>(0.3)) < Ext(3) / Ext(10));
+    CHECK(fromDoubleBits(std::bit_cast<uint64_t>(1.3)) > Ext(13) / Ext(10));
+    // fromParts: ±significand × 2^exponent.
+    CHECK(Ext::fromParts(false, 3, -1) == Ext(3) / Ext(2));
+    CHECK(Ext::fromParts(true, 5, 2) == Ext(-20));
+    CHECK(Ext::fromParts(false, 0, 7).isZero());
+}
+
 #if defined(__SIZEOF_INT128__)
 
 namespace {
