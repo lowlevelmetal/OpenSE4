@@ -710,3 +710,10 @@ name/date/summary, can be shown from our own saves.
     0-based for torpedoes by firing known weapons in the combat simulator.
 18. **Ship naming.** Confirm the `<name-list entry> <serial> (<code>)` pattern and how
     serials are assigned.
+19. **Planets filters.** What Coloniz\Empty adds to Colonizable (our client assumes: no
+    other empire has a colony in that system), which treaties make a colony an "ally"
+    one (we use Non-Aggression or better), and what makes a planet Special (we use: it
+    has stellar abilities such as ruins or value bonuses). (inferred)
+20. **Construction Queues toggles.** What Ships and Ship SY each include. Our client
+    assumes Ships = mobile ships with a space yard, Ship SY = bases with one, Planets =
+    colonies without a yard, Planet SY = colonies with one. (inferred)
