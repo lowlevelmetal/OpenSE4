@@ -114,8 +114,7 @@ questions are what the observation sessions still have to settle.
   - reconnect and chat;
   - the computer taking over empires that are missing.
 - [x] Dedicated server `opense4-server`, and PBEM (`pbem new|process|orders|info`).
-- [ ] Per-player fog-of-war in network state (every client currently receives the
-      full state).
+- [x] Fog of war in network games: each player receives only their empire's view.
 - [ ] Scenarios and the tutorial script format.
 
 ### M9: Our own content
@@ -131,4 +130,4 @@ questions are what the observation sessions still have to settle.
    - AI thresholds.
 2. The tactical combat screen.
 3. Sound and music.
-4. Fog-of-war redaction for network games.
+4. Encrypted connections, and per-player views for PBEM.
