@@ -42,7 +42,8 @@ CombatPlayback::CombatPlayback(const game::CombatRecord& record) : record_(&reco
     start_.resize(record.pieces.size());
     std::vector<uint8_t> launched(record.pieces.size(), 0);
     for (const game::CombatEvent& e : events)
-        if (e.kind == Kind::Launch && e.target < launched.size()) launched[e.target] = 1;
+        if (e.kind == Kind::Launch && e.piece < launched.size() && record.pieces[e.piece].kind == game::CombatPiece::Kind::UnitGroup)
+            launched[e.piece] = 1;
     bool first = true;
     auto extend = [&](int x, int y) {
         if (first) {
@@ -125,13 +126,14 @@ void CombatPlayback::apply(const game::CombatEvent& e) {
             if (validPiece(e.target) && e.target != e.piece) p.owner = pieces_[e.target].owner;
             break;
         case Kind::Launch:
-            if (validPiece(e.target)) {
-                Piece& t = pieces_[e.target];
-                t.onMap = true;
-                t.destroyed = false;
-                t.x = t.fromX = e.x;
-                t.y = t.fromY = e.y;
-                t.heading = p.heading;
+            // `piece` is the new unit group, `target` its carrier. A troop ship
+            // landing troops (piece = the ship, target = the planet) places nothing.
+            if (record_ && record_->pieces[e.piece].kind == game::CombatPiece::Kind::UnitGroup) {
+                p.onMap = true;
+                p.destroyed = false;
+                p.x = p.fromX = e.x;
+                p.y = p.fromY = e.y;
+                if (validPiece(e.target)) p.heading = pieces_[e.target].heading;
             }
             break;
         case Kind::Seeker:

@@ -50,7 +50,7 @@ CombatRecord battle() {
         ev(K::Fire, 1, 0, 1),
         ev(K::Hit, 1, 0, 1, 0, 0, 12),
         ev(K::Destroyed, 5, 2),  // out of order on purpose
-        ev(K::Launch, 2, 0, 2, 5, 4),
+        ev(K::Launch, 2, 2, 0, 5, 4),
         ev(K::Seeker, 2, 3, 0, 7, 5),
         ev(K::Fire, 2, 1, 0),
         ev(K::Miss, 2, 1, 0),

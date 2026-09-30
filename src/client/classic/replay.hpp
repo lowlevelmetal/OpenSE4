@@ -5,7 +5,8 @@
 // tracks where every piece is after any number of events and drives timed
 // playback; drawing lives in screens/combat_replay.cpp.
 //
-// How events are read (the recording side is the combat engine):
+// How events are read (the recording side is the combat engine; see the
+// encoding in game/combat.hpp):
 //   Move       `piece` moves to square (x, y).
 //   Fire       `piece` fires weapon `component` (Components.txt index) at `target`.
 //   Hit        `piece`'s shot hits `target` for `amount` damage.
@@ -13,7 +14,8 @@
 //   Destroyed  `piece` is destroyed (and leaves the map).
 //   Captured   `piece` is captured; its new owner is the owner of piece `target`
 //              (when `target` names another piece).
-//   Launch     `piece` launches piece `target`, which appears at (x, y).
+//   Launch     unit group `piece` is launched by carrier `target` and appears at
+//              (x, y); or troop ship `piece` lands troops on planet `target`.
 //   Seeker     seeker piece `piece` flies to (x, y) toward `target`; it appears
 //              on its first event.
 // Pieces of kind Seeker, and pieces launched by a Launch event, start off the

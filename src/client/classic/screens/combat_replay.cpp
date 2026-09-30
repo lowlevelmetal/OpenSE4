@@ -238,7 +238,7 @@ private:
                 return e.target < record_.pieces.size() && e.target != e.piece
                            ? std::format("{} is captured by {}", pieceName(ui, e.piece), empireName(ui, playback_.pieces()[e.target].owner))
                            : std::format("{} is captured", pieceName(ui, e.piece));
-            case Kind::Launch: return std::format("{} launches {}", pieceName(ui, e.piece), pieceName(ui, e.target));
+            case Kind::Launch: return std::format("{} launches {}", pieceName(ui, e.target), pieceName(ui, e.piece));
             case Kind::Seeker: return std::format("{} closes on {}", pieceName(ui, e.piece), pieceName(ui, e.target));
         }
         return {};
@@ -544,7 +544,7 @@ private:
                 break;
             }
             case Kind::Launch: {
-                const ImVec2 c = pieceCenter(v, e.target, float(e.x), float(e.y));
+                const ImVec2 c = pieceCenter(v, e.piece, float(e.x), float(e.y));
                 dl->AddCircle(c, v.cell * (0.2f + 0.6f * t), IM_COL32(200, 230, 255, int(255 * (1 - t))), 0, ui.px(2));
                 break;
             }

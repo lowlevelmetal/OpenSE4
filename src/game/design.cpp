@@ -329,20 +329,26 @@ std::optional<uint32_t> bestComponent(const Rules& r, const Empire& e, VehicleTy
 }
 
 std::optional<uint32_t> bestWeapon(const Rules& r, const Empire& e, VehicleType type, WeaponKind kind) {
-    std::optional<uint32_t> best;
-    int64_t bestScore = 0;
-    for (uint32_t i = 0; i < r.data().components.size(); ++i) {
-        const auto& c = r.component(i);
-        if (c.weapon.kind != kind || !(c.vehicles & ruleset::maskOf(type)) || !r.componentAvailable(e, i)) continue;
-        int64_t total = 0;
-        for (int d : c.weapon.damageAtRange) total += d;
-        const int64_t score = total * 100 / std::max(1, c.tonnage) / std::max(1, c.weapon.reloadRate);
-        if (!best || score > bestScore) {
-            best = i;
-            bestScore = score;
+    // General-purpose weapons only: special damage types (shields only,
+    // population only, ...) cannot hurt every target. Fall back to any.
+    for (const bool generalOnly : {true, false}) {
+        std::optional<uint32_t> best;
+        int64_t bestScore = 0;
+        for (uint32_t i = 0; i < r.data().components.size(); ++i) {
+            const auto& c = r.component(i);
+            if (c.weapon.kind != kind || !(c.vehicles & ruleset::maskOf(type)) || !r.componentAvailable(e, i)) continue;
+            if (generalOnly && !c.weapon.damageType.empty() && !datafile::keysEqual(c.weapon.damageType, "Normal")) continue;
+            int64_t total = 0;
+            for (int d : c.weapon.damageAtRange) total += d;
+            const int64_t score = total * 100 / std::max(1, c.tonnage) / std::max(1, c.weapon.reloadRate);
+            if (!best || score > bestScore) {
+                best = i;
+                bestScore = score;
+            }
         }
+        if (best) return best;
     }
-    return best;
+    return std::nullopt;
 }
 
 // Armor: a component whose only role is structure (has the Armor ability).
