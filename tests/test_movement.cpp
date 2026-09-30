@@ -1191,53 +1191,93 @@ TEST_CASE("movement: training facilities raise ship and fleet experience up to t
 TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     World w;
     const Rules& r = w.rules();
-    const SystemId a = w.system("A");
+    const SystemId a = w.system("A"), bare = w.system("Bare", 5, 0);
     w.object(a, ObjectKind::Star, {6, 6});
-    const ObjectId rocks = w.object(a, ObjectKind::Asteroids, {2, 2});
+    const ObjectId rocks = w.object(a, ObjectKind::Asteroids, {2, 2});  // a Small field
+    w.s.galaxy.object(rocks).value = {70, 80, 90};
     const size_t objects = w.s.galaxy.objects.size();
 
+    // A visible ship of an empire without a Non-Aggression treaty in the sector prevents it.
     const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Planet Maker"}), at(a, 2, 2));
+    const VehicleId intruder = w.spawn(w.ship(kB, "Intruder", 1), at(a, 2, 2));
+    w.order(maker, stellar(StellarAction::CreatePlanet, rocks));
+    w.move();
+    CHECK(w.logged(kA, "hostile"));
+    CHECK(w.s.galaxy.object(rocks).kind == ObjectKind::Asteroids);
+    w.v(intruder).count = 0;
+    w.s.removeDeadVehicles();
+
+    // The planet has exactly min(Val 1, the field's size): Small; it keeps the values.
     w.order(maker, stellar(StellarAction::CreatePlanet, rocks));
     w.move();
     const SpaceObject& made = w.s.galaxy.object(rocks);
     CHECK(made.kind == ObjectKind::Planet);
-    CHECK((made.size == "Medium" || made.size == "Small"));
+    CHECK(made.size == "Small");
+    CHECK(made.value == std::array<int, 3>{70, 80, 90});
+    CHECK(made.conditions >= 50);
+    CHECK(made.conditions <= 150);
+    CHECK(made.name == "A I");                    // the next free numeral
     CHECK(w.s.galaxy.objects.size() == objects);  // converted in place
     CHECK_FALSE(entryIntact(r, w.s, w.v(maker), 7));
     CHECK(w.v(maker).supply == 50);
     CHECK(w.v(maker).orders.empty());
-    CHECK(w.logged(kA, "Planet created"));
+    CHECK(w.logged(kA, "Planet Created"));
 
-    // Destroy it again; the colony on it is lost.
+    // No star in the system: no planet.
+    const ObjectId lonely = w.object(bare, ObjectKind::Asteroids, {3, 3});
+    const VehicleId m2 = w.spawn(w.ship(kA, "M2", 3, {"Mv Planet Maker"}), at(bare, 3, 3));
+    w.order(m2, stellar(StellarAction::CreatePlanet, lonely));
+    w.move();
+    CHECK(w.logged(kA, "needs a star"));
+    CHECK(w.s.galaxy.object(lonely).kind == ObjectKind::Asteroids);
+
+    // Destroy it again; the colony on it is lost. Colonies of empires at peace do not prevent it.
+    w.s.empire(kA).relation(kB).contact = w.s.empire(kB).relation(kA).contact = true;
+    w.setTreaty(kA, kB, Treaty::NonAggression);
     w.colony(rocks, kB, 500);
     const VehicleId breaker = w.spawn(w.ship(kA, "Breaker", 3, {"Mv Planet Breaker"}), at(a, 2, 2));
     w.order(breaker, stellar(StellarAction::DestroyPlanet));
     w.move();
     CHECK(w.s.galaxy.object(rocks).kind == ObjectKind::Asteroids);
+    CHECK(w.s.galaxy.object(rocks).name == "A I");  // keeps its name and values
+    CHECK(w.s.galaxy.object(rocks).value == std::array<int, 3>{70, 80, 90});
     CHECK(w.s.colony(rocks) == nullptr);
     CHECK(w.logged(kB, "lost"));
+    CHECK(w.logged(kA, "Planet Destroyed"));
     CHECK(hasMood(w.lastMoods, kB, "Any Planet Lost"));
 
-    // Protected and oversized planets survive.
+    // A guard in the planet's sector protects it (whoever owns it); one elsewhere does not.
     const ObjectId guarded = w.planet(a, {4, 4});
-    w.colony(guarded, kB, 500, {"Mv Planet Guard"});
-    const ObjectId big = w.planet(a, {8, 8}, "Rock", "Oxygen", "Large");
+    w.colony(guarded, kA, 500, {"Mv Planet Guard"});  // the acting empire's own guard counts too
+    const ObjectId open = w.planet(a, {9, 9});
+    const ObjectId big = w.planet(a, {8, 8}, "Rock", "Oxygen", "Large");  // PlanetSize record 4 > Val 1 = 3
     const VehicleId b2 = w.spawn(w.ship(kA, "B2", 3, {"Mv Planet Breaker"}), at(a, 4, 4));
     const VehicleId b3 = w.spawn(w.ship(kA, "B3", 3, {"Mv Planet Breaker"}), at(a, 8, 8));
+    const VehicleId b4 = w.spawn(w.ship(kA, "B4", 3, {"Mv Planet Breaker"}), at(a, 9, 9));
     w.order(b2, stellar(StellarAction::DestroyPlanet, guarded));
     w.order(b3, stellar(StellarAction::DestroyPlanet, big));
+    w.order(b4, stellar(StellarAction::DestroyPlanet, open));
     w.move();
     CHECK(w.s.galaxy.object(guarded).kind == ObjectKind::Planet);
     CHECK(w.s.galaxy.object(big).kind == ObjectKind::Planet);
+    CHECK(w.s.galaxy.object(open).kind == ObjectKind::Asteroids);
     CHECK(w.logged(kA, "protected"));
     CHECK(w.logged(kA, "too large"));
     CHECK(entryIntact(r, w.s, w.v(b2), 7));
 
-    // No movement left, no manipulation.
+    // No movement left, cloaked, or short of supply: no manipulation.
     const VehicleId stuck = w.spawn(w.design(kA, "Stuck", "Test Frigate", {"Test Bridge", "Mv Storm Maker"}), at(a, 1, 1));
     w.order(stuck, stellar(StellarAction::CreateStorm));
+    const VehicleId hidden = w.spawn(w.ship(kA, "Hidden", 3, {"Mv Storm Maker", "Mv Cloak"}), at(a, 1, 2));
+    w.v(hidden).status = VehicleStatus::Cloaked;
+    w.order(hidden, stellar(StellarAction::CreateStorm));
+    const VehicleId dry = w.spawn(w.ship(kA, "Dry", 3, {"Mv Planet Maker"}), at(bare, 3, 3));
+    w.v(dry).supply = 10;
+    w.order(dry, stellar(StellarAction::CreatePlanet, lonely));
     w.move();
     CHECK(w.logged(kA, "No movement left"));
+    CHECK(w.logged(kA, "cloaked"));
+    CHECK(w.logged(kA, "Not enough supply"));
     CHECK(countKind(w.s, a, ObjectKind::Storm) == 0);
 }
 
@@ -1246,11 +1286,15 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     const SystemId a = w.system("A"), b = w.system("B", 5, 0);
     const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
     const ObjectId planet = w.planet(a, {3, 3});
-    w.colony(planet, kB, 500);
+    w.s.galaxy.object(planet).value = {11, 22, 33};
+    w.s.galaxy.object(planet).conditions = 70;
+    w.colony(planet, kA, 500);
+    const ObjectId storm = w.object(a, ObjectKind::Storm, {9, 9});
     const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
     const VehicleId victim = w.spawn(w.ship(kB, "Victim", 1), at(a, 1, 1));
 
-    const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Star Maker"}), at(a, 2, 9));
+    // A star in a starless system, wherever the ship is.
+    const VehicleId maker = w.spawn(w.ship(kA, "Maker", 3, {"Mv Star Maker"}), at(b, 2, 9));
     w.order(maker, stellar(StellarAction::CreateStar));
     const size_t before = w.s.galaxy.objects.size();
     w.move();
@@ -1258,42 +1302,59 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     const ObjectId born{before};
     CHECK(w.s.galaxy.object(born).kind == ObjectKind::Star);
     CHECK(w.s.galaxy.object(born).sector == Sector{2, 9});
+    CHECK(w.s.galaxy.object(born).name == "B Star");
     CHECK(inSystemList(w.s, born));
     CHECK(w.s.colonies.size() == w.s.galaxy.objects.size());
     CHECK(w.s.empire(kA).knowledge.knownWarpLink.size() == w.s.galaxy.objects.size());
+    CHECK(w.logged(kA, "Star Created"));
+    // Only one star per system (a destroyed star counts).
+    const VehicleId again = w.spawn(w.ship(kA, "Again", 3, {"Mv Star Maker"}), at(b, 4, 4));
+    w.order(again, stellar(StellarAction::CreateStar));
+    w.move();
+    CHECK(w.logged(kA, "already has a star"));
 
-    // A guarded star cannot be destroyed.
-    w.colony(planet, kB, 500, {"Mv Star Guard"});
+    // A guard on any owned object in the system protects the star, the acting empire's own included.
+    w.colony(planet, kA, 500, {"Mv Star Guard"});
     const VehicleId nova = w.spawn(w.ship(kA, "Nova", 3, {"Mv Star Breaker"}), at(a, 6, 6));
     w.order(nova, stellar(StellarAction::DestroyStar, star));
     w.move();
     CHECK(w.s.galaxy.object(star).kind == ObjectKind::Star);
     CHECK(w.logged(kA, "protected"));
 
-    // Unguarded: the whole system goes, warp points excepted.
-    w.colony(planet, kB, 500);
+    // Unguarded: the shockwave. Planets become asteroid fields that keep their
+    // name, values and conditions; everything else but warp points is gone.
+    w.colony(planet, kA, 500);
     w.order(nova, stellar(StellarAction::DestroyStar, star));
     w.move();
-    CHECK(w.s.galaxy.object(star).kind == ObjectKind::DestroyedStar);
+    CHECK_FALSE(inSystemList(w.s, star));  // no destroyed star remains
+    CHECK(countKind(w.s, a, ObjectKind::DestroyedStar) == 0);
     CHECK(w.s.vehicle(nova) == nullptr);
     CHECK(w.s.vehicle(victim) == nullptr);
-    CHECK(w.s.vehicle(maker) == nullptr);
     CHECK(w.s.colony(planet) == nullptr);
-    CHECK_FALSE(inSystemList(w.s, planet));
-    CHECK_FALSE(inSystemList(w.s, born));
+    REQUIRE(inSystemList(w.s, planet));
+    CHECK(w.s.galaxy.object(planet).kind == ObjectKind::Asteroids);
+    CHECK(w.s.galaxy.object(planet).value == std::array<int, 3>{11, 22, 33});
+    CHECK(w.s.galaxy.object(planet).conditions == 70);
+    CHECK_FALSE(inSystemList(w.s, storm));
     CHECK(inSystemList(w.s, ab));
+    CHECK(w.logged(kA, "Star Destroyed"));
+    CHECK(w.s.galaxy.system(a).physicalType == "Normal");
 
-    // Nebulae: made from a star, wiping the system; then removed.
+    // Nebulae: made from a star, with the shockwave; then removed.
     World n;
     const SystemId na = n.system("N");
     n.object(na, ObjectKind::Star, {6, 6});
+    const ObjectId np = n.planet(na, {2, 2});
     const VehicleId gone = n.spawn(n.ship(kB, "Gone", 1), at(na, 0, 0));
     const VehicleId fog = n.spawn(n.ship(kA, "Fog", 3, {"Mv Nebula Maker"}), at(na, 6, 6));
     n.order(fog, stellar(StellarAction::CreateNebulae));
     n.move();
     CHECK(n.s.galaxy.system(na).physicalType == "Nebulae");
     REQUIRE(n.s.galaxy.system(na).abilities.size() == 1);
+    CHECK(n.s.galaxy.system(na).abilities[0].number1() == 3);
+    CHECK(n.rules().data().systemTypes[n.s.galaxy.system(na).type.index()].physicalType == "Nebulae");  // a nebula backdrop
     CHECK(countKind(n.s, na, ObjectKind::Star) == 0);
+    CHECK(n.s.galaxy.object(np).kind == ObjectKind::Asteroids);
     CHECK(n.s.vehicle(gone) == nullptr);
     CHECK(n.s.vehicle(fog) == nullptr);
     // No stars can be made in a nebula.
@@ -1306,16 +1367,24 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     n.move();
     CHECK(n.s.galaxy.system(na).physicalType == "Normal");
     CHECK(n.s.galaxy.system(na).abilities.empty());
+    CHECK(n.s.galaxy.object(np).kind == ObjectKind::Asteroids);  // objects untouched
 
-    // Black holes.
+    // Black holes: pull 2, centre damage 5000, shield disruption 5000.
     World h;
     const SystemId ha = h.system("H");
     h.object(ha, ObjectKind::Star, {6, 6});
     const VehicleId hole = h.spawn(h.ship(kA, "Hole", 3, {"Mv Hole Maker"}), at(ha, 6, 6));
     h.order(hole, stellar(StellarAction::CreateBlackHole));
     h.move();
-    CHECK(h.s.galaxy.system(ha).physicalType == "Black Hole");
-    CHECK(h.s.galaxy.system(ha).abilities.size() == 2);
+    const StarSystem& hs = h.s.galaxy.system(ha);
+    CHECK(hs.physicalType == "Black Hole");
+    REQUIRE(hs.abilities.size() == 3);
+    CHECK(parseAbilityKind(hs.abilities[0].type) == AbilityKind::SystemMovementTowardsCenter);
+    CHECK(hs.abilities[0].number1() == 2);
+    CHECK(parseAbilityKind(hs.abilities[1].type) == AbilityKind::SystemDestructiveCenter);
+    CHECK(hs.abilities[1].number1() == 5000);
+    CHECK(parseAbilityKind(hs.abilities[2].type) == AbilityKind::SectorShieldDisruption);
+    CHECK(hs.abilities[2].number1() == 5000);
     const VehicleId notNebula = h.spawn(h.ship(kA, "Wrong", 3, {"Mv Nebula Breaker"}), at(ha, 0, 0));
     h.order(notNebula, stellar(StellarAction::DestroyNebulae));
     const VehicleId fix = h.spawn(h.ship(kA, "Fix", 3, {"Mv Hole Breaker"}), at(ha, 0, 0));
@@ -1330,12 +1399,12 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
 TEST_CASE("movement: stellar manipulation - opening and closing warp points") {
     World w;
     const Rules& r = w.rules();
-    const SystemId a = w.system("A", 0, 0), b = w.system("B", 5, 0), c = w.system("C", 30, 0);
+    const SystemId a = w.system("A", 0, 0), b = w.system("B", 5, 0), c = w.system("C", 30, 0), d = w.system("D", 3, 4);
     const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
     w.exploreAll(kA);
 
     const VehicleId opener = w.spawn(w.ship(kA, "Opener", 3, {"Mv Warp Opener"}), at(a, 0, 0));
-    w.order(opener, stellar(StellarAction::OpenWarpPoint, {}, at(b, 6, 6)));  // not an edge sector
+    w.order(opener, stellar(StellarAction::OpenWarpPoint, {}, at(d, 6, 6)));  // the target sector is not used
     const size_t before = w.s.galaxy.objects.size();
     w.move();
     REQUIRE(w.s.galaxy.objects.size() == before + 2);
@@ -1344,45 +1413,62 @@ TEST_CASE("movement: stellar manipulation - opening and closing warp points") {
     CHECK(w.s.galaxy.object(here).sector == Sector{0, 0});
     CHECK(w.s.galaxy.object(here).destination == there);
     CHECK(w.s.galaxy.object(there).destination == here);
-    CHECK(w.s.galaxy.object(there).system == b);
-    CHECK(w.s.galaxy.object(there).sector == Sector{0, 5});  // the free edge sector facing A
+    CHECK(w.s.galaxy.object(there).system == d);
+    // The far end: edge placement facing the origin.
+    CHECK(w.s.galaxy.object(there).sector == warpEdgeSector(galaxyBearing({3, 4}, {0, 0}), {}));
+    CHECK(w.s.galaxy.object(there).sector == Sector{4, 0});
+    CHECK(w.s.galaxy.object(here).abilities.empty());
+    CHECK_FALSE(r.data().sectorObjectTypes[w.s.galaxy.object(here).sectorType].unusual);
     CHECK(sight::knowsWarpLink(w.s, kA, here));
     CHECK(w.s.colonies.size() == w.s.galaxy.objects.size());
     CHECK(countKind(w.s, a, ObjectKind::WarpPoint) == 2);
-    const auto shortcut = movement::findPath(r, w.s, kA, at(a, 0, 0), at(b, 0, 5));
+    CHECK(w.logged(kA, "Warp Point Opened"));
+    const auto shortcut = movement::findPath(r, w.s, kA, at(a, 0, 0), at(d, 4, 0));
     REQUIRE(shortcut);
     CHECK(shortcut->length == 1);
 
-    // Out of range, and blocked by a guard at the far end.
+    // Already linked, out of range (distance 30 > 10), and blocked by a guard at the far end.
+    const VehicleId twice = w.spawn(w.ship(kA, "Twice", 3, {"Mv Warp Opener"}), at(a, 3, 3));
+    w.order(twice, stellar(StellarAction::OpenWarpPoint, {}, at(b, 0, 0)));
     const VehicleId far = w.spawn(w.ship(kA, "Far", 3, {"Mv Warp Opener"}), at(a, 1, 1));
     w.order(far, stellar(StellarAction::OpenWarpPoint, {}, at(c, 0, 0)));
-    w.colony(w.planet(b, {5, 5}), kB, 100, {"Mv Warp Guard"});
+    const SystemId e = w.system("E", 0, 6);
+    w.colony(w.planet(e, {5, 5}), kA, 100, {"Mv Warp Guard"});
     const VehicleId blocked = w.spawn(w.ship(kA, "Blocked", 3, {"Mv Warp Opener"}), at(a, 2, 2));
-    w.order(blocked, stellar(StellarAction::OpenWarpPoint, {}, at(b, 0, 0)));
+    w.order(blocked, stellar(StellarAction::OpenWarpPoint, {}, at(e, 0, 0)));
+    const size_t mid = w.s.galaxy.objects.size();
     w.move();
+    CHECK(w.logged(kA, "already leads there"));
     CHECK(w.logged(kA, "out of range"));
     CHECK(w.logged(kA, "blocked"));
-    CHECK(w.s.galaxy.objects.size() == before + 3);  // only the guard's planet was added
+    CHECK(w.s.galaxy.objects.size() == mid);
 
-    // A sector picked on the target's edge is used for the far end.
-    World e;
-    const SystemId ea = e.system("A", 0, 0), eb = e.system("B", 5, 0);
-    const VehicleId picker = e.spawn(e.ship(kA, "Picker", 3, {"Mv Warp Opener"}), at(ea, 3, 3));
-    e.order(picker, stellar(StellarAction::OpenWarpPoint, {}, at(eb, 12, 12)));
-    e.move();
-    REQUIRE(e.s.galaxy.objects.size() == 2);
-    CHECK(e.s.galaxy.objects[1].system == eb);
-    CHECK(e.s.galaxy.objects[1].sector == Sector{12, 12});
+    // A system never holds more than 10 warp points.
+    World full;
+    const SystemId fa = full.system("Hub", 20, 20);
+    for (int i = 0; i < 10; ++i) {
+        const SystemId spoke = full.system("Spoke " + std::to_string(i), 20 + (i % 5) * 3 - 6, 20 + (i / 5) * 12 - 6);
+        full.link(fa, {12, i}, spoke, {0, 6});
+    }
+    const SystemId extra = full.system("Extra", 22, 22);
+    const VehicleId crowd = full.spawn(full.ship(kA, "Crowd", 3, {"Mv Warp Opener"}), at(fa, 6, 6));
+    full.order(crowd, stellar(StellarAction::OpenWarpPoint, {}, at(extra, 0, 0)));
+    full.move();
+    CHECK(full.logged(kA, "Too many warp points"));
 
-    // Closing removes both ends; closing again is a harmless no-op.
+    // Closing removes both ends; closing again is a harmless no-op; a guard in either system blocks it.
     World k;
-    const SystemId ka = k.system("A"), kb = k.system("B", 5, 0);
+    const SystemId ka = k.system("A"), kb = k.system("B", 5, 0), kc = k.system("C", 0, 5);
     const auto [kab, kba] = k.link(ka, {12, 6}, kb, {0, 6});
+    const auto [kac, kca] = k.link(ka, {6, 12}, kc, {6, 0});
+    k.colony(k.planet(kc, {2, 2}), kB, 100, {"Mv Warp Guard"});
     k.exploreAll(kA);
     const VehicleId closer = k.spawn(k.ship(kA, "Closer", 3, {"Mv Warp Closer"}), at(ka, 12, 6));
     const VehicleId late = k.spawn(k.ship(kA, "Late", 3, {"Mv Warp Closer"}), at(ka, 12, 6));
+    const VehicleId guardedCloser = k.spawn(k.ship(kA, "Guarded", 3, {"Mv Warp Closer"}), at(ka, 6, 12));
     k.order(closer, stellar(StellarAction::CloseWarpPoint, kab));
     k.order(late, stellar(StellarAction::CloseWarpPoint, kab));
+    k.order(guardedCloser, stellar(StellarAction::CloseWarpPoint, kac));
     k.move();
     CHECK_FALSE(inSystemList(k.s, kab));
     CHECK_FALSE(inSystemList(k.s, kba));
@@ -1391,12 +1477,15 @@ TEST_CASE("movement: stellar manipulation - opening and closing warp points") {
     CHECK_FALSE(entryIntact(r, k.s, k.v(closer), 7));
     CHECK(entryIntact(r, k.s, k.v(late), 7));
     CHECK(k.v(late).orders.empty());
+    CHECK(inSystemList(k.s, kac));
+    CHECK(k.logged(kA, "closure is blocked"));
+    CHECK(k.logged(kA, "Warp Point Closed"));
     (void)ba;
+    (void)kca;
 }
 
 TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
     World w;
-    const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const ObjectId star = w.object(a, ObjectKind::Star, {6, 6});
     const ObjectId storm = w.object(a, ObjectKind::Storm, {8, 8});
@@ -1411,33 +1500,59 @@ TEST_CASE("movement: stellar manipulation - storms and constructed worlds") {
     REQUIRE(w.s.galaxy.objects.size() == before + 1);
     const SpaceObject& made = w.s.galaxy.objects.back();
     CHECK(made.kind == ObjectKind::Storm);
+    CHECK(made.name == "Storm");
     CHECK(made.sector == Sector{10, 10});
     REQUIRE(made.abilities.size() == 1);
+    // The value is the Created Storm Maximum setting itself (2, 7 and 9 in the test rules).
     const auto kind = parseAbilityKind(made.abilities[0].type);
     const int64_t value = made.abilities[0].number1();
-    CHECK(value >= 1);
-    if (kind == AbilityKind::SectorSightObscuration) CHECK(value <= 2);
-    else if (kind == AbilityKind::SectorDamage) CHECK(value <= 7);
-    else CHECK((kind == AbilityKind::SectorShieldDisruption && value <= 9));
+    if (kind == AbilityKind::SectorSightObscuration) CHECK(value == 2);
+    else if (kind == AbilityKind::SectorDamage) CHECK(value == 7);
+    else CHECK((kind == AbilityKind::SectorShieldDisruption && value == 9));
 
-    // A ringworld needs 20 kT of girders at the star.
-    const VehicleId builder = w.spawn(w.ship(kA, "Builder", 3, {"Mv World Builder", "Mv Girder"}), at(a, 6, 6));
+    // Settings of 0 are redrawn: only damage is left.
+    ruleset::Ruleset data = buildRuleset();
+    data.settings.set("Created Storm Maximum Obscuration Level", "0");
+    data.settings.set("Created Storm Maximum Shield Disruption", "0");
+    const Rules onlyDamage{std::move(data)};
+    World d(onlyDamage);
+    const SystemId da = d.system("D");
+    for (int i = 0; i < 4; ++i) {
+        const VehicleId m = d.spawn(d.ship(kA, "M", 3, {"Mv Storm Maker"}), at(da, i, 0));
+        d.order(m, stellar(StellarAction::CreateStorm));
+    }
+    d.move();
+    for (const SpaceObject& o : d.s.galaxy.objects) {
+        REQUIRE(o.abilities.size() == 1);
+        CHECK(parseAbilityKind(o.abilities[0].type) == AbilityKind::SectorDamage);
+    }
+
+    // A ringworld needs 20 kT of girders on ships in the star's sector, whoever owns them.
+    const VehicleId builder = w.spawn(w.design(kA, "Builder", "Test Frigate", {"Test Bridge", "Mv Tank", "Mv World Builder", "Mv Girder"}), at(a, 6, 6));
     w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
     w.move();
     CHECK(w.logged(kA, "materials"));
-    const VehicleId hauler = w.spawn(w.ship(kA, "Girders", 3, {"Mv Girder"}), at(a, 6, 6));
+    w.s.empire(kA).relation(kB).contact = w.s.empire(kB).relation(kA).contact = true;
+    w.setTreaty(kA, kB, Treaty::TradeAlliance);
+    const VehicleId hauler = w.spawn(w.ship(kB, "Girders", 3, {"Mv Girder"}), at(a, 6, 6));
+    const VehicleId bystander = w.spawn(w.ship(kA, "Bystander", 3), at(a, 6, 6));
     w.order(builder, stellar(StellarAction::CreateConstructedPlanet, star));
     const size_t count = w.s.galaxy.objects.size();
-    w.move();
+    w.move();  // no movement needed: the builder has no engines
     REQUIRE(w.s.galaxy.objects.size() == count + 1);
     const SpaceObject& world = w.s.galaxy.objects.back();
     CHECK(world.kind == ObjectKind::Planet);
     CHECK(world.size == "Ringworld");
     CHECK(world.sector == Sector{6, 6});
-    CHECK_FALSE(entryIntact(r, w.s, w.v(builder), 7));  // the builder is used up
-    CHECK_FALSE(entryIntact(r, w.s, w.v(builder), 8));  // and the girders
-    CHECK_FALSE(entryIntact(r, w.s, w.v(hauler), 7));
-    CHECK(w.logged(kA, "Planet constructed"));
+    CHECK(world.value == std::array<int, 3>{160, 160, 160});  // Planet Value High Percent
+    CHECK(world.conditions == 150);                            // Optimal
+    CHECK(world.surface == "Rock");                            // the builder's type and atmosphere
+    CHECK(world.atmosphere == "Oxygen");
+    CHECK_FALSE(inSystemList(w.s, star));  // the star is used up
+    CHECK(w.s.vehicle(builder) == nullptr);   // the builder's ship with the device is destroyed
+    CHECK(w.s.vehicle(hauler) != nullptr);    // another empire's material ships are not
+    CHECK(w.s.vehicle(bystander) != nullptr);
+    CHECK(w.logged(kA, "Planet Created"));
 }
 
 // ---- Determinism --------------------------------------------------------------------------------------
