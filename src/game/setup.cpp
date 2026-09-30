@@ -421,7 +421,10 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         for (const Start& st : roles) {
             auto d = autoDesign(r, s.empires[i], st.role);
             if (!d) continue;
-            d->name = st.name;
+            // Design names are unique in the whole game (spec 03 §4.1): the
+            // plain name when it is free, else prefixed with the empire's name,
+            // else numbered (inferred).
+            d->name = !designNameInUse(s, st.name) ? st.name : uniqueDesignName(s, std::format("{} {}", s.empires[i].name, st.name));
             d->designType = st.designType;
             d->owner = id;
             const DesignId did = addDesign(s, std::move(*d));

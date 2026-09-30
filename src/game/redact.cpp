@@ -1,5 +1,6 @@
 #include "game/redact.hpp"
 
+#include "game/design.hpp"
 #include "game/score.hpp"
 
 #include <algorithm>
@@ -89,16 +90,19 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         c->orders.clear();
     }
 
-    // Designs: foreign designs we have not seen keep only their hull.
+    // Designs: foreign designs we have not seen keep only their hull. No
+    // foreign design shows its statistics (built, lost, kills, enemy tonnage
+    // destroyed): they are the owner's records (inferred).
     std::vector<DesignId> seen = me ? me->knowledge.seenDesigns : std::vector<DesignId>{};
     for (const Vehicle& x : v.vehicles) seen.push_back(x.design);
     std::sort(seen.begin(), seen.end());
     for (Design& d : v.designs) {
-        if (d.owner == viewer || std::binary_search(seen.begin(), seen.end(), d.id)) continue;
+        if (d.owner == viewer) continue;
+        resetDesignStatistics(d);
+        if (std::binary_search(seen.begin(), seen.end(), d.id)) continue;
         d.name = "Unknown design";
         d.designType.clear();
         d.entries.clear();
-        d.built = d.lost = d.kills = 0;
     }
 
     // Messages to or from us; battles we fought; our own pending events.

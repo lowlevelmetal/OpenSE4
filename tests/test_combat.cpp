@@ -798,6 +798,10 @@ TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the 
     CHECK(s.fleet(fid)->experienceTenths <= 1);
     CHECK(s.design(hunterDesign).kills == 1);
     CHECK(s.design(preyDesign).lost == 1);
+    // Enemy tonnage destroyed: the prey's hull tonnage (spec 04 §15; inferred measure).
+    CHECK(s.design(hunterDesign).enemyTonnageDestroyed == combatRules().hull(s.design(preyDesign).hull).tonnage);
+    CHECK(s.design(hunterDesign).enemyTonnageDestroyed > 0);
+    CHECK(s.design(preyDesign).enemyTonnageDestroyed == 0);
 
     CHECK(moodCount(ctx, ar.a, "Battle in System - Win") == 1);
     CHECK(moodCount(ctx, ar.b, "Battle in System - Loss") == 1);
@@ -1131,6 +1135,7 @@ TEST_CASE("combat: unit groups lose members one by one; satellites fire each wea
     CHECK(left < 5);
     CHECK(s.design(sat).lost == 5 - left);
     CHECK(s.design(gunship).kills == 5 - left);
+    CHECK(s.design(gunship).enemyTonnageDestroyed == (5 - left) * int64_t{combatRules().hull(s.design(sat).hull).tonnage});
     CHECK(moodCount(ctx, ar.b, "Any Ship Lost") == 0);   // units are not ships
     // A whole group killed gives +0.1; single members give nothing (spec 04 §15).
     if (left == 0) CHECK(s.vehicle(gun)->experienceTenths == 1);
@@ -1160,6 +1165,7 @@ TEST_CASE("combat: mines strike the entering group only, straight to the compone
         CHECK(s.combats.empty());               // mines are not a battle
         CHECK(moodCount(ctx, ar.a, "Any Ship Lost") == 1);
         CHECK(s.design(mine).kills == 1);
+        CHECK(s.design(mine).enemyTonnageDestroyed == combatRules().hull(s.design(s.vehicle(victim)->design).hull).tonnage);
     }
     {
         Arena ar = makeArena();

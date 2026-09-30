@@ -150,9 +150,25 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
     for (auto c : {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser", "Test Armor Plate"})
         d.entries.push_back({componentIndex(r, c), -1});
     REQUIRE(apply(r, s, me, cmd::CreateDesign{d}).ok);
-    CHECK_FALSE(apply(r, s, me, cmd::CreateDesign{d}).ok);  // duplicate name
     const DesignId warbird = s.empires[0].designs.back();
     CHECK(s.design(warbird).owner == me);
+    CHECK(s.design(warbird).name == "Warbird");
+    // Design names are unique in the whole game (spec 03 §4.1): a name taken
+    // since the order was given gets the first free numeral; renaming refuses.
+    REQUIRE(apply(r, s, them, cmd::CreateDesign{d}).ok);
+    CHECK(s.design(s.empires[1].designs.back()).name == "Warbird II");
+    CHECK(uniqueDesignName(s, "Warbird") == "Warbird III");
+    CHECK(uniqueDesignName(s, "Nightjar") == "Nightjar");
+    CHECK_FALSE(apply(r, s, me, cmd::Rename{{}, {}, warbird, {}, "Warbird II"}).ok);
+    // A new design starts without statistics.
+    Design used = d;
+    used.name = "Veteran";
+    used.built = 4;
+    used.kills = 2;
+    used.enemyTonnageDestroyed = 900;
+    REQUIRE(apply(r, s, me, cmd::CreateDesign{used}).ok);
+    CHECK(s.design(s.empires[0].designs.back()).enemyTonnageDestroyed == 0);
+    CHECK(s.design(s.empires[0].designs.back()).built == 0);
 
     const cmd::QueueTarget q{home.planet, {}};
     QueueItem item;

@@ -348,9 +348,11 @@ struct Design {
     uint32_t strategy = 0;   // index into the owner's strategies
     bool obsolete = false;
     uint32_t createdTurn = 0;
+    // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     int built = 0;
     int lost = 0;
     int kills = 0;
+    int64_t enemyTonnageDestroyed = 0;  // hull tonnage of the enemy vehicles its vehicles destroyed
 };
 
 enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };

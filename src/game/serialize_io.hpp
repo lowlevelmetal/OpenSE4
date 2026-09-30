@@ -385,7 +385,8 @@ template <class Ar> void io(Ar& ar, DesignEntry& d) { fields(ar, d.component, d.
 
 template <class Ar>
 void io(Ar& ar, Design& d) {
-    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills);
+    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills,
+           d.enemyTonnageDestroyed);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }

@@ -571,13 +571,16 @@ struct Applier {
             if (en.component >= r.data().components.size()) return R::fail("Unknown component");
             if (en.mount >= static_cast<int32_t>(r.data().weaponMounts.size())) return R::fail("Unknown mount");
         }
-        for (DesignId id : emp().designs)
-            if (s.design(id).name == d.name) return R::fail("A design with that name exists");
         const DesignStats st = computeDesignStats(r, &emp(), d);
         if (!st.problems.empty()) return R::fail(st.problems.front());
+        // A design name differs from every design in the game (spec 03 §4.1). The
+        // designer offers only free names; a name another empire took since (two
+        // players' orders in one turn, a computer player's name list) gets the
+        // first free numeral instead of refusing the design (inferred).
+        d.name = uniqueDesignName(s, d.name);
         d.owner = e;
         d.createdTurn = s.turn;
-        d.built = d.lost = d.kills = 0;
+        resetDesignStatistics(d);
         d.obsolete = false;
         if (d.strategy >= std::max<size_t>(1, emp().strategies.size())) d.strategy = 0;
         addDesign(s, std::move(d));
