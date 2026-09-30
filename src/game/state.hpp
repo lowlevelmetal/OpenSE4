@@ -586,6 +586,7 @@ struct TurnMoves {
     VehicleId vehicle;
     int steps = 0;
     int bonus = 0;
+    bool operator==(const TurnMoves&) const = default;
 };
 
 // Units launched during the player turn in progress, per launcher and unit
