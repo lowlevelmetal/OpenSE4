@@ -120,8 +120,9 @@ cmake --preset debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
     -DFETCHCONTENT_SOURCE_DIR_IMGUI=/path/to/imgui ...
 ```
 
-The sources for each dependency are also under `build/<preset>/_deps/<name>-src` after
-any online configure. You can reuse them for other build directories or worktrees
+The dependency names are `IMGUI`, `VOLK`, `VMA`, `VULKANHEADERS`, `TOMLPLUSPLUS`,
+`STB`, `DOCTEST` and `MINIUPNPC`. The sources for each dependency are also under
+`build/<preset>/_deps/<name>-src` after any online configure. You can reuse them for other build directories or worktrees
 with `FETCHCONTENT_SOURCE_DIR_<NAME>`.
 
 ## Tests

@@ -1,6 +1,7 @@
 #include "game/economy.hpp"
 
 #include "datafile/datafile.hpp"
+#include "game/ai.hpp"
 #include "game/design.hpp"
 #include "game/diplomacy.hpp"
 #include "game/economy_internal.hpp"
@@ -300,7 +301,8 @@ ColonyOutput colonyOutput(const Rules& r, const GameState& s, const Colony& c) {
     const std::vector<ParsedAbility> own = workingAbilities(r, s, c);
     const int popPct = populationModifier(r, population).production;
     const int moodPct = moodOutputPercent(r, out.mood);
-    const int common = (popPct - 100) + (moodPct - 100);
+    // The computer player bonus adds to every production and point percentage.
+    const int common = (popPct - 100) + (moodPct - 100) + ai::bonusPercent(s, c.owner);
     const bool finite = s.options.finiteResources;
     const int stars = starCount(s, planet.system);
     for (size_t i = 0; i < 3; ++i) {
