@@ -3,6 +3,7 @@
 // were added without being serialized.
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "core/rng.hpp"
 #include "game/commands.hpp"
@@ -568,8 +569,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0xf614a68476a342b2ull;
-    constexpr size_t kGoldenSize = 1614;
+    constexpr uint64_t kGoldenChecksum = 0xf395ead154ab802cull;
+    constexpr size_t kGoldenSize = 1616;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());
@@ -588,23 +589,16 @@ TEST_CASE("serialize: checksums are stable") {
 
 namespace {
 
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() / ("opense4_test_" + std::to_string(Rng(reinterpret_cast<uintptr_t>(this)).next()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ec;
-        std::filesystem::remove_all(path, ec);
-    }
+struct ScratchDir {
+    test::TempDir dir{"serialize"};
+    std::filesystem::path path = dir.path();
 };
 
 } // namespace
 
 TEST_CASE("serialize: save files") {
     const Rules& r = engineRules();
-    TempDir dir;
+    ScratchDir dir;
     GameState s = busyGame();
     SaveInfo info;
     info.gameName = "Round Trip";

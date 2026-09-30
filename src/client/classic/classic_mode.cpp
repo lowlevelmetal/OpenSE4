@@ -48,7 +48,53 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
 
-    if (auto front = frontScreenByName(options.openWindow)) {
+    if (!options.pbemFile.empty()) {
+        // --pbem: play a play-by-e-mail game file at once.
+        auto game = loadPbemGame(*mode->rules_, options.pbemFile);
+        if (!game) {
+            error = std::format("{}: {}", options.pbemFile, game.error());
+            return nullptr;
+        }
+        game::EmpireId empire;
+        if (options.pbemEmpire > 0) {
+            empire = game::EmpireId{static_cast<uint32_t>(options.pbemEmpire - 1)};
+        } else {
+            int playable = 0;
+            for (const PbemEmpireChoice& c : pbemEmpires(*game))
+                if (c.playable && c.yourTurn) {
+                    ++playable;
+                    empire = c.id;
+                }
+            if (playable != 1) {
+                error = "Several empires can play this turn: choose yours with --pbem-empire=N.";
+                return nullptr;
+            }
+        }
+        auto turn = beginPbemTurn(*game, empire, options.pbemPassword, options.pbemOrdersDir);
+        if (!turn) {
+            error = turn.error();
+            return nullptr;
+        }
+        mode->startGame(ClassicSession::pbem(mode->rules_, std::move(*game), std::move(*turn), pbemDraftsDir()));
+        if (options.pbemEndTurn) {
+            mode->session_->endTurn();
+            if (!mode->session_->pbemError().empty()) {
+                error = mode->session_->pbemError();
+                return nullptr;
+            }
+            std::printf("Orders saved to %s\n", mode->session_->ordersFile().string().c_str());
+            if (options.pbemExit) mode->ui_->requests.quitGame = true;
+        }
+        if (!options.openWindow.empty() && !frontScreenByName(options.openWindow)) {
+            mode->openLogOnTurn_ = false;
+            const auto id = screenFromName(options.openWindow);
+            if (!id) {
+                error = std::format("Unknown window '{}'", options.openWindow);
+                return nullptr;
+            }
+            mode->openScreen(*id, {});
+        }
+    } else if (auto front = frontScreenByName(options.openWindow)) {
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
     } else if (options.skipIntro) {
         std::string race = options.race;
@@ -209,6 +255,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // Classic windows are modal: while one is open the main window takes no input.
     main_.update(ui, !screens_.empty() || asking || battleAsking);
     drawNetwork(ui);
+    drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
 
     // Windows, oldest first; the newest draws on top.
@@ -275,9 +322,11 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 void ClassicMode::drawNetwork(UiContext& ui) {
     auto* net = dynamic_cast<NetTransport*>(session_->transport());
     if (!net) return;
-    // A status strip at the bottom of the system panel: who we wait for, the latest line.
+    // A status strip at the bottom of the system panel: who we wait for, the
+    // latest line. As narrow as the PBEM strip, so the planet panel's buttons
+    // stay clear; the full lines show as a tooltip.
     ImGui::SetNextWindowPos(ui.at({8, 712}));
-    ImGui::SetNextWindowSize(ui.size({650, 50}));
+    ImGui::SetNextWindowSize(ui.size({478, 50}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
     ImGui::Begin("##netstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
@@ -285,8 +334,11 @@ void ClassicMode::drawNetwork(UiContext& ui) {
     if (ImGui::SmallButton(chatOpen_ ? "Hide Chat" : "Chat")) chatOpen_ = !chatOpen_;
     ImGui::SameLine();
     const std::string status = net->status();
-    ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", status.empty() ? (session_->waitingForOthers() ? "Orders sent." : "Your turn.") : status.c_str());
-    if (!net->log().lines().empty()) ImGui::TextDisabled("%s", net->log().lines().back().c_str());
+    const std::string first = status.empty() ? (session_->waitingForOthers() ? "Orders sent." : "Your turn.") : status;
+    ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", first.c_str());
+    const std::string last = net->log().lines().empty() ? std::string{} : net->log().lines().back();
+    if (!last.empty()) ImGui::TextDisabled("%s", last.c_str());
+    if (ImGui::IsWindowHovered()) ImGui::SetTooltip("%s", last.empty() ? first.c_str() : std::format("{}\n{}", first, last).c_str());
     ImGui::End();
     ImGui::PopStyleColor();
 
@@ -310,6 +362,39 @@ void ClassicMode::drawNetwork(UiContext& ui) {
         }
         ImGui::End();
     }
+    ImGui::PopFont();
+}
+
+void ClassicMode::drawPbem(UiContext& ui) {
+    const PbemTurn* turn = session_->pbemTurn();
+    if (!turn) return;
+    // A status strip at the bottom of the system panel: where End Turn saves
+    // the orders, then where it saved them.
+    ImGui::SetNextWindowPos(ui.at({8, 712}));
+    ImGui::SetNextWindowSize(ui.size({478, 50}));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
+    ImGui::Begin("##pbemstatus", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                              ImGuiWindowFlags_NoBringToFrontOnFocus);
+    const ImVec4 gold(1, 0.85f, 0.45f, 1);
+    if (!session_->ordersFile().empty()) {
+        if (ImGui::SmallButton("Main Menu")) ui.requests.quitToIntro = true;
+        ImGui::SameLine();
+        ImGui::TextColored(gold, "%s", std::format("Send {} to the host.", session_->ordersFile().filename().string()).c_str());
+        ImGui::TextDisabled("Saved in %s", session_->ordersFile().parent_path().string().c_str());
+        if (ImGui::IsWindowHovered()) ImGui::SetTooltip("%s", session_->ordersFile().string().c_str());
+    } else if (!session_->pbemError().empty()) {
+        ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "The orders were not saved: %s", session_->pbemError().c_str());
+        ImGui::TextDisabled("End Turn tries again.");
+    } else {
+        std::string line = std::format("Play by e-mail: '{}', turn {}.", turn->info.gameName, turn->turn);
+        if (session_->pbemResumed() > 0) line += std::format(" Your saved turn is back ({} orders).", session_->pbemResumed());
+        ImGui::TextColored(gold, "%s", line.c_str());
+        ImGui::TextDisabled("End Turn saves your orders in %s", turn->ordersDir.string().c_str());
+        if (ImGui::IsWindowHovered()) ImGui::SetTooltip("%s", turn->ordersDir.string().c_str());
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopFont();
 }
 
@@ -439,7 +524,7 @@ void ClassicMode::drawHandoff(UiContext& ui) {
     ImGui::SameLine();
     if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
     if (begin) {
-        if (!needsPassword || game::hashPassword(handoffPassword_) == e.passwordHash) {
+        if (!needsPassword || session_->passwordMatches(e, handoffPassword_)) {
             handoff_ = false;
             handoffPassword_.clear();
         } else {

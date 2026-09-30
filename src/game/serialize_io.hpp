@@ -363,7 +363,7 @@ void io(Ar& ar, Empire& e) {
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
-           e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter);
+           e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -534,7 +534,9 @@ template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
     fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);
 }
-template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) { fields(ar, c.clearOrdersOnEncounter); }
+template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
+    fields(ar, c.clearOrdersOnEncounter, c.avoidTaggedMinefields, c.avoidRestrictedSystems);
+}
 
 template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
 
@@ -544,7 +546,8 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
-    fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash);
+    fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
+           e.ministerStyle, e.useRaceMinisterStyle);
 }
 
 template <class Ar> void io(Ar& ar, StartingPoint& p) { fields(ar, p.system, p.sector, p.player); }

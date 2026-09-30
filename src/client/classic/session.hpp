@@ -25,9 +25,15 @@
 // with a combat::TacticalBattle on the question's copy of the game); the
 // session then makes the same call again with the answers so far, which
 // fights the battle the same way on the real game and carries on. Local and
-// hotseat games only: network games (hosted or joined) never ask, and their
-// battles are strategic.
+// hotseat games only: network and PBEM games never ask, and their battles
+// are strategic.
+//
+// Play by e-mail (SessionKind::Pbem, pbem_play.hpp): the game file the host
+// sent, played by one empire. Orders are given as in a local game (turn-based:
+// carried out at once), and End Turn writes the orders file for the host
+// instead of processing the turn; the session then waits for good.
 
+#include "client/classic/pbem_play.hpp"
 #include "game/commands.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -40,6 +46,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -60,7 +67,7 @@ public:
     virtual std::string status() const = 0;
 };
 
-enum class SessionKind { Local, Hotseat, NetworkClient };
+enum class SessionKind { Local, Hotseat, NetworkClient, Pbem };
 
 // A tactical battle being fought in the client: a turn-based game's battle
 // (its orders answer the session's battle question) or a combat simulation
@@ -78,6 +85,11 @@ class ClassicSession {
 public:
     ClassicSession(std::shared_ptr<const game::Rules> rules, game::GameState state, game::EmpireId player,
                    SessionKind kind = SessionKind::Local);
+    // Play by e-mail: `game` played by `turn.empire` (from beginPbemTurn).
+    // With `draftsDir`, a turn in progress saved there (savePbemDraft) is
+    // resumed: its commands are given again.
+    static std::unique_ptr<ClassicSession> pbem(std::shared_ptr<const game::Rules> rules, PbemGame game, PbemTurn turn,
+                                                std::filesystem::path draftsDir = {});
 
     const game::Rules& rules() const { return *rules_; }
     std::shared_ptr<const game::Rules> rulesPtr() const { return rules_; }
@@ -129,6 +141,27 @@ public:
     const TurnTransport* transport() const { return transport_.get(); }
     TurnTransport* transport() { return transport_.get(); }
 
+    // Play by e-mail: the turn being played (nullptr in other games), the
+    // orders file End Turn wrote (empty until then), and why writing failed.
+    const PbemTurn* pbemTurn() const { return pbem_ ? &*pbem_ : nullptr; }
+    const std::filesystem::path& ordersFile() const { return ordersFile_; }
+    const std::string& pbemError() const { return pbemError_; }
+    // Play by e-mail: saves the turn so far to finish later (in the drafts
+    // folder given to pbem()); End Turn removes it. The commands a resumed
+    // draft gave again.
+    std::expected<std::filesystem::path, std::string> savePbemDraft() const;
+    size_t pbemResumed() const { return pbemResumed_; }
+
+    // The value cmd::SetEmpireOptions::passwordHash takes for a new password
+    // (empty: none). Local and hotseat games keep game::hashPassword();
+    // network and PBEM games keep the verifier the host checks logins and
+    // .plr files against (net::passwordVerifier of net::hashPassword), and so
+    // does a network or PBEM game file opened with Load Game.
+    std::string empirePasswordValue(std::string_view password) const;
+    // Whether `password` opens the empire's turn (hotseat hand-over), by the
+    // same scheme as empirePasswordValue. True when it has no password.
+    bool passwordMatches(const game::Empire& e, std::string_view password) const;
+
     // Messages the engine produced for the player on the last turn (rejected orders).
     const std::vector<std::string>& notices() const { return notices_; }
     // Called after a new turn begins (for the Log window auto-open etc.).
@@ -171,6 +204,9 @@ private:
     game::GameState state_;
     game::EmpireId player_;
     SessionKind kind_;
+    // A network or PBEM game file opened with Load Game (SaveInfo::gameId set):
+    // its empire passwords are verifiers, and saving keeps the game id.
+    uint64_t multiplayerGameId_ = 0;
     uint64_t revision_ = 1;
     std::vector<game::Command> orders_;
     std::vector<uint8_t> ended_;  // hotseat: humans who ended this turn
@@ -189,6 +225,11 @@ private:
     // Tactical battles answered in this call, as fought in the window: the
     // game's copy must come out the same (a check on determinism, logged).
     std::vector<game::CombatRecord> fought_;
+    std::optional<PbemTurn> pbem_;
+    std::filesystem::path ordersFile_;
+    std::string pbemError_;
+    std::filesystem::path pbemDrafts_;
+    size_t pbemResumed_ = 0;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

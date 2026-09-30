@@ -89,7 +89,8 @@ std::optional<ScreenId> screenFromName(std::string_view name) {
         return out;
     };
     const std::string want = squash(name);
-    static constexpr std::array<std::pair<ScreenId, const char*>, 8> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+    static constexpr std::array<std::pair<ScreenId, const char*>, 9> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+                                                                                {ScreenId::Ships, "Ships"},
                                                                                 {ScreenId::Queues, "Queues"},
                                                                                 {ScreenId::SetQueue, "SetQueue"},
                                                                                 {ScreenId::Queues, "ConstructionQueues"},

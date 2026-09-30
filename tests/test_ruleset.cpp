@@ -1,6 +1,7 @@
 #include "datafile/datafile.hpp"
 #include "ruleset/ability_names.hpp"
 #include "ruleset/ruleset.hpp"
+#include "temp_dir.hpp"
 
 #include <doctest/doctest.h>
 
@@ -105,8 +106,8 @@ TEST_CASE("ruleset: the fixture data set loads completely") {
 
 TEST_CASE("ruleset: problems are reported with file, line and record") {
     namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path() / "opense4_bad_classic_data";
-    fs::remove_all(dir);
+    const test::TempDir tmp("bad_classic_data");
+    const fs::path dir = tmp / "data";
     fs::copy(kFixture, dir);
     {
         std::ofstream out(dir / "Components.txt", std::ios::trunc);
@@ -147,8 +148,8 @@ TEST_CASE("ruleset: a player's installed classic data set (opt-in)") {
 
 TEST_CASE("ruleset: ability names, the 20-ability cap, mount fields and the list override") {
     namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path() / "opense4_ability_rules_data";
-    fs::remove_all(dir);
+    const test::TempDir tmp("ability_rules_data");
+    const fs::path dir = tmp / "data";
     fs::copy(kFixture, dir);
     {
         std::ofstream out(dir / "Components.txt", std::ios::trunc);

@@ -1,4 +1,5 @@
 #include "test_support.hpp"
+#include "temp_dir.hpp"
 
 #include "sim/rules.hpp"
 
@@ -44,8 +45,8 @@ TEST_CASE("starting designs are valid for every race") {
 
 TEST_CASE("data errors are reported with file and field context") {
     namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path() / "opense4_bad_data";
-    fs::remove_all(dir);
+    const test::TempDir tmp("bad_data");
+    const fs::path dir = tmp / "data";
     fs::copy(OPENSE4_DATA_DIR, dir, fs::copy_options::recursive);
     {
         std::ofstream out(dir / "hulls.toml", std::ios::app);

@@ -227,6 +227,103 @@ TEST_CASE("movement: tagged minefields are never entered unless they are the des
     CHECK(safe->steps[0] != at(a, 4, 0));
 }
 
+TEST_CASE("movement: the Ship Movement options decide what routes avoid; a mine sweeper ignores tagged minefields") {
+    const Rules& r = mvtest::rules();
+    // New empires avoid both (inferred); the command changes only the fields it names.
+    {
+        World w;
+        CHECK(w.s.empire(kA).avoidTaggedMinefields);
+        CHECK(w.s.empire(kA).avoidRestrictedSystems);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Enemy}).ok);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{.avoidTaggedMinefields = false}).ok);
+        CHECK_FALSE(w.s.empire(kA).avoidTaggedMinefields);
+        CHECK(w.s.empire(kA).avoidRestrictedSystems);
+        CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{.avoidRestrictedSystems = false}).ok);
+        CHECK_FALSE(w.s.empire(kA).avoidRestrictedSystems);
+        CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
+    }
+
+    // Systems to avoid: crossed again with the option off.
+    {
+        World w;
+        const SystemId a = w.system("A", 0, 0), b = w.system("B", 10, 0), c = w.system("C", 20, 0), d = w.system("D", 10, 10);
+        w.link(a, {12, 6}, b, {0, 6});
+        w.link(b, {1, 6}, c, {0, 6});
+        w.link(a, {12, 12}, d, {0, 0});
+        w.link(d, {12, 12}, c, {12, 12});
+        w.exploreAll(kA);
+        w.s.empire(kA).systemsToAvoid = {b};
+        const Location from = at(a, 6, 6), to = at(c, 6, 6);
+        CHECK(movement::findPath(r, w.s, kA, from, to)->length == 26);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{.avoidRestrictedSystems = false}).ok);
+        CHECK(movement::findPath(r, w.s, kA, from, to)->length == 15);
+    }
+
+    // Tagged minefields in a system, and warp links with one on either side.
+    {
+        World w;
+        const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+        w.link(a, {12, 6}, b, {0, 6});
+        w.link(a, {12, 12}, b, {0, 12});
+        w.exploreAll(kA);
+        auto passes = [](const movement::Path& p, Location l) { return std::find(p.steps.begin(), p.steps.end(), l) != p.steps.end(); };
+        const Location from = at(a, 6, 6), to = at(b, 3, 6);
+        auto p = movement::findPath(r, w.s, kA, from, to);
+        REQUIRE(p);
+        CHECK(p->length == 6 + 1 + 3);
+        // A tagged arrival square: the other link is used.
+        w.s.empire(kA).taggedMinefields = {at(b, 0, 6)};
+        p = movement::findPath(r, w.s, kA, from, to);
+        REQUIRE(p);
+        CHECK(p->length == 6 + 1 + 6);
+        CHECK_FALSE(passes(*p, at(b, 0, 6)));
+        // A tagged departure square too.
+        w.s.empire(kA).taggedMinefields = {at(a, 12, 6)};
+        p = movement::findPath(r, w.s, kA, from, to);
+        REQUIRE(p);
+        CHECK(p->length == 6 + 1 + 6);
+        CHECK_FALSE(passes(*p, at(a, 12, 6)));
+        // Option off: straight through.
+        w.s.empire(kA).avoidTaggedMinefields = false;
+        p = movement::findPath(r, w.s, kA, from, to);
+        REQUIRE(p);
+        CHECK(p->length == 6 + 1 + 3);
+        // Option on, but led by a mine sweeper: straight through as well.
+        w.s.empire(kA).avoidTaggedMinefields = true;
+        movement::RouteOptions sweeper;
+        sweeper.sweeper = true;
+        const Location goals[] = {to};
+        const auto swept = movement::findPathToNearest(r, w.s, kA, from, goals, sweeper);
+        REQUIRE(swept);
+        CHECK(swept->path.length == 6 + 1 + 3);
+        const DesignId sd = w.ship(kA, "Sweeper", 3);
+        w.s.design(sd).designType = "Mine Sweeper";
+        const VehicleId sv = w.spawn(sd, from);
+        CHECK(movement::leadsSweeperGroup(w.s, w.v(sv)));
+        CHECK_FALSE(movement::leadsSweeperGroup(w.s, w.v(w.spawn(w.ship(kA, "Plain", 3), from))));
+        CHECK(movement::etaTurns(r, w.s, w.v(sv), to) == 4);  // 10 steps at speed 3
+    }
+
+    // In-system greedy steps: with the option off, or led by a sweeper, tagged squares are entered.
+    auto blocked = [&](bool option, bool sweeper) {
+        World m;
+        const SystemId ma = m.system("A");
+        m.s.empire(kA).taggedMinefields = {at(ma, 0, 1), at(ma, 1, 1)};
+        m.s.empire(kA).avoidTaggedMinefields = option;
+        const DesignId d = m.ship(kA, "Walker", 3);
+        if (sweeper) m.s.design(d).designType = "Mine Sweeper";
+        const VehicleId ship = m.spawn(d, at(ma, 0, 0));
+        fuel(m, ship);
+        m.order(ship, moveTo(ma, 0, 12));
+        m.move();
+        return m.v(ship).location == at(ma, 0, 0);
+    };
+    CHECK(blocked(true, false));
+    CHECK_FALSE(blocked(false, false));
+    CHECK_FALSE(blocked(true, true));
+}
+
 TEST_CASE("movement: etaTurns uses the speed and the known route") {
     World w;
     const Rules& r = w.rules();

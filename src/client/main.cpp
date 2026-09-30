@@ -44,9 +44,18 @@ Classic rules (the default when an install is found; see docs/PARITY_PLAN.md):
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
-                                  empiresetup[:PAGE], multiplayer (e.g. --open=setup:players).
+                                  empiresetup[:PAGE], multiplayer, pbem[:GAME.gam] (e.g. --open=setup:players).
                                   tactical: a sample tactical battle (your warships against copies);
                                   simulator: the Combat Simulator with that battle set up
+
+Play by e-mail (see docs/MULTIPLAYER.md):
+  --pbem=GAME.gam                 Open the game file the host sent and play your turn; End Turn
+                                  saves your orders file (.plr) to send back
+  --pbem-empire=N                 Your empire's number (default: the only one that can play now)
+  --pbem-password=PW              Your empire's password
+  --pbem-orders=DIR               Where to save the orders file (default: the game file's folder)
+  --pbem-end-turn                 End the turn at once, write the orders file and quit
+                                  (with --screenshot: quit after the screenshot)
 
 Paths:
   --data=DIR                      Game data directory (default: auto-detect)
@@ -144,6 +153,18 @@ int main(int argc, char** argv) {
             options.classicWindow = std::string(value);
             options.classicQuickStart = true;
             options.classic = true;
+        } else if (key == "--pbem") {
+            options.pbemFile = std::string(value);
+            ok = !value.empty();
+            options.classic = true;
+        } else if (key == "--pbem-empire") {
+            ok = parseInt(value, options.pbemEmpire) && options.pbemEmpire > 0;
+        } else if (key == "--pbem-password") {
+            options.pbemPassword = std::string(value);
+        } else if (key == "--pbem-orders") {
+            options.pbemOrdersDir = std::string(value);
+        } else if (key == "--pbem-end-turn") {
+            options.pbemEndTurn = true;
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);
         } else if (key == "--turn-style") {

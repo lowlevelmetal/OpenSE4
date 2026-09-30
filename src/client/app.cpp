@@ -71,6 +71,12 @@ int App::run(const AppOptions& options) {
         co.autoTurns = options.autoTurns;
         co.openWindow = options.classicWindow;
         co.turnBased = options.classicTurnBased;
+        co.pbemFile = options.pbemFile;
+        co.pbemEmpire = options.pbemEmpire;
+        co.pbemPassword = options.pbemPassword;
+        co.pbemOrdersDir = options.pbemOrdersDir;
+        co.pbemEndTurn = options.pbemEndTurn;
+        co.pbemExit = options.pbemEndTurn && options.screenshotPath.empty();
         mode_ = ClassicMode::create(platform, co, error);
     } else {
         PrototypeOptions po;

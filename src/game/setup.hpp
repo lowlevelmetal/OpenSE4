@@ -27,6 +27,13 @@ struct EmpireSetup {
     uint32_t color = 0;           // 0: automatic
     PlayerKind kind = PlayerKind::Human;
     std::string passwordHash;
+    // Empire Setup, General page (spec 02 §9, spec 05 §7.1): the minister
+    // style (a folder under Ai/; empty: none, the race's own AI files) and
+    // "Use Race Minister Style". They become Empire::ministerStyle and
+    // useRaceMinisterStyle, so the style also drives an empire marked
+    // Computer Controlled.
+    std::string ministerStyle;
+    bool useRaceMinisterStyle = false;
 };
 
 struct GameSetup {

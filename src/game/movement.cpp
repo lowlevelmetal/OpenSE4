@@ -362,6 +362,11 @@ private:
     bool neutral(const Actor& a) const {
         return a.owner.valid() && a.owner.index() < s_.empires.size() && s_.empire(a.owner).kind == PlayerKind::Neutral;
     }
+    // Led by a mine sweeper: the owner's tagged minefields are no obstacle (spec 03 §6.2).
+    bool sweeperLed(const Actor& a) const {
+        const Vehicle* v = a.planet.valid() ? nullptr : s_.vehicle(a.lead);
+        return v && leadsSweeperGroup(s_, *v);
+    }
     int bonus(VehicleId id) const {
         const auto it = bonus_.find(id);
         return it == bonus_.end() ? 0 : it->second;
@@ -592,6 +597,7 @@ private:
     RouteOptions routeOptions(const Actor& a) const {
         RouteOptions options;
         options.allowWarp = !hasFighter(a) && !neutral(a);  // fighters and neutral empires never warp
+        options.sweeper = sweeperLed(a);
         return options;
     }
 
@@ -646,14 +652,16 @@ private:
     enum class Step { Moved, Stale, Blocked, Asked };
 
     // A step onto `l` is re-chosen when it is not the square the group heads
-    // for and it is a tagged minefield, holds a storm with `Sector - Damage`
-    // or a visible hostile object (spec 03 §6.2, confirmed: binary). Counted
-    // (inferred): the damage of the sector's own objects, not a system-wide
-    // value no step could avoid; hostile vehicles the owner sees and hostile
-    // colonies.
+    // for and it is a tagged minefield (with the owner's option on, unless a
+    // mine sweeper leads), holds a storm with `Sector - Damage` or a visible
+    // hostile object (spec 03 §6.2, confirmed: binary). Counted (inferred): the
+    // damage of the sector's own objects, not a system-wide value no step
+    // could avoid; hostile vehicles the owner sees and hostile colonies.
     bool avoidStep(const Actor& a, Location l) const {
         const Empire& e = s_.empire(a.owner);
-        if (std::find(e.taggedMinefields.begin(), e.taggedMinefields.end(), l) != e.taggedMinefields.end()) return true;
+        if (e.avoidTaggedMinefields && !sweeperLed(a) &&
+            std::find(e.taggedMinefields.begin(), e.taggedMinefields.end(), l) != e.taggedMinefields.end())
+            return true;
         for (ObjectId o : s_.galaxy.system(l.system).objects) {
             const SpaceObject& obj = s_.galaxy.object(o);
             if (obj.sector != l.sector) continue;
@@ -961,6 +969,7 @@ private:
         OrderContext ctx;
         ctx.owner = a.owner;
         ctx.members = a.members;
+        ctx.lead = a.lead;
         ctx.at = where(a);
         ctx.carriesPopulation = any(a, [](const Vehicle& v) { return v.cargo.totalPopulation() > 0; });
         std::vector<Order> expanded;

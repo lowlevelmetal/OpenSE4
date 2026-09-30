@@ -1106,6 +1106,10 @@ is on (confirmed: binary).
 - OpenSE4 choice: the Ministers window also offers the style and the race-style switch,
   so a player can change them during a game. All minister settings belong to the empire
   and travel with its orders.
+- In Empire Setup (§9) the style list holds the style folders of the install plus "the
+  race's own" (no style), which a new empire starts with; "Use Race Minister Style" starts
+  off (inferred, §13 Q50). The empire starts the game with both, whether it is played by a
+  human or marked Computer Controlled. Random computer players never get a style.
 
 **Colony types**
 - A colony type is a label chosen at colonization or later. The defaults come from
@@ -1336,3 +1340,7 @@ remaining guesses; each is marked "(inferred)" in the code.
     dropped), and a colony that becomes domed keeps facilities and cargo above the smaller
     capacities (§2). The engine leaves such a surplus in place and only blocks new
     additions. Does the original remove it, and when?
+50. **Minister style at setup.** A new empire in Empire Setup starts with no minister style
+    (the race's own AI files) and "Use Race Minister Style" off, and the style list offers
+    that choice besides the style folders. Which style, if any, does the original preselect,
+    and can it be left empty? (inferred)

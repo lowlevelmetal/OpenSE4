@@ -178,7 +178,7 @@ private:
             if (password_ != repeat_) {
                 passwordError_ = "The two entries differ.";
             } else {
-                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = hashPassword(password_)});
+                status_.issue(ui, cmd::SetEmpireOptions{.passwordHash = ui.session.empirePasswordValue(password_)});
                 password_.clear();
                 repeat_.clear();
                 ImGui::CloseCurrentPopup();
@@ -202,29 +202,29 @@ public:
         if (!d.open()) return d.keepOpen();
         ClassicSettings& s = settings();
         d.beginContent();
-        dimText("These switches are kept on this computer and apply to every game played here; the Ship Orders ones belong to this game.");
+        wrappedDim("These switches are kept on this computer and apply to every game played here; the Ship Movement and Ship "
+                   "Orders ones belong to your empire in this game.");
         ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_None);
         const char* group = nullptr;
         bool changed = false;
+        bool gameOptionsShown = false;
         for (const BoolOption& o : boolOptions()) {
             if (!group || std::string_view(group) != o.group) {
                 if (group) ImGui::Spacing();
+                if (!gameOptionsShown && std::string_view(o.group) == "System Display") {
+                    gameOptions(ui);  // in the window's order: after Next \ Previous
+                    gameOptionsShown = true;
+                    ImGui::Spacing();
+                }
                 group = o.group;
                 heading(ui, group);
             }
             changed |= lampToggle(ui, o.label, &(s.*o.member));
         }
-        // Ship Orders: kept with the empire in the game (spec 03 §6.4), both off by default.
-        ImGui::Spacing();
-        heading(ui, "Ship Orders");
-        const game::EncounterClear clear = ui.me().clearOrdersOnEncounter;
-        bool onEnemy = clear != game::EncounterClear::Never;
-        bool onAny = clear == game::EncounterClear::Any;
-        if (lampToggle(ui, "Clear orders on warping into a system with enemies", &onEnemy))
-            status_.issue(ui, cmd::SetEncounterOptions{onEnemy ? game::EncounterClear::Enemy : game::EncounterClear::Never});
-        if (lampToggle(ui, "Clear orders on warping into a system with any other empire", &onAny))
-            status_.issue(ui, cmd::SetEncounterOptions{onAny ? game::EncounterClear::Any : game::EncounterClear::Enemy});
-        status_.draw();
+        if (!gameOptionsShown) {
+            ImGui::Spacing();
+            gameOptions(ui);
+        }
         ImGui::Spacing();
         ImGui::SetNextItemWidth(ui.px(260));
         changed |= ImGui::SliderFloat("Effects volume", &s.soundVolume, 0.0f, 1.0f, "%.2f");
@@ -238,6 +238,11 @@ public:
             s.soundVolume = defaults.soundVolume;
             s.musicVolume = defaults.musicVolume;
             changed = true;
+            const game::Empire fresh;  // a new empire's game options
+            const game::Empire& me = ui.me();
+            if (me.avoidTaggedMinefields != fresh.avoidTaggedMinefields || me.avoidRestrictedSystems != fresh.avoidRestrictedSystems ||
+                me.clearOrdersOnEncounter != fresh.clearOrdersOnEncounter)
+                status_.issue(ui, cmd::SetEncounterOptions{fresh.clearOrdersOnEncounter, fresh.avoidTaggedMinefields, fresh.avoidRestrictedSystems});
         }
         if (changed) saveSettings();
         d.close();
@@ -245,6 +250,29 @@ public:
     }
 
 private:
+    // Ship Movement and Ship Orders: kept with the empire in the game (spec 03
+    // §6.2, §6.4); every change is a cmd::SetEncounterOptions.
+    void gameOptions(UiContext& ui) {
+        const game::Empire& me = ui.me();
+        heading(ui, "Ship Movement");
+        bool minefields = me.avoidTaggedMinefields;
+        if (lampToggle(ui, "Route around tagged minefields (not for ships led by a mine sweeper)", &minefields))
+            status_.issue(ui, cmd::SetEncounterOptions{.avoidTaggedMinefields = minefields});
+        bool restricted = me.avoidRestrictedSystems;
+        if (lampToggle(ui, "Never route through the systems to avoid", &restricted))
+            status_.issue(ui, cmd::SetEncounterOptions{.avoidRestrictedSystems = restricted});
+        ImGui::Spacing();
+        heading(ui, "Ship Orders");
+        const game::EncounterClear clear = me.clearOrdersOnEncounter;
+        bool onEnemy = clear != game::EncounterClear::Never;
+        bool onAny = clear == game::EncounterClear::Any;
+        if (lampToggle(ui, "Clear orders on warping into a system with enemies", &onEnemy))
+            status_.issue(ui, cmd::SetEncounterOptions{onEnemy ? game::EncounterClear::Enemy : game::EncounterClear::Never});
+        if (lampToggle(ui, "Clear orders on warping into a system with any other empire", &onAny))
+            status_.issue(ui, cmd::SetEncounterOptions{onAny ? game::EncounterClear::Any : game::EncounterClear::Enemy});
+        status_.draw();
+    }
+
     CommandStatus status_;
 };
 
@@ -343,7 +371,10 @@ public:
         const bool claimTab = overlay_ == MapOverlay::AllyClaimed;
         d.beginContent();
         dimText(claimTab ? "Click a system to claim it for us, or to give up our claim."
-                         : "Click a system to mark it as one our ships avoid, or to clear the mark.");
+                 : me.avoidRestrictedSystems
+                     ? "Click a system to mark it as one our ships avoid, or to clear the mark."
+                     : "Click a system to mark it as one to avoid, or to clear the mark. Routes ignore the marks while the "
+                       "Empire Options switch to avoid them is off.");
         QuadrantMapOptions opt;
         opt.overlay = overlay_;
         opt.names = true;

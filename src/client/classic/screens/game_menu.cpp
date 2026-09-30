@@ -114,8 +114,16 @@ public:
                 keep = false;
             }
             if (button("Save Game")) {
-                ui.open(ScreenId::SaveGame);
-                keep = false;
+                if (ui.session.pbemTurn()) {
+                    // Play by e-mail: the turn so far, to finish later (spec 05 §9.2).
+                    auto saved = ui.session.savePbemDraft();
+                    draftNote_ = saved ? "Your turn so far is saved. Open the game file again to finish it."
+                                       : std::format("The turn was not saved: {}", saved.error());
+                    ImGui::OpenPopup("Turn Saved");
+                } else {
+                    ui.open(ScreenId::SaveGame);
+                    keep = false;
+                }
             }
             // Save Map: only when the game lets players save the map (spec 01 §2.2, §12).
             if (button("Save Map", ui.state().options.playersCanSaveMap)) {
@@ -148,6 +156,7 @@ public:
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
             playersPopup(ui);
             saveMapPopup(ui);
+            draftPopup(ui);
         }
         ImGui::End();
         return keep;
@@ -186,7 +195,19 @@ private:
 
     std::string mapName_;
     std::string mapNote_;
+    std::string draftNote_;
     bool mapSaved_ = false;
+
+    void draftPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({380, 0}));
+        if (!ImGui::BeginPopupModal("Turn Saved", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        ImGui::TextWrapped("%s", draftNote_.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter, false))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
 
     void playersPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({420, 0}));

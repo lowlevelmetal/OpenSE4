@@ -37,6 +37,12 @@ struct AppOptions {
     std::string classicRace;         // race preset for the quick game
     std::string classicWindow;       // window to open at start
     bool classicTurnBased = false;   // a quick game in the turn-based style (spec 05 §8)
+    // Play by e-mail: open this game file and play the turn (docs/MULTIPLAYER.md).
+    std::string pbemFile;
+    int pbemEmpire = 0;              // 1-based; 0 = the only empire that can play now
+    std::string pbemPassword;
+    std::string pbemOrdersDir;       // empty = the game file's folder
+    bool pbemEndTurn = false;        // automation: end the turn at once (writes the .plr)
 
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;

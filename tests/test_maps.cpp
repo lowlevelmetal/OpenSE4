@@ -2,6 +2,7 @@
 // ours, docs/MAPS.md).
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
 #include "game/generate.hpp"
@@ -127,15 +128,9 @@ Galaxy chain(const ruleset::Ruleset& rs, std::vector<std::optional<uint32_t>> pl
 }
 
 struct TempDir {
+    test::TempDir dir;
     fs::path path;
-    explicit TempDir(std::string_view tag) : path(fs::temp_directory_path() / std::format("opense4_maps_{}", tag)) {
-        fs::remove_all(path);
-        fs::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ec;
-        fs::remove_all(path, ec);
-    }
+    explicit TempDir(std::string_view tag) : dir(std::format("maps_{}", tag)), path(dir.path()) {}
 };
 
 } // namespace

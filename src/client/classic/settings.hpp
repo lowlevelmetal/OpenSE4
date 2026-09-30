@@ -25,11 +25,9 @@ struct ClassicSettings {
     bool cycleSkipsUnderConstruction = true;
     bool cycleSkipsDamaged = false;
     bool cycleOncePerLocation = false;
-    // Ship movement.
-    bool avoidMinefields = true;
-    bool avoidRestrictedSystems = true;
-    // Ship orders: part of the game (Empire::clearOrdersOnEncounter, spec 03
-    // §6.4), set with cmd::SetEncounterOptions from the Empire Options window.
+    // Ship Movement and Ship Orders: part of the game (Empire::avoidTaggedMinefields,
+    // avoidRestrictedSystems, clearOrdersOnEncounter; spec 03 §6.2, §6.4), set
+    // with cmd::SetEncounterOptions from the Empire Options window.
     // System display.
     bool showWarpPointNames = true;
     bool showPlanetNames = false;

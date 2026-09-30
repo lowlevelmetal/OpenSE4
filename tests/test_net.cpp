@@ -20,6 +20,7 @@
 #include "net/socket.hpp"
 #include "net/upnp.hpp"
 #include "server/setup_file.hpp"
+#include "temp_dir.hpp"
 
 #include <doctest/doctest.h>
 
@@ -582,7 +583,8 @@ TEST_CASE("net: hostile connections do not disturb the host") {
 }
 
 TEST_CASE("net: host saves and resumes a network game") {
-    std::filesystem::path file = std::filesystem::temp_directory_path() / ("opense4_resume_" + std::to_string(net::randomId()) + ".gam");
+    const TempDir tmp("resume");
+    const std::filesystem::path file = tmp / "resume.gam";
     {
         TwoPlayerGame g;
         REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "before save")).has_value());
@@ -635,7 +637,8 @@ TEST_CASE("net: host saves and resumes a network game") {
 TEST_CASE("net: PBEM turn processing from .plr files") {
     namespace fs = std::filesystem;
     const game::Rules& r = engineRules();
-    const fs::path dir = fs::temp_directory_path() / ("opense4_pbem_" + std::to_string(net::randomId()));
+    const TempDir tmp("pbem");
+    const fs::path dir = tmp.path();
     const fs::path orders = dir / "orders";
     fs::create_directories(orders);
 
@@ -779,6 +782,21 @@ tier = 2
     auto rolled = server::parseSetup("[options]\nsystems = 0\n", "z.toml", r);
     REQUIRE(rolled.has_value());
     CHECK(rolled->options.systemCount == 0);
+    // Minister styles must be installed (this data set has none); the race-style switch is a flag.
+    auto styled = server::parseSetup("[[empire]]\nuse_race_minister_style = true\n", "m.toml", r);
+    REQUIRE(styled.has_value());
+    CHECK(styled->empires[0].setup.useRaceMinisterStyle);
+    CHECK(styled->empires[0].setup.ministerStyle.empty());
+    auto unknownStyle = server::parseSetup("[[empire]]\nminister_style = \"Nope\"\n", "n.toml", r);
+    REQUIRE_FALSE(unknownStyle.has_value());
+    CHECK(unknownStyle.error().find("no minister style 'Nope'") != std::string::npos);
+    net::HostSession host(r, hostConfig());
+    REQUIRE(host.start().has_value());
+    game::EmpireSetup cpu;
+    cpu.ministerStyle = "Nope";
+    const auto refused = host.addComputerEmpire(cpu);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == "Unknown minister style 'Nope'.");
 }
 
 
@@ -1049,7 +1067,8 @@ TEST_CASE("net: turn-based: the host refuses others' commands, and a player reco
 }
 
 TEST_CASE("net: a turn-based network game saved in the middle of a turn resumes there") {
-    std::filesystem::path file = std::filesystem::temp_directory_path() / ("opense4_tb_resume_" + std::to_string(net::randomId()) + ".gam");
+    const TempDir tmp("tb_resume");
+    const std::filesystem::path file = tmp / "resume.gam";
     uint64_t saved = 0;
     {
         TwoPlayerGame g(true);
@@ -1171,7 +1190,8 @@ TEST_CASE("net: turn-based: a battle in a player's turn is asked about, fought a
 TEST_CASE("net: turn-based PBEM: each player's turn goes to the host as a .plr of commands") {
     namespace fs = std::filesystem;
     const game::Rules& r = engineRules();
-    const fs::path dir = fs::temp_directory_path() / ("opense4_pbem_tb_" + std::to_string(net::randomId()));
+    const TempDir tmp("pbem_tb");
+    const fs::path dir = tmp.path();
     const fs::path inbox = dir / "inbox";
     fs::create_directories(inbox);
 

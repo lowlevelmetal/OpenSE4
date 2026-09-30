@@ -3,6 +3,7 @@
 // Race presets are invented for these tests and written to a temporary folder.
 
 #include "engine_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
 #include "datafile/datafile.hpp"
@@ -50,6 +51,7 @@ Design Name File       := Tests.txt
 }
 
 struct SetupRules {
+    std::unique_ptr<test::TempDir> dir;  // the fake install, removed when the tests end
     fs::path root;
     std::unique_ptr<game::Rules> rules;
 };
@@ -57,8 +59,8 @@ struct SetupRules {
 const game::Rules& setupRules() {
     static const SetupRules r = [] {
         SetupRules out;
-        out.root = fs::temp_directory_path() / "opense4_setup_model_test";
-        fs::remove_all(out.root);
+        out.dir = std::make_unique<test::TempDir>("setup_model_test");
+        out.root = out.dir->path();
         // Tier 1: Intelligence 110 (250 points); tier 2: + Night Eyes (750); tier 3: Intelligence 150,
         // Cunning 115, Night Eyes (5200).
         const std::string tiers = R"(Race Opt 1 Num Characteristics := 1
@@ -84,6 +86,8 @@ Race Opt 3 Adv Trait 1 := Night Eyes)";
         writePreset(out.root, true, "Neutral1", "Quietfolk", "Rock", "Oxygen", 0, tiers);
         writePreset(out.root, true, "Neutral2", "Stillfolk", "Rock", "Oxygen", 0, tiers);
         writeFile(out.root / "Dsgnname" / "TESTS.TXT", "Arrow\nBolt\n");
+        // One minister style folder (spec 05 §7.2).
+        writeFile(out.root / "Ai" / "Bold" / "Bold_AI_Settings.txt", "Invented.\n*BEGIN*\nPersonality Group := 1\n*END*\n");
 
         ruleset::Ruleset rs = test::buildEngineRuleset();
         auto set = [&](std::string k, std::string v) { rs.settings.set(std::move(k), std::move(v)); };
@@ -433,8 +437,8 @@ TEST_CASE("setup model: empire files round-trip through TOML") {
     CHECK(setup::sameRace(*back.customRace, d.race));
 
     // Files: save, list, load.
-    const fs::path dir = fs::temp_directory_path() / "opense4_setup_model_empires";
-    fs::remove_all(dir);
+    const test::TempDir tmp("setup_model_empires");
+    const fs::path dir = tmp / "empires";
     auto file = setup::saveEmpireFile(r, dir, *e);
     REQUIRE(file.has_value());
     const auto list = setup::listEmpireFiles(r, dir);
@@ -464,6 +468,58 @@ TEST_CASE("setup model: empire files round-trip through TOML") {
     CHECK_FALSE(setup::empireFromToml(r, "format = 99\nname = \"x\"").has_value());
 }
 
+TEST_CASE("setup model: the minister style of Empire Setup reaches the game and the empire file") {
+    const game::Rules& r = setupRules();
+    // Empire files keep the style and the race-style switch; a style that is not installed is dropped with a warning.
+    setup::EmpireDraft d = setup::draftFromPreset(r, *game::findPreset(r, "Alpha"), 0);
+    CHECK(d.setup.ministerStyle.empty());  // a new empire has none: the race's own AI files (inferred)
+    CHECK_FALSE(d.setup.useRaceMinisterStyle);
+    d.setup.ministerStyle = "Bold";
+    d.setup.useRaceMinisterStyle = true;
+    auto e = setup::finishDraft(r, d, 5000);
+    REQUIRE(e.has_value());
+    CHECK(e->ministerStyle == "Bold");
+    auto back = setup::empireFromToml(r, setup::empireToToml(r, *e));
+    REQUIRE(back.has_value());
+    CHECK(back->warnings.empty());
+    CHECK(back->empire.ministerStyle == "Bold");
+    CHECK(back->empire.useRaceMinisterStyle);
+    std::string text = setup::empireToToml(r, *e);
+    const auto pos = text.find("minister_style =");
+    REQUIRE(pos != std::string::npos);
+    text.replace(pos, text.find('\n', pos) - pos, "minister_style = \"Meek\"");
+    auto missing = setup::empireFromToml(r, text);
+    REQUIRE(missing.has_value());
+    CHECK(missing->empire.ministerStyle.empty());
+    CHECK(missing->warnings.size() == 1);
+
+    // The game: the explicit empires get their style (a computer-controlled one too); random computer players never do.
+    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    s.options.systemCount = 12;
+    REQUIRE_FALSE(s.players.empty());
+    s.players[0].ministerStyle = "Bold";
+    game::EmpireSetup cpu = s.players[0];
+    cpu.name = "Machine";
+    cpu.kind = game::PlayerKind::Computer;
+    cpu.useRaceMinisterStyle = true;
+    cpu.preset = "Gamma";
+    s.players.push_back(cpu);
+    s.computers = {true, 0};
+    auto g = setup::buildGameSetup(r, s);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    auto game = game::createGame(r, *g);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    REQUIRE(game->empires.size() > 2);
+    CHECK(game->empires[0].ministerStyle == "Bold");
+    CHECK_FALSE(game->empires[0].useRaceMinisterStyle);
+    CHECK(game->empires[1].ministerStyle == "Bold");
+    CHECK(game->empires[1].useRaceMinisterStyle);
+    for (size_t i = 2; i < game->empires.size(); ++i) {
+        CHECK(game->empires[i].ministerStyle.empty());
+        CHECK_FALSE(game->empires[i].useRaceMinisterStyle);
+    }
+}
+
 TEST_CASE("setup model: choice lists come from the data set") {
     const game::Rules& r = setupRules();
     const auto surfaces = setup::planetSurfaces(r);
@@ -473,6 +529,7 @@ TEST_CASE("setup model: choice lists come from the data set") {
     CHECK(std::find(atmospheres.begin(), atmospheres.end(), "Oxygen") != atmospheres.end());
     CHECK(setup::planetPicture(r, "Ice", "Methane").has_value());
     CHECK(setup::designNameFiles(r) == std::vector<std::string>{"TESTS.TXT"});
+    CHECK(setup::ministerStyleChoices(r) == std::vector<std::string>{"Bold"});
     const auto [lo, hi] = setup::randomPlayerRange(r, false, 1);
     CHECK(lo == 2);
     CHECK(hi == 3);

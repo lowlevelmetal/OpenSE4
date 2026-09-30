@@ -209,12 +209,12 @@ The game file goes from player to player through the host:
 1. `pbem new` with `simultaneous = false` in the setup file creates the game. The
    computer players before the first human take their turns, and the command names the
    empire to send the game to.
-2. That player opens the `.gam` and plays their turn on it. Every command is carried
-   out at once on the player's copy. At End Turn the game writes a `.plr` holding every
-   command in the order it was given (Attack Sector answers included), and checksums
-   of the game before the first command and after the last one
-   (`net::pbem::writePlayerTurn`). `opense4-server pbem orders` writes a turn without
-   commands.
+2. That player opens the `.gam` in the game ([Playing your turn](#playing-your-turn))
+   and plays their turn on it. Every command is carried out at once on the player's
+   copy. At End Turn the game writes a `.plr` holding every command in the order it was
+   given (Attack Sector answers and refused commands included), and checksums of the
+   game before the first command and after the last one (`net::pbem::writePlayerTurn`).
+   `opense4-server pbem orders` writes a turn without commands.
 3. `pbem process` checks the `.plr` like any other: game, turn, empire and password. It
    also checks that the file is for the player whose turn it is and that it was made
    from the current game file. It then replays the commands, ends the player's turn (the
@@ -292,8 +292,9 @@ the players send in. One round goes like this:
    opense4-server pbem new --setup=campaign.toml --out=campaign.gam
    ```
 
-2. **Send `campaign.gam` to every player.** Each player opens it, plays their turn,
-   and saves their orders as a `.plr` file (the game does this with
+2. **Send `campaign.gam` to every player.** Each player opens it in the game, plays
+   their turn, and End Turn saves their orders as a `.plr` file
+   ([Playing your turn](#playing-your-turn); the game uses
    `net::pbem::writePlayerOrders`). The file is named `<game>_<NN>.plr`, where NN is
    the empire's number. It holds only that empire's orders, marked with the game, the
    turn, the empire and the player's password hash.
@@ -319,6 +320,50 @@ the players send in. One round goes like this:
 
 `opense4-server pbem info --game=campaign.gam` shows the turn, the empires, their
 players and whether a master password is set.
+
+### Playing your turn
+
+In the game, choose **Multiplayer**, then **Play by E-mail**:
+
+1. Open the game file the host sent. The window lists the `.gam` files in the `pbem`
+   folder of your OpenSE4 user data (on Linux `~/.local/share/OpenSE4/pbem`), or you
+   type the file's path. The game must have been made with the same data set as yours,
+   as the host checks too.
+2. Choose your empire and enter its password. It is checked against the game file the
+   way the host checks your `.plr`, so a wrong password is caught at once. In a
+   turn-based game only the empire whose turn it is can play. A turn-based file saved
+   between player turns first plays on to the next human, exactly as the host does.
+3. Choose where the orders file goes: by default next to the game file.
+4. Play the turn. A simultaneous game works like a local one: you give orders and they
+   are carried out when the host processes the turn. In a turn-based game every order
+   is carried out at once, as in a local turn-based game.
+5. **End Turn** writes `<game>_<NN>.plr` and ends the turn on your machine; the status
+   line names the file. Send it to the host.
+
+**Save Game** in the Game Menu keeps the turn so far, in the `pbem/drafts` folder (not
+with the orders, so it cannot be sent by mistake). Open the same game file and empire
+again later, and the orders given so far come back. End Turn removes the draft. A
+password changed during the turn (Empire Status, Change Password) counts from the next
+turn; this turn's `.plr` still carries the password you opened it with.
+
+From the command line:
+
+```sh
+opense4 --pbem=campaign.gam --pbem-empire=2 --pbem-password=PW [--pbem-orders=DIR]
+```
+
+`--pbem-empire` may be left out when only one empire can play (a turn-based game), and
+`--pbem-end-turn` ends the turn at once, writes the `.plr`, prints where and quits (for
+scripts). `--open=pbem:campaign.gam` opens the Play by E-mail window with that file.
+The choices the rules leave open are listed in spec 05 open question 36.
+
+Battles in a PBEM game are always fought strategically; the Tactical or Strategic
+question is only asked in local and hotseat turn-based games.
+
+**Load Game** (not Play by E-mail) opens a PBEM game file or a network host's save as an
+ordinary local or hotseat game on your machine, for instance to go on without the other
+players. The empire passwords keep working as they did in the multiplayer game, and the
+game saved from there keeps them that way.
 
 ## Setup files
 
@@ -372,6 +417,8 @@ color = 0x3070ff
 empire_type = ""
 leader = ""
 leader_title = ""
+minister_style = "Aggressive"  # a folder under Ai/ of the install; default: none (the race's own AI files)
+use_race_minister_style = false
 ```
 
 The network server takes the name, seed, options, master password and computer
@@ -439,8 +486,6 @@ Setup files hold passwords in plain text. To avoid that, a player can run
 - IPv6 hosting.
 - Sending only the changes between turns instead of the whole game. A turn-based game
   sends the player's whole view after every command.
-- Opening a PBEM game in the client, and writing the `.plr` at End Turn (the library
-  functions exist: `net::pbem::writePlayerOrders`, `writePlayerTurn`).
 - Processing the turn on a background thread, so an in-game host's interface stays
   responsive during long turns.
 - Movement and combat replays for players (the classic `.trn` and `.cmb` files).
@@ -480,7 +525,9 @@ client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ord
 ```
 
 `net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes
-`.plr` files and processes PBEM turns. `game::saveGame`, `loadGame` and
+`.plr` files and processes PBEM turns. The player's side in the client is
+`client/classic/pbem_play.hpp` (open a `.gam`, check the empire and password, write the
+`.plr` or a draft) and `ClassicSession` with `SessionKind::Pbem`. `game::saveGame`, `loadGame` and
 `readSaveInfo` handle `.gam` files.
 
 ### Protocol

@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
+#include "game/ai_data.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -448,6 +449,8 @@ std::vector<std::string> atmospheres(const game::Rules& r) {
     return out;
 }
 
+std::vector<std::string> ministerStyleChoices(const game::Rules& r) { return game::ai::ministerStyles(r); }
+
 std::vector<std::string> designNameFiles(const game::Rules& r) {
     std::vector<std::string> out;
     if (r.gameRoot().empty()) return out;
@@ -510,6 +513,8 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
         {"preset_tier", e.presetTier},
         {"color", static_cast<int64_t>(e.color)},
         {"password_hash", e.passwordHash},
+        {"minister_style", e.ministerStyle},
+        {"use_race_minister_style", e.useRaceMinisterStyle},
         {"race", std::move(raceTable)},
     };
     std::ostringstream os;
@@ -538,7 +543,15 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
     d.setup.presetTier = static_cast<int>(root["preset_tier"].value_or(int64_t{0}));
     d.setup.color = static_cast<uint32_t>(root["color"].value_or(int64_t{0}) & 0xffffff);
     d.setup.passwordHash = root["password_hash"].value_or(std::string{});
+    d.setup.useRaceMinisterStyle = root["use_race_minister_style"].value_or(false);
     if (d.setup.name.empty()) return std::unexpected("The empire file has no empire name.");
+    const std::string style = root["minister_style"].value_or(std::string{});
+    if (!style.empty()) {
+        const std::vector<std::string> styles = ministerStyleChoices(r);
+        const auto known = std::find_if(styles.begin(), styles.end(), [&](const std::string& st) { return keysEqual(st, style); });
+        if (known != styles.end()) d.setup.ministerStyle = *known;
+        else out.warnings.push_back(std::format("The minister style {} is not installed; the race's own is used.", style));
+    }
     if (!d.setup.preset.empty() && !game::findPreset(r, d.setup.preset)) {
         out.warnings.push_back(std::format("The race style {} is not installed; generic art is used.", d.setup.preset));
     }

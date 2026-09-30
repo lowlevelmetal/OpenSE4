@@ -1,7 +1,8 @@
 #include "net/host.hpp"
 
+#include "datafile/datafile.hpp"
+#include "game/ai_data.hpp"
 #include "game/redact.hpp"
-
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
 #include "game/turn.hpp"
@@ -35,6 +36,17 @@ bool sameName(std::string_view a, std::string_view b) {
     return true;
 }
 
+// A minister style must be one of the install's (spec 02 §9); its spelling is
+// made the folder's.
+std::string checkMinisterStyle(const game::Rules& r, std::string& style) {
+    if (style.empty()) return {};
+    const std::vector<std::string> styles = game::ai::ministerStyles(r);
+    const auto known = std::find_if(styles.begin(), styles.end(), [&](const std::string& st) { return datafile::keysEqual(st, style); });
+    if (known == styles.end()) return std::format("Unknown minister style '{}'.", style);
+    style = *known;
+    return {};
+}
+
 // Cleans an empire setup received from a player.
 std::string checkSetup(const game::Rules& r, const game::GameOptions& options, game::EmpireSetup& s) {
     s.name = proto::sanitize(s.name, 64);
@@ -42,10 +54,12 @@ std::string checkSetup(const game::Rules& r, const game::GameOptions& options, g
     s.leaderTitle = proto::sanitize(s.leaderTitle, 64);
     s.leaderName = proto::sanitize(s.leaderName, 64);
     s.preset = proto::sanitize(s.preset, 64);
+    s.ministerStyle = proto::sanitize(s.ministerStyle, 64);
     s.passwordHash.clear();
     s.kind = game::PlayerKind::Human;
     s.presetTier = std::clamp(s.presetTier, 0, 2);
     if (!s.preset.empty() && !game::findPreset(r, s.preset)) return std::format("Unknown race '{}'.", s.preset);
+    if (std::string problem = checkMinisterStyle(r, s.ministerStyle); !problem.empty()) return problem;
     if (s.customRace) {
         const int cost = game::racialPointCost(r, *s.customRace);
         if (cost > options.racialPoints)
@@ -722,6 +736,7 @@ std::expected<uint32_t, std::string> HostSession::addComputerEmpire(game::Empire
     if (phase_ != HostPhase::Lobby) return std::unexpected(std::string("Empires can only be added before the game starts."));
     if (slots_.size() >= kMaxSlots) return std::unexpected(std::format("A game has at most {} empires.", kMaxSlots));
     if (!setup.preset.empty() && !game::findPreset(rules_, setup.preset)) return std::unexpected(std::format("Unknown race '{}'.", setup.preset));
+    if (std::string problem = checkMinisterStyle(rules_, setup.ministerStyle); !problem.empty()) return std::unexpected(problem);
     auto s = std::make_unique<Slot>();
     s->info.id = nextSlotId_++;
     s->info.kind = SlotKind::Computer;

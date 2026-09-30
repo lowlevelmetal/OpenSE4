@@ -89,9 +89,11 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Join a Game", ctx.size({200, 40}))) mode_ = Mode::Join;
         ImGui::SameLine();
+        if (ImGui::Button("Play by E-mail", ctx.size({200, 40}))) ctx.go(FrontId::Pbem);
+        ImGui::SameLine();
         if (ImGui::Button("Back", ctx.size({200, 40}))) ctx.go(FrontId::Intro);
         ImGui::Spacing();
-        ImGui::TextDisabled("For a game without a player on the host machine, or play by e-mail, use opense4-server.");
+        ImGui::TextDisabled("To host a game without a player on the host machine, or to host a play-by-e-mail game, use opense4-server.");
     }
 
     void common(MenuContext& ctx) {

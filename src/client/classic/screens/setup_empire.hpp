@@ -55,7 +55,7 @@ private:
     std::string error_;
     int hoveredTrait_ = -1;
     game::EmpireSetup result_;
-    std::vector<std::string> surfaces_, atmospheres_, designFiles_;
+    std::vector<std::string> surfaces_, atmospheres_, designFiles_, ministerStyles_;
 };
 
 } // namespace opense4::client::classic::setup

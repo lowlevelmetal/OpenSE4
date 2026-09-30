@@ -654,6 +654,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   when the empire's option to route around them is on. Then a warp link whose sector on either side
   is tagged is not used, and in-system steps avoid tagged sectors. A group whose leading ship has a
   particular design type (inferred: the mine-sweeper type) is exempt.
+- These two options (avoid tagged minefields, avoid restricted systems) are the empire's **Ship
+  Movement** options in the Empire Options window (spec 06). Computer players copy them from their
+  `AI_Settings` each turn (spec 05 §7.5). OpenSE4 switches both on for a new empire, and treats a
+  tagged sector at the start or the destination as no obstacle (inferred, §19 Q58).
 - **In-system steps are greedy:** one square toward the target, diagonal first. The step is
   re-chosen when the next square is not the destination and is a tagged minefield (option on), has
   `Sector - Damage`, or holds a visible hostile object. The re-choice picks at random among the
@@ -1507,3 +1511,10 @@ All rules in this section are (confirmed: binary).
     it later in the same turn (§7, §11). A `Ship - Lose Supply` on a vehicle with unlimited
     supply takes from the marker value, which returns at the owner's next upkeep; it never
     shows, since such a vehicle reads "Endless". (inferred)
+58. **Ship Movement options (§6.2):** the engine switches both options (avoid tagged
+    minefields, avoid restricted systems) on for a new human empire; a computer player's are
+    overwritten each turn by its `AI_Settings` flags, which are off when the keys are absent.
+    The group exempt from tagged minefields is one whose leading ship (the fleet leader, the
+    first ship of an ad-hoc group, or the ship itself) has the design type `Mine Sweeper`. A
+    tagged sector where the route starts or ends blocks neither a step nor a warp link. What are
+    the original's defaults for a new empire, and which design type is exempt? (inferred)

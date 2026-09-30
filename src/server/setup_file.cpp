@@ -1,5 +1,7 @@
 #include "server/setup_file.hpp"
 
+#include "datafile/datafile.hpp"
+#include "game/ai_data.hpp"
 #include "net/auth.hpp"
 
 #include <toml++/toml.hpp>
@@ -194,7 +196,7 @@ private:
 
     void empire(const toml::table& t) {
         allowOnly(t, "empire", {"name", "race", "tier", "kind", "player", "password", "password_hash", "color", "empire_type", "leader",
-                                "leader_title"});
+                                "leader_title", "minister_style", "use_race_minister_style"});
         SetupEmpire e;
         game::EmpireSetup& s = e.setup;
         s.name = string(t, "name").value_or("");
@@ -213,6 +215,17 @@ private:
             else error(*t.get("kind"), "'kind' must be \"human\", \"computer\" or \"neutral\"");
         }
         if (auto color = integer(t, "color", 0, 0xffffff)) s.color = static_cast<uint32_t>(*color);
+        // The minister style (spec 02 §9): a folder under Ai/ of the install.
+        if (auto style = string(t, "minister_style")) {
+            const std::vector<std::string> styles = game::ai::ministerStyles(rules_);
+            const auto known = std::find_if(styles.begin(), styles.end(), [&](const std::string& st) { return datafile::keysEqual(st, *style); });
+            if (known == styles.end()) error(*t.get("minister_style"), std::format("the data set has no minister style '{}'", *style));
+            else s.ministerStyle = *known;
+        }
+        if (const toml::node* n = t.get("use_race_minister_style")) {
+            if (const auto* b = n->as_boolean()) s.useRaceMinisterStyle = b->get();
+            else error(*n, "'use_race_minister_style' must be true or false");
+        }
         e.player = string(t, "player").value_or("");
         if (auto pw = string(t, "password")) s.passwordHash = net::hashPassword(*pw);
         if (auto h = string(t, "password_hash")) s.passwordHash = *h;

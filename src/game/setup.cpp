@@ -340,6 +340,10 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         e.id = EmpireId{i};
         e.kind = es.kind;
         e.passwordHash = es.passwordHash;
+        // The Empire Setup minister style; it drives a Computer Controlled
+        // empire too, unless the race's style is used (spec 02 §9, spec 05 §7.1).
+        e.ministerStyle = es.ministerStyle;
+        e.useRaceMinisterStyle = es.useRaceMinisterStyle;
         const ruleset::RacePreset* preset = es.preset.empty() ? nullptr : findPreset(r, es.preset);
         if (es.customRace) e.race = *es.customRace;
         else if (preset) e.race = raceFromPreset(r, *preset, es.presetTier);
