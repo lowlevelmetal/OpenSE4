@@ -155,7 +155,9 @@ int sweepMines(TurnContext& ctx, VehicleId sweeperId) {
     GameState& s = ctx.state;
     Vehicle* sweeper = s.vehicle(sweeperId);
     if (!sweeper || !alive(*sweeper)) return 0;
-    int64_t capacity = sumValue1(vehicleAbilities(r, s, *sweeper), AbilityKind::MineSweeping);
+    // A unit group lists every unit's abilities, so its sweeping adds up (§12).
+    int64_t capacity = abilitySum(vehicleAbilities(r, s, *sweeper), AbilityKind::MineSweeping);
+    if (isUnitType(vehicleType(r, s, *sweeper))) capacity *= std::max(1, sweeper->count);
     if (capacity <= 0) return 0;
     const EmpireId owner = sweeper->owner;
     const Location where = sweeper->location;

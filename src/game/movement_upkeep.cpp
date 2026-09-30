@@ -235,7 +235,8 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     // Solar collectors: V1 per star in the system, capped at the maximum.
     for (Vehicle& v : s.vehicles) {
         if (!alive(v) || v.owner != e || vehicleHasUnlimitedSupply(r, s, v) || !vehicleUsesSupply(r, s, v)) continue;
-        const int64_t solar = abilitySum(vehicleAbilities(r, s, v), AbilityKind::SolarSupplyGeneration);
+        const int64_t solar = abilitySum(vehicleAbilities(r, s, v), AbilityKind::SolarSupplyGeneration) *
+                              (isShipOrBase(vehicleType(r, s, v)) ? 1 : std::max(1, v.count));  // a group adds every unit's
         const int64_t capacity = vehicleSupplyCapacity(r, s, v);
         if (solar > 0 && v.supply < capacity) v.supply = std::min(capacity, v.supply + solar * starsIn(s, v.location.system));
     }

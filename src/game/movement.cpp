@@ -490,7 +490,9 @@ private:
     }
 
     // Can the group take a step now? (Arrival and routes are checked by the callers.)
-    std::optional<Travel> readyToStep(const Actor& a) const {
+    std::optional<Travel> readyToStep(Actor& a) {
+        // A maximum that dropped (engines lost in a battle) caps the movement left at once (§6.1).
+        for (VehicleId id : a.members) capMovement(a, id);
         if (immobile(a)) return held(a) ? Travel::Wait : Travel::Immobile;
         if (yardBusy(a)) return Travel::Busy;
         if (remaining(a) <= 0) return Travel::Wait;
