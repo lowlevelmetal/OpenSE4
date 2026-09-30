@@ -15,13 +15,14 @@ outcomes, **L** is an edge case.
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Arithmetic | Integer maths with floor division throughout | Percentages are applied in floating point, and each rule states whether its result is rounded (half to even) or truncated (spec 02 §1, spec 03 §2). Because of extended precision, an exact product can come out one lower, e.g. 100 × 53 % gives 52 | M |
-| Turn order (`turn.cpp:39-104`) | Economy, research, intelligence, events and population, in fixed global phases | Spec 05 §8: orders, messages, date, ministers and AI, 30 movement/combat phases, then each empire's end-of-turn steps one empire at a time (intelligence and research first, spending last turn's points), then victory, then one galaxy-wide event roll | M |
+| Turn style (`turn.cpp`) | Every game is resolved as a simultaneous turn; the setup's "One player after another" choice changes nothing | Spec 05 §8 "Turn-based game": each player's movement, combat and diplomacy happen live in that player's turn, and `empireEndOfTurn` runs when the player ends it | M |
+| End-of-turn step 12 (`turn.cpp`) | Nothing is forgotten: the engine does not record when a foreign design was seen | Spec 05 §8 step 12: knowledge of foreign designs seen more than 50 turns ago is forgotten | L |
 
 ## Economy and population (spec 02)
 
 Every row of this section was implemented on 2026-09-29. The economy's end-of-turn work is
-one function per step of spec 02 §12 (`economy.hpp`), ready for the turn-order change; open
-engine choices are spec 02 §13 items 37–48. Conditions are hundredths of the 0–1.5 scale
+one function per step of spec 02 §12 (`economy.hpp`), run inside each empire's end-of-turn
+processing (`turn.cpp`, spec 05 §8); open engine choices are spec 02 §13 items 37–48. Conditions are hundredths of the 0–1.5 scale
 everywhere (generation, events, combat, stellar manipulation), and setup's racial point
 cost sums `economy::characteristicPointCost`.
 
@@ -43,8 +44,7 @@ The rules of this section follow the spec. What is left depends on other parts o
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| `turn.cpp` phases | Research runs before intelligence, both after the economy; the first research step takes its opening pool from the economy's first-turn income (`economy::openingResearchPool`) | Intelligence, then research, first in each empire's end-of-turn processing; the pools are filled when the game is created and by the income step (§1.1, §8). The per-empire steps exist: `intel::intelStep`, `research::researchStep`, `research::addToPools`, `research::openingPools`, `diplomacy::treatyStep`, `score::checkDestruction`, `score::checkVictory`, `events::fireDueEvents`, `events::rollNewEvent` | L |
-| `events.cpp` | `Planet - Destroyed` maps Tiny and Huge planets to asteroid sizes | The Destroy Planet result of spec 01 §9 (the hazards now run first in the event step, `movement::runStellarHazards`) | L |
+| History window (client `empires.cpp`) | Lists the log's entries, and the log keeps only the last turn's (§3.4, as the original) | The history window keeps its own long record, the per-player `<game>_events.txt` (§5) | L |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -55,14 +55,12 @@ silent are listed in spec 01 §14 (Q27 onward). What is left needs code outside 
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| client `ships_logic.cpp`, `reports.cpp`, `main_window.cpp` | Button checks follow the old manipulation rules; warp points show their stored name | Mirror spec 01 §9 (one star per system, hostile, cloak and supply checks); name warp points with `sight::warpPointName` | L |
 | Low | map starting points (no map files yet, spec 01 §12); autosave choices | see spec 01 | L |
 
 ## Computer player (spec 05 §7)
 
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| `turn.cpp:39-104` | The AI plans both minister groups while orders are applied (`ai::planTurn`); anger and the state machine run at the end of the turn (`ai::updateAnger`) | Design, Research, Intelligence and the construction ministers run at the start of each empire's economy step (§7.1, §8). `ai::planOrders` and `ai::planEconomyStep` are the two groups, and `updateAnger`'s parts (`recordAiDecisions`, `updateAiStates`, `politicalStep`, `rememberAiEvents`) are separate, ready for the §8 turn order | M |
 | Commands | No command sets `Empire::ministers` or `Empire::ministerStyle`; the Ministers window keeps its switches on this computer | The per-area minister switches and the minister style are part of the player's settings (§7.1) | L |
 | Commands | No command launches units from a planet's cargo | Satellites and drones above the kept percentages are launched from planets, drones half anti-ship and half anti-planet (§7.5) | L |
-| Low | Acknowledgement chatter replies; the Units file rows; the AI_Settings movement flags (no empire movement options yet); a missed human turn's political step; the Race Opt planet type and atmosphere check | see §7 | L |
+| Low | Acknowledgement chatter replies; the Units file rows; the AI_Settings movement flags (no empire movement options yet); the Race Opt planet type and atmosphere check | see §7 | L |

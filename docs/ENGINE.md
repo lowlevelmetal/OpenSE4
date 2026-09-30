@@ -41,30 +41,67 @@ player / AI / network ─> game::Command ────┘         │
 
 ## Turn order
 
-`processTurn` (`turn.cpp`) currently runs the phases below. The original's order,
-checked in the executable, is in spec 05 §8. It differs: for example, it spends
-research and intelligence points before income, and runs each empire's end-of-turn
-steps one empire at a time. The engine still has to be brought in line with it.
+`processTurn` (`turn.cpp`) follows the original's order of a simultaneous turn, spec 05 §8
+(confirmed: binary). Empires are always taken in empire-number order, and destroyed
+empires are skipped.
 
-1. **Orders.** Each human's `EmpireOrders` are applied. Computer empires, and humans
-   who sent nothing, are played by `ai::planTurn`. Then ministers act.
-2. **Diplomacy:** `diplomacy::deliverMessages`.
-3. **Movement and space combat:** `movement::runMovementAndCombat`. Movement runs over 30
-   days: each vehicle, fleet and planet with orders carries out one order whenever its day
-   counter reaches 1, and `combat::resolveSpaceCombat` runs in sectors where something
-   acted and hostiles meet (spec 03 §6.3).
-4. **Ground combat and capture**, then colonization.
-5. **Economy:** production, trade, maintenance, then construction.
-6. **Research.** 7. **Intelligence.**
-8. **Hazards** (black-hole pull, drift, destructive centres: `movement::runStellarHazards`),
-   then **events**. 9. **Upkeep:** each empire's repair, supply and training
-   (`movement::runUpkeep`; per-empire steps in `movement.hpp`), and the design cleanup when
-   a year starts.
-10. **Sight, contact and trade.** 11. **AI anger.**
-12. **Population:** growth, then mood from every event of the turn, riots and plague.
-    The spec places it earlier. It runs last so that mood events raised by the later
-    phases are not lost.
-13. **End of turn:** statistics, score, victory, then the date advances.
+1. **Orders.** Each human's `EmpireOrders` are applied, in player order. A human who sent
+   nothing is played by the computer for this turn: all of its ministers are switched on
+   and restored at the end of the turn. A player who ticked "AI should not make changes"
+   only gets the bookkeeping.
+2. **Messages:** `diplomacy::deliverMessages` processes the players' messages.
+3. **Date.** `GameState::turn` stays the number the orders were given for until the end
+   of the turn, so log entries and records carry it. The steps that depend on the date
+   get `turn + 1`.
+4. **Start of turn**, for each empire: `ai::updateAiState`, `ai::politicalStep` (it counts
+   the turn processed before, whose battles `GameState::combats` still holds), then the
+   ministers that act while orders are given (`ai::planOrders`: every minister for a
+   computer player, the active ones for a human). Their messages take effect at once.
+   Afterwards `ai::recordAiDecisions` notes what was decided.
+5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
+   vehicle, fleet and planet with orders carries out one order whenever its day counter
+   reaches 1, and `combat::resolveSpaceCombat` runs in sectors where something acted and
+   hostiles meet (spec 03 §6.3). Colony ships waiting at their planets then found their
+   colonies (`movement::runColonization`), and sight and first contact are updated.
+6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
+   that empire's destruction check (`score::checkDestruction`):
+   1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
+      Intelligence and construction);
+   2. the statistics row (`score::recordStatistics`);
+   3. intelligence (`intel::intelStep`) and
+   4. research (`research::researchStep`), each spending the pool the previous turn filled;
+   5. income (`economy::collectIncome`): production, tariffs (the master receives its
+      share at once), the computer bonus, and the research and intelligence pools
+      (`research::addToPools`);
+   6. treaties and trade (`diplomacy::treatyStep`, which pays trade through
+      `economy::collectTrade`);
+   7. maintenance, 8. planets, 9. happiness, 10. construction (`economy::payMaintenance`,
+      `processPlanets`, `updateHappiness`, `runConstruction`);
+   11. repair, 13. supply (`movement::repairEmpire`, `supplyEmpire`);
+   14. the storage cap, 15. system-wide abilities and training (`economy::applyStorageCap`,
+      `applySystemAbilities`, `movement::trainEmpire`);
+   17. ground combat where the empire's troops invade (`combat::runGroundCombat`);
+   18. the log keeps only this turn's entries.
+
+   Step 12 (forgetting foreign designs seen more than 50 turns ago) does nothing: the
+   engine does not record when a design was seen. Step 16's per-object upkeep is part of
+   the supply step.
+7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`).
+8. **Victory check** (`score::checkVictory`).
+9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
+   (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
+   (`events::rollNewEvent`).
+10. **End.** Per-turn flags are cleared, sight and contact follow the events, the AI
+    remembers the turn's battles and spies (`ai::rememberAiEvents`), the turn number
+    advances and `economy::updateReports` projects next turn's income.
+
+Mood events raised after an empire's happiness update (construction, ground combat, the
+other empires' processing, events) wait in `GameState::pendingMood` for that empire's next
+update. The game's research pool starts at Starting Resources plus one turn of research,
+and the intelligence pool at 0 (`research::openingPools`, called by `createGame`).
+
+OpenSE4 resolves every game this way; the turn-based style (spec 05 §8, "Turn-based game")
+is not implemented. `empireEndOfTurn` is the per-player processing it would call.
 
 ## Determinism
 

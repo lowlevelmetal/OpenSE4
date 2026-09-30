@@ -73,7 +73,8 @@ struct Relation {
     int anger = 50;             // computer players: anger toward that empire, 0..100 (spec 05 §7.3)
     bool messageSentThisTurn = false;
     // What a computer player (or a Politics minister) remembers about that
-    // empire between turns (spec 05 §7.3, §7.4). Kept by ai::updateAnger.
+    // empire between turns (spec 05 §7.3, §7.4). Kept by the AI memory steps
+    // (ai::recordAiDecisions, updateAiState, politicalStep, rememberAiEvents).
     int turnsSinceWar = 999;    // 0 while at war, +1 each turn otherwise
     int treatyAge = 0;          // turns since the treaty changed (moves between Trade Alliance and better do not count)
     Treaty agedTreaty = Treaty::None;  // the treaty treatyAge was last updated for
