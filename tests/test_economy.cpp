@@ -1027,6 +1027,37 @@ TEST_CASE("economy: units go into cargo, one at a time, in the same sector only"
     CHECK(home.queue.items.empty());
 }
 
+TEST_CASE("economy: built units go to the holders in the game's object order") {
+    // Spec 02 §6.5: the builder, then the other planets and ships of the
+    // empire in the sector in object order. Planets come before every vehicle
+    // (spec 03 §19 Q62), and a vehicle that took a freed slot comes before
+    // later ones, wherever it is in the vehicle list.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {});
+    home.cargo.population = {{kMe, 1'000'000}};  // the builder is full
+    const Location homeLoc = locationOf(s.galaxy, home.planet);
+    const cmd::QueueTarget q{home.planet, {}};
+    const DesignId fighter = addTestDesign(s, r, kMe, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId hauler = addTestDesign(s, r, kMe, "Hauler", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay"});
+    const VehicleId gone = addTestVehicle(s, r, hauler, homeLoc).id;
+    const VehicleId second = addTestVehicle(s, r, hauler, homeLoc).id;
+    s.vehicle(gone)->count = 0;
+    s.removeDeadVehicles();
+    const VehicleId first = addTestVehicle(s, r, hauler, homeLoc).id;  // takes the freed slot
+    REQUIRE(s.vehicle(first)->slot < s.vehicle(second)->slot);
+    REQUIRE(s.vehicles.back().id == first);
+    QueueItem item;
+    item.design = fighter;
+    item.count = 2;
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    economyTurn(r, s);
+    CHECK(s.vehicle(first)->cargo.unitCount(fighter) == 2);
+    CHECK(s.vehicle(second)->cargo.unitCount(fighter) == 0);
+}
+
 TEST_CASE("economy: facilities need a free slot; with one the whole count is built") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();

@@ -283,12 +283,20 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
         builder = &c->cargo;
         holders.push_back({builder, colonyCargoCapacity(r, s, *c) - cargoSpaceUsed(r, s, c->cargo)});
     }
+    // Then the empire's other planets and ships in the sector, in the game's
+    // object order (spec 02 §6.5, confirmed: binary). In the engine's object
+    // slots every planet comes before every vehicle (Vehicle::slot, spec 03
+    // §19 Q62), so that order is the planets in object order, then the ships
+    // and bases by slot.
     for (ObjectId o : planetsAt(s, q.location))
         if (Colony* c = s.colony(o); c && c->owner == e && &c->cargo != builder)
             holders.push_back({&c->cargo, colonyCargoCapacity(r, s, *c) - cargoSpaceUsed(r, s, c->cargo)});
+    std::vector<Vehicle*> ships;
     for (Vehicle& v : s.vehicles)
         if (v.owner == e && v.location == q.location && v.count > 0 && &v.cargo != builder && isShipOrBase(vehicleType(r, s, v)))
-            holders.push_back({&v.cargo, vehicleCargoCapacity(r, s, v) - cargoSpaceUsed(r, s, v.cargo)});
+            ships.push_back(&v);
+    std::sort(ships.begin(), ships.end(), [](const Vehicle* a, const Vehicle* b) { return a->slot < b->slot; });
+    for (Vehicle* v : ships) holders.push_back({&v->cargo, vehicleCargoCapacity(r, s, *v) - cargoSpaceUsed(r, s, v->cargo)});
 
     const std::string where = placeName(s, q);
     const std::string name = s.design(design).name;

@@ -1503,11 +1503,13 @@ running game.
     asteroid field's 0.6 / 2, or 0.5 lowered by an event of −0.2) is Deadly, while the
     double nearest 1.3 lies above 1.3 and is Good. If the original compares with double
     constants, such values fall in the band above.
-52. **Where built units go.** *Open* (inferred, §6.5): after the builder, the engine
-    tries the empire's other planets in the sector in object order, then its ships and
-    bases in vehicle order. The original takes "the game's object order, planets and ships
-    mixed"; the engine has no order that mixes the two. Which order is it: creation order,
-    or the order of the system's object list, where a ship that arrives is appended?
+52. **Where built units go.** *Settled* (§6.5, with spec 03 §6.3 step 5): "the game's
+    object order" is the order of the object slots, where a new object takes the first
+    slot a destroyed one freed. The engine keeps a slot per vehicle (`Vehicle::slot`) and
+    places every planet before every vehicle (spec 03 §19 Q62, its own choice), so after
+    the builder it tries the empire's other planets in the sector in object order, then
+    its ships and bases by slot. Whether the original ever puts a planet's slot after a
+    ship's is spec 03's question 62.
 53. **Removing items a queue cannot build.** *Open* (inferred, §6.1): the engine removes
     them at the start of every queue's turn, also when the queue is on hold, cloaked or
     without population, or its colony is rioting. The processing order of §6.3 is decided
