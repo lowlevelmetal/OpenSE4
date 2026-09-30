@@ -254,11 +254,14 @@ public:
         ImGui::EndGroup();
         ImGui::Spacing();
         const float col = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        // Room below the lists for the new-vehicle switch, the style switch and picker, and a status line.
+        const float below = ImGui::GetFrameHeightWithSpacing() * 4 + ImGui::GetStyle().ItemSpacing.y * 2;
+        const float listHeight = std::max(ui.px(200), ImGui::GetContentRegionAvail().y - below);
         for (int pass = 0; pass < 2; ++pass) {
             if (pass == 1) ImGui::SameLine();
-            ImGui::BeginChild(pass == 0 ? "##global" : "##individual", ImVec2(col, ui.px(400)), ImGuiChildFlags_Borders);
+            ImGui::BeginChild(pass == 0 ? "##global" : "##individual", ImVec2(col, listHeight), ImGuiChildFlags_Borders);
             heading(ui, pass == 0 ? "Empire-wide ministers" : "Individual ministers");
-            dimText(pass == 0 ? "Each takes over its whole area." : "Each acts on ships and planets with the minister flag set.");
+            wrappedDim(pass == 0 ? "Each takes over its whole area." : "Each acts on ships and planets with the minister flag set.");
             ImGui::Spacing();
             for (size_t i = 0; i < game::kMinisters; ++i) {
                 const auto m = static_cast<game::Minister>(i);
