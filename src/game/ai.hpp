@@ -166,7 +166,8 @@ const ruleset::RacePreset* pickRandomRace(const Rules& r, Rng& rng, bool neutral
 // The race a random computer player plays: the preset's `Race Opt` set of the
 // racial-point level (1 for 2000, 2 for 3000, 3 for 5000; none for 0),
 // characteristics applied while they fit the budget, then traits that fit.
-Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints);
+// A planet type and atmosphere pair that is not allowed is redrawn from `rng`.
+Race randomPlayerRace(const Rules& r, const ruleset::RacePreset& preset, int racialPoints, Rng& rng);
 
 // Spec 05 §7.1 "random AIs": how many random computer (or neutral) players a
 // Low/Medium/High setting (0..2) brings, and a race preset folder for each.

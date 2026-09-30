@@ -225,7 +225,7 @@ std::expected<game::GameSetup, std::string> buildGameSetup(const game::Rules& r,
             game::EmpireSetup e;
             e.preset = p->folder;
             // The preset's Race Opt set of the racial-point level (spec 05 §7.1).
-            e.customRace = game::ai::randomPlayerRace(r, *p, o.racialPoints);
+            e.customRace = game::ai::randomPlayerRace(r, *p, o.racialPoints, rng);
             e.kind = neutral ? game::PlayerKind::Neutral : game::PlayerKind::Computer;
             // Only random players get the chosen Computer Player Difficulty.
             o.randomAiPlayers.resize(g.empires.size() + 1, 0);

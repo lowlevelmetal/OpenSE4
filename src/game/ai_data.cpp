@@ -604,6 +604,34 @@ std::vector<VehicleQueue> parseVehicles(const datafile::DataFile& file) {
     return out;
 }
 
+std::vector<UnitQueue> parseUnits(const datafile::DataFile& file) {
+    // A leading reserve key makes the whole file one record, so rows are split
+    // where `AI State` or `Colony Type` repeats (inferred format).
+    std::vector<datafile::Record> rows(1);
+    for (const auto& rec : file.records)
+        for (const auto& fld : rec.fields) {
+            const bool opens = keysEqual(fld.key, "AI State") || keysEqual(fld.key, "Colony Type");
+            if (opens && rows.back().find(fld.key)) rows.emplace_back();
+            rows.back().fields.push_back(fld);
+        }
+    std::vector<UnitQueue> out;
+    for (const auto& rec : rows) {
+        const Fields f(&rec);
+        UnitQueue q;
+        if (f.has("AI State")) q.states = parseStateList(f.text("AI State"));
+        q.colonyType = f.text("Colony Type");
+        const int n = f.num("Num Queue Entries", 0);
+        for (int i = 1; i <= n; ++i) {
+            UnitEntry e;
+            e.type = f.text(std::format("Entry {} Type", i));
+            e.amount = f.num(std::format("Entry {} Amount", i), 0);
+            if (!e.type.empty()) q.entries.push_back(std::move(e));
+        }
+        if (!q.colonyType.empty()) out.push_back(std::move(q));
+    }
+    return out;
+}
+
 bool parseVehicleType(std::string_view text, ruleset::VehicleType& out) {
     for (size_t i = 0; i < static_cast<size_t>(ruleset::VehicleType::Count); ++i) {
         const auto t = static_cast<ruleset::VehicleType>(i);
@@ -818,6 +846,13 @@ const FacilityQueue* AiProfile::facilityQueue(AiState s, std::string_view queueT
     return last;
 }
 
+const UnitQueue* AiProfile::unitQueue(AiState s, std::string_view colonyType) const {
+    const UnitQueue* last = nullptr;
+    for (const auto& q : units)
+        if ((q.states & maskOf(s)) && keysEqual(q.colonyType, colonyType)) last = &q;
+    return last;
+}
+
 const AiProfile& builtinProfile() {
     static const AiProfile p = makeBuiltin();
     return p;
@@ -843,9 +878,12 @@ AiProfile loadProfile(const std::filesystem::path& gameRoot, std::string_view ra
         if (!speech.pools.empty()) p.speech = std::move(speech);
     }
     if (auto f = readTable(where, "Strategies", p)) p.strategies = parseStrategies(*f);
-    // Not shipped with the stock install; only its reserve is used (spec 05 §7.5, the rows are open).
-    if (auto f = readTable(where, "Construction_Units", p))
+    // Not shipped with the stock install (spec 05 §7.5): the reserve for units
+    // (in the first record) and the rows (format inferred).
+    if (auto f = readTable(where, "Construction_Units", p)) {
         p.unitReservePercent = Fields(&f->records.front()).num("Percentage of Resources To Reserve For Unit Construction", 0);
+        p.units = parseUnits(*f);
+    }
     if (p.sources.empty()) p.sources.push_back("built-in");
     return p;
 }

@@ -276,9 +276,20 @@ public:
     void run() {
         const VehicleQueue* table = p_.prof.vehicleQueue(p_.state);
         cleanUp();
-        if (!table) return;
         const int64_t reserve = std::clamp(p_.prof.unitReservePercent, 0, 100);
         budget_ = p_.netIncome().percent(100 - reserve);
+        if (table) vehicles(*table);
+        // The reserve, and whatever the vehicles left, goes to unit cargo (inferred).
+        budget_ += p_.netIncome().percent(reserve);
+        units();
+    }
+
+private:
+    Planner& p_;
+    Resources budget_;
+
+    void vehicles(const VehicleQueue& list) {
+        const VehicleQueue* table = &list;
         const bool soft = p_.overCap(0), hard = p_.overCap(20);
         const int64_t colonies = p_.colonyCount();
         int placed = 0;
@@ -309,9 +320,50 @@ public:
         }
     }
 
-private:
-    Planner& p_;
-    Resources budget_;
+    // `_AI_Construction_Units` rows fill the cargo of colonies whose queue is
+    // empty (spec 05 §7.5, details open). OpenSE4 (inferred): the colony's row
+    // is the last one for the AI state and its colony type (Homeworld for an
+    // unknown type); its first entry whose newest design the colony can build
+    // and holds fewer than `Amount` of is queued once, as many as are missing,
+    // fit the free cargo and the queue finishes in one turn (at least one).
+    void units() {
+        if (p_.prof.units.empty()) return;
+        std::vector<ObjectId> planets;
+        for (const auto& c : p_.st.colonies)
+            if (c && c->queue.items.empty() && p_.controlsColony(*c, Minister::ShipConstruction)) planets.push_back(c->planet);
+        for (ObjectId planet : planets) {
+            if (!positive()) return;
+            const Colony& c = *p_.st.colony(planet);
+            const ColonyType type = parseColonyType(c.colonyType);
+            const UnitQueue* row = p_.prof.unitQueue(p_.state, type == ColonyType::Count ? displayName(ColonyType::Homeworld) : displayName(type));
+            if (!row) continue;
+            const cmd::QueueTarget target{planet, {}};
+            const Resources rate = economy::constructionRate(p_.r, p_.st, p_.id, target);
+            const int64_t room = colonyCargoCapacity(p_.r, p_.st, c) - cargoSpaceUsed(p_.r, p_.st, c.cargo);
+            for (const UnitEntry& entry : row->entries) {
+                const std::optional<DesignId> design = p_.newestDesign(entry.type);
+                if (!design || !isUnitType(p_.info(*design).stats.vehicleType)) continue;
+                int64_t held = 0;
+                for (const UnitStack& u : c.cargo.units)
+                    if (keysEqual(p_.info(u.design).aiType, entry.type)) held += u.count;
+                const int64_t tons = std::max(1, p_.r.hull(p_.st.design(*design).hull).tonnage);
+                int64_t n = std::min<int64_t>(entry.amount - held, room / tons);
+                const Resources each = p_.info(*design).stats.cost;
+                for (Resource k : kResources)
+                    if (each[k] > 0) n = std::min(n, std::max<int64_t>(1, rate[k] / each[k]));
+                if (n <= 0) continue;
+                QueueItem item;
+                item.kind = QueueItem::Kind::Vehicle;
+                item.design = *design;
+                item.count = static_cast<int>(std::min<int64_t>(n, 1000));
+                if (!queueItemProblem(p_.r, p_.st, p_.id, target, item).empty()) continue;
+                const Resources cost = economy::itemCost(p_.r, p_.st, p_.id, target, item);
+                if (!p_.emit(cmd::QueueAdd{target, item, -1})) continue;
+                budget_ -= min(cost, rate);
+                break;
+            }
+        }
+    }
 
     bool positive() const { return budget_[Resource::Minerals] > 0 && budget_[Resource::Organics] > 0 && budget_[Resource::Radioactives] > 0; }
 
