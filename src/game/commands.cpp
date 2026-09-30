@@ -285,7 +285,8 @@ struct Applier {
         const uint32_t f = col->facilities[static_cast<size_t>(c.facilitySlot)];
         int pct = static_cast<int>(r.setting("Scrap Facility Percent Returned", 30));
         pct = std::max(pct, reclamationPercentAt(r, s, e, locationOf(s.galaxy, col->planet)));
-        emp().stockpile += Resources::from(r.facility(f).cost).percent(pct);
+        // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
+        emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
         // Scrapping the space yard removes vehicles from the queue.
         if (hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard) && !colonyHasSpaceYard(r, *col))

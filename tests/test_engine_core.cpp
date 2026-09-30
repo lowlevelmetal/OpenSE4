@@ -252,6 +252,40 @@ TEST_CASE("engine: scrap refunds and retrofit keeps damage") {
     CHECK(s.empires[0].stockpile == pre + refund);
 }
 
+TEST_CASE("engine: a scrapped facility refunds round(cost × %) in floating point") {
+    // Spec 02 §6.6: round, not truncate: 109 × 30 % gives 33, where integer maths gave 32.
+    ruleset::Ruleset data = buildEngineRuleset();
+    for (auto& f : data.facilities)
+        if (f.name == "Test Lab") f.cost = {109, 5, 1};
+    const Rules r{std::move(data)};
+    GameSetup setup;
+    setup.seed = 7;
+    setup.options.systemCount = 12;
+    for (int i = 0; i < 2; ++i) {
+        EmpireSetup e;
+        e.name = std::format("Scrapper {}", i + 1);
+        setup.empires.push_back(e);
+    }
+    auto g = createGame(r, setup);
+    REQUIRE(g.has_value());
+    GameState& s = *g;
+    const EmpireId me{0u};
+    Colony& home = homeworld(s, me);
+    const uint32_t lab = facilityIndex(r, "Test Lab");
+    const auto slot = std::find(home.facilities.begin(), home.facilities.end(), lab) - home.facilities.begin();
+    REQUIRE(static_cast<size_t>(slot) < home.facilities.size());
+    const int64_t pct = std::max<int64_t>(30, reclamationPercentAt(r, s, me, locationOf(s.galaxy, home.planet)));
+    const Resources before = s.empires[0].stockpile;
+    REQUIRE(apply(r, s, me, cmd::Scrap{{}, home.planet, static_cast<int32_t>(slot)}).ok);
+    const Resources got = s.empires[0].stockpile - before;
+    CHECK(got == Resources{xmath::pctRound(109, pct), xmath::pctRound(5, pct), xmath::pctRound(1, pct)});
+    if (pct == 30) CHECK(got.v[0] == 33);
+    // The Resources helpers: percent truncates and percentRounded rounds, both in extended precision.
+    CHECK(Resources{300, 100, 90}.percent(21) == Resources{62, 21, 18});
+    CHECK(Resources{109, 5, 3}.percentRounded(30) == Resources{xmath::pctRound(109, 30), xmath::pctRound(5, 30), xmath::pctRound(3, 30)});
+    CHECK(Resources{109, 0, 0}.percentRounded(30).v[0] == 33);
+}
+
 TEST_CASE("engine: processTurn advances and rejects stale orders") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
