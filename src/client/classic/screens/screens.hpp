@@ -71,6 +71,19 @@ std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs& args);
 // combat_replay.cpp
 std::unique_ptr<Screen> makeCombatReplay(const ScreenArgs& args);
 
+// tactical.cpp: the Tactical Combat window and its Orders and Options windows,
+// for the battle in ClassicSession::tactical().
+std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
+std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
+std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
+
+// simulator.cpp: the Combat Simulator window (Designs -> Simulator). ScreenArgs::text
+// "demo" fills it with a sample battle (automation, screenshots).
+std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
+// A sample simulated battle for automation: the player's warships against
+// copies of them, the player driving the first side. False when the player has none.
+bool startDemoSimulation(UiContext& ui, bool tactical);
+
 // settings_screen.cpp
 std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
 // The Sound page (classic sound and music preferences), shared with the front end.

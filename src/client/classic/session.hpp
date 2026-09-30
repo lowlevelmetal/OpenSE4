@@ -17,10 +17,21 @@
 // the player's turn issue() checks the command on the local copy and sends
 // it to the host (TurnTransport::playCommand), whose new state replaces the
 // copy when it arrives.
+//
+// Tactical combat in turn-based games (spec 04 §2, §3; game/turn.hpp): a
+// battle with human sides stops the engine call before the battle and the
+// session holds the question (battleQuestion()). The player answers
+// Strategic, or fights it in the Tactical Combat window (startTactical()
+// with a combat::TacticalBattle on the question's copy of the game); the
+// session then makes the same call again with the answers so far, which
+// fights the battle the same way on the real game and carries on. Local and
+// hotseat games only: network games (hosted or joined) never ask, and their
+// battles are strategic.
 
 #include "game/commands.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
+#include "game/tactical.hpp"
 #include "game/turn.hpp"
 
 #include <expected>
@@ -50,6 +61,18 @@ public:
 };
 
 enum class SessionKind { Local, Hotseat, NetworkClient };
+
+// A tactical battle being fought in the client: a turn-based game's battle
+// (its orders answer the session's battle question) or a combat simulation
+// (a sandbox; nothing comes back).
+struct TacticalFight {
+    enum class Kind { Game, Simulation };
+    Kind kind = Kind::Game;
+    std::unique_ptr<game::combat::TacticalBattle> battle;
+    std::vector<game::EmpireId> players;   // the sides the player drives
+    std::string title;                     // "Tactical Combat", "Combat Simulator"
+    size_t seen = 0;                       // events of the record already shown (the window plays the rest)
+};
 
 class ClassicSession {
 public:
@@ -82,6 +105,18 @@ public:
     // Turn-based games: the first battle the player's last order started, to
     // show at once (an index into GameState::combats), then forgotten.
     std::optional<size_t> takeNewBattle();
+
+    // Tactical combat (see the file comment). The battle that waits for its
+    // answer, if any: while it waits the game is as before the call.
+    const std::optional<game::BattleQuestion>& battleQuestion() const { return battle_; }
+    // Answers it and carries on (the next battle of the same call may ask next).
+    void answerBattle(game::BattleAnswer answer);
+    // The tactical battle in the Tactical Combat window, if any.
+    TacticalFight* tactical() { return tactical_.get(); }
+    void startTactical(TacticalFight fight);
+    // Closes it: a game battle is finished (the strategies play what is left)
+    // and its orders answer the battle question; a simulation is dropped.
+    void endTactical();
 
     // Ends the local player's turn. Local: every computer empire plays and the
     // turn is processed at once. Hotseat: moves to the next human who has not
@@ -123,6 +158,14 @@ private:
     // session to that player.
     void resumeTurnBased();
     void takeResult(const game::TurnResult& result);
+    // Turn-based games: the engine call in progress, made again with the
+    // battle answers until no battle asks; then its results are taken.
+    enum class Call { None, Issue, EndTurn, Resume };
+    void beginCall(Call call, std::optional<game::Command> command = std::nullopt);
+    void runCall();
+    // Whether this session's battles may ask (turn-based, local or hotseat,
+    // "No Tactical Combat" off).
+    bool offersTactical() const;
 
     std::shared_ptr<const game::Rules> rules_;
     game::GameState state_;
@@ -136,6 +179,16 @@ private:
     std::vector<std::string> notices_;
     std::string autosaveNote_;
     std::optional<size_t> newBattle_;
+    Call call_ = Call::None;
+    std::optional<game::Command> callCommand_;
+    size_t callBattles_ = 0;                  // GameState::combats before the call
+    std::vector<game::BattleAnswer> answers_;
+    game::CommandResult issued_;              // the result of the last Issue call that finished
+    std::optional<game::BattleQuestion> battle_;
+    std::unique_ptr<TacticalFight> tactical_;
+    // Tactical battles answered in this call, as fought in the window: the
+    // game's copy must come out the same (a check on determinism, logged).
+    std::vector<game::CombatRecord> fought_;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

@@ -3,8 +3,11 @@
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/classic/net_transport.hpp"
+#include "client/classic/reports.hpp"
+#include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
 #include "game/setup.hpp"
+#include "game/tactical.hpp"
 
 #include "core/log.hpp"
 
@@ -74,7 +77,18 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 error = std::format("Unknown window '{}'", options.openWindow);
                 return nullptr;
             }
-            mode->openScreen(*id, {});
+            if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions) {
+                // A sample battle to show: the player's warships against copies of them.
+                if (!startDemoSimulation(*mode->ui_, true)) {
+                    error = "No armed ship design to fight a sample battle with.";
+                    return nullptr;
+                }
+                if (*id != ScreenId::TacticalCombat) mode->ui_->open(*id);
+            } else {
+                ScreenArgs args;
+                if (*id == ScreenId::CombatSimulator) args.text = "demo";
+                mode->openScreen(*id, std::move(args));
+            }
         }
     } else {
         mode->front_ = makeFrontScreen(FrontId::Intro);
@@ -126,7 +140,7 @@ void ClassicMode::updateAudio() {
     audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, prefs.musicVolume, prefs.remasteredSounds});
     // Intro music in the front end, battle music while a replay is open, background music otherwise.
     bool combat = false;
-    for (const auto& [id, screen] : screens_) combat = combat || id == ScreenId::CombatReplay;
+    for (const auto& [id, screen] : screens_) combat = combat || id == ScreenId::CombatReplay || id == ScreenId::TacticalCombat;
     const std::vector<std::string>& list = !session_ ? playlists_.intro : combat ? playlists_.combat : playlists_.background;
     if (prefs.musicOn && !list.empty()) audio().playMusic(list);
     else audio().stopMusic();
@@ -186,10 +200,14 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         args.index = int(*battle);
         openScreen(ScreenId::CombatReplay, std::move(args));
     }
-    const bool asking = screens_.empty() && !session_->questions().empty();
+    // Tactical combat: the Tactical Combat window stays open while a battle is fought in it.
+    if (session_->tactical() && std::none_of(screens_.begin(), screens_.end(), [](const auto& s) { return s.first == ScreenId::TacticalCombat; }))
+        openScreen(ScreenId::TacticalCombat, {});
+    const bool battleAsking = !session_->tactical() && session_->battleQuestion().has_value();
+    const bool asking = screens_.empty() && !session_->questions().empty() && !battleAsking;
 
     // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty() || asking);
+    main_.update(ui, !screens_.empty() || asking || battleAsking);
     drawNetwork(ui);
     if (asking) drawEntryQuestion(ui);
 
@@ -201,6 +219,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         if (keep) ++i;
         else screens_.erase(screens_.begin() + std::ptrdiff_t(i));
     }
+    if (battleAsking) drawBattleQuestion(ui);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
     main_.applyRequests(ui);
@@ -225,7 +244,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::End();
         ImGui::PopFont();
     }
-    if (openLogOnTurn_) {
+    if (openLogOnTurn_ && !battleAsking && !session_->tactical()) {
         openLogOnTurn_ = false;
         if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
@@ -316,6 +335,81 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     ImGui::SameLine();
     if (ImGui::Button("Stay Back", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) session_->answer(false);
     ImGui::End();
+    ImGui::PopFont();
+}
+
+void ClassicMode::drawBattleQuestion(UiContext& ui) {
+    const game::BattleQuestion& q = *session_->battleQuestion();
+    const game::GameState& s = ui.state();
+    const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
+    if (battleChoiceKey_ != key || battleChoices_.size() != q.humans.size()) {
+        battleChoiceKey_ = key;
+        battleChoices_.assign(q.humans.size(), 1);
+    }
+    std::string sides;
+    for (size_t i = 0; i < q.participants.size(); ++i)
+        sides += (i == 0 ? "" : i + 1 == q.participants.size() ? " and " : ", ") + s.empire(q.participants[i]).name;
+    const float h = 150.0f + (q.humans.size() > 1 ? 30.0f * float(q.humans.size()) : 0.0f);
+    // A modal prompt: nothing else takes input until the battle is answered.
+    constexpr const char* kPopup = "Combat##battlequestion";
+    if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
+    ImGui::SetNextWindowPos(ui.at({302, 384 - h * 0.5f}));
+    ImGui::SetNextWindowSize(ui.size({420, h}));
+    ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::PopFont();
+        return;
+    }
+    ImGui::TextWrapped("%s", std::format("Battle at {} between {}.", sectorName(s, q.where, session_->player()), sides).c_str());
+    ImGui::TextDisabled("Tactical: you give the orders. Strategic: the ships follow their strategies.");
+    ImGui::Spacing();
+    auto fight = [&](std::vector<game::EmpireId> tactical) {
+        ImGui::CloseCurrentPopup();
+        if (tactical.empty()) {
+            session_->answerBattle(game::BattleAnswer{});
+            return;
+        }
+        auto battle = std::make_unique<game::combat::TacticalBattle>(*rules_, *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, tactical});
+        if (!battle->started()) {
+            session_->answerBattle(game::BattleAnswer{});
+            return;
+        }
+        TacticalFight f;
+        f.kind = TacticalFight::Kind::Game;
+        f.battle = std::move(battle);
+        f.players = std::move(tactical);
+        f.title = "Tactical Combat";
+        session_->startTactical(std::move(f));
+        openScreen(ScreenId::TacticalCombat, {});
+    };
+    if (q.humans.size() == 1) {
+        if (ImGui::Button("Tactical", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) fight(q.humans);
+        ImGui::SameLine();
+        if (ImGui::Button("Strategic", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) fight({});
+    } else {
+        // Hotseat: each human side chooses.
+        for (size_t i = 0; i < q.humans.size(); ++i) {
+            ImGui::PushID(int(i));
+            if (Sprite flag = art_->flag(s.empire(q.humans[i]).race.style, false)) {
+                image(ui, flag, {20, 14});
+                ImGui::SameLine();
+            }
+            ImGui::TextUnformatted(s.empire(q.humans[i]).name.c_str());
+            ImGui::SameLine(ui.px(200));
+            if (ImGui::RadioButton("Tactical", battleChoices_[i] == 1)) battleChoices_[i] = 1;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Strategic", battleChoices_[i] == 0)) battleChoices_[i] = 0;
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Begin", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+            std::vector<game::EmpireId> tactical;
+            for (size_t i = 0; i < q.humans.size(); ++i)
+                if (battleChoices_[i]) tactical.push_back(q.humans[i]);
+            fight(std::move(tactical));
+        }
+    }
+    ImGui::EndPopup();
     ImGui::PopFont();
 }
 

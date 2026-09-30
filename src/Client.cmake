@@ -32,6 +32,7 @@ add_executable(opense4
     client/classic/screens/cargo_transfer.cpp
     client/classic/screens/colony_logic.cpp
     client/classic/screens/colony_widgets.cpp
+    client/classic/screens/combat_map.cpp
     client/classic/screens/combat_replay.cpp
     client/classic/screens/design_tools.cpp
     client/classic/screens/communicate.cpp
@@ -56,6 +57,7 @@ add_executable(opense4
     client/classic/screens/scrap.cpp
     client/classic/screens/settings_screen.cpp
     client/classic/screens/setup.cpp
+    client/classic/screens/simulator.cpp
     client/classic/screens/setup_empire.cpp
     client/classic/screens/setup_model.cpp
     client/classic/screens/setup_widgets.cpp
@@ -63,6 +65,7 @@ add_executable(opense4
     client/classic/screens/ships_common.cpp
     client/classic/screens/ships_logic.cpp
     client/classic/screens/stellar.cpp
+    client/classic/screens/tactical.cpp
     client/classic/screens/vehicle_orders.cpp
     client/classic/session.cpp
     client/classic/settings.cpp

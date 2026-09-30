@@ -19,6 +19,11 @@ Both play either turn style of the classic game (spec 05 §8, §9):
 
 The host is authoritative in both.
 
+Tactical combat is offered in local and hotseat turn-based games only. Network and PBEM
+games, turn-based ones included, resolve every battle strategically: the host plays the
+turn-based calls without battle answers, so nobody is asked Tactical or Strategic, and
+`no_tactical_combat` in a setup file changes nothing there (docs/PARITY_GAPS.md).
+
 Everything here is implemented by `src/net` (the `opense4_net` library),
 `src/game/serialize.*` (the save format) and `src/server` (`opense4-server`).
 

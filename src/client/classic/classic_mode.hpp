@@ -75,6 +75,11 @@ private:
 
     // Turn-based games: the Attack Sector question.
     void drawEntryQuestion(classic::UiContext& ui);
+    // Turn-based games: the combat resolution prompt, Tactical or Strategic for
+    // each human side of the battle that waits (spec 06 §1.6, spec 04 §3).
+    void drawBattleQuestion(classic::UiContext& ui);
+    std::vector<uint8_t> battleChoices_;   // per human side: 1 tactical
+    size_t battleChoiceKey_ = SIZE_MAX;
 
     // Hotseat hand-over between human players.
     void drawHandoff(classic::UiContext& ui);

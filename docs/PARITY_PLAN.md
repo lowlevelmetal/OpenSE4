@@ -89,12 +89,18 @@ questions are what the observation sessions still have to settle.
 - [x] Screens: Research, Tech Tree, Intelligence, Empires, Communicate, Treaty Grid,
       Scores, Comparisons, History, Race Report, Victory Conditions, Log.
 
-### M5: Combat (done; tactical mode open)
+### M5: Combat (done)
 - [x] Combat triggers and strategic resolution: strategies, formations, to-hit, every
       damage type, seekers, point defense, fighters, satellites, drones, mines.
 - [x] Planetary combat, bombardment, boarding and capture, ground combat.
 - [x] Combat replay window.
-- [ ] Interactive tactical combat and the combat simulator.
+- [x] Interactive tactical combat: a battle stepped phase by phase with validated
+      orders for the player's pieces (`combat::TacticalBattle`), the same rules and
+      code as strategic resolution; in turn-based games each human side chooses
+      Tactical or Strategic, and the battle fought in the client is applied to the game
+      by replaying its orders.
+- [x] The combat simulator: mock battles between virtual empires on a sandbox copy of
+      the game, fought tactically or strategically.
 
 ### M6: Computer players (done)
 - [x] An AI driven by the install's `Ai/` and race files:
@@ -108,8 +114,10 @@ questions are what the observation sessions still have to settle.
 - [x] The main window in the classic layout (1024×768, scaled): status bar, command
       buttons, order strip with the original icons, system/report/galaxy panels, and
       the original hotkeys.
-- [x] Every window in the inventory, except the tactical combat screens and the combat
-      simulator.
+- [x] Every window in the inventory, including the combat resolution prompt, Tactical
+      Combat with its Orders and Options, and the Combat Simulator; except the
+      watch-only Strategic Combat and the Ground Combat windows (strategic battles play in
+      the Combat Replay, ground fights are reported in the battle's summary).
 - [x] Sounds (UI, weapons, explosions; remastered set) and the three music playlists.
 - [ ] `.fon` fonts, cursors.
 - [ ] Screenshot comparisons against the original through the harness.
@@ -142,6 +150,6 @@ questions are what the observation sessions still have to settle.
 
    Implement from the corrected specs, not from any listing.
 2. Observation sessions for what the executable could not settle, such as the
-   simultaneous-movement day schedule (spec 03 Q8) and the questions still marked open.
-3. The tactical combat screen.
-4. Encrypted connections, and per-player views for PBEM.
+   simultaneous-movement day schedule (spec 03 Q8), the tactical-combat details of spec
+   04 Q49-Q54, and the questions still marked open.
+3. Encrypted connections, and per-player views for PBEM.

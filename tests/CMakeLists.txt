@@ -1,5 +1,6 @@
 add_executable(opense4_tests
     main.cpp
+    combat_fixture.cpp
     engine_fixture.cpp
     test_ai.cpp
     test_app_settings.cpp
@@ -8,6 +9,7 @@ add_executable(opense4_tests
     test_client_logic.cpp
     test_combat.cpp
     test_combat_replay.cpp
+    test_tactical.cpp
     test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
@@ -46,6 +48,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp

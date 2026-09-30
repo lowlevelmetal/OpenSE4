@@ -47,6 +47,15 @@ struct ClassicSettings {
 
     // Combat Replay playback speed (1 = normal).
     float replaySpeed = 1.0f;
+
+    // Tactical Combat Options (docs/spec/06 §1.6: animation, speed and display
+    // options, not itemised by the manual; this list is ours).
+    bool tacticalAnimate = true;     // play moves and shots; off: show the result at once
+    float tacticalSpeed = 2.0f;      // animation speed (1 = the replay's normal pace)
+    bool tacticalGrid = true;        // the square grid
+    bool tacticalRanges = true;      // the selected piece's weapon ranges and movement
+    bool tacticalNames = false;      // names under the pieces
+    bool tacticalAutoEnd = true;     // end the phase when nothing is left to fight
 };
 
 // The settings of this machine, loaded on first use.

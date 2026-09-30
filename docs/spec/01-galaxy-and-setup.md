@@ -1146,3 +1146,6 @@ highlighted, and an X marks each empire that has met one.
 39. **Default turn style.** §2.2 names the two turn styles but not which one a new game
     starts with. OpenSE4 starts simultaneous (also for Quick Start). Which one does the
     original's Mechanics tab select by default? **(inferred)**
+40. **No Tactical Combat default.** Is the Game Settings check box set for a new game?
+    OpenSE4 leaves it clear, so turn-based games ask each human side Tactical or
+    Strategic (spec 04 §3). **(inferred)**

@@ -91,7 +91,7 @@ enum class ScreenId {
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).
-    CombatReplay,
+    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator,
     // Files.
     SaveGame, LoadGame,
     // Graphics, controls and sound.

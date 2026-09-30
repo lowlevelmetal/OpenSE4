@@ -29,6 +29,13 @@ bool living(const GameState& s, EmpireId e);
 // Applies the commands as the empire's orders, collecting rejections.
 void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands);
 
+// Thrown by space combat when a battle's answer is missing (turn.hpp,
+// "Tactical combat in turn-based games"); the turn-based calls catch it and
+// put the state back as it was before the call.
+struct BattleQuestionRaised {
+    BattleQuestion question;
+};
+
 // The turn-based game turn (turn_based.cpp): processTurn's path when the
 // game is not simultaneous.
 TurnResult playTurnBasedTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options);
