@@ -235,6 +235,7 @@ void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     if (!me.valid() || me.index() >= s.empires.size() || s.empire(me).kind != game::PlayerKind::Human) return;
+    if (ui.session.waitingForOthers() || (ui.session.turnBased() && !ui.session.myTurn())) return;  // no orders now
     if (!game::sight::scannerReaches(ui.rules(), s, me, v)) return;
     for (game::DesignId d : game::sight::reportDesigns(s, v))
         if (s.design(d).owner != me && game::designSeenTurn(s.empire(me).knowledge, d) != std::optional<uint32_t>(s.turn)) {
