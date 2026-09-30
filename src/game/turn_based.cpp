@@ -180,6 +180,7 @@ void endGameTurn(TurnContext& ctx) {
         events::rollNewEvent(ctx, date, rng);
     }
     s.removeDeadVehicles();
+    // Per-turn flags clear once per game turn, not at each player's turn (inferred).
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
     sight::updateKnowledge(r, s);
@@ -188,14 +189,15 @@ void endGameTurn(TurnContext& ctx) {
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
     ++s.turn;
     // The battles of the game turn just ended stay for the political steps of
-    // the next one; older ones go.
+    // the next one, which count them (spec 05 open question 30); older ones go.
     std::erase_if(s.combats, [&](const CombatRecord& c) { return c.turn + 1 < s.turn; });
     economy::updateReports(r, s);
     s.playerTurn = PlayerTurn{};
 }
 
 // The turn passes from `from` to the next living empire; after the last one
-// the game turn ends.
+// the game turn ends. An empire founded during the game turn (a rebel colony)
+// plays when its number comes up, possibly in the same game turn (inferred).
 void passTurn(TurnContext& ctx, EmpireId from) {
     GameState& s = ctx.state;
     const EmpireId next = firstLivingFrom(s, from.index() + 1);

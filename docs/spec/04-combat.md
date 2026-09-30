@@ -953,6 +953,11 @@ checking in the running game.
     Does a mine check the warhead's target set as well as its damage type? Open.
 46. **Seeker merging.** Does a new seeker join one on the launch square that has already
     moved? Open.
+47. **Orders after combat in turn-based games.** §2 says combat neither clears orders nor
+    stops movement, while spec 03 §6.4 says that in turn-based games combat on entry stops
+    the move and clears the list. OpenSE4 fails the entering group's order (spec 03) and
+    otherwise only removes a Sentry at the head of a participant's list. Which groups lose
+    their orders in the original? (inferred)
 
 ### 19.1 What the engine does until the remaining questions are answered
 

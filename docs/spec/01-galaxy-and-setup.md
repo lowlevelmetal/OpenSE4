@@ -1127,3 +1127,6 @@ highlighted, and an X marks each empire that has met one.
     Pct. Extra starting planets are ordinary colonies (not capitals) of colony type
     "Balanced". "More than 60 %" of Maximum Number Of Systems is compared exactly.
     **(inferred)**
+36. **Default turn style.** §2.2 names the two turn styles but not which one a new game
+    starts with. OpenSE4 starts simultaneous (also for Quick Start). Which one does the
+    original's Mechanics tab select by default? **(inferred)**

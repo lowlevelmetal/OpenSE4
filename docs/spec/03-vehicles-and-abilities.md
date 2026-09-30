@@ -1461,3 +1461,11 @@ All rules in this section are (confirmed: binary).
     (inferred)
 49. **Sentry with Repeat on:** when a Sentry ends, the engine removes it even with Repeat on,
     instead of keeping it at the end of the list. (inferred)
+50. **The Attack Sector question (turn-based, §6.2):** the engine asks before a human's group
+    (not made only of drones) steps into a sector holding a visible vehicle other than a mine,
+    or a colony, of an empire it is hostile to; a Warp jump asks about the far side. An Attack
+    order never asks about its target's sector. Orders a human gave in advance (`processTurn`)
+    and ministers' orders enter without asking. Which sectors does the original ask about?
+    (inferred)
+51. **Fighter recovery in turn-based games (§12):** "full movement points" is read as the
+    group's movement left being at least its maximum for the turn. (inferred)

@@ -15,7 +15,7 @@ outcomes, **L** is an edge case.
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Arithmetic | Integer maths with floor division throughout | Percentages are applied in floating point, and each rule states whether its result is rounded (half to even) or truncated (spec 02 §1, spec 03 §2). Because of extended precision, an exact product can come out one lower, e.g. 100 × 53 % gives 52 | M |
-| Turn style (`turn.cpp`) | Every game is resolved as a simultaneous turn; the setup's "One player after another" choice changes nothing | Spec 05 §8 "Turn-based game": each player's movement, combat and diplomacy happen live in that player's turn, and `empireEndOfTurn` runs when the player ends it | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played on one computer only (local and hotseat): network hosts, `opense4-server pbem` and PBEM turn processing refuse a turn-based game with a message. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles are strategic, so the Tactical or Strategic question never comes up | Spec 05 §9.1: on different machines the save file passes from player to player; spec 04 §3 step 1; spec 06 §2.7 | M |
 | End-of-turn step 12 (`turn.cpp`) | Nothing is forgotten: the engine does not record when a foreign design was seen | Spec 05 §8 step 12: knowledge of foreign designs seen more than 50 turns ago is forgotten | L |
 
 ## Economy and population (spec 02)
