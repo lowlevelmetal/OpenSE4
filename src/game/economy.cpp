@@ -528,17 +528,11 @@ TurnOutputs computeTurnOutputs(const Rules& r, const GameState& s) {
         if (!e.alive) continue;
         // Trade and tariffs received come from diplomacy as one sum; split out the tariffs for the report.
         const Resources fromDiplomacy = max(diplomacy::tradeIncome(r, s, e.id), Resources{});
-        Resources tariffs;
-        for (const Empire& other : s.empires) {
-            if (other.id == e.id || !other.alive || other.id.index() >= e.relations.size()) continue;
-            const Relation& rel = e.relation(other.id);
-            if ((rel.treaty == Treaty::Subjugation || rel.treaty == Treaty::Protectorate) && rel.dominant)
-                tariffs += max(diplomacy::tariffsPaid(r, s, other.id), Resources{});
-        }
-        inc.tariffsIn = min(tariffs, fromDiplomacy);
+        inc.tariffsIn = min(max(diplomacy::tariffsReceived(r, s, e.id), Resources{}), fromDiplomacy);
         inc.trade = fromDiplomacy - inc.tariffsIn;
         inc.tariffsOut = max(diplomacy::tariffsPaid(r, s, e.id), Resources{});
         inc.research += std::max<int64_t>(0, diplomacy::researchTradeIncome(r, s, e.id));
+        inc.intelligence += std::max<int64_t>(0, diplomacy::intelTradeIncome(r, s, e.id));
         inc.research += openingResearchPool(s);
         // Income floor on gross income, for empires that still hold a planet (inferred, spec 02 §13 Q11).
         if (inc.hasColony) {
