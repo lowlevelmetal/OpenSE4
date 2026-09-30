@@ -133,7 +133,7 @@ struct ActorRef {
 
 // The group that carries out one order execution (spec 03 §8).
 struct Group {
-    std::vector<VehicleId> members;   // group order: the acting vehicle's own group first
+    std::vector<VehicleId> members;   // group order: a fleet's in member order, then ad-hoc companions
     ObjectId planet;                  // a planet's own orders
     EmpireId owner;
     VehicleId lead;                   // the acting vehicle (the first member left when it is gone)
@@ -325,9 +325,7 @@ private:
         const bool fleetOrders = followsFleetOrders(s_, *v);
         if (fleetOrders) {
             g.fleet = v->fleet;
-            addFleet(*s_.fleet(v->fleet));
-            // The acting member leads the group's place (every member is there).
-            std::stable_partition(g.members.begin(), g.members.end(), [&](VehicleId id) { return id == v->id; });
+            addFleet(*s_.fleet(v->fleet));  // in fleet member order; the acting member is `lead`
         } else {
             addOwn(v->id);
         }
