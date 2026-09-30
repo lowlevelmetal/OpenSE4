@@ -882,8 +882,10 @@ TEST_CASE("ai: anger decays, notices intruders, messages and the Mega Evil Empir
 TEST_CASE("ai: difficulty and bonus helpers") {
     GameState s = newEngineGame(3, 2, 8, false);
     s.options.aiBonus = 2;
-    CHECK(ai::bonusPercent(s, EmpireId{0u}) == 0);
-    CHECK(ai::bonusPercent(s, EmpireId{1u}) == 20);
+    CHECK(ai::incomeBonusFactor(s, EmpireId{0u}) == 1);  // humans get no bonus
+    CHECK(ai::incomeBonusFactor(s, EmpireId{1u}) == 3);
+    CHECK(ai::constructionBonusPercent(s, EmpireId{0u}) == 100);
+    CHECK(ai::constructionBonusPercent(s, EmpireId{1u}) == 200);
     CHECK(ai::moodLabel(0) == "Friendly");
     CHECK(ai::moodLabel(95) == "Furious");
     // An easy computer makes fewer plans than a hard one on the same turn.

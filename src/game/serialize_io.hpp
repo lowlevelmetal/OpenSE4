@@ -369,8 +369,8 @@ void io(Ar& ar, ConstructionQueue& q) {
 
 template <class Ar>
 void io(Ar& ar, Colony& c) {
-    fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.riotTurns,
-           c.atmosphereCountdown, c.minister, c.homeworld, c.foundedTurn);
+    fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
+           c.minister, c.homeworld, c.foundedTurn);
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------

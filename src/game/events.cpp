@@ -919,14 +919,14 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         case Effect::PlanetPopulationAngerChange: {
             if (!col || emotionless(r, s, *col)) return out;
             const int before = col->anger;
-            col->anger = std::clamp(before + amount, 0, 1000);
+            col->anger = std::clamp(before + amount, 0, col->maxAnger());  // whole percent, 80 at most on a capital (spec 02 §4)
             out.actual = col->anger - before;
             break;
         }
         case Effect::PlanetPopulationRiot: {
             if (!col || emotionless(r, s, *col)) return out;
             const int before = col->anger;
-            col->anger = std::max(before, 750);  // the Rioting band (types.hpp)
+            col->anger = col->maxAnger();  // 100, or 80 on a capital (spec 02 §4)
             out.actual = col->anger - before;
             break;
         }

@@ -81,9 +81,12 @@ std::string_view moodLabel(int anger);
 // Low/Medium/High setting (0..2) brings, and a race preset folder for each.
 // Computer races are drawn by personality group weight; group 0 is never drawn.
 std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool neutral, Rng& rng);
-// "Computer Player Bonus" as a production/research percentage for the economy
-// and research modules (0 for humans). The size of the bonus is open (spec 05
-// §7.1); we use 10 % per bonus step (inferred).
-int bonusPercent(const GameState& s, EmpireId e);
+// "Computer Player Bonus" (spec 02 §5.4, §6.2; spec 05 §8; confirmed: binary).
+// A computer-controlled empire's income of each kind, after tariffs, is
+// multiplied by 1, 2, 3 or 5 for None, Low, Medium or High and rounded; its
+// construction rates are multiplied by 1, 1.5, 2 or 3 and truncated. There is
+// no bonus to planet output percentages. Human empires get factor 1 / 100 %.
+int incomeBonusFactor(const GameState& s, EmpireId e);
+int constructionBonusPercent(const GameState& s, EmpireId e);
 
 } // namespace opense4::game::ai

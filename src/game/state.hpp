@@ -232,15 +232,14 @@ struct Colony {
     EmpireId owner;
     std::string colonyType;
     std::vector<PopulationGroup> population;
-    int anger = 200;                  // tenths of a percent (spec 02 §1.8); starts Happy
+    int anger = kNewColonyAnger;      // whole percent, 0..100 (spec 02 §4); a new colony starts Happy
     std::vector<uint32_t> facilities; // Facility.txt indices
     Cargo cargo;
     ConstructionQueue queue;
     int plagueLevel = 0;
-    int riotTurns = 0;
-    int atmosphereCountdown = -1;
+    int atmosphereTurns = 0;          // turns spent with an atmosphere the majority cannot breathe (spec 02 §2)
     bool minister = false;
-    bool homeworld = false;
+    bool homeworld = false;           // also the capital flag: anger never above 80 (spec 02 §2)
     uint32_t foundedTurn = 0;
 
     int64_t totalPopulation() const {
@@ -248,6 +247,8 @@ struct Colony {
         for (const auto& p : population) n += p.millions;
         return n;
     }
+    // The highest anger this colony can have: 80 for a capital, else 100 (spec 02 §2, §4).
+    int maxAnger() const { return homeworld ? kCapitalMaxAnger : kMaxAnger; }
 };
 
 // ---- Designs and vehicles ------------------------------------------------------------------

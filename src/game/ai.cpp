@@ -491,9 +491,27 @@ std::vector<std::string> randomComputerPresets(const Rules& r, int setting, bool
     return out;
 }
 
-int bonusPercent(const GameState& s, EmpireId e) {
-    if (!e.valid() || e.index() >= s.empires.size() || s.empire(e).kind == PlayerKind::Human) return 0;
-    return std::max(0, s.options.aiBonus) * 10;  // (inferred)
+namespace {
+
+// The "Computer Player Bonus" setting as 0 (None) .. 3 (High) for a computer
+// empire, -1 for a human one. Settings above High count as High (inferred).
+int bonusLevel(const GameState& s, EmpireId e) {
+    if (!e.valid() || e.index() >= s.empires.size() || s.empire(e).kind == PlayerKind::Human) return -1;
+    return std::clamp(s.options.aiBonus, 0, 3);
+}
+
+} // namespace
+
+int incomeBonusFactor(const GameState& s, EmpireId e) {
+    static constexpr std::array<int, 4> kFactor{1, 2, 3, 5};  // (confirmed: binary)
+    const int level = bonusLevel(s, e);
+    return level < 0 ? 1 : kFactor[static_cast<size_t>(level)];
+}
+
+int constructionBonusPercent(const GameState& s, EmpireId e) {
+    static constexpr std::array<int, 4> kPercent{100, 150, 200, 300};  // (confirmed: binary)
+    const int level = bonusLevel(s, e);
+    return level < 0 ? 100 : kPercent[static_cast<size_t>(level)];
 }
 
 } // namespace opense4::game::ai

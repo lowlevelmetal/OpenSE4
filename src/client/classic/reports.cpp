@@ -350,7 +350,7 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
             pen.sprite(ui.art.populationMini(s.empire(c->owner).race.style), 229, row - 4, 20, 20);
             line("Population", std::format("{}M/{}M", c->totalPopulation(), game::maxPopulation(r, s, *c)));
             line("Reproduction", std::format("{}% per year", out.reproductionPercent));
-            line("Mood", std::string(game::displayName(game::moodFromAnger(c->anger))));
+            line("Mood", std::string(game::economy::moodName(r, s, *c)));
             row += 8;
             pen.text(0, row, kLabelBlue, "Resource Production");
             pen.resourceRow({out.production.v[0], out.production.v[1], out.production.v[2]}, {139, 196, 249}, row, "");

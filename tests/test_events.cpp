@@ -352,12 +352,16 @@ TEST_CASE("events: planet effects") {
     out = hit(s, Effect::PlanetPopulationChange, target(home), 1000000);
     CHECK(c.totalPopulation() == maxPopulation(r, s, c));
 
-    c.anger = 900;
-    hit(s, Effect::PlanetPopulationAngerChange, target(home), 200);
-    CHECK(c.anger == 1000);
-    c.anger = 100;
+    c.anger = 70;
+    hit(s, Effect::PlanetPopulationAngerChange, target(home), 20);
+    CHECK(c.anger == 80);  // whole percent; a homeworld is a capital, capped at 80 (spec 02 §4)
+    c.anger = 10;
+    hit(s, Effect::PlanetPopulationRiot, target(home), 1);
+    CHECK(c.anger == 80);
+    c.homeworld = false;
     hit(s, Effect::PlanetPopulationRiot, target(home), 1);
     CHECK(moodFromAnger(c.anger) == Mood::Rioting);
+    c.homeworld = true;
 
     const size_t facilities = c.facilities.size();
     REQUIRE(facilities >= 2);
