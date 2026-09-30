@@ -34,7 +34,6 @@ outcomes, **L** is an edge case.
 | `economy_population.cpp:83-126` | Floor, times frequency; negative rates shrink; room shared proportionally | Rounded; frequency only gates; no shrinking; earlier races fill free room first (§3) | M |
 | `economy_queue.cpp:64-94, 142-149, 195-232` | Yard-less planets get aptitude and culture; queues by id; units overflow anywhere | Population modifier only; spaceport, resource and supply items go first; overflow into the same sector, one unit at a time (§6) | M |
 | `economy.cpp:585-617` | Value changes take the best; conditions change additively | Values sum; conditions change multiplicatively, every 10th turn; negative changes ignored (§2) | M |
-| `setup.cpp:122-138` | Characteristic cost c × P/100 beyond the threshold | P per point, N refunded (§8.1) | M |
 | Low | spaceport needs population, and the blockade counts units (`economy.cpp:180-201`); storage and maintenance traits ignored (`:341-361`); remote mining (`:426-460`); above the last bracket (`:97-112`); upgrade truncation (`economy_queue.cpp:107-126`); emergency lasts max + 1 turns (`:387-402`); atmosphere conversion takes Val1 + 1 turns (`economy_population.cpp:244-263`) | see spec 02 | L |
 
 ## Vehicles, movement and logistics (spec 03)
@@ -84,14 +83,20 @@ outcomes, **L** is an edge case.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
-| Where | Engine now | Original | Impact |
+Generation, empire placement, starting planets and stockpile, the setup option lists,
+racial point costs, sight and stellar manipulation now follow the specs (`generate.cpp`,
+`setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). The engine's own choices where the spec is
+silent are listed in spec 01 §14 (Q27 onward). What is left needs code outside those files:
+
+| Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| `generate.cpp:430-491` | Nearest-6 links, `Max Warp Points per Sys` as a cap | K nearest considered, hard cap 10, angle tests, connectivity pass (§3.5) | H |
-| `generate.cpp:626-722` | Converts any planet, prefers Medium, Euclidean farthest point | Natural planets matching atmosphere, type and home size; jump-distance tiers; created if none fits (§3.6) | H |
-| `generate.cpp:96-204, 353, 514-547` | Free size, invented placements, conditions 0–100, each warp end rolls its own ability | Small/Medium/Large counts; 67×46 grid; the five placements; conditions 0.5–1.5; paired ends share one roll (§3) | M |
-| `setup.cpp:284-317` | Extra planets at ¼ population, no facilities | Full homeworld setup, matching atmosphere and type, 1–2 jumps away (spec 02 §9) | M |
-| `movement_stellar.cpp` | Create Planet, Destroy Star, nebula, black hole, storm and Construct results; no hostile or cloak checks | Results and checks in §9 | M |
-| Low | Circle Radius rounding; comets instantiated; naming; homeworld value spread; facility order and first-turn income (`setup.cpp`); ship cloaks always on, units ignore obscuration, mines give presence, partners always visible (`sight.cpp`); drift; blockers; one-way handling | see spec 01 | L |
+| `movement.cpp` (warp jumps) | Neutral empires may use warp points | They never can, so they stay in their home system (spec 01 §8) | M |
+| `economy.cpp` (`openingResearchPool`) | The research pool opens at Starting Resources | Starting Resources plus one turn of research (spec 02 §9, spec 05 §1.1); the resource stockpile already includes the turn | L |
+| `movement.cpp:507,589`, `movement_path.cpp:135`, client reports | One-way checks and a "One-way" note | The flag is never used; generation and manipulation now always leave it false, so the checks are inert and can be removed | L |
+| `movement.cpp:795-830` | Pull and drift take the best value, drift walks a random direction per vehicle, mobile vehicles only | Sums of the values; drift heads for one target sector R[0,144] drawn per turn for all systems; bases and every unit group move too (spec 01 §7) | L |
+| `score.cpp`, `redact.cpp`, setup screen | Score Display has two choices | Own score only, own plus allies (the default), everyone's (spec 01 §2.2) | L |
+| client `ships_logic.cpp`, `reports.cpp`, `main_window.cpp` | Button checks follow the old manipulation rules; warp points show their stored name | Mirror spec 01 §9 (one star per system, hostile, cloak and supply checks); name warp points with `sight::warpPointName` | L |
+| Low | map starting points (no map files yet, spec 01 §12); autosave choices | see spec 01 | L |
 
 ## Computer player (spec 05 §7)
 
