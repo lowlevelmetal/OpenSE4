@@ -5,8 +5,8 @@
 #   dist/OpenSE4-<version>-windows-x86_64.zip    static, cross-built with MinGW-w64
 #
 # Each holds the game, the dedicated server and the data checker, with our own
-# fonts and prototype data built in, plus the README, the third-party notices and
-# the licence once the project has one. Nothing from the original game is included:
+# fonts and prototype data built in, plus the README, the licence (GPL 3.0 or
+# later) and the third-party notices. Nothing from the original game is included:
 # players point the game at their own installed copy.
 #
 #   tools/package_release.sh [linux] [windows] [--skip-tests]
@@ -38,9 +38,11 @@ notices() {  # notices <build dir> <target> <output file>
         echo "OpenSE4 third-party notices"
         echo "==========================="
         echo
-        echo "OpenSE4 is an open-source engine for Space Empires IV Deluxe. It is not"
+        echo "OpenSE4 is an open-source engine for Space Empires IV Deluxe, licensed under"
+        echo "the GNU General Public License version 3 or later (see LICENSE). It is not"
         echo "affiliated with the game's publishers and contains nothing from the game."
-        echo "The executables include the following third-party software and fonts."
+        echo "The executables include the following third-party software and fonts,"
+        echo "each under its own licence."
         section() {
             echo; echo; echo "------------------------------------------------------------------------"
             echo "$1"; echo "------------------------------------------------------------------------"; echo

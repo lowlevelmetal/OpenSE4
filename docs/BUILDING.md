@@ -125,7 +125,7 @@ platforms from one Linux machine:
 - `dist/OpenSE4-<version>-windows-x86_64.zip`
 
 Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
-with the README and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
+with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
 Font License) and the prototype's data files are built into the executables, so
 nothing else needs to sit next to them. Nothing from the original game is included:
 players point OpenSE4 at their own installed copy.

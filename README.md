@@ -153,8 +153,16 @@ tests/        doctest unit tests (our own fixtures only)
 
 ## License
 
-Code: not yet chosen. The Noto Sans fonts are under the SIL Open Font License
-(see `assets/fonts/OFL.txt`).
+OpenSE4 is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version. See
+[LICENSE](LICENSE).
+
+The Noto Sans fonts are under the SIL Open Font License (see
+`assets/fonts/OFL.txt`). Bundled third-party libraries keep their own licences,
+which the release packages list in `THIRD_PARTY_NOTICES.txt`. The GPL covers only
+OpenSE4's own code and content; the original game's files stay the property of
+their owners and are never part of OpenSE4.
 
 ## Trademarks
 
