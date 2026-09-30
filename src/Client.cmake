@@ -22,6 +22,8 @@ add_executable(opense4
     client/classic/classic_mode.cpp
     client/classic/frontend.cpp
     client/classic/main_window.cpp
+    client/classic/quadrant_map.cpp
+    client/classic/replay.cpp
     client/classic/reports.cpp
     client/classic/screens/cargo_transfer.cpp
     client/classic/screens/combat_replay.cpp
@@ -56,7 +58,9 @@ add_executable(opense4
     client/classic/screens/stellar.cpp
     client/classic/screens/vehicle_orders.cpp
     client/classic/session.cpp
+    client/classic/settings.cpp
     client/classic/ui.cpp
+    client/classic/widgets.cpp
     client/game_session.cpp
     client/main.cpp
     client/prototype_mode.cpp

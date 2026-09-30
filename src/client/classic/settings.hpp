@@ -1,0 +1,84 @@
+#pragma once
+
+// Client-side preferences of the classic client: the Empire Options switches
+// (docs/spec/06 §1.2), the per-category minister switches (until the AI
+// supports categories) and a few window preferences. They belong to whoever
+// plays on this machine, not to the game, and live in
+// <userDataDir>/classic_settings.toml.
+
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace opense4::client::classic {
+
+struct ClassicSettings {
+    // General.
+    bool showLogAtTurnStart = true;
+    bool confirmEndTurn = false;
+    bool confirmScrap = true;
+    bool confirmStellarManipulation = true;
+    bool confirmDeleteProjects = true;
+    bool pickColonyTypeOnColonize = false;
+    // Next / previous selection cycles.
+    bool cycleSkipsUnderConstruction = true;
+    bool cycleSkipsDamaged = false;
+    bool cycleOncePerLocation = false;
+    // Ship movement.
+    bool avoidMinefields = true;
+    bool avoidRestrictedSystems = true;
+    // Ship orders.
+    bool clearOrdersOnEnemyContact = true;
+    bool clearOrdersOnAnyContact = false;
+    // System display.
+    bool showWarpPointNames = true;
+    bool showPlanetNames = false;
+    bool showFacilityMarkers = false;
+    bool showMovementLines = true;
+    bool showWaypointMarkers = true;
+    bool showColonizationMarkers = true;
+
+    // Ministers: names of the categories switched on (see ministerCategories()).
+    std::vector<std::string> ministers;
+    bool ministersForNewVehicles = false;
+    bool raceMinisterStyle = false;
+
+    // Combat Replay playback speed (1 = normal).
+    float replaySpeed = 1.0f;
+
+    bool ministerOn(std::string_view category) const;
+    void setMinister(std::string_view category, bool on);
+};
+
+// The settings of this machine, loaded on first use.
+ClassicSettings& settings();
+// Writes the settings file; returns false (and logs) on failure.
+bool saveSettings();
+
+// One on/off switch of the Empire Options window.
+struct BoolOption {
+    const char* group;   // heading in the Empire Options list
+    const char* key;     // TOML key
+    const char* label;   // our own wording
+    bool ClassicSettings::*member;
+};
+std::span<const BoolOption> boolOptions();
+
+// Minister categories (docs/spec/02 §10): global ones take over a whole area,
+// individual ones act on objects whose minister flag is set.
+struct MinisterCategory {
+    const char* name;
+    bool global;
+};
+std::span<const MinisterCategory> ministerCategories();
+
+// TOML round trip (used by settings()/saveSettings(), exposed for tests).
+std::string settingsToToml(const ClassicSettings& s);
+ClassicSettings settingsFromToml(std::string_view text, std::string* error = nullptr);
+
+// A stable hash for empire passwords (cmd::SetEmpireOptions::passwordHash).
+// An empty password gives an empty hash (no password).
+std::string hashPassword(std::string_view password);
+
+} // namespace opense4::client::classic

@@ -2,6 +2,7 @@ add_executable(opense4_tests
     main.cpp
     engine_fixture.cpp
     test_client_logic.cpp
+    test_combat_replay.cpp
     test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
@@ -21,6 +22,7 @@ add_executable(opense4_tests
     test_turn.cpp)
 # Classic client logic without UI dependencies, tested directly.
 target_sources(opense4_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp

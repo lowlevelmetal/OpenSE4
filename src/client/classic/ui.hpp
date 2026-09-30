@@ -13,6 +13,7 @@
 
 #include <imgui.h>
 
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -73,6 +74,8 @@ struct UiRequests {
     // Pick a location in the main window, then call back (e.g. Set Waypoint).
     std::function<void(game::Location)> pickLocation;
     std::string pickPrompt;
+    // Replace the running game with this save (Load Game window).
+    std::optional<std::filesystem::path> loadGame;
 };
 
 class UiContext;

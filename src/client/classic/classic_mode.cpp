@@ -153,6 +153,18 @@ bool ClassicMode::update(const FrameState& fs) {
         openLogOnTurn_ = false;
         if (!ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn) openScreen(ScreenId::Log, {});
     }
+    if (ui.requests.loadGame) {
+        const std::filesystem::path file = *ui.requests.loadGame;
+        ui.requests.loadGame.reset();
+        auto loaded = ClassicSession::load(rules_, file);
+        if (loaded) {
+            startGame(std::move(*loaded));
+            return true;
+        }
+        ScreenArgs args;
+        args.text = loaded.error();
+        openScreen(ScreenId::LoadGame, std::move(args));
+    }
     if (ui.requests.quitToIntro) {
         ui.requests.quitToIntro = false;
         screens_.clear();
