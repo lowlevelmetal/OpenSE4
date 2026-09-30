@@ -142,6 +142,48 @@ move needs across commands (steps made, emergency movement, units launched) are 
 `GameState::playerTurn`, so a game saved in the middle of a turn goes on the same.
 Network and play-by-e-mail games are simultaneous only (docs/PARITY_GAPS.md).
 
+### Tactical combat and the combat simulator
+
+The space battle (`combat_battle.hpp`, `combat_space.cpp`) runs its turn sequence (spec 04
+§4) as a state machine: `advance()` plays computer phases and stops at a player's phase;
+orders for that phase are checked and carried out one at a time
+(`combat_tactical.cpp`). Strategic resolution is the same sequence with every side on its
+strategies, so the rules are identical and only control differs (spec 04 §3).
+
+`combat::TacticalBattle` (`tactical.hpp`) is the public face. It fights a battle on its
+own copy of the game, forking the random numbers and striking with mines exactly as
+`resolveSpaceCombat` does:
+
+1. **Begin**: `TacticalBattle(rules, state, {where, entering, players})`.
+2. **Query**: `pieces()` (position, shields, damage, movement, weapons with reload
+   counters, cargo, groups), `record()` (the replay record as it grows), `round()`,
+   `phaseEmpire()`, `pathTo`, `hitChance`, `damageAt`, `fireProblem`.
+3. **Orders** for the side whose phase it is: `check(order)` says why an order would be
+   refused, `submit(order)` carries it out and plays the computer phases that follow.
+   Orders: Move (to a square, or along a path), Fire (one weapon, or every enabled
+   weapon), ToggleWeapon, Launch (in groups), DropTroops, Ram, Capture, SetLeader,
+   SetMember, ClearGroup, ClearAllGroups, Auto, EndPhase, ResolveCombat, Begin.
+4. **Finish**: `finish()` lets the strategies play what is left and applies the results
+   to the battle's copy with the same code as a strategic battle.
+
+The accepted orders are the battle's `script()`: the same start and script give the same
+battle. Tests check that a player side on Auto, the strategies' orders given by hand, and
+the replayed script all give the strategic battle, bit for bit.
+
+In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
+play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
+script). A battle with a human side and no answer stops the call: the state is left as
+it was, and `TurnResult::battle` returns the question with a copy of the game as the
+battle begins. The client fights it in its window (or answers Strategic) and makes the
+same call again with the answer; the call replays deterministically to the battle and
+fights it with the script, so the game gets exactly the battle the player saw.
+
+The combat simulator (`simulator.hpp`) builds a sandbox copy of the game: one virtual
+empire per side (a copy of the player's, at war with the others), the chosen designs,
+seen enemy designs and sample planets in an empty new system, cargo, fleets, strategies,
+and the sides the computer controls. `startSimulation` returns the `TacticalBattle`;
+the real game is never changed.
+
 ## Determinism
 
 - **Turn resolution uses integer math only.** No floats, and no wall-clock time.
@@ -172,12 +214,12 @@ scaled to the window, drawn with the art from the player's install.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, keeping the Attack Sector questions and the battle to show), and it runs the End Turn flow for local, hotseat and network games |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, keeping the Attack Sector questions and the battle to show), and it runs the End Turn flow for local, hotseat and network games. In turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers |
 | `art.*` | Pictures from the install, cached as textures |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
 | `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...) |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay and Tactical Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `simulator.cpp` the Combat Simulator |
 | `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
 
 ## Tests

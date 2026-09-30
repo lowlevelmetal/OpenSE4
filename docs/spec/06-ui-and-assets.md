@@ -719,3 +719,14 @@ name/date/summary, can be shown from our own saves.
 20. **Construction Queues toggles.** What Ships and Ship SY each include. Our client
     assumes Ships = mobile ships with a space yard, Ship SY = bases with one, Planets =
     colonies without a yard, Planet SY = colonies with one. (inferred)
+21. **Tactical Combat details.** The Options window's list (the manual does not itemise
+    it): our client offers animation on or off, animation speed, the square grid, the
+    selected piece's reach, piece names, and ending the phase when no enemy is left. The
+    move pointers and crosshairs are drawn by the client (the install's cursor files are
+    not used yet). Right-clicking a piece opens a small Combat Piece Report. Which
+    Orders are hotkeys and which need a target click (our client: Ram, Capture and Drop
+    Troops are armed, then the target is clicked)? (inferred)
+22. **Combat Simulator details.** How many virtual empires the owner picker offers (our
+    client: up to four), how items are removed, and what Fleets for Plr does exactly
+    (our client puts the selected ships in their side's fleet, with a formation and a
+    strategy). (inferred)

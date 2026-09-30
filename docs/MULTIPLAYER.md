@@ -16,6 +16,8 @@ whose orders are missing. The host is authoritative.
 Turn-based games (one player after another, spec 05 §8) are played on one computer
 only, alone against the computer or hotseat. A host or `opense4-server` refuses a
 turn-based setup or saved game, and so does PBEM processing (docs/PARITY_GAPS.md).
+Tactical combat needs a turn-based game (spec 04 §2), so network and PBEM games resolve
+every battle strategically; `no_tactical_combat` in a setup file has no effect there.
 
 Everything here is implemented by `src/net` (the `opense4_net` library),
 `src/game/serialize.*` (the save format) and `src/server` (`opense4-server`).

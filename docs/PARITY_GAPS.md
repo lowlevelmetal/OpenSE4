@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played on one computer only (local and hotseat): network hosts, `opense4-server pbem` and PBEM turn processing refuse a turn-based game with a message. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued. Battles are strategic, so the Tactical or Strategic question never comes up | Spec 05 §9.1: on different machines the save file passes from player to player; spec 04 §3 step 1; spec 06 §2.7 | M |
+| Turn-based games (`turn_based.cpp`, `net/host.cpp`, `net/pbem.cpp`) | Played on one computer only (local and hotseat): network hosts, `opense4-server pbem` and PBEM turn processing refuse a turn-based game with a message, so tactical combat is never offered over the network. A computer player's (or a minister's) orders of one planning pass are carried out together after the pass, not one at a time as issued | Spec 05 §9.1: on different machines the save file passes from player to player; spec 06 §2.7 | M |
 
 ## Economy and population (spec 02)
 
@@ -40,7 +40,12 @@ the spec is silent are spec 03 §19 Q50–Q54.
 
 Every row of this section was implemented. Designs record the enemy tonnage their
 vehicles destroyed (`Design::enemyTonnageDestroyed`, spec 04 §15; the measure is open
-question 47).
+question 47). Tactical combat and the combat simulator follow spec 04 §3, §4 and §17; the
+details the spec leaves open are the engine's choices in spec 04 §19.1 (Q49-Q54).
+
+| Where | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Tactical combat in the client (`screens/tactical.cpp`, `session.*`) | A battle is fought in the Tactical Combat window before the game moves on; the game is saved as it was before the order (or End Turn) that started it, so quitting in the middle of a battle drops that order. A ground fight started by troops in a tactical battle is reported in the summary, without the Ground Combat window. The client ends a player's launch step at once, so a player launches after the side's drones and seekers have moved (the engine allows launching first) | A battle may be saved in progress (unknown); the Ground Combat window opens after troops land (spec 06 §1.6) | L |
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 

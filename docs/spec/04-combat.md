@@ -961,6 +961,25 @@ checking in the running game.
     the move and clears the list. OpenSE4 fails the entering group's order (spec 03) and
     otherwise only removes a Sentry at the head of a participant's list. Which groups lose
     their orders in the original? (inferred)
+49. **A player's phase.** May a player launch units before the side's drones and seekers
+    move (a computer side launches first, so its new drones act with the others)? Does
+    Auto hand the rest of this phase to the strategies, or every phase from then on (as
+    Resolve Combat does)? Does the battle end in the middle of a player's phase when the
+    last enemy dies, or when the phase ends? (inferred)
+50. **Tactical groups.** Where does a ship take its place when it joins a group: where it
+    stands, or in a formation slot? What happens to a group when its number is given to a
+    new leader? Does a player's leader that is blocked on its way dissolve its group, as
+    a computer leader's does? (inferred)
+51. **Launch Fighters in Groups.** Does the chosen group size apply to drones too, and how
+    many satellites form one group when a player launches them? (inferred; see Q37)
+52. **Firing by hand.** May a player fire a weapon whose damage type cannot affect the
+    target (the computer never does), and fire point-defense by order? (inferred)
+53. **Who is asked.** Is a human empire that is present in a battle but hostile to nobody
+    there asked Tactical or Strategic? (inferred)
+54. **Combat simulator.** Which race do the virtual empires have: the player's, or that of
+    the empire whose design they fly? Where is the mock battle fought, and do the system's
+    abilities apply? Do the ships start with experience? How many virtual empires can
+    there be? (inferred)
 
 ### 19.1 What the engine does until the remaining questions are answered
 
@@ -1017,3 +1036,44 @@ confirmed rules above take precedence over any older engine behaviour.
   the nearest seeker aimed at the piece.
 - **Satellite cap.** The per-sector satellite cap (spec 03 §12) also limits launches in
   combat.
+- **A player's phase (Q49).** The engine plays a player's phase in the same order as a
+  computer side's: first a launch step, in which the player may launch units (and switch
+  weapons) before anything else happens; the first other order ends it, the side's
+  drones act (with those just launched) and its seekers move, then the order is carried
+  out. Units launched after that step get their full movement at once, and launched
+  drones act at once. Any number of orders follow, in any order; a piece moves while it
+  has movement points and fires each weapon whose reload counter is 0. At the end of the
+  phase unused movement points are lost, and every piece of the side counts as having
+  acted: a ship that changes sides later in the combat turn does not act again. Auto
+  hands the rest of this phase to the strategies (what the side may still launch, then
+  every piece whose strategy has not acted yet); Auto with a piece has that piece act by
+  its strategy now; Resolve Combat hands the side to its strategies for the rest of the
+  battle. The battle ends only when a phase ends, as after a computer phase; OpenSE4's
+  client ends a player's phase by itself when no enemy is left (an option). The client
+  ends the launch step at once when the phase starts, so a player's launches come after
+  the side's drones and seekers move.
+- **Tactical groups (Q50).** Set Group Leader makes the piece lead group 0 to 9 (a
+  leader keeps its members); a piece that led that group before hands its members over
+  and follows the new leader too. A member keeps the place it has when it joins,
+  relative to its leader, and does not turn with it. When the player moves a leader,
+  each member moves toward its place with its own movement points; moving a member by
+  hand keeps it in the group, and a player's leader blocked on its way keeps its group.
+  A group a player formed is not a fleet group: its pieces use their design's strategy
+  when Auto plays them.
+- **Launch groups (Q51).** The chosen group size applies to fighters and drones; the
+  satellites of one launch order form one group.
+- **Firing by hand (Q52).** A weapon may fire at any hostile piece of its target set that
+  it reaches (a seeker: within its travel of the target's centre square), with its
+  reload, the piece's supplies and the target budget checked, as the computer's fire
+  is; the damage type is not checked, and point-defense may be fired by order.
+- **Who is asked (Q53).** Only human empires hostile to another empire in the battle,
+  in turn-based games without "No Tactical Combat". Network games are simultaneous, so
+  they never ask.
+- **Combat simulator (Q54).** Each virtual empire is a copy of the player's empire (race,
+  culture, technology and strategies) under the side's name, at war with the other
+  sides. The mock battle is in the middle of a new, empty system of the home system's
+  type, without system abilities; every side starts beside the centre. Each design used
+  is copied for its side with the chosen strategy; ships start undamaged, with full
+  supplies and no experience. A sample planet is a copy of the colony (population,
+  facilities, stored units) moved into the battle sector. The window offers up to four
+  sides.

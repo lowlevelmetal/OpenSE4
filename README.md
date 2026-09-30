@@ -19,14 +19,13 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
 - **Playable.** Every part of the classic rules is implemented:
   - economy and population;
   - ships and movement;
-  - combat, with replays;
+  - combat: strategic and tactical, with replays and the combat simulator;
   - research, intelligence, diplomacy and events;
   - computer players.
 
   The game has the classic windows, runs hotseat, network (with UPnP) and PBEM
   multiplayer, and includes a dedicated server. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md)
   tracks what remains for full parity:
-  - tactical combat;
   - sound;
   - open rule questions to settle against the original.
 
