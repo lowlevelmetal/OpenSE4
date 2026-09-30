@@ -2,6 +2,7 @@
 
 #include "game/design.hpp"
 #include "game/movement.hpp"
+#include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
 #include "game/xmath.hpp"
@@ -146,16 +147,18 @@ struct Applier {
             col->orders = c.orders;
             return {};
         }
+        // Explore, Resupply, Repair and the composite orders are expanded into
+        // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
-            f->orders = c.orders;
+            f->orders = expandGivenOrders(r, s, orderContextOf(s, *f), f->orders, c.orders);
             f->repeatOrders = c.repeat;
             return {};
         }
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
-        v->orders = c.orders;
+        v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
         v->repeatOrders = c.repeat;
         return {};
     }
@@ -769,6 +772,13 @@ struct Applier {
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
         return {};
     }
+
+    // ---- Ship Orders options (spec 03 §6.4) ----------------------------------------------------------
+    R operator()(const cmd::SetEncounterOptions& c) {
+        if (c.clearOrdersOnEncounter > EncounterClear::Any) return R::fail("Unknown option");
+        emp().clearOrdersOnEncounter = c.clearOrdersOnEncounter;
+        return {};
+    }
 };
 
 template <class T>
@@ -812,6 +822,7 @@ OPENSE4_CMD_NAME(SetRepairPriorities)
 OPENSE4_CMD_NAME(SetDesignTypes)
 OPENSE4_CMD_NAME(SetColonyTypes)
 OPENSE4_CMD_NAME(SetEmpireOptions)
+OPENSE4_CMD_NAME(SetEncounterOptions)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

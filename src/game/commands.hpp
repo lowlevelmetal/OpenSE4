@@ -98,6 +98,9 @@ struct SetDesignTypes { std::vector<std::string> designTypes; };
 struct SetColonyTypes { std::vector<std::string> colonyTypes; };
 struct SetEmpireOptions { std::optional<bool> aiMinimalChanges; std::optional<std::string> passwordHash; };
 
+// ---- Ship Orders options (spec 03 §6.4) ------------------------------------------------------------
+struct SetEncounterOptions { EncounterClear clearOrdersOnEncounter = EncounterClear::Never; };
+
 } // namespace cmd
 
 using Command = std::variant<
@@ -109,7 +112,8 @@ using Command = std::variant<
     cmd::SetResearch, cmd::SetIntel,
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
-    cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions>;
+    cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
+    cmd::SetEncounterOptions>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

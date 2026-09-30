@@ -359,6 +359,7 @@ void io(Ar& ar, Empire& e) {
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle);
+    fields(ar, e.clearOrdersOnEncounter);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -512,6 +513,7 @@ template <class Ar> void io(Ar& ar, cmd::SetRepairPriorities& c) { fields(ar, c.
 template <class Ar> void io(Ar& ar, cmd::SetDesignTypes& c) { fields(ar, c.designTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyTypes& c) { fields(ar, c.colonyTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash); }
+template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) { fields(ar, c.clearOrdersOnEncounter); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

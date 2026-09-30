@@ -5,6 +5,7 @@
 
 #include "game/ai.hpp"
 #include "game/commands.hpp"
+#include "game/orders.hpp"
 #include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
@@ -307,16 +308,25 @@ TEST_CASE("movement: a warp order jumps an unknown link, learns it and explores 
 TEST_CASE("movement: explore picks the nearest unexplored warp point and skips claimed ones") {
     World w;
     const SystemId a = w.system("A"), b = w.system("B", 10, 0), c = w.system("C", 0, 10);
-    w.link(a, {8, 6}, b, {0, 6});
-    w.link(a, {6, 8}, c, {0, 6});
+    const ObjectId toB = w.link(a, {8, 6}, b, {0, 6}).first;
+    const ObjectId toC = w.link(a, {6, 8}, c, {0, 6}).first;
     w.s.empire(kA).knowledge.explored[a.index()] = 1;
     const DesignId scout = w.ship(kA, "Scout", 3);
     const VehicleId s1 = w.spawn(scout, at(a, 6, 6));
     const VehicleId s2 = w.spawn(scout, at(a, 6, 6));
     for (VehicleId id : {s1, s2}) {
         fuel(w, id);
-        w.order(id, mk(OrderKind::Explore));
+        w.give(id, {mk(OrderKind::Explore)});
     }
+    // Explore is expanded when given: Move To plus Warp for the nearest warp point
+    // into unexplored space; the second scout skips the one the first is bound for.
+    REQUIRE(w.v(s1).orders.size() == 2);
+    CHECK(w.v(s1).orders[0] == moveTo(a, 8, 6));
+    CHECK(w.v(s1).orders[1].kind == OrderKind::Warp);
+    CHECK(w.v(s1).orders[1].object == toB);
+    REQUIRE(w.v(s2).orders.size() == 2);
+    CHECK(w.v(s2).orders[0] == moveTo(a, 6, 8));
+    CHECK(w.v(s2).orders[1].object == toC);
     w.move();
     CHECK(w.v(s1).location == at(b, 0, 6));
     CHECK(w.v(s2).location == at(c, 0, 6));
@@ -325,8 +335,11 @@ TEST_CASE("movement: explore picks the nearest unexplored warp point and skips c
     CHECK(w.s.empire(kA).hasExplored(b));
     CHECK(w.s.empire(kA).hasExplored(c));
 
-    // Nothing left: the order ends with a note.
+    // Nothing left: nothing is added.
     const VehicleId s3 = w.spawn(scout, at(a, 6, 6));
+    w.give(s3, {mk(OrderKind::Explore)});
+    CHECK(w.v(s3).orders.empty());
+    // An Explore that reached a list another way is expanded when it comes up; with nothing left it goes, with a note.
     w.order(s3, mk(OrderKind::Explore));
     w.move();
     CHECK(w.v(s3).orders.empty());
@@ -588,6 +601,8 @@ TEST_CASE("movement: with the real combat module, meetings become battles and mi
     const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
     const VehicleId picket = w.spawn(w.ship(kB, "Picket", 1, {"Test Laser"}), at(a, 1, 6));
     fuel(w, runner);
+    // Steps avoid a visible hostile's square unless it is where the ship is going (spec 03 §6.2).
+    w.order(runner, moveTo(a, 1, 6));
     w.order(runner, moveTo(a, 6, 6));
     w.move(real);
     REQUIRE_FALSE(w.s.combats.empty());
@@ -622,6 +637,7 @@ TEST_CASE("movement: combat neither stops a moving ship nor clears its orders") 
     const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
     w.spawn(w.ship(kB, "Picket", 1), at(a, 1, 6));
     fuel(w, runner);
+    w.order(runner, moveTo(a, 1, 6));  // into the picket's square on purpose (spec 03 §6.2)
     w.order(runner, moveTo(a, 6, 6));
     CombatSpy spy;
     spy.fight = hostilesMeet;
@@ -2219,4 +2235,216 @@ TEST_CASE("movement: the same state and orders give the same result") {
     const std::string second = playScenario();
     CHECK(first == second);
     CHECK(first.find("colony") != std::string::npos);
+}
+
+// ---- Orders as given, ad-hoc groups, greedy steps and the Ship Orders options (spec 03 §6.2, §6.4, §8) ----
+
+TEST_CASE("orders: composite orders are expanded into simple ones when they are given") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+    w.exploreAll(kA);
+    const ObjectId home = w.planet(a, {2, 6});
+    const ObjectId target = w.planet(a, {5, 6});
+    w.colony(home, kA, 1000, {"Test Depot"});
+
+    // Colonize: Load Cargo (population) where it is given, Move To the planet, Colonize.
+    const VehicleId ship = w.spawn(w.ship(kA, "Settler", 3, {"Test Rock Pod"}), at(a, 2, 6));
+    fuel(w, ship);
+    w.give(ship, {mk(OrderKind::Colonize, {}, target)});
+    {
+        const auto& o = w.v(ship).orders;
+        REQUIRE(o.size() == 3);
+        CHECK(o[0].kind == OrderKind::LoadCargo);
+        CHECK_FALSE(o[0].design.valid());
+        CHECK(o[0].location == at(a, 2, 6));
+        CHECK(o[0].amount == -1);
+        CHECK(o[1] == moveTo(a, 5, 6));
+        CHECK(o[2].kind == OrderKind::Colonize);
+        CHECK(o[2].object == target);
+        CHECK(o[2].amount == kColonizeExpanded);
+    }
+    // Orders added later leave the earlier ones alone: a Warp from the planet's sector.
+    w.give(ship, {mk(OrderKind::Warp, {}, ab)});
+    REQUIRE(w.v(ship).orders.size() == 5);
+    CHECK(w.v(ship).orders[3] == moveTo(a, 12, 6));
+    CHECK(w.v(ship).orders[4].kind == OrderKind::Warp);
+    // Giving the same list again changes nothing.
+    w.give(ship, {});
+    CHECK(w.v(ship).orders.size() == 5);
+    w.v(ship).orders.resize(3);
+    // Loading takes the first action; the Move To then goes on (spec 03 §6.3 step 4).
+    w.move();
+    CHECK(w.v(ship).location == at(a, 4, 6));
+    CHECK(w.v(ship).cargo.totalPopulation() == 2);
+    CHECK(w.v(ship).orders.size() == 2);
+    w.move();
+    CHECK(w.v(ship).location == at(a, 5, 6));
+    CHECK(w.v(ship).orders.size() == 1);
+    w.colonize();
+    REQUIRE(w.s.colony(target));
+    CHECK(w.s.colony(target)->owner == kA);
+
+    // A ship already carrying colonists gets no Load Cargo.
+    const ObjectId other = w.planet(a, {9, 9});
+    const VehicleId loaded = w.spawn(w.ship(kA, "Loaded", 3, {"Test Rock Pod"}), at(a, 0, 0));
+    w.v(loaded).cargo.population.push_back({kA, 1});
+    w.give(loaded, {mk(OrderKind::Colonize, {}, other)});
+    REQUIRE(w.v(loaded).orders.size() == 2);
+    CHECK(w.v(loaded).orders[0] == moveTo(a, 9, 9));
+
+    // Cargo orders for another sector: Move To there first.
+    const VehicleId hauler = w.spawn(w.ship(kA, "Hauler", 3), at(a, 0, 0));
+    w.give(hauler, {mk(OrderKind::LoadCargo, at(a, 2, 6), {}, {}, {}, -1)});
+    REQUIRE(w.v(hauler).orders.size() == 2);
+    CHECK(w.v(hauler).orders[0] == moveTo(a, 2, 6));
+    CHECK(w.v(hauler).orders[1].kind == OrderKind::LoadCargo);
+
+    // Resupply: Move To the nearest depot; already at one, nothing is added.
+    const VehicleId tanker = w.spawn(w.ship(kA, "Tanker", 3), at(a, 6, 12));
+    w.give(tanker, {mk(OrderKind::Resupply)});
+    REQUIRE(w.v(tanker).orders.size() == 1);
+    CHECK(w.v(tanker).orders[0] == moveTo(a, 2, 6));
+    const VehicleId docked = w.spawn(w.ship(kA, "Docked", 3), at(a, 2, 6));
+    w.give(docked, {mk(OrderKind::Resupply)});
+    CHECK(w.v(docked).orders.empty());
+
+    // Fleets: expanded from the leader's sector, into the fleet's list.
+    const VehicleId f1 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
+    const VehicleId f2 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Wing", {f1, f2}}).ok);
+    const FleetId fid = w.v(f1).fleet;
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {mk(OrderKind::Warp, {}, ab)}, false}).ok);
+    REQUIRE(w.s.fleet(fid)->orders.size() == 2);
+    CHECK(w.s.fleet(fid)->orders[0] == moveTo(a, 12, 6));
+    (void)ba;
+}
+
+TEST_CASE("movement: ships in one sector with the same head order move as one group") {
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId fast = w.spawn(w.ship(kA, "Fast", 4), at(a, 0, 6));
+    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 2), at(a, 0, 6));
+    const VehicleId apart = w.spawn(w.ship(kA, "Apart", 4), at(a, 0, 7));
+    for (VehicleId id : {fast, slow, apart}) fuel(w, id);
+    w.order(fast, moveTo(a, 4, 6));
+    w.order(fast, moveTo(a, 4, 0));
+    w.order(slow, moveTo(a, 4, 6));
+    w.order(slow, moveTo(a, 4, 12));
+    w.order(apart, moveTo(a, 4, 6));  // same order, another sector: on its own
+    w.move();
+    // Together at the pace of the slowest.
+    CHECK(w.v(fast).location == at(a, 2, 6));
+    CHECK(w.v(slow).location == at(a, 2, 6));
+    CHECK(w.v(apart).location == at(a, 4, 6));
+    w.move();
+    CHECK(w.v(fast).location == at(a, 4, 6));
+    CHECK(w.v(slow).location == at(a, 4, 6));
+    // The shared order is done for both; their next orders differ, so they part.
+    REQUIRE(w.v(fast).orders.size() == 1);
+    REQUIRE(w.v(slow).orders.size() == 1);
+    w.move();
+    CHECK(w.v(fast).location == at(a, 4, 2));
+    CHECK(w.v(slow).location == at(a, 4, 8));
+
+    // A group that parts during a turn: each goes on at its own pace from the next action.
+    World p;
+    const SystemId pa = p.system("A");
+    const VehicleId quick = p.spawn(p.ship(kA, "Quick", 6), at(pa, 0, 0));
+    const VehicleId steady = p.spawn(p.ship(kA, "Steady", 3), at(pa, 0, 0));
+    for (VehicleId id : {quick, steady}) fuel(p, id);
+    p.order(quick, moveTo(pa, 1, 1));
+    p.order(quick, moveTo(pa, 12, 1));
+    p.order(steady, moveTo(pa, 1, 1));
+    p.order(steady, moveTo(pa, 1, 12));
+    p.move();
+    CHECK(p.v(steady).location == at(pa, 1, 3));  // 3 steps: one together, two alone
+    CHECK(p.v(quick).location.sector.y == 1);
+    CHECK(p.v(quick).location.sector.x > 2);
+}
+
+TEST_CASE("movement: in-system steps are greedy and re-chosen around hazards and hostiles") {
+    // A visible hostile's square is stepped around, unless it is where the ship goes.
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId runner = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 6));
+    w.spawn(w.ship(kB, "Picket", 1), at(a, 1, 6));
+    fuel(w, runner);
+    w.order(runner, moveTo(a, 6, 6));
+    CombatSpy spy;
+    spy.fight = hostilesMeet;
+    w.move(spy.hooks());
+    CHECK(w.v(runner).location == at(a, 3, 6));
+    CHECK(spy.fought.empty());
+    CHECK(std::find(spy.asked.begin(), spy.asked.end(), at(a, 1, 6)) == spy.asked.end());
+
+    // A storm square too; without anything in the way the step is diagonal first.
+    World st;
+    const SystemId sa = st.system("A");
+    const ObjectId storm = st.object(sa, ObjectKind::Storm, {1, 1});
+    st.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 5));
+    const VehicleId sailor = st.spawn(st.ship(kA, "Sailor", 1), at(sa, 0, 0));
+    fuel(st, sailor);
+    st.order(sailor, moveTo(sa, 4, 4));
+    st.move();
+    CHECK((st.v(sailor).location == at(sa, 1, 0) || st.v(sailor).location == at(sa, 0, 1)));
+    CHECK(totalDamage(st.v(sailor)) == 0);
+    const VehicleId straight = st.spawn(st.ship(kA, "Straight", 1), at(sa, 5, 5));
+    fuel(st, straight);
+    st.order(straight, moveTo(sa, 9, 9));
+    st.move();
+    CHECK(st.v(straight).location == at(sa, 6, 6));
+
+    // With every square toward the target to be avoided, 10 tries fail: no step, and the order fails.
+    World m;
+    const SystemId ma = m.system("A");
+    m.s.empire(kA).taggedMinefields = {at(ma, 0, 1), at(ma, 1, 1)};
+    const VehicleId stuck = m.spawn(m.ship(kA, "Stuck", 3), at(ma, 0, 0));
+    fuel(m, stuck);
+    m.order(stuck, moveTo(ma, 0, 12));
+    m.move();
+    CHECK(m.v(stuck).location == at(ma, 0, 0));
+    CHECK(m.v(stuck).orders.empty());
+    CHECK(m.logged(kA, "blocked"));
+}
+
+TEST_CASE("movement: the Ship Orders options clear orders after a warp into another empire's system") {
+    const Rules& r = mvtest::rules();
+    auto run = [&](EncounterClear options, Treaty treaty, bool ownerHasColony) {
+        World w;
+        const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+        const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+        w.exploreAll(kA);
+        if (ownerHasColony) w.colony(w.planet(b, {8, 8}), kB, 1000);
+        w.setTreaty(kA, kB, treaty);
+        w.setTreaty(kB, kA, treaty);
+        REQUIRE(apply(r, w.s, kA, cmd::SetEncounterOptions{options}).ok);
+        const VehicleId ship = w.spawn(w.ship(kA, "Scout", 3), at(a, 11, 6));
+        fuel(w, ship);
+        w.order(ship, mk(OrderKind::Warp, {}, ab));
+        w.order(ship, moveTo(b, 3, 6));
+        w.move();
+        (void)ba;
+        return std::pair{w.v(ship).location, w.v(ship).orders.size()};
+    };
+    // Off (the default): the ship warps and goes on.
+    CHECK(World{}.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Never);
+    CHECK(run(EncounterClear::Never, Treaty::War, true).first == Location{SystemId{1u}, Sector{1, 6}});
+    // Meeting an enemy: the Warp fails on arrival and the list is cleared.
+    const auto enemy = run(EncounterClear::Enemy, Treaty::War, true);
+    CHECK(enemy.first == Location{SystemId{1u}, Sector{0, 6}});
+    CHECK(enemy.second == 0);
+    // Nobody there: nothing happens.
+    CHECK(run(EncounterClear::Enemy, Treaty::War, false).first == Location{SystemId{1u}, Sector{1, 6}});
+    // A friend is no enemy, but counts for "any empire".
+    CHECK(run(EncounterClear::Enemy, Treaty::NonAggression, true).first == Location{SystemId{1u}, Sector{1, 6}});
+    const auto any = run(EncounterClear::Any, Treaty::NonAggression, true);
+    CHECK(any.first == Location{SystemId{1u}, Sector{0, 6}});
+    CHECK(any.second == 0);
+    // Unknown values are refused.
+    World w;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetEncounterOptions{static_cast<EncounterClear>(3)}).ok);
+    CHECK(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Any}).ok);
+    CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Any);
 }

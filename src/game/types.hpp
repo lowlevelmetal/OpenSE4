@@ -137,6 +137,11 @@ bool parseCharacteristic(std::string_view s, Characteristic& out);
 
 enum class PlayerKind : uint8_t { Human, Computer, Neutral };
 
+// An empire's Ship Orders option (spec 03 §6.4, §8): after a warp into a system
+// where an enemy empire (Enemy) or any other empire (Any) has objects, the
+// order fails and the list is cleared. Never is the default.
+enum class EncounterClear : uint8_t { Never, Enemy, Any };
+
 // The 25 ministers in the original's order (spec 05 §7.1, confirmed: binary):
 // the first 11 are global, the rest individual. Bit i of Empire::ministers.
 enum class Minister : uint8_t {

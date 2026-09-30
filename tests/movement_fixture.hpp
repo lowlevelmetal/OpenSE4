@@ -6,6 +6,7 @@
 
 #include "engine_fixture.hpp"
 
+#include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
@@ -296,6 +297,15 @@ public:
     void order(VehicleId id, Order o, bool repeat = false) {
         v(id).orders.push_back(o);
         v(id).repeatOrders = repeat;
+    }
+
+    // Gives orders the way a player does (cmd::SetOrders), appended to the
+    // vehicle's list: composite orders are expanded as they are given (spec 03 §8).
+    void give(VehicleId id, std::vector<Order> more, bool repeat = false) {
+        std::vector<Order> list = v(id).orders;
+        list.insert(list.end(), more.begin(), more.end());
+        const CommandResult res = apply(r_, s, v(id).owner, cmd::SetOrders{id, {}, std::move(list), repeat});
+        REQUIRE_MESSAGE(res.ok, res.error);
     }
 
     void setTreaty(EmpireId a, EmpireId b, Treaty t) {

@@ -201,6 +201,11 @@ struct Empire {
     AiMemory aiMemory;
     int aiDifficulty = -1;                  // kDifficulty*; -1 until the AI step assigns it (ai::difficultyOf)
 
+    // Ship Orders option (spec 03 §6.4): clear orders after a warp into a system
+    // where an enemy (or any other) empire has objects. Computer players take it
+    // from their AI settings (spec 05 §7.1).
+    EncounterClear clearOrdersOnEncounter = EncounterClear::Never;
+
     bool ministerAll = false;               // full minister control
     uint32_t ministers = kIndividualMinisters;  // human empires: minister areas switched on (bit = Minister)
     std::string ministerStyle;              // "Aggressive", "Defensive", "Neutral"; empty: the race's own AI files

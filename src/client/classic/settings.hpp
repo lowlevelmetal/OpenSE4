@@ -28,9 +28,8 @@ struct ClassicSettings {
     // Ship movement.
     bool avoidMinefields = true;
     bool avoidRestrictedSystems = true;
-    // Ship orders.
-    bool clearOrdersOnEnemyContact = true;
-    bool clearOrdersOnAnyContact = false;
+    // Ship orders: part of the game (Empire::clearOrdersOnEncounter, spec 03
+    // §6.4), set with cmd::SetEncounterOptions from the Empire Options window.
     // System display.
     bool showWarpPointNames = true;
     bool showPlanetNames = false;
