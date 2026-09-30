@@ -446,7 +446,7 @@ private:
         dl->PopClipRect();
         dl->AddRect(o, o2, IM_COL32(66, 107, 216, 255));
 
-        if (b.finished()) resultPanel(ui, f, o, size);
+        if (b.finished() && !animating()) resultPanel(ui, f, o, size);
 
         // Clicks.
         if (hoveredBox && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -538,9 +538,13 @@ private:
         if (f.kind == TacticalFight::Kind::Simulation) dimText("A simulation: nothing in the game has changed.");
         ImGui::PopTextWrapPos();
         ImGui::SetCursorPosY(h - ui.px(40));
-        if (classicButton(ui, animating() ? "Skip" : "Done", {120, 26})) {
-            if (animating() || !b.applied()) skipAnimation();
-            else done_ = true;
+        if (classicButton(ui, "Done", {120, 26}, 0, false, b.applied())) done_ = true;
+        ImGui::SameLine(0, ui.px(10));
+        if (classicButton(ui, "Replay", {120, 26})) {
+            // The whole battle again from the start.
+            playback_.rewind();
+            playback_.setSpeed(settings().tacticalSpeed);
+            playback_.play();
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -800,12 +804,12 @@ private:
             u.aim = Aim::None;
             u.message.clear();
         }
-        const game::EmpireId side = b.phaseEmpire();
-        if (!side.valid()) return;
         if (animating()) {
             if (ImGui::IsKeyPressed(ImGuiKey_Space, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) skipAnimation();
             return;
         }
+        const game::EmpireId side = b.phaseEmpire();
+        if (!side.valid()) return;
         // Alt+0..9 / Ctrl+0..9: leader / member of a group.
         for (int n = 0; n <= 9; ++n) {
             if (!ImGui::IsKeyPressed(ImGuiKey(int(ImGuiKey_0) + n), false) || u.selected < 0) continue;
@@ -865,6 +869,9 @@ private:
                                                 : p.leader >= 0 ? std::format("Follows {}", paint.pieceName(uint32_t(p.leader)))
                                                                 : std::string("None"),
                            90);
+                if (const game::Vehicle* v = p.vehicle.valid() ? s.vehicle(p.vehicle) : nullptr)
+                    if (const game::Fleet* fleet = s.fleet(v->fleet); fleet && fleet->formation < ui.rules().data().formations.size())
+                        labelValue(ui, "Formation", std::format("{} ({})", ui.rules().data().formations[fleet->formation].name, fleet->name), 90);
                 if (p.kind == PieceKind::UnitGroup) labelValue(ui, "Units", std::format("{}", p.count), 90);
                 if (!p.cargo.empty()) {
                     std::string cargo;
