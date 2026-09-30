@@ -243,6 +243,7 @@ public:
             if (me.avoidTaggedMinefields != fresh.avoidTaggedMinefields || me.avoidRestrictedSystems != fresh.avoidRestrictedSystems ||
                 me.clearOrdersOnEncounter != fresh.clearOrdersOnEncounter)
                 status_.issue(ui, cmd::SetEncounterOptions{fresh.clearOrdersOnEncounter, fresh.avoidTaggedMinefields, fresh.avoidRestrictedSystems});
+            if (me.chooseColonyType != fresh.chooseColonyType) status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = fresh.chooseColonyType});
         }
         if (changed) saveSettings();
         d.close();
@@ -256,7 +257,7 @@ private:
         const game::Empire& me = ui.me();
         heading(ui, "Ship Movement");
         bool minefields = me.avoidTaggedMinefields;
-        if (lampToggle(ui, "Route around tagged minefields (not for ships led by a mine sweeper)", &minefields))
+        if (lampToggle(ui, "Route around tagged minefields (a mine sweeper may still use their warp points)", &minefields))
             status_.issue(ui, cmd::SetEncounterOptions{.avoidTaggedMinefields = minefields});
         bool restricted = me.avoidRestrictedSystems;
         if (lampToggle(ui, "Never route through the systems to avoid", &restricted))
@@ -270,6 +271,11 @@ private:
             status_.issue(ui, cmd::SetEncounterOptions{onEnemy ? game::EncounterClear::Enemy : game::EncounterClear::Never});
         if (lampToggle(ui, "Clear orders on warping into a system with any other empire", &onAny))
             status_.issue(ui, cmd::SetEncounterOptions{onAny ? game::EncounterClear::Any : game::EncounterClear::Enemy});
+        ImGui::Spacing();
+        heading(ui, "Colonies");
+        bool choose = me.chooseColonyType;
+        if (lampToggle(ui, "Choose the colony type when a colony is founded (turn-based games)", &choose))
+            status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = choose});
         status_.draw();
     }
 

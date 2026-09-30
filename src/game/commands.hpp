@@ -81,6 +81,9 @@ struct TransferCargo {       // immediate transfer between own holders in the sa
 
 // ---- Designs --------------------------------------------------------------------------------
 struct CreateDesign { Design design; };   // id/owner are assigned by the engine
+// Changes an own prototype design in place (spec 03 §4.1): refused for a
+// design that was built or retrofitted to, or that is in a construction queue.
+struct EditDesign { DesignId design; Design with; };
 struct SetDesignObsolete { DesignId design; bool obsolete = true; };
 struct DeleteDesign { DesignId design; };  // only never-built designs
 
@@ -101,7 +104,11 @@ struct SetStrategy { int32_t index = -1; ruleset::CombatStrategy strategy; bool 
 struct SetRepairPriorities { std::vector<std::string> priorities; };
 struct SetDesignTypes { std::vector<std::string> designTypes; };
 struct SetColonyTypes { std::vector<std::string> colonyTypes; };
-struct SetEmpireOptions { std::optional<bool> aiMinimalChanges; std::optional<std::string> passwordHash; };
+struct SetEmpireOptions {
+    std::optional<bool> aiMinimalChanges;
+    std::optional<std::string> passwordHash;
+    std::optional<bool> chooseColonyType;  // Empire::chooseColonyType (spec 03 §8)
+};
 
 // ---- Ministers (spec 02 §10, spec 05 §7.1) -----------------------------------------------------
 // The Ministers window's settings; fields left empty are not changed.
@@ -135,7 +142,7 @@ using Command = std::variant<
     cmd::SendMessage, cmd::AnswerMessage,
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
-    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector>;
+    cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

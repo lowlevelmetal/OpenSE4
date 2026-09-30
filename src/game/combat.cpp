@@ -14,6 +14,7 @@
 #include "datafile/reader.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
@@ -829,11 +830,16 @@ int64_t destroyComponents(const Rules& r, const GameState& s, Vehicle& v, int64_
         pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(pick));
     }
     // Whole components fall while the damage covers them; the first it cannot destroy stops it.
+    bool lost = false;
     for (const Candidate& c : queue) {
         if (damage < c.structure) break;
         destroyEntry(r, d, v, c.entry);
         damage -= c.structure;
+        lost = true;
     }
+    // Every destroyed component clamps supply and trims cargo at once (spec 03
+    // §19 Q57, spec 04 §9.4, confirmed: binary).
+    if (lost && !vehicleDestroyed(r, s, v)) movement::fitToCapacity(r, s, v);
     return damage;
 }
 
@@ -1055,7 +1061,8 @@ std::vector<VehicleId> activeMinefields(const Rules& r, const GameState& s, Loca
         if (m.location != where || m.count <= 0 || !m.owner.valid() || typeOf(r, s, m) != VehicleType::Mine) continue;
         bool friendly = false;
         for (VehicleId id : group)
-            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !enemies(s, m.owner, v->owner))) friendly = true;
+            // The mine owner's side of the treaty (spec 03 §12, confirmed: binary).
+            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !hostile(s, m.owner, v->owner))) friendly = true;
         if (!friendly) out.push_back(m.id);
     }
     return out;

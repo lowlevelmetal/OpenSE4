@@ -818,7 +818,8 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             v->movement -= static_cast<int>(out.actual);
             break;
         case Effect::ShipLoseSupply:
-            if (!v) return out;
+            // Nothing happens to unlimited supply (spec 03 §19 Q57, confirmed: binary).
+            if (!v || vehicleHasUnlimitedSupply(r, s, *v)) return out;
             out.actual = std::clamp<int64_t>(amount, 0, std::max<int64_t>(0, v->supply));
             v->supply -= out.actual;
             break;

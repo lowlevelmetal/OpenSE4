@@ -157,12 +157,12 @@ void resupply(const Rules& r, const GameState& s, OrderContext& ctx, std::vector
     if (const auto pick = nearest(r, s, ctx, depots)) moveTo(s, ctx, depots[*pick], out);
 }
 
-// Own sources only: populated colonies with Component Repair and bases first;
-// repair ships only when no such source can be reached.
+// Own sources only: colonies with Component Repair (no population needed,
+// spec 03 §13) and bases first; repair ships only when no such source can be reached.
 void repair(const Rules& r, const GameState& s, OrderContext& ctx, std::vector<Order>& out) {
     std::vector<Location> fixed, ships;
     for (const auto& c : s.colonies)
-        if (c && c->owner == ctx.owner && movement::detail::inSystem(s.galaxy, c->planet) && c->totalPopulation() > 0 &&
+        if (c && c->owner == ctx.owner && movement::detail::inSystem(s.galaxy, c->planet) &&
             abilitySum(colonyAbilities(r, s, *c), AbilityKind::ComponentRepair) > 0)
             fixed.push_back(locationOf(s.galaxy, c->planet));
     for (const Vehicle& v : s.vehicles) {
@@ -251,6 +251,19 @@ void expandOrder(const Rules& r, const GameState& s, OrderContext& ctx, const Or
         case OrderKind::Repair: repair(r, s, ctx, out); return;
         case OrderKind::Warp:
             travelThen(s, ctx, validObject(s, o.object) ? locationOf(s.galaxy, o.object) : Location{}, o, out);
+            return;
+        case OrderKind::Attack:
+            // A drone given a warp point as target gets Move To plus Warp instead (spec 03 §8, confirmed: binary).
+            if (validObject(s, o.object) && s.galaxy.object(o.object).kind == ObjectKind::WarpPoint) {
+                Order warp;
+                warp.kind = OrderKind::Warp;
+                warp.object = o.object;
+                warp.location = locationOf(s.galaxy, o.object);
+                travelThen(s, ctx, warp.location, warp, out);
+                return;
+            }
+            out.push_back(o);
+            advanceOrderContext(s, ctx, o);
             return;
         case OrderKind::Colonize: {
             // Colonists come aboard where the order is given, when the ship carries

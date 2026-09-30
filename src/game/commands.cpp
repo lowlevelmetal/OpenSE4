@@ -3,6 +3,7 @@
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
+#include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
@@ -130,13 +131,8 @@ struct Applier {
         }
     }
 
-    const Vehicle* fleetLeaderOf(const Fleet& f) const {
-        if (const Vehicle* v = s.vehicle(f.leader); v && v->count > 0) return v;
-        const Vehicle* first = nullptr;
-        for (VehicleId id : f.members)
-            if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && (!first || v->id < first->id)) first = v;
-        return first;
-    }
+    // The chosen leader, else the first member in object order (spec 03 §9).
+    const Vehicle* fleetLeaderOf(const Fleet& f) const { return movement::detail::fleetLeader(s, f); }
 
     R operator()(const cmd::SetOrders& c) {
         for (const Order& o : c.orders)
@@ -484,6 +480,8 @@ struct Applier {
                              : pairOf[i] >= 0                                                        ? 0
                                                                                                      : entryStructure(r, newD, i));
         const std::string name = newD.name;
+        // A design a ship is retrofitted to is no longer a prototype (spec 03 §4.1).
+        s.design(c.design).retrofitted = true;
         v->design = c.design;
         v->damage = std::move(damage);
         // Movement and supply recomputed and clamped to the new maxima.
@@ -499,6 +497,7 @@ struct Applier {
         if (!col) return R::fail("Not your planet");
         if (col->homeworld) return R::fail("A homeworld's colony type is fixed");
         col->colonyType = c.colonyType;
+        std::erase(emp().colonyTypeChoices, c.planet);  // the colonization dialog is answered (spec 03 §8)
         return {};
     }
 
@@ -599,6 +598,42 @@ struct Applier {
         return {};
     }
 
+    // Edit (spec 03 §4.1, confirmed: binary): only an own design that is still
+    // a prototype and in none of the empire's construction queues, changed in
+    // place (it may keep its name). The result starts as a prototype that is
+    // not obsolete, with no sightings and empty statistics.
+    R operator()(const cmd::EditDesign& c) {
+        if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
+        Design& current = s.design(c.design);
+        if (!designIsPrototype(current)) return R::fail("Only a prototype can be edited; copy or upgrade a built design");
+        if (designInQueue(s, e, c.design)) return R::fail("The design is in a construction queue");
+        for (const Vehicle& v : s.vehicles)
+            if (v.count > 0)
+                for (const UnitStack& st : groupStacks(v))
+                    if (st.design == c.design) return R::fail("Vehicles of this design exist");
+        Design d = c.with;
+        if (d.name.empty()) return R::fail("A design needs a name");
+        if (d.hull >= r.data().vehicleSizes.size()) return R::fail("Unknown hull");
+        for (const auto& en : d.entries) {
+            if (en.component >= r.data().components.size()) return R::fail("Unknown component");
+            if (en.mount >= static_cast<int32_t>(r.data().weaponMounts.size())) return R::fail("Unknown mount");
+        }
+        const DesignStats st = computeDesignStats(r, &emp(), d);
+        if (!st.problems.empty()) return R::fail(st.problems.front());
+        if (d.name != current.name && designNameInUse(s, d.name)) return R::fail("A design with that name exists");
+        current.name = d.name;
+        current.designType = d.designType;
+        current.hull = d.hull;
+        current.entries = d.entries;
+        current.strategy = d.strategy < std::max<size_t>(1, emp().strategies.size()) ? d.strategy : 0;
+        current.obsolete = false;
+        current.retrofitted = false;
+        current.createdTurn = s.turn;
+        resetDesignStatistics(current);
+        for (Empire& other : s.empires) std::erase_if(other.knowledge.seenDesigns, [&](const SeenDesign& x) { return x.design == c.design; });
+        return {};
+    }
+
     R operator()(const cmd::SetDesignObsolete& c) {
         if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
         s.design(c.design).obsolete = c.obsolete;
@@ -608,10 +643,7 @@ struct Applier {
     R operator()(const cmd::DeleteDesign& c) {
         if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
         if (s.design(c.design).built > 0) return R::fail("Built designs can only be made obsolete");
-        for (const auto& col : s.colonies)
-            if (col && col->owner == e)
-                for (const auto& q : col->queue.items)
-                    if (q.kind == QueueItem::Kind::Vehicle && q.design == c.design) return R::fail("The design is in a queue");
+        if (designInQueue(s, e, c.design)) return R::fail("The design is in a queue");
         // Designs are indexed by id; deleting only unlinks it from the empire.
         std::erase(emp().designs, c.design);
         s.design(c.design).obsolete = true;
@@ -778,6 +810,7 @@ struct Applier {
     R operator()(const cmd::SetEmpireOptions& c) {
         if (c.aiMinimalChanges) emp().aiMinimalChanges = *c.aiMinimalChanges;
         if (c.passwordHash) emp().passwordHash = *c.passwordHash;
+        if (c.chooseColonyType) emp().chooseColonyType = *c.chooseColonyType;
         return {};
     }
 
@@ -908,6 +941,7 @@ OPENSE4_CMD_NAME(SetEmpireOptions)
 OPENSE4_CMD_NAME(SetMinisters)
 OPENSE4_CMD_NAME(SetEncounterOptions)
 OPENSE4_CMD_NAME(EnterSector)
+OPENSE4_CMD_NAME(EditDesign)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

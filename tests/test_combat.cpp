@@ -513,6 +513,9 @@ TEST_CASE("combat: combatPossible respects treaties, cloaking and mines") {
     CHECK_FALSE(combat::combatPossible(r, s, ar.loc));
     const DesignId mine = design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"});
     spawn(s, mine, ar.loc, 3);
+    // Mines judge by their owner's side of the treaty (spec 03 §12): B still rates A at Non-Aggression.
+    CHECK_FALSE(combat::combatPossible(r, s, ar.loc));
+    s.empire(ar.b).relation(ar.a).treaty = Treaty::War;
     CHECK(combat::combatPossible(r, s, ar.loc));
     setTreaty(s, ar.a, ar.b, Treaty::NonAggression);
     CHECK_FALSE(combat::combatPossible(r, s, ar.loc));

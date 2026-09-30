@@ -90,8 +90,11 @@ TEST_CASE("unit groups: launches of several designs join one group per kind and 
     CHECK(fastStep == 4);
     CHECK(movement::moveSupplyCost(r, w.s, g) == 2 * slowStep + 2 * fastStep);
 
-    // Recovery takes one design out; the rest stays a group of the other design.
-    w.order(carrier, recoverOf(slow));
+    // Recovery naming the group and one design (the Launch/Recover window) takes
+    // that design out; the rest stays a group of the other design.
+    Order take = recoverOf(slow);
+    take.vehicle = groups.front();
+    w.order(carrier, take);
     w.move();
     REQUIRE(w.s.vehicle(groups.front()));
     const Vehicle& left = w.v(groups.front());
@@ -121,16 +124,24 @@ TEST_CASE("unit groups: the per-sector caps count every design") {
     CHECK(groupsAt(r, w.s, kA, here, VehicleType::Mine).size() == 1);
     CHECK(w.v(layer).cargo.unitCount(mineB) == 7);
 
-    // Sweepers clear a minefield that mixes designs in the order its mines were laid.
+    // A Sweep Mines order clears a minefield that mixes designs in the order its
+    // mines were laid (duds here, so that no mine strikes afterwards).
+    const DesignId dudA = w.design(kA, "Dud A", "Mv Mine Hull", {});
+    const DesignId dudB = w.design(kA, "Dud B", "Mv Mine Hull", {});
+    const Location there = at(a, 2, 2);
+    const VehicleId duds = w.spawn(dudA, there);
+    w.v(duds).count = 91;
+    addGroupUnits(w.s, w.v(duds), dudB, 3);
     const DesignId sweeper = w.ship(kB, "Sweeper", 3, {"Mv Sweeper", "Mv Sweeper"});
     w.setTreaty(kA, kB, Treaty::War);
-    const VehicleId sw = w.spawn(sweeper, here);
-    TurnContext ctx{r, w.s, {}, {}, {}};
-    movement::detail::sweepMines(ctx, sw);
-    CHECK(w.v(field).count == 94);
-    CHECK(groupUnits(w.v(field), mineA) == 91);
-    CHECK(groupUnits(w.v(field), mineB) == 3);
-    CHECK(w.s.design(mineA).lost == 6);
+    w.setTreaty(kB, kA, Treaty::War);
+    const VehicleId sw = w.spawn(sweeper, there);
+    w.order(sw, Order{OrderKind::SweepMines});
+    w.move();
+    CHECK(w.v(duds).count == 88);
+    CHECK(groupUnits(w.v(duds), dudA) == 85);
+    CHECK(groupUnits(w.v(duds), dudB) == 3);
+    CHECK(w.v(sw).orders.empty());   // always done
 }
 
 TEST_CASE("unit groups: damage outside combat kills whole units; the save keeps the designs") {
@@ -298,4 +309,42 @@ TEST_CASE("combat: units launched in a battle that stay in space join the sector
     CHECK(groupUnits(g, hornet) == 4);
     CHECK(g.supply == vehicleSupplyCapacity(r, s, g));   // joining refills the group
     CHECK(validateState(s, &r).empty());
+}
+
+TEST_CASE("unit groups: Recover Units takes every design of each group of the kind, group by group") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const Location here = at(a, 5, 5);
+    const DesignId wasp = w.design(kA, "Wasp", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Tank"});
+    const DesignId hornet = w.design(kA, "Hornet", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId first = w.spawn(wasp, here);
+    addGroupUnits(w.s, w.v(first), hornet, 2);
+    const VehicleId second = w.spawn(hornet, here);
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 3, {"Mv Fighter Bay", "Mv Fighter Bay"}), here);
+    // Room for 20 units of 20 kT: both groups, every design (spec 03 §8).
+    w.order(carrier, recoverOf(wasp));
+    w.move();
+    CHECK(w.s.vehicle(first) == nullptr);
+    CHECK(w.s.vehicle(second) == nullptr);
+    CHECK(w.v(carrier).cargo.unitCount(wasp) == 1);
+    CHECK(w.v(carrier).cargo.unitCount(hornet) == 3);
+
+    // Turn-based: a fighter group without its full movement gives nothing, and
+    // the order moves on to the next group only while the previous one gave some.
+    World t;
+    const SystemId ta = t.system("A");
+    t.s.options.simultaneous = false;
+    const DesignId dart = t.design(kA, "Dart", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank"});
+    const VehicleId tired = t.spawn(dart, at(ta, 5, 5));
+    const VehicleId fresh = t.spawn(dart, at(ta, 5, 5));
+    const VehicleId deck = t.spawn(t.ship(kA, "Deck", 3, {"Mv Fighter Bay"}), at(ta, 5, 5));
+    TurnContext ctx{r, t.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    t.v(tired).movement = 1;  // it has moved this turn
+    t.order(deck, recoverOf(dart));
+    movement::runLive(ctx, movement::LiveMove{kA, {deck}});
+    CHECK(t.v(deck).cargo.unitCount(dart) == 0);
+    CHECK(t.s.vehicle(tired));
+    CHECK(t.s.vehicle(fresh));
 }

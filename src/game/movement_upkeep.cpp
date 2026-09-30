@@ -4,6 +4,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai.hpp"
+#include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
@@ -22,29 +23,48 @@ namespace {
 
 using ruleset::VehicleType;
 
+// Ancient ruins on a newly colonized planet (spec 03 §3.3, confirmed:
+// binary). Plain ruins first: N = the planet's largest `Ancient Ruins` V1
+// random advances, then that ability is used up and `Ancient Ruins Unique` is
+// neither applied nor removed. Without plain ruins, `Ancient Ruins Unique`
+// adds its unique area (the largest V1) to the empire's and raises every
+// research area of that unique id below its maximum by one level
+// (requirements are not checked); then it is used up.
 void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
+    const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     SpaceObject& obj = s.galaxy.object(planet);
-    // Val 1 random advances of one level each (spec 01 §5.3).
-    const int64_t advances = rawSum(obj.abilities, AbilityKind::AncientRuins);
-    if (advances > 0) research::grantRandomAdvances(ctx, owner, static_cast<int>(advances), s.rng, "ruins");
-    for (const auto& a : obj.abilities) {
-        if (parseAbilityKind(a.type) != AbilityKind::AncientRuinsUnique) continue;
-        auto& unlocked = s.empire(owner).uniqueAreasUnlocked;
-        const int area = static_cast<int>(a.number1());
-        if (std::find(unlocked.begin(), unlocked.end(), area) == unlocked.end()) unlocked.push_back(area);
+    auto remove = [&](AbilityKind k) {
+        std::erase_if(obj.abilities, [&](const ruleset::Ability& a) { return parseAbilityKind(a.type) == k; });
+    };
+    auto announce = [&]() {
+        ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet));
+        addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
+    };
+    const int64_t advances = rawBest(obj.abilities, AbilityKind::AncientRuins);
+    if (advances > 0) {
+        announce();
+        research::grantRandomAdvances(ctx, owner, static_cast<int>(std::min<int64_t>(advances, 1000)), s.rng, "ruins");
+        remove(AbilityKind::AncientRuins);
+        return;
     }
     const bool unique = std::any_of(obj.abilities.begin(), obj.abilities.end(),
                                     [](const auto& a) { return parseAbilityKind(a.type) == AbilityKind::AncientRuinsUnique; });
-    if (advances > 0 || unique) {
-        ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet));
-        addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
+    if (!unique) return;
+    const int area = static_cast<int>(rawBest(obj.abilities, AbilityKind::AncientRuinsUnique));
+    announce();
+    if (area > 0) {
+        auto& unlocked = s.empire(owner).uniqueAreasUnlocked;
+        if (std::find(unlocked.begin(), unlocked.end(), area) == unlocked.end()) unlocked.push_back(area);
+        const auto& areas = r.data().techAreas;
+        for (size_t i = 0; i < areas.size(); ++i) {
+            if (areas[i].uniqueArea != area) continue;
+            const ruleset::TechAreaId id{static_cast<uint32_t>(i)};
+            const int level = s.empire(owner).techLevel(id);
+            if (level < areas[i].maxLevel) research::grantLevel(ctx, owner, id, level + 1, "ruins");
+        }
     }
-    // The ruins are used up (inferred).
-    std::erase_if(obj.abilities, [](const ruleset::Ability& a) {
-        const auto k = parseAbilityKind(a.type);
-        return k == AbilityKind::AncientRuins || k == AbilityKind::AncientRuinsUnique;
-    });
+    remove(AbilityKind::AncientRuinsUnique);
 }
 
 // The ship is broken up; its population and cargo land on the new colony.
@@ -58,9 +78,15 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     Colony c;
     c.planet = planet;
     c.owner = owner;
-    // Every empire's new colony gets the computer's pick (spec 05 §7.5 "at
-    // colonization"; OpenSE4 never asks the player).
+    // The colony type is chosen as a computer player chooses it (spec 05 §7.5
+    // "at colonization"), unless a human player colonizes in a turn-based game
+    // with the empire's option on: then the player picks it in a dialog
+    // (Empire::colonyTypeChoices), and this pick stands until then (spec 03 §8,
+    // confirmed: binary).
     c.colonyType = ai::colonyTypeAtColonization(r, s, owner, planet);
+    if (Empire& e = s.empire(owner); !s.options.simultaneous && e.kind == PlayerKind::Human && e.chooseColonyType &&
+                                     std::find(e.colonyTypeChoices.begin(), e.colonyTypeChoices.end(), planet) == e.colonyTypeChoices.end())
+        e.colonyTypeChoices.push_back(planet);
     c.foundedTurn = s.turn;
     c.population = v.cargo.population;
     const int64_t bonus = r.setting("Automatic Colonization Population", 0);
@@ -124,43 +150,45 @@ int starsIn(const GameState& s, SystemId sys) {
     return n;
 }
 
-// A training source: one own object's largest V1 and largest V2 of a training ability.
+// A training source: the largest V1 and largest V2 of a training ability
+// (each taken on its own, spec 03 §3.2).
 struct Training {
     int64_t perTurn = 0;
     int64_t cap = 0;
 };
 
-// Every own object in the system is a source for the sector-level ability
-// when it is in `where`'s sector and for the system-wide one anywhere in the
-// system: populated colonies first, then vehicles (inferred order).
-std::vector<Training> trainingSources(const Rules& r, const GameState& s, EmpireId owner, Location where, AbilityKind sector,
-                                      AbilityKind system) {
-    std::vector<Training> out;
-    auto add = [&](std::span<const ParsedAbility> list, bool here) {
-        for (AbilityKind k : {sector, system}) {
-            if (k == sector && !here) continue;
-            if (!hasAbility(list, k)) continue;
-            out.push_back({abilityLargest(list, k), abilityLargest(list, k, true)});
-        }
-    };
-    for (ObjectId o : s.galaxy.system(where.system).objects) {
-        const Colony* c = s.colony(o);
-        if (!c || c->owner != owner || c->totalPopulation() <= 0) continue;  // (inferred) facilities need people
-        add(colonyAbilities(r, s, *c), s.galaxy.object(o).sector == where.sector);
-    }
-    for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == owner && v.location.system == where.system)
-            add(vehicleAbilities(r, s, v), v.location.sector == where.sector);
-    return out;
+Training trainingOf(std::span<const ParsedAbility> list, AbilityKind k) {
+    return {abilityLargest(list, k), abilityLargest(list, k, true)};
 }
 
-// From each source in turn, a value below the cap gains the smaller of V1 and
-// (cap − value); a cap of 0 gives nothing (spec 03 §3.3, confirmed: binary).
-void train(int& experience, const std::vector<Training>& sources, int limit = std::numeric_limits<int>::max()) {
-    for (const Training& t : sources) {
-        if (t.perTurn <= 0 || t.cap <= 0 || experience >= t.cap) continue;
-        experience = static_cast<int>(std::min<int64_t>(limit, experience + std::min(t.perTurn, t.cap - experience)));
-    }
+// Experience in tenths of a point (Vehicle/Fleet::experience + tenths).
+int64_t tenthsOf(int whole, int tenths) { return int64_t{whole} * 10 + tenths; }
+void setTenths(int& whole, int& tenths, int64_t value) {
+    whole = static_cast<int>(value / 10);
+    tenths = static_cast<int>(value % 10);
+}
+
+// One source's gain (spec 03 §3.3, §9, confirmed: binary). Below the cap V2 the
+// value gains V1; when V1 would pass V2 it gains V2 − its experience (a ship:
+// it lands on V2) or V2 − truncate(its experience) (a fleet, and the
+// system-wide abilities). A V1 or V2 of 0 trains nobody. At most 50.
+void train(int& whole, int& tenths, Training t, bool truncatedCap) {
+    if (t.perTurn <= 0 || t.cap <= 0) return;
+    const int64_t value = tenthsOf(whole, tenths);
+    const int64_t cap = t.cap * 10;
+    if (value >= cap) return;
+    int64_t gain = t.perTurn * 10;
+    if (value + gain > cap) gain = truncatedCap ? cap - (value / 10) * 10 : cap - value;
+    setTenths(whole, tenths, std::min<int64_t>(value + gain, int64_t{combat::kMaxCombatExperience} * 10));
+}
+
+// Solar collectors on one vehicle: V1 per star in its system, capped at the
+// maximum (spec 03 §7, confirmed: binary); a group adds every unit's.
+void collectSolar(const Rules& r, const GameState& s, Vehicle& v) {
+    if (!alive(v) || vehicleHasUnlimitedSupply(r, s, v) || !vehicleUsesSupply(r, s, v)) return;
+    const int64_t solar = vehicleAbilityTotal(r, s, v, AbilityKind::SolarSupplyGeneration);
+    const int64_t capacity = vehicleSupplyCapacity(r, s, v);
+    if (solar > 0 && v.supply < capacity) v.supply = std::min(capacity, v.supply + solar * starsIn(s, v.location.system));
 }
 
 } // namespace
@@ -206,18 +234,27 @@ void repairEmpire(TurnContext& ctx, EmpireId e) {
     }
 }
 
-// Supply at the end of the turn (spec 03 §7, §12). The order of the steps
-// within it is (inferred): upkeep and cloaks, depots, fleet pooling, solar
-// collectors, then limits.
+// Supply at the end of the turn (spec 03 §7, §12, confirmed: binary):
+// 1. upkeep for every own object in object order (cloaked ships and bases
+//    their cloak parts, fighter groups per unit or their cloak parts while
+//    cloaked, drone groups their upkeep plus cloak); one that reaches 0
+//    decloaks at once;
+// 2. the depot check for every object;
+// 3. fleet pooling;
+// 4. drone groups at 0 supply are destroyed.
+// Solar collectors come later, in the training step.
 void supplyEmpire(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     const int64_t fighterUse = r.setting("Fighter Supply Usage Per Turn", 5);
     const int64_t droneUse = r.setting("Drone Supply Usage Per Turn", 200);
-    // Units pay every turn, without racial scaling: fighters count × the
-    // setting (or the cloak parts per unit while cloaked), drones the setting
-    // plus the cloak parts. Cloaked ships and bases pay their cloak parts.
-    for (Vehicle& v : s.vehicles) {
+    auto decloak = [&](Vehicle& v) {
+        v.status = VehicleStatus::Normal;
+        ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location);
+    };
+    // Units pay every turn, without racial scaling.
+    for (VehicleId id : vehiclesInObjectOrder(s)) {
+        Vehicle& v = *s.vehicle(id);
         if (!alive(v) || v.owner != e || !vehicleUsesSupply(r, s, v)) continue;
         const VehicleType t = vehicleType(r, s, v);
         const bool cloaked = v.status == VehicleStatus::Cloaked;
@@ -234,7 +271,11 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
             cost = int64_t{std::max(1, v.count)} * (droneUse + cloak);
         }
         spendSupply(r, s, v, cost);
+        // A cloak drops at 0 supply, before any depot, or when it can no longer work (§8).
+        if (v.status == VehicleStatus::Cloaked && ((v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) || !canCloak(r, s, v))) decloak(v);
     }
+    for (Vehicle& v : s.vehicles)
+        if (alive(v) && v.owner == e && v.status == VehicleStatus::Cloaked && !canCloak(r, s, v)) decloak(v);
     for (Vehicle& v : s.vehicles)
         if (alive(v) && v.owner == e && resupplyDepotAt(r, s, e, v.location)) refillSupply(r, s, v);
     // Fleet pooling among the members in the fleet's sector, at the end of the turn only.
@@ -247,53 +288,78 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
             if (const Vehicle* v = s.vehicle(id); v && alive(*v) && v->location == lead->location) together.push_back(id);
         poolSupply(r, s, together);
     }
-    // Solar collectors: V1 per star in the system, capped at the maximum.
-    for (Vehicle& v : s.vehicles) {
-        if (!alive(v) || v.owner != e || vehicleHasUnlimitedSupply(r, s, v) || !vehicleUsesSupply(r, s, v)) continue;
-        const int64_t solar = vehicleAbilityTotal(r, s, v, AbilityKind::SolarSupplyGeneration);  // a group adds every unit's
-        const int64_t capacity = vehicleSupplyCapacity(r, s, v);
-        if (solar > 0 && v.supply < capacity) v.supply = std::min(capacity, v.supply + solar * starsIn(s, v.location.system));
-    }
     for (Vehicle& v : s.vehicles) {
         if (!alive(v) || v.owner != e) continue;
-        // Capacity lost to damage takes supply and cargo with it.
+        // Capacity lost to damage takes supply and cargo with it (already done
+        // when each component was lost; kept as a safeguard).
         if (vehicleUsesSupply(r, s, v)) holdSupply(r, s, v);
         trimCargo(r, s, v);
-        const VehicleType t = vehicleType(r, s, v);
         // Drones at 0 are lost; fighters are not, they drop to 1 MP (§12, confirmed: binary).
-        if (t == VehicleType::Drone && v.supply <= 0) {
-            vehicleLost(ctx, v, "Ran out of supplies.");
-            continue;
-        }
-        // A cloak drops at 0 supply or when it can no longer work (§8).
-        if (v.status == VehicleStatus::Cloaked &&
-            ((v.supply <= 0 && !vehicleHasUnlimitedSupply(r, s, v)) || !canCloak(r, s, v))) {
-            v.status = VehicleStatus::Normal;
-            ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location);
-        }
+        if (vehicleType(r, s, v) == VehicleType::Drone && v.supply <= 0) vehicleLost(ctx, v, "Ran out of supplies.");
     }
 }
 
-// Ship and fleet training (spec 03 §3.3): every own object is a source.
+// The training step (spec 03 §3.3, §7, §9, confirmed: binary): every own
+// object, in object order, is a source for its own sector (a colonized planet
+// through its facilities, no population needed; a ship, base or unit group
+// through its abilities), and its solar collectors act; then the system-wide
+// abilities give one source per explored system.
 void trainEmpire(TurnContext& ctx, EmpireId e) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    std::vector<std::pair<VehicleId, std::vector<Training>>> ships;
-    for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == e && v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v)))
-            ships.emplace_back(v.id, trainingSources(r, s, e, v.location, AbilityKind::ShipTraining, AbilityKind::ShipTrainingSystem));
-    for (auto& [id, sources] : ships) train(s.vehicle(id)->experience, sources);
-    // Fleet experience is capped at 50 (spec 03 §9).
-    for (Fleet& f : s.fleets)
-        if (f.owner == e)
-            if (const Vehicle* lead = fleetLeader(s, f))
-                train(f.experience, trainingSources(r, s, e, lead->location, AbilityKind::FleetTraining, AbilityKind::FleetTrainingSystem), 50);
+    auto trainSector = [&](Location where, std::span<const ParsedAbility> list) {
+        const Training ship = trainingOf(list, AbilityKind::ShipTraining);
+        if (ship.perTurn > 0)
+            for (Vehicle& v : s.vehicles)
+                if (alive(v) && v.owner == e && v.location == where && v.status != VehicleStatus::Mothballed && isShipOrBase(vehicleType(r, s, v)))
+                    train(v.experience, v.experienceTenths, ship, false);
+        const Training fleet = trainingOf(list, AbilityKind::FleetTraining);
+        if (fleet.perTurn > 0)
+            for (Fleet& f : s.fleets)
+                if (f.owner == e)
+                    if (const Vehicle* lead = fleetLeader(s, f); lead && lead->location == where) train(f.experience, f.experienceTenths, fleet, true);
+    };
+    // Sector sources: planets come before every vehicle in object order (Vehicle::slot).
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e && inSystem(s.galaxy, c->planet)) trainSector(locationOf(s.galaxy, c->planet), colonyAbilities(r, s, *c));
+    for (VehicleId id : vehiclesInObjectOrder(s)) {
+        Vehicle* v = s.vehicle(id);
+        if (!v || !alive(*v) || v->owner != e) continue;
+        trainSector(v->location, vehicleAbilities(r, s, *v));
+        collectSolar(r, s, *v);
+    }
+    // System-wide sources: per explored system, the largest V1 and V2 over all
+    // the empire's objects there.
+    const Empire& emp = s.empire(e);
+    for (const StarSystem& sys : s.galaxy.systems) {
+        if (!emp.hasExplored(sys.id) && !s.options.omnipresent) continue;
+        Training ship, fleet;
+        auto take = [&](std::span<const ParsedAbility> list) {
+            const Training st = trainingOf(list, AbilityKind::ShipTrainingSystem), ft = trainingOf(list, AbilityKind::FleetTrainingSystem);
+            ship = {std::max(ship.perTurn, st.perTurn), std::max(ship.cap, st.cap)};
+            fleet = {std::max(fleet.perTurn, ft.perTurn), std::max(fleet.cap, ft.cap)};
+        };
+        for (ObjectId o : sys.objects)
+            if (const Colony* c = s.colony(o); c && c->owner == e) take(colonyAbilities(r, s, *c));
+        for (const Vehicle& v : s.vehicles)
+            if (alive(v) && v.owner == e && v.location.system == sys.id) take(vehicleAbilities(r, s, v));
+        if (ship.perTurn > 0)
+            for (Vehicle& v : s.vehicles)
+                if (alive(v) && v.owner == e && v.location.system == sys.id && v.status != VehicleStatus::Mothballed &&
+                    isShipOrBase(vehicleType(r, s, v)))
+                    train(v.experience, v.experienceTenths, ship, true);
+        if (fleet.perTurn > 0)
+            for (Fleet& f : s.fleets)
+                if (f.owner == e)
+                    if (const Vehicle* lead = fleetLeader(s, f); lead && lead->location.system == sys.id)
+                        train(f.experience, f.experienceTenths, fleet, true);
+    }
 }
 
-// An obsolete design goes once no vehicle or unit of it exists, no queue of
-// its owner holds it and no other living empire knows it (spec 03 §4.1;
-// inferred: a design an empire still lists among its seen designs counts as
-// seen within 50 turns).
+// An obsolete design goes, every 10th turn, once no vehicle or unit of it
+// exists, no queue of its owner holds it and no other living empire saw it
+// less than 50 turns ago: a sighting exactly 50 turns old no longer protects
+// it (spec 03 §4.1, confirmed: binary).
 void purgeObsoleteDesigns(TurnContext& ctx) {
     GameState& s = ctx.state;
     std::set<DesignId> inUse;
@@ -318,9 +384,11 @@ void purgeObsoleteDesigns(TurnContext& ctx) {
     for (Empire& owner : s.empires)
         std::erase_if(owner.designs, [&](DesignId id) {
             if (id.index() >= s.designs.size() || !s.design(id).obsolete || inUse.contains(id)) return false;
-            for (const Empire& other : s.empires)
-                if (other.id != owner.id && other.alive && knowsDesign(other.knowledge, id))
-                    return false;
+            for (const Empire& other : s.empires) {
+                if (other.id == owner.id || !other.alive) continue;
+                const std::optional<uint32_t> seen = designSeenTurn(other.knowledge, id);
+                if (seen && (*seen >= s.turn || s.turn - *seen < kDesignMemoryTurns)) return false;
+            }
             return true;
         });
 }

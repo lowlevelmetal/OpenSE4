@@ -366,6 +366,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
+    fields(ar, e.chooseColonyType, e.colonyTypeChoices);
 }
 
 // ---- Cargo, queues, colonies ------------------------------------------------------------------
@@ -392,8 +393,8 @@ template <class Ar> void io(Ar& ar, DesignEntry& d) { fields(ar, d.component, d.
 
 template <class Ar>
 void io(Ar& ar, Design& d) {
-    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.built, d.lost, d.kills,
-           d.enemyTonnageDestroyed);
+    fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
+           d.kills, d.enemyTonnageDestroyed);
     fields(ar, d.templateName);
 }
 
@@ -401,7 +402,7 @@ template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o
 
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
-    fields(ar, v.id, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
+    fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn);
 }
@@ -526,6 +527,7 @@ void io(Ar& ar, cmd::TransferCargo& c) {
 }
 
 template <class Ar> void io(Ar& ar, cmd::CreateDesign& c) { fields(ar, c.design); }
+template <class Ar> void io(Ar& ar, cmd::EditDesign& c) { fields(ar, c.design, c.with); }
 template <class Ar> void io(Ar& ar, cmd::SetDesignObsolete& c) { fields(ar, c.design, c.obsolete); }
 template <class Ar> void io(Ar& ar, cmd::DeleteDesign& c) { fields(ar, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c.evenly, c.repeat); }
@@ -540,7 +542,7 @@ template <class Ar> void io(Ar& ar, cmd::SetStrategy& c) { fields(ar, c.index, c
 template <class Ar> void io(Ar& ar, cmd::SetRepairPriorities& c) { fields(ar, c.priorities); }
 template <class Ar> void io(Ar& ar, cmd::SetDesignTypes& c) { fields(ar, c.designTypes); }
 template <class Ar> void io(Ar& ar, cmd::SetColonyTypes& c) { fields(ar, c.colonyTypes); }
-template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash); }
+template <class Ar> void io(Ar& ar, cmd::SetEmpireOptions& c) { fields(ar, c.aiMinimalChanges, c.passwordHash, c.chooseColonyType); }
 template <class Ar>
 void io(Ar& ar, cmd::SetMinisters& c) {
     fields(ar, c.areas, c.style, c.useRaceStyle, c.newVehicles, c.individual, c.completeAi);

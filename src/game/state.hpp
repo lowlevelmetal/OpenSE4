@@ -236,11 +236,12 @@ struct Empire {
     bool useRaceMinisterStyle = false;      // "Use Race Minister Style": the race's files even with a style (spec 05 §7.1)
     bool ministersForNewVehicles = false;   // new vehicles and launched units start under minister control (spec 02 §10)
 
-    // Ship Orders option (spec 03 §6.4): a Warp into a system holding such an
-    // empire's objects fails and clears the orders (movement reads it). Players
-    // set it with cmd::SetEncounterOptions; computer players copy it from their
-    // AI_Settings each turn (spec 05 §7.5).
-    EncounterClear clearOrdersOnEncounter = EncounterClear::Never;
+    // Ship Orders option (spec 03 §6.4, confirmed: binary): a warp transit into
+    // a system holding such an empire's objects that the owner sees clears the
+    // group's orders (movement reads it). "Clear on meeting an enemy" is on for
+    // a new empire. Players set it with cmd::SetEncounterOptions; computer
+    // players copy it from their AI_Settings each turn (spec 05 §7.5).
+    EncounterClear clearOrdersOnEncounter = EncounterClear::Enemy;
     // Ship Movement options (spec 03 §6.2): routes go around the tagged
     // minefields, and never cross the systems to avoid, only while these are
     // on. Both are on for a new empire (inferred, spec 03 §19 Q58). Players set
@@ -248,6 +249,12 @@ struct Empire {
     // AI_Settings each turn (spec 05 §7.5).
     bool avoidTaggedMinefields = true;
     bool avoidRestrictedSystems = true;
+    // "Choose the colony type on colonization" (spec 03 §8, on for a new
+    // empire): a human player's colony founded in a turn-based game waits in
+    // colonyTypeChoices for the player to pick its type in a dialog
+    // (cmd::SetColonyType); until then it has the type the computer would pick.
+    bool chooseColonyType = true;
+    std::vector<ObjectId> colonyTypeChoices;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
@@ -269,13 +276,15 @@ enum class OrderKind : uint8_t {
     LoadCargo,      // design (unit) or population (design invalid); amount (-1 = all that fit)
     DropCargo,      // same
     LaunchUnits,    // design, amount
-    RecoverUnits,   // design, amount
+    RecoverUnits,   // design = one of the unit kind (every design of each group of that kind is recovered);
+                    // vehicle = one named group, then only `design` from it, up to amount (the Launch/Recover window)
     Cloak,
     Decloak,
     SweepMines,
     UseComponent,   // amount = design entry index
     StellarManipulation,  // amount = StellarAction, object/location = target
     MoveToWaypoint, // amount = waypoint slot
+    SelfDestruct,   // the whole object is destroyed (spec 03 §8, §15; movement::canSelfDestruct)
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -397,6 +406,9 @@ struct Design {
     // list's entries look designs up by it, and the Design minister's name
     // counter counts such designs (spec 05 §7.5, confirmed: binary).
     std::string templateName;
+    // A ship was retrofitted to it: it is no longer a prototype, even with
+    // nothing built (spec 03 §4.1; designIsPrototype, design.hpp).
+    bool retrofitted = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     int built = 0;
     int lost = 0;
@@ -408,6 +420,13 @@ enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
 
 struct Vehicle {
     VehicleId id;
+    // Its slot in the game's object list: the order objects act in during the
+    // simultaneous movement phase (spec 03 §6.3). A new vehicle takes the
+    // first slot a removed vehicle freed, else a new one at the end
+    // (GameState::addVehicle); planets come before every vehicle (inferred:
+    // the galaxy is made before any vehicle, and slots freed by removed
+    // stellar objects are not reused by vehicles).
+    uint32_t slot = 0;
     EmpireId owner;
     DesignId design;                // a unit group that mixes designs: its first design
     std::string name;

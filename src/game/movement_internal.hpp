@@ -7,6 +7,7 @@
 #include "game/movement.hpp"
 #include "game/turn.hpp"
 
+#include <array>
 #include <map>
 #include <optional>
 #include <span>
@@ -36,10 +37,37 @@ inline bool heldInPlace(const GameState& s, const Vehicle& v) { return s.turn < 
 int turnMovement(const Rules& r, const GameState& s, const Vehicle& v);
 bool isMobileType(ruleset::VehicleType t);  // ships, fighters, drones
 
+// The vehicles in object order: by their slots in the game's object list
+// (Vehicle::slot, spec 03 §6.3).
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
+// A computer player (or a neutral empire): its ad-hoc groups gather every own
+// vehicle with an identical head order (spec 03 §8).
+bool computerPlayer(const GameState& s, EmpireId e);
+
+// The chosen leader, else the first member in object order (spec 03 §9).
 // A member of a fleet that has orders, in the leader's sector, follows the
 // fleet's orders instead of its own.
 const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
 bool followsFleetOrders(const GameState& s, const Vehicle& v);
+
+// An Attack order's pursuit is over: the target no longer exists, belongs to
+// `owner`, or is a planet without a colony; there is no visibility test
+// (spec 03 §8, confirmed: binary).
+bool pursuitOver(const GameState& s, EmpireId owner, const Order& o);
+
+// ---- Destructive centres (spec 03 §6.2, confirmed: binary) --------------------------------------
+// The system's total System - Destructive Center (0: none) and System -
+// Movement Towards Center (the radius of the zone around the centre).
+int64_t destructiveCentre(const GameState& s, SystemId sys);
+int64_t centreZone(const GameState& s, SystemId sys);
+// The cost map toward `target`: the target costs 1; entering a square costs
+// 1 + (30 - round(distance to the centre)) + 1000 within the zone; each square
+// keeps its cheapest cost and only squares costing at most 500 spread. -1: not reached.
+using CentreCostMap = std::array<int64_t, kSystemSize * kSystemSize>;
+CentreCostMap centreCostMap(Sector target, int64_t zone);
+// The cheapest of the nine squares around `at` (its own included; the lowest
+// sector number on a tie), or nullopt when none was reached.
+std::optional<Sector> centreStep(const CentreCostMap& map, Sector at);
 
 // ---- Supply (spec 03 §7) ----------------------------------------------------------------------
 // round(amount × (100 + racial Supply Cost) %) when the racial total is not 0.
@@ -63,8 +91,13 @@ void vehicleLost(TurnContext& ctx, Vehicle& v, std::string_view cause);
 bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause);
 
 // ---- Mines ----------------------------------------------------------------------------------------
-// Removes up to the vehicle's Mine Sweeping total of hostile mines in its sector.
-int sweepMines(TurnContext& ctx, VehicleId sweeper);
+// A minefield in `where` acts on this group: one of an empire that rates
+// every member's owner below Non-Aggression (the mine owner's side of the
+// treaty), with no member of its own (spec 03 §12, confirmed: binary).
+bool minefieldActs(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> group);
+// A group with a sweeper entering one of its owner's tagged minefields where
+// a minefield acts: its cloaked members decloak first (spec 03 §12).
+void decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group);
 
 // ---- Cargo and units (spec 03 §11-12) ------------------------------------------------------------
 int64_t freeCargo(const Rules& r, const GameState& s, const Vehicle& v);
@@ -88,6 +121,9 @@ struct Launcher {
 // Units launched this turn per launcher and unit kind (the per-game-turn budget).
 struct UnitBudget {
     std::map<std::tuple<VehicleId, ObjectId, AbilityKind>, int64_t> launched;
+    // Turn-based games: a new group gets its full movement at once, so it can
+    // move and be recovered in the same turn (spec 03 §12, confirmed: binary).
+    bool turnBased = false;
 };
 AbilityKind launcherFor(ruleset::VehicleType unitType);
 int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const Order& o);

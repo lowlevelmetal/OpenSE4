@@ -11,6 +11,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace opense4::client {
@@ -86,6 +87,9 @@ private:
 
     // Turn-based games: the Attack Sector question.
     void drawEntryQuestion(classic::UiContext& ui);
+    // Turn-based games: the colony type of a colony just founded (spec 03 §8).
+    std::optional<game::ObjectId> colonyTypeChoice(const classic::UiContext& ui) const;
+    void drawColonyTypeChoice(classic::UiContext& ui, game::ObjectId planet);
     // Turn-based games: the combat resolution prompt, Tactical or Strategic for
     // each human side of the battle that waits (spec 06 §1.6, spec 04 §3).
     void drawBattleQuestion(classic::UiContext& ui);

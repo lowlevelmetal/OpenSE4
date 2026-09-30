@@ -72,8 +72,10 @@ bool canLaunch(const game::Rules& r, const game::GameState& s, const game::Vehic
 game::Resources scrapValue(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 game::Resources unmothballCost(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& s, const game::Colony& c, size_t slot);
-// Design entry of an intact Self-Destruct component, if any.
-std::optional<size_t> selfDestructEntry(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// Whether the vehicle can self-destruct: a ship or base with Self-Destruct in
+// its ability list; satellite groups, minefields and drone groups always;
+// fighter groups never (spec 03 §12, §15).
+bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
 // Another own vehicle in the sector, outside `selection`, has an intact weapon.
 bool canBeFiredOn(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::vector<game::VehicleId>& selection);

@@ -3,6 +3,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/combat.hpp"
+#include "game/combat_detail.hpp"
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
@@ -45,12 +46,28 @@ int turnMovement(const Rules& r, const GameState& s, const Vehicle& v) { return 
 bool isShipOrBase(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Base; }
 bool isMobileType(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Fighter || t == VehicleType::Drone; }
 
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
+    std::vector<std::pair<uint32_t, VehicleId>> slots;
+    slots.reserve(s.vehicles.size());
+    for (const Vehicle& v : s.vehicles) slots.emplace_back(v.slot, v.id);
+    std::sort(slots.begin(), slots.end());
+    std::vector<VehicleId> out;
+    out.reserve(slots.size());
+    for (const auto& [slot, id] : slots) out.push_back(id);
+    return out;
+}
+
+bool computerPlayer(const GameState& s, EmpireId e) {
+    return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != PlayerKind::Human;
+}
+
 // The chosen leader, else the first member in object order (spec 03 §9).
 const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
     if (const Vehicle* v = s.vehicle(f.leader); v && alive(*v) && v->fleet == f.id) return v;
     const Vehicle* first = nullptr;
     for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && alive(*v) && (!first || v->id < first->id)) first = v;
+        if (const Vehicle* v = s.vehicle(id); v && alive(*v) && (!first || std::pair(v->slot, v->id) < std::pair(first->slot, first->id)))
+            first = v;
     return first;
 }
 
@@ -61,6 +78,18 @@ bool followsFleetOrders(const GameState& s, const Vehicle& v) {
     if (!f || f->orders.empty()) return false;
     const Vehicle* lead = fleetLeader(s, *f);
     return lead && lead->location == v.location && v.status != VehicleStatus::Mothballed;
+}
+
+bool pursuitOver(const GameState& s, EmpireId owner, const Order& o) {
+    if (o.vehicle.valid()) {
+        const Vehicle* t = s.vehicle(o.vehicle);
+        return !t || !alive(*t) || t->owner == owner;
+    }
+    if (!o.object.valid() || !inSystem(s.galaxy, o.object)) return true;
+    const SpaceObject& obj = s.galaxy.object(o.object);
+    if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return false;
+    const Colony* c = s.colony(o.object);
+    return !c || c->owner == owner;
 }
 
 // ---- Supply ----------------------------------------------------------------------------------
@@ -164,35 +193,30 @@ bool hurt(TurnContext& ctx, VehicleId id, int amount, std::string_view cause) {
 
 // ---- Mines -------------------------------------------------------------------------------------
 
-int sweepMines(TurnContext& ctx, VehicleId sweeperId) {
-    const Rules& r = ctx.rules;
-    GameState& s = ctx.state;
-    Vehicle* sweeper = s.vehicle(sweeperId);
-    if (!sweeper || !alive(*sweeper)) return 0;
-    // A unit group lists every unit's abilities, so its sweeping adds up (§12).
-    int64_t capacity = vehicleAbilityTotal(r, s, *sweeper, AbilityKind::MineSweeping);
-    if (capacity <= 0) return 0;
-    const EmpireId owner = sweeper->owner;
-    const Location where = sweeper->location;
-    int64_t swept = 0;
-    for (Vehicle& m : s.vehicles) {
-        if (capacity <= 0) break;
-        if (!alive(m) || m.location != where || m.owner == owner || vehicleType(r, s, m) != VehicleType::Mine) continue;
-        if (!treatyIsHostile(s.empire(owner).relation(m.owner).treaty)) continue;  // the mine rule: no treaty or worse
-        // A minefield that mixes designs loses its mines in the order they were laid (inferred).
-        for (const UnitStack& st : groupStacks(m)) {
-            if (capacity <= 0) break;
-            const int n = removeGroupUnits(s, m, st.design, static_cast<int>(std::min<int64_t>(capacity, st.count)));
-            capacity -= n;
-            swept += n;
-            s.design(st.design).lost += n;
-        }
+bool minefieldActs(const Rules& r, const GameState& s, Location where, std::span<const VehicleId> group) {
+    for (const Vehicle& m : s.vehicles) {
+        if (!alive(m) || m.location != where || !m.owner.valid() || vehicleType(r, s, m) != VehicleType::Mine) continue;
+        bool friendly = false;
+        for (VehicleId id : group)
+            if (const Vehicle* v = s.vehicle(id); v && (v->owner == m.owner || !hostile(s, m.owner, v->owner))) friendly = true;
+        if (!friendly) return true;
     }
-    if (swept > 0) {
-        const Vehicle* sv = s.vehicle(sweeperId);
-        ctx.log(owner, LogCategory::Combat, std::format("{} swept {} mines", sv->name, swept), {}, where);
-    }
-    return static_cast<int>(swept);
+    return false;
+}
+
+void decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group) {
+    if (group.empty()) return;
+    const Vehicle* first = s.vehicle(group.front());
+    if (!first) return;
+    const auto& tagged = s.empire(first->owner).taggedMinefields;
+    if (std::find(tagged.begin(), tagged.end(), where) == tagged.end()) return;
+    const bool sweeper = std::any_of(group.begin(), group.end(), [&](VehicleId id) {
+        const Vehicle* v = s.vehicle(id);
+        return v && alive(*v) && vehicleAbilityTotal(r, s, *v, AbilityKind::MineSweeping) > 0;
+    });
+    if (!sweeper || !minefieldActs(r, s, where, group)) return;
+    for (VehicleId id : group)
+        if (Vehicle* v = s.vehicle(id); v && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
 }
 
 // ---- Cargo -------------------------------------------------------------------------------------
@@ -437,7 +461,7 @@ Holder holderOf(const Rules& r, GameState& s, Launcher l, AbilityKind k) {
         h.owner = v->owner;
         h.where = v->location;
         h.perTurn = abilitySum(abilities, k, true);  // Σ Val 2, no fallback to Val 1 (confirmed: binary)
-        h.canRecover = hasAbility(abilities, k);     // (inferred) recovery needs the matching bay too
+        h.canRecover = hasAbility(abilities, k);     // recovery needs the matching bay too (§12, confirmed: binary)
         h.freeSpace = freeCargo(r, s, *v);
         return h;
     }
@@ -479,14 +503,6 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const O
     // Units in space: the empire must be below the cap before the stack; the
     // launch is not cut to fit (confirmed: binary).
     if (unitsInSpace(r, s, h.owner) >= s.options.maxUnitsPerPlayer) return 0;
-    VehicleId targetVehicle;
-    ObjectId targetObject;
-    if (type == VehicleType::Drone) {
-        // A drone needs a ship or planet target at launch (spec 03 §12).
-        targetVehicle = o.vehicle;
-        targetObject = o.object;
-        if (!targetVehicle.valid() && !targetObject.valid()) return 0;
-    }
     if (n <= 0) return 0;
 
     Cargo taken;
@@ -496,6 +512,9 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const O
     const Location where = h.where;
     const Design& d = s.design(unit);
 
+    // A new group starts full, with 0 movement; a turn-based launch gives it
+    // its full movement, so it can move and be recovered in the same turn
+    // (§12, confirmed: binary). A drone gets no target and no order.
     auto newGroup = [&](int count) {
         Vehicle g;
         g.owner = owner;
@@ -504,29 +523,28 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const O
         g.location = where;
         g.count = count;
         g.damage.assign(d.entries.size(), 0);
-        g.movement = 0;  // launched units act from the next turn (inferred)
-        g.targetVehicle = targetVehicle;
-        g.targetObject = targetObject;
+        g.movement = 0;
         g.builtTurn = s.turn;
         Vehicle& added = s.addVehicle(std::move(g));
-        added.supply = initialSupply(r, s, added);  // new groups start full
+        added.supply = initialSupply(r, s, added);
+        if (budget.turnBased) added.movement = turnMovement(r, s, added);
     };
     if (type == VehicleType::Drone) {
         for (int64_t i = 0; i < n; ++i) newGroup(1);  // every drone is its own group and never merges (confirmed: binary)
         return n;
     }
-    // One group per (owner, kind, sector), mixing designs (confirmed: binary):
-    // the units join the first such group there; launching refills its supply.
-    bool merged = false;
-    for (Vehicle& g : s.vehicles)
-        if (alive(g) && g.owner == owner && g.location == where && vehicleType(r, s, g) == type) {
-            addGroupUnits(s, g, unit, static_cast<int>(n));
-            merged = true;
-            break;
-        }
-    if (!merged) newGroup(static_cast<int>(n));
-    for (Vehicle& g : s.vehicles)
-        if (alive(g) && g.owner == owner && g.location == where && vehicleType(r, s, g) == type) g.supply = initialSupply(r, s, g);
+    // The units join the last group of their kind and owner in the sector's
+    // object order, whatever its designs, fleet, orders or cloak, and only that
+    // group is refilled to its new maximum (§12, confirmed: binary).
+    Vehicle* last = nullptr;
+    for (VehicleId id : vehiclesInObjectOrder(s))
+        if (Vehicle* g = s.vehicle(id); g && alive(*g) && g->owner == owner && g->location == where && vehicleType(r, s, *g) == type) last = g;
+    if (!last) {
+        newGroup(static_cast<int>(n));
+        return n;
+    }
+    addGroupUnits(s, *last, unit, static_cast<int>(n));
+    last->supply = initialSupply(r, s, *last);
     return n;
 }
 
@@ -534,33 +552,56 @@ int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!o.design.valid() || o.design.index() >= s.designs.size()) return 0;
-    const DesignId unit = o.design;
-    const VehicleType type = r.hull(s.design(unit).hull).type;
+    const VehicleType type = r.hull(s.design(o.design).hull).type;
     if (type != VehicleType::Fighter && type != VehicleType::Satellite) return 0;  // only fighters and satellites come back
     const Holder h = holderOf(r, s, into, launcherFor(type));
     if (!h.cargo || !h.canRecover) return 0;
-    // No per-turn limit: free cargo space is the only limit (confirmed: binary).
-    int64_t n = h.freeSpace / unitTons(r, s, unit);
-    if (o.amount >= 0) n = std::min<int64_t>(n, o.amount);
+    Cargo* cargo = into.vehicle.valid() ? &s.vehicle(into.vehicle)->cargo : &s.colony(into.planet)->cargo;
+    int64_t room = h.freeSpace;  // no per-turn limit: free cargo space is the only limit (confirmed: binary)
     int64_t moved = 0;
-    for (Vehicle& g : s.vehicles) {
-        if (n <= 0) break;
-        if (!alive(g) || g.id == into.vehicle || g.owner != h.owner || g.location != h.where || groupUnits(g, unit) <= 0) continue;
-        if (o.vehicle.valid() && g.id != o.vehicle) continue;  // a named group only
-        // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
-        if (!s.options.simultaneous && type == VehicleType::Fighter && g.movement < turnMovement(r, s, g)) continue;
-        // The units of that design leave the group; the others stay (inferred: the supply
-        // left over stays with the group, up to what the rest can hold).
-        const int take = removeGroupUnits(s, g, unit, static_cast<int>(std::min<int64_t>(n, std::numeric_limits<int>::max())));
+    // Units of one design leave the group into the cargo, as far as room allows.
+    auto take = [&](Vehicle& g, DesignId unit, int64_t wanted) {
+        const int64_t fit = std::min(wanted, room / unitTons(r, s, unit));
+        if (fit <= 0) return int64_t{0};
+        const int n = removeGroupUnits(s, g, unit, static_cast<int>(std::min<int64_t>(fit, std::numeric_limits<int>::max())));
+        // (inferred) the supply left over stays with the group, up to what the rest can hold.
         if (g.count > 0) g.supply = std::min(g.supply, vehicleSupplyCapacity(r, s, g));
-        n -= take;
-        moved += take;
-    }
-    if (moved > 0) {
-        Cargo* cargo = into.vehicle.valid() ? &s.vehicle(into.vehicle)->cargo : &s.colony(into.planet)->cargo;
+        room -= int64_t{n} * unitTons(r, s, unit);
         auto it = std::find_if(cargo->units.begin(), cargo->units.end(), [&](const UnitStack& u) { return u.design == unit; });
-        if (it == cargo->units.end()) cargo->units.push_back({unit, static_cast<int>(moved)});
-        else it->count += static_cast<int>(moved);
+        if (it == cargo->units.end()) cargo->units.push_back({unit, n});
+        else it->count += n;
+        return int64_t{n};
+    };
+    auto ofKindHere = [&](const Vehicle& g) {
+        return alive(g) && g.id != into.vehicle && g.owner == h.owner && g.location == h.where && vehicleType(r, s, g) == type;
+    };
+    // In turn-based games a fighter group comes back only with its full movement (§12, confirmed: binary).
+    auto recoverable = [&](const Vehicle& g) {
+        return ofKindHere(g) && (s.options.simultaneous || type != VehicleType::Fighter || g.movement >= turnMovement(r, s, g));
+    };
+    if (o.vehicle.valid()) {
+        // The Launch/Recover window names one group and one design of it (OpenSE4's
+        // stand-in for the turn-based window in simultaneous games, inferred).
+        Vehicle* g = s.vehicle(o.vehicle);
+        if (!g || !recoverable(*g)) return 0;
+        const int64_t wanted = o.amount >= 0 ? o.amount : groupUnits(*g, o.design);
+        return take(*g, o.design, std::min<int64_t>(wanted, groupUnits(*g, o.design)));
+    }
+    // Recover Units names a unit kind: each own group of that kind in the sector,
+    // in object order, gives the units of every design as far as cargo room
+    // allows; the next group comes only while the previous one gave at least
+    // one unit (spec 03 §8, confirmed: binary).
+    for (VehicleId id : vehiclesInObjectOrder(s)) {
+        Vehicle* g = s.vehicle(id);
+        if (!g || !ofKindHere(*g)) continue;
+        int64_t gave = 0;
+        if (recoverable(*g))
+            for (const UnitStack& st : groupStacks(*g)) {
+                if (!alive(*g)) break;
+                gave += take(*g, st.design, st.count);
+            }
+        moved += gave;
+        if (gave <= 0) break;
     }
     return moved;
 }
@@ -620,6 +661,7 @@ int64_t cloakSupply(const Rules& r, const GameState& s, const Vehicle& v) {
 // ---- Public helpers ------------------------------------------------------------------------------------
 
 using detail::alive;
+using ruleset::VehicleType;
 
 int unitsInSpace(const Rules& r, const GameState& s, EmpireId owner) {
     int64_t n = 0;
@@ -658,13 +700,13 @@ bool resupplyDepotAt(const Rules& r, const GameState& s, EmpireId empire, Locati
 }
 
 int64_t repairPoolAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
+    // Every own colonized planet (its abilities and facilities, no population
+    // needed), ship, base and unit group in the sector (§13, confirmed: binary).
     int64_t pool = 0;
     for (ObjectId o : planetsAt(s, where))
-        if (const Colony* c = s.colony(o); c && c->owner == empire && c->totalPopulation() > 0)  // (inferred) facilities need people
-            pool += abilitySum(colonyAbilities(r, s, *c), AbilityKind::ComponentRepair);
+        if (const Colony* c = s.colony(o); c && c->owner == empire) pool += abilitySum(colonyAbilities(r, s, *c), AbilityKind::ComponentRepair);
     for (const Vehicle& v : s.vehicles)
-        if (alive(v) && v.owner == empire && v.location == where && detail::isShipOrBase(vehicleType(r, s, v)))
-            pool += abilitySum(vehicleAbilities(r, s, v), AbilityKind::ComponentRepair);
+        if (alive(v) && v.owner == empire && v.location == where) pool += vehicleAbilityTotal(r, s, v, AbilityKind::ComponentRepair);
     return std::min(pool, kAbilitySumCap);
 }
 
@@ -717,25 +759,21 @@ int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v) {
 
 int64_t damageUnitGroup(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng) {
     if (amount <= 0 || !alive(v)) return 0;
-    // Whole units die while the damage covers their structure, each drawn from
-    // one of the group's designs at random, as in combat (spec 04 §9.4) but
-    // without shields, and what is left is lost (inferred).
+    // Spec 04 §9.4 with both pools at 0 and nothing carried over (spec 03 §6.2,
+    // confirmed: binary): the damage (at most 50,000) is the pool; up to 20
+    // times one of the group's designs is drawn, all equally likely, a design
+    // with no units left wasting the draw; a unit dies when the pool covers its
+    // hit points, which then leave the pool. The rest is lost.
     std::vector<UnitStack> stacks = groupStacks(v);
-    auto structure = [&](DesignId id) {
-        const Design& d = s.design(id);
-        int64_t total = 0;
-        for (size_t i = 0; i < d.entries.size(); ++i) total += entryStructure(r, d, i);
-        return std::max<int64_t>(1, total);
-    };
-    int64_t left = amount, used = 0;
-    for (;;) {
-        std::vector<size_t> live;
-        for (size_t k = 0; k < stacks.size(); ++k)
-            if (stacks[k].count > 0 && structure(stacks[k].design) <= left) live.push_back(k);
-        if (live.empty()) break;
-        UnitStack& st = stacks[live.size() == 1 ? live.front() : live[rng.below(live.size())]];
-        const int64_t hp = structure(st.design);
-        left -= hp;
+    int64_t pool = std::min<int64_t>(amount, combat::kMaxShotDamage);
+    int64_t used = 0;
+    for (int draw = 0; draw < 20; ++draw) {
+        if (std::none_of(stacks.begin(), stacks.end(), [](const UnitStack& st) { return st.count > 0; })) break;
+        UnitStack& st = stacks[stacks.size() == 1 ? 0 : rng.below(stacks.size())];
+        if (st.count <= 0) continue;
+        const int64_t hp = std::max<int64_t>(1, combat::detail::unitHitPoints(r, s.design(st.design), combat::DamageType::Normal));
+        if (pool < hp) continue;
+        pool -= hp;
         used += hp;
         --st.count;
         ++s.design(st.design).lost;
@@ -751,31 +789,28 @@ bool damageVehicle(const Rules& r, GameState& s, Vehicle& v, int amount) {
         damageUnitGroup(r, s, v, amount, s.rng);   // records the units lost
         return !alive(v);
     }
-    const Design& d = s.design(v.design);
-    if (d.entries.empty()) return false;
-    if (v.damage.size() < d.entries.size()) v.damage.resize(d.entries.size(), 0);
-    int left = amount;
-    for (int layer = 0; layer < 2 && left > 0; ++layer) {
-        const bool armorLayer = layer == 0;
-        for (;;) {
-            std::vector<size_t> intact;
-            for (size_t i = 0; i < d.entries.size(); ++i)
-                if (entryIntact(r, s, v, i) && hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::Armor) == armorLayer)
-                    intact.push_back(i);
-            if (intact.empty() || left <= 0) break;
-            const size_t pick = intact[s.rng.below(intact.size())];
-            const int room = entryStructure(r, d, pick) - v.damage[pick];
-            const int take = std::min(left, std::max(1, room));
-            v.damage[pick] += take;
-            left -= take;
-        }
-    }
+    // Whole components in the random, structure-weighted order with all armor
+    // first, until the damage cannot cover the next one; the rest is lost
+    // (spec 03 §6.2, spec 04 §9.1a, confirmed: binary).
+    combat::detail::destroyComponents(r, s, v, amount, combat::DamageType::Normal, s.rng);
     if (!vehicleDestroyed(r, s, v)) {
         fitToCapacity(r, s, v);
         return false;
     }
     v.count = 0;
     return true;
+}
+
+bool canSelfDestruct(const Rules& r, const GameState& s, const Vehicle& v) {
+    if (!alive(v)) return false;
+    switch (vehicleType(r, s, v)) {
+        case VehicleType::Ship:
+        case VehicleType::Base: return hasAbility(vehicleAbilities(r, s, v), AbilityKind::SelfDestruct);  // empty when mothballed
+        case VehicleType::Satellite:
+        case VehicleType::Mine:
+        case VehicleType::Drone: return true;
+        default: return false;  // fighter groups never
+    }
 }
 
 void fitToCapacity(const Rules& r, const GameState& s, Vehicle& v) {

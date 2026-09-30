@@ -43,6 +43,8 @@ bool mountAllowed(const Rules& r, uint32_t hull, uint32_t component, uint32_t mo
 
 // Damage of a mounted weapon at `range` squares (1-based), after mount modifiers (§4.3).
 int weaponDamageAtRange(const Rules& r, const DesignEntry& e, int range);
+// The maximum range used by strategies, point-defense and the reports: the
+// largest range from 1 to 20 at which the weapon does damage (at most 20).
 int weaponMaxRange(const Rules& r, const DesignEntry& e);
 
 // ---- Designs --------------------------------------------------------------------------------------
@@ -92,6 +94,11 @@ std::string uniqueDesignName(const GameState& s, std::string_view wanted);
 // Zeroes a design's statistics: built, lost, kills and enemy tonnage destroyed
 // (a new, copied or redacted design starts without any).
 void resetDesignStatistics(Design& d);
+// A design is a prototype until a construction queue completes a vehicle or
+// unit of it, or a ship is retrofitted to it (spec 03 §4.1, confirmed: binary).
+bool designIsPrototype(const Design& d);
+// One of the empire's construction queues (planets and space yard ships) holds it.
+bool designInQueue(const GameState& s, EmpireId empire, DesignId design);
 // What a destroyed vehicle of this design adds to its killer's "enemy tonnage
 // destroyed" per unit: its hull's Tonnage (inferred, spec 04 §19).
 int64_t designTonnage(const Rules& r, const Design& d);
