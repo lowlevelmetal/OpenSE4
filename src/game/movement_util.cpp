@@ -704,7 +704,7 @@ int64_t moveSupplyCost(const Rules& r, const GameState& s, const Vehicle& v) {
         if (!v.mixed.empty()) {
             int64_t total = 0;
             for (const UnitStack& st : v.mixed) {
-                Vehicle probe = stackProbe(s, v, st);
+                Vehicle probe = stackProbe(s, v, UnitStack{st.design, 1});   // one unit of the design
                 probe.owner = {};  // the racial percentage comes once, below
                 total += moveSupplyCost(r, s, probe) * st.count;
             }

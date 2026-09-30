@@ -57,9 +57,9 @@ TEST_CASE("unit groups: launches of several designs join one group per kind and 
     const SystemId a = w.system("A");
     const Location here = at(a, 5, 5);
     // A slow fighter and a fast one with twice the fuel.
-    const DesignId slow = w.design(kA, "Slow Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
+    const DesignId slow = w.design(kA, "Slow Wasp", "Test Fighter Hull", {"Mv Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
     const DesignId fast = w.design(kA, "Fast Wasp", "Test Fighter Hull",
-                                   {"Test Fighter Engine", "Test Fighter Engine", "Mv Fighter Tank", "Mv Fighter Tank"});
+                                   {"Mv Fighter Engine", "Mv Fighter Engine", "Mv Fighter Tank", "Mv Fighter Tank"});
     const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 3, {"Mv Fighter Bay", "Mv Fighter Bay"}), here);
     w.v(carrier).cargo.units = {{slow, 2}, {fast, 2}};
     w.order(carrier, launchOf(slow));
@@ -86,8 +86,9 @@ TEST_CASE("unit groups: launches of several designs join one group per kind and 
     const int64_t slowStep = movement::moveSupplyCost(r, w.s, one);
     setGroupStacks(w.s, one, {{fast, 1}});
     const int64_t fastStep = movement::moveSupplyCost(r, w.s, one);
+    CHECK(slowStep == 2);   // one engine's Supply Amount Used
+    CHECK(fastStep == 4);
     CHECK(movement::moveSupplyCost(r, w.s, g) == 2 * slowStep + 2 * fastStep);
-    CHECK(fastStep == 2 * slowStep);
 
     // Recovery takes one design out; the rest stays a group of the other design.
     w.order(carrier, recoverOf(slow));
