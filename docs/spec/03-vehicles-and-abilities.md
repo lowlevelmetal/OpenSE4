@@ -1466,3 +1466,27 @@ All rules in this section are (confirmed: binary).
     first free Roman numeral ("Scout II") instead of being refused. Premade starting
     designs keep their plain name when it is free, else get the empire's name in front.
     (inferred)
+51. **Ad-hoc groups:** the engine forms them when the movement phase starts, from ships
+    outside fleets (not bases or unit groups) in one sector with identical head orders.
+    A group only loses members: after each action, members whose head order is no longer
+    the leader's go on alone (or as a group of their own) from the next day, at their own
+    speed. A Load or Drop amount is shared by the group, as for fleets. When do groups
+    form in the original, and can other vehicle classes join them? (inferred)
+52. **Greedy steps:** when moving straight, the three squares tried are the forward
+    square and its two neighbours across the direction of travel, so a try can pick the
+    avoided square again; squares off the grid are failed tries. The square the group
+    heads for (never avoided) is the next warp point on the route or the destination.
+    Storm damage counts the `Sector - Damage` of the objects in the sector, not a
+    system-wide value; hostile colonies count as hostile objects, unseen vehicles (mines
+    included) do not. (inferred)
+53. **Clearing orders on meeting empires:** the engine checks the option after every
+    warp transit (Warp orders and the jumps of a Move To), counting that empire's
+    colonies in the system and its vehicles the owner can see. The order in progress fails
+    even when the jump ended it. (inferred)
+54. **Orders as given:** a Resupply or Repair given where the depot or repair source
+    already is adds nothing, and so does one with no reachable target. Explore skips warp
+    points named by Warp orders anywhere in the lists of other own ships and fleets, and
+    by the orders given before it in the same list; its candidates are those whose far
+    system is unexplored, whether or not the link is known. Orders sent again unchanged
+    are not expanded again. The Load Cargo that Colonize adds takes an action of its own,
+    like every order that needs no movement (§6.3). (inferred)

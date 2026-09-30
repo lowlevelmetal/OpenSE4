@@ -20,7 +20,9 @@ player / AI / network ─> game::Command ────┘         │
 | `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists), colonies, designs, vehicles, fleets, messages, pending events, combat records, options |
 | `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets) |
 | `abilities.hpp` | The closed list of ability identifiers used by the data, parsed once |
-| `design.hpp` | Mounts, design validation, movement points, supply, cargo, and generated starting designs |
+| `design.hpp` | Mounts, design validation, unique design names and statistics, movement points, supply, cargo, and generated starting designs |
+| `orders.hpp` | Orders as they are given: Explore, Resupply, Repair and the composite orders expanded into simple ones (spec 03 §8) |
+| `map_file.hpp` | Map files in our own text format ([MAPS.md](MAPS.md)): Save Map, and loaded maps with starting points |
 | `query.hpp` | Read-only questions: what is where, space yards, capacities, hostility |
 
 `GameState` is plain data. Every field is serialized (`serialize.hpp`), and

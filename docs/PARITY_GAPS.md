@@ -14,7 +14,7 @@ outcomes, **L** is an edge case.
 
 | Item | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Arithmetic | Integer maths with floor division throughout | Percentages are applied in floating point, and each rule states whether its result is rounded (half to even) or truncated (spec 02 §1, spec 03 §2). Because of extended precision, an exact product can come out one lower, e.g. 100 × 53 % gives 52 | M |
+| Arithmetic (`ai_diplomacy.cpp`, client `ships_logic.cpp`) | The rules engine applies percentages in extended-precision floating point (`xmath.hpp`; audited on 2026-09-30, and `Resources::percent` now truncates through it). Two places still differ: a computer player's value of a Unit item truncates the three-resource total once, and the Ships window's facility refund preview truncates | The Unit item is worth its scrap value × 100, each resource rounded before summing (spec 05 §7.4, spec 03 §15); a facility refunds round(cost × %) per resource (spec 02 §6.6) | L |
 | Turn order (`turn.cpp:39-104`) | Economy, research, intelligence, events and population, in fixed global phases | Spec 05 §8: orders, messages, date, ministers and AI, 30 movement/combat phases, then each empire's end-of-turn steps one empire at a time (intelligence and research first, spending last turn's points), then victory, then one galaxy-wide event roll | M |
 
 ## Economy and population (spec 02)
@@ -27,15 +27,21 @@ cost sums `economy::characteristicPointCost`.
 
 ## Vehicles, movement and logistics (spec 03)
 
+Design names are unique in the whole game (`uniqueDesignName`), composite orders are
+expanded when given (`orders.hpp`), ships with identical head orders move as ad-hoc groups,
+in-system steps are greedy with the random re-choice, and the empire option to clear
+orders on meeting empires is `Empire::clearOrdersOnEncounter`. The engine's choices where
+the spec is silent are spec 03 §19 Q50–Q54.
+
 | Where | Engine now | Original | Impact |
 |---|---|---|---|
-| Low | Design names are unique per empire in `CreateDesign` (`commands.cpp`): starting designs (`setup.cpp`) and computer players' designs (`ai_design.cpp`) reuse names across empires, so a game-wide check would stop computer players from creating designs; `designNameInUse` exists, renaming a design already checks every empire, and the designer avoids every empire's names. Movement makes a stellar manipulation order wait when no capable member has movement left; the manipulation's own checks are in `movement_stellar.cpp` (spec 01 §9). Unit groups that mix designs are kept as one record per design (they share caps and launch refills, but move and fight as separate records). Not implemented: the empire options to clear orders on meeting empires, ad-hoc groups of ships with identical head orders, greedy in-system steps with the random re-choice, and composite orders being expanded when given | see spec 03 | L |
+| Low | Unit groups that mix designs are kept as one record per design: they share the per-sector caps and launch refills, but move, pay supply and fight as separate records (spec 03 §19 Q43). A single record would need a vehicle that holds several designs, which touches combat, movement, supply, cargo, the windows and the save layout | One group per (owner, unit kind, sector), mixing designs: its supply is pooled, its MP is the lowest design speed, and it fights as one group (spec 03 §1, §12) | L |
 
 ## Combat (spec 04)
 
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Low | design statistics lack "enemy tonnage destroyed": it needs a `Design` field that the design commands, redaction and events also reset | see spec 04 §15 | L |
+Every row of this section was implemented. Designs record the enemy tonnage their
+vehicles destroyed (`Design::enemyTonnageDestroyed`, spec 04 §15; the measure is open
+question 47).
 
 ## Research, intelligence, diplomacy, events, score (spec 05 §1–§6)
 
@@ -45,18 +51,21 @@ The rules of this section follow the spec. What is left depends on other parts o
 |---|---|---|---|
 | `turn.cpp` phases | Research runs before intelligence, both after the economy; the first research step takes its opening pool from the economy's first-turn income (`economy::openingResearchPool`) | Intelligence, then research, first in each empire's end-of-turn processing; the pools are filled when the game is created and by the income step (§1.1, §8). The per-empire steps exist: `intel::intelStep`, `research::researchStep`, `research::addToPools`, `research::openingPools`, `diplomacy::treatyStep`, `score::checkDestruction`, `score::checkVictory`, `events::fireDueEvents`, `events::rollNewEvent` | L |
 | `events.cpp` | `Planet - Destroyed` maps Tiny and Huge planets to asteroid sizes | The Destroy Planet result of spec 01 §9 (the hazards now run first in the event step, `movement::runStellarHazards`) | L |
+| `events.cpp` (stolen designs) | The copy keeps the victim's enemy tonnage destroyed, and its name is checked only against the thief's designs | A new design starts without statistics and its name differs from every design in the game (spec 04 §15, spec 03 §4.1): use `resetDesignStatistics` and `uniqueDesignName` (`design.hpp`) | L |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
 Generation, empire placement, starting planets and stockpile, the setup option lists,
 racial point costs, sight and stellar manipulation now follow the specs (`generate.cpp`,
-`setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). The engine's own choices where the spec is
-silent are listed in spec 01 §14 (Q27 onward). What is left needs code outside those files:
+`setup.cpp`, `sight.cpp`, `movement_stellar.cpp`). Maps are saved and loaded in our own
+format ([MAPS.md](MAPS.md), `map_file.hpp`) with starting points placed first, and the
+autosave choices are applied after each processed turn in local and hotseat games. The
+engine's own choices where the spec is silent are listed in spec 01 §14 (Q27 onward). What
+is left needs code outside those files:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | client `ships_logic.cpp`, `reports.cpp`, `main_window.cpp` | Button checks follow the old manipulation rules; warp points show their stored name | Mirror spec 01 §9 (one star per system, hostile, cloak and supply checks); name warp points with `sight::warpPointName` | L |
-| Low | map starting points (no map files yet, spec 01 §12); autosave choices | see spec 01 | L |
 
 ## Computer player (spec 05 §7)
 

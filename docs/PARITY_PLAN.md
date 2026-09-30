@@ -44,6 +44,8 @@ questions are what the observation sessions still have to settle.
       cloaking by sight type; scanners; sharing between partners.
 - [x] Galaxy panel and the Galaxy Map window: overlays, distances, notes.
 - [x] Quadrant size choices and the 67 × 46 galaxy grid (spec 01 §2.2, §3.2).
+- [x] Map files: Save Map, Load Map and map starting points, in our own format
+      ([MAPS.md](MAPS.md), spec 01 §12).
 - [ ] Compare generated quadrants with the original's maps.
 
 ### M2: Empires and economy (done; calibration continues)
@@ -74,8 +76,9 @@ questions are what the observation sessions still have to settle.
 - [x] Movement points and supply.
 - [x] Retrofit, scrap and mothball.
 - [x] The order, fleet, cargo, unit, scrap and stellar-manipulation windows.
-- [ ] 30-phase simultaneous movement, every order, pathfinding, colonization, supply
-      and repair (being merged).
+- [x] 30-phase simultaneous movement, every order (expanded when given), ad-hoc groups,
+      greedy in-system steps, colonization, supply and repair. Left: unit groups that mix
+      designs are one record per design (PARITY_GAPS.md).
 
 ### M4: Research, intelligence, diplomacy (done)
 - [x] Tech costs, queue allocation, racial and unique areas, ruins.
@@ -112,7 +115,8 @@ questions are what the observation sessions still have to settle.
 - [ ] Screenshot comparisons against the original through the harness.
 
 ### M8: Persistence and multiplayer (done)
-- [x] Save and load: a versioned, checksummed format with validation on load.
+- [x] Save and load: a versioned, checksummed format with validation on load; autosave
+      every 1, 2, 3, 5 or 10 turns into ten rotating slots.
 - [x] Hotseat, with a password hand-over between players.
 - [x] Network games:
   - the in-game lobby, including hosting with UPnP port mapping;
