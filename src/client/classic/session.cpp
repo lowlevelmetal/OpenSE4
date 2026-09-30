@@ -22,18 +22,11 @@ ClassicSession::ClassicSession(std::shared_ptr<const game::Rules> rules, game::G
 game::CommandResult ClassicSession::issue(game::Command c) {
     if (waiting_) return game::CommandResult::fail("Waiting for the other players");
     if (turnBased() && kind_ != SessionKind::NetworkClient) {
-        const size_t battles = state_.combats.size();
-        const game::TurnResult res = game::applyLive(*rules_, state_, player_, c);
-        ++revision_;
-        for (const game::EntryQuestion& q : res.questions)
-            if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
-        for (size_t i = battles; i < state_.combats.size() && !newBattle_; ++i) {
-            const auto& who = state_.combats[i].participants;
-            if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
-        }
-        if (!res.rejected.empty()) return game::CommandResult::fail(res.rejected.front().second);
-        orders_.push_back(std::move(c));
-        return {};
+        if (call_ != Call::None) return game::CommandResult::fail("A battle waits to be fought first.");
+        issued_ = {};
+        beginCall(Call::Issue, std::move(c));
+        // While a battle waits for its answer the order is under way; a refusal shows up as a notice.
+        return issued_;
     }
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
     if (r.ok) {
@@ -63,25 +56,102 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
     questions_ = result.questions;
 }
 
-void ClassicSession::resumeTurnBased() {
-    const game::TurnResult result = game::resumeTurnBased(*rules_, state_);
-    // The session belongs to the human whose turn it is (hotseat: the next one).
-    if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
-    takeResult(result);
+void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
+
+bool ClassicSession::offersTactical() const { return kind_ != SessionKind::NetworkClient && game::tacticalOffered(state_); }
+
+void ClassicSession::beginCall(Call call, std::optional<game::Command> command) {
+    call_ = call;
+    callCommand_ = std::move(command);
+    callBattles_ = state_.combats.size();
+    answers_.clear();
+    battle_.reset();
+    runCall();
+}
+
+void ClassicSession::runCall() {
+    const std::vector<game::BattleAnswer>* answers = offersTactical() ? &answers_ : nullptr;
+    game::TurnResult res;
+    switch (call_) {
+        case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;
+        case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, answers); break;
+        case Call::Resume: res = game::resumeTurnBased(*rules_, state_, answers); break;
+        case Call::None: return;
+    }
+    ++revision_;
+    if (res.battle) {
+        // The call stopped before a battle with human sides; the game is as it was.
+        battle_ = std::move(res.battle);
+        return;
+    }
+    const Call call = std::exchange(call_, Call::None);
+    const bool tactical = std::any_of(answers_.begin(), answers_.end(), [](const game::BattleAnswer& a) { return !a.tactical.empty(); });
+    const bool answered = !answers_.empty();
+    answers_.clear();
+    auto nextHuman = [&] {
+        // The session belongs to the human whose turn it is (hotseat: the next one).
+        if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
+    };
+    switch (call) {
+        case Call::Issue: {
+            for (const game::EntryQuestion& q : res.questions)
+                if (std::find(questions_.begin(), questions_.end(), q) == questions_.end()) questions_.push_back(q);
+            // A battle fought here in the Tactical Combat window has been seen already.
+            if (!tactical)
+                for (size_t i = callBattles_; i < state_.combats.size() && !newBattle_; ++i) {
+                    const auto& who = state_.combats[i].participants;
+                    if (std::find(who.begin(), who.end(), player_) != who.end()) newBattle_ = i;
+                }
+            if (!res.rejected.empty()) {
+                issued_ = game::CommandResult::fail(res.rejected.front().second);
+                if (answered) notices_.push_back(res.rejected.front().second);
+            } else {
+                orders_.push_back(std::move(*callCommand_));
+                issued_ = {};
+            }
+            break;
+        }
+        case Call::EndTurn:
+            nextHuman();
+            takeResult(res);
+            orders_.clear();
+            waiting_ = false;
+            if (onNewTurn) onNewTurn();
+            break;
+        case Call::Resume:
+            nextHuman();
+            takeResult(res);
+            break;
+        case Call::None: break;
+    }
+    callCommand_.reset();
+}
+
+void ClassicSession::answerBattle(game::BattleAnswer answer) {
+    if (!battle_ || call_ == Call::None) return;
+    answers_.push_back(std::move(answer));
+    battle_.reset();
+    runCall();
+}
+
+void ClassicSession::startTactical(TacticalFight fight) { tactical_ = std::make_unique<TacticalFight>(std::move(fight)); }
+
+void ClassicSession::endTactical() {
+    if (!tactical_) return;
+    std::unique_ptr<TacticalFight> fight = std::move(tactical_);
+    if (fight->kind != TacticalFight::Kind::Game || !fight->battle) return;
+    // Phases left are played by the strategies, as a script that runs out does.
+    fight->battle->finish();
+    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()});
 }
 
 void ClassicSession::endTurn() {
     if (waiting_) return;
     if (turnBased() && kind_ != SessionKind::NetworkClient) {
         // The player's end-of-turn processing; the computer players' turns;
-        // then the next human's turn starts.
-        const game::TurnResult result = game::endPlayerTurn(*rules_, state_, player_);
-        if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
-        takeResult(result);
-        orders_.clear();
-        waiting_ = false;
-        ++revision_;
-        if (onNewTurn) onNewTurn();
+        // then the next human's turn starts (after any battles that ask).
+        if (call_ != Call::None) return;
+        beginCall(Call::EndTurn);
         return;
     }
     if (kind_ == SessionKind::NetworkClient) {
@@ -158,6 +228,10 @@ void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
     questions_.clear();
     newBattle_.reset();
+    call_ = Call::None;
+    battle_.reset();
+    answers_.clear();
+    tactical_.reset();
     if (turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     beginTurn();
 }

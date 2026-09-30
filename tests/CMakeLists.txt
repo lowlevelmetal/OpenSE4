@@ -48,6 +48,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp

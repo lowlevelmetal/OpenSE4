@@ -367,10 +367,7 @@ private:
         }
         if (lampButton(ui, d, "Hide Obsolete", hideObsolete_)) hideObsolete_ = !hideObsolete_;
         if (lampButton(ui, d, "Stats\\Strategy", statsView_)) statsView_ = !statsView_;
-        if (d.button("Simulator")) {
-            note_ = "The combat simulator is not available yet.";
-            noteIsError_ = false;
-        }
+        if (d.button("Simulator")) ui.open(ScreenId::CombatSimulator);
     }
 
     bool initialized_ = false;

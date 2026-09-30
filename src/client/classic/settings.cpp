@@ -60,12 +60,20 @@ std::string settingsToToml(const ClassicSettings& s) {
     for (const BoolOption& o : kBoolOptions) options.insert(o.key, s.*o.member);
     toml::table replay;
     replay.insert("speed", double(s.replaySpeed));
+    toml::table tactical;
+    tactical.insert("animate", s.tacticalAnimate);
+    tactical.insert("speed", double(s.tacticalSpeed));
+    tactical.insert("grid", s.tacticalGrid);
+    tactical.insert("ranges", s.tacticalRanges);
+    tactical.insert("names", s.tacticalNames);
+    tactical.insert("auto_end", s.tacticalAutoEnd);
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_volume", double(s.musicVolume));
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("replay", std::move(replay));
+    root.insert("tactical", std::move(tactical));
     root.insert("sound", std::move(sound));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
@@ -85,6 +93,12 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
         for (const BoolOption& o : kBoolOptions)
             if (auto v = (*options)[o.key].value<bool>()) s.*o.member = *v;
     if (auto speed = root["replay"]["speed"].value<double>()) s.replaySpeed = std::clamp(float(*speed), 0.25f, 8.0f);
+    if (auto v = root["tactical"]["animate"].value<bool>()) s.tacticalAnimate = *v;
+    if (auto v = root["tactical"]["speed"].value<double>()) s.tacticalSpeed = std::clamp(float(*v), 0.25f, 8.0f);
+    if (auto v = root["tactical"]["grid"].value<bool>()) s.tacticalGrid = *v;
+    if (auto v = root["tactical"]["ranges"].value<bool>()) s.tacticalRanges = *v;
+    if (auto v = root["tactical"]["names"].value<bool>()) s.tacticalNames = *v;
+    if (auto v = root["tactical"]["auto_end"].value<bool>()) s.tacticalAutoEnd = *v;
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_volume"].value<double>()) s.musicVolume = std::clamp(float(*v), 0.0f, 1.0f);
     return s;

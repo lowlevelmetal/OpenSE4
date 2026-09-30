@@ -6,6 +6,8 @@
 
 #include "combat_fixture.hpp"
 
+#include "client/classic/session.hpp"
+
 #include "game/combat.hpp"
 #include "game/query.hpp"
 #include "game/serialize.hpp"
@@ -919,4 +921,82 @@ TEST_CASE("simulator: the same setup and seed give the same battle") {
         return stateChecksum(b.state());
     };
     CHECK(run() == run());
+}
+
+// ---- The client session (client/classic/session.hpp) ----------------------------------------------------
+
+TEST_CASE("client session: a turn-based battle asks, is fought tactically in the client, and the game carries on") {
+    // A local turn-based game: A human attacker, B a computer player.
+    Arena ar = makeArena(23);
+    GameState& s = ar.s;
+    s.options.simultaneous = false;
+    s.empire(ar.a).kind = PlayerKind::Human;
+    s.empire(ar.b).kind = PlayerKind::Computer;
+    const Location to = ar.loc, from{to.system, Sector{to.sector.x - 1, to.sector.y}};
+    const VehicleId warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "Test Laser", "CT Big Armor"}), from);
+    spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser", "Test Armor Plate"}), to);
+    for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+    auto rules = std::make_shared<const Rules>(buildCombatRuleset());
+    client::classic::ClassicSession session(rules, std::move(s), ar.a, client::classic::SessionKind::Local);
+    REQUIRE(session.player() == ar.a);
+
+    Order o;
+    o.kind = OrderKind::MoveTo;
+    o.location = to;
+    CHECK(session.issue(cmd::SetOrders{warship, {}, {o}}).ok);
+    REQUIRE(session.questions().size() == 1);   // Attack Sector?
+    const uint64_t before = stateChecksum(session.state());
+    session.answer(true);
+    REQUIRE(session.battleQuestion().has_value());
+    CHECK(stateChecksum(session.state()) == before);   // nothing happened yet
+    CHECK(session.issue(cmd::SetOrders{warship, {}, {}}).error == "A battle waits to be fought first.");
+
+    // The player fights it in the Tactical Combat window.
+    const BattleQuestion q = *session.battleQuestion();
+    REQUIRE(q.humans == std::vector<EmpireId>{ar.a});
+    client::classic::TacticalFight fight;
+    fight.kind = client::classic::TacticalFight::Kind::Game;
+    fight.battle = std::make_unique<TacticalBattle>(*rules, *q.state, TacticalBattle::Setup{q.where, q.entering, q.humans});
+    fight.players = q.humans;
+    session.startTactical(std::move(fight));
+    TacticalBattle& b = *session.tactical()->battle;
+    REQUIRE(b.awaitingOrders());
+    CHECK(b.submit(order(OK::Begin, ar.a)).empty());
+    CHECK(b.submit(order(OK::EndPhase, ar.a)).empty());
+    session.endTactical();   // the strategies play what is left; the orders answer the question
+    CHECK(session.tactical() == nullptr);
+    CHECK_FALSE(session.battleQuestion().has_value());
+    REQUIRE(session.state().combats.size() == 1);
+    CHECK_FALSE(session.takeNewBattle().has_value());   // seen already in the window
+    // The order went through: the warship entered the sector (if it survived).
+    if (const Vehicle* v = session.state().vehicle(warship)) CHECK(v->location == to);
+    CHECK(session.ordersThisTurn().size() == 2);
+}
+
+TEST_CASE("client session: a strategic answer, and a game without tactical combat, fight at once") {
+    for (const bool offered : {true, false}) {
+        CAPTURE(offered);
+        Arena ar = makeArena(29);
+        GameState& s = ar.s;
+        s.options.simultaneous = false;
+        s.options.noTacticalCombat = !offered;
+        s.empire(ar.a).kind = PlayerKind::Human;
+        s.empire(ar.b).kind = PlayerKind::Computer;
+        const Location to = ar.loc, from{to.system, Sector{to.sector.x - 1, to.sector.y}};
+        const VehicleId warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "CT Big Armor"}), from);
+        spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), to);
+        for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+        client::classic::ClassicSession session(std::make_shared<const Rules>(buildCombatRuleset()), std::move(s), ar.a,
+                                                client::classic::SessionKind::Local);
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = to;
+        session.issue(cmd::SetOrders{warship, {}, {o}});
+        session.answer(true);
+        CHECK(session.battleQuestion().has_value() == offered);
+        if (offered) session.answerBattle(BattleAnswer{});
+        CHECK_FALSE(session.battleQuestion().has_value());
+        CHECK(session.state().combats.size() == 1);
+        CHECK(session.takeNewBattle().has_value());   // shown in the replay window
+    }
 }

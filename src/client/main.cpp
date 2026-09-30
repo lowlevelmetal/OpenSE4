@@ -44,7 +44,9 @@ Classic rules (the default when an install is found; see docs/PARITY_PLAN.md):
   --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
-                                  empiresetup[:PAGE], multiplayer (e.g. --open=setup:players)
+                                  empiresetup[:PAGE], multiplayer (e.g. --open=setup:players).
+                                  tactical: a sample tactical battle (your warships against copies);
+                                  simulator: the Combat Simulator with that battle set up
 
 Paths:
   --data=DIR                      Game data directory (default: auto-detect)
