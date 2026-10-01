@@ -5,7 +5,10 @@
 // tactical()): a turn-based game's battle or a combat simulation.
 //
 // The map is the Combat Replay's (combat_map.hpp): the battle's record plays
-// back as it grows, so every move and shot, the computer's too, is seen.
+// back as it grows, so every move and shot, the computer's too, is seen, each
+// frame followed by the original's wait unless Fast Tactical Combat is on
+// (spec 06 §1.10.3; replay.hpp). In a combat simulation the sides show as
+// numbered colour boxes instead of flags (spec 04 §17).
 // The window opens with Begin, Orders dim; Begin starts the battle and
 // becomes End Turn. Left-click selects an own piece, moves it to an empty
 // square or fires its enabled weapons at an enemy; right-click opens the
@@ -48,9 +51,10 @@ constexpr float kMapW = 676;
 constexpr float kSideX = 684;
 constexpr float kSideW = 310;
 
-// Animation pace: Fast Tactical Combat drops the pauses between steps (spec 06
-// §1.10.3); our playback runs faster instead (inferred).
-float animationSpeed() { return settings().fastTacticalCombat ? 6.0f : 2.0f; }
+// Animation pace (spec 06 §1.10.3): the original's waits after every frame,
+// none with Fast Tactical Combat; moves slide, or jump with "animate ship
+// movement in combat" off. Every frame is drawn either way (replay.hpp).
+CombatPace animationPace(const game::Rules& r) { return combatPace(r, settings().fastTacticalCombat, settings().animateCombatMovement); }
 
 // A target picked on the map for Ram or Capture (the Orders window, R or C).
 enum class Aim { None, Ram, Capture };
@@ -296,23 +300,19 @@ private:
         if (&rec != record_ || rec.events.size() != events_ || rec.pieces.size() != pieces_) {
             const size_t cursor = record_ ? playback_.cursor() : std::min(ui.session.tactical()->seen, rec.events.size());
             playback_ = CombatPlayback(rec);
-            playback_.setSpeed(animationSpeed());
+            playback_.setPace(animationPace(ui.rules()));
             playback_.seekEvent(std::min(cursor, playback_.eventCount()));
             // Before Begin the map stays as the battle starts.
-            if (state().begun) {
-                if (settings().animateCombatMovement && !playback_.atEnd()) playback_.play();
-                else playback_.seekEvent(playback_.eventCount());
-            }
+            if (state().begun && !playback_.atEnd()) playback_.play();
             record_ = &rec;
             events_ = rec.events.size();
             pieces_ = rec.pieces.size();
         }
         if (!state().begun) return;
-        if (!playback_.playing() && !playback_.atEnd()) {
-            if (settings().animateCombatMovement) playback_.play();
-            else playback_.seekEvent(playback_.eventCount());
-        }
-        playback_.setSpeed(animationSpeed());
+        // The Combat Options may change the pace.
+        if (playback_.pace().fast != settings().fastTacticalCombat || playback_.pace().animateMoves != settings().animateCombatMovement)
+            playback_.setPace(animationPace(ui.rules()));
+        if (!playback_.playing() && !playback_.atEnd()) playback_.play();
         const size_t before = playback_.cursor();
         playback_.advance(ui.dt);
         CombatMapPainter(ui, b.state(), rec, playback_).sounds(before, playback_.cursor());
@@ -864,8 +864,7 @@ private:
     void begin(const TacticalBattle& b) {
         TacticalUi& u = state();
         u.begun = true;
-        if (settings().animateCombatMovement && !playback_.atEnd()) playback_.play();
-        else skipAnimation();
+        if (!playback_.atEnd()) playback_.play();
         centreOn(b, u.selected);
     }
 

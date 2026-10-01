@@ -2,9 +2,11 @@
 // 04 §17): a battle of the last processed turn played back one combat turn at
 // a time with Next (or Space); Options opens the replay's options, kept with
 // the empire; Esc closes. Playback state lives in CombatPlayback
-// (replay.hpp); this file draws it. Beside the map, an overview of the whole
-// combat grid, and as OpenSE4's own help, the turn's events in words and the
-// battle's summary.
+// (replay.hpp), which draws every frame with the waits of spec 06 §1.10.3
+// (none with the replay's Fast Tactical Combat); this file draws it. Beside
+// the map, an overview of the whole combat grid. The turn's events in words
+// and the battle's summary under it are an OpenSE4 extension: the original's
+// replay keeps no log of any kind (spec 06 §7 Q39; kept, inferred).
 
 #include "client/classic/replay.hpp"
 #include "client/classic/reports.hpp"
@@ -26,8 +28,9 @@ using Kind = game::CombatEvent::Kind;
 // Stop Replay in the options window closes the replay.
 bool gStopReplay = false;
 
-// Playback pace: Fast Tactical Combat drops the pauses (inferred: a faster playback).
-float replaySpeed(const game::InterfaceOptions& o) { return o.replayFast ? 6.0f : 2.0f; }
+// Playback pace (spec 06 §1.10.3): the replay's own Fast Tactical Combat and
+// "animate ship movement in combat replay" switches, as in the tactical window.
+CombatPace replayPace(const game::Rules& r, const game::InterfaceOptions& o) { return combatPace(r, o.replayFast, o.replayAnimate); }
 
 class CombatReplayScreen final : public Screen {
 public:
@@ -43,7 +46,8 @@ public:
         if (index_ < 0 || index_ >= int(combats.size()) || loadedTurn_ != ui.state().turn)
             load(ui, wanted_ >= 0 && wanted_ < int(combats.size()) ? wanted_ : int(combats.size()) - 1, combats);
         const game::InterfaceOptions& opts = ui.options();
-        playback_.setSpeed(replaySpeed(opts));
+        if (playback_.pace().beams.empty() || playback_.pace().fast != opts.replayFast || playback_.pace().animateMoves != opts.replayAnimate)
+            playback_.setPace(replayPace(ui.rules(), opts));
         // Next plays one combat turn: animated, or at once with animation off.
         const size_t before = playback_.cursor();
         if (playback_.playing() && playback_.cursor() >= stopAt_) playback_.pause();
@@ -73,7 +77,7 @@ public:
         if (d.button("Options")) ui.open(ScreenId::CombatReplayOptions);
         if (d.button("Next", !playback_.atEnd() && !playback_.playing()) ||
             (ImGui::IsKeyPressed(ImGuiKey_Space, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
-            next(opts);
+            next();
         // Esc closes (spec 06 §3.4); there is no Close button.
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) d.requestClose();
         return d.keepOpen();
@@ -102,15 +106,11 @@ private:
         listCursor_ = SIZE_MAX;
     }
 
-    void next(const game::InterfaceOptions& opts) {
+    void next() {
         if (playback_.atEnd()) return;
         const int round = std::max(0, playback_.round()) + 1;
         stopAt_ = round + 1 <= playback_.roundCount() ? playback_.roundStart(round + 1) : playback_.eventCount();
-        if (opts.replayAnimate) {
-            playback_.play();
-        } else {
-            playback_.seekEvent(stopAt_);
-        }
+        playback_.play();
     }
 
     CombatMapPainter painter(UiContext& ui) const { return CombatMapPainter(ui, ui.state(), record_, playback_); }
@@ -247,7 +247,6 @@ private:
         // Show Grid (Combat Replay Options).
         paint.background(dl, o, o2, v, opts.replayGrid ? IM_COL32(40, 70, 140, 70) : 0);
         const std::optional<uint32_t> hovered = paint.pieces(dl, v, hoveredBox, ImGui::GetIO().MousePos);
-        if (const game::CombatEvent* e = playback_.animating()) paint.event(dl, v, *e, playback_.fraction());
         if (hovered) {
             const ImVec2 c = paint.piecePos(v, *hovered);
             const float h = v.cell * paint.pieceExtent(*hovered) * 0.5f;

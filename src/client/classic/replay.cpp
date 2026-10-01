@@ -112,6 +112,8 @@ int CombatPlayback::round() const {
 void CombatPlayback::reset() {
     pieces_ = start_;
     cursor_ = 0;
+    frames_.clear();
+    frame_ = 0;
 }
 
 void CombatPlayback::apply(const game::CombatEvent& e) {
@@ -182,7 +184,10 @@ void CombatPlayback::seekEvent(size_t n) {
     n = std::min(n, order_.size());
     if (n < cursor_) reset();
     while (cursor_ < n) apply(event(cursor_++));
-    elapsed_ = 0.0f;
+    frames_.clear();
+    frame_ = 0;
+    spent_ = 0.0f;
+    if (playing_) startEvent();
 }
 
 void CombatPlayback::seekRound(int r) {
@@ -211,41 +216,145 @@ void CombatPlayback::stepEvent() { seekEvent(cursor_ + 1); }
 void CombatPlayback::play() {
     if (atEnd()) rewind();
     playing_ = !order_.empty();
-    elapsed_ = 0.0f;
+    startEvent();
 }
 
-void CombatPlayback::setSpeed(float s) { speed_ = std::clamp(s, 0.25f, 8.0f); }
+namespace {
 
-float CombatPlayback::eventDuration(size_t i) const {
-    if (i >= order_.size()) return 1.0f;
-    float d = 0.2f;
-    switch (event(i).kind) {
-        case Kind::Move: d = 0.18f; break;
-        case Kind::Fire: d = 0.35f; break;
-        case Kind::Hit: d = 0.3f; break;
-        case Kind::Miss: d = 0.25f; break;
-        case Kind::Destroyed: d = 0.5f; break;
-        case Kind::Captured: d = 0.5f; break;
-        case Kind::Launch: d = 0.3f; break;
-        case Kind::Seeker: d = 0.2f; break;
-        case Kind::UnitsLost: d = 0.05f; break;
+// The waits of spec 06 §1.10.3 (confirmed: binary), in seconds.
+constexpr float kSlideWait = 0.001f;
+constexpr float kJumpWait = 0.1f;
+constexpr float kTurnWait = 0.01f;
+constexpr float kBeamWait = 0.00001f;
+constexpr float kBeamEraseWait = 0.00005f;
+constexpr float kTorpedoWait = 0.001f;
+constexpr float kHitFrameWait = 0.1f;
+constexpr float kAfterHitWait = 0.3f;
+constexpr int kHitFrames = 8;
+// Our own drawings' frame counts (inferred): a slide over one square, a
+// torpedo per square of its flight, a flash.
+constexpr int kSlideFrames = 6;
+constexpr int kFlashFrames = 4;
+
+// 45-degree steps between two headings, the shorter way round.
+int turnSteps(float from, float to) {
+    constexpr float kPi = 3.14159265358979f;
+    float d = std::fmod(to - from, 2.0f * kPi);
+    if (d > kPi) d -= 2.0f * kPi;
+    if (d < -kPi) d += 2.0f * kPi;
+    return int(std::lround(std::fabs(d) / (kPi / 4.0f)));
+}
+
+} // namespace
+
+std::vector<AnimationFrame> CombatPlayback::framesOf(size_t i) const {
+    using Part = AnimationFrame::Part;
+    std::vector<AnimationFrame> out;
+    if (i >= order_.size()) return out;
+    const game::CombatEvent& e = event(i);
+    const bool known = validPiece(e.piece);
+    auto add = [&](Part part, int steps, float wait) {
+        for (int k = 0; k < steps; ++k) out.push_back(AnimationFrame{part, k, steps, pace_.fast ? 0.0f : wait});
+    };
+    switch (e.kind) {
+        case Kind::Move: {
+            if (!known) break;
+            const Piece& p = pieces_[e.piece];
+            if (e.x == p.x && e.y == p.y) break;
+            // A piece turns to its new facing first, then moves one square.
+            add(Part::Turn, turnSteps(p.heading, headingOf(e.x - p.x, e.y - p.y)), kTurnWait);
+            if (pace_.animateMoves) add(Part::Slide, kSlideFrames, kSlideWait);
+            else add(Part::Jump, 1, kJumpWait);
+            break;
+        }
+        case Kind::Seeker: {
+            // A seeker's step is its flight: drawn as a torpedo's.
+            if (!known) break;
+            add(Part::Slide, kSlideFrames, kTorpedoWait);
+            break;
+        }
+        case Kind::Fire: {
+            if (!known || !validPiece(e.target)) break;
+            const bool beam = e.component < pace_.beams.size() && pace_.beams[e.component] != 0;
+            if (beam) {
+                // Our beam is one stamp stretched from shooter to target (inferred).
+                add(Part::Beam, 1, kBeamWait);
+                add(Part::BeamErase, 1, kBeamEraseWait);
+            } else {
+                const Piece& a = pieces_[e.piece];
+                const Piece& b = pieces_[e.target];
+                const int squares = std::max(std::abs(b.x - a.x), std::abs(b.y - a.y));
+                add(Part::Torpedo, std::max(1, squares), kTorpedoWait);
+            }
+            break;
+        }
+        case Kind::Hit:
+            if (!validPiece(e.target)) break;
+            add(Part::Explosion, kHitFrames, kHitFrameWait);
+            add(Part::Wipe, 1, kHitFrameWait);
+            add(Part::AfterHit, 1, kAfterHitWait);
+            break;
+        case Kind::Destroyed:
+            // A loss plays an explosion like a hit's (inferred).
+            if (!known) break;
+            add(Part::Explosion, kHitFrames, kHitFrameWait);
+            add(Part::Wipe, 1, kHitFrameWait);
+            break;
+        case Kind::Captured:
+        case Kind::Launch:
+            if (known) add(Part::Flash, kFlashFrames, 0.0f);
+            break;
+        case Kind::Miss:        // the shot was drawn by its Fire
+        case Kind::UnitsLost: break;   // shown by the Hit before it
     }
-    // A short pause before each new round.
-    if (i > 0 && event(i).round != event(i - 1).round) d += 0.4f;
-    return d;
+    return out;
+}
+
+void CombatPlayback::setPace(CombatPace pace) {
+    pace_ = std::move(pace);
+    if (!playing_ || atEnd() || frames_.empty()) return;
+    frames_ = framesOf(cursor_);
+    if (frames_.empty()) startEvent();
+    else frame_ = std::min(frame_, frames_.size() - 1);
+}
+
+float CombatPlayback::eventWait(size_t i) const {
+    float total = 0.0f;
+    for (const AnimationFrame& f : framesOf(i)) total += f.wait;
+    return total;
+}
+
+void CombatPlayback::startEvent() {
+    frames_.clear();
+    frame_ = 0;
+    spent_ = 0.0f;
+    hold_ = true;
+    if (!playing_) return;
+    while (!atEnd()) {
+        frames_ = framesOf(cursor_);
+        if (!frames_.empty()) return;
+        apply(event(cursor_++));
+    }
+    playing_ = false;
 }
 
 void CombatPlayback::advance(float seconds) {
     if (!playing_) return;
-    elapsed_ += std::max(0.0f, seconds) * speed_;
-    while (!atEnd() && elapsed_ >= eventDuration(cursor_)) {
-        elapsed_ -= eventDuration(cursor_);
-        apply(event(cursor_++));
+    if (frames_.empty()) startEvent();
+    if (!playing_) return;
+    // The frame current now has not been on screen yet: it is drawn first.
+    if (hold_) {
+        hold_ = false;
+        return;
     }
-    if (atEnd()) {
-        playing_ = false;
-        elapsed_ = 0.0f;
-    }
+    spent_ += std::max(0.0f, seconds);
+    if (spent_ < frames_[frame_].wait) return;
+    // On to the next frame (at most one per refresh, so each one is seen).
+    spent_ = 0.0f;
+    if (++frame_ < frames_.size()) return;
+    apply(event(cursor_++));
+    startEvent();
+    hold_ = false;   // the new frame is drawn after this call
 }
 
 bool CombatPlayback::followsFire(size_t i) const {

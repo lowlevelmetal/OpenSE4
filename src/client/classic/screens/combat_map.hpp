@@ -55,8 +55,8 @@ public:
     // window's map and the Tactical Combat overview. Returns the piece under
     // `mouse` when `hover` is set. `minSize` is the smallest square in pixels.
     std::optional<uint32_t> squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover = false, ImVec2 mouse = {}) const;
-    // The event being animated, `t` of the way through.
-    void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, float t) const;
+    // The event being animated, at its current frame (CombatPlayback::frame()).
+    void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, const AnimationFrame& f) const;
     // Weapon and explosion sounds for the events played between two cursors.
     void sounds(size_t from, size_t to) const;
 
@@ -68,5 +68,9 @@ private:
 };
 
 ImU32 withAlpha(ImU32 c, float a);
+
+// The pace of the combat windows' animations (spec 06 §1.10.3): Fast Tactical
+// Combat and "animate ship movement", and which weapons are drawn as beams.
+CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves);
 
 } // namespace opense4::client::classic
