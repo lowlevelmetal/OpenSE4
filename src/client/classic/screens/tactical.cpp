@@ -52,7 +52,7 @@ using game::combat::TacticalWeapon;
 using OK = TacticalOrder::Kind;
 using PieceKind = game::CombatPiece::Kind;
 
-constexpr float kStatusH = 46;       // frame pixels
+[[maybe_unused]] constexpr float kStatusH = 46;  // frame pixels
 // The map takes the window's width less the side panel: the window covers
 // the whole frame in both layouts (spec 06 §2.1.1, §1.10.1).
 constexpr float kSideW = 310;

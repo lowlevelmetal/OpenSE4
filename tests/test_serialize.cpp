@@ -39,12 +39,19 @@ void fields(FieldCounter& c, T&...) {
 }
 } // namespace opense4::game::serial
 
-namespace {
-
+// Converts to any field type. Only declared: it is used in unevaluated contexts.
+// It is outside the anonymous namespace because Clang reports a function with
+// internal linkage that is used but never defined.
+namespace serialize_test {
 struct AnyField {
     template <class T>
     operator T() const;
 };
+} // namespace serialize_test
+
+namespace {
+
+using serialize_test::AnyField;
 
 template <class T, class... A>
 consteval size_t fieldCount() {

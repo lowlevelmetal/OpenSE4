@@ -67,7 +67,7 @@ void resources(UiContext& ui, const game::Resources& r, bool compact) {
     static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
     static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
     for (size_t i = 0; i < 3; ++i) {
-        if (i > 0) ImGui::SameLine(0, ui.px(compact ? 6 : 14));
+        if (i > 0) ImGui::SameLine(0, ui.px(compact ? 6.0f : 14.0f));
         ImGui::TextColored(imColorV(kColors[i]), "%s", formatNumber(r.v[i]).c_str());
         if (Sprite s = ui.art.icon16(kIcons[i])) {
             ImGui::SameLine(0, ui.px(1));

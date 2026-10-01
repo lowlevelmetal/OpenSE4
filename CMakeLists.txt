@@ -44,6 +44,9 @@ include(Shaders)
 add_library(opense4_warnings INTERFACE)
 if(MSVC)
     target_compile_options(opense4_warnings INTERFACE /W4 /permissive- /utf-8)
+    # The C library's getenv, fopen and the like are standard: no "use the _s
+    # variant" deprecation warnings (C4996).
+    target_compile_definitions(opense4_warnings INTERFACE _CRT_SECURE_NO_WARNINGS)
     if(OPENSE4_WARNINGS_AS_ERRORS)
         target_compile_options(opense4_warnings INTERFACE /WX)
     endif()
@@ -54,6 +57,18 @@ else()
         target_compile_options(opense4_warnings INTERFACE -Werror)
     endif()
 endif()
+
+# Windows finds DLLs next to the executable: copy the shared libraries a program
+# needs there (SDL3, unless it is linked statically).
+function(opense4_copy_runtime_dlls target)
+    if(WIN32)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E "$<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${target}>>,copy_if_different,true>"
+                    "$<TARGET_RUNTIME_DLLS:${target}>" "$<TARGET_FILE_DIR:${target}>"
+            COMMAND_EXPAND_LISTS
+            VERBATIM)
+    endif()
+endfunction()
 
 add_subdirectory(src)
 add_subdirectory(tools)

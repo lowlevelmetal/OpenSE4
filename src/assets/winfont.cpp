@@ -23,8 +23,8 @@ void fail(std::string* error, std::string text) {
     if (error && error->empty()) *error = std::move(text);
 }
 
-// FNT header offsets (the published Windows 3.0 font format).
-constexpr size_t kVersion = 0, kSize = 2, kType = 66, kPoints = 68, kAscent = 74, kInternalLeading = 76, kItalic = 80, kWeight = 83,
+// FNT header offsets (the published Windows 3.0 font format). Not all are read.
+[[maybe_unused]] constexpr size_t kVersion = 0, kSize = 2, kType = 66, kPoints = 68, kAscent = 74, kInternalLeading = 76, kItalic = 80, kWeight = 83,
                  kPixHeight = 88, kFirstChar = 95, kLastChar = 96, kDefaultChar = 97, kFace = 105;
 constexpr size_t kHeaderV2 = 118, kHeaderV3 = 148;
 

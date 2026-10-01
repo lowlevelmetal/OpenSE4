@@ -1,5 +1,7 @@
 # OpenSE4
 
+[![CI](https://github.com/lowlevelmetal/OpenSE4/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lowlevelmetal/OpenSE4/actions/workflows/ci.yml)
+
 **An open-source engine reimplementation for Space Empires IV Deluxe.**
 
 OpenSE4 is a new engine, written from scratch in C++23, with Vulkan rendering and an
