@@ -1733,7 +1733,7 @@ TEST_CASE("movement: pulls, drift and destructive centres act on everything once
     w.hazards();
     CHECK(w.s.vehicle(doomed) == nullptr);
     CHECK(w.s.design(doomedDesign).lost == 1);
-    CHECK(w.logged(kA, "Doomed 1 destroyed"));
+    CHECK(w.logged(kA, "Doomed 0001 destroyed"));  // new ships are named "<design> NNNN" (spec 06 §6)
     CHECK(hasMood(w.lastMoods, kA, "Any Ship Lost"));
     CHECK(totalDamage(w.v(offCentre)) == 0);
     // Pull 1 + 1 = 2 king steps toward the centre, for ships, bases and unit groups alike.

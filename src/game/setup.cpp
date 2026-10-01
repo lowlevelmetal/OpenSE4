@@ -74,11 +74,11 @@ void addStartingFacilities(const Rules& r, const GameState& s, const Empire& e, 
     }
 }
 
-Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location where, int number) {
+Vehicle makeVehicle(const Rules& r, GameState& s, const Design& d, Location where) {
     Vehicle v;
     v.owner = d.owner;
     v.design = d.id;
-    v.name = std::format("{} {}", d.name, number);
+    v.name = nextVehicleName(s, d);
     v.location = where;
     v.damage.assign(d.entries.size(), 0);
     v.builtTurn = s.turn;
@@ -455,7 +455,7 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
             d->owner = id;
             const DesignId did = addDesign(s, std::move(*d));
             for (int k = 0; k < st.ships; ++k) {
-                Vehicle v = makeVehicle(r, s, s.design(did), home, k + 1);
+                Vehicle v = makeVehicle(r, s, s.design(did), home);
                 ++s.design(did).built;
                 s.addVehicle(std::move(v));
             }

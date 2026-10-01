@@ -500,3 +500,23 @@ TEST_CASE("main window: History files travel with saves") {
     CHECK(fs::exists(history / "plr_2_events.txt"));
     CHECK_FALSE(fs::exists(history / "plr_3_log.txt"));
 }
+
+// ---- Ship names (docs/spec/06 §6, §7 Q18) ----
+
+TEST_CASE("main window: new ships take the next four-digit serial of their design") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId d = design(s, r, "Hood", "Test Frigate", kShipBasics);
+    CHECK(nextVehicleName(s, s.design(d)) == "Hood 0001");
+    Vehicle& a = addTestVehicle(s, r, d, where);
+    a.name = "Hood 0001";
+    Vehicle& b = addTestVehicle(s, r, d, where);
+    b.name = "Hood 0007";
+    CHECK(nextVehicleName(s, s.design(d)) == "Hood 0008");
+    b.name = "Renamed";  // the highest serial is gone: its number is used again
+    CHECK(nextVehicleName(s, s.design(d)) == "Hood 0002");
+    // The starting ships of a new game: two scouts of one design are 0001 and 0002.
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kMe && v.design != d) CHECK((v.name.ends_with(" 0001") || v.name.ends_with(" 0002")));
+}

@@ -338,6 +338,17 @@ void resetDesignStatistics(Design& d) {
 
 bool designIsPrototype(const Design& d) { return d.built == 0 && !d.retrofitted; }
 
+std::string nextVehicleName(const GameState& s, const Design& d) {
+    int highest = 0;
+    for (const Vehicle& v : s.vehicles) {
+        if (v.design != d.id || v.name.size() < 4) continue;
+        const std::string_view tail = std::string_view(v.name).substr(v.name.size() - 4);
+        if (std::all_of(tail.begin(), tail.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            highest = std::max(highest, (tail[0] - '0') * 1000 + (tail[1] - '0') * 100 + (tail[2] - '0') * 10 + (tail[3] - '0'));
+    }
+    return std::format("{} {:04d}", d.name, highest + 1);
+}
+
 bool designInQueue(const GameState& s, EmpireId empire, DesignId design) {
     auto holds = [&](const ConstructionQueue& q) {
         return std::any_of(q.items.begin(), q.items.end(), [&](const QueueItem& it) { return it.kind == QueueItem::Kind::Vehicle && it.design == design; });
