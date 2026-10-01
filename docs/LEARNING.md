@@ -357,7 +357,7 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 **Order kinds** (`order`): `move-to`, `warp`, `attack`, `resupply`, `repair`,
 `explore`, `colonize`, `sentry`, `load-cargo`, `drop-cargo`, `launch-units`,
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
-`stellar-manipulation`, `move-to-waypoint`, `self-destruct`.
+`stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`.
 
 **Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
 

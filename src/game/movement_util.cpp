@@ -582,28 +582,25 @@ int useComponent(TurnContext& ctx, VehicleId id, int entry) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     Vehicle* v = s.vehicle(id);
-    if (!v || !alive(*v) || v->status == VehicleStatus::Mothballed) return -1;
+    if (!v || !alive(*v)) return 0;
     const Design& d = s.design(v->design);
-    if (entry < 0 || static_cast<size_t>(entry) >= d.entries.size() || !entryIntact(r, s, *v, static_cast<size_t>(entry))) return -1;
+    if (entry < 0 || static_cast<size_t>(entry) >= d.entries.size()) return 0;
     const auto e = static_cast<size_t>(entry);
     const auto abilities = r.componentAbilities(d.entries[e].component);
-    if (hasAbility(abilities, AbilityKind::SelfDestruct)) {  // spec 03 §15: no yard needed
-        vehicleLost(ctx, *v, "It self-destructed.");
-        return 0;
-    }
-    const int64_t energy = abilitySum(abilities, AbilityKind::EmergencyEnergy);
-    const int64_t resupply = abilitySum(abilities, AbilityKind::EmergencyResupply);
-    if (energy <= 0 && resupply <= 0) return -1;
-    // A part destroyed on use goes first; no supply is charged (§8, confirmed: binary).
+    // A part destroyed on use goes first, even one with neither ability; no
+    // supply is charged and nothing is logged (§8, confirmed: binary).
     if (hasAbility(abilities, AbilityKind::ComponentDestroyedOnUse)) {
         if (v->damage.size() < d.entries.size()) v->damage.resize(d.entries.size(), 0);
         v->damage[e] = entryStructure(r, d, e);
         fitToCapacity(r, s, *v);  // storage the part held goes with it (§7, §11)
     }
-    if (resupply > 0 && !vehicleHasUnlimitedSupply(r, s, *v))
+    const int64_t energy = abilitySum(abilities, AbilityKind::EmergencyEnergy);
+    const int64_t resupply = abilitySum(abilities, AbilityKind::EmergencyResupply);
+    // Emergency Resupply: V1 more supply, capped at the maximum; nothing for
+    // unlimited supply or a mothballed vehicle.
+    if (resupply > 0 && v->status != VehicleStatus::Mothballed && !vehicleHasUnlimitedSupply(r, s, *v))
         v->supply = std::max(v->supply, std::min(v->supply + resupply, vehicleSupplyCapacity(r, s, *v)));
-    ctx.log(v->owner, LogCategory::Misc, std::format("{} used {}", v->name, r.component(d.entries[e].component).name), {}, v->location);
-    // Emergency energy only helps a vehicle that can move at all.
+    // Emergency Energy only for a vehicle whose maximum movement is above 0.
     return energy > 0 && vehicleMaxMovement(r, s, *v) > 0 ? static_cast<int>(std::min<int64_t>(energy, 1000)) : 0;
 }
 

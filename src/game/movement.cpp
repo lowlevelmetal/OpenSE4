@@ -967,6 +967,10 @@ private:
     Exec execute(Group& g, Order& o) {
         if (g.planet.valid()) {
             if (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits) return cargo(g, o);
+            // Use Facility looks up the facility at the recorded position and
+            // completes with no effect, cost or message, whether or not that
+            // facility still exists (spec 03 §8, confirmed: binary).
+            if (o.kind == OrderKind::UseFacility) return Exec::Done;
             return fail(g, o, "Planets cannot carry out that order.");
         }
         switch (o.kind) {
@@ -994,6 +998,7 @@ private:
             case OrderKind::UseComponent: return useComponentOrder(g, o);
             case OrderKind::StellarManipulation: return stellar(g, o);
             case OrderKind::SelfDestruct: return selfDestruct(g, o);
+            case OrderKind::UseFacility: return fail(g, o, "Only colonies use facilities.");
             case OrderKind::Count: break;
         }
         return fail(g, o, "Unknown order.");
@@ -1301,26 +1306,32 @@ private:
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
 
+    // Use Component (spec 03 §8, confirmed: binary): only the group's first
+    // member uses the part at the recorded position, whatever part sits there
+    // now: the acting vehicle itself, or for a fleet the first of its members
+    // at the fleet's location in object order. Nothing checks that the part is
+    // intact or the vehicle not mothballed; no supply is charged and nothing
+    // is logged. Emergency energy gives, in a turn-based game, V1 more
+    // movement this turn without a cap; in a simultaneous one V1 on the day
+    // counter, up to V1 more actions at one a day. It needs no movement, so it
+    // completes, never fails, and the next order runs in the same action.
     Exec useComponentOrder(Group& g, Order& o) {
-        int gained = -1;
-        for (VehicleId id : std::vector<VehicleId>(g.members)) {
-            const int n = useComponent(ctx_, id, o.amount);
-            if (n < 0) continue;
-            gained = std::max(gained, n);
-            if (n <= 0 || heldInPlace(s_, *s_.vehicle(id))) continue;
-            // Emergency energy (spec 03 §8, confirmed: binary): in a turn-based
-            // game V1 more movement this turn, without a cap; in a simultaneous
-            // one V1 on the day counter, up to V1 more actions at one a day.
+        VehicleId user = g.actor;
+        if (const Fleet* f = g.fleet.valid() ? s_.fleet(g.fleet) : nullptr) {
+            user = {};
+            for (VehicleId id : fleetGroup(s_, *f))
+                if (!user.valid() || objectOrderKey(*s_.vehicle(id)) < objectOrderKey(*s_.vehicle(user))) user = id;
+        }
+        const int n = user.valid() ? useComponent(ctx_, user, o.amount) : 0;
+        if (n > 0 && !heldInPlace(s_, *s_.vehicle(user))) {
             if (live_) {
-                s_.vehicle(id)->movement += n;
-                bonus_[id] += n;
+                s_.vehicle(user)->movement += n;
+                bonus_[user] += n;
             } else {
-                counters_[id].add(n);
+                counters_[user].add(n);
             }
         }
-        if (gained < 0) return fail(g, o, "No usable component.");
-        prune(g);
-        return g.stopped ? Exec::Gone : Exec::Acted;
+        return Exec::Done;
     }
 
     // Self-Destruct (spec 03 §8, §15): every member that can is destroyed.

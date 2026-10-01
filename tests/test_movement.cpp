@@ -1714,16 +1714,18 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     w.move();
     CHECK(w.v(ship).location == at(a, 6, 6));
 
-    // The second use chains into the same action and finds nothing left: it fails.
+    // The second use chains into the same action. Nothing checks that the
+    // part is still intact: it gives its 60 again, capped at the maximum.
+    // Nothing is logged, and the order never fails (spec 03 §8, confirmed: binary).
     const VehicleId tanker = w.spawn(w.ship(kA, "Reserve", 2, {"Mv Spare Tank"}), at(a, 3, 3));
     w.v(tanker).supply = 10;
     w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
-    CHECK(w.v(tanker).supply == 70);
+    CHECK(w.v(tanker).supply == 100);
     CHECK_FALSE(entryIntact(r, w.s, w.v(tanker), 6));
     CHECK(w.v(tanker).orders.empty());
-    CHECK(w.logged(kA, "No usable component"));
+    CHECK_FALSE(w.logged(kA, "Reserve"));
 
     // Emergency resupply is capped at the maximum and does nothing for unlimited supply.
     const VehicleId full = w.spawn(w.ship(kA, "Brimming", 2, {"Mv Spare Tank"}), at(a, 4, 4));
@@ -1733,17 +1735,80 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     CHECK(w.v(full).supply == 100);
 }
 
+TEST_CASE("movement: Use Component is used by the group's first member only, with no intact or mothball check (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    // A fleet: the first member at the fleet's location in object order uses
+    // the part at the recorded position, whoever the order was given to.
+    const VehicleId first = w.spawn(w.ship(kA, "First", 2, {"Mv Spare Tank"}), at(a, 2, 2));
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 2, {"Mv Spare Tank"}), at(a, 2, 2));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {second, first}}).ok);
+    w.v(first).supply = w.v(second).supply = 10;
+    Order use = mk(OrderKind::UseComponent, {}, {}, {}, {}, 6);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{second, {}, {use}, false}).ok);
+    CHECK(w.v(first).orders == std::vector<Order>{use});  // a simultaneous game appends it to each list
+    w.move();
+    CHECK(w.v(first).supply == 70);
+    CHECK_FALSE(entryIntact(r, w.s, w.v(first), 6));
+    CHECK(w.v(second).supply == 10);
+    CHECK(entryIntact(r, w.s, w.v(second), 6));
+    CHECK(w.v(first).orders.empty());
+    CHECK(w.v(second).orders.empty());
+
+    // A mothballed vehicle uses its part too: the destroyed-on-use part goes,
+    // but supply does not come to a mothballed vehicle, and no movement to one
+    // whose maximum is 0. The order completes.
+    const VehicleId laidUp = w.spawn(w.ship(kA, "Laid Up", 2, {"Mv Spare Tank", "Mv Energy Cell"}), at(a, 5, 5));
+    w.v(laidUp).status = VehicleStatus::Mothballed;
+    w.v(laidUp).supply = 0;
+    w.order(laidUp, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
+    w.order(laidUp, mk(OrderKind::UseComponent, {}, {}, {}, {}, 7));
+    w.move();
+    CHECK(w.v(laidUp).orders.empty());
+    CHECK(w.v(laidUp).supply == 0);
+    CHECK_FALSE(entryIntact(r, w.s, w.v(laidUp), 6));
+    CHECK_FALSE(entryIntact(r, w.s, w.v(laidUp), 7));
+    CHECK(w.v(laidUp).location == at(a, 5, 5));
+    // A position past the design's parts gives nothing and completes too.
+    const VehicleId odd = w.spawn(w.ship(kA, "Odd", 2), at(a, 6, 6));
+    w.order(odd, mk(OrderKind::UseComponent, {}, {}, {}, {}, 40));
+    w.move();
+    CHECK(w.v(odd).orders.empty());
+}
+
+TEST_CASE("movement: Use Facility runs on day 1 in a colony's list and completes with no effect (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {6, 6});
+    w.colony(home, kA, 1000, {"Test Mine"});
+    const Resources before = w.s.empire(kA).stockpile;
+    Order use = mk(OrderKind::UseFacility, {}, {}, {}, {}, 3);  // no facility at that position: no matter
+    cmd::SetOrders c;
+    c.planet = home;
+    c.orders = {use};
+    REQUIRE(apply(r, w.s, kA, c).ok);
+    CHECK(w.s.colony(home)->orders == std::vector<Order>{use});  // a simultaneous game keeps it for the movement phase
+    w.move();
+    CHECK(w.s.colony(home)->orders.empty());
+    CHECK(w.s.empire(kA).stockpile == before);
+    CHECK(w.s.empire(kA).log.empty());
+}
+
 TEST_CASE("movement: self-destruct: ships and bases need the ability, satellites, mines and drones nothing, fighters never") {
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
+    // Use Component never reaches Self-Destruct: a part with neither emergency
+    // ability gives nothing, and the order completes (spec 03 §8, confirmed: binary).
     const DesignId design = w.ship(kA, "Bomb", 2, {"Test Self Destruct"});
     const VehicleId bomb = w.spawn(design, at(a, 2, 2));
     w.order(bomb, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
-    CHECK(w.s.vehicle(bomb) == nullptr);
-    CHECK(w.s.design(design).lost == 1);
-    CHECK(w.logged(kA, "self-destructed"));
+    REQUIRE(w.s.vehicle(bomb) != nullptr);
+    CHECK(w.v(bomb).orders.empty());
+    CHECK(w.s.design(design).lost == 0);
 
     // The Self-Destruct order (spec 03 §8, §15).
     const VehicleId second = w.spawn(design, at(a, 2, 2));

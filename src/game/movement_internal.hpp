@@ -126,9 +126,11 @@ int64_t launchUnits(TurnContext& ctx, UnitBudget& budget, Launcher from, const O
 int64_t recoverUnits(TurnContext& ctx, Launcher into, const Order& o);
 
 // ---- One-shot components ---------------------------------------------------------------------------
-// Uses design entry `entry` (Emergency Energy, Emergency Resupply or
-// Self-Destruct). Returns the movement points gained (-1 = nothing usable).
-// No supply is charged (spec 03 §8).
+// The vehicle uses the part at design entry `entry`, whatever it is (spec 03
+// §8, confirmed: binary): a part with `Component Destroyed On Use` is
+// destroyed first; `Emergency Resupply` adds its V1 to the supply; a part
+// with neither ability gives nothing. Nothing is checked or logged and no
+// supply is charged. Returns the movement `Emergency Energy` gives (0: none).
 int useComponent(TurnContext& ctx, VehicleId id, int entry);
 
 // ---- Cloaking (spec 03 §8) ---------------------------------------------------------------------------

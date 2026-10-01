@@ -72,6 +72,10 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
         case OrderKind::MoveToWaypoint:
             if (o.amount < 0 || o.amount >= static_cast<int>(s.empire(e).waypoints.size())) return "Invalid waypoint";
             break;
+        case OrderKind::UseComponent:
+        case OrderKind::UseFacility:
+            if (o.amount < 0) return "No such position";
+            break;
         case OrderKind::LoadCargo:
         case OrderKind::DropCargo:
         case OrderKind::LaunchUnits:
@@ -162,8 +166,13 @@ struct Applier {
         const std::vector<VehicleId> holders = fleetGroup(s, f);
         if (holders.empty()) return R::fail("The fleet has no member at its location");
         const std::vector<Order> base = addressed ? addressed->orders : fleetOrders(s, f);
-        const std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
-        const bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
+        std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
+        bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
+        // Use Component in a turn-based game: each list at the location is cleared first.
+        if (appended && clearBeforeUse(full, base.size())) {
+            appended = false;
+            repeat = false;
+        }
         for (VehicleId id : holders) {
             Vehicle& v = *s.vehicle(id);
             if (appended) v.orders.insert(v.orders.end(), full.begin() + static_cast<std::ptrdiff_t>(base.size()), full.end());
@@ -173,6 +182,27 @@ struct Applier {
         return {};
     }
 
+    // Turn-based games: Use Component and Use Facility clear the list before
+    // they are added (spec 03 §8, §19 Q76, confirmed: binary). `list` is the
+    // new list, whose orders from `added` on were just given; when one of
+    // them is such an order, only it and what follows it stay. True when the
+    // list was cut; the caller then switches Repeat off, as Clear Orders does
+    // (inferred).
+    bool clearBeforeUse(std::vector<Order>& list, size_t added) const {
+        if (s.options.simultaneous) return false;
+        for (size_t i = list.size(); i-- > added;)
+            if (list[i].kind == OrderKind::UseComponent || list[i].kind == OrderKind::UseFacility) {
+                list.erase(list.begin(), list.begin() + static_cast<std::ptrdiff_t>(i));
+                return true;
+            }
+        return false;
+    }
+
+    // The orders a colony carries out (spec 02 §5.6, spec 03 §8, §12).
+    static bool colonyOrder(OrderKind k) {
+        return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::UseFacility;
+    }
+
     R operator()(const cmd::SetOrders& c) {
         for (const Order& o : c.orders)
             if (auto p = orderProblem(s, e, o); !p.empty()) return R::fail(p);
@@ -180,10 +210,14 @@ struct Applier {
             Colony* col = ownColony(s, e, c.planet);
             if (!col) return R::fail("Not your planet");
             for (const Order& o : c.orders)
-                if (o.kind != OrderKind::LaunchUnits && o.kind != OrderKind::RecoverUnits) return R::fail("Planets can only launch and recover units");
-            col->orders = c.orders;
+                if (!colonyOrder(o.kind)) return R::fail("Planets cannot carry out that order");
+            std::vector<Order> list = c.orders;
+            clearBeforeUse(list, static_cast<size_t>(std::mismatch(col->orders.begin(), col->orders.end(), list.begin(), list.end()).second - list.begin()));
+            col->orders = std::move(list);
             return {};
         }
+        for (const Order& o : c.orders)
+            if (o.kind == OrderKind::UseFacility) return R::fail("Only colonies use facilities");
         // Explore, Resupply, Repair and the composite orders are expanded into
         // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
@@ -194,8 +228,10 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
         if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
+        const size_t kept = static_cast<size_t>(std::mismatch(v->orders.begin(), v->orders.end(), c.orders.begin(), c.orders.end()).second - c.orders.begin());
         v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
-        v->repeatOrders = c.repeat;
+        const bool cleared = clearBeforeUse(v->orders, kept);
+        v->repeatOrders = c.repeat && !cleared;
         return {};
     }
 

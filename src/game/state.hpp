@@ -367,10 +367,11 @@ enum class OrderKind : uint8_t {
     Cloak,
     Decloak,
     SweepMines,
-    UseComponent,   // amount = design entry index
+    UseComponent,   // amount = design entry position (spec 03 §8)
     StellarManipulation,  // amount = StellarAction, object/location = target
     MoveToWaypoint, // amount = waypoint slot
     SelfDestruct,   // the whole object is destroyed (spec 03 §8, §15; movement::canSelfDestruct)
+    UseFacility,    // a colony's: amount = facility position; completes with no effect (spec 03 §8)
     Count
 };
 std::string_view displayName(OrderKind k);

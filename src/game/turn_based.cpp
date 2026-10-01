@@ -118,9 +118,16 @@ struct Effects {
 
 void noteEffects(Effects& fx, const Command& c) {
     if (const auto* o = std::get_if<cmd::SetOrders>(&c)) {
-        if (o->planet.valid()) fx.move.planets.push_back(o->planet);
-        else if (o->fleet.valid()) fx.move.fleets.push_back(o->fleet);
-        else if (o->vehicle.valid()) fx.move.vehicles.push_back(o->vehicle);
+        // A colony's list runs at once when the player gives it an order,
+        // except Use Facility: the immediate run covers vehicle lists only,
+        // so that order waits for the colony's next run (spec 03 §8).
+        if (o->planet.valid()) {
+            if (o->orders.empty() || o->orders.back().kind != OrderKind::UseFacility) fx.move.planets.push_back(o->planet);
+        } else if (o->fleet.valid()) {
+            fx.move.fleets.push_back(o->fleet);
+        } else if (o->vehicle.valid()) {
+            fx.move.vehicles.push_back(o->vehicle);
+        }
     } else if (std::holds_alternative<cmd::SendMessage>(c) || std::holds_alternative<cmd::AnswerMessage>(c)) {
         fx.messages = true;
     }

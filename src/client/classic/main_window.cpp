@@ -782,10 +782,14 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             chooser_ = std::move(c);
             return;
         }
+        // "Select Component": each position of the selected vehicle whose part
+        // is intact and has Emergency Resupply or Emergency Energy; "Select
+        // Facility": each facility position of the colony with either ability.
+        // The order records the position (spec 03 §8).
         case OrderId::UseComponent: {
             if (!v) return;
             Chooser c;
-            c.title = "Use Component";
+            c.title = "Select Component";
             c.note = v->name;
             const game::Design& d = s.design(v->design);
             for (size_t i = 0; i < d.entries.size(); ++i) {
@@ -795,6 +799,24 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                     continue;
                 c.items.push_back({r.component(d.entries[i].component).name, [this, &ui, i] {
                                        game::Order o{game::OrderKind::UseComponent};
+                                       o.amount = int(i);
+                                       giveOrder(ui, o);
+                                   }});
+            }
+            if (!c.items.empty()) chooser_ = std::move(c);
+            return;
+        }
+        case OrderId::UseFacility: {
+            if (!colony) return;
+            Chooser c;
+            c.title = "Select Facility";
+            c.note = s.galaxy.object(colony->planet).name;
+            for (size_t i = 0; i < colony->facilities.size(); ++i) {
+                const auto abilities = r.facilityAbilities(colony->facilities[i]);
+                if (!game::hasAbility(abilities, game::AbilityKind::EmergencyResupply) && !game::hasAbility(abilities, game::AbilityKind::EmergencyEnergy))
+                    continue;
+                c.items.push_back({r.facility(colony->facilities[i]).name, [this, &ui, i] {
+                                       game::Order o{game::OrderKind::UseFacility};
                                        o.amount = int(i);
                                        giveOrder(ui, o);
                                    }});
@@ -821,7 +843,6 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         }
         // Our engine has no command for these yet (docs/spec/06 §7 Q4).
         case OrderId::Jettison:
-        case OrderId::UseFacility:
         case OrderId::ConvertResources: note(ui, std::format("{} is not in OpenSE4 yet.", orderName(id))); return;
         case OrderId::ReplayPlay:
         case OrderId::ReplayShip:

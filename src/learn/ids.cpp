@@ -53,6 +53,7 @@ constexpr std::array<std::pair<game::OrderKind, std::string_view>, static_cast<s
     {game::OrderKind::StellarManipulation, "stellar-manipulation"},
     {game::OrderKind::MoveToWaypoint, "move-to-waypoint"},
     {game::OrderKind::SelfDestruct, "self-destruct"},
+    {game::OrderKind::UseFacility, "use-facility"},
 }};
 
 // The order strip's slots (main_window.cpp kOrderStrip keys) and their tag ids.
