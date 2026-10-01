@@ -201,10 +201,13 @@ int upgradeCount(const Rules& r, const Colony& c, uint32_t target);
 // An upgrade item to `target` as the queue stores it: the target and the
 // count, both fixed when it is queued (cmd::QueueAdd sets them the same way).
 QueueItem upgradeItem(const Rules& r, const Colony& c, uint32_t target);
-// Whether the queue can no longer build this item: a ship or base once the
-// queue has no space yard, a facility or upgrade in a ship's queue, an
-// upgrade with nothing left to upgrade (spec 02 §6.1). Such items are removed
-// at the start of the queue's turn.
+// Whether the removal pass at the start of the queue's turn takes this item
+// (spec 02 §6.1, §13 Q53, confirmed: binary): in a ship's queue, its facility
+// and upgrade items; on a colony without a working space yard, its ship and
+// base items and any upgrade with nothing left to upgrade. Nothing else: a
+// ship keeps its ship and base items even when mothballed or with its yard
+// destroyed, a colony with a yard keeps an upgrade with nothing left (paid in
+// full, it converts nothing), and an item whose design no longer exists stays.
 bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t, const QueueItem& item);
 
 // ---- Empire experience (spec 02 §9) -------------------------------------------------------------------

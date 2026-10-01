@@ -131,16 +131,23 @@ bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t,
     const Vehicle* ship = t.vehicle.valid() ? s.vehicle(t.vehicle) : nullptr;
     const Colony* c = t.vehicle.valid() ? nullptr : s.colony(t.planet);
     if (!ship && !c) return false;  // the queue itself is gone
+    // A ship's queue loses its facility items only: its ship and base items
+    // stay, even while it is mothballed or its yard component is destroyed
+    // (confirmed: binary, spec 02 §6.1, §13 Q53).
+    if (ship) return item.kind != QueueItem::Kind::Vehicle;
+    // A colony without a working space yard loses its ship and base items and
+    // its upgrades with no lower-level facility left. Unit and facility items
+    // stay, an upgrade with nothing left stays on a colony with a yard (§6.6),
+    // and so does an item whose design no longer exists.
+    if (colonyHasSpaceYard(r, *c)) return false;
     switch (item.kind) {
-        case QueueItem::Kind::Vehicle: {
-            if (!item.design.valid() || item.design.index() >= s.designs.size()) return true;
-            if (!isShipOrBase(r.hull(s.design(item.design).hull).type)) return false;  // units: every queue builds them
-            return ship ? !vehicleHasSpaceYard(r, s, *ship) : !colonyHasSpaceYard(r, *c);
-        }
-        case QueueItem::Kind::Facility: return !c || item.facility >= r.data().facilities.size();
-        case QueueItem::Kind::Upgrade: return !c || upgradeCount(r, *c, item.facility) == 0;
+        case QueueItem::Kind::Vehicle:
+            if (!item.design.valid() || item.design.index() >= s.designs.size()) return false;
+            return isShipOrBase(r.hull(s.design(item.design).hull).type);
+        case QueueItem::Kind::Facility: return false;
+        case QueueItem::Kind::Upgrade: return item.facility < r.data().facilities.size() && upgradeCount(r, *c, item.facility) == 0;
     }
-    return true;
+    return false;
 }
 
 Resources itemCost(const Rules& r, const GameState& s, EmpireId, const cmd::QueueTarget&, const QueueItem& item) {
@@ -403,14 +410,18 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
     return Outcome::Invalid;
 }
 
-// Repeat Build keeps the item only while it can still be built (spec 02 §6.3).
+// Repeat Build keeps the item only while it can still be built (spec 02 §6.3,
+// confirmed: binary): a vehicle item always; a facility item while the colony
+// has a free slot and, for a space yard facility, no space yard yet; never an
+// upgrade.
 bool stillBuildable(const Rules& r, const GameState& s, EmpireId e, const QueueRef& q, const QueueItem& item) {
     switch (item.kind) {
         case QueueItem::Kind::Vehicle: return item.design.valid() && item.design.index() < s.designs.size();
         case QueueItem::Kind::Facility: {
             const Colony* c = s.colony(q.target.planet);
-            return c && item.facility < r.data().facilities.size() && r.facilityAvailable(s.empire(e), item.facility) &&
-                   static_cast<int>(c->facilities.size()) < facilitySlots(r, s, *c);
+            if (!c || item.facility >= r.data().facilities.size() || !r.facilityAvailable(s.empire(e), item.facility)) return false;
+            if (static_cast<int>(c->facilities.size()) >= facilitySlots(r, s, *c)) return false;
+            return !hasAbility(r.facilityAbilities(item.facility), AbilityKind::SpaceYard) || !colonyHasSpaceYard(r, *c);
         }
         case QueueItem::Kind::Upgrade: return false;
     }
@@ -426,9 +437,11 @@ Resources runQueue(TurnContext& ctx, EmpireId e, const QueueRef& q) {
     GameState& s = ctx.state;
     ConstructionQueue* queue = liveQueue(s, q);
     if (!queue) return {};
-    // At the start of its turn a queue drops every item it can no longer build
-    // (spec 02 §6.1, confirmed: binary), also while it is on hold or cannot
-    // work this turn (inferred, spec 02 §13 Q53).
+    // At the start of its turn a queue drops the items the removal pass takes
+    // (spec 02 §6.1, §13 Q53, confirmed: binary), before the empty test, the
+    // on-hold test and the rate, so also while it is on hold or cannot work
+    // this turn. The processing order was fixed from every queue's top item
+    // before (empireQueues).
     std::erase_if(queue->items, [&](const QueueItem& item) { return itemObsolete(r, s, q.target, item); });
     if (queue->items.empty() || queue->onHold || !queueBlocked(r, s, q.target).empty()) return {};
     const Resources rate = constructionRate(r, s, e, q.target);

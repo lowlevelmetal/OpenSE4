@@ -1203,6 +1203,75 @@ TEST_CASE("economy: an upgrade with fewer facilities left converts those, at the
     CHECK(home.queue.items[0].kind == QueueItem::Kind::Facility);
 }
 
+TEST_CASE("economy: on a colony with a yard an upgrade with nothing left stays, is paid and converts nothing (spec 02 Q53)") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t yard = facilityIndex(*r, "Test Space Yard");
+    Colony& home = plainHome(*r, s, {"Test Space Yard", "Test Mine", "Test Mine"});
+    const cmd::QueueTarget q{home.planet, {}};
+    home.queue.items = {economy::upgradeItem(*r, home, facilityIndex(*r, "Test Mine III"))};
+    REQUIRE(home.queue.items[0].count == 2);
+    home.facilities = {yard};  // both mines are lost
+    home.queue.onHold = true;
+    CHECK_FALSE(economy::itemObsolete(*r, s, q, home.queue.items[0]));
+    economyTurn(*r, s);
+    REQUIRE(home.queue.items.size() == 1);
+    home.queue.onHold = false;
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    // Charged in full at the stored count, nothing converted, the message sent, removed.
+    CHECK(s.empire(kMe).economy.construction == Resources{300 * 2, 10 * 2, 0});
+    CHECK(home.facilities == std::vector<uint32_t>{yard});
+    CHECK(logged(s, kMe, "0 facilities are now Test Mine III"));
+    CHECK(home.queue.items.empty());
+}
+
+TEST_CASE("economy: a yard ship's queue keeps its ship items and loses facility items (spec 02 Q53)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {});
+    const Location spot{s.galaxy.object(home.planet).system, Sector{1, 1}};
+    const DesignId tender = addTestDesign(s, r, kMe, "Tender", "Test Station",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+    const VehicleId yard = addTestVehicle(s, r, tender, spot).id;
+    QueueItem warship;
+    warship.design = frigate(s, r, kMe);
+    const cmd::QueueTarget q{{}, yard};
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    QueueItem mine;
+    mine.kind = QueueItem::Kind::Facility;
+    mine.facility = facilityIndex(r, "Test Mine");
+    s.vehicle(yard)->queue.items.push_back(mine);
+    s.vehicle(yard)->status = VehicleStatus::Mothballed;
+    CHECK_FALSE(economy::itemObsolete(r, s, q, s.vehicle(yard)->queue.items[0]));
+    CHECK(economy::itemObsolete(r, s, q, s.vehicle(yard)->queue.items[1]));
+    economyTurn(r, s);
+    REQUIRE(s.vehicle(yard)->queue.items.size() == 1);
+    CHECK(s.vehicle(yard)->queue.items[0].design == warship.design);
+    CHECK(s.vehicle(yard)->queue.items[0].spent.isZero());
+}
+
+TEST_CASE("economy: a repeated space yard item stops once the colony has a yard (spec 02 §6.3)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {});
+    const cmd::QueueTarget q{home.planet, {}};
+    QueueItem yard;
+    yard.kind = QueueItem::Kind::Facility;
+    yard.facility = facilityIndex(r, "Test Space Yard");
+    home.queue.items = {yard};
+    home.queue.repeat = true;
+    for (int turn = 0; turn < 20 && !home.queue.items.empty(); ++turn) {
+        s.empire(kMe).stockpile = {400000, 400000, 400000};
+        economyTurn(r, s);
+    }
+    CHECK(home.queue.items.empty());
+    CHECK(std::count(home.facilities.begin(), home.facilities.end(), yard.facility) == 1);
+    (void)q;
+}
+
 TEST_CASE("economy: upgrade prices truncate per facility") {
     auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Upgrade Facility Cost Percent", 33); });
     GameState s = newGame(*r);
