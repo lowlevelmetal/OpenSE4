@@ -86,7 +86,8 @@ Conventions:
   written, every surviving piece whose object was cloaked when the battle began cloaks
   again if it still can: a ship or base only if it still meets the conditions of the
   Cloak order (spec 03 §8: a working part giving cloak level 2 or more in some sight
-  type, and supplies), a unit group always, and a planet if it still has a colony. A ship
+  type, and supplies), a unit group always, and a planet if it still has a colony, even one
+  that lost its cloaking facilities or changed owner (spec 01 §6.9). A ship
   captured or converted in the battle cloaks again for its new owner. The combat
   simulator does not do this.
 - Mines are not combat pieces. They act when a vehicle group enters their sector (§10.6).
@@ -1026,7 +1027,8 @@ command exists). The only ways to disengage are:
 - **Design statistics** (confirmed: binary). A design keeps four counters: Number
   Constructed, Number Lost, Number Scrapped and Enemy Tonnage Destroyed (In Service is
   constructed − lost − scrapped). There is no kill counter. A vehicle that self-destructs
-  counts as scrapped, not lost. Units killed count as lost for their design as they die.
+  counts as scrapped, not lost. Units killed count as lost for their design as they die, and
+  so do units jettisoned from cargo (spec 03 §8).
   Enemy tonnage destroyed, credited when a piece is destroyed:
   - the value is the victim's hull `Tonnage` for a ship or base; for a unit group, hull
     `Tonnage` × every unit it had in the battle (killed ones included), credited only when

@@ -210,7 +210,7 @@ uses them: an asteroid field can never be colonized (§2) (confirmed: binary).
 | `Modify Reproduction - System` | +% per year to reproduction (§3). | Best per sys |
 | `Change Population - System` | +M per turn to each colony in sys, split across its races in proportion to their size and rounded, up to the colony's maximum [H]. Negative values do nothing. | Best per sys |
 | `Plague Prevention - System` | Each turn cures every colony of the owner in sys whose plague level is at most Val1 (§3). | Best per sys |
-| `Resource Conversion` | % of material lost when converting (§5.6). | Best on the converting planet or ship itself |
+| `Resource Conversion` | % of material lost when converting (§5.6). | Largest among the converting colony's facilities, so the highest loss counts |
 | `Resource Reclamation` | % of cost refunded when anything is scrapped in the sector; used when higher than the Settings %. | Best per sector |
 | `Reduced Maintenance Cost - System` | % cut to maintenance of the owner's vehicles in sys (§7). Negative values never raise it. | Best per sys |
 | `Modified Maintenance Cost` (hull or component) | Maintenance × (100 + Val1)/100, so −50 halves it (§7). | Sum per design |
@@ -798,10 +798,70 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
   - **Expenses:** Tariffs, Maintenance, Construction Queue Usage, Total.
   - **Net per turn**, which may be negative.
   - **Treasury:** the current amount and the maximum.
-- **Convert Resources** order: the player spends X of one resource (at most what is
-  held, and at most 65535 per order) and at once receives `trunc(X × (100 − L)/100)` of
-  another, where `L` is the best `Resource Conversion` on the planet or ship that gives
-  the order. Other converters in the system do not count.
+- **Convert Resources** (Ctrl V), a colony order (confirmed: binary unless marked):
+  - **Who.** An own colony, from its report, when the largest `Resource Conversion` value among
+    the planet's own abilities, or among its facilities' abilities, is at least 1 (spec 06
+    §2.8). Population is not needed. Ships never get the order. The computer players and the
+    ministers never convert.
+  - **Loss L.** The largest `Resource Conversion` V1 among the colony's facilities (spec 03
+    §3.2, mode Largest). The planet's own abilities are not read here, so a planet whose only
+    converter is its own ability converts with no loss. Several converters on one colony do not
+    combine: the highest loss counts. Converters on other colonies, in the same system or
+    elsewhere, never count.
+  - **The window** ("Convert Resources"). On the left, a list "Convert From Resource" with
+    Minerals, Organics and Radioactives. Below it are three buttons of the same names, of which
+    exactly one is down (Minerals when the window opens); they choose the resource to convert
+    *to*. Two more buttons, "x 10000" and "x 100000", set the step: 1,000 with both up, 10,000
+    or 100,000 with one down (pressing one releases the other). A click on a resource on the
+    left adds one step of conversion from it to the chosen target. A line with the same source
+    and target grows by the step; otherwise a new line is added at the end. The right list,
+    headed "Conversions (at L% Loss of resources)", shows each line as the source with its
+    amount and the target with the amount it would yield (the rule below). A click on a line
+    removes one step from it. A line holding less than one step drops to 0, and a line at 0 is
+    removed. The window checks neither the treasury nor whether source and target differ. OK
+    gives the orders; Cancel gives none.
+  - **The orders.** Each line, in list order, becomes Convert Resources orders appended to the
+    colony's order list: (amount div 65,000) + 1 orders, each for 65,000 or for what is left.
+    A line that is an exact multiple of 65,000 therefore ends with an order for 0, which does
+    nothing.
+  - **When they run.** In a turn-based game the colony's whole order list runs when OK is
+    pressed, so the conversion happens at once. In a simultaneous game the orders stay in the
+    colony's list and run on day 1 of the movement phase, in the colony's place in object order
+    (spec 03 §6.3). A colony's list follows the list rules of spec 03 §8. At most 21 orders
+    run in one run; the rest wait for the colony's next run, which comes at the start of the
+    owner's next turn in a turn-based game. With Repeat Orders on, the conversions go round
+    the list, so each run carries out up to 21 of them, every one limited by what is still held.
+  - **Each order.** Nothing happens unless the source and the target are each minerals,
+    organics or radioactives. The amount is cut to the empire's current stock of the source.
+    If it is still above 0, the source loses the amount and the target gains
+    `G = trunc(amount × (100 − L) / 100)`. L is read when the order runs. A colony that no longer
+    has a converter facility therefore has L = 0 and loses nothing, and an L above 100 would make G
+    negative. Source and target may be the same resource, which only loses the loss part. The
+    target is not capped here: the storage cap above applies later, at step 9 of §12. The order
+    costs nothing else and never fails.
+  - **Rounding.** The game computes G in floating point: the factor (100 − L)/100, then the
+    product, then truncation. The result equals the exact integer `floor(amount × (100 − L) /
+    100)` for every L from 0 to 100 except 16, 22, 29, 35, 41, 47, 48, 58, 61, 74, 79 and 87.
+    For those values, some amounts whose exact result is a whole number come out 1 lower. The
+    stock values 30, 40 and 50 are always exact. This was checked for every amount up to 65,000,
+    under both processor precision settings the game can run with, which give the same results.
+    The window's preview uses the same formula. OpenSE4 choice: the exact integer formula.
+  - **Message.** In a simultaneous game, each order that converts something puts a Misc entry,
+    titled "Resources Converted", in the owner's log. In it the Resource Minister reports that
+    the colony (named, with its system) has converted the amount of the source into G of the
+    target; Goto shows the colony. A human player in a turn-based game gets no entry; the
+    window simply refreshes.
+  - **The engine differs:** it has no Convert Resources at all; the client says the order is
+    not in OpenSE4 yet (spec 06 §7 Q4). It needs:
+    - a colony order kind holding the source, the target and an amount of at most 65,000,
+      which the planet form of the orders command accepts (today that form takes only Launch
+      Units and Recover Units);
+    - the splitting of each window line into such orders, as above;
+    - execution as above in the planet order runner: at once in a turn-based game, on day 1
+      in a simultaneous one;
+    - the log entry, in simultaneous games only;
+    - the window;
+    - a Repeat flag on colony order lists, which the engine's colonies lack.
 
 ---
 
@@ -816,7 +876,12 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
   at most one space yard facility [H].
 
 **Blocking rules** [H]
-- A cloaked planet or ship cannot build. Cloaking a ship clears its queue.
+- A cloaked ship cannot build, and cloaking a ship clears its queue. A cloaked colony is
+  different (confirmed: binary): it keeps its queue and goes on building facilities, units and
+  upgrades at its normal rate, the yard's rate included. Only its space yard stops working, so
+  the removal pass below drops its ship and base items every turn, and the one-yard limit
+  still refuses a second yard (spec 01 §6.9). The engine has no cloaked colonies yet; when
+  it gets them, its block on cloaked queues must apply to ships only.
 - Scrapping a planet's space yard removes the ships from its queue. In the game
   (confirmed: binary), each empire first fixes the processing order of §6.3 from every
   queue's top item. Then, for each queue in that order, a removal pass runs before
@@ -890,7 +955,8 @@ and `Supply Generation`; then all other queues in the empire's queue order.
 
 **Emergency build** (confirmed: binary unless marked). Each queue keeps one turn counter.
 At the end of each queue's turn (whether or not it built anything, and also for cloaked
-queues that cannot build):
+queues that cannot build; a further pass moves the counter of every cloaked object's queue,
+so a cloaked colony, which is also handled normally, moves twice per turn, spec 01 §6.9):
 - in emergency mode: if the counter has reached `Maximum Emergency Build Turns`,
   emergency mode ends; otherwise the counter goes up by 1;
 - not in emergency mode: if the counter is above 0, the queue is in **slow mode** and the

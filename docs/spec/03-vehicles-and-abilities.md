@@ -251,7 +251,8 @@ Most abilities are automatic. Some only act through an order:
 | Order | Abilities that need it |
 |---|---|
 | Colonize | the colonize abilities |
-| Use Component | `Emergency Energy`, `Emergency Resupply` |
+| Use Component | `Emergency Energy`, `Emergency Resupply` (nothing else can be used through it) |
+| Use Facility | none: the order exists for facilities with `Emergency Energy` or `Emergency Resupply`, but it has no effect (§8) |
 | Stellar Manipulation | create/destroy/open/close abilities |
 | Cloak | `Cloak Level` of a ship or base, from hull and components alike (§8) |
 | Sweep Mines | runs the sector's mine encounter again: sweeping, then the remaining mines strike (automatic sweeping also happens on entry, §12) |
@@ -397,7 +398,7 @@ type, none = defined but unused.
 | `Modify Reproduction - System` | F | ±% | – | Population growth modifier. |
 | `Change Population - System` | F | M/turn | – | Population added each turn in the system. |
 | `Plague Prevention - System` | F | level | – | Plagues up to V1 are prevented in the system. |
-| `Resource Conversion` | F | % loss | – | Enables the Convert Resources order with this loss. |
+| `Resource Conversion` | F | % loss | – | Enables the Convert Resources order with this loss: the largest value among the colony's facilities, so the highest loss counts (spec 02 §5.6) (confirmed: binary). |
 | `Resource Reclamation` | F | % | – | Scrap return rate for scrapping in this sector (§15). |
 | `Close Warp Point` | C | – | – | Stellar manipulation. |
 | `Destroy Star` / `Create Star` | C | – | – | Stellar manipulation. Destroying a star wipes out the system, including the user. |
@@ -986,11 +987,18 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
   first member in object order that is due and has orders: the order at that member's own
   list position is carried out by the members at the fleet's location (a member elsewhere is not
   one of them, even when it is the one acting), and completing it removes, or with Repeat
-  passes, that position in each of their lists. A vehicle's list is cleared when it joins or
-  leaves a fleet (§9, §19 Q65) (confirmed: binary).
+  passes, that position in each of their lists; a failure clears their lists. The acting
+  member's own list changes only when it is at the location: an away member keeps its order
+  and runs it again (§19 Q73). Mothballed members count like any other (§19 Q74). Orders,
+  Clear Orders and Repeat Orders given to an away member go to the members at the location and
+  leave its own list alone; the original has no other way to edit a list (§19 Q76). A
+  vehicle's list is cleared when it joins or leaves a fleet (§9, §19 Q65) (confirmed: binary).
 - **Ad-hoc groups:** the executing group is rebuilt every time an order is executed. For a
   computer player, every own vehicle in the sector whose head order is identical joins: ships,
-  bases and unit groups, fleet members and cloaked ones included. For a human player only a drone
+  bases and unit groups, fleet members, mothballed and cloaked ones included, each alone (not its
+  whole fleet). Carrying out the order changes only the acting vehicle's list (or its fleet's
+  lists at the location); the companions' lists are left as they are, and they carry the order
+  out again on their own next action (§19 Q75). For a human player only a drone
   group outside fleets gathers the other drone groups outside fleets in its sector with an
   identical head order; human ships never form ad-hoc groups. In turn-based games the vehicles the
   player selected together act as the group. A group moves only while every member has MP left
@@ -1022,13 +1030,13 @@ sector is elsewhere) plus the action.
 | Recover Units Remotely (O) | unit type, sector | Composite. Names a unit kind (fighters or satellites), not a design. For each own group of that kind in the sector, in object order, it recovers the units of every design as far as cargo room allows, and moves on to the next group only while the previous one gave at least one unit. Always done (confirmed: binary). |
 | Cargo Transfer (T) | — | Instant window, turn-based games only (§11). |
 | Launch/Recover Units (U) | — | Instant window, turn-based games only (§12). |
-| Jettison Cargo (J) | — | Destroys the selected or all cargo. No MP. |
+| Jettison Cargo (J) | window | Not an order: destroys the cargo chosen in a window at once, in both turn styles, at no MP or supply cost. See the rules below the table (confirmed: binary). |
 | Fleet Transfer (F) | — | Window (§9). |
 | Change Formation\Strategy (H) | — | Fleet only. |
-| Cloak (Z) / Decloak (X) | — | Take effect immediately; they are not queued. Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). |
+| Cloak (Z) / Decloak (X) | — | Take effect immediately; they are not queued. Cloaking needs a working part whose `Cloak Level` gives level 2 or more in some sight type, and supply above 0. While cloaked the vehicle pays, every turn, the total mounted `Supply Amount Used` of its working cloak parts (a group of fighters pays it per unit), and it decloaks by itself at 0 supply or when it can no longer cloak. A cloaked vehicle cannot colonize, manipulate stellar objects, be mothballed, scrapped, analyzed or retrofitted (confirmed: binary). Colonies cloak by other rules: no supply, no upkeep, and their queue is kept (spec 01 §6.9). |
 | Sweep Mines (Ctrl M) | — | Runs the whole mine encounter of the current sector again (sweeping, then the remaining hostile mines strike the group, §12), then, if the group survived, costs 1 MP (if any is left) and one move's supply. Always done (confirmed: binary). |
 | Add / Remove Tagged Minefield (Ctrl T / Ctrl R) | sector | Empire-level. |
-| Use Component | component | A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap; in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
+| Use Component (Ctrl Z) | component position | Given through a picker; in a turn-based game it first clears the list. Only the acting group's first member uses the part (rules below the table). A part with `Component Destroyed On Use` is destroyed first. `Emergency Energy`, only when the vehicle's maximum MP is above 0: in turn-based games it adds V1 to this turn's remaining MP, without a cap; in simultaneous games it adds V1 to the day counter (§6.3), giving up to V1 extra actions at one per day. `Emergency Resupply` adds V1 supply, capped at the maximum, with no effect on unlimited supply or mothballed vehicles. No supply is charged for the use (confirmed: binary). |
 | Self-Destruct | — | A separate order. A ship or base needs `Self-Destruct` in its ability list; satellite groups, minefields and drone groups need nothing; fighter groups cannot self-destruct (§15) (confirmed: binary). |
 | Stellar Manipulation (B) | action | See below. |
 | Scrap / Analyze / Mothball (G) | — | §15. |
@@ -1076,8 +1084,110 @@ sector is elsewhere) plus the action.
 - The other preconditions and every result (what Destroy Star leaves, created nebulae, black
   holes and storms, the far end of an opened warp point...) are in spec 01 §9.
 
-Planet-only orders (Scrap Facilities, Abandon Planet, Use Facility, Convert Resources) belong to
-other specs. The movement-log replay orders are UI only.
+**Jettison Cargo** (confirmed: binary):
+
+- **Not an order.** Jettison acts at once through its window, in both turn styles. It costs no
+  MP and no supply, adds nothing to the order list, and does not touch Repeat, the vehicle's
+  fleet or any group. It is lit for an own ship or base that is not mothballed and for an own
+  colony, when the cargo holds anything (spec 06 §2.8). It is never lit for a fleet (the player
+  selects the member instead), a unit group or a list of several objects. Being cloaked or in a
+  fleet makes no difference. The computer players and the ministers never jettison.
+- **What can be dropped:** anything in the holder's cargo: population, one entry per race, and
+  units of every kind (troops, fighters, satellites, mines, drones, weapon platforms), one entry
+  per stack. For a colony this means its stored cargo. The colony's own population is not cargo
+  and cannot be jettisoned; Abandon Planet is the way to empty a colony.
+- **The window** ("Jettison Cargo") has a list "Cargo Present" on the left and a list "Cargo To
+  Be Jettisoned" on the right, each line an entry with its amount. Four buttons, of which exactly
+  one is down, set how much a click moves: Move One (1), Move Five (5), Move Ten (10) and Move
+  All (the whole line). Move All is down when the window opens. A click on a line on the left
+  moves that much of it to the right, or what the line holds if that is less. If that entry is
+  already on the right the amounts add up, otherwise a new line is added at the end. A line
+  emptied this way disappears. A click on a line on the right moves it back in the same way. OK
+  carries out the right list. Cancel empties it, so nothing is dropped.
+- **Where it goes:** nowhere. Jettisoned population and units are destroyed. Nothing is placed in
+  space or on a planet, no unit group is made, and nobody can pick it up. Each jettisoned unit
+  counts as lost in its design's statistics (Number Lost, spec 04 §15). There is no log entry
+  and no other consequence: no happiness change, no score or treaty effect.
+- **Faults of the original window.**
+  - The amount shown on the left for each population line is the total population aboard, all
+    races together, not that race's own amount. Moving at least the race's own amount removes
+    its whole entry.
+  - The right list is carried out line by line in the order its lines were first added. Each
+    line names its entry by its position in the cargo list, population entries first, then the
+    unit stacks. After each line, every later line whose position is higher is moved one
+    position down, as if the entry just handled had been removed. When a line takes only part
+    of an entry, a later line for an entry further down the cargo list therefore hits the
+    entry above its own. Example: a ship carries 10 fighters of design A and then 5 of design
+    B. The player moves 5 of A and then all of B. The game takes 5 from A, then takes 5 more
+    from A, which empties it, and leaves B alone; design A records 10 lost.
+
+  OpenSE4 choice: jettison exactly what the player moved, and show each race's own population.
+  These two faults are not reproduced.
+- **The engine differs:** it has no jettison at all; the client says the order is not in
+  OpenSE4 yet (spec 06 §7 Q4). It needs an immediate command, applied like the engine's cargo
+  transfer command, that names the holder (an own vehicle that is not mothballed, or an own
+  colony) and the amounts per population race and per unit stack. The command removes them from
+  the cargo, adds the jettisoned units to their designs' lost counters and logs nothing. It also
+  needs the window above.
+
+**Use Component and Use Facility** (confirmed: binary):
+
+- **Lit:** Use Component (Ctrl Z) for an own ship or base that is not mothballed and has
+  `Emergency Resupply` or `Emergency Energy`. It is never lit for a fleet, a unit group or a
+  colony. Use Facility (Ctrl J) for an own colony whose planet or facilities have either ability
+  (spec 06 §2.8). These two abilities are the only ones the orders can use. Stellar
+  manipulation, self-destruct and cloaking have their own orders and are never reached through
+  them. The computer players and the ministers never give either order.
+- **Picker.** "Select Component" lists each component position of the selected vehicle whose
+  part is not destroyed and has `Emergency Resupply` or `Emergency Energy`, every position
+  separately. "Select Facility" lists each facility position of the colony whose facility has
+  either ability. Closing the picker without a choice gives no order.
+- **Giving the order.** The order records the chosen position, not the part. In a turn-based
+  game the object's order list is cleared first, then the order is added. For a fleet member,
+  the lists of all the members at the fleet's location are cleared (§9). Then the vehicle's list
+  runs at once, so Use Component takes effect as it is given. In a simultaneous game the order is
+  appended like any other, for a fleet member to each member at the fleet's location. It runs
+  when it reaches the head of the list during movement. It needs no MP, so it completes and the
+  next order runs in the same action.
+- **Use Component, when it runs.** Only the first member of the acting group uses it. For a
+  vehicle outside a fleet that is the vehicle itself. For a fleet member it is the first fleet
+  member at the fleet's location in the sector's object order, which need not be the vehicle the
+  player picked. That member's part at the recorded position is used, whatever part sits there
+  now. A part with `Component Destroyed On Use` is destroyed first, then the energy and supply
+  rules of the table apply. A part with neither ability gives nothing, though a
+  destroyed-on-use part is still destroyed. Nothing checks that the part is still intact or that
+  the vehicle is not mothballed. No supply is charged and nothing is logged. The order always
+  completes and never fails.
+- **Use Facility, when it runs, does nothing.** The game looks up the facility at the recorded
+  position, and the order completes with no effect, cost or message, whether or not that
+  facility still exists. So `Emergency Resupply` and `Emergency Energy` on facilities are inert;
+  no stock facility has them. Colony orders run on day 1 of a simultaneous movement phase
+  (§6.3). In a turn-based game the immediate run after an order covers vehicle lists only. The
+  Use Facility order therefore stays in the colony's list until the colony's orders next run:
+  at the start of the owner's next turn, or when the player gives a colony order that runs the
+  list at once (Convert Resources, spec 02 §5.6; Abandon Planet; Launch or Recover Units
+  Remotely). Its only visible effects are that, in a turn-based game, giving it clears the colony's
+  other orders, and that it shows in the colony's order list until it runs.
+- **The engine differs:**
+  - In a turn-based game it appends Use Component to the existing list instead of clearing the
+    list first, so a waiting order in front (such as a Move To with no MP left) holds it back.
+    It must clear the vehicle's list, or the member lists at the fleet's location, before adding
+    the order.
+  - It applies the order to every member of the acting group, each using the part at that
+    position in its own design. The original applies it to the group's first member only.
+  - It refuses a destroyed part and a mothballed vehicle, logs "<vehicle> used <part>", and
+    fails the order, which clears the list, when no member could use it. The original does none
+    of these.
+  - Its Use Component also destroys a vehicle whose part at that position has `Self-Destruct`.
+    The original's Use Component never does that; Self-Destruct is a separate order (§15). The
+    client's picker cannot reach this case.
+  - Use Facility does not exist; the client says it is not in OpenSE4 yet. The faithful form is
+    a colony order that completes with no effect, given through the facility picker, with the
+    turn-based clearing of the colony's list.
+
+**Convert Resources** is a colony order with economic effects; its rules are in spec 02 §5.6.
+Scrap Facilities and Abandon Planet are also in spec 02. The movement-log replay orders are UI
+only.
 
 ### 8.1 Waypoints
 
@@ -1111,8 +1221,10 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   of its fleet, so the fleet's location goes with it and the whole fleet is disbanded.
 - **Who can join:** ships always; bases only when `Bases Can Join Fleets` is True; fighter groups
   yes; drones, satellites and mines never. Fleet Transfer offers only own vehicles in the same
-  sector that are not already in a fleet. "Add All" and "Remove All" are available. Joining or
-  leaving a fleet clears the vehicle's own orders (below).
+  sector that are not already in a fleet, mothballed ones included. "Add All" and "Remove All"
+  are available. Joining or leaving a fleet clears the vehicle's own orders (below). A vehicle
+  in a fleet cannot be mothballed, scrapped, analyzed or retrofitted, because the Scrap window
+  does not list it (§15, §19 Q74).
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's
   object order. If the chosen leader leaves or is destroyed, the choice is cleared and the first
   member leads again. The leader only matters for the formation.
@@ -1393,9 +1505,10 @@ Effect:
 
 ## 15. Scrap window actions
 
-Each action applies to the selected own vehicles in one sector. Scrap, Analyze, Mothball and
-Retrofit need an own space yard in the sector and a vehicle that is not cloaked. All rules in this
-section are (confirmed: binary).
+Each action applies to the selected own vehicles in one sector. The window lists only own
+vehicles in the sector that are in no fleet and not cloaked (§19 Q74). Scrap, Analyze, Mothball
+and Retrofit need an own space yard in the sector and a vehicle that is not cloaked. All rules
+in this section are (confirmed: binary).
 
 | Action | Requires | Effect |
 |---|---|---|
@@ -1931,26 +2044,131 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     stands, as the original's does.
 
 The questions below came up while the engine was brought in line with the answers to 60–71.
-Each gives the engine's choice, marked (inferred) in the code.
+Each gave the engine's choice, marked (inferred) in the code; all are now settled from the
+binary.
 
 72. **Objects replaced in place (§6.3 step 5, spec 01 §9):** Create Planet turns an asteroid
     field into a planet, and Destroy Planet and the shockwave turn a planet or asteroid field
     into an asteroid field. The engine changes the object where it stands, so it keeps its slot
     in the object list. Does the original remove the old object and make a new one, which
     would take the lowest free slot (perhaps another one) and leave the old slot free?
+    **Answer:** yes. The original never changes such an object in place: it adds the new
+    object first and then removes the old one (confirmed: binary).
+    - Create Planet adds the planet while the asteroid field still holds its slot. The planet
+      takes the lowest empty slot (Q62), else a new slot at the end, and never the field's own
+      slot. Then the field is removed and its slot left empty. When the data has no planet
+      type of the field's stellar size, no planet is made, but the field is still removed,
+      the supply and the part are still paid, and the result is still reported.
+    - Destroy Planet does the reverse. A new asteroid field, with the planet's name and
+      values, is added first, then the planet is removed with its colony.
+    - The shockwave (Destroy Star, Create Nebulae, Create Black Hole) is one pass over all the
+      system's objects in slot order, vehicles and colonies included. Each planet or asteroid
+      field gets a new asteroid field in the lowest slot empty at that moment, which may be
+      one emptied earlier in the same pass; then the old object is removed. Every other object
+      except warp points is removed in the same pass: ships, bases, unit groups, storms,
+      comets. The star goes after the pass.
+    - Anything that named the old object finds it gone. A Colonize, an Attack, or another
+      ship's Create Planet aimed at it fails, and a pursuit of it ends (§8).
+
+    The engine differs: its stellar manipulation converts the object in place and keeps its id
+    and slot. It must create the replacement (with the contents it gives it today) while the
+    old object still holds its slot, so that the new one takes the lowest empty slot, and then
+    remove the old object. In the shockwave it must take vehicles and space objects together,
+    in one pass in slot order; today it destroys all vehicles first. It must also, for Create
+    Planet with no planet type of the field's size, remove the field, pay and report, instead
+    of refusing.
 73. **A fleet member away from the fleet's location that acts (§8, Q61):** its order is carried
     out by the members at the location. The engine also moves that member's own list on (the
-    order leaves it, or goes to its back under Repeat), so the member does not carry out the same
-    order again on its next action. Does the original leave that member's list as it is?
+    order leaves it, or goes to its back under Repeat), so the member does not carry out the
+    same order again on its next action. Does the original leave that member's list as it is?
+    **Answer:** yes. Every change that carrying out an order makes goes only to the lists of the
+    members at the fleet's location (confirmed: binary):
+    - a completed order is removed, at the acting member's list position, from their lists
+      only; with Repeat on, only their lists move on; a failure clears only their lists;
+    - the away member's own list keeps the order and its position.
+
+    Completed orders chain (§8), so the same order runs again at once. Each time it completes
+    it removes the order at that position from the location members' lists again, even after
+    their lists are empty. This goes on until the 21-execution limit, or until the order waits
+    or fails. Example: an away member whose Move To the group has
+    already reached wipes the location members' lists, one order per execution, and does so
+    again on every later action.
+
+    The engine differs: the holders of the fleet's lists include the acting vehicle even when
+    it is away. The actor's own list may change only when the actor is one of the members at
+    the fleet's location. The chained run then repeats its unchanged head order, up to 21
+    times, as the original does.
 74. **Mothballed fleet members (§9):** the engine leaves them out of the group that carries out
     the fleet's orders and gives them no copies of orders given to the fleet; they still count
     for the fleet's speed, which their 0 maximum holds at 0. Does the original give them copies
     and make them part of the group?
+    **Answer:** yes. Nothing in fleet handling tests the vehicle's status (confirmed: binary):
+    - A mothballed member at the location gets copies of appended orders and is affected by
+      Clear Orders and Repeat Orders.
+    - It is in the group that carries out the fleet's orders, and every list change of §8
+      applies to its list.
+    - Its maximum movement is 0, so the fleet's speed is 0. Every member's movement at the
+      location is set to 0 (§9), and movement orders wait.
+    - It can be the acting member. In a simultaneous game a vehicle with maximum 0 that has
+      orders acts on day 1 (§6.3), while the other members gain no day credit at speed 0. So
+      the fleet acts once a turn, through it, and orders that need no movement are carried out.
+      In a turn-based game it acts when it is the first member in object order with orders.
+    - A mothballed ship can join a fleet: Fleet Transfer and Join Fleet do not test status.
+    - Conversely, a vehicle in a fleet cannot be mothballed, scrapped, analyzed or retrofitted.
+      The Scrap window lists only own vehicles in the sector that are in no fleet and not
+      cloaked (§15).
+
+    The engine differs in two places. Its fleet group leaves mothballed members out. The fleet
+    group must be all the members at the fleet's location, mothballed ones included, for the
+    group, for copies of orders, for Clear and for Repeat. Its mothball, scrap and retrofit
+    commands accept fleet members; they must refuse a vehicle in a fleet, as they refuse a
+    cloaked one.
 75. **Fleet members in a computer player's ad-hoc group (§8, Q51):** when a member's head order
     is identical to the acting group's, the engine takes in every member of its fleet at the
     fleet's location. Does the original take only that member?
+    **Answer:** yes, only that vehicle (confirmed: binary).
+    - **Who joins:** every own vehicle in the acting vehicle's own sector whose first order is
+      identical to the order being carried out, fleet members, cloaked and mothballed vehicles
+      included. Each joins alone. Fleet-mates join only when their own first orders match too,
+      which identical fleet copies normally do.
+    - **Whose lists change:** only the acting vehicle's list, or, when the actor is a fleet
+      member, the lists of its fleet's members at the fleet's location. A companion's list is
+      never touched: the order stays at its head, and a failure does not clear it. The
+      companions are held from acting again that day. On their next action they carry the
+      order out themselves; a Move To already reached then completes at once.
+    - Drone groups gathering other drone groups (human or computer) follow the same rule.
+    - A companion that is a fleet member and moves with the group takes its fleet's location
+      with it (§9).
+    - The only exception is the turn-based selection: when the player selected vehicles
+      together, every selected vehicle's list is changed.
+
+    The engine differs: its group builder brings in the matching member's whole fleet. It must
+    add the vehicle alone. Its list changes reach every member of the group; they must reach
+    only the actor's list (or its fleet's members at the location), or the turn-based
+    selection.
 76. **Changes to a fleet's orders other than adding (§8, Q65):** the engine appends added orders
     to every copy, as the original does; for any other change (Clear Orders, an order taken back
     or put in front) it makes every copy the new list. Orders given to a member away from the
     fleet's location also go to that member's own list. Does the original apply such changes
     position by position to each list, and leave the away member's list alone?
+    **Answer:** the original has no other such changes, and it leaves the away member alone
+    (confirmed: binary).
+    - The View Orders window is read-only. There is no way to take an order back, put one in
+      front or reorder the list.
+    - Besides appending, the only changes to a list are:
+      - Clear Orders, which empties it and switches Repeat off;
+      - Repeat Orders, which sets the flag and restarts at the first order;
+      - Sentry given to a vehicle whose first order is a Sentry, which clears the list;
+      - Use Component and Use Facility in a turn-based game, which clear the list before the
+        order is added (§8).
+    - For a fleet each of these is applied list by list to the members at the fleet's location.
+      The computer players do the same for their fleets.
+    - An order, Clear Orders or Repeat Orders given to a member away from the fleet's location
+      goes to the members at the location; the addressed member's own list is left alone.
+
+    The engine differs: when an order is given to a fleet member, it adds the away member to
+    the lists it changes; it must not. Clear must empty each list and Repeat must set each
+    list's flag; appending already works list by list. Taking an order back or putting one in
+    front has no counterpart in the original. OpenSE4 choice: the engine may keep these
+    editing commands and make every copy the new list, provided the change never reaches the
+    away member.
