@@ -45,11 +45,14 @@
 //   end-of-turn processing, at its ground-combat step (spec 05 §8): each of
 //   its colonies with landed troops fights on, unless the owner is the
 //   landed empire or at Non-Aggression or better with it, in which case the
-//   troops join the colony's cargo and the invasion ends. To land troops
-//   outside space combat (a Drop Cargo order onto an enemy planet), movement
-//   calls landTroops(). During a space battle, ships land their troops the
-//   same way and the ground combat is fought at once. Colony::militia holds
-//   the militia pool of an invaded colony (-1 when nobody invades it).
+//   troops join the colony's cargo and the invasion ends; that hand-over is
+//   the only place where a treaty counts. During a space battle a ship's
+//   Drop Troops lands on the adjacent colony of another empire that comes
+//   last in piece order, whatever the treaty, and the ground combat is fought
+//   at once (spec 04 §11, §13). To land troops outside space combat (a Drop
+//   Cargo order onto an enemy planet, an OpenSE4 path), movement calls
+//   landTroops(). Colony::militia holds the militia pool of an invaded colony
+//   (-1 when nobody invades it).
 //
 // The replay record (GameState::combats)
 // --------------------------------------
@@ -75,6 +78,7 @@
 //   Launch     piece = a unit group, target = its carrier, amount = units launched
 //              (again for units that join it from the same Launch Units window);
 //              or piece = a troop ship, target = the planet, amount = troops landed
+//              (its ground combat is CombatRecord::grounds, whose `event` names it)
 //   Seeker     piece = new seeker, target = its target, amount = members, component
 // With Settings `Create Combat Replay` off, events are left out (pieces and
 // the summary lines remain).
@@ -278,7 +282,9 @@ void resolveSpaceCombat(TurnContext& ctx, Location where, std::span<const Vehicl
 // fight goes on, or, when the owner is the landed empire or at Non-Aggression
 // or better with it, the troops join the colony's cargo and the invasion
 // ends. A colony the invaders take changes owner; a colony that no longer
-// holds invaders loses its militia pool.
+// holds invaders loses its militia pool. Both empires get a log entry for
+// each fight. In a turn-based game on one machine (TurnContext::battles) a
+// fight with a human side stops the call to be shown (turn.hpp).
 void runGroundCombat(TurnContext& ctx, EmpireId owner);
 
 // ---- Queries and helpers ------------------------------------------------------------------------
@@ -302,7 +308,8 @@ int weaponReach(const Rules& r, const DesignEntry& e);
 std::vector<EmpireId> invaders(const Rules& r, const GameState& s, const Colony& c);
 bool isTroopDesign(const Rules& r, const GameState& s, DesignId d);
 // Moves up to `count` troop units of `design` from a carrier onto a hostile
-// colony in the carrier's sector (spec 04 §11 Drop Troops): they land for the
+// colony in the carrier's sector outside a battle (a Drop Cargo order, an
+// OpenSE4 path; the battle's Drop Troops is spec 04 §11): they land for the
 // carrier's owner. Refused when the colony is not hostile to it or is already
 // contested by another invader (spec 04 §13). The first landing gives the
 // colony its militia pool. Returns the number landed.

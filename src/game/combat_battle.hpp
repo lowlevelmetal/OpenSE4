@@ -410,7 +410,12 @@ private:
     void logMove(int i, const std::vector<std::pair<int, int>>& path);
     void board(int i, int t);
     void ram(int i, int t);
-    void dropTroops(int i, int t);
+    // Drop Troops (spec 04 §11): the colony a landing takes, why it is refused
+    // (empty: it is not), and the landing with its ground combat.
+    int landingColony(int i) const;
+    std::string landingProblem(int i) const;
+    void dropTroops(int i);
+    EmpireId colonyHolder(const Piece& planet) const;   // the colony's owner during the battle
     int boardTarget(int i) const;
     int ramTarget(int i) const;
     int troopTarget(int i) const;

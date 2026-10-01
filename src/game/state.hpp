@@ -661,12 +661,23 @@ struct CombatPiece {
     int32_t count = 1;                 // units in a group at the start (seekers: members)
 };
 
-// A ground combat fought during a space battle, when troops landed (spec 04
-// §11, §13): what the Ground Combat window shows (spec 06 §1.6).
+// The counts left after one round of a ground combat (spec 06 §1.10.6): each
+// stack of GroundCombat::attackers and ::defenders, in their order, and the militia.
+struct GroundRound {
+    std::vector<int32_t> attackers;
+    std::vector<int32_t> defenders;
+    int32_t militia = 0;
+};
+
+// A ground combat (spec 04 §11, §13): what the Ground Combat window shows
+// (spec 06 §1.10.6). One fought during a space battle, when troops landed, is
+// kept in its battle's record; the colony owner's end-of-turn fight is handed
+// to the client when a window shows it (turn.hpp, BattleQuestion).
 struct GroundCombat {
-    uint8_t round = 0;                      // the combat turn the troops landed in
+    uint8_t round = 0;                      // the combat turn the troops landed in (0: the colony owner's end-of-turn fight)
     uint32_t planetPiece = 0;               // index into CombatRecord::pieces
     uint32_t troopShip = 0;                 // the piece that dropped them
+    uint32_t event = 0;                     // the landing: its Launch event's index in CombatRecord::events
     ObjectId planet;
     EmpireId attacker, defender;
     int64_t population = 0;                 // millions when the troops landed
@@ -675,9 +686,10 @@ struct GroundCombat {
     std::vector<UnitStack> defenders;       // the planet's troops and other stored units at the start
     std::vector<UnitStack> attackersLeft;   // the same stacks after the fight
     std::vector<UnitStack> defendersLeft;
-    int militia = 0, militiaLeft = 0;       // the colony's militia pool before and after
+    int militia = 0, militiaLeft = 0;       // the militia raised for the fight, and those left
     int rounds = 0;
     bool captured = false;                  // the planet fell
+    std::vector<GroundRound> perRound;      // the counts after every round
 };
 
 struct CombatRecord {

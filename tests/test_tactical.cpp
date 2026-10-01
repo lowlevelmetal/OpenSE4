@@ -584,7 +584,7 @@ TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding need
     const EmpireId a = k.ar.a;
     const int boarder = pieceIndex(b, k.boarder), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
     CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "It has no boarding parties.");
-    CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "It carries no troops.");
+    CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "No colony of another empire is adjacent.");
     // Close on the shielded ship: boarding waits for its shields, ramming only for adjacency.
     for (int round = 0; round < 10 && b.distance(boarder, shielded) > 1 && b.phaseEmpire() == a; ++round) {
         if (b.distance(boarder, shielded) > 1) {
@@ -657,7 +657,7 @@ TEST_CASE("tactical: troops land on an adjacent enemy planet and fight at once")
     for (int round = 0; round < 12 && b.awaitingOrders() && !landed; ++round) {
         REQUIRE(b.phaseEmpire() == ar.a);
         if (b.distance(i, planet) > 1) {
-            CHECK(b.check(order(OK::DropTroops, ar.a, i, planet)) == "The planet must be adjacent.");
+            CHECK(b.check(order(OK::DropTroops, ar.a, i, planet)) == "No colony of another empire is adjacent.");
             TacticalOrder mv = order(OK::Move, ar.a, i);
             mv.x = b.pieces()[static_cast<size_t>(planet)].x + 1;
             mv.y = b.pieces()[static_cast<size_t>(planet)].y + 1;

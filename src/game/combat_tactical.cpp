@@ -177,15 +177,12 @@ std::string Battle::check(const TacticalOrder& o) const {
         case OK::Launch:
         case OK::LaunchFighters: return checkLaunch(o);
         case OK::DropTroops: {
+            // The order names no planet: the landing takes the adjacent colony of
+            // another empire that comes last in piece order, whatever the treaty
+            // (spec 04 §11, spec 06 §1.10.2, confirmed: binary); `target` is ignored.
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
-            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships drop troops.";
-            if (!hasTroops(o.piece)) return "It carries no troops.";
-            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !combatant(o.target) ||
-                pieces_[static_cast<size_t>(o.target)].kind != Kind::Planet || !hostileTo(o.piece, o.target))
-                return "Troops land only on enemy planets.";
-            if (dist(o.piece, o.target) > 1) return "The planet must be adjacent.";
-            if (contestedBy(pieces_[static_cast<size_t>(o.target)], o.empire)) return "Another empire's troops are fighting there already.";
-            return {};
+            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships and bases drop troops.";
+            return landingProblem(o.piece);
         }
         case OK::Ram: {
             if (std::string e = checkPiece(o, true); !e.empty()) return e;
@@ -349,7 +346,7 @@ void Battle::execute(const TacticalOrder& o) {
         }
         case OK::Launch:
         case OK::LaunchFighters: launchOrder(o); return;
-        case OK::DropTroops: dropTroops(o.piece, o.target); return;
+        case OK::DropTroops: dropTroops(o.piece); return;
         case OK::Ram: ram(o.piece, o.target); return;
         case OK::Capture: board(o.piece, o.target); return;
         case OK::SetLeader: setGroup(o.piece, o.group, true, o.formation); return;

@@ -930,3 +930,198 @@ TEST_CASE("combat: the verdict counts every other empire's survivors, whatever t
     const auto& summary = s.combats.back().summary;
     CHECK(std::find(summary.begin(), summary.end(), std::format("{}: stalemate", s.empire(ar.c).name)) != summary.end());
 }
+
+// ---- Drop Troops without treaty checks (spec 04 §11, §13, §16.1; spec 06 §1.10.2, §7 Q37) ----------------
+
+namespace {
+
+// A second colony in the sector of B's homeworld, for empire `owner`: another
+// planet of that system moved there.
+ObjectId colonyBeside(GameState& s, ObjectId home, EmpireId owner, int64_t millions) {
+    const SpaceObject& h = s.galaxy.object(home);
+    for (SpaceObject& o : s.galaxy.objects) {
+        if (o.kind != ObjectKind::Planet || o.system != h.system || o.id == home || s.colony(o.id)) continue;
+        o.sector = h.sector;
+        Colony c;
+        c.planet = o.id;
+        c.owner = owner;
+        c.colonyType = "Balanced";
+        c.population.push_back({owner, millions});
+        s.colonies[o.id.index()] = c;
+        return o.id;
+    }
+    FAIL("no free planet in the home system");
+    return {};
+}
+
+// Plays the battle's computer phases until the player's side may give orders.
+void untilPlayer(Battle& b, EmpireId player) {
+    b.advance();
+    REQUIRE(b.phaseEmpire() == player);
+}
+
+} // namespace
+
+TEST_CASE("drop troops: the order takes the last adjacent colony of another empire, whatever the treaty, and the fight takes it") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.cargo = {};
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    // C, an ally of A, has a small colony beside B's homeworld; C is at war with B, so there is a battle.
+    const ObjectId ally = colonyBeside(s, hw.planet, ar.c, 10);   // below 20M: no militia
+    setTreaty(s, ar.a, ar.b, Treaty::Partnership);
+    setTreaty(s, ar.a, ar.c, Treaty::Partnership);
+    const VehicleId skiff = spawn(s, design(s, ar.c, "Skiff", "Test Frigate", {"Test Bridge"}), ar.loc);
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), ar.loc);
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int t = k.at(transport), home = k.planet(hw.planet), mine = k.planet(ally);
+    REQUIRE(home < mine);   // C's colony comes later in piece order
+    k.arrange({{home, 30, 30}, {mine, 35, 30}, {t, 34, 31}, {k.at(skiff), 50, 50}});
+    untilPlayer(b, k.ar.a);
+    TacticalOrder drop{OK::DropTroops, k.ar.a, t, home};   // the target the order names is ignored
+    CHECK(b.check(drop) == "It carries no troops.");
+    b.piece(t).unit.cargo.units.push_back({trooper, 4});
+    CHECK(b.check(drop).empty());
+    REQUIRE(b.submit(drop).empty());
+    // The landing went to C's colony, the last in piece order, though C is an ally; four troops took it at once.
+    REQUIRE(b.record().grounds.size() == 1);
+    const GroundCombat& g = b.record().grounds.front();
+    CHECK(static_cast<int>(g.planetPiece) == mine);
+    CHECK(g.attacker == k.ar.a);
+    CHECK(g.defender == k.ar.c);
+    CHECK(g.captured);
+    CHECK(b.pieces()[static_cast<size_t>(mine)].owner == k.ar.a);
+    CHECK(b.pieces()[static_cast<size_t>(home)].landed.empty());
+    CHECK(b.record().events[g.event].kind == CombatEvent::Kind::Launch);
+    // Both empires' log entries, titled with the system.
+    for (EmpireId e : {k.ar.a, k.ar.c}) {
+        const auto& log = k.ar.s.empire(e).log;
+        CHECK(std::any_of(log.begin(), log.end(), [](const LogEntry& l) { return l.title.starts_with("Ground combat at ") && l.text.ends_with("taken."); }));
+    }
+}
+
+TEST_CASE("drop troops: refused where a third empire's troops are landed; every landing resets the planet's piece") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    // B's homeworld: planet shields, a weapon platform, and enough troops to throw one invader back.
+    for (size_t f = 0; f < combatRules().data().facilities.size(); ++f)
+        if (combatRules().facility(static_cast<uint32_t>(f)).name == "Test Planet Shield") hw.facilities.push_back(static_cast<uint32_t>(f));
+    const DesignId platform = design(s, ar.b, "Bastion", "CT Platform Hull", {"CT Platform Gun", "CT Platform Core"});
+    const DesignId guard = design(s, ar.b, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    hw.cargo.units = {{platform, 1}, {guard, 20}};
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const DesignId other = design(s, ar.c, "Other", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), ar.loc);
+    s.vehicle(transport)->cargo.units.push_back({trooper, 1});
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int t = k.at(transport), home = k.planet(hw.planet);
+    k.arrange({{home, 30, 30}, {t, 34, 31}});
+    untilPlayer(b, k.ar.a);
+    const TacticalOrder drop{OK::DropTroops, k.ar.a, t};
+    // C's troops already fight there: refused.
+    b.piece(home).landed = {{other, 2}};
+    b.piece(home).invader = k.ar.c;
+    CHECK(b.check(drop) == "Another empire's troops are already there.");
+    b.piece(home).landed.clear();
+    b.piece(home).invader = {};
+    // The planet has fired and lost its shields; the landing (which fails) resets the piece all the same.
+    combat::detail::Piece& p = b.piece(home);
+    REQUIRE(p.sh.max > 0);
+    REQUIRE_FALSE(p.weapons.empty());
+    p.sh.current = 0;
+    for (auto& w : p.weapons) std::fill(w.reload.begin(), w.reload.end(), 2);
+    p.engaged = {t};
+    REQUIRE(b.submit(drop).empty());
+    REQUIRE(b.record().grounds.size() == 1);
+    CHECK_FALSE(b.record().grounds.front().captured);
+    const combat::detail::Piece& q = b.pieces()[static_cast<size_t>(home)];
+    CHECK(q.owner == k.ar.b);
+    CHECK(q.sh.current == q.sh.max);
+    CHECK(q.engaged.empty());
+    for (const auto& w : q.weapons)
+        for (int c : w.reload) CHECK(c == 0);
+}
+
+TEST_CASE("drop troops: a computer carrier that waits lands after its move on whichever foreign colony is adjacent") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.cargo = {};
+    hw.population = {{ar.b, 10}};
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    setTreaty(s, ar.a, ar.b, Treaty::Partnership);   // B is A's friend: no hostile colony to head for
+    useStrategy(s, ar.a, {{"Primary Movement Strategy", "Drop Troops"}, {"Secondary Movement Strategy", "Don't Get Hurt"}});
+    const VehicleId skiff = spawn(s, design(s, ar.c, "Skiff", "Test Frigate", {"Test Bridge"}), ar.loc);
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), ar.loc);
+    s.vehicle(transport)->cargo.units.push_back({trooper, 4});
+    Bench k(std::move(ar));
+    Battle& b = k.start();
+    const int t = k.at(transport), home = k.planet(hw.planet);
+    k.arrange({{home, 30, 30}, {t, 34, 31}, {k.at(skiff), 60, 55}});
+    CHECK(b.planFor(t).target == -1);   // no hostile colony: it waits (Don't Get Hurt)
+    b.piece(t).mp = 0;                  // it stays where it is
+    b.run();
+    REQUIRE_FALSE(b.record().grounds.empty());
+    const GroundCombat& g = b.record().grounds.front();
+    CHECK(static_cast<int>(g.planetPiece) == home);
+    CHECK(g.attacker == k.ar.a);
+    CHECK(g.captured);
+    CHECK(g.round == 1);
+}
+
+TEST_CASE("ground combat: the record keeps every stack's count after every round") {
+    const Rules& r = combatRules();
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.population = {{ar.b, 100}};   // five militia
+    const DesignId guard = design(s, ar.b, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    hw.cargo.units = {{guard, 6}};
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    hw.landedTroops = {{trooper, 9}};
+    hw.invader = ar.a;
+    hw.militia = -1;
+    const combat::CombatSettings cs = combat::loadSettings(r);
+    GroundCombat rec;
+    combat::detail::GroundFight f;
+    f.attacker = ar.a;
+    f.defender = ar.b;
+    f.invaders = &hw.landedTroops;
+    f.cargo = &hw.cargo;
+    f.population = &hw.population;
+    f.militia = &hw.militia;
+    f.record = &rec;
+    Rng rng(11);
+    const combat::detail::GroundOutcome o = combat::detail::fightGround(r, s, cs, f, rng);
+    CHECK(rec.rounds == o.rounds);
+    REQUIRE(rec.perRound.size() == static_cast<size_t>(o.rounds));
+    REQUIRE(o.rounds >= 1);
+    CHECK(rec.attackers == std::vector<UnitStack>{{trooper, 9}});
+    CHECK(rec.defenders == std::vector<UnitStack>{{guard, 6}});
+    CHECK(rec.militia == 5);
+    int prevA = 9, prevD = 6, prevM = 5;
+    for (const GroundRound& round : rec.perRound) {
+        REQUIRE(round.attackers.size() == 1);
+        REQUIRE(round.defenders.size() == 1);
+        CHECK(round.attackers[0] <= prevA);
+        CHECK(round.defenders[0] <= prevD);
+        CHECK(round.militia <= prevM);
+        prevA = round.attackers[0];
+        prevD = round.defenders[0];
+        prevM = round.militia;
+    }
+    CHECK(rec.attackersLeft.front().count == prevA);
+    CHECK(rec.defendersLeft.front().count == prevD);
+    CHECK(rec.militiaLeft == prevM);
+    CHECK(hw.landedTroops.front().count == prevA);
+    CHECK(hw.cargo.units.front().count == prevD);
+    CHECK(hw.militia == prevM);
+    CHECK(rec.captured == o.captured);
+}

@@ -67,7 +67,8 @@ struct TacticalOrder {
                          // session: units of one kind launched from the piece in one session share a group
                          // (drones: one each) (spec 04 §10.4)
         LaunchFighters,  // "Launch Fighters in Groups": `count` fighters of `design` in groups of `group` (5-50)
-        DropTroops,      // `piece` lands its troops on the adjacent planet `target` (spec 04 §11)
+        DropTroops,      // `piece` lands its troops on the adjacent colony of another empire that comes last in
+                         // piece order, whatever the treaty (spec 04 §11; `target` is ignored)
         Ram,             // `piece` rams the adjacent `target` (spec 04 §10.3)
         Capture,         // `piece` boards the adjacent ship `target` (spec 04 §12)
         SetLeader,       // `piece` leads combat group `group` (0-9) in `formation` (Formations.txt index)

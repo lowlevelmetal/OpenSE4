@@ -148,7 +148,7 @@ The movement strategies are:
 | Point Blank | Goes right next to its target. |
 | Board Enemy Ships | Closes in to capture ships ([Ground combat and capture](ground-combat-and-capture#capturing-ships)). |
 | Ram | Rams its target. |
-| Drop Troops | Lands troops on an enemy planet ([Ground combat and capture](ground-combat-and-capture)). |
+| Drop Troops | Heads for an enemy colony and lands troops on the colony next to it ([Ground combat and capture](ground-combat-and-capture)). |
 | Don't Get Hurt | Keeps away from enemies. Unarmed ships use it. |
 
 `Add` makes a new strategy, `Copy` copies one and `Remove` deletes it.

@@ -1713,10 +1713,15 @@ void Battle::move(int i) {
             if (pieces_[m].alive && leaderOf(static_cast<int>(m)) == i && hasPlace(static_cast<int>(m)) && pieces_[m].mp > 0 && !acted_[m] &&
                 !leavesFormation(static_cast<int>(m)))
                 followLeader(static_cast<int>(m), true);
+    // A piece whose strategy in effect is Drop Troops tries a landing after
+    // every move it plans, whether it went for a colony or waited: on whichever
+    // colony of another empire is then adjacent, hostile or not (spec 04 §11,
+    // §16.1, confirmed: binary). A surrounded piece plans no move, so it does
+    // not land (inferred).
+    if (!stuck && mv.mode == MoveStrategy::DropTroops && pieces_[i].alive) dropTroops(i);
     const int t = mv.target;
     if (!stuck && t >= 0 && combatant(t) && dist(i, t) <= 1) {
         switch (mv.mode) {
-            case MoveStrategy::DropTroops: dropTroops(i, t); break;
             case MoveStrategy::BoardEnemyShips: board(i, t); break;
             case MoveStrategy::Ram:
                 if (pieces_[i].mp > 0) ram(i, t);
@@ -3275,13 +3280,49 @@ void Battle::ram(int i, int t) {
     if (targetDestroyed && combatant(i)) gainExperience(i, kShipKillTenths);   // a surviving rammer's crew: +1.0 more
 }
 
-void Battle::dropTroops(int i, int t) {
-    // A ship drops every troop unit aboard, of whatever design, for its owner,
-    // onto an adjacent hostile colony not contested by another empire's troops;
-    // the ground combat is fought at once (confirmed: binary).
+// The colony's owner during the battle: whoever owned it at the start, or the
+// empire whose troops took it since. A planet piece converted by Crew
+// Conversion fights for the converter while the colony keeps its owner (§12).
+EmpireId Battle::colonyHolder(const Piece& planet) const { return planet.capturedBy.valid() ? planet.capturedBy : planet.startOwner; }
+
+// The colony a landing takes (spec 04 §11, confirmed: binary): among the
+// colonized planet pieces of other empires adjacent to the ship, the one that
+// comes last in piece order, whatever the treaty; only that one is looked at.
+// "Other" is judged by the colony's owner, so a planet piece converted to the
+// ship's empire is still a landing site for it (inferred, §19.4 Q87).
+int Battle::landingColony(int i) const {
+    const Piece& ship = pieces_[i];
+    int last = -1;
+    for (size_t k = 0; k < pieces_.size(); ++k) {
+        const Piece& q = pieces_[k];
+        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && colonyHolder(q) != ship.owner && dist(i, static_cast<int>(k)) <= 1)
+            last = static_cast<int>(k);
+    }
+    return last;
+}
+
+// Why a landing is refused (spec 04 §11, spec 06 §1.10.2): no colony of
+// another empire adjacent, a third empire's troops already landed there, or
+// no troops aboard (the order of the checks is inferred).
+std::string Battle::landingProblem(int i) const {
+    const int t = landingColony(i);
+    if (t < 0) return "No colony of another empire is adjacent.";
+    if (contestedBy(pieces_[t], pieces_[i].owner)) return "Another empire's troops are already there.";
+    if (!hasTroops(i)) return "It carries no troops.";
+    return {};
+}
+
+void Battle::dropTroops(int i) {
+    // A ship or base drops every troop unit aboard, of whatever design, for its
+    // owner, onto the colony the landing takes; it needs no movement and planet
+    // shields do not stop it. The treaty is not checked, and the ground combat
+    // is fought at once and to its end whatever the treaty (spec 04 §11, §13,
+    // confirmed: binary).
+    if (!landingProblem(i).empty()) return;
+    const int t = landingColony(i);
     Piece& planet = pieces_[t];
-    if (planet.kind != Kind::Planet || !planet.alive || dist(i, t) > 1 || !hostileTo(i, t) || contestedBy(planet, pieces_[i].owner)) return;
     const EmpireId attacker = pieces_[i].owner;
+    const EmpireId holder = colonyHolder(planet);
     const bool invaded = std::any_of(planet.landed.begin(), planet.landed.end(), [](const UnitStack& u) { return u.count > 0; });
     int landed = 0;
     std::vector<UnitStack> dropped;
@@ -3292,7 +3333,7 @@ void Battle::dropTroops(int i, int t) {
         st.count = 0;
     }
     if (landed <= 0) return;
-    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::DropTroops, attacker, i, t});
+    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::DropTroops, attacker, i});
     std::erase_if(pieces_[i].unit.cargo.units, [](const UnitStack& u) { return u.count <= 0; });
     Piece& pl = pieces_[t];
     std::erase_if(pl.landed, [](const UnitStack& u) { return u.count <= 0; });
@@ -3300,73 +3341,71 @@ void Battle::dropTroops(int i, int t) {
     pl.invader = attacker;
     if (!invaded || pl.militia < 0) pl.militia = militiaCount(cs_, pl.population);
     troopsLanded_[attacker.value] += landed;
+    const uint32_t landing = static_cast<uint32_t>(rec_.events.size());
     event(Ev::Launch, i, t, landed);
     note(std::format("{} landed {} troops on {}", label(i), landed, pl.name));
 
-    detail::GroundFight fight;
-    fight.attacker = attacker;
-    fight.defender = pl.owner;
-    fight.invaders = &pl.landed;
-    fight.cargo = &pl.unit.cargo;
-    fight.population = &pl.population;
-    fight.militia = &pl.militia;
-    for (uint32_t f : pl.facilities) fight.groundDefensePercent += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetChangeGroundDefense);
-    for (const auto& a : s_.galaxy.object(pl.object).abilities)
-        if (parseAbilityKind(a.type) == AbilityKind::PlanetChangeGroundDefense) fight.groundDefensePercent += a.number1();
-    // The record for the Ground Combat window: both sides as the fight begins.
+    // The fight, recorded round by round for the Ground Combat window (spec 06 §1.10.6).
     GroundCombat gc;
     gc.round = static_cast<uint8_t>(std::clamp(round_, 0, 255));
     gc.planetPiece = static_cast<uint32_t>(t);
     gc.troopShip = static_cast<uint32_t>(i);
+    gc.event = landing;
     gc.planet = pl.object;
-    gc.attacker = attacker;
-    gc.defender = pl.owner;
     for (const PopulationGroup& g : pl.population) gc.population += g.millions;
     gc.facilities = pl.facilities;
-    gc.militia = std::max(0, pl.militia);
-    std::vector<size_t> attIndex, defIndex;
-    for (size_t k = 0; k < pl.landed.size(); ++k)
-        if (pl.landed[k].count > 0) {
-            attIndex.push_back(k);
-            gc.attackers.push_back(pl.landed[k]);
-        }
-    for (size_t k = 0; k < pl.unit.cargo.units.size(); ++k)
-        if (pl.unit.cargo.units[k].count > 0) {
-            defIndex.push_back(k);
-            gc.defenders.push_back(pl.unit.cargo.units[k]);
-        }
+    detail::GroundFight fight;
+    fight.attacker = attacker;
+    fight.defender = holder;
+    fight.invaders = &pl.landed;
+    fight.cargo = &pl.unit.cargo;
+    fight.population = &pl.population;
+    fight.militia = &pl.militia;
+    fight.record = &gc;
+    for (uint32_t f : pl.facilities) fight.groundDefensePercent += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetChangeGroundDefense);
+    for (const auto& a : s_.galaxy.object(pl.object).abilities)
+        if (parseAbilityKind(a.type) == AbilityKind::PlanetChangeGroundDefense) fight.groundDefensePercent += a.number1();
     const detail::GroundOutcome o = detail::fightGround(r_, s_, cs_, fight, rng_);
-    Piece& after = pieces_[t];
-    for (size_t k : attIndex) gc.attackersLeft.push_back(after.landed[k]);
-    for (size_t k : defIndex) gc.defendersLeft.push_back(after.unit.cargo.units[k]);
-    gc.militiaLeft = std::max(0, after.militia);
-    gc.rounds = o.rounds;
-    gc.captured = o.captured;
     rec_.grounds.push_back(std::move(gc));
+    Piece& after = pieces_[t];
     groundReports_.push_back(std::format("Ground combat on {}: {} rounds; invaders lost {} of {} troops, defenders {} units and {} militia{}.",
                                          after.name, o.rounds, o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost,
                                          o.captured ? "; the planet fell" : o.attackersGone ? "; the invasion failed" : ""));
+    // Both empires' combat log entries, shown in a window or not; none in the simulator (spec 04 §13 "Log").
+    if (!simulated()) detail::logGroundCombat(ctx_, after.object, attacker, holder, o);
     if (o.attackersGone) {
         after.landed.clear();
         after.invader = {};
     }
-    if (!o.captured) {
-        afterDamage(t);
-        return;
+    if (o.captured) {
+        // The surviving invaders join its cargo; the colony is the invader's from now on.
+        after.capturedBy = attacker;
+        after.militia = -1;
+        detail::joinUnits(after.unit.cargo.units, after.landed);
+        after.landed.clear();
+        after.invader = {};
     }
-    // The planet's piece changes sides at once; the surviving invaders join its cargo.
-    after.owner = attacker;
-    after.unit.owner = attacker;
-    after.capturedBy = attacker;
-    after.militia = -1;
-    detail::joinUnits(after.unit.cargo.units, after.landed);
-    after.landed.clear();
-    after.invader = {};
-    if (after.isLeader) dissolve(t);
-    planetShields(pieces_[t], false);
+    // Whether or not the planet fell, its piece is reset: it belongs to the
+    // colony's owner after the fight, its targets engaged this combat turn are
+    // cleared, every weapon is ready again, its shields go back to their
+    // maximum, and its offense, defense and target budget are worked out again
+    // (spec 04 §11, confirmed: binary).
+    const EmpireId owner = o.captured ? attacker : holder;
+    const bool changed = after.owner != owner;
+    if (changed && after.isLeader) dissolve(t);
+    Piece& p = pieces_[t];
+    p.owner = owner;
+    p.unit.owner = owner;
+    p.engaged.clear();
+    for (Weapon& w : p.weapons) std::fill(w.reload.begin(), w.reload.end(), 0);
+    for (Weapon& w : p.warheads) std::fill(w.reload.begin(), w.reload.end(), 0);
+    planetShields(p, true);
     refreshStats(t);
-    event(Ev::Captured, t, i, static_cast<int>(attacker.value));
-    note(std::format("{} fell to {} troops", pieces_[t].name, s_.empire(attacker).name));
+    if (o.captured) {
+        event(Ev::Captured, t, i, static_cast<int>(attacker.value));
+        note(std::format("{} fell to {} troops", pieces_[t].name, s_.empire(attacker).name));
+    }
+    if (changed) ownerChanged(t);
 }
 
 // ---- The turn sequence (spec 04 §4) ------------------------------------------------------------------

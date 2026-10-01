@@ -13,16 +13,22 @@ To take a planet you need **troops**: ground units you design on the Unit Design
 in the cargo of your ships (see [Units](units)).
 
 1. Bring the troop ships to the enemy colony's sector. A battle starts there (see [Combat](combat#when-battles-happen)).
-2. In the battle, move a ship carrying troops next to the planet, select it and press `T` (or **Drop Troops** in the Orders window). The ship lands all the troops it carries at once on the adjacent colony. Planetary shields do not stop a landing.
+2. In the battle, move a ship carrying troops next to the planet, select it and press `T` (or **Drop Troops** in the Orders window). The ship lands all the troops it carries at once on the adjacent colony of another empire; when several are next to it, the one that came last into the battle. Planetary shields do not stop a landing.
 3. The ground combat is fought at once, in the middle of the space battle.
 
-In a strategic battle, ships with the **Drop Troops** strategy do this by themselves. They wait
-while the planet still has weapons and your side has armed ships to deal with them, then go in
-and land. While your troop ships are waiting to land, your other ships hold their fire on enemy
-planets that have no weapons left, so that you do not kill the people you came to conquer.
+> A landing does not ask about treaties: troops dropped next to an ally's colony land on it and fight it like any other, and take it if they win. Keep troop ships away from your friends' planets.
 
-Only one invader at a time: no empire can land on a planet where two other empires are already
-fighting. You can land more troops at any time to reinforce your own.
+Every landing also gives the planet a fresh start in the battle: its shields are full again and all its weapons are ready, whether or not it falls.
+
+In a strategic battle, ships with the **Drop Troops** strategy do this by themselves. They head
+only for enemy colonies: they wait while the planet still has weapons and your side has armed
+ships to deal with them, then go in and land. After every move they land on whatever colony of
+another empire is then next to them, an ally's included. While your troop ships are waiting to
+land, your other ships hold their fire on enemy planets that have no weapons left, so that you do
+not kill the people you came to conquer.
+
+Only one invader at a time: no empire can land on a planet where another empire's troops are
+already landed. You can land more troops at any time to reinforce your own.
 
 ## How ground combat works
 
@@ -41,8 +47,9 @@ race's ground combat skill (its physical strength, culture and traits) changes t
 - If the attackers are all gone, the invasion has failed.
 - If both sides hold on after the last round, the fight goes on next turn, during the defender's end-of-turn processing, and so on until one side wins.
 
-When the two empires make peace (Non-Aggression or better) before that, the fighting stops and
-the landed troops simply join the colony's cargo.
+When the two empires are at Non-Aggression or better by then, the fighting stops and the landed
+troops simply join the colony's cargo. This is the only place where treaties count: a landing and
+the fight it starts ignore them.
 
 The conquered people keep their race. A colony with several races is domed if any of them cannot
 breathe its air (see [Planets and colonies](planets-and-colonies#size-and-capacity)), and its mood
@@ -52,14 +59,17 @@ may suffer.
 
 ## The Ground Combat window
 
-The **Ground Combat** window shows a ground combat fought in a battle: the planet with its
-type, atmosphere, conditions, value, population and facilities, and the defending and attacking
-units with their counts (the militia among the defenders). `Begin` plays it round by round;
-*Victorious!* appears beside the winner, and `Close` stays dim until the end.
+The **Ground Combat** window shows a ground combat: the planet with its type, atmosphere,
+conditions, value, population and facilities, and the defending and attacking troops with their
+counts (the militia among the defenders). `Begin` fights it round by round: after each round the
+round counter and the counts change, and an explosion flashes over the planet. *Victorious!*
+appears beside the winner, and `Close` stays dim until the end.
 
 It opens by itself once your troops have landed in the Tactical Combat window, or when a
 computer player's troops land during a battle you watch, unless both empires are played by the
-computer. Each landing opens its own window, one after another.
+computer. Each landing opens its own window, one after another. In a turn-based game it also
+opens at the end of the defending empire's turn, after a notice, for every planet where the
+fight goes on, when one of the two empires is played by a person.
 
 ## Capturing ships
 

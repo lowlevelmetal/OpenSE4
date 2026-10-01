@@ -39,20 +39,35 @@
 
 namespace opense4::game {
 
-// ---- Tactical combat in turn-based games (spec 04 §2, §3 step 1) ------------------------------
+// ---- Battles shown as they happen (spec 04 §2, §3 step 1; spec 06 §1.10.5, §1.10.6) -----------
 //
-// Each human participant of a battle chooses Tactical or Strategic. The
-// engine cannot wait for the choice in the middle of a turn, so the calls
-// that play a turn-based game (resumeTurnBased, applyLive, endPlayerTurn)
-// take the answers in advance, one per battle that asks, in the order the
-// battles come up. When they run out, the call stops at the battle: the
+// On one machine the original stops whatever started a battle (a move, an
+// Attack or a Seek) once the battle is set up, before combat turn 1, and
+// shows it: in a turn-based game every battle with a piece of a
+// human-controlled empire asks Tactical or Strategic (with the "No Tactical
+// Combat" option it opens the Strategic Combat window with Begin and Close
+// instead), and in a simultaneous game, when the Settings flag
+// `Simultaneous Games Show Strategic Combat` is on, every such battle opens
+// the Strategic Combat window. A turn-based game also shows the colony
+// owner's end-of-turn ground combat when one of the two empires is human
+// (a notice, then the Ground Combat window), and its processing waits.
+//
+// The engine cannot wait in the middle of a turn, so the calls that play the
+// game (resumeTurnBased, applyLive, endPlayerTurn, and processTurn with
+// TurnOptions::battles) take the answers in advance, one per stop, in the
+// order the stops come up. When they run out, the call stops there: the
 // state is left as it was before the call and TurnResult::battle holds the
-// question with the game as the battle begins. The player fights it (a
-// combat::TacticalBattle on that copy) or chooses Strategic; the same call is
-// made again with the answer added and replays, deterministically, to the
-// same battle, which it now fights with the answer: the tactical sides'
-// orders are the battle's script, and its results are applied by the same
-// code as a strategic battle's.
+// question with the game as the battle begins. The client shows it (a
+// battle: a combat::TacticalBattle on that copy, fought by hand or by the
+// strategies while the window shows it; a ground fight: the record the
+// engine fought), then makes the same call again with the answer added; it
+// replays, deterministically, to the same stop and goes on: a battle is
+// fought with the answer (the tactical sides' orders are its script, and its
+// results are applied by the same code as a strategic battle's), a ground
+// fight is fought again the same way. Nothing a window shows can change the
+// game, so the results are the same whether a window shows a battle or not,
+// and a call without answers (network and PBEM hosts, automation) never
+// stops.
 
 // How one battle is fought.
 struct BattleAnswer {
@@ -60,22 +75,33 @@ struct BattleAnswer {
     std::vector<combat::TacticalOrder> orders;    // their orders (combat::TacticalBattle::script())
 };
 
-// A battle about to start with human participants.
+// A stop: a battle about to start with human participants, or a ground fight to show.
 struct BattleQuestion {
+    enum class Kind : uint8_t {
+        Choose,   // Tactical or Strategic: the Strategic Combat window in its question form
+        Show,     // the Strategic Combat window with Begin and Close; the strategies fight it while it shows it
+        Ground,   // the colony owner's end-of-turn ground combat: the notice, then the Ground Combat window
+    };
+    Kind kind = Kind::Choose;
     Location where;
     // The vehicles that entered the sector (the mines' targets; see TacticalBattle::Setup).
     std::optional<std::vector<VehicleId>> entering;
     combat::BattleCheck check;                    // who ran the battle check (see TacticalBattle::Setup)
     std::vector<EmpireId> humans;                 // human sides that fight in it, each asked
     std::vector<EmpireId> participants;           // every side with pieces
-    std::shared_ptr<const GameState> state;       // the game just before the battle (before the mines)
-    size_t index = 0;                             // its place among the call's battles that ask
+    std::shared_ptr<const GameState> state;       // the game just before the battle (before the mines), or the ground fight
+    size_t index = 0;                             // its place among the call's stops
+    // Ground: the fight as the engine fought it (the answer only says it was shown).
+    std::optional<GroundCombat> ground;
 };
 
 // Whether battles ask their human participants: turn-based games without
 // the "No Tactical Combat" game option (simultaneous games never offer
 // tactical combat, spec 04 §2).
 bool tacticalOffered(const GameState& s);
+// Whether a simultaneous game's battles are shown (Settings `Simultaneous
+// Games Show Strategic Combat`, spec 04 §2).
+bool simultaneousBattlesShown(const Rules& r);
 
 // Transient data passed between the phases of one turn. Persistent results
 // go into GameState; mood events that no happiness update used this turn
@@ -88,8 +114,8 @@ struct TurnContext {
     std::vector<MoodEvent> moodEvents;
     std::vector<Location> battleSites;          // sectors where space combat happened
     std::vector<std::pair<EmpireId, std::string>> rejected;  // commands refused
-    // Turn-based games with tactical combat: the answers of this call's
-    // battles (null: every battle is strategic, nobody is asked).
+    // The answers of this call's stops (null: nothing stops, every battle is
+    // strategic; see "Battles shown as they happen").
     struct Battles {
         const std::vector<BattleAnswer>* answers = nullptr;
         size_t next = 0;
@@ -114,6 +140,10 @@ struct TurnContext {
 struct TurnOptions {
     // Empires that sent no orders are played by the computer (spec 05 §9.2).
     bool aiForMissing = true;
+    // A simultaneous game played on one machine: the answers of the battles
+    // shown so far (see "Battles shown as they happen"; null: nothing stops).
+    // The turn stops only when the Settings flag shows its battles.
+    const std::vector<BattleAnswer>* battles = nullptr;
 };
 
 struct TurnResult {
@@ -121,8 +151,9 @@ struct TurnResult {
     // Turn-based games: moves of a human player's groups that stopped before
     // a sector with enemies, waiting for the answer (cmd::EnterSector).
     std::vector<EntryQuestion> questions;
-    // Turn-based games with tactical combat: the battle whose answer is
-    // missing. The call changed nothing; call it again with the answer.
+    // The stop whose answer is missing (a battle to show or ask about, or a
+    // ground fight to show). The call changed nothing; call it again with
+    // the answer.
     std::optional<BattleQuestion> battle;
     // The lines to append to human players' statistics, history and log
     // text files, one entry per end-of-turn processing in the call (spec 05
