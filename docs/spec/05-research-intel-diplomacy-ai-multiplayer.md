@@ -211,7 +211,12 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   1,000 random draws among the candidates of the right kind (the target empire's ships, its
   planets, the tech areas, third empires, or systems), and a candidate that fails the checks
   is removed from the draw. "Any" gives no bonus; the manual's claim that it succeeds more
-  often is not borne out by the binary.
+  often is not borne out by the binary. For a political operation the candidates are the
+  living empires the source has contact with, other than the source and the target, in
+  empire order; no further check applies, so the first draw stands. With no candidate the
+  operation fails and the source is told that no valid target was found. A third empire
+  named in the order is only checked to exist; the handler checks the rest (confirmed:
+  binary).
 - **Messages**:
   - The source is sent a source message.
   - The victim gets a titled target message, prefixed with an "Intelligence Minister"
@@ -249,8 +254,8 @@ message at all.
 | Category | `Type` → effect on success |
 |---|---|
 | Ship sabotage | `Ship - Damage`: Amount damage points through the standard damage routine. `Ship - Lose Movement`: the ship loses Amount of its remaining movement points for the current turn (never below 0). Movement points are refilled when simultaneous movement starts, and in a turn-based game at the start of each player's turn before its vehicles move (§8). Intelligence runs in the attacker's end-of-turn processing and events after every player, so the loss is always refilled before the ship moves again and has no effect. `Ship - Lose Supply`: removes min(Amount, the ship's supply). `Ship - Rebel`: the ship joins the source. `Ship - Experience Change`: adds the signed Amount. `Ship - Cargo Damage`: if the ship carries anything, its whole cargo (every person and unit) is destroyed; Amount is not used, and the message shows its absolute value. `Ship - Orders Change`: mothballed ships and ships without an order list are immune; the ship leaves its fleet, its orders are cleared, and it gets one Move To a random sector of a random system of the quadrant (its own system included). |
-| Ship espionage | `Ship - Concentrations`: a report. `Ship - Construction Info`: the largest queue concentrations. `Ship Designs - Steal`, `Unit Designs - Steal`: the thief learns exactly one design of the target, the newest one of the right class (ship or base, or a unit type) that has been built at least once, that the thief does not know yet and that its owner can still build. It is dated as seen this turn (§8 "Design knowledge"); it does not join the thief's own designs, and nothing is copied. A specific target in the order is ignored; with no such design the operation fails. |
-| Planet sabotage | `Planet - Conditions Change`: any planet, colonized or not; the conditions become conditions + Amount / 10 on spec 02's 0–1.5 scale, kept within 0 and 1.5 (Amount is in tenths); no message. `Planet - Value Change`: each of the three resource values changes by Amount; in finite-resource games by Amount × 1,000 when that is strictly between −500,000 and +500,000, otherwise by Amount. A result below 0 becomes 0; any other result is clamped into `Minimum/Maximum Planet Percent/Resource Value`, so a value already outside is pulled in. `Planet - Population Change`: with s = trunc(\|Amount\| / 5), the change is Amount + d, d uniform from −s to +s. A loss is taken from the population groups in list order, first group first; a gain goes only to an existing group of the owner's race, capped at the planet's maximum population (the domed maximum when domed); no group is created. The message shows the absolute change. `Planet - Population Anger Change`: needs a colony whose owner's race is not `Population Emotionless`; anger changes by Amount in whole percent, within 0 and 100 (at most 80 on a capital). `Planet - Population Rebel`: see below. `Planet - Cargo Damage`: nothing when Amount ≤ 0 or the cargo is empty; otherwise Amount damage points strike the population in the cargo first, killing Amount ÷ `Damage Points To Kill One Population` million (truncated) from the first group on; if fewer people are aboard, all die and the damage they absorbed (people × that setting) is subtracted, and the rest hits the units in the cargo as a hull-damaging hit on a unit group (spec 04 §9.4). `Planet - Facility Damage`: n = min(Amount, the number of facilities), nothing when n ≤ 0; n facilities are destroyed one at a time, each draw picking a facility kind with a chance in proportion to how many of that kind the planet had at the start (a kind with none left is drawn again); the message shows n. |
+| Ship espionage | `Ship - Concentrations`: a report. `Ship - Construction Info`: the largest queue concentrations. `Ship Designs - Steal`, `Unit Designs - Steal`: the thief learns exactly one design of the target, the newest one of the right class (ship or base, or a unit type) that has been built at least once, or that a ship was retrofitted to (a mark kept with the design, cleared only when the design is saved again in the designer; confirmed: binary), that the thief does not know yet and that its owner can still build. It is dated as seen this turn (§8 "Design knowledge"); it does not join the thief's own designs, and nothing is copied. A specific target in the order is ignored; with no such design the operation fails. |
+| Planet sabotage | `Planet - Conditions Change`: any planet, colonized or not; the conditions become conditions + Amount / 10 on spec 02's 0–1.5 scale, kept within 0 and 1.5 (Amount is in tenths). The planet sends no notice of its own, but the record's messages go out as for any other effect: as a project, the source and the victim get theirs (with the 1-in-5 suspect line); as an event, the recipients its `Message To` names (confirmed: binary). `Planet - Value Change`: each of the three resource values changes by Amount; in finite-resource games by Amount × 1,000 when that is strictly between −500,000 and +500,000, otherwise by Amount. A result below 0 becomes 0; any other result is clamped into `Minimum/Maximum Planet Percent/Resource Value`, so a value already outside is pulled in. `Planet - Population Change`: with s = trunc(\|Amount\| / 5), the change is Amount + d, d uniform from −s to +s. A loss is taken from the population groups in list order, first group first; a gain goes only to an existing group of the owner's race, capped at the planet's maximum population (the domed maximum when domed); no group is created. The message shows the absolute change. `Planet - Population Anger Change`: needs a colony whose owner's race is not `Population Emotionless`; anger changes by Amount in whole percent, within 0 and 100 (at most 80 on a capital). `Planet - Population Rebel`: see below. `Planet - Cargo Damage`: nothing when Amount ≤ 0 or the cargo is empty; otherwise Amount damage points strike the population in the cargo first, killing Amount ÷ `Damage Points To Kill One Population` million (truncated) from the first group on; if fewer people are aboard, all die and the damage they absorbed (people × that setting) is subtracted, and the rest hits the units in the cargo as a hull-damaging hit on a unit group (spec 04 §9.4). `Planet - Facility Damage`: n = min(Amount, the number of facilities), nothing when n ≤ 0; n facilities are destroyed one at a time, each draw picking a facility kind with a chance in proportion to how many of that kind the planet had at the start (a kind with none left is drawn again); the message shows n. |
 | Planet espionage | `Planet - Info`: a full report, including cargo [H]. `Planet - Locations`. |
 | Points | `Points - Change`: the target's minerals, organics and radioactives each change by Amount, never below 0. `Points - Steal`: for each of the three, min(Amount, the target's stock) moves to the source. Research and intelligence points are not touched. |
 | Projects | `Research - Steal`: the chosen area must be one where the target's level is above ours and that is neither racial nor unique; we gain exactly one level. `Research - Delete Project`, `Intel - Delete Project`: one random entry of the target's queue is removed with its progress; the latter can remove a defense project. |
@@ -266,21 +271,30 @@ message at all.
     empire; otherwise a second roll of 1–4 equal to 1 makes it join the source; otherwise
     nothing happens. That is 25 %, 18.75 % and 56.25 %. When the 20-empire limit blocks
     the break-away, nothing happens (the "join the source" roll is not made).
-  - **The new empire** starts as a copy of the former owner: race, traits,
-    characteristics, culture, technology, queues and options. Then:
-    - its name is the system's name, or a random empire name when another empire already
-      has that name; it gets a new leader name and the pictures of an unused neutral race;
+  - **The new empire** starts as a copy of the former owner (confirmed: binary): race,
+    traits, characteristics, culture, research levels and queue, intelligence queue,
+    construction queues, options, experience, and its ministers' state: the minister
+    style, the anger toward each empire, the turns since war with each, the AI state and
+    turns in it, and the AI's target, staging, secured and defended systems and its
+    attack timer. It gets no designs, and the lists of accepted demands start empty. Then:
+    - its name is the system's name. When that is empty or any other empire (destroyed
+      ones included) has the name, a random line of the empire-names file is drawn, again
+      until the name is unique. It gets a new leader name and the pictures of a random
+      neutral race that no empire uses for its race or pictures; when all are in use, a
+      random one of all the neutral races;
     - it is computer controlled with all ministers on, not neutral; its difficulty is the
       highest held by any computer-controlled empire, or Medium when there is none (§7.1);
-    - its home is the planet's system and sector, and its home planet type and atmosphere
-      are the planet's; it has explored only that system (every system under the option
-      that shows all systems);
+    - its home is the planet's system and sector (§4). The planet's atmosphere becomes the
+      gas its race breathes and the planet's physical type its native type, and its lists
+      of allowed atmospheres and planet types are reset to just those two; it has explored
+      only that system (every system under the option that shows all systems);
     - the colony's whole population, of every race, becomes one group of its own people
       with the same total; the colony becomes a Homeworld and a capital, with anger 25;
       facilities and cargo stay;
     - each of its five stocks starts at 4 × its production of that kind;
-    - all its treaties start at "no contact" and its log is empty: it meets only the
-      empires that detect it (§3.1), at None, not at War.
+    - all its treaties start at "no contact" (anger kept, as above) and its log is
+      emptied: it meets only the empires that detect it and that a warp path links to it
+      (§3.1), at None, not at War.
   - A homeworld can rebel: neither a named target nor an "Any" pick excludes it.
 - **`Research - Steal` with target "Any"** (confirmed: binary): the original's automatic
   pick keeps only areas where the thief is already *ahead* of the target, so the steal that
@@ -336,11 +350,20 @@ ability never changes anything in the stock game.
 
 - **First contact** (confirmed: binary): whenever sight in a system changes, every pair of
   living empires that have not met and that **each detect the other** in that system make
-  contact: their treaty goes from "no contact" to None and each logs "First Contact".
+  contact, but only when a warp path links them: a colony of the other empire must lie in
+  a system reached from the systems holding our colonies by following warp points (every
+  one, known or not, in its own direction). Their treaty goes from "no contact" to None and
+  each logs "First Contact". So an empire without colonies makes no contact.
 - **What contact enables** [M]: messages, treaties, trades and intel.
-- **Contact is never lost** (confirmed: binary). The manual's rule about losing contact
-  when no warp path links two empires is not implemented in the original. The only way back
-  to "no contact" is the destruction of an empire (§6).
+- **Losing contact** (confirmed: binary): once per game turn, after the design cleanup and
+  before the victory check, in both turn styles (§8), each living empire A checks every
+  empire B it has contact with. It follows warp points outward from the systems holding
+  A's colonies, as for first contact. When no colony of B lies in a reached system, A's
+  treaty with B returns to "no contact", A's intelligence projects against B are removed,
+  and A logs "contact lost" (a history line, §3.4). A's anger toward B is unchanged. B's
+  side changes when B is checked. So an empire that loses its last colony loses contact
+  with everyone at the next check, even while its ships keep it alive. Contact also ends
+  when an empire is destroyed (§6), which logs only the destruction.
 - **Buying contact** [M]: a package item **Comm Channels** grants contact with a third
   empire.
 
@@ -480,10 +503,26 @@ up the trade chain [M].
   - from the political messages sent or received by the player: an accepted treaty ("<treaty>
     established"), a broken treaty and a declaration of war. The original also has a line for
     a surrender, but its test can never pass, so a surrender is never recorded;
-  - from the player's own log: an empire destroyed, first contact, and contact lost.
+  - from the player's own log: an empire destroyed, first contact, and contact lost (§3.1).
+    A destruction writes only its own line, never a contact-lost line.
 
   Nothing else is recorded: colonies, battles, events, research and intelligence stay in the
   log. Computer players have no history.
+- **Players' text files** (confirmed: binary): a human player's three files (statistics
+  §5, history, log copy) live in a history folder of the installation (or of the mod),
+  named after the player number. Saving a game copies them next to the save, prefixed with
+  the game's name; loading a game empties the folder and copies that game's files back. A
+  TCP/IP host sends each player its own history and statistics files with the turn.
+  - History: appended, and opened only when there is at least one line. Each line is the
+    entry's date as a whole number of tenths of a year (24001 for 2400.1) right-aligned in
+    8 characters, the other empire's number in 5 (0 for none), two flags always 0 in 5
+    each, a space, then the text.
+  - Log copy: written only when `Create Log Text Files for Players` is true (it is off when
+    the key is missing, and the stock file turns it off), and only when the log is not
+    empty. The file is rewritten each turn, not appended: two header lines (the column
+    titles, then a rule), then one line per entry of the whole log as it stands: the date
+    in the form 2400.1 left-aligned in 9 characters, the title padded to 40, then the text
+    with its line breaks turned into spaces.
 - **Log categories**: Construction, Research, Intelligence, Events, Politics, Combat, Misc.
 - **Log lifetime** (confirmed: binary): at the end of each empire's turn processing its log
   keeps only the entries of the last turn; the history window keeps the long record.
@@ -531,7 +570,12 @@ up the trade chain [M].
   - it no longer exists;
   - for a High or Catastrophic planet or star event: it sits exactly at an empire's home
     planet location (system and sector), so homeworlds are safe from those, but stars,
-    which sit elsewhere, practically never are;
+    which sit elsewhere, practically never are. Each empire records that location when
+    the game is created (its home planet) or when a rebel empire is founded (the rebel
+    planet), and it never moves: not when the planet is lost, captured or abandoned, nor
+    when the empire is destroyed. Every empire's recorded location counts, destroyed
+    empires included, whoever owns the planet now; other starting planets and other
+    capitals are not protected (confirmed: binary);
   - **luck**: for an owned target, a roll of 1–100 must be below 100 + the owner's `Luck`
     trait values (a total of 0 or less skips the roll). A normal race keeps 99 %, a `Luck`
     −50 race 49 %. An empire target rolls with its own Luck. For star events every empire
@@ -603,7 +647,11 @@ up the trade chain [M].
   empire's number, the date and the Score window's columns (score, resources, research,
   intelligence, tech levels, systems, planets, population, units, ships, bases); a history
   line holds the date, the other empire's number (0 for none), two flags the game always
-  writes as 0, and the text.
+  writes as 0, and the text (§3.4). In a statistics line every number is right-aligned
+  with no separator: the empire number in 5 characters, the date as a whole number of
+  tenths of a year (24001 for 2400.1) in 8, and each of the eleven columns in 12. The date
+  is the one the empire's end-of-turn processing sees: advanced in a simultaneous game,
+  unadvanced in a turn-based one (§8). The player's own empire always has a row.
 
 ## 6. Victory
 
@@ -956,6 +1004,16 @@ minister is on: always for computer players, and for humans whose Politics minis
   everything logged since the empire's previous political step: the rest of its own last
   turn, the turns of the players after it, and the turns of the players before it in the
   current game turn.
+  - The mark is the same as the Log window's "read" mark (confirmed: binary). When a human
+    opens the Log window, every entry is marked, so those entries are never counted; in a
+    simultaneous game the marks reach the host with the orders. The step stops reading
+    after the first entry dated before the turn before, and counts that entry too when it
+    is unmarked.
+  - An empire whose step does not run (its Politics minister off, or a missed turn whose
+    player forbade AI changes) marks nothing; its next step counts what is still unmarked
+    in that window.
+  - Battles are counted from the combat entries of its own log (one per battle, listing the
+    participants), messages from the message entries of its own log.
 
 **Territory.** The political step first recomputes the claimed territory (the same
 territory §7.2 uses):
@@ -985,7 +1043,10 @@ Human players claim systems by hand; their home system starts claimed.
    Ground combat changes nothing.
 2. **Stellar manipulation.** Each report this turn that X destroyed a planet, destroyed a
    star (making a nebula is reported the same way) or created a black hole adds 2 ×
-   `Combat Defending Lost`. Empires present in that system get the report.
+   `Combat Defending Lost`. The report is an entry of our own log, counted like the
+   others: when the manipulation happens, it is logged, naming the empire responsible, to
+   every empire with a ship, base, colony, or fighter, satellite or drone group (not mine
+   fields) in that system at that moment (confirmed: binary).
 3. **Intelligence.** Each successful project by X against us adds `Intelligence Against
    Us`, but only when we learn who did it. After a success, the target is told the culprit
    with a 1 in 5 chance. Blocked attempts and counter-intelligence projects add nothing.
@@ -1119,10 +1180,32 @@ anger ≥ T.
 
 - With a 50 % chance the AI first checks "wants war" and then "wants to break". If either
   holds, it takes the initiative (below) instead of answering X.
-- Otherwise it answers X: only the newest unanswered political message from X, at most
-  one per turn.
+- Otherwise it answers X: only the newest political message from X in its answer window
+  (below), whatever its type. Older ones are never answered.
 - If it sent X nothing, it takes the initiative. In simultaneous games it does not while a
-  message from X is still waiting.
+  political message from X of any type, dated after the date − 2, waits. This test also
+  follows an initiative of the 50 % branch that sent nothing, so the initiative can run
+  twice in one turn (confirmed: binary).
+- Each check of "wants war" or "wants to break" rolls again, and the initiative checks
+  them again. The first check that finds a war or break queued by an accepted demand uses
+  it up, so a queued war can end without a declaration when a later roll fails
+  (confirmed: binary).
+
+**Answer window** (confirmed: binary). Every delivered message becomes a political entry in
+the recipient's log, dated at delivery. In a simultaneous game the messages from the
+players' orders (§8 step 2) carry the date before it advances, and those a computer player
+sends during its start-of-turn step carry the advanced date. The AI keeps no "answered"
+mark; it looks only at the single newest political message from X in a window:
+- Turn-based: messages dated after a cut-off, which is the date − 1 when X's player number
+  is lower than ours and the date − 2 otherwise. That is exactly what X sent since our
+  previous turn.
+- Simultaneous: only messages dated exactly the date the ministers see − 2. So a message
+  from a player's orders is answered at the next turn's processing, and a computer
+  player's message two processings later.
+
+If that newest message gets no reply (a General message, a generic demand, request or
+warning, or a reply whose speech pool is empty), nothing from X is answered that turn. The
+windows never overlap, so no message is answered twice.
 
 **Wants war with X**
 - Never when already at war with X or X is a team mate. Always when X is a team enemy.
@@ -1218,7 +1301,14 @@ Team mates are always accepted, and team enemies always refused.
 - The AI then builds a package worth V = `… Value Base to Friend/Enemy`, plus (P × `…
   Per Percentage Greater Score` − 100) when P > 100.
 - It adds the requested items in order, a random concrete item for each "any" item, until
-  the package reaches V.
+  the package reaches V. A concrete requested item goes in even when the AI cannot hand
+  it over; it just adds no value (confirmed: binary).
+- A package that ends up empty (V is 0 or less, or every requested item is an "any" item
+  with nothing to offer) counts as a refusal (confirmed: binary).
+- The game option that allows gifts and tributes is never read by the computer player: it
+  only limits which message types a human can pick. With it off, an accepted request is
+  still answered with the gift or tribute, and its items move when it is accepted
+  (confirmed: binary).
 - The AI never gives or asks for gifts or tributes on its own.
 
 **Other demands and requests**
@@ -1229,7 +1319,9 @@ Team mates are always accepted, and team enemies always refused.
   computer-controlled. A human's ministers never surrender. Allow Surrender (confirmed:
   binary) is the seventh check box of the Game Settings tab, on by default; with it off a
   Surrender message does nothing at all.
-- An accepted demand is carried out only with a 50 % chance:
+- An accepted demand is carried out only with a 50 % chance, decided before the reply is
+  sent. It is carried out even when no Accept Demand reply is sent because its pool is
+  empty, as in the stock files (confirmed: binary):
   - remove ships or colonies, or leave a planet: the system is marked to avoid. Colonies
     are never abandoned;
   - break with, declare war on, support against or make peace with a third empire: queued
@@ -1239,11 +1331,12 @@ Team mates are always accepted, and team enemies always refused.
   - stop attacks in a system: nothing happens.
 - These queues are cleared every 10 turns.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
-  newest unanswered political message from X (above):
+  newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
     Accept, Counter or Refuse Trade; a gift or a tribute: Accept or Refuse;
-  - a request for a gift or tribute: the gift or tribute itself when accepted, otherwise a
-    General message from the `Response … Want a gift/tribute` pool;
+  - a request for a gift or tribute: the gift or tribute itself when accepted and its
+    package holds at least one item; otherwise (refused, or accepted with an empty
+    package) a General message from the `Response … Want a gift/tribute` pool;
   - a surrender demand (only with Allow Surrender): Surrender, otherwise a General message
     from `Response … Demand your surrender`. With the option off it gets no answer;
   - the other 13 demands: Accept or Refuse Demand (`Response … YES/NO …`);
@@ -1419,10 +1512,16 @@ binary).
     many units as the queue finishes in one turn, at least one (recon satellites one at a
     time). The budget is reduced by the cost capped at the rate. At most one item per
     colony.
-  - *Reserve quirk*: the start-of-turn AI step resets the reserve to 0, and only the units
-    step loads it, after the vehicle list. So the reserve an empire's vehicle list applies
-    is the value the previous empire's units step left in the same round (0 for the
-    first). In turn-based games it is always 0.
+  - *Reserve quirk* (confirmed: binary): the reserve is one value shared by all empires.
+    Each empire's start-of-turn AI step resets it to 0. Only the units step loads it,
+    after the vehicle list, and that step runs for every empire whose Ship Construction
+    minister acts: it sets the reserve to 0, then to the file's percentage when a units
+    file is found (race folder, style folder or Default). An empire whose ministers do not
+    act (the minister off, or a player with missing orders who forbade AI changes, §7.1)
+    leaves it unchanged. So the reserve an empire's vehicle list applies is the value left
+    by the nearest empire before it in the same round whose units step ran, which is 0
+    when that empire has no units file (0 for the first). In turn-based games, and with the
+    stock install, it is always 0.
 - **`AI_Construction_Facilities`** (Facility Construction minister; confirmed: binary).
   Rows are (state set, `Construction Queue Type` = Homeworld or a colony type, ordered
   `Facility N Ability` + `Amount`).
@@ -1527,8 +1626,9 @@ binary).
     rules (spec 03 §8). OpenSE4 gives the single Colonize order of spec 03 §8, which loads
     colonists where the ship is and has the same effect.
 - **Logistics ministers** (confirmed: binary unless marked).
-  - *Transports*: an idle population transport whose cargo fills more than half its
-    capacity delivers. A Load Cargo (population) order takes the planet's races in the order
+  - *Transports*: an idle population transport that carries people and whose used cargo
+    space (people and units) is more than half its capacity delivers; otherwise it runs the
+    load step (confirmed: binary). A Load Cargo (population) order takes the planet's races in the order
     of its population list until the hold is full, always leaving 1M.
     - The destination is the own colony with the lowest population among those below
       their maximum (the domed maximum when domed), in a safe system, not already another
@@ -1539,8 +1639,18 @@ binary).
       own atmosphere is "wanted" and whose whole population breathes one same atmosphere.
       An atmosphere is wanted when it is the atmosphere of an under-populated safe colony
       or, for a domed one, an atmosphere all its races breathe. The test reads the source
-      planet's atmosphere, which looks like a slip for the race's. If the chosen step finds
-      nothing, the other one is tried once.
+      planet's atmosphere, which looks like a slip for the race's.
+    - A failed delivery never falls back to loading (confirmed: binary). After the load
+      step, the delivery is planned in the same turn only when the load source is in the
+      transport's own sector: the Load order is then followed by the delivery orders. When
+      the load step finds nothing, or sends the transport to a source elsewhere, no
+      delivery is tried. The delivery picks its destination by the races aboard, so a
+      transport with nothing aboard never delivers.
+    - The orders depend on where the target is: in another system, only a move to the
+      target's sector (the transport finishes the job when it is planned again after
+      arrival); in the same system, a move and then Load or Drop; in the same sector, Load
+      or Drop at once. Only a Drop order reserves its destination against other
+      transports. A transport left without orders gets the resupply orders below.
     - Idle ships with a Medical Bay get no order: the routine picks a planet and then drops
       it.
   - *Retrofit*: none while over the soft cap, in the Attack, Incursion or Defend (Short
@@ -1564,16 +1674,34 @@ binary).
     - any other type: when its destroyed parts exceed round(0.25 × its part count) or it
       lacks a part it needs to operate.
 
+    A vehicle "lacks a part it needs to operate" when it has no working (not destroyed)
+    source of `Ship Bridge`, none of `Ship Auxiliary Control` and none of `Master
+    Computer`, the hull's own abilities included (confirmed: binary). Engines, movement,
+    life support and crew quarters are not checked: the game tests the last two, but that
+    test can never fail. A mothballed vehicle has no working abilities, so it always lacks
+    one. The fleet-fitness test (§7.5 "Fleets") uses the same rule.
+
     Every turn, such a vehicle loses all its orders (Colonize included) and leaves its
     fleet, before any destination is looked for. If it can move, it seeks the nearest of the
     empire's space yards by travel distance (a colony with a Space Yard facility, or an
     uncloaked ship with a working yard) and waits when it is already there or a yard ship
-    is within that ship's own speed. With no yard it is left without orders.
+    is within that ship's own speed. With no yard it is left without orders. Details
+    (confirmed: binary):
+    - Mothballed vehicles are not skipped. One with a destroyed part loses its orders and
+      leaves its fleet every turn, but its maximum movement is 0, so it gets no
+      destination.
+    - Yards are visited by system number, then in the game's object order within the
+      system, and on equal travel distance the first one found wins. A yard at a travel
+      distance above 9,998 is never chosen.
+    - The vehicle itself counts as a yard when it has a working yard and a queue: it is
+      then its own nearest yard and stays where it is.
   - *Resupply* (confirmed: binary). Each system's supply distance is 13 × (1 + the warp
     jumps, over all links, to the nearest system holding one of our colonies with `Supply
-    Generation`), or 999,999 when there is none. A fleet not on unlimited supply is sent
-    when its total supply ÷ its total supply cost per move is below the distance of the
-    system it is in; the fleet takes the orders its leader would get. A ship outside
+    Generation`), or 999,999 when there is none. A fleet is on unlimited supply when none
+    of its ships lacks unlimited supply, a fleet without ships included. A fleet not on
+    unlimited supply is sent when its total supply ÷ its total supply cost per move is
+    below the distance of the system it is in; both totals count only the members without
+    unlimited supply (confirmed: binary); the fleet takes the orders its leader would get. A ship outside
     fleets is sent on the same test or when its supply is 0; colony ships and Destroy Star
     ships are exempt. The orders: the list is cleared, then a Move To the nearest own or
     allied depot, avoiding sectors with a visible armed hostile (the Resupply order of spec
@@ -1581,19 +1709,40 @@ binary).
   - *Space Yard Ships* (confirmed: binary): own yard ships with normal status, movement
     left and no orders. One without a working yard part gets the resupply orders above.
     Otherwise it seeks the nearest own vehicle that has a destroyed part, a maximum movement
-    of at most 2 and no own yard in its sector (in practice mostly bases), and waits when
-    already there. With no such vehicle it gets the resupply orders.
+    of at most 2 and no own yard in its sector (in practice mostly bases, and mothballed
+    vehicles), and waits when already there. With no such vehicle it gets the resupply
+    orders. Details (confirmed: binary):
+    - "Own yard in its sector" is any of our objects there with a space yard: a colony with
+      a Space Yard facility, or an uncloaked ship with a working yard, the yard ship itself
+      included. So a vehicle the yard ship has reached is no longer a target, and the yard
+      ship goes on to the next one or gets the resupply orders. It waits beside a vehicle
+      only while it is cloaked.
+    - "Movement left" is the movement the yard ship still has when the start-of-turn
+      ministers act. Movement is refilled later (spec 03 §6.3, §8 here), so this is what
+      its last movement left.
+    - Fleet membership is not checked.
   - *Stellar Manipulation* (confirmed: binary): idle own ships of the matching design type
     that are not in a fleet. "Nearest" means nearest to our home system.
-    - Open Warp Point: only when no free exploration frontier point is left (§7.2). Each
-      explored system with fewer than 10 warp points gets one random target: an unexplored
-      system within the ship's range, with fewer than 10 warp points and not yet linked to
-      it. The source with the fewest of our colonies (then the fewest jumps from home) is
-      chosen; the ship moves to a random empty edge sector there (up to 100 tries) and opens
-      the point. With nothing chosen it gets the resupply orders.
-    - Close Warp Point: a random warp point that leads from a system with one of our
-      colonies into a system where we have no ship, base or colony but see a hostile
-      empire. Otherwise no order.
+    - Open Warp Point: while a free exploration frontier point is left (§7.2), the ship's
+      range counts as 0, so nothing is chosen and the ship gets the resupply orders
+      (confirmed: binary). Otherwise each explored system with fewer than 10 warp points
+      gets one random target: an unexplored system within the ship's range, with fewer
+      than 10 warp points and not yet linked to it. The source with the fewest of our
+      colonies (then the fewest jumps from home) is chosen. The ship moves to a random
+      empty edge sector there and opens the point. The edge sector is drawn as a random
+      side (1 in 4 each), then a random position 0–12 along it, so each corner is twice
+      as likely as any other edge sector. A sector holding any object, vehicles and unit
+      groups included, is drawn again. Only the first 99 draws can succeed (the 100th is
+      discarded even when empty); when none does, or nothing is chosen, the ship gets the
+      resupply orders.
+    - Close Warp Point: a random warp point that leads from an explored system with one of
+      our colonies into a system where we have no presence but see a hostile empire.
+      Otherwise no order. (Confirmed: binary.) "Presence" is a ship, base, colony, or
+      fighter, satellite or drone group of ours; mine fields do not count. We "see" a
+      hostile empire (treaty below Non-Aggression, no contact included) when any object
+      it owns there (ship, base, unit group or colony) passes the detection test that
+      Sentry uses (spec 03 §8): the system is explored by us and our sensors there reach
+      the object's cloak level. A colony counts unless a cloaking facility hides it.
     - Create Planet: the uncolonized asteroid field nearest home by jumps, in an explored
       system with a star, that no other ship of ours is already heading for; ties are
       random.
@@ -1608,8 +1757,13 @@ binary).
     - Create Storm: never used.
     - Destroy Storm: the nearest storm whose sector holds no visible armed hostile.
     - Destroy Black Hole, Destroy Nebulae: the explored system of that kind nearest by
-      jumps. The order is given at once when the ship is inside, otherwise the ship seeks a
-      fixed sector of it.
+      jumps. The order is given at once when the ship is inside. Otherwise the ship gets a
+      Seek toward sector 36 of that system (x 10, y 2) (confirmed: binary). That Seek lasts
+      one turn: in a turn-based game it moves the ship as far as it can and is then done;
+      in a simultaneous game it pursues the sector for the whole movement phase and is
+      removed after it. So the minister plans the ship again every turn. With no such
+      system known, the order it gives points at no system, moves nothing and is gone the
+      next turn, the same as no order.
   - *Carriers and troops*: empty carriers, drone carriers and troop transports reload at
     the nearest colony holding fighters, drones or troops.
 - **Design types of other designs** (confirmed: binary). A human's design is typed when it
@@ -1710,8 +1864,9 @@ binary).
         not count). The name is the first line of the race's design-name file whose
         position is beyond the counter and that no design of any empire uses. Then come
         rounds with "II" up to "XV", the position count carrying on across the rounds;
-        with nothing left the name is empty. With no file the name is "Design <counter +
-        1>", unchecked.
+        with nothing left the name is empty, and the design is still made under the empty
+        name: nothing checks it (confirmed: binary). With no file the name is "Design
+        <counter + 1>", unchecked.
     12. **Obsolete**: every older design of the same player and design type becomes
         obsolete, including the player's own hand-made ones.
   - There is no scout design type, so the AI never designs or builds scouts.
@@ -1782,14 +1937,24 @@ binary).
     drones work only while the empire has fewer placed units than the game's unit limit.
   - *Layers*: an empty layer goes to the nearest own colony holding mines (satellites) in
     its cargo and loads them. A loaded layer picks among the warp points of our colony
-    systems whose far system holds any object of another empire, weighted 1, or 4 when
-    that empire is hostile and 7 when at war (satellites: 1, or 2 when hostile). The check
-    of the per-sector cap counts our units in the far system at that sector and uses the
-    mine limit for satellites too. With no candidate it takes a random warp-point sector of
-    a colony system where no other empire has any object; mine layers do the same on turns
-    when the AI has flagged star-destroying designs among the enemy designs it has seen,
-    and then half the time pick a random star's sector instead. The orders are Move To
-    there, then Launch Units Remotely.
+    systems whose far system holds any object of another empire. Each other empire with
+    any object there adds its own weight to that warp point, and the weights add up:
+    mines 1, or 4 when that empire is hostile and 7 when at war; satellites 1, or 2 when
+    hostile (confirmed: binary). The per-sector cap counts only our units of the layer's
+    kind (mines for a mine layer, satellites for a satellite layer) in the far system at
+    the sector number of the warp point in our system, and both kinds are compared with
+    `Maximum Mines Per Player Per Sector`.
+  - *Layer fallback* (confirmed: binary): a satellite layer with no candidate, and a mine
+    layer with no candidate or on a turn with the star-destroyer flag set (it then ignores
+    the candidates), first draws one random quiet colony system: one of our colony systems
+    where no other empire has any object. With none, no order. With the flag set, half the
+    time it takes a random star of that system (no star: no order this turn); otherwise
+    it takes a random warp-point sector of that system (none: no order). The flag is
+    evaluated only on turns whose date is a multiple of 20 (it is off on all others): it
+    is set when some design, our own included, whose seen date for us is at most 20 turns
+    old has `Destroy Star`, `Create Nebulae` or `Create Black Hole`. Our own designs get
+    such a date when they fight in a battle (§8 "Design knowledge").
+  - The orders are Move To the chosen sector, then Launch Units Remotely.
   - *Satellites*: total = the empire's Satellite and Recon Satellite units everywhere (in
     space and in every planet's and vehicle's cargo); stored = those in any cargo. If total
     > 0 and stored / total × 100 exceeds `Percentage of total satellites to keep as
@@ -1851,7 +2016,7 @@ binary).
   A line is drawn at random from the pool. Friend or Enemy follows the AI's treaty with the
   other empire when it answers: Non-Aggression or better is Friend. A message whose pool is
   empty is not sent at all; a war declaration with an empty pool still sets the anger to
-  100 but declares nothing. In the stock files the pools of the generic demand/request/warn
+  100 but declares nothing, and an accepted demand is still carried out (§7.4). In the stock files the pools of the generic demand/request/warn
   and of the Accept and Refuse Demand messages are empty.
 - **`AI_Strategies`**: the same schema as `DefaultStrategies.txt` (§7.7). Other tables
   refer to it by name.
@@ -1921,7 +2086,9 @@ are skipped.
 6. **End-of-turn processing**, for each empire in order (the list below), each followed by
    the destruction check for that empire (§6). The list of empires is fixed when this step
    starts: an empire founded during it (a rebel colony) is first processed next turn.
-7. **Design cleanup** every tenth turn (each new year).
+7. **Design cleanup** every tenth turn (each new year). Then, every turn, the **contact
+   check** (§3.1): empires that no warp path links any more lose contact (confirmed:
+   binary).
 8. **Victory check** (§6).
 9. **Event step** (§4): hazard damage, due timed events, then the new event roll.
 10. Per-turn marks (bookkeeping) are cleared, a new random code for the turn is drawn (the
@@ -1932,8 +2099,8 @@ happen live during that player's own turn. When a player ends the turn, that emp
 end-of-turn processing runs at once and the turn passes to the next player number. The
 number of empires is read again each time, so an empire founded during the game turn (a
 rebel colony) plays when its number comes up, in the same game turn. After the last player
-the date advances, then the design cleanup (every tenth turn), the victory check and the
-event step run, as in steps 7–9 above; step 10's per-turn marks are not cleared in
+the date advances, then the design cleanup (every tenth turn), the contact check, the
+victory check and the event step run, as in steps 7–9 above; step 10's per-turn marks are not cleared in
 turn-based games. A player's turn starts like this:
 
 1. A human's turn starts with the destruction check (§6).
@@ -1944,6 +2111,11 @@ turn-based games. A player's turn starts like this:
    player, in object order, carries out its orders, those just given by the ministers
    included. Each goes on until an order is not finished (no movement left, or it waits),
    fails (the list is cleared) or the list is empty, and completes at most 21 orders.
+   The limit counts the orders completed in one run of the list (an order that finishes
+   leaves the list, or goes to its back under Repeat); removals outside a run, such as
+   combat ending a Sentry, do not count. Each run counts afresh: this one, each
+   simultaneous movement phase, and in a turn-based game each order a human gives, which
+   runs the list at once (confirmed: binary).
 4. A computer player's destruction check comes only now, after its start-of-turn step. Its
    turn then ends at once.
 
@@ -2022,10 +2194,16 @@ at T + 51. A date is set to the current turn when:
 - an empire surrenders to it: every design of the surrendering empire, and every design
   the surrendering empire knew whose owner can still build it (has the technology for its
   hull, parts and mounts);
-- a human player opens the report of a foreign vehicle that its long-range scanners reach
-  and that carries no Scanner Jammer (and the units in the cargo it shows). Nothing is
-  learned from scanners until a report is opened, and computer players never learn this
-  way.
+- a human player's screen fills in the report of a foreign vehicle that its long-range
+  scanners reach and that carries no Scanner Jammer: in the main screen's report panel or
+  in a report window, whatever tab is showing (confirmed: binary). The report of a ship or
+  base dates only its own design, never the units in its cargo; the report of a fighter,
+  satellite, drone or mine group in space dates its units' design. Each display renews
+  the date. Nothing is learned from scanners until a report is shown, and computer
+  players never learn this way. In a simultaneous game the player's machine dates with
+  the unadvanced date, and only the ship and base reports reach the host, through a
+  "viewed this turn" mark sent with the orders; dates from unit-group reports never
+  reach it.
 
 Two treaty rules copy dates at step 6 of the receiving empire:
 
@@ -2327,8 +2505,16 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       - the speech pools: §7.4 and §7.5.
 
       Where OpenSE4 still differs is listed in docs/PARITY_GAPS.md.
-13. **Contact loss**: answered (confirmed: binary). Contact is never lost, except when an
-    empire is destroyed (§3.1).
+13. **Contact loss**: answered (confirmed: binary; corrected on 2026-09-30, the earlier
+    answer "never lost" missed the check). Contact is lost when no warp path leads from an
+    empire's colonies to a colony of the other empire, checked for every pair once per game
+    turn, after the design cleanup and before the victory check, in both turn styles. An
+    empire that finds no path resets its own treaty to "no contact", drops its intelligence
+    projects against the other and logs "contact lost". First contact needs the same path, so an
+    empire without colonies neither makes nor keeps contact (§3.1, §8). Destruction also
+    ends contact. The engine differs: it never loses contact and makes first contact on
+    mutual detection alone. It must add the check of §3.1 to both turn styles, require the
+    path for first contact, and record the contact-lost line in the history (§3.4).
 14. **Simultaneous timing**: answered (confirmed: binary). Messages are processed before
     movement; research and intelligence run after movement, in each empire's end-of-turn
     processing (§8). The day schedule and the order within a day are spec 03 §6.3 (§9.3).
@@ -2474,8 +2660,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     turn with the previous turn's accepted treaties, broken treaties, declarations of war,
     destroyed empires, first contacts and lost contacts (a surrender line exists but is
     never written), each dated and naming the other empire; it has no length limit and no
-    map positions (confirmed: binary, §3.4). OpenSE4's record keeps those events (a lost
-    contact happens only when an empire is destroyed, §3.1) and more (colonies, ruins,
+    map positions (confirmed: binary, §3.4). OpenSE4's record keeps those events (contact
+    is lost by the warp-path rule of §3.1, question 13) and more (colonies, ruins,
     captured planets, stellar manipulations, events, the end of the game), in the save, for
     every empire. The files themselves are written for human players as §5 describes
     (OpenSE4's layout and place: question 40).
@@ -2536,90 +2722,219 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     and game code. Turn-based games have no `.plr` at all. OpenSE4's `.plr` is a command
     list with checksums, written next to the `.gam`, and its drafts folder, password rule
     and turn-based files have no counterpart.
-37. **Computer-player details the settled rules leave open** (§7.2–§7.5): open. OpenSE4
-    implements §7 as settled on 2026-09-30 and makes these choices where the text is
-    silent (each marked "(inferred)" in `ai*.cpp`); observing the original would settle
-    them:
+37. **Computer-player details the settled rules leave open** (§7.2–§7.5): **Answer:**
+    every sub-item is settled from the executable (confirmed: binary), except the last,
+    which has no counterpart. The rule is in the section named. Where the engine (each
+    choice marked "(inferred)" in `ai*.cpp`) differs, the sub-item says what must change.
     - Which messages count for "the newest unanswered political message" and for "a
-      message from X is still waiting": those dated this turn or the turn before, as the
-      log the anger step reads (§7.3). Is an older message ever answered?
-    - A transport with nothing aboard never delivers; when its load step finds nothing it
-      tries the delivery only when it carries people.
-    - The reserve quirk of the units file: an empire whose Ship Construction minister acts
-      but that has no units file leaves the reserve as the previous empire's units step
-      left it. OpenSE4 cannot tell a missing player who forbade AI changes from one whose
-      ministers acted, and counts both as acting.
-    - "Lacks a part it needs to operate" (Repair minister, fleet fitness): no control (a
-      bridge, life support and crew quarters, or a Master Computer), or no working engine
-      on a hull that uses engines.
-    - The Repair minister skips mothballed vehicles; among yards at the same travel
-      distance the colonies come before the yard ships.
-    - A fleet is "on unlimited supply" when every member is.
-    - The Space Yard Ship's test "no own yard in its sector" ignores the yard ship itself,
-      so it can wait beside the vehicle it serves. "Movement left" is the movement the
-      ship still has when the ministers act.
-    - Open Warp Point: when 100 draws find no empty edge sector, the last one drawn is
-      used. Destroy Black Hole and Destroy Nebulae ships head for the sector (0, 0) of the
-      system.
-    - Close Warp Point: we "see" a hostile empire in a system where one of its vehicles is
-      visible to us or, in an explored system, where it has a colony.
-    - Mine and satellite layers: a warp point whose far system holds several other empires
-      takes the largest of their weights; the per-sector cap counts every unit group of
-      ours at that sector; "star-destroying designs" are known foreign designs with
-      `Destroy Star`; the "random star's sector" is a star of one of our colony systems.
-    - Design names: when every name of every round is taken OpenSE4, which refuses a
-      design without a name, uses "Design <counter + 1>".
-    - An accepted demand whose `Response … YES …` pool is empty sends no Accept Demand
-      message, and OpenSE4 then does not carry the demand out either. Does the original
-      carry out a demand it accepted without a reply?
-    - A request for a gift or tribute that is accepted but for which nothing can be given
-      (or gifts are off) gets no reply.
-    - Old saves: a battle recorded before `CombatRecord::currentPlayer` existed counts as
-      Defending for everyone.
-38. **"Any" third empires** (§2.1, §2.3) [I]: for a political operation with target "Any",
-    OpenSE4 draws the third empire among every empire number other than the target and the
-    source, destroyed ones included, as events do (§4); the handler then needs it alive. Does
-    the original's candidate list leave destroyed empires out?
-39. **An operation that tells nobody** (§2.3) [I]: `Planet - Conditions Change` sends no
-    message. As an event OpenSE4 logs nothing; as an intelligence project it still sends the
-    source its message and leaves the victim unaware. Does the source hear of it, and does
-    the victim?
-40. **The players' files in OpenSE4** (§3.4, §5, §9.2) [I]: the classic client appends the
-    lines to `history/<game seed>/player<N>_stats.txt`, `_events.txt` and `_log.txt` in its
-    user data directory, for local and hotseat games; network and e-mail hosts write none.
-    The date written is the turn being processed (the unadvanced date). The column widths
-    are OpenSE4's. The log copy holds the log entries dated the turn before and follows
-    `Create Log Text Files for Players` (on when the key is missing). A destroyed empire gives
-    one history line: the engine logs no separate "contact lost" entry. To check: the
-    original's widths and date format, whether the log copy is gated by that key, and
-    whether a destruction also writes a contact-lost line.
-41. **Rebel empire details** (§2.3) [I]: "its home planet type and atmosphere are the
-    planet's" is read as the race's native surface and the gas it breathes; with no unused
-    neutral race left the rebels keep the former owner's pictures; a name is drawn from
-    `EmpireNames` only when the system's name is taken; its designs, log, record, AI memory
-    and experience start empty, while its queues and options are copies. For design theft,
-    "built at least once" reads the design's built count, which a statistics reset clears.
-42. **Home planet locations** (§4) [I]: High and Catastrophic planet and star events spare
-    "an empire's home planet location". OpenSE4 records only the home system
-    (`Empire::homeSystem`, spec 02 §2), not the sector, and uses where the capitals
-    (colonies with the Homeworld flag) lie. Does the original's location move when the
-    capital is lost, as its home system does not?
-43. **Opening a report** (§8 "Design knowledge") [I]: the classic client gives
-    `cmd::OpenVehicleReport` when its report panel shows a foreign vehicle that the player's
-    scanners reach and the report would date a design; the command checks the reach again.
-    In a simultaneous network game the host applies it with the player's orders, at the
-    start of the turn processing. When exactly does the original date the design: on opening
-    the report, or on showing its component tab?
-44. **What a turn-based political step counts** (§7.3) [I]: OpenSE4 marks, per empire, how
-    many battles, log entries (per empire) and messages of the step's turn existed when its
-    step ran (`Empire::politicsMark`), and the next step counts what came after, among what is
-    dated that turn or later. An empire whose step did not run (a player who forbade AI
-    changes) counts from the turn before on. The stellar-manipulation term reads the other
-    empire's log (spec 05 §7.3 term 2 in OpenSE4), which may be pruned before the step counts
-    it.
-45. **The 21-order limit** (§8 "Turn-based game") [I]: OpenSE4 counts the orders that leave
-    the head of the list (completed, or removed such as an ended Sentry) and applies the limit
-    to every run of a group's orders, the orders a human gives during the turn included.
-46. **Step 16** (§8) [I]: OpenSE4 resets the sector a ship, base, fighter group or drone
-    group comes from in both turn styles; satellites, mines and troops never move by
-    themselves and keep theirs.
+      message from X is still waiting": **Answer:** the AI keeps no "answered" mark. It
+      looks only at the single newest political message from X in a date window, whatever
+      its type, and an older message is never answered (§7.4 "Answer window"). In a
+      turn-based game the window holds what X sent since our previous turn; in a
+      simultaneous game, the messages dated exactly the ministers' date − 2. "Waiting"
+      (simultaneous only) is any political message from X dated after the date − 2. The
+      engine differs: it takes the newest unanswered message dated this turn or the turn
+      before and tests "waiting" on unanswered answerable messages. It must use the window
+      and the waiting test of §7.4, dating each message as the original does (a message
+      from a player's orders carries the unadvanced date, one a computer player sends
+      during its start-of-turn step the advanced date). It must also run the initiative
+      again when the 50 % branch's initiative sent nothing and nothing waits, and roll
+      "wants war" and "wants to break" again at every check instead of once per turn.
+    - Transports: **Answer:** a transport delivers first only when it carries people and
+      its cargo is more than half full. A failed delivery never falls back to loading, and
+      a delivery follows a load in the same turn only when the source is in the
+      transport's own sector. A transport with nothing aboard never delivers (§7.5
+      Transports). The engine differs: it tries the other step once whichever fails,
+      always gives a move followed by Load or Drop, and leaves a transport that found
+      nothing without orders. It must follow §7.5: a move only when the target is in
+      another system, delivery after loading only in the same sector, and the resupply
+      orders for a transport left without orders.
+    - The reserve quirk of the units file: **Answer:** the reserve is one value shared by
+      all empires. Every empire whose Ship Construction minister acts reloads it in its
+      units step, to 0 when it has no units file; an empire whose ministers do not act,
+      a missing player who forbade AI changes included, leaves it alone (§7.5 "Reserve
+      quirk"). The engine differs: it walks back past acting empires without a units file,
+      and counts a missing player who forbade AI changes as acting. It must take the
+      nearest earlier empire whose units step ran (its percentage, or 0 without a file)
+      and treat that missing player as not acting. With the stock install the reserve is
+      0 either way.
+    - "Lacks a part it needs to operate" (Repair minister, fleet fitness): **Answer:** no
+      working source of `Ship Bridge`, of `Ship Auxiliary Control` or of `Master
+      Computer`; engines, life support and crew quarters are not checked, and a mothballed
+      vehicle always lacks one (§7.5 Repair). The engine differs: it asks for a bridge with
+      life support and crew quarters (or a Master Computer) and a working engine on hulls
+      that use engines. It must use the bridge, auxiliary control or Master Computer rule,
+      in the Repair minister and in fleet fitness.
+    - The Repair minister and mothballed vehicles; ties between yards: **Answer:**
+      mothballed vehicles are not skipped: they lose their orders and leave their fleet,
+      but get no destination. Yards are visited by system number, then in object order,
+      and the first one found wins a tie. The vehicle itself counts as a yard when it has
+      a working yard and a queue (§7.5 Repair). The engine differs: it skips mothballed
+      vehicles, ranks colonies before yard ships on a tie whatever their systems, and
+      never counts the vehicle itself. It must follow §7.5.
+    - A fleet "on unlimited supply": **Answer:** when none of its ships lacks unlimited
+      supply, a fleet without ships included; the supply totals leave out the members with
+      unlimited supply (§7.5 Resupply). The engine matches the test but differs in the
+      totals: it adds every member's supply and cost per move, and must skip the members
+      with unlimited supply.
+    - The Space Yard Ship's "no own yard in its sector" and "movement left": **Answer:**
+      the test does not ignore the yard ship: when uncloaked it counts as a yard in its
+      own sector, so a vehicle it has reached stops being a target and it waits beside one
+      only while cloaked. "Movement left" is what the ship has when the ministers act, as
+      in OpenSE4. Fleet membership is not checked (§7.5). The engine differs: its yard
+      test leaves out the yard ship itself and it skips yard ships in fleets. It must count
+      the yard ship when uncloaked, never count a cloaked yard ship, and drop the fleet
+      skip.
+    - Open Warp Point, Destroy Black Hole and Destroy Nebulae: **Answer:** when no draw
+      succeeds, the ship gets the resupply orders; the last draw is not used. It also gets
+      them while a free exploration frontier point is left. A draw picks a side, then a
+      position along it; a sector with any object, vehicles included, is drawn again; only
+      99 draws can succeed. Destroy Black Hole and Destroy Nebulae ships seek sector 36
+      (x 10, y 2) of the system, with a Seek that lasts one turn (§7.5). The engine
+      differs: it skips the ship while a frontier point is left, draws evenly among the
+      edge sectors (so its corners are not twice as likely), counts only galaxy objects as
+      filling a sector, uses the last draw after 100 failures, and heads for sector
+      (0, 0). It must follow §7.5.
+    - Close Warp Point, "seeing" a hostile empire: **Answer:** any object the hostile
+      empire owns in the far system (ship, base, unit group or colony) that passes the
+      detection test of Sentry; our presence includes fighter, satellite and drone groups
+      but not mines (§7.5). The engine differs: its presence test leaves out our fighter,
+      satellite and drone groups, and it counts any hostile colony in an explored system,
+      even one a cloaking facility hides. It must follow §7.5.
+    - Mine and satellite layers: **Answer:** the weights of the empires in the far system
+      add up; the per-sector cap counts only our units of the layer's kind; the
+      star-destroyer flag is evaluated on dates that are multiples of 20, from designs
+      (ours included) seen within 20 turns that have `Destroy Star`, `Create Nebulae` or
+      `Create Black Hole`; the fallback draws one quiet colony system first and takes its
+      star or one of its warp points (§7.5 "Layers", "Layer fallback"). The engine
+      differs: it takes the largest weight, counts every unit group of ours at the sector,
+      flags known foreign designs with `Destroy Star` on every turn, and draws the star
+      from any colony system. It must follow §7.5.
+    - Design names when every name is taken: **Answer:** the name stays empty and the
+      design is still made (§7.5 "Name"). OpenSE4 choice: OpenSE4 refuses a design without
+      a name, so it uses "Design <counter + 1>" instead. This happens only after every
+      round of the whole name file is used. The engine choice stands.
+    - An accepted demand whose `Response … YES …` pool is empty: **Answer:** the original
+      carries it out. The demand is accepted and carried out first (with its 50 % chance),
+      and the reply is sent afterwards, only when its text is not empty (§7.4). The stock
+      pools are empty, so this is the normal case. The engine differs: it acts only on a
+      sent Accept Demand, so nothing happens. It must record the acceptance without a
+      message and carry it out.
+    - A request for a gift or tribute that is accepted but for which nothing can be given,
+      or with gifts off: **Answer:** an accepted request whose package ends up empty
+      counts as refused and gets the General reply from `Response … Want a gift` (or
+      `… Want a tribute`). A concrete requested item goes in even when the AI cannot hand
+      it over. The game option for gifts and tributes is never read by the computer
+      player; it only limits the message types a human can pick (§7.4). The engine
+      differs: it refuses when gifts are off, skips items it cannot give, and stays silent
+      on an empty package; it also refuses to move a gift's items at acceptance when the
+      option is off. It must follow §7.4.
+    - Old saves: **Answer:** OpenSE4 choice. The original has no counterpart: it writes
+      each side's attacker or defender log entry when the battle is fought, so nothing can
+      be missing. A battle recorded before `CombatRecord::currentPlayer` existed counts as
+      Defending for everyone; that is save compatibility only, and the engine choice
+      stands.
+38. **"Any" third empires** (§2.1, §2.3): **Answer:** the candidates are the living
+    empires the source has contact with, other than the source and the target, in empire
+    order; one is drawn at random and no further check applies, so the first draw stands.
+    With no candidate the operation fails and the source is told that no valid target was
+    found (confirmed: binary, §2.1). The engine differs: it draws among every empire number
+    other than the target and the source, destroyed empires and empires without contact
+    included, and leaves the check to the handler. It must draw only among living empires
+    in contact with the source and fail at once when there are none.
+39. **An operation that tells nobody** (§2.3): **Answer:** `Planet - Conditions Change` is
+    an ordinary successful effect. The planet sends no notice of its own about the change,
+    but the record's messages go out as for any other effect: as an intelligence project,
+    the source gets its source message and the victim its target message, with the usual
+    1-in-5 suspect line; as an event, the record's message goes to the recipients its
+    `Message To` names (confirmed: binary, §2.3). The engine differs: it treats the effect
+    as silent, so the event logs nothing and the victim of the project hears nothing. It
+    must send the messages as for any other effect.
+40. **The players' files in OpenSE4** (§3.4, §5, §9.2): **Answer:** the formats are settled
+    (confirmed: binary, §3.4 "Players' text files", §5). Statistics: empire number in 5
+    characters, the date as a whole number of tenths of a year (24001) in 8, then the
+    eleven columns in 12 each, right-aligned, with the date the empire's end-of-turn
+    processing sees (advanced in a simultaneous game). History: the entry's date in the
+    same form in 8, the other empire in 5, two zero flags in 5 each, a space, the text;
+    the file is opened only when there is a line to add. A destruction writes only its own
+    line; contact-lost lines come from the warp-path rule of §3.1. The log copy is written
+    only when `Create Log Text Files for Players` is true (off when the key is missing; the
+    stock file turns it off) and the log is not empty; it is rewritten each turn with two
+    header lines and one line per entry of the whole log (date as 2400.1 in 9 characters,
+    title in 40, text with line breaks turned into spaces). The engine differs in each of
+    these: its column widths; its dates, written as 2400.1 rather than as a whole number of
+    tenths, and in the statistics always the unadvanced turn; its log copy (its own line
+    layout, on when the key is missing, appended, last turn's entries only, no header); and
+    the missing contact-lost lines. It must follow §3.4 and §5. OpenSE4 choice: the folder and file names in the
+    user data directory (`history/<game seed>/player<N>_…`), which have no counterpart since
+    the original keeps the files in the installation and copies them with each save. That
+    OpenSE4's network and e-mail hosts write no files is also an OpenSE4 choice; the
+    original's TCP/IP host sends each player its history and statistics files.
+41. **Rebel empire details** (§2.3): **Answer** (confirmed: binary, §2.3 "The new empire"):
+    - the planet's atmosphere becomes the race's breathed gas and its physical type the
+      native type, and the allowed atmosphere and planet type lists shrink to those two.
+      The engine's reading matches;
+    - the pictures come from a random neutral race that no empire uses for its race or
+      pictures, else from a random one of all neutral races;
+    - the name is the system's; when it is empty or already taken (destroyed empires
+      included), empire-names lines are drawn until one is unique;
+    - copied from the former owner: research, the intelligence and construction queues,
+      options, experience, and the ministers' state (style, anger toward each empire,
+      turns since war, AI state and turns in it, target, staging, secured and defended
+      systems, attack timer). No designs are given; the log is emptied; treaties reset to
+      "no contact"; the accepted-demand lists start empty;
+    - "built at least once" for design theft is a mark set when a queue completes a
+      vehicle or unit of the design or a ship is retrofitted to it, cleared only when the
+      design is saved again in the designer. No statistics reset clears it.
+
+    The engine differs: it resets the experience, the minister style, the AI state and
+    memory and the anger toward everyone; it keeps the former owner's pictures when no
+    unused neutral race is left; it draws a replacement name only once and not for an
+    empty system name; and its design theft reads the built count, which misses designs
+    only retrofitted to. It must follow §2.3. Spec 02 §10 is corrected to match: a rebel
+    keeps its former owner's minister style.
+42. **Home planet locations** (§4): **Answer:** each empire records a home system and
+    sector, set when the game is created (its home planet) or when a rebel empire is
+    founded (the rebel planet). It never moves: not when the planet is lost, captured or
+    abandoned, nor when the empire is destroyed. High and Catastrophic planet and star
+    events reject a candidate at any empire's recorded location, destroyed empires
+    included, whoever owns the planet now; other starting planets and other capitals are
+    not protected (confirmed: binary, §4; spec 02 §2). The engine differs: it records only
+    the home system and protects the sectors of the current capitals. It must record the
+    home sector with the home system (set at setup and when a rebel empire is founded,
+    never changed, and saved) and protect every empire's recorded location.
+43. **Opening a report** (§8 "Design knowledge"): **Answer:** the design is dated when the
+    report of a foreign vehicle is filled in for display, in the report panel or a report
+    window, whatever tab shows; no tab adds anything. A ship's or base's report dates only
+    its own design, never its cargo units; a unit group's report in space dates its
+    units' design. In a simultaneous game only ship and base reports reach the host, with
+    the unadvanced date (confirmed: binary, §8). The engine differs: its report also dates
+    the designs of the units in a ship's cargo, and in a simultaneous game a unit group's
+    report dates its design on the host. It must date only the vehicle's own design for a
+    ship or base, and nothing on the host for a unit-group report in a simultaneous game.
+    The date it uses matches.
+44. **What a turn-based political step counts** (§7.3): **Answer:** each log entry carries
+    a mark. The step counts only the unmarked entries of the empire's own log, from the
+    newest back, and stops after the first entry dated before the turn before (counting it
+    when unmarked); when it finishes, every entry is marked. The mark is the Log window's
+    "read" mark, so entries a human has seen in the Log window are never counted. An
+    empire whose step does not run marks nothing, and its next step counts what is still
+    unmarked in its window. The stellar-manipulation term reads the counting empire's own
+    log: the report is logged to every empire present in the system when it happens,
+    naming the empire responsible (confirmed: binary, §7.3). The engine differs in term 2:
+    it reads the culprit's log and tests who is present when the step runs. It must log
+    the report to each empire present at that moment and count it from the counting
+    empire's own log. Its per-empire mark of what a step counted gives the same result as
+    the original's marks, except that opening the Log window does not mark anything; an
+    implementer may replace it with a mark per log entry, set also when a human reads the
+    log.
+45. **The 21-order limit** (§8 "Turn-based game"): **Answer:** the limit counts the orders
+    completed in one run of a vehicle's or fleet's order list; an unfinished order ends the
+    run and a failed one clears the list. Removals outside a run, such as combat ending a
+    Sentry, do not count. Each run counts afresh: the start of the turn, each simultaneous
+    movement phase, and in a turn-based game each order a human gives, which runs the list
+    at once (confirmed: binary, §8). The engine matches.
+46. **Step 16** (§8): **Answer:** only ships, bases, fighter groups and drone groups record
+    their current sector. Satellites, mines, planets and other objects do nothing, and
+    troops are never in space. The step is part of every empire's end-of-turn processing,
+    so it runs in both turn styles (confirmed: binary, §8 step 16). The engine matches.
