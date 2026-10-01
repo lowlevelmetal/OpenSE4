@@ -476,6 +476,73 @@ TEST_CASE("setup model: empire files round-trip through TOML") {
     CHECK_FALSE(setup::empireFromToml(r, "format = 99\nname = \"x\"").has_value());
 }
 
+TEST_CASE("setup model: empire files keep the designs saved with them, and a new game gives them back") {
+    // Save Empire with its designs (spec 06 §7 Q48): by the data set's names;
+    // a design the data set cannot build any more is left out with a warning.
+    const game::Rules& r = setupRules();
+    const auto& data = r.data();
+    REQUIRE(data.components.size() >= 2);
+    REQUIRE_FALSE(data.vehicleSizes.empty());
+    setup::EmpireDraft d = setup::draftFromPreset(r, *game::findPreset(r, "Alpha"), 0);
+    auto e = setup::finishDraft(r, d, 5000);
+    REQUIRE(e.has_value());
+    CHECK(setup::empireToToml(r, *e).find("[[design]]") == std::string::npos);   // none: nothing written
+    game::Design saved;
+    saved.name = "Long Reach";
+    saved.designType = "Attack Ship";
+    saved.hull = 0;
+    saved.entries = {{0, -1}, {1, data.weaponMounts.empty() ? -1 : 0}};
+    saved.obsolete = true;
+    saved.built = 7;   // statistics are not kept
+    e->designs = {saved};
+    const std::string text = setup::empireToToml(r, *e);
+    auto back = setup::empireFromToml(r, text);
+    REQUIRE(back.has_value());
+    CHECK(back->warnings.empty());
+    REQUIRE(back->empire.designs.size() == 1);
+    const game::Design& got = back->empire.designs.front();
+    CHECK(got.name == "Long Reach");
+    CHECK(got.designType == "Attack Ship");
+    CHECK(got.hull == 0);
+    CHECK(got.entries == saved.entries);
+    CHECK(got.obsolete);
+    CHECK(got.built == 0);
+
+    // A component the data set lacks: the design is left out.
+    std::string edited = text;
+    const std::string first = std::format("'{}'", data.components[0].name);
+    const auto pos = edited.find(first, edited.find("[[design]]"));
+    REQUIRE(pos != std::string::npos);
+    edited.replace(pos, first.size(), "'No Such Part'");
+    auto missing = setup::empireFromToml(r, edited);
+    REQUIRE(missing.has_value());
+    CHECK(missing->empire.designs.empty());
+    CHECK(missing->warnings.size() == 1);
+    // A file of the first format, without designs, still loads.
+    std::string old = setup::empireToToml(r, *e);
+    const auto fpos = old.find("format = 2");
+    REQUIRE(fpos != std::string::npos);
+    old.replace(fpos, 10, "format = 1");
+    CHECK(setup::empireFromToml(r, old).has_value());
+
+    // The new game gives the empire the design after its starting ones, under a free name.
+    setup::NewGameSettings s = setup::defaultSettings(r, 5);
+    s.options.systemCount = 12;
+    REQUIRE_FALSE(s.players.empty());
+    s.players[0].designs = {saved};
+    auto g = setup::buildGameSetup(r, s);
+    REQUIRE_MESSAGE(g.has_value(), (g ? std::string{} : g.error()));
+    auto game = game::createGame(r, *g);
+    REQUIRE_MESSAGE(game.has_value(), (game ? std::string{} : game.error()));
+    const game::Empire& first0 = game->empires[0];
+    REQUIRE_FALSE(first0.designs.empty());
+    const game::Design& given = game->design(first0.designs.back());
+    CHECK(given.name == "Long Reach");
+    CHECK(given.owner == first0.id);
+    CHECK(given.entries == saved.entries);
+    CHECK(given.built == 0);
+}
+
 TEST_CASE("setup model: the minister style of Empire Setup reaches the game and the empire file") {
     const game::Rules& r = setupRules();
     // Empire files keep the style and the race-style switch; a style that is not installed is dropped with a warning.

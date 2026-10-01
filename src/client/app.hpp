@@ -73,6 +73,7 @@ public:
     std::string rendererInfo() const override { return rendererInfo_; }
     gfx::Backend backend() const override { return device_->backend(); }
     float fps() const override { return fps_; }
+    void minimize() override;
 
 private:
     bool createWindowAndDevice();

@@ -36,7 +36,7 @@ struct Word {
 class Renderer {
 public:
     Renderer(const Painter& p, MarkdownOptions& options) : p_(p), opt_(options) {
-        body_ = p.fonts.regular;
+        body_ = p.fonts.readingFont();  // OpenSE4's own text font (docs/spec/06 §5.4)
         size_ = p.fontPx(kTextSize);
         ImGui::PushFont(body_, size_);
         lineH_ = ImGui::GetTextLineHeight() + p.px(2);

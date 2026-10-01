@@ -1,6 +1,7 @@
 // Research (F8) and Tech Tree windows (docs/spec/06 §1.2, docs/spec/05 §1).
 
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/screens/screens.hpp"
 
 #include "game/research.hpp"
@@ -507,6 +508,7 @@ private:
     }
 
     void exportView(UiContext& ui) {
+        const BusyPointer busy;  // the Hourglass while it writes the file (spec 06 §5.8)
         const std::string text = levels_ ? techLevelsExport(ui.rules(), ui.state(), ui.me()) : techAreasExport(ui.rules(), ui.state(), ui.me());
         const std::filesystem::path file = userDataDir() / (levels_ ? "tech_levels.txt" : "tech_areas.txt");
         std::ofstream out(file, std::ios::binary);

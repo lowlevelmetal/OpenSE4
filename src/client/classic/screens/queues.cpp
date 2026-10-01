@@ -3,7 +3,10 @@
 
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
+#include "client/classic/screens/item_reports.hpp"
+#include "client/classic/screens/reorder_popup.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/status_icons.hpp"
 
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -61,8 +64,12 @@ constexpr std::array<std::pair<QueueKind, const char*>, 4> kQueueToggles{
     {{QueueKind::Ship, "Ships"}, {QueueKind::Planet, "Planets"}, {QueueKind::ShipYard, "Ship SY"}, {QueueKind::PlanetYard, "Planet SY"}}};
 
 enum QueueColumn { QcName, QcTab, QcQueue };
-constexpr float kQueueRowH = 40.0f;   // three 12 px item lines and a margin (inferred)
 constexpr std::array<uint32_t, 3> kResourceColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+constexpr ImU32 kYellow = IM_COL32(255, 255, 0, 255);
+// The classic fonts draw their cell top this far above the point given
+// (client/ui/bitmap_font.hpp): Futurist Medium 3 px, Futurist small 2 px, so
+// a position from the spec (the cell's top) adds these.
+constexpr float kBodyLead = 3.0f, kSmallLead = 2.0f;
 
 // Multi-Add hands the tagged queues to the Set Construction Queue window it
 // opens, and gets back what was added (one Multi-Add at a time).
@@ -73,26 +80,29 @@ bool gMultiAddFailed = false;
 struct QueueRow {
     QueueEntry entry;
     game::Resources rate, usage;
-    std::vector<std::string> items;   // the first three, with counts
-    int turns = -1;                   // the whole queue (-1: never)
-    bool empty = true;
+    std::vector<std::string> items;   // the first three, "<name> x <count>"
+    std::string firstName;            // the first item's name alone (the queue column's sort key)
+    std::string time;                 // "(0.3 years)", "(Never)", "(On Hold)"; empty for an empty queue
+    bool timeYellow = false;
     bool onHold = false;
     bool repeat = false;
     std::string note;                 // the build-mode note
     int facilities = 0, slots = 0;    // colonies only
     int64_t cargoUsed = 0, cargoCapacity = 0;
-    std::vector<int> icons;           // colonies' status icons
+    std::vector<int> icons;           // status icons (1-based numbers): the ship set or the planet set
     std::array<int, 3> value{};       // the planet's values (colonies only)
     bool colony = false;
 };
 
-// Three amounts in the resource colours, from `x`.
+// Three amounts in the resource colours, from `at`, in Futurist Medium.
 void drawAmounts(UiContext& ui, ImDrawList* dl, ImVec2 at, const std::array<int64_t, 3>& v, const char* suffix = "") {
+    ImFont* font = ui.fonts.medium;
+    const float size = ui.fontPx(kTextSize);
     float x = at.x;
     for (size_t k = 0; k < 3; ++k) {
         const std::string t = std::format("{}{}", v[k], suffix);
-        dl->AddText(ImVec2(x, at.y), imColor(kResourceColors[k]), t.c_str());
-        x += std::max(ImGui::CalcTextSize(t.c_str()).x + ui.px(6), ui.px(44));
+        dl->AddText(font, size, ImVec2(x, at.y), imColor(kResourceColors[k]), t.c_str());
+        x += std::max(font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x + ui.px(6), ui.px(44));
     }
 }
 
@@ -118,7 +128,7 @@ public:
             std::vector<const QueueRow*> rows;
             for (const QueueRow& r : rows_)
                 if (shown_ & queueKindBit(r.entry.kind)) rows.push_back(&r);
-            sortRows(rows);
+            sortRows(ui, rows);
 
             d.beginContent();
             statistics(ui);
@@ -127,9 +137,10 @@ public:
             for (const QueueRow* r : rows) marked[r->entry.where.system.index()] = 1;
             quadrantMap(ui, "##map", {262, 190}, marked, hovered_);
             hovered_.reset();
+            // Our command results, above the hint (the list fills the window below).
+            status_.drawAt(ui, {3, 160}, 280);
             ImGui::SetCursorPos(ui.size({0, 197}));
             list(ui, rows);
-            status_.draw(ui);
 
             d.beginButtons();
             static constexpr std::array<const char*, 5> kTabIds{{"rate", "usage", "planet-value", "facilities", "cargo"}};
@@ -143,7 +154,7 @@ public:
             // Always enabled; with nothing tagged it explains how to tag (spec 06 §1.8.2).
             if (d.button("Multi-Add")) {
                 if (tagged_.empty()) {
-                    noticeText_ = "Shift+click the queues to add to first (a lamp marks each); Multi-Add then adds the same items to every one of them.";
+                    noticeText_ = "Shift+click the queues to add to first (an arrow marks each); Multi-Add then adds the same items to every one of them.";
                     notice_ = true;
                 } else {
                     gMultiAddTargets = tagged_;
@@ -187,34 +198,44 @@ private:
         rows_.clear();
         planetYards_ = shipYards_ = onHold_ = 0;
         usage_ = {};
+        generated_ = {};
         for (QueueEntry& e : empireQueues(r, s, me)) {
             const game::ConstructionQueue* q = queueOf(s, me, e.target);
             if (!q) continue;
             QueueRow row;
             row.rate = game::economy::constructionRate(r, s, me, e.target);
             row.usage = queueUsage(r, s, me, e.target, *q, row.rate);
-            row.empty = q->items.empty();
             row.onHold = q->onHold;
             row.repeat = q->repeat;
             row.note = queueModeNote(*q);
             for (size_t i = 0; i < q->items.size() && i < 3; ++i) row.items.push_back(queueItemName(r, s, q->items[i]));
-            if (!q->items.empty()) row.turns = estimateQueue(r, s, me, e.target, *q, row.rate).back().doneIn;
+            if (!q->items.empty()) {
+                row.firstName = queueItemBaseName(r, s, q->items.front());
+                // The first item's time; "(Never)" when the three rates sum to 0 (spec 06 §1.8.2, §7 Q48).
+                const std::string time = timeRemainingText(r, s, me, e.target, *q, row.rate);
+                row.time = "(" + time + ")";
+                row.timeYellow = q->onHold || time == "Never";
+            }
             if (const game::Colony* c = e.target.vehicle.valid() ? nullptr : s.colony(e.target.planet)) {
                 row.colony = true;
                 row.facilities = static_cast<int>(c->facilities.size());
                 row.slots = game::facilitySlots(r, s, *c);
                 row.cargoUsed = game::cargoSpaceUsed(r, s, c->cargo);
                 row.cargoCapacity = game::colonyCargoCapacity(r, s, *c);
-                row.icons = colonyStatusIcons(r, s, *c, game::economy::colonyOutput(r, s, *c).connected);
+                const game::economy::ColonyOutput out = game::economy::colonyOutput(r, s, *c);
+                row.icons = colonyStatusIcons(r, s, *c, out.connected);
                 row.value = s.galaxy.object(c->planet).value;
+                generated_ += out.production;
             } else if (const game::Vehicle* v = s.vehicle(e.target.vehicle)) {
                 row.cargoUsed = game::cargoSpaceUsed(r, s, v->cargo);
                 row.cargoCapacity = game::vehicleCargoCapacity(r, s, *v);
+                for (int cell : vehicleStatusCells(r, s, *v)) row.icons.push_back(cell + 1);
             }
+            // Counted over every queue, whatever the toggles (spec 06 §1.8.2).
             planetYards_ += e.kind == QueueKind::PlanetYard;
             shipYards_ += e.kind == QueueKind::ShipYard;
             onHold_ += row.onHold;
-            usage_ += row.usage;
+            usage_ += row.usage;  // nothing for a queue on hold
             row.entry = std::move(e);
             rows_.push_back(std::move(row));
         }
@@ -235,24 +256,23 @@ private:
         return 0;
     }
 
-    void sortRows(std::vector<const QueueRow*>& rows) const {
-        // Name A to Z, the tab column highest first, the queue by its first item A to Z (spec 06 §1.8.2).
-        sort_.sort(rows, [&](int column, const QueueRow* a, const QueueRow* b) {
+    void sortRows(UiContext& ui, std::vector<const QueueRow*>& rows) const {
+        // Name A to Z, the tab column highest first (whatever the tab shown
+        // measures), the queue by its first item's name A to Z (spec 06 §1.8.2, §7 Q24).
+        sortByKeys(rows, sortKeys(ui.options().queuesSort, QcName), [&](int column, const QueueRow* a, const QueueRow* b) {
             switch (column) {
                 case QcTab: {
                     const int64_t x = tabValue(*a), y = tabValue(*b);
                     return x == y ? 0 : x > y ? -1 : 1;
                 }
-                case QcQueue:
-                    return compareNames(a->items.empty() ? std::string_view{} : a->items.front(), b->items.empty() ? std::string_view{} : b->items.front());
+                case QcQueue: return compareNames(a->firstName, b->firstName);
                 default: return compareNames(a->entry.name, b->entry.name);
             }
         });
     }
 
     void statistics(UiContext& ui) {
-        const game::EconomyReport& eco = ui.me().economy;
-        const game::Resources income = eco.colonies + eco.trade + eco.tariffsIn + eco.remoteMining + eco.otherIncome;
+        // Labels in label blue from (18,40), one every 16 px; counts right-aligned at x 289 (window pixels).
         auto line = [&](float y, const char* label) {
             ImGui::SetCursorPos(ui.size({3, y}));
             ImGui::TextColored(kLabelBlue, "%s", label);
@@ -261,22 +281,25 @@ private:
             ImGui::SetCursorPos(ImVec2(ui.px(274) - ImGui::CalcTextSize(v.c_str()).x, ui.px(y)));
             ImGui::TextUnformatted(v.c_str());
         };
-        line(5, "Resources Per Turn");
+        line(5, "Resources Generated Per Turn");
         ImGui::SetCursorPos(ui.size({12, 21}));
-        resources(ui, income, true);
-        line(41, "Queue Usage Per Turn");
-        ImGui::SetCursorPos(ui.size({12, 57}));
+        resources(ui, generated_, true);
+        line(37, "Construction Queue Usage Per Turn");
+        ImGui::SetCursorPos(ui.size({12, 53}));
         resources(ui, usage_, true);
-        line(85, "Space Yards");
-        value(85, std::to_string(planetYards_ + shipYards_));
-        line(101, "Planetary Space Yards");
-        value(101, std::to_string(planetYards_));
-        line(117, "Ship Space Yards");
-        value(117, std::to_string(shipYards_));
-        line(133, "Queues On Hold");
-        value(133, std::to_string(onHold_));
-        ImGui::SetCursorPos(ui.size({3, 183}));
-        ImGui::TextColored(kTextDim, "Click a queue to change it.");
+        line(77, "Total Space Yards");
+        value(77, std::to_string(planetYards_ + shipYards_));
+        line(93, "Total Planetary Space Yards");
+        value(93, std::to_string(planetYards_));
+        line(109, "Total Ship Space Yards");
+        value(109, std::to_string(shipYards_));
+        line(125, "Number Of Queues On Hold");
+        value(125, std::to_string(onHold_));
+        // The hint at (18,218), Futurist small in label blue.
+        ImGui::SetCursorPos(ui.size({3, 183 + kSmallLead}));
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::TextColored(kLabelBlue, "(click item to change its queue)");
+        ImGui::PopFont();
     }
 
     void list(UiContext& ui, const std::vector<const QueueRow*>& rows) {
@@ -284,13 +307,20 @@ private:
         const std::array<ListColumn, 3> cols{{{"Name", 170}, {kQueueTabHeaders[size_t(tab_)], 150}, {"Construction Queue", 0}}};
         // The rows' child has no padding; the header leaves room for its scrollbar.
         const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
-        if (const int c = listHeader(ui, "##queuehead", cols, width); c >= 0) sort_.click(c);
+        if (const int c = listHeader(ui, "##queuehead", cols, width); c >= 0) {
+            // Stored with the empire at once (spec 06 §7 Q24).
+            game::InterfaceOptions o = ui.options();
+            o.queuesSort = clickSort(o.queuesSort, c, QcName);
+            ui.setOptions(o);
+        }
         const std::vector<float> x = columnEdges(ui, cols, width);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
-        ImGui::BeginChild("##queuerows", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##queuerows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
-        const float rowH = ui.px(kQueueRowH);
-        const float lh = ImGui::GetTextLineHeight();
+        const float rowH = ui.px(kListRowH);
+        ImFont* body = ui.fonts.medium;
+        ImFont* small = ui.fonts.small;
+        const float bodySize = ui.fontPx(kTextSize), smallSize = ui.fontPx(kSmallSize);
         for (const QueueRow* rp : rows) {
             const QueueRow& r = *rp;
             const game::cmd::QueueTarget& t = r.entry.target;
@@ -316,30 +346,33 @@ private:
                 }
             }
             ImDrawList* dl = ImGui::GetWindowDrawList();
-            const float top = a.y + ui.px(2);
-            auto clipText = [&](size_t col, ImVec2 at, ImU32 color, const std::string& text) {
-                dl->PushClipRect(ImVec2(a.x + x[col], a.y), ImVec2(a.x + x[col + 1] - ui.px(2), a.y + rowH), true);
-                dl->AddText(at, color, text.c_str());
-                dl->PopClipRect();
+            // A point of the row in frame pixels from its top-left corner.
+            auto at = [&](float px, float py) { return ImVec2(a.x + ui.px(px), a.y + ui.px(py)); };
+            auto clip = [&](size_t col, float right) {
+                dl->PushClipRect(ImVec2(a.x + x[col], a.y), ImVec2(std::min(a.x + x[col + 1], right), a.y + rowH), true);
             };
-            // Name: picture, name, and the status icons on a second line.
+            // Name: the 36x36 picture, the name at (40,0) with a leading space, the
+            // status icons in one line from (40,15), 20 px apart (spec 06 §1.8.2).
+            clip(QcName, FLT_MAX);
             if (Sprite pic = targetSprite(ui, t))
-                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(pic.tex.value)), ImVec2(a.x + ui.px(2), top), ImVec2(a.x + ui.px(34), top + ui.px(32)),
-                             {pic.uv.min.x, pic.uv.min.y}, {pic.uv.max.x, pic.uv.max.y});
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(pic.tex.value)), at(0, 0), at(36, 36), {pic.uv.min.x, pic.uv.min.y},
+                             {pic.uv.max.x, pic.uv.max.y});
             if (tagged)
-                if (Sprite lampOn = ui.art.region("Pictures/Game/General.bmp", 191, 0, 13, 13))  // the tag marker (inferred)
-                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(lampOn.tex.value)), ImVec2(a.x, top), ImVec2(a.x + ui.px(13), top + ui.px(13)),
-                                 {lampOn.uv.min.x, lampOn.uv.min.y}, {lampOn.uv.max.x, lampOn.uv.max.y});
-            clipText(QcName, ImVec2(a.x + ui.px(38), top), IM_COL32_WHITE, r.entry.name);
-            for (size_t i = 0; i < r.icons.size() && i < 6; ++i)
+                // The marker of tagged ships in the main ship list: the green arrow, black transparent.
+                if (Sprite arrow = ui.art.region("Pictures/Game/General.bmp", 203, 15, 13, 13))
+                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(arrow.tex.value)), at(0, 0), at(13, 13), {arrow.uv.min.x, arrow.uv.min.y},
+                                 {arrow.uv.max.x, arrow.uv.max.y});
+            dl->AddText(body, bodySize, at(40, kBodyLead), IM_COL32_WHITE, (" " + r.entry.name).c_str());
+            for (size_t i = 0; i < r.icons.size(); ++i)
                 if (Sprite ic = ui.art.statusIcon(r.icons[i])) {
-                    const ImVec2 p0(a.x + ui.px(38 + 20 * float(i)), top + lh + ui.px(3));
-                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(ic.tex.value)), p0, ImVec2(p0.x + ui.px(16), p0.y + ui.px(16)),
-                                 {ic.uv.min.x, ic.uv.min.y}, {ic.uv.max.x, ic.uv.max.y});
+                    const float ix = 40 + 20 * float(i);
+                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(ic.tex.value)), at(ix, 15), at(ix + 20, 35), {ic.uv.min.x, ic.uv.min.y},
+                                 {ic.uv.max.x, ic.uv.max.y});
                 }
-            // The tab column, with the build-mode note under it in yellow.
-            const ImVec2 tabAt(a.x + x[QcTab] + ui.px(2), top);
-            dl->PushClipRect(ImVec2(a.x + x[QcTab], a.y), ImVec2(a.x + x[QcQueue] - ui.px(2), a.y + rowH), true);
+            dl->PopClipRect();
+            // The tab column, with the build-mode note under it in yellow Futurist small at (+10, 15).
+            clip(QcTab, FLT_MAX);
+            const ImVec2 tabAt(a.x + x[QcTab] + ui.px(2), a.y + ui.px(kBodyLead));
             switch (tab_) {
                 case QueueTab::Rate: drawAmounts(ui, dl, tabAt, r.rate.v); break;
                 case QueueTab::Usage: drawAmounts(ui, dl, tabAt, r.usage.v); break;
@@ -347,31 +380,32 @@ private:
                     if (r.colony) drawAmounts(ui, dl, tabAt, {r.value[0], r.value[1], r.value[2]}, s.options.finiteResources ? "" : "%");
                     break;
                 case QueueTab::Facilities:
-                    if (r.colony) dl->AddText(tabAt, IM_COL32_WHITE, std::format("{} / {}", r.facilities, r.slots).c_str());
+                    if (r.colony) dl->AddText(body, bodySize, tabAt, IM_COL32_WHITE, std::format("{} / {}", r.facilities, r.slots).c_str());
                     break;
                 case QueueTab::Cargo:
-                    dl->AddText(tabAt, IM_COL32_WHITE, std::format("{} / {}", formatNumber(r.cargoUsed), formatNumber(r.cargoCapacity)).c_str());
+                    dl->AddText(body, bodySize, tabAt, IM_COL32_WHITE,
+                                std::format("{} / {}", formatNumber(r.cargoUsed), formatNumber(r.cargoCapacity)).c_str());
                     break;
             }
-            if (!r.note.empty()) dl->AddText(ImVec2(tabAt.x, top + lh + ui.px(2)), IM_COL32(255, 255, 0, 255), r.note.c_str());
+            if (!r.note.empty())
+                dl->AddText(small, smallSize, ImVec2(a.x + x[QcTab] + ui.px(10), a.y + ui.px(15 + kSmallLead)), kYellow, r.note.c_str());
             dl->PopClipRect();
-            // The first three items, one per 12 px line; the time in years at the right.
-            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-            std::string time = r.onHold ? std::string("On Hold") : r.empty ? std::string{} : queueYearsText(r.turns);
-            const bool yellow = r.onHold || time == "Never";
-            const float timeW = std::max(ImGui::CalcTextSize(time.c_str()).x, r.repeat ? ImGui::CalcTextSize("(Repeat)").x : 0.0f);
-            const float right = a.x + x[QcQueue + 1] - ui.px(4);
-            dl->PushClipRect(ImVec2(a.x + x[QcQueue], a.y), ImVec2(right - timeW - ui.px(4), a.y + rowH), true);
+            // The first three items, Futurist small at y -1, 11 and 23; the first
+            // item's time right-aligned 2 px from the row's right edge, "(Repeat)" under it.
+            const float right = a.x + x[QcQueue + 1] - ui.px(2);
+            const float timeW = r.time.empty() ? 0.0f : body->CalcTextSizeA(bodySize, FLT_MAX, 0.0f, r.time.c_str()).x;
+            const float repeatW = r.repeat ? small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, "(Repeat)").x : 0.0f;
+            clip(QcQueue, right - std::max(timeW, repeatW) - ui.px(4));
             for (size_t i = 0; i < r.items.size(); ++i)
-                dl->AddText(ImVec2(a.x + x[QcQueue] + ui.px(2), top + ui.px(12 * float(i))), IM_COL32_WHITE, r.items[i].c_str());
+                dl->AddText(small, smallSize, ImVec2(a.x + x[QcQueue] + ui.px(2), a.y + ui.px(-1 + 12 * float(i) + kSmallLead)), IM_COL32_WHITE,
+                            r.items[i].c_str());
             dl->PopClipRect();
-            if (!time.empty())
-                dl->AddText(ImVec2(right - ImGui::CalcTextSize(time.c_str()).x, top), yellow ? IM_COL32(255, 255, 0, 255) : IM_COL32_WHITE, time.c_str());
-            if (r.repeat) dl->AddText(ImVec2(right - ImGui::CalcTextSize("(Repeat)").x, top + ui.px(12)), IM_COL32_WHITE, "(Repeat)");
-            ImGui::PopFont();
-            // Rows are separated by a line in #647EC7.
-            dl->AddLine(ImVec2(a.x, a.y + rowH - ImGui::GetStyle().ItemSpacing.y * 0.5f),
-                        ImVec2(a.x + x.back(), a.y + rowH - ImGui::GetStyle().ItemSpacing.y * 0.5f), imColor(palette::kFrameLight));
+            if (!r.time.empty())
+                dl->AddText(body, bodySize, ImVec2(right - timeW, a.y + ui.px(kBodyLead)), r.timeYellow ? kYellow : IM_COL32_WHITE, r.time.c_str());
+            if (r.repeat) dl->AddText(small, smallSize, ImVec2(right - repeatW, a.y + ui.px(12 + kSmallLead)), IM_COL32_WHITE, "(Repeat)");
+            // A 1 px line in #647EC7 on the row's bottom pixel row separates the rows.
+            const float lineY = a.y + ui.px(35.5f);
+            dl->AddLine(ImVec2(a.x, lineY), ImVec2(a.x + x.back(), lineY), imColor(palette::kFrameLight));
         }
         if (rows.empty()) ImGui::TextColored(kTextDim, "%s", shown_ == 0 ? "Every toggle is off." : "No queues of the shown kinds.");
         ImGui::EndChild();
@@ -451,7 +485,7 @@ private:
             ImGui::OpenPopup(id);
             notice_ = false;
         }
-        ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ui.size({380, 0}), ImGuiCond_Always);
         if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags))
             return;
@@ -466,11 +500,10 @@ private:
     bool restored_ = false;
     QueueTab tab_ = QueueTab::Rate;
     uint8_t shown_ = 0x0f;
-    SortHistory sort_{QcName};
     std::vector<game::cmd::QueueTarget> tagged_;
     std::optional<game::SystemId> hovered_;
     int planetYards_ = 0, shipYards_ = 0, onHold_ = 0;
-    game::Resources usage_;
+    game::Resources usage_, generated_;
     StatusLine status_;
     ReportPopup report_;
     ScrapFacilitiesPopup scrapOne_;
@@ -515,6 +548,13 @@ public:
     }
 
     bool draw(UiContext& ui) override {
+        const bool keep = drawWindow(ui);
+        itemReport_.draw(ui);
+        return keep;
+    }
+
+private:
+    bool drawWindow(UiContext& ui) {
         if (!initialized_) {
             initialize(ui);
         }
@@ -553,6 +593,7 @@ public:
         ImGui::EndChild();
         status_.draw(ui);
 
+        // The original's fourteen buttons, with no gaps (spec 06 §1.2).
         d.beginButtons();
         const bool planet = !multi_ && !target_.vehicle.valid();
         static constexpr std::array<const char*, 4> kBuildTabIds{{"ships", "facilities", "units", "upgrades"}};
@@ -562,7 +603,6 @@ public:
         }
         if (lampButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
             onlyLatest_ = !onlyLatest_;
-        d.spacer();
         // Multi-Add disables the queue option buttons (spec 06 §1.8.2).
         const bool options = !multi_;
         game::cmd::QueueFlags flags{target_, q->onHold, q->repeat, q->emergency, q->autoWaypoint};
@@ -581,35 +621,53 @@ public:
             flags.onHold = !q->onHold;
             status_.issue(ui, flags);
         }
-        d.spacer();
         if (d.button("Set Move To", options)) waypointPending_ = true;
         if (ImGui::IsItemHovered()) itemTooltip("New ships built here get orders to move to a waypoint");
         if (d.button("Clear Move To", options && q->autoWaypoint >= 0)) {
             flags.autoWaypoint = -1;
             status_.issue(ui, flags);
         }
-        d.spacer();
         if (d.button("Fill Queue", options)) {
             templatesPending_ = true;
             chosenTemplate_ = -1;
         }
+        // "Confirm deleting the first item" asks before Clear Queue when the
+        // queue holds anything (spec 06 §7 Q28); never in the Multi-Add queue.
+        const bool asks = !multi_ && ui.options().confirmDeleteFirstQueueItem;
         if (d.button("Clear Queue", !q->items.empty())) {
-            // Clearing deletes the first item too: the Empire Options ask first (inferred).
-            if (!multi_ && ui.options().confirmDeleteFirstQueueItem) {
+            if (asks) {
                 confirmAction_ = Confirm::Clear;
-                confirm_.open("Clear the whole queue? Progress on the item under construction is lost.");
+                confirm_.open("Remove every item from this queue? The progress on the item being built is lost.", "Remove All Queue Items");
             } else {
                 clearQueue(ui);
             }
+        }
+        if (d.button("Reorder Queue", q->items.size() > 1)) {
+            std::vector<std::string> names;
+            for (const game::QueueItem& item : q->items) names.push_back(queueItemName(ui.rules(), s, item));
+            reorderCount_ = q->items.size();
+            reorder_.open(std::move(names));
         }
         if (d.close()) {
             if (multi_) finishMultiAdd(ui);
             return false;
         }
+        if (const auto order = reorder_.draw(ui); order && order->size() == reorderCount_) {
+            // When another entry would come first, the first item's progress is lost: ask (spec 06 §7 Q28).
+            if (asks && !order->empty() && order->front() != 0) {
+                pendingOrder_ = *order;
+                confirmAction_ = Confirm::Reorder;
+                confirm_.open("Another item will be built first. The progress on the item being built now is lost.", "Move First Queue Item");
+            } else {
+                applyOrder(ui, *order);
+            }
+        }
         if (confirm_.draw(ui)) {
             if (confirmAction_ == Confirm::Clear) clearQueue(ui);
             else if (confirmAction_ == Confirm::RemoveTop) remove(ui, 0);
+            else if (confirmAction_ == Confirm::Reorder) applyOrder(ui, pendingOrder_);
         }
+        note_.draw(ui);
         if (!multi_) {
             waypointPopup(ui, flags);
             if (const game::ConstructionQueue* now = queueOf(s, ui.session.player(), target_)) templatePopup(ui, *now);
@@ -617,8 +675,7 @@ public:
         return d.keepOpen();
     }
 
-private:
-    enum class Confirm { None, Clear, RemoveTop };
+    enum class Confirm { None, Clear, RemoveTop, Reorder };
 
     // Multi-Add: Ships only when every tagged queue can build ships, Units
     // likewise; never Facilities or Upgrades (spec 06 §1.8.2).
@@ -713,11 +770,11 @@ private:
         resources(ui, ui.me().stockpile, true);
         ImGui::EndGroup();
 
-        ImGui::SameLine(ui.px(470));
+        // A second column inside the content's 556 px.
+        ImGui::SameLine(ui.px(340));
         ImGui::BeginGroup();
         if (c) {
-            labelValue(ui, "Facilities", std::format("{} / {} ({} free after queue)", c->facilities.size(), game::facilitySlots(r, s, *c),
-                                                     freeFacilitySlots(r, s, *c)),
+            labelValue(ui, "Facilities", std::format("{} / {} ({} free)", c->facilities.size(), game::facilitySlots(r, s, *c), freeFacilitySlots(r, s, *c)),
                        90);
             labelValue(ui, "Population", std::format("{}M", formatNumber(c->totalPopulation())), 90);
         }
@@ -830,6 +887,9 @@ private:
         ImGui::PopStyleVar();
     }
 
+    // The queue: a left-click on an entry deletes it with its count (only the
+    // first entry asks, with the Empire Option on); a right-click opens its
+    // report (spec 06 §7 Q28).
     void queueList(UiContext& ui, const game::ConstructionQueue& q) {
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
@@ -839,11 +899,10 @@ private:
         if (q.items.empty()) ImGui::TextColored(kTextWarn, "Empty");
         else if (est.back().doneIn < 0) ImGui::TextColored(kTextDim, "%zu item%s", q.items.size(), q.items.size() == 1 ? "" : "s");
         else ImGui::TextColored(kTextDim, "%zu item%s, all done in %s", q.items.size(), q.items.size() == 1 ? "" : "s", turnsText(est.back().doneIn).c_str());
-        if (selected_ && *selected_ >= q.items.size()) selected_.reset();
-        const float controls = ui.px(26) + ImGui::GetStyle().ItemSpacing.y;
+        std::optional<size_t> clicked;
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(4), ui.px(2)));
         const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_SizingFixedFit;
-        if (ImGui::BeginTable("##queue", 4, flags, ImVec2(0, -controls))) {
+        if (ImGui::BeginTable("##queue", 4, flags)) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("", 0, ui.px(28));
             ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
@@ -852,9 +911,10 @@ private:
             ImGui::TableHeadersRow();
             for (size_t i = 0; i < q.items.size(); ++i) {
                 const game::QueueItem& item = q.items[i];
-                const RowEvents ev = tableRow(ui, static_cast<int>(i), selected_ == i);
+                const RowEvents ev = tableRow(ui, static_cast<int>(i), false);
                 if (ev.hovered) hoverQueue_ = i;
-                if (ev.clicked || ev.doubleClicked) selected_ = i;
+                if (ev.clicked || ev.doubleClicked) clicked = i;
+                if (ev.rightClicked) openItemReport(ui, item);
                 cellImage(ui, queueItemSprite(ui, item), 22);
                 ImGui::TableSetColumnIndex(1);
                 cellText(ui, queueItemName(r, s, item), i == 0 ? kTextHighlight : ImVec4(1, 1, 1, 1));
@@ -873,63 +933,24 @@ private:
             ImGui::EndTable();
         }
         ImGui::PopStyleVar();
-
-        // Reorder, remove and batch-size controls for the selected item.
-        // Everything is read before any button acts: a command changes the items under us.
-        const bool sel = selected_.has_value();
-        const size_t n = q.items.size();
-        const size_t i = selected_.value_or(0);
-        const bool unit = sel && q.items[i].kind == game::QueueItem::Kind::Vehicle && q.items[i].design.valid() &&
-                          isUnitDesign(r, s.design(q.items[i].design));
-        const int count = sel ? q.items[i].count : 1;
-        const bool topHasProgress = n > 0 && !q.items.front().spent.isZero();
-        const std::string topName = n > 0 ? queueItemName(r, s, q.items.front()) : std::string{};
-        const float w = ui.px(52);
-        auto small = [&](const char* label, bool enabled, const char* tip) {
-            ImGui::BeginDisabled(!enabled);
-            const bool c = ImGui::Button(label, ImVec2(w, ui.px(24)));
-            ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) itemTooltip(tip);
-            ImGui::SameLine(0, ui.px(3));
-            return c;
-        };
-        enum class Act { None, Top, Up, Down, Bottom, Remove, Fewer, More } act = Act::None;
-        if (small("Top", sel && i > 0, "Move the selected item to the top")) act = Act::Top;
-        if (small("Up", sel && i > 0, "Move the selected item up")) act = Act::Up;
-        if (small("Down", sel && i + 1 < n, "Move the selected item down")) act = Act::Down;
-        if (small("Bottom", sel && i + 1 < n, "Move the selected item to the bottom")) act = Act::Bottom;
-        if (small("Remove", sel, "Remove the selected item from the queue (Delete)")) act = Act::Remove;
-        if (unit) {
-            ImGui::SameLine(0, ui.px(10));
-            if (ImGui::Button("-", ImVec2(ui.px(24), ui.px(24))) && count > 1) act = Act::Fewer;
-            ImGui::SameLine(0, ui.px(3));
-            ImGui::AlignTextToFramePadding();
-            ImGui::Text("x%d", count);
-            ImGui::SameLine(0, ui.px(3));
-            if (ImGui::Button("+", ImVec2(ui.px(24), ui.px(24)))) act = Act::More;
+        if (!clicked) return;
+        if (*clicked == 0 && !multi_ && ui.options().confirmDeleteFirstQueueItem) {
+            confirmAction_ = Confirm::RemoveTop;
+            confirm_.open(std::format("Remove {}, the item being built? Its progress is lost.", queueItemName(r, s, q.items.front())),
+                          "Remove First Queue Item");
         } else {
-            ImGui::NewLine();
+            remove(ui, *clicked);
         }
-        if (sel && ImGui::IsKeyPressed(ImGuiKey_Delete, false) && ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows)) act = Act::Remove;
-        switch (act) {
-            case Act::None: break;
-            case Act::Top: move(ui, i, 0); break;
-            case Act::Up: move(ui, i, i - 1); break;
-            case Act::Down: move(ui, i, i + 1); break;
-            case Act::Bottom: move(ui, i, n - 1); break;
-            case Act::Remove:
-                // The Empire Options' "confirm deleting the first item of a construction queue" (spec 06 §1.9).
-                if (i == 0 && !multi_ && ui.options().confirmDeleteFirstQueueItem) {
-                    confirmAction_ = Confirm::RemoveTop;
-                    confirm_.open(topHasProgress ? std::format("Remove {}? Its construction progress is lost.", topName)
-                                                 : std::format("Remove {}, the first item of the queue?", topName));
-                } else {
-                    remove(ui, i);
-                }
-                break;
-            // Batch sizes step by one up to 5, then by five.
-            case Act::Fewer: setCount(ui, i, count > 5 ? count - 5 : count - 1); break;
-            case Act::More: setCount(ui, i, count >= 5 ? count + 5 : count + 1); break;
+    }
+
+    // The report of a queued item: a facility's, or the hull's for a ship or unit
+    // (our engine has no report of a whole design; inferred).
+    void openItemReport(UiContext& ui, const game::QueueItem& item) {
+        if (item.kind == game::QueueItem::Kind::Vehicle) {
+            if (item.design.valid() && item.design.index() < ui.state().designs.size())
+                itemReport_.open({ItemRef::Kind::Hull, ui.state().design(item.design).hull});
+        } else if (item.facility < ui.rules().data().facilities.size()) {
+            itemReport_.open({ItemRef::Kind::Facility, item.facility});
         }
     }
 
@@ -947,7 +968,7 @@ private:
             problem = b.problem;
             cost = b.cost;
             turns = b.turns;
-        } else if (const auto idx = hoverQueue_ ? hoverQueue_ : selected_; idx && *idx < q.items.size()) {
+        } else if (const auto idx = hoverQueue_; idx && *idx < q.items.size()) {
             item = q.items[*idx];
             const auto est = estimateQueue(r, s, ui.session.player(), target_, q, rate_);
             cost = est[*idx].cost;
@@ -957,7 +978,7 @@ private:
         }
         if (!item) {
             ImGui::TextColored(kTextDim, "Point at an item to see its details. Left-click an available item to queue it;");
-            ImGui::TextColored(kTextDim, "select a queued item to reorder or remove it.");
+            ImGui::TextColored(kTextDim, "left-click a queued item to remove it. Right-click an item for its report.");
             return;
         }
         Sprite portrait;
@@ -1027,59 +1048,56 @@ private:
         }
         if (!status_.issue(ui, game::cmd::QueueAdd{target_, b.item, -1})) return;
         status_.info(std::format("Queued {}", b.name));
-        // The Empire Options' "note when similar system-wide abilities exist"
-        // (spec 06 §1.9): another facility of ours in the system has the same
-        // system-wide ability (inferred: what counts as similar).
-        if (b.item.kind == game::QueueItem::Kind::Facility && !target_.vehicle.valid() && ui.options().noteSimilarAbilities) {
-            const auto same = similarSystemAbilities(ui.rules(), ui.state(), ui.session.player(), target_.planet, b.item.facility);
-            if (!same.empty()) {
-                std::string list;
-                for (const std::string& a : same) list += (list.empty() ? "" : ", ") + a;
-                status_.info(std::format("Queued {}. A colony of ours in this system already has: {}.", b.name, list));
-            }
-        }
-    }
-
-    void move(UiContext& ui, size_t from, size_t to) {
-        if (multi_) {
-            if (from >= temp_.items.size() || to >= temp_.items.size()) return;
-            const game::QueueItem item = temp_.items[from];
-            temp_.items.erase(temp_.items.begin() + std::ptrdiff_t(from));
-            temp_.items.insert(temp_.items.begin() + std::ptrdiff_t(to), item);
-            selected_ = to;
-            return;
-        }
-        if (status_.issue(ui, game::cmd::QueueMove{target_, static_cast<uint32_t>(from), static_cast<uint32_t>(to)})) selected_ = to;
+        // A facility added by hand to a planet's queue: a "Note" when an object
+        // of ours in the system already has a similar system-wide ability (spec
+        // 06 §7 Q29). The Empire Option is never read: the note always comes.
+        if (b.item.kind == game::QueueItem::Kind::Facility && !target_.vehicle.valid() &&
+            !similarSystemAbilities(ui.rules(), ui.state(), ui.session.player(), target_.planet, b.item.facility).empty())
+            note_.open("A facility with similar system-wide abilities already exists in this system.", "Note");
     }
 
     void remove(UiContext& ui, size_t index) {
         if (multi_) {
             if (index < temp_.items.size()) temp_.items.erase(temp_.items.begin() + std::ptrdiff_t(index));
-            selected_.reset();
             return;
         }
-        if (status_.issue(ui, game::cmd::QueueRemove{target_, static_cast<uint32_t>(index)})) selected_.reset();
+        // Removing the first entry discards its progress with it.
+        status_.issue(ui, game::cmd::QueueRemove{target_, static_cast<uint32_t>(index)});
     }
 
-    void setCount(UiContext& ui, size_t index, int count) {
+    // Puts the entries in `order` (spec 06 §7 Q28). When another entry comes
+    // first, the old first item's progress is discarded (spec 02 §6.3): it
+    // goes back in at its new place as a fresh item.
+    void applyOrder(UiContext& ui, const std::vector<size_t>& order) {
         if (multi_) {
-            if (index < temp_.items.size()) temp_.items[index].count = std::max(1, count);
+            if (order.size() != temp_.items.size()) return;
+            std::vector<game::QueueItem> items;
+            for (size_t i : order) items.push_back(temp_.items[i]);
+            temp_.items = std::move(items);
             return;
         }
-        status_.issue(ui, game::cmd::QueueSetCount{target_, static_cast<uint32_t>(index), count});
+        const game::ConstructionQueue* q = queueOf(ui.state(), ui.session.player(), target_);
+        if (!q || order.size() != q->items.size() || order.empty()) return;
+        const game::QueueItem first = q->items.front();
+        for (const auto& [from, to] : reorderMoves(order))
+            if (!status_.issue(ui, game::cmd::QueueMove{target_, from, to})) return;
+        if (order.front() == 0 || first.spent.isZero()) return;
+        const auto at = static_cast<uint32_t>(std::find(order.begin(), order.end(), size_t{0}) - order.begin());
+        if (status_.issue(ui, game::cmd::QueueRemove{target_, at})) status_.issue(ui, game::cmd::QueueAdd{target_, first, static_cast<int32_t>(at)});
     }
 
+    // Clear Queue also turns off On Hold and Repeat Build; the progress goes with the items (spec 06 §7 Q28).
     void clearQueue(UiContext& ui) {
         if (multi_) {
             temp_.items.clear();
-            selected_.reset();
             return;
         }
         const game::ConstructionQueue* q = queueOf(ui.state(), ui.session.player(), target_);
         if (!q) return;
         for (size_t i = q->items.size(); i-- > 0;)
-            if (!status_.issue(ui, game::cmd::QueueRemove{target_, static_cast<uint32_t>(i)})) break;
-        selected_.reset();
+            if (!status_.issue(ui, game::cmd::QueueRemove{target_, static_cast<uint32_t>(i)})) return;
+        if (q = queueOf(ui.state(), ui.session.player(), target_); q && (q->onHold || q->repeat))
+            status_.issue(ui, game::cmd::QueueFlags{target_, false, false, q->emergency, q->autoWaypoint});
     }
 
     void waypointPopup(UiContext& ui, game::cmd::QueueFlags flags) {
@@ -1225,10 +1243,15 @@ private:
     int batch_ = 1;
     game::Resources rate_;
     std::vector<Buildable> avail_;
-    std::optional<size_t> hoverAvail_, hoverQueue_, selected_;
+    std::optional<size_t> hoverAvail_, hoverQueue_;
     StatusLine status_;
     ConfirmPopup confirm_;
     Confirm confirmAction_ = Confirm::None;
+    NoticePopup note_;
+    ReorderPopup reorder_;
+    size_t reorderCount_ = 0;
+    std::vector<size_t> pendingOrder_;
+    ItemReportPopup itemReport_;
     bool waypointPending_ = false;
     bool templatesPending_ = false;
     bool templatesLoaded_ = false;

@@ -55,6 +55,10 @@ inline constexpr std::array<int, 5> kMusicVolumes{20, 40, 60, 80, 100};
 ClassicSettings& settings();
 // Writes the settings file; returns false (and logs) on failure.
 bool saveSettings();
+// Records a game file just saved as the one Resume Game loads (spec 06 §6.1,
+// §7 Q53: every successful save of a game, autosaves included) and writes
+// the settings file.
+void rememberSavedGame(const std::string& file);
 
 // One on/off switch kept in the settings file.
 struct BoolOption {

@@ -536,36 +536,35 @@ uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts) {
     return counts[stored - 1] > 0 ? stored : uint8_t{0};
 }
 
-int logOpeningRow(int32_t stored, size_t rows) {
-    if (rows == 0) return -1;
-    return stored >= 0 && size_t(stored) < rows ? int(stored) : 0;
+int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown) {
+    if (shown.empty()) return -1;
+    const auto it = std::find(shown.begin(), shown.end(), stored);
+    return it == shown.end() ? 0 : int(it - shown.begin());
 }
 
-std::optional<LogWindow> logWindowTarget(game::LogCategory c) {
-    switch (c) {
-        case game::LogCategory::Construction: return LogWindow::ConstructionQueues;
-        case game::LogCategory::Research: return LogWindow::Research;
-        case game::LogCategory::Intelligence: return LogWindow::Intelligence;
-        case game::LogCategory::Politics: return LogWindow::Empires;
-        case game::LogCategory::Events:
-        case game::LogCategory::Combat:
-        case game::LogCategory::Misc: break;
+std::optional<LogWindow> logWindowTarget(game::LogGoto target) {
+    switch (target) {
+        case game::LogGoto::ConstructionQueues: return LogWindow::ConstructionQueues;
+        case game::LogGoto::Research: return LogWindow::Research;
+        case game::LogGoto::Intelligence: return LogWindow::Intelligence;
+        case game::LogGoto::EmpireOptions: return LogWindow::EmpireOptions;
+        case game::LogGoto::Designs: return LogWindow::Designs;
+        case game::LogGoto::Empires: return LogWindow::Empires;
+        case game::LogGoto::None:
+        case game::LogGoto::Location: break;
     }
     return std::nullopt;
 }
 
 std::vector<CombatDamageRow> combatDamageRows(const game::Rules& r, const game::GameState& s, const game::CombatRecord& c) {
     using Kind = game::CombatPiece::Kind;
-    using Event = game::CombatEvent::Kind;
     const size_t n = c.pieces.size();
-    std::vector<uint8_t> dead(n, 0), taken(n, 0), hit(n, 0);
-    std::vector<int64_t> unitsLost(n, 0);
-    for (const game::CombatEvent& e : c.events) {
-        if (e.kind == Event::Destroyed && e.piece < n) dead[e.piece] = 1;
-        if (e.kind == Event::Captured && e.piece < n) taken[e.piece] = 1;
-        if (e.kind == Event::UnitsLost && e.piece < n) unitsLost[e.piece] += e.amount;
-        if (e.kind == Event::Hit && e.target < n) hit[e.target] = 1;
-    }
+    // Survivors by name: does `empire` (or, with `other`, any other empire) hold a survivor of this name?
+    auto survives = [&](const std::string& name, game::EmpireId empire, bool other) {
+        return std::any_of(c.pieces.begin(), c.pieces.end(), [&](const game::CombatPiece& q) {
+            return q.survivor.valid() && q.name == name && (other ? q.survivor != empire : q.survivor == empire);
+        });
+    };
     std::vector<CombatDamageRow> out;
     for (const game::EmpireId empire : c.participants) {
         CombatDamageRow head;
@@ -575,26 +574,18 @@ std::vector<CombatDamageRow> combatDamageRows(const game::Rules& r, const game::
         out.push_back(std::move(head));
         for (uint32_t i = 0; i < n; ++i) {
             const game::CombatPiece& p = c.pieces[i];
-            if (p.owner != empire || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) continue;
+            if (p.owner != empire || p.damage < 0 || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) continue;
             CombatDamageRow row;
             row.empire = empire;
             row.piece = i;
             row.name = p.name;
-            if (taken[i]) {
-                row.damage = "Taken";
-            } else if (dead[i]) {
-                row.damage = "Dead";
-            } else if (p.kind == Kind::UnitGroup) {
-                const int64_t start = std::max<int64_t>(1, p.count);
-                row.damage = std::format("{}%", std::clamp<int64_t>(unitsLost[i] * 100 / start, 0, 100));
-            } else if (p.kind == Kind::Vehicle) {
-                const game::Vehicle* v = s.vehicle(p.vehicle);
-                int pct = 0;
-                if (v && v->owner == empire) pct = game::vehicleDamageTaken(s, *v) * 100 / std::max(1, game::vehicleStructure(r, s, *v));
-                row.damage = std::format("{}%", std::clamp(pct, 0, 100));
-            } else {
-                row.damage = hit[i] ? "Hit" : "0%";
+            // Ships and bases add their hull's Code (spec 06 §7 Q18).
+            if (p.kind == Kind::Vehicle && p.design.valid() && p.design.index() < s.designs.size()) {
+                const uint32_t hull = s.design(p.design).hull;
+                if (hull < r.data().vehicleSizes.size() && !r.hull(hull).code.empty()) row.name += std::format(" ({})", r.hull(hull).code);
             }
+            if (survives(p.name, empire, false)) row.damage = std::format("{}%", p.damage);
+            else row.damage = survives(p.name, empire, true) ? "Taken" : "Dead";
             out.push_back(std::move(row));
         }
     }

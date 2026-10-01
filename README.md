@@ -84,6 +84,13 @@ opense4 [--renderer=auto|vulkan|opengl] [--classic-dir=DIR] [--quick-start[=RACE
 `--help` lists every option. With `--renderer=auto` (the default) the game tries
 Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
 
+The game has the original's two screen layouts, 800x600 and 1024x768, drawn with your
+install's art, fonts and mouse pointers and scaled to the window. Like the original,
+OpenSE4 picks 800x600 when the desktop is at most 800 pixels wide and 1024x768
+otherwise. `--layout=800x600` or `--layout=1024x768` forces one for a run, and
+Settings → Graphics → Screen layout keeps the choice (forcing a layout is OpenSE4's
+addition).
+
 ```sh
 ./build/debug/opense4                                # auto-detects a Steam install
 ./build/debug/opense4 --classic-dir=/path/to/se4     # or point at it
@@ -127,6 +134,7 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=30
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --turns=20 --screenshot=sim.png
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=10 --open=none --screenshot=main.png  # no Log on top
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --open=help:hotkeys --screenshot=keys.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --layout=800x600 --size=800x600 --screenshot=small.png
 ```
 
 ## Modding

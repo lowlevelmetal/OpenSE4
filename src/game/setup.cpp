@@ -466,6 +466,29 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         }
     }
 
+    // ---- Designs an empire file brought (spec 06 §7 Q48), after the starting
+    // ones: those the data set can still build from (hull, components and
+    // mounts it has), under a name no other design uses (inferred).
+    for (size_t i = 0; i < n; ++i)
+        for (const Design& saved : setup.empires[i].designs) {
+            const auto& data = r.data();
+            const bool known = saved.hull < data.vehicleSizes.size() &&
+                               std::all_of(saved.entries.begin(), saved.entries.end(), [&](const DesignEntry& e) {
+                                   return e.component < data.components.size() &&
+                                          (e.mount < 0 || static_cast<size_t>(e.mount) < data.weaponMounts.size());
+                               });
+            if (!known || saved.name.empty()) continue;
+            Design d;
+            d.owner = EmpireId{i};
+            d.name = designNameInUse(s, saved.name) ? uniqueDesignName(s, saved.name) : saved.name;
+            d.designType = saved.designType;
+            d.hull = saved.hull;
+            d.entries = saved.entries;
+            d.strategy = saved.strategy < s.empires[i].strategies.size() ? saved.strategy : 0;
+            d.obsolete = saved.obsolete;
+            addDesign(s, std::move(d));
+        }
+
     sight::updateKnowledge(r, s);
     // Starting Resources plus one turn of production for the stockpile and
     // research, intelligence at 0 (spec 02 §9, spec 05 §1.1, confirmed: binary).

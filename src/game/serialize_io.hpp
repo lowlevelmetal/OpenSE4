@@ -332,7 +332,7 @@ void io(Ar& ar, AiMemory& m) {
 
 template <class Ar> void io(Ar& ar, PoliticsMark& m) { fields(ar, m.set, m.turn, m.battles, m.logs, m.nextMessage); }
 
-template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture); }
+template <class Ar> void io(Ar& ar, LogEntry& l) { fields(ar, l.turn, l.category, l.title, l.text, l.location, l.picture, l.target, l.message); }
 
 template <class Ar> void io(Ar& ar, HistoryEntry& h) { fields(ar, h.turn, h.empire, h.text, h.location); }
 
@@ -364,6 +364,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.galaxyGridLines, o.galaxyWarpLines, o.latestConstructionOnly, o.latestComponentsOnly, o.autoClaimColonized);
     fields(ar, o.logFilter, o.logPosition, o.logScroll, o.planetsTab, o.planetsNoSysToAvoid, o.queuesTab, o.queuesShown,
            o.simulatorNoObsolete);
+    fields(ar, o.planetsSort, o.coloniesSort, o.shipsSort, o.queuesSort);
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
 }
 
@@ -450,7 +451,7 @@ void io(Ar& ar, CombatEvent& e) {
 
 template <class Ar>
 void io(Ar& ar, CombatPiece& p) {
-    fields(ar, p.kind, p.owner, p.vehicle, p.planet, p.design, p.name, p.startX, p.startY, p.count);
+    fields(ar, p.kind, p.owner, p.vehicle, p.planet, p.design, p.name, p.startX, p.startY, p.count, p.damage, p.survivor);
 }
 
 template <class Ar>
@@ -583,7 +584,7 @@ template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.tu
 template <class Ar>
 void io(Ar& ar, EmpireSetup& e) {
     fields(ar, e.name, e.empireType, e.leaderTitle, e.leaderName, e.preset, e.presetTier, e.customRace, e.color, e.kind, e.passwordHash,
-           e.ministerStyle, e.useRaceMinisterStyle, e.experience);
+           e.ministerStyle, e.useRaceMinisterStyle, e.experience, e.designs);
 }
 
 template <class Ar> void io(Ar& ar, QuadrantMap& m) { fields(ar, m.name, m.galaxy, m.startingPoints); }

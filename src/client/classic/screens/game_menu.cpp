@@ -3,6 +3,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
@@ -64,9 +65,9 @@ std::string cleanName(std::string_view in) {
     return out;
 }
 
-// Yes/No confirmation popup; returns true when Yes was chosen.
-bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
-    bool yes = false;
+// Yes/No popup: true for Yes, false for No, nothing while it waits (or is closed).
+std::optional<bool> answerPopup(UiContext& ui, const char* id, const std::string& question) {
+    std::optional<bool> answer;
     ImGui::SetNextWindowSize(ui.size({340, 0}));
     if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
         ImGui::TextWrapped("%s", question.c_str());
@@ -74,16 +75,17 @@ bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         // Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
         const std::optional<bool> key = yesNoKey();
-        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true) {
-            yes = true;
-            ImGui::CloseCurrentPopup();
-        }
+        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true) answer = true;
         ImGui::SameLine();
-        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false) answer = answer.value_or(false);
+        if (answer) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
-    return yes;
+    return answer;
 }
+
+// Yes/No confirmation popup; returns true when Yes was chosen.
+bool confirmPopup(UiContext& ui, const char* id, const std::string& question) { return answerPopup(ui, id, question) == true; }
 
 // ---- Game Menu -----------------------------------------------------------------------------
 
@@ -96,7 +98,7 @@ public:
         const Vec2 menu{173, 320};
         const Vec2 extra{173, 50};
         const Vec2 size{menu.x, menu.y + 6 + extra.y};
-        const Vec2 min{(kFrameW - menu.x) * 0.5f, (kFrameH - menu.y) * 0.5f};
+        const Vec2 min{(frameW() - menu.x) * 0.5f, (frameH() - menu.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -141,10 +143,8 @@ public:
                 mapNote_.clear();
                 ImGui::OpenPopup("Save Map");
             }
-            if (button("Save Empire")) {
-                saveEmpire(ui);
-                ImGui::OpenPopup("Save Empire");
-            }
+            // Save Empire asks first whether the designs go with it (spec 06 §7 Q48).
+            if (button("Save Empire")) ImGui::OpenPopup("Save Designs");
             if (button("Players")) ImGui::OpenPopup("Player Computer Control");
             // The per-computer Options window (spec 06 §1.9); Empire Options opens
             // from Empire Status. OpenSE4's graphics and controls open from Options.
@@ -176,6 +176,10 @@ public:
             playersPopup(ui);
             saveMapPopup(ui);
             draftPopup(ui);
+            if (const auto designs = answerPopup(ui, "Save Designs", "Save the empire's designs with it?")) {
+                saveEmpire(ui, *designs);
+                ImGui::OpenPopup("Save Empire");
+            }
             notePopup(ui, "Save Empire", empireNote_);
         }
         ImGui::End();
@@ -214,11 +218,11 @@ private:
         ImGui::EndPopup();
     }
 
-    // Save Empire (spec 06 §6.1): the empire's name, leader, race and minister
-    // style as an empire file for a later game's setup (our format, under
-    // <user data>/empires). Our empire files hold no designs, so the original's
-    // question whether to include them is not asked.
-    void saveEmpire(UiContext& ui) {
+    // Save Empire (spec 06 §6.1, §7 Q48): the empire's name, leader, race,
+    // minister style and experience, and with `designs` every design of the
+    // player's, as an empire file for a later game's setup (our format, named
+    // after the empire, under <user data>/empires); the game state is not kept.
+    void saveEmpire(UiContext& ui, bool designs) {
         const game::Empire& e = ui.me();
         game::EmpireSetup out;
         out.name = e.name;
@@ -229,8 +233,13 @@ private:
         out.ministerStyle = e.ministerStyle;
         out.useRaceMinisterStyle = e.useRaceMinisterStyle;
         out.experience = e.experience;
+        if (designs)
+            for (const game::DesignId d : e.designs)
+                if (d.valid() && d.index() < ui.state().designs.size()) out.designs.push_back(ui.state().design(d));
+        const BusyPointer busy;
         const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", out);
-        empireNote_ = saved ? std::format("The {} empire is saved as {}. New games can use it in the empire setup.", e.name, saved->string())
+        empireNote_ = saved ? std::format("The {} empire is saved as {}{}. New games can use it in the empire setup.", e.name, saved->string(),
+                                          designs ? std::format(" with {} designs", out.designs.size()) : std::string{})
                             : std::format("The empire was not saved: {}", saved.error());
     }
 
@@ -337,13 +346,12 @@ public:
 
 private:
     void save(UiContext& ui, const std::filesystem::path& file, const std::string& name) {
+        const BusyPointer busy;  // the Hourglass while it saves (spec 06 §5.8)
         const auto result = ui.session.save(file, name);
         if (result) {
-            // The players' History files go beside the save, and this becomes the
-            // game Resume Game loads (docs/spec/06 §6.1).
+            // The players' History files go beside the save; the session has
+            // made it the game Resume Game loads (docs/spec/06 §6.1).
             if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) copyHistoryNextTo(file);
-            settings().lastSavedGame = file.string();
-            saveSettings();
             error_.clear();
             saved_ = name;
             saves_ = listSaves();

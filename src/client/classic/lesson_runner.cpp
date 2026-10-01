@@ -193,7 +193,7 @@ void LessonRunner::drawPanel(UiContext& ui) {
     if (!moved_) {
         const ImVec2 size = ui.size(kPanelSize);
         const float gap = ui.px(4);
-        ImVec2 at = ui.at({ui.map.left + 6, kFrameH - kPanelSize.y - 6});
+        ImVec2 at = ui.at({ui.map.left + 6, frameH() - kPanelSize.y - 6});
         if (const UiTag* galaxy = findTag(ui, "panel:galaxy"); galaxy && !windowsOpen_)
             at = ImVec2(galaxy->max.x - size.x, galaxy->max.y - size.y);
         else if (const UiTag* system = findTag(ui, "panel:system"))
@@ -223,8 +223,11 @@ void LessonRunner::drawPanel(UiContext& ui) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
         ImGui::BeginChild("##body", ui.size({kPanelSize.x - 30, kPanelSize.y - 36 - kButtonsH - 6}), ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
+        // OpenSE4's own panel: its own text font (docs/spec/06 §5.4).
+        ImGui::PushFont(ui.fonts.readingFont(), ui.fontPx(kTextSize));
         if (lesson().kind == learn::LessonKind::Tutorial) tutorialBody(ui);
         else trainingBody(ui);
+        ImGui::PopFont();
         ImGui::EndChild();
 
         // Two rows of buttons.

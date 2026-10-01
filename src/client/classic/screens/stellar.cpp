@@ -140,15 +140,37 @@ private:
         ImGui::EndGroup();
     }
 
-    // Every manipulation asks first while the Empire Options' "confirm stellar
-    // manipulation" is on (spec 06 §1.9); otherwise it is given at once.
+    // Every manipulation asks a "Confirm Action" Yes/No naming the effect while
+    // the Empire Options' "confirm stellar manipulation" is on; otherwise it
+    // is given at once (spec 06 §7 Q46).
     void ask(UiContext& ui, const game::Vehicle& v, game::StellarAction a, const StellarCheck& check) {
         if (ui.options().confirmStellarManipulation) {
             pending_ = a;
-            confirm_.open(stellarInfo(a).name, check.reason.empty() ? std::string("Give the order?") : check.reason + " Give the order?");
+            confirm_.open("Confirm Action", confirmText(a));
             return;
         }
         act(ui, v, a, check);
+    }
+
+    static std::string confirmText(game::StellarAction a) {
+        using game::StellarAction;
+        switch (a) {
+            case StellarAction::CreatePlanet: return "Do you want to create a planet in this sector?";
+            case StellarAction::DestroyPlanet: return "Do you want to destroy the planet in this sector?";
+            case StellarAction::CreateStar: return "Do you want to create a star in this sector?";
+            case StellarAction::DestroyStar: return "Do you want to destroy the star in this sector?";
+            case StellarAction::OpenWarpPoint: return "Do you want to open a warp point from this sector?";
+            case StellarAction::CloseWarpPoint: return "Do you want to close the warp point in this sector?";
+            case StellarAction::CreateStorm: return "Do you want to create a storm in this sector?";
+            case StellarAction::DestroyStorm: return "Do you want to destroy the storm in this sector?";
+            case StellarAction::CreateNebulae: return "Do you want to turn this system into a nebula?";
+            case StellarAction::DestroyNebulae: return "Do you want to clear the nebula from this system?";
+            case StellarAction::CreateBlackHole: return "Do you want to turn this system's star into a black hole?";
+            case StellarAction::DestroyBlackHole: return "Do you want to collapse the black hole in this system?";
+            case StellarAction::CreateConstructedPlanet: return "Do you want to construct a world in this sector?";
+            case StellarAction::Count: break;
+        }
+        return "Do you want to give this order?";
     }
 
     void act(UiContext& ui, const game::Vehicle& v, game::StellarAction a, const StellarCheck& check) {

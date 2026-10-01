@@ -10,11 +10,13 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <format>
 #include <limits>
 #include <map>
 #include <set>
+#include <span>
 #include <type_traits>
 
 namespace opense4::client::classic {
@@ -135,12 +137,12 @@ std::optional<game::VehicleId> chooseColonyShip(const game::Rules& r, const game
     return best;
 }
 
-game::cmd::SetOrders sendColonyShipOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet) {
+game::cmd::SetOrders sendColonyShipOrders(const game::Rules& r, const game::GameState& s, game::VehicleId ship, game::ObjectId planet) {
     game::cmd::SetOrders c;
     c.vehicle = ship;
     const game::Vehicle* v = s.vehicle(ship);
     const game::Location where = game::locationOf(s.galaxy, planet);
-    if (v && v->cargo.totalPopulation() == 0) {
+    if (v && v->cargo.totalPopulation() == 0 && game::vehicleCargoCapacity(r, s, *v) > 0) {
         game::Order load{game::OrderKind::LoadCargo, v->location};
         load.amount = -1;  // population: as much as fits
         c.orders.push_back(load);
@@ -245,10 +247,20 @@ PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, co
     return st;
 }
 
-void SortHistory::click(int column) {
-    std::erase(columns_, column);
-    columns_.insert(columns_.begin(), column);
-    if (columns_.size() > kKeys) columns_.resize(kKeys);
+std::vector<int> sortKeys(const SortSlots& slots, int nameColumn) {
+    std::vector<int> keys;
+    for (uint8_t slot : slots)
+        if (slot != 0) keys.push_back(int(slot) - 1);
+    if (keys.empty()) keys.push_back(nameColumn);
+    return keys;
+}
+
+SortSlots clickSort(SortSlots slots, int column, int nameColumn) {
+    // A window that was never sorted starts with Name as its only key.
+    if (std::all_of(slots.begin(), slots.end(), [](uint8_t x) { return x == 0; })) slots[0] = uint8_t(nameColumn + 1);
+    for (size_t i = slots.size() - 1; i > 0; --i) slots[i] = slots[i - 1];
+    slots[0] = uint8_t(std::clamp(column + 1, 1, 255));
+    return slots;
 }
 
 int compareNames(std::string_view a, std::string_view b) {
@@ -327,19 +339,6 @@ std::vector<std::string> planetOrders(const std::vector<game::Command>& orders, 
 
 // ---- Construction queues -------------------------------------------------------------------------
 
-namespace {
-
-// An intact Space Yard part, whatever the vehicle's status.
-bool hasYardPart(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
-    const game::Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), game::AbilityKind::SpaceYard))
-            return true;
-    return false;
-}
-
-} // namespace
-
 bool workingVehicleYard(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     return v.status != game::VehicleStatus::Cloaked && game::vehicleHasSpaceYard(r, s, v);
 }
@@ -357,9 +356,9 @@ std::vector<QueueEntry> empireQueues(const game::Rules& r, const game::GameState
         out.push_back(std::move(q));
     }
     for (const game::Vehicle& v : s.vehicles) {
-        if (v.owner != e || v.count <= 0) continue;
+        if (v.owner != e || v.count <= 0 || v.status == game::VehicleStatus::Mothballed) continue;
         const bool working = workingVehicleYard(r, s, v);
-        if (!working && v.queue.items.empty() && !hasYardPart(r, s, v)) continue;
+        if (!working && v.queue.items.empty()) continue;
         QueueEntry q;
         q.target.vehicle = v.id;
         q.kind = working ? QueueKind::ShipYard : QueueKind::Ship;
@@ -386,19 +385,22 @@ const game::ConstructionQueue* queueOf(const game::GameState& s, game::EmpireId 
 
 bool sameTarget(const game::cmd::QueueTarget& a, const game::cmd::QueueTarget& b) { return a.planet == b.planet && a.vehicle == b.vehicle; }
 
-std::string queueItemName(const game::Rules& r, const game::GameState& s, const game::QueueItem& item) {
+std::string queueItemBaseName(const game::Rules& r, const game::GameState& s, const game::QueueItem& item) {
     switch (item.kind) {
-        case game::QueueItem::Kind::Vehicle: {
+        case game::QueueItem::Kind::Vehicle:
             if (!item.design.valid() || item.design.index() >= s.designs.size()) return "Unknown design";
-            const std::string& name = s.design(item.design).name;
-            return item.count > 1 ? std::format("{} x{}", name, item.count) : name;
-        }
+            return s.design(item.design).name;
         case game::QueueItem::Kind::Facility:
             return item.facility < r.data().facilities.size() ? r.facility(item.facility).name : std::string("Unknown facility");
         case game::QueueItem::Kind::Upgrade:
-            return item.facility < r.data().facilities.size() ? "Upgrade to " + r.facility(item.facility).name : std::string("Upgrade");
+            return item.facility < r.data().facilities.size() ? "Upg. " + r.facility(item.facility).name : std::string("Upg.");
     }
     return {};
+}
+
+std::string queueItemName(const game::Rules& r, const game::GameState& s, const game::QueueItem& item) {
+    std::string name = queueItemBaseName(r, s, item);
+    return item.count > 1 ? std::format("{} x {}", name, item.count) : name;
 }
 
 game::Resources displayCost(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
@@ -447,9 +449,35 @@ game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game:
     return game::max(game::min(remaining, rate), game::Resources{});
 }
 
+int timeRemainingTurns(const game::Resources& remaining, const game::Resources& rate) {
+    int turns = 0;
+    bool any = false;
+    for (size_t i = 0; i < 3; ++i) {
+        if (rate.v[i] <= 0) continue;  // a resource that is not produced does not count
+        any = true;
+        const int64_t left = std::max<int64_t>(0, remaining.v[i]);
+        const int64_t t = (left + rate.v[i] - 1) / rate.v[i];
+        turns = int(std::min<int64_t>(std::max<int64_t>(turns, t), kNeverTurns));
+    }
+    return any ? turns : kNeverTurns;
+}
+
 std::string queueYearsText(int turns) {
     if (turns < 0 || turns >= kNeverTurns) return "Never";
-    return std::format("{}.{} Years", turns / 10, turns % 10);
+    turns = std::max(1, turns);  // 0 turns shows as one turn
+    return std::format("{}.{} years", turns / 10, turns % 10);
+}
+
+std::string timeRemainingText(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
+                              const game::ConstructionQueue& q, const game::Resources& rate) {
+    if (q.items.empty()) return {};
+    if (q.onHold) return "On Hold";
+    const game::QueueItem& top = q.items.front();
+    return queueYearsText(timeRemainingTurns(displayCost(r, s, e, t, top) - top.spent, rate));
+}
+
+std::string underConstructionText(const game::Rules& r, const game::GameState& s, const game::ConstructionQueue& q) {
+    return q.items.empty() ? std::string("None") : queueItemName(r, s, q.items.front());
 }
 
 std::string queueModeNote(const game::ConstructionQueue& q) {
@@ -469,27 +497,65 @@ std::vector<game::cmd::QueueAdd> multiAddCommands(const std::vector<game::cmd::Q
     return out;
 }
 
+bool similarAbilityCounts(game::AbilityKind k) {
+    using K = game::AbilityKind;
+    static constexpr std::array<K, 18> kCounted{{
+        K::ResourceGenModSystemMinerals, K::ResourceGenModSystemOrganics, K::ResourceGenModSystemRadioactives,
+        K::SystemPointGenModResearch, K::SystemPointGenModIntelligence, K::CombatModifierSystem, K::DamageModifierSystem,
+        K::ChangeBadEventChanceSystem, K::ChangeBadIntelChanceSystem, K::ChangePopulationHappinessSystem, K::ModifyReproductionSystem,
+        K::ChangePopulationSystem, K::PlaguePreventionSystem, K::ShipTrainingSystem, K::FleetTrainingSystem, K::LongRangeScannerSystem,
+        K::ReducedMaintenanceSystem, K::ShieldModifierSystem,
+    }};
+    return std::find(kCounted.begin(), kCounted.end(), k) != kCounted.end();
+}
+
 std::vector<std::string> similarSystemAbilities(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
                                                 uint32_t facility) {
     std::vector<std::string> out;
     if (facility >= r.data().facilities.size()) return out;
     const game::SystemId sys = s.galaxy.object(planet).system;
-    // System-wide: an ability whose identifier names "System" (inferred).
-    auto systemWide = [](game::AbilityKind k) { return game::identifier(k).find("System") != std::string_view::npos; };
     std::set<game::AbilityKind> wanted;
     for (const game::ParsedAbility& a : r.facilityAbilities(facility))
-        if (a.kind != game::AbilityKind::Unknown && systemWide(a.kind)) wanted.insert(a.kind);
+        if (similarAbilityCounts(a.kind)) wanted.insert(a.kind);
     if (wanted.empty()) return out;
     std::set<game::AbilityKind> found;
+    auto take = [&](std::span<const game::ParsedAbility> list) {
+        for (const game::ParsedAbility& a : list)
+            if (wanted.contains(a.kind)) found.insert(a.kind);
+    };
+    // Built facilities of our colonies in the system (queued ones do not count).
     for (game::ObjectId id : s.galaxy.system(sys).objects) {
         const game::Colony* c = s.colony(id);
         if (!c || c->owner != e) continue;
         for (uint32_t f : c->facilities)
-            for (const game::ParsedAbility& a : r.facilityAbilities(f))
-                if (wanted.contains(a.kind)) found.insert(a.kind);
+            if (f < r.data().facilities.size()) take(r.facilityAbilities(f));
+    }
+    // The components of our ships and bases there.
+    for (const game::Vehicle& v : s.vehicles) {
+        if (v.owner != e || v.location.system != sys || v.count <= 0) continue;
+        const ruleset::VehicleType type = game::vehicleType(r, s, v);
+        if (type != ruleset::VehicleType::Ship && type != ruleset::VehicleType::Base) continue;
+        take(game::vehicleAbilities(r, s, v));
     }
     for (game::AbilityKind k : found) out.emplace_back(game::identifier(k));
     return out;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> reorderMoves(const std::vector<size_t>& order) {
+    std::vector<std::pair<uint32_t, uint32_t>> moves;
+    std::vector<size_t> now(order.size());
+    for (size_t i = 0; i < now.size(); ++i) now[i] = i;
+    for (size_t to = 0; to < order.size(); ++to) {
+        const auto it = std::find(now.begin() + std::ptrdiff_t(to), now.end(), order[to]);
+        if (it == now.end()) continue;
+        const size_t from = size_t(it - now.begin());
+        if (from == to) continue;
+        moves.emplace_back(uint32_t(from), uint32_t(to));
+        const size_t item = *it;
+        now.erase(it);
+        now.insert(now.begin() + std::ptrdiff_t(to), item);
+    }
+    return moves;
 }
 
 std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c) {

@@ -55,40 +55,4 @@ private:
     game::SystemId lastShown_;
 };
 
-// The movement log of a simultaneous game (docs/spec/06 §2.7, Ctrl+P/O/I/U).
-// Our engine keeps no day-by-day log, so the replay moves every vehicle the
-// player saw in a straight line from where it was before the turn was
-// processed to where it is now, in ten steps of one day (inferred).
-class MovementReplay {
-public:
-    static constexpr int kDays = 10;
-    static constexpr double kSecondsPerDay = 0.3;
-
-    // A new turn: where the vehicles were before it was processed.
-    void newTurn(std::map<game::VehicleId, game::Location> before);
-    bool available() const { return !before_.empty(); }
-    // Rewind: everything back at its start, held there.
-    void rewind();
-    // One day further (from the end: starts again at the first day).
-    void step();
-    // Plays from the current point (from the start when at the end).
-    void play(double now);
-    // Call once per frame; ends the replay when it is done.
-    void update(double now);
-    bool active() const { return active_; }
-    // How far the replay is, 0 (start of the turn) .. 1 (now).
-    double progress(double now) const;
-    // Where to draw a vehicle during the replay, in sector units, when it moved
-    // within `shown`; nullopt draws it at its place (or it was not seen before).
-    std::optional<Vec2> position(game::VehicleId v, game::Location now, game::SystemId shown, double time) const;
-
-private:
-    std::map<game::VehicleId, game::Location> before_;
-    bool active_ = false;
-    bool playing_ = false;
-    double day_ = kDays;        // days shown when not playing
-    double playStart_ = 0.0;    // time play() began
-    double playFrom_ = 0.0;     // days shown when play() began
-};
-
 } // namespace opense4::client::classic

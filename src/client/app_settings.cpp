@@ -36,6 +36,8 @@ constexpr std::array<std::pair<DisplayMode, const char*>, 3> kModes{
     {{DisplayMode::Windowed, "windowed"}, {DisplayMode::Borderless, "borderless"}, {DisplayMode::Fullscreen, "fullscreen"}}};
 constexpr std::array<std::pair<WidescreenLayout, const char*>, 2> kLayouts{
     {{WidescreenLayout::Extended, "extended"}, {WidescreenLayout::Classic, "classic"}}};
+constexpr std::array<std::pair<LayoutChoice, const char*>, 3> kScreenLayouts{
+    {{LayoutChoice::Auto, "auto"}, {LayoutChoice::Small800, "800x600"}, {LayoutChoice::Large1024, "1024x768"}}};
 
 std::unique_ptr<AppSettings>& instance() {
     static std::unique_ptr<AppSettings> s;
@@ -70,6 +72,15 @@ const char* displayName(WidescreenLayout w) {
     return "?";
 }
 
+const char* displayName(LayoutChoice l) {
+    switch (l) {
+        case LayoutChoice::Auto: return "Automatic (800x600 on a desktop 800 wide or less)";
+        case LayoutChoice::Small800: return "800x600";
+        case LayoutChoice::Large1024: return "1024x768";
+    }
+    return "?";
+}
+
 std::filesystem::path appSettingsFile() {
     std::filesystem::path dir;
     if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
@@ -96,6 +107,7 @@ std::string appSettingsToToml(const AppSettings& s) {
     graphics.insert("vsync", g.vsync);
     graphics.insert("frame_limit", g.frameLimit);
     graphics.insert("widescreen", toName(g.widescreen, kLayouts));
+    graphics.insert("layout", toName(g.layout, kScreenLayouts));
     graphics.insert("sharp_pixels", g.sharpPixels);
     graphics.insert("integer_scaling", g.integerScaling);
     graphics.insert("text_scale", double(g.textScale));
@@ -143,6 +155,7 @@ AppSettings appSettingsFromToml(std::string_view text, std::string* error) {
     g.vsync = gr["vsync"].value_or(g.vsync);
     g.frameLimit = std::clamp(gr["frame_limit"].value_or(0), 0, 1000);
     g.widescreen = fromName(gr["widescreen"].value_or(std::string{}), kLayouts, g.widescreen);
+    g.layout = fromName(gr["layout"].value_or(std::string{}), kScreenLayouts, g.layout);
     g.sharpPixels = gr["sharp_pixels"].value_or(g.sharpPixels);
     g.integerScaling = gr["integer_scaling"].value_or(g.integerScaling);
     g.textScale = std::clamp(float(gr["text_scale"].value_or(1.0)), 0.75f, 2.0f);

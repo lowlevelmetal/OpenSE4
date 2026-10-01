@@ -78,9 +78,11 @@ public:
     // Command buttons: icon 0..12, state row 0 (normal), 1 (hover), 2 (pressed).
     Sprite commandButton(int icon, int state);
     Sprite eventPicture(std::string_view name);
-    // The system panel's background (Systems/1024X768/<bitmap>, ".bmp" added
+    // The system panel's background (Systems/<layout>/<bitmap>, ".bmp" added
     // when missing), and the 128x128 picture of the System Report (Systems/<bitmap>).
     Sprite systemBackground(std::string_view bitmap);
+    // The intro screen's picture for the layout in use (Game/Screens/<layout>/Intro.bmp).
+    Sprite introPicture();
     Sprite systemPicture(std::string_view bitmap);
     // The tactical and replay maps' background (docs/spec/06 §5.3): 432x432,
     // 6 x 6 tiles of 72x72, each picked by `seed` among Systems/<name>Tile<n>.bmp;

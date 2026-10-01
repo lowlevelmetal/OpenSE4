@@ -85,8 +85,8 @@ struct PlayerRecords {
     std::vector<std::string> history;
     // The whole file, rewritten (empty: the file is not written): only when
     // `Create Log Text Files for Players` is true (off when the key is
-    // missing) and the log is not empty; two header lines, then logLine for
-    // every entry of the log as it stands.
+    // missing) and the log is not empty; logCopyHeader and 78 dashes, then
+    // logLine for every entry of the log as it stands. Written with CR LF.
     std::vector<std::string> log;
 };
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e);
@@ -106,10 +106,14 @@ std::string statisticsLine(EmpireId e, uint32_t date, const TurnStats& t);
 // in 8 characters, the other empire's number in 5 (0 for none), two flags
 // always 0 in 5 each, a space, then the text.
 std::string historyLine(uint32_t date, EmpireId other, std::string_view text);
-// A line of the log copy (spec 05 §3.4, confirmed: binary): the date as
-// 2400.1 left-aligned in 9 characters, the title padded to 40, then the text
-// with its line breaks turned into spaces.
+// A line of the log copy (spec 05 §3.4, spec 06 §6.1, confirmed: binary): the
+// date as 2400.1 left-aligned in 9 characters, the title padded to 40, one
+// space, then the text with each line break (a CR LF pair, or our texts'
+// LF) turned into one space. The file's lines end in CR LF.
 std::string logLine(uint32_t date, std::string_view title, std::string_view text);
+// The log copy's first line: "Date" at column 1, "Header" at column 10 and
+// "Text" at column 51 (spec 06 §6.1, §7 Q55); a line of 78 dashes follows.
+std::string logCopyHeader();
 // The log text of a destroyed empire's announcement (the history file finds
 // the empire by it).
 std::string destroyedText(const GameState& s, EmpireId gone);

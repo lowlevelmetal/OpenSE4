@@ -26,6 +26,8 @@ public:
     void rect(const Rect& r, Color c);
     void rectOutline(const Rect& r, float thicknessPx, Color c);
     void sprite(TextureId tex, const Rect& dst, const Rect& uv, Color tint = {});
+    // A sprite on any quad (corners clockwise from the picture's top left), e.g. turned.
+    void spriteQuad(TextureId tex, const std::array<Vec2, 4>& corners, const Rect& uv, Color tint = {});
     void triangle(Vec2 a, Vec2 b, Vec2 c, Color color);
     void convexPolygon(std::span<const Vec2> points, Color c);
 
