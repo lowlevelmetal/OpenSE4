@@ -1,0 +1,35 @@
+// Windows resources of opense4.exe: the application icon (also the window's and
+// the taskbar's: SDL uses the first icon) and the version shown in Explorer.
+// CMake fills in the @...@ values (src/Client.cmake).
+#include <winver.h>
+
+1 ICON "@OPENSE4_ICON@"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "The OpenSE4 developers"
+            VALUE "FileDescription", "OpenSE4"
+            VALUE "FileVersion", "@PROJECT_VERSION@"
+            VALUE "InternalName", "opense4"
+            VALUE "LegalCopyright", "Free software under the GNU GPL 3.0 or later"
+            VALUE "OriginalFilename", "opense4.exe"
+            VALUE "ProductName", "OpenSE4"
+            VALUE "ProductVersion", "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

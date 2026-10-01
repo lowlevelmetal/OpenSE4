@@ -123,6 +123,8 @@ platforms from one Linux machine:
 
 - `dist/OpenSE4-<version>-linux-x86_64.tar.gz`
 - `dist/OpenSE4-<version>-windows-x86_64.zip`
+- `dist/OpenSE4-<version>-windows-x86_64-setup.exe`, the same programs as an installer
+- `dist/OpenSE4-<version>-SHA256SUMS.txt`
 
 Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
 with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
@@ -147,9 +149,36 @@ installed copy, without which the game does not start.
   application; started from a console it still prints `--help` and its log there.
   With Wine installed, the script runs the Windows tests through it.
 
-Requirements beyond a normal build: network access the first time (SDL3 is fetched
-and built as a static library), `mingw-w64-gcc` for Windows, and `bsdtar` for the
-zip file. Pass `--skip-tests` to package without running the tests.
+Requirements beyond a normal build:
+
+- network access the first time (SDL3 is fetched and built as a static library);
+- `mingw-w64-gcc` for Windows;
+- `bsdtar` for the zip file;
+- NSIS or Wine for the installer (see "The Windows installer").
+
+Pass `--skip-tests` to package without running the tests.
+
+### The Windows installer
+
+`packaging/windows/opense4.nsi` is an NSIS 3 script for a standard installer
+(welcome, licence, components, folder, finish). It installs for all users into
+Program Files and adds:
+
+- a Start menu entry and, if chosen, a desktop shortcut;
+- an Apps & features entry with the icon, version and an uninstaller.
+
+An update goes into the folder of the previous install. The uninstaller leaves
+saved games and settings in `%APPDATA%\OpenSE4` alone. Silent use works as with any
+NSIS installer: `setup.exe /S`, and `/D=C:\path` (last, unquoted) for another folder.
+
+The script uses `makensis` when it is on the PATH (Debian and Ubuntu package it as
+`nsis`). Otherwise it runs the official Windows build of NSIS under Wine. That build
+is downloaded once into `build/_tools` and checked against a pinned SHA-256, or
+taken from `NSIS_DIR`.
+
+`opense4.exe` carries the icon and version information from
+`packaging/windows/opense4.rc.in`. The icon (`opense4.ico`) and the installer's side
+picture are rendered from the SVG icon by `tools/render_icons.sh`.
 
 ## Installing on Linux
 

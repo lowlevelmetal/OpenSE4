@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.2.1" date="2026-09-30" type="development">
+      <description>
+        <p>A Windows installer, and the game's entry and icon on Linux desktops.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-30" type="development">
       <description>
         <p>OpenSE4 plays only the classic game, and the remaining rule questions are settled and implemented.</p>

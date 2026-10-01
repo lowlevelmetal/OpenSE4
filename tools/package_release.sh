@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # Builds the redistributable OpenSE4 packages (docs/BUILDING.md, "Release packages"):
 #
-#   dist/OpenSE4-<version>-linux-x86_64.tar.gz   static except the C library (glibc 2.34+)
-#   dist/OpenSE4-<version>-windows-x86_64.zip    static, cross-built with MinGW-w64
+#   dist/OpenSE4-<version>-linux-x86_64.tar.gz        static except the C library (glibc 2.34+)
+#   dist/OpenSE4-<version>-windows-x86_64.zip         static, cross-built with MinGW-w64
+#   dist/OpenSE4-<version>-windows-x86_64-setup.exe   the same, as an installer
 #   dist/OpenSE4-<version>-SHA256SUMS.txt
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
-# third-party notices. The Linux package also carries the desktop entry, icons
-# and AppStream metadata (packaging/linux) and install-desktop-entry.sh, which
-# adds the game to the desktop's application list. Nothing from the original game is included: players point
+# third-party notices. Nothing from the original game is included: players point
 # the game at their own installed copy.
+#
+# The Linux package also carries the desktop entry, icons and AppStream metadata
+# (packaging/linux) and install-desktop-entry.sh, which adds the game to the
+# desktop's application list. The Windows installer is built with NSIS
+# (packaging/windows/opense4.nsi): a native makensis when there is one, else the
+# official Windows build under Wine, downloaded once into build/_tools (or taken
+# from $NSIS_DIR).
 #
 #   tools/package_release.sh [linux] [windows] [--skip-tests]
 
@@ -47,6 +53,34 @@ if [[ "$version" != *-* ]] && ! grep -q "<release version=\"$version\"" "$metain
     echo "$metainfo has no <release> entry for $version: add one first." >&2
     exit 1
 fi
+
+nsis_version=3.13
+nsis_sha256=ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8
+
+installer() {  # installer <staged Windows folder> <output .exe>
+    local nsi="$root/packaging/windows/opense4.nsi"
+    local defines=(-V2 "-DVERSION=$version" "-DVERSION_NUMBER=$project_version")
+    if command -v makensis > /dev/null; then
+        makensis "${defines[@]}" "-DSTAGE=$1" "-DOUTFILE=$2" "$nsi"
+        return
+    fi
+    if ! command -v wine > /dev/null; then
+        echo "The Windows installer needs NSIS (makensis) or Wine." >&2
+        exit 1
+    fi
+    local nsis="${NSIS_DIR:-$root/build/_tools/nsis-$nsis_version}"
+    if [ ! -f "$nsis/makensis.exe" ]; then
+        echo "    fetching NSIS $nsis_version"
+        mkdir -p "$(dirname "$nsis")"
+        local zip="$nsis.zip"
+        curl -fsSL -o "$zip" "https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsis_version/nsis-$nsis_version.zip"
+        echo "$nsis_sha256  $zip" | sha256sum -c --quiet -
+        bsdtar -xf "$zip" -C "$(dirname "$nsis")"
+        rm -f "$zip"
+    fi
+    WINEDEBUG=-all wine "$nsis/makensis.exe" "${defines[@]}" "-DSTAGE=$(winepath -w "$1")" \
+        "-DOUTFILE=$(winepath -w "$2")" "$(winepath -w "$nsi")"
+}
 
 notices() {  # notices <build dir> <target> <output file>
     local deps="$1/_deps" out="$3"
@@ -150,9 +184,13 @@ for target in "${targets[@]}"; do
     else
         (cd "$dist" && bsdtar -a -cf "$name.zip" "$name")
         echo "    $dist/$name.zip"
+        echo "==> $target: installer"
+        rm -f "$dist/$name-setup.exe"
+        installer "$stage" "$dist/$name-setup.exe"
+        echo "    $dist/$name-setup.exe"
     fi
 done
 
 # Checksums for whatever this version's archives are in dist/.
-(cd "$dist" && sha256sum OpenSE4-"${version}"-*.tar.gz OpenSE4-"${version}"-*.zip 2> /dev/null > "OpenSE4-${version}-SHA256SUMS.txt" || true)
+(cd "$dist" && sha256sum OpenSE4-"${version}"-*.tar.gz OpenSE4-"${version}"-*.zip OpenSE4-"${version}"-*-setup.exe 2> /dev/null > "OpenSE4-${version}-SHA256SUMS.txt" || true)
 echo "==> checksums: $dist/OpenSE4-${version}-SHA256SUMS.txt"

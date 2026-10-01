@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- OpenSE4 application icon: a ringed planet in a starfield. Our own drawing,
      under the project's licence (GPL 3.0 or later). PNG sizes are rendered from
-     this file by tools/render_icons.sh. -->
+     this file by tools/render_icons.sh, and so are the Windows icon and the
+     installer's side picture (packaging/windows). -->
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0.4" y2="1">
@@ -27,9 +28,9 @@
     </clipPath>
   </defs>
 
-  <rect x="10" y="12" width="108" height="108" rx="22" fill="#000" opacity="0.25"/>
-  <rect x="10" y="10" width="108" height="108" rx="22" fill="url(#sky)"/>
-  <rect x="10.5" y="10.5" width="107" height="107" rx="21.5" fill="none" stroke="#6f8fd8" stroke-opacity="0.35"/>
+  <rect id="base-shadow" x="10" y="12" width="108" height="108" rx="22" fill="#000" opacity="0.25"/>
+  <rect id="base" x="10" y="10" width="108" height="108" rx="22" fill="url(#sky)"/>
+  <rect id="base-edge" x="10.5" y="10.5" width="107" height="107" rx="21.5" fill="none" stroke="#6f8fd8" stroke-opacity="0.35"/>
 
   <g fill="#fff">
     <circle cx="27" cy="27" r="1.3" opacity="0.8"/>

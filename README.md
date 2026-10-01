@@ -89,6 +89,11 @@ Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
 ./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
 ```
 
+On Windows, the release's `-setup.exe` installs OpenSE4 for all users. It goes into
+Program Files with a Start menu entry and, if you choose, a desktop shortcut, and you
+remove it from Apps & features. The zip holds the same programs to run from any folder.
+Saved games and settings live in `%APPDATA%\OpenSE4` either way.
+
 On Linux, the game can appear in the desktop's application list (GNOME, KDE Plasma
 and other freedesktop.org desktops):
 
