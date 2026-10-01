@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.4.0" date="2026-10-01" type="development">
+      <description>
+        <p>Battles shown as they are fought, round-by-round ground combat, colony cloaking, the missing colony and cargo orders, the original's fonts and pointers, and the 800x600 layout.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-01" type="development">
       <description>
         <p>Every remaining rule and interface question settled from the original and implemented, and new tutorials, training games and an in-game manual.</p>
