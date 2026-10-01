@@ -124,6 +124,7 @@ struct AiMemory {
 // §7.3 "What it counts"): the game turn it ran in, how many battles
 // (GameState::combats) and log entries of each empire were dated that turn
 // then, and the next message id. The next step counts what came after.
+// Simultaneous games use only the message id (ai::simultaneousWindow).
 struct PoliticsMark {
     bool set = false;
     uint32_t turn = 0;

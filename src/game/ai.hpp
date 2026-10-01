@@ -144,7 +144,21 @@ struct PoliticalWindow {
     std::vector<uint32_t> logs;       // per EmpireId: of its log entries dated `turn`, the first ones not counted
     uint32_t firstMessage = 0;        // messages with a lower id do not count
     bool andLater = false;            // everything dated after `turn` counts too
+    // Simultaneous games: the messages count by delivery instead of `turn`:
+    // those delivered since the empire's previous political step (id at
+    // least firstMessage) whose political entry is dated `messagesFrom` or
+    // later (DiplomaticMessage::dated).
+    bool messagesByDelivery = false;
+    uint32_t messagesFrom = 0;
 };
+// The window of a simultaneous turn's political step (spec 05 §7.3 "What it
+// counts", confirmed: binary): the battles and log entries of the turn
+// processed before, and the messages delivered since the empire's previous
+// political step that are dated this turn or the turn before (the players'
+// messages of this turn's step 2, and the computer players' messages
+// delivered after that step). recordPoliticalStep marks them as counted.
+PoliticalWindow simultaneousWindow(const GameState& s, EmpireId e);
+void recordPoliticalStep(GameState& s, EmpireId e);
 void politicalStep(TurnContext& ctx);
 void politicalStep(TurnContext& ctx, EmpireId e, std::optional<uint32_t> eventsTurn);
 void politicalStep(TurnContext& ctx, EmpireId e, const PoliticalWindow& window);

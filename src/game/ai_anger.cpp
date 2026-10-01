@@ -286,7 +286,10 @@ struct AngerInputs {
     bool counts(uint32_t turn) const {
         return window.turn && (turn == *window.turn || (window.andLater && turn > *window.turn));
     }
-    bool countsMessage(const DiplomaticMessage& m) const { return counts(m.sentTurn) && m.id.value >= window.firstMessage; }
+    bool countsMessage(const DiplomaticMessage& m) const {
+        if (window.messagesByDelivery) return m.delivered && m.id.value >= window.firstMessage && m.dated >= window.messagesFrom;
+        return counts(m.sentTurn) && m.id.value >= window.firstMessage;
+    }
 };
 
 // Marks the items of `list` (in order) that the window counts: those dated
@@ -644,6 +647,19 @@ void politicalStep(TurnContext& ctx) {
 }
 
 void politicalStep(TurnContext& ctx, EmpireId id, std::optional<uint32_t> eventsTurn) { politicalStep(ctx, id, turnWindow(eventsTurn)); }
+
+PoliticalWindow simultaneousWindow(const GameState& s, EmpireId e) {
+    PoliticalWindow w;
+    if (s.turn > 0) w.turn = s.turn - 1;
+    w.messagesByDelivery = true;
+    w.messagesFrom = s.turn;  // the ministers' date − 1
+    if (e.valid() && e.index() < s.empires.size()) w.firstMessage = s.empire(e).politicsMark.nextMessage;
+    return w;
+}
+
+void recordPoliticalStep(GameState& s, EmpireId e) {
+    if (e.valid() && e.index() < s.empires.size()) s.empire(e).politicsMark.nextMessage = s.nextMessageId;
+}
 
 void politicalStep(TurnContext& ctx, EmpireId id, const PoliticalWindow& window) {
     GameState& s = ctx.state;

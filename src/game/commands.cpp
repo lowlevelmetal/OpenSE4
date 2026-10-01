@@ -804,7 +804,8 @@ struct Applier {
             case MessageType::RequestAttackEmpire: addUnique(me.aiMemory.attackSystems, d.system); break;
             case MessageType::RequestAttackPlanet: addUnique(me.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
             // A promise about the empire the demand names, not the requester
-            // (spec 05 open question 47). None named: nothing (inferred).
+            // (spec 05 open question 47). None named: nothing (inferred, spec
+            // 05 open question 51).
             case MessageType::RequestStopHostilities:
                 if (named) ++named->promises;
                 break;

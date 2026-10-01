@@ -178,16 +178,19 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 
     // ---- 4. Start of turn, empire by empire: the AI state update, the
     // political step (counting the turn processed before: its battles are
-    // still in GameState::combats), then the ministers that act while orders
-    // are given. The Politics minister acts first and its messages take
+    // still in GameState::combats; and the messages delivered since the
+    // empire's previous step, those of step 2 included), then the ministers
+    // that act while orders are given. The Politics minister acts first and its messages take
     // effect as they are sent, so the other ministers already see the
     // treaties it changed (spec 05 §8 step 4, confirmed: binary).
-    const std::optional<uint32_t> previousTurn = s.turn > 0 ? std::optional<uint32_t>(s.turn - 1) : std::nullopt;
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
         ai::updateAiState(ctx, id);
-        if (controlOf(i) != Control::Absent) ai::politicalStep(ctx, id, previousTurn);
+        if (controlOf(i) != Control::Absent) {
+            ai::politicalStep(ctx, id, ai::simultaneousWindow(s, id));
+            ai::recordPoliticalStep(s, id);
+        }
         // Messages sent now carry the advanced date (spec 05 §7.4 "Answer window").
         if (ministersPlan(s, id, controlOf(i))) {
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));

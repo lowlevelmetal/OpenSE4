@@ -437,7 +437,7 @@ std::string roman(int n) {
 // count carrying on across the rounds. With no file the name is "Design
 // <counter + 1>", unchecked. With every name used the original leaves the
 // name empty; OpenSE4 refuses a design without a name, so it takes "Design
-// <counter + 1>" then (inferred, spec 05 open question 37).
+// <counter + 1>" then (an OpenSE4 choice, spec 05 open question 37).
 std::string designName(const Planner& p) {
     int64_t counter = 0;
     for (const Design& d : p.st.designs) counter += d.owner == p.id && !d.templateName.empty();

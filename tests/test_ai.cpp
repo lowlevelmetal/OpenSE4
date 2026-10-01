@@ -1760,6 +1760,48 @@ TEST_CASE("ai: anger term 2 counts the stellar manipulation reports of the empir
     CHECK(s.empire(a).relation(c).anger == std::max(std::clamp(50 + table.regularDecrease, 0, 100), table.minimum));
 }
 
+TEST_CASE("ai: a simultaneous political step counts the messages delivered since the previous one, step 2's included") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, false);
+    const EmpireId human{0u}, cpu{1u}, later{2u};
+    meet(s, human, cpu);
+    meet(s, later, cpu);
+    s.turn = 5;
+    const auto& table = ai::builtinProfile().anger;
+    TurnContext ctx{r, s, {}, {}, {}};
+    // A player's message of this turn's step 2 (dated 5) and a computer
+    // player's message delivered after our previous step (dated 5 too).
+    DiplomaticMessage demand;
+    demand.to = cpu;
+    demand.type = MessageType::DemandTribute;
+    REQUIRE(apply(r, s, human, cmd::SendMessage{demand}).ok);
+    DiplomaticMessage war = demand;
+    war.type = MessageType::DemandSurrender;
+    REQUIRE(apply(r, s, later, cmd::SendMessage{war}).ok);
+    diplomacy::deliverMessages(ctx);
+    s.empire(cpu).relation(human).anger = 30;
+    s.empire(cpu).relation(later).anger = 30;
+    ai::politicalStep(ctx, cpu, ai::simultaneousWindow(s, cpu));
+    ai::recordPoliticalStep(s, cpu);
+    auto expected = [&](int receive) { return std::max(std::clamp(30 + receive + table.regularDecrease, 0, 100), table.minimum); };
+    const int fromHuman = s.empire(cpu).relation(human).anger;
+    CHECK(fromHuman <= expected(table.receive[static_cast<size_t>(MessageType::DemandTribute)]));
+    CHECK(fromHuman >= expected(table.receive[static_cast<size_t>(MessageType::DemandTribute)]) - 10);
+    // Counted once: the next step does not count them again.
+    ++s.turn;
+    s.empire(cpu).relation(human).anger = 30;
+    ai::politicalStep(ctx, cpu, ai::simultaneousWindow(s, cpu));
+    CHECK(s.empire(cpu).relation(human).anger <= expected(0));
+    // Without the delivery-based window, step 2's message was not counted in its own turn.
+    s.turn = 5;
+    s.empire(cpu).politicsMark = PoliticsMark{};
+    s.empire(cpu).relation(human).anger = 30;
+    ai::PoliticalWindow old = ai::simultaneousWindow(s, cpu);
+    old.messagesByDelivery = false;
+    ai::politicalStep(ctx, cpu, old);
+    CHECK(s.empire(cpu).relation(human).anger < fromHuman);
+}
+
 TEST_CASE("ai: the Mega Evil Empire is judged per AI with the strict threshold") {
     ruleset::Ruleset data = buildEngineRuleset();
     data.settings.set("AI Mega Evil Empire Threshold Score Thousands", "0");
