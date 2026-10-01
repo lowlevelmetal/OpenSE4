@@ -213,8 +213,11 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         score::checkDestruction(ctx, id);
     }
 
-    // ---- 7. Design cleanup when a new year starts.
+    // ---- 7. Design cleanup when a new year starts; then, every turn, the
+    // contact check: empires that no warp path links any more lose contact
+    // (spec 05 §3.1, confirmed: binary).
     if (date % 10 == 0) movement::purgeObsoleteDesigns(ctx);
+    diplomacy::checkContacts(ctx);
 
     // ---- 8. Victory check.
     score::checkVictory(ctx, date);

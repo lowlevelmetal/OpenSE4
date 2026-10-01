@@ -70,7 +70,8 @@ empires are skipped.
    second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase. Sight and first
-   contact are then updated.
+   contact are then updated: two empires meet when each detects the other in one system
+   and a warp path links their colonies (`diplomacy::updateContacts`).
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
@@ -99,7 +100,10 @@ empires are skipped.
    18. the log keeps only this turn's entries; the long record of the History window is
       `Empire::historyEvents`, which is never pruned (`addHistory`).
 
-7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`).
+7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`), then,
+   every turn, the **contact check** (`diplomacy::checkContacts`): an empire from whose
+   colonies no warp path leads to a colony of an empire it has met returns to "no
+   contact" with it, drops its intelligence projects against it and logs "Contact Lost".
 8. **Victory check** (`score::checkVictory`).
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
@@ -146,7 +150,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    empire's turn starts. Computer players take their turns the same way, one after
    another (`resumeTurnBased`).
 4. **After the last player** the date advances, then the design cleanup (a new year), the
-   victory check and the event step run, the per-turn flags are cleared and the AI
+   contact check, the victory check and the event step run, the per-turn flags are cleared and the AI
    remembers the turn, as in steps 7 to 10. `GameState::combats` keeps the battles of the
    game turn in progress and of the one before, so each empire's political step counts
    every battle since its previous step exactly once.

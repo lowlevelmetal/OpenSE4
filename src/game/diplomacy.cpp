@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 
 namespace opense4::game::diplomacy {
 
@@ -352,6 +353,52 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
 
 std::string firstContactText(const GameState& s, EmpireId other) { return std::format("We have made contact with the {}.", nameOf(s, other)); }
 
+std::string contactLostText(const GameState& s, EmpireId other) {
+    return std::format("No warp route links our colonies to the {} any more: we have lost contact with it.", nameOf(s, other));
+}
+
+std::vector<uint8_t> warpReach(const GameState& s, EmpireId e) {
+    const size_t n = s.galaxy.systems.size();
+    std::vector<uint8_t> reached(n, 0);
+    std::vector<SystemId> frontier;
+    for (const auto& c : s.colonies) {
+        if (!c || c->owner != e) continue;
+        const SystemId sys = s.galaxy.object(c->planet).system;
+        if (sys.index() < n && !reached[sys.index()]) {
+            reached[sys.index()] = 1;
+            frontier.push_back(sys);
+        }
+    }
+    while (!frontier.empty()) {
+        const SystemId at = frontier.back();
+        frontier.pop_back();
+        for (SystemId next : s.galaxy.neighbors(at))
+            if (next.index() < n && !reached[next.index()]) {
+                reached[next.index()] = 1;
+                frontier.push_back(next);
+            }
+    }
+    return reached;
+}
+
+namespace {
+
+bool colonyIn(const GameState& s, const std::vector<uint8_t>& reached, EmpireId owner) {
+    for (const auto& c : s.colonies) {
+        if (!c || c->owner != owner) continue;
+        const SystemId sys = s.galaxy.object(c->planet).system;
+        if (sys.index() < reached.size() && reached[sys.index()]) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool warpLinked(const GameState& s, EmpireId from, EmpireId to) {
+    if (!validEmpire(s, from) || !validEmpire(s, to)) return false;
+    return colonyIn(s, warpReach(s, from), to);
+}
+
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to) {
     GameState& s = ctx.state;
     if (!living(s, from) || !living(s, to) || from == to || s.empire(from).relation(to).treaty == Treaty::War) return;
@@ -637,10 +684,46 @@ void updateContacts(TurnContext& ctx) {
             if (owner == b && std::binary_search(detects[b].begin(), detects[b].end(), std::pair{sys, static_cast<uint32_t>(a)})) return true;
         return false;
     };
+    // ... and a warp path from each side's colonies to a colony of the other
+    // (spec 05 §3.1, confirmed: binary), the test the contact check repeats
+    // every turn. Every warp link works both ways (spec 01 §3.5), so the two
+    // directions agree; checking both keeps a new contact from being lost at
+    // the next check.
+    std::vector<std::optional<std::vector<uint8_t>>> reach(n);
+    auto linked = [&](size_t from, size_t to) {
+        if (!reach[from]) reach[from] = warpReach(s, EmpireId{from});
+        return colonyIn(s, *reach[from], EmpireId{to});
+    };
     for (size_t a = 0; a < n; ++a)
         for (size_t b = a + 1; b < n; ++b)
-            if (s.empires[a].alive && s.empires[b].alive && !s.empires[a].relations[b].contact && mutual(a, b))
+            if (s.empires[a].alive && s.empires[b].alive && !s.empires[a].relations[b].contact && mutual(a, b) && linked(a, b) &&
+                linked(b, a))
                 makeContact(ctx, EmpireId{a}, EmpireId{b});
+}
+
+void checkContacts(TurnContext& ctx) {
+    GameState& s = ctx.state;
+    const size_t n = s.empires.size();
+    for (size_t a = 0; a < n; ++a) {
+        if (!s.empires[a].alive) continue;
+        const EmpireId id{a};
+        std::optional<std::vector<uint8_t>> reached;
+        for (size_t b = 0; b < n; ++b) {
+            const EmpireId other{b};
+            if (b == a || !s.empires[a].relations[b].contact) continue;
+            if (!reached) reached = warpReach(s, id);
+            if (colonyIn(s, *reached, other)) continue;
+            // Our side only returns to "no contact"; the anger stays.
+            Relation& rel = s.empires[a].relations[b];
+            rel.contact = false;
+            rel.treaty = Treaty::None;
+            rel.dominant = false;
+            rel.treatyTurn = s.turn;
+            std::erase_if(s.empires[a].intel, [&](const IntelProjectOrder& o) { return o.target == other; });
+            ctx.log(id, LogCategory::Politics, "Contact Lost", contactLostText(s, other));
+            addHistory(s, id, other, std::format("Lost contact with the {}", nameOf(s, other)));
+        }
+    }
 }
 
 void treatyStep(TurnContext& ctx, EmpireId id) {

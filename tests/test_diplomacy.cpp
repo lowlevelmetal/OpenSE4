@@ -547,15 +547,16 @@ TEST_CASE("diplomacy: surrender and independence") {
     CHECK(hasLog(s, kC, "Independence Granted"));
 }
 
-TEST_CASE("diplomacy: first contact needs mutual detection in one system and is never lost") {
+TEST_CASE("diplomacy: first contact needs mutual detection in one system and a warp path") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     TurnContext ctx = context(s);
     const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
-    const SystemId homeC = s.galaxy.object(homeworld(s, kC).planet).system;
     VehicleId shipOfA;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == kA) shipOfA = v.id;
+    REQUIRE(diplomacy::warpLinked(s, kA, kB));
+    REQUIRE(diplomacy::warpLinked(s, kB, kA));
 
     // A has presence at B's home and sees B's colony, but B does not see A: no contact.
     s.empire(kA).knowledge.present[homeB.index()] = 1;
@@ -568,33 +569,128 @@ TEST_CASE("diplomacy: first contact needs mutual detection in one system and is 
     diplomacy::updateContacts(ctx);
     CHECK_FALSE(diplomacy::inContact(s, kA, kB));
 
-    // Both detect each other in B's home system: contact.
+    // Both detect each other in B's home system, but no warp path links them: none.
     s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kB).planet);
+    std::vector<ObjectId> links;
+    for (SpaceObject& o : s.galaxy.objects)
+        if (o.kind == ObjectKind::WarpPoint) {
+            links.push_back(o.destination);
+            o.destination = ObjectId{};
+        }
+    CHECK_FALSE(diplomacy::warpLinked(s, kA, kB));
+    diplomacy::updateContacts(ctx);
+    CHECK_FALSE(diplomacy::inContact(s, kA, kB));
+
+    // With the warp links back: contact, both ways.
+    {
+        size_t i = 0;
+        for (SpaceObject& o : s.galaxy.objects)
+            if (o.kind == ObjectKind::WarpPoint) o.destination = links[i++];
+    }
     diplomacy::updateContacts(ctx);
     CHECK(diplomacy::inContact(s, kA, kB));
     CHECK(diplomacy::inContact(s, kB, kA));
     CHECK_FALSE(diplomacy::inContact(s, kA, kC));
     CHECK(hasLog(s, kA, "First Contact"));
     CHECK(hasLog(s, kB, "First Contact"));
-    (void)homeC;
 
-    // Nobody sees anybody and the warp network falls apart: contact stays.
+    // Nobody sees anybody any more: the contact check keeps contact while the path exists.
     diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
     for (Empire& e : s.empires) {
         e.knowledge.visibleVehicles.clear();
         std::fill(e.knowledge.present.begin(), e.knowledge.present.end(), uint8_t{0});
     }
-    for (SpaceObject& o : s.galaxy.objects)
-        if (o.kind == ObjectKind::WarpPoint) o.destination = ObjectId{};
-    diplomacy::updateContacts(ctx);
+    diplomacy::checkContacts(ctx);
     CHECK(diplomacy::inContact(s, kA, kB));
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
 
-    // Only the destruction of an empire ends contact.
+    // Destruction ends contact too.
     diplomacy::forgetEmpire(s, kB);
     CHECK_FALSE(diplomacy::inContact(s, kA, kB));
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
     (void)r;
+}
+
+TEST_CASE("diplomacy: contact is lost when no warp path links the colonies (spec 05 §3.1)") {
+    GameState s = newPoliticsGame();
+    TurnContext ctx = context(s);
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    diplomacy::setTreaty(ctx, kA, kB, Treaty::TradeAlliance);
+    s.empire(kA).relation(kB).anger = 37;
+    s.empire(kB).relation(kA).anger = 64;
+    IntelProjectOrder spyB;
+    spyB.project = 0;
+    spyB.target = kB;
+    IntelProjectOrder spyC = spyB;
+    spyC.target = kC;
+    s.empire(kA).intel = {spyB, spyC};
+    s.empire(kB).intel = {spyB, spyC};
+    s.empire(kB).intel[0].target = kA;
+
+    // A keeps its colonies linked to C's, but every warp point of B's home
+    // system leads nowhere, and every warp point toward it too.
+    const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
+    for (SpaceObject& o : s.galaxy.objects) {
+        if (o.kind != ObjectKind::WarpPoint || !o.destination.valid()) continue;
+        if (o.system == homeB || s.galaxy.object(o.destination).system == homeB) o.destination = ObjectId{};
+    }
+    REQUIRE(diplomacy::warpLinked(s, kA, kC));
+    diplomacy::checkContacts(ctx);
+    for (auto [x, y] : {std::pair{kA, kB}, std::pair{kB, kA}}) {
+        const Relation& rel = s.empire(x).relation(y);
+        CHECK_FALSE(rel.contact);
+        CHECK(rel.treaty == Treaty::None);
+        CHECK(hasLog(s, x, "Contact Lost"));
+    }
+    // The anger stays; only the projects against the lost empire go.
+    CHECK(s.empire(kA).relation(kB).anger == 37);
+    CHECK(s.empire(kB).relation(kA).anger == 64);
+    REQUIRE(s.empire(kA).intel.size() == 1);
+    CHECK(s.empire(kA).intel[0].target == kC);
+    REQUIRE(s.empire(kB).intel.size() == 1);
+    CHECK(s.empire(kB).intel[0].target == kC);
+    CHECK(diplomacy::inContact(s, kA, kC));
+    CHECK(std::any_of(s.empire(kA).historyEvents.begin(), s.empire(kA).historyEvents.end(),
+                      [](const HistoryEntry& h) { return h.empire == kB && h.text.starts_with("Lost contact"); }));
+
+    // The human's history file gets the line the turn after.
+    nextTurn(s);
+    const score::PlayerRecords rec = score::playerRecords(politicsRules(), s, kA);
+    CHECK(std::any_of(rec.history.begin(), rec.history.end(), [](const std::string& l) { return l.find("Lost contact") != std::string::npos; }));
+}
+
+TEST_CASE("diplomacy: an empire without colonies loses every contact at the next check") {
+    GameState s = newPoliticsGame();
+    TurnContext ctx = context(s);
+    setContact(s, kA, kB);
+    setContact(s, kB, kC);
+    s.colonies[homeworld(s, kB).planet.index()].reset();
+    REQUIRE(s.empire(kB).alive);
+    diplomacy::checkContacts(ctx);
+    CHECK_FALSE(diplomacy::inContact(s, kB, kA));
+    CHECK_FALSE(diplomacy::inContact(s, kB, kC));
+    CHECK_FALSE(diplomacy::inContact(s, kA, kB));
+    CHECK_FALSE(diplomacy::inContact(s, kC, kB));
+}
+
+TEST_CASE("diplomacy: the turn runs the contact check after the design cleanup, in both turn styles") {
+    for (const bool simultaneous : {true, false}) {
+        CAPTURE(simultaneous);
+        GameState s = newPoliticsGame();
+        s.options.simultaneous = simultaneous;
+        setContact(s, kA, kB);
+        for (SpaceObject& o : s.galaxy.objects)
+            if (o.kind == ObjectKind::WarpPoint) o.destination = ObjectId{};
+        const uint32_t turn = s.turn;
+        processTurn(politicsRules(), s, {}, {});
+        CHECK(s.turn == turn + 1);
+        CHECK_FALSE(diplomacy::inContact(s, kA, kB));
+        CHECK_FALSE(diplomacy::inContact(s, kB, kA));
+        const LogEntry* lost = findLog(s, kA, "Contact Lost");
+        REQUIRE(lost != nullptr);
+        CHECK(lost->turn == turn);
+    }
 }
 
 TEST_CASE("diplomacy: the treaty step resets mismatched treaties and declaring war ignores the treaty") {

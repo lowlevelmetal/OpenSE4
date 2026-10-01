@@ -194,7 +194,9 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
         else if (m.type == MessageType::BreakTreaty) out.history.push_back(historyLine(before, other, "Treaty broken"));
         else if (m.type == MessageType::DeclareWar) out.history.push_back(historyLine(before, other, "War declared"));
     }
-    // ... and the player's own log: empires destroyed and first contacts.
+    // ... and the player's own log: empires destroyed, first contacts and
+    // contacts lost (the contact check's lines, spec 05 §3.1; a destruction
+    // writes only its own line).
     const Empire& me = s.empire(e);
     for (const LogEntry& l : me.log) {
         if (l.turn != before) continue;
@@ -204,6 +206,8 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
                 out.history.push_back(historyLine(before, x.id, std::format("The {} was destroyed", effects::empireFullName(x))));
             else if (l.title == "First Contact" && l.text == diplomacy::firstContactText(s, x.id))
                 out.history.push_back(historyLine(before, x.id, std::format("First contact with the {}", effects::empireFullName(x))));
+            else if (l.title == "Contact Lost" && l.text == diplomacy::contactLostText(s, x.id))
+                out.history.push_back(historyLine(before, x.id, std::format("Lost contact with the {}", effects::empireFullName(x))));
         }
     }
     // The text copy of the log.

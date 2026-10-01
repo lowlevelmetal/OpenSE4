@@ -924,7 +924,13 @@ TEST_CASE("events: a colony that breaks away mid-turn becomes an empire that pla
     REQUIRE(s.empires.size() > 3);
     const EmpireId rebel{3u};
     CHECK(s.empire(rebel).alive);
-    CHECK(hasLog(s, rebel, "First Contact"));
+    // It meets only the empires that detect it and that a warp path links to
+    // it (spec 05 §3.1), at None.
+    for (const Empire& e : s.empires)
+        if (e.id != rebel && s.empire(rebel).relation(e.id).contact) {
+            CHECK(diplomacy::warpLinked(s, rebel, e.id));
+            CHECK(hasLog(s, rebel, "First Contact"));
+        }
     // Founded in the event step, after every empire's end-of-turn processing:
     // its own processing starts next turn (spec 05 §8).
     const size_t recorded = s.empire(rebel).history.size();
