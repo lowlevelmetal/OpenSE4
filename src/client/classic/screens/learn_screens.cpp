@@ -19,11 +19,10 @@ namespace {
 
 const ImVec4 kDone{0.45f, 0.9f, 0.45f, 1.0f};
 
-void dim(const Painter& p, std::string_view text) {
+void dim(std::string_view text) {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(imColorV(palette::kSecondary), "%.*s", int(text.size()), text.data());
     ImGui::PopTextWrapPos();
-    (void)p;
 }
 
 } // namespace
@@ -75,7 +74,7 @@ void LearnView::lessons(const Painter& p, LearnHost& host, learn::LessonKind kin
     std::string& sel = selected_[kind == learn::LessonKind::Tutorial ? 0 : 1];
     if (list.empty()) {
         heading(p, kind == learn::LessonKind::Tutorial ? "Tutorials" : "Training");
-        dim(p, kind == learn::LessonKind::Tutorial ? "No tutorials are installed yet." : "No training games are installed yet.");
+        dim(kind == learn::LessonKind::Tutorial ? "No tutorials are installed yet." : "No training games are installed yet.");
         return;
     }
     if (!lib.lesson(kind, sel)) sel = list.front().slug;
@@ -134,12 +133,12 @@ void LearnView::contents(const Painter& p, LearnHost& host) {
     std::string& sel = selected_[2];
     if (lib.manual.empty()) {
         heading(p, "Manual");
-        dim(p, "No manual pages are installed yet.");
-        if (!host.content->originalManual.empty()) dim(p, "The game's own manual opens in the browser with Original Manual.");
+        dim("No manual pages are installed yet.");
+        if (!host.content->originalManual.empty()) dim("The game's own manual opens in the browser with Original Manual.");
         return;
     }
     heading(p, "Manual");
-    dim(p, "Click a chapter or section to read it.");
+    dim("Click a chapter or section to read it.");
     ImGui::Spacing();
     ImGui::BeginChild("##chapters", ImVec2(0, 0), ImGuiChildFlags_Borders);
     for (const learn::ManualPage& page : lib.manual) {
@@ -257,7 +256,7 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     d.beginContent();
     if (!page) {
         heading(p, "Manual");
-        dim(p, "No manual pages are installed yet.");
+        dim("No manual pages are installed yet.");
     } else {
         ImGui::BeginChild("##contents", ImVec2(p.px(230), 0), ImGuiChildFlags_None);
         contents(p, lib);
@@ -274,6 +273,11 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
             return host.inGame || (l.kind != learn::Link::Kind::Window && l.kind != learn::Link::Kind::Help);
         };
         if (auto clicked = drawMarkdown(p, page->doc.blocks, options_)) follow(*clicked, host);
+        if (!options_.scrollTo.empty()) {
+            // No such section on the page: its top.
+            options_.scrollTo.clear();
+            ImGui::SetScrollY(0.0f);
+        }
         ImGui::EndChild();
     }
 
@@ -399,15 +403,6 @@ private:
 
 // ---- In the front end ----------------------------------------------------------------------------
 
-// The intro picture behind the windows, as the other front-end screens show it.
-void background(MenuContext& ctx) {
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    const ImVec2 a{0, 0}, b = ImGui::GetIO().DisplaySize;
-    if (Sprite bg = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
-        dl->AddImage(ImTextureRef(static_cast<ImTextureID>(bg.tex.value)), a, b, ImVec2(bg.uv.min.x, bg.uv.min.y), ImVec2(bg.uv.max.x, bg.uv.max.y));
-    else dl->AddRectFilled(a, b, IM_COL32(2, 4, 12, 255));
-}
-
 class LearnFrontScreen final : public FrontScreen {
 public:
     // `start`: a Learn tab name, or "manual:<slug#anchor>" to open the manual
@@ -420,7 +415,7 @@ public:
     }
 
     void draw(MenuContext& ctx) override {
-        background(ctx);
+        introBackground(ctx);
         if (!ctx.learn) {
             ctx.go(FrontId::Intro);
             return;

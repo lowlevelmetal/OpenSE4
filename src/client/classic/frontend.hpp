@@ -56,6 +56,8 @@ public:
 };
 
 std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
+// The intro picture over the whole window, behind the front end's windows.
+void introBackground(MenuContext& ctx);
 // Automation (--open=NAME): a front-end screen by name: intro, quickstart,
 // setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
 // (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer,

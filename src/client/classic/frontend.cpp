@@ -16,16 +16,18 @@
 
 namespace opense4::client::classic {
 
-namespace {
-
 // The intro picture stretched over the whole window, as the original shows it.
-void background(MenuContext& ctx) {
+void introBackground(MenuContext& ctx) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const ImVec2 a{0, 0}, b = ImGui::GetIO().DisplaySize;
     if (Sprite bg = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
         dl->AddImage(ImTextureRef(static_cast<ImTextureID>(bg.tex.value)), a, b, ImVec2(bg.uv.min.x, bg.uv.min.y), ImVec2(bg.uv.max.x, bg.uv.max.y));
     else dl->AddRectFilled(a, b, IM_COL32(2, 4, 12, 255));
 }
+
+namespace {
+
+void background(MenuContext& ctx) { introBackground(ctx); }
 
 // A classic window (pipe frame, title strip) with its content area as the ImGui window.
 bool beginPanel(MenuContext& ctx, const char* id, Rect r, const char* title = nullptr) {
