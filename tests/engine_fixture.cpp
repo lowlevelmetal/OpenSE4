@@ -287,17 +287,20 @@ ruleset::Ruleset buildEngineRuleset() {
     drone.maxEngines = 4;
     // Hulls made for colony modules and for cargo: the computer player's
     // colony-ship and transport templates only use hulls like these (spec 05 §7.5).
+    // Each is set up before the next is added: adding one may move the others.
+    auto shipHull = [](VehicleSize& h) {
+        h.enginesPerMove = 1;
+        h.mustHaveBridge = true;
+        h.minLifeSupport = 1;
+        h.minCrewQuarters = 1;
+        h.usesEngines = true;
+        h.maxEngines = 6;
+    };
     auto& colonyHull = b.hull("Test Colony Hull", VehicleType::Ship, 150, {80, 0, 10}, {con});
-    auto& transport = b.hull("Test Transport Hull", VehicleType::Ship, 200, {100, 0, 10}, {con});
-    for (VehicleSize* h : {&colonyHull, &transport}) {
-        h->enginesPerMove = 1;
-        h->mustHaveBridge = true;
-        h->minLifeSupport = 1;
-        h->minCrewQuarters = 1;
-        h->usesEngines = true;
-        h->maxEngines = 6;
-    }
+    shipHull(colonyHull);
     colonyHull.maxPercentColonyModules = 20;
+    auto& transport = b.hull("Test Transport Hull", VehicleType::Ship, 200, {100, 0, 10}, {con});
+    shipHull(transport);
     transport.maxPercentCargo = 25;
 
     // ---- A roomier start system so homeworlds have neighbours.
