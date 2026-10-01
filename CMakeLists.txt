@@ -58,6 +58,21 @@ endif()
 add_subdirectory(src)
 add_subdirectory(tools)
 
+# `cmake --install`: the programs, and on Linux the desktop entry, icons and
+# AppStream metadata that let desktops list the game (packaging/linux).
+include(GNUInstallDirs)
+install(TARGETS opense4-server opense4-datacheck RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+if(TARGET opense4)
+    install(TARGETS opense4 RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
+install(FILES README.md LICENSE DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+if(UNIX AND NOT APPLE)
+    set(opense4_app_id io.github.lowlevelmetal.OpenSE4)
+    install(FILES "packaging/linux/${opense4_app_id}.desktop" DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+    install(FILES "packaging/linux/${opense4_app_id}.metainfo.xml" DESTINATION "${CMAKE_INSTALL_DATADIR}/metainfo")
+    install(DIRECTORY packaging/linux/icons/hicolor DESTINATION "${CMAKE_INSTALL_DATADIR}/icons")
+endif()
+
 if(OPENSE4_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

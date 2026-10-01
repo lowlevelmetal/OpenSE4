@@ -46,7 +46,9 @@ void fatal(const std::string& message) {
 
 int App::run(const AppOptions& options) {
     options_ = options;
-    SDL_SetAppMetadata("OpenSE4", "0.1.0", "org.opense4.OpenSE4");
+    // The identifier is the Wayland app ID and X11 window class, which desktops
+    // match to packaging/linux/io.github.lowlevelmetal.OpenSE4.desktop.
+    SDL_SetAppMetadata("OpenSE4", OPENSE4_CLIENT_VERSION, "io.github.lowlevelmetal.OpenSE4");
     // The game is the player's own installed copy: without one there is nothing
     // to play. Checked before any window or renderer exists.
     const auto dataDir = ruleset::findInstalledDataDir(options.installDir);

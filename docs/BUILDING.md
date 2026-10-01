@@ -127,6 +127,10 @@ platforms from one Linux machine:
 Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
 with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
 Font License) are built into the game, so nothing else needs to sit next to it.
+The Linux package also holds the desktop entry, icons and AppStream metadata under
+`share/`, and `install-desktop-entry.sh`, which adds the game to the user's
+application list (see "Installing on Linux"). The script refuses to package a tagged
+version that has no `<release>` entry in the AppStream metadata.
 Nothing from the original game is included: players point OpenSE4 at their own
 installed copy, without which the game does not start.
 
@@ -146,6 +150,31 @@ installed copy, without which the game does not start.
 Requirements beyond a normal build: network access the first time (SDL3 is fetched
 and built as a static library), `mingw-w64-gcc` for Windows, and `bsdtar` for the
 zip file. Pass `--skip-tests` to package without running the tests.
+
+## Installing on Linux
+
+`cmake --install` puts the programs in `bin/` and, on Linux, the files that let
+desktops list the game (`packaging/linux`):
+
+```sh
+cmake --install build/release --prefix ~/.local      # for your user
+sudo cmake --install build/release --prefix /usr/local
+```
+
+| File | Installed to |
+|---|---|
+| `io.github.lowlevelmetal.OpenSE4.desktop` | `share/applications/` |
+| `io.github.lowlevelmetal.OpenSE4.metainfo.xml` (AppStream, for software centres) | `share/metainfo/` |
+| The icon: an SVG, and PNGs from 16 to 512 pixels | `share/icons/hicolor/` |
+
+The game sets `io.github.lowlevelmetal.OpenSE4` as its Wayland app ID and X11 window
+class, so the desktop matches its window to the entry. The PNGs are rendered from the
+SVG by `tools/render_icons.sh` (needs `rsvg-convert`). Add a `<release>` entry to the
+metainfo file for each new version.
+
+For the release package, `install-desktop-entry.sh` does the same for one user. It
+copies the entry and icons into `~/.local/share` (or `$XDG_DATA_HOME`), with `Exec`
+pointing at the unpacked folder.
 
 ## Offline builds
 

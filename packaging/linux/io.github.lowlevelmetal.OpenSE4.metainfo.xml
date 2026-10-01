@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: lets software centres such as GNOME Software list OpenSE4.
+     Add a <release> entry for each new version (tools/package_release.sh checks). -->
+<component type="desktop-application">
+  <id>io.github.lowlevelmetal.OpenSE4</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>OpenSE4</name>
+  <summary>Open-source engine for Space Empires IV Deluxe</summary>
+  <developer id="io.github.lowlevelmetal">
+    <name>The OpenSE4 developers</name>
+  </developer>
+
+  <description>
+    <p>
+      OpenSE4 is a new engine for the turn-based space strategy game Space Empires IV
+      Deluxe. It plays the classic game faithfully, with Vulkan or OpenGL rendering, on
+      current Linux and Windows systems.
+    </p>
+    <p>
+      OpenSE4 needs your own installed copy of Space Empires IV Deluxe and reads its
+      data, art and sound in place. Nothing from the original game is included.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>The classic rules: economy, research, ship design, movement, combat, intelligence, diplomacy and the computer players</li>
+      <li>Strategic and tactical combat, combat replays and the combat simulator</li>
+      <li>Simultaneous and turn-based games, played alone, hotseat, over the network or by e-mail</li>
+      <li>A dedicated server for network and play-by-e-mail games</li>
+    </ul>
+    <p>
+      OpenSE4 is not affiliated with, endorsed by or sponsored by the publishers of
+      Space Empires IV Deluxe.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.lowlevelmetal.OpenSE4.desktop</launchable>
+  <provides>
+    <binary>opense4</binary>
+    <binary>opense4-server</binary>
+    <binary>opense4-datacheck</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/lowlevelmetal/OpenSE4</url>
+  <url type="bugtracker">https://github.com/lowlevelmetal/OpenSE4/issues</url>
+  <url type="vcs-browser">https://github.com/lowlevelmetal/OpenSE4</url>
+
+  <categories>
+    <category>Game</category>
+    <category>StrategyGame</category>
+  </categories>
+  <keywords>
+    <keyword>space</keyword>
+    <keyword>strategy</keyword>
+    <keyword>4X</keyword>
+    <keyword>turn-based</keyword>
+  </keywords>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">mild</content_attribute>
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.2.0" date="2026-09-30" type="development">
+      <description>
+        <p>OpenSE4 plays only the classic game, and the remaining rule questions are settled and implemented.</p>
+      </description>
+    </release>
+    <release version="0.1.0" date="2026-09-30" type="development">
+      <description>
+        <p>First public build.</p>
+      </description>
+    </release>
+  </releases>
+</component>

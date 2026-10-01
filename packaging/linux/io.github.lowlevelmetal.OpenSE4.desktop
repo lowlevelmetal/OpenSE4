@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=OpenSE4
+GenericName=Space Strategy Game
+Comment=Play Space Empires IV Deluxe on an open-source engine (needs your own copy of the game)
+Icon=io.github.lowlevelmetal.OpenSE4
+Exec=opense4
+TryExec=opense4
+Terminal=false
+Categories=Game;StrategyGame;
+Keywords=space;strategy;4X;empire;turn-based;SE4;
+StartupNotify=true
+StartupWMClass=io.github.lowlevelmetal.OpenSE4
+SingleMainWindow=true

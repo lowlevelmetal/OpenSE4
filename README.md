@@ -89,6 +89,16 @@ Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
 ./build/debug/opense4-server --players=2 --ai=3      # host a network game without playing
 ```
 
+On Linux, the game can appear in the desktop's application list (GNOME, KDE Plasma
+and other freedesktop.org desktops):
+
+- **Release package:** run `./install-desktop-entry.sh` in the unpacked folder. It adds
+  the entry and icon for your user and starts the game from that folder. Run it again
+  after moving the folder; `--uninstall` removes the entry.
+- **Source build:** `cmake --install build/release --prefix ~/.local` (or
+  `/usr/local`, with `sudo`) installs the programs, the desktop entry, the icons and
+  the AppStream metadata.
+
 The intro offers Quick Start, New Game (the full game and empire setup), Load Game and
 Multiplayer. In the game, the classic hotkeys work: F1–F12 open the windows and End
 Turn, and letter keys give orders. See [docs/SETUP.md](docs/SETUP.md) and
@@ -126,6 +136,7 @@ tools/        opense4-datacheck, opense4-observe (drive the original), cleanroom
 docs/spec/    rules specs, written in our own words
 shaders/      GLSL shared by both backends
 assets/       fonts (Noto Sans, SIL OFL)
+packaging/    Linux desktop entry, application icon and AppStream metadata
 tests/        doctest unit tests (our own fixtures only)
 ```
 

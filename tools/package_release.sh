@@ -7,7 +7,9 @@
 #
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
-# third-party notices. Nothing from the original game is included: players point
+# third-party notices. The Linux package also carries the desktop entry, icons
+# and AppStream metadata (packaging/linux) and install-desktop-entry.sh, which
+# adds the game to the desktop's application list. Nothing from the original game is included: players point
 # the game at their own installed copy.
 #
 #   tools/package_release.sh [linux] [windows] [--skip-tests]
@@ -38,6 +40,13 @@ else
 fi
 dist="$root/dist"
 mkdir -p "$dist"
+
+app_id=io.github.lowlevelmetal.OpenSE4
+metainfo="packaging/linux/$app_id.metainfo.xml"
+if [[ "$version" != *-* ]] && ! grep -q "<release version=\"$version\"" "$metainfo"; then
+    echo "$metainfo has no <release> entry for $version: add one first." >&2
+    exit 1
+fi
 
 notices() {  # notices <build dir> <target> <output file>
     local deps="$1/_deps" out="$3"
@@ -113,6 +122,19 @@ for target in "${targets[@]}"; do
     cp README.md "$stage/README.md"
     [ -f LICENSE ] && cp LICENSE "$stage/LICENSE"
     notices "$build" "$target" "$stage/THIRD_PARTY_NOTICES.txt"
+    if [ "$target" = linux ]; then
+        mkdir -p "$stage/share/applications" "$stage/share/metainfo" "$stage/share/icons"
+        cp "packaging/linux/$app_id.desktop" "$stage/share/applications/"
+        cp "$metainfo" "$stage/share/metainfo/"
+        cp -r packaging/linux/icons/hicolor "$stage/share/icons/"
+        cp packaging/linux/install-desktop-entry.sh "$stage/"
+        if command -v desktop-file-validate > /dev/null; then
+            desktop-file-validate "$stage/share/applications/$app_id.desktop"
+        fi
+        if command -v appstreamcli > /dev/null; then
+            appstreamcli validate --no-net "$stage/share/metainfo/$app_id.metainfo.xml" > /dev/null
+        fi
+    fi
     if [ "$target" = windows ]; then
         # Windows editors expect CRLF line endings in plain text files.
         for f in "$stage"/*.md "$stage"/*.txt "$stage"/LICENSE; do
