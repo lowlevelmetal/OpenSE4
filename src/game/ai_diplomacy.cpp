@@ -21,18 +21,6 @@ using datafile::keysEqual;
 // Position in the treaty order of spec 05 §7.4 (1 War .. 11 Partnership; 3 is "no contact").
 int treatyNumber(Treaty t) { return t <= Treaty::NonIntercourse ? static_cast<int>(t) + 1 : static_cast<int>(t) + 2; }
 
-bool answerable(MessageType t) {
-    switch (t) {
-        case MessageType::ProposeTreaty:
-        case MessageType::CounterTreaty:
-        case MessageType::ProposeTrade:
-        case MessageType::CounterTrade:
-        case MessageType::Gift:
-        case MessageType::Tribute: return true;
-        default: return isDemand(t);
-    }
-}
-
 void replaceAll(std::string& text, std::string_view token, std::string_view value) {
     for (size_t pos = text.find(token); pos != std::string::npos; pos = text.find(token, pos + value.size()))
         text.replace(pos, token.size(), value);
@@ -140,7 +128,6 @@ private:
     const PoliticsTable& pol_;
     EmpireId mee_;
     int64_t ours_;
-    std::map<uint32_t, bool> wantsWar_, wantsBreak_;
 
     const Relation& rel(EmpireId x) const { return p_.emp().relation(x); }
     int anger(EmpireId x) const { return rel(x).anger; }
@@ -224,40 +211,49 @@ private:
 
     // ---- Decisions -----------------------------------------------------------------------------
 
+    // Each check rolls again; the first check that finds an entry for x in
+    // the war (or break) list uses one up and answers yes (spec 05 §7.4,
+    // open question 49, confirmed: binary).
+    bool useEntry(cmd::DemandList list, EmpireId x) { return p_.emit(cmd::UseDemandEntry{list, x}); }
     bool wantsWar(EmpireId x) {
-        auto it = wantsWar_.find(x.value);
-        if (it != wantsWar_.end()) return it->second;
-        bool want = false;
-        if (rel(x).treaty == Treaty::War || teamMate(x)) want = false;
-        else if (teamEnemy(x) || rel(x).queuedWar) want = true;
-        else if (p_.st.options.teamMode || p_.rng.percent(50)) want = anger(x) >= warThreshold(x);
-        return wantsWar_[x.value] = want;
+        if (rel(x).treaty == Treaty::War || teamMate(x)) return false;
+        if (teamEnemy(x)) return true;
+        if (rel(x).queuedWar > 0 && useEntry(cmd::DemandList::War, x)) return true;
+        if (!p_.st.options.teamMode && !p_.rng.percent(50)) return false;
+        return anger(x) >= warThreshold(x);
     }
     bool wantsBreak(EmpireId x) {
-        auto it = wantsBreak_.find(x.value);
-        if (it != wantsBreak_.end()) return it->second;
-        bool want = false;
-        if (rel(x).treaty < Treaty::NonAggression || teamMate(x)) want = false;
-        else if (teamEnemy(x) || rel(x).queuedBreak) want = true;
-        else if (p_.st.options.teamMode || p_.rng.percent(50)) want = anger(x) >= breakThreshold(x);
-        return wantsBreak_[x.value] = want;
+        if (rel(x).treaty < Treaty::NonAggression || teamMate(x)) return false;
+        if (teamEnemy(x)) return true;
+        if (rel(x).queuedBreak > 0 && useEntry(cmd::DemandList::Break, x)) return true;
+        if (!p_.st.options.teamMode && !p_.rng.percent(50)) return false;
+        return anger(x) >= breakThreshold(x);
     }
 
+    // Spec 05 §7.4 "Each turn" (confirmed: binary): with a 50 % chance "wants
+    // war", then "wants to break"; if either holds, the initiative instead of
+    // an answer. Otherwise the answer to x. If nothing went to x, the
+    // initiative, unless (simultaneous games) a message from x waits; that
+    // test also follows a 50 % initiative that sent nothing, so the
+    // initiative can run twice.
     void turnWith(EmpireId x) {
-        if (p_.rng.percent(50) && (wantsWar(x) || wantsBreak(x))) {
-            initiative(x);
-            return;
-        }
-        if (answerNewest(x)) return;  // it sent x something
-        // In a simultaneous game nothing is started while a message from x waits
-        // (dated this turn or the turn before, inferred).
-        if (p_.st.options.simultaneous)
-            for (const DiplomaticMessage& m : p_.st.messages)
-                if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && !m.answered && answerable(m.type)) return;
+        bool sent = false;
+        if (p_.rng.percent(50) && (wantsWar(x) || wantsBreak(x))) sent = initiative(x);
+        else sent = answerNewest(x);
+        if (sent || (p_.st.options.simultaneous && messageWaiting(x))) return;
         initiative(x);
     }
 
-    void initiative(EmpireId x) {
+    // A political message from x of any type dated after the ministers' date − 2.
+    bool messageWaiting(EmpireId x) const {
+        const int64_t cutoff = int64_t{p_.date} - 2;
+        for (const DiplomaticMessage& m : p_.st.messages)
+            if (m.from == x && m.to == p_.id && m.delivered && int64_t{m.dated} > cutoff) return true;
+        return false;
+    }
+
+    // Whether something went to x.
+    bool initiative(EmpireId x) {
         if (wantsWar(x)) {
             // Against the MEE the text is a `Mega Evil Declarations` line.
             const bool sent = x == mee_ ? send(x, MessageType::DeclareWar, "Mega Evil Declarations") : sendNamed(x, MessageType::DeclareWar);
@@ -265,20 +261,21 @@ private:
             // recordDecisions); with an empty speech pool nothing is declared,
             // but the anger still becomes 100 (spec 05 §7.3, §7.5 AI_Speech).
             if (!sent) p_.emit(cmd::DecideWar{x});
-            return;
+            return sent;
         }
-        if (wantsBreak(x)) {
-            sendNamed(x, MessageType::BreakTreaty, rel(x).treaty);
-            return;
-        }
-        if (propose(x)) return;
-        if (p_.rng.percent(25)) demand(x);
+        if (wantsBreak(x)) return sendNamed(x, MessageType::BreakTreaty, rel(x).treaty);
+        if (propose(x)) return true;
+        if (p_.rng.percent(25)) return demand(x);
+        return false;
     }
 
     bool propose(EmpireId x) {
         if (subject()) return false;
         const bool mate = teamMate(x);
-        const bool forced = mate || rel(x).queuedPeace;
+        // An accepted "make peace" request forces a proposal: one entry of the
+        // peace list is used up, even when nothing is sent (open question 49).
+        const bool peace = !mate && !teamEnemy(x) && rel(x).queuedPeace > 0 && useEntry(cmd::DemandList::Peace, x);
+        const bool forced = mate || peace;
         int T = 50;  // when a forced proposal computed no threshold
         if (!forced) {
             const int chance = pol_.proposeChancePercent * (mee_.valid() && x != mee_ ? 3 : 1);
@@ -363,25 +360,22 @@ private:
 
     // ---- Answers ---------------------------------------------------------------------------------
 
-    // Spec 05 §7.4 "Which messages get an answer" (confirmed: binary): each
-    // turn at most the newest unanswered political message from x, whatever
-    // its type. A message counts while it is dated this turn or the turn
-    // before, as the log the original reads (inferred). True when a reply
-    // went out.
-    bool repliedByUs(const DiplomaticMessage& m) const {
-        for (const DiplomaticMessage& o : p_.st.messages)
-            if (o.from == p_.id && o.inReplyTo == m.id) return true;
-        return false;
+    // Spec 05 §7.4 "Answer window" (confirmed: binary): the AI keeps no
+    // "answered" mark; it looks only at the single newest political message
+    // from x in a date window, whatever its type, and an older one is never
+    // answered. Turn-based: dated after the ministers' date − 1 when x's
+    // player number is lower than ours, after the date − 2 otherwise (what x
+    // sent since our previous turn). Simultaneous: dated exactly the date − 2.
+    bool inAnswerWindow(const DiplomaticMessage& m) const {
+        const int64_t date = p_.date, dated = m.dated;
+        if (p_.st.options.simultaneous) return dated == date - 2;
+        return dated > (m.from < p_.id ? date - 1 : date - 2);
     }
-    bool unanswered(const DiplomaticMessage& m) const {
-        if (answerable(m.type) && m.answered) return false;  // the rest are marked answered when delivered
-        return !repliedByUs(m);
-    }
+    // True when something went to x in reply.
     bool answerNewest(EmpireId x) {
         const DiplomaticMessage* newest = nullptr;
         for (const DiplomaticMessage& m : p_.st.messages)
-            if (m.from == x && m.to == p_.id && m.delivered && m.sentTurn + 1 >= p_.st.turn && unanswered(m) && (!newest || m.id > newest->id))
-                newest = &m;
+            if (m.from == x && m.to == p_.id && m.delivered && inAnswerWindow(m) && (!newest || m.id > newest->id)) newest = &m;
         if (!newest) return false;
         const DiplomaticMessage msg = *newest;  // copy: answering appends to the list
         switch (msg.type) {
@@ -599,7 +593,10 @@ private:
     }
 
     // The 13 demands from "remove ships" to "stop attacks": Accept or Refuse
-    // Demand, the text from `Response Friend/Enemy YES/NO <demand>`.
+    // Demand, the text from `Response Friend/Enemy YES/NO <demand>`. An
+    // accepted demand is carried out with a 50 % chance decided before the
+    // reply, even when the reply's pool is empty and nothing is sent (spec 05
+    // §7.4, confirmed: binary).
     bool answerDemand(const DiplomaticMessage& msg) {
         const EmpireId x = msg.from;
         const DemandRule& rule = pol_.demands[static_cast<size_t>(msg.type)];
@@ -607,6 +604,7 @@ private:
         if (teamEnemy(x)) accept = false;
         else if (teamMate(x)) accept = true;
         else accept = pct(x) >= rule.acceptScorePercent && (isFriend(x) ? rule.acceptFromFriend : rule.acceptFromEnemy);
+        if (accept && p_.rng.percent(50)) p_.emit(cmd::CarryOutDemand{msg.id});
         return reply(msg, accept, std::format("Response {} {} {}", side(x), accept ? "YES" : "NO", angerKeyName(msg.type)));
     }
 
@@ -626,7 +624,8 @@ private:
             accept = p >= rule.acceptScorePercent && (friendly ? rule.acceptFromFriend : rule.acceptFromEnemy) &&
                      anger(x) <= (gift ? (friendly ? pol_.giftMaxAngerFriend : pol_.giftMaxAngerEnemy)
                                        : (friendly ? pol_.tributeMaxAngerFriend : pol_.tributeMaxAngerEnemy));
-        if (accept) return payUp(msg, friendly, p);
+        // An accepted request whose package ends up empty counts as refused.
+        if (accept && payUp(msg, friendly, p)) return true;
         return generalReply(msg, std::format("Response {} {}", side(x), angerKeyName(msg.type)));
     }
 
@@ -650,9 +649,12 @@ private:
     }
 
     // An accepted request for a gift or tribute: the requested items in order
-    // (a random concrete one for each "any") until the package is worth V.
+    // (a random concrete one for each "any") until the package is worth V. A
+    // concrete requested item goes in even when we cannot hand it over; it
+    // just adds no value. The game option for gifts is never read here (spec
+    // 05 §7.4, confirmed: binary). False when the package is empty (or the
+    // gift was not sent), which counts as a refusal.
     bool payUp(const DiplomaticMessage& msg, bool friendly, int64_t p) {
-        if (!p_.st.options.allowGifts) return false;
         const bool gift = msg.type == MessageType::DemandGift;
         const int64_t base = gift ? (friendly ? pol_.giftBaseFriend : pol_.giftBaseEnemy) : (friendly ? pol_.tributeBaseFriend : pol_.tributeBaseEnemy);
         const int64_t per = gift ? (friendly ? pol_.giftPerPercentFriend : pol_.giftPerPercentEnemy)
@@ -663,8 +665,8 @@ private:
         for (const PackageItem& want : msg.request) {
             if (value >= target) break;
             std::optional<PackageItem> item = diplomacy::isPlaceholder(want) ? concrete(want, msg.from) : std::optional<PackageItem>(want);
-            if (!item || !canGive(*item, msg.from)) continue;
-            value += itemValue(*item, p_.id, msg.from);
+            if (!item) continue;
+            if (canGive(*item, msg.from)) value += itemValue(*item, p_.id, msg.from);
             package.push_back(*item);
         }
         if (package.empty()) return false;

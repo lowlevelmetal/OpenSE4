@@ -321,7 +321,7 @@ void io(Ar& ar, IntelProjectOrder& p) {
 template <class Ar>
 void io(Ar& ar, Relation& r) {
     fields(ar, r.contact, r.treaty, r.dominant, r.tradeTurns, r.treatyTurn, r.lastWarTurn, r.anger, r.messageSentThisTurn);
-    fields(ar, r.turnsSinceWar, r.treatyAge, r.agedTreaty, r.promise, r.queuedWar, r.queuedBreak, r.queuedPeace, r.attackedUs,
+    fields(ar, r.turnsSinceWar, r.treatyAge, r.agedTreaty, r.promises, r.queuedWar, r.queuedBreak, r.queuedPeace, r.attackedUs,
            r.spiedOnUs, r.attackedIn, r.combatsThisTurn, r.combatsLastTurn);
 }
 
@@ -426,7 +426,7 @@ void io(Ar& ar, PackageItem& p) {
 template <class Ar>
 void io(Ar& ar, DiplomaticMessage& m) {
     fields(ar, m.id, m.from, m.to, m.sentTurn, m.type, m.tone, m.text, m.treaty, m.offer, m.request, m.thirdEmpire, m.system, m.planet,
-           m.inReplyTo, m.delivered, m.answered);
+           m.inReplyTo, m.delivered, m.answered, m.dated);
 }
 
 // ---- Combat records, events, options --------------------------------------------------------------
@@ -539,6 +539,8 @@ template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.ev
 template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message); }
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
+template <class Ar> void io(Ar& ar, cmd::CarryOutDemand& c) { fields(ar, c.demand); }
+template <class Ar> void io(Ar& ar, cmd::UseDemandEntry& c) { fields(ar, c.list, c.about); }
 template <class Ar> void io(Ar& ar, cmd::SetWaypoint& c) { fields(ar, c.slot, c.waypoint); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemFlags& c) { fields(ar, c.system, c.avoid, c.claim); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemNote& c) { fields(ar, c.system, c.note); }

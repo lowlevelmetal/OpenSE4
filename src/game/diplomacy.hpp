@@ -5,6 +5,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -25,8 +26,10 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // treaty, declare war, surrender, grant independence). Expired messages are
 // removed. The turn calls it for the players' messages (spec 05 §8 step 2)
 // and after each computer player's and minister's orders (step 4: their
-// messages take effect as they are sent).
-void deliverMessages(TurnContext& ctx);
+// messages take effect as they are sent). Each delivered message is dated
+// `date` (DiplomaticMessage::dated; by default GameState::turn): a
+// simultaneous turn passes the advanced date for step 4.
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
 // First contact between every pair of living empires that have not met,
 // that each detect the other in one system and that a warp path links (spec
 // 05 §3.1, confirmed: binary), after sight::updateKnowledge. An empire

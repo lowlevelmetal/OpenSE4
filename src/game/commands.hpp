@@ -106,6 +106,23 @@ struct AnswerMessage { MessageId message; bool accept = false; std::string text;
 // The treaty does not change and no message is sent. `target` must be another
 // living empire the player has met.
 struct DecideWar { EmpireId target; };
+// The Politics minister carries out a demand or request it accepted (spec 05
+// §7.4, confirmed: binary): decided (with its 50 % chance) before the reply
+// is sent, and carried out even when no Accept Demand reply follows because
+// its speech pool is empty. Remove ships or colonies, or leave a planet: the
+// system is marked to avoid; declare war on or support against, break with,
+// make peace with a third empire: one entry naming it in the war, break or
+// peace list; attack an empire in a system or a planet: an attack target;
+// stop espionage or sabotage: the intelligence projects against the
+// requester are cancelled; stop hostile actions against an empire: a promise
+// about the empire it names; stop attacks in a system: nothing. `demand` must
+// be a demand or request delivered to the player.
+struct CarryOutDemand { MessageId demand; };
+// A check of the Politics minister used up one entry of a demand list naming
+// `about` (spec 05 §7.4 "Demand lists"): "wants war", "wants to break" and the
+// treaty proposal. Refused when the list holds no such entry.
+enum class DemandList : uint8_t { War, Break, Peace };
+struct UseDemandEntry { DemandList list = DemandList::War; EmpireId about; };
 
 // ---- Empire-wide lists ------------------------------------------------------------------------
 struct SetWaypoint { int slot = 0; std::optional<Waypoint> waypoint; };
@@ -160,7 +177,7 @@ using Command = std::variant<
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
-    cmd::QueueReplaceFacility, cmd::DecideWar>;
+    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::CarryOutDemand, cmd::UseDemandEntry>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

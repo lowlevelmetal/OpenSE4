@@ -78,10 +78,15 @@ struct Relation {
     int turnsSinceWar = 999;    // 0 while at war, +1 each turn otherwise
     int treatyAge = 0;          // turns since the treaty changed (moves between Trade Alliance and better do not count)
     Treaty agedTreaty = Treaty::None;  // the treaty treatyAge was last updated for
-    bool promise = false;       // we accepted their "stop hostile actions" request (-20 anger once)
-    bool queuedWar = false;     // an accepted request asks us to declare war on them
-    bool queuedBreak = false;   // ... to break our treaty with them
-    bool queuedPeace = false;   // ... to make peace with them
+    // The Politics minister's demand lists (spec 05 §7.4 "Demand lists", §7.3
+    // term 8, confirmed: binary), as the number of entries naming that empire
+    // (the lists keep duplicates): each carried-out demand adds one, each
+    // check that gets far enough uses one up, and all are emptied on the
+    // dates that are multiples of 10.
+    int promises = 0;           // promises about them: "stop hostile actions against" them accepted (-20 anger each, one a turn)
+    int queuedWar = 0;          // the war list: "declare war on" or "support against" them accepted
+    int queuedBreak = 0;        // the break list: "break with" them accepted
+    int queuedPeace = 0;        // the peace list: "make peace with" them accepted
     bool attackedUs = false;    // their ships attacked ours or our planets
     bool spiedOnUs = false;     // one of their intelligence operations against us was traced to them
     SystemId attackedIn;        // where they last attacked us
@@ -547,6 +552,13 @@ struct DiplomaticMessage {
     MessageId inReplyTo;
     bool delivered = false;
     bool answered = false;
+    // The date of its political entry in the recipient's log, set at delivery
+    // (spec 05 §7.4 "Answer window", confirmed: binary), as a GameState::turn
+    // number: the unadvanced date for the players' messages of a simultaneous
+    // turn and in turn-based games, the advanced date (turn + 1) for those a
+    // computer player or minister sends during the start-of-turn step of a
+    // simultaneous turn.
+    uint32_t dated = 0;
 };
 
 // ---- Combat records (replays and reports) ----------------------------------------------------

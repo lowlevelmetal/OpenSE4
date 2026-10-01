@@ -61,70 +61,19 @@ const DiplomaticMessage* findMessage(const GameState& s, MessageId id) {
     return nullptr;
 }
 
-void addUnique(std::vector<SystemId>& list, SystemId sys) {
-    if (sys.valid() && std::find(list.begin(), list.end(), sys) == list.end()) list.push_back(sys);
-}
-
-// Declaring war sets anger to 100; an accepted demand is carried out half of
-// the time (spec 05 §7.3, §7.4).
-void recordDecisions(TurnContext& ctx, EmpireId id, Rng& rng) {
+// Declaring war sets anger to 100 (spec 05 §7.3, §7.4). Accepted demands are
+// carried out by the Politics minister itself (cmd::CarryOutDemand), before
+// it replies.
+void recordDecisions(TurnContext& ctx, EmpireId id, Rng&) {
     GameState& s = ctx.state;
-    std::vector<DiplomaticMessage> sent;
     for (const DiplomaticMessage& m : s.messages)
-        if (m.from == id && m.sentTurn == s.turn) sent.push_back(m);
-    for (const DiplomaticMessage& m : sent) {
-        if (!m.to.valid() || m.to.index() >= s.empires.size()) continue;
-        if (m.type == MessageType::DeclareWar) {
+        if (m.from == id && m.sentTurn == s.turn && m.type == MessageType::DeclareWar && m.to.valid() && m.to.index() < s.empires.size())
             s.empire(id).relation(m.to).anger = kMaxAnger;
-            continue;
-        }
-        if (m.type != MessageType::AcceptDemand || !politicsOn(s.empire(id))) continue;
-        const DiplomaticMessage* demand = findMessage(s, m.inReplyTo);
-        if (!demand || !isDemand(demand->type)) continue;
-        const DiplomaticMessage d = *demand;
-        if (!rng.percent(50)) continue;
-        Empire& e = s.empire(id);
-        auto third = [&]() -> Relation* {
-            return d.thirdEmpire.valid() && d.thirdEmpire.index() < e.relations.size() && d.thirdEmpire != id ? &e.relation(d.thirdEmpire)
-                                                                                                                : nullptr;
-        };
-        const SystemId planetSystem = d.planet.valid() && d.planet.index() < s.galaxy.objects.size() ? s.galaxy.object(d.planet).system
-                                                                                                        : SystemId{};
-        switch (d.type) {
-            case MessageType::DemandRemoveShips:
-            case MessageType::DemandRemoveColonies: addUnique(e.aiMemory.avoid, d.system); break;
-            case MessageType::DemandLeavePlanet: addUnique(e.aiMemory.avoid, d.system.valid() ? d.system : planetSystem); break;
-            case MessageType::RequestBreakTreaty:
-                if (Relation* r = third()) r->queuedBreak = true;
-                break;
-            case MessageType::RequestDeclareWar:
-            case MessageType::RequestSupport:
-                if (Relation* r = third()) r->queuedWar = true;
-                break;
-            case MessageType::RequestMakePeace:
-                if (Relation* r = third()) r->queuedPeace = true;
-                break;
-            case MessageType::RequestAttackEmpire: addUnique(e.aiMemory.attackSystems, d.system); break;
-            case MessageType::RequestAttackPlanet: addUnique(e.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
-            case MessageType::RequestStopHostilities: e.relation(d.from).promise = true; break;
-            case MessageType::DemandStopEspionage:
-            case MessageType::DemandStopSabotage: {
-                std::vector<IntelProjectOrder> keep;
-                for (const IntelProjectOrder& o : e.intel)
-                    if (o.target != d.from) keep.push_back(o);
-                if (keep.size() != e.intel.size()) {
-                    const cmd::SetIntel c{keep, e.intelEvenly, e.repeatIntel};
-                    const CommandResult res = apply(ctx.rules, s, id, c);
-                    if (!res.ok) ctx.rejected.emplace_back(id, "SetIntel: " + res.error);
-                }
-                break;
-            }
-            default: break;  // stop attacks: nothing; gifts, tributes and surrender are sent by the planner
-        }
-    }
 }
 
-// Turns since war, treaty age, and the queues forgotten every 10 turns.
+// Turns since war, treaty age, and the attacks and spies the AI noted for
+// its own demands (OpenSE4's record of what its log shows), forgotten every
+// 10 turns.
 void keepCounters(GameState& s, Empire& e) {
     const bool forget = aiDate(s) % 10 == 0;  // "every 10 turns" reads the date the ministers see
     for (size_t i = 0; i < e.relations.size(); ++i) {
@@ -136,15 +85,21 @@ void keepCounters(GameState& s, Empire& e) {
         else rel.treatyAge = std::min(rel.treatyAge + 1, kCounterCap);
         rel.agedTreaty = rel.treaty;
         if (forget) {
-            rel.promise = rel.queuedWar = rel.queuedBreak = rel.queuedPeace = false;
             rel.attackedUs = rel.spiedOnUs = false;
             rel.attackedIn = {};
         }
     }
-    if (forget) {
-        e.aiMemory.avoid.clear();
-        e.aiMemory.attackSystems.clear();
-    }
+}
+
+// The demand lists (war, break, peace and the promises) and the systems
+// marked to avoid or to attack are emptied in the start-of-turn step of every
+// turn whose date (the ministers') is a multiple of 10, before the Politics
+// minister acts (spec 05 §7.4 "Demand lists", confirmed: binary).
+void forgetDemands(const GameState& s, Empire& e) {
+    if (aiDate(s) % 10 != 0) return;
+    for (Relation& rel : e.relations) rel.promises = rel.queuedWar = rel.queuedBreak = rel.queuedPeace = 0;
+    e.aiMemory.avoid.clear();
+    e.aiMemory.attackSystems.clear();
 }
 
 // ---- Combat results (spec 05 §7.3 step 1) ---------------------------------------------------
@@ -412,10 +367,10 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
     if (in.mee[e.id.index()] == x.id) add(t.megaEvilEmpire);
     // 7. Team Mode.
     if (s.options.teamMode) add((e.kind == PlayerKind::Human) == (x.kind == PlayerKind::Human) ? -20 : 20);
-    // 8. A promise to stop hostile actions.
-    if (rel.promise) {
+    // 8. A promise about them to stop hostile actions: -20, one promise a turn.
+    if (rel.promises > 0) {
         add(-20);
-        rel.promise = false;
+        --rel.promises;
     }
     // 9. Attack locations.
     {
@@ -678,6 +633,8 @@ void angerOf(const Rules& r, GameState& s, Empire& e, const AngerInputs& in) {
 
 void updateAiStates(TurnContext& ctx) {
     GameState& s = ctx.state;
+    for (Empire& e : s.empires)
+        if (e.alive) forgetDemands(s, e);
     for (Empire& e : s.empires) claimTerritory(ctx.rules, s, e);
     for (const Empire& e : s.empires)
         if (e.alive) decideState(ctx.rules, s, e.id);
@@ -686,6 +643,7 @@ void updateAiStates(TurnContext& ctx) {
 void updateAiState(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !s.empire(id).alive) return;
+    forgetDemands(s, s.empire(id));
     claimTerritory(ctx.rules, s, s.empire(id));
     decideState(ctx.rules, s, id);
 }

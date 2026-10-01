@@ -1094,12 +1094,24 @@ MessageId deliver(GameState& s, EmpireId from, EmpireId to, MessageType type, Tr
     return m.id;
 }
 
-// The AI answers messages of this turn or the turn before: the message is
-// dated the turn it is answered in.
+// The date that puts a message in the AI's answer window now (spec 05 §7.4
+// "Answer window"): in a simultaneous game the ministers' date − 2 (a
+// player's message of the turn processed before), in a turn-based game the
+// current date (sent earlier in this game turn).
+uint32_t answerDate(const GameState& s) {
+    const uint32_t date = ai::aiDate(s);
+    if (!s.options.simultaneous) return date;
+    return date >= 2 ? date - 2 : uint32_t{0xffffffffu};
+}
+
+// The message dated so that the AI answers it now.
 GameState datedNow(const GameState& s, MessageId id) {
     GameState g = s;
     for (DiplomaticMessage& m : g.messages)
-        if (m.id == id) m.sentTurn = g.turn;
+        if (m.id == id) {
+            m.sentTurn = g.turn;
+            m.dated = answerDate(g);
+        }
     return g;
 }
 
@@ -1348,47 +1360,178 @@ TEST_CASE("ai: trades are judged on item values") {
     CHECK(trade(900000, 60000) == false);
 }
 
-TEST_CASE("ai: an accepted request is carried out half of the time and queues a war") {
+TEST_CASE("ai: an accepted demand is carried out half of the time, before the reply, even when the reply's pool is empty") {
     TempTree t("request");
     t.write("Ai/Default_AI_Politics.txt",
             "Score Percent To Accept Declare war on empire := 0\nWill Accept From Enemy Declare war on empire := True\n"
             "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    // No `Response ... YES ...` pool (as in the stock files): no Accept Demand reply is ever sent.
+    t.write("Ai/Default_AI_Speech.txt", "Number of Send General Message := 1\nSend General Message 1 := Hello.\n");
     const Rules r{buildEngineRuleset(), t.root};
     GameState s = computerGame(7, 3, 0, 12, r);
     const EmpireId asker{0u}, cpu{1u}, third{2u};
     meet(s, asker, cpu);
     meet(s, cpu, third);
     meet(s, asker, third);
-    bool queued = false;
-    int accepted = 0;
-    for (uint32_t turn = 1; turn < 30 && !queued; ++turn) {
+    int carried = 0, turns = 0;
+    for (uint32_t turn = 1; turn < 41; ++turn) {
         s.turn = turn;
         s.messages.clear();
-        DiplomaticMessage m;
-        m.id = MessageId{s.nextMessageId++};
-        m.from = asker;
-        m.to = cpu;
-        m.type = MessageType::RequestDeclareWar;
-        m.thirdEmpire = third;
-        m.sentTurn = turn;
-        m.delivered = true;
-        s.messages.push_back(m);
-        const auto cmds = ai::planTurn(r, s, cpu);
-        REQUIRE(applyAll(r, s, cpu, cmds).empty());
-        for (const DiplomaticMessage& reply : s.messages) accepted += reply.from == cpu && reply.type == MessageType::AcceptDemand;
-        for (Empire& e : s.empires)
-            for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
-        TurnContext ctx{r, s, {}, {}, {}};
-        ai::updateAnger(ctx);
-        queued = s.empire(cpu).relation(third).queuedWar;
+        const MessageId id = deliver(s, asker, cpu, MessageType::RequestDeclareWar);
+        s.messages.back().thirdEmpire = third;
+        const auto cmds = ai::planTurn(r, datedNow(s, id), cpu);
+        ++turns;
+        bool carriedNow = false;
+        for (const Command& c : cmds) {
+            if (const auto* d = as<cmd::CarryOutDemand>(c); d && d->demand == id) carriedNow = true;
+            if (const auto* a = as<cmd::AnswerMessage>(c)) CHECK(a->message != id);  // the empty pool: no reply
+        }
+        carried += carriedNow;
     }
-    CHECK(accepted > 0);
-    REQUIRE(queued);
-    // The queued war is declared at the next opportunity.
-    bool declared = false;
-    for (const Command& c : ai::planTurn(r, s, cpu))
-        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == third && m->message.type == MessageType::DeclareWar) declared = true;
-    CHECK(declared);
+    CHECK(carried > 0);
+    CHECK(carried < turns);
+    // Carried out: one entry naming the third empire on the war list.
+    GameState g = s;
+    const MessageId id = g.messages.back().id;
+    REQUIRE(apply(r, g, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(g.empire(cpu).relation(third).queuedWar == 1);
+    REQUIRE(apply(r, g, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(g.empire(cpu).relation(third).queuedWar == 2);  // duplicates are kept
+    CHECK_FALSE(apply(r, g, asker, cmd::CarryOutDemand{id}).ok);  // not the recipient
+}
+
+TEST_CASE("ai: demand-list entries are used up one per check, and promises name the empire the demand names") {
+    TempTree t("lists");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 3, 0, 12, r);
+    const EmpireId asker{0u}, cpu{1u}, third{2u};
+    meet(s, asker, cpu);
+    meet(s, cpu, third);
+    for (uint32_t turn = 21; turn < 29; ++turn) {
+        s.turn = turn;
+        // Two war entries: the first check uses one, and the initiative's check
+        // (in either branch) answers yes too: war is declared every time.
+        GameState g = s;
+        g.empire(cpu).relation(third).queuedWar = 2;
+        const auto cmds = ai::planTurn(r, g, cpu);
+        bool declared = false;
+        for (const Command& c : cmds) {
+            if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == third && m->message.type == MessageType::DeclareWar) declared = true;
+            if (const auto* d = as<cmd::DecideWar>(c); d && d->target == third) declared = true;
+        }
+        CHECK(declared);
+        REQUIRE(applyAll(r, g, cpu, cmds).empty());
+        CHECK(g.empire(cpu).relation(third).queuedWar <= 1);
+        // One entry is always used up, declared or not.
+        GameState one = s;
+        one.empire(cpu).relation(third).queuedWar = 1;
+        REQUIRE(applyAll(r, one, cpu, ai::planTurn(r, one, cpu)).empty());
+        CHECK(one.empire(cpu).relation(third).queuedWar == 0);
+        // A peace entry forces a proposal and is used up even when no treaty
+        // qualifies and nothing is sent.
+        GameState peace = s;
+        peace.empire(cpu).relation(third).queuedPeace = 1;
+        peace.empire(cpu).relation(third).anger = 100;
+        REQUIRE(applyAll(r, peace, cpu, ai::planTurn(r, peace, cpu)).empty());
+        CHECK(peace.empire(cpu).relation(third).queuedPeace == 0);
+    }
+    // A check that stops earlier leaves the entries alone: already at war.
+    s.turn = 21;
+    s.empire(cpu).relation(third).treaty = s.empire(third).relation(cpu).treaty = Treaty::War;
+    s.empire(cpu).relation(third).queuedWar = 1;
+    s.empire(cpu).relation(third).queuedBreak = 1;
+    REQUIRE(applyAll(r, s, cpu, ai::planTurn(r, s, cpu)).empty());
+    CHECK(s.empire(cpu).relation(third).queuedWar == 1);
+    CHECK(s.empire(cpu).relation(third).queuedBreak == 1);
+    // "Stop hostile actions against" an empire: a promise about that empire,
+    // not about the requester (spec 05 open question 47).
+    const MessageId id = deliver(s, asker, cpu, MessageType::RequestStopHostilities);
+    s.messages.back().thirdEmpire = third;
+    REQUIRE(apply(r, s, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(s.empire(cpu).relation(third).promises == 1);
+    CHECK(s.empire(cpu).relation(asker).promises == 0);
+}
+
+TEST_CASE("ai: an accepted gift request: concrete items go in, the gifts option is not read, an empty package is a refusal") {
+    TempTree t("giftrequest");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Score Percent To Accept Want a gift := 0\nWill Accept From Enemy Want a gift := True\nGift to Enemy Max Anger := 100\n"
+            "Gift Value Base to Enemy := 1000\nGift Value to Enemy Per Percentage Greater Score := 0\n"
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 10, r);
+    const EmpireId asker{0u}, cpu{1u};
+    meet(s, asker, cpu);
+    s.turn = 30;
+    s.options.allowGifts = false;  // only limits what a human picks
+    s.empire(cpu).stockpile = {5000, 5000, 5000};
+    // A planet the AI does not own is a concrete item it cannot hand over:
+    // it goes in anyway, adding no value; then resources up to the value.
+    PackageItem planet;
+    planet.kind = PackageItem::Kind::Planet;
+    planet.planet = homeworld(s, asker).planet;
+    PackageItem cash;
+    cash.resources = {3000, 0, 0};
+    const MessageId id = deliver(s, asker, cpu, MessageType::DemandGift);
+    s.messages.back().request = {planet, cash};
+    GameState g = datedNow(s, id);
+    const auto cmds = ai::planTurn(r, g, cpu);
+    std::optional<DiplomaticMessage> gift;
+    for (const Command& c : cmds)
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.inReplyTo == id) gift = m->message;
+    REQUIRE(gift);
+    CHECK(gift->type == MessageType::Gift);
+    REQUIRE(gift->offer.size() == 2);
+    CHECK(gift->offer[0].kind == PackageItem::Kind::Planet);
+    CHECK(applyAll(r, g, cpu, cmds).empty());
+    // Accepted, its items move although gifts are off.
+    TurnContext ctx{r, g, {}, {}, {}};
+    diplomacy::deliverMessages(ctx);
+    const MessageId sent = g.messages.back().id;
+    const Resources before = g.empire(asker).stockpile;
+    REQUIRE(apply(r, g, asker, cmd::AnswerMessage{sent, true, {}}).ok);
+    diplomacy::deliverMessages(ctx);
+    CHECK(g.empire(asker).stockpile[Resource::Minerals] == before[Resource::Minerals] + 3000);
+    // A value of 0: the package stays empty and the answer is the General refusal.
+    TempTree t2("giftrequest0");
+    t2.write("Ai/Default_AI_Politics.txt",
+             "Score Percent To Accept Want a gift := 0\nWill Accept From Enemy Want a gift := True\nGift to Enemy Max Anger := 100\n"
+             "Gift Value Base to Enemy := 0\nGift Value to Enemy Per Percentage Greater Score := 0\n"
+             "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r0{buildEngineRuleset(), t2.root};
+    std::optional<DiplomaticMessage> refusal;
+    for (const Command& c : ai::planTurn(r0, datedNow(s, id), cpu))
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.inReplyTo == id) refusal = m->message;
+    REQUIRE(refusal);
+    CHECK(refusal->type == MessageType::General);
+}
+
+TEST_CASE("ai: the demand lists are emptied at the start of turns whose date is a multiple of 10") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(7, 2, 0, 10);
+    const EmpireId cpu{1u}, other{0u};
+    auto fill = [&] {
+        Relation& rel = s.empire(cpu).relation(other);
+        rel.queuedWar = rel.queuedBreak = rel.queuedPeace = rel.promises = 2;
+        s.empire(cpu).aiMemory.avoid = {SystemId{0u}};
+        s.empire(cpu).aiMemory.attackSystems = {SystemId{1u}};
+    };
+    TurnContext ctx{r, s, {}, {}, {}};
+    fill();
+    s.turn = 8;  // the ministers see 9
+    ai::updateAiState(ctx, cpu);
+    CHECK(s.empire(cpu).relation(other).queuedWar == 2);
+    s.turn = 9;  // the ministers see 10
+    ai::updateAiState(ctx, cpu);
+    const Relation& rel = s.empire(cpu).relation(other);
+    CHECK(rel.queuedWar == 0);
+    CHECK(rel.queuedBreak == 0);
+    CHECK(rel.queuedPeace == 0);
+    CHECK(rel.promises == 0);
+    CHECK(s.empire(cpu).aiMemory.avoid.empty());
+    CHECK(s.empire(cpu).aiMemory.attackSystems.empty());
 }
 
 TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100") {
@@ -1577,11 +1720,16 @@ TEST_CASE("ai: intruders in our territory and a promise change anger") {
     CHECK(std::binary_search(s.empire(a).claimedSystems.begin(), s.empire(a).claimedSystems.end(), home.system));
     // At war: Per Enemy Ship. A promise to stop hostile actions: -20, once.
     s.empire(a).relation(b).treaty = Treaty::War;
-    s.empire(a).relation(b).promise = true;
+    s.empire(a).relation(b).promises = 2;
     s.empire(a).relation(b).anger = 50;
     ai::updateAnger(ctx);
     CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease - 20 + 2 * table.perEnemyShip);
-    CHECK_FALSE(s.empire(a).relation(b).promise);
+    CHECK(s.empire(a).relation(b).promises == 1);
+    // Two promises: -20 on two turns (spec 05 open question 47).
+    s.empire(a).relation(b).anger = 50;
+    ai::updateAnger(ctx);
+    CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease - 20 + 2 * table.perEnemyShip);
+    CHECK(s.empire(a).relation(b).promises == 0);
     // Friends' ships do not count.
     s.empire(a).relation(b).treaty = Treaty::NonAggression;
     s.empire(a).relation(b).anger = 50;
@@ -2433,15 +2581,18 @@ TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
         m.type = type;
         m.treaty = Treaty::NonAggression;
         m.sentTurn = sent;
+        m.dated = sent;
         m.delivered = true;
         s.messages.push_back(m);
         return m.id;
     };
     // Acknowledgements are marked answered on delivery (they need no answer).
+    // The answer window of a simultaneous turn: messages dated the ministers'
+    // date (6) − 2.
     const MessageId proposal = message(a, b, MessageType::ProposeTreaty, 3);
-    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // too old to reply to now
+    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // outside the window
     const MessageId chatter = message(b, a, MessageType::General, 4);      // plain chatter gets no reply
-    const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4);
+    const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4); // the newest in the window
     s.messages.back().inReplyTo = proposal;
     for (DiplomaticMessage& m : s.messages) m.answered = true;
 
@@ -2461,8 +2612,9 @@ TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
     CHECK(applyAll(r, s, a, cmds).empty());
     for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != stale);
     for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != chatter);
-    // Acknowledged once: nothing more next turn.
+    // Acknowledged once: the next turn's window holds nothing from b.
     for (Relation& rel : s.empire(a).relations) rel.messageSentThisTurn = false;
+    ++s.turn;
     CHECK(replies(ai::planTurn(r, s, a)).empty());
 }
 
@@ -3503,7 +3655,7 @@ TEST_CASE("ai: trade values of systems, ships and planets") {
     CHECK(ai::detail::tradeItemValue(moth, planet, cpu, human) == 0);  // no longer the giver's
 }
 
-TEST_CASE("ai: only the newest unanswered message is answered, and an empty pool sends nothing") {
+TEST_CASE("ai: only the newest message in the answer window is answered, and an empty pool sends nothing") {
     TempTree t("speechpool");
     t.write("Ai/Default_AI_Speech.txt", "Number of Send Refuse Treaty := 1\nSend Refuse Treaty 1 := No.\n");
     t.write("Ai/Default_AI_Politics.txt", "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
@@ -3526,15 +3678,56 @@ TEST_CASE("ai: only the newest unanswered message is answered, and an empty pool
     }
     REQUIRE(refused);
     CHECK_FALSE(*refused);
-    // A newer General message is the newest: nothing is answered.
+    // A newer General message in the window is the newest: nothing is answered.
     const MessageId chat = deliver(s, asker, cpu, MessageType::General);
     for (uint32_t turn = 60; turn < 70; ++turn) {
         s.turn = turn;
         GameState g = datedNow(s, offer);
         for (DiplomaticMessage& m : g.messages)
-            if (m.id == chat) m.sentTurn = g.turn;
+            if (m.id == chat) m.dated = answerDate(g);
         for (const Command& c : ai::planTurn(r, g, cpu)) CHECK_FALSE((as<cmd::AnswerMessage>(c) && as<cmd::AnswerMessage>(c)->message == offer));
     }
+    // The window (simultaneous): exactly the ministers' date − 2. An older
+    // offer is never answered, a newer one not yet.
+    for (const int shift : {-1, 1}) {
+        s.turn = 60;
+        GameState g = datedNow(s, offer);
+        g.messages.erase(std::remove_if(g.messages.begin(), g.messages.end(), [&](const DiplomaticMessage& m) { return m.id == chat; }),
+                         g.messages.end());
+        for (DiplomaticMessage& m : g.messages)
+            if (m.id == offer) m.dated = static_cast<uint32_t>(static_cast<int>(m.dated) + shift);
+        for (const Command& c : ai::planTurn(r, g, cpu)) CHECK_FALSE((as<cmd::AnswerMessage>(c) && as<cmd::AnswerMessage>(c)->message == offer));
+    }
+}
+
+TEST_CASE("ai: the turn-based answer window holds what the other empire sent since our previous turn") {
+    TempTree t("tbwindow");
+    t.write("Ai/Default_AI_Politics.txt", "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 3, 0, 10, r);
+    s.options.simultaneous = false;
+    const EmpireId low{0u}, cpu{1u}, high{2u};
+    meet(s, low, cpu);
+    meet(s, high, cpu);
+    s.turn = 60;  // the ministers' date in a turn-based game
+    s.empire(cpu).relation(low).anger = 0;
+    s.empire(cpu).relation(high).anger = 0;
+    auto answered = [&](EmpireId from, uint32_t dated) {
+        GameState g = s;
+        const MessageId id = deliver(g, from, cpu, MessageType::ProposeTreaty, Treaty::NonAggression);
+        for (DiplomaticMessage& m : g.messages)
+            if (m.id == id) m.dated = dated;
+        for (const Command& c : ai::planTurn(r, g, cpu))
+            if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == id) return true;
+        return false;
+    };
+    // A lower player number played before us this game turn: only this date.
+    CHECK(answered(low, 60));
+    CHECK_FALSE(answered(low, 59));
+    // A higher one played after us in the game turn before: that date too.
+    CHECK(answered(high, 60));
+    CHECK(answered(high, 59));
+    CHECK_FALSE(answered(high, 58));
 }
 
 TEST_CASE("ai: a vehicle-list entry first looks for a design made from the template of that name") {

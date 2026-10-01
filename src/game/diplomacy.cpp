@@ -145,13 +145,11 @@ void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& proposal) {
 
 void acceptPackage(TurnContext& ctx, const DiplomaticMessage& offer) {
     GameState& s = ctx.state;
+    // The game option for gifts and tributes only limits the message types a
+    // human can pick; an accepted gift's items move whatever it says (spec 05
+    // §7.4, confirmed: binary).
     const bool gift = offer.type == MessageType::Gift || offer.type == MessageType::Tribute;
     const std::string what = gift ? std::string(displayName(offer.type)) : std::string("Trade");
-    if (gift && !s.options.allowGifts) {
-        for (EmpireId e : {offer.from, offer.to})
-            ctx.log(e, LogCategory::Politics, what + " Cancelled", "Gifts and tributes are not allowed in this game.");
-        return;
-    }
     const bool placeholders = std::any_of(offer.offer.begin(), offer.offer.end(), isPlaceholder) ||
                               std::any_of(offer.request.begin(), offer.request.end(), isPlaceholder);
     if (placeholders) {
@@ -632,13 +630,14 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
 
 // ---- Turn phases ------------------------------------------------------------------------------------
 
-void deliverMessages(TurnContext& ctx) {
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date) {
     GameState& s = ctx.state;
     std::vector<MessageId> lost;
     const size_t n = s.messages.size();
     for (size_t i = 0; i < n; ++i) {
         if (s.messages[i].delivered) continue;
         s.messages[i].delivered = true;
+        s.messages[i].dated = date.value_or(s.turn);
         const DiplomaticMessage& m = s.messages[i];
         if (!living(s, m.from) || !living(s, m.to) || m.from == m.to) {
             lost.push_back(m.id);

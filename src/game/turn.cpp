@@ -188,11 +188,12 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         if (!s.empire(id).alive) continue;
         ai::updateAiState(ctx, id);
         if (controlOf(i) != Control::Absent) ai::politicalStep(ctx, id, previousTurn);
+        // Messages sent now carry the advanced date (spec 05 §7.4 "Answer window").
         if (ministersPlan(s, id, controlOf(i))) {
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
-            diplomacy::deliverMessages(ctx);
+            diplomacy::deliverMessages(ctx, date);
             applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id));
-            diplomacy::deliverMessages(ctx);
+            diplomacy::deliverMessages(ctx, date);
         }
     }
     ai::recordAiDecisions(ctx);
