@@ -85,25 +85,6 @@ const char* screenTitle(ScreenId id) {
     return "";
 }
 
-std::string_view windowId(ScreenId id) {
-    // learn/ids.hpp lists the same ids in ScreenId order (a test checks it).
-    static constexpr std::array<std::string_view, static_cast<size_t>(ScreenId::Count)> kIds{
-        "game-menu", "designs", "create-design", "planets", "colonies", "ships", "queues", "set-queue", "research", "tech-tree",
-        "empires", "log", "empire-status", "help", "galaxy-map", "empire-options", "ministers", "systems-to-avoid", "waypoints",
-        "strategies", "repair-priorities", "fleet-transfer", "cargo-transfer", "launch-recover", "scrap", "view-orders",
-        "select-waypoint", "stellar-manipulation", "rename", "communicate", "intelligence", "treaty-grid", "scores", "comparisons",
-        "history", "race-report", "victory-conditions", "combat-replay", "tactical-combat", "tactical-orders", "tactical-options",
-        "combat-simulator", "strategic-combat", "ground-combat", "save-game", "load-game", "settings", "learn", "manual"};
-    const auto i = static_cast<size_t>(id);
-    return i < kIds.size() ? kIds[i] : std::string_view{};
-}
-
-std::optional<ScreenId> screenFromWindowId(std::string_view id) {
-    for (int i = 0; i < static_cast<int>(ScreenId::Count); ++i)
-        if (windowId(static_cast<ScreenId>(i)) == id) return static_cast<ScreenId>(i);
-    return std::nullopt;
-}
-
 std::optional<ScreenId> screenFromName(std::string_view name) {
     auto squash = [](std::string_view in) {
         std::string out;

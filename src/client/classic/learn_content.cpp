@@ -60,7 +60,6 @@ std::string progressKey(learn::LessonKind kind, std::string_view slug) { return 
 std::unique_ptr<LearnContent> loadLearnContent(const std::filesystem::path& assetsDir, const std::filesystem::path& learnDir,
                                                const assets::InstallFiles& install) {
     auto content = std::make_unique<LearnContent>();
-    std::error_code ec;
     if (!learnDir.empty()) {
         content->library = learn::loadLibrary(learn::DirectorySource(learnDir));
         content->origin = learnDir.string();
@@ -69,12 +68,18 @@ std::unique_ptr<LearnContent> loadLearnContent(const std::filesystem::path& asse
         for (std::string_view path : embeddedResourcePaths(kEmbeddedPrefix))
             builtIn->add(std::string(path.substr(kEmbeddedPrefix.size())), embeddedResource(path));
         std::vector<std::unique_ptr<learn::Source>> layers;
-        const std::filesystem::path disk = assetsDir / "learn";
         content->origin = "built in";
-        if (std::filesystem::is_directory(disk, ec)) {
+#ifdef OPENSE4_SOURCE_DIR
+        // Developer builds: the files in the assets folder win, so content can
+        // be edited and checked without building again.
+        const std::filesystem::path disk = assetsDir / "learn";
+        if (std::error_code ec; std::filesystem::is_directory(disk, ec)) {
             layers.push_back(std::make_unique<learn::DirectorySource>(disk));
             content->origin = std::format("built in and {}", disk.string());
         }
+#else
+        (void)assetsDir;
+#endif
         layers.push_back(std::move(builtIn));
         content->library = learn::loadLibrary(learn::LayeredSource(std::move(layers)));
     }

@@ -10,6 +10,7 @@
 #include "learn/condition.hpp"
 #include "learn/ids.hpp"
 #include "learn/library.hpp"
+#include "learn/progress.hpp"
 
 #include <doctest/doctest.h>
 
@@ -559,4 +560,149 @@ TEST_CASE("learn: every built-in lesson, training game and manual page is valid"
     CHECK_MESSAGE(lib.problems.empty(), problemsText(lib.problems));
     MESSAGE(std::format("assets/learn: {} manual pages, {} tutorials, {} training games", lib.manual.size(), lib.tutorials.size(),
                         lib.training.size()));
+}
+
+// ---- Progress through a lesson ---------------------------------------------------------------------
+
+namespace {
+
+learn::Lesson fixtureLesson(LessonKind kind, const char* file) {
+    std::vector<Diagnostic> problems;
+    const auto text = DirectorySource(kFixtures).read(file);
+    REQUIRE(text);
+    auto l = parseLesson(*text, file, kind, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    return *l;
+}
+
+} // namespace
+
+TEST_CASE("learn progress: tutorial steps wait for Next or their condition") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    LessonProgress p(fixtureLesson(LessonKind::Tutorial, "tutorials/01-first-steps.toml"), r, s, me);
+    ClientFacts client;
+
+    // Step 1 has no condition: Next moves on.
+    CHECK(p.step() == 0);
+    CHECK(p.canGoNext());
+    CHECK_FALSE(p.canGoBack());
+    CHECK_FALSE(p.update(r, s, me, client).stepChanged);
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.step() == 1);
+
+    // Step 2 waits for the Research window, then moves on by itself.
+    CHECK_FALSE(p.canGoNext());
+    CHECK_FALSE(p.goNext(r, s, me));
+    client.openWindows = {"research"};
+    CHECK(p.update(r, s, me, client).stepChanged);
+    CHECK(p.step() == 2);
+    CHECK(p.completed(1));
+
+    // Back shows a done step with Next open; Next returns to where we were.
+    p.goBack();
+    CHECK(p.step() == 1);
+    CHECK(p.canGoNext());
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.step() == 2);
+
+    // Step 3 counts commands from when it was first shown.
+    CHECK_FALSE(p.update(r, s, me, client).stepChanged);
+    p.issued(game::cmd::QueueAdd{});
+    CHECK_FALSE(p.update(r, s, me, client).stepChanged);
+    p.issued(game::cmd::SetResearch{});
+    CHECK(p.update(r, s, me, client).stepChanged);
+    CHECK(p.step() == 3);
+
+    // The last step: a turn must end, then the lesson is done.
+    CHECK_FALSE(p.update(r, s, me, client).finished);
+    s.turn += 1;
+    const auto ch = p.update(r, s, me, client);
+    CHECK(ch.finished);
+    CHECK(p.result() == LessonProgress::Result::Done);
+    CHECK_FALSE(p.canGoNext());
+}
+
+TEST_CASE("learn progress: jumping to a step marks the ones before done") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    LessonProgress p(fixtureLesson(LessonKind::Tutorial, "tutorials/01-first-steps.toml"), r, s, game::EmpireId{0u});
+    p.jumpTo(2, r, s, game::EmpireId{0u});
+    CHECK(p.step() == 2);
+    CHECK(p.completed(0));
+    CHECK(p.completed(1));
+    CHECK_FALSE(p.completed(2));
+    p.jumpTo(99, r, s, game::EmpireId{0u});
+    CHECK(p.step() == 3);
+}
+
+TEST_CASE("learn progress: training objectives, pages, hints and the result") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    LessonProgress p(fixtureLesson(LessonKind::Training, "training/01-expansion.toml"), r, s, me);
+    const ClientFacts client;
+
+    // The first turn's briefing comes up; both of its pages are in the series.
+    auto ch = p.update(r, s, me, client);
+    CHECK(ch.pageShown);
+    CHECK(p.page() == 0u);
+    CHECK(p.series() == std::vector<size_t>{0, 1});
+    CHECK_FALSE(p.objectiveDone(0));
+    CHECK_FALSE(p.objectiveDone(1));
+
+    // An objective holds once and stays done.
+    s.empires[0].research.push_back({techArea(r, "Test Construction"), 0});
+    p.update(r, s, me, client);
+    CHECK(p.objectiveDone(1));
+    s.empires[0].research.clear();
+    p.update(r, s, me, client);
+    CHECK(p.objectiveDone(1));
+
+    // The hint comes once its condition holds, and once only.
+    CHECK_FALSE(p.hint());
+    s.turn = 2;
+    ch = p.update(r, s, me, client);
+    CHECK(ch.hintShown);
+    REQUIRE(p.hint());
+    p.dismissHint();
+    CHECK_FALSE(p.hint());
+    s.turn = 3;
+    CHECK_FALSE(p.update(r, s, me, client).hintShown);
+
+    // The deadline of "two colonies" passes: the game is lost.
+    s.turn = 31;
+    ch = p.update(r, s, me, client);
+    CHECK(ch.finished);
+    CHECK(p.objectiveFailed(0));
+    CHECK(p.result() == LessonProgress::Result::Lost);
+    CHECK(p.why().find("Have two colonies") != std::string::npos);
+}
+
+TEST_CASE("learn progress: the fail rule and winning") {
+    const game::Rules& r = engineRules();
+    const game::EmpireId me{0u};
+    {
+        // Every colony lost: the fail rule holds.
+        game::GameState s = newEngineGame(7, 2, 12, true);
+        LessonProgress p(fixtureLesson(LessonKind::Training, "training/01-expansion.toml"), r, s, me);
+        for (auto& c : s.colonies)
+            if (c && c->owner == me) c->owner = game::EmpireId{1u};
+        CHECK(p.update(r, s, me, ClientFacts{}).finished);
+        CHECK(p.result() == LessonProgress::Result::Lost);
+        CHECK(p.why() == "Every colony was lost.");
+    }
+    {
+        // Two colonies and a project before the deadline: won.
+        game::GameState s = newEngineGame(7, 2, 12, true);
+        LessonProgress p(fixtureLesson(LessonKind::Training, "training/01-expansion.toml"), r, s, me);
+        for (auto& c : s.colonies)
+            if (c && c->owner == game::EmpireId{1u}) c->owner = me;
+        s.empires[0].research.push_back({techArea(r, "Test Construction"), 0});
+        s.turn = 12;
+        CHECK(p.update(r, s, me, ClientFacts{}).finished);
+        CHECK(p.result() == LessonProgress::Result::Won);
+        CHECK(p.why() == "Every objective was met by 2401.2.");
+    }
 }

@@ -31,6 +31,7 @@ add_executable(opense4
     client/classic/pbem_play.cpp
     client/classic/quadrant_map.cpp
     client/classic/replay.cpp
+    client/classic/screen_id.cpp
     client/classic/ship_glides.cpp
     client/classic/reports.cpp
     client/classic/screens/cargo_transfer.cpp

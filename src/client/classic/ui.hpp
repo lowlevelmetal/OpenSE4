@@ -7,6 +7,7 @@
 // docs/spec/06 §1).
 
 #include "client/classic/art.hpp"
+#include "client/classic/screen_id.hpp"
 #include "client/classic/session.hpp"
 #include "client/fonts.hpp"
 #include "client/mode.hpp"
@@ -79,28 +80,6 @@ struct FrameMapping {
 
 // Scale and extent for a framebuffer, per the Graphics settings.
 FrameMapping frameMappingFor(float framebufferWidth, float framebufferHeight);
-
-// Every window of the classic client. The main window is not a Screen.
-enum class ScreenId {
-    // Command buttons (docs/spec/06 §1.2).
-    GameMenu, Designs, CreateDesign, Planets, Colonies, Ships, Queues, SetQueue, Research, TechTree, Empires, Log,
-    EmpireStatus, Help, GalaxyMap,
-    // Empire Status sub-windows.
-    EmpireOptions, Ministers, SystemsToAvoid, Waypoints, Strategies, RepairPriorities,
-    // Order dialogs (§1.3).
-    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename,
-    // Diplomacy and comparisons (§1.5).
-    Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
-    // Combat (§1.6).
-    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
-    // Files.
-    SaveGame, LoadGame,
-    // Graphics, controls and sound.
-    Settings,
-    // Learning to play (docs/LEARNING.md): tutorials, training games and the manual.
-    Learn, Manual,
-    Count
-};
 
 // Optional context for opening a screen.
 struct ScreenArgs {
@@ -316,9 +295,6 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args);
 const char* screenTitle(ScreenId id);
 // "designs", "Construction Queues", "EmpireStatus"... (case and spaces ignored).
 std::optional<ScreenId> screenFromName(std::string_view name);
-// The window id lessons and manual links use: the kebab-case of the ScreenId
-// name ("create-design"; learn/ids.hpp lists them), and back.
-std::string_view windowId(ScreenId id);
-std::optional<ScreenId> screenFromWindowId(std::string_view id);
+
 
 } // namespace opense4::client::classic

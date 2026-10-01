@@ -23,6 +23,7 @@ add_executable(opense4_tests
     test_integration.cpp
     test_intel.cpp
     test_learn.cpp
+    test_learn_client.cpp
     test_maps.cpp
     test_movement.cpp
     test_net.cpp
@@ -50,6 +51,8 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screen_id.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/settings.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ship_glides.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp

@@ -22,8 +22,8 @@ struct LearnContent {
 };
 
 // Loads the content: from `learnDir` alone when it is given (--learn-dir),
-// else the built-in copies with the files under <assetsDir>/learn winning
-// (the source tree's in developer builds). Problems are logged.
+// else the built-in copies, over which developer builds (OPENSE4_DEV_PATHS)
+// let the files under <assetsDir>/learn win. Problems are logged.
 std::unique_ptr<LearnContent> loadLearnContent(const std::filesystem::path& assetsDir, const std::filesystem::path& learnDir,
                                                const assets::InstallFiles& install);
 

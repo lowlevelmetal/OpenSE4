@@ -35,20 +35,8 @@ void dimWrapped(const char* text) {
 
 } // namespace
 
-LessonRunner::LessonRunner(learn::Lesson lesson, const ClassicSession& session) : lesson_(std::move(lesson)) {
-    gameMark_ = learn::markNow(session.rules(), session.state(), session.player(), tracker_);
-    stepMarks_.resize(lesson_.steps.size());
-    completed_.assign(lesson_.steps.size(), 0);
-    if (!stepMarks_.empty()) stepMarks_.front() = gameMark_;
-    objectiveDone_.assign(lesson_.objectives.size(), 0);
-    objectiveFailed_.assign(lesson_.objectives.size(), 0);
-    hintShown_.assign(lesson_.hints.size(), 0);
-    pageSeen_.assign(lesson_.pages.size(), 0);
-}
-
-learn::EvalContext LessonRunner::context(const UiContext& ui, const learn::ClientFacts& facts, const learn::Mark& mark) const {
-    return learn::EvalContext{ui.rules(), ui.state(), ui.session.player(), facts, tracker_, mark};
-}
+LessonRunner::LessonRunner(learn::Lesson lesson, const ClassicSession& session)
+    : progress_(std::move(lesson), session.rules(), session.state(), session.player()) {}
 
 void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts) {
     evaluate(ui, facts);
@@ -57,101 +45,41 @@ void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts) {
     drawResult(ui);
 }
 
-void LessonRunner::enterStep(const UiContext& ui, size_t step) {
-    step_ = step;
-    if (!stepMarks_[step]) stepMarks_[step] = learn::markNow(ui.rules(), ui.state(), ui.session.player(), tracker_);
-    panelOpen_ = true;
-    seenSignature_ = 0;
-}
-
 void LessonRunner::jumpTo(const UiContext& ui, size_t step) {
-    if (lesson_.steps.empty()) return;
-    step = std::min(step, lesson_.steps.size() - 1);
-    for (size_t i = 0; i < step; ++i) completed_[i] = 1;
-    enterStep(ui, step);
+    progress_.jumpTo(step, ui.rules(), ui.state(), ui.session.player());
+    seen_ = 0;
 }
 
-void LessonRunner::finish(Result r, std::string why) {
-    result_ = r;
-    resultWhy_ = std::move(why);
+void LessonRunner::finished() {
     showResult_ = true;
     panelOpen_ = true;
-    if (r == Result::Done || r == Result::Won) markLessonDone(lesson_.kind, lesson_.slug);
+    const learn::LessonProgress::Result r = progress_.result();
+    if (r == learn::LessonProgress::Result::Done || r == learn::LessonProgress::Result::Won) markLessonDone(lesson().kind, lesson().slug);
 }
 
 void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
-    const ClassicSession& session = ui.session;
-    if (session.revision() != seenRevision_) {
-        tracker_.observe(session.state(), session.player());
-        seenRevision_ = session.revision();
-    }
     // The conditions read the game, the commands and the client facts: check
     // them again only when one of these changed.
+    const ClassicSession& session = ui.session;
     Hasher h;
-    h.add(session.revision()).add(tracker_.commands().size()).add(step_);
+    h.add(session.revision()).add(progress_.tracker().commands().size()).add(progress_.step());
     for (const std::string& w : facts.openWindows) h.add(std::string_view(w));
     h.add(std::string_view("|"));
     for (const std::string& k : facts.selected) h.add(std::string_view(k));
-    if (h.value() == seenSignature_ || result_ != Result::None) return;
-    seenSignature_ = h.value();
-
-    if (lesson_.kind == learn::LessonKind::Tutorial) {
-        if (step_ >= lesson_.steps.size()) return;
-        const learn::Step& st = lesson_.steps[step_];
-        if (completed_[step_] || !st.done || !learn::holds(*st.done, context(ui, facts, *stepMarks_[step_]))) return;
-        // Done: on to the next step (or the end) at once.
-        completed_[step_] = 1;
-        audio().play("button");
-        if (step_ + 1 < lesson_.steps.size()) enterStep(ui, step_ + 1);
-        else finish(Result::Done);
-        return;
-    }
-
-    const learn::EvalContext ctx = context(ui, facts, gameMark_);
-    const uint32_t turn = ui.state().turn;
-    // Briefing pages appear at the start of their turn.
-    if (!lastTurn_ || *lastTurn_ != turn) {
-        lastTurn_ = turn;
-        bool shown = false;
-        for (size_t i = 0; i < lesson_.pages.size(); ++i) {
-            if (pageSeen_[i] || lesson_.pages[i].turn > turn) continue;
-            pageSeen_[i] = 1;
-            if (!shown) {
-                page_ = i;
-                panelOpen_ = true;
-                shown = true;
-            }
-        }
-    }
-    for (size_t i = 0; i < lesson_.objectives.size(); ++i) {
-        if (objectiveDone_[i] || objectiveFailed_[i]) continue;
-        const learn::Objective& o = lesson_.objectives[i];
-        if (learn::holds(o.when, ctx)) objectiveDone_[i] = 1;
-        else if (o.byTurn && turn > *o.byTurn) objectiveFailed_[i] = 1;
-    }
-    for (size_t i = 0; i < lesson_.hints.size(); ++i)
-        if (!hintShown_[i] && learn::holds(lesson_.hints[i].when, ctx)) {
-            hintShown_[i] = 1;
-            hints_.push_back(i);
-            panelOpen_ = true;
-        }
-    if (lesson_.fail && learn::holds(lesson_.fail->when, ctx)) {
-        finish(Result::Lost, learn::plainText(lesson_.fail->text));
-        return;
-    }
-    for (size_t i = 0; i < lesson_.objectives.size(); ++i)
-        if (objectiveFailed_[i]) {
-            finish(Result::Lost, std::format("The deadline for \"{}\" has passed.", lesson_.objectives[i].text));
-            return;
-        }
-    if (std::all_of(objectiveDone_.begin(), objectiveDone_.end(), [](uint8_t d) { return d != 0; }))
-        finish(Result::Won, std::format("Every objective was met by {}.", formatDate(turn)));
+    if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
+    seen_ = h.value();
+    const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);
+    if (ch.stepChanged) audio().play("button");
+    if (ch.stepChanged || ch.pageShown || ch.hintShown) panelOpen_ = true;
+    if (ch.finished) finished();
 }
 
 void LessonRunner::drawOutlines(UiContext& ui) const {
-    if (lesson_.kind != learn::LessonKind::Tutorial || result_ != Result::None || step_ >= lesson_.steps.size()) return;
-    const learn::Step& st = lesson_.steps[step_];
-    if (st.highlight.empty() || completed_[step_]) return;
+    const learn::Lesson& l = lesson();
+    const size_t step = progress_.step();
+    if (l.kind != learn::LessonKind::Tutorial || progress_.result() != learn::LessonProgress::Result::None || step >= l.steps.size()) return;
+    const learn::Step& st = l.steps[step];
+    if (st.highlight.empty() || progress_.completed(step)) return;
     // The outlines go in a see-through window over the classic windows and
     // under the panel (the panel's own buttons are outlined over it).
     ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -195,56 +123,53 @@ void LessonRunner::followLink(UiContext& ui, const std::string& target) {
 }
 
 void LessonRunner::tutorialBody(UiContext& ui) {
-    const size_t n = lesson_.steps.size();
-    if (n == 0) return;
-    const learn::Step& st = lesson_.steps[step_];
-    ImGui::TextColored(kLabelBlue, "Step %zu of %zu", step_ + 1, n);
+    const learn::Lesson& l = lesson();
+    const size_t n = l.steps.size(), step = progress_.step();
+    if (step >= n) return;
+    const learn::Step& st = l.steps[step];
+    ImGui::TextColored(kLabelBlue, "Step %zu of %zu", step + 1, n);
     heading(ui, st.title.c_str());
     ImGui::Spacing();
     MarkdownOptions options;
     if (auto clicked = drawMarkdown(ui.painter(), st.text, options)) followLink(ui, *clicked);
     ImGui::Spacing();
-    if (result_ == Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
-    else if (st.done && completed_[step_]) ImGui::TextColored(kGood, "Done.");
+    if (progress_.result() == learn::LessonProgress::Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
+    else if (st.done && progress_.completed(step)) ImGui::TextColored(kGood, "Done.");
     else if (st.done) dimWrapped("Next lights up once you have done this.");
 }
 
 void LessonRunner::trainingBody(UiContext& ui) {
+    const learn::Lesson& l = lesson();
     const Painter p = ui.painter();
-    if (!hints_.empty()) {
-        const learn::Hint& h = lesson_.hints[hints_.front()];
+    if (const auto hint = progress_.hint()) {
+        const learn::Hint& h = l.hints[*hint];
         ImGui::TextColored(kGold, "%s", h.title.c_str());
         MarkdownOptions options;
         if (auto clicked = drawMarkdown(p, h.text, options)) followLink(ui, *clicked);
-        if (ImGui::SmallButton("OK")) hints_.pop_front();
+        if (ImGui::SmallButton("OK")) progress_.dismissHint();
         ImGui::Separator();
     }
     ImGui::TextColored(kLabelBlue, "Objectives");
-    for (size_t i = 0; i < lesson_.objectives.size(); ++i) {
-        const learn::Objective& o = lesson_.objectives[i];
+    for (size_t i = 0; i < l.objectives.size(); ++i) {
+        const learn::Objective& o = l.objectives[i];
         ImGui::PushID(int(i));
-        lamp(ui, objectiveDone_[i] != 0);
+        lamp(ui, progress_.objectiveDone(i));
         ImGui::SameLine();
         const std::string text = o.byTurn ? std::format("{} (by {})", o.text, formatDate(*o.byTurn)) : o.text;
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(objectiveDone_[i] ? kGood : objectiveFailed_[i] ? kBad : ImVec4(1, 1, 1, 1), "%s", text.c_str());
+        ImGui::TextColored(progress_.objectiveDone(i) ? kGood : progress_.objectiveFailed(i) ? kBad : ImVec4(1, 1, 1, 1), "%s", text.c_str());
         ImGui::PopTextWrapPos();
         ImGui::PopID();
     }
-    if (result_ == Result::Won) ImGui::TextColored(kGood, "Training game won.");
-    else if (result_ == Result::Lost) ImGui::TextColored(kBad, "Training game lost.");
-    if (page_) {
-        const learn::BriefingPage& pg = lesson_.pages[*page_];
+    if (progress_.result() == learn::LessonProgress::Result::Won) ImGui::TextColored(kGood, "Training game won.");
+    else if (progress_.result() == learn::LessonProgress::Result::Lost) ImGui::TextColored(kBad, "Training game lost.");
+    if (const auto page = progress_.page()) {
+        const learn::BriefingPage& pg = l.pages[*page];
         ImGui::Separator();
-        // Where the page is in its series.
-        size_t index = 0, count = 0;
-        for (size_t i = 0; i < lesson_.pages.size(); ++i)
-            if (lesson_.pages[i].series == pg.series && pageSeen_[i]) {
-                ++count;
-                if (i <= *page_) index = count;
-            }
+        const std::vector<size_t> series = progress_.series();
+        const size_t index = size_t(std::find(series.begin(), series.end(), *page) - series.begin());
         heading(ui, pg.title.c_str());
-        if (count > 1) ImGui::TextColored(imColorV(palette::kSecondary), "%zu of %zu", index, count);
+        if (series.size() > 1) ImGui::TextColored(imColorV(palette::kSecondary), "%zu of %zu", index + 1, series.size());
         ImGui::Spacing();
         MarkdownOptions options;
         if (auto clicked = drawMarkdown(p, pg.text, options)) followLink(ui, *clicked);
@@ -267,14 +192,14 @@ void LessonRunner::drawPanel(UiContext& ui) {
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
         const ImVec2 pos = ImGui::GetWindowPos();
         const Vec2 at = ui.map.fromFb(Vec2{pos.x, pos.y} * ui.fbScale);
-        drawWindowFrame(p, ImGui::GetWindowDrawList(), Rect{at, at + kPanelSize}, lesson_.title.c_str(), 0);
+        drawWindowFrame(p, ImGui::GetWindowDrawList(), Rect{at, at + kPanelSize}, lesson().title.c_str(), 0);
         ui.tag("lesson:panel", pos, ImVec2(pos.x + ui.px(kPanelSize.x), pos.y + ui.px(kPanelSize.y)));
 
         ImGui::SetCursorPos(ui.size({15, 36}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({4, 2}));
         ImGui::BeginChild("##body", ui.size({kPanelSize.x - 30, kPanelSize.y - 36 - kButtonsH - 6}), ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
-        if (lesson_.kind == learn::LessonKind::Tutorial) tutorialBody(ui);
+        if (lesson().kind == learn::LessonKind::Tutorial) tutorialBody(ui);
         else trainingBody(ui);
         ImGui::EndChild();
 
@@ -288,15 +213,17 @@ void LessonRunner::drawPanel(UiContext& ui) {
             return clicked;
         };
         const float third = (inner - 8) / 3;
-        if (lesson_.kind == learn::LessonKind::Tutorial) {
-            const learn::Step* st = step_ < lesson_.steps.size() ? &lesson_.steps[step_] : nullptr;
-            if (button("Back", 0, third, y0, step_ > 0)) step_ -= 1;
-            const bool last = step_ + 1 >= lesson_.steps.size();
-            const bool canNext = st && (!st->done || completed_[step_]) && !(last && result_ != Result::None);
-            if (button(last ? "Finish##next" : "Next##next", third + 4, third, y0, canNext)) {
-                completed_[step_] = 1;
-                if (!last) enterStep(ui, step_ + 1);
-                else finish(Result::Done);
+        const learn::Lesson& l = lesson();
+        const bool over = progress_.result() != learn::LessonProgress::Result::None;
+        if (l.kind == learn::LessonKind::Tutorial) {
+            const size_t step = progress_.step();
+            const learn::Step* st = step < l.steps.size() ? &l.steps[step] : nullptr;
+            if (button("Back", 0, third, y0, progress_.canGoBack())) progress_.goBack();
+            const bool last = step + 1 >= l.steps.size();
+            if (button(last ? "Finish##next" : "Next##next", third + 4, third, y0, progress_.canGoNext())) {
+                progress_.goNext(ui.rules(), ui.state(), ui.session.player());
+                seen_ = 0;
+                if (progress_.result() != learn::LessonProgress::Result::None) finished();
             }
             ui.tagItem("lesson:next");
             if (button("Read More", 2 * (third + 4), third, y0, st && !st->manual.empty())) {
@@ -307,23 +234,19 @@ void LessonRunner::drawPanel(UiContext& ui) {
             ui.tagItem("lesson:read-more");
         } else {
             // Previous and next browse the shown page's series.
-            std::vector<size_t> series;
-            if (page_)
-                for (size_t i = 0; i < lesson_.pages.size(); ++i)
-                    if (pageSeen_[i] && lesson_.pages[i].series == lesson_.pages[*page_].series) series.push_back(i);
-            const auto shown = page_ ? std::find(series.begin(), series.end(), *page_) : series.end();
+            const std::vector<size_t> series = progress_.series();
+            const auto shown = progress_.page() ? std::find(series.begin(), series.end(), *progress_.page()) : series.end();
             const bool hasPrev = shown != series.end() && shown != series.begin();
             const bool hasNext = shown != series.end() && shown + 1 != series.end();
-            if (button("Previous", 0, third, y0, hasPrev)) page_ = *(shown - 1);
-            if (button("Next##next", third + 4, third, y0, hasNext)) page_ = *(shown + 1);
+            if (button("Previous", 0, third, y0, hasPrev)) progress_.showPage(*(shown - 1));
+            if (button("Next##next", third + 4, third, y0, hasNext)) progress_.showPage(*(shown + 1));
             ui.tagItem("lesson:next");
-            if (button("Close Page", 2 * (third + 4), third, y0, page_.has_value())) page_.reset();
+            if (button("Close Page", 2 * (third + 4), third, y0, progress_.page().has_value())) progress_.showPage(std::nullopt);
         }
         const float half = (inner - 4) / 2;
         if (button("Hide", 0, half, y0 + 31, true)) panelOpen_ = false;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ctrl+H or the T button shows the panel again");
-        const bool over = result_ != Result::None;
-        const char* leave = over ? "Learn" : lesson_.kind == learn::LessonKind::Tutorial ? "Leave Lesson" : "Leave Game";
+        const char* leave = over ? "Learn" : l.kind == learn::LessonKind::Tutorial ? "Leave Lesson" : "Leave Game";
         if (button(leave, half + 4, half, y0 + 31, true)) {
             if (over) request_ = Request::Leave;
             else confirmLeave_ = true;
@@ -359,18 +282,20 @@ void LessonRunner::drawResult(UiContext& ui) {
     ImGui::SetNextWindowSize(ui.size({400, 0}));
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) return;
-    const bool won = result_ == Result::Done || result_ == Result::Won;
-    const char* title = result_ == Result::Done ? "Lesson complete" : result_ == Result::Won ? "Training game won" : "Training game lost";
+    using Result = learn::LessonProgress::Result;
+    const Result result = progress_.result();
+    const bool won = result == Result::Done || result == Result::Won;
+    const char* title = result == Result::Done ? "Lesson complete" : result == Result::Won ? "Training game won" : "Training game lost";
     ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
     ImGui::TextColored(won ? kGood : kBad, "%s", title);
     ImGui::PopFont();
-    ImGui::TextUnformatted(lesson_.title.c_str());
+    ImGui::TextUnformatted(lesson().title.c_str());
     ImGui::Spacing();
-    if (!resultWhy_.empty()) ImGui::TextWrapped("%s", resultWhy_.c_str());
+    if (!progress_.why().empty()) ImGui::TextWrapped("%s", progress_.why().c_str());
     if (won) dimWrapped("The Learn window marks it done. You can keep playing this game.");
     ImGui::Spacing();
     const ImVec2 size(ui.px(118), ui.px(26));
-    const learn::Lesson* next = ui.learn ? ui.learn->library.next(lesson_.kind, lesson_.slug) : nullptr;
+    const learn::Lesson* next = ui.learn ? ui.learn->library.next(lesson().kind, lesson().slug) : nullptr;
     if (won && next) {
         if (ImGui::Button("Next Lesson", size)) {
             request_ = Request::Next;

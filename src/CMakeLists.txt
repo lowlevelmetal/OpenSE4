@@ -99,7 +99,8 @@ add_library(opense4_learn STATIC
     learn/ids.cpp
     learn/lesson.cpp
     learn/library.cpp
-    learn/markdown.cpp)
+    learn/markdown.cpp
+    learn/progress.cpp)
 target_link_libraries(opense4_learn PUBLIC opense4_game PRIVATE tomlplusplus opense4_warnings)
 
 # --- net: multiplayer (TCP host/client sessions, UPnP port mapping, PBEM files) -----
