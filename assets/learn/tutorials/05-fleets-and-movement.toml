@@ -1,0 +1,169 @@
+# OpenSE4's own lesson (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Fleets, movement and supply"
+summary = "Form a fleet, move it, use waypoints and the order list, and keep your ships supplied."
+minutes = 15
+
+[setup]
+seed = 404
+computer_players = 2
+quadrant_size = "small"
+events = "none"
+
+[[step]]
+title = "Ships on the move"
+text = """
+Ships do their work far from home. This lesson shows you how to group them into a **fleet**, how
+to move them, and how to keep them supplied. You will use your two scouts.
+"""
+highlight = ["lesson:panel"]
+manual = "ships-and-fleets"
+
+[[step]]
+title = "Select a scout"
+text = """
+Select one of your scouts with the ship arrows at the top right, or `Space`.
+"""
+highlight = ["cycle:ship"]
+done = { selected = "ship" }
+manual = "main-window#selecting-things"
+
+[[step]]
+title = "Fleet Transfer"
+text = """
+Open **Fleet Transfer** with its order button or `F`. It lists the ships in this sector that are
+not in a fleet, and the fleets already there.
+"""
+highlight = ["order:fleet-transfer"]
+done = { window = "fleet-transfer" }
+manual = "ships-and-fleets#fleets"
+
+[[step]]
+title = "Create a fleet"
+text = """
+Press **Create Fleet** and give the fleet a name (or keep the one offered). The fleet starts with
+your selected scout.
+"""
+highlight = ["fleet-transfer:create-fleet"]
+done = { command = "CreateFleet" }
+manual = "ships-and-fleets#fleets"
+
+[[step]]
+title = "Add the second scout"
+text = """
+With the new fleet selected, click your other **scout** in the list of ships outside fleets to add
+it. (Leave the colony ship out: a fleet moves at the speed of its slowest member.)
+"""
+highlight = ["fleet-transfer:ships", "fleet-transfer:fleets"]
+done = { command = "JoinFleet" }
+manual = "ships-and-fleets#fleets"
+
+[[step]]
+title = "Your fleet"
+text = """
+Close Fleet Transfer. Select a scout again: the report panel now shows the **fleet** above the
+ship, with its speed, supplies, formation, strategy and members. Orders you give now go to the
+whole fleet.
+"""
+highlight = ["panel:report", "cycle:ship"]
+done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet" }] }
+manual = "ships-and-fleets#fleets"
+
+[[step]]
+title = "Move the fleet"
+text = """
+Press the **Move To** order (or `M`), then click a sector in the system view. You can also click
+a system in the galaxy panel first to pick a sector in another system you have explored.
+
+(Shortcut: with a ship selected, right-clicking a sector also gives a Move To order.)
+"""
+highlight = ["order:move-to", "panel:system"]
+done = { order = "move-to" }
+manual = "ships-and-fleets#moving-around"
+
+[[step]]
+title = "Movement points"
+text = """
+The fleet moved at once, one sector per **movement point**, and stopped when its points ran out;
+the rest of the move continues next turn. The dashed line shows its route. `Ctrl+L` hides or shows
+it. Press **Next**.
+"""
+highlight = ["panel:system"]
+manual = "ships-and-fleets#moving-around"
+
+[[step]]
+title = "Set a waypoint"
+text = """
+**Waypoints** are ten places you can send ships to quickly. Click something in the system view,
+for example a warp point or a planet (an empty sector cannot be selected), then press `Alt+1`:
+its sector becomes waypoint 1.
+
+Then select your fleet again (a scout, with the ship arrows).
+"""
+highlight = ["panel:system"]
+done = { command = "SetWaypoint" }
+manual = "ships-and-fleets#waypoints"
+
+[[step]]
+title = "Go to the waypoint"
+text = """
+With a scout of the fleet selected, press `Ctrl+1`, or the **Move To Waypoint** order button and
+pick waypoint 1 from the list.
+"""
+highlight = ["order:move-to-waypoint", "cycle:ship"]
+done = { order = "move-to-waypoint" }
+manual = "ships-and-fleets#waypoints"
+
+[[step]]
+title = "The order list"
+text = """
+New orders are **added to the end** of the list. Press **View Orders** (or `V`) to see the fleet's
+whole list.
+"""
+highlight = ["order:view-orders"]
+done = { window = "view-orders" }
+manual = "ships-and-fleets#orders"
+
+[[step]]
+title = "Editing orders"
+text = """
+Here you can move orders up and down, delete one, or clear them all; the **Repeat Orders** box
+makes the fleet repeat its list forever. An order that fails clears the whole list.
+
+Close the window when you are done.
+"""
+highlight = ["window:view-orders"]
+done = { not = { window = "view-orders" } }
+manual = "ships-and-fleets#orders"
+
+[[step]]
+title = "Supplies"
+text = """
+Ships use **supplies** to move, fire and cloak. A ship that runs out crawls one sector a turn and
+cannot fire. Your ships are refilled for free in any sector with a **resupply depot**, such as
+the one on your homeworld.
+
+Give the fleet the **Resupply** order (or `S`): it adds a move to the nearest depot.
+"""
+highlight = ["order:resupply"]
+done = { order = "resupply" }
+manual = "logistics#supply"
+
+[[step]]
+title = "End the turn"
+text = """
+End the turn. Your fleet carries on with its orders at the start of your next turn, before you
+get control.
+"""
+highlight = ["button:end-turn"]
+done = { turns_passed = 1 }
+manual = "turns#turn-based-play"
+
+[[step]]
+title = "Well done"
+text = """
+You can now form fleets and move them, use waypoints, and read and edit order lists. Two orders
+to remember for guards: **Sentry** (`Y`) waits until an enemy appears in the system, and **Set
+Patrol** (`P`) moves between several sectors forever.
+"""
+highlight = ["order:sentry", "order:patrol"]
+manual = "ships-and-fleets#orders"
