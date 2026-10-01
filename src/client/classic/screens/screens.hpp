@@ -103,6 +103,22 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
 // A sample simulated battle for automation: the player's warships against
 // copies of them, the player driving the first side. False when the player has none.
 bool startDemoSimulation(UiContext& ui, bool tactical);
+// Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
+// Fleet Transfer and Cargo Transfer windows with ScreenArgs::text
+// kSimulatorWindow: those windows then work on a sandbox built from the
+// simulator's setup, never on the real game, and the simulator takes back
+// what was changed there when they close. drawInSimulatorSandbox() runs a
+// window's drawing with a UiContext over that sandbox (false, drawing
+// nothing, when there is none); simulatorSandboxClosed() tells the simulator
+// the window has gone.
+inline constexpr const char* kSimulatorWindow = "simulator";
+bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>& draw);
+void simulatorSandboxClosed();
+// A tactical simulation is being fought: Designs closes, and the Tactical
+// Combat window opens it again with the simulator afterwards (spec 06 §1.10.4).
+bool tacticalSimulationRunning(const UiContext& ui);
+// Set when Designs closed for one, so that it opens again afterwards.
+bool& designsClosedForSimulation();
 
 // settings_screen.cpp: the per-computer Options window and OpenSE4's Settings.
 std::unique_ptr<Screen> makeOptions(const ScreenArgs& args);

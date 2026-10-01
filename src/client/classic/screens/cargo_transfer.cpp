@@ -30,12 +30,25 @@ struct Item {
 
 class CargoTransferScreen final : public Screen {
 public:
-    explicit CargoTransferScreen(const ScreenArgs& args) {
+    explicit CargoTransferScreen(const ScreenArgs& args) : sandbox_(args.text == kSimulatorWindow) {
         from_.vehicle = args.vehicle;
         from_.planet = args.vehicle.valid() ? game::ObjectId{} : args.planet;
     }
 
+    ~CargoTransferScreen() override {
+        if (sandbox_) simulatorSandboxClosed();
+    }
+    CargoTransferScreen(const CargoTransferScreen&) = delete;
+    CargoTransferScreen& operator=(const CargoTransferScreen&) = delete;
+
     bool draw(UiContext& ui) override {
+        // Opened by the Combat Simulator: the same window over its sandbox.
+        if (sandbox_) return drawInSimulatorSandbox(ui, [this](UiContext& sub) { return drawIn(sub); });
+        return drawIn(ui);
+    }
+
+private:
+    bool drawIn(UiContext& ui) {
         locate(ui);
         Dialog d(ui, screenTitle(ScreenId::CargoTransfer), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
@@ -69,9 +82,10 @@ public:
         stepButtons(d, step_);
         d.spacer();
         const game::Vehicle* orderVehicle = deferredVehicle(ui);
-        const bool canOrder = orderVehicle && game::vehicleCargoCapacity(ui.rules(), ui.state(), *orderVehicle) > 0;
-        if (d.button("Load Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::LoadCargo, *orderVehicle);
-        if (d.button("Drop Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::DropCargo, *orderVehicle);
+        const bool canOrder = !sandbox_ && orderVehicle && game::vehicleCargoCapacity(ui.rules(), ui.state(), *orderVehicle) > 0;
+        // The deferred orders belong to the real game, not to the simulator's sandbox.
+        if (!sandbox_ && d.button("Load Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::LoadCargo, *orderVehicle);
+        if (!sandbox_ && d.button("Drop Cargo Order", canOrder)) openOrderPicker(ui, game::OrderKind::DropCargo, *orderVehicle);
         if (d.close()) return false;
         report_.draw(ui);
         if (auto pick = orderPicker_.draw(ui); pick && ownVehicle(ui, orderVehicle_)) {
@@ -85,7 +99,6 @@ public:
         return d.keepOpen();
     }
 
-private:
     void locate(UiContext& ui) {
         if (where_) return;
         const game::GameState& s = ui.state();
@@ -244,6 +257,7 @@ private:
     TypeAmountPicker orderPicker_;
     game::OrderKind orderKind_ = game::OrderKind::LoadCargo;
     game::VehicleId orderVehicle_;
+    bool sandbox_ = false;   // opened by the Combat Simulator's Change Cargo
 };
 
 } // namespace

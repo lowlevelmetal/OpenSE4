@@ -127,4 +127,28 @@ bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::
 // Removes a row's items (a fleet left without members is simply not formed).
 void simulatorRemove(game::combat::SimulatorSetup& setup, const SimulatorRow& row);
 
+// Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
+// real Fleet Transfer and Cargo Transfer windows; ours work on a sandbox built
+// from the setup (game::combat::buildSimulation), never on the real game. For
+// Fleets For Plr the window plays the chosen side: its ships and its fleets,
+// with formation and strategy from its copied list. For Change Cargo every
+// vehicle and colony of the simulator is made the chosen side's in the
+// sandbox, so that the one window lists them all (inferred: units in cargo
+// have no owner). The sandbox state is simultaneous, so commands take effect
+// at once. `anchor*`: what the window opens on.
+struct SimulatorSandbox {
+    game::combat::Simulation sim;
+    int sideIndex = 0;
+    game::EmpireId side;
+    bool cargo = false;
+    game::VehicleId anchorVehicle;
+    game::ObjectId anchorPlanet;
+};
+SimulatorSandbox simulatorSandbox(const game::Rules& r, const game::GameState& real, const game::combat::SimulatorSetup& setup, int side, bool cargo);
+// What the window changed in `sandbox` comes back into the setup: the side's
+// fleets (members, name, formation, strategy; unit groups are in none), or
+// every ship's and colony's units (in real designs; population moved onto a
+// ship is not kept, inferred).
+void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const game::GameState& sandbox, game::combat::SimulatorSetup& setup);
+
 } // namespace opense4::client::classic

@@ -9,15 +9,20 @@
 // then the neutral objects; a left-click removes one. Top right: the items;
 // a left-click adds one to the side picked below it (one ship, or one unit to
 // the side's group of that kind), a right-click opens its report. Bottom
-// right: the owner for new items. With Tactical the simulator closes while
-// the battle is fought and opens again afterwards with the same setup; with
-// Strategic the Strategic Combat window opens over it. Cancel discards the
-// setup.
+// right: the owner for new items. Sides show as numbered colour boxes, never
+// flags. With Tactical the simulator and Designs close while the battle is
+// fought and open again afterwards with the same setup; with Strategic the
+// Strategic Combat window opens over it. Fleets For Plr and Change Cargo open
+// the Fleet Transfer and Cargo Transfer windows over a sandbox of the setup
+// (the real game never changes) and the setup takes back what they changed.
+// Cancel discards the setup.
 
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/combat_logic.hpp"
+#include "client/classic/screens/combat_map.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/session.hpp"
 #include "client/classic/widgets.hpp"
 
 #include "game/design.hpp"
@@ -57,6 +62,25 @@ std::optional<SimulatorSetup>& savedSetup() {
     return s;
 }
 
+// A tactical simulation is being fought: Designs stays closed until it is over.
+bool& tacticalSimulation() {
+    static bool on = false;
+    return on;
+}
+
+// The sandbox of the setup that Fleet Transfer or Cargo Transfer works on
+// while the simulator's Fleets For Plr or Change Cargo window is open.
+struct Sandbox {
+    std::unique_ptr<ClassicSession> session;   // over the sandbox
+    SimulatorSandbox made;                     // how it was made (its state moved into the session)
+    bool open = true;                          // its window is still open
+};
+
+std::optional<Sandbox>& sandbox() {
+    static std::optional<Sandbox> s;
+    return s;
+}
+
 bool armedShip(const game::Rules& r, const game::GameState& s, game::DesignId d) {
     const game::Design& design = s.design(d);
     if (r.hull(design.hull).type != ruleset::VehicleType::Ship) return false;
@@ -88,11 +112,15 @@ bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& mess
     if (!message.empty()) return false;
     game::combat::Simulation sim = game::combat::buildSimulation(ui.rules(), ui.state(), setup);
     std::vector<game::EmpireId> players = sim.players;
+    std::vector<game::EmpireId> sides = sim.sides;
     auto battle = std::make_unique<game::combat::TacticalBattle>(game::combat::startSimulation(ui.rules(), std::move(sim)));
     if (!battle->started()) {
         message = "Nobody on the field can see an enemy.";
         return false;
     }
+    // The battle windows show the sides as numbered boxes (spec 04 §17).
+    setSimulationSides(&battle->state(), std::move(sides));
+    tacticalSimulation() = tactical;
     TacticalFight fight;
     fight.kind = TacticalFight::Kind::Simulation;
     fight.battle = std::move(battle);
@@ -108,6 +136,7 @@ public:
     explicit CombatSimulatorScreen(const std::string& mode) : demo_(mode == "demo") {
         if (mode == "again" && savedSetup()) setup_ = std::move(*savedSetup());
         savedSetup().reset();
+        tacticalSimulation() = false;
     }
     bool modal() const override { return true; }
 
@@ -117,6 +146,11 @@ public:
         if (!setup_.viewer.valid()) setup_ = demo_ ? demoSetup(ui.rules(), s, me) : defaultSetup(me);
         // The simulation fought by the strategies is watched over this window.
         if (ui.session.tactical()) return true;
+        // Fleet Transfer or Cargo Transfer has closed: the setup takes back what changed there.
+        if (sandbox() && !sandbox()->open) {
+            takeBack(ui);
+            sandbox().reset();
+        }
         Dialog d(ui, "Combat Simulator", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
@@ -143,8 +177,8 @@ public:
         if (d.button("Strategies")) ui.open(ScreenId::Strategies);
         ui.tagItem("combat-simulator:strategies");
         if (d.button("Computer Control")) ImGui::OpenPopup("Player Computer Control##sim");
-        if (d.button("Fleets For Plr")) ImGui::OpenPopup("Fleets##sim");
-        if (d.button("Change Cargo")) ImGui::OpenPopup("Change Cargo##sim");
+        if (d.button("Fleets For Plr")) openSandbox(ui, false);
+        if (d.button("Change Cargo")) openSandbox(ui, true);
         const bool beginClicked = d.button("Begin");
         ui.tagItem("combat-simulator:begin");
         if (beginClicked) {
@@ -156,13 +190,12 @@ public:
             }
         }
         computerPopup(ui);
-        fleetsPopup(ui);
-        cargoPopup(ui);
         designPopup(ui);
         report_.draw(ui);
         // Cancel discards the setup (Esc too).
         if (d.close(true, "Cancel")) {
             savedSetup().reset();
+            sandbox().reset();
             return false;
         }
         return d.keepOpen();
@@ -192,7 +225,9 @@ private:
         return ui.me().race.style;
     }
 
-    // "Combat vehicles" at (17,75), 295x370: 36 px rows with flag, picture and name.
+    // "Combat vehicles" at (17,75), 295x370: 36 px rows with flag, picture and
+    // name. What the original's Flag column draws was not traced (spec 04 §17,
+    // open): ours shows the flag of the empire the side copies.
     void vehicles(UiContext& ui) {
         const game::GameState& s = ui.state();
         const Vec2 o = largeOrigin();
@@ -274,7 +309,8 @@ private:
         ui.tagItem("combat-simulator:items");
     }
 
-    // "Owner for item" at (322,325), 250x120: Race 1 to Race 10 with their flags.
+    // "Owner for item" at (322,325), 250x120: Race 1 to Race 10, each with its
+    // numbered colour box, never a flag (spec 04 §17, spec 06 §1.10.4).
     void owners(UiContext& ui) {
         const Vec2 o = largeOrigin();
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 308}));
@@ -286,8 +322,7 @@ private:
             bool on = current_ == k;
             const ImVec2 p = ImGui::GetCursorScreenPos();
             if (lampToggle(ui, std::format("      {}", setup_.sides[size_t(k)].name).c_str(), &on) && on) current_ = k;
-            if (Sprite flag = ui.art.flag(sideStyle(ui, k), false))
-                drawSprite(ImGui::GetWindowDrawList(), flag, {p.x + ui.px(22), p.y + ui.px(2)}, {p.x + ui.px(40), p.y + ui.px(14)});
+            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(22), p.y + ui.px(1)}, {p.x + ui.px(40), p.y + ui.px(15)}, k + 1);
             ImGui::PopID();
         }
         ImGui::EndChild();
@@ -318,60 +353,12 @@ private:
         if (!ImGui::BeginPopupModal("Player Computer Control##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
         ImGui::TextColored(kLabelBlue, "A lit lamp: the computer plays that race.");
         for (size_t k = 0; k < setup_.sides.size(); ++k) {
-            bool on = setup_.sides[k].computer;
-            if (lampToggle(ui, setup_.sides[k].name.c_str(), &on)) setup_.sides[k].computer = on;
-        }
-        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
-
-    // Fleets For Plr: the chosen race's ships and the one fleet they may form
-    // there, with its formation and strategy (inferred: one fleet per race; the
-    // original opens Fleet Transfer for the race).
-    void fleetsPopup(UiContext& ui) {
-        ImGui::SetNextWindowSize(ui.size({420, 0}));
-        if (!ImGui::BeginPopupModal("Fleets##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
-        const game::GameState& s = ui.state();
-        heading(ui, std::format("Fleet of {}", setup_.sides[size_t(current_)].name).c_str());
-        int fleet = -1;
-        for (size_t f = 0; f < setup_.fleets.size(); ++f)
-            if (setup_.fleets[f].side == current_) fleet = int(f);
-        const std::vector<std::string> names = game::combat::simulatorItemNames(ui.rules(), s, setup_);
-        bool any = false;
-        for (size_t k = 0; k < setup_.items.size(); ++k) {
-            SimulatorItem& i = setup_.items[k];
-            if (i.side != current_ || i.kind != SimulatorItem::Kind::Design || game::isUnitType(ui.rules().hull(s.design(i.design).hull).type)) continue;
-            any = true;
-            bool in = fleet >= 0 && i.fleet == fleet;
             ImGui::PushID(int(k));
-            if (lampToggle(ui, names[k].c_str(), &in)) {
-                if (in && fleet < 0) {
-                    setup_.fleets.push_back(SimulatorFleet{current_, std::format("{} Fleet", setup_.sides[size_t(current_)].name), 0, 0});
-                    fleet = int(setup_.fleets.size()) - 1;
-                }
-                i.fleet = in ? fleet : -1;
-            }
+            bool on = setup_.sides[k].computer;
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            if (lampToggle(ui, std::format("      {}", setup_.sides[k].name).c_str(), &on)) setup_.sides[k].computer = on;
+            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(22), p.y + ui.px(1)}, {p.x + ui.px(40), p.y + ui.px(15)}, int(k) + 1);
             ImGui::PopID();
-        }
-        if (!any) dimText("This race has no ships.");
-        if (fleet >= 0) {
-            SimulatorFleet& f = setup_.fleets[size_t(fleet)];
-            const auto& formations = ui.rules().data().formations;
-            ImGui::SetNextItemWidth(ui.px(200));
-            if (ImGui::BeginCombo("Formation", f.formation < formations.size() ? formations[f.formation].name.c_str() : "None")) {
-                for (uint32_t k = 0; k < formations.size(); ++k)
-                    if (ImGui::Selectable(formations[k].name.c_str(), f.formation == k)) f.formation = k;
-                ImGui::EndCombo();
-            }
-            // The fleet's strategy is one of its side's list: the strategies of the
-            // empire the side copies, the owner of its first item (game/simulator.hpp).
-            const auto& list = s.empire(sideSource(ui, current_)).strategies;
-            ImGui::SetNextItemWidth(ui.px(200));
-            if (ImGui::BeginCombo("Strategy", f.strategy < list.size() ? list[f.strategy].name.c_str() : "Default")) {
-                for (uint32_t k = 0; k < list.size(); ++k)
-                    if (ImGui::Selectable(list[k].name.c_str(), f.strategy == k)) f.strategy = k;
-                ImGui::EndCombo();
-            }
         }
         if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
@@ -392,60 +379,30 @@ private:
         return ui.session.player();
     }
 
-    // Change Cargo: the units any ship, base or colony of the battle carries
-    // (inferred: our own picker; the original opens Cargo Transfer).
-    void cargoPopup(UiContext& ui) {
-        ImGui::SetNextWindowSize(ui.size({440, 0}));
-        if (!ImGui::BeginPopupModal("Change Cargo##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
-        const game::GameState& s = ui.state();
-        const std::vector<std::string> names = game::combat::simulatorItemNames(ui.rules(), s, setup_);
-        std::vector<size_t> holders;
-        for (size_t k = 0; k < setup_.items.size(); ++k) {
-            const SimulatorItem& i = setup_.items[k];
-            if (i.kind == SimulatorItem::Kind::Planet && !game::combat::simulatorColony(s, i)) continue;
-            if (game::combat::simulatorCargoCapacity(ui.rules(), s, i) > 0) holders.push_back(k);
+    // Fleets For Plr and Change Cargo: Fleet Transfer or Cargo Transfer over a
+    // sandbox of the setup (spec 06 §1.10.4; simulatorSandbox()).
+    void openSandbox(UiContext& ui, bool cargo) {
+        message_.clear();
+        if (setup_.items.empty()) {
+            message_ = "Add some items first.";
+            return;
         }
-        if (holders.empty()) {
-            dimText("Nothing in the battle has cargo space.");
-        } else {
-            if (std::find(holders.begin(), holders.end(), cargoHolder_) == holders.end()) cargoHolder_ = holders.front();
-            ImGui::SetNextItemWidth(ui.px(300));
-            if (ImGui::BeginCombo("Holder", names[cargoHolder_].c_str())) {
-                for (size_t k : holders)
-                    if (ImGui::Selectable(std::format("{} (Race {})##h{}", names[k], setup_.items[k].side + 1, k).c_str(), k == cargoHolder_)) cargoHolder_ = k;
-                ImGui::EndCombo();
-            }
-            SimulatorItem& i = setup_.items[cargoHolder_];
-            if (i.kind == SimulatorItem::Kind::Planet && !i.replaceCargo) {
-                // Start from the colony's own units.
-                if (const game::Colony* c = s.colony(i.planet)) i.cargo = c->cargo.units;
-                i.replaceCargo = true;
-            }
-            dimText(std::format("{} of {} kT used", game::combat::simulatorCargoUsed(ui.rules(), s, i), game::combat::simulatorCargoCapacity(ui.rules(), s, i))
-                        .c_str());
-            for (game::DesignId d : game::combat::simulatorCargoDesigns(ui.rules(), s, ui.session.player(), ui.options().simulatorNoObsolete)) {
-                ImGui::PushID(int(d.value));
-                auto it = std::find_if(i.cargo.begin(), i.cargo.end(), [&](const game::UnitStack& u) { return u.design == d; });
-                int count = it == i.cargo.end() ? 0 : it->count;
-                ImGui::TextUnformatted(s.design(d).name.c_str());
-                ImGui::SameLine(ui.px(220));
-                if (ImGui::SmallButton("-") && count > 0) --count;
-                ImGui::SameLine();
-                ImGui::Text("%3d", count);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("+")) ++count;
-                ImGui::SameLine();
-                if (ImGui::SmallButton("+10")) count += 10;
-                if (it == i.cargo.end() && count > 0) i.cargo.push_back({d, count});
-                else if (it != i.cargo.end()) {
-                    if (count > 0) it->count = count;
-                    else i.cargo.erase(it);
-                }
-                ImGui::PopID();
-            }
-        }
-        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
+        SimulatorSandbox made = simulatorSandbox(ui.rules(), ui.state(), setup_, current_, cargo);
+        ScreenArgs args;
+        args.text = kSimulatorWindow;
+        args.vehicle = made.anchorVehicle;
+        args.planet = made.anchorPlanet;
+        Sandbox box;
+        box.session = std::make_unique<ClassicSession>(ui.session.rulesPtr(), std::move(made.sim.state), made.side, SessionKind::Local);
+        box.made = std::move(made);
+        sandbox() = std::move(box);
+        ui.open(cargo ? ScreenId::CargoTransfer : ScreenId::FleetTransfer, std::move(args));
+    }
+
+    // What the window changed comes back into the setup.
+    void takeBack(UiContext& ui) {
+        const Sandbox& box = *sandbox();
+        simulatorTakeBack(ui.rules(), box.made, box.session->state(), setup_);
     }
 
     // A design's report (right-click on an item): its hull and parts.
@@ -474,7 +431,6 @@ private:
     int current_ = 0;
     bool tactical_ = true;
     std::string message_;
-    size_t cargoHolder_ = 0;
     game::DesignId designReport_;
     ReportPopup report_;
 };
@@ -482,6 +438,41 @@ private:
 } // namespace
 
 std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args) { return std::make_unique<CombatSimulatorScreen>(args.text); }
+
+bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>& draw) {
+    std::optional<Sandbox>& box = sandbox();
+    if (!box || !box->open || !box->session) return false;
+    UiContext sub(*box->session, ui.art, ui.fonts);
+    sub.map = ui.map;
+    sub.fbScale = ui.fbScale;
+    sub.time = ui.time;
+    sub.dt = ui.dt;
+    sub.textScale = ui.textScale;
+    sub.app = ui.app;
+    sub.learn = ui.learn;
+    sub.lessonRunning = ui.lessonRunning;
+    sub.drawing = ui.drawing;
+    // The window opens nothing of the real game from the sandbox.
+    sub.opener = [](ScreenId, ScreenArgs) {};
+    const bool keep = draw(sub);
+    for (UiTag& t : sub.tags) ui.tags.push_back(std::move(t));
+    ui.windowTagged = ui.windowTagged || sub.windowTagged;
+    return keep;
+}
+
+void simulatorSandboxClosed() {
+    if (sandbox()) sandbox()->open = false;
+}
+
+bool& designsClosedForSimulation() {
+    static bool closed = false;
+    return closed;
+}
+
+bool tacticalSimulationRunning(const UiContext& ui) {
+    const TacticalFight* f = ui.session.tactical();
+    return tacticalSimulation() && f && f->kind == TacticalFight::Kind::Simulation;
+}
 
 bool startDemoSimulation(UiContext& ui, bool tactical) {
     const SimulatorSetup setup = demoSetup(ui.rules(), ui.state(), ui.session.player());

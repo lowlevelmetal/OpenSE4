@@ -18,9 +18,22 @@ using namespace shipui;
 
 class FleetTransferScreen final : public Screen {
 public:
-    explicit FleetTransferScreen(const ScreenArgs& args) : anchor_(args.vehicle), selected_(args.fleet) {}
+    explicit FleetTransferScreen(const ScreenArgs& args) : anchor_(args.vehicle), selected_(args.fleet), sandbox_(args.text == kSimulatorWindow) {}
+
+    ~FleetTransferScreen() override {
+        if (sandbox_) simulatorSandboxClosed();
+    }
+    FleetTransferScreen(const FleetTransferScreen&) = delete;
+    FleetTransferScreen& operator=(const FleetTransferScreen&) = delete;
 
     bool draw(UiContext& ui) override {
+        // Opened by the Combat Simulator: the same window over its sandbox.
+        if (sandbox_) return drawInSimulatorSandbox(ui, [this](UiContext& sub) { return drawIn(sub); });
+        return drawIn(ui);
+    }
+
+private:
+    bool drawIn(UiContext& ui) {
         locate(ui);
         Dialog d(ui, screenTitle(ScreenId::FleetTransfer), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
@@ -69,7 +82,8 @@ public:
             strategyPicker_.open("Strategy", std::move(items), static_cast<int>(fleet->strategy));
         }
         d.spacer();
-        if (d.button("Existing Fleets")) {
+        // The real game's fleets list; not for the simulator's sandbox.
+        if (!sandbox_ && d.button("Existing Fleets")) {
             ScreenArgs a;
             a.text = "fleets";
             ui.open(ScreenId::Ships, a);
@@ -237,6 +251,7 @@ private:
     TextPrompt createPrompt_, renamePrompt_;
     ListPicker formationPicker_, strategyPicker_;
     ReportPopup report_;
+    bool sandbox_ = false;   // opened by the Combat Simulator's Fleets For Plr
 };
 
 } // namespace

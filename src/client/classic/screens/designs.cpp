@@ -106,6 +106,12 @@ public:
     explicit DesignsScreen(const ScreenArgs& args) : selected_(args.design) {}
 
     bool draw(UiContext& ui) override {
+        // Designs closes while a tactical simulation is fought and opens again
+        // with the simulator afterwards (spec 06 §1.10.4).
+        if (tacticalSimulationRunning(ui)) {
+            designsClosedForSimulation() = true;
+            return false;
+        }
         if (!initialized_) init(ui);
         const bool keep = drawDialog(ui);
         popup_.draw(ui);
@@ -397,6 +403,12 @@ public:
     explicit CreateDesignScreen(const ScreenArgs& args) : args_(args) {}
 
     bool draw(UiContext& ui) override {
+        // Designs closes while a tactical simulation is fought and opens again
+        // with the simulator afterwards (spec 06 §1.10.4).
+        if (tacticalSimulationRunning(ui)) {
+            designsClosedForSimulation() = true;
+            return false;
+        }
         if (!initialized_) init(ui);
         const bool keep = drawDialog(ui);
         popup_.draw(ui);

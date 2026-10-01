@@ -278,6 +278,8 @@ private:
         const bool simulation = f.kind == TacticalFight::Kind::Simulation;
         ui.session.endTactical();
         if (simulation) {
+            // Designs (when it closed for the battle) and the simulator open again.
+            if (std::exchange(designsClosedForSimulation(), false)) ui.open(ScreenId::Designs);
             ScreenArgs a;
             a.text = "again";
             ui.open(ScreenId::CombatSimulator, std::move(a));

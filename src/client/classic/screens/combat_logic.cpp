@@ -285,6 +285,8 @@ bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::
                 ++i.count;
                 return true;
             }
+    // A ship takes its side's next serial number (spec 04 §17).
+    game::combat::simulatorNumberShips(r, s, setup, item);
     setup.items.push_back(std::move(item));
     return true;
 }
@@ -294,6 +296,96 @@ void simulatorRemove(game::combat::SimulatorSetup& setup, const SimulatorRow& ro
     std::sort(items.rbegin(), items.rend());
     for (size_t k : items)
         if (k < setup.items.size()) setup.items.erase(setup.items.begin() + std::ptrdiff_t(k));
+}
+
+SimulatorSandbox simulatorSandbox(const game::Rules& r, const game::GameState& real, const game::combat::SimulatorSetup& setup, int side, bool cargo) {
+    SimulatorSandbox out;
+    out.sim = game::combat::buildSimulation(r, real, setup);
+    out.sideIndex = std::clamp(side, 0, std::max(0, int(out.sim.sides.size()) - 1));
+    out.side = out.sim.sides.empty() ? game::EmpireId{} : out.sim.sides[size_t(out.sideIndex)];
+    out.cargo = cargo;
+    game::GameState& state = out.sim.state;
+    state.options.simultaneous = true;   // commands take effect at once; nobody's turn is played
+    if (cargo) {
+        for (game::Vehicle& v : state.vehicles)
+            if (v.location == out.sim.where && v.count > 0) v.owner = out.side;
+        for (game::ObjectId o : out.sim.itemObjects)
+            if (game::Colony* c = o.valid() ? state.colony(o) : nullptr) {
+                c->owner = out.side;
+                if (!out.anchorPlanet.valid()) out.anchorPlanet = o;
+            }
+    }
+    if (!out.anchorPlanet.valid())
+        for (const std::vector<game::VehicleId>& vehicles : out.sim.itemVehicles)
+            for (game::VehicleId v : vehicles)
+                if (!out.anchorVehicle.valid() && state.vehicle(v) && state.vehicle(v)->owner == out.side &&
+                    !game::isUnitType(game::vehicleType(r, state, *state.vehicle(v))))
+                    out.anchorVehicle = v;
+    return out;
+}
+
+void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const game::GameState& sb, game::combat::SimulatorSetup& setup) {
+    using game::combat::SimulatorFleet;
+    using game::combat::SimulatorItem;
+    auto realDesign = [&](game::DesignId d) {
+        for (const auto& [copy, real] : made.sim.designCopies)
+            if (copy == d) return real;
+        return d;
+    };
+    auto vehicleOf = [&](size_t item) -> const game::Vehicle* {
+        if (item >= made.sim.itemVehicles.size() || made.sim.itemVehicles[item].empty()) return nullptr;
+        return sb.vehicle(made.sim.itemVehicles[item].front());
+    };
+    if (made.cargo) {
+        for (size_t k = 0; k < setup.items.size(); ++k) {
+            SimulatorItem& item = setup.items[k];
+            std::vector<game::UnitStack> units;
+            if (item.kind == SimulatorItem::Kind::Planet) {
+                const game::ObjectId o = k < made.sim.itemObjects.size() ? made.sim.itemObjects[k] : game::ObjectId{};
+                const game::Colony* c = o.valid() ? sb.colony(o) : nullptr;
+                if (!c) continue;
+                for (const game::UnitStack& u : c->cargo.units)
+                    if (u.count > 0) units.push_back({realDesign(u.design), u.count});
+                item.cargo = std::move(units);
+                item.replaceCargo = true;
+                continue;
+            }
+            const game::Vehicle* v = vehicleOf(k);
+            if (!v || game::isUnitType(game::vehicleType(r, sb, *v))) continue;
+            for (const game::UnitStack& u : v->cargo.units)
+                if (u.count > 0) units.push_back({realDesign(u.design), u.count});
+            item.cargo = std::move(units);
+        }
+        return;
+    }
+    // The side's fleets as the window left them; the other sides' stay.
+    std::vector<SimulatorFleet> fleets;
+    std::vector<int> remap(setup.fleets.size(), -1);
+    for (size_t f = 0; f < setup.fleets.size(); ++f)
+        if (setup.fleets[f].side != made.sideIndex) {
+            remap[f] = int(fleets.size());
+            fleets.push_back(setup.fleets[f]);
+        }
+    std::map<uint32_t, int> formed;   // sandbox fleet -> its index in `fleets`
+    for (size_t k = 0; k < setup.items.size(); ++k) {
+        SimulatorItem& item = setup.items[k];
+        if (item.side != made.sideIndex) {
+            item.fleet = item.fleet >= 0 && size_t(item.fleet) < remap.size() ? remap[size_t(item.fleet)] : -1;
+            continue;
+        }
+        item.fleet = -1;
+        const game::Vehicle* v = vehicleOf(k);
+        if (!v || game::isUnitType(game::vehicleType(r, sb, *v)) || !v->fleet.valid()) continue;
+        const game::Fleet* fl = sb.fleet(v->fleet);
+        if (!fl || fl->owner != made.side) continue;
+        auto it = formed.find(fl->id.value);
+        if (it == formed.end()) {
+            it = formed.emplace(fl->id.value, int(fleets.size())).first;
+            fleets.push_back(SimulatorFleet{made.sideIndex, fl->name, fl->formation, fl->strategy});
+        }
+        item.fleet = it->second;
+    }
+    setup.fleets = std::move(fleets);
 }
 
 } // namespace opense4::client::classic

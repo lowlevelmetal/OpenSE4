@@ -9,7 +9,9 @@
 #include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/session.hpp"
 
+#include "game/commands.hpp"
 #include "game/query.hpp"
+#include "game/serialize.hpp"
 #include "game/simulator.hpp"
 #include "game/tactical.hpp"
 
@@ -385,6 +387,113 @@ TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows pe
     classic::simulatorRemove(setup, rows[2]);
     CHECK(std::none_of(setup.items.begin(), setup.items.end(), [&](const Item& i) { return i.design == wasp; }));
     CHECK(classic::simulatorRows(r, s, setup).size() == rows.size() - 1);
+}
+
+TEST_CASE("combat windows: the simulator numbers each side's ships with one counter for all designs") {
+    Arena ar = makeArena(20);
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser"});
+    const DesignId pike = frigate(s, ar.a, "Pike", 2, {"Test Laser"});
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    for (int k = 0; k < combat::kSimulatorMaxSides; ++k) setup.sides.push_back({std::format("Race {}", k + 1), k > 0});
+    using Item = combat::SimulatorItem;
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, pike, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, pike, {}, 1}));
+    auto names = [&] {
+        std::vector<std::string> out;
+        for (const auto& row : classic::simulatorRows(r, s, setup)) out.push_back(row.name);
+        return out;
+    };
+    CHECK(names() == std::vector<std::string>{"Lancer 0001", "Pike 0002", "Pike 0001"});
+    // Removing a ship never lowers the counter; it lasts as long as the setup.
+    classic::simulatorRemove(setup, classic::simulatorRows(r, s, setup)[0]);
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    CHECK(names() == std::vector<std::string>{"Pike 0002", "Lancer 0003", "Pike 0001"});
+    const combat::SimulatorSetup kept = setup;   // as the simulator keeps it across a tactical battle
+    combat::SimulatorSetup again = kept;
+    REQUIRE(classic::simulatorAdd(r, s, again, Item{Item::Kind::Design, pike, {}, 0}));
+    CHECK(classic::simulatorRows(r, s, again)[2].name == "Pike 0004");
+    // The sandbox names its ships the same way and says which items made them.
+    const combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    REQUIRE(sim.itemVehicles.size() == setup.items.size());
+    std::vector<std::string> ships;
+    for (const auto& vehicles : sim.itemVehicles) {
+        REQUIRE(vehicles.size() == 1);
+        ships.push_back(sim.state.vehicle(vehicles.front())->name);
+    }
+    CHECK(ships == std::vector<std::string>{"Pike 0002", "Pike 0001", "Lancer 0003"});
+}
+
+TEST_CASE("combat windows: Fleets For Plr and Change Cargo work on a sandbox and the setup takes back what changed") {
+    Arena ar = makeArena(23);
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser"});
+    const DesignId hauler = frigate(s, ar.a, "Hauler", 2, {"Test Cargo Bay", "Test Cargo Bay"});
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    Colony& home = homeworld(s, ar.a);
+    home.cargo.units = {{trooper, 6}};
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    for (int k = 0; k < combat::kSimulatorMaxSides; ++k) setup.sides.push_back({std::format("Race {}", k + 1), k > 0});
+    using Item = combat::SimulatorItem;
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, hauler, {}, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home.planet, 0}));
+    REQUIRE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 1}));
+    const GameState before = s;
+
+    // Fleets For Plr for side 1: a fleet of the two Lancers.
+    {
+        classic::SimulatorSandbox box = classic::simulatorSandbox(r, s, setup, 0, false);
+        REQUIRE(box.side.valid());
+        CHECK(box.anchorVehicle.valid());
+        GameState& sb = box.sim.state;
+        const VehicleId a = box.sim.itemVehicles[0].front(), b = box.sim.itemVehicles[1].front();
+        REQUIRE(apply(r, sb, box.side, cmd::CreateFleet{"Spear", {a, b}}).ok);
+        const FleetId fleet = sb.vehicle(a)->fleet;
+        REQUIRE(fleet.valid());
+        REQUIRE(apply(r, sb, box.side, cmd::SetFleetOptions{fleet, 0, 0}).ok);
+        classic::simulatorTakeBack(r, box, sb, setup);
+        REQUIRE(setup.fleets.size() == 1);
+        CHECK(setup.fleets[0].side == 0);
+        CHECK(setup.fleets[0].name == "Spear");
+        CHECK(setup.items[0].fleet == 0);
+        CHECK(setup.items[1].fleet == 0);
+        CHECK(setup.items[2].fleet == -1);
+        CHECK(setup.items[4].fleet == -1);
+    }
+    // Change Cargo: three troops from the colony onto the Hauler.
+    {
+        classic::SimulatorSandbox box = classic::simulatorSandbox(r, s, setup, 0, true);
+        GameState& sb = box.sim.state;
+        CHECK(box.anchorPlanet.valid());
+        const VehicleId ship = box.sim.itemVehicles[2].front();
+        const ObjectId planet = box.sim.itemObjects[3];
+        REQUIRE(sb.colony(planet));
+        REQUIRE_FALSE(sb.colony(planet)->cargo.units.empty());
+        cmd::TransferCargo t;
+        t.fromPlanet = planet;
+        t.toVehicle = ship;
+        t.unitDesign = sb.colony(planet)->cargo.units.front().design;
+        t.amount = 3;
+        REQUIRE(apply(r, sb, box.side, t).ok);
+        classic::simulatorTakeBack(r, box, sb, setup);
+        REQUIRE(setup.items[2].cargo.size() == 1);
+        CHECK(setup.items[2].cargo[0].design == trooper);   // the real design, not the sandbox copy
+        CHECK(setup.items[2].cargo[0].count == 3);
+        CHECK(setup.items[3].replaceCargo);
+        REQUIRE(setup.items[3].cargo.size() == 1);
+        CHECK(setup.items[3].cargo[0].count == 3);
+        CHECK(setup.fleets.size() == 1);   // fleets untouched
+        CHECK(combat::simulatorProblem(r, s, setup).empty());
+    }
+    // The real game never changed.
+    CHECK(stateChecksum(s) == stateChecksum(before));
 }
 
 TEST_CASE("combat windows: a side whose first item is another empire's colony copies that empire") {
