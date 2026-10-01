@@ -2044,8 +2044,9 @@ TEST_CASE("movement: warp point turbulence hits half the transits and ends the m
 
 // ---- Colonization -----------------------------------------------------------------------------------
 
-TEST_CASE("movement: a human empire claims the systems it colonizes while its Politics option is on") {
-    // Empire Options, Politics (spec 06 §1.9): on for a new empire.
+TEST_CASE("movement: founding a colony claims nothing, whatever the Politics option says") {
+    // Empire Options, Politics (spec 06 §1.9): on for a new empire, stored
+    // and shown but never read (spec 06 §7 Q47, confirmed: binary).
     for (const bool on : {true, false}) {
         World w;
         const Rules& r = w.rules();
@@ -2065,42 +2066,46 @@ TEST_CASE("movement: a human empire claims the systems it colonizes while its Po
         REQUIRE(w.s.colony(target));
         const auto& claimed = w.s.empire(kA).claimedSystems;
         CHECK(std::is_sorted(claimed.begin(), claimed.end()));
-        CHECK((std::find(claimed.begin(), claimed.end(), b) != claimed.end()) == on);
-        CHECK(std::find(claimed.begin(), claimed.end(), a) != claimed.end());
+        CHECK(std::find(claimed.begin(), claimed.end(), b) == claimed.end());
+        CHECK(claimed == std::vector<SystemId>{a});
     }
 }
 
-TEST_CASE("commands: an abandoned colony leaves its facilities to the next colony on the planet") {
-    // Spec 02 §5: the player scraps the facilities first, or leaves them for a later owner.
+TEST_CASE("commands: an abandoned colony that keeps facilities stays with its owner") {
+    // Spec 06 §7 Q47 (confirmed: binary): the people leave and the anger is
+    // reset to 25; with facilities left, the planet stays the same empire's
+    // colony, empty, and nobody can colonize it.
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const ObjectId planet = w.planet(a, {5, 6});
     w.colony(planet, kA, 10, {"Mv Trainer", "Mv System Scanner"});
     const std::vector<uint32_t> facilities = w.s.colony(planet)->facilities;
+    w.s.colonies[planet.index()]->anger = 70;
     REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{planet}).ok);
-    CHECK_FALSE(w.s.colony(planet));
-    REQUIRE(w.s.leftFacilities.size() == 1);
-    CHECK(w.s.leftFacilities.front().planet == planet);
-    CHECK(w.s.leftFacilities.front().facilities == facilities);
-    // Another empire colonizes it and finds them.
+    REQUIRE(w.s.colony(planet));
+    CHECK(w.s.colony(planet)->owner == kA);
+    CHECK(w.s.colony(planet)->totalPopulation() == 0);
+    CHECK(w.s.colony(planet)->anger == 25);
+    CHECK(w.s.colony(planet)->facilities == facilities);
+    CHECK(w.s.leftFacilities.empty());
+    // Another empire's colony ship cannot settle it.
     const VehicleId ship = w.spawn(w.ship(kB, "Settler", 4, {"Test Rock Pod"}), at(a, 5, 6));
     fuel(w, ship);
     w.v(ship).cargo.population.push_back({kB, 2});
     w.order(ship, mk(OrderKind::Colonize, {}, planet));
     w.colonize();
     REQUIRE(w.s.colony(planet));
-    CHECK(w.s.colony(planet)->owner == kB);
-    CHECK(w.s.colony(planet)->facilities == facilities);
-    CHECK(w.s.leftFacilities.empty());
+    CHECK(w.s.colony(planet)->owner == kA);
 
-    // Scrapped first: a refund now and nothing left behind.
+    // Scrapped first: a refund now, and with no facility left the colony goes.
     const ObjectId other = w.planet(a, {8, 8});
     w.colony(other, kA, 10, {"Mv Trainer"});
     const Resources before = w.s.empire(kA).stockpile;
     REQUIRE(apply(r, w.s, kA, cmd::Scrap{{}, other, 0}).ok);
     CHECK(w.s.empire(kA).stockpile.total() > before.total());
     REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{other}).ok);
+    CHECK_FALSE(w.s.colony(other));
     CHECK(w.s.leftFacilities.empty());
     CHECK(validateState(w.s, &r).empty());
 }

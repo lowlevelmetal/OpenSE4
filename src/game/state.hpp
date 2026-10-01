@@ -867,8 +867,10 @@ struct PlayerTurn {
     std::vector<EntryQuestion> questions;
 };
 
-// Facilities an abandoned colony left on its planet (spec 02 §5: the player
-// may leave them for a later owner): the next colony founded there gets them.
+// Facilities left on a planet for a later owner. Nothing makes these any
+// more: an abandoned colony that keeps facilities stays with its owner (spec
+// 06 §7 Q47, confirmed: binary). The list stays in the state, always empty in
+// a new game, so that the save format is unchanged.
 struct LeftFacilities {
     ObjectId planet;
     std::vector<uint32_t> facilities;   // Facilities.txt indices
