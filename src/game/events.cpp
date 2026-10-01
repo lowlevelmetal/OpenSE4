@@ -532,17 +532,18 @@ std::optional<Target> pickTarget(const Rules& r, const GameState& s, Effect e, c
         case Effect::PoliticsFakeMessages:
         case Effect::PoliticsPreventMessages:
         case Effect::PoliticsTreatyInfo: {
-            // A third empire: any empire number but the target's and the
-            // source's (inferred: destroyed ones included, as for events,
-            // spec 05 open question 38); the handler needs it alive.
-            auto third = [&](EmpireId o) { return validEmpire(s, o) && o != owner && o != request.source; };
-            if (request.other.valid()) return third(request.other) ? std::optional<Target>(t) : std::nullopt;
+            // A third empire named in the order is only checked to exist; the
+            // handler checks the rest. "Any" (confirmed: binary, spec 05 §2.1,
+            // open question 38): the living empires the source has contact
+            // with, other than the source and the target, in empire order; one
+            // is drawn and no further check applies. None: the operation fails.
+            if (request.other.valid()) return validEmpire(s, request.other) ? std::optional<Target>(t) : std::nullopt;
             std::vector<EmpireId> others;
-            for (const Empire& o : s.empires)
-                if (third(o.id)) others.push_back(o.id);
-            auto pick = drawCandidate(others, rng, [](EmpireId) { return true; });
-            if (!pick) return std::nullopt;
-            t.other = *pick;
+            if (living(s, request.source))
+                for (const Empire& o : s.empires)
+                    if (o.alive && o.id != owner && o.id != request.source && s.empire(request.source).relation(o.id).contact) others.push_back(o.id);
+            if (others.empty()) return std::nullopt;
+            t.other = others[static_cast<size_t>(rng.below(others.size()))];
             return t;
         }
 
@@ -935,16 +936,16 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
 
         case Effect::PlanetConditionsChange: {
             // Any planet, colonized or not: conditions + Amount / 10 on the
-            // 0–1.5 scale (Amount in tenths), kept within the scale; no message
-            // (spec 05 §2.3, confirmed: binary). `actual` is the change in
-            // hundredths.
+            // 0–1.5 scale (Amount in tenths), kept within the scale (spec 05
+            // §2.3, confirmed: binary). The planet sends no notice of its own;
+            // the record's messages go out as for any other effect (open
+            // question 39). `actual` is the change in hundredths.
             if (!validObject(s, t.object)) return out;
             SpaceObject& obj = s.galaxy.object(t.object);
             if (obj.kind != ObjectKind::Planet && obj.kind != ObjectKind::Asteroids) return out;
             const Conditions before = obj.conditions;
             obj.conditions = conditionsPlus(before, xmath::Ext(amount) / xmath::Ext(10));
             out.actual = obj.conditions.inHundredths() - before.inHundredths();
-            out.silent = true;
             break;
         }
         case Effect::PlanetValueChange: {
@@ -1471,7 +1472,7 @@ void fire(TurnContext& ctx, uint32_t record, const Target& t, Rng& rng) {
     if (!effect) return;
     const std::optional<Location> where = effects::targetLocation(ctx.state, t);
     const effects::Outcome out = effects::apply(ctx, *effect, t, ev.effectAmount, rng);
-    if (!out.applied || out.silent) return;
+    if (!out.applied) return;
     effects::Tokens tokens = baseTokens(ctx.state, t, out.tokens);
     tokens.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     sendMessages(ctx, ev, ev.messages, t, tokens, where, rng);

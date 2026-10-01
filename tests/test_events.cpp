@@ -583,14 +583,15 @@ TEST_CASE("events: planet effects") {
     auto out = hit(s, Effect::PlanetConditionsChange, target(home), -3);
     CHECK(planet.conditions == Conditions::hundredths(20));
     CHECK(out.actual == -30);
-    CHECK(out.silent);
     hit(s, Effect::PlanetConditionsChange, target(home), -8);
     CHECK(planet.conditions == Conditions{});
     planet.conditions = Conditions::hundredths(140);
     hit(s, Effect::PlanetConditionsChange, target(home), 2);
     CHECK(planet.conditions == kOptimalConditions);
     {
-        // Any planet, colonized or not; the event tells nobody.
+        // Any planet, colonized or not. The planet sends no notice of its own,
+        // but the record's message goes to the recipients its Message To names
+        // (spec 05 open question 39): the owner of a colony, nobody for a free planet.
         ObjectId free;
         for (ObjectId o : s.galaxy.system(planet.system).objects)
             if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) free = o;
@@ -603,8 +604,9 @@ TEST_CASE("events: planet effects") {
         nobody.object = free;
         REQUIRE(events::trigger(ectx, 0, nobody, erng));
         CHECK(s.galaxy.object(free).conditions.inHundredths() == 130);
-        REQUIRE(events::trigger(ectx, 0, onObject(kA, home), erng));
         CHECK_FALSE(hasLog(s, kA, "Omen"));
+        REQUIRE(events::trigger(ectx, 0, onObject(kA, home), erng));
+        CHECK(hasLog(s, kA, "Omen"));
     }
     // Each value changes by the amount; a result below 0 becomes 0 and any
     // other is pulled into Minimum/Maximum Planet Percent Value (10 and 150

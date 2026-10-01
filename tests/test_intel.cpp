@@ -150,6 +150,20 @@ TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") 
     CHECK(tgt->text.find("[%") == std::string::npos);
 }
 
+TEST_CASE("intel: Planet - Conditions Change tells the victim like any other effect (spec 05 open question 39)") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    IntelProjectOrder o = order(Effect::PlanetConditionsChange, kB);
+    o.targetPlanet = homeworld(s, kB).planet;
+    s.empire(kA).intel = {o};
+    step(s, kA, 1000);
+    CHECK(s.empire(kA).intel.empty());
+    CHECK(findLog(s, kA, politicsRules().data().intelProjects[projectFor(Effect::PlanetConditionsChange)].name) != nullptr);
+    const LogEntry* tgt = findLog(s, kB, "Probe Hit");
+    REQUIRE(tgt);
+    CHECK(tgt->text.starts_with("Intelligence Minister: They got "));
+}
+
 TEST_CASE("intel: there is no success roll, and the source is named one time in five") {
     int named = 0, runs = 0;
     const GameState base = newPoliticsGame(5);
@@ -575,11 +589,20 @@ TEST_CASE("intel: political operations") {
     };
 
     // Disrupt Trade needs trade between the target and a third empire; its
-    // counter restarts. "Any" draws any third empire; the handler checks.
+    // counter restarts. "Any" draws among the living empires the source has
+    // contact with, other than the source and the target (spec 05 open
+    // question 38); the handler checks the rest.
     Rng rng(2);
     const auto any = effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, target(kB, kA), rng);
     REQUIRE(any.has_value());
     CHECK(any->other == kC);
+    for (const bool destroyed : {false, true}) {
+        GameState g = s;
+        if (destroyed) g.empire(kC).alive = false;
+        else g.empire(kA).relation(kC).contact = false;
+        Rng again(2);
+        CHECK_FALSE(effects::pickTarget(r, g, Effect::PoliticsDisruptTrade, target(kB, kA), again).has_value());
+    }
     CHECK_FALSE(run(s, Effect::PoliticsDisruptTrade, {}).applied);
     // Intercept Messages with nothing to report fails.
     CHECK_FALSE(run(s, Effect::PoliticsInterceptMessages, third(kC)).applied);
