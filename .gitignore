@@ -5,6 +5,7 @@
 compile_commands.json
 *.png
 !assets/**/*.png
+!packaging/**/*.png
 imgui.ini
 .vscode/
 .idea/
