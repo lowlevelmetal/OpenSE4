@@ -21,7 +21,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
 #include <fstream>
+#include <map>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -530,6 +532,64 @@ TEST_CASE("main window: the movement log is recorded day by day") {
     CHECK(log.days[2].removed == std::vector<VehicleId>{ship});
     CHECK(log.movers(kMe) == std::vector<VehicleId>{ship});
     CHECK(log.movers(EmpireId{1u}).empty());
+}
+
+TEST_CASE("main window: a local simultaneous turn is played again for its movement log") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3);
+    // A ship of ours with somewhere to go.
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId scout = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& runner = addTestVehicle(start, *rules, scout, home);
+    runner.supply = 1000;
+    const VehicleId ship = runner.id;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    CHECK_FALSE(session.canReplayLastTurn());
+    session.endTurn();
+    Location there = home;
+    there.sector.x = static_cast<decltype(there.sector.x)>(there.sector.x > 2 ? there.sector.x - 2 : there.sector.x + 2);
+    const CommandResult given = session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, there}}, false});
+    REQUIRE_MESSAGE(given.ok, given.error);
+    session.endTurn();
+    REQUIRE(session.canReplayLastTurn());
+    REQUIRE(session.turnStart());
+    CHECK(session.turnStart()->turn + 1 == session.state().turn);
+    auto record = [&] {
+        MovementRecorder rec(*session.turnStart());
+        int days = 0;
+        CHECK(session.replayLastTurn([&](int day, const GameState& at) {
+            rec.day(day, at);
+            days = day;
+        }));
+        CHECK(days == MovementLog::kDays);
+        return rec.take(session.state().turn);
+    };
+    const MovementLog first = record();
+    const MovementLog second = record();
+    // The same turn twice: the same log (the engine is deterministic).
+    REQUIRE(first.days.size() == second.days.size());
+    size_t moves = 0;
+    for (size_t d = 0; d < first.days.size(); ++d) {
+        REQUIRE(first.days[d].moves.size() == second.days[d].moves.size());
+        moves += first.days[d].moves.size();
+        for (size_t m = 0; m < first.days[d].moves.size(); ++m) CHECK(first.days[d].moves[m].to == second.days[d].moves[m].to);
+    }
+    // After day 30 the vehicles stand where the processed turn left them.
+    std::map<VehicleId, Location> end = first.start;
+    for (const MovementLog::Day& d : first.days) {
+        for (const MovementLog::Move& m : d.moves) end[m.id] = m.to;
+        for (const auto& [id, at] : d.appeared) end[id] = at;
+        for (VehicleId id : d.removed) end.erase(id);
+    }
+    size_t compared = 0;
+    for (const Vehicle& v : session.state().vehicles)
+        if (const auto it = end.find(v.id); it != end.end()) {
+            CHECK(it->second == v.location);
+            ++compared;
+        }
+    CHECK(compared > 0);
+    CHECK(moves > 0);
+    CHECK(first.movers(kMe) == std::vector<VehicleId>{ship});
 }
 
 TEST_CASE("main window: the movement log replay's keys") {
