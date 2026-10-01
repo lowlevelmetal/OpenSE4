@@ -8,6 +8,7 @@ seed = 94
 systems = 6
 computer_players = 1
 tech_level = "medium"
+ai_difficulty = "low"
 starting_resources = 100000
 events = "none"
 
@@ -15,6 +16,11 @@ events = "none"
 text = "Destroy 5 enemy ships or bases"
 when = { enemy_ships_destroyed = 5 }
 by_turn = 100
+
+[[objective]]
+text = "Capture an enemy colony with troops"
+when = { planets_captured = 1 }
+by_turn = 120
 
 [[objective]]
 text = "Hold 6 colonies, conquered ones included"
@@ -32,6 +38,7 @@ treasury; so does your rival.
 Your orders:
 
 - destroy **5 enemy ships or bases** by **2410.0**;
+- capture at least **one enemy colony** with troops by **2412.0**;
 - hold **6 colonies** by **2412.0**. Planets you take from the enemy count.
 """
 

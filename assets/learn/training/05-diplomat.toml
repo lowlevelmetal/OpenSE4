@@ -20,6 +20,11 @@ when = { treaties = 2 }
 by_turn = 70
 
 [[objective]]
+text = "Sign a Trade Alliance or better"
+when = { any = [{ treaty = "trade-alliance" }, { treaty = "trade-research-alliance" }, { treaty = "military-alliance" }, { treaty = "partnership" }] }
+by_turn = 80
+
+[[objective]]
 text = "Hold 4 colonies"
 when = { colonies = 4 }
 by_turn = 70
@@ -35,6 +40,7 @@ Your orders:
 
 - meet **3 other empires** by **2404.0**;
 - hold **2 treaties** of Non-Aggression or better at the same time by **2407.0**;
+- sign a **Trade Alliance** or a better treaty with someone by **2408.0**;
 - hold **4 colonies** by **2407.0**.
 """
 
