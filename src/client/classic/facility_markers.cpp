@@ -3,7 +3,6 @@
 #include "game/abilities.hpp"
 
 #include <array>
-#include <initializer_list>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -14,7 +13,7 @@ using game::AbilityKind;
 
 struct Marker {
     const char* letters;
-    std::initializer_list<AbilityKind> abilities;   // any of them
+    std::vector<AbilityKind> abilities;   // any of them (a vector: an initializer_list here would dangle)
 };
 
 // Per group, its letters in the order of the Empire Options row.

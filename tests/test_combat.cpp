@@ -614,29 +614,25 @@ TEST_CASE("combat: the battle check sees colonies by current sensors; minefields
         // whose sensors do not pierce it.
         Arena ar = makeArena();
         GameState& s = ar.s;
-        const Colony& home = homeworld(s, ar.b);
-        const Location there = locationOf(s.galaxy, home.planet);
+        const ObjectId home = homeworld(s, ar.b).planet;   // an id: adding the storm moves the colonies
+        const Location there = locationOf(s.galaxy, home);
         const VehicleId scout = spawn(s, frigate(s, ar.a, "Scout", 1, {}), there);
         sight::markExplored(s, ar.a, there.system);
         const combat::BattleCheck byScout{{scout}};
-        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home));
         CHECK(combat::battleCheck(r, s, there, byScout));
         SpaceObject storm;
-        storm.id = ObjectId{s.galaxy.objects.size()};
         storm.kind = ObjectKind::Storm;
-        storm.system = there.system;
         storm.sector = there.sector;
         storm.name = "Squall";
         storm.abilities.push_back(ab(AbilityKind::SectorSightObscuration, 3));
-        s.galaxy.system(there.system).objects.push_back(storm.id);
-        s.galaxy.objects.push_back(storm);
-        s.colonies.resize(s.galaxy.objects.size());
-        CHECK_FALSE(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        s.addObject(std::move(storm), there.system);
+        CHECK_FALSE(combat::detail::colonyVisibleTo(r, s, ar.a, home));
         CHECK_FALSE(combat::battleCheck(r, s, there, byScout));
         // Its owner always sees it; sensors that pierce the storm see it too.
-        CHECK(combat::detail::colonyVisibleTo(r, s, ar.b, home.planet));
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.b, home));
         spawn(s, frigate(s, ar.a, "Eye", 1, {"CT Sensor"}), Location{there.system, Sector{0, 0}});
-        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home));
         CHECK(combat::battleCheck(r, s, there, byScout));
     }
     {
