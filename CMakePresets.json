@@ -31,8 +31,8 @@
             }
         },
         {
-            "name": "dist-linux",
-            "displayName": "Release package for Linux (static, resources built in)",
+            "name": "dist",
+            "hidden": true,
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
@@ -42,10 +42,20 @@
             }
         },
         {
+            "name": "dist-linux",
+            "displayName": "Release package for Linux (static, resources built in)",
+            "inherits": "dist"
+        },
+        {
             "name": "dist-windows",
             "displayName": "Release package for Windows (MinGW-w64 cross build, static, resources built in)",
-            "inherits": "dist-linux",
+            "inherits": "dist",
             "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake"
+        },
+        {
+            "name": "dist-mingw",
+            "displayName": "Release package for Windows (native MinGW-w64 build in MSYS2, static, resources built in)",
+            "inherits": "dist"
         }
     ],
     "buildPresets": [
@@ -53,12 +63,15 @@
         { "name": "release", "configurePreset": "release" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "dist-linux", "configurePreset": "dist-linux" },
-        { "name": "dist-windows", "configurePreset": "dist-windows" }
+        { "name": "dist-windows", "configurePreset": "dist-windows" },
+        { "name": "dist-mingw", "configurePreset": "dist-mingw" }
     ],
     "testPresets": [
         { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+        { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
         { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
         { "name": "dist-linux", "configurePreset": "dist-linux", "output": { "outputOnFailure": true } },
-        { "name": "dist-windows", "configurePreset": "dist-windows", "output": { "outputOnFailure": true } }
+        { "name": "dist-windows", "configurePreset": "dist-windows", "output": { "outputOnFailure": true } },
+        { "name": "dist-mingw", "configurePreset": "dist-mingw", "output": { "outputOnFailure": true } }
     ]
 }

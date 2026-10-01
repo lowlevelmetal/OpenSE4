@@ -58,6 +58,18 @@ else()
     endif()
 endif()
 
+# Windows finds DLLs next to the executable: copy the shared libraries a program
+# needs there (SDL3, unless it is linked statically).
+function(opense4_copy_runtime_dlls target)
+    if(WIN32)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E "$<IF:$<BOOL:$<TARGET_RUNTIME_DLLS:${target}>>,copy_if_different,true>"
+                    "$<TARGET_RUNTIME_DLLS:${target}>" "$<TARGET_FILE_DIR:${target}>"
+            COMMAND_EXPAND_LISTS
+            VERBATIM)
+    endif()
+endfunction()
+
 add_subdirectory(src)
 add_subdirectory(tools)
 

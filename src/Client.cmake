@@ -98,6 +98,7 @@ if(OPENSE4_DEV_PATHS)
     target_compile_definitions(opense4 PRIVATE OPENSE4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 endif()
 set_target_properties(opense4 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+opense4_copy_runtime_dlls(opense4)
 if(WIN32)
     # A windowed application: no console window next to the game. main.cpp attaches
     # to the parent console when started from one, so --help still prints.

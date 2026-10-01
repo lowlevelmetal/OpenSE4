@@ -6,6 +6,9 @@
 #   dist/OpenSE4-<version>-windows-x86_64-setup.exe   the same, as an installer
 #   dist/OpenSE4-<version>-SHA256SUMS.txt
 #
+# On Linux both are built (Windows cross-compiled with MinGW-w64). In MSYS2 on
+# Windows (the UCRT64 shell) the Windows packages are built natively instead.
+#
 # Each holds the game, the dedicated server and the data checker, with our own
 # fonts built in, plus the README, the licence (GPL 3.0 or later) and the
 # third-party notices. Nothing from the original game is included: players point
@@ -14,9 +17,9 @@
 # The Linux package also carries the desktop entry, icons and AppStream metadata
 # (packaging/linux) and install-desktop-entry.sh, which adds the game to the
 # desktop's application list. The Windows installer is built with NSIS
-# (packaging/windows/opense4.nsi): a native makensis when there is one, else the
-# official Windows build under Wine, downloaded once into build/_tools (or taken
-# from $NSIS_DIR).
+# (packaging/windows/opense4.nsi): a makensis on the PATH when there is one, else
+# the official Windows build under Wine, downloaded once into build/_tools (or
+# taken from $NSIS_DIR).
 #
 #   tools/package_release.sh [linux] [windows] [--skip-tests]
 
@@ -34,6 +37,17 @@ for arg in "$@"; do
         *) echo "usage: $0 [linux] [windows] [--skip-tests]" >&2; exit 2 ;;
     esac
 done
+
+# Native Windows: MSYS2 (MinGW-w64) builds only the Windows packages.
+native_windows=0
+case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) native_windows=1 ;; esac
+if [ "$native_windows" = 1 ]; then
+    [ ${#targets[@]} -gt 0 ] || targets=(windows)
+    if [[ " ${targets[*]} " == *" linux "* ]]; then
+        echo "The Linux package is built on Linux." >&2
+        exit 2
+    fi
+fi
 [ ${#targets[@]} -gt 0 ] || targets=(linux windows)
 
 # A tagged commit (v0.1.0) is packaged as that version; anything else as the
@@ -61,7 +75,11 @@ installer() {  # installer <staged Windows folder> <output .exe>
     local nsi="$root/packaging/windows/opense4.nsi"
     local defines=(-V2 "-DVERSION=$version" "-DVERSION_NUMBER=$project_version")
     if command -v makensis > /dev/null; then
-        makensis "${defines[@]}" "-DSTAGE=$1" "-DOUTFILE=$2" "$nsi"
+        if [ "$native_windows" = 1 ]; then
+            makensis "${defines[@]}" "-DSTAGE=$(cygpath -w "$1")" "-DOUTFILE=$(cygpath -w "$2")" "$(cygpath -w "$nsi")"
+        else
+            makensis "${defines[@]}" "-DSTAGE=$1" "-DOUTFILE=$2" "$nsi"
+        fi
         return
     fi
     if ! command -v wine > /dev/null; then
@@ -113,7 +131,10 @@ notices() {  # notices <build dir> <target> <output file>
         sed -n '/Copyright/,/\*\//p' third_party/khronos/GL/glcorearb.h
         section "Noto Sans fonts (SIL Open Font License 1.1)" "assets/fonts/OFL.txt"
         if [ "$2" = windows ]; then
-            section "MinGW-w64 runtime" "/usr/share/licenses/mingw-w64-crt/COPYING.MinGW-w64-runtime.txt"
+            # Arch's mingw-w64-crt, or MSYS2's crt package.
+            local runtime=/usr/share/licenses/mingw-w64-crt/COPYING.MinGW-w64-runtime.txt
+            [ "$native_windows" = 1 ] && runtime="$MINGW_PREFIX/share/licenses/crt/COPYING.MinGW-w64-runtime.txt"
+            section "MinGW-w64 runtime" "$runtime"
         fi
         echo; echo; echo "------------------------------------------------------------------------"
         echo "GCC runtime libraries"; echo "------------------------------------------------------------------------"; echo
@@ -124,6 +145,7 @@ notices() {  # notices <build dir> <target> <output file>
 
 for target in "${targets[@]}"; do
     preset="dist-$target"
+    [ "$native_windows" = 1 ] && preset=dist-mingw
     build="$root/build/$preset"
     echo "==> $target: configure and build ($preset)"
     cmake --preset "$preset" > /dev/null
@@ -131,13 +153,18 @@ for target in "${targets[@]}"; do
 
     exe=""
     strip=strip
-    if [ "$target" = windows ]; then exe=".exe"; strip=x86_64-w64-mingw32-strip; fi
+    if [ "$target" = windows ]; then
+        exe=".exe"
+        [ "$native_windows" = 1 ] || strip=x86_64-w64-mingw32-strip
+    fi
 
     if [ "$tests" = 1 ]; then
         echo "==> $target: tests"
         if [ "$target" = linux ]; then
             "$build/tests/opense4_tests"
             tools/check_glibc.sh "$build/opense4" "$build/opense4-server" "$build/opense4-datacheck"
+        elif [ "$native_windows" = 1 ]; then
+            "$build/tests/opense4_tests.exe"
         elif command -v wine > /dev/null; then
             WINEDEBUG=-all wine "$build/tests/opense4_tests.exe"
         else

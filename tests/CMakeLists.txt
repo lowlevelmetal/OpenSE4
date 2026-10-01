@@ -74,4 +74,6 @@ target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
+opense4_copy_runtime_dlls(opense4_tests)
+
 add_test(NAME opense4_tests COMMAND opense4_tests)
