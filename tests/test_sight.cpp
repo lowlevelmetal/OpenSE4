@@ -332,12 +332,13 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(farV)));
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
     CHECK_FALSE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
-    // The report shows the ship's design and the units in its cargo.
+    // A ship's report dates only its own design, never the units in its
+    // cargo (spec 05 §8, open question 43).
     const DesignId sat = w.ship(kB, "Cargo Sat", 1);
     w.v(nearV).cargo.units = {{sat, 2}};
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
     CHECK(seen(w.s, kA, nearD));
-    CHECK(seen(w.s, kA, sat));
+    CHECK_FALSE(seen(w.s, kA, sat));
     CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
     // Each opening dates the sighting anew (spec 05 §8 step 12 counts from it).
     w.s.turn += 7;
@@ -361,6 +362,16 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
     CHECK(seen(w.s, kA, farD));
     CHECK_FALSE(seen(w.s, kA, jamD));
+    // A unit group's report dates its units' design, but in a simultaneous
+    // game it never reaches the host.
+    const DesignId nearSatD = w.v(nearSat).design;
+    REQUIRE(w.s.options.simultaneous);
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearSat}).ok);
+    CHECK_FALSE(seen(w.s, kA, nearSatD));
+    w.s.options.simultaneous = false;
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearSat}).ok);
+    CHECK(seen(w.s, kA, nearSatD));
+    w.s.options.simultaneous = true;
     CHECK_FALSE(apply(r, w.s, kB, cmd::OpenVehicleReport{nearV}).ok);  // never one's own vehicles
     // A computer player never learns this way.
     w.s.empire(kA).kind = PlayerKind::Computer;
