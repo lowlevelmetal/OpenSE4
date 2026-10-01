@@ -83,6 +83,8 @@ Begin Game and Cancel buttons sit below the grid. The stock empires come from
   - Every other object measured lies on the same lattice (x = 83, 133, 283, 383, 433,
     483, 533, 633).
   - Warp points sit in the outermost column and row, sectors 0 and 12.
+  - The executable puts the centres at (34 + 50·i, 139 + 50·j), 1 px right of and 4 px
+    below these measurements; spec 06 §2.4 has the exact geometry (confirmed: binary).
 
   This matches the SystemTypes header (0..12). The manual's "196 sectors" is wrong for
   this version.

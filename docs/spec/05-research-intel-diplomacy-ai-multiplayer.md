@@ -2592,7 +2592,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     `Create Log Text Files for Players` (on when the key is missing). A destroyed empire gives
     one history line: the engine logs no separate "contact lost" entry. To check: the
     original's widths and date format, whether the log copy is gated by that key, and
-    whether a destruction also writes a contact-lost line.
+    whether a destruction also writes a contact-lost line. **Partly answered** in spec 06
+    §6.1 (confirmed: binary): the original writes `History/plr_<N>_stats.txt`,
+    `_events.txt` and `_log.txt` in the installation, with the column widths given there;
+    the stats and events lines carry the raw turn number, not a date; and the log copy is
+    written only when `Create Log Text Files for Players` is on. Still open: whether a
+    destruction also writes a contact-lost line.
 41. **Rebel empire details** (§2.3) [I]: "its home planet type and atmosphere are the
     planet's" is read as the race's native surface and the gas it breathes; with no unused
     neutral race left the rebels keep the former owner's pictures; a name is drawn from
