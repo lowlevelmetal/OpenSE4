@@ -109,9 +109,9 @@ a list.
 The [Help](window:help) window (`F1`) is the game's encyclopedia. It covers only what your
 empire knows. Its tabs:
 
-- [Components](help:components), [Facilities](help:facilities), [Ship Sizes](help:shipsizes) and [Unit Sizes](help:unitsizes): every part, building and hull, with its cost, size, abilities and technology requirements;
-- [Tech Areas](help:techareas): each area and what its levels bring;
-- [Treaties](help:treaties) and [Intel Projects](help:intelprojects);
+- [Components](help:components), [Facilities](help:facilities), [Ship Sizes](help:ship-sizes) and [Unit Sizes](help:unit-sizes): every part, building and hull, with its cost, size, abilities and technology requirements;
+- [Tech Areas](help:tech-areas): each area and what its levels bring;
+- [Treaties](help:treaties) and [Intel Projects](help:intel-projects);
 - [Formations](help:formations): the shape of each fleet formation;
 - [Hotkeys](help:hotkeys): the classic keys. The [Hotkeys](hotkeys) chapter of this manual lists the keys that work in this version of OpenSE4.
 

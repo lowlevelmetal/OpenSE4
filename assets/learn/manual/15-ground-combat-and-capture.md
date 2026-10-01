@@ -52,7 +52,7 @@ may suffer.
 
 ## The Ground Combat window
 
-The [Ground Combat](window:ground-combat) window shows a ground combat fought in a battle: the
+The **Ground Combat** window shows a ground combat fought in a battle: the
 planet, its owner, its population and facilities, and the defending and attacking units. `Begin`
 shows the outcome: how many rounds were fought, and whether the planet fell, the invasion failed
 or the fight goes on. When a battle had several ground combats, `Previous` and `Next` step
