@@ -44,6 +44,7 @@ add_executable(opense4
     client/classic/screens/combat_logic.cpp
     client/classic/screens/combat_map.cpp
     client/classic/screens/combat_replay.cpp
+    client/classic/screens/convert_resources.cpp
     client/classic/screens/design_tools.cpp
     client/classic/screens/communicate.cpp
     client/classic/screens/designs.cpp

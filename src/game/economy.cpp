@@ -510,6 +510,34 @@ Production empireProduction(const Rules& r, const GameState& s, EmpireId e) { re
 
 // ---- Treasury --------------------------------------------------------------------------------------------
 
+bool colonyConverts(const Rules& r, const GameState& s, const Colony& c) {
+    return bestValue1(colonyAbilities(r, s, c), AbilityKind::ResourceConversion) >= 1;
+}
+
+int64_t conversionLoss(const Rules& r, const Colony& c) {
+    int64_t loss = 0;
+    for (uint32_t f : c.facilities)
+        if (f < r.data().facilities.size()) loss = std::max(loss, bestValue1(r.facilityAbilities(f), AbilityKind::ResourceConversion));
+    return loss;
+}
+
+int64_t conversionGain(int64_t amount, int64_t loss) { return amount * (100 - loss) / 100; }
+
+std::vector<Order> conversionOrders(Resource from, Resource to, int64_t amount) {
+    std::vector<Order> out;
+    if (amount < 0) return out;
+    for (int64_t n = amount / kMaxConversionOrder + 1, left = amount; n > 0; --n) {
+        Order o;
+        o.kind = OrderKind::ConvertResources;
+        o.from = static_cast<uint8_t>(from);
+        o.to = static_cast<uint8_t>(to);
+        o.amount = static_cast<int>(std::min<int64_t>(left, kMaxConversionOrder));
+        left -= o.amount;
+        out.push_back(o);
+    }
+    return out;
+}
+
 Resources storageCapacity(const Rules& r, const GameState& s, EmpireId e) {
     constexpr std::array<AbilityKind, 3> kStorage{AbilityKind::ResourceStorageMinerals, AbilityKind::ResourceStorageOrganics,
                                                   AbilityKind::ResourceStorageRadioactives};

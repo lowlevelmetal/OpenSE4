@@ -1,6 +1,7 @@
 #include "client/classic/screens/ships_logic.hpp"
 
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
 
@@ -38,7 +39,10 @@ const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o)
 }
 
 bool repeatOf(const game::GameState& s, OrderOwner o) {
-    if (o.planet.valid()) return false;
+    if (o.planet.valid()) {
+        const game::Colony* c = s.colony(o.planet);
+        return c && c->repeatOrders;
+    }
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
         return f && game::fleetRepeats(s, *f);
@@ -175,6 +179,36 @@ bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::Empir
     }
     const game::Colony* c = s.colony(planet);
     return c && c->owner == viewer;
+}
+
+// ---- Convert Resources --------------------------------------------------------------------
+
+void ConversionWindow::add(game::Resource from) {
+    const auto it = std::find_if(lines.begin(), lines.end(), [&](const ConversionLine& l) { return l.from == from && l.to == target; });
+    if (it != lines.end()) it->amount += step;
+    else lines.push_back({from, target, step});
+}
+
+void ConversionWindow::remove(size_t line) {
+    if (line >= lines.size()) return;
+    lines[line].amount = std::max<int64_t>(0, lines[line].amount - step);
+    if (lines[line].amount == 0) lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(line));
+}
+
+void ConversionWindow::press(int64_t bigStep) { step = step == bigStep ? 1000 : bigStep; }
+
+std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lines) {
+    std::vector<game::Order> out;
+    for (const ConversionLine& l : lines) {
+        const auto part = game::economy::conversionOrders(l.from, l.to, l.amount);
+        out.insert(out.end(), part.begin(), part.end());
+    }
+    return out;
+}
+
+bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet) {
+    const game::Colony* c = s.colony(planet);
+    return c && c->owner == viewer && game::economy::colonyConverts(r, s, *c);
 }
 
 // ---- Units --------------------------------------------------------------------------------

@@ -76,6 +76,9 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
         case OrderKind::UseFacility:
             if (o.amount < 0) return "No such position";
             break;
+        case OrderKind::ConvertResources:
+            if (o.amount < 0 || o.amount > economy::kMaxConversionOrder) return "At most 65,000 per conversion order";
+            break;
         case OrderKind::LoadCargo:
         case OrderKind::DropCargo:
         case OrderKind::LaunchUnits:
@@ -200,7 +203,7 @@ struct Applier {
 
     // The orders a colony carries out (spec 02 §5.6, spec 03 §8, §12).
     static bool colonyOrder(OrderKind k) {
-        return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::UseFacility;
+        return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::UseFacility || k == OrderKind::ConvertResources;
     }
 
     R operator()(const cmd::SetOrders& c) {
@@ -212,12 +215,21 @@ struct Applier {
             for (const Order& o : c.orders)
                 if (!colonyOrder(o.kind)) return R::fail("Planets cannot carry out that order");
             std::vector<Order> list = c.orders;
-            clearBeforeUse(list, static_cast<size_t>(std::mismatch(col->orders.begin(), col->orders.end(), list.begin(), list.end()).second - list.begin()));
+            const size_t kept = static_cast<size_t>(std::mismatch(col->orders.begin(), col->orders.end(), list.begin(), list.end()).second - list.begin());
+            // Convert Resources is given only to a colony with a converter, as
+            // its button is lit (spec 02 §5.6; checked here since commands can
+            // come from anywhere, an OpenSE4 choice). Orders already in the
+            // list stay even when the converter is gone.
+            for (size_t i = kept; i < list.size(); ++i)
+                if (list[i].kind == OrderKind::ConvertResources && !economy::colonyConverts(r, s, *col))
+                    return R::fail("This colony cannot convert resources");
+            const bool cleared = clearBeforeUse(list, kept);
             col->orders = std::move(list);
+            col->repeatOrders = c.repeat && !cleared;
             return {};
         }
         for (const Order& o : c.orders)
-            if (o.kind == OrderKind::UseFacility) return R::fail("Only colonies use facilities");
+            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
         // Explore, Resupply, Repair and the composite orders are expanded into
         // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {

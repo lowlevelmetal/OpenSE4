@@ -487,6 +487,7 @@ void MainWindow::giveOrder(UiContext& ui, game::Order o) {
             c.repeat = v->repeatOrders;
         } else if (const game::Colony* col = s.colony(w.planet)) {
             c.orders = col->orders;
+            c.repeat = col->repeatOrders;
         }
         c.orders.push_back(o);
         const game::CommandResult r = ui.session.issue(c);
@@ -727,6 +728,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                 repeat = x->repeatOrders;
             } else if (const game::Colony* c = s.colony(owners.front().planet)) {
                 current = c->orders;
+                repeat = c->repeatOrders;
             }
             replaceOrders(ui, std::move(current), !repeat);
             return;
@@ -842,8 +844,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             return;
         }
         case OrderId::Jettison: openFor(ui, ScreenId::JettisonCargo); return;
-        // Our engine has no command for this yet (docs/spec/06 §7 Q4).
-        case OrderId::ConvertResources: note(ui, std::format("{} is not in OpenSE4 yet.", orderName(id))); return;
+        case OrderId::ConvertResources: openFor(ui, ScreenId::ConvertResources); return;
         case OrderId::ReplayPlay:
         case OrderId::ReplayShip:
             if (!replay_.available()) note(ui, "No movement to replay yet.");

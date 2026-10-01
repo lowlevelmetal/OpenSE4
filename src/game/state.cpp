@@ -26,6 +26,7 @@ std::string_view displayName(OrderKind k) {
         case OrderKind::MoveToWaypoint: return "Move To Waypoint";
         case OrderKind::SelfDestruct: return "Self-Destruct";
         case OrderKind::UseFacility: return "Use Facility";
+        case OrderKind::ConvertResources: return "Convert Resources";
         case OrderKind::Count: break;
     }
     return "?";

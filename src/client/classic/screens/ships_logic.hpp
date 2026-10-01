@@ -78,6 +78,38 @@ std::optional<game::cmd::JettisonCargo> jettisonCommand(const JettisonLists& lis
 // mothballed, or an own colony.
 bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::VehicleId vehicle, game::ObjectId planet);
 
+// ---- Convert Resources (docs/spec/02 §5.6) ----------------------------------------------------
+
+// One line of the window's "Conversions" list.
+struct ConversionLine {
+    game::Resource from = game::Resource::Minerals;
+    game::Resource to = game::Resource::Minerals;
+    int64_t amount = 0;
+    bool operator==(const ConversionLine&) const = default;
+};
+// The Convert Resources window: the target resource (Minerals when it
+// opens), the step (1,000; 10,000 or 100,000 with the "x 10000" or "x 100000"
+// button down, pressing one releasing the other) and the lines. A click on a
+// resource on the left adds a step from it to the target, onto the line with
+// the same source and target or a new line at the end; a click on a line
+// takes a step off it, and a line left below one step is removed. Neither the
+// treasury nor source = target is checked.
+struct ConversionWindow {
+    game::Resource target = game::Resource::Minerals;
+    int64_t step = 1000;
+    std::vector<ConversionLine> lines;
+    void add(game::Resource from);
+    void remove(size_t line);
+    // The "x 10000" (10'000) and "x 100000" (100'000) buttons.
+    void press(int64_t bigStep);
+};
+// OK: each line in list order as Convert Resources orders of at most 65,000
+// (economy::conversionOrders).
+std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lines);
+// Whether Convert Resources is for this colony: an own colony whose planet or
+// facilities give `Resource Conversion` of at least 1.
+bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet);
+
 // ---- Units --------------------------------------------------------------------------------
 
 bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);

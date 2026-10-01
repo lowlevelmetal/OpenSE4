@@ -29,6 +29,7 @@ std::unique_ptr<Screen> makeShips(const ScreenArgs& args);
 std::unique_ptr<Screen> makeFleetTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeCargoTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeJettisonCargo(const ScreenArgs& args);    // cargo_transfer.cpp: ScreenArgs::vehicle or ::planet
+std::unique_ptr<Screen> makeConvertResources(const ScreenArgs& args); // convert_resources.cpp: ScreenArgs::planet
 std::unique_ptr<Screen> makeLaunchRecover(const ScreenArgs& args);
 std::unique_ptr<Screen> makeScrap(const ScreenArgs& args);
 std::unique_ptr<Screen> makeAbandonPlanet(const ScreenArgs& args);   // scrap.cpp: ScreenArgs::planet

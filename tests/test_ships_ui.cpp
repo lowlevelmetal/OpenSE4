@@ -389,3 +389,38 @@ TEST_CASE("ships ui: Jettison Cargo is for an own ship or base that is not mothb
     s.vehicle(ship)->status = VehicleStatus::Mothballed;
     CHECK_FALSE(shipui::canJettisonFrom(r, s, me, ship, {}));
 }
+
+TEST_CASE("ships ui: the Convert Resources window adds and takes steps, merges lines, and splits them into orders (spec 02 §5.6)") {
+    shipui::ConversionWindow w;
+    CHECK(w.target == Resource::Minerals);  // Minerals is down when it opens
+    CHECK(w.step == 1000);
+    w.target = Resource::Organics;
+    w.add(Resource::Minerals);
+    w.add(Resource::Minerals);  // same source and target: the line grows
+    w.press(100'000);
+    w.add(Resource::Radioactives);
+    w.press(10'000);            // pressing one releases the other
+    CHECK(w.step == 10'000);
+    w.press(10'000);            // and pressing it again: back to 1,000
+    CHECK(w.step == 1000);
+    w.target = Resource::Minerals;
+    w.add(Resource::Minerals);  // source = target is not checked
+    REQUIRE(w.lines.size() == 3);
+    CHECK(w.lines[0] == shipui::ConversionLine{Resource::Minerals, Resource::Organics, 2000});
+    CHECK(w.lines[1] == shipui::ConversionLine{Resource::Radioactives, Resource::Organics, 100'000});
+    CHECK(w.lines[2] == shipui::ConversionLine{Resource::Minerals, Resource::Minerals, 1000});
+    // A click takes a step off; below one step the line drops to 0 and goes.
+    w.press(10'000);
+    w.remove(1);
+    CHECK(w.lines[1].amount == 90'000);
+    w.remove(0);
+    CHECK(w.lines.size() == 2);
+    // OK: each line in order, as orders of at most 65,000.
+    const std::vector<Order> orders = shipui::conversionOrders(w.lines);
+    REQUIRE(orders.size() == 3);
+    CHECK(orders[0].amount == 65'000);
+    CHECK(orders[1].amount == 25'000);
+    CHECK(orders[2].amount == 1000);
+    CHECK(orders[2].from == static_cast<uint8_t>(Resource::Minerals));
+    CHECK(orders[2].to == static_cast<uint8_t>(Resource::Minerals));
+}

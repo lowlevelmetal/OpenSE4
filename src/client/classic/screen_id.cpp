@@ -10,7 +10,8 @@ std::string_view windowId(ScreenId id) {
         "game-menu", "designs", "create-design", "planets", "colonies", "ships", "queues", "set-queue", "research", "tech-tree",
         "empires", "log", "empire-status", "help", "galaxy-map", "empire-options", "ministers", "systems-to-avoid", "waypoints",
         "strategies", "repair-priorities", "fleet-transfer", "cargo-transfer", "launch-recover", "scrap", "view-orders",
-        "select-waypoint", "stellar-manipulation", "rename", "abandon-planet", "jettison-cargo", "communicate", "intelligence", "treaty-grid", "scores",
+        "select-waypoint", "stellar-manipulation", "rename", "abandon-planet", "jettison-cargo", "convert-resources",
+        "communicate", "intelligence", "treaty-grid", "scores",
         "comparisons", "history", "race-report", "victory-conditions", "combat-replay", "tactical-combat", "tactical-orders", "tactical-options",
         "tactical-launch", "combat-piece-report", "combat-replay-options", "combat-simulator", "strategic-combat", "ground-combat",
         "save-game", "load-game", "options", "settings", "learn", "manual"};

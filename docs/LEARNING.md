@@ -357,7 +357,8 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 **Order kinds** (`order`): `move-to`, `warp`, `attack`, `resupply`, `repair`,
 `explore`, `colonize`, `sentry`, `load-cargo`, `drop-cargo`, `launch-units`,
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
-`stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`.
+`stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`,
+`convert-resources`.
 
 **Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
 
@@ -428,7 +429,7 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `galaxy-map`, `empire-options`, `ministers`, `systems-to-avoid`, `waypoints`,
 `strategies`, `repair-priorities`, `fleet-transfer`, `cargo-transfer`,
 `launch-recover`, `scrap`, `view-orders`, `select-waypoint`, `stellar-manipulation`,
-`rename`, `abandon-planet`, `jettison-cargo`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
+`rename`, `abandon-planet`, `jettison-cargo`, `convert-resources`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
 `comparisons`, `history`, `race-report`, `victory-conditions`, `combat-replay`,
 `tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
 `tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
@@ -438,7 +439,7 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 A `window:` link cannot open the battle windows (`combat-replay`, `tactical-combat`,
 `tactical-orders`, `tactical-options`, `tactical-launch`, `combat-piece-report`,
 `combat-replay-options`, `strategic-combat`, `ground-combat`): they need a battle; nor
-`abandon-planet` and `jettison-cargo`, which need a planet or a ship. Front matter may also
+`abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 
 **Help tabs** (`help:` links): `components`, `facilities`, `ship-sizes`, `unit-sizes`,

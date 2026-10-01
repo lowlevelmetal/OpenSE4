@@ -372,6 +372,7 @@ enum class OrderKind : uint8_t {
     MoveToWaypoint, // amount = waypoint slot
     SelfDestruct,   // the whole object is destroyed (spec 03 §8, §15; movement::canSelfDestruct)
     UseFacility,    // a colony's: amount = facility position; completes with no effect (spec 03 §8)
+    ConvertResources,  // a colony's: `amount` (at most 65,000) of resource `from` into `to` (spec 02 §5.6)
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -389,6 +390,10 @@ struct Order {
     VehicleId vehicle;
     DesignId design;
     int amount = 0;
+    // Convert Resources: the resource converted from and into, as Resource
+    // values; with any other value the order does nothing (spec 02 §5.6).
+    uint8_t from = 0;
+    uint8_t to = 0;
     bool operator==(const Order&) const = default;
 };
 
@@ -464,9 +469,13 @@ struct Colony {
     // nobody invades the colony.
     EmpireId invader;
     std::vector<UnitStack> landedTroops;
-    // Planet orders (simultaneous games, spec 05 §9.2): Launch Units and
-    // Recover Units, carried out in the movement phase (spec 03 §12).
+    // The colony's order list (spec 03 §8, §12, spec 02 §5.6): Launch Units,
+    // Recover Units, Use Facility and Convert Resources, carried out on day 1
+    // of the movement phase in a simultaneous game, and in a turn-based one at
+    // the start of the owner's turn and when the player gives an order that
+    // runs the list. It follows the list rules of spec 03 §8, Repeat included.
     std::vector<Order> orders;
+    bool repeatOrders = false;
 
     int64_t totalPopulation() const {
         int64_t n = 0;

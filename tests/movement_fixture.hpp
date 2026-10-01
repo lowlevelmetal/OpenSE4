@@ -135,6 +135,13 @@ inline ruleset::Ruleset buildRuleset() {
     facility("Mv Planet Guard", {ab(AbilityKind::StopPlanetDestroyer)});
     facility("Mv Star Guard", {ab(AbilityKind::StopStarDestroyer)});
     facility("Mv Warp Guard", {ab(AbilityKind::StopOpenWarpPoint), ab(AbilityKind::StopCloseWarpPoint)});
+    // Colony orders and colony cloaking (spec 02 §5.6, spec 01 §6.9, spec 03 §8).
+    facility("Mv Converter", {ab(AbilityKind::ResourceConversion, 30)});
+    facility("Mv Lossy Converter", {ab(AbilityKind::ResourceConversion, 50)});
+    facility("Mv Planet Cloak", allTypes(AbilityKind::CloakLevel, 3));
+    facility("Mv Faint Cloak", {abText(AbilityKind::CloakLevel, "EM Active", 1)});
+    facility("Mv Planet Eye", {abText(AbilityKind::SensorLevel, "Psychic", 4)});
+    facility("Mv Emergency Depot", {ab(AbilityKind::EmergencyResupply, 100)});
 
     // System types for created nebulae and black holes.
     {

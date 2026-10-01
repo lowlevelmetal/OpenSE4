@@ -22,6 +22,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
@@ -496,7 +497,7 @@ private:
     template <class Fn>
     void forEachList(const Group& g, Fn&& fn) {
         if (g.planet.valid()) {
-            if (Colony* c = s_.colony(g.planet)) fn(c->orders, false);
+            if (Colony* c = s_.colony(g.planet)) fn(c->orders, c->repeatOrders);
             return;
         }
         for (VehicleId id : g.holders)
@@ -506,7 +507,10 @@ private:
     void setLists(const Group& g, const std::vector<Order>& list) {
         routes_.erase(routeKey(g));
         if (g.planet.valid()) {
-            if (Colony* c = s_.colony(g.planet)) c->orders = list;
+            if (Colony* c = s_.colony(g.planet)) {
+                c->orders = list;
+                c->repeatOrders = false;
+            }
             return;
         }
         for (VehicleId id : g.holders)
@@ -971,6 +975,7 @@ private:
             // completes with no effect, cost or message, whether or not that
             // facility still exists (spec 03 §8, confirmed: binary).
             if (o.kind == OrderKind::UseFacility) return Exec::Done;
+            if (o.kind == OrderKind::ConvertResources) return convert(g, o);
             return fail(g, o, "Planets cannot carry out that order.");
         }
         switch (o.kind) {
@@ -998,7 +1003,8 @@ private:
             case OrderKind::UseComponent: return useComponentOrder(g, o);
             case OrderKind::StellarManipulation: return stellar(g, o);
             case OrderKind::SelfDestruct: return selfDestruct(g, o);
-            case OrderKind::UseFacility: return fail(g, o, "Only colonies use facilities.");
+            case OrderKind::UseFacility:
+            case OrderKind::ConvertResources: return fail(g, o, "Only colonies carry out that order.");
             case OrderKind::Count: break;
         }
         return fail(g, o, "Unknown order.");
@@ -1330,6 +1336,34 @@ private:
             } else {
                 counters_[user].add(n);
             }
+        }
+        return Exec::Done;
+    }
+
+    // Convert Resources (spec 02 §5.6, confirmed: binary): nothing happens
+    // unless the source and the target are each minerals, organics or
+    // radioactives. The amount is cut to the empire's stock of the source;
+    // what is left above 0 goes from the source, and the target gains it less
+    // the colony's loss, read now (economy::conversionGain), uncapped (the
+    // storage cap comes later in the turn). It costs nothing else and never
+    // fails. In a simultaneous game each order that converts something is
+    // logged; a turn-based player gets no entry.
+    Exec convert(Group& g, const Order& o) {
+        const Colony* c = s_.colony(g.planet);
+        if (!c || o.from >= kResources.size() || o.to >= kResources.size()) return Exec::Done;
+        Resources& bank = s_.empire(g.owner).stockpile;
+        const Resource from = kResources[o.from], to = kResources[o.to];
+        const int64_t amount = std::min<int64_t>(o.amount, bank[from]);
+        if (amount <= 0) return Exec::Done;
+        const int64_t gain = economy::conversionGain(amount, economy::conversionLoss(r_, *c));
+        bank[from] -= amount;
+        bank[to] += gain;
+        if (s_.options.simultaneous) {
+            const SpaceObject& planet = s_.galaxy.object(g.planet);
+            ctx_.log(g.owner, LogCategory::Misc, "Resources Converted",
+                     std::format("The Resource Minister reports that {} in the {} system has converted {} {} into {} {}.", planet.name,
+                                 s_.galaxy.system(planet.system).name, amount, displayName(from), gain, displayName(to)),
+                     locationOf(s_.galaxy, g.planet));
         }
         return Exec::Done;
     }
