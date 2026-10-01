@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/settings.hpp"
 #include "client/settings_window.hpp"
 #include "datafile/datafile.hpp"
 
@@ -47,8 +48,10 @@ class IntroScreen final : public FrontScreen {
 public:
     void draw(MenuContext& ctx) override {
         background(ctx);
-        // A black band along the bottom with two rows of four buttons across the
-        // full width, the version at the left and the loading state at the right.
+        // The original's intro (docs/spec/06 §1.1, §7 Q9): a black band along the
+        // bottom with two rows of four buttons across the full width, the version
+        // at the left and the data set at the right. OpenSE4's own entries sit
+        // in a small row at the top right, apart from the original's layout.
         const Painter p = ctx.painter();
         const float left = ctx.map.left, right = ctx.map.right;
         ImGui::GetBackgroundDrawList()->AddRectFilled(ctx.at({left, 695}), ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y),
@@ -69,30 +72,103 @@ public:
                 const char* label;
                 std::function<void()> go;
             };
-            // The original's Tutorial and Scenario buttons open our Learn window
-            // (docs/LEARNING.md) on its Tutorials and Training tabs.
-            const std::array<Entry, 10> entries{{
+            // Resume Game loads the last game saved on this machine. The original's
+            // Tutorial and Scenario open our Learn window (docs/LEARNING.md) on its
+            // Tutorials and Training tabs.
+            const std::filesystem::path last = settings().lastSavedGame;
+            std::error_code ec;
+            const bool canResume = !last.empty() && std::filesystem::is_regular_file(last, ec);
+            const std::array<Entry, 8> entries{{
                 {"Quick Start", [&] { ctx.go(FrontId::QuickStart); }},
                 {"New Game", [&] { ctx.go(FrontId::GameSetup); }},
-                {"Resume Game", nullptr},
+                {"Resume Game", canResume ? std::function<void()>([&] { resume(ctx, last); }) : nullptr},
                 {"Load Game", [&] { ctx.go(FrontId::LoadGame); }},
-                {"Multiplayer", [&] { ctx.go(FrontId::Multiplayer); }},
                 {"Tutorial", [&] { ctx.go(FrontId::Learn); }},
                 {"Scenario", [&] { ctx.go(FrontId::LearnTraining); }},
-                {"Manual", [&] { ctx.go(FrontId::Manual); }},
-                {"Settings", [&] { ctx.go(FrontId::Settings); }},
+                {"Credits", [&] { ctx.go(FrontId::Credits); }},
                 {"Quit Game", [&] { ctx.quit(); }},
             }};
-            constexpr size_t kColumns = 5;
+            constexpr size_t kColumns = 4;
             const float w = (right - left - 24 - 5 * float(kColumns - 1)) / float(kColumns);
             for (size_t i = 0; i < entries.size(); ++i) {
                 ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % kColumns) * (w + 5), 700 + float(i / kColumns) * 30}));
                 if (classicButton(p, entries[i].label, {w, 26}, 0, false, entries[i].go != nullptr) && entries[i].go) entries[i].go();
             }
             if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
+            if (!error_.empty()) dl->AddText(ctx.at({left + 12, 644}), IM_COL32(255, 128, 100, 255), error_.c_str());
         }
         ImGui::End();
         ImGui::PopStyleVar(2);
+
+        // OpenSE4's own entries: multiplayer, its settings and the manual.
+        ImGui::SetNextWindowPos(ctx.at({right - 12 - 3 * 112 - 2 * 4, 10}));
+        ImGui::SetNextWindowSize(ctx.size({3 * 112 + 2 * 4, 24}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ctx.px(4), 0));
+        if (ImGui::Begin("##intro-extras", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                       ImGuiWindowFlags_NoBackground)) {
+            const std::array<std::pair<const char*, FrontId>, 3> extras{
+                {{"Multiplayer", FrontId::Multiplayer}, {"Settings", FrontId::Settings}, {"Manual", FrontId::Manual}}};
+            for (size_t i = 0; i < extras.size(); ++i) {
+                if (i > 0) ImGui::SameLine();
+                if (classicButton(p, extras[i].first, {112, 22})) ctx.go(extras[i].second);
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+    }
+
+private:
+    void resume(MenuContext& ctx, const std::filesystem::path& file) {
+        auto session = ClassicSession::load(ctx.rules, file);
+        if (!session) {
+            error_ = session.error();
+            return;
+        }
+        restoreHistoryFrom(file);
+        if (ctx.loadedFromIntro) ctx.loadedFromIntro();
+        ctx.startGame(std::move(*session));
+    }
+    std::string error_;
+};
+
+// Credits, in our own words: OpenSE4, its licence and contributors, what it
+// is built with, and where the game's own files come from.
+class CreditsScreen final : public FrontScreen {
+public:
+    void draw(MenuContext& ctx) override {
+        background(ctx);
+        if (beginPanel(ctx, "##credits", Rect{{212, 100}, {812, 668}}, "Credits")) {
+            const Painter p = ctx.painter();
+            ImGui::BeginChild("##text", ImVec2(0, -ctx.px(42)));
+            ImGui::PushTextWrapPos(0.0f);
+            auto section = [&](const char* title) {
+                ImGui::Spacing();
+                heading(p, title);
+            };
+            ImGui::TextUnformatted("OpenSE4 " OPENSE4_CLIENT_VERSION);
+            ImGui::TextColored(kDimText, "An open-source engine for Space Empires IV Deluxe.");
+            section("Licence");
+            ImGui::TextUnformatted("OpenSE4 is free software under the GNU General Public License, version 3 or any later version. "
+                                   "It comes with no warranty. The licence text is in the LICENSE file.");
+            section("Made by");
+            ImGui::TextUnformatted("Matthew Geiger and the OpenSE4 contributors.");
+            section("Built with");
+            ImGui::TextUnformatted("SDL 3, Dear ImGui, the Vulkan headers, volk, Vulkan Memory Allocator, toml++, stb_image, "
+                                   "dr_mp3 and miniupnpc, each under its own licence (see THIRD_PARTY_NOTICES.txt in the release).");
+            section("Fonts");
+            ImGui::TextUnformatted("Noto Sans, under the SIL Open Font License. In a game, the bitmap fonts are read from your installed copy.");
+            section("The game's own files");
+            ImGui::TextUnformatted("The rules data, pictures, sounds, music and fonts you see and hear come from your own installed "
+                                   "copy of Space Empires IV Deluxe, read where they are. None of them is part of OpenSE4.");
+            ImGui::TextColored(kDimText, "Space Empires is a trademark of its owner. OpenSE4 is an independent project, not affiliated with, "
+                                         "endorsed by or sponsored by Strategy First or Malfador Machinations.");
+            ImGui::PopTextWrapPos();
+            ImGui::EndChild();
+            if (classicButton(p, "Back", {140, 28}) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ctx.go(FrontId::Intro);
+        }
+        endPanel();
     }
 };
 
@@ -247,8 +323,13 @@ public:
             for (const auto& [name, path] : saves_)
                 if (ImGui::Selectable(name.c_str())) {
                     auto session = ClassicSession::load(ctx.rules, path);
-                    if (session) ctx.startGame(std::move(*session));
-                    else error_ = session.error();
+                    if (session) {
+                        restoreHistoryFrom(path);
+                        if (ctx.loadedFromIntro) ctx.loadedFromIntro();
+                        ctx.startGame(std::move(*session));
+                    } else {
+                        error_ = session.error();
+                    }
                 }
             ImGui::EndChild();
             if (ImGui::Button("Cancel", ctx.size({140, 34}))) ctx.go(FrontId::Intro);
@@ -327,6 +408,7 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
         case FrontId::Learn: return makeLearnFrontScreen("tutorials");
         case FrontId::LearnTraining: return makeLearnFrontScreen("training");
         case FrontId::Manual: return makeLearnFrontScreen("manual:");
+        case FrontId::Credits: return std::make_unique<CreditsScreen>();
     }
     return nullptr;
 }
@@ -343,6 +425,7 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
     if (datafile::keysEqual(screen, "multiplayer")) return makeMultiplayerScreen(page);
     if (datafile::keysEqual(screen, "pbem")) return makePbemScreen(page);
     if (datafile::keysEqual(screen, "learn")) return makeLearnFrontScreen(page);
+    if (datafile::keysEqual(screen, "credits")) return makeFrontScreen(FrontId::Credits);
     return nullptr;
 }
 

@@ -338,7 +338,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
     if (!session_) {
-        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, frontError_};
+        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, {}, frontError_};
         ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
@@ -464,6 +464,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui.requests.loadGame.reset();
         auto loaded = ClassicSession::load(rules_, file);
         if (loaded) {
+            restoreHistoryFrom(file);
             startGame(std::move(*loaded));
             return true;
         }

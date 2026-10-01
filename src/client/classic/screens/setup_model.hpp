@@ -58,10 +58,10 @@ inline constexpr std::array<int, 6> kAutosaveTurns{0, 1, 2, 3, 5, 10};          
 
 // Autosave (spec 01 §2.2, §14 Q38, confirmed: binary): the save written after
 // a turn has been processed, when `turn` (the turns since 2400.0, the game
-// date) is a multiple of `everyTurns`: "Autosave D" with D the last digit of
+// date) is a multiple of `everyTurns`: "AutoSavD" with D the last digit of
 // `turn`, so at most ten files (five for every 2 turns, two for every 5, one
-// for every 10). Nothing when `everyTurns` is 0 or this turn is not saved.
-// The file names are ours.
+// for every 10), named as the original names them (docs/spec/06 §6.1).
+// Nothing when `everyTurns` is 0 or this turn is not saved.
 std::optional<std::string> autosaveName(int everyTurns, uint32_t turn);
 
 // ---- Quadrant -----------------------------------------------------------------------------

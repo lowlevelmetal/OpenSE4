@@ -405,8 +405,9 @@ TEST_CASE("score: a human player's statistics, history and log text files") {
     REQUIRE(rec.statistics.size() == 2);
     const TurnStats mine = score::currentStats(r, s, kA);
     CHECK(rec.statistics[0] == score::statisticsLine(kA, mine));
-    CHECK(rec.statistics[0].starts_with("   1  2400.0"));
-    CHECK(rec.statistics[1].starts_with("   2"));
+    CHECK(rec.statistics[0].starts_with("    1   24000"));  // widths 5 and 8 (docs/spec/06 §6.1)
+    CHECK(rec.statistics[0].size() == 5 + 8 + 11 * 12);
+    CHECK(rec.statistics[1].starts_with("    2"));
     CHECK(rec.statistics[0].find(std::to_string(mine.score)) != std::string::npos);
     s.options.scoreDisplay = 2;
     CHECK(score::playerRecords(r, s, kA).statistics.size() == 3);
@@ -442,15 +443,16 @@ TEST_CASE("score: a human player's statistics, history and log text files") {
     rec = score::playerRecords(r, s, kA);
     REQUIRE(rec.history.size() == 4);
     CHECK(rec.history[0] == score::historyLine(4, kB, "Trade Alliance established"));
-    CHECK(rec.history[0] == "  2400.4   2 0 0 Trade Alliance established");
+    CHECK(rec.history[0] == "   24004    2    0    0 Trade Alliance established");
     CHECK(rec.history[1] == score::historyLine(4, kC, "War declared"));
     CHECK(rec.history[2].find("First contact with") != std::string::npos);
-    CHECK(rec.history[2].starts_with("  2400.4   3 0 0 "));
+    CHECK(rec.history[2].starts_with("   24004    3    0    0 "));
     CHECK(rec.history[3].find("was destroyed") != std::string::npos);
-    CHECK(score::historyLine(4, {}, "x") == "  2400.4   0 0 0 x");
+    CHECK(score::historyLine(4, {}, "x") == "   24004    0    0    0 x");
     // The log copy: the entries of the turn before.
     REQUIRE(rec.log.size() == 2);
     CHECK(rec.log[0].find("First Contact") != std::string::npos);
+    CHECK(score::logCopyLine(4, "Title", "two\nlines") == std::format("{:<9}{:<40}two lines", "2400.4", "Title"));
 
     // processTurn hands out a set of lines for each human player only.
     GameState g = newPoliticsGame();

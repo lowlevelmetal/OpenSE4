@@ -159,13 +159,20 @@ std::string destroyedText(const GameState& s, EmpireId gone) {
 std::string dateText(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
 
 std::string statisticsLine(EmpireId e, const TurnStats& t) {
-    return std::format("{:>4}{:>8}{:>14}{:>14}{:>12}{:>12}{:>6}{:>6}{:>6}{:>12}{:>8}{:>6}{:>6}", e.value + 1, dateText(t.turn), t.score,
+    return std::format("{:>5}{:>8}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}", e.value + 1, 24000 + t.turn, t.score,
                        t.production.total(), t.research, t.intelligence, t.techLevels, t.systems, t.planets, t.population, t.units, t.ships,
                        t.bases);
 }
 
 std::string historyLine(uint32_t turn, EmpireId other, std::string_view text) {
-    return std::format("{:>8}{:>4} 0 0 {}", dateText(turn), other.valid() ? other.value + 1 : 0u, text);
+    return std::format("{:>8}{:>5}{:>5}{:>5} {}", 24000 + turn, other.valid() ? other.value + 1 : 0u, 0, 0, text);
+}
+
+std::string logCopyLine(uint32_t turn, std::string_view title, std::string_view text) {
+    std::string body(text);
+    std::replace(body.begin(), body.end(), '\n', ' ');
+    std::erase(body, '\r');
+    return std::format("{:<9}{:<40}{}", dateText(turn), title, body);
 }
 
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
@@ -210,8 +217,7 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     if (r.settingFlag("Create Log Text Files for Players", true))
         for (const LogEntry& l : me.log)
             if (l.turn == before)
-                out.log.push_back(std::format("{:>8} {:<12} {}{}{}", dateText(l.turn), std::string(displayName(l.category)), l.title,
-                                              l.text.empty() ? "" : ": ", l.text));
+                out.log.push_back(logCopyLine(l.turn, l.title, l.text));
     return out;
 }
 

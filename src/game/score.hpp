@@ -87,13 +87,19 @@ struct PlayerRecords {
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e);
 // "2401.3": the date of a turn number (2400.0 + turn / 10).
 std::string dateText(uint32_t turn);
-// A statistics row: the empire's number (EmpireId + 1), the date and the
-// Score window's columns: score, resources, research, intelligence, tech
-// levels, systems, planets, population, units, ships, bases (widths inferred).
+// The fixed-width rows of the players' History files (docs/spec/06 §6.1,
+// confirmed: binary). The date there is in tenths of a year (24001 for 2400.1).
+// A statistics row: the empire's number (EmpireId + 1, width 5), the date
+// (width 8), then the Score window's columns, each 12 wide: score, resources,
+// research, intelligence, tech levels, systems, planets, population, units,
+// ships, bases.
 std::string statisticsLine(EmpireId e, const TurnStats& t);
-// A history row: the date, the other empire's number (0 for none), two flags
-// always 0, and the text.
+// A history row: the date (width 8), the other empire's number (0 for none,
+// width 5), two flags always 0 (width 5 each), a space and the text.
 std::string historyLine(uint32_t turn, EmpireId other, std::string_view text);
+// A row of the log copy: the date padded to 9, the title padded to 40, and
+// the text with its line breaks turned into spaces.
+std::string logCopyLine(uint32_t turn, std::string_view title, std::string_view text);
 // The log text of a destroyed empire's announcement (the history file finds
 // the empire by it).
 std::string destroyedText(const GameState& s, EmpireId gone);

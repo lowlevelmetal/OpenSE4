@@ -7,16 +7,19 @@
 #include "assets/assets.hpp"
 #include "client/classic/map_style.hpp"
 #include "client/classic/order_rules.hpp"
+#include "client/classic/session.hpp"
 #include "client/classic/ship_glides.hpp"
 #include "client/classic/status_icons.hpp"
 #include "client/input.hpp"
 #include "game/commands.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
+#include "temp_dir.hpp"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <fstream>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -466,4 +469,34 @@ TEST_CASE("main window: the movement log replay") {
     r.play(100.0);
     r.update(100.0 + MovementReplay::kDays * MovementReplay::kSecondsPerDay);
     CHECK_FALSE(r.active());
+}
+
+// ---- Files the game writes (docs/spec/06 §6.1) ----
+
+TEST_CASE("main window: History files travel with saves") {
+    namespace fs = std::filesystem;
+    const opense4::test::TempDir tmp("history");
+    const fs::path history = tmp.path() / "History";
+    const fs::path saves = tmp.path() / "saves";
+    fs::create_directories(history);
+    fs::create_directories(saves);
+    CHECK(historyFileName(EmpireId{0u}, "stats.txt") == "plr_1_stats.txt");
+    auto write = [](const fs::path& p, std::string_view text) {
+        std::ofstream out(p);
+        out << text;
+    };
+    write(history / "plr_1_stats.txt", "one");
+    write(history / "plr_2_events.txt", "two");
+    const fs::path save = saves / "Foo.gam";
+    write(save, "game");
+    copyHistoryNextTo(save, history);
+    CHECK(fs::exists(saves / "Foo_plr_1_stats.txt"));
+    CHECK(fs::exists(saves / "Foo_plr_2_events.txt"));
+
+    // Loading empties History/ and refills it from the save's companions.
+    write(history / "plr_3_log.txt", "stale");
+    restoreHistoryFrom(save, history);
+    CHECK(fs::exists(history / "plr_1_stats.txt"));
+    CHECK(fs::exists(history / "plr_2_events.txt"));
+    CHECK_FALSE(fs::exists(history / "plr_3_log.txt"));
 }

@@ -256,5 +256,13 @@ private:
 // Where OpenSE4 keeps saves and settings (created on demand).
 std::filesystem::path userDataDir();
 std::filesystem::path savesDir();
+// The players' statistics, history and log files (docs/spec/06 §6.1):
+// <userDataDir>/History/plr_<N>_<kind> with kind "stats.txt", "events.txt"
+// or "log.txt". A save carries copies named <save name>_plr_<N>_<kind>
+// beside it; loading a game empties History/ and refills it from them.
+std::filesystem::path historyDir();
+std::string historyFileName(game::EmpireId empire, std::string_view kind);
+void copyHistoryNextTo(const std::filesystem::path& saveFile, const std::filesystem::path& history = historyDir());
+void restoreHistoryFrom(const std::filesystem::path& saveFile, const std::filesystem::path& history = historyDir());
 
 } // namespace opense4::client::classic
