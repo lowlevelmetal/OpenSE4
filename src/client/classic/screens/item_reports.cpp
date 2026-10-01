@@ -221,7 +221,8 @@ void hullDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     const std::string& style = ui.me().race.style;
     const Sprite pic = st == DetailStyle::Compact ? ui.art.shipMini(style, h) : ui.art.shipPortrait(style, h);
     beginHeader(ui, pic, st);
-    title(ui, h.code.empty() ? h.name : std::format("{} ({})", h.name, h.code));
+    // The hull Code appears only in the Log's combat rows, never here (spec 06 §7 Q18).
+    title(ui, h.name);
     row(ui, "Class", std::string(ruleset::displayName(h.type)), st);
     row(ui, "Tonnage", std::format("{} kT", h.tonnage), st);
     ImGui::EndGroup();

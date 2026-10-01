@@ -1987,9 +1987,9 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     in the Help window belongs to the Weapon Mount report and shows the mount's code
     (confirmed: binary). Captures in the manual that show the code elsewhere come from an
     older version (inferred); nothing remains open.
-    Our client follows the serial rule (`game::nextVehicleName`). It differs: its Log
-    combat rows lack the "(<Code>)" suffix (Q43), and its ship-size report puts the hull
-    code in brackets after the hull name, where the original shows no code.
+    Our client follows the serial rule (`game::nextVehicleName`), and its ship-size report
+    shows the hull name without the code. It differs: its Log combat rows lack the
+    "(<Code>)" suffix (Q43).
 19. **Planets filters.** What does Coloniz\Empty add to Colonizable, which treaties make
     a colony an ally one, and what makes a planet Special? **Answer:** Coloniz\Empty means
     the planet itself is not colonized (not a test on the system). Ally means
@@ -2067,9 +2067,13 @@ executable:
     second click never reverses it. The sort is not stable: rows equal on every key come
     out in no fixed order. In Construction Queues the middle column's key means whatever
     the tab shown at sorting time measures (confirmed: binary).
-    Our client differs: it removes the earlier copy of the clicked column (so a repeated
-    click drops nothing); its history lives in the window, not with the empire, so it is
-    lost on closing and not saved; its sort is stable (harmless).
+    Our client follows this in all four list windows: five slots each, stored with the
+    empire and saved with the game (`InterfaceOptions::planetsSort`, `coloniesSort`,
+    `shipsSort`, `queuesSort`), written at once through `cmd::SetInterfaceOptions`, Name
+    the only key at first, an earlier copy of the column kept. It differs: its sort is
+    stable (harmless). In Colonies and Ships\Units, where the columns change with the tab,
+    a slot holds the table's column number, so after a tab change it stands for that
+    column of the tab shown, and their fixed directions are ours (Q56).
 25. **Available colony ships.** We count a ship as having orders when its fleet has orders,
     and as out of supplies at 0 supply. Send Colony Ship on a planet that is already
     colonized (possible from the Colonizable tab) refuses with a message. What does the
@@ -2091,11 +2095,11 @@ executable:
       the ship arrives.
 
     (confirmed: binary)
-    Our client differs: it refuses an already colonized planet with a message and says
-    when no colony ship can go, where the original stays silent; it gives the orders
-    through the engine's order command, which reaches every member of the ship's fleet,
-    where the original writes only to the chosen ship; it searches vehicles in game order,
-    so ties can resolve differently (minor). The availability test matches.
+    Our client follows this: the availability test, no check of the planet, silence when
+    no ship qualifies, and Load Cargo only with cargo space and no population aboard. It
+    still differs: it gives the orders through the engine's order command, which reaches
+    every member of the ship's fleet, where the original writes only to the chosen ship;
+    it searches vehicles in game order, so ties can resolve differently (minor).
 26. **Planets statistics.** We leave our own colonies out of "owned by enemies" and "owned
     by allies". Does the original count them in one of the groups? **Answer:** our own
     colonies count only in "Number of Colonizable Planets"; they are left out of the
@@ -2115,14 +2119,15 @@ executable:
     vehicle's queue at once, so the Ships group is in practice always empty. "Resources
     Generated Per Turn" is the colonies' production only. Every detail is in §1.8.2
     (confirmed: binary).
-    Our client differs: 40 px rows; the whole queue's time as "N.N Years" without
-    brackets; the green lamp (cell (191,0)) as the tag marker; the name at x 38; status
-    icons only for colonies, at most 6, 16 px apart; vehicle items as "Name x2" but no
-    count for facilities and upgrades; mothballed vehicles and any vehicle with a yard
-    part or leftover items are listed; "Resources Per Turn" is the total income with
-    trade, tariffs and remote mining; the statistics labels and the hint are worded
-    differently. In the engine, cloaking a ship with a working yard should empty its
-    queue.
+    Our client follows this: 36 px rows, the first item's time in brackets, the green
+    arrow as the tag marker, the name at (40,0), status icons for ships, bases and
+    colonies in one line from (40,15), every item as "<name> x <count>", mothballed
+    vehicles never listed, the colonies' production as "Resources Generated Per Turn",
+    the original's statistics labels and hint. It still differs: the list box starts at
+    x 15 and is 556 px wide (the dialog's content box); the status icons stop at the
+    Name column's edge; a vehicle whose yard stopped working is listed under Ships while
+    its queue still holds items, because our engine does not yet empty a vehicle's queue
+    when its yard stops working (cloaking a ship with a working yard should empty it).
 28. **First-item confirmation.** With "confirm deleting the first item" on we ask whenever
     the first item is removed, with or without progress, and before Clear Queue. Does the
     original ask in both cases, and only for the first item? **Answer:** the switch
@@ -2139,11 +2144,13 @@ executable:
        progress and applies the new order; No drops the whole reorder.
 
     (confirmed: binary)
-    Our client differs: it removes through select-then-Remove (or Delete) rather than a
-    left-click on the entry; its Top, Up, Down and Bottom buttons act directly and never
-    ask, even when the first entry changes (the original uses a reorder list with OK and
-    Cancel); its Clear does not turn off On Hold and Repeat. The first-item and Clear
-    prompts otherwise match.
+    Our client follows this: a left-click deletes an entry, only the first asking; Clear
+    Queue asks and also turns off On Hold and Repeat Build; Reorder Queue opens the
+    reorder list and asks "Move First Queue Item" when another entry would come first, No
+    dropping the whole reorder; nothing asks in the Multi-Add queue. When the first item
+    changes, its progress is discarded by queueing it again at its new place. It differs
+    only in the report a right-click opens on a queued ship or unit: the hull's, since our
+    client has no report of a whole design (Q56).
 29. **Similar system-wide abilities.** We note it after a facility is queued whose
     abilities include one with "System" in its identifier that a facility of one of our
     colonies in the same system already has. Which abilities count, does the original
@@ -2169,10 +2176,9 @@ executable:
       system-wide abilities already exists in this system; the facility is added anyway.
 
     (confirmed: binary)
-    Our client differs: it obeys the switch; it counts every ability with "System" in its
-    identifier, which wrongly includes the planet value and conditions changes; it looks
-    only at our colonies' facilities, not at our ships' and bases' components; it shows
-    the note in the status line after queueing instead of a modal "Note" box.
+    Our client follows this: the 18 abilities, only for a facility added by a left-click to
+    a planet's queue, our colonies' built facilities and our ships' and bases' components
+    in that system, a modal OK-only "Note" box, and the switch is not read.
 
 The combat windows (Tactical Combat and its Orders, Launch Units, Combat Options and
 Combat Piece Report windows, Combat Replay, Combat Simulator, Strategic Combat and Ground
@@ -2427,11 +2433,12 @@ something open; all are now settled from the executable:
       player's designs on Yes, none on No.
 
     (confirmed: binary)
-    Our client differs: it writes "N.N Years" with a capital Y and would show "0.0" for 0
-    turns (the original: "0.1 years"); it has no " x N" suffix and writes "Upgrade "
-    instead of "Upg. "; Save Empire does not ask about designs and saves none (to match,
-    our empire file needs designs). "Skip ships under construction" skipping nothing
-    already matches.
+    Our client follows Time Remaining and Under Construction in the planet and ship
+    reports, the Colonies list and the Construction Queues rows ("0.3 years", "0.1 years"
+    for 0 turns, "Never", "On Hold", nothing for an empty queue; " x N" for any item;
+    "Upg. <facility>"). It differs: Save Empire does not ask about designs and saves none
+    (to match, our empire file needs designs). "Skip ships under construction" skipping
+    nothing already matches.
 
 Questions 49–55 were our own choices for the main window, maps, art, sound and files;
 all are now settled from the executable:
@@ -2583,6 +2590,17 @@ all are now settled from the executable:
     Our client differs (the engine's log writer): "Title" instead of "Header" and "Text"
     at column 50; no separating space before the text, so it starts at column 50 instead
     of 51; every CR and every LF becomes a space instead of one space per CR LF pair.
+
+Raised while implementing the answers above (inferred, open):
+
+56. **Colonies and Ships\Units details.** The spec gives the five-slot sort history
+    (Q24) for every list window but the columns and directions only for Planets and
+    Construction Queues. Ours stores, for Colonies and Ships\Units, the table's column
+    number (1 the name, then the tab's own columns), so a key stands for whatever that
+    column of the tab shown measures, as in Construction Queues; names and text sort A
+    to Z and numbers highest first; both windows start with Name. A right-click on a
+    queued ship or unit in Set Construction Queue opens its hull's report. What are the
+    original's columns per tab, their directions, and the report a queued design opens?
 
 Questions 60–64 are choices of ours made while implementing the fonts, pointers, the
 800x600 layout and the movement log replay (inferred):
