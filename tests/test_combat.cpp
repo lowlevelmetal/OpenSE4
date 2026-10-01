@@ -1271,25 +1271,30 @@ TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
     CHECK(s.colony(home.planet)->totalPopulation() == 1000);
 }
 
-TEST_CASE("combat: a planet that takes damage sheds cargo above its capacity") {
-    // Spec 02 §2, §13 Q49: the population held as cargo goes first, 1M at a time.
+TEST_CASE("combat: a planet hit past its shields sheds cargo above its capacity; planet-only weapons never trim") {
+    // Spec 02 §2, §13 Q49, Q54 (confirmed: binary): after each hit of a
+    // hull-damaging type that gets past the shields, inside the battle; the
+    // population held as cargo goes first, 1M at a time. The planet-only types never trim.
     const Rules& r = combatRules();
-    Arena ar = makeArena();
-    GameState& s = ar.s;
-    Colony& home = homeworld(s, ar.b);
-    home.population = {{ar.b, 1000}};
-    const int64_t capacity = colonyCargoCapacity(r, s, home);
-    const int64_t mass = r.setting("Population Mass", 5);
-    home.cargo.units.clear();
-    home.cargo.population = {{ar.b, capacity / mass + 3}};
-    REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
-    spawn(s, frigate(s, ar.a, "Bomber", 3, {"CT Neutron Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
-    TurnContext ctx = context(s);
-    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
-    REQUIRE(s.colony(home.planet) != nullptr);
-    REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
-    REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
-    CHECK(s.colony(home.planet)->cargo.population[0].millions == capacity / mass);
+    for (const bool bomb : {true, false}) {
+        CAPTURE(bomb);
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        Colony& home = homeworld(s, ar.b);
+        home.population = {{ar.b, 1000}};
+        home.cargo.units.clear();
+        const int64_t capacity = colonyCargoCapacity(r, s, home);
+        const int64_t mass = r.setting("Population Mass", 5);
+        home.cargo.population = {{ar.b, capacity / mass + 3}};
+        REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
+        spawn(s, frigate(s, ar.a, "Bomber", 3, {bomb ? "CT Neutron Bomb" : "CT Gun", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+        REQUIRE(s.colony(home.planet) != nullptr);
+        REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
+        REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
+        CHECK(s.colony(home.planet)->cargo.population[0].millions == (bomb ? capacity / mass + 3 : capacity / mass));
+    }
 }
 
 TEST_CASE("combat: the empire that destroys a ship gains its hull tonnage div 10 as experience") {
@@ -1387,10 +1392,14 @@ TEST_CASE("combat: boarding captures ships; crew quarters, security and self-des
         CHECK(lost == 1);
     }
     {
+        // 40 attack against 40 + 4: a strict comparison. The strategy only boards
+        // a ship whose defense is below its attack, so it makes no attempt and
+        // keeps its boarding parties (spec 04 §16.1, §19.2 Q69).
         auto [ar, boarder, target, moods] = board({"Test Security Station", "Test Security Station"});
         const GameState& s = ar.s;
-        CHECK(s.vehicle(target)->owner == ar.b);   // 40 attack against 40 + 4: a strict comparison
-        CHECK_FALSE(entryIntact(combatRules(), s, *s.vehicle(boarder), 7));
+        CHECK(s.vehicle(target)->owner == ar.b);
+        CHECK(entryIntact(combatRules(), s, *s.vehicle(boarder), 7));
+        CHECK(countEvents(s.combats.front(), CombatEvent::Kind::Captured) == 0);
     }
     {
         auto [ar, boarder, target, moods] = board({"Test Crew Quarters", "Test Crew Quarters", "Test Crew Quarters", "Test Crew Quarters",
@@ -1599,7 +1608,10 @@ TEST_CASE("combat: kamikaze ships and drones ram") {
         Arena ar = makeArena();
         GameState& s = ar.s;
         useStrategy(s, ar.a, {{"Primary Movement Strategy", "Don't Get Hurt"}});   // the carrier keeps away
+        // Drones move by their strategies like any piece; Ram makes them ram (spec 04 §16.1).
+        s.empire(ar.a).strategies.push_back(ruleset::CombatStrategy{"Drone Attack", {{"Primary Movement Strategy", "Ram"}}});
         const DesignId drone = design(s, ar.a, "Dart", "Test Drone Hull", {"Test Engine", "Test Engine", "Test Warhead"});
+        s.design(drone).strategy = 1;
         const VehicleId carrier = spawn(s, frigate(s, ar.a, "Drone Carrier", 1, {"CT Drone Bay", "CT Big Armor"}), ar.loc);
         s.vehicle(carrier)->cargo.units.push_back({drone, 2});
         const VehicleId hulk = spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc);

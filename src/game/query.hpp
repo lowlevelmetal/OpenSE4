@@ -19,6 +19,16 @@ inline Location locationOf(const Galaxy& g, ObjectId o) {
 
 // Planets (and asteroid fields) in a sector.
 std::vector<ObjectId> planetsAt(const GameState& s, Location where);
+
+// The game's object order (spec 03 §6.3 step 5): the order of slots in the
+// game's one list of objects. A sort key for a planet or a vehicle; smaller
+// comes first. The engine numbers vehicles apart (Vehicle::slot) and puts
+// every planet, by its place in the galaxy, before every vehicle (spec 03 §19
+// Q62). Code that needs planets and vehicles in object order (combat's
+// start positions, spec 04 §19.2 Q57) uses these, so a shared slot order
+// changes only them.
+uint64_t objectOrderKey(ObjectId planet);
+uint64_t objectOrderKey(const Vehicle& v);
 // The colony owned by `empire` in a sector, if any.
 const Colony* ownColonyAt(const GameState& s, EmpireId empire, Location where);
 

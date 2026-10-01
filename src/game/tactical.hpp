@@ -71,7 +71,8 @@ struct TacticalOrder {
         Ram,             // `piece` rams the adjacent `target` (spec 04 §10.3)
         Capture,         // `piece` boards the adjacent ship `target` (spec 04 §12)
         SetLeader,       // `piece` leads combat group `group` (0-9) in `formation` (Formations.txt index)
-        SetMember,       // `piece` joins combat group `group`: the next slot of its leader's formation
+        SetMember,       // `piece` joins combat group `group` with the next member number: its place is the
+                         // position with that number in the formation of whoever leads the group
         ClearGroup,      // `piece` leaves its group (its members keep the number)
         ClearAllGroups,  // every piece of the side leaves its group
         Auto,            // `piece` acts by its strategy now; -1: the battle's Auto toggle, set to `on`
@@ -139,7 +140,7 @@ struct TacticalPiece {
     bool acted = false;           // it has had its turn this phase (its strategy acted, or it was launched now)
     int leader = -1;              // the group leader it follows (-1: none)
     bool isLeader = false;
-    int group = -1;               // combat group number 0-9 (-1: none or a fleet's group)
+    int group = -1;               // combat group number, a fleet group's too (-1: none; spec 04 §3 step 5, §5)
     int seekTarget = -1, launcher = -1, carrier = -1;
     std::vector<TacticalWeapon> weapons;
     std::vector<UnitStack> cargo;  // units carried (planets: their stored units)
@@ -171,6 +172,9 @@ public:
         // Who ran the battle check that started it (spec 04 §2); empty: a
         // simultaneous game's check (the simulator and tests).
         BattleCheck check;
+        // The simulator: the strategy each side's planets use, an index into
+        // that side's strategies (other planets use their empire's first one).
+        std::vector<std::pair<EmpireId, uint32_t>> planetStrategies;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);
