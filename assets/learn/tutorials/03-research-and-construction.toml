@@ -1,0 +1,179 @@
+# OpenSE4's own lesson (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Research and construction"
+summary = "Choose research projects, build facilities and ships in a construction queue, and read your budget."
+minutes = 15
+
+[setup]
+seed = 404
+computer_players = 2
+quadrant_size = "small"
+events = "none"
+
+[[step]]
+title = "Research and building"
+text = """
+Two things decide how fast your empire grows: what you **research** and what you **build**. This
+lesson shows you both.
+"""
+highlight = ["lesson:panel"]
+manual = "research"
+
+[[step]]
+title = "The Research window"
+text = """
+Open the **Research** window with its command button (the flask) or `F8`.
+"""
+highlight = ["command:research"]
+done = { window = "research" }
+manual = "research#the-research-window"
+
+[[step]]
+title = "Research points"
+text = """
+The top line shows the **research points** available this turn. Your colonies produced them at
+the end of the last turn, and they are all spent at the end of this one. Points that no project
+can use are lost, so keep the queue full.
+
+At the start you also have a large stock of points: put it to work. Press **Next**.
+"""
+highlight = ["window:research"]
+manual = "research#research-points"
+
+[[step]]
+title = "Choose projects"
+text = """
+The list shows every technology area you can research now, with your level and the cost of the
+next level. Hover over an area to see what its next level unlocks.
+
+Click areas to add them to your projects: queue at least **three**. Look at the **Cost** column:
+some levels cost a few turns of research, others a hundred turns. Start with one or two cheap
+ones, then add a long-term goal, such as colonizing another planet type.
+"""
+highlight = ["research:areas"]
+done = { research_queued = 3 }
+manual = "research#technology-areas-and-levels"
+
+[[step]]
+title = "Your projects"
+text = """
+Your projects appear here, four to a page, each with a progress bar and an estimate of when it
+finishes.
+
+- Click a project to cancel it (its progress is lost).
+- **Reorder Projects** changes the order, and **Repeat Projects** keeps researching an area level
+  after level.
+- **Divide Pts Evenly** is on at the start: every project gets an equal share. Switch it off and
+  the points go to the first project until it is paid for, then to the next, so the project you
+  need most finishes first.
+
+Press **Next**.
+"""
+highlight = ["research:queue"]
+manual = "research#the-research-queue"
+
+[[step]]
+title = "The Tech Tree"
+text = """
+Press **Tech Tree**. It shows every technology area of the game, what each needs and what each
+leads to, so you can plan several steps ahead.
+"""
+highlight = ["research:tech-tree"]
+done = { window = "tech-tree" }
+manual = "research#the-tech-tree-window"
+
+[[step]]
+title = "Close the windows"
+text = """
+Close the Tech Tree and the Research window (**Close** or `Esc`).
+"""
+highlight = ["window:tech-tree", "window:research"]
+done = { all = [{ not = { window = "tech-tree" } }, { not = { window = "research" } }] }
+manual = "research#the-tech-tree-window"
+
+[[step]]
+title = "Your colonies"
+text = """
+Now construction. Every colony with people has a **construction queue**. Open the **Colonies**
+window (`F5`).
+"""
+highlight = ["command:colonies"]
+done = { window = "colonies" }
+manual = "construction#who-can-build"
+
+[[step]]
+title = "Open a queue"
+text = """
+Click your homeworld in the list, then press **Constr. Queue** to open its construction queue.
+(Another way: select the homeworld in the main window and press `Q`.)
+"""
+highlight = ["colonies:list", "colonies:queue"]
+done = { window = "set-queue" }
+manual = "construction#the-set-construction-queue-window"
+
+[[step]]
+title = "Build something"
+text = """
+The list on the left shows what this queue can build. Its tabs choose **Ships**, **Facilities**,
+**Units** and **Upgrades**. Hover over an item to see its cost and build time.
+
+Click an item to add it to the queue. A second **colony ship** is a good choice: more colonies
+mean more of everything.
+"""
+highlight = ["set-queue:available"]
+done = { command = "QueueAdd" }
+manual = "construction#the-set-construction-queue-window"
+
+[[step]]
+title = "How a queue builds"
+text = """
+Each turn, only the **top item** of a queue makes progress. The queue spends up to its build
+rate, and only when your treasury can pay for all three resources at once. It finishes at most
+one item per turn.
+
+So keep every queue busy, and give long jobs to your best yards. Press **Next**.
+"""
+highlight = ["set-queue:queue"]
+manual = "construction#how-a-queue-builds"
+
+[[step]]
+title = "All your queues"
+text = """
+Close this window and open **Construction Queues** with its command button (the wrench) or `F7`.
+It lists every queue of your empire, what each is building and when it will be done. Click a
+queue to open it.
+"""
+highlight = ["command:queues"]
+done = { window = "queues" }
+manual = "construction#the-construction-queues-window"
+
+[[step]]
+title = "Your budget"
+text = """
+Open **Empire Status** with the crown button or `F11`. It shows your income and expenses for each
+resource, and **Net Per Turn**: what your treasury gains or loses each turn. Ships cost upkeep,
+so watch this number as your fleet grows.
+"""
+highlight = ["command:empire-status"]
+done = { window = "empire-status" }
+manual = "economy#the-empire-status-window"
+
+[[step]]
+title = "End the turn"
+text = """
+Close the window and end the turn. At the end of the turn your colonies produce, your queues
+build and your research projects are paid.
+"""
+highlight = ["button:end-turn"]
+done = { turns_passed = 1 }
+manual = "turns#what-happens-at-the-end-of-a-turn"
+
+[[step]]
+title = "New technology"
+text = """
+When a project reaches its cost, your empire gains a level in that area, and the Log (`F10`)
+lists what the new level unlocks. End turns until your first project is done: with a cheap
+project first and **Divide Pts Evenly** off, that is the next turn.
+"""
+highlight = ["command:log", "button:end-turn"]
+done = { techs_researched = 1 }
+manual = "research#the-research-queue"

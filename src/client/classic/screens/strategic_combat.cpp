@@ -1,31 +1,45 @@
-// Strategic Combat and Ground Combat (docs/spec/06 §1.6; the rules are
-// docs/spec/04 §2, §3, §11, §13).
+// Strategic Combat and Ground Combat (docs/spec/06 §1.10.5, §1.10.6; the
+// rules are docs/spec/04 §2, §3, §11, §13).
 //
-// Strategic Combat is watch-only: a battle fought by the strategies, played
-// back on a small map of coloured squares (the combat map's squares, shared
-// with the Tactical Combat overview) beside the forces of each side, counted
-// per vehicle size: how many are left and how many were lost so far. Begin
-// plays it; Close closes it, for the battle's results are already in the
-// game. It shows a battle of the game (GameState::combats: one the player's
-// orders started or answered Strategic in a turn-based game, or one of a
-// simultaneous game's processed turn when the Settings flag `Simultaneous
-// Games Show Strategic Combat` is on), or a simulation that the strategies
-// fight (the session's fight without player sides, from the Combat Simulator).
+// Strategic Combat shows a battle fought by the strategies, one combat turn
+// at a time: a list of each empire's forces per hull on the left (current and
+// lost), a small map of coloured squares on the right, and "Combat Turn N" in
+// the title strip. Begin (or Strategic) starts it; Close stays dim until the
+// battle is over. It plays no sounds. It is opened
+//   - as the question of a turn-based game on this machine (ScreenArgs::index
+//     kStrategicQuestion): the battle that waits for Tactical or Strategic, with
+//     Strategic and Tactical buttons. Strategic fights it here: the battle is
+//     fought by the strategies on the question's copy of the game (a
+//     combat::TacticalBattle without player sides), shown, and its orders
+//     answer the question when the window closes; Tactical opens the Tactical
+//     Combat window instead;
+//   - for the session's fight without player sides (index -1): such a game
+//     battle, or a simulation the strategies fight;
+//   - for a battle of the game (index into GameState::combats): one the
+//     player's orders started, one of a game without tactical combat, or one
+//     of a simultaneous game's turn when the Settings flag `Simultaneous Games
+//     Show Strategic Combat` is on.
+// The engine fights a battle at once, so the window plays the recorded battle
+// back one combat turn at a time (our way of fighting it "live").
 //
 // Ground Combat shows a ground fight recorded in a battle (CombatRecord::
-// grounds): the planet with its facilities, and the defenders and attackers
-// as the fight began; Begin shows how it ended. It opens by itself when the
-// troops land, in the Tactical Combat window and when the playback here
-// reaches the landing.
+// grounds): the planet, its facilities, the defenders and the attackers.
+// Begin fights it round by round and "Victorious!" marks the winner; Close is
+// dim until then. It opens by itself when troops land in the Tactical Combat
+// window, and when a computer side lands troops during a Strategic Combat
+// battle, unless both empires are computer-controlled (the simulator always
+// shows it).
 
 #include "client/classic/replay.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/combat_logic.hpp"
 #include "client/classic/screens/combat_map.hpp"
 #include "client/classic/screens/screens.hpp"
-#include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 
 #include "game/combat.hpp"
+#include "game/economy.hpp"
+#include "game/query.hpp"
 #include "game/tactical.hpp"
 
 #include <algorithm>
@@ -36,6 +50,16 @@ namespace opense4::client::classic {
 namespace {
 
 using PieceKind = game::CombatPiece::Kind;
+
+// Seconds a combat turn or a ground combat round stays on screen (inferred:
+// the original has no coded delay, so it runs as fast as it can draw).
+constexpr float kTurnSeconds = 0.45f;
+
+// The Large dialog's top-left corner, for the positions spec 06 gives in window pixels.
+Vec2 largeOrigin() { return {(kFrameW - 780.0f) * 0.5f, (kFrameH - 475.0f) * 0.5f}; }
+
+// Ground Combat windows open now: a Strategic Combat battle waits while one is.
+int gGroundWindows = 0;
 
 // The battle a window shows: a battle of the game, or the session's fight.
 struct BattleSource {
@@ -69,8 +93,8 @@ std::string systemName(const game::GameState& s, game::Location where) {
     return where.system.valid() && where.system.index() < s.galaxy.systems.size() ? s.galaxy.system(where.system).name : std::string("?");
 }
 
-std::string designName(const game::GameState& s, game::DesignId d) {
-    return d.valid() && d.index() < s.designs.size() ? s.design(d).name : std::string("Unknown design");
+bool computerControlled(const game::GameState& s, game::EmpireId e) {
+    return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != game::PlayerKind::Human;
 }
 
 void flagAndName(UiContext& ui, const game::GameState& s, game::EmpireId e) {
@@ -93,80 +117,153 @@ public:
     bool modal() const override { return true; }
 
     bool draw(UiContext& ui) override {
-        BattleSource src = index_ < 0 ? fightBattle(ui) : gameBattle(ui, index_);
+        BattleSource src;
+        bool question = false;
+        if (index_ == kStrategicQuestion) {
+            TacticalFight* f = ui.session.tactical();
+            if (f && f->kind == TacticalFight::Kind::Game && f->players.empty()) {
+                index_ = -1;   // answered Strategic: the fight is ours to show
+            } else if (!ui.session.battleQuestion()) {
+                return false;
+            } else {
+                if (!preview(ui)) return false;
+                question = true;
+                src.state = &preview_->state();
+                src.record = &preview_->record();
+            }
+        }
+        if (!question) src = index_ < 0 ? fightBattle(ui) : gameBattle(ui, index_);
         if (src.fight && !src.fight->battle->applied()) {
-            // The strategies fight a simulation to its end at once; the window plays it back.
+            // The strategies have fought it to its end already; work out the results.
             src.fight->battle->finish();
             src = fightBattle(ui);
         }
         if (!src.record) return false;
         sync(*src.record);
-        const CombatMapPainter paint(ui, *src.state, *src.record, playback_);
-        const size_t before = playback_.cursor();
-        playback_.advance(ui.dt);
-        paint.sounds(before, playback_.cursor());
-        troopsLanded(ui, *src.record);
+        step(ui, src);
+        forces_.update(ui.rules(), *src.state, *src.record, playback_.pieces());
 
         Dialog d(ui, screenTitle(ScreenId::StrategicCombat), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
+        const game::Location where = src.record->location;
+        d.titleText(270, IM_COL32_WHITE, std::format("System {}", systemName(*src.state, where)));
+        d.titleText(450, IM_COL32_WHITE, std::format("Coordinates ({},{})", where.sector.x, where.sector.y));
+        if (begun_) d.titleText(630, IM_COL32_WHITE, std::format("Combat Turn {}", std::max(1, playback_.round())));
         d.beginContent();
-        header(ui, *src.state, *src.record);
-        const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float side = ui.px(250);
-        drawMap(ui, paint, ImVec2(avail.x - side - ImGui::GetStyle().ItemSpacing.x, avail.y));
-        ImGui::SameLine();
-        forces(ui, paint, *src.state, *src.record, ImVec2(side, avail.y));
+        forcesList(ui, *src.state);
+        drawMap(ui, *src.state, *src.record);
 
         d.beginButtons();
-        const char* play = playback_.playing() ? "Pause" : playback_.atEnd() ? "Watch Again" : playback_.atStart() ? "Begin" : "Continue";
-        if (d.button(play, playback_.eventCount() > 0)) playback_.togglePlay();
-        if (d.button("Skip to End", !playback_.atEnd())) {
-            playback_.pause();
-            playback_.seekEvent(playback_.eventCount());
+        const bool over = begun_ && playback_.atEnd();
+        if (question) {
+            // T and S pick them (spec 06 §3.4).
+            const std::optional<bool> key = tacticalStrategicKey();
+            const bool strategic = d.button("Strategic") || key == false;
+            const bool tactical = d.button("Tactical") || key == true;
+            if (strategic) answerStrategic(ui);
+            else if (tactical) return answerTactical(ui);
+        } else if (d.button("Begin", !begun_)) {
+            begin();
         }
-        d.spacer();
-        for (size_t k = 0; k < src.record->grounds.size(); ++k) {
-            const std::string label = src.record->grounds.size() == 1 ? std::string("Ground Combat") : std::format("Ground Combat {}", k + 1);
-            if (d.button(label.c_str())) openGround(ui, int(k));
-        }
-        const bool closing = d.close();
-        if (closing || !d.keepOpen()) {
-            // A simulation is dropped; a game battle is already over.
-            if (src.fight && src.fight->kind == TacticalFight::Kind::Simulation) ui.session.endTactical();
+        if (d.close(over) || !d.keepOpen()) {
+            // A simulation is dropped; a game battle fought here answers its question.
+            if (src.fight) ui.session.endTactical();
             return false;
         }
         return true;
     }
 
 private:
+    // The battle that waits for its answer, fought by the strategies on the question's copy of the game.
+    bool preview(UiContext& ui) {
+        const game::BattleQuestion& q = *ui.session.battleQuestion();
+        const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
+        if (preview_ && previewKey_ == key) return true;
+        previewKey_ = key;
+        begun_ = false;
+        record_ = nullptr;
+        preview_ = std::make_unique<game::combat::TacticalBattle>(
+            ui.rules(), *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, {}, std::nullopt, std::nullopt, std::nullopt, q.check});
+        if (!preview_->started()) {
+            preview_.reset();
+            ui.session.answerBattle(game::BattleAnswer{});
+            return false;
+        }
+        return true;
+    }
+
+    void answerStrategic(UiContext& ui) {
+        if (!preview_) return;
+        TacticalFight f;
+        f.kind = TacticalFight::Kind::Game;
+        f.battle = std::move(preview_);
+        f.title = screenTitle(ScreenId::StrategicCombat);
+        ui.session.startTactical(std::move(f));
+        index_ = -1;
+        begin();
+    }
+
+    bool answerTactical(UiContext& ui) {
+        const game::BattleQuestion& q = *ui.session.battleQuestion();
+        auto battle = std::make_unique<game::combat::TacticalBattle>(
+            ui.rules(), *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, q.humans, std::nullopt, std::nullopt, std::nullopt, q.check});
+        if (!battle->started()) {
+            ui.session.answerBattle(game::BattleAnswer{});
+            return false;
+        }
+        TacticalFight f;
+        f.kind = TacticalFight::Kind::Game;
+        f.battle = std::move(battle);
+        f.players = q.humans;
+        f.title = screenTitle(ScreenId::TacticalCombat);
+        ui.session.startTactical(std::move(f));
+        ui.open(ScreenId::TacticalCombat);
+        return false;
+    }
+
+    void begin() {
+        begun_ = true;
+        elapsed_ = kTurnSeconds;   // the first combat turn at once
+    }
+
     void sync(const game::CombatRecord& rec) {
         if (&rec == record_ && rec.events.size() == events_) return;
         const size_t cursor = record_ ? playback_.cursor() : 0;
-        const bool playing = record_ && playback_.playing();
         playback_ = CombatPlayback(rec);
-        playback_.setSpeed(settings().replaySpeed);
         playback_.seekEvent(std::min(cursor, playback_.eventCount()));
-        if (playing) playback_.play();
         record_ = &rec;
         events_ = rec.events.size();
         shown_.assign(rec.grounds.size(), 0);
+        forces_.reset();
     }
 
-    void openGround(UiContext& ui, int k) {
-        ScreenArgs a;
-        a.index = index_;
-        a.sub = k;
-        ui.open(ScreenId::GroundCombat, std::move(a));
+    // One combat turn at a time while the battle runs; it waits while a Ground Combat window is open.
+    void step(UiContext& ui, const BattleSource& src) {
+        if (!begun_ || playback_.atEnd() || gGroundWindows > 0) return;
+        elapsed_ += ui.dt;
+        if (elapsed_ < kTurnSeconds) return;
+        elapsed_ = 0.0f;
+        playback_.seekRound(std::max(0, playback_.round()) + 1);
+        troopsLanded(ui, src);
     }
 
-    // "After troops land" (spec 06 §1.6): the Ground Combat window opens as the playback reaches a landing.
-    void troopsLanded(UiContext& ui, const game::CombatRecord& rec) {
-        if (!playback_.playing() || playback_.round() <= 0) return;
+    // A computer side's troops landed in the turn just shown: the Ground Combat
+    // window, unless both empires are computer-controlled (the simulator always
+    // shows it) (spec 06 §1.10.6).
+    void troopsLanded(UiContext& ui, const BattleSource& src) {
+        const game::CombatRecord& rec = *src.record;
+        const int first = firstRound(rec);
+        const bool simulation = src.fight && src.fight->kind == TacticalFight::Kind::Simulation;
         for (size_t k = 0; k < rec.grounds.size() && k < shown_.size(); ++k) {
-            if (shown_[k] || int(rec.grounds[k].round) - firstRound(rec) + 1 > playback_.round()) continue;
+            const game::GroundCombat& g = rec.grounds[k];
+            if (shown_[k] || int(g.round) - first + 1 > playback_.round()) continue;
             shown_[k] = 1;
-            playback_.pause();
-            openGround(ui, int(k));
+            if (!computerControlled(*src.state, g.attacker)) continue;
+            if (!simulation && computerControlled(*src.state, g.defender)) continue;
+            ScreenArgs a;
+            a.index = src.index;
+            a.sub = int(k);
+            ui.open(ScreenId::GroundCombat, std::move(a));
         }
     }
 
@@ -176,160 +273,122 @@ private:
         return rec.events.empty() ? 1 : first;
     }
 
-    void header(UiContext& ui, const game::GameState& s, const game::CombatRecord& rec) {
-        ImGui::TextColored(kLabelBlue, "System");
-        ImGui::SameLine();
-        ImGui::TextUnformatted(systemName(s, rec.location).c_str());
-        ImGui::SameLine(0, ui.px(24));
-        ImGui::TextColored(kLabelBlue, "Sector");
-        ImGui::SameLine();
-        ImGui::Text("%d, %d", rec.location.sector.x, rec.location.sector.y);
-        ImGui::SameLine(0, ui.px(24));
-        ImGui::TextColored(kLabelBlue, "Combat turn");
-        ImGui::SameLine();
-        if (playback_.roundCount() <= 0) ImGui::TextUnformatted("-");
-        else if (playback_.atStart()) ImGui::Text("before the first of %d", playback_.roundCount());
-        else ImGui::Text("%d of %d", std::max(playback_.round(), 1), playback_.roundCount());
-        ImGui::Separator();
+    // "Combat Forces" (15,55), 329x400, 18 px rows; Current and Lost at +220 and +270.
+    void forcesList(UiContext& ui, const game::GameState& s) {
+        const Vec2 o = largeOrigin();
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{15, 38}));
+        ImGui::TextColored(kLabelBlue, "Combat Forces");
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{15 + 220, 38}));
+        ImGui::TextColored(kLabelBlue, "Current");
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{15 + 270, 38}));
+        ImGui::TextColored(kLabelBlue, "Lost");
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{15, 55}));
+        ImGui::BeginChild("##forces", ui.size({329, 400}), ImGuiChildFlags_Borders);
+        // 18 px rows: the text drawn in place, then a dummy item that takes the row.
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float rowH = ui.px(18);
+        auto text = [&](ImVec2 at, ImU32 color, const std::string& t) { dl->AddText(at, color, t.c_str()); };
+        auto row = [&](const std::string& name, int current, int lost) {
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            const float y = p.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
+            text({p.x + ui.px(16), y}, IM_COL32_WHITE, name);
+            text({p.x + ui.px(218), y}, IM_COL32_WHITE, std::to_string(current));
+            text({p.x + ui.px(268), y}, lost > 0 ? IM_COL32(255, 115, 102, 255) : IM_COL32_WHITE, std::to_string(lost));
+            ImGui::Dummy(ImVec2(ui.px(300), rowH));
+        };
+        for (const ForceSide& side : forces_.sides()) {
+            flagAndName(ui, s, side.empire);
+            for (const ForceRow& r : side.rows) row(r.name, r.current, r.lost);
+        }
+        ImGui::EndChild();
     }
 
-    // The small map: the whole combat grid, every piece a square of its owner's colour.
-    void drawMap(UiContext& ui, const CombatMapPainter& paint, ImVec2 size) {
-        const ImVec2 o = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("##strategicmap", size);
-        const bool hoveredBox = ImGui::IsItemHovered();
+    // The map at (354,55), 218x191: the whole combat grid in 3 px squares, framed in #647EC7.
+    void drawMap(UiContext& ui, const game::GameState& s, const game::CombatRecord& rec) {
+        const Vec2 o = largeOrigin();
+        const ImVec2 a = ui.at(o + Vec2{354, 55}), b = ui.at(o + Vec2{354 + 218, 55 + 191});
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 o2{o.x + size.x, o.y + size.y};
-        constexpr float kW = float(game::combat::kCombatMapWidth), kH = float(game::combat::kCombatMapHeight);
+        dl->PushClipRect(a, b, false);
+        dl->AddRectFilled(a, b, IM_COL32_BLACK);
         CombatView v;
-        v.cell = std::max(1.0f, std::min(size.x / kW, size.y / kH));
-        v.cx = kW * 0.5f;
-        v.cy = kH * 0.5f;
-        v.center = {o.x + size.x * 0.5f, o.y + size.y * 0.5f};
-        dl->PushClipRect(o, o2, true);
-        dl->AddRectFilled(o, o2, IM_COL32(0, 0, 0, 255));
-        const ImVec2 m0 = v.at(0, 0), m1 = v.at(kW, kH);
-        dl->AddRectFilled(m0, m1, IM_COL32(6, 10, 24, 255));
-        if (v.cell >= 4.0f) {
-            for (int x = 0; x <= int(kW); ++x) dl->AddLine(v.at(float(x), 0), v.at(float(x), kH), IM_COL32(40, 70, 140, 28));
-            for (int y = 0; y <= int(kH); ++y) dl->AddLine(v.at(0, float(y)), v.at(kW, float(y)), IM_COL32(40, 70, 140, 28));
-        }
-        dl->AddRect(m0, m1, IM_COL32(90, 120, 200, 200));
-        const std::optional<uint32_t> hovered = paint.squares(dl, v, 3.0f, hoveredBox, ImGui::GetIO().MousePos);
-        if (const game::CombatEvent* e = playback_.animating()) paint.event(dl, v, *e, playback_.fraction());
+        v.cell = ui.px(3);
+        v.cx = float(game::combat::kCombatMapWidth) * 0.5f;
+        v.cy = float(game::combat::kCombatMapHeight) * 0.5f;
+        v.center = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f};
+        const CombatMapPainter paint(ui, s, rec, playback_);
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const bool inside = mouse.x >= a.x && mouse.x < b.x && mouse.y >= a.y && mouse.y < b.y;
+        const std::optional<uint32_t> hovered = paint.squares(dl, v, ui.px(3), inside, mouse);
         dl->PopClipRect();
-        dl->AddRect(o, o2, IM_COL32(66, 107, 216, 255));
+        dl->AddRect(a, b, imColor(palette::kFrameLight));
         if (hovered && *hovered < playback_.pieces().size()) {
             const CombatPlayback::Piece& p = playback_.pieces()[*hovered];
             ImGui::BeginTooltip();
             ImGui::TextUnformatted(paint.pieceName(*hovered).c_str());
             labelValue(ui, "Owner", p.neutral ? std::string("None") : paint.empireName(p.owner), 70);
-            if (record_ && record_->pieces[*hovered].kind == PieceKind::UnitGroup)
-                labelValue(ui, "Units", std::format("{} of {} left", p.units, record_->pieces[*hovered].count), 70);
+            if (rec.pieces[*hovered].kind == PieceKind::UnitGroup)
+                labelValue(ui, "Units", std::format("{} of {} left", p.units, rec.pieces[*hovered].count), 70);
             ImGui::EndTooltip();
         }
     }
 
-    // Forces: for each side, per vehicle size, the pieces left now and those lost so far
-    // (unit groups count their units; planets count as one).
-    void forces(UiContext& ui, const CombatMapPainter& paint, const game::GameState& s, const game::CombatRecord& rec, ImVec2 size) {
-        ImGui::BeginChild("##forces", size, ImGuiChildFlags_Borders);
-        heading(ui, "Forces");
-        for (game::EmpireId e : rec.participants) {
-            struct Row {
-                std::string size;
-                int now = 0, lost = 0;
-            };
-            std::vector<Row> rows;
-            auto rowFor = [&](const std::string& name) -> Row& {
-                for (Row& r : rows)
-                    if (r.size == name) return r;
-                rows.push_back({name});
-                return rows.back();
-            };
-            for (size_t i = 0; i < rec.pieces.size() && i < playback_.pieces().size(); ++i) {
-                const game::CombatPiece& rp = rec.pieces[i];
-                const CombatPlayback::Piece& p = playback_.pieces()[i];
-                if (rp.kind == PieceKind::Seeker || rp.kind == PieceKind::Obstacle) continue;
-                if (!p.onMap && !p.destroyed && !p.captured) continue;   // units not launched yet
-                const bool group = rp.kind == PieceKind::UnitGroup;
-                std::string name = "Planets";
-                if (rp.kind != PieceKind::Planet) {
-                    const ruleset::VehicleSize* hull = paint.hullOf(rp);
-                    name = hull ? hull->name : std::string("Unknown");
-                }
-                const int start = group ? std::max(1, int(rp.count)) : 1;
-                const int left = p.destroyed || p.neutral ? 0 : group ? std::clamp(p.units, 0, start) : 1;
-                if (rp.owner == e) rowFor(name).lost += p.owner != e && left > 0 ? start : start - left;
-                if (p.owner == e && left > 0) rowFor(name).now += left;
-            }
-            ImGui::Spacing();
-            flagAndName(ui, s, e);
-            if (rows.empty()) {
-                dimText("  Nothing on the field");
-                continue;
-            }
-            for (const Row& r : rows) {
-                ImGui::TextUnformatted(std::format("  {}", r.size).c_str());
-                ImGui::SameLine(ui.px(150));
-                ImGui::Text("%d", r.now);
-                ImGui::SameLine(ui.px(185));
-                if (r.lost > 0) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "lost %d", r.lost);
-                else dimText("");
-            }
-        }
-        if (playback_.atEnd() && !rec.summary.empty()) {
-            ImGui::Spacing();
-            heading(ui, "Result");
-            ImGui::PushTextWrapPos(0.0f);
-            for (const std::string& line : rec.summary)
-                if (!line.starts_with("Turn ")) ImGui::TextUnformatted(line.c_str());
-            ImGui::PopTextWrapPos();
-        }
-        ImGui::EndChild();
-    }
-
     int index_ = -1;
+    std::unique_ptr<game::combat::TacticalBattle> preview_;   // the question's battle, fought by the strategies
+    size_t previewKey_ = SIZE_MAX;
     const game::CombatRecord* record_ = nullptr;
     size_t events_ = 0;
     CombatPlayback playback_;
-    std::vector<uint8_t> shown_;   // ground combats already opened by the playback
+    CombatForces forces_;
+    bool begun_ = false;
+    float elapsed_ = 0.0f;
+    std::vector<uint8_t> shown_;   // ground combats already opened
 };
 
 // ---- Ground Combat ---------------------------------------------------------------------------------------
 
 class GroundCombatScreen final : public Screen {
 public:
-    GroundCombatScreen(int index, int sub) : index_(index), sub_(std::max(0, sub)) {}
+    GroundCombatScreen(int index, int sub) : index_(index), sub_(std::max(0, sub)) { ++gGroundWindows; }
+    ~GroundCombatScreen() override { --gGroundWindows; }
+    GroundCombatScreen(const GroundCombatScreen&) = delete;
+    GroundCombatScreen& operator=(const GroundCombatScreen&) = delete;
     bool modal() const override { return true; }
 
     bool draw(UiContext& ui) override {
         BattleSource src = find(ui);
+        const game::GroundCombat* g = src.record && size_t(sub_) < src.record->grounds.size() ? &src.record->grounds[size_t(sub_)] : nullptr;
+        if (!g) return false;
+        // Round by round once begun (our record keeps the start and the end of the fight).
+        if (begun_ && round_ < g->rounds) {
+            elapsed_ += ui.dt;
+            if (elapsed_ >= kTurnSeconds) {
+                elapsed_ = 0.0f;
+                ++round_;
+            }
+        }
+        const bool over = begun_ && round_ >= g->rounds;
         Dialog d(ui, screenTitle(ScreenId::GroundCombat), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
+        const game::GameState& s = *src.state;
+        d.titleText(270, IM_COL32_WHITE, std::format("System {}", systemName(s, src.record->location)));
+        d.titleText(450, IM_COL32_WHITE, std::format("Coordinates ({},{})", src.record->location.sector.x, src.record->location.sector.y));
         d.beginContent();
-        const game::GroundCombat* g = src.record && size_t(sub_) < src.record->grounds.size() ? &src.record->grounds[size_t(sub_)] : nullptr;
-        if (!g) {
-            ImGui::Spacing();
-            ImGui::TextWrapped("No ground combat was fought in the battles of the last turn.");
-        } else {
-            draw(ui, *src.state, *src.record, *g);
+        drawPlanet(ui, s, *g);
+        const bool defenderWon = over && !g->captured && survivors(g->attackersLeft) == 0;
+        const bool attackerWon = over && g->captured;
+        sideRow(ui, s, "Defender", 264, g->defender, over ? g->defendersLeft : g->defenders, g->defenders, over ? g->militiaLeft : g->militia, defenderWon);
+        sideRow(ui, s, "Attacker", 378, g->attacker, over ? g->attackersLeft : g->attackers, g->attackers, -1, attackerWon);
+        if (begun_ && !over) {
+            ImGui::SetCursorScreenPos(ui.at(largeOrigin() + Vec2{350, 230}));
+            ImGui::TextColored(kLabelBlue, "%s", std::format("Round {} of {}", std::max(1, round_), g->rounds).c_str());
         }
         d.beginButtons();
-        if (d.button(done_ ? "Fought" : "Begin", g && !done_)) done_ = true;
-        const size_t count = src.record ? src.record->grounds.size() : 0;
-        if (count > 1) {
-            d.spacer();
-            if (d.button("Previous", sub_ > 0)) {
-                --sub_;
-                done_ = false;
-            }
-            if (d.button("Next", size_t(sub_) + 1 < count)) {
-                ++sub_;
-                done_ = false;
-            }
+        if (d.button("Begin", !begun_)) {
+            begun_ = true;
+            elapsed_ = 0.0f;
+            round_ = g->rounds > 0 ? 1 : 0;
         }
-        if (d.close()) return false;
+        if (d.close(over)) return false;
         return d.keepOpen();
     }
 
@@ -344,70 +403,107 @@ private:
         return {};
     }
 
-    void draw(UiContext& ui, const game::GameState& s, const game::CombatRecord& rec, const game::GroundCombat& g) {
-        const game::Rules& r = ui.rules();
-        const bool planetKnown = g.planet.valid() && g.planet.index() < s.galaxy.objects.size();
-        // The planet: picture, name, owner, population, where, and its facilities.
-        ImGui::BeginChild("##planet", ImVec2(ui.px(250), 0), ImGuiChildFlags_Borders);
-        if (planetKnown) image(ui, objectSprite(ui, s.galaxy.object(g.planet)), {96, 96});
-        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTextSize));
-        ImGui::TextUnformatted(planetKnown ? s.galaxy.object(g.planet).name.c_str() : "Planet");
-        ImGui::PopFont();
-        labelValue(ui, "Owner", g.defender.valid() && g.defender.index() < s.empires.size() ? s.empire(g.defender).name : std::string("Nobody"), 80);
-        labelValue(ui, "Population", std::format("{}M", formatNumber(g.population)), 80);
-        labelValue(ui, "Location", sectorName(s, rec.location, ui.session.player()), 80);
-        labelValue(ui, "Landed", std::format("combat turn {}", int(g.round)), 80);
-        heading(ui, std::format("Facilities ({})", g.facilities.size()).c_str());
-        for (uint32_t f : g.facilities)
-            if (f < r.data().facilities.size()) ImGui::BulletText("%s", r.facility(f).name.c_str());
-        if (g.facilities.empty()) dimText("None");
-        ImGui::EndChild();
-        ImGui::SameLine();
-        // The two sides: as the fight began, and after Begin, what is left of them.
-        ImGui::BeginGroup();
-        const float w = ImGui::GetContentRegionAvail().x;
-        const float h = (ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.5f) * 0.5f;
-        side(ui, s, "Defenders", g.defender, g.defenders, g.defendersLeft, g.militia, g.militiaLeft, ImVec2(w, h));
-        side(ui, s, "Attackers", g.attacker, g.attackers, g.attackersLeft, -1, -1, ImVec2(w, h));
-        if (done_) {
-            const std::string attacker = g.attacker.valid() && g.attacker.index() < s.empires.size() ? s.empire(g.attacker).name : "the invaders";
-            int attackersLeft = 0;
-            for (const game::UnitStack& st : g.attackersLeft) attackersLeft += st.count;
-            std::string result = g.captured ? std::format("The planet fell to the {}.", attacker)
-                                 : attackersLeft == 0 ? std::string("The invasion failed.")
-                                                      : std::string("Both sides hold on: the fight goes on next game turn.");
-            ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", std::format("{} round{}. {}", g.rounds, g.rounds == 1 ? "" : "s", result).c_str());
-        } else {
-            dimText("Begin to see how the fight went.");
-        }
-        ImGui::EndGroup();
+    static int survivors(const std::vector<game::UnitStack>& stacks) {
+        int n = 0;
+        for (const game::UnitStack& st : stacks) n += st.count;
+        return n;
     }
 
-    void side(UiContext& ui, const game::GameState& s, const char* title, game::EmpireId who, const std::vector<game::UnitStack>& start,
-              const std::vector<game::UnitStack>& left, int militia, int militiaLeft, ImVec2 size) {
-        ImGui::BeginChild(title, size, ImGuiChildFlags_Borders);
-        heading(ui, title);
+    // Picture (12,40), name (160,40), labels at x 170 from y 60 every 30 px with
+    // their values under them at x 180; Facilities at (350,60) over its grid.
+    void drawPlanet(UiContext& ui, const game::GameState& s, const game::GroundCombat& g) {
+        const game::Rules& r = ui.rules();
+        const Vec2 o = largeOrigin();
+        const bool known = g.planet.valid() && g.planet.index() < s.galaxy.objects.size();
+        const game::SpaceObject* obj = known ? &s.galaxy.object(g.planet) : nullptr;
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{12, 40}));
+        Sprite pic;
+        if (obj && obj->sectorType < r.data().sectorObjectTypes.size()) pic = ui.art.planetPortrait(r.data().sectorObjectTypes[obj->sectorType].picture);
+        if (!pic && obj) pic = objectSprite(ui, *obj);
+        image(ui, pic, {128, 128});
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{160, 40}));
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        ImGui::TextUnformatted(obj ? obj->name.c_str() : "Planet");
+        ImGui::PopFont();
+        const game::Colony* colony = known ? s.colony(g.planet) : nullptr;
+        const std::string population = std::format("{}M{}", formatNumber(g.population), colony && !game::breathable(s, *colony) ? " (Domed)" : "");
+        const std::array<std::pair<const char*, std::string>, 5> lines{{
+            {"Type", obj ? std::format("{} {}", obj->size, obj->surface) : std::string("-")},
+            {"Atmosphere", obj ? obj->atmosphere : std::string("-")},
+            {"Conditions", obj ? std::string(game::economy::conditionsName(game::economy::conditionsBand(obj->conditions))) : std::string("-")},
+            {"Value", obj ? std::format("{}% / {}% / {}%", obj->value[0], obj->value[1], obj->value[2]) : std::string("-")},
+            {"Population", population},
+        }};
+        for (size_t k = 0; k < lines.size(); ++k) {
+            const float y = 60.0f + 30.0f * float(k);
+            ImGui::SetCursorScreenPos(ui.at(o + Vec2{170, y}));
+            ImGui::TextColored(kLabelBlue, "%s", lines[k].first);
+            ImGui::SetCursorScreenPos(ui.at(o + Vec2{180, y + 14}));
+            ImGui::TextUnformatted(lines[k].second.c_str());
+        }
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{350, 60}));
+        ImGui::TextColored(kLabelBlue, "Facilities");
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{350, 75}));
+        ImGui::BeginChild("##facilities", ui.size({218, 146}), ImGuiChildFlags_Borders);
+        int col = 0;
+        for (uint32_t f : g.facilities) {
+            if (f >= r.data().facilities.size()) continue;
+            if (col > 0) ImGui::SameLine(0, ui.px(2));
+            image(ui, ui.art.facility(r.facility(f).picture), {32, 32});
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", r.facility(f).name.c_str());
+            col = (col + 1) % 6;
+        }
+        if (g.facilities.empty()) dimText("None");
+        ImGui::EndChild();
+    }
+
+    // "Defender" / "Attacker" at (40,y) over its units at (40,y+15), 504x72 (ours 66 high, to stay inside
+    // our content panel); "Victorious!" beside the winner.
+    void sideRow(UiContext& ui, const game::GameState& s, const char* label, float y, game::EmpireId who, const std::vector<game::UnitStack>& units,
+                 const std::vector<game::UnitStack>& start, int militia, bool won) {
+        const Vec2 o = largeOrigin();
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{40, y}));
+        ImGui::TextColored(kLabelBlue, "%s", label);
+        ImGui::SameLine(0, ui.px(10));
         flagAndName(ui, s, who);
+        if (won) {
+            ImGui::SameLine(0, ui.px(12));
+            ImGui::TextColored(ImVec4(1, 1, 0, 1), "Victorious!");
+        }
+        ImGui::SetCursorScreenPos(ui.at(o + Vec2{40, y + 15}));
+        ImGui::BeginChild(label, ui.size({504, 66}), ImGuiChildFlags_Borders);
+        const std::string style = who.valid() && who.index() < s.empires.size() ? s.empire(who).race.style : std::string{};
+        int col = 0;
         for (size_t k = 0; k < start.size(); ++k) {
-            const int after = k < left.size() ? left[k].count : start[k].count;
-            ImGui::TextUnformatted(std::format("  {}", designName(s, start[k].design)).c_str());
-            ImGui::SameLine(ui.px(260));
-            if (done_) ImGui::Text("%d of %d", after, start[k].count);
-            else ImGui::Text("%d", start[k].count);
+            const game::UnitStack& st = start[k];
+            const int now = k < units.size() ? units[k].count : st.count;
+            if (col > 0) ImGui::SameLine(0, ui.px(6));
+            ImGui::BeginGroup();
+            Sprite pic;
+            if (st.design.valid() && st.design.index() < s.designs.size()) pic = ui.art.shipMini(style, ui.rules().hull(s.design(st.design).hull));
+            image(ui, pic, {36, 36});
+            ImGui::Text("%d", now);
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered() && st.design.valid() && st.design.index() < s.designs.size())
+                ImGui::SetTooltip("%s", s.design(st.design).name.c_str());
+            col = (col + 1) % 12;
         }
         if (militia >= 0) {
-            ImGui::TextUnformatted("  Militia");
-            ImGui::SameLine(ui.px(260));
-            if (done_) ImGui::Text("%d of %d", militiaLeft, militia);
-            else ImGui::Text("%d", militia);
+            if (col > 0) ImGui::SameLine(0, ui.px(6));
+            ImGui::BeginGroup();
+            dimText("Militia");
+            ImGui::Text("%d", militia);
+            ImGui::EndGroup();
         }
-        if (start.empty() && militia <= 0) dimText("  None");
+        if (start.empty() && militia < 0) dimText("None");
         ImGui::EndChild();
     }
 
     int index_ = -1;
     int sub_ = 0;
-    bool done_ = false;
+    bool begun_ = false;
+    int round_ = 0;
+    float elapsed_ = 0.0f;
 };
 
 } // namespace

@@ -243,7 +243,7 @@ void planFleets(Planner& p) {
     std::vector<FleetId> keep;
     for (FleetId fid : fleets) {
         const Fleet* f = p.st.fleet(fid);
-        const Vehicle* leader = f ? p.st.vehicle(f->leader) : nullptr;
+        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
         if (!f || static_cast<int>(keep.size()) >= wanted || !leader || unfit(p, *leader)) {
             if (f) p.emit(cmd::DisbandFleet{fid});
             continue;
@@ -281,7 +281,7 @@ void planFleets(Planner& p) {
     // Recruits: idle ships outside fleets within 3 jumps.
     for (size_t k = 0; k < keep.size(); ++k) {
         const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = f ? p.st.vehicle(f->leader) : nullptr;
+        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
         if (!leader) continue;
         const bool defenceLed = p.info(leader->design).role == Role::Defense;
         const Location at = leader->location;
@@ -306,7 +306,7 @@ void planFleets(Planner& p) {
     // Orders go to idle fleets only.
     std::vector<size_t> idleFleets;
     for (size_t k = 0; k < keep.size(); ++k)
-        if (const Fleet* f = p.st.fleet(keep[k]); f && f->orders.empty() && !f->members.empty()) idleFleets.push_back(k);
+        if (const Fleet* f = p.st.fleet(keep[k]); f && fleetOrders(p.st, *f).empty() && !f->members.empty()) idleFleets.push_back(k);
         else if (f) p.busyFleets.insert(keep[k]);
     std::vector<uint8_t> done(keep.size(), 0);
     if (p.state == AiState::DefendShortTerm) {
@@ -315,7 +315,7 @@ void planFleets(Planner& p) {
             int bestJ = 0;
             for (size_t k : idleFleets) {
                 if (done[k] || attack[k]) continue;
-                const Vehicle* leader = p.st.vehicle(p.st.fleet(keep[k])->leader);
+                const Vehicle* leader = fleetLeader(p.st, *p.st.fleet(keep[k]));
                 const int j = p.jumpsFrom(leader->location.system)[threat.system.index()];
                 if (!best || j < bestJ) {
                     best = k;
@@ -341,7 +341,7 @@ void planFleets(Planner& p) {
     for (size_t k : idleFleets) {
         if (done[k]) continue;
         const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = p.st.vehicle(f->leader);
+        const Vehicle* leader = fleetLeader(p.st, *f);
         if (defendAt < toDefend.size()) {
             if (auto orders = engage(p, toDefend[defendAt++]->latest); !orders.empty() && p.setFleetOrders(keep[k], std::move(orders))) done[k] = 1;
             if (done[k]) continue;
@@ -1355,19 +1355,20 @@ bool needsRepair(Planner& p, const Vehicle& v) {
 // never chosen; the vehicle itself is a yard when it has a working one, and
 // then stays where it is.
 void planRepair(Planner& p) {
-    // The yards in visiting order: by system, then in object order (the
-    // engine's object slots put planets before vehicles, spec 02 §13 Q52).
+    // The yards in visiting order: by system number, then in the game's
+    // object order, colonies and ships mixed (objectOrderKey, spec 03 §19 Q62).
     struct Yard {
         Location at;
         VehicleId ship;   // invalid: a colony
-        uint32_t order = 0;
+        uint64_t order = 0;
     };
     std::vector<Yard> yards;
     for (const auto& c : p.st.colonies)
-        if (c && c->owner == p.id && colonyHasSpaceYard(p.r, *c)) yards.push_back({locationOf(p.st.galaxy, c->planet), {}, c->planet.value});
+        if (c && c->owner == p.id && colonyHasSpaceYard(p.r, *c))
+            yards.push_back({locationOf(p.st.galaxy, c->planet), {}, objectOrderKey(p.st, c->planet)});
     for (const Vehicle& o : p.st.vehicles)
         if (o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
-            yards.push_back({o.location, o.id, static_cast<uint32_t>(p.st.galaxy.objects.size()) + o.slot});
+            yards.push_back({o.location, o.id, objectOrderKey(o)});
     std::stable_sort(yards.begin(), yards.end(), [](const Yard& a, const Yard& b) {
         return std::tuple{a.at.system.value, a.order} < std::tuple{b.at.system.value, b.order};
     });
@@ -1432,7 +1433,7 @@ void planResupply(Planner& p) {
     // orders its leader would get.
     for (const Fleet& f : p.st.fleets) {
         if (!p.controlsFleet(f, Minister::Resupply) || f.members.empty()) continue;
-        const Vehicle* leader = p.st.vehicle(f.leader);
+        const Vehicle* leader = fleetLeader(p.st, f);
         if (!leader) continue;
         // On unlimited supply when none of its ships lacks it; the totals
         // count only the members without unlimited supply (confirmed: binary).

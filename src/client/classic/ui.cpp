@@ -75,8 +75,10 @@ void labelValue(UiContext& ui, const char* label, const std::string& value, floa
     ImGui::TextUnformatted(value.c_str());
 }
 
-void heading(UiContext& ui, const char* text) {
-    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+void heading(UiContext& ui, const char* text) { heading(ui.painter(), text); }
+
+void heading(const Painter& p, const char* text) {
+    ImGui::PushFont(p.fonts.bold, p.fontPx(kTitleSize));
     ImGui::TextColored(imColorV(palette::kHeading), "%s", text);
     ImGui::PopFont();
 }
@@ -287,8 +289,28 @@ std::unordered_map<ImGuiID, int>& slotCounts() {
 
 } // namespace
 
+void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
+    if (!drawing || windowTagged) return;
+    windowTagged = true;
+    tag(std::string("window:") + std::string(windowId(*drawing)), min, max);
+}
+
 Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn)
-    : ui_(ui), rect_(dialogRect(size)), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
+    : Dialog(ui.painter(), title, dialogRect(size), buttonColumn) {
+    if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
+}
+
+Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
+    : Dialog(ui.painter(), title,
+             Rect{Vec2{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}, Vec2{(kFrameW + size.x) * 0.5f, (kFrameH + size.y) * 0.5f}},
+             buttonColumn) {
+    if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
+}
+
+Dialog::Dialog(const Painter& ui, const char* title, DialogSize size, float buttonColumn) : Dialog(ui, title, dialogRect(size), buttonColumn) {}
+
+Dialog::Dialog(const Painter& ui, const char* title, const Rect& rect, float buttonColumn)
+    : ui_(ui), rect_(rect), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
     ImGui::SetNextWindowPos(ui.at(rect_.min), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ui.size(rect_.size()), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -298,7 +320,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
                                                 ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     if (visible_) {
-        drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
+        drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     }
 }
@@ -371,10 +393,12 @@ bool Dialog::check(const char* label, bool on, bool enabled) { return slot(label
 void Dialog::spacer() {
     ImGui::SetCursorPos(ImVec2(0, ui_.px(float(nextSlot_) * pitch_)));
     ++nextSlot_;
-    emptySlot(ui_.painter(), {buttonColumn_, buttonH_});
+    emptySlot(ui_, {buttonColumn_, buttonH_});
 }
 
-bool Dialog::close() {
+bool Dialog::close() { return close(true, "Close"); }
+
+bool Dialog::close(bool enabled, const char* label) {
     // Unused slots show as empty boxes down to Close; in taller windows the
     // circuit filler takes the space below it.
     const float room = (ImGui::GetWindowHeight() / ui_.k()) - kButtonH - 2;
@@ -384,7 +408,7 @@ bool Dialog::close() {
     const float closeY = std::min(float(nextSlot_) * pitch_, room);
     slotCounts()[ImGui::GetID("##slots")] = nextSlot_ + 1;
     ImGui::SetCursorPos(ImVec2(0, ui_.px(closeY)));
-    const bool clicked = classicButton(ui_, "Close", {buttonColumn_, buttonH_});
+    const bool clicked = classicButton(ui_, label, {buttonColumn_, buttonH_}, 0, false, enabled);
     const float below = closeY + kSlotPitch;
     if (buttonColumn_ >= 150 && room + kButtonH - below > 40)
         if (Sprite filler = ui_.art.image("Pictures/Game/Screens/1024X768/RightFiller.bmp", false)) {
@@ -403,12 +427,80 @@ bool Dialog::close() {
                 }
         }
     ++nextSlot_;
-    const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-    if (clicked || escape) {
+    // Esc or Enter close a window whose bottom button is Close; Esc alone one
+    // whose bottom button is Cancel (spec 06 §3.4); never while it is dim, or
+    // a popup of it or a text field has the keys.
+    const bool isClose = std::strcmp(label, "Close") == 0;
+    const bool key = enabled &&
+                     (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+                      (isClose && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)))) &&
+                     ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput && !ImGui::IsAnyItemActive() &&
+                     !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    if (clicked || key) {
         keep_ = false;
         audio().play("close");
     }
-    return clicked || escape;
+    return clicked || key;
+}
+
+// ---- Keys in dialogs -------------------------------------------------------------------------------
+
+namespace {
+bool pressed(ImGuiKey k) { return ImGui::IsKeyPressed(k, false); }
+bool enterPressed() { return pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter); }
+} // namespace
+
+std::optional<bool> yesNoKey() {
+    if (ImGui::IsWindowAppearing() || ImGui::GetIO().WantTextInput) return std::nullopt;
+    if (pressed(ImGuiKey_Y)) return true;
+    if (pressed(ImGuiKey_N) || pressed(ImGuiKey_Escape) || enterPressed()) return false;
+    return std::nullopt;
+}
+
+bool okKey() { return !ImGui::IsWindowAppearing() && !ImGui::GetIO().WantTextInput && (pressed(ImGuiKey_Escape) || enterPressed()); }
+
+std::optional<bool> tacticalStrategicKey() {
+    if (ImGui::IsWindowAppearing()) return std::nullopt;
+    if (pressed(ImGuiKey_T)) return true;
+    if (pressed(ImGuiKey_S)) return false;
+    return std::nullopt;
+}
+
+void YesNoPrompt::open(std::string question, std::string title) {
+    question_ = std::move(question);
+    title_ = std::move(title);
+    pending_ = true;
+}
+
+bool YesNoPrompt::draw(UiContext& ui) {
+    const std::string id = title_ + "###yesno";
+    if (pending_) {
+        ImGui::OpenPopup(id.c_str());
+        pending_ = false;
+    }
+    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ui.size({400, 0}), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal(id.c_str(), nullptr,
+                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags))
+        return false;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted(question_.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    const std::optional<bool> key = yesNoKey();
+    const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    const bool yes = ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true;
+    ImGui::SameLine();
+    const bool no = ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false;
+    if (yes || no) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return yes;
+}
+
+bool UiContext::setOptions(const game::InterfaceOptions& o) {
+    if (o == options()) return true;
+    return session.issue(game::cmd::SetInterfaceOptions{o}).ok;
 }
 
 void applyClassicStyle() {

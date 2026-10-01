@@ -539,15 +539,17 @@ bool Confirm::draw(UiContext& ui) {
         request_ = false;
     }
     placePopup(ui, {440, 190});
-    if (!ImGui::BeginPopupModal(id.c_str(), nullptr, kPopupFlags)) return false;
+    if (!ImGui::BeginPopupModal(id.c_str(), nullptr, kPopupFlags | kPromptFlags)) return false;
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(text_.c_str());
     ImGui::PopTextWrapPos();
     ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), ImGui::GetWindowHeight() - ui.px(34)));
     const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    const bool yes = ImGui::Button("Yes", ImVec2(w, ui.px(24)));
+    // Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+    const std::optional<bool> key = yesNoKey();
+    const bool yes = ImGui::Button("Yes", ImVec2(w, ui.px(24))) || key == true;
     ImGui::SameLine();
-    const bool no = ImGui::Button("No", ImVec2(w, ui.px(24))) || escapePressed();
+    const bool no = ImGui::Button("No", ImVec2(w, ui.px(24))) || key == false;
     if (yes || no) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
     return yes;

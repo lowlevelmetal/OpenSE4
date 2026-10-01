@@ -81,6 +81,7 @@ public:
         ImGui::BeginChild("##areas", ImVec2(0, ui.px(245)), ImGuiChildFlags_Borders);
         areaList(ui);
         ImGui::EndChild();
+        ui.tagItem("research:areas");
         if (hovered_) {
             ImGui::SetNextWindowSize(ui.size({380, 0}));
             if (ImGui::BeginTooltip()) {
@@ -92,7 +93,10 @@ public:
         ImGui::TextColored(kTextBlue, "%zu Current Projects", e.research.size());
         ImGui::SameLine();
         note(ui, "(click a project to cancel it)");
+        ImGui::BeginGroup();
         projects(ui);
+        ImGui::EndGroup();
+        ui.tagItem("research:queue");
 
         d.beginButtons();
         projectPageButtons(d, page_);
@@ -101,6 +105,7 @@ public:
         if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
         d.spacer();
         if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
+        ui.tagItem("research:tech-tree");
         if (d.button("Reorder Projects", e.research.size() > 1)) {
             std::vector<std::string> rows;
             for (const auto& p : e.research) rows.push_back(std::format("{} {}", ui.rules().tech(p.area).name, e.techLevel(p.area) + 1));
@@ -263,10 +268,25 @@ private:
             ImGui::PopID();
         }
         if (remove) {
-            auto q = e.research;
-            q.erase(q.begin() + std::ptrdiff_t(*remove));
-            set(ui, q, e.researchEvenly, e.repeatResearch);
+            // Asks first while the Empire Options' "confirm deleting a research
+            // project" is on (spec 06 §1.9).
+            removing_ = e.research[*remove].area;
+            if (ui.options().confirmDeleteResearch)
+                confirm_.open(std::format("Cancel the research project {} {}?", r.tech(*removing_).name, e.techLevel(*removing_) + 1));
+            else cancelProject(ui);
         }
+        if (confirm_.draw(ui)) cancelProject(ui);
+    }
+
+    void cancelProject(UiContext& ui) {
+        const game::Empire& e = ui.me();
+        if (!removing_) return;
+        auto q = e.research;
+        const auto it = std::find_if(q.begin(), q.end(), [&](const game::ResearchProject& p) { return p.area == *removing_; });
+        removing_.reset();
+        if (it == q.end()) return;
+        q.erase(it);
+        set(ui, q, e.researchEvenly, e.repeatResearch);
     }
 
     void detail(UiContext& ui) {
@@ -309,6 +329,8 @@ private:
     int page_ = 0;
     std::optional<TechAreaId> hovered_;
     std::optional<TechAreaId> pinned_;
+    std::optional<TechAreaId> removing_;
+    YesNoPrompt confirm_;
     ReorderPopup reorder_;
     StatusLine status_;
 };

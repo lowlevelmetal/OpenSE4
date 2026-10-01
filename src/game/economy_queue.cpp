@@ -271,10 +271,8 @@ struct Holder {
 // Places one unit at a time: in the builder's cargo if it fits, else in another
 // planet or ship of the empire in the same sector (spec 02 §6.5, spec 03 §1). A
 // unit that finds no room is not built, with a "No Storage Available" message
-// of its own. Returns whether the last unit was placed. The original takes the
-// other holders in its object order, planets and ships mixed; we have no such
-// order and take planets (in object order) before ships (inferred, spec 02 §13
-// Q52).
+// of its own. Returns whether the last unit was placed. The other holders come
+// in the game's object order, planets and ships mixed (spec 02 §13 Q52).
 bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design, int count) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
@@ -291,19 +289,18 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
         holders.push_back({builder, colonyCargoCapacity(r, s, *c) - cargoSpaceUsed(r, s, c->cargo)});
     }
     // Then the empire's other planets and ships in the sector, in the game's
-    // object order (spec 02 §6.5, confirmed: binary). In the engine's object
-    // slots every planet comes before every vehicle (Vehicle::slot, spec 03
-    // §19 Q62), so that order is the planets in object order, then the ships
-    // and bases by slot.
-    for (ObjectId o : planetsAt(s, q.location))
-        if (Colony* c = s.colony(o); c && c->owner == e && &c->cargo != builder)
-            holders.push_back({&c->cargo, colonyCargoCapacity(r, s, *c) - cargoSpaceUsed(r, s, c->cargo)});
-    std::vector<Vehicle*> ships;
-    for (Vehicle& v : s.vehicles)
+    // object order, planets and ships mixed: the slots of the one object list
+    // (spec 02 §6.5, §13 Q52, confirmed: binary).
+    for (const ObjectRef& ref : objectOrder(s)) {
+        if (ref.object.valid()) {
+            if (Colony* c = s.colony(ref.object); c && c->owner == e && &c->cargo != builder && locationOf(s.galaxy, ref.object) == q.location)
+                holders.push_back({&c->cargo, colonyCargoCapacity(r, s, *c) - cargoSpaceUsed(r, s, c->cargo)});
+            continue;
+        }
+        Vehicle& v = *s.vehicle(ref.vehicle);
         if (v.owner == e && v.location == q.location && v.count > 0 && &v.cargo != builder && isShipOrBase(vehicleType(r, s, v)))
-            ships.push_back(&v);
-    std::sort(ships.begin(), ships.end(), [](const Vehicle* a, const Vehicle* b) { return a->slot < b->slot; });
-    for (Vehicle* v : ships) holders.push_back({&v->cargo, vehicleCargoCapacity(r, s, *v) - cargoSpaceUsed(r, s, v->cargo)});
+            holders.push_back({&v.cargo, vehicleCargoCapacity(r, s, v) - cargoSpaceUsed(r, s, v.cargo)});
+    }
 
     const std::string where = placeName(s, q);
     const std::string name = s.design(design).name;

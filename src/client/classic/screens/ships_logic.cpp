@@ -31,7 +31,7 @@ const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o)
     }
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
-        return f ? &f->orders : nullptr;
+        return f ? &game::fleetOrders(s, *f) : nullptr;  // its members' copies (spec 03 §8)
     }
     const game::Vehicle* v = s.vehicle(o.vehicle);
     return v ? &v->orders : nullptr;
@@ -41,7 +41,7 @@ bool repeatOf(const game::GameState& s, OrderOwner o) {
     if (o.planet.valid()) return false;
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
-        return f && f->repeatOrders;
+        return f && game::fleetRepeats(s, *f);
     }
     const game::Vehicle* v = s.vehicle(o.vehicle);
     return v && v->repeatOrders;

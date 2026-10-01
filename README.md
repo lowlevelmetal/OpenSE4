@@ -29,7 +29,8 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
   remains:
   - small details the original leaves open, where the engine makes its own choice;
   - interface details still to compare with the original;
-  - scenarios and the tutorial.
+  - the content of the tutorials, training games and manual: the learning system
+    itself is in place ([docs/LEARNING.md](docs/LEARNING.md)).
 
 `opense4` finds your install on its own, or takes its location with `--classic-dir`.
 Without an install it explains where it looked and exits: there is no game to play
@@ -107,8 +108,11 @@ and other freedesktop.org desktops):
   the AppStream metadata.
 
 The intro offers Quick Start, New Game (the full game and empire setup), Load Game and
-Multiplayer. In the game, the classic hotkeys work: F1–F12 open the windows and End
-Turn, and letter keys give orders. See [docs/SETUP.md](docs/SETUP.md) and
+Multiplayer. Tutorial, Scenario and Manual open OpenSE4's own guided lessons, training
+games and manual ([docs/LEARNING.md](docs/LEARNING.md)); during a game the Game Menu's
+Learn button opens them and Shift+F1 shows the manual page for the window in front. In
+the game, the classic hotkeys work: F1–F12 open the windows and End Turn, and letter
+keys give orders. See [docs/SETUP.md](docs/SETUP.md) and
 [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 Headless screenshots, used for testing, work with SDL's offscreen driver:

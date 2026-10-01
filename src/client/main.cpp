@@ -65,6 +65,12 @@ Game:
                                   tactical: a sample tactical battle (your warships against copies);
                                   simulator: the Combat Simulator with that battle set up
 
+Learning to play (see docs/LEARNING.md):
+  --tutorial=SLUG                 Start a tutorial (a guided lesson) at once
+  --training=SLUG                 Start a training game at once
+  --manual[=SLUG[#SECTION]]       Open the manual (at a page)
+  --learn-dir=DIR                 Read tutorials, training games and the manual from DIR only
+
 Play by e-mail (see docs/MULTIPLAYER.md):
   --pbem=GAME.gam                 Open the game file the host sent and play your turn; End Turn
                                   saves your orders file (.plr) to send back
@@ -166,6 +172,17 @@ int main(int argc, char** argv) {
             options.pbemOrdersDir = std::string(value);
         } else if (key == "--pbem-end-turn") {
             options.pbemEndTurn = true;
+        } else if (key == "--tutorial") {
+            options.tutorial = std::string(value);
+            ok = !value.empty();
+        } else if (key == "--training") {
+            options.training = std::string(value);
+            ok = !value.empty();
+        } else if (key == "--manual") {
+            options.manual = std::string(value);
+        } else if (key == "--learn-dir") {
+            options.learnDir = std::string(value);
+            ok = !value.empty();
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);
         } else if (key == "--turn-style") {

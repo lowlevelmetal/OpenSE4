@@ -8,12 +8,15 @@
 #include "client/classic/settings.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "learn/markdown.hpp"
 
 #include "core/log.hpp"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 
 namespace opense4::client {
@@ -63,6 +66,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->fonts_ = loadClassicFonts(*platform.fonts, mode->art_->files());
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
+    mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
     if (!options.pbemFile.empty()) {
         // --pbem: play a play-by-e-mail game file at once.
@@ -110,6 +114,37 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             }
             mode->openScreen(*id, {});
         }
+    } else if (!options.tutorial.empty() || !options.training.empty()) {
+        // --tutorial / --training: the lesson's game at once; "<slug>:<step>"
+        // starts a tutorial at that step (1-based), for checking content.
+        const bool training = options.tutorial.empty();
+        std::string slug = training ? options.training : options.tutorial;
+        size_t step = 0;
+        if (const size_t colon = slug.find(':'); colon != std::string::npos && !training) {
+            step = static_cast<size_t>(std::max(1, std::atoi(slug.c_str() + colon + 1))) - 1;
+            slug.resize(colon);
+        }
+        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug)) {
+            error = *problem;
+            return nullptr;
+        }
+        if (step > 0) mode->lesson_->jumpTo(*mode->ui_, step);
+        if (!options.openWindow.empty()) {
+            const auto id = screenFromName(options.openWindow);
+            if (!id) {
+                error = std::format("Unknown window '{}'", options.openWindow);
+                return nullptr;
+            }
+            mode->openScreen(*id, {});
+        }
+    } else if (options.manual) {
+        // --manual[=slug]: the manual on its own.
+        const learn::Link at = learn::parseLink(*options.manual);
+        if (!options.manual->empty() && (at.kind != learn::Link::Kind::Page || !mode->learn_->library.page(at.target))) {
+            error = std::format("No manual page '{}'", *options.manual);
+            return nullptr;
+        }
+        mode->front_ = makeLearnFrontScreen("manual:" + *options.manual);
     } else if (auto front = frontScreenByName(options.openWindow)) {
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
     } else if (options.skipIntro) {
@@ -140,14 +175,14 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 return nullptr;
             }
             if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions ||
-                *id == ScreenId::StrategicCombat) {
+                *id == ScreenId::TacticalLaunch || *id == ScreenId::CombatPieceReport || *id == ScreenId::StrategicCombat) {
                 // A sample battle to show: the player's warships against copies of them
                 // (fought by the strategies for Strategic Combat).
                 if (!startDemoSimulation(*mode->ui_, *id != ScreenId::StrategicCombat)) {
                     error = "No armed ship design to fight a sample battle with.";
                     return nullptr;
                 }
-                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id);
+                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id, ScreenArgs{.index = 0});
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";
@@ -162,6 +197,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
 
 ClassicMode::~ClassicMode() {
     screens_.clear();
+    lesson_.reset();
     ui_.reset();
     session_.reset();
     art_.reset();
@@ -169,9 +205,14 @@ ClassicMode::~ClassicMode() {
 
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     screens_.clear();
+    lesson_.reset();
     session_ = std::move(session);
     ui_ = std::make_unique<UiContext>(*session_, *art_, fonts_);
     ui_->app = platform_.app;
+    ui_->learn = learn_.get();
+    session_->onIssued = [this](const game::Command& c) {
+        if (lesson_) lesson_->issued(c);
+    };
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] {
         openLogOnTurn_ = true;
@@ -182,6 +223,70 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     handoffPlayer_ = {};
     handoff_ = false;
     front_.reset();
+}
+
+std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug) {
+    const learn::Library& lib = learn_->library;
+    const learn::Lesson* lesson = lib.lesson(kind, slug);
+    const char* what = kind == learn::LessonKind::Tutorial ? "tutorial" : "training game";
+    if (!lesson) {
+        std::string known;
+        for (const learn::Lesson& l : lib.lessons(kind)) known += (known.empty() ? "" : ", ") + l.slug;
+        return std::format("No {} named '{}' ({}).", what, slug, known.empty() ? "none are installed" : "there are: " + known);
+    }
+    // The lesson's game: a quick start for its race, then its options.
+    std::string race;
+    if (!lesson->setup.race.empty()) {
+        const ruleset::RacePreset* preset = game::findPreset(*rules_, lesson->setup.race);
+        if (!preset) return std::format("The {} '{}' plays the race '{}', which this data set does not have.", what, slug, lesson->setup.race);
+        race = preset->folder;
+    } else {
+        for (const auto& p : rules_->racePresets())
+            if (!p.neutral) {
+                race = p.folder;
+                break;
+            }
+    }
+    game::GameSetup setup = quickStartSetup(*rules_, race, lesson->setup.seed.value_or(options_.seed), lesson->setup.computerPlayers);
+    learn::applySetup(lesson->setup, setup.options);
+    auto session = startLocalGame(rules_, setup);
+    if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
+    startGame(std::move(*session));
+    lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
+    openLogOnTurn_ = false;
+    log::info("Started the {} '{}'", what, slug);
+    return std::nullopt;
+}
+
+void ClassicMode::quitToLearn(learn::LessonKind kind) {
+    screens_.clear();
+    lesson_.reset();
+    ui_.reset();
+    session_.reset();
+    front_ = makeLearnFrontScreen(kind == learn::LessonKind::Tutorial ? "tutorials" : "training");
+}
+
+void ClassicMode::contextHelp() {
+    // The page that explains the window in front (the main window when none is open).
+    const std::string_view id = screens_.empty() ? std::string_view("main") : windowId(screens_.back().first);
+    if (id == "manual") return;
+    const learn::ManualPage* page = learn_->library.pageForWindow(id);
+    ScreenArgs args;
+    if (page) args.text = page->slug;
+    openScreen(ScreenId::Manual, std::move(args));
+}
+
+void ClassicMode::updateLesson(UiContext& ui) {
+    const Bindings& keys = appSettings().controls.bindings;
+    if (keys.pressed(Action::ContextHelp)) contextHelp();
+    const bool toggle = ui.requests.toggleLessonPanel;
+    ui.requests.toggleLessonPanel = false;
+    if (!lesson_) return;
+    if (toggle || keys.pressed(Action::LessonText)) lesson_->togglePanel();
+    learn::ClientFacts facts;
+    for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
+    facts.selected = main_.selectionKinds(ui);
+    lesson_->frame(ui, facts);
 }
 
 void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
@@ -204,7 +309,7 @@ void ClassicMode::endTurn() {
 
 void ClassicMode::updateAudio() {
     const ClassicSettings& prefs = settings();
-    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, prefs.musicVolume, prefs.remasteredSounds});
+    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, float(prefs.musicVolume) / 100.0f, !prefs.classicSoundEffects});
     // Intro music in the front end, battle music while a replay is open, background music otherwise.
     bool combat = false;
     for (const auto& [id, screen] : screens_)
@@ -233,7 +338,19 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
+        ctx.learn = learn_.get();
+        ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) { pendingLesson_ = {kind, slug}; };
         if (front_) front_->draw(ctx);
+        if (pendingLesson_ && !session_) {
+            // Started after the screen drew: starting replaces it.
+            const auto [kind, slug] = *pendingLesson_;
+            pendingLesson_.reset();
+            if (auto problem = startLesson(kind, slug)) {
+                frontError_ = *problem;
+                front_ = makeFrontScreen(FrontId::Intro);
+            }
+            return !quit_;
+        }
         if (nextFront_ && !session_) {
             front_ = makeFrontScreen(*nextFront_);
             nextFront_.reset();
@@ -247,6 +364,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.fbScale = fs.fbScale;
     ui.time = fs.time;
     ui.dt = fs.dt;
+    ui.tags.clear();
+    ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
 
     // Hotseat: when the turn passes to another human, hide the map until that
@@ -288,7 +407,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
     // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value());
+    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value() || confirmEndTurn_);
     drawNetwork(ui);
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
@@ -297,39 +416,51 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // Windows, oldest first; the newest draws on top.
     for (size_t i = 0; i < screens_.size();) {
         ImGui::PushID(int(i));
+        ui.drawing = screens_[i].first;   // its Dialog registers window:<id>
+        ui.windowTagged = false;
         const bool keep = screens_[i].second->draw(ui);
+        ui.drawing.reset();
         ImGui::PopID();
         if (keep) ++i;
         else screens_.erase(screens_.begin() + std::ptrdiff_t(i));
     }
     if (battleAsking) drawBattleQuestion(ui);
+    updateLesson(ui);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
     main_.applyRequests(ui);
 
     if (ui.requests.endTurn) {
         ui.requests.endTurn = false;
-        if (settings().confirmEndTurn) confirmEndTurn_ = true;
+        // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
+        if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
         else endTurn();
     }
     if (confirmEndTurn_) {
+        // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
+        // §3.4). The key that asked for the end of the turn does not answer it.
         ImGui::SetNextWindowPos(ui.at({362, 330}));
         ImGui::SetNextWindowSize(ui.size({300, 110}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
         ImGui::TextUnformatted("End the turn now?");
-        if (ImGui::Button("End Turn", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
-            confirmEndTurn_ = false;
-            endTurn();
-        }
+        const std::optional<bool> key = yesNoKey();
+        const bool yes = ImGui::Button("Yes", ui.size({120, 28})) || key == true;
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) confirmEndTurn_ = false;
+        const bool no = ImGui::Button("No", ui.size({120, 28})) || key == false;
         ImGui::End();
         ImGui::PopFont();
+        if (yes) {
+            confirmEndTurn_ = false;
+            endTurn();
+        } else if (no) {
+            confirmEndTurn_ = false;
+        }
     }
     if (openLogOnTurn_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
         openLogOnTurn_ = false;
-        if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
+        if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
     }
     if (ui.requests.loadGame) {
@@ -347,10 +478,44 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (ui.requests.quitToIntro) {
         ui.requests.quitToIntro = false;
         screens_.clear();
+        lesson_.reset();
         ui_.reset();
         session_.reset();
         front_ = makeFrontScreen(FrontId::Intro);
         return true;
+    }
+    // The learning system: a lesson chosen in the Learn window, or what the
+    // player chose in the lesson panel or its result. Each replaces the game.
+    if (ui.requests.startLesson) {
+        const auto [kind, slug] = *ui.requests.startLesson;
+        ui.requests.startLesson.reset();
+        if (auto problem = startLesson(kind, slug)) lessonError_ = *problem;
+        return true;
+    }
+    if (lesson_) {
+        const learn::LessonKind kind = lesson_->lesson().kind;
+        const std::string slug = lesson_->lesson().slug;
+        switch (lesson_->takeRequest()) {
+            case LessonRunner::Request::None: break;
+            case LessonRunner::Request::Leave: quitToLearn(kind); return true;
+            case LessonRunner::Request::Restart:
+                if (auto problem = startLesson(kind, slug)) lessonError_ = *problem;
+                return true;
+            case LessonRunner::Request::Next:
+                if (const learn::Lesson* next = learn_->library.next(kind, slug))
+                    if (auto problem = startLesson(kind, next->slug)) lessonError_ = *problem;
+                return true;
+        }
+    }
+    if (!lessonError_.empty()) {
+        ImGui::SetNextWindowPos(ui.at({312, 320}));
+        ImGui::SetNextWindowSize(ui.size({400, 0}));
+        ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+        ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::TextWrapped("%s", lessonError_.c_str());
+        if (ImGui::Button("OK", ui.size({120, 26}))) lessonError_.clear();
+        ImGui::End();
+        ImGui::PopFont();
     }
     return !ui.requests.quitGame;
 }
@@ -448,14 +613,19 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     ImGui::SetNextWindowPos(ui.at({312, 290}));
     ImGui::SetNextWindowSize(ui.size({400, 150}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+    if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     ImGui::TextWrapped("%s", std::format("Enemy forces are in {}. Should {} enter the sector and attack?", where, who.empty() ? "the ship" : who).c_str());
     ImGui::TextDisabled("Declining stops the move and cancels its orders.");
     ImGui::Spacing();
-    if (ImGui::Button("Attack", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) session_->answer(true);
+    // A Yes/No prompt (spec 06 §1.3): Y means Yes; N, Esc and Enter mean No (§3.4).
+    const std::optional<bool> key = yesNoKey();
+    const bool yes = ImGui::Button("Yes", ui.size({140, 30})) || key == true;
     ImGui::SameLine();
-    if (ImGui::Button("Stay Back", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) session_->answer(false);
+    const bool no = ImGui::Button("No", ui.size({140, 30})) || key == false;
     ImGui::End();
+    if (yes) session_->answer(true);
+    else if (no) session_->answer(false);
     ImGui::PopFont();
 }
 
@@ -493,9 +663,9 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
 
 void ClassicMode::drawBattleQuestion(UiContext& ui) {
     // One question per battle, answered at the machine, for every human empire
-    // in it, hostile or not (spec 04 §3 step 1). When the player whose turn it
-    // is is a computer empire, a notice naming the system and the empires
-    // comes first.
+    // in it, hostile or not (spec 04 §3 step 1, spec 06 §1.10.5). When the
+    // player whose turn it is is a computer empire, a notice naming the system
+    // and the empires comes first.
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
@@ -504,54 +674,43 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
         const game::EmpireId turn = game::activePlayer(s);
         battleNotice_ = !s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() && s.empire(turn).kind != game::PlayerKind::Human;
     }
-    std::string sides;
-    for (size_t i = 0; i < q.participants.size(); ++i)
-        sides += (i == 0 ? "" : i + 1 == q.participants.size() ? " and " : ", ") + s.empire(q.participants[i]).name;
+    if (!battleNotice_) {
+        // The question itself is the Strategic Combat window with Strategic and Tactical.
+        const bool open = std::any_of(screens_.begin(), screens_.end(), [](const auto& sc) { return sc.first == ScreenId::StrategicCombat; });
+        if (!open) {
+            ScreenArgs args;
+            args.index = kStrategicQuestion;
+            openScreen(ScreenId::StrategicCombat, std::move(args));
+        }
+        return;
+    }
+    // The 253x150 notice: the system, and each empire's flag and name; Begin, Esc or Enter go on.
     const std::string system = q.where.system.index() < s.galaxy.systems.size() ? s.galaxy.system(q.where.system).name : std::string("?");
-    const float h = 150.0f;
-    // A modal prompt: nothing else takes input until the battle is answered.
-    constexpr const char* kPopup = "Combat##battlequestion";
+    constexpr const char* kPopup = "Combat##battlenotice";
     if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
-    ImGui::SetNextWindowPos(ui.at({302, 384 - h * 0.5f}));
-    ImGui::SetNextWindowSize(ui.size({420, h}));
+    const Vec2 size{253, 150};
+    ImGui::SetNextWindowPos(ui.at({(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}));
+    ImGui::SetNextWindowSize(ui.size(size));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
         ImGui::PopFont();
         return;
     }
-    if (battleNotice_) {
-        ImGui::TextWrapped("%s", std::format("Combat in the {} system between {}.", system, sides).c_str());
-        ImGui::Spacing();
-        if (ImGui::Button("OK", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) battleNotice_ = false;
-        ImGui::EndPopup();
-        ImGui::PopFont();
-        return;
+    ImGui::TextUnformatted(std::format("Combat in the {} system", system).c_str());
+    for (game::EmpireId e : q.participants) {
+        if (!e.valid() || e.index() >= s.empires.size()) continue;
+        if (Sprite flag = art_->flag(s.empire(e).race.style, false)) {
+            image(ui, flag, {20, 14});
+            ImGui::SameLine(0, ui.px(5));
+        }
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, e)), "%s", s.empire(e).name.c_str());
     }
-    ImGui::TextWrapped("%s", std::format("Battle at {} between {}.", sectorName(s, q.where, session_->player()), sides).c_str());
-    ImGui::TextDisabled("Tactical: the players give the orders. Strategic: the ships follow their strategies.");
-    ImGui::Spacing();
-    auto fight = [&](std::vector<game::EmpireId> tactical) {
+    // A battle notice: Esc and Enter both mean Begin (spec 06 §3.4).
+    ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), ImGui::GetWindowHeight() - ui.px(36)));
+    if (ImGui::Button("Begin", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+        battleNotice_ = false;
         ImGui::CloseCurrentPopup();
-        if (tactical.empty()) {
-            session_->answerBattle(game::BattleAnswer{});
-            return;
-        }
-        auto battle = std::make_unique<game::combat::TacticalBattle>(*rules_, *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, tactical, std::nullopt, std::nullopt, std::nullopt, q.check});
-        if (!battle->started()) {
-            session_->answerBattle(game::BattleAnswer{});
-            return;
-        }
-        TacticalFight f;
-        f.kind = TacticalFight::Kind::Game;
-        f.battle = std::move(battle);
-        f.players = std::move(tactical);
-        f.title = "Tactical Combat";
-        session_->startTactical(std::move(f));
-        openScreen(ScreenId::TacticalCombat, {});
-    };
-    if (ImGui::Button("Tactical", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) fight(q.humans);
-    ImGui::SameLine();
-    if (ImGui::Button("Strategic", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) fight({});
+    }
     ImGui::EndPopup();
     ImGui::PopFont();
 }
@@ -578,7 +737,9 @@ void ClassicMode::drawHandoff(UiContext& ui) {
             begin = true;
         handoffPassword_ = buffer;
     }
-    if (ImGui::Button("Begin Turn", ui.size({140, 30}))) begin = true;
+    // The Next Player notice: Esc or Enter continue (spec 06 §3.4); with a
+    // password, Enter in its field submits it.
+    if (ImGui::Button("Begin Turn", ui.size({140, 30})) || (!needsPassword && okKey())) begin = true;
     ImGui::SameLine();
     if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
     if (begin) {

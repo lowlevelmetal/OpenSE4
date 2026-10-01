@@ -579,11 +579,7 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
     for (auto& c : s.colonies)
         if (c && c->owner == from) transferColony(s, c->planet, to);
     for (Fleet& f : s.fleets)
-        if (f.owner == from) {
-            f.owner = to;
-            f.orders.clear();
-            f.repeatOrders = false;
-        }
+        if (f.owner == from) f.owner = to;  // its members' copies of its orders are cleared below
     for (Vehicle& v : s.vehicles)
         if (v.owner == from) {
             v.owner = to;

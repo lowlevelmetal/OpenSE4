@@ -9,6 +9,7 @@
 #include "client/classic/ui.hpp"
 
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -59,6 +60,18 @@ using SortKey = std::variant<int64_t, std::string>;
 bool sortKeyLess(const SortKey& a, const SortKey& b);
 // Reads the current table's sort column (by user id) and direction.
 void readSortSpecs(int& column, bool& ascending);
+
+// ---- Classic lists (the Planets and Construction Queues windows, spec 06 §1.8) --------------------
+
+struct ListColumn {
+    const char* label;
+    float width;  // frame pixels; 0 takes what is left
+};
+// Left edges of the columns, in ImGui units from the list's left, plus the right edge.
+std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width);
+// The column headers in label blue at the cursor, each a click target, over
+// `width` ImGui units; returns the column clicked, or -1.
+int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, float width);
 
 // ---- Text helpers ------------------------------------------------------------------------------
 

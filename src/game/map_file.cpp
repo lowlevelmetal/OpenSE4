@@ -161,6 +161,7 @@ struct Reader {
                 if (!kind) return std::unexpected(std::format("{}: unknown kind.", owhere));
                 SpaceObject obj;
                 obj.id = ObjectId{g.objects.size()};
+                obj.slot = static_cast<uint32_t>(obj.id.value);  // the map's objects fill the first slots in order
                 obj.kind = *kind;
                 obj.system = SystemId{si};
                 obj.name = (*ot)["name"].value_or(std::string{});

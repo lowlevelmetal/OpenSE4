@@ -82,8 +82,8 @@ void moveTo(const GameState& s, OrderContext& ctx, Location where, std::vector<O
 
 // ---- Explore (spec 03 §8, confirmed: binary) ----------------------------------------------------------
 
-// The warp points other own ships and fleets are bound for (a Warp order
-// anywhere in their lists), and those already in this list.
+// The warp points other own ships are bound for (a Warp order anywhere in
+// their lists, fleet members' copies included), and those already in this list.
 std::vector<ObjectId> boundFor(const GameState& s, const OrderContext& ctx, std::span<const Order> sofar) {
     std::vector<ObjectId> out;
     auto note = [&](std::span<const Order> list) {
@@ -92,11 +92,6 @@ std::vector<ObjectId> boundFor(const GameState& s, const OrderContext& ctx, std:
     };
     for (const Vehicle& v : s.vehicles)
         if (v.count > 0 && v.owner == ctx.owner && !member(ctx, v.id)) note(v.orders);
-    for (const Fleet& f : s.fleets) {
-        if (f.owner != ctx.owner) continue;
-        const bool ours = std::any_of(f.members.begin(), f.members.end(), [&](VehicleId m) { return member(ctx, m); });
-        if (!ours) note(f.orders);
-    }
     note(sofar);
     std::sort(out.begin(), out.end());
     return out;
@@ -192,12 +187,11 @@ OrderContext orderContextOf(const GameState&, const Vehicle& v) {
 OrderContext orderContextOf(const GameState& s, const Fleet& f) {
     OrderContext ctx;
     ctx.owner = f.owner;
-    const Vehicle* lead = movement::detail::fleetLeader(s, f);
-    if (!lead) return ctx;
-    ctx.lead = lead->id;
-    ctx.at = lead->location;
-    for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->location == ctx.at) ctx.members.push_back(id);
+    ctx.members = fleetGroup(s, f);
+    if (ctx.members.empty()) return ctx;
+    const Vehicle* lead = fleetLeader(s, f);
+    ctx.lead = lead && lead->location == f.location ? lead->id : ctx.members.front();
+    ctx.at = f.location;
     ctx.carriesPopulation = carriesPopulation(s, ctx.members);
     return ctx;
 }

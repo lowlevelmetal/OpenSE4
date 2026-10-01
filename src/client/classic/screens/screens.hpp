@@ -30,6 +30,7 @@ std::unique_ptr<Screen> makeFleetTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeCargoTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeLaunchRecover(const ScreenArgs& args);
 std::unique_ptr<Screen> makeScrap(const ScreenArgs& args);
+std::unique_ptr<Screen> makeAbandonPlanet(const ScreenArgs& args);   // scrap.cpp: ScreenArgs::planet
 std::unique_ptr<Screen> makeViewOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeSelectWaypoint(const ScreenArgs& args);
 std::unique_ptr<Screen> makeStellarManipulation(const ScreenArgs& args);
@@ -68,20 +69,27 @@ std::unique_ptr<Screen> makeHelp(const ScreenArgs& args);
 // galaxy_map.cpp
 std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs& args);
 
-// combat_replay.cpp
+// combat_replay.cpp: the Combat Replay window (GameState::combats[index]) and its options.
 std::unique_ptr<Screen> makeCombatReplay(const ScreenArgs& args);
+std::unique_ptr<Screen> makeCombatReplayOptions(const ScreenArgs& args);
 
-// tactical.cpp: the Tactical Combat window and its Orders and Options windows,
-// for the battle in ClassicSession::tactical().
+// tactical.cpp: the Tactical Combat window and its Orders, Launch Units,
+// Combat Options and Combat Piece Report (piece `index`) windows, for the
+// battle in ClassicSession::tactical().
 std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
+std::unique_ptr<Screen> makeTacticalLaunch(const ScreenArgs& args);
+std::unique_ptr<Screen> makeCombatPieceReport(const ScreenArgs& args);
 
-// strategic_combat.cpp: the watch-only Strategic Combat window and the Ground
-// Combat window. Strategic Combat shows GameState::combats[index], or with
-// index -1 the session's simulation fought by the strategies. Ground Combat
-// shows ground combat `sub` of that battle (index -1 and the session's
-// tactical fight: its record; no battle given: the last one with a ground combat).
+// strategic_combat.cpp: the Strategic Combat window and the Ground Combat
+// window. Strategic Combat shows GameState::combats[index]; with index -1 the
+// session's fight without player sides (a simulation, or a game battle
+// answered Strategic); with kStrategicQuestion the session's battle question,
+// with Strategic and Tactical buttons. Ground Combat shows ground combat `sub`
+// of that battle (index -1 and the session's tactical fight: its record; no
+// battle given: the last one with a ground combat).
+inline constexpr int kStrategicQuestion = -2;
 std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args);
 
@@ -92,10 +100,17 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
 // copies of them, the player driving the first side. False when the player has none.
 bool startDemoSimulation(UiContext& ui, bool tactical);
 
-// settings_screen.cpp
+// settings_screen.cpp: the per-computer Options window and OpenSE4's Settings.
+std::unique_ptr<Screen> makeOptions(const ScreenArgs& args);
 std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
 // The Sound page (classic sound and music preferences), shared with the front end.
 void soundSettingsPage(float px);
+
+// learn_screens.cpp: the Learn window (ScreenArgs::text: "tutorials", "training"
+// or "manual", the tab to show) and the manual (ScreenArgs::text: "slug" or
+// "slug#anchor"; empty: the first page). docs/LEARNING.md.
+std::unique_ptr<Screen> makeLearn(const ScreenArgs& args);
+std::unique_ptr<Screen> makeManual(const ScreenArgs& args);
 
 // A stand-in for windows that are not written yet.
 std::unique_ptr<Screen> makePlaceholder(ScreenId id);

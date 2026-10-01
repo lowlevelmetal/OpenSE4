@@ -8,6 +8,7 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <limits>
 #include <map>
@@ -59,59 +60,93 @@ std::string colonizeProblem(const game::Rules&, const game::GameState& s, game::
     return {};
 }
 
-bool colonyShipEnroute(const game::GameState& s, game::EmpireId e, game::ObjectId planet) {
-    auto targets = [&](const std::vector<game::Order>& orders) {
-        return std::any_of(orders.begin(), orders.end(),
-                           [&](const game::Order& o) { return o.kind == game::OrderKind::Colonize && o.object == planet; });
-    };
-    for (const game::Vehicle& v : s.vehicles)
-        if (v.owner == e && targets(v.orders)) return true;
-    for (const game::Fleet& f : s.fleets)
-        if (f.owner == e && targets(f.orders)) return true;
-    return false;
+bool colonizableType(const game::GameState& s, game::EmpireId e, game::ObjectId planet, const ColonizeTech& tech) {
+    const game::SpaceObject& o = s.galaxy.object(planet);
+    if (o.kind != game::ObjectKind::Planet || !tech.allows(o.surface)) return false;
+    const game::Race& race = s.empire(e).race;
+    if (s.options.onlyBreathable && !breathableBy(s, e, o)) return false;
+    if (s.options.onlyHomeType && !keysEqual(o.surface, race.nativeSurface)) return false;
+    return true;
 }
 
-std::optional<game::VehicleId> findColonyShip(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet) {
+// ---- Colony ships ------------------------------------------------------------------------------
+
+namespace {
+
+// Per design: its statistics, worked out once.
+class DesignStatsCache {
+public:
+    DesignStatsCache(const game::Rules& r, const game::GameState& s) : r_(r), s_(s) {}
+    const game::DesignStats& operator()(game::DesignId d) {
+        auto [it, inserted] = stats_.try_emplace(d);
+        if (inserted) it->second = game::computeDesignStats(r_, nullptr, s_.design(d));
+        return it->second;
+    }
+
+private:
+    const game::Rules& r_;
+    const game::GameState& s_;
+    std::map<game::DesignId, game::DesignStats> stats_;
+};
+
+bool colonyShipDesign(const game::DesignStats& st) {
+    return !game::isUnitType(st.vehicleType) && (st.canColonizeRock || st.canColonizeIce || st.canColonizeGas);
+}
+
+} // namespace
+
+std::vector<ColonyShip> colonyShips(const game::Rules& r, const game::GameState& s, game::EmpireId e) {
+    std::vector<ColonyShip> out;
+    DesignStatsCache stats(r, s);
+    for (const game::Vehicle& v : s.vehicles) {
+        if (v.owner != e || v.count <= 0 || !colonyShipDesign(stats(v.design))) continue;
+        ColonyShip c;
+        c.id = v.id;
+        c.name = v.name;
+        // "No orders": a fleet member holds copies of its fleet's orders (spec 03 §19 Q65).
+        c.available = v.orders.empty() && v.status != game::VehicleStatus::Mothballed && v.supply > 0;
+        for (const game::Order& o : v.orders)
+            if (o.kind == game::OrderKind::Colonize && o.object.valid()) c.target = o.object;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
+std::optional<game::VehicleId> chooseColonyShip(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet) {
     const game::SpaceObject& p = s.galaxy.object(planet);
     const game::Location target{p.system, p.sector};
-    std::map<game::DesignId, bool> able;  // per design: can colonize this surface
-    auto canColonize = [&](const game::Vehicle& v) {
-        auto [it, inserted] = able.try_emplace(v.design, false);
-        if (inserted) {
-            const game::DesignStats st = game::computeDesignStats(r, nullptr, s.design(v.design));
-            it->second = !game::isUnitType(st.vehicleType) && st.canColonize(p.surface);
-        }
-        return it->second;
-    };
-    auto straight = [&](game::Location a) -> int64_t {
-        if (a.system == target.system) return game::chebyshev(a.sector, target.sector);
-        const game::GalaxyPos pa = s.galaxy.system(a.system).position, pb = s.galaxy.system(target.system).position;
-        const int64_t dx = pa.x - pb.x, dy = pa.y - pb.y;
-        return 1000 + dx * dx + dy * dy;
-    };
-    std::optional<game::VehicleId> byEta, byDistance;
-    int bestEta = std::numeric_limits<int>::max();
-    int64_t bestDistance = std::numeric_limits<int64_t>::max();
-    for (const game::Vehicle& v : s.vehicles) {
-        if (v.owner != e || v.fleet.valid() || !v.orders.empty() || v.status == game::VehicleStatus::Mothballed || !canColonize(v)) continue;
-        if (const int eta = game::movement::etaTurns(r, s, v, target); eta >= 0 && eta < bestEta) {
-            bestEta = eta;
-            byEta = v.id;
-        }
-        if (const int64_t d = straight(v.location); d < bestDistance) {
-            bestDistance = d;
-            byDistance = v.id;
+    DesignStatsCache stats(r, s);
+    std::optional<game::VehicleId> best;
+    int bestLength = std::numeric_limits<int>::max();
+    for (const ColonyShip& c : colonyShips(r, s, e)) {
+        if (!c.available) continue;
+        const game::Vehicle& v = *s.vehicle(c.id);
+        if (!stats(v.design).canColonize(p.surface)) continue;
+        if (!s.options.simultaneous && v.movement <= 0) continue;  // turn-based: movement left
+        const auto path = game::movement::findPath(r, s, e, v.location, target);
+        if (!path) continue;
+        if (path->length < bestLength) {
+            bestLength = path->length;
+            best = c.id;
         }
     }
-    return byEta ? byEta : byDistance;
+    return best;
 }
 
-game::cmd::SetOrders colonizeOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet) {
+game::cmd::SetOrders sendColonyShipOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet) {
     game::cmd::SetOrders c;
     c.vehicle = ship;
-    game::Order o{game::OrderKind::Colonize, game::locationOf(s.galaxy, planet)};
-    o.object = planet;
-    c.orders.push_back(o);
+    const game::Vehicle* v = s.vehicle(ship);
+    const game::Location where = game::locationOf(s.galaxy, planet);
+    if (v && v->cargo.totalPopulation() == 0) {
+        game::Order load{game::OrderKind::LoadCargo, v->location};
+        load.amount = -1;  // population: as much as fits
+        c.orders.push_back(load);
+    }
+    c.orders.push_back(game::Order{game::OrderKind::MoveTo, where});
+    game::Order colonize{game::OrderKind::Colonize, where};
+    colonize.object = planet;
+    c.orders.push_back(colonize);
     return c;
 }
 
@@ -121,21 +156,19 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
     std::vector<PlanetInfo> out;
     const game::Empire& me = s.empire(e);
     const ColonizeTech tech = colonizeTech(r, me);
-    std::set<game::ObjectId> enroute;
-    auto collect = [&](const std::vector<game::Order>& orders) {
-        for (const game::Order& o : orders)
-            if (o.kind == game::OrderKind::Colonize && o.object.valid()) enroute.insert(o.object);
+    // The targets of our colony ships' last Colonize orders.
+    std::map<game::ObjectId, std::string> enroute;
+    for (const ColonyShip& c : colonyShips(r, s, e))
+        if (c.target.valid()) enroute.try_emplace(c.target, c.name);
+    const auto& sizes = r.data().planetSizes;
+    auto rankOf = [&](const game::SpaceObject& o) {
+        const ruleset::PlanetSize* ps = game::planetSize(r, o);
+        return ps ? int(ps - sizes.data()) : int(sizes.size());
     };
-    for (const game::Vehicle& v : s.vehicles)
-        if (v.owner == e) collect(v.orders);
-    for (const game::Fleet& f : s.fleets)
-        if (f.owner == e) collect(f.orders);
+    auto atLeast = [](game::Treaty t, game::Treaty floor) { return static_cast<uint8_t>(t) >= static_cast<uint8_t>(floor); };
 
     for (const game::StarSystem& sys : s.galaxy.systems) {
         if (!me.hasExplored(sys.id)) continue;
-        bool foreign = false;
-        for (game::ObjectId id : sys.objects)
-            if (const game::Colony* c = s.colony(id); c && c->owner != e) foreign = true;
         const bool avoided = std::find(me.systemsToAvoid.begin(), me.systemsToAvoid.end(), sys.id) != me.systemsToAvoid.end();
         for (game::ObjectId id : sys.objects) {
             const game::SpaceObject& o = s.galaxy.object(id);
@@ -148,16 +181,26 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
                 p.colonized = true;
                 p.owner = c->owner;
                 p.own = c->owner == e;
-                p.enemy = !p.own && game::hostile(s, e, c->owner);
-                p.ally = !p.own && !p.enemy;
+                if (!p.own && c->owner.valid() && c->owner.index() < s.empires.size()) {
+                    // Ally: Non-Aggression or better; every other empire, one not met
+                    // yet included, is an enemy (spec 06 §1.8.1, confirmed: binary).
+                    const game::Relation& rel = me.relation(c->owner);
+                    p.ally = rel.contact && atLeast(rel.treaty, game::Treaty::NonAggression);
+                    p.enemy = !p.ally;
+                }
             }
+            p.colonizable = colonizableType(s, e, id, tech);
             p.problem = colonizeProblem(r, s, e, id, tech);
-            p.colonizable = p.problem.empty();
             p.breathable = !p.asteroids && breathableBy(s, e, o);
-            p.special = !o.abilities.empty();
-            p.enroute = enroute.contains(id);
-            p.foreignSystem = foreign;
+            for (const ruleset::Ability& a : o.abilities)
+                if (const auto k = game::parseAbilityKind(a.type); k == game::AbilityKind::AncientRuins || k == game::AbilityKind::AncientRuinsUnique)
+                    p.special = true;
+            if (auto it = enroute.find(id); it != enroute.end()) {
+                p.enroute = true;
+                p.enrouteShip = it->second;
+            }
             p.avoided = avoided;
+            p.sizeRank = rankOf(o);
             out.push_back(std::move(p));
         }
     }
@@ -166,20 +209,52 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
 
 bool matches(PlanetFilter f, const PlanetInfo& p) {
     switch (f) {
-        case PlanetFilter::All: return true;
+        case PlanetFilter::All: return !p.asteroids;
         case PlanetFilter::Colonizable: return p.colonizable;
         case PlanetFilter::AllColonies: return p.colonized;
-        case PlanetFilter::EnemyColonies: return p.enemy;
-        case PlanetFilter::AllyColonies: return p.ally;
-        // "Empty": no other empire has settled the system (inferred; docs/spec/06 §7).
-        case PlanetFilter::ColonizableEmpty: return p.colonizable && !p.foreignSystem;
-        case PlanetFilter::ColonizableBreathable: return p.colonizable && p.breathable;
+        case PlanetFilter::EnemyColonies: return p.colonized && p.enemy;
+        case PlanetFilter::AllyColonies: return p.colonized && p.ally;
+        case PlanetFilter::ColonizableEmpty: return p.colonizable && !p.colonized;
+        case PlanetFilter::ColonizableBreathable: return p.colonizable && !p.colonized && p.breathable;
         case PlanetFilter::ShipEnroute: return p.enroute;
         case PlanetFilter::Asteroids: return p.asteroids;
         case PlanetFilter::Special: return p.special;
         case PlanetFilter::Count: break;
     }
     return false;
+}
+
+PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, const std::vector<PlanetInfo>& planets,
+                                  const std::vector<ColonyShip>& ships) {
+    PlanetStatistics st;
+    for (const game::StarSystem& sys : s.galaxy.systems) st.systems += s.empire(e).hasExplored(sys.id) ? 1 : 0;
+    for (const PlanetInfo& p : planets) {
+        if (p.asteroids) continue;
+        ++st.planets;
+        if (!p.colonizable) continue;
+        ++st.colonizable;
+        st.enemy += p.colonized && p.enemy;
+        st.ally += p.colonized && p.ally;
+        st.free += !p.colonized;
+        st.freeBreathable += !p.colonized && p.breathable;
+    }
+    st.colonyShips = int(ships.size());
+    for (const ColonyShip& c : ships) st.available += c.available;
+    return st;
+}
+
+void SortHistory::click(int column) {
+    std::erase(columns_, column);
+    columns_.insert(columns_.begin(), column);
+    if (columns_.size() > kKeys) columns_.resize(kKeys);
+}
+
+int compareNames(std::string_view a, std::string_view b) {
+    for (size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
+        const int x = std::tolower(static_cast<unsigned char>(a[i])), y = std::tolower(static_cast<unsigned char>(b[i]));
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return a.size() == b.size() ? 0 : a.size() < b.size() ? -1 : 1;
 }
 
 // ---- Colonies ------------------------------------------------------------------------------------
@@ -267,27 +342,57 @@ std::vector<std::string> planetOrders(const std::vector<game::Command>& orders, 
 
 // ---- Construction queues -------------------------------------------------------------------------
 
+namespace {
+
+// An intact Space Yard part, whatever the vehicle's status.
+bool hasYardPart(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const game::Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), game::AbilityKind::SpaceYard))
+            return true;
+    return false;
+}
+
+} // namespace
+
+bool workingVehicleYard(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    return v.status != game::VehicleStatus::Cloaked && game::vehicleHasSpaceYard(r, s, v);
+}
+
 std::vector<QueueEntry> empireQueues(const game::Rules& r, const game::GameState& s, game::EmpireId e) {
     std::vector<QueueEntry> out;
     for (const auto& c : s.colonies) {
         if (!c || c->owner != e) continue;
         QueueEntry q;
         q.target.planet = c->planet;
+        // Our engine has no colony cloaking, so a colony's yard always works.
         q.kind = game::colonyHasSpaceYard(r, *c) ? QueueKind::PlanetYard : QueueKind::Planet;
         q.where = game::locationOf(s.galaxy, c->planet);
         q.name = s.galaxy.object(c->planet).name;
         out.push_back(std::move(q));
     }
     for (const game::Vehicle& v : s.vehicles) {
-        if (v.owner != e || !game::vehicleHasSpaceYard(r, s, v)) continue;
+        if (v.owner != e || v.count <= 0) continue;
+        const bool working = workingVehicleYard(r, s, v);
+        if (!working && v.queue.items.empty() && !hasYardPart(r, s, v)) continue;
         QueueEntry q;
         q.target.vehicle = v.id;
-        q.kind = game::vehicleType(r, s, v) == ruleset::VehicleType::Ship ? QueueKind::Ship : QueueKind::Base;
+        q.kind = working ? QueueKind::ShipYard : QueueKind::Ship;
         q.where = v.location;
         q.name = v.name;
         out.push_back(std::move(q));
     }
     return out;
+}
+
+bool queueCanBuild(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t, bool units) {
+    if (t.vehicle.valid()) {
+        const game::Vehicle* v = s.vehicle(t.vehicle);
+        return v && v->owner == e && workingVehicleYard(r, s, *v);
+    }
+    const game::Colony* c = s.colony(t.planet);
+    if (!c || c->owner != e || c->totalPopulation() == 0) return false;
+    return units || game::colonyHasSpaceYard(r, *c);
 }
 
 const game::ConstructionQueue* queueOf(const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t) {
@@ -355,6 +460,51 @@ game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game:
     const game::QueueItem& top = q.items.front();
     const game::Resources remaining = game::max(displayCost(r, s, e, t, top) - top.spent, game::Resources{});
     return game::max(game::min(remaining, rate), game::Resources{});
+}
+
+std::string queueYearsText(int turns) {
+    if (turns < 0 || turns >= kNeverTurns) return "Never";
+    return std::format("{}.{} Years", turns / 10, turns % 10);
+}
+
+std::string queueModeNote(const game::ConstructionQueue& q) {
+    if (q.emergency) return std::format("Emergency ({} of 10 turns)", q.emergencyTurns);
+    if (q.slowTurns > 0) return std::format("Slow ({} turns left)", q.slowTurns);
+    return {};
+}
+
+std::vector<game::cmd::QueueAdd> multiAddCommands(const std::vector<game::cmd::QueueTarget>& tagged, const std::vector<game::QueueItem>& items) {
+    std::vector<game::cmd::QueueAdd> out;
+    for (const game::cmd::QueueTarget& t : tagged)
+        for (const game::QueueItem& item : items) {
+            game::QueueItem add = item;
+            add.spent = {};
+            out.push_back(game::cmd::QueueAdd{t, add, -1});
+        }
+    return out;
+}
+
+std::vector<std::string> similarSystemAbilities(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
+                                                uint32_t facility) {
+    std::vector<std::string> out;
+    if (facility >= r.data().facilities.size()) return out;
+    const game::SystemId sys = s.galaxy.object(planet).system;
+    // System-wide: an ability whose identifier names "System" (inferred).
+    auto systemWide = [](game::AbilityKind k) { return game::identifier(k).find("System") != std::string_view::npos; };
+    std::set<game::AbilityKind> wanted;
+    for (const game::ParsedAbility& a : r.facilityAbilities(facility))
+        if (a.kind != game::AbilityKind::Unknown && systemWide(a.kind)) wanted.insert(a.kind);
+    if (wanted.empty()) return out;
+    std::set<game::AbilityKind> found;
+    for (game::ObjectId id : s.galaxy.system(sys).objects) {
+        const game::Colony* c = s.colony(id);
+        if (!c || c->owner != e) continue;
+        for (uint32_t f : c->facilities)
+            for (const game::ParsedAbility& a : r.facilityAbilities(f))
+                if (wanted.contains(a.kind)) found.insert(a.kind);
+    }
+    for (game::AbilityKind k : found) out.emplace_back(game::identifier(k));
+    return out;
 }
 
 std::vector<game::QueueItem> possibleUpgrades(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::Colony& c) {

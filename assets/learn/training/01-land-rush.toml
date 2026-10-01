@@ -1,0 +1,98 @@
+# OpenSE4's own training game (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Land rush"
+summary = "Explore your corner of the quadrant and found five colonies before your neighbour takes the best planets."
+minutes = 45
+
+[setup]
+seed = 31
+systems = 24
+computer_players = 1
+events = "none"
+
+[[objective]]
+text = "Explore 6 star systems (your home system counts)"
+when = { systems_explored = 6 }
+by_turn = 30
+
+[[objective]]
+text = "Hold 5 colonies (your homeworld counts)"
+when = { colonies = 5 }
+by_turn = 50
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "The land rush"
+text = """
+A single rival shares this quadrant with you, and it is hungry for planets. Whoever settles the
+good worlds first will lead for the rest of the game.
+
+Your orders:
+
+- explore **6 star systems** by **2403.0**;
+- hold **5 colonies** by **2405.0**.
+
+The objectives on this panel light up as you meet them. `Ctrl+H` or the **T** button brings the
+panel back when you hide it.
+"""
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "How to do it"
+text = """
+- Send both scouts out with **Explore** (`E`), and give them the order again each time they
+  arrive.
+- Use your colony ship at once: the [Planets](window:planets) window (`F4`) shows the planets
+  you can settle, and **Send Colony Ship** sends it.
+- Keep your homeworld's construction queue building **colony ships**.
+- Prefer planets your people can breathe on: a domed colony grows far less.
+
+The manual's chapter on [planets and colonies](planets-and-colonies#colonizing) has the details.
+"""
+
+[[page]]
+turn = 20
+series = "reports"
+title = "Two years in"
+text = """
+Two years have passed. Check your progress against the objectives, and look at the
+[Colonies](window:colonies) window: a colony in a new system delivers nothing to your empire
+until that system has a **spaceport**.
+"""
+
+[[hint]]
+title = "Your colony ship"
+when = { all = [{ turn = 2 }, { not = { colonies = 2 } }, { not = { order = "colonize" } }] }
+text = """
+Your colony ship is still waiting at home. Open the Planets window (`F4`), pick a colonizable
+planet with a green star, and press **Send Colony Ship**.
+"""
+
+[[hint]]
+title = "An idle yard"
+when = { all = [{ turn = 4 }, { not = { construction_queued = 1 } }] }
+text = """
+Nothing is being built. Select your homeworld, press `Q`, and add a **Colonizer** on the Ships
+tab. Turn on **Repeat Build** to keep them coming.
+"""
+
+[[hint]]
+title = "A second colony"
+when = { colonies = 2 }
+text = """
+Your second colony is founded. New colonies start small; they grow every turn. If one sits in a
+system without your spaceport, queue a spaceport there so its output reaches you.
+"""
+
+[[hint]]
+title = "Running short of planets?"
+when = { all = [{ turn = 25 }, { not = { colonies = 3 } }] }
+text = """
+Behind schedule. Planets in nearby systems count too: explore further, check the
+**Colonizable** filter of the Planets window often, and settle domed planets if you must.
+"""
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Your last colony was lost."

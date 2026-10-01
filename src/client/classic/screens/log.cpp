@@ -1,13 +1,19 @@
-// Log (F10): this turn's news, messages from other empires and rejected
+// Log (F10): this turn's news, messages from other empires and refused
 // orders, with category filters, a details pane with the event picture, a
-// mini-map, Goto, Send Reply and Combat Replay (docs/spec/06 §4.1-§4.3).
+// mini-map, Send Reply, Combat Replay, Constr. Queues and Goto (docs/spec/06
+// §4.1-§4.3, confirmed: binary).
+//
+// The filter, the selected position and the scroll position belong to the
+// empire (game::InterfaceOptions, saved with the game) and come back on every
+// opening.
 
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/widgets.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
-#include <map>
 
 namespace opense4::client::classic {
 
@@ -15,36 +21,24 @@ namespace {
 
 using game::LogCategory;
 
-constexpr int kCategories = int(LogCategory::Misc) + 1;
+constexpr float kRowH = 16.0f;
+constexpr Vec2 kListPos{17, 57}, kListSize{272, 207};
+constexpr Vec2 kMapPos{17, 272}, kMapSize{272, 190};
+constexpr Vec2 kDetailsPos{296, 57}, kDetailsSize{278, 405};
 
-ImVec4 categoryColor(LogCategory c) {
-    switch (c) {
-        case LogCategory::Construction: return ImVec4(1.0f, 0.66f, 0.30f, 1);
-        case LogCategory::Research: return ImVec4(0.70f, 0.55f, 1.0f, 1);
-        case LogCategory::Intelligence: return ImVec4(0.75f, 0.78f, 0.85f, 1);
-        case LogCategory::Events: return ImVec4(1.0f, 0.88f, 0.35f, 1);
-        case LogCategory::Politics: return ImVec4(0.45f, 0.90f, 0.50f, 1);
-        case LogCategory::Combat: return ImVec4(1.0f, 0.42f, 0.38f, 1);
-        case LogCategory::Misc: return ImVec4(0.50f, 0.68f, 1.0f, 1);
-    }
-    return ImVec4(1, 1, 1, 1);
-}
-
-const char* filterLabel(int f) {
-    if (f < 0) return "All";
-    if (f == int(LogCategory::Misc)) return "Misc";
-    static std::array<std::string, kCategories> names = [] {
-        std::array<std::string, kCategories> a;
-        for (int i = 0; i < kCategories; ++i) a[size_t(i)] = std::string(game::displayName(static_cast<LogCategory>(i)));
+const char* filterLabel(int category) {
+    static const std::array<std::string, kLogCategories> names = [] {
+        std::array<std::string, kLogCategories> a;
+        for (int i = 0; i < kLogCategories; ++i) a[size_t(i)] = std::string(game::displayName(static_cast<LogCategory>(i)));
+        a[size_t(LogCategory::Misc)] = "Misc";
         return a;
     }();
-    return names[size_t(f)].c_str();
+    return names[size_t(category)].c_str();
 }
 
 struct Row {
     enum class Kind : uint8_t { Entry, Message, Notice };
     Kind kind = Kind::Entry;
-    size_t key = 0;  // log index, message id or notice index
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
     std::string title;
@@ -53,177 +47,206 @@ struct Row {
     const std::string* notice = nullptr;
 };
 
-// The window remembers its selection and filter while the turn lasts.
-struct Memory {
-    uint32_t turn = UINT32_MAX;
-    Row::Kind kind = Row::Kind::Entry;
-    size_t key = 0;
-    int filter = -1;
-    bool earlier = false;
-};
-Memory gMemory;
-
 class LogScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
         const game::GameState& s = ui.state();
-        if (!restored_) {
-            restored_ = true;
-            if (gMemory.turn == s.turn) {
-                filter_ = gMemory.filter;
-                earlier_ = gMemory.earlier;
-                selectedKind_ = gMemory.kind;
-                selectedKey_ = gMemory.key;
-                haveSelection_ = true;
-            }
-        }
         const std::vector<Row> all = rows(ui);
-        std::array<int, kCategories> counts{};
+        std::vector<int> counts(kLogCategories, 0);
         for (const Row& r : all) ++counts[size_t(r.category)];
+        if (!opened_) {
+            // The stored filter, else All when its category is empty now; the
+            // stored row, else the first (spec 06 §4.1).
+            opened_ = true;
+            const game::InterfaceOptions& o = ui.options();
+            filter_ = logOpeningFilter(o.logFilter, counts);
+            selected_ = o.logPosition;
+            scrollRows_ = o.logScroll;
+            restoreScroll_ = true;
+        }
         std::vector<const Row*> shown;
         for (const Row& r : all)
-            if (filter_ < 0 || int(r.category) == filter_) shown.push_back(&r);
-        const Row* sel = nullptr;
-        for (const Row* r : shown)
-            if (haveSelection_ && r->kind == selectedKind_ && r->key == selectedKey_) sel = r;
-        if (!sel && !shown.empty()) sel = shown.front();
+            if (filter_ == 0 || int(r.category) == filter_ - 1) shown.push_back(&r);
+        selected_ = logOpeningRow(selected_, shown.size());
+        const Row* sel = selected_ >= 0 ? shown[size_t(selected_)] : nullptr;
 
         Dialog d(ui, "Log", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        const float leftW = ui.px(330);
-        ImGui::BeginChild("##left", ImVec2(leftW, 0));
-        heading(ui, "Log Messages");
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - ui.px(118)));
-        ImGui::Checkbox("Earlier turns", &earlier_);
-        const float mapH = ui.px(230);
-        ImGui::BeginChild("##list", ImVec2(0, ImGui::GetContentRegionAvail().y - mapH - ImGui::GetStyle().ItemSpacing.y),
-                          ImGuiChildFlags_Borders);
-        if (shown.empty()) ImGui::TextColored(kTextDim, "%s", all.empty() ? "Nothing to report this turn." : "No entries in this category.");
-        for (size_t i = 0; i < shown.size(); ++i) {
-            const Row& r = *shown[i];
-            ImGui::PushID(int(i));
-            const ImVec2 p = ImGui::GetCursorScreenPos();
-            const float lh = ImGui::GetTextLineHeight();
-            ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + ui.px(5), p.y + lh * 0.5f), ui.px(3.5f),
-                                                        ImGui::ColorConvertFloat4ToU32(categoryColor(r.category)));
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ui.px(14));
-            const std::string label = r.turn + 1 < s.turn ? std::format("{}  {}", formatDate(r.turn), r.title) : r.title;
-            if (ImGui::Selectable(label.c_str(), &r == sel)) select(r);
-            if (&r == sel && scrollToSelection_) {
-                ImGui::SetScrollHereY();
-                scrollToSelection_ = false;
-            }
-            ImGui::PopID();
-        }
-        ImGui::EndChild();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddText(d.at({17, 40}), imColor(palette::kLabel), "Log Messages");
+        dl->AddText(d.at({296, 40}), imColor(palette::kLabel), "Log Details");
+        dl->AddText(d.at({450, 40}), imColor(palette::kLabel), "Game Date:");
+        const std::string date = formatDate(s.turn);
+        dl->AddText(d.at({530, 40}), IM_COL32_WHITE, date.c_str());
+
+        list(ui, d, shown);
+        ui.tagItem("log:messages");
         MiniMapStyle style;
         const std::optional<game::Location> where = location(sel);
         if (where) style.highlight.push_back(where->system);
-        miniMap(ui, "##logMap", {330, 230}, style);
-        ImGui::EndChild();
-        ImGui::SameLine();
-        ImGui::BeginChild("##details", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        ImGui::SetCursorScreenPos(d.at(kMapPos));
+        miniMap(ui, "##logMap", kMapSize, style);
+        ImGui::SetCursorScreenPos(d.at(kDetailsPos));
+        ImGui::BeginChild("##details", ui.size(kDetailsSize), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         details(ui, sel);
         ImGui::EndChild();
+        cannotReplyPopup(ui);
 
+        // Button column (spec 06 §4.1): All, the seven filters, an empty slot,
+        // Send Reply, Combat Replay, Constr. Queues, Goto, Close.
         d.beginButtons();
-        if (d.tab("All", filter_ < 0)) setFilter(-1);
-        for (int c = 0; c < kCategories; ++c)
-            if (d.tab(filterLabel(c), filter_ == c, counts[size_t(c)] > 0)) setFilter(c);
+        if (d.tab("All", filter_ == 0)) setFilter(ui, 0);
+        for (int c = 0; c < kLogCategories; ++c)
+            if (d.tab(filterLabel(c), filter_ == c + 1, counts[size_t(c)] > 0)) setFilter(ui, uint8_t(c + 1));
         d.spacer();
         const game::DiplomaticMessage* msg = sel ? sel->message : nullptr;
         if (d.button("Send Reply", msg != nullptr)) {
-            ScreenArgs a;
-            a.empire = msg->from;
-            a.index = static_cast<int>(msg->id.value);
-            ui.open(ScreenId::Communicate, a);
+            // One message per empire per turn: a second one is refused (spec 05 §3).
+            if (msg->from.index() < ui.me().relations.size() && ui.me().relation(msg->from).messageSentThisTurn) {
+                ImGui::OpenPopup("Cannot Reply");
+            } else {
+                ScreenArgs a;
+                a.empire = msg->from;
+                a.index = static_cast<int>(msg->id.value);
+                ui.open(ScreenId::Communicate, a);
+            }
         }
         const int combat = combatIndex(ui, sel);
-        if (d.button("Combat Replay", combat >= 0)) {
+        // Only with Settings.txt `Create Combat Replay` on (spec 06 §4.1).
+        if (d.button("Combat Replay", combat >= 0 && ui.rules().settingFlag("Create Combat Replay", true))) {
             ScreenArgs a;
             a.index = combat;
             if (where) a.location = where;
             ui.open(ScreenId::CombatReplay, a);
         }
         if (d.button("Constr. Queues")) ui.open(ScreenId::Queues);
+        const std::optional<LogWindow> window = sel && !where ? logWindowTarget(sel->category) : std::nullopt;
         bool close = false;
-        if (d.button("Goto", where.has_value())) {
-            ui.requests.focus = *where;
-            close = true;
+        if (d.button("Goto", where.has_value() || window.has_value())) {
+            remember(ui);
+            if (where) {
+                // A location closes the Log and shows the sector in the main window.
+                ui.requests.focus = *where;
+                close = true;
+            } else {
+                ui.open(windowScreen(*window));   // over the Log, which stays open
+            }
         }
-        d.close();
-        remember(ui, sel);
+        if (d.close()) remember(ui);
         if (close) d.requestClose();
         return d.keepOpen();
     }
 
 private:
-    std::vector<Row> rows(const UiContext& ui) {
+    // This turn's entries in the order they were made (spec 06 §4.1): the
+    // messages other empires sent (politics comes first in a turn), the log,
+    // then the orders the turn refused.
+    std::vector<Row> rows(const UiContext& ui) const {
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         std::vector<Row> out;
-        auto recent = [&](uint32_t turn) { return earlier_ || turn + 1 >= s.turn; };
-        for (size_t i = 0; i < me.log.size(); ++i) {
-            const game::LogEntry& l = me.log[i];
-            if (!recent(l.turn)) continue;
-            Row r;
-            r.kind = Row::Kind::Entry;
-            r.key = i;
-            r.turn = l.turn;
-            r.category = l.category;
-            r.title = l.title.empty() ? std::string(game::displayName(l.category)) : l.title;
-            r.entry = &l;
-            out.push_back(std::move(r));
-        }
+        auto thisTurn = [&](uint32_t turn) { return turn + 1 >= s.turn; };
         for (const game::DiplomaticMessage& m : s.messages) {
-            if (m.to != me.id || !m.delivered || m.from.index() >= s.empires.size()) continue;
-            if (!recent(m.sentTurn) && m.answered) continue;
+            if (m.to != me.id || !m.delivered || m.from.index() >= s.empires.size() || !thisTurn(m.sentTurn)) continue;
             Row r;
             r.kind = Row::Kind::Message;
-            r.key = m.id.value;
             r.turn = m.sentTurn;
             r.category = LogCategory::Politics;
             r.title = std::format("{}: {}", s.empire(m.from).name, game::displayName(m.type));
             r.message = &m;
             out.push_back(std::move(r));
         }
+        for (const game::LogEntry& l : me.log) {
+            if (!thisTurn(l.turn)) continue;
+            Row r;
+            r.turn = l.turn;
+            r.category = l.category;
+            r.title = l.title.empty() ? std::string(game::displayName(l.category)) : l.title;
+            r.entry = &l;
+            out.push_back(std::move(r));
+        }
         const auto& notices = ui.session.notices();
-        for (size_t i = 0; i < notices.size(); ++i) {
+        for (const std::string& n : notices) {
             Row r;
             r.kind = Row::Kind::Notice;
-            r.key = i;
             r.turn = s.turn == 0 ? 0 : s.turn - 1;
             r.category = LogCategory::Misc;
             r.title = "Order not carried out";
-            r.notice = &notices[i];
+            r.notice = &n;
             out.push_back(std::move(r));
         }
-        // Newest first, then in the order they happened.
-        std::stable_sort(out.begin(), out.end(), [](const Row& a, const Row& b) { return a.turn > b.turn; });
         return out;
     }
 
-    void select(const Row& r) {
-        selectedKind_ = r.kind;
-        selectedKey_ = r.key;
-        haveSelection_ = true;
-    }
-
-    void setFilter(int f) {
-        filter_ = f;
-        scrollToSelection_ = true;
-    }
-
-    void remember(const UiContext& ui, const Row* sel) {
-        gMemory.turn = ui.state().turn;
-        gMemory.filter = filter_;
-        gMemory.earlier = earlier_;
-        if (sel) {
-            gMemory.kind = sel->kind;
-            gMemory.key = sel->key;
+    // The message list: 16 px rows, each with a lamp (green for the selected
+    // row, blue for the others) and the title 17 px in; the row under the
+    // pointer has the row grid texture behind it.
+    void list(UiContext& ui, Dialog& d, const std::vector<const Row*>& shown) {
+        ImGui::SetCursorScreenPos(d.at(kListPos));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImGui::BeginChild("##list", ui.size(kListSize), ImGuiChildFlags_Borders);
+        if (restoreScroll_) {
+            ImGui::SetScrollY(ui.px(kRowH) * float(std::max(0, scrollRows_)));
+            restoreScroll_ = false;
         }
+        const Sprite green = ui.art.region("Pictures/Game/General.bmp", 190, 0, 13, 13);
+        const Sprite blue = ui.art.region("Pictures/Game/General.bmp", 177, 0, 13, 13);
+        const Sprite grid = ui.art.region("Pictures/Game/Dialogs/Rowgrid.bmp", 0, 0, int(kListSize.x), int(kRowH), false);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float width = ImGui::GetContentRegionAvail().x;
+        for (size_t i = 0; i < shown.size(); ++i) {
+            ImGui::PushID(int(i));
+            const ImVec2 a = ImGui::GetCursorScreenPos();
+            if (ImGui::InvisibleButton("##row", ImVec2(width, ui.px(kRowH)))) selected_ = int(i);
+            const ImVec2 b{a.x + width, a.y + ui.px(kRowH)};
+            if (ImGui::IsItemHovered() && grid) drawSprite(dl, grid, a, b);
+            const Sprite& lampSprite = int(i) == selected_ ? green : blue;
+            const ImVec2 l{a.x + ui.px(2), a.y + ui.px(1.5f)};
+            if (lampSprite) drawSprite(dl, lampSprite, l, {l.x + ui.px(13), l.y + ui.px(13)});
+            dl->PushClipRect({a.x + ui.px(17), a.y}, b, true);
+            dl->AddText({a.x + ui.px(17), a.y + (ui.px(kRowH) - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE, shown[i]->title.c_str());
+            dl->PopClipRect();
+            ImGui::PopID();
+        }
+        if (shown.empty()) dimText("Nothing to report this turn.");
+        scrollRows_ = int(std::lround(ImGui::GetScrollY() / ui.px(kRowH)));
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+    }
+
+    void setFilter(UiContext& ui, uint8_t f) {
+        if (f == filter_) return;
+        filter_ = f;
+        selected_ = 0;
+        restoreScroll_ = true;
+        scrollRows_ = 0;
+        // Every filter click is stored with the empire (spec 06 §4.1).
+        game::InterfaceOptions o = ui.options();
+        o.logFilter = f;
+        ui.setOptions(o);
+    }
+
+    // On Close and Goto the position and the scroll position are stored with the empire.
+    void remember(UiContext& ui) const {
+        game::InterfaceOptions o = ui.options();
+        o.logFilter = filter_;
+        o.logPosition = std::max(0, selected_);
+        o.logScroll = std::max(0, scrollRows_);
+        ui.setOptions(o);
+    }
+
+    static ScreenId windowScreen(LogWindow w) {
+        switch (w) {
+            case LogWindow::ConstructionQueues: return ScreenId::Queues;
+            case LogWindow::Research: return ScreenId::Research;
+            case LogWindow::Intelligence: return ScreenId::Intelligence;
+            case LogWindow::EmpireOptions: return ScreenId::EmpireOptions;
+            case LogWindow::Designs: return ScreenId::Designs;
+            case LogWindow::Empires: return ScreenId::Empires;
+        }
+        return ScreenId::Queues;
     }
 
     static std::optional<game::Location> location(const Row* r) {
@@ -234,7 +257,7 @@ private:
     }
 
     // The battle a combat entry reports (battles of the last processed turn).
-    int combatIndex(const UiContext& ui, const Row* r) const {
+    static int combatIndex(const UiContext& ui, const Row* r) {
         if (!r || !r->entry || r->entry->category != LogCategory::Combat || !r->entry->location) return -1;
         const auto& combats = ui.state().combats;
         for (size_t i = 0; i < combats.size(); ++i)
@@ -242,48 +265,37 @@ private:
         return -1;
     }
 
+    void cannotReplyPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({340, 0}));
+        if (!ImGui::BeginPopupModal("Cannot Reply", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
+        ImGui::TextWrapped("A message has already gone to this empire this turn. Only one message per empire can be sent each turn.");
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     void details(UiContext& ui, const Row* r) {
         const game::GameState& s = ui.state();
-        heading(ui, "Log Details");
-        ImGui::SameLine();
-        ImGui::TextColored(kTextDim, "Game Date %s", formatDate(s.turn).c_str());
-        ImGui::Separator();
-        if (!r) {
-            ImGui::TextColored(kTextDim, "Select an entry.");
-            return;
-        }
+        if (!r) return;
         Sprite picture;
         if (r->entry) picture = ui.art.eventPicture(r->entry->picture);
         else if (r->message) picture = ui.art.racePortrait(s.empire(r->message->from).race.style);
         else if (r->notice) picture = ui.art.eventPicture("OrdersNotCompleted");
+        const int combat = combatIndex(ui, r);
         framedImage(ui, picture, {128, 128});
-        ImGui::SameLine(0, ui.px(12));
-        ImGui::BeginGroup();
+        ImGui::Spacing();
+        if (combat >= 0) {
+            combatDetails(ui, *r, s.combats[size_t(combat)]);
+            return;
+        }
         ImGui::PushTextWrapPos(0.0f);
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         ImGui::TextUnformatted(r->title.c_str());
         ImGui::PopFont();
         ImGui::PopTextWrapPos();
-        ImGui::TextColored(categoryColor(r->category), "%s", std::string(game::displayName(r->category)).c_str());
-        ImGui::TextColored(kTextDim, "%s", formatDate(r->turn).c_str());
-        if (const auto where = location(r)) {
-            if (where->system.valid() && where->system.index() < s.galaxy.systems.size()) {
-                const bool known = ui.me().hasExplored(where->system);
-                ImGui::TextColored(kTextBlue, "At");
-                ImGui::SameLine();
-                ImGui::TextUnformatted(known ? s.galaxy.system(where->system).name.c_str() : "an unexplored system");
-            }
-        }
-        if (r->message) {
-            ImGui::TextColored(kTextBlue, "From");
-            ImGui::SameLine();
-            empireLabel(ui, r->message->from);
-        }
-        ImGui::EndGroup();
-        ImGui::Spacing();
+        labelValue(ui, "Date:", formatDate(r->turn), 40);
         if (r->entry) {
             if (!r->entry->text.empty()) wrappedText(r->entry->text);
-            if (const int c = combatIndex(ui, r); c >= 0) combatForces(ui, s.combats[size_t(c)]);
         } else if (r->message) {
             messageDetails(ui, *r->message);
         } else if (r->notice) {
@@ -291,79 +303,74 @@ private:
         }
     }
 
+    // A combat entry (spec 06 §4.1): "Combat in <system>", the date and the
+    // sector, then each empire and the damage of its ships, unit groups and planets.
+    void combatDetails(UiContext& ui, const Row& r, const game::CombatRecord& c) {
+        const game::GameState& s = ui.state();
+        const bool known = c.location.system.index() < s.galaxy.systems.size();
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        ImGui::TextUnformatted(std::format("Combat in {}", known ? s.galaxy.system(c.location.system).name : std::string("?")).c_str());
+        ImGui::PopFont();
+        const float x = ImGui::GetCursorPosX();
+        auto at = [&](float dx) { ImGui::SameLine(x + ui.px(dx)); };
+        ImGui::SetCursorPosX(x + ui.px(4));
+        ImGui::TextColored(kLabelBlue, "Date:");
+        at(40);
+        ImGui::TextUnformatted(formatDate(r.turn).c_str());
+        at(132);
+        ImGui::TextColored(kLabelBlue, "Coord:");
+        at(180);
+        ImGui::TextUnformatted(std::format("({},{})", c.location.sector.x, c.location.sector.y).c_str());
+        ImGui::Spacing();
+        ImGui::SetCursorPosX(x + ui.px(4));
+        ImGui::TextColored(kLabelBlue, "Combat Forces");
+        at(200);
+        ImGui::TextColored(kLabelBlue, "Damage");
+        ImGui::BeginChild("##forces", ImVec2(0, 0));
+        for (const CombatDamageRow& row : combatDamageRows(ui.rules(), s, c)) {
+            const float y = ImGui::GetCursorPosY();
+            if (row.header) {
+                empireLabel(ui, row.empire);
+            } else {
+                ImGui::SetCursorPosX(ui.px(16));
+                ImGui::TextUnformatted(row.name.c_str());
+                ImGui::SameLine(ui.px(200));
+                ImGui::TextColored(row.damage == "Dead" ? kTextBad : row.damage == "Taken" ? kTextWarn : ImVec4(1, 1, 1, 1), "%s",
+                                   row.damage.c_str());
+            }
+            ImGui::SetCursorPosY(y + ui.px(20));
+        }
+        ImGui::EndChild();
+    }
+
     void messageDetails(UiContext& ui, const game::DiplomaticMessage& m) {
         const game::GameState& s = ui.state();
-        labelValue(ui, "Tone", std::string(toneName(m.tone)));
-        if (messageNeeds(m.type).treaty || m.type == game::MessageType::AcceptTreaty) labelValue(ui, "Treaty", std::string(game::displayName(m.treaty)));
-        if (m.thirdEmpire.valid() && m.thirdEmpire.index() < s.empires.size()) labelValue(ui, "About", s.empire(m.thirdEmpire).name);
-        if (m.planet.valid() && m.planet.index() < s.galaxy.objects.size()) labelValue(ui, "Planet", s.galaxy.object(m.planet).name);
+        labelValue(ui, "From", s.empire(m.from).name, 60);
+        labelValue(ui, "Tone", std::string(toneName(m.tone)), 60);
+        if (messageNeeds(m.type).treaty || m.type == game::MessageType::AcceptTreaty)
+            labelValue(ui, "Treaty", std::string(game::displayName(m.treaty)), 60);
+        if (m.thirdEmpire.valid() && m.thirdEmpire.index() < s.empires.size()) labelValue(ui, "About", s.empire(m.thirdEmpire).name, 60);
+        if (m.planet.valid() && m.planet.index() < s.galaxy.objects.size()) labelValue(ui, "Planet", s.galaxy.object(m.planet).name, 60);
         ImGui::Spacing();
         wrappedText(m.text.empty() ? std::string("(no text)") : m.text);
-        auto list = [&](const char* title, const std::vector<game::PackageItem>& items) {
-            if (items.empty()) return;
+        auto items = [&](const char* title, const std::vector<game::PackageItem>& list) {
+            if (list.empty()) return;
             ImGui::Spacing();
-            heading(ui, title);
-            for (const auto& i : items) ImGui::BulletText("%s", packageItemText(ui.rules(), s, i).c_str());
+            ImGui::TextColored(kLabelBlue, "%s", title);
+            for (const auto& i : list) ImGui::BulletText("%s", packageItemText(ui.rules(), s, i).c_str());
         };
-        list("They give", m.offer);
-        list("They ask for", m.request);
+        items("They give", m.offer);
+        items("They ask for", m.request);
         ImGui::Spacing();
         if (m.answered) ImGui::TextColored(kTextDim, "Answered.");
         else if (answerable(m.type)) ImGui::TextColored(kTextWarn, "Awaiting our answer: use Send Reply.");
     }
 
-    // Combat Forces: per empire, each kind of vehicle or planet with start and lost counts.
-    void combatForces(UiContext& ui, const game::CombatRecord& c) {
-        const game::GameState& s = ui.state();
-        std::vector<uint8_t> lost(c.pieces.size(), 0);
-        for (const game::CombatEvent& ev : c.events)
-            if ((ev.kind == game::CombatEvent::Kind::Destroyed || ev.kind == game::CombatEvent::Kind::Captured) && ev.piece < lost.size())
-                lost[ev.piece] = 1;
-        ImGui::Spacing();
-        heading(ui, "Combat Forces");
-        if (!ImGui::BeginTable("##forces", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) return;
-        ImGui::TableSetupColumn("Vehicle", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Start", ImGuiTableColumnFlags_WidthFixed, ui.px(48));
-        ImGui::TableSetupColumn("Lost", ImGuiTableColumnFlags_WidthFixed, ui.px(48));
-        ImGui::TableHeadersRow();
-        for (game::EmpireId e : c.participants) {
-            std::map<std::string, std::pair<int, int>> counts;
-            for (size_t i = 0; i < c.pieces.size(); ++i) {
-                const game::CombatPiece& p = c.pieces[i];
-                if (p.owner != e || p.kind == game::CombatPiece::Kind::Seeker) continue;
-                std::string name = p.name;
-                if (p.kind != game::CombatPiece::Kind::Planet && p.design.valid() && p.design.index() < s.designs.size())
-                    name = s.design(p.design).name;
-                auto& [start, gone] = counts[name];
-                ++start;
-                gone += lost[i];
-            }
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            empireLabel(ui, e);
-            for (const auto& [name, n] : counts) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Indent(ui.px(12));
-                ImGui::TextUnformatted(name.c_str());
-                ImGui::Unindent(ui.px(12));
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%d", n.first);
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextColored(n.second > 0 ? kTextBad : kTextDim, "%d", n.second);
-            }
-        }
-        ImGui::EndTable();
-        for (const std::string& line : c.summary) wrappedText(line, kTextDim);
-    }
-
-    bool restored_ = false;
-    int filter_ = -1;
-    bool earlier_ = false;
-    bool haveSelection_ = false;
-    bool scrollToSelection_ = true;
-    Row::Kind selectedKind_ = Row::Kind::Entry;
-    size_t selectedKey_ = 0;
+    bool opened_ = false;
+    uint8_t filter_ = 0;          // 0 All, else the category + 1
+    int selected_ = 0;            // row of the filtered list
+    int scrollRows_ = 0;
+    bool restoreScroll_ = false;
 };
 
 } // namespace

@@ -79,7 +79,7 @@ void pruneQuestions(GameState& s) {
     std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) {
         if (q.fleet.valid()) {
             const Fleet* f = s.fleet(q.fleet);
-            return !f || f->orders.empty();
+            return !f || fleetOrders(s, *f).empty();
         }
         const Vehicle* v = s.vehicle(q.vehicle);
         return !v || v->orders.empty();

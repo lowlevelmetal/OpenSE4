@@ -1037,10 +1037,10 @@ TEST_CASE("economy: units go into cargo, one at a time, in the same sector only"
 }
 
 TEST_CASE("economy: built units go to the holders in the game's object order") {
-    // Spec 02 §6.5: the builder, then the other planets and ships of the
-    // empire in the sector in object order. Planets come before every vehicle
-    // (spec 03 §19 Q62), and a vehicle that took a freed slot comes before
-    // later ones, wherever it is in the vehicle list.
+    // Spec 02 §6.5, §13 Q52: the builder, then the other planets and ships of
+    // the empire in the sector in object order, planets and ships mixed: a
+    // vehicle that took a freed slot comes before later ones, wherever it is
+    // in the vehicle list, and before a planet made after it.
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     dropVehicles(s, kMe);
@@ -1065,6 +1065,35 @@ TEST_CASE("economy: built units go to the holders in the game's object order") {
     economyTurn(r, s);
     CHECK(s.vehicle(first)->cargo.unitCount(fighter) == 2);
     CHECK(s.vehicle(second)->cargo.unitCount(fighter) == 0);
+
+    // A stellar object's slot taken by a new ship puts that ship before a
+    // planet made later in the same sector (spec 03 §19 Q62): the units go to
+    // the ship, not to the colony on the new planet.
+    s.vehicle(first)->cargo.units.clear();
+    s.vehicle(first)->cargo.population = {{kMe, 1'000'000}};
+    s.vehicle(second)->cargo.population = {{kMe, 1'000'000}};
+    ObjectId stellar;
+    for (const StarSystem& sys : s.galaxy.systems)
+        if (sys.id != homeLoc.system && !sys.objects.empty()) stellar = sys.objects.front();
+    REQUIRE(stellar.valid());
+    const uint32_t freed = s.galaxy.object(stellar).slot;
+    std::erase(s.galaxy.system(s.galaxy.object(stellar).system).objects, stellar);  // taken off the map
+    const VehicleId early = addTestVehicle(s, r, hauler, homeLoc).id;
+    REQUIRE(s.vehicle(early)->slot == freed);
+    SpaceObject moon = s.galaxy.object(home.planet);
+    moon.name = "Moon";
+    const ObjectId late = s.addObject(std::move(moon), homeLoc.system);
+    REQUIRE(s.galaxy.object(late).slot > s.vehicle(early)->slot);
+    Colony other;
+    other.planet = late;
+    other.owner = kMe;
+    other.population = {{kMe, 10}};
+    s.colonies[late.index()] = other;
+    REQUIRE(colonyCargoCapacity(r, s, *s.colony(late)) > 40);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    economyTurn(r, s);
+    CHECK(s.vehicle(early)->cargo.unitCount(fighter) == 2);
+    CHECK(s.colony(late)->cargo.unitCount(fighter) == 0);
 }
 
 TEST_CASE("economy: facilities need a free slot; with one the whole count is built") {

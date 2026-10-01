@@ -110,6 +110,11 @@ std::optional<ObjectKind> parseObjectKind(std::string_view physicalType);  // ac
 
 struct SpaceObject {
     ObjectId id;
+    // Its slot in the game's one object list, shared with the vehicles (spec 03
+    // §6.3 step 5, §19 Q62; spec 02 §13 Q52): the generated galaxy fills the
+    // first slots in creation order; an object made during play takes the
+    // lowest slot no object of any kind holds (GameState::addObject).
+    uint32_t slot = 0;
     ObjectKind kind = ObjectKind::Planet;
     SystemId system;
     Sector sector;
@@ -139,7 +144,7 @@ struct StarSystem {
     ruleset::SystemTypeId type;
     std::string physicalType;                 // "Normal", "Nebulae", "Black Hole"
     std::vector<ruleset::Ability> abilities;  // system-wide, always present
-    std::vector<ObjectId> objects;            // in creation order
+    std::vector<ObjectId> objects;            // in object order (SpaceObject::slot)
 };
 
 // A starting point of a map (spec 01 §12, §3.6): the sector where an empire's
@@ -165,7 +170,7 @@ struct Galaxy {
     SpaceObject& object(ObjectId id) { return objects[id.index()]; }
     const SpaceObject& object(ObjectId id) const { return objects[id.index()]; }
 
-    // Warp points of a system, in creation order.
+    // Warp points of a system, in object order.
     std::vector<ObjectId> warpPoints(SystemId sys) const;
     // Systems reachable by one jump from `sys`.
     std::vector<SystemId> neighbors(SystemId sys) const;

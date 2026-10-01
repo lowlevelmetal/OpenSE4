@@ -26,6 +26,8 @@ public:
     void applyRequests(UiContext& ui);
 
     game::SystemId shownSystem() const { return shown_; }
+    // What is selected, as lessons name it (learn::ClientFacts::selected).
+    std::vector<std::string> selectionKinds(const UiContext& ui) const;
 
 private:
     enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, Callback };
@@ -60,6 +62,8 @@ private:
 
     // Drawing.
     void statusBar(UiContext& ui);
+    // The T button that shows the lesson panel again (docs/LEARNING.md).
+    void lessonButton(UiContext& ui);
     void commandPanel(UiContext& ui);
     void reportPanel(UiContext& ui);
     void overlayText(UiContext& ui);
@@ -78,7 +82,6 @@ private:
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
     ReportTab tab_ = ReportTab::Detail;
-    bool showMovementLines_ = true;
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;

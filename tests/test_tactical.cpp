@@ -112,7 +112,10 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
     // in the same state. So does (1), except that a battle with player sides ends
     // after the phase in which the last enemy falls, a strategic one only after
     // the whole combat turn (spec 04 §4): up to then both record the same events.
-    int battles = 0, orders = 0, whole = 0;
+    // A player's side is not automated, so a hit on its group's leader never
+    // dissolves the group as it does in strategic resolution (spec 03 §10, §19
+    // Q60): (1) is compared only when no player side has a fleet.
+    int battles = 0, orders = 0, whole = 0, compared = 0;
     for (int variant = 0; variant < 20; ++variant)
         for (uint64_t seed = 1; seed <= 3; ++seed) {
             CAPTURE(variant);
@@ -124,12 +127,16 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
             auto [start, where] = battleScenario(variant, seed);
             const GameState resolved = strategic(start, where);
             const TacticalBattle::Setup setup{where, std::nullopt, players};
+            const bool playerFleet = std::any_of(start.fleets.begin(), start.fleets.end(), [&](const Fleet& f) {
+                return !f.members.empty() && std::find(players.begin(), players.end(), f.owner) != players.end();
+            });
 
             TacticalBattle autoBattle(combatRules(), start, setup);
             REQUIRE(autoBattle.started());
             const std::vector<std::vector<TacticalOrder>> phases = playAuto(autoBattle);
             const uint64_t expected = stateChecksum(autoBattle.state());
-            {
+            if (!playerFleet) {
+                ++compared;
                 const std::vector<CombatEvent>& mine = autoBattle.record().events;
                 const std::vector<CombatEvent>& theirs = resolved.combats.back().events;
                 REQUIRE(mine.size() <= theirs.size());
@@ -175,7 +182,8 @@ TEST_CASE("tactical: a battle stepped with the strategies' orders is the strateg
         }
     CHECK(battles == 60);
     CHECK(orders > 1000);
-    CHECK(whole > 30);
+    CHECK(compared >= 40);
+    CHECK(whole > 20);
 }
 
 TEST_CASE("tactical: without player sides the battle is fought at once, as strategic resolution fights it") {

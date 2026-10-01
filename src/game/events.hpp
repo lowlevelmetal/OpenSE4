@@ -182,7 +182,8 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 // Damage to a vehicle in the standard order: armor first (design order),
 // then the other intact components at random. Returns the damage applied.
 int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng);
-// Removes a vehicle from its fleet (empty fleets are deleted).
+// Takes a vehicle out of its fleet (game::leaveFleet): it loses its orders,
+// and a fleet left with no member at its location is disbanded.
 void detachFromFleet(GameState& s, Vehicle& v);
 
 } // namespace opense4::game::effects

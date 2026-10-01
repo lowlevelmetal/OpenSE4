@@ -7,10 +7,12 @@
 // docs/spec/06 §1).
 
 #include "client/classic/art.hpp"
+#include "client/classic/screen_id.hpp"
 #include "client/classic/session.hpp"
 #include "client/fonts.hpp"
 #include "client/mode.hpp"
 #include "game/state.hpp"
+#include "learn/lesson.hpp"
 
 #include <imgui.h>
 
@@ -79,26 +81,6 @@ struct FrameMapping {
 // Scale and extent for a framebuffer, per the Graphics settings.
 FrameMapping frameMappingFor(float framebufferWidth, float framebufferHeight);
 
-// Every window of the classic client. The main window is not a Screen.
-enum class ScreenId {
-    // Command buttons (docs/spec/06 §1.2).
-    GameMenu, Designs, CreateDesign, Planets, Colonies, Ships, Queues, SetQueue, Research, TechTree, Empires, Log,
-    EmpireStatus, Help, GalaxyMap,
-    // Empire Status sub-windows.
-    EmpireOptions, Ministers, SystemsToAvoid, Waypoints, Strategies, RepairPriorities,
-    // Order dialogs (§1.3).
-    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename,
-    // Diplomacy and comparisons (§1.5).
-    Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
-    // Combat (§1.6).
-    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
-    // Files.
-    SaveGame, LoadGame,
-    // Graphics, controls and sound.
-    Settings,
-    Count
-};
-
 // Optional context for opening a screen.
 struct ScreenArgs {
     game::ObjectId planet;
@@ -126,7 +108,21 @@ struct UiRequests {
     std::string pickPrompt;
     // Replace the running game with this save (Load Game window).
     std::optional<std::filesystem::path> loadGame;
+    // The learning system: replace the game with a lesson's (Learn window),
+    // leave the running lesson (its panel), show or hide the lesson panel.
+    std::optional<std::pair<learn::LessonKind, std::string>> startLesson;
+    bool leaveLesson = false;
+    bool toggleLessonPanel = false;
 };
+
+// A rectangle a lesson can outline (docs/LEARNING.md "UI tags"), in ImGui
+// screen units, registered while it is drawn.
+struct UiTag {
+    std::string name;
+    ImVec2 min, max;
+};
+
+struct LearnContent;
 
 // What the classic widgets need to draw: the pictures, the fonts and the frame
 // scale. The in-game UiContext and the front end's MenuContext both provide one.
@@ -176,6 +172,11 @@ public:
     const game::Rules& rules() const { return session.rules(); }
     const game::GameState& state() const { return session.state(); }
     const game::Empire& me() const { return session.me(); }
+    // The empire's Empire Options and window memories (spec 06 §1.9), and a
+    // change to them (cmd::SetInterfaceOptions; nothing is issued when they
+    // are unchanged). False when the change was refused (not our turn).
+    const game::InterfaceOptions& options() const { return me().interfaceOptions; }
+    bool setOptions(const game::InterfaceOptions& o);
 
     void open(ScreenId id, ScreenArgs args = {}) {
         if (opener) opener(id, std::move(args));
@@ -193,6 +194,24 @@ public:
     ImVec2 size(Vec2 frameSize) const { return {frameSize.x * k(), frameSize.y * k()}; }
     float px(float framePixels) const { return framePixels * k(); }
     Painter painter() const { return {art, fonts, map, fbScale, textScale}; }
+
+    // UI tags of this frame (cleared at its start): `window:<id>` for each
+    // window (Dialog registers it), the main window's buttons and panels and
+    // a few widgets inside windows (learn/ids.hpp lists them all).
+    std::vector<UiTag> tags;
+    void tag(std::string_view name, ImVec2 min, ImVec2 max) { tags.push_back({std::string(name), min, max}); }
+    // The last ImGui item (a button, a child window).
+    void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
+    void tagFrame(std::string_view name, const Rect& frameRect) { tag(name, at(frameRect.min), at(frameRect.max)); }
+    // The window being drawn (set by the mode around each Screen::draw): its
+    // first Dialog registers `window:<id>`.
+    std::optional<ScreenId> drawing;
+    bool windowTagged = false;
+    void tagWindow(ImVec2 min, ImVec2 max);
+
+    // The learning content and whether a lesson is running (its T button).
+    const LearnContent* learn = nullptr;
+    bool lessonRunning = false;
 };
 
 // ---- Drawing helpers (ImGui, sizes in frame pixels) --------------------------------------
@@ -205,9 +224,38 @@ void resources(UiContext& ui, const game::Resources& r, bool compact = false);
 void labelValue(UiContext& ui, const char* label, const std::string& value, float valueColumn = 110.0f);
 // Heading text in the classic label blue.
 void heading(UiContext& ui, const char* text);
+void heading(const Painter& p, const char* text);
 std::string formatNumber(int64_t v);             // 12345 (the classic screens use no digit grouping)
 std::string formatDate(uint32_t turn);           // 2400.3
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
+
+// ---- Keys in dialogs (spec 06 §3.4, confirmed: binary) ---------------------------------------
+// Call inside the prompt's window. Keys pressed on the frame the window
+// appears are ignored: they belong to whatever opened it.
+
+// A Yes/No message box: Y means Yes; N, Esc and Enter mean No. True for Yes,
+// false for No, nothing without a key.
+std::optional<bool> yesNoKey();
+// A message box with OK (or a notice with Begin): Esc or Enter.
+bool okKey();
+// A prompt that offers Tactical and Strategic: T or S. True for Tactical.
+std::optional<bool> tacticalStrategicKey();
+// Window flags for prompts: no keyboard navigation, so Enter never presses
+// the focused button (the keys above decide).
+inline constexpr ImGuiWindowFlags kPromptFlags = ImGuiWindowFlags_NoNavInputs;
+
+class UiContext;
+// A Yes/No message box with those keys, centred on the frame. open() asks;
+// call draw() every frame: it returns true once, when Yes is chosen.
+class YesNoPrompt {
+public:
+    void open(std::string question, std::string title = "Confirm");
+    bool draw(UiContext& ui);
+
+private:
+    std::string question_, title_;
+    bool pending_ = false;
+};
 
 // ---- Classic dialog layout -----------------------------------------------------------------
 
@@ -219,12 +267,19 @@ enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
 //   return d.keepOpen();
 class Dialog {
 public:
+    // In a game: also registers the window's UI tag.
     Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f);
+    // A window of its own size (frame pixels), centred.
+    Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn = 190.0f);
+    // Anywhere (the front end's Learn and Manual windows).
+    Dialog(const Painter& painter, const char* title, DialogSize size, float buttonColumn = 190.0f);
     ~Dialog();
     Dialog(const Dialog&) = delete;
     Dialog& operator=(const Dialog&) = delete;
 
     bool open() const { return visible_; }
+    // Screen position (ImGui units) of a point given in frame pixels from the window's top left.
+    ImVec2 at(Vec2 windowPos) const { return ui_.at(rect_.min + windowPos); }
     // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
     void titleText(float x, ImU32 color, std::string_view text);
     void titleIcon(float x, const Sprite& icon);
@@ -237,15 +292,19 @@ public:
     // an on/off setting (a check box that shows a lamp when on).
     bool check(const char* label, bool on, bool enabled = true);
     void spacer();
-    // The bottom Close button; also true on Escape.
+    // The bottom Close button; also true on Esc or Enter (spec 06 §3.4), unless
+    // a text field takes the keys.
     bool close();
+    // The bottom button with another label (Cancel: Esc only) or dim (no keys).
+    bool close(bool enabled, const char* label = "Close");
     bool keepOpen() const { return keep_; }
     void requestClose() { keep_ = false; }
 
 private:
+    Dialog(const Painter& painter, const char* title, const Rect& rect, float buttonColumn);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
-    UiContext& ui_;
+    Painter ui_;
     Rect rect_;
     bool visible_ = false;
     bool keep_ = true;
@@ -277,5 +336,6 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args);
 const char* screenTitle(ScreenId id);
 // "designs", "Construction Queues", "EmpireStatus"... (case and spaces ignored).
 std::optional<ScreenId> screenFromName(std::string_view name);
+
 
 } // namespace opense4::client::classic

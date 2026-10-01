@@ -556,34 +556,27 @@ TEST_CASE("events: ship effects") {
         destinations[s.vehicle(id)->location.system.index()] = 1;
     }
     CHECK(std::count(destinations.begin(), destinations.end(), uint8_t{1}) > 3);
-    // Every sector is possible: one sector number 0-168 per move (spec 05 §4).
-    std::vector<uint8_t> sectors(kSystemSize * kSystemSize, 0);
-    for (uint64_t seed = 1; seed <= 2000; ++seed) {
+    // The draws (spec 05 §4, confirmed: binary): the system R[1, systems],
+    // then one sector number R[0, 168] split as x = s mod 13, y = s div 13.
+    for (uint64_t seed = 1; seed <= 10; ++seed) {
+        Rng expect(seed);
+        const SystemId sys{static_cast<uint32_t>(expect.range(1, static_cast<int64_t>(s.galaxy.systems.size())) - 1)};
+        const int number = static_cast<int>(expect.range(0, 168));
         hit(s, Effect::ShipMoved, target(), 2, seed);
-        const Sector at = s.vehicle(id)->location.sector;
-        sectors[static_cast<size_t>(at.y * kSystemSize + at.x)] = 1;
+        CHECK(s.vehicle(id)->location == Location{sys, Sector{number % 13, number / 13}});
     }
-    CHECK(std::count(sectors.begin(), sectors.end(), uint8_t{1}) > 150);
-    // The ship moves first and then leaves its fleet: the fleet is disbanded,
-    // and the members left behind lose their orders.
-    {
-        const VehicleId mate = addTestVehicle(s, r, tank, s.vehicle(id)->location).id;
-        Fleet f;
-        f.owner = kA;
-        f.members = {id, mate};
-        f.leader = id;
-        f.orders = {Order{OrderKind::Sentry}};
-        const FleetId fleet = s.addFleet(f).id;
-        s.vehicle(id)->fleet = s.vehicle(mate)->fleet = fleet;
-        s.vehicle(mate)->orders = {Order{OrderKind::Sentry}};
-        hit(s, Effect::ShipMoved, target(), 2, 5);
-        CHECK(s.fleet(fleet) == nullptr);
-        CHECK_FALSE(s.vehicle(id)->fleet.valid());
-        CHECK_FALSE(s.vehicle(mate)->fleet.valid());
-        CHECK(s.vehicle(mate)->orders.empty());
-        s.vehicle(mate)->count = 0;
-        s.removeDeadVehicles();
-    }
+    // The ship moves first and then leaves its fleet: the fleet's location
+    // goes with it, so the rest of the fleet is disbanded and loses its orders.
+    const VehicleId mate = addTestVehicle(s, r, tank, s.vehicle(id)->location).id;
+    REQUIRE(apply(r, s, kA, cmd::CreateFleet{"Pair", {id, mate}}).ok);
+    const FleetId pair = s.vehicle(id)->fleet;
+    REQUIRE(apply(r, s, kA, cmd::SetOrders{{}, pair, {Order{OrderKind::Sentry}}, false}).ok);
+    REQUIRE(s.vehicle(mate)->orders.size() == 1);
+    hit(s, Effect::ShipMoved, target(), 2, 5);
+    CHECK(s.fleet(pair) == nullptr);
+    CHECK_FALSE(s.vehicle(id)->fleet.valid());
+    CHECK_FALSE(s.vehicle(mate)->fleet.valid());
+    CHECK(s.vehicle(mate)->orders.empty());
 
     TurnContext ctx = context(r, s);
     Rng rng(3);

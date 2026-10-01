@@ -76,8 +76,10 @@ struct Piece {
     int64_t shieldPool = 0;           // unit groups and a planet's stored units: the shield pool Q (spec 04 §9.4)
     int64_t regenPool = 0;            // organic armor (spec 04 §9.3)
     int mp = 0;
-    int reach = 0;                    // movement points at the start of the combat turn
-    std::vector<Weapon> weapons;
+    std::vector<Weapon> weapons;      // every weapon that fires (warheads never do)
+    // Warheads: they get targets when the computer gives them out, count in
+    // the attack map and the fire-first test, but never fire (spec 04 §16, §16.1).
+    std::vector<Weapon> warheads;
     std::vector<int> engaged;         // distinct targets engaged this combat turn
     int budget = 1;
     int offense = 0, defense = 0;     // offense includes the system bonus
@@ -88,17 +90,17 @@ struct Piece {
     std::array<int64_t, kRangeTable + 1> firepower{};
     TargetCategory category = TargetCategory::Ships;
     FleetId fleet;                    // for fleet experience while the ship stays in it
+    bool inFleet = false;             // it belongs to a fleet of its owner: in a group it uses the fleet's strategy
     uint32_t designStrategy = 0, fleetStrategy = 0;
-    // Combat groups (spec 04 §5). A fleet's group: members point at their
-    // leader. A group a player formed (tactical): leader and members carry its
-    // number, and a member follows whichever piece of its side leads that number.
-    int leader = -1;
+    // Combat groups (spec 04 §3 step 5, §5): fleet groups and the groups a
+    // player forms share one numbering per side. A leader holds the number and
+    // the formation; a member holds only the number and its member number, and
+    // its place is the position with that number in the formation of whichever
+    // piece of its side leads the number at that moment.
     bool isLeader = false;
-    int group = -1;                   // tactical groups: the number 0-9 (leaders and members)
-    bool tacticalGroup = false;       // leaders: a group a player formed (no fleet strategy)
-    int slotDx = 0, slotDy = 0;       // formation offset before turning to the leader's facing
-    bool hasSlot = false;             // members: a formation position to keep
-    bool fleetMember = false;         // in its fleet's combat group: it uses the fleet strategy (spec 03 §9)
+    int group = -1;                   // the group's number (leaders and members), -1: in no group
+    int member = 0;                   // members: 1 + the highest member number held when it joined
+    int formation = -1;               // leaders: Formations.txt index (-1: none)
     bool arrived = false;             // moved into the sector this turn: an attacker's piece
     bool warped = false;              // came through a warp point (another system)
     int boxDx = 0, boxDy = 0;         // the neighbouring sector it came from (start box)
@@ -112,12 +114,15 @@ struct Piece {
     bool launched = false;
     int droneTarget = -1;
     EmpireId droneTargetOwner;
+    bool droneOrderTarget = false;    // the target its Attack pursuit names: any kind of piece (spec 03 §19 Q68)
+    bool wasCloaked = false;          // cloaked when the battle began: it cloaks again afterwards if it can (spec 04 §2)
     int64_t tonnageHad = 0;           // unit groups: hull tonnage of every unit it had in the battle (spec 04 §15, spec 02 §9 experience)
     // Planets.
     std::vector<PopulationGroup> population;
     std::vector<uint32_t> facilities;   // every facility at the start: lost ones keep working until the end (spec 04 §11)
     std::vector<char> facilityLost;     // per entry of `facilities`: destroyed in this battle
     std::vector<UnitStack> landed;      // troops landed by `invader` (Colony::landedTroops)
+    std::vector<UnitStack> cargoDead;   // stored units killed in this battle: they take cargo space until it ends (spec 02 §2)
     EmpireId invader;
     int militia = -1;
     int64_t popKilled = 0, hpStart = 0;   // hpStart: planets and unit groups, hit points at the start
@@ -125,22 +130,46 @@ struct Piece {
     EmpireId capturedBy;              // planets taken by troops during the battle
     int plague = 0;
     // Bookkeeping.
-    bool fired = false, damaged = false, captured = false, pushed = false;
+    bool fired = false, captured = false;
     int unitsLost = 0, startCount = 1;
 };
 
+// One weapon of a piece as the computer gives out targets (spec 04 §16): a
+// weapon or warhead of one unit, platform or ship, in design order.
+struct Arm {
+    bool warhead = false;
+    size_t index = 0;      // into Piece::weapons, or Piece::warheads
+    int instance = 0;      // the unit or platform of a satellite or drone group or a planet
+    int target = -1;
+};
+
+// The targets a computer piece gives its weapons at one choice (spec 04 §16):
+// the main target (the first sorted candidate) and each weapon's.
+struct Targeting {
+    int main = -1;
+    std::vector<Arm> arms;
+};
+
+// The overkill totals of one choice, per candidate: the damage given to it,
+// and the part of that from seeking weapons (spec 04 §16 "Overkill limit").
+using OverkillTotals = std::map<int, std::pair<int64_t, int64_t>>;
+
 struct MovePlan {
     MoveStrategy mode = MoveStrategy::DontGetHurt;
-    int target = -1;
+    int target = -1;                 // what it drops troops on, boards or rams after the move
+    int aim = -1;                    // the fire-first test's target (spec 04 §16.1)
+    std::pair<int, int> dest{0, 0};  // the square chosen; (0, 0) when no plan is made
     std::vector<std::pair<int, int>> path;
 };
 
 // Where the battle is fought when it is not in the real game (the combat
-// simulator, spec 04 §17): the location's interference and disruption, and
-// no system modifier totals.
+// simulator, spec 04 §17): the location's interference and disruption, no
+// system modifier totals, the strategy each side's planets use, and no
+// cloaking again after the battle (spec 04 §2).
 struct BattleOverrides {
     int interference = 0;
     int disruption = 0;
+    std::vector<std::pair<EmpireId, uint32_t>> planetStrategies;   // (side, index into its strategies)
 };
 
 class Battle {
@@ -212,6 +241,23 @@ public:
     // Why weapon `wi` of piece i cannot fire at t now (empty: it can). Instance -1: any ready one.
     std::string fireProblem(int i, size_t wi, int instance, int t) const;
 
+    // A free square for a piece drawn at (x, y): hops, then growing squares
+    // (spec 04 §3 step 4). `found` is false when none is free; the square is
+    // then the last hop's.
+    struct Settled {
+        int x = 0, y = 0;
+        bool found = false;
+    };
+
+    // ---- For the tests: the computer's choices as things stand, and pieces set by hand.
+    Targeting targetsFor(int i, bool firing) { return chooseTargets(i, firing); }
+    MovePlan planFor(int i);
+    std::vector<int64_t> attackMapFor(int i) { return attackMap(i, chooseTargets(i, false)); }
+    uint32_t strategyIndexOf(int i) const { return strategyIndex(i); }
+    Settled settleFor(int x, int y, int size) { return settle(x, y, size, -1); }
+    Piece& piece(int i) { return pieces_[static_cast<size_t>(i)]; }
+    void placeAt(int i, int x, int y);
+
 private:
     // ---- Setup.
     void addVehiclePiece(const Vehicle& v);
@@ -221,7 +267,7 @@ private:
     void buildWeapons(Piece& p) const;
     void buildPlanetWeapons(Piece& p) const;
     void place();
-    std::pair<int, int> settle(int x, int y, int size, int self);
+    Settled settle(int x, int y, int size, int self);
     bool fits(int x, int y, int size, int self) const;
     void occupy(int i);
     void vacate(int i);
@@ -256,22 +302,37 @@ private:
     bool canMove(int att, int t) const;
     int damageBonus(EmpireId e) const;
     bool contestedBy(const Piece& planet, EmpireId e) const;
-    bool overkill(int i, int t, bool seeker) const;
+    bool overkill(int t, int64_t given) const;   // the candidate's total has reached its limit
     Vehicle roster(const Piece& p) const;   // a unit group with every design it had (to-hit, tracking)
+    int64_t boardingDefense(int t) const;
+    int hullRank(int j) const;              // the place of a ship's hull in VehicleSize.txt
+    bool automated(EmpireId e) const;       // its pieces follow their strategies now (spec 03 §10, §19 Q60)
+    bool simulated() const { return overrides_.has_value(); }
 
-    // ---- Targeting.
-    std::vector<int> sortedTargets(int i, const Strategy& S);
+    // ---- Targeting (spec 04 §16).
+    // The candidates of a choice, sorted by the strategy: within `range`
+    // (range distance) when it is not negative, of categories in `only` when it
+    // is not 0; the Damage Percent filters first, all of them when those leave none.
+    std::vector<int> sortedTargets(int i, const Strategy& S, int range = -1, uint8_t only = 0);
     bool holdsFire(EmpireId e);
-    int pickTarget(int i, const Weapon& w, const std::vector<int>& targets);
-    int planTarget(int i, const Weapon& w, const std::vector<int>& targets);
-    int64_t incomingSeekerDamage(int t) const;
+    std::vector<Arm> arms(int i) const;     // every weapon and warhead, in design order
+    const Weapon& weaponOf(int i, const Arm& a) const;
+    bool ready(int i, const Arm& a) const;
+    bool reaches(int i, const Weapon& w, int t) const;
+    // Targets for all weapons at once: when planning (no distance check) or
+    // firing. `carried`: totals kept from one choice to the next (drones
+    // choosing new targets); `only`: candidate categories.
+    Targeting chooseTargets(int i, bool firing, OverkillTotals* carried = nullptr, uint8_t only = 0);
+    void updateDroneTarget(int i);
 
     // ---- The phases (spec 04 §4).
     void phase(EmpireId e);          // a computer phase: drones, seekers, then the other pieces
     void phaseDrones(EmpireId e);
     void phasePieces(EmpireId e);
     void endPhase();                 // the next phase; the battle ends when no two hostile sides are left
+    void beginPhase(EmpireId e);     // the side's danger map and the drones' carried totals
     void act(int i);
+    void move(int i);                // a moving piece's plan, move, special action and fire (spec 04 §16.1)
     void fire(int i);
     void shoot(int i, size_t wi, size_t k, int t);
     void launchSeeker(int i, const Weapon& w, int t, int count);
@@ -281,6 +342,7 @@ private:
     void seekerHit(int att, int t, DamageType type, int64_t damage);
     void planetHit(int att, int t, DamageType type, int64_t damage);
     void cargoHit(int t, DamageType type, int64_t damage, bool platforms);
+    void trimPlanetCargo(int t);     // cargo above the capacity goes after a hit (spec 02 §2, §13 Q54)
     void populationLoss(int att, int t, int64_t millions);
     void facilityLoss(int t);
     void loseFacility(int t, size_t entry);
@@ -295,11 +357,16 @@ private:
     void dissolve(int leader);
     void dissolveByStrategy(int leader);   // the same, as the strategies' orders (logged for player sides)
     bool surrounded(int i) const;          // every square on the map around it is taken
+    // Groups: the leader's formation, and a member's place in it (spec 04 §5).
+    const ruleset::Formation* formationOf(int leader) const;
+    bool hasPlace(int i) const;
+    std::pair<int, int> placeOf(int i) const;
     void pdReact(int mover);
     void moveSeekers(EmpireId e);
     void expire(int i);
-    void launchFrom(int i);          // a computer carrier's or planet's launches (spec 04 §10.4, §10.7)
-    int spawnUnit(int carrier, DesignId design, int count, uint32_t strategyIndex);
+    // A computer carrier's or planet's launches (spec 04 §10.4, §10.7); returns the units launched.
+    int launchFrom(int i);
+    int spawnUnit(int carrier, DesignId design, int count);
     void joinUnit(int group, DesignId design, int count);
     // Unit groups: hit points of the units left (without the pool), and `unit` brought in line with `stacks`.
     int64_t groupHitPoints(const Piece& p) const;
@@ -308,26 +375,28 @@ private:
     int satellitesPresent(EmpireId e) const;
 
     // ---- Movement.
-    MovePlan plan(int i);
-    std::pair<MoveStrategy, int> chooseMode(int i, const Strategy& S);
+    MovePlan plan(int i, const Targeting& T);
     MoveStrategy strategyInEffect(int i);
     bool leavesFormation(int i);
     void buildDanger(EmpireId e);
     std::vector<int64_t> dangerFor(int i) const;
-    std::vector<int64_t> attackMap(int i, const std::vector<int>& targets);
-    std::pair<int, int> rangeSquare(int i, MoveStrategy m, int t, const std::vector<int64_t>& danger, const std::vector<int64_t>& attack);
+    std::vector<int64_t> attackMap(int i, const Targeting& T) const;
+    // `t`: the main target; `pointBlank`: Point Blank's target (its last weapon's, else the main one).
+    std::pair<int, int> rangeSquare(int i, MoveStrategy m, int t, int pointBlank, const std::vector<int64_t>& danger,
+                                    const std::vector<int64_t>& attack);
     std::pair<int, int> dontGetHurtSquare(int i) const;
-    std::vector<std::pair<int, int>> pathToward(int i, int t) const;
+    std::pair<int, int> pointBlankSquare(int i, int t) const;
+    std::pair<int, int> approachSquare(int i, int t) const;   // Ram: the free square nearest to it near the target
     void walk(int i, const std::vector<std::pair<int, int>>& path);
     void moveTo(int i, int x, int y);
     void step(int i, int x, int y);
     void followLeader(int i, bool logMoves = false);
     void logMove(int i, const std::vector<std::pair<int, int>>& path);
-    void droneAct(int i);
     void board(int i, int t);
     void ram(int i, int t);
     void dropTroops(int i, int t);
     int boardTarget(int i) const;
+    int ramTarget(int i) const;
     int troopTarget(int i) const;
 
     // ---- Player orders (combat_tactical.cpp).
@@ -373,20 +442,16 @@ private:
     std::map<uint32_t, int> troopsLanded_;
     std::map<uint32_t, int> combatBonus_, damageBonus_, shieldBonus_;   // system totals at the start
     std::map<uint32_t, std::pair<int, int>> fleetExp_;                // fleet -> (whole, tenths)
-    std::map<std::pair<uint32_t, int>, int64_t> assigned_;            // (empire, target) -> direct damage this turn
     std::vector<std::string> groundReports_;
     // Each empire's own random numbers for its pieces' planning (ties among
-    // squares), forked at setup: planning for one side never shifts the dice of
-    // another, so a side's moves given as orders play out as its strategies' do.
-    std::map<uint32_t, Rng> planRng_;
+    // squares), forked at setup, one stream for its drones (always moved by
+    // the computer) and one for its other pieces: planning for one side never
+    // shifts the dice of another, so a side's moves given as orders play out as
+    // its strategies' do.
+    std::map<std::pair<uint32_t, bool>, Rng> planRng_;
     std::vector<int64_t> danger_;                                     // the moving side's danger map (spec 04 §16.1)
     EmpireId dangerFor_;
-    // Tactical groups a player formed: (empire, number) -> formation and the next slot.
-    struct TacticalGroup {
-        int formation = -1;
-        int nextSlot = 0;
-    };
-    std::map<std::pair<uint32_t, int>, TacticalGroup> groups_;
+    OverkillTotals droneTotals_;                                      // carried from drone to drone in a phase (spec 04 §16)
     // Launch Units window sessions: (piece, session, launch kind) -> the group made (spec 04 §10.4).
     std::map<std::tuple<int, int, int>, int> launchGroups_;
     int round_ = 1;

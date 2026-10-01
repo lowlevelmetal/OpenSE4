@@ -105,8 +105,7 @@ void meet(GameState& s, EmpireId a, EmpireId b) {
 // to each other.
 void fakeMovement(const Rules& r, GameState& s) {
     for (Vehicle& v : s.vehicles) {
-        std::vector<Order> orders = v.orders;
-        if (const Fleet* f = s.fleet(v.fleet); f && !f->orders.empty()) orders = f->orders;
+        const std::vector<Order> orders = v.orders;  // a fleet member's copy of its fleet's orders
         for (const Order& o : orders) {
             switch (o.kind) {
                 case OrderKind::MoveTo:
@@ -136,8 +135,8 @@ void fakeMovement(const Rules& r, GameState& s) {
             }
         }
         v.orders.clear();
+        fleetMemberMoved(s, v);
     }
-    for (Fleet& f : s.fleets) f.orders.clear();
     s.removeDeadVehicles();
     sight::updateKnowledge(r, s);
     for (Empire& e : s.empires)
@@ -203,7 +202,7 @@ std::string digest(const GameState& s) {
     }
     for (const Fleet& f : s.fleets) {
         o << "fleet " << f.id.value << " " << f.owner.value << " n" << f.members.size() << " orders";
-        for (const Order& ord : f.orders) o << " " << static_cast<int>(ord.kind) << ":" << ord.object.value;
+        for (const Order& ord : fleetOrders(s, f)) o << " " << static_cast<int>(ord.kind) << ":" << ord.object.value;
         o << "\n";
     }
     for (const auto& c : s.colonies) {
@@ -3993,7 +3992,7 @@ TEST_CASE("ai: a fleet's supply totals leave out the members with unlimited supp
     s.vehicle(endless)->supply = 1'000'000;
     ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
     ai::detail::planRepairAndResupply(p, false);
-    CHECK_FALSE(p.st.fleet(fleet)->orders.empty());
+    CHECK_FALSE(fleetOrders(p.st, *p.st.fleet(fleet)).empty());
 }
 
 TEST_CASE("ai: a space yard ship counts itself as a yard, and one in a fleet is planned too") {

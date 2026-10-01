@@ -1,20 +1,21 @@
-// Combat Replay (docs/spec/06 §1.6, docs/spec/04 §17): plays back a battle
-// of the last processed turn on a tactical-style map. Playback state lives in
-// CombatPlayback (replay.hpp); this file draws it.
+// Combat Replay and Combat Replay Options (docs/spec/06 §1.10.3, §3.4; spec
+// 04 §17): a battle of the last processed turn played back one combat turn at
+// a time with Next (or Space); Options opens the replay's options, kept with
+// the empire; Esc closes. Playback state lives in CombatPlayback
+// (replay.hpp); this file draws it. Beside the map, an overview of the whole
+// combat grid, and as OpenSE4's own help, the turn's events in words and the
+// battle's summary.
 
 #include "client/classic/replay.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/combat_map.hpp"
 #include "client/classic/screens/screens.hpp"
-#include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 
+#include "game/combat.hpp"
+
 #include <algorithm>
-#include <array>
-#include <charconv>
-#include <cmath>
 #include <format>
-#include <numbers>
 
 namespace opense4::client::classic {
 
@@ -22,20 +23,35 @@ namespace {
 
 using Kind = game::CombatEvent::Kind;
 
-constexpr std::array<float, 5> kSpeeds{0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
+// Stop Replay in the options window closes the replay.
+bool gStopReplay = false;
+
+// Playback pace: Fast Tactical Combat drops the pauses (inferred: a faster playback).
+float replaySpeed(const game::InterfaceOptions& o) { return o.replayFast ? 6.0f : 2.0f; }
 
 class CombatReplayScreen final : public Screen {
 public:
-    explicit CombatReplayScreen(int index) : wanted_(index) {}
+    explicit CombatReplayScreen(int index) : wanted_(index) { gStopReplay = false; }
 
     bool draw(UiContext& ui) override {
         const auto& combats = ui.state().combats;
         if (combats.empty()) return drawEmpty(ui);
-        if (index_ < 0 || index_ >= int(combats.size()) || loadedTurn_ != ui.state().turn) {
-            load(ui, wanted_ >= 0 && wanted_ < int(combats.size()) ? wanted_ : int(combats.size()) - 1, combats);
+        if (gStopReplay) {
+            gStopReplay = false;
+            return false;
         }
+        if (index_ < 0 || index_ >= int(combats.size()) || loadedTurn_ != ui.state().turn)
+            load(ui, wanted_ >= 0 && wanted_ < int(combats.size()) ? wanted_ : int(combats.size()) - 1, combats);
+        const game::InterfaceOptions& opts = ui.options();
+        playback_.setSpeed(replaySpeed(opts));
+        // Next plays one combat turn: animated, or at once with animation off.
         const size_t before = playback_.cursor();
+        if (playback_.playing() && playback_.cursor() >= stopAt_) playback_.pause();
         playback_.advance(ui.dt);
+        if (playback_.cursor() > stopAt_) {
+            playback_.pause();
+            playback_.seekEvent(stopAt_);
+        }
         painter(ui).sounds(before, playback_.cursor());
 
         Dialog d(ui, "Combat Replay", DialogSize::Full);
@@ -45,55 +61,21 @@ public:
         const ImVec2 avail = ImGui::GetContentRegionAvail();
         const float side = ui.px(250);
         const ImVec2 mapSize{avail.x - side - ImGui::GetStyle().ItemSpacing.x, avail.y};
-        drawMap(ui, mapSize);
+        drawMap(ui, mapSize, opts);
         ImGui::SameLine();
         ImGui::BeginGroup();
-        eventList(ui, ImVec2(side, avail.y * 0.58f));
+        overview(ui, opts, side);
+        eventList(ui, ImVec2(side, avail.y * 0.45f));
         summary(ui, ImVec2(side, 0));
         ImGui::EndGroup();
 
         d.beginButtons();
-        if (d.button(playback_.playing() ? "Pause" : playback_.atEnd() ? "Play Again" : "Play")) playback_.togglePlay();
-        if (d.button("Next Round", !playback_.atEnd())) {
-            playback_.pause();
-            playback_.stepRound();
-        }
-        if (d.button("Previous Round", !playback_.atStart())) {
-            playback_.pause();
-            playback_.stepBackRound();
-        }
-        if (d.button("Next Event", !playback_.atEnd())) {
-            playback_.pause();
-            playback_.stepEvent();
-        }
-        if (d.button("Rewind", !playback_.atStart())) {
-            playback_.pause();
-            playback_.rewind();
-        }
-        if (d.button(std::format("Speed: {}x###speed", playback_.speed() < 1.0f ? std::string("1/2") : std::format("{}", int(playback_.speed()))).c_str())) {
-            auto it = std::find(kSpeeds.begin(), kSpeeds.end(), playback_.speed());
-            const float next = it == kSpeeds.end() || it + 1 == kSpeeds.end() ? kSpeeds.front() : *(it + 1);
-            playback_.setSpeed(next);
-            settings().replaySpeed = next;
-            saveSettings();
-        }
-        d.spacer();
-        // Ground combats fought when troops landed in this battle (spec 06 §1.6).
-        for (size_t k = 0; k < record_.grounds.size(); ++k) {
-            const std::string label = record_.grounds.size() == 1 ? std::string("Ground Combat") : std::format("Ground Combat {}", k + 1);
-            if (d.button(label.c_str())) {
-                ScreenArgs a;
-                a.index = index_;
-                a.sub = int(k);
-                ui.open(ScreenId::GroundCombat, std::move(a));
-            }
-        }
-        const int count = int(combats.size());
-        if (d.button("Previous Battle", index_ > 0)) load(ui, index_ - 1, combats);
-        if (d.button("Next Battle", index_ + 1 < count)) load(ui, index_ + 1, combats);
-        dimText(std::format("Battle {} of {}", index_ + 1, count).c_str());
-        keys();
-        d.close();
+        if (d.button("Options")) ui.open(ScreenId::CombatReplayOptions);
+        if (d.button("Next", !playback_.atEnd() && !playback_.playing()) ||
+            (ImGui::IsKeyPressed(ImGuiKey_Space, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)))
+            next(opts);
+        // Esc closes (spec 06 §3.4); there is no Close button.
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) d.requestClose();
         return d.keepOpen();
     }
 
@@ -116,31 +98,24 @@ private:
         loadedTurn_ = ui.state().turn;
         record_ = combats[size_t(index)];
         playback_ = CombatPlayback(record_);
-        playback_.setSpeed(settings().replaySpeed);
-        playback_.play();
+        stopAt_ = 0;
         listCursor_ = SIZE_MAX;
     }
 
-    void keys() {
-        if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::GetIO().WantTextInput) return;
-        if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) playback_.togglePlay();
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-            playback_.pause();
-            playback_.stepRound();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-            playback_.pause();
-            playback_.stepBackRound();
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
-            playback_.pause();
-            playback_.rewind();
+    void next(const game::InterfaceOptions& opts) {
+        if (playback_.atEnd()) return;
+        const int round = std::max(0, playback_.round()) + 1;
+        stopAt_ = round + 1 <= playback_.roundCount() ? playback_.roundStart(round + 1) : playback_.eventCount();
+        if (opts.replayAnimate) {
+            playback_.play();
+        } else {
+            playback_.seekEvent(stopAt_);
         }
     }
 
     CombatMapPainter painter(UiContext& ui) const { return CombatMapPainter(ui, ui.state(), record_, playback_); }
 
-    // ---- Status bar, event list, summary -------------------------------------------------------------
+    // ---- Status bar, overview, event list, summary ---------------------------------------------------
 
     void statusBar(UiContext& ui) {
         const game::GameState& s = ui.state();
@@ -149,7 +124,8 @@ private:
         ImGui::PopFont();
         ImGui::SameLine();
         dimText(std::format("  {}", formatDate(record_.turn)).c_str());
-        const std::string round = playback_.roundCount() > 0 ? std::format("Round {} of {}", playback_.round(), playback_.roundCount()) : "No rounds";
+        const std::string round = playback_.roundCount() > 0 ? std::format("Combat Turn {} of {}", std::max(playback_.round(), 0), playback_.roundCount())
+                                                             : "No combat turns";
         ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ImGui::CalcTextSize(round.c_str()).x - ui.px(6));
         ImGui::TextColored(kLabelBlue, "%s", round.c_str());
         bool first = true;
@@ -174,8 +150,37 @@ private:
         ImGui::Separator();
     }
 
+    // The whole combat grid, with the dotted Viewing Rectangle when the option is on.
+    void overview(UiContext& ui, const game::InterfaceOptions& opts, float width) {
+        const float w = width, h = width * float(game::combat::kCombatMapHeight) / float(game::combat::kCombatMapWidth);
+        const ImVec2 o = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(w, h));
+        const ImVec2 o2{o.x + w, o.y + h};
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(o, o2, IM_COL32(0, 0, 0, 255));
+        const float k = w / float(game::combat::kCombatMapWidth);
+        CombatView whole;
+        whole.center = o;
+        whole.cell = k;
+        painter(ui).squares(dl, whole, 2.0f);
+        if (opts.replayViewRect && view_.cell > 0) {
+            const float halfW = viewSize_.x * 0.5f / view_.cell, halfH = viewSize_.y * 0.5f / view_.cell;
+            const ImVec2 a{std::max(o.x, o.x + (view_.cx - halfW) * k), std::max(o.y, o.y + (view_.cy - halfH) * k)};
+            const ImVec2 c{std::min(o2.x, o.x + (view_.cx + halfW) * k), std::min(o2.y, o.y + (view_.cy + halfH) * k)};
+            for (float x = a.x; x < c.x; x += 4) {
+                dl->AddLine({x, a.y}, {std::min(x + 2, c.x), a.y}, IM_COL32_WHITE);
+                dl->AddLine({x, c.y}, {std::min(x + 2, c.x), c.y}, IM_COL32_WHITE);
+            }
+            for (float y = a.y; y < c.y; y += 4) {
+                dl->AddLine({a.x, y}, {a.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
+                dl->AddLine({c.x, y}, {c.x, std::min(y + 2, c.y)}, IM_COL32_WHITE);
+            }
+        }
+        dl->AddRect(o, o2, IM_COL32(66, 107, 216, 255));
+    }
+
     void eventList(UiContext& ui, ImVec2 size) {
-        heading(ui, playback_.round() > 0 ? std::format("Round {}", playback_.round()).c_str() : "Before the battle");
+        heading(ui, playback_.round() > 0 ? std::format("Combat Turn {}", playback_.round()).c_str() : "Before the battle");
         ImGui::BeginChild("##events", ImVec2(size.x, size.y - ImGui::GetFrameHeightWithSpacing()), ImGuiChildFlags_Borders);
         const int round = playback_.round();
         const size_t from = round > 0 ? playback_.roundStart(round) : 0;
@@ -197,7 +202,7 @@ private:
             }
         }
         if (anim) ImGui::TextColored(ImVec4(1, 1, 0.7f, 1), "> %s", painter(ui).eventText(*anim).c_str());
-        if (from == to && !anim) dimText(playback_.atStart() ? "Pieces in their starting positions." : "Nothing happened this round.");
+        if (from == to && !anim) dimText(playback_.atStart() ? "Pieces in their starting positions. Next plays a combat turn." : "Nothing happened this turn.");
         ImGui::PopTextWrapPos();
         if (listCursor_ != to) {
             ImGui::SetScrollHereY(1.0f);
@@ -210,15 +215,16 @@ private:
         heading(ui, "Summary");
         ImGui::BeginChild("##summary", ImVec2(size.x, 0), ImGuiChildFlags_Borders);
         ImGui::PushTextWrapPos(0.0f);
-        for (const std::string& line : record_.summary) ImGui::TextUnformatted(line.c_str());
-        if (record_.summary.empty()) dimText("No summary was recorded.");
+        if (playback_.atEnd())
+            for (const std::string& line : record_.summary) ImGui::TextUnformatted(line.c_str());
+        else dimText("Shown once the last combat turn has played.");
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
     }
 
     // ---- The map ----------------------------------------------------------------------------------------
 
-    void drawMap(UiContext& ui, ImVec2 size) {
+    void drawMap(UiContext& ui, ImVec2 size, const game::InterfaceOptions& opts) {
         const game::GameState& s = ui.state();
         const CombatMapPainter paint = painter(ui);
         const ImVec2 o = ImGui::GetCursorScreenPos();
@@ -236,8 +242,12 @@ private:
         v.center = {o.x + size.x * 0.5f, o.y + size.y * 0.5f};
         v.cx = (float(b.minX) + float(b.maxX + 1)) * 0.5f;
         v.cy = (float(b.minY) + float(b.maxY + 1)) * 0.5f;
-        paint.background(dl, o, o2, v, IM_COL32(40, 70, 140, 70));
+        view_ = v;
+        viewSize_ = size;
+        // Show Grid (Combat Replay Options).
+        paint.background(dl, o, o2, v, opts.replayGrid ? IM_COL32(40, 70, 140, 70) : 0);
         const std::optional<uint32_t> hovered = paint.pieces(dl, v, hoveredBox, ImGui::GetIO().MousePos);
+        if (const game::CombatEvent* e = playback_.animating()) paint.event(dl, v, *e, playback_.fraction());
         if (hovered) {
             const ImVec2 c = paint.piecePos(v, *hovered);
             const float h = v.cell * paint.pieceExtent(*hovered) * 0.5f;
@@ -246,6 +256,7 @@ private:
         dl->PopClipRect();
         dl->AddRect(o, o2, IM_COL32(66, 107, 216, 255));
 
+        // Hovering a piece shows its design, not its damaged state (spec 04 §17).
         if (hovered) {
             const uint32_t i = *hovered;
             const game::CombatPiece& rp = record_.pieces[i];
@@ -258,10 +269,6 @@ private:
                 labelValue(ui, "Design", hull ? std::format("{} ({})", d.name, hull->name) : d.name, 80);
             }
             labelValue(ui, "Owner", p.neutral ? std::string("None") : paint.empireName(p.owner), 80);
-            if (rp.kind == game::CombatPiece::Kind::UnitGroup) labelValue(ui, "Units", std::format("{} of {} left", p.units, rp.count), 80);
-            if (p.captured) labelValue(ui, "Captured from", paint.empireName(rp.owner), 80);
-            labelValue(ui, "Square", std::format("{}, {}", p.x, p.y), 80);
-            if (p.damage > 0) labelValue(ui, "Hits taken", std::format("{} damage so far", p.damage), 80);
             ImGui::EndTooltip();
         }
     }
@@ -271,11 +278,45 @@ private:
     uint32_t loadedTurn_ = 0;
     game::CombatRecord record_;
     CombatPlayback playback_;
+    size_t stopAt_ = 0;               // the event Next plays up to
     size_t listCursor_ = SIZE_MAX;
+    CombatView view_;
+    ImVec2 viewSize_{0, 0};
+};
+
+// ---- Combat Replay Options (spec 06 §1.10.3) ---------------------------------------------------------------
+
+// Kept with the empire and saved with the game (game::InterfaceOptions).
+class CombatReplayOptionsScreen final : public Screen {
+public:
+    bool modal() const override { return true; }
+
+    bool draw(UiContext& ui) override {
+        Dialog d(ui, screenTitle(ScreenId::CombatReplayOptions), DialogSize::Large);
+        if (!d.open()) return d.keepOpen();
+        game::InterfaceOptions o = ui.options();
+        d.beginContent();
+        ImGui::TextColored(kLabelBlue, "Options In Use");
+        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        lampToggle(ui, "Animate ship movement in combat replay", &o.replayAnimate);
+        lampToggle(ui, "Fast Tactical Combat", &o.replayFast);
+        lampToggle(ui, "Show Viewing Rectangle on Map", &o.replayViewRect);
+        lampToggle(ui, "Show Grid", &o.replayGrid);
+        ImGui::EndChild();
+        ui.setOptions(o);
+        d.beginButtons();
+        if (d.button("Stop Replay")) {
+            gStopReplay = true;
+            d.requestClose();
+        }
+        d.close();
+        return d.keepOpen();
+    }
 };
 
 } // namespace
 
 std::unique_ptr<Screen> makeCombatReplay(const ScreenArgs& args) { return std::make_unique<CombatReplayScreen>(args.index); }
+std::unique_ptr<Screen> makeCombatReplayOptions(const ScreenArgs&) { return std::make_unique<CombatReplayOptionsScreen>(); }
 
 } // namespace opense4::client::classic

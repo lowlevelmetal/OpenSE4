@@ -1,5 +1,7 @@
 #include "client/classic/reports.hpp"
 
+#include "client/classic/screens/colony_logic.hpp"
+
 #include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -362,8 +364,9 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
             ImGui::Text("%s%s", v->name.c_str(), id == f.leader ? " (leader)" : "");
         }
     heading(ui, "Orders");
-    if (f.orders.empty()) ImGui::TextColored(kDim, "None");
-    for (const auto& o : f.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
+    const std::vector<game::Order>& orders = game::fleetOrders(s, f);  // the copies its members at its location hold
+    if (orders.empty()) ImGui::TextColored(kDim, "None");
+    for (const auto& o : orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
 }
 
 void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
@@ -439,6 +442,11 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 building = q.kind == game::QueueItem::Kind::Facility  ? r.facility(q.facility).name
                            : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
                                                                       : s.design(q.design).name;
+                // What the item under construction still needs at this turn's rate,
+                // in years as the Construction Queues window shows times (inferred).
+                const game::cmd::QueueTarget target{c->planet, {}};
+                const auto est = estimateQueue(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target));
+                remaining = c->queue.onHold ? std::string("On Hold") : queueYearsText(est.front().turns);
             }
             line("Under Construction", building);
             line("Time Remaining", remaining);

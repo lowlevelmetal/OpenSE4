@@ -235,12 +235,15 @@ Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& 
 // ---- Cargo over capacity (spec 02 §2, §13 Q49) --------------------------------------------------------
 
 // A colony's cargo above its capacity (after a dome, a capture or a lost
-// `Cargo Storage` facility) stays until the planet next takes damage or loses
-// population to plague. Then cargo is removed until it fits: population held
-// as cargo first, 1M at a time, then units one at a time from the first stack
-// (confirmed: binary). Combat calls this for a planet that a hit got through
-// to (inferred, spec 02 §13 Q54).
-void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c);
+// `Cargo Storage` facility) stays until the planet next takes a space-combat
+// hit of a hull-damaging type that gets past its shields, or loses population
+// to plague. Then cargo is removed until it fits: every troop unit first when
+// the colony has no population left, then population held as cargo, 1M at a
+// time from the first group, then units one at a time from the first stack
+// (spec 02 §2, §13 Q54, confirmed: binary). `deadSpace`: the space of units
+// killed earlier in the battle, which they take until it ends; combat keeps
+// emptied stacks in place (`keepEmptyStacks`) while the battle goes on.
+void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c, int64_t deadSpace = 0, bool keepEmptyStacks = false);
 
 // ---- Colonies ending ------------------------------------------------------------------------------
 

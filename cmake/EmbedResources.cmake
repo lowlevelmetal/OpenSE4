@@ -1,5 +1,5 @@
 # Script mode (-P): writes a C++ source that builds files into the executable and
-# defines opense4::embeddedResource() (src/core/embedded.hpp).
+# defines opense4::embeddedResource() and embeddedResourcePaths() (src/core/embedded.hpp).
 # Inputs: OUTPUT (the .cpp to write), ROOT (the source tree), FILES (paths relative
 # to ROOT, separated by '|').
 
@@ -40,6 +40,12 @@ file(WRITE "${OUTPUT}.tmp"
 "    for (const Entry& e : kEntries)\n"
 "        if (e.path == path) return {e.data, e.size};\n"
 "    return {};\n"
+"}\n\n"
+"std::vector<std::string_view> embeddedResourcePaths(std::string_view prefix) {\n"
+"    std::vector<std::string_view> out;\n"
+"    for (const Entry& e : kEntries)\n"
+"        if (e.path.starts_with(prefix)) out.push_back(e.path);\n"
+"    return out;\n"
 "}\n\n"
 "} // namespace opense4\n")
 

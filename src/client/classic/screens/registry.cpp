@@ -60,6 +60,7 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::SelectWaypoint: return "Select Waypoint";
         case ScreenId::StellarManipulation: return "Stellar Manipulation";
         case ScreenId::Rename: return "Change Name";
+        case ScreenId::AbandonPlanet: return "Abandon Planet";
         case ScreenId::Communicate: return "Communicate";
         case ScreenId::Intelligence: return "Intelligence";
         case ScreenId::TreatyGrid: return "Treaty Grid";
@@ -71,13 +72,19 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::CombatReplay: return "Combat Replay";
         case ScreenId::TacticalCombat: return "Tactical Combat";
         case ScreenId::TacticalOrders: return "Tactical Combat Orders";
-        case ScreenId::TacticalOptions: return "Tactical Combat Options";
+        case ScreenId::TacticalOptions: return "Combat Options";
+        case ScreenId::TacticalLaunch: return "Launch Units";
+        case ScreenId::CombatPieceReport: return "Combat Piece Report";
+        case ScreenId::CombatReplayOptions: return "Combat Replay Options";
         case ScreenId::CombatSimulator: return "Combat Simulator";
         case ScreenId::StrategicCombat: return "Strategic Combat";
         case ScreenId::GroundCombat: return "Ground Combat";
         case ScreenId::SaveGame: return "Save Game";
         case ScreenId::LoadGame: return "Load Game";
+        case ScreenId::Options: return "Options";
         case ScreenId::Settings: return "Settings";
+        case ScreenId::Learn: return "Learn";
+        case ScreenId::Manual: return "Manual";
         case ScreenId::Count: break;
     }
     return "";
@@ -91,7 +98,9 @@ std::optional<ScreenId> screenFromName(std::string_view name) {
         return out;
     };
     const std::string want = squash(name);
-    static constexpr std::array<std::pair<ScreenId, const char*>, 11> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+    static constexpr std::array<std::pair<ScreenId, const char*>, 13> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+                                                                                 {ScreenId::TacticalOptions, "TacticalOptions"},
+                                                                                 {ScreenId::CombatReplayOptions, "ReplayOptions"},
                                                                                  {ScreenId::Ships, "Ships"},
                                                                                 {ScreenId::Queues, "Queues"},
                                                                                 {ScreenId::SetQueue, "SetQueue"},
@@ -142,6 +151,7 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::SelectWaypoint: return makeSelectWaypoint(args);
         case ScreenId::StellarManipulation: return makeStellarManipulation(args);
         case ScreenId::Rename: return makeRename(args);
+        case ScreenId::AbandonPlanet: return makeAbandonPlanet(args);
         case ScreenId::Communicate: return makeCommunicate(args);
         case ScreenId::Intelligence: return makeIntelligence(args);
         case ScreenId::TreatyGrid: return makeTreatyGrid(args);
@@ -154,12 +164,18 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::TacticalCombat: return makeTacticalCombat(args);
         case ScreenId::TacticalOrders: return makeTacticalOrders(args);
         case ScreenId::TacticalOptions: return makeTacticalOptions(args);
+        case ScreenId::TacticalLaunch: return makeTacticalLaunch(args);
+        case ScreenId::CombatPieceReport: return makeCombatPieceReport(args);
+        case ScreenId::CombatReplayOptions: return makeCombatReplayOptions(args);
         case ScreenId::CombatSimulator: return makeCombatSimulator(args);
         case ScreenId::StrategicCombat: return makeStrategicCombat(args);
         case ScreenId::GroundCombat: return makeGroundCombat(args);
         case ScreenId::SaveGame: return makeSaveGame(args);
         case ScreenId::LoadGame: return makeLoadGame(args);
+        case ScreenId::Options: return makeOptions(args);
         case ScreenId::Settings: return makeSettings(args);
+        case ScreenId::Learn: return makeLearn(args);
+        case ScreenId::Manual: return makeManual(args);
         case ScreenId::Count: break;
     }
     return nullptr;
