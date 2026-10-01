@@ -72,7 +72,10 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::CombatReplay: return "Combat Replay";
         case ScreenId::TacticalCombat: return "Tactical Combat";
         case ScreenId::TacticalOrders: return "Tactical Combat Orders";
-        case ScreenId::TacticalOptions: return "Tactical Combat Options";
+        case ScreenId::TacticalOptions: return "Combat Options";
+        case ScreenId::TacticalLaunch: return "Launch Units";
+        case ScreenId::CombatPieceReport: return "Combat Piece Report";
+        case ScreenId::CombatReplayOptions: return "Combat Replay Options";
         case ScreenId::CombatSimulator: return "Combat Simulator";
         case ScreenId::StrategicCombat: return "Strategic Combat";
         case ScreenId::GroundCombat: return "Ground Combat";
@@ -93,7 +96,9 @@ std::optional<ScreenId> screenFromName(std::string_view name) {
         return out;
     };
     const std::string want = squash(name);
-    static constexpr std::array<std::pair<ScreenId, const char*>, 11> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+    static constexpr std::array<std::pair<ScreenId, const char*>, 13> kAliases{{{ScreenId::Ships, "ShipsUnits"},
+                                                                                 {ScreenId::TacticalOptions, "TacticalOptions"},
+                                                                                 {ScreenId::CombatReplayOptions, "ReplayOptions"},
                                                                                  {ScreenId::Ships, "Ships"},
                                                                                 {ScreenId::Queues, "Queues"},
                                                                                 {ScreenId::SetQueue, "SetQueue"},
@@ -157,6 +162,9 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::TacticalCombat: return makeTacticalCombat(args);
         case ScreenId::TacticalOrders: return makeTacticalOrders(args);
         case ScreenId::TacticalOptions: return makeTacticalOptions(args);
+        case ScreenId::TacticalLaunch: return makeTacticalLaunch(args);
+        case ScreenId::CombatPieceReport: return makeCombatPieceReport(args);
+        case ScreenId::CombatReplayOptions: return makeCombatReplayOptions(args);
         case ScreenId::CombatSimulator: return makeCombatSimulator(args);
         case ScreenId::StrategicCombat: return makeStrategicCombat(args);
         case ScreenId::GroundCombat: return makeGroundCombat(args);

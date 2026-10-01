@@ -1,0 +1,310 @@
+// The logic behind the combat windows (client/classic/screens/combat_logic.hpp,
+// docs/spec/06 §1.10): the Strategic Combat forces list, the Combat Piece
+// Report lines, the Drop Troops target, the Combat Simulator's rows, items
+// and names, and how the session shows battles fought by the strategies. All
+// content is invented for the tests.
+
+#include "combat_fixture.hpp"
+
+#include "client/classic/screens/combat_logic.hpp"
+#include "client/classic/session.hpp"
+
+#include "game/query.hpp"
+#include "game/simulator.hpp"
+#include "game/tactical.hpp"
+
+#include <doctest/doctest.h>
+
+#include <algorithm>
+
+using namespace opense4;
+using namespace opense4::game;
+using namespace opense4::ctest;
+using opense4::test::homeworld;
+namespace combat = opense4::game::combat;
+namespace classic = opense4::client::classic;
+using combat::TacticalBattle;
+using combat::TacticalOrder;
+using OK = combat::TacticalOrder::Kind;
+
+namespace {
+
+CombatEvent ev(CombatEvent::Kind kind, uint8_t round, uint32_t piece, uint32_t target = 0, int x = 0, int y = 0, int amount = 0) {
+    CombatEvent e;
+    e.kind = kind;
+    e.round = round;
+    e.piece = piece;
+    e.target = target;
+    e.x = static_cast<int16_t>(x);
+    e.y = static_cast<int16_t>(y);
+    e.amount = amount;
+    return e;
+}
+
+CombatPiece piece(CombatPiece::Kind kind, EmpireId owner, DesignId design, int count = 1) {
+    CombatPiece p;
+    p.kind = kind;
+    p.owner = owner;
+    p.design = design;
+    p.count = count;
+    p.startX = 10;
+    p.startY = 10;
+    return p;
+}
+
+const classic::ForceRow* row(const classic::CombatForces& f, EmpireId e, std::string_view name) {
+    for (const classic::ForceSide& side : f.sides())
+        if (side.empire == e)
+            for (const classic::ForceRow& r : side.rows)
+                if (r.name == name) return &r;
+    return nullptr;
+}
+
+} // namespace
+
+TEST_CASE("combat windows: the forces list counts per hull, keeps rows, and counts losses from the highest count") {
+    Arena ar = makeArena(5);
+    GameState& s = ar.s;
+    const DesignId frig = frigate(s, ar.a, "Lancer", 2, {"Test Laser"});
+    const DesignId cruiser = design(s, ar.b, "Bulwark", "Test Cruiser", {"Test Laser"});
+    const DesignId wasp = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const Colony& colony = homeworld(s, ar.b);
+    CombatRecord rec;
+    rec.participants = {ar.a, ar.b};
+    rec.pieces = {piece(CombatPiece::Kind::Vehicle, ar.a, frig), piece(CombatPiece::Kind::Vehicle, ar.a, frig),
+                  piece(CombatPiece::Kind::UnitGroup, ar.a, wasp, 6), piece(CombatPiece::Kind::Vehicle, ar.b, cruiser),
+                  piece(CombatPiece::Kind::Seeker, ar.b, {}), piece(CombatPiece::Kind::Planet, ar.b, {})};
+    rec.pieces[5].planet = colony.planet;
+    rec.pieces[5].name = "Home";
+    rec.events = {
+        ev(CombatEvent::Kind::Launch, 1, 2, 0, 11, 11),        // the fighters appear
+        ev(CombatEvent::Kind::Seeker, 1, 4, 0, 12, 12),
+        ev(CombatEvent::Kind::Destroyed, 2, 1),                // a frigate is lost
+        ev(CombatEvent::Kind::UnitsLost, 2, 2, 3, 0, 0, 2),    // two fighters
+        ev(CombatEvent::Kind::Captured, 3, 3, 0),              // the cruiser is taken by A
+        ev(CombatEvent::Kind::Destroyed, 3, 5),                // the planet falls
+    };
+    rec.pieces[2].startX = 0;   // launched: off the map until its Launch event
+    classic::CombatPlayback play(rec);
+    classic::CombatForces forces;
+    const Rules& r = combatRules();
+
+    forces.update(r, s, rec, play.pieces());
+    REQUIRE(forces.sides().size() == 2);
+    REQUIRE(row(forces, ar.a, "Test Frigate"));
+    CHECK(row(forces, ar.a, "Test Frigate")->current == 2);
+    CHECK(row(forces, ar.a, "Test Fighter Hull") == nullptr);   // still in cargo
+    CHECK(row(forces, ar.b, "Test Cruiser")->current == 1);
+    REQUIRE(row(forces, ar.b, "Home"));
+    CHECK(row(forces, ar.b, "Home")->planet);
+    CHECK(row(forces, ar.b, "Home")->current == 1);
+
+    play.seekRound(1);
+    forces.update(r, s, rec, play.pieces());
+    REQUIRE(row(forces, ar.a, "Test Fighter Hull"));
+    CHECK(row(forces, ar.a, "Test Fighter Hull")->current == 6);
+
+    play.seekRound(2);
+    forces.update(r, s, rec, play.pieces());
+    CHECK(row(forces, ar.a, "Test Frigate")->current == 1);
+    CHECK(row(forces, ar.a, "Test Frigate")->lost == 1);
+    CHECK(row(forces, ar.a, "Test Fighter Hull")->current == 4);
+    CHECK(row(forces, ar.a, "Test Fighter Hull")->lost == 2);
+
+    play.seekRound(3);
+    forces.update(r, s, rec, play.pieces());
+    // The captured cruiser counts for A now; B's row stays at 0 with one lost.
+    REQUIRE(row(forces, ar.b, "Test Cruiser"));
+    CHECK(row(forces, ar.b, "Test Cruiser")->current == 0);
+    CHECK(row(forces, ar.b, "Test Cruiser")->lost == 1);
+    REQUIRE(row(forces, ar.a, "Test Cruiser"));
+    CHECK(row(forces, ar.a, "Test Cruiser")->current == 1);
+    CHECK(row(forces, ar.b, "Home")->current == 0);
+    CHECK(row(forces, ar.b, "Home")->lost == 1);
+    // Seekers are never counted.
+    for (const classic::ForceSide& side : forces.sides())
+        for (const classic::ForceRow& fr : side.rows) CHECK(fr.name != "Unknown");
+}
+
+TEST_CASE("combat windows: the piece report lines and the Drop Troops target") {
+    Arena ar = makeArena(9);
+    GameState& s = ar.s;
+    Colony& colony = homeworld(s, ar.b);
+    colony.population = {{ar.b, 10}};
+    colony.cargo = {};
+    const Location there = locationOf(s.galaxy, colony.planet);
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 4, {"Test Cargo Bay", "Test Cargo Bay", "CT Combat Thruster"}), there);
+    s.vehicle(transport)->cargo.units.push_back({trooper, 4});
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{there, std::nullopt, {ar.a}});
+    REQUIRE(b.started());
+    int ship = -1, planet = -1;
+    for (size_t j = 0; j < b.pieces().size(); ++j) {
+        if (b.pieces()[j].vehicle == transport) ship = int(j);
+        if (b.pieces()[j].kind == CombatPiece::Kind::Planet && b.pieces()[j].planet == colony.planet) planet = int(j);
+    }
+    REQUIRE(ship >= 0);
+    REQUIRE(planet >= 0);
+
+    const auto lines = classic::pieceReportLines(combatRules(), b.state(), b.pieces(), ship);
+    std::vector<std::string> labels;
+    for (const auto& [label, value] : lines) labels.push_back(label);
+    CHECK(labels == std::vector<std::string>{"Movement", "Shields", "Damage", "Supply", "Max Targets", "Combat Group", "Formation"});
+    CHECK(lines[5].second == "None");
+    CHECK(lines[2].second.starts_with("0/"));
+    const auto planetLines = classic::pieceReportLines(combatRules(), b.state(), b.pieces(), planet);
+    REQUIRE_FALSE(planetLines.empty());
+    CHECK(planetLines[0] == std::pair<std::string, std::string>{"Population", "10M"});
+
+    // Drop Troops picks the adjacent colony of another empire, without a click.
+    bool landed = false;
+    for (int round = 0; round < 12 && b.awaitingOrders() && !landed; ++round) {
+        const classic::DropTarget t = classic::dropTroopsTarget(b, ship);
+        if (b.distance(ship, planet) > 1) {
+            CHECK(t.planet < 0);
+            CHECK(t.problem == "No colony of another empire is adjacent.");
+            TacticalOrder mv{OK::Move, ar.a, ship};
+            mv.x = b.pieces()[size_t(planet)].x + 1;
+            mv.y = b.pieces()[size_t(planet)].y + 1;
+            if (b.check(mv).empty()) b.submit(mv);
+        }
+        if (b.distance(ship, planet) <= 1) {
+            const classic::DropTarget near = classic::dropTroopsTarget(b, ship);
+            REQUIRE(near.planet == planet);
+            CHECK(b.submit(TacticalOrder{OK::DropTroops, ar.a, ship, near.planet}).empty());
+            landed = true;
+        } else {
+            b.submit(TacticalOrder{OK::EndPhase, ar.a});
+        }
+    }
+    CHECK(landed);
+}
+
+TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows per vehicle and group, and removes rows") {
+    Arena ar = makeArena(19);
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser"});
+    const DesignId wasp = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "CT Fighter Fuel"});
+    const DesignId drone = design(s, ar.a, "Bee", "Test Drone Hull", {"Test Warhead"});
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    for (int k = 0; k < combat::kSimulatorMaxSides; ++k) setup.sides.push_back({std::format("Race {}", k + 1), k > 0});
+    using Item = combat::SimulatorItem;
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 0}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, lancer, {}, 1}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, wasp, {}, 0}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, wasp, {}, 0}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, drone, {}, 0}));
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Design, drone, {}, 0}));
+    const ObjectId home = homeworld(s, ar.a).planet;
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home, 1}));
+    CHECK_FALSE(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, home, 2}));   // once
+    // The home system's unowned objects come as neutral obstacles.
+    const auto objects = combat::simulatorPlanets(s, ar.a);
+    ObjectId neutral;
+    for (ObjectId o : objects)
+        if (!s.colony(o) && o != home) neutral = o;
+    REQUIRE(neutral.valid());
+    CHECK(classic::simulatorAdd(r, s, setup, Item{Item::Kind::Planet, {}, neutral, 0}));
+
+    const auto rows = classic::simulatorRows(r, s, setup);
+    std::vector<std::string> names;
+    for (const auto& row : rows) names.push_back(row.name);
+    const std::string star = s.galaxy.object(neutral).name;
+    CHECK(names == std::vector<std::string>{"Lancer 0001", "Lancer 0002", "Wasp", "Bee", "Bee", "Lancer 0001", s.galaxy.object(home).name, star});
+    CHECK(rows[2].units == 2);         // one fighter group of two
+    CHECK(rows[5].side == 1);
+    CHECK(rows.back().side == -1);     // neutral
+    REQUIRE(combat::simulatorProblem(r, s, setup).empty());
+
+    // The engine names the ships the same way, and the neutral object stands in the battle sector.
+    const combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    std::vector<std::string> ships;
+    for (const Vehicle& v : sim.state.vehicles)
+        if (v.location == sim.where && !isUnitType(vehicleType(r, sim.state, v))) ships.push_back(v.name);
+    std::sort(ships.begin(), ships.end());
+    CHECK(ships == std::vector<std::string>{"Lancer 0001", "Lancer 0001", "Lancer 0002"});
+    int copies = 0;
+    for (ObjectId o : sim.state.galaxy.system(sim.where.system).objects)
+        if (sim.state.galaxy.object(o).name == star) {
+            ++copies;
+            CHECK_FALSE(sim.state.colony(o));
+        }
+    CHECK(copies == 1);
+
+    // Removing the fighter group row removes both clicks' worth.
+    classic::simulatorRemove(setup, rows[2]);
+    CHECK(std::none_of(setup.items.begin(), setup.items.end(), [&](const Item& i) { return i.design == wasp; }));
+    CHECK(classic::simulatorRows(r, s, setup).size() == rows.size() - 1);
+}
+
+TEST_CASE("combat windows: a side whose first item is another empire's colony copies that empire") {
+    Arena ar = makeArena(21);
+    GameState& s = ar.s;
+    const Rules& r = combatRules();
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser"});
+    // B's colony in A's home system.
+    ObjectId spot;
+    const SystemId home = s.empire(ar.a).homeSystem;
+    for (ObjectId o : s.galaxy.system(home).objects)
+        if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) spot = o;
+    REQUIRE(spot.valid());
+    if (s.colonies.size() < s.galaxy.objects.size()) s.colonies.resize(s.galaxy.objects.size());
+    Colony c;
+    c.planet = spot;
+    c.owner = ar.b;
+    c.population = {{ar.b, 50}};
+    s.colonies[spot.index()] = c;
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    setup.sides = {{"Race 1", true}, {"Race 2", true}};
+    using Item = combat::SimulatorItem;
+    setup.items.push_back(Item{Item::Kind::Design, lancer, {}, 0});
+    setup.items.push_back(Item{Item::Kind::Planet, {}, spot, 1});
+    REQUIRE(combat::simulatorProblem(r, s, setup).empty());
+    const combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    CHECK(sim.state.empire(sim.sides[1]).race.name == s.empire(ar.b).race.name);
+    CHECK(sim.state.empire(sim.sides[0]).race.name == s.empire(ar.a).race.name);
+}
+
+TEST_CASE("combat windows: a battle answered Strategic and watched is not listed again; without tactical combat every human battle is") {
+    for (const bool offered : {true, false}) {
+        CAPTURE(offered);
+        Arena ar = makeArena(29);
+        GameState& s = ar.s;
+        s.options.simultaneous = false;
+        s.options.noTacticalCombat = !offered;
+        s.empire(ar.a).kind = PlayerKind::Human;
+        s.empire(ar.b).kind = PlayerKind::Computer;
+        const Location to = ar.loc, from{to.system, Sector{to.sector.x - 1, to.sector.y}};
+        const VehicleId warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "CT Big Armor"}), from);
+        spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), to);
+        for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+        auto rules = std::make_shared<const Rules>(buildCombatRuleset());
+        classic::ClassicSession session(rules, std::move(s), ar.a, classic::SessionKind::Local);
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = to;
+        session.issue(cmd::SetOrders{warship, {}, {o}});
+        session.answer(true);
+        CHECK(session.battleQuestion().has_value() == offered);
+        if (offered) {
+            // The Strategic Combat window fights it with the strategies and shows it.
+            const BattleQuestion q = *session.battleQuestion();
+            classic::TacticalFight fight;
+            fight.kind = classic::TacticalFight::Kind::Game;
+            fight.battle = std::make_unique<TacticalBattle>(*rules, *q.state, TacticalBattle::Setup{q.where, q.entering, {}});
+            REQUIRE(fight.battle->finished());
+            session.startTactical(std::move(fight));
+            session.endTactical();
+            CHECK_FALSE(session.battleQuestion().has_value());
+            REQUIRE(session.state().combats.size() == 1);
+            CHECK(session.takeStrategicBattles().empty());
+        } else {
+            REQUIRE(session.state().combats.size() == 1);
+            CHECK(session.takeStrategicBattles() == std::vector<size_t>{0});
+        }
+    }
+}

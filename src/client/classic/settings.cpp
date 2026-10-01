@@ -22,7 +22,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 14> kBoolOptions{{
+constexpr std::array<BoolOption, 12> kBoolOptions{{
     {"animate_system_movement", &S::animateSystemMovement},
     {"animate_combat_movement", &S::animateCombatMovement},
     {"sound_on", &S::soundOn},
@@ -35,8 +35,6 @@ constexpr std::array<BoolOption, 14> kBoolOptions{{
     {"center_on_current_ship", &S::centerOnCurrentShip},
     {"show_to_hit_chances", &S::showToHitChances},
     {"tactical_grid", &S::tacticalGrid},
-    {"tactical_ranges", &S::tacticalRanges},
-    {"tactical_names", &S::tacticalNames},
 }};
 
 std::filesystem::path settingsFile() { return userDataDir() / "classic_settings.toml"; }
@@ -53,18 +51,11 @@ std::span<const BoolOption> boolOptions() { return kBoolOptions; }
 std::string settingsToToml(const ClassicSettings& s) {
     toml::table options;
     for (const BoolOption& o : kBoolOptions) options.insert(o.key, s.*o.member);
-    toml::table replay;
-    replay.insert("speed", double(s.replaySpeed));
-    toml::table tactical;
-    tactical.insert("speed", double(s.tacticalSpeed));
-    tactical.insert("auto_end", s.tacticalAutoEnd);
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_percent", s.musicVolume);
     toml::table root;
     root.insert("options", std::move(options));
-    root.insert("replay", std::move(replay));
-    root.insert("tactical", std::move(tactical));
     root.insert("sound", std::move(sound));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
@@ -83,9 +74,6 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (const toml::table* options = root["options"].as_table())
         for (const BoolOption& o : kBoolOptions)
             if (auto v = (*options)[o.key].value<bool>()) s.*o.member = *v;
-    if (auto speed = root["replay"]["speed"].value<double>()) s.replaySpeed = std::clamp(float(*speed), 0.25f, 8.0f);
-    if (auto v = root["tactical"]["speed"].value<double>()) s.tacticalSpeed = std::clamp(float(*v), 0.25f, 8.0f);
-    if (auto v = root["tactical"]["auto_end"].value<bool>()) s.tacticalAutoEnd = *v;
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_percent"].value<int64_t>()) {
         // The nearest of the five steps.
