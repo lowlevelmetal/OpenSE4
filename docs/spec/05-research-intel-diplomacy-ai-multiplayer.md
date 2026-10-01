@@ -1211,11 +1211,12 @@ windows never overlap, so no message is answered twice.
 
 **Wants war with X**
 - Never when already at war with X or X is a team mate. Always when X is a team enemy.
-- Always when an accepted demand queued a war on X.
+- Otherwise, when the war list (§7.4 "Demand lists") holds X: one entry for X is used up,
+  and the answer is yes (confirmed: binary).
 - Otherwise a 50 % roll must pass (no roll in Team Mode), then war when anger ≥ T.
 
 **Wants to break** the treaty with X: only when the treaty is Non-Aggression or better. It
-follows the same pattern as war, with the Break Treaty threshold and its own queue.
+follows the same pattern as war, with the Break Treaty threshold and the break list.
 
 **Initiative**, the first that applies:
 
@@ -1235,7 +1236,10 @@ follows the same pattern as war, with the Break Treaty threshold and its own que
   exists.
 - Needs anger ≤ T. When anger > 70, there is a further 50 % chance to drop the proposal.
 - A team mate, or an accepted "make peace" request, forces a proposal. If no threshold was
-  computed in that case, T = 50.
+  computed in that case, T = 50. The request counts when X is neither a team mate nor a
+  team enemy, the AI is not a subject and the peace list (§7.4 "Demand lists") holds X:
+  one entry for X is then used up, even when no treaty qualifies and nothing is sent
+  (confirmed: binary).
 - **Which treaty**:
   - Walk the `Propose Treaty Type N` entries in file order.
   - An entry qualifies if its treaty is at most `Highest Allowed Treaty`, better than the
@@ -1326,14 +1330,28 @@ Team mates are always accepted, and team enemies always refused.
   empty, as in the stock files (confirmed: binary):
   - remove ships or colonies, or leave a planet: the system is marked to avoid. Colonies
     are never abandoned;
-  - break with, declare war on, support against or make peace with a third empire: queued
-    for the matching decision above;
+  - declare war on, support against, break with or make peace with a third empire: one
+    entry naming that empire is added to the matching demand list (below);
   - attack an empire in a system, or attack a planet: that system becomes an attack target;
   - stop espionage or sabotage: intelligence projects against the requester are cancelled;
   - stop hostile actions against an empire: a promise about the empire the demand names,
     not the requester (§7.3 term 8);
   - stop attacks in a system: nothing happens.
-- These queues are cleared every 10 turns.
+- **Demand lists** (confirmed: binary). Each computer empire keeps a war list (fed by
+  "declare war on" and "support against"), a break list ("break with"), a peace list
+  ("make peace with") and the promises of §7.3 term 8. Each is a list of empire numbers
+  that keeps duplicates: every carried-out demand adds one entry, for the empire the
+  demand names, so two accepted demands about the same empire give two entries. Each
+  check that finds an entry for X uses up one entry: "wants war with X" and "wants to
+  break with X" above, the treaty proposal to X, and for a promise the anger update toward
+  X (§7.3). A check that stops earlier (already at war, a treaty below Non-Aggression for
+  a break, a team mate or team enemy, the AI a subject for a proposal) leaves the entries
+  alone.
+- These lists, and the systems marked to avoid or to attack, are emptied in the
+  start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
+  date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
+  until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
+  on a date that is a multiple of 10) (confirmed: binary).
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -2375,7 +2393,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
   A repeated acceptance of a trade, gift or tribute moves items only when the newest
   political message from the other empire in the accepting empire's log, among those
   dated the turn before or later, is an offer of that kind; it is then that newer offer
-  that is carried out. The offer accepted the first time is too old to be found.
+  that is carried out. The offer accepted the first time is too old to be found. OpenSE4
+  does not reproduce this double delivery (question 48).
 - The stock ports are UDP 6716 for control and TCP 6720 for files.
 
 ### 9.5 Mapping to OpenSE4
@@ -2979,4 +2998,32 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     delivers one twice, in any mode, which matches the original's e-mail, shared-folder
     and Hotseat hosts. Reproducing the TCP/IP double delivery would mean delivering the
     computer players' messages of the turn before again at step 2 of a network host's turn
-    processing; whether to copy this fault of the original is the project's choice.
+    processing. OpenSE4 choice: OpenSE4 does not reproduce it, because it is a fault of the
+    original's TCP/IP host. OpenSE4 delivers each message once in every mode, as the
+    original's e-mail, shared-folder and Hotseat hosts do; the engine choice stands.
+49. **The other demand lists** (§7.4 "Demand lists", "Wants war with X", "Propose
+    Treaty"): **Answer** (confirmed: binary):
+    - Added: when a carried-out demand (the 50 % chance of §7.4) is "declare war on" or
+      "support against", one entry for the empire it names goes to the war list; "break
+      with" adds one to the break list; "make peace with" one to the peace list.
+      Duplicates are kept.
+    - Used up, one entry at a time: a war entry by a check of "wants war with X" that gets
+      past "already at war" and the team tests, which then answers yes; a break entry the
+      same way by "wants to break", which first needs a treaty of Non-Aggression or better;
+      a peace entry by the treaty-proposal check when X is neither a team mate nor a team
+      enemy and the AI is not a subject, which then forces a proposal (nothing is sent when
+      no treaty qualifies, but the entry is gone). Since every check rolls again and the
+      50 % branch checks war and break before the initiative checks them again (§7.4 "Each
+      turn"), a single war entry can be used up by the first check, after which the second
+      check rolls normally; a second entry for the same empire makes the second check
+      answer yes too.
+    - Expire: every list is emptied in the start-of-turn step of each turn whose date (the
+      ministers' date) is a multiple of 10, before the Politics minister acts, so an entry
+      lasts from 1 to 10 turns.
+
+    The engine differs: it keeps one flag per empire for each list (`Relation::queuedWar`,
+    `queuedBreak`, `queuedPeace`), never uses a flag up (it stays set until the 10-turn
+    clear, so a queued peace forces a proposal on every turn until then), and decides
+    "wants war" and "wants to break" once per turn. It must keep counts (or lists) per
+    empire, add one per carried-out demand, use one up at each check described above, and
+    clear them all on the dates that are multiples of 10.
