@@ -204,10 +204,10 @@ float CombatMapPainter::pieceHeading(uint32_t i) const {
     const float to = std::atan2(float(e->x - p.x), float(-(e->y - p.y)));
     if (f->part != AnimationFrame::Part::Turn) return to;
     // Turning: 45 degrees a frame toward the new facing, the shorter way round.
-    constexpr float kPi = std::numbers::pi_v<float>;
-    float d = std::fmod(to - p.heading, 2.0f * kPi);
-    if (d > kPi) d -= 2.0f * kPi;
-    if (d < -kPi) d += 2.0f * kPi;
+    constexpr float pi = std::numbers::pi_v<float>;
+    float d = std::fmod(to - p.heading, 2.0f * pi);
+    if (d > pi) d -= 2.0f * pi;
+    if (d < -pi) d += 2.0f * pi;
     return p.heading + d * float(f->step + 1) / float(std::max(1, f->steps));
 }
 

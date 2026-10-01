@@ -6,6 +6,7 @@
 
 #include <doctest/doctest.h>
 
+#include <ostream>
 #include <string>
 
 using namespace opense4;
