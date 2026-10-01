@@ -63,8 +63,7 @@ pointing at an order button shows its name and key at the top of the system pane
 | Scrap Facilities | `Ctrl+K` |
 | Toggle Minister Control | `Ctrl+Y` |
 
-Jettison Cargo (`J`), Use Facility (`Ctrl+J`) and Convert Resources (`Ctrl+V`) have keys and
-buttons but are not in OpenSE4 yet. The `Ctrl` and `Alt` number keys cannot be changed.
+The `Ctrl` and `Alt` number keys cannot be changed.
 
 ## Movement log
 

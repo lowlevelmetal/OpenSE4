@@ -135,6 +135,27 @@ TEST_CASE("tactical: a battle shown phase by phase in the Strategic Combat windo
     CHECK(ground > 0);   // invasions were among them
 }
 
+TEST_CASE("tactical: a cloaked colony decloaks for a battle shown step by step and cloaks again when it finishes") {
+    // Spec 01 §6.9, spec 04 §2: whether the battle is stepped, shown or fought at once.
+    Arena ar = makeArena(13);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.cloaked = true;
+    const Location there = locationOf(s.galaxy, hw.planet);
+    spawn(s, frigate(s, ar.a, "Raider", 2, {"Test Laser", "CT Big Armor"}), there);
+    spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), there);
+    TacticalBattle::Setup setup{there, std::nullopt, {}};
+    setup.stepped = true;
+    TacticalBattle b(combatRules(), s, setup);
+    REQUIRE(b.started());
+    CHECK_FALSE(b.state().colony(hw.planet)->cloaked);   // decloaked for the battle
+    while (b.step()) CHECK_FALSE(b.state().colony(hw.planet)->cloaked);
+    b.finish();
+    REQUIRE(b.state().colony(hw.planet));
+    CHECK(b.state().colony(hw.planet)->cloaked);
+    CHECK(stateChecksum(b.state()) == stateChecksum(strategic(s, there)));
+}
+
 TEST_CASE("tactical: a battle stepped with the strategies' orders is the strategic battle") {
     // For each battle: (1) strategic resolution; (2) the player sides played by
     // the strategies (AutoPhase), which records their orders; (3) those orders

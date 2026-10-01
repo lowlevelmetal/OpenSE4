@@ -18,9 +18,9 @@ namespace opense4::client::classic {
 
 // The letter groups of one colony for the rows switched on (bit i: row i,
 // game::kFacilityMarkerGroups rows), in the order of the Q44 table: "R", "S",
-// "Y", "Ca", ..., "Slr". `yardWorks`: the colony's yard is not stopped by a
-// cloak (our colonies cannot cloak yet, so callers pass true).
-std::vector<std::string> facilityMarkerGroups(const game::Rules& r, const game::Colony& c, uint16_t rows, bool yardWorks = true);
+// "Y", "Ca", ..., "Slr". Y needs a working yard: a cloaked colony's does not
+// work (spec 01 §6.9).
+std::vector<std::string> facilityMarkerGroups(const game::Rules& r, const game::Colony& c, uint16_t rows);
 // The groups joined with spaces (for lists and tests), such as "R Y Cc".
 std::string facilityMarkers(const game::Rules& r, const game::Colony& c, uint16_t rows);
 

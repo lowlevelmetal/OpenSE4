@@ -1,10 +1,11 @@
 // Stellar manipulation (spec 01 §9, confirmed: binary).
 //
-// Object ids stay stable: objects are converted in place where possible
-// (asteroids <-> planet), keeping their slot (inferred, spec 03 §19 Q72); new
-// objects take the lowest free slot of the object list (GameState::addObject);
-// removed objects leave their system's object list, which frees their slot,
-// and keep their record.
+// An object is never changed in place: a replaced planet or asteroid field is
+// a new object, added while the old one still holds its slot, so it takes the
+// lowest empty slot of the object list (GameState::addObject); then the old
+// one is removed, which empties its slot (spec 03 §19 Q72, confirmed: binary).
+// Removed objects leave their system's object list and keep their record, so
+// ids stay stable and whatever named the old object finds it gone.
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
@@ -86,42 +87,72 @@ void loseColony(TurnContext& ctx, ObjectId planet, std::string_view cause) {
     s.colonies[planet.index()].reset();
 }
 
-// A planet or asteroid field becomes a random natural asteroid field that
-// keeps its name, values and conditions (of `size`, 0 = any).
-void toAsteroids(const Rules& r, SpaceObject& obj, int size, Rng& rng) {
-    std::vector<uint32_t> types = naturalSectorTypes(r.data(), ObjectKind::Asteroids, size);
-    if (types.empty()) types = naturalSectorTypes(r.data(), ObjectKind::Asteroids);
-    obj.kind = ObjectKind::Asteroids;
-    obj.abilities.clear();
-    if (!types.empty()) applySectorType(r.data(), obj, types[rng.below(types.size())]);
-}
-
-// An object leaves its system's object list; its record stays (ids are stable).
+// An object leaves its system's object list, which empties its slot; its
+// record stays (ids are stable).
 void removeObject(GameState& s, ObjectId id) {
     SpaceObject& obj = s.galaxy.object(id);
     std::erase(s.galaxy.system(obj.system).objects, id);
     if (obj.kind == ObjectKind::WarpPoint) obj.destination = {};
 }
 
-// The shockwave of a destroyed star (spec 01 §9): every planet and asteroid
-// field becomes a new asteroid field of any size that keeps its name, values
-// and conditions (colonies lost); everything else except warp points is
-// destroyed, ships and unit groups included.
+// A planet or asteroid field is replaced by a random natural asteroid field
+// (of `size`, 0 = any) that keeps its name, values and conditions. The new
+// field is added first, while the old object still holds its slot, so it
+// takes the lowest empty slot; then the old object is removed with its colony
+// (spec 01 §9, spec 03 §19 Q72, confirmed: binary).
+ObjectId replaceByAsteroids(TurnContext& ctx, ObjectId old, int size, std::string_view cause, Rng& rng) {
+    GameState& s = ctx.state;
+    const Rules& r = ctx.rules;
+    SpaceObject field = s.galaxy.object(old);
+    std::vector<uint32_t> types = naturalSectorTypes(r.data(), ObjectKind::Asteroids, size);
+    if (types.empty()) types = naturalSectorTypes(r.data(), ObjectKind::Asteroids);
+    field.kind = ObjectKind::Asteroids;
+    field.abilities.clear();
+    if (!types.empty()) applySectorType(r.data(), field, types[rng.below(types.size())]);
+    const ObjectId made = s.addObject(std::move(field), s.galaxy.object(old).system);
+    loseColony(ctx, old, cause);
+    removeObject(s, old);
+    return made;
+}
+
+// A vehicle destroyed by the shockwave leaves the game at once, so its slot
+// is empty for the rest of the pass.
+void eraseVehicle(GameState& s, VehicleId id) {
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.id == id; });
+}
+
+// The shockwave of a destroyed star (spec 01 §9, spec 03 §19 Q72, confirmed:
+// binary): one pass over the system's objects in slot order, vehicles and
+// stellar objects together. Each planet or asteroid field is replaced by a new
+// asteroid field of any size that keeps its name, values and conditions (its
+// colony lost), in the lowest slot empty at that moment, which may be one
+// emptied earlier in the pass; every other object except warp points and
+// stars is removed: ships, bases, unit groups, storms, comets. The stars go
+// after the pass.
 void shockwave(TurnContext& ctx, SystemId sys, std::string_view cause, Rng& rng) {
     GameState& s = ctx.state;
-    for (Vehicle& v : s.vehicles)
-        if (alive(v) && v.location.system == sys) vehicleLost(ctx, v, cause);
-    const std::vector<ObjectId> objects = s.galaxy.system(sys).objects;
-    for (ObjectId o : objects) {
-        SpaceObject& obj = s.galaxy.object(o);
-        if (obj.kind == ObjectKind::WarpPoint) continue;
-        if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) {
-            loseColony(ctx, o, cause);
-            toAsteroids(ctx.rules, s.galaxy.object(o), 0, rng);
-        } else {
-            removeObject(s, o);
-        }
+    std::vector<ObjectRef> pass;
+    for (const ObjectRef& ref : objectOrder(s)) {
+        if (ref.vehicle.valid() ? s.vehicle(ref.vehicle)->location.system == sys : s.galaxy.object(ref.object).system == sys)
+            pass.push_back(ref);
     }
+    std::vector<ObjectId> stars;
+    for (const ObjectRef& ref : pass) {
+        if (ref.vehicle.valid()) {
+            if (Vehicle* v = s.vehicle(ref.vehicle)) {
+                vehicleLost(ctx, *v, cause);
+                eraseVehicle(s, ref.vehicle);
+            }
+            continue;
+        }
+        const ObjectKind kind = s.galaxy.object(ref.object).kind;
+        if (kind == ObjectKind::WarpPoint) continue;
+        if (isStar(kind)) stars.push_back(ref.object);
+        else if (kind == ObjectKind::Planet || kind == ObjectKind::Asteroids) replaceByAsteroids(ctx, ref.object, 0, cause, rng);
+        else removeObject(s, ref.object);
+    }
+    for (ObjectId star : stars) removeObject(s, star);
+    s.tidyFleets();
 }
 
 struct Actor {
@@ -293,9 +324,10 @@ protected:
                 if (!plan_.object) return "No asteroid field without a colony here";
                 if (count(sys.id, [](const SpaceObject& o) { return isStar(o.kind); }) == 0) return "A planet needs a star in the system";
                 // Exactly min(Val 1, the field's size).
+                // With no Planet record of that size no planet is made, but the
+                // field is still removed, paid for and reported (spec 03 §19 Q72).
                 const int size = static_cast<int>(std::min<int64_t>(actor_.value, stellarSizeOf(rs, cs_.galaxy.object(*plan_.object))));
                 plan_.types = naturalSectorTypes(rs, ObjectKind::Planet, size);
-                if (plan_.types.empty()) return "No planet of that size can be made";
                 return {};
             }
             case StellarAction::DestroyPlanet: {
@@ -491,11 +523,15 @@ private:
         ctx_.log(owner_, LogCategory::Events, std::move(title), text, here_);
     }
 
-    // The empires present in the system: a ship, base, colony, or fighter,
-    // satellite or drone group there; mine fields do not count (spec 05 §7.3).
-    // Taken as the manipulation is carried out, before its result removes
-    // anything (inferred, spec 05 open question 50).
-    void noteWitnesses() {
+    // Who gets a destroyed planet's or star's report (spec 05 §7.3 term 2,
+    // open question 50, confirmed: binary). Destroy Planet: the empires
+    // present in the system once the planet is gone, with a ship, base,
+    // colony, or fighter, satellite or drone group there; mine fields do not
+    // count (`mines` false, taken after the result). The shockwave (Destroy
+    // Star, Create Nebulae, Create Black Hole): every empire that loses a
+    // colony or any object of its own there, mine fields included (`mines`
+    // true, taken before the result, which removes them all).
+    void noteWitnesses(bool mines) {
         witnesses_.clear();
         auto add = [&](EmpireId e) {
             if (e.valid() && std::find(witnesses_.begin(), witnesses_.end(), e) == witnesses_.end()) witnesses_.push_back(e);
@@ -503,7 +539,7 @@ private:
         for (const Vehicle& v : s_.vehicles) {
             if (!alive(v) || v.location.system != here_.system) continue;
             const ruleset::VehicleType t = vehicleType(r_, s_, v);
-            if (t != ruleset::VehicleType::Mine && t != ruleset::VehicleType::Troop) add(v.owner);
+            if ((mines || t != ruleset::VehicleType::Mine) && t != ruleset::VehicleType::Troop) add(v.owner);
         }
         for (ObjectId o : s_.galaxy.system(here_.system).objects)
             if (const Colony* c = s_.colony(o)) add(c->owner);
@@ -515,25 +551,36 @@ private:
 
     // The result, after every check has passed.
     void perform() {
-        noteWitnesses();
+        witnesses_.clear();
         StarSystem& sys = system();
         const auto& rs = r_.data();
         switch (action_) {
             case StellarAction::CreatePlanet: {
-                // The field has no colony (checked). Its rolled ability does not carry
-                // over, and the planet rolls none (spec 01 §14 Q34, confirmed: binary).
+                // The field has no colony (checked). The planet is a new object,
+                // added while the field still holds its slot, so it never takes
+                // the field's slot; then the field is removed (spec 03 §19 Q72,
+                // confirmed: binary). It keeps the field's values; the field's
+                // rolled ability does not carry over, and the planet rolls none
+                // (spec 01 §14 Q34, confirmed: binary).
                 const std::string name = planetName(sys.id);
-                SpaceObject& obj = s_.galaxy.object(*plan_.object);
-                obj.kind = ObjectKind::Planet;
-                obj.abilities.clear();
-                applySectorType(rs, obj, pick(plan_.types));
-                obj.conditions = rollConditions(false, s_.rng);  // the values are kept
-                obj.name = name;
-                announce(std::format("Planet Created: {}", obj.name));
+                if (!plan_.types.empty()) {
+                    SpaceObject planet = s_.galaxy.object(*plan_.object);
+                    planet.kind = ObjectKind::Planet;
+                    planet.abilities.clear();
+                    applySectorType(rs, planet, pick(plan_.types));
+                    planet.conditions = rollConditions(false, s_.rng);
+                    planet.name = name;
+                    append(std::move(planet), sys.id);
+                }
+                remove(*plan_.object);
+                announce(std::format("Planet Created: {}", name));
                 return;
             }
             case StellarAction::DestroyPlanet: {
                 destroyPlanet(ctx_, *plan_.object, "The planet was destroyed.", s_.rng);
+                // Destroy Planet takes the empires present after its result:
+                // the destroyed colony no longer counts (spec 05 Q50).
+                noteWitnesses(false);
                 announce(std::format("{}{}", kPlanetDestroyed, s_.galaxy.object(*plan_.object).name));
                 return;
             }
@@ -548,6 +595,7 @@ private:
                 return;
             }
             case StellarAction::DestroyStar:
+                noteWitnesses(true);
                 announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
                 destroyStar(ctx_, *plan_.object, "A star exploded in the system.", s_.rng);
                 return;
@@ -587,6 +635,7 @@ private:
             case StellarAction::CreateNebulae:
             case StellarAction::CreateBlackHole: {
                 const bool nebula = action_ == StellarAction::CreateNebulae;
+                noteWitnesses(true);
                 announce(std::format("{}{}", kStarDestroyed, s_.galaxy.object(*plan_.object).name));
                 announce(std::format("{} created in {}", nebula ? "Nebula" : "Black hole", sys.name));
                 shockwave(ctx_, sys.id, nebula ? "The system became a nebula." : "The system collapsed into a black hole.", s_.rng);
@@ -735,9 +784,8 @@ void closeWarpPoint(GameState& s, ObjectId warpPoint) {
 void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng) {
     GameState& s = ctx.state;
     if (!planet.valid() || planet.index() >= s.galaxy.objects.size() || s.galaxy.object(planet).kind != ObjectKind::Planet) return;
-    detail::loseColony(ctx, planet, cause);
-    SpaceObject& obj = s.galaxy.object(planet);
-    detail::toAsteroids(ctx.rules, obj, stellarSizeOf(ctx.rules.data(), obj), rng);
+    if (!detail::inSystem(s.galaxy, planet)) return;
+    detail::replaceByAsteroids(ctx, planet, stellarSizeOf(ctx.rules.data(), s.galaxy.object(planet)), cause, rng);
 }
 
 } // namespace opense4::game::movement

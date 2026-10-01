@@ -386,10 +386,12 @@ enum class OrderKind : uint8_t {
     Cloak,
     Decloak,
     SweepMines,
-    UseComponent,   // amount = design entry index
+    UseComponent,   // amount = design entry position (spec 03 §8)
     StellarManipulation,  // amount = StellarAction, object/location = target
     MoveToWaypoint, // amount = waypoint slot
     SelfDestruct,   // the whole object is destroyed (spec 03 §8, §15; movement::canSelfDestruct)
+    UseFacility,    // a colony's: amount = facility position; completes with no effect (spec 03 §8)
+    ConvertResources,  // a colony's: `amount` (at most 65,000) of resource `from` into `to` (spec 02 §5.6)
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -407,6 +409,10 @@ struct Order {
     VehicleId vehicle;
     DesignId design;
     int amount = 0;
+    // Convert Resources: the resource converted from and into, as Resource
+    // values; with any other value the order does nothing (spec 02 §5.6).
+    uint8_t from = 0;
+    uint8_t to = 0;
     bool operator==(const Order&) const = default;
 };
 
@@ -482,9 +488,22 @@ struct Colony {
     // nobody invades the colony.
     EmpireId invader;
     std::vector<UnitStack> landedTroops;
-    // Planet orders (simultaneous games, spec 05 §9.2): Launch Units and
-    // Recover Units, carried out in the movement phase (spec 03 §12).
+    // The colony's order list (spec 03 §8, §12, spec 02 §5.6): Launch Units,
+    // Recover Units, Use Facility and Convert Resources, carried out on day 1
+    // of the movement phase in a simultaneous game, and in a turn-based one at
+    // the start of the owner's turn and when the player gives an order that
+    // runs the list. It follows the list rules of spec 03 §8, Repeat included.
     std::vector<Order> orders;
+    bool repeatOrders = false;
+    // Colony (planetary) cloaking (spec 01 §6.9, confirmed: binary). The cloak
+    // and sensor levels per sight type come from the colony's facilities
+    // alone and are stored: sight::recalculateColony refreshes them, only when
+    // a facility is completed, Scrap Facilities is used, a battle destroys
+    // facilities, the colony is founded or the game is loaded. The cloaked
+    // mark survives every change of owner.
+    bool cloaked = false;
+    std::array<int, kSightTypes> cloakLevels{1, 1, 1, 1, 1};    // at least 1 in each type
+    std::array<int, kSightTypes> sensorLevels{1, 0, 0, 0, 0};   // EM Active at least 1
 
     int64_t totalPopulation() const {
         int64_t n = 0;
@@ -1001,9 +1020,12 @@ std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
 const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
 // The members at the fleet's location, alive, in member order.
 std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f);
-// The members that carry out the fleet's orders as one group: those at its
-// location that are not mothballed, in member order. A mothballed member only
-// holds the fleet's speed at 0 (inferred, spec 03 §19 Q74).
+// The members that carry out the fleet's orders as one group: every member at
+// its location, mothballed ones included, in member order. Nothing in fleet
+// handling tests a member's status: a mothballed member gets copies of the
+// fleet's orders, is in the group and can act for it, and its maximum
+// movement of 0 holds the fleet's speed at 0 (spec 03 §9, §19 Q74, confirmed:
+// binary).
 std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f);
 // The vehicle is one of its fleet's group (fleetGroup).
 bool inFleetGroup(const GameState& s, const Vehicle& v);

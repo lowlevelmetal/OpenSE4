@@ -1,6 +1,7 @@
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/movement_internal.hpp"
@@ -40,6 +41,19 @@ bool ownDesign(const GameState& s, EmpireId e, DesignId d) { return d.valid() &&
 
 bool knownSystem(const GameState& s, SystemId sys) { return sys.valid() && sys.index() < s.galaxy.systems.size(); }
 
+// The requests that name a third empire (spec 05 §3.4, open question 51).
+bool needsThirdEmpire(MessageType t) {
+    switch (t) {
+        case MessageType::RequestStopHostilities:
+        case MessageType::RequestBreakTreaty:
+        case MessageType::RequestDeclareWar:
+        case MessageType::RequestMakePeace:
+        case MessageType::RequestSupport:
+        case MessageType::RequestAttackEmpire: return true;
+        default: return false;
+    }
+}
+
 std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
     if (o.kind >= OrderKind::Count) return "Unknown order";
     switch (o.kind) {
@@ -58,6 +72,13 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
             break;
         case OrderKind::MoveToWaypoint:
             if (o.amount < 0 || o.amount >= static_cast<int>(s.empire(e).waypoints.size())) return "Invalid waypoint";
+            break;
+        case OrderKind::UseComponent:
+        case OrderKind::UseFacility:
+            if (o.amount < 0) return "No such position";
+            break;
+        case OrderKind::ConvertResources:
+            if (o.amount < 0 || o.amount > economy::kMaxConversionOrder) return "At most 65,000 per conversion order";
             break;
         case OrderKind::LoadCargo:
         case OrderKind::DropCargo:
@@ -109,11 +130,12 @@ struct Applier {
 
     Empire& emp() { return s.empire(e); }
 
-    // An own space yard in the sector: a planet facility, or a ship's Space
-    // Yard component while that ship is not cloaked (spec 03 §14, §15).
+    // An own working space yard in the sector: a planet facility while the
+    // colony is not cloaked, or a ship's Space Yard component while that ship
+    // is not cloaked (spec 03 §14, §15, spec 01 §6.9).
     bool yardAt(Location where) const {
         for (ObjectId o : planetsAt(s, where))
-            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasSpaceYard(r, *c)) return true;
+            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasWorkingYard(r, *c)) return true;
         for (const Vehicle& v : s.vehicles)
             if (v.count > 0 && v.owner == e && v.location == where && v.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(r, s, v))
                 return true;
@@ -133,22 +155,29 @@ struct Applier {
     }
 
     // Orders for a fleet, given to the fleet or to any of its members (spec 03
-    // §8, §9, §19 Q65, confirmed: binary): the fleet has no list of its own;
-    // every member at its location holds a copy, and every change applies to
-    // each copy. `base` is the list the player changed (the addressed
-    // member's, else the fleet's as fleetOrders shows it): orders added after
-    // it are appended to every copy, expanded once from where the base leaves
-    // the fleet. Any other change (Clear Orders, an order taken back or put in
-    // front) makes every copy the new list (inferred, spec 03 §19 Q76). Repeat
-    // is set on every copy. An addressed member away from the fleet's
-    // location gets the change too (inferred, Q76).
+    // §8, §9, §19 Q65, Q76, confirmed: binary): the fleet has no list of its
+    // own; every member at its location holds a copy, and each change is
+    // applied list by list to those members only. A member away from the
+    // fleet's location that is addressed passes the change on to them and
+    // keeps its own list as it is. `base` is the list the player changed (the
+    // addressed member's, else the fleet's as fleetOrders shows it): orders
+    // added after it are appended to each list,
+    // expanded once from where the base leaves the fleet; Clear Orders empties
+    // each list and switches its Repeat off; Repeat Orders sets each list's
+    // flag. The original has no other change to a list; taking an order back
+    // or putting one in front makes every list the new one (an OpenSE4 choice,
+    // Q76).
     R setFleetOrders(const Fleet& f, const Vehicle* addressed, const std::vector<Order>& given, bool repeat) {
-        std::vector<VehicleId> holders = fleetGroup(s, f);
-        if (addressed && std::find(holders.begin(), holders.end(), addressed->id) == holders.end()) holders.push_back(addressed->id);
+        const std::vector<VehicleId> holders = fleetGroup(s, f);
         if (holders.empty()) return R::fail("The fleet has no member at its location");
         const std::vector<Order> base = addressed ? addressed->orders : fleetOrders(s, f);
-        const std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
-        const bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
+        std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
+        bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
+        // Use Component in a turn-based game: each list at the location is cleared first.
+        if (appended && clearBeforeUse(full, base.size())) {
+            appended = false;
+            repeat = false;
+        }
         for (VehicleId id : holders) {
             Vehicle& v = *s.vehicle(id);
             if (appended) v.orders.insert(v.orders.end(), full.begin() + static_cast<std::ptrdiff_t>(base.size()), full.end());
@@ -158,6 +187,27 @@ struct Applier {
         return {};
     }
 
+    // Turn-based games: Use Component and Use Facility clear the list before
+    // they are added (spec 03 §8, §19 Q76, confirmed: binary). `list` is the
+    // new list, whose orders from `added` on were just given; when one of
+    // them is such an order, only it and what follows it stay. True when the
+    // list was cut; the caller then switches Repeat off, as Clear Orders does
+    // (inferred).
+    bool clearBeforeUse(std::vector<Order>& list, size_t added) const {
+        if (s.options.simultaneous) return false;
+        for (size_t i = list.size(); i-- > added;)
+            if (list[i].kind == OrderKind::UseComponent || list[i].kind == OrderKind::UseFacility) {
+                list.erase(list.begin(), list.begin() + static_cast<std::ptrdiff_t>(i));
+                return true;
+            }
+        return false;
+    }
+
+    // The orders a colony carries out (spec 02 §5.6, spec 03 §8, §12).
+    static bool colonyOrder(OrderKind k) {
+        return k == OrderKind::LaunchUnits || k == OrderKind::RecoverUnits || k == OrderKind::UseFacility || k == OrderKind::ConvertResources;
+    }
+
     R operator()(const cmd::SetOrders& c) {
         for (const Order& o : c.orders)
             if (auto p = orderProblem(s, e, o); !p.empty()) return R::fail(p);
@@ -165,10 +215,23 @@ struct Applier {
             Colony* col = ownColony(s, e, c.planet);
             if (!col) return R::fail("Not your planet");
             for (const Order& o : c.orders)
-                if (o.kind != OrderKind::LaunchUnits && o.kind != OrderKind::RecoverUnits) return R::fail("Planets can only launch and recover units");
-            col->orders = c.orders;
+                if (!colonyOrder(o.kind)) return R::fail("Planets cannot carry out that order");
+            std::vector<Order> list = c.orders;
+            const size_t kept = static_cast<size_t>(std::mismatch(col->orders.begin(), col->orders.end(), list.begin(), list.end()).second - list.begin());
+            // Convert Resources is given only to a colony with a converter, as
+            // its button is lit (spec 02 §5.6; checked here since commands can
+            // come from anywhere, an OpenSE4 choice). Orders already in the
+            // list stay even when the converter is gone.
+            for (size_t i = kept; i < list.size(); ++i)
+                if (list[i].kind == OrderKind::ConvertResources && !economy::colonyConverts(r, s, *col))
+                    return R::fail("This colony cannot convert resources");
+            const bool cleared = clearBeforeUse(list, kept);
+            col->orders = std::move(list);
+            col->repeatOrders = c.repeat && !cleared;
             return {};
         }
+        for (const Order& o : c.orders)
+            if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
         // Explore, Resupply, Repair and the composite orders are expanded into
         // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
@@ -179,8 +242,10 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
         if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
+        const size_t kept = static_cast<size_t>(std::mismatch(v->orders.begin(), v->orders.end(), c.orders.begin(), c.orders.end()).second - c.orders.begin());
         v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
-        v->repeatOrders = c.repeat;
+        const bool cleared = clearBeforeUse(v->orders, kept);
+        v->repeatOrders = c.repeat && !cleared;
         return {};
     }
 
@@ -292,6 +357,8 @@ struct Applier {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");
             if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be scrapped");
+            // The Scrap window lists no fleet member (spec 03 §15, §19 Q74, confirmed: binary).
+            if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be scrapped");
             if (!yardAt(v->location)) return R::fail("Scrapping needs a space yard in the sector");
             const auto type = vehicleType(r, s, *v);
             if (type == ruleset::VehicleType::Drone || type == ruleset::VehicleType::Mine) return R::fail("Drones and minefields cannot be scrapped");
@@ -311,6 +378,7 @@ struct Applier {
         // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
         emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
+        sight::recalculateColony(r, *col);  // Scrap Facilities refreshes the cloak and sensor levels (spec 01 §6.9)
         // Scrapping the space yard removes vehicles from the queue.
         if (hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard) && !colonyHasSpaceYard(r, *col))
             std::erase_if(col->queue.items, [&](const QueueItem& q) {
@@ -325,6 +393,9 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
         if (isUnitType(vehicleType(r, s, *v))) return R::fail("Units cannot be mothballed");
+        // The Scrap window lists no fleet member, so neither Mothball nor
+        // Unmothball reaches one (spec 03 §9, §15, §19 Q74, confirmed: binary).
+        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be mothballed or unmothballed");
         if (c.mothball) {
             if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be mothballed");
             if (v->status != VehicleStatus::Normal) return R::fail("Already mothballed");
@@ -455,6 +526,7 @@ struct Applier {
         if (!v) return R::fail("Not your vehicle");
         if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
         if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be retrofitted");
+        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be retrofitted");  // spec 03 §15, §19 Q74
         const Design& oldD = s.design(v->design);
         const Design& newD = s.design(c.design);
         // Pair each target component with the first unpaired current entry of the
@@ -620,6 +692,70 @@ struct Applier {
         return moved > 0 ? R{} : R::fail("Nothing could be moved");
     }
 
+    R operator()(const cmd::CloakColony& c) {
+        Colony* col = ownColony(s, e, c.planet);
+        if (!col) return R::fail("Not your planet");
+        if (c.cloak) {
+            if (col->cloaked) return R::fail("The colony is already cloaked");
+            if (!sight::colonyCanCloak(*col)) return R::fail("No facility of this colony can cloak it");
+            col->cloaked = true;
+            sight::updateKnowledge(r, s);
+            return {};
+        }
+        if (!col->cloaked) return R::fail("The colony is not cloaked");
+        col->cloaked = false;
+        sight::updateKnowledge(r, s);
+        TurnContext contact{r, s, {}, {}, {}};
+        diplomacy::updateContacts(contact);  // Decloak runs the first-contact check at once
+        return {};
+    }
+
+    R operator()(const cmd::JettisonCargo& c) {
+        Cargo* hold = nullptr;
+        if (c.vehicle.valid()) {
+            Vehicle* v = ownVehicle(s, e, c.vehicle);
+            if (!v || v->count <= 0) return R::fail("Not your vehicle");
+            if (isUnitType(vehicleType(r, s, *v))) return R::fail("Unit groups carry no cargo");
+            if (v->status == VehicleStatus::Mothballed) return R::fail("A mothballed vehicle cannot jettison cargo");
+            hold = &v->cargo;
+        } else {
+            Colony* col = ownColony(s, e, c.planet);
+            if (!col) return R::fail("Not your planet");
+            hold = &col->cargo;
+        }
+        if (c.population.empty() && c.units.empty()) return R::fail("Nothing to jettison");
+        // Every entry must be held, in at least the amount named (all named
+        // entries of one race or design together).
+        std::map<EmpireId, int64_t> races;
+        std::map<DesignId, int64_t> designs;
+        for (const PopulationGroup& p : c.population) {
+            if (p.millions <= 0) return R::fail("Nothing to jettison");
+            races[p.race] += p.millions;
+        }
+        for (const UnitStack& u : c.units) {
+            if (u.count <= 0) return R::fail("Nothing to jettison");
+            designs[u.design] += u.count;
+        }
+        for (const auto& [race, n] : races) {
+            const auto held = std::find_if(hold->population.begin(), hold->population.end(), [&](const PopulationGroup& p) { return p.race == race; });
+            if (held == hold->population.end() || held->millions < n) return R::fail("Not that much population aboard");
+        }
+        for (const auto& [design, n] : designs)
+            if (hold->unitCount(design) < n) return R::fail("Not that many units aboard");
+        // Destroyed: nothing goes into space or onto a planet.
+        for (const auto& [race, n] : races)
+            for (PopulationGroup& p : hold->population)
+                if (p.race == race) p.millions -= n;
+        for (const auto& [design, n] : designs) {
+            for (UnitStack& u : hold->units)
+                if (u.design == design) u.count -= static_cast<int>(n);
+            s.design(design).lost += static_cast<int>(n);  // spec 04 §15 Number Lost
+        }
+        std::erase_if(hold->population, [](const PopulationGroup& p) { return p.millions <= 0; });
+        std::erase_if(hold->units, [](const UnitStack& u) { return u.count <= 0; });
+        return {};
+    }
+
     R operator()(const cmd::CreateDesign& c) {
         Design d = c.design;
         if (d.name.empty()) return R::fail("A design needs a name");
@@ -744,6 +880,17 @@ struct Applier {
         if (!m.to.valid() || m.to.index() >= s.empires.size() || m.to == e) return R::fail("Invalid recipient");
         if (!emp().relation(m.to).contact) return R::fail("No contact with that empire");
         if (emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
+        // A request about a third empire names one the sender picks from the
+        // empires it has met that are still in the game, other than itself and
+        // the recipient (spec 05 open question 51, confirmed: binary). A
+        // computer player's own messages do not go through that picker and are
+        // not checked (inferred).
+        if (needsThirdEmpire(m.type) && emp().kind == PlayerKind::Human) {
+            const EmpireId third = m.thirdEmpire;
+            if (!third.valid() || third.index() >= s.empires.size() || third == e || third == m.to || !s.empire(third).alive ||
+                !emp().relation(third).contact)
+                return R::fail("Choose an empire we have met, other than the recipient");
+        }
         // The game option limits the message types a player picks; the
         // answer to a request for a gift or tribute (the computer player's,
         // spec 05 §7.4, which never reads the option) is always allowed.
@@ -831,8 +978,9 @@ struct Applier {
             case MessageType::RequestAttackEmpire: addUnique(me.aiMemory.attackSystems, d.system); break;
             case MessageType::RequestAttackPlanet: addUnique(me.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
             // A promise about the empire the demand names, not the requester
-            // (spec 05 open question 47). None named: nothing (inferred, spec
-            // 05 open question 51).
+            // (spec 05 open question 47). None named: nothing, which has the
+            // effect of the original's record of an empire it never uses (spec
+            // 05 open question 51; a player cannot send such a request).
             case MessageType::RequestStopHostilities:
                 if (named) ++named->promises;
                 break;
@@ -1083,6 +1231,8 @@ OPENSE4_CMD_NAME(DecideWar)
 OPENSE4_CMD_NAME(SetInterfaceOptions)
 OPENSE4_CMD_NAME(CarryOutDemand)
 OPENSE4_CMD_NAME(UseDemandEntry)
+OPENSE4_CMD_NAME(JettisonCargo)
+OPENSE4_CMD_NAME(CloakColony)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

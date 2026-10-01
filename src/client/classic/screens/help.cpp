@@ -10,7 +10,6 @@
 // "weapons" for the Weapons Report with `index` as the initial weapon mount.
 
 #include "client/app_settings.hpp"
-#include "client/classic/order_rules.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -53,10 +52,7 @@ std::vector<Hotkey> boundKeys(std::initializer_list<std::string_view> groups) {
             for (const KeyChord& c : b.chords(a.action))
                 if (!c.empty()) keys += (keys.empty() ? "" : ", ") + chordName(c);
             if (keys.empty()) continue;
-            std::string action = a.label;
-            for (size_t i = 0; i < kOrderCount; ++i)
-                if (orderAction(static_cast<OrderId>(i)) == a.action && orderNotInEngine(static_cast<OrderId>(i))) action += " (not in OpenSE4 yet)";
-            out.push_back({std::move(keys), std::move(action)});
+            out.push_back({std::move(keys), a.label});
         }
     return out;
 }

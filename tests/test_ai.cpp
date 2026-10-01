@@ -4384,3 +4384,42 @@ TEST_CASE("installed data set: AI files load and computer players play (opt-in)"
         }
     }
 }
+
+TEST_CASE("ai: the Destroy Planet minister skips every colony marked cloaked, even one it sees (spec 01 §6.9)") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (const ruleset::Component& c : std::vector<ruleset::Component>(rs.components))
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Component breaker = c;
+            breaker.name = "Test Planet Breaker";
+            breaker.abilities.clear();
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::DestroyPlanetSize));
+            a.value1 = "100";
+            breaker.abilities.push_back(a);
+            rs.components.push_back(breaker);
+        }
+    rs.reindex();
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 12, r);
+    exploreEverything(s);
+    const EmpireId me{0u}, them{1u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId design = addTestDesign(s, r, me, "Breaker", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Planet Breaker"});
+    s.design(design).designType = "Destroy Planet";
+    const VehicleId id = addTestVehicle(s, r, design, homeAt).id;
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        return ordersOf(p, id);
+    };
+    const auto orders = plan(s);
+    REQUIRE_FALSE(orders.empty());
+    CHECK(orders.back().kind == OrderKind::StellarManipulation);
+    CHECK(s.colony(orders.back().object)->owner == them);
+    // Every colony of the enemy marked cloaked: no target.
+    GameState hidden = s;
+    for (auto& c : hidden.colonies)
+        if (c && c->owner == them) c->cloaked = true;
+    CHECK(plan(hidden).empty());
+}

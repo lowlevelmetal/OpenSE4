@@ -5,6 +5,7 @@
 #include "game/economy_internal.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -135,11 +136,12 @@ bool itemObsolete(const Rules& r, const GameState& s, const cmd::QueueTarget& t,
     // stay, even while it is mothballed or its yard component is destroyed
     // (confirmed: binary, spec 02 §6.1, §13 Q53).
     if (ship) return item.kind != QueueItem::Kind::Vehicle;
-    // A colony without a working space yard loses its ship and base items and
-    // its upgrades with no lower-level facility left. Unit and facility items
-    // stay, an upgrade with nothing left stays on a colony with a yard (§6.6),
-    // and so does an item whose design no longer exists.
-    if (colonyHasSpaceYard(r, *c)) return false;
+    // A colony without a working space yard (none built, or the colony is
+    // cloaked, spec 01 §6.9) loses its ship and base items and its upgrades
+    // with no lower-level facility left. Unit and facility items stay, an
+    // upgrade with nothing left stays on a colony with a yard (§6.6), and so
+    // does an item whose design no longer exists.
+    if (colonyHasWorkingYard(r, *c)) return false;
     switch (item.kind) {
         case QueueItem::Kind::Vehicle:
             if (!item.design.valid() || item.design.index() >= s.designs.size()) return false;
@@ -377,6 +379,7 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                 ctx.mood(e, "Facility Constructed", q.location.system, c->planet);
             }
             gainExperience(s.empire(e), count);  // each finished facility item adds its count (confirmed: binary)
+            sight::recalculateColony(r, *c);      // a completed facility refreshes the colony's cloak and sensor levels (spec 01 §6.9)
             return Outcome::Done;
         }
         case QueueItem::Kind::Upgrade: {
@@ -405,6 +408,8 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             }
             ctx.log(e, LogCategory::Construction, std::format("{} upgraded", where),
                     std::format("{} facilit{} now {}.", changed, changed == 1 ? "y is" : "ies are", target.name), q.location);
+            // Upgraded facilities are completed facilities too (inferred, spec 01 §6.9).
+            sight::recalculateColony(r, *c);
             return Outcome::Done;
         }
     }
@@ -502,6 +507,12 @@ void runConstruction(TurnContext& ctx, EmpireId e) {
         if (c && c->owner == e) advanceQueueMode(c->queue, maxTurns);
     for (Vehicle& v : s.vehicles)
         if (v.owner == e) advanceQueueMode(v.queue, maxTurns);
+    // A further pass moves the counter of every cloaked object's queue: a
+    // cloaked colony, handled above like any other, moves twice (spec 02 §6.4,
+    // spec 01 §6.9, confirmed: binary). A cloaked ship's counter already moved
+    // once above, the one move it gets.
+    for (auto& c : s.colonies)
+        if (c && c->owner == e && c->cloaked) advanceQueueMode(c->queue, maxTurns);
 }
 
 } // namespace opense4::game::economy

@@ -8,6 +8,7 @@
 #include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <array>
@@ -177,6 +178,9 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
         for (game::ObjectId id : sys.objects) {
             const game::SpaceObject& o = s.galaxy.object(id);
             if (o.kind != game::ObjectKind::Planet && o.kind != game::ObjectKind::Asteroids) continue;
+            // A cloaked colony the empire cannot see leaves its planet out; when
+            // it is seen it is listed as a colony (spec 06 §1.8.1, spec 01 §6.9).
+            if (!game::sight::colonyShown(r, s, e, id)) continue;
             PlanetInfo p;
             p.id = id;
             p.system = sys.id;
@@ -349,8 +353,8 @@ std::vector<QueueEntry> empireQueues(const game::Rules& r, const game::GameState
         if (!c || c->owner != e) continue;
         QueueEntry q;
         q.target.planet = c->planet;
-        // Our engine has no colony cloaking, so a colony's yard always works.
-        q.kind = game::colonyHasSpaceYard(r, *c) ? QueueKind::PlanetYard : QueueKind::Planet;
+        // A cloaked colony's yard does not work (spec 01 §6.9, spec 06 §1.8.2).
+        q.kind = game::colonyHasWorkingYard(r, *c) ? QueueKind::PlanetYard : QueueKind::Planet;
         q.where = game::locationOf(s.galaxy, c->planet);
         q.name = s.galaxy.object(c->planet).name;
         out.push_back(std::move(q));

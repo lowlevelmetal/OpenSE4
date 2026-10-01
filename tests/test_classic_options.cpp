@@ -145,7 +145,9 @@ TEST_CASE("classic options: facility marker letters and their tests (spec 06 §7
     CHECK(facilityMarkerGroups(r, c, plague) == std::vector<std::string>{"Src"});
     // R, S, Y in the table's order; Y needs a working (uncloaked) yard.
     CHECK(facilityMarkerGroups(r, c, yards) == std::vector<std::string>{"R", "S", "Y"});
-    CHECK(facilityMarkerGroups(r, c, yards, false) == std::vector<std::string>{"R", "S"});
+    Colony cloaked = c;
+    cloaked.cloaked = true;   // a cloaked colony's yard does not work (spec 01 §6.9)
+    CHECK(facilityMarkerGroups(r, cloaked, yards) == std::vector<std::string>{"R", "S"});
 
     // Whose colonies are marked: ours, and Military Alliance or Partnership partners'.
     CHECK(showsFacilityMarkers(w.s, kA, kA));

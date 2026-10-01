@@ -97,9 +97,8 @@ struct PlanetInfo {
     std::string problem;          // why we cannot colonize it now (empty: we can)
 };
 
-// Every planet and asteroid field in the systems the empire has explored.
-// (Our engine has no planetary cloak, so none is left out for one, and every
-// colony is seen.)
+// Every planet and asteroid field in the systems the empire has explored,
+// except a planet whose colony is cloaked and unseen (spec 01 §6.9).
 std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 bool matches(PlanetFilter f, const PlanetInfo& p);
 

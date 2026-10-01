@@ -338,3 +338,89 @@ TEST_CASE("ship windows: a renamed design needs a name no empire uses") {
     CHECK(designNameInUse(s, "Theirs"));
     CHECK_FALSE(designNameInUse(s, "Nobody's"));
 }
+
+TEST_CASE("ships ui: the Jettison Cargo lists move a step of a line, merge entries and drop emptied lines (spec 03 §8)") {
+    Cargo cargo;
+    cargo.population = {{EmpireId{0u}, 12}, {EmpireId{1u}, 3}};
+    cargo.units = {{DesignId{4u}, 10}, {DesignId{5u}, 5}};
+    shipui::JettisonLists lists = shipui::jettisonLists(cargo);
+    // Each race's own amount (OpenSE4 choice), then the unit stacks.
+    REQUIRE(lists.present.size() == 4);
+    CHECK(lists.present[0] == shipui::JettisonLine{{}, EmpireId{0u}, 12});
+    CHECK(lists.present[1] == shipui::JettisonLine{{}, EmpireId{1u}, 3});
+    CHECK(lists.present[2] == shipui::JettisonLine{DesignId{4u}, {}, 10});
+    // Move Five of the first stack, then Move All of the second: a new line each, in order.
+    lists.move(true, 2, shipui::Step::Five);
+    lists.move(true, 3, shipui::Step::All);
+    CHECK(lists.present.size() == 3);  // the emptied line is gone
+    REQUIRE(lists.chosen.size() == 2);
+    CHECK(lists.chosen[0] == shipui::JettisonLine{DesignId{4u}, {}, 5});
+    CHECK(lists.chosen[1] == shipui::JettisonLine{DesignId{5u}, {}, 5});
+    // The same entry again adds up on its line; more than the line holds moves what it holds.
+    lists.move(true, 2, shipui::Step::Ten);
+    CHECK(lists.chosen[0] == shipui::JettisonLine{DesignId{4u}, {}, 10});
+    CHECK(lists.present.size() == 2);
+    // A click on the right moves it back the same way, onto a new line at the end.
+    lists.move(false, 1, shipui::Step::One);
+    CHECK(lists.chosen[1].amount == 4);
+    CHECK(lists.present.back() == shipui::JettisonLine{DesignId{5u}, {}, 1});
+    lists.move(true, 1, shipui::Step::One);  // a race's population, one million
+    // OK: exactly the right-hand list.
+    const auto c = shipui::jettisonCommand(lists, VehicleId{7u}, ObjectId{});
+    REQUIRE(c);
+    CHECK(c->vehicle == VehicleId{7u});
+    CHECK(c->units == std::vector<UnitStack>{{DesignId{4u}, 10}, {DesignId{5u}, 4}});
+    CHECK(c->population == std::vector<PopulationGroup>{{EmpireId{1u}, 1}});
+    CHECK_FALSE(shipui::jettisonCommand(shipui::JettisonLists{}, VehicleId{7u}, ObjectId{}));
+}
+
+TEST_CASE("ships ui: Jettison Cargo is for an own ship or base that is not mothballed, or an own colony") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const EmpireId me{0u};
+    const Colony& home = homeworld(s, me);
+    CHECK(shipui::canJettisonFrom(r, s, me, {}, home.planet));
+    CHECK_FALSE(shipui::canJettisonFrom(r, s, EmpireId{1u}, {}, home.planet));
+    VehicleId ship;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == me && !shipui::isUnitVehicle(r, s, v)) ship = v.id;
+    REQUIRE(ship.valid());
+    CHECK(shipui::canJettisonFrom(r, s, me, ship, {}));
+    s.vehicle(ship)->status = VehicleStatus::Mothballed;
+    CHECK_FALSE(shipui::canJettisonFrom(r, s, me, ship, {}));
+}
+
+TEST_CASE("ships ui: the Convert Resources window adds and takes steps, merges lines, and splits them into orders (spec 02 §5.6)") {
+    shipui::ConversionWindow w;
+    CHECK(w.target == Resource::Minerals);  // Minerals is down when it opens
+    CHECK(w.step == 1000);
+    w.target = Resource::Organics;
+    w.add(Resource::Minerals);
+    w.add(Resource::Minerals);  // same source and target: the line grows
+    w.press(100'000);
+    w.add(Resource::Radioactives);
+    w.press(10'000);            // pressing one releases the other
+    CHECK(w.step == 10'000);
+    w.press(10'000);            // and pressing it again: back to 1,000
+    CHECK(w.step == 1000);
+    w.target = Resource::Minerals;
+    w.add(Resource::Minerals);  // source = target is not checked
+    REQUIRE(w.lines.size() == 3);
+    CHECK(w.lines[0] == shipui::ConversionLine{Resource::Minerals, Resource::Organics, 2000});
+    CHECK(w.lines[1] == shipui::ConversionLine{Resource::Radioactives, Resource::Organics, 100'000});
+    CHECK(w.lines[2] == shipui::ConversionLine{Resource::Minerals, Resource::Minerals, 1000});
+    // A click takes a step off; below one step the line drops to 0 and goes.
+    w.press(10'000);
+    w.remove(1);
+    CHECK(w.lines[1].amount == 90'000);
+    w.remove(0);
+    CHECK(w.lines.size() == 2);
+    // OK: each line in order, as orders of at most 65,000.
+    const std::vector<Order> orders = shipui::conversionOrders(w.lines);
+    REQUIRE(orders.size() == 3);
+    CHECK(orders[0].amount == 65'000);
+    CHECK(orders[1].amount == 25'000);
+    CHECK(orders[2].amount == 1000);
+    CHECK(orders[2].from == static_cast<uint8_t>(Resource::Minerals));
+    CHECK(orders[2].to == static_cast<uint8_t>(Resource::Minerals));
+}

@@ -35,19 +35,29 @@ player / AI / network ─> game::Command ────┘         │
   lists its objects in slot order. `objectOrder` returns every object by slot, and
   whatever the rules do "in object order" follows it: the acting order of the movement
   phase, colonized planets included, where built units go, training sources and so on
-  (spec 03 §6.3 step 5, §19 Q62).
+  (spec 03 §6.3 step 5, §19 Q62). Stellar manipulation never changes an object in place: the
+  replacement is a new object, added while the old one holds its slot, then the old one is
+  removed (spec 03 §19 Q72).
 - **Fleets** have no order list of their own (spec 03 §8, §9). Their orders are copies in
-  the lists of the members at the fleet's location (`fleetOrders`, `fleetGroup`): orders
-  given to the fleet or to any member are appended to every copy, and joining or leaving
-  clears a vehicle's list. The location is the fleet's own record (`Fleet::location`): it
-  follows whichever member moved last (`fleetMemberMoved`), and a fleet left with no member
-  there is disbanded (`GameState::tidyFleets`, `leaveFleet`, `disbandFleet`).
+  the lists of the members at the fleet's location, mothballed ones included (`fleetOrders`,
+  `fleetGroup`): orders given to the fleet or to any member are appended to each of those
+  lists, never to an away member's own, and joining or leaving clears a vehicle's list. The
+  location is the fleet's own record (`Fleet::location`): it follows whichever member moved
+  last (`fleetMemberMoved`), and a fleet left with no member there is disbanded
+  (`GameState::tidyFleets`, `leaveFleet`, `disbandFleet`).
+- **Colonies** have an order list with Repeat (`Colony::orders`, `repeatOrders`): Launch and
+  Recover Units, Use Facility and Convert Resources (spec 02 §5.6, spec 03 §8, §12). A colony
+  can cloak (spec 01 §6.9): its cloak and sensor levels come from its facilities, stored and
+  recalculated only at the moments the spec names (`sight::recalculateColony`), and
+  `Colony::cloaked` survives every change of owner.
 
 ## Changing state
 
 - **Players change state only through commands** (`commands.hpp`). There is one command
   per player action: orders, fleets, queues, designs, research, intelligence,
-  messages, waypoints and so on.
+  messages, waypoints and so on. A few act at once in both turn styles, as the original's
+  windows do: cargo transfer, Jettison Cargo (`cmd::JettisonCargo`) and a colony's Cloak and
+  Decloak (`cmd::CloakColony`).
   - `game::apply` validates a command against the state and applies it, or rejects it
     with a reason.
   - One empire's commands for one turn form an `EmpireOrders`, the equivalent of the
@@ -360,7 +370,7 @@ which the original draws in the system's Small Fonts.
 | `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
 | `sector_view.*` | What a sector of the system panel shows: the stellar object, one vehicle or the owners' flags, and the counts (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |

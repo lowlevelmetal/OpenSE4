@@ -45,6 +45,14 @@ change (Q56's command check stays an OpenSE4 choice). Q52 (the shared object slo
 the movement work and Q54 (the cargo trim after each qualifying hit) with the combat work,
 both on 2026-10-01. No row remains.
 
+Also on 2026-10-01 the engine got Convert Resources (§5.6): a colony order of at most 65,000,
+split from the window's lines, run at once in a turn-based game and on day 1 in a simultaneous
+one (at most 21 a run), with Repeat on colony lists, the loss read when it runs and the log
+entry in simultaneous games. It computes the gain with the exact integer formula (OpenSE4
+choice) and refuses a new conversion for a colony without a converter (OpenSE4 choice, as for
+Q56). A cloaked colony keeps building at its normal rate; only its yard stops (§6.1), and its
+emergency counter moves twice a turn (§6.4).
+
 ## Vehicles, movement and logistics (spec 03)
 
 Design names are unique in the whole game (`uniqueDesignName`; the original allows duplicates
@@ -95,10 +103,28 @@ belong with spec 04), and they were closed the same day:
   obscures counted as a seen colony without sensors. Now the detection rule of spec 01 §6.3
   applies, which needs sensors in the system.
 
-The engine's own choices where the spec is silent are spec 03 §19 Q72–Q76: objects changed
-in place by stellar manipulation, a fleet member away from the fleet's location that acts,
-mothballed members, fleet members in a computer player's ad-hoc group, and changes to a
-fleet's orders other than adding. No row remains.
+On 2026-10-01 the answers to §19 Q72–Q76 were implemented:
+
+- **Objects replaced, not changed** (Q72; `movement_stellar.cpp`). Create Planet, Destroy
+  Planet and the shockwave add the new object while the old one holds its slot, then remove
+  the old one; the shockwave is one pass in slot order over vehicles and stellar objects, the
+  stars last; Create Planet with no planet record of the size still removes the field, pays
+  and reports.
+- **An away fleet member's own list** (Q73, Q76; `Group::holders`, `setFleetOrders`). Carrying
+  out an order, and orders, Clear and Repeat given to an away member, change only the lists of
+  the members at the fleet's location.
+- **Mothballed fleet members** (Q74; `fleetGroup`). They are full members: copies, group, speed
+  0 (movement orders wait). Mothball, scrap and retrofit refuse fleet members, and the Scrap
+  window lists only vehicles in no fleet that are not cloaked.
+- **A computer player's ad-hoc companions** (Q75). Each joins alone and keeps its list.
+
+The same day the orders of §8 followed the spec: **Jettison Cargo** (`cmd::JettisonCargo` and
+its window; the original window's two faults are not reproduced, an OpenSE4 choice), **Use
+Component** (the group's first member only, no checks or log, never failing, cleared first in
+a turn-based game; no Self-Destruct branch), and **Use Facility** (a colony order with no
+effect, cleared first and run with the colony's list in a turn-based game). The engine's new
+choices are §19 Q77 (Repeat after the turn-based clearing; which lists a minefield and the Ship
+Orders options clear when a computer group has companions). No row remains.
 
 ## Combat (spec 04)
 
@@ -227,9 +253,12 @@ Q45 and Q46 needed no change. The "(inferred)" markers of these choices are gone
 empire draw, the silent Conditions Change, the log copy's default and the files' widths, the
 rebel's pictures, the theft's built count, the capitals standing for home locations, the
 report's cargo designs, the culprit's log in anger term 2), and the 21-order limit's is now
-"(confirmed: binary)". The engine's remaining choices are open questions 50 (when the
-empires present at a stellar manipulation are taken) and 51 (a stop-hostilities demand that
-names no empire). No row remains.
+"(confirmed: binary)". On 2026-10-01 the answers to questions 50 and 51 followed: Destroy
+Planet reports to the empires still present after its result, the shockwave to every empire
+that lost an object there, mine fields included (`Manipulation::noteWitnesses`); a human
+player's request about a third empire must name a living empire it has met, other than itself
+and the recipient (`cmd::SendMessage`). The engine's choice is question 52: a computer
+player's own requests are not checked. No row remains.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -246,8 +275,18 @@ after the last digit of the turn count, and can be changed during the game (Empi
 Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
 and since 2026-10-01 a comet or warp point entry of a system template is placed like any
 other entry (its position and a record drawn, its sector marked and recorded for `Same As`)
-and keeps an empty name for the letters of later planets there (Q43). This row is where
-the engine differs:
+and keeps an empty name for the letters of later planets there (Q43).
+
+Colony (planetary) cloaking (§6.9) came on 2026-10-01: cloak and sensor levels from facilities
+alone, stored and recalculated only at the moments the spec names; Cloak and Decloak at once
+(`cmd::CloakColony`), Decloak running the first-contact check; the cloak levels in detection,
+first contact, the battle checks, Sentry, stellar manipulation, Colonize, the computer players'
+choices, the Planets window, the map and the intelligence picker; a cloaked colony's yard does
+not work; battles decloak colonies and cloak them again; the computer players' colony orders
+decloak and cloak again. The engine's choices (how a simultaneous host receives a mid-turn
+Cloak, which loads recalculate, upgrades) are §14 Q44.
+
+This row is where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|

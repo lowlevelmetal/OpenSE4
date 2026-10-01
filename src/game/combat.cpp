@@ -415,9 +415,9 @@ bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicl
 
 // A colony is seen like a vehicle: by its owner, or by an empire that has
 // explored the system and whose current sensors there reach the planet's
-// obscuration in some sight type (1, raised by a storm or nebula), not by the
-// map's memory of the explored system (spec 04 §2, §19.2 Q74, confirmed:
-// binary). The engine has no cloaked colonies.
+// obscuration in some sight type (1, or the colony's cloak levels while it is
+// cloaked, raised by a storm or nebula), not by the map's memory of the
+// explored system (spec 04 §2, §19.2 Q74, spec 01 §6.9, confirmed: binary).
 bool colonyVisibleTo(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
     const Colony* c = s.colony(planet);
     if (c && c->owner == viewer) return true;
@@ -1323,7 +1323,7 @@ bool battleCheck(const Rules& r, const GameState& s, Location where, const Battl
     for (const Vehicle* v : here)
         if (v->owner != mover && v->status != VehicleStatus::Cloaked) watchers.push_back(v->owner);
     for (const Colony* c : colonies)
-        if (c->owner != mover) watchers.push_back(c->owner);
+        if (c->owner != mover && !c->cloaked) watchers.push_back(c->owner);  // a cloaked colony is not uncloaked (spec 01 §6.9)
     for (EmpireId e : watchers) {
         if (!hostile(s, e, mover)) continue;
         for (const Vehicle* v : group)

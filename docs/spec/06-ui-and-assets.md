@@ -1960,11 +1960,6 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
    Our client lights the buttons by the rules of §2.8, for every kind of selection
    including tagged groups (Shift+click in the list, Shift+A, Shift+C), and binds every
    key of §3.1 (rebindable). It differs:
-   - Jettison Cargo, Use Facility and Convert Resources light by the rules, but our engine
-     cannot carry them out yet: using one says so. Their rules are in spec 03 §8 and spec 02
-     §5.6.
-   - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies. The
-     colony cloaking rules are in spec 01 §6.9.
    - The movement log replay is ours where the engine differs (Q51).
 5. **System art.** Where are the 128x128 `Systems/*.bmp` and the 72x72 storm and
    asteroid tiles drawn, and what do `Mask Background Objs` and `Non-Tiled Center Pic`
@@ -2067,8 +2062,8 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     drawing order for ships, planets and fleets, including cell 36 (remote mining),
     which the manual does not mention (confirmed: binary).
     Our client draws these cells in this order for ships, fleets, planets, ship-list rows,
-    reports and the Colonies list, with the conditions of Q50. It differs: colonies cannot
-    cloak in our engine, so a colony never shows cell 9; the rest is in Q50.
+    reports and the Colonies list, with the conditions of Q50, a cloaked colony's cell 9
+    first (since 2026-10-01); the rest is in Q50.
 14. **Transparency.** **Answer:** the colour key is exact black, RGB(0,0,0), and there
     is no additive or alpha blending anywhere: every sprite is copied opaque or drawn
     with black transparent, explosions, shield hits, beams and torpedoes included
@@ -2133,9 +2128,8 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     Colonizable does not exclude colonized planets, and All lists no asteroid fields.
     The full tab table, the statistics, columns, sorting and Send Colony Ship are in
     §1.8.1 (confirmed: binary).
-    Our client follows this (its own choices where the rules are silent are Q24–Q29). It
-    still differs only where our engine has nothing to test: it has no planetary cloak,
-    so no planet is left out for one and every colony is seen.
+    Our client follows this (its own choices where the rules are silent are Q24–Q29),
+    planetary cloaks included since 2026-10-01.
 20. **Construction Queues toggles.** What do Ships and Ship SY each include?
     **Answer:** the split is by whether a vehicle's space yard works right now, not by
     hull. Ship SY holds every ship and base queue with a working yard; Ships holds vehicle
@@ -2143,9 +2137,9 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     the next update, so it is normally empty. Planets and Planet SY split colonies the
     same way: a cloaked colony's yard does not count. All four are on by default. Rules,
     columns, statistics and the three action buttons are in §1.8.2 (confirmed: binary).
-    Our client follows this (its own choices are Q24–Q29). It still differs in: no
-    colony cloaking exists in our engine, so a colony's yard always works; status icons
-    on a row's second line are drawn for colonies only (ships and bases have none yet).
+    Our client follows this (its own choices are Q24–Q29), a cloaked colony's yard not
+    counting since 2026-10-01. It still differs in: status icons on a row's second line
+    are drawn for colonies only (ships and bases have none yet).
 21. **Tactical Combat details.** The Options list; which Orders act at once and which
     need a target click; the pointers; the right-click report. **Answer:** §1.10.1–
     §1.10.3 and §3.3 (confirmed: binary). The Options window has nine switches under
@@ -2651,9 +2645,9 @@ something open; all are now settled from the executable:
     described in §2.4 (confirmed: binary).
     Our client follows this: the letters and tests of the table, on our colonies and our
     Military Alliance and Partnership partners', in the owner's colour, packed right to
-    left from the sprite square's bottom right, new lines one text height higher. It
-    differs: the letters use OpenSE4's small raster face (§5.4); Y is told the yard works,
-    since our colonies cannot cloak yet (the facility test is ready for it).
+    left from the sprite square's bottom right, new lines one text height higher, on the
+    colonies the viewer sees, and Y only for a colony that is not cloaked (since
+    2026-10-01). It differs: the letters use OpenSE4's small raster face (§5.4).
 45. **Planet names and coordinate location.** We draw a planet's name under it, like a
     warp point's destination, and the coordinates of the sector under the pointer after
     the system name. Where does the original show them? **Answer:** a planet's name, like

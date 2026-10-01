@@ -20,6 +20,7 @@
 #include "game/design.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "game/turn_internal.hpp"
 #include "game/xmath.hpp"
@@ -292,6 +293,7 @@ void Battle::addPlanetPiece(const Colony& c) {
     p.landed = c.landedTroops;
     p.invader = c.invader;
     p.militia = c.militia;
+    p.wasCloaked = c.cloaked;
     // A planet uses the strategy its empire chose for planets (spec 04 §3 step
     // 8): the empire's first one (inferred, spec 04 §19.3 Q85), or in the
     // simulator the viewer's (§17).
@@ -366,6 +368,8 @@ bool Battle::setup() {
         for (VehicleId id : forces.vehicles)
             if (s_.vehicle(id)->owner == e) addVehiclePiece(*s_.vehicle(id));
     }
+    // Colonies decloak when the battle begins (spec 01 §6.9, spec 04 §2).
+    for (ObjectId o : forces.colonies) s_.colony(o)->cloaked = false;
     for (ObjectId o : forces.obstacles) addObstaclePiece(o);
 
     // Defenders had a piece in the sector already; every planet has (confirmed: binary).
@@ -3609,7 +3613,7 @@ void Battle::finish() {
         // order's conditions (a working part giving cloak level 2 or more in
         // some sight type, and supplies), a unit group always; a captured or
         // converted ship for its new owner. The simulator does not (spec 04 §2,
-        // confirmed: binary). The engine has no cloaked colonies.
+        // confirmed: binary). Colonies are handled with the planets below.
         if (p.wasCloaked && !simulated()) {
             bool can = p.kind == Kind::UnitGroup;
             if (!can) {
@@ -3653,11 +3657,19 @@ void Battle::finish() {
         std::vector<uint32_t> kept;
         for (size_t f = 0; f < p.facilities.size(); ++f)
             if (!p.facilityLost[f]) kept.push_back(p.facilities[f]);
+        const bool facilitiesLost = kept.size() != c->facilities.size();
         c->facilities = std::move(kept);
+        // Damage that destroys facilities refreshes the colony's cloak and
+        // sensor levels (spec 01 §6.9).
+        if (facilitiesLost) sight::recalculateColony(r_, *c);
         c->militia = p.militia;
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);
         if (invaders(r_, s_, *c).empty()) detail::endInvasion(*c, false);
+        // A colony that was cloaked when the battle began cloaks again, with no
+        // can-cloak test, even after losing its cloaking facilities or changing
+        // owner (spec 01 §6.9, spec 04 §2, confirmed: binary).
+        if (p.wasCloaked && !simulated()) c->cloaked = true;
     }
 
     // Carriers recover the fighter and satellite groups they launched in this

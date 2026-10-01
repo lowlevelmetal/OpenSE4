@@ -854,17 +854,14 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
     the colony (named, with its system) has converted the amount of the source into G of the
     target; Goto shows the colony. A human player in a turn-based game gets no entry; the
     window simply refreshes.
-  - **The engine differs:** it has no Convert Resources at all; the client says the order is
-    not in OpenSE4 yet (spec 06 §7 Q4). It needs:
-    - a colony order kind holding the source, the target and an amount of at most 65,000,
-      which the planet form of the orders command accepts (today that form takes only Launch
-      Units and Recover Units);
-    - the splitting of each window line into such orders, as above;
-    - execution as above in the planet order runner: at once in a turn-based game, on day 1
-      in a simultaneous one;
-    - the log entry, in simultaneous games only;
-    - the window;
-    - a Repeat flag on colony order lists, which the engine's colonies lack.
+  - **The engine follows this since 2026-10-01:** a colony order kind with the source, the
+    target and the amount, the window and its splitting into orders, execution at once in a
+    turn-based game and on day 1 in a simultaneous one (at most 21 a run), the log entry in
+    simultaneous games only, and Repeat on colony order lists. It computes G with the exact
+    integer formula (the OpenSE4 choice above). OpenSE4 choice: since commands can come from
+    anywhere, the orders command refuses a new Convert Resources order for a colony whose
+    planet and facilities give no `Resource Conversion` of at least 1 (as for upgrades,
+    §13 Q56); orders already in the list stay.
 
 ---
 
@@ -883,8 +880,8 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
   different (confirmed: binary): it keeps its queue and goes on building facilities, units and
   upgrades at its normal rate, the yard's rate included. Only its space yard stops working, so
   the removal pass below drops its ship and base items every turn, and the one-yard limit
-  still refuses a second yard (spec 01 §6.9). The engine has no cloaked colonies yet; when
-  it gets them, its block on cloaked queues must apply to ships only.
+  still refuses a second yard (spec 01 §6.9). The engine follows this since 2026-10-01: only
+  a cloaked ship's queue is blocked.
 - Scrapping a planet's space yard removes the ships from its queue. In the game
   (confirmed: binary), each empire first fixes the processing order of §6.3 from every
   queue's top item. Then, for each queue in that order, a removal pass runs before

@@ -16,7 +16,7 @@ constexpr WindowInfo kWindows[] = {
     {"research"}, {"tech-tree"}, {"empires"}, {"log"}, {"empire-status"}, {"help"}, {"galaxy-map"},
     {"empire-options"}, {"ministers"}, {"systems-to-avoid"}, {"waypoints"}, {"strategies"}, {"repair-priorities"},
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
-    {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false},
+    {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false}, {"jettison-cargo", false}, {"convert-resources", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
     {"victory-conditions"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
@@ -53,6 +53,8 @@ constexpr std::array<std::pair<game::OrderKind, std::string_view>, static_cast<s
     {game::OrderKind::StellarManipulation, "stellar-manipulation"},
     {game::OrderKind::MoveToWaypoint, "move-to-waypoint"},
     {game::OrderKind::SelfDestruct, "self-destruct"},
+    {game::OrderKind::UseFacility, "use-facility"},
+    {game::OrderKind::ConvertResources, "convert-resources"},
 }};
 
 // The order strip's slots (main_window.cpp kOrderStrip keys) and their tag ids.
