@@ -1618,6 +1618,24 @@ TEST_CASE("movement: cloak and decloak orders") {
     CHECK(w.logged(kA, "cloaking device"));
 }
 
+TEST_CASE("movement: every action gives the acting vehicle exactly 1 movement point, a stopped one too") {
+    // Spec 03 §6.3 step 4, §19 Q63 (confirmed: binary).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId ship = w.spawn(w.ship(kA, "Dash", 5, {"Mv Energy Cell"}), at(a, 0, 6));
+    w.v(ship).supply = 10;  // the first step empties the tank: the maximum falls from 5 to 1
+    w.order(ship, mk(OrderKind::UseComponent, {}, {}, {}, {}, 9));
+    w.order(ship, moveTo(a, 12, 6));
+    w.move();
+    // Speed 5 acts on day 7: the use chains into a step that runs the supply
+    // out, so the ship keeps the 0 the action left and gains no more day
+    // credit. The energy's 4 on the counter still give actions on days 8 to
+    // 11, each with 1 movement point again: one step each.
+    CHECK(w.v(ship).location == at(a, 5, 6));
+    CHECK(w.v(ship).movement == 0);
+    CHECK(w.v(ship).supply == 0);
+}
+
 TEST_CASE("movement: emergency energy and emergency resupply are one-shot components") {
     World w;
     const Rules& r = w.rules();

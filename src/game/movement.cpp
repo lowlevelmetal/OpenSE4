@@ -7,8 +7,8 @@
 // planets and vehicles mixed: objectOrder, spec 03 §19 Q62). The group
 // that acts is rebuilt at every order execution: a fleet's members at its
 // location, and ad-hoc companions with an identical head order (spec 03 §8).
-// An action runs the order list with exactly 1 movement point; orders that
-// complete chain into the next. After every day, each sector where an object
+// An action gives the acting vehicle exactly 1 movement point and runs its
+// order list; orders that complete chain into the next. After every day, each sector where an object
 // carried out an order (any order, a waiting Sentry included) runs a battle
 // check (spec 04 §2).
 //
@@ -303,16 +303,20 @@ private:
         actionMovement_.clear();
     }
 
-    // A vehicle takes part in the action: exactly 1 movement point (none when it
-    // has none left), and it does not act again that day; one that was due
-    // loses 1 from its counter (spec 03 §6.3 steps 4-5).
-    void join(VehicleId id) {
+    // A vehicle takes part in the action, and it does not act again that day;
+    // one that was due loses 1 from its counter (spec 03 §6.3 steps 4-5). The
+    // acting vehicle gets exactly 1 movement point, whatever it had, when its
+    // maximum is at least 1, so a vehicle stopped earlier in the turn moves
+    // again, one step per action; with a maximum of 0 it keeps 0. The other
+    // members keep their own, so one with 0 still holds the group back (spec
+    // 03 §6.3 step 4, §19 Q63, confirmed: binary).
+    void join(VehicleId id, bool acting) {
         participants_.insert(id);
         if (live_ || actionMovement_.contains(id)) return;
         Vehicle* v = s_.vehicle(id);
         if (!v) return;
         actionMovement_[id] = v->movement;
-        v->movement = v->movement > 0 ? 1 : 0;
+        if (acting) v->movement = turnMovement(r_, s_, *v) >= 1 ? 1 : 0;
         if (acted_.insert(id).second) counters_[id].take();
     }
 
@@ -543,7 +547,7 @@ private:
         for (int n = 0; n < kChainLimit; ++n) {
             Group g = build(ref);
             if (g.stopped) break;
-            for (VehicleId id : g.members) join(id);
+            for (VehicleId id : g.members) join(id, id == g.actor);
             std::vector<Order>* list = orders(g);
             if (!list || list->empty()) {
                 last = g;

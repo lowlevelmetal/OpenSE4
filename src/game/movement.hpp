@@ -142,10 +142,11 @@ CombatHooks defaultCombatHooks();
 // member in object order that is due and has orders acts: the members at the
 // fleet's location carry out that member's order and each of their lists
 // moves on (spec 03 §8, §19 Q61, Q65); ad-hoc groups form at every order
-// execution (spec 03 §8). An action runs the order list with exactly 1 movement point:
-// orders that complete chain into the next, up to 21 executions, until one
-// waits or fails. Movement points are not spent: they come back after the
-// action, unless the maximum fell below them during it. After each day every
+// execution (spec 03 §8). An action gives the acting vehicle exactly 1
+// movement point (0 when its maximum is 0; the other members keep theirs) and
+// runs its order list: orders that complete chain into the next, up to 21
+// executions, until one waits or fails. Movement points are not spent: they
+// come back after the action, unless the maximum fell below them during it. After each day every
 // sector where an object carried out an order (any order, a waiting Sentry
 // included) runs a battle check, unless the latest battle there this turn
 // left every object in the sector as an undamaged survivor;
