@@ -131,6 +131,52 @@ const char* stepLabel(Step step) {
     return "";
 }
 
+// ---- Jettison Cargo -----------------------------------------------------------------------
+
+void JettisonLists::move(bool fromPresent, size_t line, Step step) {
+    std::vector<JettisonLine>& from = fromPresent ? present : chosen;
+    std::vector<JettisonLine>& to = fromPresent ? chosen : present;
+    if (line >= from.size()) return;
+    JettisonLine moved = from[line];
+    moved.amount = std::min(stepAmount(step, from[line].amount), from[line].amount);
+    if (moved.amount <= 0) return;
+    from[line].amount -= moved.amount;
+    if (from[line].amount <= 0) from.erase(from.begin() + static_cast<std::ptrdiff_t>(line));
+    const auto it = std::find_if(to.begin(), to.end(), [&](const JettisonLine& l) { return l.unit == moved.unit && l.race == moved.race; });
+    if (it != to.end()) it->amount += moved.amount;
+    else to.push_back(moved);
+}
+
+JettisonLists jettisonLists(const game::Cargo& cargo) {
+    JettisonLists out;
+    for (const game::PopulationGroup& p : cargo.population)
+        if (p.millions > 0) out.present.push_back({{}, p.race, p.millions});
+    for (const game::UnitStack& u : cargo.units)
+        if (u.count > 0) out.present.push_back({u.design, {}, u.count});
+    return out;
+}
+
+std::optional<game::cmd::JettisonCargo> jettisonCommand(const JettisonLists& lists, game::VehicleId vehicle, game::ObjectId planet) {
+    if (lists.chosen.empty()) return std::nullopt;
+    game::cmd::JettisonCargo c;
+    c.vehicle = vehicle;
+    c.planet = vehicle.valid() ? game::ObjectId{} : planet;
+    for (const JettisonLine& l : lists.chosen) {
+        if (l.unit.valid()) c.units.push_back({l.unit, static_cast<int>(l.amount)});
+        else c.population.push_back({l.race, l.amount});
+    }
+    return c;
+}
+
+bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::VehicleId vehicle, game::ObjectId planet) {
+    if (vehicle.valid()) {
+        const game::Vehicle* v = s.vehicle(vehicle);
+        return v && v->owner == viewer && v->count > 0 && !isUnitVehicle(r, s, *v) && v->status != game::VehicleStatus::Mothballed;
+    }
+    const game::Colony* c = s.colony(planet);
+    return c && c->owner == viewer;
+}
+
 // ---- Units --------------------------------------------------------------------------------
 
 bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {

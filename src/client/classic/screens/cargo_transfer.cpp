@@ -246,8 +246,88 @@ private:
     game::VehicleId orderVehicle_;
 };
 
+// Jettison Cargo (order J, docs/spec/03 §8, spec 06 §1.3): "Cargo Present" on
+// the left and "Cargo To Be Jettisoned" on the right; Move One, Five, Ten and
+// All set how much a click moves (Move All when it opens). OK destroys the
+// right-hand list at once, in both turn styles (cmd::JettisonCargo); Cancel
+// drops nothing. Each race's population shows its own amount, and exactly
+// the lines moved are dropped (OpenSE4's choice over the original window's
+// two faults).
+class JettisonScreen final : public Screen {
+public:
+    explicit JettisonScreen(const ScreenArgs& args) : vehicle_(args.vehicle), planet_(args.vehicle.valid() ? game::ObjectId{} : args.planet) {}
+
+    bool draw(UiContext& ui) override {
+        Dialog d(ui, screenTitle(ScreenId::JettisonCargo), DialogSize::Large);
+        if (!d.open()) return d.keepOpen();
+        const game::GameState& s = ui.state();
+        // Opened with nothing (automation): the homeworld.
+        if (!vehicle_.valid() && !planet_.valid())
+            if (auto home = homeworld(ui)) planet_ = *home;
+        const bool usable = canJettisonFrom(ui.rules(), s, ui.session.player(), vehicle_, planet_);
+        if (usable && !loaded_) {
+            lists_ = jettisonLists(vehicle_.valid() ? s.vehicle(vehicle_)->cargo : s.colony(planet_)->cargo);
+            loaded_ = true;
+        }
+        d.beginContent();
+        if (!usable) {
+            ImGui::TextColored(kDim, "Select one of your ships, bases or colonies first.");
+        } else {
+            const std::string holder = vehicle_.valid() ? s.vehicle(vehicle_)->name : s.galaxy.object(planet_).name;
+            ImGui::TextColored(kDim, "%s", holder.c_str());
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+            const float w = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
+            const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.4f;
+            linePanel(ui, "##present", "Cargo Present", true, ImVec2(w, h));
+            ImGui::SameLine();
+            linePanel(ui, "##chosen", "Cargo To Be Jettisoned", false, ImVec2(w, h));
+            status_.draw(ui);
+        }
+        d.beginButtons();
+        stepButtons(d, step_);
+        d.spacer();
+        if (d.button("OK", usable && !lists_.chosen.empty())) {
+            if (const auto c = jettisonCommand(lists_, vehicle_, planet_); c && status_.issue(ui, *c)) return false;
+        }
+        if (d.close(true, "Cancel")) return false;
+        return d.keepOpen();
+    }
+
+private:
+    void linePanel(UiContext& ui, const char* id, const char* caption, bool present, ImVec2 size) {
+        const game::GameState& s = ui.state();
+        beginPanel(ui, id, caption, size);
+        const std::vector<JettisonLine> lines = present ? lists_.present : lists_.chosen;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            const JettisonLine& l = lines[i];
+            std::string title, detail;
+            Sprite pic;
+            if (l.unit.valid()) {
+                title = s.design(l.unit).name;
+                detail = std::format("{} unit{}", formatNumber(l.amount), l.amount == 1 ? "" : "s");
+                pic = designMini(ui, l.unit);
+            } else {
+                title = (l.race.valid() && l.race.index() < s.empires.size() ? s.empire(l.race).race.name : std::string("Unknown")) + " Population";
+                detail = std::format("{}M", formatNumber(l.amount));
+                pic = ui.art.populationMini(l.race.valid() && l.race.index() < s.empires.size() ? s.empire(l.race).race.style : "");
+            }
+            if (row(ui, static_cast<int>(i), pic, title, detail).left) lists_.move(present, i, step_);
+        }
+        if (lines.empty()) ImGui::TextColored(kDim, present ? "No cargo." : "Nothing chosen.");
+        endPanel(ui, present ? "Click cargo to jettison it." : "Click a line to keep it.");
+    }
+
+    game::VehicleId vehicle_;
+    game::ObjectId planet_;
+    JettisonLists lists_;
+    bool loaded_ = false;
+    Step step_ = Step::All;
+    Status status_;
+};
+
 } // namespace
 
 std::unique_ptr<Screen> makeCargoTransfer(const ScreenArgs& args) { return std::make_unique<CargoTransferScreen>(args); }
+std::unique_ptr<Screen> makeJettisonCargo(const ScreenArgs& args) { return std::make_unique<JettisonScreen>(args); }
 
 } // namespace opense4::client::classic

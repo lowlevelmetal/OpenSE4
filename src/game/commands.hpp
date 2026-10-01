@@ -83,6 +83,20 @@ struct TransferCargo {       // immediate transfer between own holders in the sa
     EmpireId populationRace;
     int64_t amount = 0;      // units, or millions of population
 };
+// Jettison Cargo (spec 03 §8, confirmed: binary): not an order. It destroys,
+// at once and in both turn styles, the cargo the player moved in its window,
+// per population race and per unit stack, from an own ship or base that is
+// not mothballed or from an own colony's stored cargo (never the colony's own
+// population). No movement or supply is spent, the order list, Repeat and
+// fleets are untouched, and nothing is logged; each jettisoned unit counts as
+// lost in its design's statistics. Exactly the amounts named go (OpenSE4
+// choice: the original window's two faults are not reproduced).
+struct JettisonCargo {
+    VehicleId vehicle;
+    ObjectId planet;                           // one of the two
+    std::vector<PopulationGroup> population;   // millions per race
+    std::vector<UnitStack> units;              // units per design
+};
 
 // ---- Designs --------------------------------------------------------------------------------
 struct CreateDesign { Design design; };   // id/owner are assigned by the engine
@@ -181,7 +195,7 @@ using Command = std::variant<
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
-    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry>;
+    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

@@ -176,7 +176,7 @@ std::optional<Action> orderAction(OrderId o) {
     return std::nullopt;
 }
 
-bool orderNotInEngine(OrderId o) { return o == OrderId::Jettison || o == OrderId::ConvertResources; }
+bool orderNotInEngine(OrderId o) { return o == OrderId::ConvertResources; }
 
 bool vehicleCanCloak(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     if (v.supply <= 0 && !game::vehicleHasUnlimitedSupply(r, s, v)) return false;

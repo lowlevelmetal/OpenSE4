@@ -678,6 +678,52 @@ struct Applier {
         return moved > 0 ? R{} : R::fail("Nothing could be moved");
     }
 
+    R operator()(const cmd::JettisonCargo& c) {
+        Cargo* hold = nullptr;
+        if (c.vehicle.valid()) {
+            Vehicle* v = ownVehicle(s, e, c.vehicle);
+            if (!v || v->count <= 0) return R::fail("Not your vehicle");
+            if (isUnitType(vehicleType(r, s, *v))) return R::fail("Unit groups carry no cargo");
+            if (v->status == VehicleStatus::Mothballed) return R::fail("A mothballed vehicle cannot jettison cargo");
+            hold = &v->cargo;
+        } else {
+            Colony* col = ownColony(s, e, c.planet);
+            if (!col) return R::fail("Not your planet");
+            hold = &col->cargo;
+        }
+        if (c.population.empty() && c.units.empty()) return R::fail("Nothing to jettison");
+        // Every entry must be held, in at least the amount named (all named
+        // entries of one race or design together).
+        std::map<EmpireId, int64_t> races;
+        std::map<DesignId, int64_t> designs;
+        for (const PopulationGroup& p : c.population) {
+            if (p.millions <= 0) return R::fail("Nothing to jettison");
+            races[p.race] += p.millions;
+        }
+        for (const UnitStack& u : c.units) {
+            if (u.count <= 0) return R::fail("Nothing to jettison");
+            designs[u.design] += u.count;
+        }
+        for (const auto& [race, n] : races) {
+            const auto held = std::find_if(hold->population.begin(), hold->population.end(), [&](const PopulationGroup& p) { return p.race == race; });
+            if (held == hold->population.end() || held->millions < n) return R::fail("Not that much population aboard");
+        }
+        for (const auto& [design, n] : designs)
+            if (hold->unitCount(design) < n) return R::fail("Not that many units aboard");
+        // Destroyed: nothing goes into space or onto a planet.
+        for (const auto& [race, n] : races)
+            for (PopulationGroup& p : hold->population)
+                if (p.race == race) p.millions -= n;
+        for (const auto& [design, n] : designs) {
+            for (UnitStack& u : hold->units)
+                if (u.design == design) u.count -= static_cast<int>(n);
+            s.design(design).lost += static_cast<int>(n);  // spec 04 §15 Number Lost
+        }
+        std::erase_if(hold->population, [](const PopulationGroup& p) { return p.millions <= 0; });
+        std::erase_if(hold->units, [](const UnitStack& u) { return u.count <= 0; });
+        return {};
+    }
+
     R operator()(const cmd::CreateDesign& c) {
         Design d = c.design;
         if (d.name.empty()) return R::fail("A design needs a name");
@@ -1153,6 +1199,7 @@ OPENSE4_CMD_NAME(DecideWar)
 OPENSE4_CMD_NAME(SetInterfaceOptions)
 OPENSE4_CMD_NAME(CarryOutDemand)
 OPENSE4_CMD_NAME(UseDemandEntry)
+OPENSE4_CMD_NAME(JettisonCargo)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

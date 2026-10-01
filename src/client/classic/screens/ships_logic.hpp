@@ -52,6 +52,32 @@ enum class Step { One, Five, Ten, All };
 int64_t stepAmount(Step step, int64_t available);
 const char* stepLabel(Step step);
 
+// ---- Jettison Cargo (docs/spec/03 §8) -------------------------------------------------------
+
+// One line of the Jettison Cargo window: a population race or a unit stack,
+// with its amount.
+struct JettisonLine {
+    game::DesignId unit;   // invalid: population
+    game::EmpireId race;
+    int64_t amount = 0;
+    bool operator==(const JettisonLine&) const = default;
+};
+// "Cargo Present" (the holder's cargo, one line per race, then one per unit
+// stack, each race with its own amount: an OpenSE4 choice) and "Cargo To Be
+// Jettisoned". A click on a line moves the step's amount of it, or what the
+// line holds if that is less, to the other list: onto that entry's line when
+// it is there, else onto a new line at the end; an emptied line disappears.
+struct JettisonLists {
+    std::vector<JettisonLine> present, chosen;
+    void move(bool fromPresent, size_t line, Step step);
+};
+JettisonLists jettisonLists(const game::Cargo& cargo);
+// OK: exactly the right-hand list (empty lists give no command).
+std::optional<game::cmd::JettisonCargo> jettisonCommand(const JettisonLists& lists, game::VehicleId vehicle, game::ObjectId planet);
+// Whether Jettison Cargo is for this holder: an own ship or base that is not
+// mothballed, or an own colony.
+bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::VehicleId vehicle, game::ObjectId planet);
+
 // ---- Units --------------------------------------------------------------------------------
 
 bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);

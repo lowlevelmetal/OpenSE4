@@ -16,7 +16,7 @@ constexpr WindowInfo kWindows[] = {
     {"research"}, {"tech-tree"}, {"empires"}, {"log"}, {"empire-status"}, {"help"}, {"galaxy-map"},
     {"empire-options"}, {"ministers"}, {"systems-to-avoid"}, {"waypoints"}, {"strategies"}, {"repair-priorities"},
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
-    {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false},
+    {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false}, {"jettison-cargo", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
     {"victory-conditions"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},

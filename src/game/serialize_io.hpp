@@ -575,6 +575,7 @@ template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
 
 template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
 template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::JettisonCargo& c) { fields(ar, c.vehicle, c.planet, c.population, c.units); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

@@ -18,6 +18,7 @@ enum class ScreenId {
     EmpireOptions, Ministers, SystemsToAvoid, Waypoints, Strategies, RepairPriorities,
     // Order dialogs (§1.3).
     FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename, AbandonPlanet,
+    JettisonCargo,
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).

@@ -841,8 +841,8 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             }
             return;
         }
-        // Our engine has no command for these yet (docs/spec/06 §7 Q4).
-        case OrderId::Jettison:
+        case OrderId::Jettison: openFor(ui, ScreenId::JettisonCargo); return;
+        // Our engine has no command for this yet (docs/spec/06 §7 Q4).
         case OrderId::ConvertResources: note(ui, std::format("{} is not in OpenSE4 yet.", orderName(id))); return;
         case OrderId::ReplayPlay:
         case OrderId::ReplayShip:

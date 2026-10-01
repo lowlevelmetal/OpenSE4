@@ -1735,6 +1735,60 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     CHECK(w.v(full).supply == 100);
 }
 
+TEST_CASE("movement: Jettison Cargo destroys exactly what the player moved, at once, and counts the units as lost (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Tank"});
+    const DesignId spare = w.design(kA, "Spare Fighter", "Test Fighter Hull", {"Mv Fighter Engine"});
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 2, {"Test Cargo Bay"}), at(a, 2, 2));
+    w.v(carrier).cargo.units = {{fighter, 10}, {spare, 5}};
+    w.v(carrier).cargo.population = {{kA, 4}, {kB, 3}};
+    w.order(carrier, moveTo(a, 5, 5), true);
+    const Vehicle before = w.v(carrier);
+    // Five of the first stack and all of the second: the original would take
+    // ten from the first (its window's position fault); OpenSE4 takes what
+    // was moved. Each race's population is its own entry.
+    REQUIRE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kB, 3}}, {{fighter, 5}, {spare, 5}}}).ok);
+    CHECK(w.v(carrier).cargo.units == std::vector<UnitStack>{{fighter, 5}});
+    CHECK(w.v(carrier).cargo.population == std::vector<PopulationGroup>{{kA, 4}});
+    CHECK(w.s.design(fighter).lost == 5);
+    CHECK(w.s.design(spare).lost == 5);
+    // Not an order: no movement or supply, the list and Repeat untouched, no log.
+    CHECK(w.v(carrier).orders == before.orders);
+    CHECK(w.v(carrier).repeatOrders);
+    CHECK(w.v(carrier).supply == before.supply);
+    CHECK(w.v(carrier).movement == before.movement);
+    CHECK(w.s.empire(kA).log.empty());
+    // More than is aboard, nothing at all, or a race not aboard: refused, nothing changes.
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 6}}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 3}, {fighter, 3}}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kB, 1}}, {}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {}}).ok);
+    CHECK_FALSE(apply(r, w.s, kB, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    CHECK(w.v(carrier).cargo.units == std::vector<UnitStack>{{fighter, 5}});
+    // Being cloaked or in a fleet makes no difference; being mothballed does.
+    w.v(carrier).status = VehicleStatus::Cloaked;
+    CHECK(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    CHECK(w.v(carrier).cargo.totalPopulation() == 3);
+    w.v(carrier).status = VehicleStatus::Mothballed;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    w.v(carrier).status = VehicleStatus::Normal;
+    // A colony jettisons its stored cargo; its own population is not cargo.
+    const ObjectId home = w.planet(a, {6, 6});
+    Colony& col = w.colony(home, kA, 1000);
+    col.cargo.units = {{fighter, 2}};
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{{}, home, {{kA, 10}}, {}}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::JettisonCargo{{}, home, {}, {{fighter, 2}}}).ok);
+    CHECK(w.s.colony(home)->cargo.empty());
+    CHECK(w.s.colony(home)->totalPopulation() == 1000);
+    CHECK(w.s.design(fighter).lost == 7);
+    // Turn-based games carry it out at once too.
+    w.s.options.simultaneous = false;
+    CHECK(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 5}}}).ok);
+    CHECK(w.v(carrier).cargo.units.empty());
+}
+
 TEST_CASE("movement: Use Component is used by the group's first member only, with no intact or mothball check (spec 03 §8)") {
     World w;
     const Rules& r = w.rules();

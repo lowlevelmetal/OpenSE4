@@ -360,6 +360,7 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::SetInterfaceOptions{InterfaceOptions{.confirmEndTurn = false, .facilityMarkers = 0x0a5, .logFilter = 3}});
     c.push_back(cmd::CarryOutDemand{MessageId{35u}});
     c.push_back(cmd::UseDemandEntry{cmd::DemandList::Peace, EmpireId{2u}});
+    c.push_back(cmd::JettisonCargo{VehicleId{36u}, ObjectId{}, {{EmpireId{1u}, 12}}, {{DesignId{37u}, 3}}});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
