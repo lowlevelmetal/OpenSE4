@@ -319,6 +319,53 @@ TEST_CASE("main window: status icons of ships, colonies and fleets") {
     CHECK(fleetStatusCells(s, f) == std::vector<int>{cell::kMinister});
 }
 
+TEST_CASE("main window: status icons of yards, fleets and fighter groups (spec 06 §7 Q50, Q54)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    namespace cell = status_cell;
+    const DesignId yardShip = design(s, r, "Builder", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+    Vehicle& y = addTestVehicle(s, r, yardShip, where);
+    QueueItem item;
+    item.kind = QueueItem::Kind::Facility;
+    item.facility = facilityIndex(r, "Test Mine");
+    y.queue.items.push_back(item);
+    std::vector<int> icons = vehicleStatusCells(r, s, y);
+    CHECK(has(icons, cell::kSpaceYard));
+    CHECK(has(icons, cell::kBuilding));
+    // Mothballed: the yard icon stays, building does not.
+    y.status = VehicleStatus::Mothballed;
+    icons = vehicleStatusCells(r, s, y);
+    CHECK(has(icons, cell::kSpaceYard));
+    CHECK_FALSE(has(icons, cell::kBuilding));
+    // Cloaked: no working yard.
+    y.status = VehicleStatus::Cloaked;
+    icons = vehicleStatusCells(r, s, y);
+    CHECK_FALSE(has(icons, cell::kSpaceYard));
+    CHECK_FALSE(has(icons, cell::kBuilding));
+    CHECK(has(icons, cell::kCloaked));
+
+    // A fleet is cloaked when a member of its owner is.
+    Fleet f;
+    f.owner = kMe;
+    f.members = {y.id};
+    CHECK(fleetStatusCells(s, f) == std::vector<int>{cell::kCloaked});
+    f.owner = EmpireId{1u};
+    CHECK(fleetStatusCells(s, f).empty());
+
+    // A fighter group: low below a tenth of the warning level, and only while it holds a fighter.
+    const DesignId wasp = design(s, r, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    Vehicle& g = addTestVehicle(s, r, wasp, where);
+    const int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
+    g.count = 3;
+    g.supply = warning / 10;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
+    g.supply = warning / 10 - 1;
+    CHECK(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
+    g.supply = 0;
+    CHECK(has(vehicleStatusCells(r, s, g), cell::kNoSupply));
+}
+
 // ---- Map colours and symbols (docs/spec/06 §2.6) ----
 
 TEST_CASE("main window: galaxy symbols") {

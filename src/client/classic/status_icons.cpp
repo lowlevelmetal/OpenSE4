@@ -32,6 +32,15 @@ void cargoCells(const game::Rules& r, const game::GameState& s, const game::Carg
     if (c.totalPopulation() > 0) out.push_back(cell::kPopulation);
 }
 
+// An intact component with the Space Yard ability, whatever the vehicle's
+// status (a mothballed yard ship keeps its icon, §7 Q50).
+bool yardPart(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const game::Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::SpaceYard)) return true;
+    return false;
+}
+
 bool damagedParts(const game::Vehicle& v) {
     return std::any_of(v.damage.begin(), v.damage.end(), [](int d) { return d > 0; });
 }
@@ -82,7 +91,7 @@ std::vector<int> vehicleStatusCells(const game::Rules& r, const game::GameState&
     if (cloaked) out.push_back(cell::kCloaked);
     // 6. A working space yard (not cloaked; a mothballed yard ship still shows
     // it), else repair (§7 Q50).
-    const bool yard = game::vehicleHasSpaceYard(r, s, v) && !cloaked;
+    const bool yard = yardPart(r, s, v) && !cloaked;
     if (yard) out.push_back(cell::kSpaceYard);
     else if (game::hasAbility(game::vehicleAbilities(r, s, v), AbilityKind::ComponentRepair)) out.push_back(cell::kCanRepair);
     // 7-9.

@@ -3,6 +3,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
@@ -229,6 +230,7 @@ private:
         out.ministerStyle = e.ministerStyle;
         out.useRaceMinisterStyle = e.useRaceMinisterStyle;
         out.experience = e.experience;
+        const BusyPointer busy;
         const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", out);
         empireNote_ = saved ? std::format("The {} empire is saved as {}. New games can use it in the empire setup.", e.name, saved->string())
                             : std::format("The empire was not saved: {}", saved.error());
@@ -337,6 +339,7 @@ public:
 
 private:
     void save(UiContext& ui, const std::filesystem::path& file, const std::string& name) {
+        const BusyPointer busy;  // the Hourglass while it saves (spec 06 §5.8)
         const auto result = ui.session.save(file, name);
         if (result) {
             // The players' History files go beside the save, and this becomes the

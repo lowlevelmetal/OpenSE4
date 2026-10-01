@@ -1,4 +1,5 @@
 #include "client/classic/frontend.hpp"
+#include "client/classic/pointers.hpp"
 
 #include "client/app_settings.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -121,6 +122,7 @@ public:
 
 private:
     void resume(MenuContext& ctx, const std::filesystem::path& file) {
+        const BusyPointer busy;  // the Hourglass while it loads (spec 06 §5.8)
         auto session = ClassicSession::load(ctx.rules, file);
         if (!session) {
             error_ = session.error();
@@ -322,6 +324,7 @@ public:
             if (saves_.empty()) ImGui::TextDisabled("No saved games in %s", savesDir().string().c_str());
             for (const auto& [name, path] : saves_)
                 if (ImGui::Selectable(name.c_str())) {
+                    const BusyPointer busy;
                     auto session = ClassicSession::load(ctx.rules, path);
                     if (session) {
                         restoreHistoryFrom(path);
