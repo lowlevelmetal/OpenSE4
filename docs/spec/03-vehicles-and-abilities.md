@@ -852,8 +852,11 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 
 - An order whose destination cannot be reached fails, and a failed order clears the whole list
   (§8).
-- Movement stops and the list is cleared by: storm damage on entry, turbulence damage on a warp,
-  a minefield, a refused entry into an enemy sector, and (turn-based games only) combat on entry.
+- Movement stops and the list is cleared by: storm damage on entry, turbulence damage on a warp, a
+  minefield, a refused entry into an enemy sector, and (turn-based games only) combat on entry. A
+  pursuit (the Seek form of Attack, §8) is the exception: when its step meets storm damage,
+  turbulence, mines or a battle, it only stops moving for this run of its list; its order and the
+  list are kept (spec 04 §2, §19.2 Q76) (confirmed: binary).
 - Being in combat in a simultaneous game neither stops movement nor clears orders.
 - Each empire has two **Ship Orders** options: clear orders on encountering an enemy empire (on
   for a new empire) and on encountering any empire (off); computer players take them from their
@@ -1139,11 +1142,12 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Members leave the formation only during automated moves (every piece in strategic combat): a
   piece leaves when its strategy in effect is Don't Get Hurt, Drop Troops, Board or Ram, or when
   the strategy's `Break Formation` flag covers its category (spec 04 §16.1). The whole group
-  dissolves when the leader is destroyed or removed from the group, when the leader of an
-  automated side is left with 0 movement by damage, or when, after the leader's automated move,
-  every square on the map around it is occupied. When the leader itself leaves formation, only
-  its own marks are cleared: the members stay in the group, keep the fleet strategy, but have no
-  leader to follow and move on their own. In tactical combat the player's combat group orders
+  dissolves when the leader is destroyed or removed from the group, when the leader of an automated
+  side is left with 0 movement by damage, or when the leader's turn to act comes in an automated
+  phase and every square on the map around its footprint is already occupied; this is tested before
+  it moves, and it then does not move (spec 04 §16.1). When the leader itself leaves formation,
+  only its own marks are cleared: the members stay in the group, keep the fleet strategy, but have
+  no leader to follow and move on their own. In tactical combat the player's combat group orders
   also change groups (spec 04 §5).
 - Fleet Transfer and Change Formation\Strategy select the formation. The Formation Report draws the
   grid.
