@@ -149,74 +149,71 @@ void CombatForces::count(const game::Rules& r, const game::GameState& s, const g
 
 // ---- Tactical Combat ---------------------------------------------------------------------------
 
+namespace {
+
+// Above 100000, in thousands with "K" (spec 06 §1.10.1; truncated, inferred).
+std::string supplyNumber(int64_t v) { return v > 100000 ? std::format("{}K", v / 1000) : std::format("{}", v); }
+
+} // namespace
+
 std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Rules& r, const game::GameState& s,
                                                                   const std::vector<game::combat::TacticalPiece>& pieces, int piece) {
     std::vector<std::pair<std::string, std::string>> out;
     if (piece < 0 || size_t(piece) >= pieces.size()) return out;
     const game::combat::TacticalPiece& p = pieces[size_t(piece)];
     const bool planet = p.kind == PieceKind::Planet;
+    const bool seeker = p.kind == PieceKind::Seeker;
     const bool drone = p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Drone;
-    const game::Colony* colony = planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size() ? s.colony(p.planet) : nullptr;
-    if (planet) out.emplace_back("Population", colony ? std::format("{}M", colony->totalPopulation()) : std::string("None"));
+    const bool satellites = p.kind == PieceKind::UnitGroup && p.type == ruleset::VehicleType::Satellite;
+    if (planet) out.emplace_back("Population", std::format("{}M", p.population));
     else out.emplace_back("Movement", std::format("{}/{}", p.movement, p.movementMax));
     out.emplace_back("Shields", std::format("{}/{}", p.shields, p.shieldsMax));
-    // Damage taken against the maximum: a ship's structure; otherwise the percentage the battle reports.
-    std::string damage = std::format("{}%", p.damagePercent);
-    if (p.kind == PieceKind::Vehicle && p.vehicle.valid())
-        if (const game::Vehicle* v = s.vehicle(p.vehicle)) {
-            const int64_t max = game::vehicleStructure(r, s, *v);
-            if (max > 0) damage = std::format("{}/{}", std::clamp<int64_t>(max - p.hitPoints, 0, max), max);
-        }
-    out.emplace_back("Damage", damage);
-    out.emplace_back("Supply", planet ? std::string("-") : !p.hasSupply ? std::string("None") : std::format("{}", p.supply));
+    // Taken against the full hit points the overkill limit counts, for every kind of piece.
+    out.emplace_back("Damage", std::format("{}/{}", std::max<int64_t>(0, p.fullHitPoints - p.hitPoints), p.fullHitPoints));
+    std::string supply;
+    if (seeker) supply = "None";
+    else if (planet || satellites) supply = "Never";
+    else if (p.unlimitedSupply) supply = "Endless";
+    else supply = std::format("{}/{}", supplyNumber(p.supply), supplyNumber(p.supplyCapacity));
+    out.emplace_back("Supply", supply);
     out.emplace_back("Max Targets", std::format("{}", p.budget));
     if (drone) {
-        const bool known = p.seekTarget >= 0 && size_t(p.seekTarget) < pieces.size();
-        out.emplace_back("Target", known ? pieces[size_t(p.seekTarget)].name : std::string("None"));
+        const bool known = p.droneTarget >= 0 && size_t(p.droneTarget) < pieces.size() && pieces[size_t(p.droneTarget)].alive;
+        out.emplace_back("Target", known ? pieces[size_t(p.droneTarget)].name : std::string("None"));
     } else {
+        // Fleet groups are numbered like the groups formed in the window (spec 04 §3 step 5).
         std::string group = "None";
-        // A fleet's own combat group has no number (inferred: shown as "Fleet").
-        const std::string number = p.group >= 0 ? std::format("Group {}", p.group) : std::string("Fleet");
-        if (p.isLeader) group = number + " - Leader";
-        else if (p.leader >= 0 || p.group >= 0) group = number + " - Wingman";
+        if (p.group >= 0) group = std::format("Group {} - {}", p.group, p.isLeader ? "Leader" : "Wingman");
         out.emplace_back("Combat Group", group);
-        std::string formation = "None";
-        if (const game::Vehicle* v = p.vehicle.valid() ? s.vehicle(p.vehicle) : nullptr)
-            if (const game::Fleet* f = s.fleet(v->fleet); f && f->formation < r.data().formations.size())
-                formation = r.data().formations[f->formation].name;
-        out.emplace_back("Formation", formation);
+        const auto& formations = r.data().formations;
+        out.emplace_back("Formation", p.formation >= 0 && size_t(p.formation) < formations.size() ? formations[size_t(p.formation)].name
+                                                                                                    : std::string("None"));
     }
-    if (colony && colony->plagueLevel > 0) out.emplace_back("Conditions", std::format("Plague level {}", colony->plagueLevel));
+    if (planet) {
+        int plague = p.plague;
+        if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size())
+            if (const game::Colony* colony = s.colony(p.planet)) plague = std::max(plague, colony->plagueLevel);
+        if (plague > 0) out.emplace_back("Conditions", std::format("Plague {}", plague));
+    }
     return out;
 }
 
-DropTarget dropTroopsTarget(const game::combat::TacticalBattle& b, int piece) {
-    DropTarget out;
+int dropTroopsColony(const game::combat::TacticalBattle& b, int piece) {
     const auto& pieces = b.pieces();
-    if (piece < 0 || size_t(piece) >= pieces.size()) {
-        out.problem = "Select a ship with troops first.";
-        return out;
-    }
+    if (piece < 0 || size_t(piece) >= pieces.size()) return -1;
     const game::combat::TacticalPiece& ship = pieces[size_t(piece)];
+    int last = -1;
     for (size_t j = 0; j < pieces.size(); ++j) {
         const game::combat::TacticalPiece& q = pieces[j];
-        if (!q.alive || q.kind != PieceKind::Planet || !q.owner.valid() || q.owner == ship.owner || b.distance(piece, int(j)) > 1) continue;
-        // Refused when another empire's troops already fight on it (spec 06 §1.10.2).
-        if (!q.landed.empty() && q.invader.valid() && q.invader != ship.owner) {
-            if (out.problem.empty()) out.problem = "Another empire's troops are fighting there already.";
-            continue;
-        }
-        game::combat::TacticalOrder o{game::combat::TacticalOrder::Kind::DropTroops, ship.owner, piece, int(j)};
-        if (std::string why = b.check(o); !why.empty()) {
-            if (out.problem.empty()) out.problem = why;
-            continue;
-        }
-        out.planet = int(j);
-        out.problem.clear();
-        return out;
+        if (q.alive && q.kind == PieceKind::Planet && q.owner.valid() && q.owner != ship.owner && b.distance(piece, int(j)) <= 1) last = int(j);
     }
-    if (out.problem.empty()) out.problem = "No colony of another empire is adjacent.";
-    return out;
+    return last;
+}
+
+game::combat::TacticalOrder dropTroopsOrder(const game::combat::TacticalBattle& b, int piece) {
+    game::combat::TacticalOrder o{game::combat::TacticalOrder::Kind::DropTroops, b.phaseEmpire(), piece};
+    o.target = dropTroopsColony(b, piece);
+    return o;
 }
 
 // ---- Combat Simulator ---------------------------------------------------------------------------

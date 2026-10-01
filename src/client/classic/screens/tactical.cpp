@@ -25,13 +25,18 @@
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 
+#include "game/abilities.hpp"
 #include "game/combat.hpp"
+#include "game/design.hpp"
+#include "game/query.hpp"
 #include "game/tactical.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <format>
+#include <functional>
+#include <utility>
 #include <numbers>
 
 namespace opense4::client::classic {
@@ -59,8 +64,9 @@ CombatPace animationPace(const game::Rules& r) { return combatPace(r, settings()
 // A target picked on the map for Ram or Capture (the Orders window, R or C).
 enum class Aim { None, Ram, Capture };
 
-// The pickers the Orders window's items open (spec 06 §1.10.2).
-enum class OrdersMode { Menu, GroupSize, LeaderNumber, LeaderFormation, MemberNumber, Resolve };
+// The pickers the Orders window's items open, each a modal window of its own
+// once the menu has closed (spec 06 §1.10.2).
+enum class Picker { None, GroupSize, LeaderNumber, MemberNumber, Formation, Resolve };
 
 // What the windows share for the battle in progress.
 struct TacticalUi {
@@ -70,7 +76,7 @@ struct TacticalUi {
     int target = -1;             // the enemy last hovered or fired at
     bool hoverEnemy = false;     // the pointer is over an enemy now (to-hit chances)
     Aim aim = Aim::None;
-    OrdersMode ordersMode = OrdersMode::Menu;
+    Picker picker = Picker::None;
     int ordersGroup = 1;         // the group number picked for Set Group Leader
     int launchWindow = 0;        // the Launch Units window's session (spec 04 §10.4)
     std::string message;         // the last refusal or hint
@@ -108,7 +114,10 @@ void flush(TacticalFight& f) {
     std::vector<TacticalOrder> queue = std::move(u.queue);
     u.queue.clear();
     for (const TacticalOrder& o : queue) {
-        u.message = f.battle->submit(o);
+        std::string why = f.battle->submit(o);
+        // The group orders refuse silently (spec 06 §1.10.2).
+        const bool group = o.kind == OK::SetLeader || o.kind == OK::SetMember || o.kind == OK::ClearGroup || o.kind == OK::ClearAllGroups;
+        u.message = group ? std::string{} : std::move(why);
     }
     if (u.finishNow && f.battle->finished() && !f.battle->applied()) f.battle->finish();
     u.finishNow = false;
@@ -170,7 +179,9 @@ std::string unitsText(const game::GameState& s, const TacticalPiece& p) {
     return out;
 }
 
-// Drop Troops (the Orders item and T): at once on the adjacent colony of another empire (spec 06 §1.10.2).
+// Drop Troops (the Orders item and T): at once, no target click, on the
+// adjacent colony of another empire that comes last in piece order, whatever
+// the treaty; a refusal is explained (spec 06 §1.10.2, spec 04 §11).
 void dropTroops(TacticalFight& f) {
     TacticalUi& u = state();
     const TacticalBattle& b = *f.battle;
@@ -178,12 +189,12 @@ void dropTroops(TacticalFight& f) {
         u.message = "Select one of your ships first.";
         return;
     }
-    const DropTarget t = dropTroopsTarget(b, u.selected);
-    if (t.planet < 0) {
-        u.message = t.problem;
+    const TacticalOrder o = dropTroopsOrder(b, u.selected);
+    if (std::string why = b.check(o); !why.empty()) {
+        u.message = std::move(why);
         return;
     }
-    submit(f, TacticalOrder{OK::DropTroops, b.phaseEmpire(), u.selected, t.planet});
+    submit(f, o);
 }
 
 // Alt/Ctrl+0 and Clear Group Assignment: the selected piece's group marks go (spec 06 §3.3).
@@ -231,6 +242,7 @@ public:
         overviewAndButtons(ui, *f, paint);
         ImGui::EndGroup();
         keys(ui, *f);
+        pickers(ui, *f);
         if (!u.message.empty()) {
             ImGui::SetCursorScreenPos({origin.x + ui.px(kSideX), origin.y + ui.px(636)});
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(kSideW));
@@ -260,8 +272,8 @@ public:
 
 private:
     // Closes the window: a game battle's orders answer its question and the game
-    // carries on; after a simulation the Combat Simulator opens again with the
-    // same setup (spec 06 §1.10.4).
+    // carries on; after a simulation Designs and the Combat Simulator open
+    // again with the same setup (spec 06 §1.10.4).
     bool finishWindow(UiContext& ui, TacticalFight& f) {
         const bool simulation = f.kind == TacticalFight::Kind::Simulation;
         ui.session.endTactical();
@@ -394,10 +406,8 @@ private:
         for (game::EmpireId e : b.participants()) {
             if (!first) ImGui::SameLine(0, ui.px(14));
             first = false;
-            if (Sprite flag = ui.art.flag(paint.styleOf(e), false)) {
-                image(ui, flag, {20, 14});
-                ImGui::SameLine(0, ui.px(4));
-            }
+            // A simulation's sides show their numbered boxes (spec 04 §17).
+            if (ownerMark(ui, s, e, {20, 14})) ImGui::SameLine(0, ui.px(4));
             int left = 0;
             for (const TacticalPiece& p : b.pieces())
                 if (p.alive && p.owner == e && p.kind != PieceKind::Seeker && p.kind != PieceKind::Obstacle) ++left;
@@ -648,10 +658,7 @@ private:
         image(ui, pic, {64, 64});
         ImGui::SameLine();
         ImGui::BeginGroup();
-        if (Sprite flag = ui.art.flag(paint.styleOf(p.owner), false)) {
-            image(ui, flag, {20, 14});
-            ImGui::SameLine();
-        }
+        if (ownerMark(ui, s, p.owner, {20, 14})) ImGui::SameLine();
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTextSize));
         ImGui::TextUnformatted(paint.pieceName(uint32_t(u.selected)).c_str());
         ImGui::PopFont();
@@ -783,10 +790,7 @@ private:
             return;
         }
         const TacticalPiece& t = b.pieces()[size_t(u.target)];
-        if (Sprite flag = ui.art.flag(paint.styleOf(t.owner), false)) {
-            image(ui, flag, {20, 14});
-            ImGui::SameLine();
-        }
+        if (ownerMark(ui, b.state(), t.owner, {20, 14})) ImGui::SameLine();
         ImGui::TextUnformatted(paint.pieceName(uint32_t(u.target)).c_str());
         // Shields in blue, internal damage in red.
         ImGui::TextColored(ImVec4(0.4f, 0.6f, 1, 1), "Shields %d", t.shields);
@@ -839,10 +843,7 @@ private:
         const bool orders = u.begun && side.valid() && !animating();
         if (classicButton(ui, "Options", {150, 28})) ui.open(ScreenId::TacticalOptions);
         ui.tagItem("tactical-combat:options");
-        if (classicButton(ui, "Orders", {150, 28}, 0, false, orders && !b.paused())) {
-            u.ordersMode = OrdersMode::Menu;
-            ui.open(ScreenId::TacticalOrders);
-        }
+        if (classicButton(ui, "Orders", {150, 28}, 0, false, orders && !b.paused())) ui.open(ScreenId::TacticalOrders);
         ui.tagItem("tactical-combat:orders");
         // Auto: one toggle for every empire, from the next phase on (spec 04 §4).
         TacticalOrder toggle{OK::Auto, side};
@@ -866,6 +867,138 @@ private:
         u.begun = true;
         if (!playback_.atEnd()) playback_.play();
         centreOn(b, u.selected);
+    }
+
+    // ---- The Orders window's pickers (spec 06 §1.10.2) --------------------------------------------------
+
+    // Each picker is a modal list window of its own, opened once the Orders
+    // menu has closed: "Select Fighters Per group" (Amount 5 to 50), "Select
+    // Combat Group" (1 to 9) and, for a new leader, "Select Formation" (closed
+    // without a choice, the piece's group marks are cleared); and the
+    // "Resolve Combat" confirmation.
+    void pickers(UiContext& ui, TacticalFight& f) {
+        TacticalUi& u = state();
+        if (u.picker == Picker::None) return;
+        TacticalBattle& b = *f.battle;
+        const game::EmpireId side = b.phaseEmpire();
+        const TacticalPiece* p = ownSelected(b, u);
+        if (u.picker != Picker::Resolve && !p) {
+            u.picker = Picker::None;
+            return;
+        }
+        std::string title, column;
+        std::vector<std::string> rows;
+        const auto& formations = ui.rules().data().formations;
+        switch (u.picker) {
+            case Picker::GroupSize:
+                title = "Select Fighters Per group";
+                column = "Amount";
+                for (int n : game::combat::kFighterGroupSizes) rows.push_back(std::to_string(n));
+                break;
+            case Picker::LeaderNumber:
+            case Picker::MemberNumber:
+                title = "Select Combat Group";
+                column = "Group";
+                for (int n = 1; n <= 9; ++n) rows.push_back(std::to_string(n));
+                break;
+            case Picker::Formation:
+                if (formations.empty()) {
+                    // Without formations the leader takes none.
+                    TacticalOrder o{OK::SetLeader, side, u.selected};
+                    o.group = u.ordersGroup;
+                    submit(f, o);
+                    u.picker = Picker::None;
+                    return;
+                }
+                title = "Select Formation";
+                column = "Formation";
+                for (const ruleset::Formation& fm : formations) rows.push_back(fm.name);
+                break;
+            case Picker::Resolve: title = "Resolve Combat"; break;
+            case Picker::None: return;
+        }
+        const std::string id = title + "##tacticalpicker";
+        if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+        const Vec2 size = u.picker == Picker::Resolve ? Vec2{320, 120} : Vec2{240, 60 + 22 * float(std::min<size_t>(rows.size(), 10)) + 40};
+        ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
+        int picked = -1;
+        bool cancelled = false, yes = false;
+        if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
+            if (u.picker == Picker::Resolve) {
+                // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted("Should the rest of the battle be fought automatically?");
+                ImGui::PopTextWrapPos();
+                const std::optional<bool> key = yesNoKey();
+                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(36));
+                yes = ImGui::Button("Yes", ui.size({140, 26})) || key == true;
+                ImGui::SameLine();
+                cancelled = ImGui::Button("No", ui.size({140, 26})) || key == false;
+            } else {
+                ImGui::TextColored(kLabelBlue, "%s", column.c_str());
+                ImGui::BeginChild("##rows", ImVec2(0, -ui.px(34)), ImGuiChildFlags_Borders);
+                for (size_t k = 0; k < rows.size(); ++k)
+                    if (ImGui::Selectable(rows[k].c_str(), false)) picked = int(k);
+                ImGui::EndChild();
+                cancelled = ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) ||
+                            (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::IsWindowAppearing());
+            }
+            if (picked >= 0 || cancelled || yes) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        if (picked < 0 && !cancelled && !yes) return;
+        const Picker was = u.picker;
+        u.picker = Picker::None;
+        switch (was) {
+            case Picker::GroupSize:
+                if (picked >= 0) launchInGroups(ui, f, game::combat::kFighterGroupSizes[size_t(picked)]);
+                break;
+            case Picker::LeaderNumber:
+                if (picked >= 0) {
+                    u.ordersGroup = picked + 1;
+                    u.picker = Picker::Formation;
+                }
+                break;
+            case Picker::MemberNumber:
+                if (picked >= 0) {
+                    TacticalOrder o{OK::SetMember, side, u.selected};
+                    o.group = picked + 1;
+                    submit(f, o);
+                }
+                break;
+            case Picker::Formation:
+                if (picked >= 0) {
+                    TacticalOrder o{OK::SetLeader, side, u.selected};
+                    o.group = u.ordersGroup;
+                    o.formation = picked;
+                    submit(f, o);
+                } else if (p && (p->isLeader || p->group >= 0)) {
+                    submit(f, TacticalOrder{OK::ClearGroup, side, u.selected});   // closed without a choice
+                }
+                break;
+            case Picker::Resolve:
+                if (yes) submit(f, TacticalOrder{OK::ResolveCombat, side});
+                break;
+            case Picker::None: break;
+        }
+    }
+
+    // Every fighter the selected piece carries, in single-design groups of `size` (spec 04 §10.4).
+    static void launchInGroups(UiContext& ui, TacticalFight& f, int size) {
+        const TacticalUi& u = state();
+        const TacticalBattle& b = *f.battle;
+        const TacticalPiece* p = ownSelected(b, u);
+        if (!p) return;
+        const game::GameState& s = b.state();
+        for (const game::UnitStack& st : p->cargo) {
+            if (st.design.index() >= s.designs.size() || ui.rules().hull(s.design(st.design).hull).type != ruleset::VehicleType::Fighter) continue;
+            TacticalOrder o{OK::LaunchFighters, b.phaseEmpire(), u.selected};
+            o.design = st.design;
+            o.count = st.count;
+            o.group = size;
+            if (b.check(o).empty()) submit(f, o);
+        }
     }
 
     // ---- Hotkeys (spec 06 §3.3) ------------------------------------------------------------------------
@@ -897,8 +1030,7 @@ private:
             } else if (io.KeyAlt) {
                 // A new leader then picks its formation.
                 u.ordersGroup = n;
-                u.ordersMode = OrdersMode::LeaderFormation;
-                ui.open(ScreenId::TacticalOrders);
+                u.picker = Picker::Formation;
             } else {
                 TacticalOrder o{OK::SetMember, side, u.selected};
                 o.group = n;
@@ -939,8 +1071,10 @@ private:
 
 // ---- Tactical Combat Orders (spec 06 §1.10.2) ------------------------------------------------------------------
 
-// A 326x350 menu of 11 stacked 306x30 buttons, without a title; the items that
-// need a choice open their pickers in its place.
+// A 326x350 modal menu without border or title bar: 11 stacked 306x30
+// buttons with no gap, from (10,10). A click closes it, and only then does
+// the order run: the items that need a choice open their pickers as windows
+// of their own (TacticalCombatScreen::pickers).
 class TacticalOrdersScreen final : public Screen {
 public:
     bool modal() const override { return true; }
@@ -958,7 +1092,8 @@ public:
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        bool keep = true;
+        std::function<void()> chosen;   // runs once the menu has gone
+        bool close = false;
         const bool open = ImGui::Begin("Tactical Combat Orders", nullptr,
                                        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags);
         ImGui::PopStyleVar(2);
@@ -967,137 +1102,32 @@ public:
             ui.tagWindow(ui.at(min), ui.at(min + size));
             drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
             int row = 0;
-            auto button = [&](const std::string& label, bool enabled = true) {
+            auto item = [&](const char* label, bool enabled, std::function<void()> action) {
                 ImGui::SetCursorPos(ImVec2(ui.px(10), ui.px(10 + 30 * float(row++))));
-                const bool clicked = classicButton(ui, label.c_str(), {306, 30}, 0, false, enabled);
-                if (clicked) audio().play("button");
-                return clicked;
+                if (classicButton(ui, label, {306, 30}, 0, false, enabled)) {
+                    audio().play("button");
+                    chosen = std::move(action);
+                    close = true;
+                }
             };
-            switch (u.ordersMode) {
-                case OrdersMode::Menu: keep = menu(ui, *f, p, button); break;
-                case OrdersMode::GroupSize:
-                    for (int n : game::combat::kFighterGroupSizes)
-                        if (button(std::format("Groups of {}", n))) {
-                            launchInGroups(ui, *f, n);
-                            keep = false;
-                        }
-                    break;
-                case OrdersMode::LeaderNumber:
-                case OrdersMode::MemberNumber:
-                    for (int n = 1; n <= 9; ++n)
-                        if (button(std::format("Group {}", n), p != nullptr)) {
-                            if (u.ordersMode == OrdersMode::LeaderNumber) {
-                                u.ordersGroup = n;
-                                u.ordersMode = OrdersMode::LeaderFormation;
-                            } else {
-                                TacticalOrder o{OK::SetMember, side, u.selected};
-                                o.group = n;
-                                submit(*f, o);
-                                keep = false;
-                            }
-                        }
-                    break;
-                case OrdersMode::LeaderFormation: {
-                    const auto& formations = ui.rules().data().formations;
-                    for (size_t k = 0; k < formations.size() && k < 10; ++k)
-                        if (button(formations[k].name, p != nullptr)) {
-                            TacticalOrder o{OK::SetLeader, side, u.selected};
-                            o.group = u.ordersGroup;
-                            o.formation = int(k);
-                            submit(*f, o);
-                            keep = false;
-                        }
-                    if (formations.empty() && button(std::format("Lead group {}", u.ordersGroup), p != nullptr)) {
-                        TacticalOrder o{OK::SetLeader, side, u.selected};
-                        o.group = u.ordersGroup;
-                        submit(*f, o);
-                        keep = false;
-                    }
-                    break;
-                }
-                case OrdersMode::Resolve: {
-                    // A Yes/No prompt: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
-                    ImGui::SetCursorPos(ImVec2(ui.px(14), ui.px(14)));
-                    ImGui::PushTextWrapPos(ui.px(size.x - 14));
-                    ImGui::TextUnformatted("Let every empire's strategies fight the rest of the battle?");
-                    ImGui::PopTextWrapPos();
-                    row = 3;
-                    const std::optional<bool> answer = yesNoKey();
-                    if (button("Yes") || answer == true) {
-                        submit(*f, TacticalOrder{OK::ResolveCombat, side});
-                        keep = false;
-                    } else if (button("No") || answer == false) {
-                        u.ordersMode = OrdersMode::Menu;
-                    }
-                    break;
-                }
-            }
-            if (u.ordersMode != OrdersMode::Menu && u.ordersMode != OrdersMode::Resolve) {
-                row = 10;
-                if (button("Cancel")) keep = false;
-            }
+            const bool can = p != nullptr;
+            const bool phase = side.valid() && b.awaitingOrders();
+            item("Launch Units", can, [&ui] { ui.open(ScreenId::TacticalLaunch); });
+            item("Launch Fighters in Groups", can, [&u] { u.picker = Picker::GroupSize; });
+            item("Drop Troops", can, [f] { dropTroops(*f); });
+            item("Ram Ship", can && p->movement > 0, [&u] { u.aim = Aim::Ram; });
+            item("Capture Ship", can && p->boardingAttack > 0, [&u] { u.aim = Aim::Capture; });
+            item("Resolve Combat", phase, [&u] { u.picker = Picker::Resolve; });
+            item("Set Group Leader", can, [&u] { u.picker = Picker::LeaderNumber; });
+            item("Set Group Member", can, [&u] { u.picker = Picker::MemberNumber; });
+            item("Clear Group Assignment", can, [f] { clearGroup(*f); });
+            item("Clear All Group Assignments", phase && !b.paused(), [f, side] { submit(*f, TacticalOrder{OK::ClearAllGroups, side}); });
+            item("Cancel", true, [] {});
         }
         ImGui::End();
+        if (close && chosen) chosen();
         flush(*f);
-        if (!keep) u.ordersMode = OrdersMode::Menu;
-        return keep;
-    }
-
-private:
-    template <class Button>
-    bool menu(UiContext& ui, TacticalFight& f, const TacticalPiece* p, Button&& button) {
-        TacticalUi& u = state();
-        const TacticalBattle& b = *f.battle;
-        const game::EmpireId side = b.phaseEmpire();
-        const bool can = p != nullptr;
-        bool keep = true;
-        if (button("Launch Units", can)) {
-            ui.open(ScreenId::TacticalLaunch);
-            keep = false;
-        }
-        if (button("Launch Fighters in Groups", can)) u.ordersMode = OrdersMode::GroupSize;
-        if (button("Drop Troops", can && p->troops)) {
-            dropTroops(f);
-            keep = false;
-        }
-        if (button("Ram Ship", can && p->movement > 0)) {
-            u.aim = Aim::Ram;
-            keep = false;
-        }
-        if (button("Capture Ship", can && p->boardingAttack > 0)) {
-            u.aim = Aim::Capture;
-            keep = false;
-        }
-        if (button("Resolve Combat", side.valid() && b.awaitingOrders())) u.ordersMode = OrdersMode::Resolve;
-        if (button("Set Group Leader", can)) u.ordersMode = OrdersMode::LeaderNumber;
-        if (button("Set Group Member", can)) u.ordersMode = OrdersMode::MemberNumber;
-        if (button("Clear Group Assignment", can)) {
-            clearGroup(f);
-            keep = false;
-        }
-        if (button("Clear All Group Assignments", side.valid() && b.awaitingOrders() && !b.paused())) {
-            submit(f, TacticalOrder{OK::ClearAllGroups, side});
-            keep = false;
-        }
-        if (button("Cancel")) keep = false;
-        return keep;
-    }
-
-    // Every fighter the selected piece carries, in single-design groups of `size` (spec 04 §10.4).
-    static void launchInGroups(UiContext& ui, TacticalFight& f, int size) {
-        const TacticalUi& u = state();
-        const TacticalBattle& b = *f.battle;
-        const TacticalPiece* p = ownSelected(b, u);
-        if (!p) return;
-        const game::GameState& s = b.state();
-        for (const game::UnitStack& st : p->cargo) {
-            if (st.design.index() >= s.designs.size() || ui.rules().hull(s.design(st.design).hull).type != ruleset::VehicleType::Fighter) continue;
-            TacticalOrder o{OK::LaunchFighters, b.phaseEmpire(), u.selected};
-            o.design = st.design;
-            o.count = st.count;
-            o.group = size;
-            if (b.check(o).empty()) submit(f, o);
-        }
+        return !close;
     }
 };
 
@@ -1210,7 +1240,17 @@ public:
 
 // ---- Combat Piece Report (spec 06 §1.10.1) ----------------------------------------------------------------------
 
-// A 353x422 report: a 128 px picture, the owner's flag, the name and the Detail lines.
+// A 353x422 report window built like the object reports: a 290x361 Detail
+// page (the 128x128 picture at the top left with the owner's flag on it, the
+// name at the top from x 120, or right-aligned 10 px from the page's right
+// edge when too long; labels in #7D9FFF at x 130 from y 20, 30 px apart, each
+// value in white at x 140, 15 px under its label) and the object's tabs along
+// the bottom: a ship or base Detail, Comps, Cargo (with cargo space) and
+// Ability; a planet Detail, Facil, Cargo (likewise) and Ability. A unit group
+// has no tabs: its page is cut to 249 px and its units are listed in a 108 px
+// grid at y 253. A seeker has no tabs and shows the picture of the weapon that
+// launched it. A neutral obstacle opens its ordinary object report. In a
+// simulation the owner's flag is the side's numbered box.
 class CombatPieceReportScreen final : public Screen {
 public:
     explicit CombatPieceReportScreen(int piece) : piece_(piece) {}
@@ -1225,46 +1265,178 @@ public:
         Dialog d(ui, screenTitle(ScreenId::CombatPieceReport), Vec2{353, 422}, 0);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        Sprite pic;
-        const std::string style = p.owner.valid() && p.owner.index() < s.empires.size() ? s.empire(p.owner).race.style : std::string{};
-        if (p.design.valid() && p.design.index() < s.designs.size()) {
-            const ruleset::VehicleSize& hull = ui.rules().hull(s.design(p.design).hull);
-            pic = ui.art.shipPortrait(style, hull);
-            if (!pic) pic = ui.art.shipMini(style, hull);
-        } else if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
-            const game::SpaceObject& o = s.galaxy.object(p.planet);
-            if (o.sectorType < ui.rules().data().sectorObjectTypes.size()) pic = ui.art.planetPortrait(ui.rules().data().sectorObjectTypes[o.sectorType].picture);
-            if (!pic) pic = objectSprite(ui, o);
-        }
-        image(ui, pic, {128, 128});
-        ImGui::SameLine();
-        ImGui::BeginGroup();
-        if (!style.empty())
-            if (Sprite flag = ui.art.flag(style)) image(ui, flag, {39, 27});
-        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted(p.name.c_str());
-        ImGui::PopTextWrapPos();
-        ImGui::PopFont();
-        if (p.design.valid() && p.design.index() < s.designs.size()) dimText(s.design(p.design).name.c_str());
-        ImGui::EndGroup();
-        ImGui::Spacing();
-        heading(ui, "Detail");
+        const ImVec2 page = ImGui::GetCursorScreenPos();
+        // The 290x361 page and the tab strip under it, fitted to our dialog's content area.
+        const float pageH = std::min(361.0f, ImGui::GetContentRegionAvail().y / ui.px(1) - 32.0f);
         if (p.kind == PieceKind::Obstacle) {
-            // A neutral obstacle (inferred: its name and kind; the original opens its ordinary report).
-            dimText("A neutral obstacle: it takes no part in the fighting.");
+            // The object's ordinary report (stars, warp points, comets, empty planets).
+            ImGui::BeginChild("##page", ui.size({290, pageH}));
+            if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) objectReport(ui, p.planet, &s);
+            ImGui::EndChild();
         } else {
-            for (const auto& [label, value] : pieceReportLines(ui.rules(), s, b.pieces(), piece_)) labelValue(ui, label.c_str(), value, 110);
+            const bool group = p.kind == PieceKind::UnitGroup;
+            const bool seeker = p.kind == PieceKind::Seeker;
+            const bool planet = p.kind == PieceKind::Planet;
+            const bool tabs = !group && !seeker;
+            if (!tabs) tab_ = ReportTab::Detail;
+            // A unit group's page is cut to 249 px, its unit grid (108 px) at y 253.
+            const float detailH = group ? std::min(249.0f, pageH - 112.0f) : pageH;
+            ImGui::BeginChild("##page", ui.size({290, detailH}), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+            switch (tab_) {
+                case ReportTab::Detail: detail(ui, b, p); break;
+                case ReportTab::Components: components(ui, s, p); break;
+                case ReportTab::Facilities: facilities(ui, s, p); break;
+                case ReportTab::Cargo: cargo(ui, s, p); break;
+                case ReportTab::Abilities: abilities(ui, s, p); break;
+            }
+            ImGui::EndChild();
+            if (group) unitGrid(ui, s, p, {page.x, page.y + ui.px(detailH + 4)}, pageH - detailH - 4);
+            if (tabs) {
+                ImGui::SetCursorScreenPos({page.x, page.y + ui.px(pageH + 2)});
+                tab_ = reportTabs(ui, tab_, planet, cargoSpace(ui.rules(), s, p) > 0);
+            }
         }
         // Esc closes a report window (spec 06 §3.4).
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) d.requestClose();
-        ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(34));
-        if (classicButton(ui, "Close", {100, 26})) d.requestClose();
+        // Close in the title strip (OpenSE4's: the strip under the page holds the tabs).
+        ImGui::SetCursorScreenPos(d.at({353 - 74, 7}));
+        if (classicButton(ui, "Close", {64, 22})) d.requestClose();
         return d.keepOpen();
     }
 
 private:
+    static int64_t cargoSpace(const game::Rules& r, const game::GameState& s, const TacticalPiece& p) {
+        if (p.kind == PieceKind::Vehicle && p.vehicle.valid())
+            if (const game::Vehicle* v = s.vehicle(p.vehicle)) return game::vehicleCargoCapacity(r, s, *v);
+        if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size())
+            if (const game::Colony* c = s.colony(p.planet)) return game::colonyCargoCapacity(r, s, *c);
+        return 0;
+    }
+
+    void detail(UiContext& ui, const TacticalBattle& b, const TacticalPiece& p) {
+        const game::GameState& s = b.state();
+        const game::Rules& r = ui.rules();
+        const ImVec2 o = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // The picture: the hull's portrait, the planet's, or the launching weapon's for a seeker.
+        Sprite pic;
+        const std::string style = p.owner.valid() && p.owner.index() < s.empires.size() ? s.empire(p.owner).race.style : std::string{};
+        if (p.kind == PieceKind::Seeker) {
+            if (p.seekComponent >= 0 && size_t(p.seekComponent) < r.data().components.size()) pic = ui.art.component(r.component(uint32_t(p.seekComponent)).picture);
+        } else if (p.design.valid() && p.design.index() < s.designs.size()) {
+            const ruleset::VehicleSize& hull = r.hull(s.design(p.design).hull);
+            pic = ui.art.shipPortrait(style, hull);
+            if (!pic) pic = ui.art.shipMini(style, hull);
+        } else if (p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
+            const game::SpaceObject& obj = s.galaxy.object(p.planet);
+            if (obj.sectorType < r.data().sectorObjectTypes.size()) pic = ui.art.planetPortrait(r.data().sectorObjectTypes[obj.sectorType].picture);
+            if (!pic) pic = objectSprite(ui, obj);
+        }
+        ImGui::SetCursorScreenPos(o);
+        image(ui, pic, {128, 128});
+        // The owner's flag on the picture (a simulation's side box).
+        ImGui::SetCursorScreenPos(o);
+        ownerMark(ui, s, p.owner, {26, 18}, false);
+        // The name at the top from x 120; right-aligned 10 px from the right edge when too long.
+        ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+        const float w = ImGui::CalcTextSize(p.name.c_str()).x;
+        const float x = w > ui.px(290 - 10 - 120) ? o.x + ui.px(290 - 10) - w : o.x + ui.px(120);
+        dl->AddText({x, o.y}, IM_COL32_WHITE, p.name.c_str());
+        ImGui::PopFont();
+        // The lines: labels at x 130 from y 20 every 30 px, values at x 140 15 px under them; Conditions at y 230.
+        float y = 20;
+        for (const auto& [label, value] : pieceReportLines(r, s, b.pieces(), piece_)) {
+            if (label == "Conditions") y = 230;
+            dl->AddText({o.x + ui.px(130), o.y + ui.px(y)}, ImGui::ColorConvertFloat4ToU32(kLabelBlue), label.c_str());
+            dl->AddText({o.x + ui.px(140), o.y + ui.px(y + 15)}, IM_COL32_WHITE, value.c_str());
+            y += 30;
+        }
+        ImGui::SetCursorScreenPos({o.x, o.y + ui.px(y + 30)});
+        ImGui::Dummy({1, 1});
+    }
+
+    // Comps: the design's components, those destroyed in red.
+    void components(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
+        const game::Rules& r = ui.rules();
+        if (!p.design.valid() || p.design.index() >= s.designs.size()) return;
+        const game::Design& d = s.design(p.design);
+        for (size_t e = 0; e < d.entries.size(); ++e) {
+            const ruleset::Component& c = r.component(d.entries[e].component);
+            const bool intact = e >= p.intact.size() || p.intact[e] != 0;
+            image(ui, ui.art.component(c.picture), {24, 24}, intact ? Color{1, 1, 1, 1} : Color{1, 0.3f, 0.3f, 0.8f});
+            ImGui::SameLine();
+            std::string label = c.name;
+            if (d.entries[e].mount >= 0 && size_t(d.entries[e].mount) < r.data().weaponMounts.size())
+                label = r.data().weaponMounts[size_t(d.entries[e].mount)].shortName + " " + label;
+            if (intact) ImGui::TextUnformatted(label.c_str());
+            else ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s (destroyed)", label.c_str());
+        }
+    }
+
+    // Facil: the colony's facilities as the battle began.
+    void facilities(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
+        const game::Colony* c = p.planet.valid() && p.planet.index() < s.galaxy.objects.size() ? s.colony(p.planet) : nullptr;
+        if (!c) {
+            dimText("Not colonized");
+            return;
+        }
+        for (uint32_t f : c->facilities) {
+            image(ui, ui.art.facility(ui.rules().facility(f).picture), {24, 24});
+            ImGui::SameLine();
+            ImGui::TextUnformatted(ui.rules().facility(f).name.c_str());
+        }
+    }
+
+    // Cargo: the units it carries now.
+    void cargo(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
+        game::Cargo c;
+        c.units = p.cargo;
+        labelValue(ui, "Capacity", std::format("{} / {} kT", game::cargoSpaceUsed(ui.rules(), s, c), cargoSpace(ui.rules(), s, p)));
+        if (p.cargo.empty()) dimText("Empty");
+        for (const game::UnitStack& u : p.cargo)
+            ImGui::Text("%d x %s", u.count, u.design.index() < s.designs.size() ? s.design(u.design).name.c_str() : "?");
+    }
+
+    // Ability: what its parts or facilities give it.
+    void abilities(UiContext& ui, const game::GameState& s, const TacticalPiece& p) {
+        std::vector<game::ParsedAbility> list;
+        if (p.kind == PieceKind::Vehicle && p.vehicle.valid()) {
+            if (const game::Vehicle* v = s.vehicle(p.vehicle)) list = game::vehicleAbilities(ui.rules(), s, *v);
+        } else if (p.kind == PieceKind::Planet && p.planet.valid() && p.planet.index() < s.galaxy.objects.size()) {
+            if (const game::Colony* c = s.colony(p.planet)) list = game::colonyAbilities(ui.rules(), s, *c);
+        }
+        bool any = false;
+        for (const game::ParsedAbility& a : list) {
+            if (a.kind == game::AbilityKind::AITag) continue;
+            any = true;
+            const std::string name = a.kind == game::AbilityKind::Unknown ? a.raw : std::string(game::identifier(a.kind));
+            if (a.value1 != 0 || a.value2 != 0) ImGui::BulletText("%s (%lld, %lld)", name.c_str(), static_cast<long long>(a.value1), static_cast<long long>(a.value2));
+            else ImGui::BulletText("%s", name.c_str());
+        }
+        if (!any) dimText("No special abilities");
+    }
+
+    // A unit group's units in a 108 px grid under its cut Detail page.
+    void unitGrid(UiContext& ui, const game::GameState& s, const TacticalPiece& p, ImVec2 at, float height) {
+        ImGui::SetCursorScreenPos(at);
+        ImGui::BeginChild("##units", ui.size({290, std::max(40.0f, height)}), ImGuiChildFlags_Borders);
+        const std::string style = p.owner.valid() && p.owner.index() < s.empires.size() ? s.empire(p.owner).race.style : std::string{};
+        int col = 0;
+        for (const game::UnitStack& st : p.units) {
+            if (st.design.index() >= s.designs.size()) continue;
+            if (col > 0) ImGui::SameLine(0, ui.px(4));
+            ImGui::BeginGroup();
+            image(ui, ui.art.shipMini(style, ui.rules().hull(s.design(st.design).hull)), {36, 36});
+            ImGui::Text("%d", st.count);
+            ImGui::EndGroup();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.design(st.design).name.c_str());
+            col = (col + 1) % 6;
+        }
+        ImGui::EndChild();
+    }
+
     int piece_ = -1;
+    ReportTab tab_ = ReportTab::Detail;
 };
 
 } // namespace

@@ -13,9 +13,11 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab);
 void fleetReport(UiContext& ui, const game::Fleet& f);
 void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab);
 void systemReport(UiContext& ui, game::SystemId sys);
-void objectReport(UiContext& ui, game::ObjectId object);  // stars, storms, warp points
-// Tab strip for reports; returns the chosen tab.
-ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet);
+// Stars, storms, warp points; `state`: another game than the session's (a
+// battle's copy or a combat simulation's sandbox).
+void objectReport(UiContext& ui, game::ObjectId object, const game::GameState* state = nullptr);
+// Tab strip for reports; returns the chosen tab. Without `cargo` the Cargo tab is left out.
+ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo = true);
 
 // One-line descriptions for lists. `viewer` names warp points the way that
 // empire knows them (sight::warpPointName: the destination once explored);

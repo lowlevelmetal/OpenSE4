@@ -567,6 +567,10 @@ void TacticalBattle::finish() {
 }
 
 void TacticalBattle::refresh() {
+    // A former leader still shows the formation it led (spec 06 §1.10.1).
+    std::vector<int> led;
+    led.reserve(views_.size());
+    for (const TacticalPiece& v : views_) led.push_back(v.formation);
     views_.clear();
     if (!started_) return;
     const std::vector<detail::Piece>& pieces = battle_->pieces();
@@ -599,10 +603,13 @@ void TacticalBattle::refresh() {
         v.seekTarget = p.seekTarget;
         v.launcher = p.launcher;
         v.carrier = p.carrier;
+        v.formation = p.isLeader && p.formation >= 0 ? p.formation : k < led.size() ? led[k] : -1;
         if (p.kind == CombatPiece::Kind::Seeker) {
             v.count = p.members;
             v.hitPoints = battle_->hitPoints(i);
+            v.fullHitPoints = p.hp;
             v.movement = v.movementMax = p.speed;
+            if (p.seekWeapon.comp) v.seekComponent = static_cast<int>(p.seekWeapon.de.component);
             views_.push_back(std::move(v));
             continue;
         }
@@ -646,6 +653,30 @@ void TacticalBattle::refresh() {
             v.boardingAttack = detail::componentSum(rules_, *state_, p.unit, AbilityKind::BoardingAttack);
             v.troops = battle_->hasTroops(i);
         }
+        switch (p.kind) {
+            case CombatPiece::Kind::Vehicle: {
+                const Design& d = state_->design(p.unit.design);
+                v.fullHitPoints = detail::designStructure(rules_, d);
+                v.intact.resize(d.entries.size(), 0);
+                for (size_t e = 0; e < d.entries.size(); ++e) v.intact[e] = entryIntact(rules_, *state_, p.unit, e) ? 1 : 0;
+                break;
+            }
+            case CombatPiece::Kind::UnitGroup: v.fullHitPoints = v.hitPoints + p.pool; break;
+            case CombatPiece::Kind::Planet: {
+                v.fullHitPoints = p.hpStart;
+                for (const PopulationGroup& g : p.population) v.population += g.millions;
+                v.plague = p.plague;
+                break;
+            }
+            default: break;
+        }
+        if (p.kind == CombatPiece::Kind::Vehicle || (p.kind == CombatPiece::Kind::UnitGroup && p.vtype != ruleset::VehicleType::Satellite)) {
+            v.supplyCapacity = vehicleSupplyCapacity(rules_, *state_, p.unit);
+            v.unlimitedSupply = detail::unlimitedSupply(rules_, *state_, p.unit);
+        }
+        if (p.kind == CombatPiece::Kind::UnitGroup && p.vtype == ruleset::VehicleType::Drone && p.droneTarget >= 0 &&
+            static_cast<size_t>(p.droneTarget) < pieces.size())
+            v.droneTarget = p.droneTarget;
         views_.push_back(std::move(v));
     }
 }

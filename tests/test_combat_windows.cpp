@@ -157,7 +157,7 @@ TEST_CASE("combat windows: a live battle's forces count each stack of a mixed gr
     CHECK(row(forces, ar.b, "World 1")->current == 1);
 }
 
-TEST_CASE("combat windows: the piece report lines and the Drop Troops target") {
+TEST_CASE("combat windows: the piece report lines and the Drop Troops colony") {
     Arena ar = makeArena(9);
     GameState& s = ar.s;
     Colony& colony = homeworld(s, ar.b);
@@ -182,33 +182,149 @@ TEST_CASE("combat windows: the piece report lines and the Drop Troops target") {
     for (const auto& [label, value] : lines) labels.push_back(label);
     CHECK(labels == std::vector<std::string>{"Movement", "Shields", "Damage", "Supply", "Max Targets", "Combat Group", "Formation"});
     CHECK(lines[5].second == "None");
-    CHECK(lines[2].second.starts_with("0/"));
+    // Damage taken against the full design structure.
+    const combat::TacticalPiece& sp = b.pieces()[size_t(ship)];
+    CHECK(sp.fullHitPoints > 0);
+    CHECK(lines[2].second == std::format("0/{}", sp.fullHitPoints));
+    CHECK(lines[3].second == std::format("{}/{}", sp.supply, sp.supplyCapacity));
     const auto planetLines = classic::pieceReportLines(combatRules(), b.state(), b.pieces(), planet);
-    REQUIRE_FALSE(planetLines.empty());
+    REQUIRE(planetLines.size() >= 4);
     CHECK(planetLines[0] == std::pair<std::string, std::string>{"Population", "10M"});
+    CHECK(planetLines[3] == std::pair<std::string, std::string>{"Supply", "Never"});
+    CHECK(planetLines[2].second == std::format("0/{}", b.pieces()[size_t(planet)].fullHitPoints));
 
-    // Drop Troops picks the adjacent colony of another empire, without a click.
+    // Drop Troops: the adjacent colony of another empire, without a click.
     bool landed = false;
     for (int round = 0; round < 12 && b.awaitingOrders() && !landed; ++round) {
-        const classic::DropTarget t = classic::dropTroopsTarget(b, ship);
         if (b.distance(ship, planet) > 1) {
-            CHECK(t.planet < 0);
-            CHECK(t.problem == "No colony of another empire is adjacent.");
+            CHECK(classic::dropTroopsColony(b, ship) < 0);
+            CHECK_FALSE(b.check(classic::dropTroopsOrder(b, ship)).empty());
             TacticalOrder mv{OK::Move, ar.a, ship};
             mv.x = b.pieces()[size_t(planet)].x + 1;
             mv.y = b.pieces()[size_t(planet)].y + 1;
             if (b.check(mv).empty()) b.submit(mv);
         }
         if (b.distance(ship, planet) <= 1) {
-            const classic::DropTarget near = classic::dropTroopsTarget(b, ship);
-            REQUIRE(near.planet == planet);
-            CHECK(b.submit(TacticalOrder{OK::DropTroops, ar.a, ship, near.planet}).empty());
+            CHECK(classic::dropTroopsColony(b, ship) == planet);
+            const TacticalOrder drop = classic::dropTroopsOrder(b, ship);
+            CHECK(drop.kind == OK::DropTroops);
+            CHECK(drop.empire == ar.a);
+            CHECK(b.submit(drop).empty());
             landed = true;
         } else {
             b.submit(TacticalOrder{OK::EndPhase, ar.a});
         }
     }
     CHECK(landed);
+}
+
+TEST_CASE("combat windows: every line of the Combat Piece Report") {
+    using combat::TacticalPiece;
+    const Rules& r = combatRules();
+    Arena ar = makeArena(10);
+    GameState& s = ar.s;
+    std::vector<TacticalPiece> pieces(6);
+    // 0: a ship leading group 3, with a big supply.
+    TacticalPiece& lead = pieces[0];
+    lead.kind = CombatPiece::Kind::Vehicle;
+    lead.name = "Lead";
+    lead.movement = 3;
+    lead.movementMax = 6;
+    lead.shields = 5;
+    lead.shieldsMax = 20;
+    lead.fullHitPoints = 300;
+    lead.hitPoints = 120;
+    lead.supply = 150000;
+    lead.supplyCapacity = 2500000;
+    lead.budget = 2;
+    lead.group = 3;
+    lead.isLeader = true;
+    lead.formation = r.data().formations.empty() ? -1 : 0;
+    // 1: its wingman; unlimited supply.
+    TacticalPiece& wing = pieces[1];
+    wing = lead;
+    wing.name = "Wing";
+    wing.isLeader = false;
+    wing.formation = -1;
+    wing.unlimitedSupply = true;
+    // 2: a drone group aimed at the leader.
+    TacticalPiece& drone = pieces[2];
+    drone.kind = CombatPiece::Kind::UnitGroup;
+    drone.type = ruleset::VehicleType::Drone;
+    drone.droneTarget = 0;
+    drone.fullHitPoints = 40;
+    drone.hitPoints = 50;   // more than full: taken never goes below 0
+    // 3: satellites; 4: a seeker; 5: a planet with plague.
+    pieces[3].kind = CombatPiece::Kind::UnitGroup;
+    pieces[3].type = ruleset::VehicleType::Satellite;
+    pieces[4].kind = CombatPiece::Kind::Seeker;
+    pieces[5].kind = CombatPiece::Kind::Planet;
+    pieces[5].population = 0;
+    pieces[5].plague = 2;
+
+    auto value = [&](int piece, std::string_view label) {
+        for (const auto& [l, v] : classic::pieceReportLines(r, s, pieces, piece))
+            if (l == label) return v;
+        return std::string("(none)");
+    };
+    CHECK(value(0, "Movement") == "3/6");
+    CHECK(value(0, "Shields") == "5/20");
+    CHECK(value(0, "Damage") == "180/300");
+    CHECK(value(0, "Supply") == "150K/2500K");
+    CHECK(value(0, "Max Targets") == "2");
+    CHECK(value(0, "Combat Group") == "Group 3 - Leader");
+    if (!r.data().formations.empty()) CHECK(value(0, "Formation") == r.data().formations[0].name);
+    CHECK(value(1, "Combat Group") == "Group 3 - Wingman");
+    CHECK(value(1, "Formation") == "None");
+    CHECK(value(1, "Supply") == "Endless");
+    CHECK(value(2, "Target") == "Lead");
+    CHECK(value(2, "Combat Group") == "(none)");
+    CHECK(value(2, "Formation") == "(none)");
+    CHECK(value(2, "Damage") == "0/40");
+    CHECK(value(3, "Supply") == "Never");
+    CHECK(value(4, "Supply") == "None");
+    CHECK(value(5, "Population") == "0M");
+    CHECK(value(5, "Movement") == "(none)");
+    CHECK(value(5, "Conditions") == "Plague 2");
+    // A former leader still shows its formation; a drone whose target is gone shows None.
+    lead.isLeader = false;
+    lead.group = -1;
+    CHECK(value(0, "Combat Group") == "None");
+    if (!r.data().formations.empty()) CHECK(value(0, "Formation") == r.data().formations[0].name);
+    pieces[0].alive = false;
+    CHECK(value(2, "Target") == "None");
+}
+
+TEST_CASE("combat windows: the report's formation stays with a leader that stops leading") {
+    Arena ar = makeArena(12);
+    GameState& s = ar.s;
+    const DesignId armed = frigate(s, ar.a, "Liner", 1, {"CT Gun"});
+    const VehicleId first = spawn(s, armed, ar.loc), second = spawn(s, armed, ar.loc);
+    Fleet f;
+    f.owner = ar.a;
+    f.members = {first, second};
+    f.leader = first;
+    f.formation = 0;
+    const FleetId fid = s.addFleet(f).id;
+    for (VehicleId v : f.members) s.vehicle(v)->fleet = fid;
+    warpIn(s, spawn(s, design(s, ar.b, "Target", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc));
+    TacticalBattle b(combatRules(), s, TacticalBattle::Setup{ar.loc, std::vector<VehicleId>{}, {ar.a}});
+    REQUIRE(b.started());
+    int lead = -1, wing = -1;
+    for (size_t j = 0; j < b.pieces().size(); ++j) {
+        if (b.pieces()[j].vehicle == first) lead = int(j);
+        if (b.pieces()[j].vehicle == second) wing = int(j);
+    }
+    REQUIRE(lead >= 0);
+    REQUIRE(wing >= 0);
+    REQUIRE(b.pieces()[size_t(lead)].isLeader);
+    CHECK(b.pieces()[size_t(lead)].formation == 0);
+    CHECK(b.pieces()[size_t(wing)].formation == -1);
+    while (!b.awaitingOrders() && !b.finished()) b.submit(TacticalOrder{OK::EndPhase, b.phaseEmpire()});
+    REQUIRE(b.awaitingOrders());
+    REQUIRE(b.submit(TacticalOrder{OK::ClearGroup, ar.a, lead}).empty());
+    CHECK_FALSE(b.pieces()[size_t(lead)].isLeader);
+    CHECK(b.pieces()[size_t(lead)].formation == 0);
 }
 
 TEST_CASE("combat windows: the simulator adds one vehicle a click, lists rows per vehicle and group, and removes rows") {

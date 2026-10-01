@@ -383,6 +383,77 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
     }
 }
 
+// ---- Combat simulator sides -------------------------------------------------------------------------------
+
+namespace {
+
+struct SimulationSides {
+    const game::GameState* sandbox = nullptr;
+    std::vector<game::EmpireId> sides;
+};
+
+SimulationSides& simulationSides() {
+    static SimulationSides s;
+    return s;
+}
+
+} // namespace
+
+void setSimulationSides(const game::GameState* sandbox, std::vector<game::EmpireId> sides) {
+    simulationSides() = SimulationSides{sandbox, std::move(sides)};
+}
+
+int simulationSide(const game::GameState& state, game::EmpireId e) {
+    const SimulationSides& sim = simulationSides();
+    if (sim.sandbox != &state || !e.valid()) return 0;
+    for (size_t k = 0; k < sim.sides.size(); ++k)
+        if (sim.sides[k] == e) return int(k) + 1;
+    return 0;
+}
+
+ImU32 sideBoxColor(int side) {
+    // The standard colours of those names (inferred: the values of the named colours).
+    static constexpr std::array<ImU32, 10> kColors{
+        IM_COL32(255, 0, 0, 255),   IM_COL32(0, 0, 255, 255),     IM_COL32(0, 128, 0, 255),   IM_COL32(255, 255, 0, 255),
+        IM_COL32(128, 0, 128, 255), IM_COL32(255, 255, 255, 255), IM_COL32(0, 255, 255, 255), IM_COL32(0, 255, 0, 255),
+        IM_COL32(128, 0, 0, 255),   IM_COL32(128, 128, 0, 255)};
+    return side >= 1 && side <= int(kColors.size()) ? kColors[size_t(side - 1)] : IM_COL32(128, 128, 128, 255);
+}
+
+ImU32 sideNumberColor(int side) {
+    const bool dark = side == 1 || side == 2 || side == 3 || side == 5 || side == 9 || side == 10;
+    return dark ? IM_COL32_WHITE : IM_COL32_BLACK;
+}
+
+void drawSideBox(UiContext& ui, ImDrawList* dl, ImVec2 min, ImVec2 max, int side) {
+    dl->AddRectFilled(min, max, sideBoxColor(side));
+    dl->AddRect(min, max, IM_COL32(0, 0, 0, 255));
+    const std::string number = std::to_string(side);
+    ImFont* font = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+    const float size = std::min(max.y - min.y - 2.0f, std::max(ui.px(11), 8.0f));
+    const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, number.c_str());
+    dl->AddText(font, size, {(min.x + max.x - ts.x) * 0.5f, (min.y + max.y - ts.y) * 0.5f}, sideNumberColor(side), number.c_str());
+}
+
+void sideBox(UiContext& ui, int side, Vec2 size) {
+    const ImVec2 a = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ui.size(size));
+    drawSideBox(ui, ImGui::GetWindowDrawList(), a, {a.x + ui.px(size.x), a.y + ui.px(size.y)}, side);
+}
+
+bool ownerMark(UiContext& ui, const game::GameState& s, game::EmpireId e, Vec2 size, bool small) {
+    if (const int side = simulationSide(s, e); side > 0) {
+        sideBox(ui, side, size);
+        return true;
+    }
+    if (!e.valid() || e.index() >= s.empires.size()) return false;
+    if (Sprite flag = ui.art.flag(s.empire(e).race.style, !small)) {
+        image(ui, flag, size);
+        return true;
+    }
+    return false;
+}
+
 CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves) {
     CombatPace pace;
     pace.fast = fast;

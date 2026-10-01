@@ -82,23 +82,28 @@ private:
 
 // ---- Tactical Combat ---------------------------------------------------------------------------
 
-// The Combat Piece Report's Detail lines (spec 06 §1.10.1): Movement
-// (Population for a planet), Shields now/max, Damage (taken against the
-// maximum), Supply, Max Targets, Combat Group ("Group N - Leader", "Group N -
-// Wingman" or None; a drone shows Target instead), Formation (not for drones),
-// and Conditions with the plague level for a planet with plague.
+// The Combat Piece Report's Detail lines (spec 06 §1.10.1, confirmed: binary):
+// Movement "left/max" (Population for a planet), Shields now/max, Damage
+// taken/full for every kind of piece (full as the overkill limit counts it),
+// Supply (now/capacity with "K" thousands above 100000, "Endless", "Never"
+// for planets and satellite groups, "None" for seekers), Max Targets, Combat
+// Group ("Group N - Leader", "Group N - Wingman" or None, fleet groups
+// numbered like the others; a drone group shows Target, its drone target,
+// instead), Formation (not for drone groups: the formation of the group it
+// leads, kept after it stops leading), and Conditions "Plague N" for a planet
+// with plague.
 std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Rules& r, const game::GameState& s,
                                                                   const std::vector<game::combat::TacticalPiece>& pieces, int piece);
 
-// Drop Troops (spec 06 §1.10.2): the adjacent colony of another empire that
-// the piece's troops land on, at once, without a target click. The first such
-// planet the battle accepts; `problem` says why none does (no adjacent
-// colony, or another empire's troops already fight there).
-struct DropTarget {
-    int planet = -1;
-    std::string problem;
-};
-DropTarget dropTroopsTarget(const game::combat::TacticalBattle& b, int piece);
+// Drop Troops (spec 06 §1.10.2, spec 04 §11, confirmed: binary): no target
+// click. The troops land on the colony of another empire adjacent to the
+// ship that comes last in piece order, whatever the treaty; the engine picks
+// it by that rule and refuses with the reason (no colony adjacent, another
+// empire's troops already there, no troops aboard). dropTroopsColony() names
+// that colony (-1: none); the order carries it in `target` for the record,
+// and the engine does not rely on it.
+int dropTroopsColony(const game::combat::TacticalBattle& b, int piece);
+game::combat::TacticalOrder dropTroopsOrder(const game::combat::TacticalBattle& b, int piece);
 
 // ---- Combat Simulator (spec 06 §1.10.4) ---------------------------------------------------------
 
