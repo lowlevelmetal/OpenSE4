@@ -1175,17 +1175,19 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Members leave the formation only during automated moves (every piece in strategic combat): a
   piece leaves when its strategy in effect is Don't Get Hurt, Drop Troops, Board or Ram, or when
   the strategy's `Break Formation` flag covers its category (spec 04 §16.1). The whole group
-  dissolves when the leader is destroyed or removed from the group, when the leader of an
-  automated side survives a hit (even one its shields absorb completely) and has no movement
-  left this combat turn once its movement is capped at its new maximum (so a leader that has
-  already moved its full allowance is enough), or when the leader's turn to act comes in an
-  automated phase and every square on the map around its footprint is already occupied; this is
-  tested before it moves, and it then does not move (spec 04 §16.1). The computer players' sides
-  are automated; so is every side in strategic combat, in a battle fought without a window, in
-  tactical combat while the Auto button is down, and after Resolve Combat (§19 Q60). When the
-  leader itself leaves formation, only its own marks are cleared: the members stay in the group,
-  keep the fleet strategy, but have no leader to follow and move on their own. In tactical combat
-  the player's combat group orders also change groups (spec 04 §5).
+  dissolves when the leader is destroyed or removed from the group, when the leader of an automated
+  side survives a hit (even one its shields absorb completely) and has no movement left this combat
+  turn once its movement is capped at its new maximum, or when the leader's turn to act comes in an
+  automated phase and every square on the map around its footprint is already occupied. A
+  computer-played piece has no movement left once it has acted, so any hit on the leader after its
+  action in that combat turn is enough, as is any hit on a leader that cannot move. The surrounded
+  test runs only then, before the leader plans and moves, and the leader then does not move; there
+  is no such test after a move (spec 04 §16.1). The computer players' sides are automated; so is
+  every side in strategic combat, in a battle fought without a window, in tactical combat while the
+  Auto button is down, and after Resolve Combat (§19 Q60). When the leader itself leaves formation,
+  only its own marks are cleared: the members stay in the group, keep the fleet strategy, but have
+  no leader to follow and move on their own. In tactical combat the player's combat group orders
+  also change groups (spec 04 §5).
 - Fleet Transfer and Change Formation\Strategy select the formation. The Formation Report draws the
   grid.
 
@@ -1816,6 +1818,10 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     dissolves. A leader that has already used up its movement this combat turn is therefore
     enough (confirmed: binary). The engine differs: it dissolves the group only when the hit
     takes the leader's maximum to 0 and the leader had movement at the start of the combat turn.
+    The other trigger, a surrounded leader, is tested once, when the leader's turn to act comes
+    in an automated phase, before it plans and moves; there is no test after the move, and a
+    surrounded leader does not move (spec 04 §16.1) (confirmed: binary). The engine differs
+    there too: it tests after the leader's move.
 61. **Fleet members away from the fleet's sector (§6.3 step 2):** **Answer:** no. Every fleet
     member's daily gain uses the fleet's figure, wherever the member is: the lowest MP left among
     the fleet's members at the fleet's location. A member elsewhere is not counted in it. With no
