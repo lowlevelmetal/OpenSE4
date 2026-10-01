@@ -34,6 +34,7 @@ add_executable(opense4
     client/classic/screens/cargo_transfer.cpp
     client/classic/screens/colony_logic.cpp
     client/classic/screens/colony_widgets.cpp
+    client/classic/screens/combat_logic.cpp
     client/classic/screens/combat_map.cpp
     client/classic/screens/combat_replay.cpp
     client/classic/screens/design_tools.cpp

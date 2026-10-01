@@ -260,6 +260,8 @@ public:
     // The bottom Close button; also true on Esc or Enter (spec 06 §3.4), unless
     // a text field takes the keys.
     bool close();
+    // The bottom button with another label (Cancel: Esc only) or dim (no keys).
+    bool close(bool enabled, const char* label = "Close");
     bool keepOpen() const { return keep_; }
     void requestClose() { keep_ = false; }
 

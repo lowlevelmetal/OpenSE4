@@ -10,6 +10,7 @@ add_executable(opense4_tests
     test_combat.cpp
     test_combat_rules.cpp
     test_combat_replay.cpp
+    test_combat_windows.cpp
     test_tactical.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
@@ -52,6 +53,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ship_glides.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/combat_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp

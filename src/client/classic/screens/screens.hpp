@@ -77,11 +77,14 @@ std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
 
-// strategic_combat.cpp: the watch-only Strategic Combat window and the Ground
-// Combat window. Strategic Combat shows GameState::combats[index], or with
-// index -1 the session's simulation fought by the strategies. Ground Combat
-// shows ground combat `sub` of that battle (index -1 and the session's
-// tactical fight: its record; no battle given: the last one with a ground combat).
+// strategic_combat.cpp: the Strategic Combat window and the Ground Combat
+// window. Strategic Combat shows GameState::combats[index]; with index -1 the
+// session's fight without player sides (a simulation, or a game battle
+// answered Strategic); with kStrategicQuestion the session's battle question,
+// with Strategic and Tactical buttons. Ground Combat shows ground combat `sub`
+// of that battle (index -1 and the session's tactical fight: its record; no
+// battle given: the last one with a ground combat).
+inline constexpr int kStrategicQuestion = -2;
 std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args);
 
