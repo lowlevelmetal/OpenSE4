@@ -1737,6 +1737,29 @@ TEST_CASE("ai: intruders in our territory and a promise change anger") {
     CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease);
 }
 
+TEST_CASE("ai: anger term 2 counts the stellar manipulation reports of the empire's own log (spec 05 Q44)") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 3, 0, 10);
+    const EmpireId a{0u}, b{1u}, c{2u};
+    meet(s, a, b);
+    meet(s, a, c);
+    const auto& table = ai::builtinProfile().anger;
+    s.turn = 1;
+    s.empire(a).relation(b).anger = 50;
+    s.empire(a).relation(c).anger = 50;
+    // A report in our own log naming B; the same report in C's own log does
+    // not count for us.
+    const Location where = locationOf(s.galaxy, homeworld(s, a).planet);
+    const LogEntry entry{s.turn, LogCategory::Events, "Planet Destroyed: Somewhere", movement::stellarReportText(s, b, "Breaker 1"), where, {}};
+    s.empire(a).log.push_back(entry);
+    s.empire(c).log.push_back(entry);
+    TurnContext ctx{r, s, {}, {}, {}};
+    ai::politicalStep(ctx, a, s.turn);
+    const int expected = std::clamp(50 + 2 * table.defendingLost, 0, 100);
+    CHECK(s.empire(a).relation(b).anger == std::max(std::clamp(expected + table.regularDecrease, 0, 100), table.minimum));
+    CHECK(s.empire(a).relation(c).anger == std::max(std::clamp(50 + table.regularDecrease, 0, 100), table.minimum));
+}
+
 TEST_CASE("ai: the Mega Evil Empire is judged per AI with the strict threshold") {
     ruleset::Ruleset data = buildEngineRuleset();
     data.settings.set("AI Mega Evil Empire Threshold Score Thousands", "0");

@@ -303,18 +303,6 @@ std::vector<uint8_t> countedItems(const List& list, const AngerInputs& in, uint3
     return out;
 }
 
-// Was the empire in that system when something happened there in `turn`?
-// It is still there, or it logged something located there (inferred).
-bool presentIn(const GameState& s, const Empire& e, SystemId sys, uint32_t turn) {
-    for (const auto& c : s.colonies)
-        if (c && c->owner == e.id && s.galaxy.object(c->planet).system == sys) return true;
-    for (const Vehicle& v : s.vehicles)
-        if (v.owner == e.id && v.location.system == sys) return true;
-    for (const LogEntry& l : e.log)
-        if (l.turn == turn && l.location && l.location->system == sys) return true;
-    return false;
-}
-
 void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empire& x, const AngerInputs& in, const AiProfile& prof) {
     const AngerTable& t = prof.anger;
     Relation& rel = e.relation(x.id);
@@ -339,11 +327,12 @@ void updateAngerToward(const Rules& r, const GameState& s, Empire& e, const Empi
                 case Outcome::Stalemate: add(attacking ? t.attackingStalemate : t.defendingStalemate); break;
             }
         }
-    // 2. Stellar manipulation reported to empires in that system.
-    for (size_t i = 0; i < x.log.size(); ++i) {
-        const LogEntry& l = x.log[i];
-        if (in.logs[x.id.index()][i] && l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title) && l.location &&
-            presentIn(s, e, l.location->system, l.turn))
+    // 2. Stellar manipulation: each report in our own log, counted like the
+    // others, that X destroyed a planet or a star or made a nebula or black
+    // hole (logged to every empire present when it happened, spec 05 §7.3).
+    for (size_t i = 0; i < e.log.size(); ++i) {
+        const LogEntry& l = e.log[i];
+        if (in.logs[e.id.index()][i] && l.category == LogCategory::Events && movement::stellarReportNames(s, l, x.id))
             add(int64_t{2} * t.defendingLost);
     }
     // 3. Successful operations traced to them: the victim's log names the
