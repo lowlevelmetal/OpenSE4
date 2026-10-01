@@ -31,9 +31,23 @@ Built units go to the holders in the game's object order (spec 02 §6.5): with t
 engine's object slots every planet comes before every vehicle, so after the builder they
 try the planets, then the ships and bases by slot (spec 02 §13 Q52). A queued facility
 switches to a newer level in place, keeping what was paid (`cmd::QueueReplaceFacility`,
-spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades. The
-engine's own choices where the spec is silent are spec 02 §13 items 51–56. No row
-remains.
+spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades.
+
+On 2026-09-30 the engine's own choices where the spec had been silent (spec 02 §13 items
+51–56) were answered from the executable, and on 2026-10-01 the engine followed the answers:
+the conditions bands compare the stored double with the doubles nearest their edges, a value
+on an edge in the band above (`economy::conditionsBand`, Q51); the queue removal pass takes
+only a yard ship's facility items and, on a colony without a working yard, its ship and base
+items and its upgrades with nothing left, so an upgrade with nothing left on a colony with a
+yard is paid in full and converts nothing, and a repeated space yard item stops once the
+colony has a yard (`economy::itemObsolete`, `stillBuildable`, Q53). Q55 and Q56 needed no
+change (Q56's command check stays an OpenSE4 choice). Two rows remain, each left to other
+work:
+
+| Item | Engine now | Original (spec) | Impact |
+|---|---|---|---|
+| Object slots (`Vehicle::slot`, `placeUnits`) | Every planet comes before every vehicle, so built units try the planets in the sector before the ships | One slot order shared by every object, a new planet or vehicle taking the first slot any removed object freed (spec 02 §13 Q52, spec 03 §19 Q62). Held back until a related movement question is settled | L |
+| Cargo trimmed in battle (`combat_space.cpp`) | Planets marked damaged by the planet-only types too; trimmed once after the battle, when the killed units are gone | Trimmed after each qualifying hit, against the capacity and cargo at that moment with the battle's dead still counted, never for the planet-only types (spec 02 §2 "Domes", §13 Q54). Left to the combat work | L |
 
 ## Vehicles, movement and logistics (spec 03)
 
@@ -91,12 +105,48 @@ on 2026-09-30, found the differences below.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
-Every rule of this section follows the spec (2026-09-30). Where the spec leaves a detail
-open, the engine's choices are spec 05 open questions 38–46: third empires for "Any"
-political operations, who hears of an operation that tells nobody, the place and layout
-of the players' statistics, history and log files, rebel empire details, home planet
-locations, when opening a report dates a design, how a turn-based political step knows
-what it counted, the 21-order limit and step 16.
+Every rule of this section follows the spec. On 2026-09-30 the engine's own choices (spec
+05 open questions 38–46) were answered from the executable, and contact loss was found
+(question 13, corrected). The rows found then were implemented on 2026-10-01:
+
+- Contact is lost when no warp path leads from an empire's colonies to a colony of the
+  other: checked once per game turn in both turn styles, after the design cleanup and before
+  the victory check, it returns that side to "no contact", drops its intelligence projects
+  against the other and logs "Contact Lost", which the human player's history file records;
+  first contact needs the same path (`diplomacy::checkContacts`, `updateContacts`,
+  `warpReach`; Q13, §3.1).
+- An "Any" political operation draws its third empire among the living empires the source
+  has met, other than the source and the target, and fails without one (`effects::pickTarget`, Q38).
+- Planet - Conditions Change sends its messages like any other effect (Q39).
+- The players' files use the original's layouts: statistics with the date the end-of-turn
+  processing sees, history lines dated as tenths with the contact-lost lines, and the log
+  copy only when `Create Log Text Files for Players` is true, rewritten each turn with its
+  header (`score::playerRecords`, Q40). Their folder and names stay an OpenSE4 choice.
+- A rebel empire keeps its former owner's experience, minister style and AI state, plans and
+  anger; its name and pictures are drawn as §2.3 says; design theft reads a built-at-least-once
+  mark (`Design::everBuilt`, Q41). OpenSE4 stops drawing names after 1,000 draws and numbers
+  the name (the original would draw for ever).
+- Every empire records its home sector (`Empire::homeSector`), and High and Catastrophic
+  events spare every empire's recorded location (Q42).
+- A ship's or base's report dates only its own design; a unit group's report dates nothing
+  in a simultaneous game (Q43). OpenSE4 skips it on the player's machine too, where the
+  original dates it until the turn ends.
+- Stellar manipulation reports go to every empire present in the system, and anger term 2
+  counts them in the counting empire's own log (`movement::stellarReportNames`, Q44). The
+  per-empire mark of what a turn-based step counted stays; opening the Log window marks
+  nothing in OpenSE4.
+- A simultaneous political step counts the messages delivered since the empire's previous
+  step (`ai::simultaneousWindow`), so a player's message of step 2 counts in its own turn as
+  question 24 states; it counted a turn late before.
+- `Ship - Moved` draws one sector number and disbands the ship's fleet (§4).
+
+Q45 and Q46 needed no change. The "(inferred)" markers of these choices are gone (the third
+empire draw, the silent Conditions Change, the log copy's default and the files' widths, the
+rebel's pictures, the theft's built count, the capitals standing for home locations, the
+report's cargo designs, the culprit's log in anger term 2), and the 21-order limit's is now
+"(confirmed: binary)". The engine's remaining choices are open questions 50 (when the
+empires present at a stellar manipulation are taken) and 51 (a stop-hostilities demand that
+names no empire). No row remains.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -142,6 +192,48 @@ facilities switched by an upgrade change in place and keep what was paid
 (`cmd::QueueReplaceFacility`); a war declaration whose speech pool is empty declares
 nothing but still sets the anger to 100 (`cmd::DecideWar`); a new design's fallback
 strategy follows the design type as §7.5 lists it, so transports, colony ships and the
-other unarmed types get Don't Get Hurt. The engine's own choices where the spec is silent
-are spec 05 open question 37. No row remains.
+other unarmed types get Don't Get Hurt.
+
+On 2026-09-30 the engine's own choices (spec 05 open question 37) were answered from the
+executable, with the demand lists (questions 47 and 49). The rows found then were implemented
+on 2026-10-01:
+
+- The Politics minister answers only the newest message from an empire in its date window
+  (`DiplomaticMessage::dated`: the unadvanced date for players' messages, the advanced one for
+  those sent in a simultaneous start-of-turn step), keeps no answered mark, tests "waiting"
+  on any message dated after the date − 2, runs the initiative again after a 50 % initiative
+  that sent nothing, and rolls "wants war" and "wants to break" at every check.
+- The demand lists keep duplicates as counts per empire (war, break, peace, promises); each
+  check that gets far enough uses one up (`cmd::UseDemandEntry`); all, with the systems to
+  avoid or attack, are emptied at the start of turns whose date is a multiple of 10, before
+  the Politics minister. A promise names the empire the demand names (Q47, Q49).
+- An accepted demand is carried out with its 50 % chance before the reply, even when the
+  reply's pool is empty (`cmd::CarryOutDemand`). A request for a gift or tribute takes
+  concrete items it cannot hand over, refuses with the General reply when its package is
+  empty, and never reads the gifts option; accepted gifts move their items whatever it says.
+- Transports deliver only more than half full with people aboard, never fall back to
+  loading, deliver after a load only from their own sector, move only toward a target in
+  another system and otherwise get the resupply orders.
+- The units reserve is the value the nearest earlier empire's units step left
+  (`TurnContext::unitReserve`, `ai::unitReserveLeft`).
+- "Lacks a part to operate" means no working bridge, auxiliary control or Master Computer;
+  the Repair minister handles mothballed vehicles, visits yards by system then object order
+  and counts a vehicle's own yard; a fleet's supply totals leave out members with unlimited
+  supply; Space Yard Ships count themselves as a yard and are planned in fleets too.
+- Open Warp Point gets the resupply orders while a frontier point is free or no edge sector
+  is drawn (99 draws, corners twice as likely, vehicles fill a sector); Destroy Black Hole and
+  Destroy Nebulae seek sector 36, and Close Warp Point uses our presence (fighter, satellite
+  and drone groups included, mines not) and the Sentry detection test.
+- Mine and satellite layers add up the weights, cap only their own kind, evaluate the
+  star-destroyer flag on dates that are multiples of 20 (our own designs that fought count,
+  `AiMemory::designsFought`) and draw a quiet colony system first in the fallback.
+
+OpenSE4 choices: a design name when every name is used (question 37), and the one-turn Seek
+of Destroy Black Hole and Destroy Nebulae ships, which the engine gives as a Move To to
+sector 36 that the minister plans again every turn. The record of our designs that fought
+lists the first design of a group that mixes designs. The "(inferred)" markers of question
+37 in `ai*.cpp` are gone (the operating part, mothballed repairs, the yard ship's own yard,
+the unlimited-supply test, the warp-point draws and the top-left sector, Close Warp Point's
+sight, the layers' weights, cap and flag, the empty transport, the answer window, the
+waiting test, the units reserve). No row remains.
 
