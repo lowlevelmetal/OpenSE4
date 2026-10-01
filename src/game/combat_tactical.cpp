@@ -214,7 +214,7 @@ std::string Battle::check(const TacticalOrder& o) const {
             if (std::string e = checkPiece(o, true); !e.empty()) return e;
             if (o.group < 0 || o.group >= kGroups) return "Groups are numbered 0 to 9.";
             const Piece& p = pieces_[static_cast<size_t>(o.piece)];
-            if (p.isLeader || p.group >= 0 || leaderOf(o.piece) >= 0 || p.fleetMember) return "It already belongs to a group.";
+            if (p.isLeader || p.group >= 0) return "It already belongs to a group.";
             int leader = -1;
             for (size_t k = 0; k < pieces_.size(); ++k)
                 if (pieces_[k].alive && pieces_[k].owner == o.empire && pieces_[k].isLeader && pieces_[k].group == o.group) leader = static_cast<int>(k);
@@ -228,7 +228,7 @@ std::string Battle::check(const TacticalOrder& o) const {
         case OK::ClearGroup: {
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
             const Piece& p = pieces_[static_cast<size_t>(o.piece)];
-            if (!p.isLeader && p.group < 0 && p.leader < 0 && !p.fleetMember) return "It is in no group.";
+            if (!p.isLeader && p.group < 0) return "It is in no group.";
             return {};
         }
         case OK::ClearAllGroups: return {};
@@ -264,6 +264,7 @@ void Battle::startPlayerPhase() {
     // The side's drones move and attack, then its seekers, before the player
     // gets control (spec 04 §4: always computer-controlled).
     stage_ = Stage::Orders;
+    beginPhase(phaseEmpire_);
     phaseDrones(phaseEmpire_);
     moveSeekers(phaseEmpire_);
 }
@@ -356,7 +357,7 @@ void Battle::execute(const TacticalOrder& o) {
         case OK::ClearGroup: leaveGroup(o.piece); return;
         case OK::ClearAllGroups:
             for (size_t k = 0; k < pieces_.size(); ++k)
-                if (pieces_[k].owner == e && (pieces_[k].isLeader || pieces_[k].group >= 0 || pieces_[k].leader >= 0 || pieces_[k].fleetMember))
+                if (pieces_[k].owner == e && (pieces_[k].isLeader || pieces_[k].group >= 0))
                     leaveGroup(static_cast<int>(k));
             return;
     }
@@ -380,7 +381,6 @@ void Battle::launchOrder(const TacticalOrder& o) {
     if (u >= units.size()) return;
     left = std::min(left, units[u].count);
     if (left <= 0) return;
-    const uint32_t sIndex = strategyIndex(i);
     int launched = 0;
     auto spawned = [&](int idx, int n) {
         if (idx < 0) return false;
@@ -390,11 +390,11 @@ void Battle::launchOrder(const TacticalOrder& o) {
     };
     if (kind == kLaunchDrones) {
         for (int n = 0; n < left; ++n)
-            if (!spawned(spawnUnit(i, o.design, 1, sIndex), 1)) break;
+            if (!spawned(spawnUnit(i, o.design, 1), 1)) break;
     } else if (o.kind == OK::LaunchFighters) {
         while (launched < left) {
             const int n = std::min(o.group, left - launched);
-            if (!spawned(spawnUnit(i, o.design, n, sIndex), n)) break;
+            if (!spawned(spawnUnit(i, o.design, n), n)) break;
         }
     } else {
         const std::tuple<int, int, int> key{i, o.group, kind};
@@ -403,7 +403,7 @@ void Battle::launchOrder(const TacticalOrder& o) {
             joinUnit(it->second, o.design, left);
             launched = left;
         } else {
-            const int idx = spawnUnit(i, o.design, left, sIndex);
+            const int idx = spawnUnit(i, o.design, left);
             if (spawned(idx, left)) launchGroups_[key] = idx;
         }
     }
@@ -414,41 +414,35 @@ void Battle::launchOrder(const TacticalOrder& o) {
 
 void Battle::leaveGroup(int i) {
     // Clear Group Assignment clears only that piece: members of a cleared leader
-    // keep their number and follow whichever piece leads it later (spec 04 §5).
-    // A fleet's members keep the fleet's group, with no leader to follow, as
-    // when the leader leaves the formation (spec 03 §10).
+    // keep their number and follow whichever piece leads it later, fleet groups
+    // included (spec 04 §5, §19.2 Q64).
     Piece& q = pieces_[static_cast<size_t>(i)];
     q.isLeader = false;
-    q.leader = -1;
     q.group = -1;
-    q.tacticalGroup = false;
-    q.hasSlot = false;
-    q.fleetMember = false;
+    q.member = 0;
+    q.formation = -1;
 }
 
 void Battle::setGroup(int i, int group, bool asLeader, int formation) {
     Piece& p = pieces_[static_cast<size_t>(i)];
-    auto& g = groups_[{p.owner.value, group}];
     p.group = group;
     if (asLeader) {
-        // The leader picks the formation its members take their places in.
+        // The leader picks the formation its members take their places in; a
+        // new leader of the number puts every member at the position with its
+        // number in this formation (spec 04 §5).
         p.isLeader = true;
-        p.tacticalGroup = true;
-        g.formation = formation;
+        p.formation = formation;
+        p.member = 0;
         return;
     }
-    // The member takes the next position of the leader's formation, turned by
-    // the leader's facing (spec 04 §5); none left: it keeps no place (inferred).
-    p.hasSlot = false;
-    const ruleset::Formation* f = g.formation >= 0 && static_cast<size_t>(g.formation) < r_.data().formations.size()
-                                      ? &r_.data().formations[static_cast<size_t>(g.formation)]
-                                      : nullptr;
-    if (f && static_cast<size_t>(g.nextSlot) < f->positions.size()) {
-        const auto& pos = f->positions[static_cast<size_t>(g.nextSlot++)];
-        p.slotDx = pos.x - f->leader.x;
-        p.slotDy = pos.y - f->leader.y;
-        p.hasSlot = true;
-    }
+    // A member keeps only its member number: 1 + the highest number held by the
+    // side's members of the group, so a freed highest number is given out
+    // again (spec 04 §5, §19.2 Q64, confirmed: binary).
+    int highest = 0;
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (static_cast<int>(k) != i && pieces_[k].alive && pieces_[k].owner == p.owner && pieces_[k].group == group && !pieces_[k].isLeader)
+            highest = std::max(highest, pieces_[k].member);
+    p.member = highest + 1;
 }
 
 } // namespace detail
@@ -468,8 +462,8 @@ TacticalBattle::TacticalBattle(const Rules& r, GameState state, Setup setup)
     if (!setup_.entering) detail::resolveMines(ctx_->turn, setup_.where, {}, ctx_->rng);
     else if (!setup_.entering->empty()) detail::resolveMines(ctx_->turn, setup_.where, *setup_.entering, ctx_->rng);
     battle_ = std::make_unique<detail::Battle>(ctx_->turn, setup_.where, ctx_->rng);
-    if (setup_.interference || setup_.disruption)
-        battle_->setOverrides(detail::BattleOverrides{setup_.interference.value_or(0), setup_.disruption.value_or(0)});
+    if (setup_.interference || setup_.disruption || !setup_.planetStrategies.empty())
+        battle_->setOverrides(detail::BattleOverrides{setup_.interference.value_or(0), setup_.disruption.value_or(0), setup_.planetStrategies});
     battle_->setCheck(setup_.check);
     started_ = battle_->setup();
     if (started_) {

@@ -312,7 +312,6 @@ private:
         ImGui::SetNextWindowSize(ui.size({420, 0}));
         if (!ImGui::BeginPopupModal("Fleets##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
         const game::GameState& s = ui.state();
-        const game::Empire& me = ui.me();
         heading(ui, std::format("Fleet of {}", setup_.sides[size_t(current_)].name).c_str());
         int fleet = -1;
         for (size_t f = 0; f < setup_.fleets.size(); ++f)
@@ -344,15 +343,33 @@ private:
                     if (ImGui::Selectable(formations[k].name.c_str(), f.formation == k)) f.formation = k;
                 ImGui::EndCombo();
             }
+            // The fleet's strategy is one of its side's list: the strategies of the
+            // empire the side copies, the owner of its first item (game/simulator.hpp).
+            const auto& list = s.empire(sideSource(ui, current_)).strategies;
             ImGui::SetNextItemWidth(ui.px(200));
-            if (ImGui::BeginCombo("Strategy", f.strategy < me.strategies.size() ? me.strategies[f.strategy].name.c_str() : "Default")) {
-                for (uint32_t k = 0; k < me.strategies.size(); ++k)
-                    if (ImGui::Selectable(me.strategies[k].name.c_str(), f.strategy == k)) f.strategy = k;
+            if (ImGui::BeginCombo("Strategy", f.strategy < list.size() ? list[f.strategy].name.c_str() : "Default")) {
+                for (uint32_t k = 0; k < list.size(); ++k)
+                    if (ImGui::Selectable(list[k].name.c_str(), f.strategy == k)) f.strategy = k;
                 ImGui::EndCombo();
             }
         }
         if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
+    }
+
+    // The real empire a side copies: the owner of its first design or colony
+    // (neutral objects do not count), else the player's.
+    game::EmpireId sideSource(const UiContext& ui, int side) const {
+        const game::GameState& s = ui.state();
+        for (const SimulatorItem& item : setup_.items) {
+            if (item.side != side) continue;
+            if (item.kind == SimulatorItem::Kind::Design && item.design.index() < s.designs.size()) {
+                const game::EmpireId owner = s.design(item.design).owner;
+                return owner.valid() && owner.index() < s.empires.size() ? owner : ui.session.player();
+            }
+            if (item.kind == SimulatorItem::Kind::Planet && game::combat::simulatorColony(s, item)) return s.colony(item.planet)->owner;
+        }
+        return ui.session.player();
     }
 
     // Change Cargo: the units any ship, base or colony of the battle carries

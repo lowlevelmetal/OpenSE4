@@ -250,22 +250,21 @@ Strategy empireStrategy(const GameState& s, EmpireId e, uint32_t index);
 //     object (a vehicle or a colony) must instead see one of the group's
 //     vehicles and be hostile to the group's owner.
 //   - Empty `group`: the check a simultaneous game makes of a sector after a
-//     day (tools and tests use it too). It passes when an empire with an
-//     uncloaked vehicle in the sector (a unit group, even a minefield, counts;
-//     "uncloaked" is the vehicle's status) sees an object there, not a
-//     minefield, of an empire it is hostile to; a colony never counts as the
-//     side that sees.
-// Hostility is each empire's own side of the treaty (spec 03 §6.4). A colony
-// in the sector is always seen (planets cannot hide, inferred); a vehicle is
-// seen by combat's rule (detail::visibleTo). Once the check passes, the
-// battle is fought when two empires with pieces there are hostile (in either
-// direction); a check that finds only minefields fights nothing (inferred).
+//     day (tools and tests use it too). It passes when an empire with a
+//     vehicle or unit group in the sector whose cloaked flag is off sees an
+//     object there, not a minefield, of an empire it is hostile to; a colony
+//     never counts as the side that sees, and minefields take no part at all.
+// Hostility is each empire's own side of the treaty (spec 03 §6.4). Vehicles
+// and colonies alike are seen by the sight rules of spec 01 §6.3, by current
+// sensors (detail::visibleTo, colonyVisibleTo; spec 04 §19.2 Q74, Q75). A
+// check that passes always starts a battle, even one where only minefields
+// were seen; it then ends at its first end check (spec 04 §19.2 Q73).
 struct BattleCheck {
     std::vector<VehicleId> group;
 };
 bool battleCheck(const Rules& r, const GameState& s, Location where, const BattleCheck& check);
 
-// True when the check passes and a battle would be fought, or hostile mines
+// True when the check passes (a battle is then fought), or hostile mines
 // there can strike an entering vehicle (spec 04 §2, §10.6).
 bool combatPossible(const Rules& r, const GameState& s, Location where, const BattleCheck& check = {});
 // Mines first, then the battle: appends a CombatRecord, applies damage,

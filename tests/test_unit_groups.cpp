@@ -314,7 +314,9 @@ TEST_CASE("combat: units launched in a battle that nobody recovers stay separate
     CHECK(groupUnits(g, hornet) == 0);
     const Vehicle& launched = *s.vehicle(groups.front() == group ? groups.back() : groups.front());
     CHECK(groupUnits(launched, hornet) == 4);
-    CHECK(launched.supply == vehicleSupplyCapacity(r, s, launched));
+    // It keeps its one supply pool, less what its volleys used (spec 04 §19.1 Q56).
+    CHECK(launched.supply > 0);
+    CHECK(launched.supply < vehicleSupplyCapacity(r, s, launched));
     CHECK(validateState(s, &r).empty());
 }
 

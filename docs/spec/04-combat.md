@@ -1412,8 +1412,9 @@ component `Family` and adds the families (§7).
 
 Answers found in the executable are given in place. Since 2026-09-30 every question below
 is answered from the executable; §19.1 keeps the engine's own choices where the original
-has no rule, and OpenSE4's extensions, and §19.2 answers the questions that came up while
-implementing the settled rules (questions 57 to 77).
+has no rule, and OpenSE4's extensions, §19.2 answers the questions that came up while
+implementing the settled rules (questions 57 to 77), and §19.3 holds the questions that
+came up while implementing those answers (questions 78 onwards), still open.
 
 1. **Grid.** Answered (confirmed: binary): 72 × 63 squares; start boxes by arrival
    direction (§3). Stars, warp points, comets and uncolonised planets are 4×4 obstacles
@@ -1611,12 +1612,12 @@ the bullets below were checked in the executable on 2026-09-30; those parts are 
   whose units have all died, speed the slowest design's (spec 03 §12), and the target
   budget counts the living units. Each loss of units is recorded (a `UnitsLost` event,
   for the Strategic Combat window and the replay). The fighter group's fire across
-  designs is confirmed (binary). Its supply works otherwise (confirmed: binary): a
-  fighter group's supply is one pool whose capacity is the total `Supply Storage` of all
-  its units (unlimited if one has a Quantum Reactor); every launch into the group, a new
-  one or a join, fills it up to that capacity, and each volley takes the supply use times
-  the weapons fired (§6). The engine differs: it keeps supply per unit, and a group that
-  mixes designs keeps the smallest full load of its designs.
+  designs is confirmed (binary). So is its supply (confirmed: binary): a fighter group's
+  supply is one pool whose capacity is the total `Supply Storage` of all its units
+  (unlimited if one has a Quantum Reactor); every launch into the group, a new one or a
+  join, fills it up to that capacity, and each volley takes the supply use times the
+  weapons fired (§6). The engine follows this since 2026-09-30; a launched group left in
+  space after the battle keeps its pool.
 - **Facility losses (Q39).** OpenSE4 does not copy the original's stale count of
   destroyed facilities (§11): each destroyed facility keeps working until the battle
   ends and is then removed once.
@@ -1626,9 +1627,8 @@ the bullets below were checked in the executable on 2026-09-30; those parts are 
 - **Tactical groups (Q50).** Settled (confirmed: binary; §3 step 8): a ship that belongs
   to a fleet uses the fleet's strategy while it leads or belongs to any combat group, its
   fleet's or a tactical one; any other piece, and a ship in no group, uses its design's.
-  So a player's group of ships in no fleet uses design strategies, as the engine has it.
-  The engine differs for a fleet ship that the player puts into a tactical group: it
-  gives it its design's strategy; the original keeps the fleet's.
+  So a player's group of ships in no fleet uses design strategies. The engine follows
+  this since 2026-09-30, a fleet ship in a tactical group included.
 - **Pools of 16 bits.** In the original a unit group's damage and shield pools, and those
   of a planet's stored units, are 16-bit counters: the units receive only the hit's value
   modulo 65536, and a hit that takes a pool past 65535 stops the game with a run-time
@@ -1636,9 +1636,10 @@ the bullets below were checked in the executable on 2026-09-30; those parts are 
   50000 cap of §9.4 on the damage pool.
 - **Planning dice.** Each empire's pieces break their planning ties (the 1-in-10 and
   coin-flip choices of §16.1) with random numbers of their own, forked from the battle's
-  at setup. The original uses one stream for everything; ours keeps a side's moves, given
-  as orders by hand, playing out exactly as its strategies' do (the tactical tests rely
-  on it). Both are deterministic.
+  at setup: one stream for the empire's drones, which the computer always moves, and one
+  for its other pieces. The original uses one stream for everything; ours keeps a side's
+  moves, given as orders by hand, playing out exactly as its strategies' do (the tactical
+  tests rely on it). Both are deterministic.
 - **OpenSE4 extensions in the tactical window (Q49).** Auto can be given to a single
   piece, which then acts by its strategy at once, and "Auto This Phase" lets the
   strategies play the rest of the player's phase (the battle's Auto toggle and Resolve
@@ -1653,8 +1654,7 @@ the bullets below were checked in the executable on 2026-09-30; those parts are 
 ### 19.2 Questions from implementing the settled rules
 
 Each was an engine choice marked "(inferred)" in the code. On 2026-09-30 all of them were
-answered from the executable. Where an answer says "The engine differs", the code must
-change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those changes.
+answered from the executable. The engine was brought in line with the answers the same day.
 
 57. **Numbering the empires in the middle.** **Answer:** the empires are numbered in the
     order of their first piece that was already in the battle sector, taking the pieces
@@ -1666,10 +1666,9 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     battle sector that were already there count; an empire's colonies and vehicles
     elsewhere in the system, and its arriving vehicles, play no part. The colony owner
     that keeps the centre is the owner of the last colonised planet in that order (§3
-    step 4). The engine differs: it ranks an empire by its first colony anywhere in the
-    system, else by its first vehicle anywhere in the system in creation order. It should
-    rank each empire by its lowest object slot among its pieces already in the battle
-    sector, planets before vehicles (spec 03 §19 Q62) and vehicles by their slot.
+    step 4). The engine follows this since 2026-09-30. It takes the object order from one
+    helper (`objectOrderKey`: planets before vehicles and vehicles by slot for now), so a
+    shared slot order (spec 03 §19 Q62) applies here as soon as the helper follows it.
 58. **Placement hops.** **Answer:** the hops do walk on from one another, and the
     growing-squares search does start from the square first drawn, but a hop never leaves
     the map (confirmed: binary). After each hop the column is cut to at most 71 − size and
@@ -1679,10 +1678,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     distance, takes the first free square scanning column by column from the left, each
     column from the top. A square is free when its top-left square is on the map and every
     footprint square that lies on the map is empty; footprint squares off the map do not
-    count. If no square is free, the piece stays on its last hop square. The engine
-    differs: its hops may go off the map and continue from there, its search scans row by
-    row, and it refuses a 4×4 footprint that sticks out of the map. It should clamp each
-    hop, scan column by column, and test only the footprint squares on the map (§3 step 4).
+    count. If no square is free, the piece stays on its last hop square. The engine follows this since 2026-09-30.
 59. **Arrivals from farther away.** **Answer:** the original has no rule for this
     (confirmed: binary). No box is chosen for such a piece: it keeps the box worked out for
     the piece placed just before it (nothing defined for the very first piece), takes a
@@ -1699,15 +1695,10 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     warheads get targets too; a fighter group gives all its weapons one target. The main
     target is simply the first sorted candidate. The attack map uses each weapon's
     assigned target, and the fire-first test the target of the first ready, intact weapon
-    in design order that is not point-defense and has one (a warhead counts). The engine
-    differs: it gives each weapon the first sorted target it can hit and affect, ignoring
-    the budget, the overkill total and the spreading of push, pull and teleport; it leaves
-    point-defense and warheads out; it gives a fighter group's weapons separate targets;
-    and its main target is the first target some weapon can engage. The overkill rule of
-    §16 was also corrected: the totals start from 0 at every choice and count only what
-    that piece gives out then, never seekers in flight; the engine instead adds up a
-    side's assignments over the combat turn, counts seekers in flight and uses current
-    hit points. It should follow §16 as now written.
+    in design order that is not point-defense and has one (a warhead counts). The overkill rule of §16 was also corrected: the totals start from 0 at every
+    choice and count only what that piece gives out then, never seekers in flight. The
+    engine follows this since 2026-09-30; its choices where the text is silent are §19.3
+    Q79, Q80 and Q84.
 61. **Choosing the square.** **Answer** (confirmed: binary; §16.1): the scan goes column by
     column (x 1 to 70, each column y 1 to 61), and "danger within 10 squares" means a
     square on the map within 10 columns and 10 rows of the piece's top-left square whose
@@ -1720,12 +1711,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     value; the attack map has the danger map's border over-count. Optimal has a third
     case (every damaging square at 9999 or more: the most damage), and Maximum Weapons
     Range counts point-defense as a ready weapon and in the target's longest range, and
-    takes the first square found on ties except for its "farthest overall" case. The
-    engine differs: it lets the mover keep its own square; its attack map always leaves
-    point-defense out and never counts warheads, compares unweighted damage with the
-    emissive value and then scales by the weapon count and a fifth, truncated, and has no
-    border over-count; Optimal takes the lowest ratio even at 9999 or more; and Maximum
-    Range leaves point-defense out of both tests and breaks ring ties 1 in 10.
+    takes the first square found on ties except for its "farthest overall" case. The engine follows this since 2026-09-30 (its choices: §19.3 Q82 to Q84).
 62. **When the computer launches.** **Answer** (confirmed: binary; §16.1, §10.4, §10.7): a
     computer side's pieces are searched leaders first, then in piece order, and the
     search starts again from the first piece after every action. A ship, base or planet
@@ -1740,10 +1726,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     and max(0, "Drones Per Target" × H − D) (H the hostile ships and bases, mothballed
     ones included; D the side's living drones), stacks in cargo order in batches of
     "Drones Per Target", the last batch smaller, every drone its own group; stacks whose
-    design type is Anti-Planet Drone are never launched this way. The engine matches on
-    launching before moving, full movement and acting in the same phase, and the batch
-    arithmetic. It differs: it handles each carrier once per phase, so it never launches
-    a second wave, and it does not skip Anti-Planet Drone designs.
+    design type is Anti-Planet Drone are never launched this way. The engine follows this since 2026-09-30.
 63. **Launch Units windows.** **Answer:** the case cannot arise in the original
     (confirmed: binary). The window is modal and is made afresh, with an empty list of the
     groups it launched, each time Launch Units is chosen; while it is open nothing else in
@@ -1757,19 +1740,16 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
       is given out again). Its place is the position with that number in the formation of
       whoever leads the group at that moment. A member whose number is beyond the
       formation's positions has no place: it keeps its group but does not follow the
-      leader and acts on its own, as the engine has it. The engine differs in the
-      numbering: its counter never gives a freed number out again.
+      leader and acts on its own.
     - A new leader of the number, or a leader that picks another formation, puts every
       member at the position with its number in the new formation, where members beyond
-      its positions have no place. The engine differs: each member keeps the offset it got
-      when it joined, from the formation of that time. It should work out the place from
-      the member number and the current leader's formation each time.
+      its positions have no place.
     - Fleet groups have numbers: each empire's fleet groups are numbered 1, 2, 3… in
       piece order at setup, in the same numbering as the tactical window's groups. Clearing
       a fleet's leader clears only it; its members keep the number and follow whichever
-      piece the player later makes leader of that number. The engine differs: its fleet
-      groups have no number, so their members can never get a new leader. It should number
-      fleet groups at setup and share the numbers with the tactical window's groups.
+      piece the player later makes leader of that number.
+
+    The engine follows all three since 2026-09-30.
 65. **Ground combat.** **Answer:** the credited stack is drawn with equal chance among
     all the killing side's stacks present at that moment; emptied stacks are removed only
     when the round ends, so in effect these are the stacks alive when the round began: for
@@ -1783,8 +1763,8 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     hull-damaging hit destroys a member the pool is 0 and the rest of that hit is lost
     (confirmed: binary; §10.1). The engine matches. One detail matters only with modded
     data: the original counts every type except Shields Only and the two reload types as
-    damage against a seeker, the planet-only types and Crew Conversion included, while
-    the engine ignores those types on seekers. No stock weapon of those types can target
+    damage against a seeker, the planet-only types and Crew Conversion included; so does the engine since
+    2026-09-30. No stock weapon of those types can target
     seekers (and a reload-type weapon that could would stop the original with an error).
 67. **The ram's blow.** **Answer:** yes. The blow is one hit with the rammer as its
     attacker, so the rammer's `Damage Modifier - System` multiplies the whole of A + W
@@ -1799,11 +1779,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     group, each warhead kills a unit only when its own damage (with the shared leftover)
     covers the unit's hit points, and later draws never fall on emptied stacks. When a
     mine destroys a unit group, the mine's design is credited with hull `Tonnage` × the
-    units the group had when that mine picked it (confirmed: binary; §10.6, §15). The
-    engine differs: it keeps one shield pool per unit group for the whole strike, keeps
-    emptied stacks until the strike ends, and credits the tonnage the group had at its
-    first strike. It should reset both pools and remove the dead after each warhead, and
-    work out the credit per mine. Both pools are 16-bit counters in the original; see
+    units the group had when that mine picked it (confirmed: binary; §10.6, §15). The engine follows this since 2026-09-30. Both pools are 16-bit counters in the original; see
     §19.1.
 69. **Strategies without a target.** **Answer** (confirmed: binary; §16.1): Drop Troops
     falls back to Don't Get Hurt without troops or without a hostile colony, as the engine
@@ -1819,20 +1795,15 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     for a drone group, else the hostile ship or base with the latest hull, then the
     nearest, never a planet or unit group; it approaches through the free square nearest
     to it within 5 squares of the target, and rams only if then adjacent with movement
-    left; without a ram target it keeps that first move and does not ram. The engine
-    differs: Board without a target always uses Don't Get Hurt; its boarding target is
-    any shields-down ship, nearest first, with no strength test; its Ram target is the
-    first sorted target, possibly a planet or a unit group; Ram without a target uses
-    Don't Get Hurt; it steps toward the ram target greedily instead of using the approach
-    square; and its Drop Troops skips contested colonies and reads only Attack orders.
+    left; without a ram target it keeps that first move and does not ram. The engine follows this since 2026-09-30, drone groups included: they move by their
+    strategies like any piece (its choice for the approach square's ties: §19.3 Q81).
 70. **The end of an unseen battle.** **Answer:** yes. A battle nobody sees, like the
     strategic window, plays whole combat turns, every side's phase in order, then the
     start-of-turn upkeep of the next combat turn (counter, reloads, regeneration,
     movement), and only then checks its end; so at least one full combat turn is always
-    fought (confirmed: binary; §4). The engine matches, except that the original runs that
-    upkeep once more before ending. Its only lasting effect is one more organic armor
-    restore before the end-of-battle restore, which matters only beyond 10000 points of
-    destroyed regenerating armor; to be exact, run the upkeep before the end check.
+    fought (confirmed: binary; §4). The upkeep runs once more before the end check; its only lasting effect is one
+    more organic armor restore before the end-of-battle restore, which matters only beyond
+    10000 points of destroyed regenerating armor. The engine follows this since 2026-09-30.
 71. **The simulator's location.** **Answer:** the location is the viewer's home system and
     home sector: the real interference and disruption of that system and of the real
     objects in that sector apply, the empire totals are 0, and only the simulator's own
@@ -1844,8 +1815,8 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     with that enemy's strategy; a ship of a fleet formed in the simulator uses, while in
     its combat group, the fleet's strategy from its side's list; a unit group uses its
     first stack's design's strategy, found the same way; every planet uses the viewer's
-    strategy for planets (§17). The engine differs: it gives every side the viewer's
-    strategies. It should keep each side's copied list and resolve as above.
+    strategy for planets (§17). The engine follows this since 2026-09-30 (a record a side's copied list lacks is
+    added to that side's list); its simulator no longer picks a strategy per item.
 72. **Invaders of an empire that is gone.** **Answer:** nothing special happens
     (confirmed: binary; §13). Destroying an empire removes its own objects and sets every
     treaty with it back to "not yet met", which is hostile. Its troops landed on other
@@ -1866,8 +1837,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     match the mines' cloak (not with stock data), or a wholly cloaked group seen by an
     empire whose only uncloaked object in the sector is a minefield (possible in stock
     play). The simultaneous check ignores minefields, so it never leads to such a battle.
-    The engine differs: it fights nothing and the moving group keeps its orders. It
-    should fight the battle whenever the check passes.
+    The engine follows this since 2026-09-30.
 74. **Colonies in the check.** **Answer:** no exception for colonies: every check uses the
     ordinary sight rules for every object (confirmed: binary; §2). The viewer must have
     explored the system and have, in some sight type, a sensor level at least equal to
@@ -1876,19 +1846,16 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     system (spec 01 §6.3). Sight is worked out afresh after each step. So a colony in a
     storm or nebula, or a cloaked colony, can go unseen, and then starts no battle; and
     when a wholly cloaked group moves in, a colony is its owner's uncloaked object only
-    while the colony is not cloaked. The engine differs: it always sees a colony and counts
-    every colony as an uncloaked object. It should test a colony like a vehicle, by the
-    viewer's current sensors against the colony's obscuration (not by the map's "seen
-    since exploration" rule), and skip cloaked colonies as watchers. Its fallback for
-    vehicles (seen when uncloaked in a sector that is not obscured) is not in the original
-    either.
+    while the colony is not cloaked. The engine follows this since 2026-09-30: it tests a colony by the viewer's current
+    sensors against its obscuration, not by the map's memory, and its old fallback for
+    vehicles (seen when uncloaked in a sector that is not obscured) is gone. It has no
+    cloaked colonies.
 75. **"Uncloaked" in the simultaneous check.** **Answer:** only the cloaked flag counts
     (confirmed: binary; §2). A vehicle or unit group in the sector whose cloaked flag is
     off makes its empire a seeing side, even a fighter, satellite or drone group whose
     cloak hides it all the same, and even a mothballed ship. So yes, such a unit group is a
     seeing side. Minefields take no part in this check at all: they neither make their
-    owner present, nor see, nor are seen. The engine differs only for minefields: it lets
-    a minefield make its owner a seeing side. It should leave minefields out.
+    owner present, nor see, nor are seen. The engine follows this since 2026-09-30.
 76. **A Seek stepping in.** **Answer:** no; a pursuit ignores what its own steps meet
     (confirmed: binary; §2). When a pursuit's step or warp jump meets a battle
     (turn-based), mines, storm damage or warp turbulence, the pursuit stops moving for
@@ -1896,10 +1863,7 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     time the list runs with the group at its target's sector, it attacks (1 movement point
     and a battle check) and the order stays; a group that has just arrived without a
     battle attacks at the next run of its list. The Ship Orders options of spec 03 §6.4
-    still apply at the end of a warp, but never to groups made only of drones. The engine
-    differs: it clears the list when a battle is fought on a pursuit's step. It should only
-    stop the pursuit's movement for this run, keeping its order and list (likewise for
-    mines, storm and turbulence damage on a pursuit's step).
+    still apply at the end of a warp, but never to groups made only of drones. The engine follows this since 2026-09-30.
 77. **The Attack order and Repeat.** **Answer:** the Attack order always ends as done,
     whether it acted or not (confirmed: binary). With movement left it spends 1 movement
     point and one move's supply and runs a battle check; with none it does nothing, and the
@@ -1908,3 +1872,48 @@ change to the rule given; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those change
     order, wrapping round to the first. A battle it starts never fails it. The engine
     matches: moving a completed order to the end of the list gives the same sequence. Its
     log message for an Attack without movement is an OpenSE4 addition.
+
+### 19.3 Questions from implementing §19.2
+
+Each is an engine choice marked "(inferred)" in the code, where the answers of §19.2
+leave a detail open. To check in the executable.
+
+78. **A surrounded piece's targets.** A piece found surrounded makes no plan, and its
+    fire-first test measures from square (0, 0) (§16.1). Are its weapons given their
+    targets before that test, so that it can fire first? The engine gives them out first,
+    as for any moving piece, then tests; such a piece fires before its (empty) move
+    whenever its first ready weapon's target is nearer to it than to square (0, 0).
+79. **Warheads and the overkill limit.** §16 checks direct fire and point-defense against
+    the first total and seeking weapons against the second. Which total stops a warhead?
+    The engine checks warheads against the first, like direct fire.
+80. **A drone's new target.** Drones choosing new targets carry the overkill totals over
+    from one to the next (§16). Which result of a drone's choice becomes its drone target,
+    and how long do the totals carry over? The engine takes the target of its first
+    weapon (design order) that got one, else the main target, with candidates among
+    ships, planets and satellites, and starts the totals afresh with each phase of the
+    drones' side.
+81. **Ram's approach square.** "The first found on ties" (§16.1): in what order are the
+    boxes scanned, and is the rammer's own square free? The engine scans each box column
+    by column from the left, each column from the top, like the other scans, and treats
+    the rammer's own square as taken, as the range strategies do (§19.2 Q61).
+82. **Warheads in Maximum Weapons Range.** Do warheads count as ready weapons for "with
+    no ready weapon", and in the target's longest range for the ring? The engine counts
+    them in both, as it counts point-defense.
+83. **Optimal's "fewer own pieces".** The third case of Optimal Weapons Range breaks ties
+    by fewer own pieces. Fewer where? The engine counts the mover's own pieces on the
+    square itself; since a chosen square holds no piece that blocks it, only seekers can
+    be counted.
+84. **Distances in the attack map and in firing.** How far out does a weapon's ring of the
+    attack map go, and how far does "the longest ready range" of the firing choice reach?
+    The engine draws the attack map out to the weapon's longest range as the strategies
+    see it (at most 20, spec 03 §19 Q42), as the danger map does, and lets the firing
+    choice use each weapon's whole reach, so a mounted weapon whose entry 20 is above 0
+    counts candidates anywhere on the map (no stock weapon does).
+85. **The strategy for planets.** §3 step 8 has a planet use "the strategy its empire
+    chose for planets". Where is that choice made, and what is it by default? The engine
+    has no such setting: a planet uses its empire's first strategy, and in the combat
+    simulator the viewer's first one (§17).
+86. **Reports of a battle with nobody to fight.** Every participant gets a battle report
+    (§15, §19.2 Q73), also in a battle that the check started on a minefield alone. What
+    does the report of an empire that fought nobody say? The engine judges it like the
+    others: victory when it still has pieces and no hostile empire there has any.

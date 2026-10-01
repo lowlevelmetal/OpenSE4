@@ -219,16 +219,11 @@ bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::
     }
     const ruleset::VehicleSize* hull = hullOf(r, s, item.design);
     if (!hull) return false;
-    // The window has no strategy per item: the player's own designs keep their
-    // strategy; others use the player's first (every side picks from the
-    // player's list, game/simulator.hpp).
-    const game::Design& design = s.design(item.design);
-    const bool own = design.owner == setup.viewer && setup.viewer.valid() && setup.viewer.index() < s.empires.size();
-    item.strategy = own && design.strategy < s.empire(setup.viewer).strategies.size() ? design.strategy : 0;
+    // Designs fight with their real owner's strategy (spec 04 §17): the window
+    // sets none per item.
     if (game::isUnitType(hull->type) && hull->type != ruleset::VehicleType::Drone)
         for (SimulatorItem& i : setup.items)
-            if (i.kind == SimulatorItem::Kind::Design && i.design == item.design && i.side == item.side && i.cargo.empty() && i.fleet < 0 &&
-                i.strategy == item.strategy) {
+            if (i.kind == SimulatorItem::Kind::Design && i.design == item.design && i.side == item.side && i.cargo.empty() && i.fleet < 0) {
                 if (i.count >= game::combat::kSimulatorMaxCount) return false;
                 ++i.count;
                 return true;

@@ -14,6 +14,7 @@
 
 #include "game/combat.hpp"
 
+#include "datafile/datafile.hpp"
 #include "game/combat_battle.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
@@ -147,15 +148,21 @@ Weapon Battle::makeWeapon(const DesignEntry& de, size_t entry) const {
 
 void Battle::buildWeapons(Piece& p) const {
     p.weapons.clear();
+    p.warheads.clear();
     if (p.mothballed) return;
+    // Weapons that fire go to `weapons`, warheads to `warheads` (they get
+    // targets but never fire, spec 04 §16).
+    auto listFor = [&](const ruleset::Component& c) -> std::vector<Weapon>& {
+        return c.weapon.kind == WeaponKind::Warhead ? p.warheads : p.weapons;
+    };
     if (p.kind != Kind::UnitGroup) {
         const Design& d = s_.design(p.unit.design);
         for (size_t i = 0; i < d.entries.size(); ++i) {
             const ruleset::Component& c = r_.component(d.entries[i].component);
-            if (!c.isWeapon() || c.weapon.kind == WeaponKind::Warhead) continue;
+            if (!c.isWeapon()) continue;
             Weapon w = makeWeapon(d.entries[i], i);
             w.reload.assign(1, 0);
-            p.weapons.push_back(std::move(w));
+            listFor(c).push_back(std::move(w));
         }
         return;
     }
@@ -166,12 +173,13 @@ void Battle::buildWeapons(Piece& p) const {
         const Design& d = s_.design(p.stacks[k].design);
         for (size_t i = 0; i < d.entries.size(); ++i) {
             const ruleset::Component& c = r_.component(d.entries[i].component);
-            if (!c.isWeapon() || c.weapon.kind == WeaponKind::Warhead) continue;
+            if (!c.isWeapon()) continue;
+            std::vector<Weapon>& list = listFor(c);
             if (fighters) {
                 // A fighter group fires identical weapons (same part and mount) together,
                 // whichever of its designs carries them (confirmed: binary).
-                auto same = std::find_if(p.weapons.begin(), p.weapons.end(), [&](const Weapon& w) { return w.de == d.entries[i]; });
-                if (same != p.weapons.end()) {
+                auto same = std::find_if(list.begin(), list.end(), [&](const Weapon& w) { return w.de == d.entries[i]; });
+                if (same != list.end()) {
                     auto share = std::find_if(same->shares.begin(), same->shares.end(), [&](const auto& sh) { return sh.first == stack; });
                     if (share == same->shares.end()) same->shares.emplace_back(stack, 1);
                     else ++share->second;
@@ -188,7 +196,7 @@ void Battle::buildWeapons(Piece& p) const {
                 // Satellite and drone groups fire each weapon of each unit on its own.
                 w.reload.assign(static_cast<size_t>(std::max(1, p.stacks[k].count)), 0);
             }
-            p.weapons.push_back(std::move(w));
+            list.push_back(std::move(w));
         }
     }
 }
@@ -204,6 +212,7 @@ void Battle::syncGroup(Piece& p) { setGroupStacks(s_, p.unit, p.stacks); }
 
 void Battle::buildPlanetWeapons(Piece& p) const {
     p.weapons.clear();
+    p.warheads.clear();
     // Every weapon of every platform is a separate weapon of the planet (confirmed: binary).
     for (size_t k = 0; k < p.unit.cargo.units.size(); ++k) {
         const UnitStack& st = p.unit.cargo.units[k];
@@ -211,11 +220,11 @@ void Battle::buildPlanetWeapons(Piece& p) const {
         const Design& d = s_.design(st.design);
         for (size_t i = 0; i < d.entries.size(); ++i) {
             const ruleset::Component& comp = r_.component(d.entries[i].component);
-            if (!comp.isWeapon() || comp.weapon.kind == WeaponKind::Warhead) continue;
+            if (!comp.isWeapon()) continue;
             Weapon w = makeWeapon(d.entries[i], i);
             w.stack = static_cast<int>(k);
             w.reload.assign(static_cast<size_t>(st.count), 0);
-            p.weapons.push_back(std::move(w));
+            (comp.weapon.kind == WeaponKind::Warhead ? p.warheads : p.weapons).push_back(std::move(w));
         }
     }
 }
@@ -244,9 +253,11 @@ void Battle::addVehiclePiece(const Vehicle& v) {
     if (p.kind == Kind::UnitGroup) p.unit.damage.assign(d.entries.size(), 0);   // units are whole or dead
     p.name = v.name;
     p.mothballed = v.status == VehicleStatus::Mothballed;
+    p.wasCloaked = v.status == VehicleStatus::Cloaked;
     p.designStrategy = d.owner == v.owner ? d.strategy : 0;
     if (const Fleet* f = s_.fleet(v.fleet); f && f->owner == v.owner) {
         p.fleetStrategy = f->strategy;
+        p.inFleet = true;
         if (p.kind == Kind::Vehicle) {
             p.fleet = v.fleet;
             fleetExp_.emplace(v.fleet.value, std::pair{f->experience, f->experienceTenths});
@@ -281,6 +292,12 @@ void Battle::addPlanetPiece(const Colony& c) {
     p.landed = c.landedTroops;
     p.invader = c.invader;
     p.militia = c.militia;
+    // A planet uses the strategy its empire chose for planets (spec 04 §3 step
+    // 8): the empire's first one (inferred, spec 04 §19.3 Q85), or in the
+    // simulator the viewer's (§17).
+    if (overrides_)
+        for (const auto& [side, index] : overrides_->planetStrategies)
+            if (side == c.owner) p.designStrategy = index;
     buildPlanetWeapons(p);
     pieces_.push_back(std::move(p));
 }
@@ -358,14 +375,27 @@ bool Battle::setup() {
                 defenders_.push_back(e);
                 break;
             }
-    // Drones keep the target they were given.
-    for (Piece& p : pieces_)
-        if (p.vtype == VehicleType::Drone && p.kind == Kind::UnitGroup && p.unit.targetVehicle.valid())
-            for (size_t j = 0; j < pieces_.size(); ++j)
-                if (pieces_[j].source == p.unit.targetVehicle) {
-                    p.droneTarget = static_cast<int>(j);
-                    p.droneTargetOwner = pieces_[j].owner;
-                }
+    // A drone group's target is the object its first order names, when that
+    // order is an Attack pursuit and the object is a piece here, of whatever
+    // kind (ship, base, planet or unit group); otherwise it is chosen in the
+    // battle (spec 03 §19 Q68, spec 04 §10.7, confirmed: binary). A drone
+    // group's own list holds its orders (a fleet's members hold the fleet's,
+    // spec 03 §19 Q65).
+    for (Piece& p : pieces_) {
+        if (p.vtype != VehicleType::Drone || p.kind != Kind::UnitGroup || p.unit.orders.empty()) continue;
+        const Order& o = p.unit.orders.front();
+        if (o.kind != OrderKind::Attack) continue;
+        for (size_t j = 0; j < pieces_.size(); ++j) {
+            const Piece& q = pieces_[j];
+            const bool named = (o.vehicle.valid() && q.source == o.vehicle) ||
+                               (o.object.valid() && q.kind == Kind::Planet && q.object == o.object);
+            if (!named) continue;
+            p.droneTarget = static_cast<int>(j);
+            p.droneTargetOwner = q.owner;
+            p.droneOrderTarget = true;
+            break;
+        }
+    }
 
     // Starting values: shields full (none without supplies), reloads ready, full movement (confirmed: binary).
     for (size_t i = 0; i < pieces_.size(); ++i) {
@@ -392,7 +422,10 @@ bool Battle::setup() {
     rng_.shuffle(order_);
     rng_.shuffle(att);
     order_.insert(order_.end(), att.begin(), att.end());
-    for (EmpireId e : empires_) planRng_.emplace(e.value, rng_.fork());
+    for (EmpireId e : empires_) {
+        planRng_.emplace(std::pair{e.value, false}, rng_.fork());
+        planRng_.emplace(std::pair{e.value, true}, rng_.fork());   // its drones'
+    }
 
     rec_.turn = s_.turn;
     rec_.location = where_;
@@ -406,34 +439,42 @@ bool Battle::setup() {
     return true;
 }
 
+// A square is free for a piece when its top-left square lies on the map and
+// every square of its footprint that lies on the map is empty; footprint
+// squares off the map do not count (spec 04 §3 step 4, confirmed: binary).
 bool Battle::fits(int x, int y, int size, int self) const {
+    if (!onMap(x, y)) return false;
     for (int dy = 0; dy < size; ++dy)
         for (int dx = 0; dx < size; ++dx)
-            if (!isFree(x + dx, y + dy, self)) return false;
+            if (onMap(x + dx, y + dy) && !isFree(x + dx, y + dy, self)) return false;
     return true;
 }
 
 // A piece whose drawn square is taken or off the map first makes up to ten
-// random hops of its own size in one of the four straight directions, stopping
-// on the first free square; failing that, it takes the first free square in
-// growing squares around the square first drawn, up to 100 squares away
-// (confirmed: binary). The hops walk on from each other (inferred).
-std::pair<int, int> Battle::settle(int x, int y, int size, int self) {
-    if (fits(x, y, size, self)) return {x, y};
+// random hops of its own size in one of the four straight directions, each
+// from where the last one ended, stopping on the first free square. A hop
+// never leaves the map: the column is cut to 0..71 − size and the row to
+// 0..62 − size. Failing that, it takes the first free square in growing
+// squares around the square first drawn, at distance 0 to 100, each distance
+// scanned column by column from the left, each column from the top; if none is
+// free it stays on its last hop square (spec 04 §3 step 4, §19.2 Q58,
+// confirmed: binary).
+Battle::Settled Battle::settle(int x, int y, int size, int self) {
+    if (fits(x, y, size, self)) return {x, y, true};
     int hx = x, hy = y;
     for (int hop = 0; hop < 10; ++hop) {
         const auto [dx, dy] = kStraight[rng_.below(kStraight.size())];
-        hx += dx * size;
-        hy += dy * size;
-        if (fits(hx, hy, size, self)) return {hx, hy};
+        hx = std::clamp(hx + dx * size, 0, kW - 1 - size);
+        hy = std::clamp(hy + dy * size, 0, kH - 1 - size);
+        if (fits(hx, hy, size, self)) return {hx, hy, true};
     }
-    for (int rad = 1; rad <= 100; ++rad)
-        for (int dy = -rad; dy <= rad; ++dy)
-            for (int dx = -rad; dx <= rad; ++dx) {
+    for (int rad = 0; rad <= 100; ++rad)
+        for (int dx = -rad; dx <= rad; ++dx)
+            for (int dy = -rad; dy <= rad; ++dy) {
                 if (std::max(std::abs(dx), std::abs(dy)) != rad) continue;
-                if (fits(x + dx, y + dy, size, self)) return {x + dx, y + dy};
+                if (fits(x + dx, y + dy, size, self)) return {x + dx, y + dy, true};
             }
-    return {-1, -1};
+    return {hx, hy, false};
 }
 
 void Battle::occupy(int i) {
@@ -500,34 +541,27 @@ void Battle::place() {
         }
     };
 
-    // Empires with a piece already in the sector, numbered in the order the
-    // system lists their first object. Our system lists its planets, then the
-    // vehicles in it in the game's vehicle order (inferred).
-    const StarSystem& system = s_.galaxy.system(where_.system);
-    std::map<uint32_t, size_t> firstObject;
-    auto note = [&](EmpireId e, size_t rank) {
-        auto it = firstObject.find(e.value);
-        if (it == firstObject.end()) firstObject.emplace(e.value, rank);
-        else it->second = std::min(it->second, rank);
-    };
-    for (size_t k = 0; k < system.objects.size(); ++k)
-        if (const Colony* c = s_.colony(system.objects[k])) note(c->owner, k);
-    for (size_t k = 0; k < s_.vehicles.size(); ++k)
-        if (s_.vehicles[k].count > 0 && s_.vehicles[k].owner.valid() && s_.vehicles[k].location.system == where_.system)
-            note(s_.vehicles[k].owner, system.objects.size() + k);
+    // Empires with a piece already in the battle sector, numbered 1, 2, 3... in
+    // the order of their first such piece, the pieces taken in the game's
+    // object order; arriving vehicles and objects elsewhere play no part. With
+    // two or more, the owner of the last colonised planet in that order keeps
+    // the centre (spec 04 §3 step 4, §19.2 Q57, confirmed: binary).
+    std::vector<std::pair<uint64_t, size_t>> already;   // (object order, piece)
+    for (size_t k = 0; k < n; ++k) {
+        const Piece& p = pieces_[k];
+        if (!p.owner.valid()) continue;
+        if (p.kind == Kind::Planet) already.emplace_back(objectOrderKey(p.object), k);
+        else if (!p.arrived && p.source.valid())
+            if (const Vehicle* v = s_.vehicle(p.source)) already.emplace_back(objectOrderKey(*v), k);
+    }
+    std::sort(already.begin(), already.end());
     std::vector<EmpireId> middle;
-    for (const Piece& p : pieces_)
-        if (p.owner.valid() && (p.kind == Kind::Planet || !p.arrived) && std::find(middle.begin(), middle.end(), p.owner) == middle.end())
-            middle.push_back(p.owner);
-    std::sort(middle.begin(), middle.end(), [&](EmpireId a, EmpireId b) {
-        const size_t ra = firstObject.count(a.value) ? firstObject[a.value] : SIZE_MAX;
-        const size_t rb = firstObject.count(b.value) ? firstObject[b.value] : SIZE_MAX;
-        return ra != rb ? ra < rb : a < b;
-    });
-    // With two or more, the owner of a colony in the sector (the one listed last) keeps the centre.
     EmpireId keeper;
-    for (ObjectId o : system.objects)
-        if (const Colony* c = s_.colony(o); c && s_.galaxy.object(o).sector == where_.sector) keeper = c->owner;
+    for (const auto& [key, k] : already) {
+        const EmpireId owner = pieces_[k].owner;
+        if (std::find(middle.begin(), middle.end(), owner) == middle.end()) middle.push_back(owner);
+        if (pieces_[k].kind == Kind::Planet) keeper = owner;
+    }
     auto boxOf = [&](const Piece& p) -> Box {
         if (p.warped) return warpBox;
         if (p.boxDx != 0 || p.boxDy != 0) return edgeBox(p.boxDx, p.boxDy);
@@ -543,9 +577,9 @@ void Battle::place() {
 
     std::vector<char> placed(n, 0);
     auto put = [&](size_t i, int x, int y) {
-        const auto [px, py] = settle(x, y, pieces_[i].size, static_cast<int>(i));
-        pieces_[i].x = std::max(0, px);
-        pieces_[i].y = std::max(0, py);
+        const Settled at = settle(x, y, pieces_[i].size, static_cast<int>(i));
+        pieces_[i].x = at.x;
+        pieces_[i].y = at.y;
         occupy(static_cast<int>(i));
         placed[i] = 1;
     };
@@ -563,14 +597,19 @@ void Battle::place() {
 
     // Then the fleets' leaders: a fleet's armed members form its combat group,
     // anchored by the fleet leader, armed or not (or, when it is not here, the
-    // first armed member); the other armed members take formation positions
-    // 1, 2, 3... in piece order (spec 03 §9, §10, confirmed: binary). Nothing
-    // breaks formation at placement, and unarmed members are placed at random.
+    // first armed member); the other armed members get member numbers 1, 2,
+    // 3... in piece order, and those numbered beyond the formation's positions
+    // have no place (spec 03 §9, §10, confirmed: binary). Each empire's fleet
+    // groups are numbered 1, 2, 3... in piece order, in the numbering of the
+    // tactical window's groups (spec 04 §3 step 5, §19.2 Q64). Nothing breaks
+    // formation at placement; members without a place, and unarmed members,
+    // are placed at random.
     std::vector<FleetId> fleets;
     for (const Piece& p : pieces_)
         if (p.kind != Kind::Planet && p.kind != Kind::Obstacle && p.unit.fleet.valid() &&
             std::find(fleets.begin(), fleets.end(), p.unit.fleet) == fleets.end())
             fleets.push_back(p.unit.fleet);
+    std::map<uint32_t, int> fleetGroups;   // empire -> fleet groups numbered so far
     for (FleetId fid : fleets) {
         const Fleet* fleet = s_.fleet(fid);
         if (!fleet) continue;
@@ -590,29 +629,25 @@ void Battle::place() {
                     break;
                 }
         if (leader == SIZE_MAX) continue;
-        const Box b = boxOf(pieces_[leader]);
-        pieces_[leader].facing = facingFor(pieces_[leader]);
+        Piece& lead = pieces_[leader];
+        lead.isLeader = true;
+        lead.group = ++fleetGroups[fleet->owner.value];
+        lead.formation = fleet->formation < r_.data().formations.size() ? static_cast<int>(fleet->formation) : -1;
+        const Box b = boxOf(lead);
+        lead.facing = facingFor(lead);
         // A leader in an edge box starts on the box's inner line at a random point along it.
         if (b.edge && b.innerY >= 0) put(leader, rng_.rangeInt(b.x, b.x + b.w), b.innerY);
         else if (b.edge) put(leader, b.innerX, rng_.rangeInt(b.y, b.y + b.h));
         else put(leader, rng_.rangeInt(b.x, b.x + b.w), rng_.rangeInt(b.y, b.y + b.h));
-        const ruleset::Formation* formation =
-            fleet->formation < r_.data().formations.size() ? &r_.data().formations[fleet->formation] : nullptr;
-        size_t slot = 0;
+        int number = 0;
         for (size_t i : members) {
-            if (i == leader || !armed(i) || !formation) continue;
-            if (slot >= formation->positions.size()) break;   // beyond the positions: no formation place
-            const auto& pos = formation->positions[slot++];
-            const int dx = pos.x - formation->leader.x, dy = pos.y - formation->leader.y;
-            const auto [rx, ry] = rotateSlot(pieces_[leader].facing, dx, dy);
+            if (i == leader || !armed(i)) continue;
+            pieces_[i].group = pieces_[leader].group;
+            pieces_[i].member = ++number;
+            if (!hasPlace(static_cast<int>(i))) continue;   // beyond the positions: no formation place
+            const auto [px, py] = placeOf(static_cast<int>(i));
             pieces_[i].facing = facingFor(pieces_[i]);
-            put(i, std::clamp(pieces_[leader].x + rx, 0, kW - 1), std::clamp(pieces_[leader].y + ry, 0, kH - 1));
-            pieces_[i].leader = static_cast<int>(leader);
-            pieces_[i].slotDx = dx;
-            pieces_[i].slotDy = dy;
-            pieces_[i].hasSlot = true;
-            pieces_[i].fleetMember = true;
-            pieces_[leader].isLeader = true;
+            put(i, px, py);
         }
     }
     // Everything else at a random square of its box.
@@ -634,26 +669,63 @@ const Strategy& Battle::strategy(EmpireId e, uint32_t index) const {
 
 uint32_t Battle::strategyIndex(int i) const {
     const Piece& p = pieces_[i];
-    // While in its fleet's combat group a ship uses the fleet strategy, afterwards its design's (history 1.84).
-    // A member whose leader left the formation stays in the group, with the fleet
-    // strategy (spec 03 §10). A group a player formed in tactical combat is no fleet group (spec 04 §19.1).
-    if (p.isLeader) return p.tacticalGroup ? p.designStrategy : p.fleetStrategy;
-    if (p.fleetMember) return p.fleetStrategy;
-    return p.designStrategy;
+    // A ship of a fleet uses the fleet's strategy while it leads or belongs to
+    // any combat group, its fleet's or one formed in the tactical window; a
+    // unit group likewise. Otherwise, and once it has left every group, its
+    // design's (spec 04 §3 step 8, §19.1 Q50, confirmed: binary; history 1.84).
+    // A member whose leader left the formation stays in the group (spec 03 §10).
+    return p.group >= 0 && p.inFleet ? p.fleetStrategy : p.designStrategy;
 }
 
 int Battle::leaderOf(int i) const {
+    // A member follows whichever piece of its side leads its number now (spec 04 §5).
     const Piece& p = pieces_[i];
-    if (p.isLeader) return -1;
-    if (p.group >= 0) {
-        // A member of a player's group follows whichever piece of its side leads that number.
-        for (size_t k = 0; k < pieces_.size(); ++k)
-            if (static_cast<int>(k) != i && pieces_[k].alive && pieces_[k].owner == p.owner && pieces_[k].isLeader && pieces_[k].group == p.group)
-                return static_cast<int>(k);
-        return -1;
-    }
-    if (p.leader >= 0 && pieces_[p.leader].alive && pieces_[p.leader].isLeader && pieces_[p.leader].owner == p.owner) return p.leader;
+    if (p.isLeader || p.group < 0) return -1;
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (static_cast<int>(k) != i && pieces_[k].alive && pieces_[k].owner == p.owner && pieces_[k].isLeader && pieces_[k].group == p.group)
+            return static_cast<int>(k);
     return -1;
+}
+
+const ruleset::Formation* Battle::formationOf(int leader) const {
+    if (leader < 0) return nullptr;
+    const int f = pieces_[leader].formation;
+    return f >= 0 && static_cast<size_t>(f) < r_.data().formations.size() ? &r_.data().formations[static_cast<size_t>(f)] : nullptr;
+}
+
+// A member's place is the position with its member number in the formation of
+// whoever leads the group now, turned by that leader's facing; a member whose
+// number is beyond the positions has none (spec 04 §5, §19.2 Q64, confirmed: binary).
+bool Battle::hasPlace(int i) const {
+    const ruleset::Formation* f = formationOf(leaderOf(i));
+    const int m = pieces_[i].member;
+    return f && m >= 1 && static_cast<size_t>(m) <= f->positions.size();
+}
+
+std::pair<int, int> Battle::placeOf(int i) const {
+    const int l = leaderOf(i);
+    const ruleset::Formation& f = *formationOf(l);
+    const auto& pos = f.positions[static_cast<size_t>(pieces_[i].member - 1)];
+    const auto [dx, dy] = rotateSlot(pieces_[l].facing, pos.x - f.leader.x, pos.y - f.leader.y);
+    return {std::clamp(pieces_[l].x + dx, 0, kW - 1), std::clamp(pieces_[l].y + dy, 0, kH - 1)};
+}
+
+// Automated sides (spec 03 §10, §19 Q60): the computer players', and every
+// side in strategic combat, in a battle without a window, while Auto is down
+// and after Resolve Combat.
+bool Battle::automated(EmpireId e) const { return !isPlayer(e) || autoAll_; }
+
+int Battle::hullRank(int j) const { return static_cast<int>(s_.design(pieces_[j].unit.design).hull); }
+
+// Boarding defense (spec 04 §12): Boarding Defense + 4 × intact crew quarters + Boarding Attack.
+int64_t Battle::boardingDefense(int t) const {
+    const Piece& b = pieces_[t];
+    const Design& d = s_.design(b.unit.design);
+    int crew = 0;
+    for (size_t e = 0; e < d.entries.size(); ++e)
+        if (entryIntact(r_, s_, b.unit, e) && hasAbility(r_.componentAbilities(d.entries[e].component), AbilityKind::ShipCrewQuarters)) ++crew;
+    return detail::componentSum(r_, s_, b.unit, AbilityKind::BoardingDefense) + 4 * crew +
+           detail::componentSum(r_, s_, b.unit, AbilityKind::BoardingAttack);
 }
 
 bool Battle::combatant(int i) const {
@@ -819,10 +891,8 @@ void Battle::refreshPiece(int i) {
     Piece& p = pieces_[i];
     if (!p.alive || p.kind == Kind::Seeker || p.kind == Kind::Obstacle) return;
     p.engaged.clear();
-    p.pushed = false;
     p.launchedNow = {};
     p.mp = computeMp(i);
-    p.reach = p.mp;
     refreshStats(i);
 }
 
@@ -832,20 +902,12 @@ void Battle::afterDamage(int i) {
     if (!p.alive || p.kind == Kind::Obstacle || p.kind == Kind::Seeker) return;
     if (p.kind == Kind::Vehicle) detail::refreshShields(r_, s_, p.unit, shieldBonus(p.owner), disruption_, p.sh, false);
     else if (p.kind == Kind::Planet) planetShields(p, false);
-    const int allowance = computeMp(i);
-    p.mp = std::min(p.mp, allowance);
+    p.mp = std::min(p.mp, computeMp(i));
     refreshStats(i);
-    // The group dissolves when the leader of an automated side is left with 0
-    // movement by damage (spec 03 §10, confirmed: binary): every side in
-    // strategic combat, a player's side in tactical combat while Auto is on,
-    // so that a tactical battle fought on Auto stays the strategic battle
-    // (inferred, spec 03 §19 Q60).
-    if (p.isLeader && allowance == 0 && p.reach > 0 && (!isPlayer(p.owner) || autoAll_)) dissolve(i);
 }
 
 void Battle::startRound() {
     // At the start of every combat turn after the first (confirmed: binary).
-    assigned_.clear();
     for (size_t k = 0; k < pieces_.size(); ++k) {
         const int i = static_cast<int>(k);
         Piece& p = pieces_[k];
@@ -1097,7 +1159,10 @@ bool Battle::canAffect(DamageType type, int t, int att) const {
     const detail::DamageRule rule = detail::damageRule(type);
     switch (b.kind) {
         case Kind::Obstacle: return false;
-        case Kind::Seeker: return rule.structural && !rule.shieldsOnly && !isSpecialEffect(type);
+        case Kind::Seeker:
+            // Every type but Shields Only and the reload types counts as damage
+            // against a seeker (spec 04 §10.1, §19.2 Q66, confirmed: binary).
+            return !rule.shieldsOnly && type != DamageType::IncreaseReloadTime && type != DamageType::DisruptReloadTime;
         case Kind::Planet:
             // Against planets (spec 04 §9.5, confirmed: binary).
             if (isPlanetOnlyDamage(type)) return true;
@@ -1153,17 +1218,25 @@ bool Battle::contestedBy(const Piece& planet, EmpireId e) const {
     return std::any_of(planet.landed.begin(), planet.landed.end(), [](const UnitStack& u) { return u.count > 0; });
 }
 
-// The computer stops assigning fire once 1.5 × (shields + hit points) of a ship
-// or planet, or 1 × of a unit group or seeker, is on its way this turn;
-// seekers in flight count separately (confirmed: binary).
-bool Battle::overkill(int i, int t, bool seeker) const {
+// The overkill limit (spec 04 §16, §19.2 Q60, confirmed: binary): a candidate
+// stops taking weapons once its total reaches 1.5 × (its current shields + its
+// full hit points) for a ship, base or planet, or 1 × that for a unit group or
+// seeker. Full hit points: a ship's full design structure, a unit group's
+// units at full health, a seeker's resistance, a planet's hit points at the
+// battle's start.
+bool Battle::overkill(int t, int64_t given) const {
     const Piece& b = pieces_[t];
-    const int64_t total = int64_t{b.kind == Kind::Vehicle || b.kind == Kind::Planet ? b.sh.current : 0} + hitPoints(t);
+    int64_t full = 0;
+    switch (b.kind) {
+        case Kind::Vehicle: full = detail::designStructure(r_, s_.design(b.unit.design)); break;
+        case Kind::UnitGroup: full = groupHitPoints(b); break;
+        case Kind::Seeker: full = b.hp; break;
+        case Kind::Planet: full = b.hpStart; break;
+        case Kind::Obstacle: return true;
+    }
     const bool big = b.kind == Kind::Vehicle || b.kind == Kind::Planet;
-    int64_t sent = 0;
-    if (seeker) sent = incomingSeekerDamage(t);
-    else if (const auto it = assigned_.find({pieces_[i].owner.value, t}); it != assigned_.end()) sent = it->second;
-    return big ? sent * 2 >= total * 3 : sent >= total;
+    const int64_t limit = (big ? int64_t{b.sh.current} : 0) + full;
+    return big ? given * 2 >= limit * 3 : given >= limit;
 }
 
 // ---- Targeting (spec 04 §6, §16) ------------------------------------------------------------------------
@@ -1180,7 +1253,7 @@ bool Battle::holdsFire(EmpireId e) {
     return false;
 }
 
-std::vector<int> Battle::sortedTargets(int i, const Strategy& S) {
+std::vector<int> Battle::sortedTargets(int i, const Strategy& S, int range, uint8_t only) {
     struct Candidate {
         int idx = 0;
         bool fresh = true;
@@ -1195,6 +1268,9 @@ std::vector<int> Battle::sortedTargets(int i, const Strategy& S) {
         const int j = static_cast<int>(k);
         const Piece& b = pieces_[k];
         if (!combatant(j) || j == i || b.owner == a.owner || !detail::enemies(s_, a.owner, b.owner)) continue;
+        if (only != 0 && !(maskOf(j) & only)) continue;
+        // When firing, only candidates within the longest ready range count (spec 04 §16).
+        if (range >= 0 && dist(i, j) > range) continue;
         const TargetCategory cat = categoryFor(j, a.owner);
         if (S.dontFireOn[static_cast<size_t>(cat)]) continue;
         if (b.kind == Kind::Planet) {
@@ -1237,10 +1313,12 @@ std::vector<int> Battle::sortedTargets(int i, const Strategy& S) {
         }
         list.push_back(c);
     }
+    // The Damage Percent filters apply first; if they leave nothing, the
+    // candidates are taken again without them (spec 04 §16).
+    if (std::any_of(list.begin(), list.end(), [](const Candidate& c) { return c.fresh; }))
+        std::erase_if(list, [](const Candidate& c) { return !c.fresh; });
     const bool typeFirst = S.typePriorityFirst;
-    // Targets past the damage percentage come last: the choice falls back to them when nothing else is left.
     std::sort(list.begin(), list.end(), [&](const Candidate& x, const Candidate& y) {
-        if (x.fresh != y.fresh) return x.fresh;
         if (typeFirst && x.priority != y.priority) return x.priority < y.priority;
         if (x.keys != y.keys) return x.keys < y.keys;
         if (!typeFirst && x.priority != y.priority) return x.priority < y.priority;   // (inferred) later tie-break
@@ -1252,56 +1330,142 @@ std::vector<int> Battle::sortedTargets(int i, const Strategy& S) {
     return out;
 }
 
-int64_t Battle::incomingSeekerDamage(int t) const {
-    int64_t total = 0;
-    for (size_t k = 0; k < pieces_.size(); ++k) {
-        const Piece& sk = pieces_[k];
-        if (!sk.alive || sk.kind != Kind::Seeker || sk.seekTarget != t) continue;
+// Every weapon and warhead of the piece, one per unit or platform, in design
+// order (stack, then entry; the units of a stack in turn).
+std::vector<Arm> Battle::arms(int i) const {
+    const Piece& p = pieces_[i];
+    std::vector<Arm> out;
+    auto add = [&](const std::vector<Weapon>& list, bool warhead) {
+        for (size_t k = 0; k < list.size(); ++k)
+            for (int n = 0; n < static_cast<int>(list[k].reload.size()); ++n) out.push_back(Arm{warhead, k, n, -1});
+    };
+    add(p.weapons, false);
+    add(p.warheads, true);
+    std::stable_sort(out.begin(), out.end(), [&](const Arm& a, const Arm& b) {
+        const Weapon& x = weaponOf(i, a);
+        const Weapon& y = weaponOf(i, b);
+        return std::tuple{x.stack, x.entry, a.instance} < std::tuple{y.stack, y.entry, b.instance};
+    });
+    return out;
+}
+
+const Weapon& Battle::weaponOf(int i, const Arm& a) const { return a.warhead ? pieces_[i].warheads[a.index] : pieces_[i].weapons[a.index]; }
+
+// Intact and ready: its unit or platform is there and its reload counter is 0 (a warhead's always is).
+bool Battle::ready(int i, const Arm& a) const {
+    const Weapon& w = weaponOf(i, a);
+    return a.instance < instances(i, w) && w.reload[static_cast<size_t>(a.instance)] == 0;
+}
+
+// Whether a weapon reaches a target from where its piece stands: damage above
+// 0 at the range distance; a seeker, within its travel of the target's centre
+// square (inferred: straight to the centre square).
+bool Battle::reaches(int i, const Weapon& w, int t) const {
+    if (w.kind() == WeaponKind::Seeking) {
         const auto [cx, cy] = centreOf(t);
-        const int travel = sk.travelled + std::max(std::abs(cx - sk.x), std::abs(cy - sk.y));
-        total += int64_t{weaponDamage(r_, sk.seekWeapon.de, std::clamp(travel, 1, 20))} * sk.members;
+        const auto [sx, sy] = centreOf(i);
+        return std::max(std::abs(cx - sx), std::abs(cy - sy)) <= w.reach;
     }
-    return total;
+    return weaponDamage(r_, w.de, dist(i, t)) > 0;
 }
 
-int Battle::pickTarget(int i, const Weapon& w, const std::vector<int>& targets) {
-    const Piece& a = pieces_[i];
-    const bool pd = w.kind() == WeaponKind::PointDefense;
-    const bool seeking = w.kind() == WeaponKind::Seeking;
-    const bool moves = w.type == DamageType::PushesTarget || w.type == DamageType::PullsTarget || w.type == DamageType::RandomTargetMovement;
-    for (int t : targets) {
-        const Piece& b = pieces_[t];
-        // A target converted by an earlier shot of this volley is no longer hostile (spec 04 §2).
-        if (!combatant(t) || !hostileTo(i, t) || !(w.targets & maskOf(t))) continue;
-        if (seeking) {
-            // A seeker needs its target within travel range (inferred: straight to the centre square).
-            const auto [cx, cy] = centreOf(t);
-            const auto [sx, sy] = centreOf(i);
-            if (std::max(std::abs(cx - sx), std::abs(cy - sy)) > w.reach) continue;
-        } else if (weaponDamage(r_, w.de, dist(i, t)) <= 0) {
-            continue;
+// How the computer gives out targets (spec 04 §16, §19.2 Q60, confirmed:
+// binary). The candidates are sorted by the strategy; the main target is the
+// first. Only the first B candidates take weapons, B the target budget. They
+// are walked in as many rounds as there are of them (at least two); in each
+// round every candidate in turn takes each weapon, in design order, that is
+// intact and ready, has no target yet, has the candidate's category in its
+// target set and a damage type that can affect it (and, when firing, reaches
+// it), until its overkill total reaches the limit. A push, pull or teleport
+// weapon closes its candidate for the rest of the round (history 1.73). Every
+// weapon takes part, point-defense and warheads included. A fighter group
+// gives all its weapons one target: the first candidate its first ready
+// weapon can hit and affect (else the next ready weapon's). Warheads are
+// checked against the first total, as direct fire is (inferred, spec 04
+// §19.3 Q79).
+Targeting Battle::chooseTargets(int i, bool firing, OverkillTotals* carried, uint8_t only) {
+    Targeting out;
+    out.arms = arms(i);
+    int range = -1;
+    if (firing) {
+        // Only candidates within the piece's longest ready range count: each
+        // weapon's whole reach, a mounted one's beyond 20 too (inferred, spec 04 §19.3 Q84).
+        range = 0;
+        for (const Arm& a : out.arms)
+            if (ready(i, a)) range = std::max(range, weaponOf(i, a).reach);
+    }
+    const std::vector<int> candidates = sortedTargets(i, strategyOf(i), range, only);
+    if (candidates.empty()) return out;
+    out.main = candidates.front();
+    auto fits = [&](const Arm& a, int c) {
+        const Weapon& w = weaponOf(i, a);
+        if (!(w.targets & maskOf(c)) || !canAffect(w.type, c, i)) return false;
+        return !firing || reaches(i, w, c);
+    };
+    const Piece& p = pieces_[i];
+    if (p.kind == Kind::UnitGroup && p.vtype == VehicleType::Fighter) {
+        int target = -1;
+        for (const Arm& a : out.arms) {
+            if (!ready(i, a)) continue;
+            for (int c : candidates)
+                if (fits(a, c)) {
+                    target = c;
+                    break;
+                }
+            if (target >= 0) break;
         }
-        if (overkill(i, t, seeking)) continue;
-        const bool engaged = std::find(a.engaged.begin(), a.engaged.end(), t) != a.engaged.end();
-        if (!pd && !engaged && static_cast<int>(a.engaged.size()) >= a.budget) continue;
-        if (!canAffect(w.type, t, i)) continue;
-        if (moves && b.pushed) continue;   // spread push/pull/teleport over different enemies (history 1.73)
-        return t;
+        for (Arm& a : out.arms) a.target = target;
+        return out;
     }
-    return -1;
+    const size_t budget = std::min(candidates.size(), static_cast<size_t>(std::max(1, p.budget)));
+    OverkillTotals local;
+    OverkillTotals& totals = carried ? *carried : local;
+    const size_t rounds = std::max<size_t>(2, budget);
+    for (size_t round = 0; round < rounds; ++round) {
+        for (size_t k = 0; k < budget; ++k) {
+            const int c = candidates[k];
+            for (Arm& a : out.arms) {
+                if (a.target >= 0 || !ready(i, a) || !fits(a, c)) continue;
+                const Weapon& w = weaponOf(i, a);
+                const bool seeking = w.kind() == WeaponKind::Seeking;
+                auto& [all, seekers] = totals[c];
+                if (overkill(c, seeking ? seekers : all)) continue;
+                a.target = c;
+                const int64_t damage = int64_t{weaponDamage(r_, w.de, dist(i, c))} * firedTogether(i, w);
+                all += damage;
+                if (seeking) seekers += damage;
+                if (w.type == DamageType::PushesTarget || w.type == DamageType::PullsTarget || w.type == DamageType::RandomTargetMovement)
+                    break;   // the candidate is closed for the rest of this round
+            }
+        }
+    }
+    return out;
 }
 
-// The target a ready weapon has while its piece plans its move: the first of
-// the sorted targets it can hit, wherever it stands (inferred: range and the
-// target budget are left to the moment it fires).
-int Battle::planTarget(int i, const Weapon& w, const std::vector<int>& targets) {
-    const bool seeking = w.kind() == WeaponKind::Seeking;
-    for (int t : targets) {
-        if (!combatant(t) || !hostileTo(i, t) || !(w.targets & maskOf(t))) continue;
-        if (overkill(i, t, seeking) || !canAffect(w.type, t, i)) continue;
-        return t;
-    }
-    return -1;
+// A drone keeps its target while that is a hostile piece still owned as when
+// it was picked: the target its Attack pursuit named (any kind), or one it
+// picked among ships, planets and satellites. Otherwise it picks a new one as
+// the computer gives out targets, with the overkill totals carried over from
+// the drones that chose before it in this phase (spec 04 §10.7, §16; spec 03
+// §19 Q68). Its target is that of its first weapon given one, else the main
+// target (inferred, spec 04 §19.3 Q80).
+void Battle::updateDroneTarget(int i) {
+    Piece& p = pieces_[i];
+    const int t = p.droneTarget;
+    if (t >= 0 && combatant(t) && pieces_[t].kind != Kind::Seeker && hostileTo(i, t) && pieces_[t].owner == p.droneTargetOwner &&
+        (p.droneOrderTarget || (maskOf(t) & kDroneTargets)))
+        return;
+    const Targeting T = chooseTargets(i, false, &droneTotals_, kDroneTargets);
+    int pick = T.main;
+    for (const Arm& a : T.arms)
+        if (a.target >= 0) {
+            pick = a.target;
+            break;
+        }
+    Piece& q = pieces_[i];
+    q.droneTarget = pick;
+    q.droneOrderTarget = false;
+    q.droneTargetOwner = pick >= 0 ? pieces_[pick].owner : EmpireId{};
 }
 
 // ---- Actions --------------------------------------------------------------------------------------------
@@ -1327,9 +1491,20 @@ std::string Battle::label(int i) const {
     return std::format("{} ({})", p.name, who);
 }
 
+void Battle::beginPhase(EmpireId e) {
+    // The danger map is built once, as the side's movement begins (its drones
+    // move first), and is not updated as pieces move (spec 04 §16.1). The
+    // overkill totals that drones choosing new targets carry over from one to
+    // the next start afresh with the side's phase (spec 04 §16; the span is
+    // inferred, §19.3 Q80).
+    buildDanger(e);
+    droneTotals_.clear();
+}
+
 void Battle::phase(EmpireId e) {
     // The side's drones move and attack, then its seekers, then everything else
     // (confirmed: binary); computer carriers launch as they act.
+    beginPhase(e);
     phaseDrones(e);
     moveSeekers(e);
     phasePieces(e);
@@ -1338,35 +1513,57 @@ void Battle::phase(EmpireId e) {
 void Battle::phaseDrones(EmpireId e) {
     for (size_t k = 0; k < pieces_.size(); ++k)
         if (pieces_[k].alive && pieces_[k].owner == e && pieces_[k].kind == Kind::UnitGroup && pieces_[k].vtype == VehicleType::Drone &&
-            !acted_[k]) {
-            acted_[k] = 1;
-            droneAct(static_cast<int>(k));
-        }
+            !acted_[k])
+            act(static_cast<int>(k));
 }
 
 void Battle::phasePieces(EmpireId e) {
-    // Spec 04 §16.1: the danger map is built once, as the side's movement
-    // begins; group leaders act first, then the others in piece order (planets
-    // only launch then); after all have moved, every piece that has not acted
-    // fires (confirmed: binary).
-    buildDanger(e);
-    auto ready = [&](size_t k) {
-        return !acted_[k] && pieces_[k].alive && pieces_[k].owner == e && pieces_[k].kind != Kind::Seeker && pieces_[k].kind != Kind::Obstacle;
+    // Spec 04 §16.1, §19.2 Q62 (confirmed: binary): the pieces act one at a
+    // time, group leaders first, then the others, in piece order, and after
+    // every action the search starts again from the first piece. A ship or
+    // planet with fighters or drones aboard launches when the search reaches
+    // it, with or without movement left, so a carrier reached again launches
+    // again whenever its limits and rate allow; a piece that moves then plans
+    // and moves in the same action; planets only launch. After all have moved,
+    // every piece of the side that has not acted fires.
+    auto own = [&](size_t k) {
+        return pieces_[k].alive && pieces_[k].owner == e && pieces_[k].kind != Kind::Seeker && pieces_[k].kind != Kind::Obstacle;
     };
-    auto mover = [&](size_t k) { return pieces_[k].kind == Kind::Vehicle || pieces_[k].kind == Kind::UnitGroup; };
-    auto still = [&](size_t k) { return pieces_[k].kind == Kind::Planet || (pieces_[k].kind == Kind::UnitGroup && pieces_[k].vtype == VehicleType::Satellite); };
-    for (size_t k = 0; k < pieces_.size(); ++k)
-        if (ready(k) && pieces_[k].isLeader && mover(k) && !still(k)) act(static_cast<int>(k));
-    for (size_t k = 0; k < pieces_.size(); ++k) {
-        if (!ready(k)) continue;
-        if (still(k)) {
-            if (pieces_[k].kind == Kind::Planet) launchFrom(static_cast<int>(k));
-            continue;
+    auto mover = [&](size_t k) {
+        const Piece& p = pieces_[k];
+        return (p.kind == Kind::Vehicle || p.kind == Kind::UnitGroup) && !(p.kind == Kind::UnitGroup && p.vtype == VehicleType::Satellite);
+    };
+    auto carrier = [&](size_t k) { return pieces_[k].kind == Kind::Vehicle || pieces_[k].kind == Kind::Planet; };
+    // Carriers whose launch came to nothing since the last action (nothing changed for them since).
+    std::vector<char> idle(pieces_.size(), 0);
+    for (;;) {
+        idle.resize(pieces_.size(), 0);
+        int pick = -1;
+        bool launchOnly = false;
+        for (const bool leaders : {true, false}) {
+            for (size_t k = 0; k < pieces_.size() && pick < 0; ++k) {
+                if (!own(k) || (leaders && !pieces_[k].isLeader)) continue;
+                if (!acted_[k] && mover(k)) pick = static_cast<int>(k);
+                else if (carrier(k) && !idle[k] && !pieces_[k].mothballed) {
+                    pick = static_cast<int>(k);
+                    launchOnly = true;
+                }
+            }
+            if (pick >= 0) break;
         }
-        act(static_cast<int>(k));
+        if (pick < 0) break;
+        if (launchOnly) {
+            if (launchFrom(pick) <= 0) {
+                idle[static_cast<size_t>(pick)] = 1;
+                continue;
+            }
+        } else {
+            act(pick);
+        }
+        std::fill(idle.begin(), idle.end(), 0);
     }
     for (size_t k = 0; k < pieces_.size(); ++k)
-        if (ready(k)) {
+        if (own(k) && !acted_[k]) {
             acted_[k] = 1;
             fire(static_cast<int>(k));
         }
@@ -1381,12 +1578,15 @@ void Battle::act(int i) {
         fire(i);
         return;
     }
-    if (pieces_[i].kind == Kind::UnitGroup && pieces_[i].vtype == VehicleType::Drone) {
-        droneAct(i);
-        return;
-    }
-    // A member that keeps its formation heads for its slot (spec 04 §16.1).
-    if (leaderOf(i) >= 0 && pieces_[i].hasSlot) {
+    // Drones pick their own targets, then move by their strategies like any
+    // piece: Ram makes them ram their drone target (spec 04 §10.7, §16.1).
+    if (pieces_[i].kind == Kind::UnitGroup && pieces_[i].vtype == VehicleType::Drone) updateDroneTarget(i);
+    move(i);
+}
+
+void Battle::move(int i) {
+    // A member that keeps its formation heads for its place (spec 04 §16.1).
+    if (leaderOf(i) >= 0 && hasPlace(i)) {
         if (!leavesFormation(i)) {
             followLeader(i, true);
             if (pieces_[i].alive) fire(i);
@@ -1395,56 +1595,60 @@ void Battle::act(int i) {
         }
         // It leaves the formation: only its own marks are cleared (spec 03 §10).
         if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[i].owner, i});
-        pieces_[i].leader = -1;
         pieces_[i].group = -1;
-        pieces_[i].hasSlot = false;
-        pieces_[i].fleetMember = false;
-    } else if (pieces_[i].isLeader && !pieces_[i].tacticalGroup && leavesFormation(i)) {
-        // A fleet's leader that leaves the formation clears only its own marks: its
-        // members stay in the group with the fleet strategy, but have no leader to
-        // follow and move on their own (spec 03 §10).
+        pieces_[i].member = 0;
+    } else if (pieces_[i].isLeader && leavesFormation(i)) {
+        // A leader that leaves the formation clears only its own marks: its
+        // members stay in the group (a fleet's keep its strategy) but have no
+        // leader to follow and move on their own (spec 03 §10).
         if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[i].owner, i});
         pieces_[i].isLeader = false;
+        pieces_[i].group = -1;
+        pieces_[i].formation = -1;
     }
-    // Each piece: chooses a destination; fires first if that square is farther
-    // (aim distance) from the target of its first ready weapon than its current
-    // square is; moves; drops troops, rams or boards; then fires again with
-    // whatever is still ready (confirmed: binary). One move per phase.
-    const MovePlan mv = plan(i);
-    const int t = mv.target;
-    int aimTarget = -1;
-    {
-        const std::vector<int> targets = sortedTargets(i, strategyOf(i));
-        for (const Weapon& w : pieces_[i].weapons) {
-            if (w.kind() == WeaponKind::PointDefense || instances(i, w) <= 0) continue;
-            bool readyNow = false;
-            for (int k = 0; k < instances(i, w); ++k) readyNow = readyNow || w.reload[static_cast<size_t>(k)] == 0;
-            if (!readyNow) continue;
-            aimTarget = planTarget(i, w, targets);
-            if (aimTarget >= 0) break;
+    // Each piece gives its weapons targets (without the distance check),
+    // builds its attack map and chooses a destination; it fires first if that
+    // square is farther (aim distance) from the target of its first ready
+    // weapon that has one than its current square is; it moves; it drops
+    // troops, rams or boards; then it fires again with whatever is still ready
+    // (spec 04 §16.1, confirmed: binary). One move per phase.
+    const Targeting T = chooseTargets(i, false);
+    // Surrounded pieces (spec 04 §16.1, spec 03 §10, confirmed: binary): a piece
+    // that follows no formation place and finds every square on the map around
+    // its footprint taken makes no plan and does not move, but still fires;
+    // its fire-first test measures from square (0, 0). A leader's whole group
+    // is dissolved first. Its weapons are given their targets first, so that
+    // test can fire first (inferred, spec 04 §19.3 Q78).
+    MovePlan mv;
+    const bool stuck = surrounded(i);
+    if (stuck) {
+        if (pieces_[i].isLeader) dissolveByStrategy(i);
+    } else {
+        mv = plan(i, T);
+    }
+    // The first ready weapon in design order, not point-defense, that has a target (a warhead counts).
+    for (const Arm& a : T.arms)
+        if (a.target >= 0 && ready(i, a) && weaponOf(i, a).kind() != WeaponKind::PointDefense) {
+            mv.aim = a.target;
+            break;
         }
+    if (mv.aim >= 0 && combatant(mv.aim)) {
+        const Piece& q = pieces_[mv.aim];
+        if (cheb(mv.dest.first, mv.dest.second, q.x, q.y) > cheb(pieces_[i].x, pieces_[i].y, q.x, q.y)) fire(i);
     }
-    bool fireFirst = false;
-    if (aimTarget >= 0 && !mv.path.empty()) {
-        const Piece& q = pieces_[aimTarget];
-        fireFirst = cheb(mv.path.back().first, mv.path.back().second, q.x, q.y) > cheb(pieces_[i].x, pieces_[i].y, q.x, q.y);
-    }
-    if (fireFirst) fire(i);
     if (!pieces_[i].alive) return;
     const bool leads = pieces_[i].isLeader;
     logMove(i, mv.path);
     walk(i, mv.path);
     if (!pieces_[i].alive) return;
-    // After the leader's move the group dissolves when every square on the map
-    // around it is taken (spec 03 §10); otherwise the members follow, each toward
-    // its slot around the leader's new square (spec 04 §5).
-    if (leads && pieces_[i].isLeader && surrounded(i)) dissolveByStrategy(i);
+    // The members follow, each toward its place around the leader's new square (spec 04 §5).
     if (leads && pieces_[i].isLeader)
         for (size_t m = 0; m < pieces_.size(); ++m)
-            if (pieces_[m].alive && leaderOf(static_cast<int>(m)) == i && pieces_[m].hasSlot && pieces_[m].mp > 0 && !acted_[m] &&
+            if (pieces_[m].alive && leaderOf(static_cast<int>(m)) == i && hasPlace(static_cast<int>(m)) && pieces_[m].mp > 0 && !acted_[m] &&
                 !leavesFormation(static_cast<int>(m)))
                 followLeader(static_cast<int>(m), true);
-    if (t >= 0 && combatant(t) && dist(i, t) <= 1) {
+    const int t = mv.target;
+    if (!stuck && t >= 0 && combatant(t) && dist(i, t) <= 1) {
         switch (mv.mode) {
             case MoveStrategy::DropTroops: dropTroops(i, t); break;
             case MoveStrategy::BoardEnemyShips: board(i, t); break;
@@ -1461,25 +1665,30 @@ void Battle::act(int i) {
 
 void Battle::fire(int i) {
     if (!combatant(i) || pieces_[i].kind == Kind::Seeker || pieces_[i].mothballed || !hasSupply(i)) return;
-    const Strategy& S = strategyOf(i);
-    const std::vector<int> targets = sortedTargets(i, S);
-    // Weapons fire one at a time in design order (confirmed: binary).
-    for (size_t wi = 0; wi < pieces_[i].weapons.size(); ++wi) {
-        for (size_t k = 0;; ++k) {
-            if (!pieces_[i].alive || !hasSupply(i)) return;
-            const Weapon& w = pieces_[i].weapons[wi];
-            if (k >= static_cast<size_t>(instances(i, w))) break;
-            if (w.reload[k] > 0) continue;
-            const int t = pickTarget(i, w, targets);
-            if (t < 0) break;
-            if (logging(i)) {
-                TacticalOrder o{TacticalOrder::Kind::Fire, pieces_[i].owner, i, t};
-                o.weapon = static_cast<int>(wi);
-                o.instance = static_cast<int>(k);
-                logOrder(std::move(o));
-            }
-            shoot(i, wi, k, t);
+    // Targets for all weapons at once, with the distance check; then the
+    // weapons fire one at a time in design order (spec 04 §6, §16, confirmed:
+    // binary). Warheads get targets but never fire.
+    const Targeting T = chooseTargets(i, true);
+    for (const Arm& a : T.arms) {
+        if (a.warhead || a.target < 0) continue;
+        if (!pieces_[i].alive || !hasSupply(i)) return;
+        const Weapon& w = pieces_[i].weapons[a.index];
+        const int t = a.target;
+        if (!ready(i, a)) continue;
+        // A target destroyed, converted or moved away by an earlier shot of this volley is passed over.
+        if (!combatant(t) || !hostileTo(i, t) || !reaches(i, w, t)) continue;
+        // The target budget (point-defense is outside it, spec 04 §6).
+        const Piece& p = pieces_[i];
+        if (w.kind() != WeaponKind::PointDefense && std::find(p.engaged.begin(), p.engaged.end(), t) == p.engaged.end() &&
+            static_cast<int>(p.engaged.size()) >= p.budget)
+            continue;
+        if (logging(i)) {
+            TacticalOrder o{TacticalOrder::Kind::Fire, pieces_[i].owner, i, t};
+            o.weapon = static_cast<int>(a.index);
+            o.instance = a.instance;
+            logOrder(std::move(o));
         }
+        shoot(i, a.index, static_cast<size_t>(a.instance), t);
     }
 }
 
@@ -1491,10 +1700,10 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
         Piece& a = pieces_[i];
         if ((a.kind == Kind::Vehicle || a.kind == Kind::UnitGroup) && detail::usesSupply(r_, s_, a.unit)) {
             if (a.unit.supply <= 0) return;   // zero supplies: cannot fire (confirmed: binary)
-            // Supply Amount Used times the weapons fired together (confirmed: binary). A
-            // group's supply is kept per unit here, so each fighter pays for its own guns.
-            const int perHolder = a.kind == Kind::UnitGroup ? w.perUnit : n;
-            a.unit.supply = std::max<int64_t>(0, a.unit.supply - int64_t{detail::supplyPerShot(r_, w.de)} * perHolder);
+            // Supply Amount Used times the weapons fired together, from the
+            // piece's one pool: a fighter group's pool holds its units'
+            // supplies together (spec 04 §6, §19.1 Q56, confirmed: binary).
+            a.unit.supply = std::max<int64_t>(0, a.unit.supply - int64_t{detail::supplyPerShot(r_, w.de)} * n);
         }
         a.weapons[wi].reload[k] = w.reloadRate;
         a.fired = true;
@@ -1507,7 +1716,6 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
         return;
     }
     const int table = weaponDamage(r_, w.de, dist(i, t));
-    assigned_[{pieces_[i].owner.value, t}] += int64_t{table} * n;
     // Direct fire and point-defense roll to hit; a fighter group's weapons roll one by one
     // and the hits add up to one hit (confirmed: binary).
     const int chance = pieces_[i].alwaysHit ? 100 : hitChance(i, w, t);
@@ -1575,40 +1783,55 @@ void Battle::applyHit(int att, int t, DamageType type, int64_t damage) {
     // Push, pull and teleport move the target first; the value then still counts as damage.
     if ((type == DamageType::PushesTarget || type == DamageType::PullsTarget) && att >= 0 && canMove(att, t)) {
         forcedMove(t, att, damage, type == DamageType::PushesTarget);
-        pieces_[t].pushed = true;
     } else if (type == DamageType::RandomTargetMovement && b.kind != Kind::Planet && b.kind != Kind::Seeker) {
         randomMove(t);
-        pieces_[t].pushed = true;
     }
-    // Crew Conversion and the reload types act, then do no damage; shields do not stop them.
+    // Crew Conversion and the reload types act, then do no damage; shields do
+    // not stop them. Against a seeker, Crew Conversion counts as damage like
+    // the other non-hull types (spec 04 §10.1, §19.2 Q66).
+    bool damages = true;
     switch (type) {
         case DamageType::CrewConversion:
-            if (att < 0) return;
+            if (b.kind == Kind::Seeker) break;
+            damages = false;
+            if (att < 0) break;
             if (b.kind == Kind::Vehicle && detail::canAffectVehicle(r_, s_, b.unit, b.sh, type) && rng_.rangeInt(1, 100) <= damage)
                 capture(t, att, false);
             // A conversion weapon able to target planets makes the planet's piece fight for the converter (confirmed: binary).
             else if (b.kind == Kind::Planet && rng_.rangeInt(1, 100) <= damage)
                 convertPlanet(t, att);
-            return;
+            break;
         case DamageType::IncreaseReloadTime:
         case DamageType::DisruptReloadTime:
+            damages = false;
             // Every weapon's reload counter, up to 250; a planet has no Master Computer (confirmed: binary).
             if (b.kind == Kind::Vehicle || b.kind == Kind::UnitGroup || b.kind == Kind::Planet) {
                 if (type == DamageType::IncreaseReloadTime && b.kind == Kind::Vehicle &&
                     detail::hasIntactComponent(r_, s_, b.unit, AbilityKind::MasterComputer))
-                    return;
+                    break;
                 for (Weapon& w : b.weapons)
                     for (int& c : w.reload) c = static_cast<int>(std::min<int64_t>(kMaxReload, c + damage));
             }
-            return;
+            break;
         default: break;
     }
-    switch (pieces_[t].kind) {
-        case Kind::Seeker: seekerHit(att, t, type, damage); break;
-        case Kind::Planet: planetHit(att, t, type, damage); break;
-        case Kind::UnitGroup: groupHit(att, t, type, damage); break;
-        case Kind::Vehicle: shipHit(att, t, type, damage); break;
-        case Kind::Obstacle: break;
+    if (damages) {
+        switch (pieces_[t].kind) {
+            case Kind::Seeker: seekerHit(att, t, type, damage); break;
+            case Kind::Planet: planetHit(att, t, type, damage); break;
+            case Kind::UnitGroup: groupHit(att, t, type, damage); break;
+            case Kind::Vehicle: shipHit(att, t, type, damage); break;
+            case Kind::Obstacle: break;
+        }
+    }
+    // After every hit a group's leader survives, even one its shields absorb
+    // completely, its movement left this combat turn is capped at its new
+    // maximum; if that leaves 0 and its side is automated, the whole group
+    // dissolves (spec 03 §10, §19 Q60, confirmed: binary).
+    Piece& leader = pieces_[t];
+    if (combatant(t) && leader.isLeader && (leader.kind == Kind::Vehicle || leader.kind == Kind::UnitGroup)) {
+        leader.mp = std::min(leader.mp, computeMp(t));
+        if (leader.mp <= 0 && automated(leader.owner)) dissolve(t);
     }
 }
 
@@ -1616,7 +1839,6 @@ void Battle::shipHit(int att, int t, DamageType type, int64_t damage) {
     if (isPlanetOnlyDamage(type)) return;
     Piece& b = pieces_[t];
     const detail::HitResult h = detail::hitVehicle(r_, s_, b.unit, b.sh, b.pool, damage, type, rng_);
-    if (h.reached > 0 || h.shieldDamage > 0) b.damaged = true;
     if (h.destroyed) {
         b.unitsLost = 1;
         kill(t, att);
@@ -1638,7 +1860,6 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
         damage = detail::absorbShields(none, damage, rule);
     }
     if (damage <= 0) return;
-    b.damaged = true;
     std::vector<size_t> entries(b.stacks.size());
     for (size_t k = 0; k < entries.size(); ++k) entries[k] = k;
     std::vector<int> killed;
@@ -1653,9 +1874,11 @@ void Battle::groupHit(int att, int t, DamageType type, int64_t damage) {
 }
 
 void Battle::seekerHit(int att, int t, DamageType type, int64_t damage) {
-    // Spec 04 §10.1 (confirmed: binary): R hit points and a pool P for one member.
+    // Spec 04 §10.1 (confirmed: binary): R hit points and a pool P for one
+    // member. Every type but Shields Only and the two reload types counts as
+    // damage, the planet-only types and Crew Conversion included (§19.2 Q66).
     const detail::DamageRule rule = detail::damageRule(type);
-    if (!rule.structural || rule.shieldsOnly) return;   // a seeker has no shields to drain
+    if (rule.shieldsOnly || type == DamageType::IncreaseReloadTime || type == DamageType::DisruptReloadTime) return;
     if (rule.shieldMultiply != 1 || rule.shieldDivide != 1) {
         ShieldState none;
         damage = detail::absorbShields(none, damage, rule);
@@ -1683,7 +1906,6 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
         // Planet shields stop these too (confirmed: binary); then the effect.
         const int64_t rem = detail::absorbShields(p.sh, damage, detail::damageRule(DamageType::Normal));
         if (rem <= 0) return;
-        p.damaged = true;
         switch (type) {
             case DamageType::PlagueLevel1:
             case DamageType::PlagueLevel2:
@@ -1744,7 +1966,6 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
     // A hull-damaging hit: the planet keeps no pool, so shields take the hit alone (confirmed: binary).
     const int64_t d = detail::absorbShields(p.sh, damage, rule);
     if (d <= 0) return;
-    p.damaged = true;
     // Weapon platforms take it first; when that kills the last of them and
     // other units remain, those take the same full hit again. Otherwise the
     // other stored units take it (spec 04 §11).
@@ -1769,6 +1990,10 @@ void Battle::planetHit(int att, int t, DamageType type, int64_t damage) {
         const bool roll = rng_.rangeInt(1, 3) == 1;
         if (roll && pieces_[t].alive && !pieces_[t].colonyLost) facilityLoss(t);
     }
+    // A hull-damaging hit that got past the shields trims the cargo at once,
+    // after it has damaged the stored units, the population and the
+    // facilities (spec 02 §2, §13 Q54, confirmed: binary).
+    if (rule.hullDamaging && !pieces_[t].colonyLost) trimPlanetCargo(t);
     afterDamage(t);
 }
 
@@ -1783,7 +2008,31 @@ void Battle::cargoHit(int t, DamageType type, int64_t damage, bool platforms) {
     std::vector<int> killed;
     detail::hitUnits(r_, s_, p.unit.cargo.units, entries, p.pool, p.shieldPool, damage, type, rng_, killed);
     for (size_t k = 0; k < killed.size(); ++k)
-        if (killed[k] > 0) s_.design(p.unit.cargo.units[k].design).lost += killed[k];
+        if (killed[k] > 0) {
+            s_.design(p.unit.cargo.units[k].design).lost += killed[k];
+            // The dead still take cargo space until the battle ends (spec 02 §2).
+            detail::joinUnits(p.cargoDead, std::vector<UnitStack>{{p.unit.cargo.units[k].design, killed[k]}});
+        }
+}
+
+// Cargo above the planet's capacity goes (spec 02 §2, §13 Q54, confirmed:
+// binary): the capacity and the cargo as they stand in the battle, the
+// facilities lost in it still giving their space, and the units killed in it
+// still taking theirs. Emptied stacks stay in place until the battle ends
+// (the planet's weapons refer to them).
+void Battle::trimPlanetCargo(int t) {
+    Piece& p = pieces_[t];
+    const Colony* real = s_.colony(p.object);
+    if (!real) return;
+    Colony c = *real;
+    if (p.capturedBy.valid()) c.owner = p.capturedBy;
+    c.population = p.population;
+    c.facilities = p.facilities;
+    c.cargo = p.unit.cargo;
+    Cargo dead;
+    dead.units = p.cargoDead;
+    economy::trimCargoToCapacity(r_, s_, c, cargoSpaceUsed(r_, s_, dead), true);
+    p.unit.cargo = std::move(c.cargo);
 }
 
 void Battle::populationLoss(int att, int t, int64_t millions) {
@@ -1931,8 +2180,9 @@ void Battle::kill(int t, int att) {
     else if (b.kind == Kind::UnitGroup) value = b.tonnageHad;
     creditTonnage(att, value);
     // Empire experience (spec 02 §9, confirmed: binary): the destroyer's empire
-    // gains the value div 10 (a unit group's units counted as for the design
-    // statistics: inferred, spec 02 §13 Q55); seekers credit their launcher's.
+    // gains the value div 10, a unit group's every unit it held, the battle's
+    // earlier dead included (spec 02 §13 Q55, confirmed: binary); seekers
+    // credit their launcher's.
     if (const int k = att >= 0 && pieces_[att].kind == Kind::Seeker ? pieces_[att].launcher : att; k >= 0 && value > 0)
         if (const EmpireId gainer = pieces_[k].owner; gainer.valid() && gainer.index() < s_.empires.size())
             economy::gainExperience(s_.empire(gainer), value / 10);
@@ -1942,21 +2192,29 @@ void Battle::kill(int t, int att) {
 }
 
 void Battle::dissolve(int leader) {
-    // The whole group: its members leave the fleet's group too (spec 03 §10).
-    pieces_[leader].isLeader = false;
+    // The whole group: the leader and every member of its number leave it (spec 03 §10).
+    Piece& l = pieces_[leader];
+    const int number = l.group;
+    const EmpireId owner = l.owner;
+    l.isLeader = false;
+    l.group = -1;
+    l.formation = -1;
+    if (number < 0) return;
     for (Piece& p : pieces_)
-        if (p.leader == leader) {
-            p.leader = -1;
-            p.hasSlot = false;
-            p.fleetMember = false;
+        if (p.owner == owner && p.group == number && !p.isLeader) {
+            p.group = -1;
+            p.member = 0;
         }
 }
 
 void Battle::dissolveByStrategy(int leader) {
-    if (logging(leader))
+    if (logging(leader)) {
+        const Piece& l = pieces_[leader];
         for (size_t m = 0; m < pieces_.size(); ++m)
-            if (pieces_[m].leader == leader && pieces_[m].alive) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[leader].owner, static_cast<int>(m)});
-    if (logging(leader)) logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, pieces_[leader].owner, leader});
+            if (static_cast<int>(m) != leader && pieces_[m].alive && pieces_[m].owner == l.owner && pieces_[m].group == l.group && !pieces_[m].isLeader)
+                logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, l.owner, static_cast<int>(m)});
+        logOrder(TacticalOrder{TacticalOrder::Kind::ClearGroup, l.owner, leader});
+    }
     dissolve(leader);
 }
 
@@ -1976,6 +2234,7 @@ void Battle::capture(int t, int capturer, bool boarding) {
     // The ship changes owner at once (confirmed: binary). Boarding also costs its
     // crew experience and adds the captured-ship reload; conversion does neither.
     // A capture changes no design statistic and gives no experience (spec 04 §15).
+    if (pieces_[t].isLeader) dissolve(t);   // its group, among its old owner's pieces
     Piece& b = pieces_[t];
     const EmpireId newOwner = pieces_[capturer].owner;
     b.owner = newOwner;
@@ -1989,11 +2248,9 @@ void Battle::capture(int t, int capturer, bool boarding) {
     }
     b.fleet = {};
     b.unit.fleet = {};
-    if (b.isLeader) dissolve(t);
-    pieces_[t].leader = -1;
-    pieces_[t].group = -1;
-    pieces_[t].hasSlot = false;
-    pieces_[t].fleetMember = false;
+    b.inFleet = false;
+    b.group = -1;
+    b.member = 0;
     pieces_[t].designStrategy = 0;   // (inferred) the captor's first strategy
     pieces_[t].fleetStrategy = 0;
     pieces_[t].droneTarget = -1;
@@ -2009,9 +2266,9 @@ void Battle::convertPlanet(int t, int converter) {
     Piece& p = pieces_[t];
     const EmpireId newOwner = pieces_[converter].owner;
     if (!newOwner.valid() || p.owner == newOwner) return;
+    if (p.isLeader) dissolve(t);
     p.owner = newOwner;
     p.unit.owner = newOwner;
-    if (p.isLeader) dissolve(t);
     refreshStats(t);
     event(Ev::Captured, t, converter, static_cast<int>(newOwner.value));
     note(std::format("{} converted by {}", p.name, s_.empire(newOwner).name));
@@ -2101,20 +2358,23 @@ void Battle::moveSeekers(EmpireId e) {
 }
 
 // A computer carrier's or planet's launches (spec 04 §10.4, §10.5, §10.7,
-// confirmed: binary): never satellites or mines. Fighters in batches of the
-// strategy's Fighters Launch Group Amount, each a new group from one cargo
-// stack (0: all in one group). Drones one per group, in batches of Drones Per
-// Target, at most Drones Per Target × the hostile ships and bases in the
-// battle − the side's drones already alive (0: all of them). All within the
-// per-turn launch rate.
-void Battle::launchFrom(int i) {
+// §19.2 Q62, confirmed: binary): never satellites or mines. Fighters: the
+// smaller of the launch rate left and the fighters aboard, each stack in
+// batches of the strategy's Fighters Launch Group Amount, each batch a new
+// group (0: all of them in one group). Drones: the total of one launch is the
+// smallest of the rate left, the drones aboard and max(0, Drones Per Target ×
+// the hostile ships and bases − the side's living drones), stacks in cargo
+// order in batches of Drones Per Target, every drone a group of its own;
+// Anti-Planet Drone designs are never launched this way (an option of 0
+// launches every drone). Returns the units launched.
+int Battle::launchFrom(int i) {
     Piece& c = pieces_[i];
-    if (!c.alive || c.mothballed || (c.kind != Kind::Vehicle && c.kind != Kind::Planet) || c.unit.cargo.units.empty()) return;
+    if (!c.alive || c.mothballed || (c.kind != Kind::Vehicle && c.kind != Kind::Planet) || c.unit.cargo.units.empty()) return 0;
     std::array<int, 3> left = launchLeft(i);
-    if (left[kLaunchFighters] + left[kLaunchDrones] <= 0) return;
+    if (left[kLaunchFighters] + left[kLaunchDrones] <= 0) return 0;
     const EmpireId e = c.owner;
-    const uint32_t sIndex = strategyIndex(i);
-    const Strategy& S = strategy(e, sIndex);
+    const Strategy& S = strategy(e, strategyIndex(i));   // the carrier's strategy gives the batches
+    int total = 0;
     auto logLaunch = [&](DesignId design, int count) {
         if (!logging(i)) return;
         TacticalOrder o{TacticalOrder::Kind::Launch, e, i};
@@ -2123,55 +2383,60 @@ void Battle::launchFrom(int i) {
         o.group = static_cast<int>(rec_.events.size());   // a window of its own (a fresh group)
         logOrder(std::move(o));
     };
+    int droneLimit = INT_MAX;
+    if (S.dronesPerTarget > 0) {
+        int hostile = 0, alive = 0;
+        for (size_t k = 0; k < pieces_.size(); ++k) {
+            const Piece& q = pieces_[k];
+            if (!q.alive) continue;
+            if (q.kind == Kind::Vehicle && detail::enemies(s_, e, q.owner)) ++hostile;   // mothballed ones included
+            if (q.kind == Kind::UnitGroup && q.vtype == VehicleType::Drone && q.owner == e) alive += q.unit.count;
+        }
+        droneLimit = std::max(0, S.dronesPerTarget * hostile - alive);
+    }
     for (size_t u = 0; u < pieces_[i].unit.cargo.units.size(); ++u) {
         const UnitStack st = pieces_[i].unit.cargo.units[u];
         if (st.count <= 0) continue;
-        const VehicleType type = r_.hull(s_.design(st.design).hull).type;
+        const Design& d = s_.design(st.design);
+        const VehicleType type = r_.hull(d.hull).type;
         if (type == VehicleType::Fighter) {
             const int batch = S.fighterLaunchGroup > 0 ? S.fighterLaunchGroup : INT_MAX;
             while (left[kLaunchFighters] > 0 && pieces_[i].unit.cargo.units[u].count > 0) {
                 const int n = std::min({batch, left[kLaunchFighters], pieces_[i].unit.cargo.units[u].count});
-                if (spawnUnit(i, st.design, n, sIndex) < 0) break;
+                if (spawnUnit(i, st.design, n) < 0) break;
                 logLaunch(st.design, n);
                 pieces_[i].unit.cargo.units[u].count -= n;
                 pieces_[i].launchedNow[kLaunchFighters] += n;
                 left[kLaunchFighters] -= n;
+                total += n;
             }
         } else if (type == VehicleType::Drone) {
-            int limit = INT_MAX;
-            if (S.dronesPerTarget > 0) {
-                int hostile = 0, alive = 0;
-                for (size_t k = 0; k < pieces_.size(); ++k) {
-                    const Piece& q = pieces_[k];
-                    if (!q.alive) continue;
-                    if (q.kind == Kind::Vehicle && detail::enemies(s_, e, q.owner)) ++hostile;
-                    if (q.kind == Kind::UnitGroup && q.vtype == VehicleType::Drone && q.owner == e) alive += q.unit.count;
-                }
-                limit = std::max(0, S.dronesPerTarget * hostile - alive);
-            }
+            if (S.dronesPerTarget > 0 && datafile::keysEqual(d.designType, "Anti-Planet Drone")) continue;
             const int batch = S.dronesPerTarget > 0 ? S.dronesPerTarget : INT_MAX;
-            while (limit > 0 && left[kLaunchDrones] > 0 && pieces_[i].unit.cargo.units[u].count > 0) {
-                const int n = std::min({batch, limit, left[kLaunchDrones], pieces_[i].unit.cargo.units[u].count});
+            while (droneLimit > 0 && left[kLaunchDrones] > 0 && pieces_[i].unit.cargo.units[u].count > 0) {
+                const int n = std::min({batch, droneLimit, left[kLaunchDrones], pieces_[i].unit.cargo.units[u].count});
                 int launched = 0;
                 for (; launched < n; ++launched)   // every drone is a group of its own
-                    if (spawnUnit(i, st.design, 1, sIndex) < 0) break;
+                    if (spawnUnit(i, st.design, 1) < 0) break;
                 if (launched <= 0) break;
                 logLaunch(st.design, launched);
                 pieces_[i].unit.cargo.units[u].count -= launched;
                 pieces_[i].launchedNow[kLaunchDrones] += launched;
                 left[kLaunchDrones] -= launched;
-                limit -= launched;
+                droneLimit -= launched;
+                total += launched;
                 if (launched < n) break;
             }
         }
     }
-    refreshStats(i);
+    if (total > 0) refreshStats(i);
+    return total;
 }
 
-int Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strategyIndex) {
+int Battle::spawnUnit(int carrier, DesignId design, int count) {
     const auto [cx, cy] = centreOf(carrier);
-    const auto [x, y] = settle(cx, cy, 1, -1);
-    if (x < 0) return -1;
+    const Settled at = settle(cx, cy, 1, -1);
+    if (!at.found) return -1;
     const Design& d = s_.design(design);
     Piece u;
     u.kind = Kind::UnitGroup;
@@ -2182,17 +2447,17 @@ int Battle::spawnUnit(int carrier, DesignId design, int count, uint32_t strategy
     u.stacks = {UnitStack{design, count}};
     u.unit.location = where_;
     u.unit.damage.assign(d.entries.size(), 0);
-    int64_t supply = detail::hullSum(r_, d, AbilityKind::SupplyStorage);
-    for (const DesignEntry& e : d.entries) supply += sumValue1(r_.componentAbilities(e.component), AbilityKind::SupplyStorage);
-    u.unit.supply = supply;   // per unit; new groups start full
+    // One supply pool for the group, filled at launch (spec 04 §19.1 Q56, confirmed: binary).
+    u.unit.supply = initialSupply(r_, s_, u.unit);
     u.vtype = r_.hull(d.hull).type;
     u.name = d.name;
-    u.x = x;
-    u.y = y;
+    u.x = at.x;
+    u.y = at.y;
     u.facing = pieces_[carrier].facing;
     u.carrier = carrier;
     u.launched = true;
-    u.designStrategy = strategyIndex;
+    // A unit group uses its first design's strategy (spec 04 §3 step 8).
+    u.designStrategy = d.owner == u.owner ? d.strategy : 0;
     u.startCount = count;
     u.hpStart = groupHitPoints(u);
     u.tonnageHad = designTonnage(r_, d) * count;
@@ -2213,13 +2478,9 @@ void Battle::joinUnit(int group, DesignId design, int count) {
     if (st != g.stacks.end()) st->count += count;
     else g.stacks.push_back({design, count});
     syncGroup(g);
-    if (g.vtype != VehicleType::Satellite) {
-        // Supply is kept per unit: a group that mixes designs keeps the smallest full load (inferred).
-        const Design& d = s_.design(design);
-        int64_t supply = detail::hullSum(r_, d, AbilityKind::SupplyStorage);
-        for (const DesignEntry& e : d.entries) supply += sumValue1(r_.componentAbilities(e.component), AbilityKind::SupplyStorage);
-        g.unit.supply = std::min(g.unit.supply, supply);
-    }
+    // The group's one supply pool: its capacity is the total Supply Storage of
+    // its units, and every launch into it fills it up (spec 04 §19.1 Q56, confirmed: binary).
+    g.unit.supply = initialSupply(r_, s_, g.unit);
     buildWeapons(g);
     // The weapons already there keep their reload counters; the new units' are ready.
     for (Weapon& w : g.weapons)
@@ -2290,54 +2551,36 @@ bool Battle::leavesFormation(int i) {
     return strategyOf(i).breakFormation[static_cast<size_t>(pieces_[i].category)];
 }
 
-std::pair<MoveStrategy, int> Battle::chooseMode(int i, const Strategy& S) {
-    const MoveStrategy m = strategyInEffect(i);
-    switch (m) {
-        case MoveStrategy::DontGetHurt: return {m, -1};
-        case MoveStrategy::DropTroops: return {m, troopTarget(i)};
-        case MoveStrategy::BoardEnemyShips: return {m, boardTarget(i)};
-        case MoveStrategy::Ram:
-            for (int t : sortedTargets(i, S))
-                if (pieces_[t].kind != Kind::Seeker) return {m, t};
-            return {m, -1};
-        default: {
-            // The range strategies' target: the first one an intact weapon other than point-defense can engage.
-            uint8_t reach = 0;
-            for (const Weapon& w : pieces_[i].weapons)
-                if (w.kind() != WeaponKind::PointDefense && instances(i, w) > 0) reach |= w.targets;
-            if (reach)
-                for (int t : sortedTargets(i, S))
-                    if (maskOf(t) & reach) return {m, t};
-            return {m, -1};
-        }
+namespace {
+
+// A ring of squares at distance d around (cx, cy), cut at the map's border:
+// rows and columns beyond the border collapse onto it, so border squares are
+// counted again for every larger ring (spec 04 §16.1, confirmed: binary).
+void addRing(std::vector<int64_t>& map, int cx, int cy, int d, int64_t v) {
+    if (v == 0) return;
+    auto add = [&](int x, int y) { map[static_cast<size_t>(y * kW + x)] += v; };
+    const int x0 = std::clamp(cx - d, 0, kW - 1), x1 = std::clamp(cx + d, 0, kW - 1);
+    const int y0 = std::clamp(cy - d, 0, kH - 1), y1 = std::clamp(cy + d, 0, kH - 1);
+    if (d == 0) {
+        add(x0, y0);
+        return;
+    }
+    for (int x = x0; x <= x1; ++x) {
+        add(x, y0);
+        if (y1 != y0) add(x, y1);
+    }
+    for (int y = y0 + 1; y < y1; ++y) {
+        add(x0, y);
+        if (x1 != x0) add(x1, y);
     }
 }
+
+} // namespace
 
 // Spec 04 §16.1: the danger map, built once as a side's movement begins.
 void Battle::buildDanger(EmpireId e) {
     danger_.assign(static_cast<size_t>(kW * kH), 0);
     dangerFor_ = e;
-    auto add = [&](int x, int y, int64_t v) { danger_[static_cast<size_t>(y * kW + x)] += v; };
-    // A ring of squares at distance d, cut at the map's border: rows and columns
-    // beyond the border collapse onto it, so border squares are counted again for
-    // every larger ring (confirmed: binary).
-    auto ring = [&](int cx, int cy, int d, int64_t v) {
-        if (v == 0) return;
-        const int x0 = std::clamp(cx - d, 0, kW - 1), x1 = std::clamp(cx + d, 0, kW - 1);
-        const int y0 = std::clamp(cy - d, 0, kH - 1), y1 = std::clamp(cy + d, 0, kH - 1);
-        if (d == 0) {
-            add(x0, y0, v);
-            return;
-        }
-        for (int x = x0; x <= x1; ++x) {
-            add(x, y0, v);
-            if (y1 != y0) add(x, y1, v);
-        }
-        for (int y = y0 + 1; y < y1; ++y) {
-            add(x0, y, v);
-            if (x1 != x0) add(x1, y, v);
-        }
-    };
     for (size_t k = 0; k < pieces_.size(); ++k) {
         const int h = static_cast<int>(k);
         const Piece& p = pieces_[k];
@@ -2345,7 +2588,7 @@ void Battle::buildDanger(EmpireId e) {
         // Neutral obstacles count as hostile here.
         if (p.kind != Kind::Obstacle && (!p.owner.valid() || p.owner == e || !detail::enemies(s_, e, p.owner))) continue;
         const int cx = std::clamp(p.x, 0, kW - 1), cy = std::clamp(p.y, 0, kH - 1);
-        add(cx, cy, kDangerOwnSquare);
+        danger_[static_cast<size_t>(cy * kW + cx)] += kDangerOwnSquare;
         if (p.kind == Kind::Obstacle || p.kind == Kind::Seeker || p.mothballed) continue;
         const int M = computeMp(h);
         // Each ready intact weapon other than point-defense (seeking weapons and
@@ -2353,38 +2596,26 @@ void Battle::buildDanger(EmpireId e) {
         // distance d, out to its longest range + M. An enemy ship's weapons that
         // cannot target ships are left out.
         std::vector<int64_t> rings;
-        auto addWeapon = [&](const DesignEntry& de, uint8_t targets, int64_t count) {
-            if (count <= 0 || (p.kind == Kind::Vehicle && !(targets & kTargetShips))) return;
-            // Its longest range as the strategies see it: at most 20 (spec 03 §19 Q42, confirmed: binary).
-            const int reach = weaponMaxRange(r_, de);
-            if (static_cast<int>(rings.size()) < reach + M + 1) rings.resize(static_cast<size_t>(reach + M + 1), 0);
-            for (int d = 0; d <= reach + M; ++d) rings[static_cast<size_t>(d)] += int64_t{weaponDamage(r_, de, std::max(1, d - M))} * count;
-        };
-        for (const Weapon& w : p.weapons) {
-            if (w.kind() == WeaponKind::PointDefense) continue;
+        auto addWeapon = [&](const Weapon& w) {
+            if (w.kind() == WeaponKind::PointDefense || (p.kind == Kind::Vehicle && !(w.targets & kTargetShips))) return;
             int ready = 0;
             for (int n = 0; n < instances(h, w); ++n) ready += w.reload[static_cast<size_t>(n)] == 0 ? 1 : 0;
-            addWeapon(w.de, w.targets, int64_t{ready} * firedTogether(h, w));
-        }
-        if (p.kind == Kind::Vehicle || p.kind == Kind::UnitGroup) {
-            const std::vector<UnitStack> designs = p.kind == Kind::UnitGroup ? p.stacks : std::vector<UnitStack>{{p.unit.design, 1}};
-            for (const UnitStack& st : designs) {
-                if (st.count <= 0) continue;
-                const Design& d = s_.design(st.design);
-                for (size_t n = 0; n < d.entries.size(); ++n) {
-                    const ruleset::Component& c = r_.component(d.entries[n].component);
-                    if (c.weapon.kind != WeaponKind::Warhead || (p.kind == Kind::Vehicle && !entryIntact(r_, s_, p.unit, n))) continue;
-                    addWeapon(d.entries[n], parseWeaponTargets(c.weapon.targets), st.count);
-                }
-            }
-        }
-        for (size_t d = 0; d < rings.size(); ++d) ring(cx, cy, static_cast<int>(d), rings[d]);
+            const int64_t count = int64_t{ready} * firedTogether(h, w);
+            if (count <= 0) return;
+            // Its longest range as the strategies see it: at most 20 (spec 03 §19 Q42, confirmed: binary).
+            const int reach = weaponMaxRange(r_, w.de);
+            if (static_cast<int>(rings.size()) < reach + M + 1) rings.resize(static_cast<size_t>(reach + M + 1), 0);
+            for (int d = 0; d <= reach + M; ++d) rings[static_cast<size_t>(d)] += int64_t{weaponDamage(r_, w.de, std::max(1, d - M))} * count;
+        };
+        for (const Weapon& w : p.weapons) addWeapon(w);
+        for (const Weapon& w : p.warheads) addWeapon(w);
+        for (size_t d = 0; d < rings.size(); ++d) addRing(danger_, cx, cy, static_cast<int>(d), rings[d]);
         // An enemy ship with total Boarding Attack B adds B ÷ 2 + 1 to every square within its movement.
         if (p.kind == Kind::Vehicle) {
             const int64_t b = detail::componentSum(r_, s_, p.unit, AbilityKind::BoardingAttack);
             if (b > 0)
                 for (int y = std::max(0, cy - M); y <= std::min(kH - 1, cy + M); ++y)
-                    for (int x = std::max(0, cx - M); x <= std::min(kW - 1, cx + M); ++x) add(x, y, b / 2 + 1);
+                    for (int x = std::max(0, cx - M); x <= std::min(kW - 1, cx + M); ++x) danger_[static_cast<size_t>(y * kW + x)] += b / 2 + 1;
         }
     }
 }
@@ -2404,107 +2635,101 @@ std::vector<int64_t> Battle::dangerFor(int i) const {
         const int cx = std::clamp(sk.x, 0, kW - 1), cy = std::clamp(sk.y, 0, kH - 1);
         for (int d = 0; d <= last; ++d) {
             const int64_t v = weaponDamage(r_, sk.seekWeapon.de, std::max(1, d));
-            if (v <= 0) continue;
-            const int x0 = std::clamp(cx - d, 0, kW - 1), x1 = std::clamp(cx + d, 0, kW - 1);
-            const int y0 = std::clamp(cy - d, 0, kH - 1), y1 = std::clamp(cy + d, 0, kH - 1);
-            auto add = [&](int x, int y) { map[static_cast<size_t>(y * kW + x)] += v; };
-            if (d == 0) {
-                add(x0, y0);
-                continue;
-            }
-            for (int x = x0; x <= x1; ++x) {
-                add(x, y0);
-                if (y1 != y0) add(x, y1);
-            }
-            for (int y = y0 + 1; y < y1; ++y) {
-                add(x0, y);
-                if (x1 != x0) add(x1, y);
-            }
+            if (v > 0) addRing(map, cx, cy, d, v);
         }
     }
     return map;
 }
 
-// Spec 04 §16.1: the attack map. For each ready weapon that has a target it
-// can hit, the damage it would deal from each square, measured from the
-// target's top-left square: in full, a fifth for Shields Only, Only Engines and
-// Only Master Computers, nothing for push, pull and teleport; against a ship
-// whose shields are no more than its regeneration, values below its emissive
-// armor count 0 (unless the mover is a fighter or satellite group).
-std::vector<int64_t> Battle::attackMap(int i, const std::vector<int>& targets) {
-    std::vector<int64_t> map(static_cast<size_t>(kW * kH), 0);
+// Spec 04 §16.1 "Attack map", §19.2 Q61 (confirmed: binary): for each of the
+// mover's ready, intact weapons that has a target it can hit (given out as in
+// §16), the damage it would deal from each square, measured from the
+// target's top-left square: at distance d, the weapon's damage at range d
+// times its weight, Rounded; the weight is 1, a fifth for Shields Only, Only
+// Engines and Only Master Computers, and 0 for push, pull and teleport.
+// Against a ship whose shields are no more than its shield regeneration, a
+// weighted value below its emissive armor counts 0 (unless the mover is a
+// fighter or satellite group), judged for each weapon and each distance; each
+// weapon adds its own value. Warheads count like any other weapon;
+// point-defense counts only when no other weapon added anything. The rings
+// have the danger map's over-count along the border, and go out to the
+// weapon's longest range as the strategies see it, at most 20 (inferred, as
+// the danger map, spec 04 §19.3 Q84).
+std::vector<int64_t> Battle::attackMap(int i, const Targeting& T) const {
+    std::vector<int64_t> map(static_cast<size_t>(kW * kH), 0), pointDefense(static_cast<size_t>(kW * kH), 0);
+    bool any = false;
     const Piece& a = pieces_[i];
-    for (const Weapon& w : a.weapons) {
-        if (w.kind() == WeaponKind::PointDefense) continue;
-        int ready = 0;
-        for (int n = 0; n < instances(i, w); ++n) ready += w.reload[static_cast<size_t>(n)] == 0 ? 1 : 0;
-        if (ready <= 0) continue;
+    const bool small = a.kind == Kind::UnitGroup && (a.vtype == VehicleType::Fighter || a.vtype == VehicleType::Satellite);
+    for (const Arm& arm : T.arms) {
+        if (arm.target < 0 || !ready(i, arm)) continue;
+        const Weapon& w = weaponOf(i, arm);
         if (w.type == DamageType::PushesTarget || w.type == DamageType::PullsTarget || w.type == DamageType::RandomTargetMovement) continue;
-        const int t = planTarget(i, w, targets);
-        if (t < 0) continue;
-        const Piece& b = pieces_[t];
+        const Piece& b = pieces_[arm.target];
         const bool fifth = w.type == DamageType::ShieldsOnly || w.type == DamageType::OnlyEngines || w.type == DamageType::OnlyMasterComputers;
         int64_t emissive = 0;
-        if (b.kind == Kind::Vehicle && !(a.kind == Kind::UnitGroup && (a.vtype == VehicleType::Fighter || a.vtype == VehicleType::Satellite))) {
+        if (b.kind == Kind::Vehicle && !small) {
             const Design& d = s_.design(b.unit.design);
             const int64_t regen = detail::componentSum(r_, s_, b.unit, AbilityKind::ShieldRegeneration) + detail::hullSum(r_, d, AbilityKind::ShieldRegeneration);
             if (b.sh.current <= regen)
                 emissive = std::max(detail::componentBest(r_, s_, b.unit, AbilityKind::EmissiveArmor), bestValue1(r_.hullAbilities(d.hull), AbilityKind::EmissiveArmor));
         }
-        const int64_t n = int64_t{ready} * firedTogether(i, w);
-        std::array<int64_t, kRangeTable + 1> byRange{};
-        for (int d = 1; d <= kRangeTable; ++d) {
+        const bool pd = w.kind() == WeaponKind::PointDefense;
+        std::vector<int64_t>& into = pd ? pointDefense : map;
+        const int together = firedTogether(i, w);
+        const int reach = weaponMaxRange(r_, w.de);
+        for (int d = 1; d <= reach; ++d) {
             int64_t v = weaponDamage(r_, w.de, d);
+            if (fifth) v = xmath::divRoundHalfEven(v, 5);
             if (v < emissive) v = 0;
-            v *= n;
-            if (fifth) v /= 5;
-            byRange[static_cast<size_t>(d)] = v;
+            v *= together;
+            if (v > 0 && !pd) any = true;
+            addRing(into, b.x, b.y, d, v);
         }
-        for (int y = 0; y < kH; ++y)
-            for (int x = 0; x < kW; ++x) {
-                const int d = cheb(x, y, b.x, b.y);
-                if (d >= 1 && d <= kRangeTable) map[static_cast<size_t>(y * kW + x)] += byRange[static_cast<size_t>(d)];
-            }
     }
-    return map;
+    return any ? map : pointDefense;
 }
 
-// Spec 04 §16.1 "Choosing the square" for the range strategies. Returns the
-// destination; (-1, -1) means Don't Get Hurt.
-std::pair<int, int> Battle::rangeSquare(int i, MoveStrategy m, int t, const std::vector<int64_t>& danger, const std::vector<int64_t>& attack) {
+// Spec 04 §16.1 "Choosing the square", §19.2 Q61 (confirmed: binary), for the
+// range strategies. Returns the destination; (-1, -1) means Don't Get Hurt.
+std::pair<int, int> Battle::rangeSquare(int i, MoveStrategy m, int t, int pointBlank, const std::vector<int64_t>& danger,
+                                        const std::vector<int64_t>& attack) {
     const Piece& p = pieces_[i];
     const int px = p.x, py = p.y;
     auto at = [](const std::vector<int64_t>& map, int x, int y) { return map[static_cast<size_t>(y * kW + x)]; };
-    // Never a border row or column, nor a square with a piece on it (inferred: its own square may be kept).
-    auto usable = [&](int x, int y) {
-        if (x <= 0 || y <= 0 || x >= kW - 1 || y >= kH - 1) return false;
-        const int o = occupant(x, y);
-        return o < 0 || o == i;
-    };
+    // Never a border row or column, nor a square with a piece on it, the mover's own included.
+    auto usable = [&](int x, int y) { return x > 0 && y > 0 && x < kW - 1 && y < kH - 1 && occupant(x, y) < 0; };
     auto toTarget = [&](int x, int y) { return t >= 0 ? cheb(x, y, pieces_[t].x, pieces_[t].y) : 0; };
+    // Own pieces on a square: only seekers can share a free square (inferred, spec 04 §19.3 Q83).
+    auto ownOn = [&](int x, int y) {
+        int64_t n = 0;
+        for (const Piece& q : pieces_)
+            if (q.alive && q.owner == p.owner && q.x == x && q.y == y) ++n;
+        return n;
+    };
     auto dangerNear = [&] {
         for (int y = std::max(0, py - 10); y <= std::min(kH - 1, py + 10); ++y)
             for (int x = std::max(0, px - 10); x <= std::min(kW - 1, px + 10); ++x)
                 if (at(danger, x, y) > 0) return true;
         return false;
     };
-    // The scan runs column by column; a full tie replaces the choice with a
-    // 1-in-10 chance as the scan goes on (confirmed: binary; the scan order is inferred).
+    // The scan runs column by column, x from 1 to 70 and y from 1 to 61. A full
+    // tie replaces the choice with a 1-in-`tieOdds` chance as the scan goes on;
+    // with no odds the first square found stays.
     struct Best {
         bool found = false;
         int x = -1, y = -1;
         std::array<int64_t, 3> key{};   // smaller is better
     };
-    Rng& dice = planRng_[p.owner.value];
+    Rng& dice = planRng_.at({p.owner.value, p.kind == Kind::UnitGroup && p.vtype == VehicleType::Drone});
     auto scan = [&](auto&& keyOf, auto&& allowed, int tieOdds) {
         Best best;
-        for (int x = 0; x < kW; ++x)
-            for (int y = 0; y < kH; ++y) {
+        for (int x = 1; x < kW - 1; ++x)
+            for (int y = 1; y < kH - 1; ++y) {
                 if (!usable(x, y) || !allowed(x, y)) continue;
                 const std::array<int64_t, 3> key = keyOf(x, y);
                 if (!best.found || key < best.key) {
                     best = Best{true, x, y, key};
-                } else if (key == best.key && dice.below(static_cast<uint64_t>(tieOdds)) == 0) {
+                } else if (key == best.key && tieOdds > 0 && dice.below(static_cast<uint64_t>(tieOdds)) == 0) {
                     best.x = x;
                     best.y = y;
                 }
@@ -2527,10 +2752,17 @@ std::pair<int, int> Battle::rangeSquare(int i, MoveStrategy m, int t, const std:
         Best b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {-at(attack, x, y), toTarget(x, y), 0}; },
                       [&](int x, int y) { return at(danger, x, y) == 0 && at(attack, x, y) > 0; }, 10);
         if (b.found) return {b.x, b.y};
-        // The lowest 1000 × danger ÷ damage, nearest its target.
+        // The lowest 1000 × danger ÷ damage, nearest its target, if that is below 9999.
         b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {1000 * at(danger, x, y) / at(attack, x, y), toTarget(x, y), 0}; },
                  [&](int x, int y) { return at(attack, x, y) > 0; }, 10);
-        if (b.found) return {b.x, b.y};
+        if (b.found && b.key[0] < 9999) return {b.x, b.y};
+        // It can deal damage somewhere, but every such square has 9999 or more:
+        // the most damage, ties to less danger, then fewer own pieces.
+        if (b.found) {
+            b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {-at(attack, x, y), at(danger, x, y), ownOn(x, y)}; },
+                     [&](int x, int y) { return at(attack, x, y) > 0; }, 10);
+            return {b.x, b.y};
+        }
         return fallback();
     };
     switch (m) {
@@ -2543,41 +2775,44 @@ std::pair<int, int> Battle::rangeSquare(int i, MoveStrategy m, int t, const std:
             return fallback();
         }
         case MoveStrategy::PointBlank: {
-            if (t < 0) return optimal();
-            // The square next to the target's top-left square, one step toward the mover.
-            const Piece& q = pieces_[t];
-            return {q.x + sgn(px - q.x), q.y + sgn(py - q.y)};
+            // The square next to its target's top-left square, one step toward the
+            // mover: the target of its last weapon that has one, else the main
+            // target; without one, as Optimal.
+            if (pointBlank < 0) return optimal();
+            return pointBlankSquare(i, pointBlank);
         }
         case MoveStrategy::MaximumRange: {
             if (t < 0) return dangerNear() ? std::pair{px, py} : std::pair{-1, -1};
+            // A ready weapon: point-defense counts as one, and so do warheads (inferred, spec 04 §19.3 Q82).
             bool ready = false;
-            for (const Weapon& w : p.weapons) {
-                if (w.kind() == WeaponKind::PointDefense) continue;
-                for (int n = 0; n < instances(i, w); ++n) ready = ready || w.reload[static_cast<size_t>(n)] == 0;
-            }
+            for (const Arm& a : arms(i)) ready = ready || this->ready(i, a);
             if (!ready || at(attack, px, py) > 0) {
                 // The ring at (the target's longest weapon range + its movement + 2)
-                // from its top-left square: the least-danger square of it within
-                // reach, else its nearest square, else Don't Get Hurt.
+                // from its top-left square, every intact weapon of the target
+                // counting, point-defense included, ready or not (warheads too:
+                // inferred, Q82): the least-danger square of it within reach, else
+                // its nearest square, else Don't Get Hurt. Ties go to the first square found.
                 const Piece& q = pieces_[t];
                 int longest = 0;
                 // The longest range the strategies use is at most 20, even for a weapon
                 // that can fire further (spec 03 §19 Q42, confirmed: binary; weaponMaxRange).
-                for (const Weapon& w : q.weapons)
-                    if (w.kind() != WeaponKind::PointDefense) longest = std::max(longest, std::min(w.reach, weaponMaxRange(r_, w.de)));
+                for (const std::vector<Weapon>* list : {&q.weapons, &q.warheads})
+                    for (const Weapon& w : *list)
+                        if (instances(t, w) > 0) longest = std::max(longest, weaponMaxRange(r_, w.de));
                 const int radius = longest + computeMp(t) + 2;
                 auto onRing = [&](int x, int y) { return cheb(x, y, q.x, q.y) == radius; };
                 Best b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {at(danger, x, y), 0, 0}; },
-                              [&](int x, int y) { return onRing(x, y) && cheb(x, y, px, py) <= p.mp; }, 10);
+                              [&](int x, int y) { return onRing(x, y) && cheb(x, y, px, py) <= p.mp; }, 0);
                 if (b.found) return {b.x, b.y};
-                b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {cheb(x, y, px, py), 0, 0}; }, onRing, 10);
+                b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {cheb(x, y, px, py), 0, 0}; }, onRing, 0);
                 if (b.found) return {b.x, b.y};
                 return {-1, -1};
             }
             // Where it can deal damage: within its movement, the farthest from the
-            // target, else the farthest overall; ties nearer to itself, then a coin flip.
-            Best b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {-int64_t{toTarget(x, y)}, cheb(x, y, px, py), 0}; },
-                          [&](int x, int y) { return at(attack, x, y) > 0 && cheb(x, y, px, py) <= p.mp; }, 2);
+            // target (the first found on ties); else the farthest overall, ties
+            // nearer to itself, then a coin flip.
+            Best b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {-int64_t{toTarget(x, y)}, 0, 0}; },
+                          [&](int x, int y) { return at(attack, x, y) > 0 && cheb(x, y, px, py) <= p.mp; }, 0);
             if (b.found) return {b.x, b.y};
             b = scan([&](int x, int y) -> std::array<int64_t, 3> { return {-int64_t{toTarget(x, y)}, cheb(x, y, px, py), 0}; },
                      [&](int x, int y) { return at(attack, x, y) > 0; }, 2);
@@ -2633,73 +2868,112 @@ std::pair<int, int> Battle::dontGetHurtSquare(int i) const {
     return {bestX, bestY};
 }
 
-MovePlan Battle::plan(int i) {
+// The square next to a target's top-left square, one step toward the mover (spec 04 §16.1).
+std::pair<int, int> Battle::pointBlankSquare(int i, int t) const {
+    const Piece& q = pieces_[t];
+    return {q.x + sgn(pieces_[i].x - q.x), q.y + sgn(pieces_[i].y - q.y)};
+}
+
+// Ram (spec 04 §16.1, §19.2 Q69, confirmed: binary): the free square nearest
+// to the rammer (aim distance) in growing boxes of 0 to 5 squares around the
+// target's top-left square, the first found on ties (the target's top-left
+// square itself if none is free). Each box is scanned column by column from
+// the left, each column from the top, and the rammer's own square is not
+// free (inferred, as the other scans and squares, spec 04 §19.3 Q81).
+std::pair<int, int> Battle::approachSquare(int i, int t) const {
+    const Piece& p = pieces_[i];
+    const Piece& q = pieces_[t];
+    for (int r = 0; r <= 5; ++r) {
+        bool found = false;
+        int bx = 0, by = 0, best = 0;
+        for (int x = q.x - r; x <= q.x + r; ++x)
+            for (int y = q.y - r; y <= q.y + r; ++y) {
+                if (!onMap(x, y) || occupant(x, y) >= 0) continue;
+                const int d = cheb(x, y, p.x, p.y);
+                if (!found || d < best) {
+                    found = true;
+                    bx = x;
+                    by = y;
+                    best = d;
+                }
+            }
+        if (found) return {bx, by};
+    }
+    return {q.x, q.y};
+}
+
+MovePlan Battle::planFor(int i) {
+    if (dangerFor_ != pieces_[i].owner) buildDanger(pieces_[i].owner);
+    return plan(i, chooseTargets(i, false));
+}
+
+void Battle::placeAt(int i, int x, int y) {
+    vacate(i);
+    pieces_[i].x = x;
+    pieces_[i].y = y;
+    occupy(i);
+}
+
+// Spec 04 §16.1 (confirmed: binary): the destination of a piece by its
+// strategy in effect, from the targets its weapons were given (`T`).
+MovePlan Battle::plan(int i, const Targeting& T) {
     MovePlan mv;
-    const Strategy& S = strategyOf(i);
-    std::tie(mv.mode, mv.target) = chooseMode(i, S);
-    if (pieces_[i].mp <= 0) return mv;
+    mv.mode = strategyInEffect(i);
+    // Its weapon target: that of the last weapon (design order) that has one.
+    int weaponTarget = -1;
+    for (const Arm& a : T.arms)
+        if (a.target >= 0) weaponTarget = a.target;
+    const int main = T.main;
     std::pair<int, int> dest{-1, -1};
+    auto rangeMove = [&](MoveStrategy m) {
+        if (dangerFor_ != pieces_[i].owner) buildDanger(pieces_[i].owner);   // (inferred) a piece acting on its own
+        return rangeSquare(i, m, main, weaponTarget >= 0 ? weaponTarget : main, dangerFor(i), attackMap(i, T));
+    };
     switch (mv.mode) {
         case MoveStrategy::DontGetHurt: break;
         case MoveStrategy::DropTroops: {
+            // Without a hostile colony, Don't Get Hurt. While its planet still has
+            // a weapon other than point-defense and warheads and the side has an
+            // armed escort (a piece with such a weapon and a range strategy in
+            // effect), the carrier waits (Don't Get Hurt); otherwise it goes to the
+            // planet's Point Blank square and lands.
+            mv.target = troopTarget(i);
             if (mv.target < 0) break;
-            // While its planet still has guns and the side has an armed escort (a
-            // piece with guns and a range strategy in effect), the carrier waits;
-            // otherwise it goes to the planet's Point Blank square and lands.
             bool escort = false;
             if (pieces_[mv.target].guns)
                 for (size_t k = 0; k < pieces_.size() && !escort; ++k)
                     if (pieces_[k].alive && pieces_[k].owner == pieces_[i].owner && static_cast<int>(k) != i && pieces_[k].guns &&
                         pieces_[k].kind != Kind::Planet && isRangeStrategy(strategyInEffect(static_cast<int>(k))))
                         escort = true;
-            if (escort) break;
-            const Piece& q = pieces_[mv.target];
-            dest = {q.x + sgn(pieces_[i].x - q.x), q.y + sgn(pieces_[i].y - q.y)};
+            if (!escort) dest = pointBlankSquare(i, mv.target);
             break;
         }
         case MoveStrategy::BoardEnemyShips:
-        case MoveStrategy::Ram:
-            if (mv.target < 0) break;
-            mv.path = pathToward(i, mv.target);
-            return mv;
-        default: {
-            const std::vector<int> targets = sortedTargets(i, S);
-            if (dangerFor_ != pieces_[i].owner) buildDanger(pieces_[i].owner);   // (inferred) a piece acting on its own
-            dest = rangeSquare(i, mv.mode, mv.target, dangerFor(i), attackMap(i, targets));
+            // With a target it goes to its Point Blank square (staying put if
+            // already adjacent) and tries the capture; without one it moves as
+            // Optimal Weapons Range if it has a main or weapon target, else Don't
+            // Get Hurt, and makes no capture attempt.
+            mv.target = boardTarget(i);
+            if (mv.target >= 0) dest = dist(i, mv.target) <= 1 ? std::pair{pieces_[i].x, pieces_[i].y} : pointBlankSquare(i, mv.target);
+            else if (main >= 0 || weaponTarget >= 0) dest = rangeMove(MoveStrategy::OptimalRange);
+            break;
+        case MoveStrategy::Ram: {
+            // First the Point Blank square of its weapon target (else its main
+            // target), or Don't Get Hurt without a main target. With a ram target
+            // not adjacent, the approach square; adjacent, it stays put. Without a
+            // ram target it keeps that first move and does not ram.
+            if (main >= 0) dest = pointBlankSquare(i, weaponTarget >= 0 ? weaponTarget : main);
+            mv.target = ramTarget(i);
+            if (mv.target >= 0) dest = dist(i, mv.target) <= 1 ? std::pair{pieces_[i].x, pieces_[i].y} : approachSquare(i, mv.target);
             break;
         }
+        default: dest = rangeMove(mv.mode); break;
     }
     // Don't Get Hurt: the fallback of Drop Troops, Maximum Weapons Range, Board and Ram.
     if (dest.first < 0) dest = dontGetHurtSquare(i);
-    if (dest != std::pair{pieces_[i].x, pieces_[i].y}) mv.path = pathToSquare(i, dest.first, dest.second);
+    mv.dest = dest;
+    if (pieces_[i].mp > 0 && dest != std::pair{pieces_[i].x, pieces_[i].y}) mv.path = pathToSquare(i, dest.first, dest.second);
     return mv;
-}
-
-// Rams, boarding and drones close on their target: greedy steps to a square
-// next to its footprint (inferred).
-std::vector<std::pair<int, int>> Battle::pathToward(int i, int t) const {
-    std::vector<std::pair<int, int>> path;
-    int x = pieces_[i].x, y = pieces_[i].y;
-    for (int left = pieces_[i].mp; left > 0; --left) {
-        const int cur = std::max(gap(x, 1, pieces_[t].x, pieces_[t].size), gap(y, 1, pieces_[t].y, pieces_[t].size));
-        if (cur <= 1) break;
-        int bx = x, by = y, best = cur;
-        for (const auto& [dx, dy] : kDirs) {
-            const int nx = x + dx, ny = y + dy;
-            if (!isFree(nx, ny, i) || std::find(path.begin(), path.end(), std::pair{nx, ny}) != path.end()) continue;
-            const int d = std::max(gap(nx, 1, pieces_[t].x, pieces_[t].size), gap(ny, 1, pieces_[t].y, pieces_[t].size));
-            if (d < best) {
-                best = d;
-                bx = nx;
-                by = ny;
-            }
-        }
-        if (bx == x && by == y) break;
-        x = bx;
-        y = by;
-        path.emplace_back(x, y);
-    }
-    return path;
 }
 
 // Steps toward a square: when the next square is taken, the piece tries the
@@ -2730,14 +3004,10 @@ std::vector<std::pair<int, int>> Battle::pathToSquare(int i, int tx, int ty) con
 }
 
 void Battle::followLeader(int i, bool logMoves) {
-    // Members move toward their formation slot around the leader's square, turned
-    // by the leader's facing, with their own movement points (spec 04 §5).
-    const int l = leaderOf(i);
-    if (l < 0 || !pieces_[i].hasSlot) return;
-    const Piece& leader = pieces_[l];
-    const auto [dx, dy] = rotateSlot(leader.facing, pieces_[i].slotDx, pieces_[i].slotDy);
-    const int tx = std::clamp(leader.x + dx, 0, kW - 1);
-    const int ty = std::clamp(leader.y + dy, 0, kH - 1);
+    // A member moves toward its place around the leader's square, turned by the
+    // leader's facing, with its own movement points (spec 04 §5).
+    if (leaderOf(i) < 0 || !hasPlace(i)) return;
+    const auto [tx, ty] = placeOf(i);
     const std::vector<std::pair<int, int>> path = pathToSquare(i, tx, ty);
     if (logMoves) logMove(i, path);
     walk(i, path);
@@ -2751,41 +3021,20 @@ void Battle::logMove(int i, const std::vector<std::pair<int, int>>& path) {
     logOrder(std::move(o));
 }
 
-void Battle::droneAct(int i) {
-    // Drones pick their own ship, planet or satellite targets and ram them (spec 04 §10.7).
-    int t = pieces_[i].droneTarget;
-    const bool valid = t >= 0 && combatant(t) && pieces_[t].owner != pieces_[i].owner && detail::enemies(s_, pieces_[i].owner, pieces_[t].owner) &&
-                       (maskOf(t) & kDroneTargets) && pieces_[t].owner == pieces_[i].droneTargetOwner;
-    if (!valid) {
-        // A temporary target until the battle ends; one that changed owner is dropped (confirmed: binary).
-        t = -1;
-        for (int c : sortedTargets(i, strategyOf(i)))
-            if (maskOf(c) & kDroneTargets) {
-                t = c;
-                break;
-            }
-        pieces_[i].droneTarget = t;
-        if (t >= 0) pieces_[i].droneTargetOwner = pieces_[t].owner;
-    }
-    if (t < 0) {
-        fire(i);
-        return;
-    }
-    walk(i, pathToward(i, t));
-    if (combatant(i) && combatant(t) && dist(i, t) <= 1 && pieces_[i].mp > 0) ram(i, t);
-    if (combatant(i)) fire(i);   // drones also fire any weapons they carry
-    if (combatant(i)) pieces_[i].mp = 0;
-}
-
+// Board Enemy Ships (spec 04 §16.1, §19.2 Q69, confirmed: binary): a hostile
+// ship or base whose shields are exactly 0 and whose boarding defense is
+// below the boarder's Boarding Attack; among those, the one whose hull comes
+// latest in VehicleSize.txt, then the nearest (aim distance), then the first
+// in piece order.
 int Battle::boardTarget(int i) const {
-    // Enemy ships and bases, those with shields down first, then the nearest.
+    const int64_t attack = detail::componentSum(r_, s_, pieces_[i].unit, AbilityKind::BoardingAttack);
     int best = -1;
     std::tuple<int, int, int> bestKey{};
     for (size_t k = 0; k < pieces_.size(); ++k) {
-        const Piece& b = pieces_[k];
         const int j = static_cast<int>(k);
-        if (!b.alive || b.kind != Kind::Vehicle || !detail::enemies(s_, pieces_[i].owner, b.owner)) continue;
-        const std::tuple<int, int, int> key{b.sh.current > 0 ? 1 : 0, dist(i, j), j};
+        const Piece& b = pieces_[k];
+        if (!b.alive || b.kind != Kind::Vehicle || !hostileTo(i, j) || b.sh.current != 0 || boardingDefense(j) >= attack) continue;
+        const std::tuple<int, int, int> key{-hullRank(j), aimDist(i, j), j};
         if (best < 0 || key < bestKey) {
             best = j;
             bestKey = key;
@@ -2794,17 +3043,43 @@ int Battle::boardTarget(int i) const {
     return best;
 }
 
+// Ram (spec 04 §16.1, §19.2 Q69, confirmed: binary): a drone group's drone
+// target; for any other piece, among the hostile ships and bases (whatever
+// their shields), the one whose hull comes latest in VehicleSize.txt, then the
+// nearest (aim distance), then the first in piece order. Planets and unit
+// groups are never chosen.
+int Battle::ramTarget(int i) const {
+    const Piece& p = pieces_[i];
+    if (p.kind == Kind::UnitGroup && p.vtype == VehicleType::Drone) return p.droneTarget >= 0 && combatant(p.droneTarget) ? p.droneTarget : -1;
+    int best = -1;
+    std::tuple<int, int, int> bestKey{};
+    for (size_t k = 0; k < pieces_.size(); ++k) {
+        const int j = static_cast<int>(k);
+        if (!pieces_[k].alive || pieces_[k].kind != Kind::Vehicle || !hostileTo(i, j)) continue;
+        const std::tuple<int, int, int> key{-hullRank(j), aimDist(i, j), j};
+        if (best < 0 || key < bestKey) {
+            best = j;
+            bestKey = key;
+        }
+    }
+    return best;
+}
+
+// Drop Troops (spec 04 §16.1, §19.2 Q69, confirmed: binary): every hostile
+// colony is a candidate, one where another empire's troops already fight
+// included (the landing is then refused on arrival). The one named by one of
+// the ship's own Attack (or Seek) orders, the last such in piece order; else
+// the most populous, the first on ties.
 int Battle::troopTarget(int i) const {
     const Piece& a = pieces_[i];
-    auto usable = [&](int j) {
-        const Piece& b = pieces_[j];
-        return b.alive && b.kind == Kind::Planet && detail::enemies(s_, a.owner, b.owner) && !contestedBy(b, a.owner);
-    };
-    // A hostile colony named by one of the ship's own Attack orders, else the most populous (confirmed: binary).
-    for (const Order& o : a.unit.orders)
-        if (o.kind == OrderKind::Attack && o.object.valid())
-            for (size_t k = 0; k < pieces_.size(); ++k)
-                if (pieces_[k].kind == Kind::Planet && pieces_[k].object == o.object && usable(static_cast<int>(k))) return static_cast<int>(k);
+    auto usable = [&](int j) { return pieces_[j].alive && pieces_[j].kind == Kind::Planet && hostileTo(i, j); };
+    int named = -1;
+    for (size_t k = 0; k < pieces_.size(); ++k)
+        if (usable(static_cast<int>(k)) &&
+            std::any_of(a.unit.orders.begin(), a.unit.orders.end(),
+                        [&](const Order& o) { return o.kind == OrderKind::Attack && o.object == pieces_[k].object; }))
+            named = static_cast<int>(k);
+    if (named >= 0) return named;
     int best = -1;
     int64_t bestPop = -1;
     for (size_t k = 0; k < pieces_.size(); ++k) {
@@ -3037,8 +3312,9 @@ void Battle::endPhase() {
     ++phaseIndex_;
     dangerFor_ = {};   // the next side builds its own danger map
     // The battle's end is checked only after a phase (confirmed: binary); in the
-    // strategic window only after a whole combat turn, as for every battle
-    // without player sides (inferred, spec 04 §19.2 Q70).
+    // strategic window, as for every battle without player sides, only after a
+    // whole combat turn and the next one's upkeep (advance; spec 04 §19.2 Q70,
+    // confirmed: binary).
     stage_ = !strategic_ && over() ? Stage::Finished : Stage::Between;
 }
 
@@ -3067,11 +3343,21 @@ void Battle::advance() {
         }
         if (phaseIndex_ >= order_.size()) {
             roundOpen_ = false;
-            if (strategic_ && over()) {
-                stage_ = Stage::Finished;
-                return;
-            }
             ++round_;
+            if (strategic_) {
+                // A battle without player sides plays whole combat turns, then the
+                // start-of-turn upkeep of the next one (counter, reloads,
+                // regeneration, movement), and only then checks its end (spec 04 §4,
+                // §19.2 Q70, confirmed: binary).
+                beginRound();
+                if (round_ >= cs_.spaceTurns || over()) {
+                    round_ = std::min(round_ - 1, lastRound());
+                    stage_ = Stage::Finished;
+                    return;
+                }
+                roundOpen_ = true;
+                phaseIndex_ = 0;
+            }
             continue;
         }
         const EmpireId e = order_[phaseIndex_];
@@ -3117,15 +3403,19 @@ void Battle::finish() {
                 fighting.push_back(e);
                 break;
             }
+    // Every participant gets a battle report (spec 04 §15, §19.2 Q73); a battle
+    // the check started with nobody hostile having pieces there ends at once.
+    // A participant that fought nobody is judged by the same rule (inferred,
+    // spec 04 §19.3 Q86).
     std::map<uint32_t, Result> results;
-    for (EmpireId e : fighting) {
+    for (EmpireId e : empires_) {
         const bool mine = hasPieces(e);
         bool enemy = false;
         for (EmpireId o : empires_)
             if (o != e && detail::enemies(s_, e, o) && hasPieces(o)) enemy = true;
         results[e.value] = mine && !enemy ? Result::Win : (!mine && enemy ? Result::Loss : Result::Stalemate);
     }
-    for (EmpireId e : fighting) {
+    for (EmpireId e : empires_) {
         const Result res = results[e.value];
         const char* word = res == Result::Win ? "victory" : res == Result::Loss ? "defeat" : "stalemate";
         rec_.summary.push_back(std::format("{}: {}", s_.empire(e).name, word));
@@ -3163,7 +3453,7 @@ void Battle::finish() {
             tally[p.owner.value].captured.push_back(p.name);
         }
     }
-    for (EmpireId e : fighting)
+    for (EmpireId e : empires_)
         for (const Piece& p : pieces_) {
             if ((p.kind != Kind::Vehicle && p.kind != Kind::UnitGroup) || p.startOwner == e || !detail::enemies(s_, e, p.startOwner)) continue;
             if (p.kind == Kind::UnitGroup) tally[e.value].unitsKilled += p.unitsLost;
@@ -3201,6 +3491,22 @@ void Battle::finish() {
             v->targetVehicle = {};
             v->targetObject = {};
         }
+        // Every surviving piece that was cloaked when the battle began cloaks
+        // again if it still can: a ship or base only while it meets the Cloak
+        // order's conditions (a working part giving cloak level 2 or more in
+        // some sight type, and supplies), a unit group always; a captured or
+        // converted ship for its new owner. The simulator does not (spec 04 §2,
+        // confirmed: binary). The engine has no cloaked colonies.
+        if (p.wasCloaked && !simulated()) {
+            bool can = p.kind == Kind::UnitGroup;
+            if (!can) {
+                const std::vector<ParsedAbility> list = vehicleAbilities(r_, s_, *v);
+                for (size_t t = 0; t < kSightTypes && !can; ++t)
+                    can = abilityPerSightType(list, AbilityKind::CloakLevel, static_cast<SightType>(t)) >= 2;
+                can = can && (v->supply > 0 || detail::unlimitedSupply(r_, s_, *v));
+            }
+            v->status = can ? VehicleStatus::Cloaked : VehicleStatus::Normal;
+        }
     }
 
     // Planets: cargo, landed troops, population, facilities, plague, lost and
@@ -3235,9 +3541,6 @@ void Battle::finish() {
         for (size_t f = 0; f < p.facilities.size(); ++f)
             if (!p.facilityLost[f]) kept.push_back(p.facilities[f]);
         c->facilities = std::move(kept);
-        // Cargo above the capacity left goes when the planet took damage past its
-        // shields (spec 02 §2, §13 Q49, Q54).
-        if (p.damaged) economy::trimCargoToCapacity(r_, s_, *c);
         c->militia = p.militia;
         c->plagueLevel = std::max(c->plagueLevel, p.plague);
         if (p.capturedBy.valid() && c->owner != p.capturedBy) detail::capturePlanet(ctx_, *c, p.capturedBy);
@@ -3250,7 +3553,7 @@ void Battle::finish() {
     struct Spawn {
         EmpireId owner;
         std::vector<UnitStack> stacks;
-        VehicleId target;
+        int64_t supply = 0;
     };
     std::vector<Spawn> spawns;
     std::vector<std::vector<UnitStack>> left(pieces_.size());   // launched groups: units not recovered yet
@@ -3300,23 +3603,24 @@ void Battle::finish() {
         if (u.kind != Kind::UnitGroup) continue;
         if (u.launched) {
             std::erase_if(left[k], [](const UnitStack& st) { return st.count <= 0; });
-            if (u.alive && !left[k].empty()) {
-                const VehicleId target = u.droneTarget >= 0 && pieces_[u.droneTarget].alive ? pieces_[u.droneTarget].source : VehicleId{};
-                spawns.push_back({u.owner, left[k], target});
-            }
+            // A drone's battle target is not kept: with no orders, it is chosen
+            // anew in its next battle (spec 03 §19 Q68).
+            if (u.alive && !left[k].empty()) spawns.push_back({u.owner, left[k], u.unit.supply});
         } else if (Vehicle* v = s_.vehicle(u.source); v && u.alive) {
             setGroupStacks(s_, *v, u.stacks);   // the units of each design that are left
             v->damage.assign(s_.design(v->design).entries.size(), 0);
         }
     }
 
-    // Mood events (Happiness.txt triggers) and logs for the empires that fought.
-    for (EmpireId e : fighting) {
+    // Mood events (Happiness.txt triggers) for the empires that fought, and a
+    // battle report for every participant (spec 04 §15, §19.2 Q73).
+    for (EmpireId e : empires_) {
         const Result res = results[e.value];
         const std::string outcome = res == Result::Win ? "Win" : res == Result::Loss ? "Loss" : "Stalemate";
-        ctx_.mood(e, "Battle in System - " + outcome, where_.system);
+        const bool fought = std::find(fighting.begin(), fighting.end(), e) != fighting.end();
+        if (fought) ctx_.mood(e, "Battle in System - " + outcome, where_.system);
         for (const Piece& p : pieces_)
-            if ((p.kind == Kind::Planet || p.colonyLost) && p.startOwner == e) ctx_.mood(e, "Battle in Sector - " + outcome, where_.system, p.object);
+            if (fought && (p.kind == Kind::Planet || p.colonyLost) && p.startOwner == e) ctx_.mood(e, "Battle in Sector - " + outcome, where_.system, p.object);
         const Tally& t = tally[e.value];
         if (t.shipsLost > 0) {
             ctx_.mood(e, "Any Ship Lost", {}, {}, t.shipsLost);
@@ -3376,9 +3680,9 @@ void Battle::finish() {
         v.name = d.name;
         v.location = where_;
         setGroupStacks(s_, v, sp.stacks);
-        v.supply = vehicleSupplyCapacity(r_, s_, v);
+        // It keeps its one pool, at most what its units hold (spec 04 §19.1 Q56).
+        v.supply = std::min(sp.supply, initialSupply(r_, s_, v));
         v.builtTurn = s_.turn;
-        v.targetVehicle = sp.target;
         s_.addVehicle(std::move(v));
     }
 }
