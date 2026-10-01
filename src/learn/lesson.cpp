@@ -204,6 +204,11 @@ private:
             return std::nullopt;
         }
         c.number = i->get();
+        if (c.number == 0 && fact->fact != Fact::Turn) {
+            // "At least 0" always holds: almost certainly meant as "none".
+            error(value, std::format("'{0} = 0' always holds (numbers mean \"at least\"); for none, write not = {{ {0} = 1 }}", key));
+            return std::nullopt;
+        }
         return c;
     }
 

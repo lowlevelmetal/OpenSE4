@@ -271,6 +271,13 @@ done = { turn = "five" }
     REQUIRE(problems.size() == 1);
     CHECK(problems.front().line == 2);
 
+    // "At least 0" always holds: it is an error, except for the first turn.
+    problems.clear();
+    CHECK_FALSE(parseLesson("title = \"x\"\n[[objective]]\ntext = \"o\"\nwhen = { colonies = 0 }\n", "z.toml", LessonKind::Training, problems));
+    CHECK(hasProblem(problems, 4, "'colonies = 0' always holds"));
+    problems.clear();
+    CHECK(parseLesson("title = \"x\"\n[[objective]]\ntext = \"o\"\nwhen = { turn = 0 }\n", "z.toml", LessonKind::Training, problems));
+
     problems.clear();
     CHECK_FALSE(parseLesson("title = \"x\"\n[[step]]\ntitle = \"s\"\ntext = \"t\"\n", "t.toml", LessonKind::Training, problems).has_value());
     CHECK(hasProblem(problems, 2, "unknown key 'step'"));

@@ -124,7 +124,8 @@ text = "Every colony was lost."     # optional: shown with the result
 
 A condition is a table with one key, or `all = [...]` / `any = [...]` / `not = {...}`
 over conditions; a table with several keys needs all of them. Numbers mean "at least",
-so "fewer than" is written with `not` (`not = { colonies = 1 }`: no colony). The set is
+so "fewer than" is written with `not` (`not = { colonies = 1 }`: no colony); a count of
+0 always holds and is an error (`turn = 0`, "from the first turn", is allowed). The set is
 fixed in code (`learn/condition.hpp`); an unknown key, window id, command name, order
 kind or kind of selection is a load error that names the file and line.
 
