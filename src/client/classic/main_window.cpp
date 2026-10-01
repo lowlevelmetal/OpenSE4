@@ -13,6 +13,7 @@
 #include "game/design.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "learn/ids.hpp"
 
 #include <algorithm>
@@ -712,6 +713,12 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::Cloak:
         case OrderId::Decloak:
             audio().play(id == OrderId::Cloak ? "cloakon" : "cloakoff");
+            // A colony cloaks at once, never through its order list (spec 01 §6.9).
+            if (colony && !v && tagged_.empty()) {
+                const game::CommandResult res = ui.session.issue(game::cmd::CloakColony{colony->planet, id == OrderId::Cloak});
+                if (!res.ok) note(ui, res.error);
+                return;
+            }
             simple(id == OrderId::Cloak ? game::OrderKind::Cloak : game::OrderKind::Decloak);
             return;
         case OrderId::ClearOrders: replaceOrders(ui, {}, false); return;
@@ -1606,7 +1613,8 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             // Colonies carry the owner's small flag at the top right; planets we could
             // colonise get the classic star (green: breathable, red: needs domes).
             for (game::ObjectId id : ids) {
-                if (const game::Colony* col = s.colony(id)) {
+                // The planet is always drawn; a cloaked colony's mark only when it is seen (spec 01 §6.9).
+                if (const game::Colony* col = s.colony(id); col && game::sight::colonyShown(rules, s, ui.session.player(), id)) {
                     const Sprite flag = ui.art.flag(s.empire(col->owner).race.style, false);
                     if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
                     else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, col->owner));

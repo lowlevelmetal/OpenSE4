@@ -4,6 +4,7 @@
 #include "core/log.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 
@@ -499,6 +500,9 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     auto loaded = game::loadGame(file);
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
+    // Loading a game recalculates every colony's cloak and sensor levels
+    // (spec 01 §6.9, confirmed: binary).
+    game::sight::recalculateColonies(*rules, s);
     game::EmpireId player;
     int humans = 0;
     for (const game::Empire& e : s.empires)

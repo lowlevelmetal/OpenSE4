@@ -287,6 +287,7 @@ public:
         c.colonyType = "Test";
         if (population > 0) c.population.push_back({owner, population});
         for (auto f : facilities) c.facilities.push_back(test::facilityIndex(r_, f));
+        sight::recalculateColony(r_, c);  // founded: its cloak and sensor levels (spec 01 §6.9)
         s.colonies[planet.index()] = c;
         return *s.colonies[planet.index()];
     }

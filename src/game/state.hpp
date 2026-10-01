@@ -476,6 +476,15 @@ struct Colony {
     // runs the list. It follows the list rules of spec 03 §8, Repeat included.
     std::vector<Order> orders;
     bool repeatOrders = false;
+    // Colony (planetary) cloaking (spec 01 §6.9, confirmed: binary). The cloak
+    // and sensor levels per sight type come from the colony's facilities
+    // alone and are stored: sight::recalculateColony refreshes them, only when
+    // a facility is completed, Scrap Facilities is used, a battle destroys
+    // facilities, the colony is founded or the game is loaded. The cloaked
+    // mark survives every change of owner.
+    bool cloaked = false;
+    std::array<int, kSightTypes> cloakLevels{1, 1, 1, 1, 1};    // at least 1 in each type
+    std::array<int, kSightTypes> sensorLevels{1, 0, 0, 0, 0};   // EM Active at least 1
 
     int64_t totalPopulation() const {
         int64_t n = 0;

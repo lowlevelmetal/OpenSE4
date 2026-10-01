@@ -970,13 +970,16 @@ private:
 
     Exec execute(Group& g, Order& o) {
         if (g.planet.valid()) {
-            if (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits) return cargo(g, o);
-            // Use Facility looks up the facility at the recorded position and
-            // completes with no effect, cost or message, whether or not that
-            // facility still exists (spec 03 §8, confirmed: binary).
-            if (o.kind == OrderKind::UseFacility) return Exec::Done;
-            if (o.kind == OrderKind::ConvertResources) return convert(g, o);
-            return fail(g, o, "Planets cannot carry out that order.");
+            // A colony of a computer player, or a human's under minister
+            // control with the Ship Cloaking minister on, decloaks before each
+            // of its orders and cloaks again afterwards if it can, whether or
+            // not it was cloaked before (spec 01 §6.9, confirmed: binary).
+            Colony* c = s_.colony(g.planet);
+            const bool minister = c && colonyUnderCloakingMinister(*c);
+            if (minister) c->cloaked = false;
+            const Exec e = colonyOrder(g, o);
+            if (Colony* after = s_.colony(g.planet); minister && after && sight::colonyCanCloak(*after)) after->cloaked = true;
+            return e;
         }
         switch (o.kind) {
             case OrderKind::MoveTo: return moveTo(g, o, o.location);
@@ -1008,6 +1011,16 @@ private:
             case OrderKind::Count: break;
         }
         return fail(g, o, "Unknown order.");
+    }
+
+    Exec colonyOrder(Group& g, Order& o) {
+        if (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits) return cargo(g, o);
+        // Use Facility looks up the facility at the recorded position and
+        // completes with no effect, cost or message, whether or not that
+        // facility still exists (spec 03 §8, confirmed: binary).
+        if (o.kind == OrderKind::UseFacility) return Exec::Done;
+        if (o.kind == OrderKind::ConvertResources) return convert(g, o);
+        return fail(g, o, "Planets cannot carry out that order.");
     }
 
     // A vehicle or colony of an empire whose treaty with `e` is below
@@ -1159,15 +1172,17 @@ private:
         return Exec::Acted;
     }
 
-    // The Ship Cloaking minister handles the vehicle: every vehicle of a
+    // The Ship Cloaking minister handles the vehicle or colony: every one of a
     // computer player, and a human's under minister control while that
-    // minister is on (spec 03 §6.4, §19 Q69; spec 05 §7.1).
-    bool underCloakingMinister(const Vehicle& v) const {
-        if (!v.owner.valid() || v.owner.index() >= s_.empires.size()) return false;
-        const Empire& e = s_.empire(v.owner);
+    // minister is on (spec 03 §6.4, §19 Q69; spec 05 §7.1; spec 01 §6.9).
+    bool underCloakingMinister(EmpireId owner, bool minister) const {
+        if (!owner.valid() || owner.index() >= s_.empires.size()) return false;
+        const Empire& e = s_.empire(owner);
         if (e.kind != PlayerKind::Human || e.ministerAll) return true;
-        return (e.ministers & ministerBit(Minister::ShipCloaking)) != 0 && v.minister;
+        return (e.ministers & ministerBit(Minister::ShipCloaking)) != 0 && minister;
     }
+    bool underCloakingMinister(const Vehicle& v) const { return underCloakingMinister(v.owner, v.minister); }
+    bool colonyUnderCloakingMinister(const Colony& c) const { return underCloakingMinister(c.owner, c.minister); }
 
     // After the Attack's battle check, the vehicles the Ship Cloaking minister
     // decloaked for it cloak again when they still can (§8 Cloak: a working

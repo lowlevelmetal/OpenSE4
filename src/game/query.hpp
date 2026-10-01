@@ -34,7 +34,11 @@ const Colony* ownColonyAt(const GameState& s, EmpireId empire, Location where);
 // work on a planet with zero population, except where noted by the caller.
 std::vector<ParsedAbility> colonyAbilities(const Rules& r, const GameState& s, const Colony& c);
 // Space yard capacity: a facility on an own colony, or an intact component on an own vehicle.
+// colonyHasSpaceYard is the facility (the yard's rate, the one-yard limit);
+// a colony's yard works only while the colony is not cloaked (spec 01 §6.9,
+// confirmed: binary): colonyHasWorkingYard, which spaceYardAt uses.
 bool colonyHasSpaceYard(const Rules& r, const Colony& c);
+bool colonyHasWorkingYard(const Rules& r, const Colony& c);
 bool vehicleHasSpaceYard(const Rules& r, const GameState& s, const Vehicle& v);
 bool spaceYardAt(const Rules& r, const GameState& s, EmpireId empire, Location where);
 // Best "Resource Reclamation" percentage available to `empire` in a sector (0 if none).

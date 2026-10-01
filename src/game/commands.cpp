@@ -1,6 +1,7 @@
 #include "game/commands.hpp"
 
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/movement_internal.hpp"
@@ -129,11 +130,12 @@ struct Applier {
 
     Empire& emp() { return s.empire(e); }
 
-    // An own space yard in the sector: a planet facility, or a ship's Space
-    // Yard component while that ship is not cloaked (spec 03 §14, §15).
+    // An own working space yard in the sector: a planet facility while the
+    // colony is not cloaked, or a ship's Space Yard component while that ship
+    // is not cloaked (spec 03 §14, §15, spec 01 §6.9).
     bool yardAt(Location where) const {
         for (ObjectId o : planetsAt(s, where))
-            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasSpaceYard(r, *c)) return true;
+            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasWorkingYard(r, *c)) return true;
         for (const Vehicle& v : s.vehicles)
             if (v.count > 0 && v.owner == e && v.location == where && v.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(r, s, v))
                 return true;
@@ -376,6 +378,7 @@ struct Applier {
         // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
         emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
+        sight::recalculateColony(r, *col);  // Scrap Facilities refreshes the cloak and sensor levels (spec 01 §6.9)
         // Scrapping the space yard removes vehicles from the queue.
         if (hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard) && !colonyHasSpaceYard(r, *col))
             std::erase_if(col->queue.items, [&](const QueueItem& q) {
@@ -688,6 +691,24 @@ struct Applier {
         }
         const int64_t moved = moveCargo(r, s, *from, *to, space, c.unitDesign, c.populationRace, c.amount, false);
         return moved > 0 ? R{} : R::fail("Nothing could be moved");
+    }
+
+    R operator()(const cmd::CloakColony& c) {
+        Colony* col = ownColony(s, e, c.planet);
+        if (!col) return R::fail("Not your planet");
+        if (c.cloak) {
+            if (col->cloaked) return R::fail("The colony is already cloaked");
+            if (!sight::colonyCanCloak(*col)) return R::fail("No facility of this colony can cloak it");
+            col->cloaked = true;
+            sight::updateKnowledge(r, s);
+            return {};
+        }
+        if (!col->cloaked) return R::fail("The colony is not cloaked");
+        col->cloaked = false;
+        sight::updateKnowledge(r, s);
+        TurnContext contact{r, s, {}, {}, {}};
+        diplomacy::updateContacts(contact);  // Decloak runs the first-contact check at once
+        return {};
     }
 
     R operator()(const cmd::JettisonCargo& c) {
@@ -1212,6 +1233,7 @@ OPENSE4_CMD_NAME(SetInterfaceOptions)
 OPENSE4_CMD_NAME(CarryOutDemand)
 OPENSE4_CMD_NAME(UseDemandEntry)
 OPENSE4_CMD_NAME(JettisonCargo)
+OPENSE4_CMD_NAME(CloakColony)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

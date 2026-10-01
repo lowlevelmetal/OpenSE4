@@ -7,6 +7,7 @@
 #include "game/design.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
@@ -642,7 +643,9 @@ std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v
     if (!detail::inSystem(s.galaxy, planet)) return "That planet no longer exists";
     const SpaceObject& obj = s.galaxy.object(planet);
     if (obj.kind != ObjectKind::Planet) return "Only planets can be colonized";
-    if (s.colony(planet)) return "The planet is already colonized";
+    // A colony the colonizer's owner cannot see (cloaked) leaves no planet to
+    // colonize, as far as it knows (spec 01 §6.9, confirmed: binary).
+    if (s.colony(planet)) return sight::canSeeColony(r, s, v.owner, planet) ? "The planet is already colonized" : "There is no planet here to colonize";
     AbilityKind k = AbilityKind::ColonizeRock;
     if (datafile::keysEqual(obj.surface, "Ice")) k = AbilityKind::ColonizeIce;
     else if (datafile::keysEqual(obj.surface, "Gas Giant") || datafile::keysEqual(obj.surface, "Gas")) k = AbilityKind::ColonizeGas;

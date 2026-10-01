@@ -74,6 +74,15 @@ struct Retrofit { VehicleId vehicle; DesignId design; };  // at an own space yar
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };
 struct AbandonPlanet { ObjectId planet; };
+// Cloak or Decloak a colony (spec 01 §6.9, confirmed: binary): acts at once
+// in both turn styles and is never queued; no cost, no supply, and the
+// construction queue is untouched. Cloak needs a cloak level of 2 or more in
+// some sight type from the colony's facilities; Decloak a cloaked colony.
+// Sight is recalculated, and a Decloak runs the first-contact check at once.
+// A simultaneous game's host carries it out when it applies the player's
+// orders at the start of turn processing, in player and command order
+// (inferred, spec 01 §6.9 open point).
+struct CloakColony { ObjectId planet; bool cloak = true; };
 struct TransferCargo {       // immediate transfer between own holders in the same sector
     VehicleId fromVehicle;
     ObjectId fromPlanet;
@@ -195,7 +204,8 @@ using Command = std::variant<
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
-    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo>;
+    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
+    cmd::CloakColony>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

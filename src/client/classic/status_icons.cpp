@@ -101,8 +101,10 @@ std::vector<int> vehicleStatusCells(const game::Rules& r, const game::GameState&
 std::vector<int> colonyStatusCells(const game::Rules& r, const game::GameState& s, const game::Colony& c, bool connected) {
     std::vector<int> out;
     const auto abilities = game::colonyAbilities(r, s, c);
-    const bool yard = game::colonyHasSpaceYard(r, c);
-    // Colonies do not cloak in our engine (cell 9 would come first).
+    // The cloaked cell first; the yard cell only for a working yard, which a
+    // cloaked colony's is not (spec 06 §4.4, spec 01 §6.9).
+    const bool yard = game::colonyHasWorkingYard(r, c);
+    if (c.cloaked) out.push_back(cell::kCloaked);
     if (yard) out.push_back(cell::kSpaceYard);
     if (c.minister) out.push_back(cell::kMinister);
     // Building: every colony builds (facilities at least), so a non-empty queue (inferred).

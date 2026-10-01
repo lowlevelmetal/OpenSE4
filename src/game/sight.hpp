@@ -63,7 +63,9 @@ SightVector sensorLevels(const Rules& r, const GameState& s, EmpireId viewer, Sy
 // obscure a sector.
 SightVector obscuration(const Rules& r, const GameState& s, const Vehicle& v);
 // Obscuration of a stellar body: storms and nebulae hide planets, asteroid
-// fields and comets, never stars, storms or warp points.
+// fields and comets, never stars, storms or warp points. A planet whose colony
+// is cloaked has the colony's cloak levels in place of 1, raised by the
+// sector's and the system's obscuration (spec 01 §6.9).
 SightVector planetObscuration(const Rules& r, const GameState& s, ObjectId planet);
 constexpr bool detects(const SightVector& sensors, const SightVector& obsc) {
     for (size_t t = 0; t < kSightTypes; ++t)
@@ -73,6 +75,27 @@ constexpr bool detects(const SightVector& sensors, const SightVector& obsc) {
 // Ships, bases, fighter, satellite and drone groups give sensors and presence;
 // mine fields (and troops) do not.
 bool isSensorSource(ruleset::VehicleType t);
+
+// ---- Colony cloaking (spec 01 §6.9, confirmed: binary) -------------------------------------------
+
+// Refreshes the colony's stored cloak and sensor levels from its facilities
+// alone (the planet's own abilities, population, facility damage and racial
+// traits play no part): per sight type the largest `Cloak Level`, at least 1,
+// and the largest `Sensor Level`, EM Active at least 1. A cloaked colony that
+// can no longer cloak is decloaked, without a message. Called only at the
+// moments spec 01 §6.9 names: a facility completed there, Scrap Facilities, a
+// battle that destroyed facilities, the founding of the colony, and (every
+// colony, recalculateColonies) the loading of a saved game.
+void recalculateColony(const Rules& r, Colony& c);
+void recalculateColonies(const Rules& r, GameState& s);
+// The colony can cloak: its stored cloak level is 2 or more in some sight
+// type. Cloaking needs no supply and costs nothing.
+bool colonyCanCloak(const Colony& c);
+// Whether the viewer sees the colony on its map and in its lists (the Planets
+// window, the intelligence target picker, the map's colony mark): always,
+// unless the colony is another empire's and cloaked, when the detection rule
+// decides (canSeeColony).
+bool colonyShown(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 
 // Long-range scanning (spec 01 §6.6, spec 03 §3.3, spec 05 §8 "Design
 // knowledge", confirmed: binary): the viewer sees the foreign vehicle, it

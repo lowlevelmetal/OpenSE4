@@ -520,3 +520,42 @@ TEST_CASE("main window: new ships take the next four-digit serial of their desig
     for (const Vehicle& v : s.vehicles)
         if (v.owner == kMe && v.design != d) CHECK((v.name.ends_with(" 0001") || v.name.ends_with(" 0002")));
 }
+
+TEST_CASE("main window: Cloak and Decloak for colonies, and a cloaked colony's status icons (spec 01 §6.9, spec 06 §2.8, §4.4)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = homeworld(s, kMe);
+    namespace cell = status_cell;
+    OrderSelection colony;
+    colony.planet = home.planet;
+    // No cloaking facility: both dim.
+    LitOrders l = litOrders(orderFacts(r, s, kMe, colony, true, false));
+    CHECK_FALSE(lit(l, OrderId::Cloak));
+    CHECK_FALSE(lit(l, OrderId::Decloak));
+    // A cloak level of 2 or more: Cloak lit; once cloaked, Decloak.
+    home.cloakLevels.fill(2);
+    l = litOrders(orderFacts(r, s, kMe, colony, true, false));
+    CHECK(lit(l, OrderId::Cloak));
+    CHECK_FALSE(lit(l, OrderId::Decloak));
+    home.cloaked = true;
+    l = litOrders(orderFacts(r, s, kMe, colony, true, false));
+    CHECK_FALSE(lit(l, OrderId::Cloak));
+    CHECK(lit(l, OrderId::Decloak));
+    // Decloak stays lit even when it can no longer cloak.
+    home.cloakLevels.fill(1);
+    CHECK(lit(litOrders(orderFacts(r, s, kMe, colony, true, false)), OrderId::Decloak));
+
+    // The cloaked cell first; a cloaked colony's yard does not work, so no yard
+    // cell, and the can-repair cell shows instead when it can repair.
+    REQUIRE(colonyHasSpaceYard(r, home));
+    std::vector<int> icons = colonyStatusCells(r, s, home, true);
+    REQUIRE_FALSE(icons.empty());
+    CHECK(icons.front() == cell::kCloaked);
+    CHECK_FALSE(has(icons, cell::kSpaceYard));
+    home.facilities.push_back(facilityIndex(r, "Test Repair Yard"));
+    CHECK(has(colonyStatusCells(r, s, home, true), cell::kCanRepair));
+    home.cloaked = false;
+    icons = colonyStatusCells(r, s, home, true);
+    CHECK(icons.front() == cell::kSpaceYard);
+    CHECK_FALSE(has(icons, cell::kCanRepair));
+}

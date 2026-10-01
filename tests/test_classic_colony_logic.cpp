@@ -599,3 +599,34 @@ TEST_CASE("classic ui: queue types (templates)") {
     CHECK(items[2].kind == QueueItem::Kind::Vehicle);
     CHECK(items[2].count == 2);
 }
+
+TEST_CASE("classic ui: the Planets window leaves out a cloaked colony's planet it cannot see, and lists it as a colony when it can (spec 01 §6.9)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 2, 12);
+    exploreAll(s);
+    const ObjectId theirHome = homeworld(s, kOther).planet;
+    auto listed = [&]() {
+        const auto all = surveyPlanets(r, s, kMe);
+        const auto it = std::find_if(all.begin(), all.end(), [&](const PlanetInfo& p) { return p.id == theirHome; });
+        return it == all.end() ? std::optional<PlanetInfo>{} : std::optional<PlanetInfo>{*it};
+    };
+    REQUIRE(listed());
+    Colony& theirs = homeworld(s, kOther);
+    theirs.cloakLevels.fill(3);
+    theirs.cloaked = true;
+    CHECK_FALSE(listed());  // our sensors (none there, or level 1) do not reach level 3
+    // Sensors that pierce the cloak show it again, as a colony.
+    const Location at = locationOf(s.galaxy, theirHome);
+    const DesignId eye = addTestDesign(s, r, kMe, "Eye", "Test Frigate", {"Test Bridge", "Test Sensor"});
+    theirs.cloakLevels.fill(2);  // the fixture's Test Sensor gives EM Active 2
+    addTestVehicle(s, r, eye, at);
+    const auto seen = listed();
+    REQUIRE(seen);
+    CHECK(seen->colonized);
+    // Our own cloaked colony is always listed.
+    Colony& mine = homeworld(s, kMe);
+    mine.cloakLevels.fill(3);
+    mine.cloaked = true;
+    const auto all = surveyPlanets(r, s, kMe);
+    CHECK(std::any_of(all.begin(), all.end(), [&](const PlanetInfo& p) { return p.id == mine.planet && p.own; }));
+}

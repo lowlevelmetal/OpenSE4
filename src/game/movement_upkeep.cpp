@@ -10,6 +10,7 @@
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <format>
@@ -105,6 +106,7 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
     }
     s.colonies[planet.index()] = std::move(c);
     Colony& col = *s.colonies[planet.index()];
+    sight::recalculateColony(r, col);  // a new colony's cloak and sensor levels (spec 01 §6.9)
     // More than the planet holds is lost (inferred).
     int64_t over = col.totalPopulation() - maxPopulation(r, s, col);
     for (auto it = col.population.rbegin(); over > 0 && it != col.population.rend(); ++it) {

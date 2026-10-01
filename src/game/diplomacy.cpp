@@ -4,6 +4,7 @@
 #include "game/events.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
 
@@ -653,7 +654,8 @@ void updateContacts(TurnContext& ctx) {
     GameState& s = ctx.state;
     const size_t n = s.empires.size();
     // What each empire detects this turn, as (system, owner) pairs: foreign
-    // vehicles it sees, and colonies in systems where it has presence.
+    // vehicles it sees, and colonies that pass the detection rule (spec 01
+    // §6.3), a cloaked colony's cloak levels included (spec 01 §6.9).
     std::vector<std::vector<std::pair<uint32_t, uint32_t>>> detects(n);
     for (const Empire& e : s.empires) {
         if (!e.alive) continue;
@@ -666,7 +668,8 @@ void updateContacts(TurnContext& ctx) {
         if (!c || !living(s, c->owner)) continue;
         const SystemId sys = s.galaxy.object(c->planet).system;
         for (const Empire& e : s.empires)
-            if (e.alive && e.id != c->owner && sys.index() < e.knowledge.present.size() && e.knowledge.present[sys.index()])
+            if (e.alive && e.id != c->owner && sys.index() < e.knowledge.present.size() && e.knowledge.present[sys.index()] &&
+                sight::canSeeColony(ctx.rules, s, e.id, c->planet))
                 detects[e.id.index()].emplace_back(sys.value, c->owner.value);
     }
     for (auto& list : detects) {
