@@ -89,9 +89,10 @@ and radioactives. The tabs on the right choose which planets are listed:
   a domed colony holds far fewer people and facilities.
 
 Choose **Coloniz\\Breathe** now. Click a column heading to sort the list; clicking a planet
-closes the window and shows the planet in the main window. Press **Next**.
+closes the window and shows the planet in the main window.
 """
-highlight = ["planets:list"]
+highlight = ["planets:colonizable", "planets:colonizable-breathable"]
+done = { tab = "planets:colonizable-breathable" }
 manual = "planets-and-colonies#what-a-planet-is-like"
 
 [[step]]
@@ -104,7 +105,7 @@ ship.
 (Another way: select the colony ship, press `C` and click the planet in the system view. In the
 system view a small **green star** marks a planet you can settle and breathe on.)
 """
-highlight = ["planets:list", "planets:send-colony-ship"]
+highlight = ["planets:send-colony-ship"]
 done = { order = "colonize" }
 manual = "planets-and-colonies#colonizing"
 

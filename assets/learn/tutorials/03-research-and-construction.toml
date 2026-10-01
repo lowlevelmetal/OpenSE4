@@ -66,9 +66,10 @@ finishes.
   the points go to the first project until it is paid for, then to the next, so the project you
   need most finishes first.
 
-Press **Next**.
+Switch **Divide Pts Evenly** off now.
 """
-highlight = ["research:queue"]
+highlight = ["research:queue", "research:divide-evenly"]
+done = { not = { option = "research-evenly" } }
 manual = "research#the-research-queue"
 
 [[step]]
@@ -172,7 +173,7 @@ title = "New technology"
 text = """
 When a project reaches its cost, your empire gains a level in that area, and the Log (`F10`)
 lists what the new level unlocks. End turns until your first project is done: with a cheap
-project first and **Divide Pts Evenly** off, that is the next turn.
+project first, that is the next turn.
 """
 highlight = ["command:log", "button:end-turn"]
 done = { techs_researched = 1 }

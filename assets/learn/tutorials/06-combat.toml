@@ -42,10 +42,11 @@ plays the others.
 2. Choose **Race 2** and click the **Defense Base** design, to give the other side something to
    defend.
 
-Clicking a row in Combat Vehicles removes it, and right-clicking an item shows its report. Press
-**Next** when both sides are set.
+Clicking a row in Combat Vehicles removes it, and right-clicking an item shows its report. The
+lesson goes on when both races have their items.
 """
-highlight = ["window:combat-simulator"]
+highlight = ["combat-simulator:owners", "combat-simulator:items", "combat-simulator:vehicles"]
+done = { all = [{ simulator_owners = 2 }, { simulator_items = 3 }] }
 manual = "combat-windows#the-combat-simulator"
 
 [[step]]
@@ -54,7 +55,7 @@ text = """
 Make sure the **Tactical** tab on the right is chosen, so that you command Race 1 yourself, and
 press **Begin**. The simulator closes while you fight, and comes back afterwards.
 """
-highlight = ["combat-simulator:begin"]
+highlight = ["combat-simulator:tactical", "combat-simulator:begin"]
 done = { window = "tactical-combat" }
 manual = "combat-windows#tactical-combat"
 
@@ -67,7 +68,7 @@ your selected ship, its shields, damage, movement and weapons.
 
 Press **Begin** at the bottom right to start the battle. Then press **Next** here.
 """
-highlight = ["window:tactical-combat"]
+highlight = ["tactical-combat:end-turn", "tactical-combat:map"]
 manual = "combat-windows#tactical-combat"
 
 [[step]]
@@ -78,7 +79,7 @@ half its normal speed each combat turn.
 
 The chance to hit falls by 10 points for every square of distance, so get close. Press **Next**.
 """
-highlight = ["window:tactical-combat"]
+highlight = ["tactical-combat:map", "tactical-combat:piece"]
 manual = "combat#movement-in-combat"
 
 [[step]]
@@ -90,7 +91,7 @@ ticked weapon.
 
 Shields absorb damage first, then armor is destroyed, then everything else. Press **Next**.
 """
-highlight = ["window:tactical-combat"]
+highlight = ["tactical-combat:weapons", "tactical-combat:target"]
 manual = "combat#hitting-the-target"
 
 [[step]]
@@ -103,7 +104,7 @@ side then acts, and a new combat turn begins.
 until the battle ends: **Combat Complete** appears, and after **OK** the window closes by itself
 and the simulator comes back.
 """
-highlight = ["window:tactical-combat"]
+highlight = ["tactical-combat:end-turn", "tactical-combat:auto"]
 done = { not = { window = "tactical-combat" } }
 manual = "combat-windows#tactical-combat"
 
@@ -113,7 +114,7 @@ text = """
 Back in the simulator, choose the **Strategic** tab and press **Begin** again. This time every
 ship follows its **strategy**, and you watch.
 """
-highlight = ["combat-simulator:begin"]
+highlight = ["combat-simulator:strategic", "combat-simulator:begin"]
 done = { window = "strategic-combat" }
 manual = "combat-windows#strategic-combat"
 
@@ -135,7 +136,7 @@ How a ship fights on its own depends on its **strategy**: where it moves, what i
 and when it leaves its formation. Press **Strategies** in the simulator (it also opens from
 **Empire Status**, `F11`).
 """
-highlight = ["window:combat-simulator"]
+highlight = ["combat-simulator:strategies"]
 done = { window = "strategies" }
 manual = "combat#strategies"
 
