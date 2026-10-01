@@ -161,7 +161,8 @@ Library loadLibrary(const Source& source) {
         else if (p.starts_with(kTrainingDir) && p.ends_with(".toml")) kind = 2;
         if (kind < 0) {
             // Notes for content writers (README.md and the like) may sit at the top.
-            if (p.find('/') != std::string_view::npos) lib.problems.push_back({name, 0, "not a manual page (manual/*.md) or lesson (tutorials/*.toml, training/*.toml)"});
+            if (p.find('/') != std::string_view::npos)
+                lib.problems.push_back({name, 0, "not a manual page (manual/*.md) or lesson (tutorials/*.toml, training/*.toml)"});
             continue;
         }
         const std::string slug = slugOf(path);
@@ -279,7 +280,8 @@ std::vector<Diagnostic> validate(Library& lib) {
         for (const Step& s : l.steps) {
             links(s.text, l.file, {});
             if (!s.manual.empty()) {
-                if (parseLink(s.manual).kind != Link::Kind::Page) out.push_back({l.file, s.line, "'manual' names a manual page: \"slug\" or \"slug#anchor\""});
+                if (parseLink(s.manual).kind != Link::Kind::Page)
+                    out.push_back({l.file, s.line, "'manual' names a manual page: \"slug\" or \"slug#anchor\""});
                 else if (auto problem = linkProblem(lib, s.manual)) out.push_back({l.file, s.line, *problem});
             }
         }

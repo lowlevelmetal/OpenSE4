@@ -114,7 +114,8 @@ private:
                 const float nw = body_->CalcTextSizeA(size_, FLT_MAX, 0.0f, n.c_str()).x;
                 dl->AddText(body_, size_, ImVec2(pos.x + indent + step - nw - p_.px(4), pos.y), imColor(palette::kLabel), n.c_str());
             } else {
-                dl->AddCircleFilled(ImVec2(pos.x + indent + step * 0.45f, pos.y + lineH_ * 0.45f), std::max(1.5f, p_.px(2.2f)), imColor(palette::kLabel));
+                const ImVec2 dot(pos.x + indent + step * 0.45f, pos.y + lineH_ * 0.45f);
+                dl->AddCircleFilled(dot, std::max(1.5f, p_.px(2.2f)), imColor(palette::kLabel));
             }
             paragraph(item.text, indent + step, imColor(kBody));
             for (const learn::List& sub : item.sub) list(sub, indent + step);

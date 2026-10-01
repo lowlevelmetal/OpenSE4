@@ -22,7 +22,7 @@ std::string lower(std::string s) {
 }
 
 // The index page of the install's Manual folder: index.htm(l) if there is one,
-// else the first web page in it. Only names are looked at.
+// else the first web page in it, else the folder itself. Only names are looked at.
 std::filesystem::path findOriginalManual(const std::filesystem::path& root) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -38,7 +38,7 @@ std::filesystem::path findOriginalManual(const std::filesystem::path& root) {
     std::sort(pages.begin(), pages.end());
     for (const fs::path& p : pages)
         if (lower(p.stem().string()) == "index") return p;
-    return pages.empty() ? fs::path{} : pages.front();
+    return pages.empty() ? folder : pages.front();
 }
 
 // A file:// URL with the characters browsers need escaped.

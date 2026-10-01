@@ -183,9 +183,10 @@ void LessonRunner::drawPanel(UiContext& ui) {
     ImGui::SetNextWindowSize(ui.size(kPanelSize), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    const bool open = ImGui::Begin("##lessonpanel", nullptr,
-                                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
-                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoScrollWithMouse);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
+                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_NoScrollWithMouse;
+    const bool open = ImGui::Begin("##lessonpanel", nullptr, flags);
     ImGui::PopStyleVar(2);
     if (open) {
         // Above the classic windows, which take the focus when they open.

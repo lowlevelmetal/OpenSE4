@@ -126,7 +126,8 @@ int64_t factValue(Fact f, const EvalContext& ctx) {
         case Fact::Units: return game::unitCount(ctx.rules, s, me);
         case Fact::Fleets: return std::count_if(s.fleets.begin(), s.fleets.end(), [&](const game::Fleet& fl) { return fl.owner == me; });
         case Fact::Designs:
-            return std::count_if(e.designs.begin(), e.designs.end(), [&](game::DesignId d) { return d.index() < s.designs.size() && !s.design(d).obsolete; });
+            return std::count_if(e.designs.begin(), e.designs.end(),
+                                 [&](game::DesignId d) { return d.index() < s.designs.size() && !s.design(d).obsolete; });
         case Fact::ResearchQueued: return static_cast<int64_t>(e.research.size());
         case Fact::ConstructionQueued: {
             int64_t n = 0;

@@ -18,7 +18,7 @@ namespace opense4::client::classic {
 struct LearnContent {
     learn::Library library;
     std::string origin;                     // "built in", "built in and <dir>", or the --learn-dir folder
-    std::filesystem::path originalManual;   // the install's Manual/ index page; empty: none
+    std::filesystem::path originalManual;   // the install's Manual/ index page (or the folder); empty: none
 };
 
 // Loads the content: from `learnDir` alone when it is given (--learn-dir),
@@ -27,7 +27,7 @@ struct LearnContent {
 std::unique_ptr<LearnContent> loadLearnContent(const std::filesystem::path& assetsDir, const std::filesystem::path& learnDir,
                                                const assets::InstallFiles& install);
 
-// Opens the original manual's index page in the browser.
+// Opens the original manual's index page in the browser (SDL_OpenURL).
 bool openOriginalManual(const LearnContent& content);
 
 // Progress (ClassicSettings::learnDone).

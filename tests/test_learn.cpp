@@ -96,7 +96,8 @@ TEST_CASE("learn: a manual page parses into blocks with front matter and anchors
     // The paragraph's lines are joined.
     const Block& intro = doc.blocks[1];
     REQUIRE(intro.kind == Block::Kind::Paragraph);
-    CHECK(plainText(intro.text) == "A page written for the tests. Press F1 for help, read slowly, and continue on the next line of the same paragraph.");
+    CHECK(plainText(intro.text) ==
+          "A page written for the tests. Press F1 for help, read slowly, and continue on the next line of the same paragraph.");
     CHECK(intro.line == 6);
 
     auto find = [&](Block::Kind k) {
@@ -510,7 +511,8 @@ TEST_CASE("learn: the fixture content loads and validates") {
 
 TEST_CASE("learn: validation finds broken links, ids and slugs") {
     MemorySource source("mem/");
-    source.add("manual/01-a.md", "---\nwindows: researchh\n---\n# A\n\n## Part\n\n[b](b) [c](a#nowhere) [w](window:tactical-combat) [h](help:nothing) [x](ftp:x) [ok](#part)\n");
+    source.add("manual/01-a.md", "---\nwindows: researchh\n---\n# A\n\n## Part\n\n"
+                                 "[b](b) [c](a#nowhere) [w](window:tactical-combat) [h](help:nothing) [x](ftp:x) [ok](#part)\n");
     source.add("manual/02-a.md", "# Same slug\n");
     source.add("tutorials/01-t.toml", "title = \"T\"\n[[step]]\ntitle = \"s\"\ntext = \"[w](window:nowhere)\"\nmanual = \"a#gone\"\n");
     source.add("stray/file.txt", "?");
