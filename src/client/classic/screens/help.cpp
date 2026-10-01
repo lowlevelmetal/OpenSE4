@@ -9,6 +9,8 @@
 // "intelprojects", "formations", "hotkeys") with `index` selecting an item, or
 // "weapons" for the Weapons Report with `index` as the initial weapon mount.
 
+#include "client/app_settings.hpp"
+#include "client/classic/order_rules.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -32,82 +34,32 @@ constexpr size_t kTabCount = static_cast<size_t>(HelpTab::Count);
 constexpr std::array<const char*, kTabCount> kTabLabels{"Components", "Facilities",     "Ship Sizes", "Unit Sizes", "Tech Areas",
                                                         "Treaties",   "Intel Projects", "Formations", "Hotkeys"};
 
-// ---- Hotkeys (docs/spec/06 §3), described in our own words -------------------------------------
+// ---- Hotkeys (docs/spec/06 §3) ---------------------------------------------------------------
+// The main window's keys as they are bound now (Settings -> Controls), in our
+// own words. An order key works only while its button is lit.
 
 struct Hotkey {
-    const char* keys;
-    const char* action;
+    std::string keys;
+    std::string action;
 };
 
-constexpr std::array<Hotkey, 13> kWindowKeys{{
-    {"F1", "Help: this encyclopedia"},
-    {"Shift+F1", "Manual: the page about the window in front"},
-    {"F2", "Game Menu: save, load, options"},
-    {"F3", "Designs: create and manage designs"},
-    {"F4", "Planets: every planet seen so far"},
-    {"F5", "Colonies: your settled worlds"},
-    {"F6", "Ships \\ Units: your vehicles and fleets"},
-    {"F7", "Construction Queues: all build queues"},
-    {"F8", "Research: pick what to study"},
-    {"F9", "Empires: diplomacy and intelligence"},
-    {"F10", "Log: news from the last turn"},
-    {"F11", "Empire Status: budget and settings"},
-    {"F12", "Finish your turn"},
-}};
-
-constexpr std::array<Hotkey, 14> kSelectionKeys{{
-    {"Space, Ctrl+N", "Select the next ship"},
-    {"Ctrl+B", "Go back to the previous ship"},
-    {"Ctrl+F / Ctrl+D", "Cycle through fleets (forward / back)"},
-    {"Ctrl+C / Ctrl+X", "Cycle through colonies (forward / back)"},
-    {"Shift+click", "Tag a ship in the ship list"},
-    {"Shift+A / Shift+C", "Tag all / clear tagged ships"},
-    {"Ctrl+L", "Show or hide movement lines"},
-    {"Ctrl+S", "Sound on or off"},
-    {"Ctrl+H", "Show the tutorial or scenario text"},
-    {"Ctrl+P", "Replay movement (simultaneous games)"},
-    {"Ctrl+O", "Rewind the movement replay"},
-    {"Ctrl+I", "Step the replay by one day"},
-    {"Ctrl+U", "Replay following the selected ship"},
-    {"Esc", "Cancel a location pick, clear the selection"},
-}};
-
-constexpr std::array<Hotkey, 34> kOrderKeys{{
-    {"M", "Move to a sector"},
-    {"Ctrl+0..9", "Move to waypoint 0..9"},
-    {"Alt+0..9", "Set waypoint 0..9 at the selected sector"},
-    {"W", "Warp through a warp point"},
-    {"A", "Attack a target in the sector"},
-    {"C", "Colonize a planet"},
-    {"S", "Resupply at the nearest depot"},
-    {"R", "Repair at the nearest yard"},
-    {"Del, Backspace", "Clear orders"},
-    {"F", "Fleet transfer"},
-    {"Q", "Construction queue"},
-    {"T", "Cargo transfer"},
-    {"U", "Launch or recover units"},
-    {"L / D", "Load / drop cargo at a location"},
-    {"I / O", "Launch / recover units at a location"},
-    {"Y", "Sentry"},
-    {"E", "Explore"},
-    {"P", "Patrol between picked points"},
-    {"K", "Repeat orders on or off"},
-    {"B", "Stellar manipulation"},
-    {"V", "View orders"},
-    {"G", "Scrap, analyze or mothball"},
-    {"H", "Fleet formation and strategy"},
-    {"N", "Rename"},
-    {"J", "Jettison cargo"},
-    {"Z / X", "Cloak / decloak"},
-    {"Ctrl+M", "Sweep mines"},
-    {"Ctrl+T / Ctrl+R", "Tag / untag a minefield"},
-    {"Ctrl+A", "Abandon the planet"},
-    {"Ctrl+V", "Convert resources"},
-    {"Left click", "Select; in lists, act on the row"},
-    {"Right click", "Report on the object or list row"},
-    {"Right click (galaxy)", "Open the galaxy map"},
-    {"Enter", "End the turn (or finish a patrol route)"},
-}};
+std::vector<Hotkey> boundKeys(std::initializer_list<std::string_view> groups) {
+    const Bindings& b = appSettings().controls.bindings;
+    std::vector<Hotkey> out;
+    for (std::string_view group : groups)
+        for (const ActionInfo& a : actionInfos()) {
+            if (a.group != group) continue;
+            std::string keys;
+            for (const KeyChord& c : b.chords(a.action))
+                if (!c.empty()) keys += (keys.empty() ? "" : ", ") + chordName(c);
+            if (keys.empty()) continue;
+            std::string action = a.label;
+            for (size_t i = 0; i < kOrderCount; ++i)
+                if (orderAction(static_cast<OrderId>(i)) == a.action && orderNotInEngine(static_cast<OrderId>(i))) action += " (not in OpenSE4 yet)";
+            out.push_back({std::move(keys), std::move(action)});
+        }
+    return out;
+}
 
 struct Entry {
     ItemRef ref;
@@ -285,31 +237,44 @@ private:
     }
 
     void hotkeys(UiContext& ui) {
-        auto table = [&](const char* id, const char* heading, std::span<const Hotkey> keys) {
+        auto table = [&](const char* id, const char* heading, const std::vector<Hotkey>& keys) {
             listHeading(ui, heading);
             if (ImGui::BeginTable(id, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
-                ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed, ui.px(130));
+                ImGui::TableSetupColumn("key", ImGuiTableColumnFlags_WidthFixed, ui.px(120));
                 ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthStretch);
                 for (const Hotkey& k : keys) {
                     ImGui::TableNextRow();
                     ImGui::TableNextColumn();
-                    ImGui::TextColored(ImVec4(1.0f, 0.86f, 0.45f, 1.0f), "%s", k.keys);
+                    ImGui::TextColored(ImVec4(1.0f, 0.86f, 0.45f, 1.0f), "%s", k.keys.c_str());
                     ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(k.action);
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextUnformatted(k.action.c_str());
+                    ImGui::PopTextWrapPos();
                 }
                 ImGui::EndTable();
             }
         };
-        ImGui::TextColored(kDimText, "Keys of the main window. Hovering an order button also shows its key.");
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kDimText, "The main window's keys as bound now (Settings, Controls). An order key works while its button is lit.");
+        ImGui::PopTextWrapPos();
+        std::vector<Hotkey> orders = boundKeys({"Orders"});
+        orders.push_back({"Ctrl+0..9", "Move to waypoint 0..9"});
+        orders.push_back({"Alt+0..9", "Set waypoint 0..9 at the selected sector"});
+        std::vector<Hotkey> selection = boundKeys({"Selection", "Display"});
+        selection.push_back({"Shift+click", "Tag a ship in the list (a fleet is tagged whole)"});
+        selection.push_back({"Left or right click", "Select in the system view; a list row opens its report"});
+        selection.push_back({"Right click (galaxy)", "Open the Galaxy Map"});
         const float colW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::BeginChild("##keysA", ImVec2(colW, 0), ImGuiChildFlags_Borders);
-        table("##windows", "Windows", kWindowKeys);
+        table("##windows", "Windows", boundKeys({"Windows"}));
         ImGui::Spacing();
-        table("##selection", "Selection and Display", kSelectionKeys);
+        table("##selection", "Selection, Display and Mouse", selection);
         ImGui::EndChild();
         ImGui::SameLine();
         ImGui::BeginChild("##keysB", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        table("##orders", "Orders and Mouse", kOrderKeys);
+        table("##orders", "Orders", orders);
+        ImGui::Spacing();
+        table("##replay", "Movement Log (simultaneous games)", boundKeys({"Movement log"}));
         ImGui::EndChild();
     }
 

@@ -21,7 +21,7 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 19> kBoolOptions{{
+constexpr std::array<BoolOption, 22> kBoolOptions{{
     {"General", "show_log_at_turn_start", "Open the log when a turn starts", &S::showLogAtTurnStart},
     {"General", "confirm_end_turn", "Ask before ending the turn", &S::confirmEndTurn},
     {"General", "confirm_scrap", "Ask before scrapping", &S::confirmScrap},
@@ -37,7 +37,10 @@ constexpr std::array<BoolOption, 19> kBoolOptions{{
     {"System Display", "show_movement_lines", "Show movement lines", &S::showMovementLines},
     {"System Display", "show_waypoint_markers", "Show waypoint markers", &S::showWaypointMarkers},
     {"System Display", "show_colonization_markers", "Show colonization markers on planets", &S::showColonizationMarkers},
+    {"System Display", "system_grid", "Show the system grid", &S::systemGrid},
     {"System Display", "animate_ship_movement", "Animate ship movement", &S::animateShipMovement},
+    {"Galaxy Display", "galaxy_grid_lines", "Show grid lines on the galaxy map", &S::galaxyGridLines},
+    {"Galaxy Display", "galaxy_warp_lines", "Show warp lines on the galaxy map", &S::galaxyWarpLines},
     {"Sound", "sound_on", "Play sound effects", &S::soundOn},
     {"Sound", "music_on", "Play music", &S::musicOn},
     {"Sound", "remastered_sounds", "Use the remastered sound set when the game has it", &S::remasteredSounds},
@@ -69,6 +72,8 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_volume", double(s.musicVolume));
+    toml::table games;
+    games.insert("last_saved", s.lastSavedGame);
     toml::array done;
     for (const std::string& d : s.learnDone) done.push_back(d);
     toml::table learn;
@@ -79,6 +84,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     root.insert("tactical", std::move(tactical));
     root.insert("sound", std::move(sound));
     root.insert("learn", std::move(learn));
+    root.insert("games", std::move(games));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
     return out.str();
@@ -105,6 +111,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (auto v = root["tactical"]["auto_end"].value<bool>()) s.tacticalAutoEnd = *v;
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
     if (auto v = root["sound"]["music_volume"].value<double>()) s.musicVolume = std::clamp(float(*v), 0.0f, 1.0f);
+    if (auto v = root["games"]["last_saved"].value<std::string>()) s.lastSavedGame = *v;
     if (const toml::array* done = root["learn"]["done"].as_array())
         for (const toml::node& d : *done)
             if (auto v = d.value<std::string>()) s.learnDone.push_back(*v);

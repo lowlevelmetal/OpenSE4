@@ -60,6 +60,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->options_ = options;
     mode->rules_ = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
     mode->art_ = std::make_unique<Art>(*platform.device, assets::InstallFiles(gameRoot));
+    Art::setColorSource(mode->art_.get());  // empire colours come from the race art (docs/spec/06 §5.3)
     log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
               mode->rules_->racePresets().size());
     audio().setInstall(&mode->art_->files());
@@ -169,7 +170,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->session_->simulateTurns(options.autoTurns);
         if (!options.openWindow.empty()) {
             mode->openLogOnTurn_ = false;  // the requested window stays in front
-            const auto id = screenFromName(options.openWindow);
+            // "window:text" passes the text as the window's argument (e.g. help:hotkeys).
+            const size_t colon = options.openWindow.find(':');
+            const auto id = screenFromName(options.openWindow.substr(0, colon));
             if (!id) {
                 error = std::format("Unknown window '{}'", options.openWindow);
                 return nullptr;
@@ -186,6 +189,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";
+                if (colon != std::string::npos) args.text = options.openWindow.substr(colon + 1);
                 mode->openScreen(*id, std::move(args));
             }
         }

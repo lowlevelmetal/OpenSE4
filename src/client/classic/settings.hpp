@@ -35,7 +35,11 @@ struct ClassicSettings {
     bool showMovementLines = true;
     bool showWaypointMarkers = true;
     bool showColonizationMarkers = true;
+    bool systemGrid = false;           // grid lines on the system panel (docs/spec/06 §2.4)
     bool animateShipMovement = true;   // ships glide to their new square instead of jumping
+    // Galaxy Display (§1.9, §2.6): the galaxy panel's grid and warp lines.
+    bool galaxyGridLines = true;
+    bool galaxyWarpLines = true;
 
     // Sound and music (docs/spec/06 §5.5).
     bool soundOn = true;
@@ -55,6 +59,9 @@ struct ClassicSettings {
     bool tacticalRanges = true;      // the selected piece's weapon ranges and movement
     bool tacticalNames = false;      // names under the pieces
     bool tacticalAutoEnd = true;     // end the phase when nothing is left to fight
+
+    // The last game saved on this machine, which Resume Game loads (docs/spec/06 §1.9, §6.1).
+    std::string lastSavedGame;
 
     // Learning to play (docs/LEARNING.md): the tutorials and training games
     // finished on this machine, as "tutorial:<slug>" and "training:<slug>".

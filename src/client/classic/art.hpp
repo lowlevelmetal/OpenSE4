@@ -10,6 +10,7 @@
 #include "gfx/device.hpp"
 
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -50,8 +51,9 @@ public:
     // An arbitrary rectangle of a picture.
     Sprite region(std::string_view picture, int x, int y, int w, int h, bool colorKey = true);
 
-    // Sector objects: SectType Picture Num (0-based).
-    Sprite planet(int picture);
+    // Sector objects: SectType Picture Num (0-based); opaque unless colorKey
+    // (the system panel keys black only for Mask Background Objs, docs/spec/06 §2.4).
+    Sprite planet(int picture, bool colorKey = true);
     Sprite planetPortrait(int picture);
     // Components and facilities: Pic Num (1-based).
     Sprite component(int picNum);
@@ -60,9 +62,10 @@ public:
     Sprite facilityPortrait(int picNum);
 
     // Race art by style folder (Pictures/Races/<style>, RaceNeutral, RaceGeneric fallback).
-    Sprite shipMini(std::string_view style, const ruleset::VehicleSize& hull);
+    // Minis turned to `heading` (0..7, 45° steps clockwise from up, nearest-neighbour; docs/spec/06 §2.4).
+    Sprite shipMini(std::string_view style, const ruleset::VehicleSize& hull, bool colorKey = true, int heading = 0);
     Sprite shipPortrait(std::string_view style, const ruleset::VehicleSize& hull);
-    Sprite groupMini(std::string_view style, std::string_view group);  // "Fleet", "FighterGroup", ...
+    Sprite groupMini(std::string_view style, std::string_view group, bool colorKey = true, int heading = 0);  // "Fleet", "FighterGroup", ...
     Sprite flag(std::string_view style, bool large = true);
     Sprite racePortrait(std::string_view style);
     Sprite populationMini(std::string_view style);
@@ -75,7 +78,17 @@ public:
     // Command buttons: icon 0..12, state row 0 (normal), 1 (hover), 2 (pressed).
     Sprite commandButton(int icon, int state);
     Sprite eventPicture(std::string_view name);
+    // The system panel's background (Systems/1024X768/<bitmap>, ".bmp" added
+    // when missing), and the 128x128 picture of the System Report (Systems/<bitmap>).
     Sprite systemBackground(std::string_view bitmap);
+    Sprite systemPicture(std::string_view bitmap);
+
+    // An empire's colour: the pixel at (28,13) of its style's _Main.bmp, inside
+    // the colour swatch (docs/spec/06 §5.3), as 0xRRGGBB; nullopt without the picture.
+    std::optional<uint32_t> swatchColor(std::string_view style);
+    // The Art empireColor() reads swatches from (the running game's; nullptr: none).
+    static void setColorSource(Art* art);
+    static Art* colorSource();
 
 private:
     struct Texture {
@@ -84,11 +97,14 @@ private:
         int height = 0;
     };
     const Texture* load(std::string_view relative, bool colorKey);
+    // A picture turned by heading × 45°, cached like the others.
+    Sprite rotated(std::string_view relative, int heading, bool colorKey);
     std::string raceFile(std::string_view style, std::string_view suffix);
 
     gfx::Device& device_;
     assets::InstallFiles files_;
     std::map<std::string, Texture> textures_;  // key: lowercase path + color-key flag; misses cached too
+    std::map<std::string, std::optional<uint32_t>> swatches_;  // by style
     gfx::Filter filter_ = gfx::Filter::Linear;
 };
 

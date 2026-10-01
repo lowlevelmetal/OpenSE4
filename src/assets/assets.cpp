@@ -20,6 +20,7 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace opense4::assets {
@@ -70,6 +71,30 @@ Image crop(const Image& src, int x, int y, int w, int h) {
                         &src.rgba[(static_cast<size_t>(sy) * static_cast<size_t>(src.width) + static_cast<size_t>(sx)) * 4], 4);
         }
     }
+    return out;
+}
+
+Image rotateNearest(const Image& src, double degrees, bool transparentOutside) {
+    Image out;
+    out.width = src.width;
+    out.height = src.height;
+    out.rgba.assign(src.rgba.size(), 0);
+    const double a = degrees * 3.14159265358979323846 / 180.0;
+    const double c = std::cos(a), s = std::sin(a);
+    const double cx = src.width * 0.5, cy = src.height * 0.5;
+    for (int y = 0; y < src.height; ++y)
+        for (int x = 0; x < src.width; ++x) {
+            // The source of a destination pixel: the pixel centre turned back (anticlockwise on screen).
+            const double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+            const int sx = static_cast<int>(std::floor(cx + dx * c + dy * s));
+            const int sy = static_cast<int>(std::floor(cy - dx * s + dy * c));
+            uint8_t* d = &out.rgba[(static_cast<size_t>(y) * static_cast<size_t>(src.width) + static_cast<size_t>(x)) * 4];
+            if (sx < 0 || sy < 0 || sx >= src.width || sy >= src.height) {
+                d[3] = transparentOutside ? 0 : 255;
+                continue;
+            }
+            std::memcpy(d, &src.rgba[(static_cast<size_t>(sy) * static_cast<size_t>(src.width) + static_cast<size_t>(sx)) * 4], 4);
+        }
     return out;
 }
 

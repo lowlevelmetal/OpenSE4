@@ -1,5 +1,7 @@
 #include "client/classic/screens/colony_logic.hpp"
 
+#include "client/classic/status_icons.hpp"
+
 #include "datafile/datafile.hpp"
 #include "datafile/reader.hpp"
 #include "game/design.hpp"
@@ -185,26 +187,9 @@ bool matches(PlanetFilter f, const PlanetInfo& p) {
 // ---- Colonies ------------------------------------------------------------------------------------
 
 std::vector<int> colonyStatusIcons(const game::Rules& r, const game::GameState& s, const game::Colony& c, bool connected) {
-    std::vector<int> icons;
-    const auto abilities = game::colonyAbilities(r, s, c);
-    if (game::colonyHasSpaceYard(r, c)) icons.push_back(1);
-    if (!c.queue.items.empty() && !c.queue.onHold) icons.push_back(13);
-    if (c.minister) icons.push_back(11);
-    if (game::hasAbility(abilities, game::AbilityKind::ComponentRepair)) icons.push_back(12);
-    if (game::hasAbility(abilities, game::AbilityKind::AncientRuins) || game::hasAbility(abilities, game::AbilityKind::AncientRuinsUnique))
-        icons.push_back(16);
-    if (!game::breathable(s, c)) icons.push_back(18);
-    // Cargo contents by unit class.
-    std::set<ruleset::VehicleType> kinds;
-    for (const game::UnitStack& u : c.cargo.units)
-        if (u.count > 0) kinds.insert(r.hull(s.design(u.design).hull).type);
-    using ruleset::VehicleType;
-    const std::array<std::pair<VehicleType, int>, 5> cargoIcons{
-        {{VehicleType::Fighter, 19}, {VehicleType::Satellite, 20}, {VehicleType::Mine, 21}, {VehicleType::Troop, 26}, {VehicleType::WeaponPlatform, 27}}};
-    for (const auto& [kind, icon] : cargoIcons)
-        if (kinds.contains(kind)) icons.push_back(icon);
-    if (c.cargo.totalPopulation() > 0) icons.push_back(23);
-    if (!connected) icons.push_back(31);
+    // The icons the original draws, in its order (status_icons.hpp), as icon numbers (cell + 1).
+    std::vector<int> icons = colonyStatusCells(r, s, c, connected);
+    for (int& i : icons) ++i;
     return icons;
 }
 

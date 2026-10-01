@@ -222,6 +222,8 @@ void heading(UiContext& ui, const char* text);
 void heading(const Painter& p, const char* text);
 std::string formatNumber(int64_t v);             // 12345 (the classic screens use no digit grouping)
 std::string formatDate(uint32_t turn);           // 2400.3
+// An empire's colour: its race's swatch (Art::swatchColor), as 0xRRGGBB or for ImGui.
+uint32_t empireRgb(const game::GameState& s, game::EmpireId e);
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
 
 // ---- Classic dialog layout -----------------------------------------------------------------

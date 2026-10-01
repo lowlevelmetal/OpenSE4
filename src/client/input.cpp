@@ -46,6 +46,24 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::Rename, "Orders", "Change name", "rename"},
     {Action::Cloak, "Orders", "Cloak", "cloak"},
     {Action::Decloak, "Orders", "Decloak", "decloak"},
+    {Action::MoveToWaypoint, "Orders", "Move to a waypoint", "move_to_waypoint"},
+    {Action::LaunchRemote, "Orders", "Launch units at a location", "launch_remote"},
+    {Action::RecoverRemote, "Orders", "Recover units at a location", "recover_remote"},
+    {Action::Strategy, "Orders", "Fleet formation and strategy", "strategy"},
+    {Action::Jettison, "Orders", "Jettison cargo", "jettison"},
+    {Action::SweepMines, "Orders", "Sweep mines", "sweep_mines"},
+    {Action::TagMinefield, "Orders", "Tag the selected sector as a minefield", "tag_minefield"},
+    {Action::UntagMinefield, "Orders", "Remove the selected sector's minefield tag", "untag_minefield"},
+    {Action::AbandonPlanet, "Orders", "Abandon the planet", "abandon_planet"},
+    {Action::ConvertResources, "Orders", "Convert resources", "convert_resources"},
+    {Action::UseComponent, "Orders", "Use a component", "use_component"},
+    {Action::UseFacility, "Orders", "Use a facility", "use_facility"},
+    {Action::ScrapFacilities, "Orders", "Scrap facilities", "scrap_facilities"},
+    {Action::Minister, "Orders", "Minister control on or off", "minister"},
+    {Action::ReplayPlay, "Movement log", "Play the movement log", "replay_play"},
+    {Action::ReplayRewind, "Movement log", "Rewind the movement log", "replay_rewind"},
+    {Action::ReplayStep, "Movement log", "Step the movement log", "replay_step"},
+    {Action::ReplayShip, "Movement log", "Play the movement log for every ship", "replay_ship"},
     {Action::NextIdleShip, "Selection", "Next ship without orders (turn-based: with movement left)", "next_idle_ship"},
     {Action::NextShip, "Selection", "Next ship", "next_ship"},
     {Action::PreviousShip, "Selection", "Previous ship", "previous_ship"},
@@ -53,7 +71,10 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::PreviousFleet, "Selection", "Previous fleet", "previous_fleet"},
     {Action::NextColony, "Selection", "Next colony", "next_colony"},
     {Action::PreviousColony, "Selection", "Previous colony", "previous_colony"},
+    {Action::TagAll, "Selection", "Tag every own object in the list", "tag_all"},
+    {Action::ClearTags, "Selection", "Clear the tags", "clear_tags"},
     {Action::MovementLines, "Display", "Show or hide movement lines", "movement_lines"},
+    {Action::ToggleSound, "Display", "Sound effects on or off", "toggle_sound"},
     {Action::Cancel, "Display", "Cancel targeting / clear selection", "cancel"},
     {Action::ToggleFullscreen, "Display", "Toggle fullscreen", "toggle_fullscreen"},
 }};
@@ -163,6 +184,24 @@ void Bindings::resetAll() {
     def(Action::Rename, k(ImGuiKey_N));
     def(Action::Cloak, k(ImGuiKey_Z));
     def(Action::Decloak, k(ImGuiKey_X));
+    def(Action::MoveToWaypoint, k(ImGuiKey_W, true));
+    def(Action::LaunchRemote, k(ImGuiKey_I));
+    def(Action::RecoverRemote, k(ImGuiKey_O));
+    def(Action::Strategy, k(ImGuiKey_H));
+    def(Action::Jettison, k(ImGuiKey_J));
+    def(Action::SweepMines, k(ImGuiKey_M, true));
+    def(Action::TagMinefield, k(ImGuiKey_T, true));
+    def(Action::UntagMinefield, k(ImGuiKey_R, true));
+    def(Action::AbandonPlanet, k(ImGuiKey_A, true));
+    def(Action::ConvertResources, k(ImGuiKey_V, true));
+    def(Action::UseComponent, k(ImGuiKey_Z, true));
+    def(Action::UseFacility, k(ImGuiKey_J, true));
+    def(Action::ScrapFacilities, k(ImGuiKey_K, true));
+    def(Action::Minister, k(ImGuiKey_Y, true));
+    def(Action::ReplayPlay, k(ImGuiKey_P, true));
+    def(Action::ReplayRewind, k(ImGuiKey_O, true));
+    def(Action::ReplayStep, k(ImGuiKey_I, true));
+    def(Action::ReplayShip, k(ImGuiKey_U, true));
     def(Action::NextIdleShip, k(ImGuiKey_Space));
     def(Action::NextShip, k(ImGuiKey_N, true));
     def(Action::PreviousShip, k(ImGuiKey_B, true));
@@ -170,7 +209,10 @@ void Bindings::resetAll() {
     def(Action::PreviousFleet, k(ImGuiKey_D, true));
     def(Action::NextColony, k(ImGuiKey_C, true));
     def(Action::PreviousColony, k(ImGuiKey_X, true));
+    def(Action::TagAll, k(ImGuiKey_A, false, true));
+    def(Action::ClearTags, k(ImGuiKey_C, false, true));
     def(Action::MovementLines, k(ImGuiKey_L, true));
+    def(Action::ToggleSound, k(ImGuiKey_S, true));
     def(Action::Cancel, k(ImGuiKey_Escape));
     def(Action::ToggleFullscreen, k(ImGuiKey_Enter, false, false, true));
 }
