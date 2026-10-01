@@ -240,7 +240,7 @@ struct InterfaceOptions {
     bool autoClaimColonized = true;
     // Remembered by the windows.
     uint8_t logFilter = 0;               // 0 All, else LogCategory + 1
-    int32_t logPosition = 0;             // the selected row of the filtered list
+    int32_t logPosition = 0;             // the selected entry's index in the empire's whole log (spec 06 §4.1)
     int32_t logScroll = 0;               // the list's scroll position, in rows
     uint8_t planetsTab = 0;              // the Planets window's tab (0 All)
     bool planetsNoSysToAvoid = false;
