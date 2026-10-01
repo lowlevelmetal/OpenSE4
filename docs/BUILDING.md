@@ -110,8 +110,8 @@ use `--renderer=opengl`.
 | `OPENSE4_WARNINGS_AS_ERRORS` | OFF | Treat warnings as errors (CI uses this) |
 | `OPENSE4_ENABLE_UPNP` | ON | Build with miniupnpc. OFF compiles a no-op port mapper |
 | `OPENSE4_STATIC` | OFF | Link statically for redistribution (the `dist-*` presets) |
-| `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts and prototype data into the executable; files on disk still win |
-| `OPENSE4_DEV_PATHS` | ON | Let the client find `assets/` and `data/` in the source tree. The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
+| `OPENSE4_EMBED_RESOURCES` | ON | Build our fonts into the executable; files on disk still win |
+| `OPENSE4_DEV_PATHS` | ON | Let the client find `assets/` in the source tree. The `dist-*` presets turn it off, which also keeps the build machine's paths out of the binaries |
 
 The code must compile without warnings under
 `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` on MSVC).
@@ -126,9 +126,9 @@ platforms from one Linux machine:
 
 Each package holds `opense4`, `opense4-server` and `opense4-datacheck`, stripped,
 with the README, `LICENSE` (GPL 3.0 or later) and `THIRD_PARTY_NOTICES.txt`. Our own fonts (Noto Sans, SIL Open
-Font License) and the prototype's data files are built into the executables, so
-nothing else needs to sit next to them. Nothing from the original game is included:
-players point OpenSE4 at their own installed copy.
+Font License) are built into the game, so nothing else needs to sit next to it.
+Nothing from the original game is included: players point OpenSE4 at their own
+installed copy, without which the game does not start.
 
 - **Linux** (`dist-linux`): SDL3, the C++ runtime and every other library are linked
   statically. Only the C library stays shared, because SDL loads the system's
@@ -177,8 +177,12 @@ copy anything into the repository.
 ## Headless runs
 
 The client runs without a display through SDL's offscreen driver. This is useful for
-screenshots in CI:
+screenshots in CI. It needs an installed copy of the game, as every run does;
+`--classic-dir` points at one that auto-detection does not find:
 
 ```sh
-SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --classic --seed=7 --screenshot=/tmp/classic.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --seed=7 --turns=20 --screenshot=/tmp/classic.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --seed=7 --turns=20 --screenshot=/tmp/simultaneous.png
 ```
+
+Without an installed copy the client logs why and exits with status 1.

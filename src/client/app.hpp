@@ -1,13 +1,13 @@
 #pragma once
 
 #include "client/app_settings.hpp"
+#include "client/fonts.hpp"
 #include "client/mode.hpp"
-#include "client/view_context.hpp"
 #include "gfx/device.hpp"
 #include "gfx/imgui_renderer.hpp"
 #include "gfx/renderer2d.hpp"
-#include "sim/setup.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -25,18 +25,21 @@ struct AppOptions {
     bool fullscreen = false;
     int width = 1600;
     int height = 900;
-    std::string dataDir;
     std::string assetsDir;
-    sim::GameSetup setup;
 
-    // Classic-rules engine (reads the player's installed classic data set).
-    bool classic = false;
-    std::string classicDir;  // install or Data directory; empty = auto-detect
+    // The player's installed copy of the game (its data set and art).
+    std::string installDir;          // game, se4 or Data directory; empty = auto-detect
+
+    // New games.
+    uint64_t seed = 0;               // 0 = from the clock
+    int systemCount = 0;             // a quick game's star systems; 0 = the default
+    int empireCount = 4;             // a quick game's empires, the player's included
     std::string quadrantType;
-    bool classicQuickStart = false;  // skip the intro and start a quick game
-    std::string classicRace;         // race preset for the quick game
-    std::string classicWindow;       // window to open at start
-    bool classicTurnBased = true;    // a quick game's turn style: turn-based, as a new game (spec 01 §2.2, §14 Q39; spec 05 §8)
+    bool quickStart = false;         // skip the intro and start a quick game
+    std::string race;                // race preset for the quick game
+    std::string openWindow;          // window to open at start
+    bool turnBased = true;           // a quick game's turn style: turn-based, as a new game (spec 01 §2.2, §14 Q39; spec 05 §8)
+
     // Play by e-mail: open this game file and play the turn (docs/MULTIPLAYER.md).
     std::string pbemFile;
     int pbemEmpire = 0;              // 1-based; 0 = the only empire that can play now
@@ -47,7 +50,6 @@ struct AppOptions {
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;
     int screenshotFrames = 10;
-    bool startInSystemView = false;
     int autoTurns = 0;
 };
 

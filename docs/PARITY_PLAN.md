@@ -23,9 +23,6 @@ distributed, without the original.
    questions are now answered. The engine's remaining differences are listed in
    [PARITY_GAPS.md](PARITY_GAPS.md).
 
-The prototype game (`src/sim`, the default `opense4` mode) stays playable until the
-classic engine can replace it.
-
 ## Milestones
 
 Every rule is implemented from the specs. A guess where the sources are silent is

@@ -6,7 +6,7 @@
 #include "client/classic/art.hpp"
 #include "client/classic/session.hpp"
 #include "client/classic/ui.hpp"
-#include "client/view_context.hpp"
+#include "client/fonts.hpp"
 #include "game/setup.hpp"
 
 #include <functional>

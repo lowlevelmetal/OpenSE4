@@ -3,9 +3,9 @@
 #include "client/audio.hpp"
 
 #include "client/classic/classic_mode.hpp"
-#include "client/prototype_mode.hpp"
 #include "client/ui/theme.hpp"
 #include "core/log.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -32,7 +32,7 @@ std::filesystem::path findDir(const std::string& override, const char* name, con
         std::error_code ec;
         if (fs::exists(c / marker, ec)) return fs::weakly_canonical(c, ec);
     }
-    // Not found: the fonts and data built into the executable are used instead
+    // Not found: the fonts built into the executable are used instead
     // (core/embedded.hpp), so a missing directory is not an error.
     return candidates.empty() ? fs::path(name) : candidates.front();
 }
@@ -47,6 +47,14 @@ void fatal(const std::string& message) {
 int App::run(const AppOptions& options) {
     options_ = options;
     SDL_SetAppMetadata("OpenSE4", "0.1.0", "org.opense4.OpenSE4");
+    // The game is the player's own installed copy: without one there is nothing
+    // to play. Checked before any window or renderer exists.
+    const auto dataDir = ruleset::findInstalledDataDir(options.installDir);
+    if (!dataDir) {
+        fatal(missingInstallMessage(options.installDir));
+        SDL_Quit();
+        return 1;
+    }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fatal(std::format("SDL_Init failed: {}", SDL_GetError()));
         return 1;
@@ -63,38 +71,24 @@ int App::run(const AppOptions& options) {
     // Saved display settings (a screenshot run keeps the plain window it asked for).
     if (options.screenshotPath.empty()) applyGraphics();
     std::string error;
-    if (options.classic) {
-        ClassicOptions co;
-        co.installDir = options.classicDir;
-        co.seed = options.setup.galaxy.seed;
-        co.systemCount = options.setup.galaxy.systemCount;
-        co.empireCount = options.setup.empireCount;
-        co.quadrantType = options.quadrantType;
-        co.skipIntro = options.classicQuickStart || !options.screenshotPath.empty();
-        co.race = options.classicRace;
-        co.autoTurns = options.autoTurns;
-        co.openWindow = options.classicWindow;
-        co.turnBased = options.classicTurnBased;
-        co.pbemFile = options.pbemFile;
-        co.pbemEmpire = options.pbemEmpire;
-        co.pbemPassword = options.pbemPassword;
-        co.pbemOrdersDir = options.pbemOrdersDir;
-        co.pbemEndTurn = options.pbemEndTurn;
-        co.pbemExit = options.pbemEndTurn && options.screenshotPath.empty();
-        mode_ = ClassicMode::create(platform, co, error);
-    } else {
-        PrototypeOptions po;
-        po.setup = options.setup;
-        po.dataDir = findDir(options.dataDir, "data", "rules.toml");
-        po.startInSystemView = options.startInSystemView;
-        po.autoTurns = options.autoTurns;
-        auto where = [](const std::filesystem::path& dir) {
-            std::error_code ec;
-            return std::filesystem::exists(dir, ec) ? dir.string() : std::string("built in");
-        };
-        log::info("Data: {}  Assets: {}", where(po.dataDir), where(assetsDir_));
-        mode_ = PrototypeMode::create(platform, po, error);
-    }
+    ClassicOptions co;
+    co.installDir = dataDir->string();
+    co.seed = options.seed;
+    co.systemCount = options.systemCount;
+    co.empireCount = options.empireCount;
+    co.quadrantType = options.quadrantType;
+    co.skipIntro = options.quickStart || !options.screenshotPath.empty();
+    co.race = options.race;
+    co.autoTurns = options.autoTurns;
+    co.openWindow = options.openWindow;
+    co.turnBased = options.turnBased;
+    co.pbemFile = options.pbemFile;
+    co.pbemEmpire = options.pbemEmpire;
+    co.pbemPassword = options.pbemPassword;
+    co.pbemOrdersDir = options.pbemOrdersDir;
+    co.pbemEndTurn = options.pbemEndTurn;
+    co.pbemExit = options.pbemEndTurn && options.screenshotPath.empty();
+    mode_ = ClassicMode::create(platform, co, error);
     if (!mode_) {
         fatal(error);
         shutdown();

@@ -18,8 +18,8 @@ option(OPENSE4_BUILD_TESTS "Build unit tests" ON)
 option(OPENSE4_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 # Redistributable builds (the dist-* presets, docs/BUILDING.md "Release packages").
 option(OPENSE4_STATIC "Link statically for redistribution: SDL3 is built as a static library, and so are the C++ runtime (and on Windows everything else)" OFF)
-option(OPENSE4_EMBED_RESOURCES "Build our own fonts and prototype data into the executable (files on disk still win)" ON)
-option(OPENSE4_DEV_PATHS "Let the client fall back to assets/ and data/ in the source tree" ON)
+option(OPENSE4_EMBED_RESOURCES "Build our own fonts into the executable (files on disk still win)" ON)
+option(OPENSE4_DEV_PATHS "Let the client fall back to assets/ in the source tree" ON)
 
 if(OPENSE4_STATIC AND NOT MSVC)
     if(WIN32)

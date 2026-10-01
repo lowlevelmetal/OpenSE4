@@ -1,6 +1,5 @@
 #include "client/app.hpp"
 #include "core/log.hpp"
-#include "ruleset/ruleset.hpp"
 
 #include <charconv>
 #include <ctime>
@@ -40,9 +39,8 @@ constexpr const char* kUsage = R"(OpenSE4 - an open-source engine reimplementati
 
 Usage: opense4 [options]
 
-By default, plays the classic game on your installed copy of Space Empires IV
-Deluxe (see docs/SETUP.md). Without an install, or with --prototype, runs the
-prototype game (our own simplified rules and content).
+Plays Space Empires IV Deluxe on your own installed copy of the game. The game is
+found in your Steam libraries, or given with --classic-dir (see docs/SETUP.md).
 
 Rendering:
   --renderer=auto|vulkan|opengl   Graphics backend (default: auto = Vulkan, fall back to OpenGL)
@@ -52,21 +50,15 @@ Rendering:
   --size=WxH                      Window size (default 1600x900)
   --no-audio                      No sound or music
 
-New game:
-  --seed=N                        Galaxy seed (default: random)
-  --systems=N                     Number of star systems
-  --empires=N                     Number of empires, including yours (default 4)
-  --shape=spiral|elliptical|ring|clusters
-  --race=KEY                      Your race (see data/races.toml; default human)
-
-Classic rules (the default when an install is found; see docs/PARITY_PLAN.md):
-  --classic                       Require the classic engine (fail if no install is found)
-  --prototype                     Run the prototype game instead
-  --classic-dir=DIR               Game directory of the installed classic game (default: auto-detect)
+Game:
+  --classic-dir=DIR               Game directory of your installed copy (default: auto-detect)
+  --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
+  --seed=N                        Seed for new games (default: random)
+  --systems=N                     Number of star systems in a quick game
+  --empires=N                     Number of empires in a quick game, including yours (default 4)
   --quadrant=NAME                 Quadrant type from the data set (default: the first one)
   --turn-style=simultaneous|turn-based
                                   Turn style of a quick game (default: turn-based)
-  --quick-start[=RACE]            Skip the intro: start a quick game as RACE (a Pictures/Races folder name)
   --open=WINDOW                   With a quick start, open a window at once (e.g. --open=designs)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
                                   empiresetup[:PAGE], multiplayer, pbem[:GAME.gam] (e.g. --open=setup:players).
@@ -83,13 +75,11 @@ Play by e-mail (see docs/MULTIPLAYER.md):
                                   (with --screenshot: quit after the screenshot)
 
 Paths:
-  --data=DIR                      Game data directory (default: auto-detect)
-  --assets=DIR                    Assets directory (default: auto-detect)
+  --assets=DIR                    OpenSE4's own assets directory (default: auto-detect, else built in)
 
 Automation:
   --screenshot=FILE.png           Render a few frames, save a screenshot and exit
   --frames=N                      Frame to capture (default 10)
-  --view=galaxy|system            Start on the galaxy map or the home system
   --turns=N                       Let the AI play N turns for every empire (yours too) first
 
   --verbose                       Debug logging
@@ -107,7 +97,6 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     attachParentConsole();
 #endif
-    bool prototype = false;  // --prototype, or a prototype-only option was given
     using namespace opense4;
     client::AppOptions options;
     // Start from the saved settings; command-line options override them for this run.
@@ -118,8 +107,6 @@ int main(int argc, char** argv) {
     options.vsync = saved.vsync;
     options.width = saved.windowWidth;
     options.height = saved.windowHeight;
-    options.setup.galaxy.seed = 0;
-    options.setup.galaxy.systemCount = 0;  // 0 = rules default
 
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -151,40 +138,26 @@ int main(int argc, char** argv) {
             saved.windowWidth = options.width;
             saved.windowHeight = options.height;
         } else if (key == "--seed") {
-            ok = parseInt(value, options.setup.galaxy.seed);
+            ok = parseInt(value, options.seed);
         } else if (key == "--systems") {
-            ok = parseInt(value, options.setup.galaxy.systemCount);
+            ok = parseInt(value, options.systemCount);
         } else if (key == "--empires") {
-            ok = parseInt(value, options.setup.empireCount);
-        } else if (key == "--shape") {
-            prototype = true;
-            const auto shape = sim::parseGalaxyShape(value);
-            ok = shape.has_value();
-            if (shape) options.setup.galaxy.shape = *shape;
-        } else if (key == "--race") {
-            prototype = true;
-            options.setup.playerRace = std::string(value);
+            ok = parseInt(value, options.empireCount);
         } else if (key == "--classic") {
-            options.classic = true;
+            // Accepted and ignored, so older command lines keep working.
         } else if (key == "--no-audio") {
             options.noAudio = true;
-        } else if (key == "--prototype") {
-            prototype = true;
         } else if (key == "--classic-dir") {
-            options.classicDir = std::string(value);
-            options.classic = true;
+            options.installDir = std::string(value);
         } else if (key == "--quick-start") {
-            options.classicQuickStart = true;
-            options.classic = true;
-            if (!value.empty()) options.classicRace = std::string(value);
+            options.quickStart = true;
+            if (!value.empty()) options.race = std::string(value);
         } else if (key == "--open") {
-            options.classicWindow = std::string(value);
-            options.classicQuickStart = true;
-            options.classic = true;
+            options.openWindow = std::string(value);
+            options.quickStart = true;
         } else if (key == "--pbem") {
             options.pbemFile = std::string(value);
             ok = !value.empty();
-            options.classic = true;
         } else if (key == "--pbem-empire") {
             ok = parseInt(value, options.pbemEmpire) && options.pbemEmpire > 0;
         } else if (key == "--pbem-password") {
@@ -197,21 +170,13 @@ int main(int argc, char** argv) {
             options.quadrantType = std::string(value);
         } else if (key == "--turn-style") {
             ok = value == "simultaneous" || value == "turn-based";
-            options.classicTurnBased = value == "turn-based";
-            options.classic = true;
-        } else if (key == "--data") {
-            prototype = true;
-            options.dataDir = std::string(value);
+            options.turnBased = value == "turn-based";
         } else if (key == "--assets") {
             options.assetsDir = std::string(value);
         } else if (key == "--screenshot") {
             options.screenshotPath = std::string(value);
         } else if (key == "--frames") {
             ok = parseInt(value, options.screenshotFrames);
-        } else if (key == "--view") {
-            prototype = true;
-            options.startInSystemView = value == "system";
-            ok = value == "system" || value == "galaxy";
         } else if (key == "--turns") {
             ok = parseInt(value, options.autoTurns);
         } else if (key == "--verbose") {
@@ -225,11 +190,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Classic mode is the default when the player's classic install can be found.
-    if (!options.classic && !prototype) {
-        if (ruleset::findInstalledDataDir(options.classicDir)) options.classic = true;
-        else log::info("No installed classic game found (see docs/SETUP.md); starting the prototype.");
-    }
-    if (options.setup.galaxy.seed == 0) options.setup.galaxy.seed = static_cast<uint64_t>(std::time(nullptr));
+    if (options.seed == 0) options.seed = static_cast<uint64_t>(std::time(nullptr));
     return client::App().run(options);
 }

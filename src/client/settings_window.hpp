@@ -1,8 +1,9 @@
 #pragma once
 
-// The Settings pages shared by every mode: Graphics (display, renderer,
-// scaling, frame rate) and Controls (rebindable keys, mouse). Drawn into the
-// current ImGui window; changes are applied and saved at once.
+// The Settings pages shared by the intro's Settings screen and the in-game
+// Settings window: Graphics (display, renderer, scaling, frame rate) and
+// Controls (rebindable keys, mouse). Drawn into the current ImGui window;
+// changes are applied and saved at once.
 
 #include "client/input.hpp"
 #include "client/mode.hpp"

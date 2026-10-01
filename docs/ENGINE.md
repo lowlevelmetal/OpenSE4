@@ -248,7 +248,30 @@ the real game is never changed.
 
 See [MULTIPLAYER.md](MULTIPLAYER.md).
 
+## Rendering
+
+`src/gfx` is a deliberately small RHI: textures plus batches of transient 2D geometry,
+drawn with one premultiplied-alpha uber shader (textured, SDF disc and ring, additive
+glow, antialiased line).
+
+- *Vulkan 1.3*: dynamic rendering, synchronization2, VMA, volk, two frames in flight.
+  The loader is `dlopen`ed through SDL, so a missing Vulkan runtime is not fatal.
+- *OpenGL 3.3 core*: the fallback, with the same shader source (`#ifdef VULKAN` for
+  bindings) and the same blending and framebuffer format, so both backends look the
+  same.
+- The Dear ImGui UI is drawn through the same RHI (`ImGuiRenderer`, using ImGui 1.92's
+  dynamic texture protocol), so the UI needs no per-backend code.
+
+A 2D strategy game needs very little from the GPU: textures and streamed triangles. A
+small RHI of our own covers that completely and keeps full control, where bgfx,
+Diligent or SDL_GPU would add a large dependency. The interface (`gfx/device.hpp`) can
+grow, for example with more pipelines or offscreen targets, without touching game code.
+
 ## The client
+
+`src/client/app.cpp` is the shell. It finds the player's install first, and without one
+explains where it looked and exits with an error. It then opens the window, the render
+device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
 
 `src/client/classic` presents the engine in the classic layout: a 1024×768 frame
 scaled to the window, drawn with the art from the player's install.

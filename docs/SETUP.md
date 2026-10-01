@@ -1,11 +1,12 @@
 # Setting up the game data
 
-OpenSE4 is only an engine. Classic mode (`opense4 --classic`) plays with the data files,
-art, sounds and computer-player files of **your own copy** of Space Empires IV Deluxe.
-Nothing from the original game ships with OpenSE4, and nothing is copied out of your
-installation: OpenSE4 reads the files in place.
+OpenSE4 is only an engine. It plays with the data files, art, sounds and
+computer-player files of **your own copy** of Space Empires IV Deluxe. Nothing from
+the original game ships with OpenSE4, and nothing is copied out of your installation:
+OpenSE4 reads the files in place.
 
-The prototype mode, `opense4` without `--classic`, needs no original files.
+Without a copy there is nothing to play. If OpenSE4 cannot find one, it says where it
+looked and exits.
 
 ## 1. Get the game
 
@@ -52,7 +53,7 @@ If your copy is anywhere else, pass it explicitly. Any of these works: the game
 directory, its `se4/` subdirectory, or the `Data/` directory itself.
 
 ```sh
-opense4 --classic --classic-dir="/mnt/games/SteamLibrary/steamapps/common/Space Empires IV Deluxe"
+opense4 --classic-dir="/mnt/games/SteamLibrary/steamapps/common/Space Empires IV Deluxe"
 ```
 
 ## 3. Check the data
@@ -71,9 +72,9 @@ support yet.
 ## 4. Play
 
 ```sh
-opense4 --classic                         # auto-detects the install
-opense4 --classic --quadrant="Spiral Arm" --systems=80   # an exact count; Game Setup rolls it from the Quadrant Size
-opense4 --classic --renderer=opengl       # if Vulkan misbehaves on your machine
+opense4                                   # auto-detects the install
+opense4 --quick-start --quadrant="Spiral Arm" --systems=80   # an exact count; Game Setup rolls it from the Quadrant Size
+opense4 --renderer=opengl                 # if Vulkan misbehaves on your machine
 ```
 
 `opense4 --help` lists every option. For multiplayer, see
@@ -116,7 +117,7 @@ data directory. OpenSE4 never writes to the game directory.
 
 | Symptom | Fix |
 |---|---|
-| "No installed classic data set found" | Pass `--classic-dir` (step 2). Check that the directory contains `Data/Components.txt`. |
+| "No copy of the game was found" | Pass `--classic-dir` (step 2). Check that the directory contains `Data/Components.txt`. |
 | Black window or crash at startup | Try `--renderer=opengl`. With the Vulkan SDK installed, `--validation` shows driver errors. |
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
 | A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |

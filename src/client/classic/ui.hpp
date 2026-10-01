@@ -8,8 +8,8 @@
 
 #include "client/classic/art.hpp"
 #include "client/classic/session.hpp"
+#include "client/fonts.hpp"
 #include "client/mode.hpp"
-#include "client/view_context.hpp"
 #include "game/state.hpp"
 
 #include <imgui.h>

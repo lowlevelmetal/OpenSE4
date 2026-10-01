@@ -1,6 +1,6 @@
 #pragma once
 
-#include "client/view_context.hpp"
+#include "client/fonts.hpp"
 
 #include <filesystem>
 

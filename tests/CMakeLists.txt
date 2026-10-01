@@ -11,7 +11,6 @@ add_executable(opense4_tests
     test_combat_rules.cpp
     test_combat_replay.cpp
     test_tactical.cpp
-    test_content.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
     test_discovery.cpp
@@ -19,7 +18,6 @@ add_executable(opense4_tests
     test_engine_core.cpp
     test_engine_install.cpp
     test_events.cpp
-    test_galaxy.cpp
     test_generate.cpp
     test_history.cpp
     test_integration.cpp
@@ -27,7 +25,6 @@ add_executable(opense4_tests
     test_maps.cpp
     test_movement.cpp
     test_net.cpp
-    test_pathfinding.cpp
     test_pbem_client.cpp
     test_redact.cpp
     test_research.cpp
@@ -38,7 +35,6 @@ add_executable(opense4_tests
     test_ships_ui.cpp
     test_sight.cpp
     test_stellar.cpp
-    test_turn.cpp
     test_turn_based.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
@@ -60,9 +56,8 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_sim opense4_game opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_game opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
-    OPENSE4_DATA_DIR="${CMAKE_SOURCE_DIR}/data"
     OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 add_test(NAME opense4_tests COMMAND opense4_tests)

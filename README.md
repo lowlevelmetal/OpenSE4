@@ -29,9 +29,9 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
   - sound;
   - open rule questions to settle against the original.
 
-`opense4` starts the classic game when it finds your install. Without one, or with
-`--prototype`, it runs a **prototype game** with our own simplified rules and content.
-See [docs/DESIGN.md](docs/DESIGN.md) and [docs/ENGINE.md](docs/ENGINE.md).
+`opense4` finds your install on its own, or takes its location with `--classic-dir`.
+Without an install it explains where it looked and exits: there is no game to play
+without your copy. [docs/ENGINE.md](docs/ENGINE.md) is the map of the engine's code.
 
 ## Building
 
@@ -53,7 +53,7 @@ On Arch Linux, install them with `pacman -S cmake ninja sdl3 shaderc vulkan-head
 
 ## Setting up the game data
 
-Classic mode reads your installed copy of Space Empires IV Deluxe in place.
+OpenSE4 reads your installed copy of Space Empires IV Deluxe in place.
 [docs/SETUP.md](docs/SETUP.md) explains:
 
 - how to get the files, including on Linux and macOS;
@@ -75,14 +75,11 @@ See [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 ## Running
 
 ```
-opense4 [--renderer=auto|vulkan|opengl] [--seed=N] [--systems=N] [--empires=N]
-        [--shape=spiral|elliptical|ring|clusters] [--race=human|vashk|seren|oru|ilthari|kethra]
+opense4 [--renderer=auto|vulkan|opengl] [--classic-dir=DIR] [--quick-start[=RACE]] [--seed=N]
 ```
 
 `--help` lists every option. With `--renderer=auto` (the default) the game tries
 Vulkan 1.3 and falls back to OpenGL 3.3 if Vulkan is missing or unsuitable.
-
-### Classic mode (needs the original game installed)
 
 ```sh
 ./build/debug/opense4                                # auto-detects a Steam install
@@ -101,34 +98,17 @@ Headless screenshots, used for testing, work with SDL's offscreen driver:
 
 ```sh
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=30 --open=colonies --screenshot=shot.png
-SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --prototype --seed=42 --turns=40 --screenshot=proto.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --turns=20 --screenshot=sim.png
 ```
-
-### Prototype controls
-
-| Input | Action |
-|---|---|
-| Left click | Select. Click the same sector again to cycle through what's in it |
-| Double click | Open a system / follow a warp point |
-| Right click | Move the selected ship, or colonize the planet under the cursor |
-| Drag, middle drag, WASD, arrows | Pan |
-| Mouse wheel | Zoom |
-| Tab | Select the next idle ship |
-| Enter | End turn |
-| Esc / G | Back to the galaxy map |
-| F1 / F2 / F3 / F9 | Controls / Research / Event log / Renderer info |
-| Alt+Enter | Toggle fullscreen |
 
 ## Modding
 
-Game content lives in plain TOML files in [`data/`](data), in the spirit of SE4's
-text data files. They define technologies, hulls, components, facilities, races,
-starting designs and core rules. The loader reports mistakes with the file, entry
-and field, and rejects unknown fields to catch typos:
-
-```
-hulls.toml:95 [hull 'broken']: unknown field 'speeed'
-```
+Mods for the original game are replacement data files, and sometimes replacement
+art. OpenSE4 plays whatever data set the game directory holds: apply the mod to a
+copy of the game directory and pass that copy with `--classic-dir`. Run
+`opense4-datacheck` on it first. It loads every data file and reports anything it
+does not understand with the file, line and record. See
+[docs/SETUP.md](docs/SETUP.md#mods).
 
 ## Layout
 
@@ -140,13 +120,11 @@ src/game      classic-rules engine (implemented from docs/spec/)
 src/net       multiplayer: sessions, protocol, UPnP port mapping
 src/server    opense4-server: dedicated host and PBEM turn processor
 src/assets    runtime access to the installed classic art
-src/sim       the prototype's own simplified rules (headless, deterministic)
 src/gfx       RHI with Vulkan and OpenGL backends, 2D batch renderer, ImGui bridge
-src/client    the app shell plus two modes: prototype and classic
+src/client    the app shell and the classic client (windows, front end, multiplayer)
 tools/        opense4-datacheck, opense4-observe (drive the original), cleanroom_check.py
 docs/spec/    rules specs, written in our own words
 shaders/      GLSL shared by both backends
-data/         the prototype's content (TOML)
 assets/       fonts (Noto Sans, SIL OFL)
 tests/        doctest unit tests (our own fixtures only)
 ```

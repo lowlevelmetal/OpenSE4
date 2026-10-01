@@ -20,13 +20,29 @@ namespace opense4::client {
 
 using namespace classic;
 
+std::string missingInstallMessage(const std::string& installDir) {
+    constexpr const char* kIntro =
+        "OpenSE4 is an engine for Space Empires IV Deluxe. It plays with your own installed copy of the game, "
+        "reading its data, art and sound in place; nothing from the game ships with OpenSE4.";
+    constexpr const char* kHelp = "docs/SETUP.md explains how to get the game files, also on Linux and macOS, and how to point OpenSE4 at them.";
+    if (installDir.empty())
+        return std::format("{}\n\n"
+                           "No copy of the game was found. OpenSE4 looks in every Steam library on this computer for "
+                           "steamapps/common/Space Empires IV Deluxe (Steam app 1610).\n\n"
+                           "If your copy is somewhere else, start OpenSE4 with --classic-dir=<game directory>: the folder that "
+                           "holds Data, Pictures and Sounds, or its Data folder.\n\n{}",
+                           kIntro, kHelp);
+    return std::format("{}\n\n"
+                       "No copy of the game was found at {}.\n\n"
+                       "--classic-dir takes the game directory (the folder that holds Data, Pictures and Sounds), its se4 "
+                       "folder, or its Data folder.\n\n{}",
+                       kIntro, installDir, kHelp);
+}
+
 std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const ClassicOptions& options, std::string& error) {
     const auto dataDir = ruleset::findInstalledDataDir(options.installDir);
     if (!dataDir) {
-        error = options.installDir.empty()
-                    ? "Classic mode needs an installed copy of the classic game, and none was found in your Steam libraries.\n"
-                      "Pass --classic-dir=<game directory> to point at it (see docs/SETUP.md)."
-                    : std::format("No classic data set found at {}.", options.installDir);
+        error = missingInstallMessage(options.installDir);
         return nullptr;
     }
     auto loaded = ruleset::loadRuleset(*dataDir);

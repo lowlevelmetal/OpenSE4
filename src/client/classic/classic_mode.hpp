@@ -12,6 +12,7 @@
 #include <deque>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace opense4::client {
@@ -36,6 +37,10 @@ struct ClassicOptions {
     bool pbemEndTurn = false;  // automation: end the turn at once, writing the .plr
     bool pbemExit = false;     // and quit then (no screenshot asked for)
 };
+
+// What to tell the player when no installed copy of the game is found:
+// auto-detection failed (`installDir` empty) or `installDir` holds no data set.
+std::string missingInstallMessage(const std::string& installDir);
 
 class ClassicMode final : public Mode {
 public:

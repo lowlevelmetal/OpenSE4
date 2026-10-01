@@ -1,10 +1,10 @@
 #pragma once
 
-// A Mode is one self-contained "program" running inside the app shell: the
-// prototype game, or the classic-rules engine. The shell owns the window,
-// the render device and Dear ImGui; the mode owns everything else.
+// A Mode is the "program" running inside the app shell: the classic client
+// (ClassicMode, client/classic/). The shell owns the window, the render
+// device and Dear ImGui; the mode owns everything else.
 
-#include "client/view_context.hpp"
+#include "client/fonts.hpp"
 #include "core/math.hpp"
 #include "gfx/device.hpp"
 #include "gfx/renderer2d.hpp"

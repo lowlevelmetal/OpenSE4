@@ -664,8 +664,8 @@ a description file. `Manual/` is the HTML manual.
 | `<game>_events.txt`, `<game>_stats.txt` | text (per the manual) | Per-player history events and comparison statistics shipped with each turn [T]. Exact layout unknown (Q12). |
 | `Maps/` | unknown | Written by File → Save Map and the map editor; read by Game Setup → Load Map. No sample exists (Q12). |
 
-For our engine: keep our own save format (deterministic state plus a command log, as in
-DESIGN.md). Reading `.gam`/`.emp` is not needed for parity and would mean reverse
+For our engine: keep our own save format (deterministic state plus a command log, see
+ENGINE.md). Reading `.gam`/`.emp` is not needed for parity and would mean reverse
 engineering an obfuscated format; the one useful piece, the save list's
 name/date/summary, can be shown from our own saves.
 

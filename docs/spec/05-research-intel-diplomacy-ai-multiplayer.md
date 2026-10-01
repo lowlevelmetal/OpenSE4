@@ -2181,12 +2181,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
 ### 9.5 Mapping to OpenSE4
 
-- A `.plr` corresponds to the ordered `sim::Command` list of one empire for one turn.
-  Design, strategy and queue edits must also be commands.
+- A `.plr` corresponds to the ordered `game::Command` list of one empire for one turn
+  (an `EmpireOrders`). Design, strategy and queue edits must also be commands.
 - A `.gam` corresponds to a serialized `GameState` plus the per-empire logs and
   statistics.
 - The host is authoritative, clients validate only against their own knowledge, and a
-  missing empire falls back to the AI. This matches DESIGN.md's rule of sending state
+  missing empire falls back to the AI. This matches ENGINE.md's rule of sending state
   rather than a seed.
 - **Turn-based games on different machines.** The original passes the save file from
   player to player (§9.1), and offers TCP/IP only for simultaneous games. OpenSE4 keeps a
