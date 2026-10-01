@@ -55,31 +55,38 @@ and rename it. See [Ships and fleets](ships-and-fleets#orders) for every order.
 
 With one of your **colonies** selected you can open its construction queue, transfer cargo,
 scrap facilities, launch or recover units, rename it, put it under minister control and
-abandon it.
+abandon it. A few buttons (Jettison Cargo, Use Facility, Convert Resources) are not in OpenSE4
+yet: they say so when you press them.
 
-Some orders need you to pick a place. The system panel then shows a prompt, such as
-`Move To: pick a destination`. Click a sector in the system panel, or click a system in the
-galaxy panel first to show another system and then click a sector there. Press `Esc` to cancel.
+Some orders need you to pick a place. The bottom of the system panel then shows a prompt, such
+as `Move To: pick a destination`, and the sector under the pointer gets green corner marks. Click
+a sector in the system panel, or click a system in the galaxy panel first to show another system
+and then click a sector there. Press `Esc` to cancel.
 
 ## Selecting things
 
-The **system panel** shows the selected system as a grid of 13 by 13 sectors (the grid lines are
-not drawn). Stars, planets, asteroid fields, storms, warp points and ships appear at their
-sectors.
+The **system panel** shows the selected system as a grid of 13 by 13 sectors. Stars, planets,
+asteroid fields, storms, warp points and ships appear at their sectors. The system's name is at
+the top left, followed by the coordinates of the sector under the pointer.
 
 - **Left-click** a sector. If it holds one thing, the report panel shows its report. If it holds several, the panel lists them; click one in the list to see its report, and `List` to go back.
-- **Left-click empty space** to read about the whole system: its type and its special features.
+- **Left-click empty space** to read about the whole system: its type and its special features. The sector is still marked, so that you can set a waypoint there.
 - **Right-click** a sector while one of your ships is selected, and the ship moves there (you can turn this off in [Settings](settings#controls)).
 - The selected sector has yellow corner marks.
 
 What else you see in the system panel:
 
-- A small number when a sector holds several objects, and a gold number when it holds several ships.
-- A small flag on each colony, in its owner's colour, and the flags of several empires side by side when they share a sector.
+- The flag of the owner's race at the top right of each colony.
+- For a single stack of ships, one ship picture with the number of ships at its bottom right. When several empires' ships share a sector, or ships sit beside a planet, small flags with counts take its place.
+- A ring around a cloaked ship, in its empire's colour.
 - A small green or red star on planets you could colonize (see [Planets and colonies](planets-and-colonies#colonizing)).
 - The name of the system a warp point leads to, once you have explored it.
-- Your waypoints, as numbered rings.
-- The route of your selected ship as a dashed green line. `Ctrl+L` shows or hides it.
+- Your waypoints, as a cyan frame around the sector with the waypoint's number, and sectors you tagged as minefields, with a cyan `M`.
+- With the matching option on, the route of your selected ship as a dashed line (`Ctrl+L`).
+
+[Empire Options](settings#empire-options) can add a grid, planet names and letters marking the
+facilities of your colonies, and remove the warp point names, the stars and the coordinates. An
+unexplored system shows only a star field and the word *Unexplored*.
 
 The **selection buttons** at the top right of the command panel step through your ships, fleets
 and colonies: the left arrow goes back, the right arrow goes forward. The keyboard does the same
@@ -99,10 +106,18 @@ experience, formation, strategy and members.
 You see less about other empires' ships and planets: never their cargo, and their components
 only if your scanners reach them (see [The galaxy](galaxy#scanning-enemy-ships)).
 
+In the list of a sector, your own ships and colonies carry small **status icons**: for example
+low or no supplies, damaged, cloaked, mothballed, on sentry, repeating orders, under minister
+control, building something, with a space yard, able to repair, or carrying troops, fighters,
+mines, satellites, platforms, drones or people. A colony whose system delivers nothing to your
+empire for lack of a spaceport carries an icon too. Hold `Shift` and click ships in the list to
+tag them: the list then says how many are tagged, and the next order goes to all of them.
+
 ## Windows
 
 The game's windows open over the main window. Each has its buttons in a column on the right,
-with `Close` at the bottom; `Esc` closes it too. In most lists, **left-click** acts (selects,
+with `Close` at the bottom; `Esc` closes it too, and so does `Enter` when the bottom button is
+`Close`. In most lists, **left-click** acts (selects,
 adds, goes to) and **right-click** shows a report about the item. Click a column heading to sort
 a list.
 
@@ -115,7 +130,7 @@ empire knows. Its tabs:
 - [Tech Areas](help:tech-areas): each area and what its levels bring;
 - [Treaties](help:treaties) and [Intel Projects](help:intel-projects);
 - [Formations](help:formations): the shape of each fleet formation;
-- [Hotkeys](help:hotkeys): the classic keys. The [Hotkeys](hotkeys) chapter of this manual lists the keys that work in this version of OpenSE4.
+- [Hotkeys](help:hotkeys): the keys as they are bound now, including any you changed in [Settings](settings#controls) (see also [Hotkeys](hotkeys)).
 
 The `Find` box filters the list. The [Weapons Report](help:weapons) compares weapons: their size,
 reload time and damage at each range, with filters by weapon type and a choice of weapon mount.

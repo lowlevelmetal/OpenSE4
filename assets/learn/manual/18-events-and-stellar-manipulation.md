@@ -9,7 +9,8 @@ all three.
 
 ## Random events
 
-Random events can help or harm. A ship may be damaged, lose supplies or gain experience; a planet
+Random events can help or harm. A ship may be damaged, lose supplies or gain experience, or be flung
+to a random place far away (leaving its fleet); a planet
 may gain or lose value, suffer a plague, a riot or a rebellion, or see its conditions change; in
 the worst cases a star explodes or a planet is destroyed.
 
@@ -57,7 +58,9 @@ Ships with special components can change the galaxy itself: make and destroy pla
 storms, nebulae and black holes, and open and close warp points. Select the ship and press `B` to
 open the [Stellar Manipulation](window:stellar-manipulation) window. It shows the ship's sector
 and one button per action. A button is enabled only when the ship has the right component and the
-action is possible right now; hover over it to see what it needs and what it will do.
+action is possible right now; hover over it to see what it needs and what it will do, with an
+animation of the effect. For Open Warp Point, the window closes and you pick a sector of the
+destination system on the map.
 
 The common rules:
 
@@ -84,9 +87,12 @@ The common rules:
 
 A **shockwave** wipes out the system: every planet and asteroid field becomes a bare asteroid field
 (all colonies on them are lost), and every star, storm, ship, base and unit group in the system is
-destroyed, **the ship that caused it included**. Only the warp points survive. The window asks you
-to confirm these actions, and Destroy Planet.
+destroyed, **the ship that caused it included**. Only the warp points survive. Every action asks
+you to confirm it first, while the Empire Option *Confirm stellar manipulation* is on (the
+default).
 
 > Destroying stars and planets angers every computer player that has something in the system. Use it as a last resort, or where nobody is watching.
 
-The window adds the action at the top of the ship's orders, so it is the next thing the ship does.
+The window adds the action at the top of the ship's orders (for a ship in a fleet, the fleet's),
+so it is the next thing the ship does: at once in a turn-based game, during the turn's processing
+in a simultaneous one.

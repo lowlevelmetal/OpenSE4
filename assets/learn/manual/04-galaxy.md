@@ -104,7 +104,7 @@ you.
 What you cannot see, you cannot attack. Enemy ships pass through your sectors without a fight
 if neither side sees the other. See [Combat](combat#when-battles-happen).
 
-> Stock mines are hidden from every stock sensor. You usually find a minefield by losing a ship to it. Add that system to your systems to avoid (below), or send a mine sweeper first (see [Units](units#mines)).
+> Stock mines are hidden from every stock sensor. You usually find a minefield by losing a ship to it. Select its sector and press `Ctrl+T` to tag it as a minefield: with the Empire Option *Avoid minefields* on, your routes then go around it. Or send a mine sweeper first (see [Units](units#mines)).
 
 ## Scanning enemy ships
 
@@ -129,6 +129,7 @@ you have not explored is a short stub.
 | Triangle | Several empires are there: in your colour if you are one of them |
 | Filled marker with a ring around it | The system shown in the system panel |
 
+The grid and the warp lines can be switched off in [Empire Options](settings#empire-options).
 Each empire's colour is the colour swatch of its race's flag. Point at the panel to see the name
 of the nearest explored system in cyan. Left-click a system to show it
 in the system panel. Right-click the panel to open the [Galaxy Map](window:galaxy-map).
@@ -149,12 +150,13 @@ Non-Aggression treaty or better with them. See [Diplomacy](diplomacy#how-compute
 
 You can also mark systems to **avoid** in the [Systems To Avoid](window:systems-to-avoid)
 window (from [Empire Status](window:empire-status)). Click a system on its map to mark it or
-unmark it; `Clear All` removes every mark. With the Empire Options switch **Never route through
-the systems to avoid** on (it is on for a new empire), your ships never route through an avoided
+unmark it; `Clear All` removes every mark. With the Empire Options switch **Avoid restricted
+systems** on (it is on for a new empire), your ships never route through an avoided
 system unless they start or end there. If no other route exists, the move fails instead.
 
 The same window has tabs that show your presence and the systems your allies and enemies
 claim. On the **Ally Claimed** tab, clicking a system claims it for you or releases your
-claim, and `Release All Claims` gives them all up.
+claim, and `Release All Claims` gives them all up. With the Empire Option *Claim every system we colonize* on (the default), every system you
+settle is claimed for you.
 
 > Avoid a system with a known minefield or a strong enemy fleet, and your Move To orders will steer around it on their own.

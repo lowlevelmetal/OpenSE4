@@ -50,16 +50,19 @@ move at once in a turn-based game, but only from the next turn in a simultaneous
 ## The Launch and Recover window
 
 The [Launch and Recover Units](window:launch-recover) window (`U`, titled
-`Launch \ Recover Units`) works for a selected ship or colony.
+`Launch \ Recover Units`) works for a selected ship or colony in turn-based games.
 
-- The left list, **Units in sector**, shows your ships and colonies in the sector that carry units or have bays, with their launch rates. Click a unit type under a holder to launch it.
-- The right list, **Units in space**, shows your unit groups in the sector. Click a group to recover it into the ship or colony selected on the left.
+- The left list, **Units in sector**, shows your ships with bays or units aboard, with their launch rates per turn (or *No launch bays*), and your colonies that hold units (1,000 of each kind a turn). Click a unit type under a holder to launch it.
+- The right list, **Units in space**, shows your unit groups in the sector. Click a group (or one design of a mixed group) to recover it into the ship or colony selected on the left.
 - `Move One`, `Move Five`, `Move Ten` and `Move All` choose how many units each click moves.
 - `Launch Remotely` and `Recover Remotely` give the ship an order to launch or recover at a sector you pick later.
 
-Each click becomes an order at the head of the holder's list. In a turn-based game it is carried
-out at once. In a simultaneous game it happens during the turn's movement, and you can take it
-back until then by clicking it in the list of orders at the bottom.
+Each click becomes an order at the head of the holder's list (for a ship in a fleet, the fleet's),
+and is carried out at once; the orders given are listed at the bottom. In a simultaneous game,
+use the orders **Launch Units Remotely** (`I`) and **Recover Units Remotely** (`O`) instead: they
+are carried out during the turn's movement.
+
+In tactical combat, `L` opens **Launch Units** for the selected piece.
 
 ## Fighters
 
@@ -92,7 +95,7 @@ Mines do not fight in battles and are not combat pieces. They have no supplies a
 
 **Mine sweepers** protect against mines. When a group with mine sweeping components enters a
 mined sector, the sweepers first remove up to their sweeping capacity in enemy mines; only the
-rest strike. The **Sweep Mines** order runs this again in the current sector: the sweepers clear
+rest strike. The **Sweep Mines** order (`Ctrl+M`) runs this again in the current sector: the sweepers clear
 what they can, then any remaining mines strike.
 
 > Lay mines at the warp points into your core systems. An attacker loses ships before the battle even begins, and you do not need to be there.

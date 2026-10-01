@@ -10,14 +10,24 @@ trade and the windows you use for diplomacy.
 ## Meeting other empires
 
 You start the game knowing no one. You **make contact** with another empire when your objects
-and theirs are in the same system and each side can see the other. Both empires then get a
+and theirs are in the same system and each side can see the other, as long as a chain of warp
+points leads from the systems of your colonies to a colony of theirs. Both empires then get a
 **First Contact** entry in the log, and their treaty becomes **None**: met, but with no treaty.
+An empire without colonies makes no contact.
 
-Contact lasts for the rest of the game. It ends only when one of the two empires is destroyed.
-You can also buy contact with a third empire: **Comm Channels** can be part of a trade package.
+Contact can also be **lost**. Once a turn, each empire follows the warp points outward from its
+colonies. When no colony of an empire it has met can be reached that way any more (for example
+because a warp point was closed, or because one side lost its last colony), contact with that
+empire ends: the treaty returns to "no contact" and the intelligence projects aimed at it are
+removed, and your Log reports **Contact Lost**. Contact also ends when an empire is destroyed.
+An empire you lost contact with can be met again in the usual way.
 
-Until you have met an empire you cannot send it messages, trade with it or aim intelligence
-projects at it.
+You can buy contact with a third empire: **Comm Channels** can be part of a trade package, if the
+giver is in contact with that empire. The new contact lasts only if a chain of warp points links
+you.
+
+While you are not in contact with an empire you cannot send it messages, trade with it or aim
+intelligence projects at it, and it is missing from the Empires window.
 
 ## Treaties
 
@@ -139,12 +149,12 @@ leader has a price.
 
 ## The Empires window
 
-Open [Empires](window:empires) with `F9`. It shows a portrait for each empire you have met, four
-at a time, with a column of facts below each.
+Open [Empires](window:empires) with `F9`. It shows a portrait for each empire you are in contact
+with, four at a time, with a column of facts below each.
 
 - **Left-click** a portrait to open [Communicate](window:communicate) with that empire.
 - **Right-click** a portrait for its Race Report: its race, characteristics, traits and description, and its technology if it is your partner.
-- The tabs choose the column: **Treaty** (treaty, player type, last war, the computer's mood, waiting messages), **Trade** (trade percentage and what is shared) and **Tariff** (who pays whom).
+- The tabs choose the column: **Treaty** (treaty, race, player type, since when, last war, the computer's mood with its anger value, messages waiting, a message sent this turn), **Trade** (trade percentage of the maximum, what is shared, its growth, shared sight and resupply) and **Tariff** (who pays whom).
 
 The buttons on the right open more windows:
 
@@ -153,7 +163,7 @@ The buttons on the right open more windows:
 | History | A dated record of your empire's and others' main events. |
 | Treaty Grid | The treaty between each pair of empires. You see treaties of your allies only; the rest show `??`. |
 | Intelligence | Your [intelligence](intelligence) projects. |
-| Borders | The systems each empire claims, with filters for allies, enemies and you. |
+| Borders | A check box that switches the view to the systems each empire claims, with filters `Select All`, `Allies`, `Enemies` and `Us`. |
 | Victory Conditions | Progress toward the game's [victory conditions](score-and-victory). |
 | Scores | The score table (see [Score and victory](score-and-victory#the-scores-window)). |
 | Comparisons | Graphs of the score table over time. |
@@ -167,10 +177,13 @@ default; change it as you like.
 
 For trades, gifts and tributes, `Edit Package` opens the package editor. Choose **We give** or
 **We ask for**, pick a tab (systems, planets, resources, technology, ships, units, star charts,
-treaty, comm channels) and click items to add them. Click an item in the package to remove it.
+treaty, comm channels) and click items to add them; resources are added in steps of 1,000 with
+`Add To Package`. Click an item in the package to remove it. `Clear Package` empties it and `Done`
+goes back to the message.
 
 `Send Message` sends it; the button is disabled once you have written to that empire this turn.
-Surrender and Declare War ask you to confirm.
+Surrender and Declare War ask you to confirm. `Report` shows the empire's race report,
+`View Last Offer` their newest offer, and `Start Again` clears the message.
 
 When you open a message you received (with **Send Reply** in the [Log](window:log)), the window
 shows what they offer and ask for, with `Accept`, `Refuse`, `Counter` and `Reply`. Counter

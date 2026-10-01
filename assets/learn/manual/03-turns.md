@@ -25,13 +25,19 @@ In a turn-based game, your turn begins with your ships' movement points refilled
 still have orders from earlier turns carry them on at once, before you get control. Then you play:
 
 - A **Move To** order moves the ship right away, step by step, until it arrives or runs out of movement points. The rest of the move continues at the start of your next turn.
-- When a move would take your ships into a sector where they can see enemy forces, you are asked **Attack Sector**: `Attack` enters the sector and starts a battle, `Stay Back` stops the move and cancels the ship's orders.
+- When a move would take your ships into a sector where they can see enemy forces, you are asked whether they should enter the sector and attack: `Yes` enters it and starts a battle, `No` stops the move and cancels the ship's orders.
 - When a battle starts, you choose **Tactical** (you command your ships yourself) or **Strategic** (your ships follow their strategies and you watch). See [Combat](combat).
 - Messages to other empires, treaties and declarations of war take effect at once.
 
-When you press `End Turn`, your empire's end-of-turn processing runs (below). Then the computer
-players and any other humans take their turns. After the last empire, the date moves on, the
-game checks the victory conditions, and random events happen.
+When you press `End Turn` (or `F12`), the game first asks *End the turn now?*. Answer `Yes` or
+press `Y`; `N`, `Esc` and `Enter` mean No, so a stray key never ends your turn. You can switch the
+question off with **Confirm ending the turn** in [Empire Options](settings#empire-options).
+Ending the turn closes every open window.
+
+Your empire's end-of-turn processing then runs (below). Then the computer players and any other
+humans take their turns. After the last empire, the date moves on, the game checks the victory
+conditions, and random events happen. When a battle breaks out during a computer player's turn,
+a notice names the system first.
 
 ## Simultaneous play
 
@@ -79,27 +85,31 @@ the end of the last turn, and they are spent at the end of this one.
 
 ## The Log
 
-The [Log](window:log) (`F10`) holds the news of the last turn: things built, technologies
+The [Log](window:log) (`F10`) holds the news of this turn: things built, technologies
 discovered, battles, messages from other empires, events and orders that could not be carried
-out. It opens by itself at the start of each turn when there is news (you can switch this off in
-[Empire Options](settings#empire-options)).
+out. Older news is not kept: read the Log every turn. It opens by itself at the start of a turn
+when there is news (switch **Show the log at the start of each turn** off in
+[Empire Options](settings#empire-options) if you prefer).
 
-- The list at the top left shows the entries, each with a coloured dot for its category. Tick `Earlier turns` to see older entries too.
+- The **Log Messages** list at the top left shows the entries in the order they happened: messages from other empires first, then the turn's events, then the orders that could not be carried out. The selected entry has a green lamp, the others a blue one.
 - The map below it marks the system of the selected entry.
-- The details on the right show the entry's picture, title, date and text. A battle entry lists the forces on each side and their losses. A message shows its type, tone, text and package.
-- The buttons on the right filter by category: **All, Construction, Research, Intelligence, Events, Politics, Combat** and **Misc**.
+- **Log Details** on the right shows the entry's picture, title, date and text. A battle entry lists the forces of each empire and the damage each one took. A message shows its sender, tone, text and package, and whether you have answered it.
+- The buttons on the right filter by category: **All, Construction, Research, Intelligence, Events, Politics, Combat** and **Misc**. A category with no entries this turn is dimmed.
+
+The Log remembers the filter and the selected entry when you open it again.
 
 | Button | What it does |
 |---|---|
-| `Send Reply` | Answer the selected message (opens [Communicate](window:communicate)). |
+| `Send Reply` | Answer the selected message (opens [Communicate](window:communicate)). You can send each empire one message a turn. |
 | `Combat Replay` | Watch the selected battle again (see [Battle windows](combat-windows#replays)). |
 | `Constr. Queues` | Open the [Construction Queues](window:queues). |
-| `Goto` | Close the Log and show the entry's location in the main window. |
+| `Goto` | For an entry with a location: close the Log and show it in the main window. For a construction, research, intelligence or political entry without one: open the matching window. |
 
 > Read the Misc entries: they list the orders that could not be carried out, so that you can give new ones before the ships sit idle.
 
 ## Hotseat games
 
 When several human players share one computer, each plays their turn in order. Between players a
-**Next Player** screen asks the others to look away. If the empire has a password, the player
-types it there. Then `Begin Turn` starts that player's turn.
+**Next Player** screen names the next empire, hides the map and asks the others to look away. If
+the empire has a password, the player types it there. Then `Begin Turn` starts that player's
+turn; `Quit Game` leaves instead.

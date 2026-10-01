@@ -132,9 +132,10 @@ population, from no bonus below 20M to double at about 10,000M. A full Medium ho
 
 You can move people between planets as cargo: each 1M takes 5 kT of cargo space with the stock
 settings. You can never take a colony's last 1M away. To give up a small colony, select it and
-use the **Abandon Planet** order button. It works only for colonies of 50M or less (stock
-settings), never for your homeworld, and it acts at once, without asking: the colony and its
-facilities are gone. Scrap the facilities first if you want part of their cost back.
+use the **Abandon Planet** order (`Ctrl+A`). The game asks first, and refuses if more than 50M
+people live there (stock settings). If the planet has facilities, it then asks whether to scrap
+them: **Yes** returns part of their cost now, **No** leaves them on the planet for its next
+owner. The planet is then free for anyone to colonize.
 
 ## Mood
 
@@ -198,36 +199,48 @@ cure them on your own planets and your allies' planets in their sector.
 A colony type is a label that tells your ministers and the computer what to build there:
 homeworld, mining, farming, refining, resupply base, research, intelligence, construction yard
 or military. It has no effect of its own. You set it with **Set Colony Type** in the
-[Colonies](window:colonies) window, or when you found the colony.
+[Colonies](window:colonies) window. A homeworld's type cannot be changed.
+
+When you found a colony in a turn-based game, a **Colony Type** window asks what kind of colony
+it should be, with one button per type; the computer's choice is marked *(suggested)*. Switch
+**Pick the colony type when a colony is founded** off in [Empire Options](settings#empire-options)
+to let the computer choose every time.
 
 ## The Planets window
 
-The [Planets](window:planets) window (`F4`) lists every planet you have seen, with its system,
-type, atmosphere, conditions, values and status: yours, another empire's, colonizable, needing a
-dome, or a ship already on its way. Hover over a dash in the status column to see why a planet
-cannot be colonized. The statistics at the top count your explored systems, planets and colonies,
-and a small map marks where the listed planets are.
+The [Planets](window:planets) window (`F4`) lists the planets of the systems you have explored.
+Each row shows a picture, the planet's **Name** (yours in yellow) with its type and size below
+it, its **Atmosphere**, its value for minerals, organics and radioactives (**Min.**, **Org.**,
+**Rad.**; in a game with finite resources, the amount left), and the colony ship on its way to it
+(**Ship Enroute**). Click a column heading to sort; earlier choices break ties. The statistics at
+the top count your known systems, the planets you can colonize, those owned by others, the
+uncolonized ones, and your colony ships; a small map marks where the listed planets are.
 
-The filter buttons choose what to list:
+The tabs on the right choose what to list:
 
-| Filter | Shows |
+| Tab | Shows |
 |---|---|
-| `All` | Every planet you have seen. |
-| `Colonizable` | Planets you can colonize now. |
-| `All Colonies`, `Enemy Colonies`, `Ally Colonies` | Colonies, by owner. |
-| `Coloniz\Empty` | Colonizable planets in systems where no other empire has a colony. |
-| `Coloniz\Breathe` | Colonizable planets your race can breathe on. |
+| `All` | Every planet you have seen (asteroid fields only on their own tab). |
+| `Colonizable` | Planets of a type you can colonize, settled or not. |
+| `All Colonies`, `Enemy Colonies`, `Ally Colonies` | Colonies: all of them, those of empires without a Non-Aggression treaty with you, and those of empires with one. |
+| `Coloniz\Empty` | Colonizable planets that nobody has settled. |
+| `Coloniz\Breathe` | Colonizable, unsettled planets your race can breathe on. |
 | `Ship Enroute` | Planets one of your colony ships is heading for. |
 | `Asteroids` | Asteroid fields. |
-| `Special` | Planets with special abilities, such as ruins. |
+| `Special` | Planets with ancient ruins. |
 
-`No Sys To Avoid` hides planets in your systems to avoid. Click a column heading to sort.
+`No Sys To Avoid` hides planets in your systems to avoid. The window remembers the tab.
 
-Click a planet to select it, double-click it (or press `Goto`) to show it in the main window, and
-right-click it for its report. **Send Colony Ship** gives the selected planet to your nearest idle
-colony ship (not in a fleet) that can settle it.
+**Left-click** a planet to close the window and show the planet in the main window;
+**right-click** it for its report.
 
-> Sort the Colonizable list by conditions or by mineral value to find your best targets first.
+**Send Colony Ship** opens a list of the planets on the current tab. Pick one and press
+`Colonize`: the colony ship that can settle it with the shortest trip, among those without
+orders, gets the orders to load people (if it carries none), fly there and colonize. In a
+turn-based game the window then closes and the main window shows the ship. The button is lit
+only while you have such a ship available.
+
+> Choose the Coloniz\Breathe tab and sort by a resource to find your best targets first.
 
 ## The Colonies window
 

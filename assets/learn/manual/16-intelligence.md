@@ -39,7 +39,7 @@ Between them they can do these things:
 | Politics | Read or block the messages between two empires, disrupt their trade, report their treaty, or fake a declaration of war between them. |
 | Defense | Protect your empire against enemy projects. |
 
-You can aim projects only at empires you have met, friend or foe. Depending on the project you
+You can aim projects only at empires you are in contact with, friend or foe. Projects aimed at an empire you lose contact with are deleted, and when you are in contact with nobody at all, your whole queue is cleared, defense projects included. Depending on the project you
 also pick a planet, a ship, a technology area or a third empire. Most projects also offer an
 **Any** target, which lets your agents choose for you.
 
@@ -70,8 +70,8 @@ The [Intelligence](window:intelligence) window opens from the **Intelligence** b
 [Empires](window:empires) window (`F9`).
 
 - The top shows the points available this turn, the points produced per turn, the points held by your defenses, how many projects run (at most 12) and how points are shared.
-- The left list shows the projects you can start, grouped, with their cost. **Left-click** a project to add it. **Right-click** it to read its description.
-- The right side shows your projects, four at a time. Each slot has a **Remove** button, the target choices and a progress bar.
+- The left list shows the projects you can start, grouped, with their cost. **Left-click** a project to add it. Point at it to read its description, cost and kind of target in the panel at the bottom; **right-click** it to keep it there.
+- The right side shows your projects, four at a time. Each slot has a **Remove** button (it asks first, while the Empire Option for it is on), the target choices and a progress bar.
 - `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window. Divide Evenly is on for a new empire.
 
 ## Intelligence advice

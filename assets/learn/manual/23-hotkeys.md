@@ -1,9 +1,10 @@
 # Hotkeys
 
 These are the default keys. Most of them can be changed in the Controls tab of the
-[Settings](settings#controls) window, and the [Hotkeys](help:hotkeys) tab of Help lists them as
-they are bound now. The keys of the main window work while no other window is open and no text
-field has the keyboard.
+[Settings](settings#controls) window, and the Help window's [Hotkeys](help:hotkeys) tab always
+shows the keys as they are bound now. The keys of the main window work while no other window is
+open and no text field has the keyboard. An order key works only while its order button is lit;
+pointing at an order button shows its name and key at the top of the system panel.
 
 ## Windows
 
@@ -23,69 +24,70 @@ field has the keyboard.
 | End Turn | `F12` or `Enter` |
 | Settings | `Ctrl+,` |
 | The manual page for the window in front | `Shift+F1` |
-| Show the lesson or training panel again | `Ctrl+H` |
+| Show or hide the lesson or training panel | `Ctrl+H` |
 
 ## Orders
-
-These work for the selected ship, fleet, colony or tagged group when the matching order button
-is lit; pointing at a button shows its name and key at the top of the system panel.
 
 | Order | Key |
 |---|---|
 | Move To | `M` |
+| Move To Waypoint, from a list | `Ctrl+W` |
 | Move To Waypoint 0 to 9 | `Ctrl+0` to `Ctrl+9` |
-| Set waypoint 0 to 9 where the selected object is | `Alt+0` to `Alt+9` |
+| Set waypoint 0 to 9 at the selected sector | `Alt+0` to `Alt+9` |
 | Warp | `W` |
 | Attack | `A` |
 | Colonize | `C` |
 | Explore | `E` |
-| Resupply | `S` |
-| Repair | `R` |
+| Resupply At Nearest | `S` |
+| Repair At Nearest | `R` |
 | Sentry | `Y` |
 | Set Patrol (then `Enter` or right-click to finish) | `P` |
 | Repeat Orders on or off | `K` |
 | Clear Orders | `Delete` or `Backspace` |
 | Fleet Transfer | `F` |
+| Change Formation \ Strategy (fleets) | `H` |
 | Construction queue | `Q` |
 | Cargo Transfer | `T` |
-| `Launch \ Recover Units` | `U` |
-| Load Cargo | `L` |
-| Drop Cargo | `D` |
+| Launch \ Recover Units (turn-based games) | `U` |
+| Launch Units Remotely, Recover Units Remotely | `I`, `O` |
+| Load Cargo, Drop Cargo | `L`, `D` |
 | Stellar Manipulation | `B` |
-| Scrap, retrofit, mothball | `G` |
+| Scrap \ Analyze \ Mothball | `G` |
 | View Orders | `V` |
 | Change Name | `N` |
-| Cloak | `Z` |
-| Decloak | `X` |
-| Move To Waypoint (from a list) | `Ctrl+W` |
-| Launch units at a place | `I` |
-| Recover units at a place | `O` |
-| Fleet formation and strategy | `H` |
-| Sweep Mines | `Ctrl+M` |
+| Cloak, Decloak | `Z`, `X` |
 | Use Component | `Ctrl+Z` |
-| Scrap Facilities | `Ctrl+K` |
+| Sweep Mines | `Ctrl+M` |
+| Tag or untag the selected sector as a minefield | `Ctrl+T`, `Ctrl+R` |
 | Abandon Planet | `Ctrl+A` |
-| Minister Control on or off | `Ctrl+Y` |
-| Tag, untag the selected sector as a minefield | `Ctrl+T`, `Ctrl+R` |
+| Scrap Facilities | `Ctrl+K` |
+| Toggle Minister Control | `Ctrl+Y` |
 
-Jettison Cargo (`J`), Use Facility (`Ctrl+J`) and Convert Resources (`Ctrl+V`) have their
-buttons and keys, but OpenSE4 cannot carry them out yet.
+Jettison Cargo (`J`), Use Facility (`Ctrl+J`) and Convert Resources (`Ctrl+V`) have keys and
+buttons but are not in OpenSE4 yet. The `Ctrl` and `Alt` number keys cannot be changed.
 
-In a simultaneous game, `Ctrl+P` plays the movement of the last turn again, `Ctrl+O` puts the
-ships back where they started, `Ctrl+I` moves them on by one day and `Ctrl+U` plays it for
-every ship.
+## Movement log
+
+In simultaneous games the main window can replay the last turn's movement.
+
+| Action | Key |
+|---|---|
+| Play the movement log | `Ctrl+P` |
+| Play it for every ship | `Ctrl+U` |
+| Step it one day | `Ctrl+I` |
+| Rewind it: the ships go back where they started | `Ctrl+O` |
 
 ## Selecting
 
 | Key | Action |
 |---|---|
-| `Space` | Next ship with nothing to do (turn-based games: next ship with movement left) |
+| `Space` | Next ship without orders (turn-based games: next ship with movement left) |
 | `Ctrl+N`, `Ctrl+B` | Next, previous ship |
 | `Ctrl+F`, `Ctrl+D` | Next, previous fleet |
 | `Ctrl+C`, `Ctrl+X` | Next, previous colony |
-| `Shift`+click in the list | Tag a ship (a ship in a fleet tags the fleet); orders then go to every tagged ship |
-| `Shift+A`, `Shift+C` | Tag every ship of yours in the list, clear the tags |
-| `Esc` | Cancel picking a target; otherwise clear the selection |
+| `Shift+click` in the list of a sector | Tag a ship (a ship in a fleet tags the fleet), so that one order goes to every tagged ship |
+| `Shift+A`, `Shift+C` | Tag all your ships in the selected sector, clear the tags |
+| `Esc` | Cancel picking a place; otherwise clear the selection |
 
 ## Display
 
@@ -100,7 +102,8 @@ every ship.
 | Action | Result |
 |---|---|
 | Left-click a sector | Select it: its report, or a list of what is there |
-| Right-click a sector | Move the selected ship there (can be switched off) |
+| Right-click a sector | Move the selected ship there, when it can move (can be switched off); otherwise select |
+| Right-click while picking a place | Choose it (and finish a patrol) |
 | Left-click the galaxy panel | Show that system |
 | Right-click the galaxy panel | Open the Galaxy Map |
 
@@ -108,9 +111,12 @@ every ship.
 
 | Key | Action |
 |---|---|
-| `Enter` | In the battle questions: `Attack` (enter the sector) and `Tactical`; `End Turn` when the game asks before ending the turn; `OK` in notices |
-| `Esc` | `Stay Back`, `Strategic`, `Cancel` or `No`; closes most windows |
-| `Delete` | Remove the selected item from a construction queue |
+| `Y` | Yes, in every Yes/No question |
+| `N`, `Esc`, `Enter` | No, in every Yes/No question, such as *End the turn now?* |
+| `T`, `S` | Tactical or Strategic, when a battle asks how to fight it |
+| `Esc` | Close a window or cancel |
+| `Enter` | Close a window whose bottom button is `Close`; continue from a notice |
+| `Delete` | Remove the selected item from a construction queue, with the pointer over the queue |
 
 ## Tactical combat
 
@@ -120,21 +126,29 @@ every ship.
 | `Ctrl+B` | Previous piece that can move |
 | `Ctrl+F`, `Ctrl+D` | Next, previous piece that can fire |
 | `Shift+A`, `Shift+C` | Tick all, untick all weapons of the selected piece |
-| `L` | Tactical Combat Orders window |
-| `T` | Drop troops (then click the target) |
+| `L` | Launch units from the selected piece |
+| `T` | Drop troops at once on the adjacent enemy colony |
 | `R` | Ram (then click the target) |
 | `C` | Capture (then click the target) |
 | `E` | End your phase |
-| `Alt+0` to `Alt+9` | Make the selected piece leader of a group |
-| `Ctrl+0` to `Ctrl+9` | Make the selected piece a member of a group |
+| `Alt+1` to `Alt+9` | Make the selected piece leader of a group, then choose a formation |
+| `Ctrl+1` to `Ctrl+9` | Make the selected piece a member of a group |
+| `Alt+0` or `Ctrl+0` | Clear the selected piece's group |
 | Arrow keys | Scroll the map |
 | `Esc` | Cancel aiming |
-| `Space` or `Enter` while pieces move | Skip the animation |
+| `Space` while pieces move | Skip the animation |
+
+The piece keys work once the battle has begun.
 
 ## Combat replay
 
 | Key | Action |
 |---|---|
-| `Space` | Play or pause |
-| Right arrow, Left arrow | Next, previous combat turn |
-| `Home` | Back to the start |
+| `Space` | Next: play the next combat turn |
+| `Esc` | Close the replay |
+
+## The manual
+
+| Key | Action |
+|---|---|
+| `Alt+Left`, `Alt+Right` | Back and forward through the pages you have read |

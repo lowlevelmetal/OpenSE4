@@ -17,7 +17,7 @@ A battle also needs **sight**. Your ships fight only enemies that one side can s
 ship that no enemy can see slips through enemy sectors without a fight (see
 [The galaxy](galaxy#sight-and-sensors)).
 
-- **Turn-based games**: a battle can start when a group of ships moves into a sector (warp jumps included) and sees a hostile object there, or is seen by one while cloaked. The **Attack** order starts one on purpose. Ships that simply sit in a sector never start a battle. Before your ships enter a sector with visible enemies, you are asked whether to attack.
+- **Turn-based games**: a battle can start when a group of ships moves into a sector (warp jumps included) and sees a hostile object there, or is seen by one while cloaked. The **Attack** order starts one on purpose. Ships that simply sit in a sector never start a battle. Before your ships enter a sector with visible enemies, you are asked whether they should enter and attack: `Yes` (or `Y`) goes in; `No` stops the move and cancels the ship's orders.
 - **Simultaneous games**: after each of the turn's 30 days, every sector where something carried out an order that day is checked, and a battle is fought where enemies see each other. A sector fights at most once a turn, unless newcomers arrive or a survivor of the last battle there was damaged.
 
 Once a battle starts, **everything** owned in that sector takes part, including the ships and
@@ -31,10 +31,11 @@ top of a ship's list ends.
 
 ## Tactical or strategic
 
-In a local turn-based game, each battle with a human side asks you to choose:
+In a local or hotseat turn-based game, each battle with a human side asks you to choose (see
+[Battle windows](combat-windows#how-battles-reach-you)):
 
-- **Tactical**: you give the orders for your ships in every combat turn (see [Battle windows](combat-windows#tactical-combat)).
-- **Strategic**: every ship follows its strategy, and you watch.
+- **Tactical** (`T`): you give the orders for your ships in every combat turn (see [Battle windows](combat-windows#tactical-combat)).
+- **Strategic** (`S`): every ship follows its strategy, and you watch.
 
 The rules are the same either way. Simultaneous games, network games, play-by-e-mail games and
 games set up with **Strategic combat only** always fight strategically.
@@ -127,7 +128,7 @@ as the population falls. A colony whose people are all killed is lost.
 ## Strategies
 
 A **strategy** tells a ship how to fight when the computer is in control: in strategic battles,
-under Auto in tactical battles, and always for computer players. Each design has a default
+under Auto or after Resolve Combat in tactical battles, and always for computer players. Each design has a default
 strategy, and a fleet's strategy overrides it for the fleet's armed members.
 
 Open [Strategies](window:strategies) from Empire Status or from the Combat Simulator. Its pages:
