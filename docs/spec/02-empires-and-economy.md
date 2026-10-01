@@ -409,7 +409,10 @@ Trim values, since some have trailing spaces.
   - the colony type, which decides `Homeworld Lost` (see below);
   - the empire's recorded **home system**, which the no-spaceport rule uses (§5.5). It is
     set when the game is created (for a rebel empire, when it is founded: its capital's
-    system) and never moves afterwards, even if the homeworld is lost or captured.
+    system) and never moves afterwards, even if the homeworld is lost or captured. The
+    home sector is recorded with it, on the same occasions, and never moves either; with
+    the system it makes the home planet location that High and Catastrophic events spare
+    (spec 05 §4) (confirmed: binary).
 
   The `Palace` ability plays no part (§1.5).
 - When a colony's population dies out (for example to plague), the colony is removed.
@@ -424,11 +427,30 @@ colony uses the `… Domed` capacities [M/D]. Edge cases:
   - Facilities above the new slot count stay, but no new ones can be built (§6.5).
   - Population above the new maximum stays. The colony has no room left, so it neither
     grows nor takes in population until it drops below the maximum.
-  - Cargo above the new capacity stays until the planet next takes damage (in combat, for
-    example) or loses population to plague. Then cargo is removed until it fits: first any
-    population held as cargo, 1M at a time, then units one at a time from the first stack
-    in cargo. A colony whose cargo capacity shrinks for another reason (a lost `Cargo
-    Storage` facility, for example) is treated the same way.
+  - Cargo above the new capacity stays until the planet next takes a space-combat hit of
+    a hull-damaging type that gets at least 1 damage past its shields, or loses population
+    to plague (confirmed: binary). Then cargo is removed until it fits:
+    - if the colony has no population left, every troop unit in its cargo goes first;
+    - then population held as cargo, 1M at a time, from the first race in the cargo's
+      list, then the next;
+    - then units one at a time from the first stack in cargo.
+
+    A colony whose cargo capacity shrinks for another reason (a lost `Cargo Storage`
+    facility, for example) is treated the same way. Details (confirmed: binary):
+    - The trim is part of the planet's damage step. It runs at once, inside the battle,
+      after each such hit has damaged the stored units, the population and the
+      facilities. The hull-damaging types are those of spec 04 §9: Normal, Skips Normal
+      Shields, Skips All Shields, Skips Armor, Skips Shields And Armor, and
+      Quad/Double/Half/Quarter Damage To Shields. The planet-only types never trim:
+      the plague levels and the types that hit only a planet's population, its
+      conditions, its resupply depots or its spaceports (spec 04 §9).
+    - Units killed earlier in the same battle still take cargo space until the battle
+      ends, so a trim during a battle can remove a living unit that would have fitted once
+      the dead were cleared.
+    - Plague trims after each turn's plague loss, whether or not the colony survives. A
+      colony whose race is immune to the plague loses nothing and is not trimmed.
+    - Nothing else trims a planet's cargo: not events, intelligence operations, mines,
+      storms or ground combat. `Planet - Cargo Damage` removes cargo itself.
 - Atmosphere converters (confirmed: binary): each turn the colony has a converter (best
   `Planet - Change Atmosphere` Val1 above 0) and the planet's atmosphere differs from the
   one breathed by the majority race (the owner's race when it has no population), a
@@ -469,9 +491,14 @@ colony uses the `… Domed` capacities [M/D]. Edge cases:
 
 - Facilities change conditions by multiplication (§1.5). Conditions never go above 1.5
   (the owner is told when they reach it), and a change that would leave exactly 0 gives
-  0.1.
+  0.1. A change that would leave a negative value (an event, spec 05 §4) gives 0
+  (confirmed: binary).
 - Conditions affect **reproduction only** (§3). They do not change anger.
-- How the stored double meets the band edges is our choice for now (inferred, §13 Q51).
+- The edges are the 64-bit doubles nearest 0.3, 0.5, 1.0, 1.3 and 1.5, and the stored
+  double is compared exactly with them. A value equal to an edge is in the band above it
+  (confirmed: binary). So conditions equal to the double nearest 0.3 (an asteroid field's
+  0.6 / 2, or 0.5 lowered by an event of −0.2) are Harsh, and the double nearest 1.3 is
+  Good.
 - Events can also change conditions (see the events spec).
 
 **Blockade** (confirmed: binary)
@@ -791,9 +818,18 @@ banked. The UI shows it in parentheses and adds a "No Spaceport" icon.
 **Blocking rules** [H]
 - A cloaked planet or ship cannot build. Cloaking a ship clears its queue.
 - Scrapping a planet's space yard removes the ships from its queue. In the game
-  (confirmed: binary), at the start of each queue's turn, every item the queue can no
-  longer build is removed: ships once the queue has no yard, units or facilities in a
-  queue that cannot build that kind, and upgrades with nothing left to upgrade (§6.6).
+  (confirmed: binary), each empire first fixes the processing order of §6.3 from every
+  queue's top item. Then, for each queue in that order, a removal pass runs before
+  anything else: before the empty test, the on-hold test and the rate. So it also runs
+  for queues that are on hold, rioting, without population or cloaked. The pass removes:
+  - on a colony without a working space yard (none built, or the colony is cloaked): its
+    ship and base items, and any upgrade with no lower-level facility of its family left
+    (§6.6). Unit items stay;
+  - on a ship: its facility items. Its ship and base items stay, even while the ship is
+    mothballed or its yard component is destroyed.
+
+  Nothing else is removed by the pass. An upgrade with nothing left on a colony that has a
+  working yard stays (§6.6), and an item whose design no longer exists stays too.
 
 ### 6.2 Rate (per resource r) (confirmed: binary)
 
@@ -837,7 +873,9 @@ and `Supply Generation`; then all other queues in the empire's queue order.
   - If the completion builds nothing (no free facility slot, the ship limit, or a unit
     without room), the item stays at the top of the queue and must be paid for again.
   - Otherwise it leaves the queue, unless Repeat Build is on and the item can still be
-    built. Upgrades never repeat.
+    built. Upgrades never repeat. A ship, base or unit item always repeats. A facility
+    item repeats only while the colony has a free facility slot and, for a space yard
+    facility, has no space yard yet (confirmed: binary).
 - So at most one item finishes per queue per turn, and unused rate never flows to the
   next item.
 - The UI estimates the build time as `max_r ceil(cost_r / rate_r)`; for example, 6000 at
@@ -931,8 +969,11 @@ once (confirmed: binary).
   point.
 - Cost per resource: `trunc(current cost of the target × Upgrade % / 100) × stored
   count`.
-- At the start of each queue's turn, an upgrade item is removed once the colony has no
-  lower-level facility of that family left (§6.1). Its count is never lowered.
+- An upgrade item with nothing left to upgrade is removed at the start of the queue's
+  turn only on a colony without a working space yard (§6.1). Elsewhere it stays, is paid
+  in full at its stored count, and on completion converts nothing but still sends the
+  "facilities upgraded" message and leaves the queue (confirmed: binary). Its count is
+  never lowered.
 - On completion, the colony's facilities are taken in their stored order (the order in
   which each facility type was first added). Every lower level of the family is
   converted to the target until the count is used up, in that order and not lowest level
@@ -1096,9 +1137,15 @@ also needs its password before it can be edited [H].
   and in the empire file, so it builds up over several games while the player keeps
   saving the same empire.
 - It grows during play (the total never goes above 500,000,000):
-  - when a ship or unit group is destroyed in combat, the empire that destroyed it gains
-    its tonnage div 10: the hull's tonnage for a ship, the units' total for a group, and
-    nothing for a planet. Battles in the combat simulator give nothing;
+  - when a ship or unit group is destroyed in space combat, the empire that owns the
+    piece whose shot destroyed it (the launcher's owner for a seeker) gains its tonnage
+    div 10: the hull's tonnage for a ship or base; for a group, the tonnage of every unit
+    it held when the killing hit landed, units killed earlier in the same battle included
+    (they are cleared only when the battle ends); nothing for a planet or a seeker. This is
+    the figure the design statistics credit as enemy tonnage destroyed (spec 04 §15).
+    Battles in the combat simulator give nothing, and so do units lost by a group that
+    survives, units stored on planets or carried by ships, mines outside a battle, ground
+    combat, events and hazards;
   - each finished facility item adds its count;
   - each ship built adds its hull's tonnage div 10; units add nothing.
 - Race age is not stored; it is a label read off the experience: up to 5,000 Newborn,
@@ -1232,7 +1279,9 @@ is on (confirmed: binary).
   - Ticking "Use Race Minister Style" disables the field and stores an empty style.
   - At run time an empty style loads the race's own files, and a named style loads that
     folder's. A missing file falls back to a default under `Ai\`.
-  - Random computer players and rebel empires always get an empty style.
+  - Random computer players always get an empty style. A rebel empire keeps its former
+    owner's style, with the rest of the ministers' state (spec 05 §2.3) (confirmed:
+    binary).
 - OpenSE4's Empire Setup offers the style folders plus "the race's own" (no style), which
   a new empire starts with, and "Use Race Minister Style" starts off, as in the game. The
   empire starts the game with both, whether it is played by a human or marked Computer
@@ -1486,44 +1535,82 @@ the answer, [PARITY_GAPS.md](../PARITY_GAPS.md) lists it (economy section).
     24000, such as 7 or 9.
 49. **Cargo and facilities over capacity.** *Settled* (confirmed: binary, §2): facilities
     above the slots and population above the maximum are never removed. Cargo above the
-    capacity stays until the planet next takes damage or loses population to plague;
-    then cargo population, then units from the first stack, are removed until it fits.
-    See 54 for the details the engine chose.
+    capacity stays until the planet next takes a qualifying space-combat hit or loses
+    population to plague; then cargo population, then units from the first stack, are
+    removed until it fits. See 54 for the details.
 50. **Minister style at setup.** *Settled* (confirmed: binary, §10): the style starts empty
     (the race's own files) and can be left empty; "Use Race Minister Style" starts
     unticked. Our setup matches.
 
-Items 51 onward are the engine's own choices where the rules above are silent. Each is
-marked (inferred) in `src/game` and waits for an answer from the executable or the
-running game.
+Items 51 onward were the engine's own choices where the rules above were silent. They are
+now answered from the executable. Where the engine differs, the item says so and what
+must change.
 
-51. **Band edges.** *Open* (inferred, §2): the stored double is compared with each edge
-    (0.3, 0.5, 1.0, 1.3, 1.5) as an x87 constant, as a Delphi literal would be. So a
-    double just below an edge is in the band below it: the double nearest 0.3 (an
-    asteroid field's 0.6 / 2, or 0.5 lowered by an event of −0.2) is Deadly, while the
-    double nearest 1.3 lies above 1.3 and is Good. If the original compares with double
-    constants, such values fall in the band above.
-52. **Where built units go.** *Settled* (§6.5, with spec 03 §6.3 step 5): "the game's
-    object order" is the order of the object slots, where a new object takes the first
-    slot a destroyed one freed. The engine keeps a slot per vehicle (`Vehicle::slot`) and
-    places every planet before every vehicle (spec 03 §19 Q62, its own choice), so after
-    the builder it tries the empire's other planets in the sector in object order, then
-    its ships and bases by slot. Whether the original ever puts a planet's slot after a
-    ship's is spec 03's question 62.
-53. **Removing items a queue cannot build.** *Open* (inferred, §6.1): the engine removes
-    them at the start of every queue's turn, also when the queue is on hold, cloaked or
-    without population, or its colony is rioting. The processing order of §6.3 is decided
-    by each queue's top item before the removal.
-54. **Trimming cargo.** *Open* (inferred, §2): population held as cargo is removed from
-    the first group in list order. "Takes damage" is a hit in space combat that gets past
-    the planet's shields, of any damage type; the engine trims nowhere else (events,
-    intelligence sabotage). Plague trims after its loss when the colony survives.
-55. **Experience from kills.** *Open* (inferred, §9): a destroyed unit group gives the
-    tonnage of every unit it had in the battle (killed ones and units that joined it
-    included), the value that credits enemy tonnage (spec 04 §15); units lost by a group
-    that survives give nothing, nor do mines outside a battle, units stored on planets or
-    ground combat.
-56. **Upgrade target at queue time.** *OpenSE4 choice* (§6.6): the original's queue does
-    no tech check when an upgrade is queued, and its Upgrades tab offers only researched
-    targets. OpenSE4's command check also refuses an unresearched target, since commands
-    can come from any client. No difference in play is expected.
+51. **Band edges.** **Answer:** the edges are the 64-bit doubles nearest 0.3, 0.5, 1.0,
+    1.3 and 1.5, and the stored conditions double is compared exactly with them; a value
+    equal to an edge is in the band above it (confirmed: binary, §2). So the double
+    nearest 0.3 (an asteroid field's 0.6 / 2, or 0.5 lowered by an event of −0.2) is
+    Harsh, and the double nearest 1.3 is Good. 0.5, 1.0 and 1.5 are exact doubles, so
+    only the edge at 0.3 can change a result. The engine differs: its band test compares
+    with an extended-precision value of 0.3 that lies above the double nearest 0.3, so it
+    calls that value Deadly; the original calls it Harsh. The band test must compare the
+    stored double with the double constants, value ≥ edge meaning the band above.
+52. **Where built units go.** **Answer:** the original keeps one object list for the
+    whole galaxy (confirmed: binary). A removed object leaves an empty slot: a destroyed
+    ship, an emptied unit group, or a star, planet, storm or warp point taken off the map.
+    Every new object of any kind (ships, bases, launched units, planets, stars, storms,
+    warp points) takes the first empty slot, or goes at the end. At game start every
+    planet comes before every vehicle, because the galaxy is made first; but a planet
+    created during play (by a stellar manipulation or an event) can come after ships, and
+    a new ship can reuse a slot freed by a removed stellar object. §6.5's "object order"
+    is that slot order. The engine differs for objects created or removed during play: it
+    places every planet before every vehicle (`Vehicle::slot` covers vehicles only), so
+    unit placement tries the planets in the sector before the ships whatever their slots.
+    It must keep one slot order shared by all objects, where a new planet or vehicle
+    takes the first slot freed by any kind. This also answers spec 03 §19 Q62.
+53. **Removing items a queue cannot build.** **Answer:** each empire fixes the processing
+    order of §6.3 from every queue's top item first; then, for each queue in that order,
+    the removal pass runs before the empty test, the on-hold test and the rate, so also
+    for queues on hold, rioting, without population or cloaked (confirmed: binary,
+    §6.1). The engine matches in timing. What is removed differs in three ways (§6.1,
+    §6.6):
+    - A ship's queue loses only facility items. The engine differs: it removes ship and
+      base items from a yard ship that is mothballed or has no intact yard component; the
+      original keeps them.
+    - An upgrade with no lower-level facility left is removed only on a colony without a
+      working space yard. The engine differs: it removes it on every colony. On a colony
+      with a yard the original keeps it, charges it in full at its stored count, and on
+      completion converts nothing, sends the upgrade message and removes it.
+    - An item whose design no longer exists is not removed by this pass. The engine
+      removes it; the original keeps it. This is a corner case.
+
+    Related (§6.3, confirmed: binary): under Repeat Build a facility item stays only while
+    the colony has a free slot and, for a space yard facility, no yard yet; vehicle items
+    always stay. The engine's repeat test lacks the space-yard part, so a repeated space
+    yard item could build a second yard. It must add it.
+54. **Trimming cargo.** **Answer:** settled in §2 "Domes" (confirmed: binary). The trim
+    runs inside the battle, right after each space-combat hit of a hull-damaging type that
+    gets at least 1 damage past the planet's shields, and after each plague loss. Events,
+    intelligence operations, mines, storms and ground combat never trim. It removes every
+    troop unit first when the colony has no population left, then cargo population 1M at
+    a time from the first race in the list, then units one at a time from the first stack.
+    Units killed earlier in the battle still take space until the battle ends. The engine
+    differs: it marks the planet as damaged for the planet-only damage types too, and
+    trims once after the battle, when the killed units are already gone. It must trim
+    after each qualifying hit, against the capacity and cargo at that moment with the
+    battle's dead still counted, never for the planet-only types, and drop the troop units
+    first when the population reaches 0. The order inside the trim and the plague trim
+    already match.
+55. **Experience from kills.** **Answer:** settled in §9 (confirmed: binary). The empire
+    that owns the piece whose shot destroyed a ship, base or unit group gains its tonnage
+    div 10; for a group that is every unit it held when the killing hit landed, the
+    battle's earlier dead included. Units lost by a group that survives, seekers, planets,
+    stored or carried units, mines outside a battle, ground combat, events, hazards and
+    the combat simulator give nothing. The engine matches.
+56. **Upgrade target at queue time.** **Answer:** the original's queue refuses only a
+    second upgrade to the same target when an upgrade is queued; it does no tech check
+    (confirmed: binary, §6.6). Facility items have no tech check either, only the slot
+    count and the one-yard limit; vehicle items check that the design exists, is the
+    empire's own and uses known technology. Its Upgrades tab offers only researched
+    targets. OpenSE4 choice: the command check also refuses an unresearched target, since
+    commands can come from any client. No difference in play is expected.
