@@ -147,20 +147,8 @@ void explore(GameState& s, EmpireId e, SystemId sys) {
     explored[sys.index()] = 1;
 }
 
-// Keeps per-object arrays in step after the galaxy gained objects.
-void objectsAdded(GameState& s) {
-    s.colonies.resize(s.galaxy.objects.size());
-    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), 0);
-}
-
-ObjectId addObject(GameState& s, SystemId sys, SpaceObject obj) {
-    obj.id = ObjectId{s.galaxy.objects.size()};
-    obj.system = sys;
-    s.galaxy.system(sys).objects.push_back(obj.id);
-    s.galaxy.objects.push_back(std::move(obj));
-    objectsAdded(s);
-    return s.galaxy.objects.back().id;
-}
+// A new object takes the lowest free slot of the object list (spec 03 §19 Q62).
+ObjectId addObject(GameState& s, SystemId sys, SpaceObject obj) { return s.addObject(std::move(obj), sys); }
 
 // A random sector-object appearance of a physical type (optionally of a size).
 std::optional<uint32_t> pickSectorType(const Rules& r, std::string_view physical, std::string_view size, Rng& rng) {
@@ -848,12 +836,19 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
         case Effect::ShipMoved: {
             // To a random system of the quadrant, at a random sector, orders
-            // cleared; Amount is not used (confirmed: binary).
+            // cleared; Amount is not used (confirmed: binary). The system is
+            // R[1, systems] in system order, then one sector number R[0, 168]:
+            // x = s mod 13, y = s div 13 (spec 05 §4).
             if (!v || s.galaxy.systems.empty()) return out;
-            const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
-            const Sector sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))};
-            detachFromFleet(s, *v);
+            const SystemId dest{static_cast<uint32_t>(rng.range(1, static_cast<int64_t>(s.galaxy.systems.size())) - 1)};
+            const int number = static_cast<int>(rng.range(0, kSystemSize * kSystemSize - 1));
+            const Sector sector{number % kSystemSize, number / kSystemSize};
+            // The ship moves first and only then leaves its fleet: the fleet's
+            // location goes with it, so the rest of the fleet is disbanded and
+            // loses its orders (spec 05 §4, spec 03 §9, confirmed: binary).
             v->location = {dest, sector};
+            fleetMemberMoved(s, *v);
+            detachFromFleet(s, *v);
             v->orders.clear();
             v->repeatOrders = false;
             explore(s, v->owner, dest);
@@ -1366,14 +1361,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
     return out;
 }
 
+// The vehicle leaves its fleet and loses its orders; a fleet left with no
+// member at its location is disbanded (spec 03 §9, game::leaveFleet).
 void detachFromFleet(GameState& s, Vehicle& v) {
-    if (!v.fleet.valid()) return;
-    if (Fleet* f = s.fleet(v.fleet)) {
-        std::erase(f->members, v.id);
-        if (f->leader == v.id) f->leader = f->members.empty() ? VehicleId{} : f->members.front();
-    }
-    v.fleet = FleetId{};
-    std::erase_if(s.fleets, [](const Fleet& f) { return f.members.empty(); });
+    if (v.fleet.valid()) leaveFleet(s, v);
 }
 
 } // namespace opense4::game::effects

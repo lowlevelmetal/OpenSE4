@@ -1,5 +1,7 @@
 #include "game/state.hpp"
 
+#include <tuple>
+
 namespace opense4::game {
 
 std::string_view displayName(OrderKind k) {
@@ -113,19 +115,39 @@ std::vector<DesignId> seenDesignIds(const Knowledge& k) {
     return out;
 }
 
-Vehicle& GameState::addVehicle(Vehicle v) {
-    v.id = VehicleId{nextVehicleId++};
-    // The first object slot a removed vehicle freed, else a new one at the end (spec 03 §6.3).
+uint32_t GameState::freeSlot() const {
     std::vector<uint32_t> used;
-    used.reserve(vehicles.size());
-    for (const Vehicle& other : vehicles) used.push_back(other.slot);
+    used.reserve(vehicles.size() + galaxy.objects.size());
+    for (const Vehicle& v : vehicles) used.push_back(v.slot);
+    for (const StarSystem& sys : galaxy.systems)
+        for (ObjectId o : sys.objects) used.push_back(galaxy.object(o).slot);
     std::sort(used.begin(), used.end());
     uint32_t slot = 0;
     for (uint32_t u : used) {
         if (u > slot) break;
         if (u == slot) ++slot;
     }
-    v.slot = slot;
+    return slot;
+}
+
+ObjectId GameState::addObject(SpaceObject obj, SystemId system) {
+    obj.id = ObjectId{galaxy.objects.size()};
+    obj.system = system;
+    obj.slot = freeSlot();
+    // The system lists its objects in object order (spec 04 §19.2 Q57).
+    std::vector<ObjectId>& list = galaxy.system(system).objects;
+    const auto at = std::find_if(list.begin(), list.end(), [&](ObjectId o) { return galaxy.object(o).slot > obj.slot; });
+    list.insert(at, obj.id);
+    galaxy.objects.push_back(std::move(obj));
+    colonies.resize(galaxy.objects.size());
+    for (Empire& e : empires) e.knowledge.knownWarpLink.resize(galaxy.objects.size(), options.omnipresent ? 1 : 0);
+    return galaxy.objects.back().id;
+}
+
+Vehicle& GameState::addVehicle(Vehicle v) {
+    v.id = VehicleId{nextVehicleId++};
+    // The lowest slot of the object list that no object of any kind holds (spec 03 §6.3 step 5).
+    v.slot = freeSlot();
     // "Automatically use Individual Ministers for newly built vehicles": every
     // new vehicle and launched unit group starts under minister control (spec 02 §10).
     if (v.owner.valid() && v.owner.index() < empires.size() && empires[v.owner.index()].ministersForNewVehicles) v.minister = true;
@@ -135,17 +157,144 @@ Vehicle& GameState::addVehicle(Vehicle v) {
 
 Fleet& GameState::addFleet(Fleet f) {
     f.id = FleetId{nextFleetId++};
+    if (!f.location.system.valid() && !f.members.empty())
+        if (const Vehicle* first = vehicle(f.members.front())) f.location = first->location;
     fleets.push_back(std::move(f));
     return fleets.back();
 }
 
 void GameState::removeDeadVehicles() {
     std::erase_if(vehicles, [](const Vehicle& v) { return v.count <= 0; });
+    tidyFleets();
+}
+
+void GameState::tidyFleets() {
+    std::vector<FleetId> abandoned;
     for (Fleet& f : fleets) {
-        std::erase_if(f.members, [this](VehicleId id) { return vehicle(id) == nullptr; });
-        if (f.leader.valid() && !vehicle(f.leader)) f.leader = f.members.empty() ? VehicleId{} : f.members.front();
+        std::erase_if(f.members, [&](VehicleId id) {
+            const Vehicle* v = vehicle(id);
+            return !v || v->count <= 0 || v->fleet != f.id;
+        });
+        // A chosen leader that left or was destroyed is no longer chosen (spec 03 §9).
+        if (f.leader.valid() && std::find(f.members.begin(), f.members.end(), f.leader) == f.members.end()) f.leader = {};
+        if (fleetMembersAt(*this, f).empty()) abandoned.push_back(f.id);
     }
-    std::erase_if(fleets, [](const Fleet& f) { return f.members.empty(); });
+    for (FleetId id : abandoned) disbandFleet(*this, id);
+}
+
+std::vector<ObjectRef> objectOrder(const GameState& s) {
+    std::vector<ObjectRef> out;
+    out.reserve(s.vehicles.size() + s.galaxy.objects.size());
+    for (const StarSystem& sys : s.galaxy.systems)
+        for (ObjectId o : sys.objects) out.push_back(ObjectRef{o, {}, s.galaxy.object(o).slot});
+    for (const Vehicle& v : s.vehicles) out.push_back(ObjectRef{{}, v.id, v.slot});
+    // Slots are unique; the rest only keeps the order fixed should two ever meet.
+    std::sort(out.begin(), out.end(), [](const ObjectRef& a, const ObjectRef& b) {
+        return std::tuple(a.slot, a.vehicle.valid(), a.object.value, a.vehicle.value) < std::tuple(b.slot, b.vehicle.valid(), b.object.value, b.vehicle.value);
+    });
+    return out;
+}
+
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
+    std::vector<std::pair<uint32_t, VehicleId>> slots;
+    slots.reserve(s.vehicles.size());
+    for (const Vehicle& v : s.vehicles) slots.emplace_back(v.slot, v.id);
+    std::sort(slots.begin(), slots.end());
+    std::vector<VehicleId> out;
+    out.reserve(slots.size());
+    for (const auto& [slot, id] : slots) out.push_back(id);
+    return out;
+}
+
+// ---- Fleets ----------------------------------------------------------------------------------------
+
+namespace {
+
+bool earlierInObjectOrder(const Vehicle& a, const Vehicle& b) { return std::pair(a.slot, a.id) < std::pair(b.slot, b.id); }
+
+const std::vector<Order>& noOrders() {
+    static const std::vector<Order> none;
+    return none;
+}
+
+} // namespace
+
+const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
+    if (const Vehicle* v = s.vehicle(f.leader); v && v->count > 0 && v->fleet == f.id) return v;
+    const Vehicle* first = nullptr;
+    for (VehicleId id : f.members)
+        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->fleet == f.id && (!first || earlierInObjectOrder(*v, *first))) first = v;
+    return first;
+}
+
+std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f) {
+    std::vector<VehicleId> out;
+    for (VehicleId id : f.members)
+        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->fleet == f.id && v->location == f.location) out.push_back(id);
+    return out;
+}
+
+std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f) {
+    std::vector<VehicleId> out = fleetMembersAt(s, f);
+    std::erase_if(out, [&](VehicleId id) { return s.vehicle(id)->status == VehicleStatus::Mothballed; });
+    return out;
+}
+
+bool inFleetGroup(const GameState& s, const Vehicle& v) {
+    if (!v.fleet.valid() || v.count <= 0 || v.status == VehicleStatus::Mothballed) return false;
+    const Fleet* f = s.fleet(v.fleet);
+    return f && v.location == f->location && std::find(f->members.begin(), f->members.end(), v.id) != f->members.end();
+}
+
+const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f) {
+    const Vehicle* holder = nullptr;
+    for (VehicleId id : fleetGroup(s, f))
+        if (const Vehicle* v = s.vehicle(id); !v->orders.empty() && (!holder || earlierInObjectOrder(*v, *holder))) holder = v;
+    return holder;
+}
+
+const std::vector<Order>& fleetOrders(const GameState& s, const Fleet& f) {
+    const Vehicle* holder = fleetOrderHolder(s, f);
+    return holder ? holder->orders : noOrders();
+}
+
+bool fleetRepeats(const GameState& s, const Fleet& f) {
+    if (const Vehicle* holder = fleetOrderHolder(s, f)) return holder->repeatOrders;
+    // Nobody has orders: the first member's switch (Repeat is set on every list alike).
+    const std::vector<VehicleId> group = fleetGroup(s, f);
+    const Vehicle* first = nullptr;
+    for (VehicleId id : group)
+        if (const Vehicle* v = s.vehicle(id); !first || earlierInObjectOrder(*v, *first)) first = v;
+    return first && first->repeatOrders;
+}
+
+void fleetMemberMoved(GameState& s, const Vehicle& v) {
+    if (!v.fleet.valid()) return;
+    if (Fleet* f = s.fleet(v.fleet)) f->location = v.location;
+}
+
+void leaveFleet(GameState& s, Vehicle& v) {
+    const FleetId id = v.fleet;
+    v.fleet = {};
+    v.orders.clear();
+    v.repeatOrders = false;
+    if (Fleet* f = s.fleet(id)) {
+        std::erase(f->members, v.id);
+        if (f->leader == v.id) f->leader = {};  // the first member leads again (spec 03 §9)
+    }
+    s.tidyFleets();
+}
+
+void disbandFleet(GameState& s, FleetId id) {
+    Fleet* f = s.fleet(id);
+    if (!f) return;
+    for (VehicleId m : f->members)
+        if (Vehicle* v = s.vehicle(m); v && v->fleet == id) {
+            v->fleet = {};
+            v->orders.clear();
+            v->repeatOrders = false;
+        }
+    std::erase_if(s.fleets, [&](const Fleet& x) { return x.id == id; });
 }
 
 std::vector<const Vehicle*> GameState::vehiclesAt(Location where) const {

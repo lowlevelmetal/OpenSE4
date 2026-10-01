@@ -525,6 +525,27 @@ TEST_CASE("events: ship effects") {
         destinations[s.vehicle(id)->location.system.index()] = 1;
     }
     CHECK(std::count(destinations.begin(), destinations.end(), uint8_t{1}) > 3);
+    // The draws (spec 05 §4, confirmed: binary): the system R[1, systems],
+    // then one sector number R[0, 168] split as x = s mod 13, y = s div 13.
+    for (uint64_t seed = 1; seed <= 10; ++seed) {
+        Rng expect(seed);
+        const SystemId sys{static_cast<uint32_t>(expect.range(1, static_cast<int64_t>(s.galaxy.systems.size())) - 1)};
+        const int number = static_cast<int>(expect.range(0, 168));
+        hit(s, Effect::ShipMoved, target(), 2, seed);
+        CHECK(s.vehicle(id)->location == Location{sys, Sector{number % 13, number / 13}});
+    }
+    // The ship moves first and then leaves its fleet: the fleet's location
+    // goes with it, so the rest of the fleet is disbanded and loses its orders.
+    const VehicleId mate = addTestVehicle(s, r, tank, s.vehicle(id)->location).id;
+    REQUIRE(apply(r, s, kA, cmd::CreateFleet{"Pair", {id, mate}}).ok);
+    const FleetId pair = s.vehicle(id)->fleet;
+    REQUIRE(apply(r, s, kA, cmd::SetOrders{{}, pair, {Order{OrderKind::Sentry}}, false}).ok);
+    REQUIRE(s.vehicle(mate)->orders.size() == 1);
+    hit(s, Effect::ShipMoved, target(), 2, 5);
+    CHECK(s.fleet(pair) == nullptr);
+    CHECK_FALSE(s.vehicle(id)->fleet.valid());
+    CHECK_FALSE(s.vehicle(mate)->fleet.valid());
+    CHECK(s.vehicle(mate)->orders.empty());
 
     TurnContext ctx = context(r, s);
     Rng rng(3);

@@ -24,7 +24,7 @@ namespace opense4::game {
 // Who receives orders and where the next order starts from.
 struct OrderContext {
     EmpireId owner;
-    std::vector<VehicleId> members;  // the vehicle, or the fleet's members in its sector
+    std::vector<VehicleId> members;  // the vehicle, or the fleet's group at its location (fleetGroup)
     VehicleId lead;                  // the group's leading ship (the vehicle, or the fleet's leader); invalid: the first member
     Location at;                     // where the next order starts
     bool carriesPopulation = false;  // some member carries population there

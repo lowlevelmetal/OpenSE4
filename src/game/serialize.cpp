@@ -254,11 +254,17 @@ std::string validateState(const GameState& s, const Rules* rules) {
                 return std::format("unit group {} does not match its stacks", v.id.value);
         }
     }
+    {
+        // One object list: no two objects hold the same slot (spec 03 §19 Q62).
+        const std::vector<ObjectRef> order = objectOrder(s);
+        for (size_t i = 1; i < order.size(); ++i)
+            if (order[i - 1].slot == order[i].slot) return std::format("two objects hold slot {}", order[i].slot);
+    }
     for (size_t i = 0; i < s.fleets.size(); ++i) {
         const Fleet& f = s.fleets[i];
         if (i > 0 && !(s.fleets[i - 1].id < f.id)) return "fleets are not sorted by id";
         if (!f.id.valid() || f.id.value >= s.nextFleetId) return std::format("fleet {} has an id beyond the next free one", f.id.value);
-        if (!f.owner.valid() || !empireOk(f.owner) || !ordersOk(f.orders)) return std::format("fleet {} has a wrong owner or orders", f.id.value);
+        if (!f.owner.valid() || !empireOk(f.owner) || !placeOk(f.location)) return std::format("fleet {} has a wrong owner or place", f.id.value);
     }
     for (const DiplomaticMessage& m : s.messages)
         if (!empireOk(m.from) || !empireOk(m.to) || !empireOk(m.thirdEmpire)) return "a diplomatic message names a missing empire";

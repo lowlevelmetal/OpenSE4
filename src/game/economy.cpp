@@ -590,7 +590,8 @@ struct Extraction {
 std::vector<Extraction> remoteMining(const Rules& r, const GameState& s, EmpireId e) {
     std::vector<Extraction> out;
     std::vector<Location> worked;
-    for (const Vehicle& v : s.vehicles) {
+    for (VehicleId id : vehiclesInObjectOrder(s)) {
+        const Vehicle& v = *s.vehicle(id);
         if (v.owner != e || v.count <= 0 || v.status == VehicleStatus::Mothballed) continue;
         std::array<int64_t, 3> rate{};
         bool miner = false;

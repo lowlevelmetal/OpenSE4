@@ -305,7 +305,7 @@ void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
         // "Next ship": in a turn-based game the ships that still have movement
         // points, in a simultaneous game those without orders (spec 03 §17).
         if (idleOnly && ui.session.turnBased() && v.movement <= 0) continue;
-        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty())))
+        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || game::fleetOrders(ui.state(), *ui.state().fleet(v.fleet)).empty())))
             continue;
         if (prefs.skipDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
         if (prefs.skipInFleets && v.fleet.valid() && !(current && v.id == current->id)) continue;
@@ -374,8 +374,9 @@ void MainWindow::giveOrder(UiContext& ui, game::Order o) {
     std::vector<game::Order> orders;
     bool repeat = false;
     if (const game::Fleet* f = ui.state().fleet(v->fleet)) {
-        orders = f->orders;
-        repeat = f->repeatOrders;
+        // The fleet's orders: copies in its members' lists (spec 03 §8).
+        orders = game::fleetOrders(ui.state(), *f);
+        repeat = game::fleetRepeats(ui.state(), *f);
     } else {
         orders = v->orders;
         repeat = v->repeatOrders;
@@ -476,8 +477,8 @@ std::vector<MainWindow::OrderButton> MainWindow::availableOrders(UiContext& ui) 
         const bool mobile = st.movement > 0 || fleet;
         const auto abilities = game::vehicleAbilities(r, s, *v);
         const bool hasWarp = !s.galaxy.warpPoints(v->location.system).empty();
-        const std::vector<game::Order>& current = fleet ? fleet->orders : v->orders;
-        const bool repeat = fleet ? fleet->repeatOrders : v->repeatOrders;
+        const std::vector<game::Order>& current = fleet ? game::fleetOrders(s, *fleet) : v->orders;
+        const bool repeat = fleet ? game::fleetRepeats(s, *fleet) : v->repeatOrders;
         auto simple = [&](game::OrderKind k) { return [this, &ui, k] { giveOrder(ui, game::Order{k}); }; };
         out.push_back({"Move", "Move To (M)", mobile, [this, &ui] { startPick(ui, Pick::MoveTo, "Move To: pick a destination"); }});
         out.push_back({"Wpt", "Move To Waypoint", mobile, [&ui, id] {
@@ -1316,7 +1317,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     // Movement line for the selected own vehicle.
     if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player()) {
         const game::Fleet* f = s.fleet(v->fleet);
-        const auto& orders = f ? f->orders : v->orders;
+        const auto& orders = f ? game::fleetOrders(s, *f) : v->orders;
         game::Location from = v->location;
         for (const game::Order& o : orders) {
             game::Location to = o.location;

@@ -321,18 +321,15 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             // The sample object, moved into the battle sector: a colony goes to the
             // side; an unowned object stands there as a neutral obstacle.
             SpaceObject obj = real.galaxy.object(item.planet);
-            obj.id = ObjectId{sb.galaxy.objects.size()};
-            obj.system = arena.id;
             obj.sector = sim.where.sector;
             if (!simulatorColony(real, item)) {
                 obj.destination = {};   // a copied warp point leads nowhere
-                sb.galaxy.system(arena.id).objects.push_back(obj.id);
-                sb.galaxy.objects.push_back(std::move(obj));
-                if (sb.colonies.size() < sb.galaxy.objects.size()) sb.colonies.resize(sb.galaxy.objects.size());
+                sb.addObject(std::move(obj), arena.id);
                 continue;
             }
+            const ObjectId planet = sb.addObject(std::move(obj), arena.id);
             Colony c = *real.colony(item.planet);
-            c.planet = obj.id;
+            c.planet = planet;
             c.owner = owner;
             c.orders.clear();
             c.queue = {};
@@ -340,9 +337,6 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             c.homeworld = false;
             for (PopulationGroup& g : c.population) g.race = owner;
             c.cargo.units = copyCargo(side, item.replaceCargo ? item.cargo : c.cargo.units);
-            sb.galaxy.system(arena.id).objects.push_back(obj.id);
-            sb.galaxy.objects.push_back(std::move(obj));
-            if (sb.colonies.size() < sb.galaxy.objects.size()) sb.colonies.resize(sb.galaxy.objects.size());
             sb.colonies[c.planet.index()] = std::move(c);
             // Every planet uses the viewer's strategy for planets (spec 04 §17, §19.2 Q71).
             const uint32_t planets = strategyFor(side, viewer, 0);

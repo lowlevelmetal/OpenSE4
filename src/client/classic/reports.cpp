@@ -362,8 +362,9 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
             ImGui::Text("%s%s", v->name.c_str(), id == f.leader ? " (leader)" : "");
         }
     heading(ui, "Orders");
-    if (f.orders.empty()) ImGui::TextColored(kDim, "None");
-    for (const auto& o : f.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
+    const std::vector<game::Order>& orders = game::fleetOrders(s, f);  // the copies its members at its location hold
+    if (orders.empty()) ImGui::TextColored(kDim, "None");
+    for (const auto& o : orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
 }
 
 void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {

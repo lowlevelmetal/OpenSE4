@@ -1,8 +1,10 @@
 // Stellar manipulation (spec 01 §9, confirmed: binary).
 //
 // Object ids stay stable: objects are converted in place where possible
-// (asteroids <-> planet); new objects are appended; removed objects leave
-// their system's object list and keep their record.
+// (asteroids <-> planet), keeping their slot (inferred, spec 03 §19 Q72); new
+// objects take the lowest free slot of the object list (GameState::addObject);
+// removed objects leave their system's object list, which frees their slot,
+// and keep their record.
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
@@ -214,7 +216,7 @@ protected:
                 return true;
         for (ObjectId o : cs_.galaxy.system(here_.system).objects) {
             if (cs_.galaxy.object(o).sector != here_.sector) continue;
-            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, cs_, owner_, o)) return true;
+            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeeColony(r_, cs_, owner_, o)) return true;
         }
         return false;
     }
@@ -375,7 +377,7 @@ protected:
         // least Val 2 kT of components whose Custom Group is Val 1. The count goes
         // by design: every such component, damaged or not, with its mounted size;
         // mothballed ships and unit groups do not count (spec 01 §9, §14 Q33,
-        // confirmed: binary). Bases count like ships (inferred, spec 01 §14 Q42).
+        // confirmed: binary). Bases count like ships (spec 01 §14 Q42, confirmed: binary).
         for (const ParsedAbility& a : abilities_)
             if (a.kind == AbilityKind::ConstructedPlanetRequirements) plan_.needs.emplace_back(static_cast<int>(a.value1), a.value2);
         for (const auto& [group, tons] : plan_.needs) {
@@ -434,14 +436,9 @@ private:
 
     uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.below(types.size())]; }
 
-    ObjectId append(SpaceObject obj, SystemId sys) {
-        obj.id = ObjectId{s_.galaxy.objects.size()};
-        obj.system = sys;
-        s_.galaxy.system(sys).objects.push_back(obj.id);
-        s_.galaxy.objects.push_back(std::move(obj));
-        objectsAppended(s_);
-        return s_.galaxy.objects.back().id;
-    }
+    // A new object takes the lowest free slot of the object list, whatever
+    // kind of object left it (spec 03 §19 Q62).
+    ObjectId append(SpaceObject obj, SystemId sys) { return s_.addObject(std::move(obj), sys); }
 
     void remove(ObjectId id) { removeObject(s_, id); }
 
@@ -668,11 +665,6 @@ std::optional<Location> stellarTarget(const GameState& s, const Order& o, Locati
 std::string stellarManipulation(TurnContext& ctx, std::span<const VehicleId> members, const Order& o, bool& consumed) {
     Manipulation m(ctx, o);
     return m.run(members, consumed);
-}
-
-void objectsAppended(GameState& s) {
-    s.colonies.resize(s.galaxy.objects.size());
-    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), s.options.omnipresent ? 1 : 0);
 }
 
 } // namespace opense4::game::movement::detail

@@ -290,7 +290,7 @@ template <class Ar> void io(Ar& ar, Conditions& c) { fields(ar, c.bits); }
 
 template <class Ar>
 void io(Ar& ar, SpaceObject& o) {
-    fields(ar, o.id, o.kind, o.system, o.sector, o.sectorType, o.name, o.abilities, o.size, o.surface, o.atmosphere, o.conditions,
+    fields(ar, o.id, o.slot, o.kind, o.system, o.sector, o.sectorType, o.name, o.abilities, o.size, o.surface, o.atmosphere, o.conditions,
            o.value, o.starAge, o.starColor, o.starLuminosity, o.destination);
 }
 
@@ -424,8 +424,8 @@ void io(Ar& ar, Vehicle& v) {
 
 template <class Ar>
 void io(Ar& ar, Fleet& f) {
-    fields(ar, f.id, f.owner, f.name, f.members, f.leader, f.formation, f.strategy, f.experience, f.experienceTenths, f.orders,
-           f.repeatOrders, f.minister);
+    fields(ar, f.id, f.owner, f.name, f.members, f.leader, f.location, f.formation, f.strategy, f.experience, f.experienceTenths,
+           f.minister);
 }
 
 // ---- Diplomacy ------------------------------------------------------------------------------------

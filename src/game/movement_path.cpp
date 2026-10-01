@@ -362,14 +362,12 @@ bool leadsSweeperGroup(const GameState& s, const Vehicle& first) {
 }
 
 const Vehicle& sweeperOf(const GameState& s, const Vehicle& v) {
-    if (!detail::followsFleetOrders(s, v)) return v;
-    const Fleet* f = s.fleet(v.fleet);
-    const Vehicle* first = &v;
-    for (VehicleId id : f->members)
-        if (const Vehicle* m = s.vehicle(id); m && detail::alive(*m) && m->location == v.location &&
-                                               std::pair(m->slot, m->id) < std::pair(first->slot, first->id))
-            first = m;
-    return *first;
+    const Fleet* f = v.fleet.valid() ? s.fleet(v.fleet) : nullptr;
+    if (!f) return v;
+    const Vehicle* first = nullptr;
+    for (VehicleId id : fleetMembersAt(s, *f))
+        if (const Vehicle* m = s.vehicle(id); !first || std::pair(m->slot, m->id) < std::pair(first->slot, first->id)) first = m;
+    return first ? *first : v;
 }
 
 namespace detail {
@@ -460,15 +458,12 @@ std::optional<Path> findPath(const Rules& r, const GameState& s, EmpireId e, Loc
 }
 
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f) {
-    // The lowest maximum among the members in the fleet's sector (spec 03 §9).
-    const Vehicle* lead = detail::fleetLeader(s, f);
-    if (!lead) return 0;
+    // The lowest maximum among the members at the fleet's location (spec 03 §9).
     int speed = -1;
-    for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && detail::alive(*v) && v->location == lead->location) {
-            const int mp = detail::turnMovement(r, s, *v);
-            speed = speed < 0 ? mp : std::min(speed, mp);
-        }
+    for (VehicleId id : fleetMembersAt(s, f)) {
+        const int mp = detail::turnMovement(r, s, *s.vehicle(id));
+        speed = speed < 0 ? mp : std::min(speed, mp);
+    }
     return std::max(0, speed);
 }
 
@@ -476,15 +471,17 @@ int etaTurns(const Rules& r, const GameState& s, const Vehicle& v, Location to) 
     if (v.location == to) return 0;
     int speed = vehicleMaxMovement(r, s, v);
     int held = detail::heldInPlace(s, v) ? static_cast<int>(v.immobileUntil - s.turn) : 0;
-    if (detail::followsFleetOrders(s, v))
-        if (const Fleet* f = s.fleet(v.fleet)) {
-            speed = INT_MAX;
-            for (VehicleId id : f->members)
-                if (const Vehicle* m = s.vehicle(id); m && detail::alive(*m) && m->location == v.location) {
-                    speed = std::min(speed, vehicleMaxMovement(r, s, *m));
-                    if (detail::heldInPlace(s, *m)) held = std::max(held, static_cast<int>(m->immobileUntil - s.turn));
-                }
+    // A fleet member moves at the speed of the members at the fleet's location (spec 03 §9, §19 Q61).
+    if (const Fleet* f = v.fleet.valid() ? s.fleet(v.fleet) : nullptr) {
+        speed = 0;
+        bool first = true;
+        for (VehicleId id : fleetMembersAt(s, *f)) {
+            const Vehicle& m = *s.vehicle(id);
+            speed = first ? vehicleMaxMovement(r, s, m) : std::min(speed, vehicleMaxMovement(r, s, m));
+            first = false;
+            if (detail::heldInPlace(s, m)) held = std::max(held, static_cast<int>(m.immobileUntil - s.turn));
         }
+    }
     // The moves that speed makes in a turn (a simultaneous game's day counter
     // loses some, spec 03 §6.3).
     const int moves = movesPerTurn(s, speed);

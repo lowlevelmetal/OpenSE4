@@ -563,9 +563,10 @@ TEST_CASE("placement: empires in the middle are numbered by their first piece in
     const VehicleId a = spawn(s, frigate(s, ar.a, "A", 1, {}), ar.loc);
     const VehicleId b = spawn(s, frigate(s, ar.b, "B", 1, {}), ar.loc);
     const VehicleId c = spawn(s, frigate(s, ar.c, "C", 1, {}), ar.loc);
-    s.vehicle(c)->slot = 1;
-    s.vehicle(b)->slot = 2;
-    s.vehicle(a)->slot = 3;
+    // Slots, not ages: C took the first slot, then B, then A (spec 03 §19 Q62).
+    std::swap(s.vehicle(a)->slot, s.vehicle(c)->slot);
+    REQUIRE(s.vehicle(c)->slot < s.vehicle(b)->slot);
+    REQUIRE(s.vehicle(b)->slot < s.vehicle(a)->slot);
     Bench k(std::move(ar));
     Battle& bt = k.start();
     auto inBox = [&](VehicleId v, int x0, int y0) {
@@ -575,6 +576,37 @@ TEST_CASE("placement: empires in the middle are numbered by their first piece in
     CHECK(inBox(c, 36 - 12, 31 - 12));   // 1: up-left
     CHECK(inBox(b, 36 + 12, 31 + 12));   // 2: down-right
     CHECK(inBox(a, 36 + 12, 31 - 12));   // 3: up-right
+}
+
+TEST_CASE("placement: planets and vehicles share one object order when the middle empires are numbered") {
+    // Spec 04 §3 step 4, §19.2 Q57; spec 03 §19 Q62: stellar objects and
+    // vehicles hold slots of one list, so a planet made during play comes
+    // after the ships already there.
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    const VehicleId a = spawn(s, frigate(s, ar.a, "A", 1, {}), ar.loc);
+    SpaceObject made = s.galaxy.object(homeworld(s, ar.b).planet);
+    made.sector = ar.loc.sector;
+    made.name = "Made";
+    const ObjectId planet = s.addObject(made, ar.loc.system);
+    Colony colony = homeworld(s, ar.b);
+    colony.planet = planet;
+    colony.homeworld = false;
+    colony.cargo = {};
+    s.colonies[planet.index()] = colony;
+    const VehicleId c = spawn(s, frigate(s, ar.c, "C", 1, {}), ar.loc);
+    REQUIRE(s.vehicle(a)->slot < s.galaxy.object(planet).slot);
+    REQUIRE(s.galaxy.object(planet).slot < s.vehicle(c)->slot);
+    Bench k(std::move(ar));
+    Battle& bt = k.start();
+    auto inBox = [&](VehicleId v, int x0, int y0) {
+        const combat::detail::Piece& p = bt.pieces()[static_cast<size_t>(k.at(v))];
+        return p.x >= x0 && p.x <= x0 + 6 && p.y >= y0 && p.y <= y0 + 6;
+    };
+    // A's ship comes first (1: up-left), B's colony second, and B, owner of
+    // the last colonised planet in that order, keeps the centre; C is third.
+    CHECK(inBox(a, 36 - 12, 31 - 12));   // 1: up-left
+    CHECK(inBox(c, 36 + 12, 31 - 12));   // 3: up-right
 }
 
 TEST_CASE("placement: hops stay on the map, and footprint squares off the map do not count") {

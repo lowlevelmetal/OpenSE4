@@ -550,7 +550,7 @@ void Battle::place() {
     for (size_t k = 0; k < n; ++k) {
         const Piece& p = pieces_[k];
         if (!p.owner.valid()) continue;
-        if (p.kind == Kind::Planet) already.emplace_back(objectOrderKey(p.object), k);
+        if (p.kind == Kind::Planet) already.emplace_back(objectOrderKey(s_, p.object), k);
         else if (!p.arrived && p.source.valid())
             if (const Vehicle* v = s_.vehicle(p.source)) already.emplace_back(objectOrderKey(*v), k);
     }

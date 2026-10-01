@@ -311,6 +311,18 @@ bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), obsc);
 }
 
+bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
+    if (!viewer.valid() || viewer.index() >= s.empires.size() || !planet.valid() || planet.index() >= s.galaxy.objects.size())
+        return false;
+    if (!inSystem(s.galaxy, planet)) return false;
+    if (const Colony* c = s.colony(planet); c && c->owner == viewer) return true;
+    const SpaceObject& obj = s.galaxy.object(planet);
+    if (!explored(r, s, viewer, obj.system)) return false;
+    // A colony's own cloak levels would count while it is cloaked; colonies
+    // never cloak in the engine, so the planet's obscuration is the whole test.
+    return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), planetObscuration(r, s, planet));
+}
+
 size_t forgetOldDesigns(GameState& s, EmpireId e) {
     if (!e.valid() || e.index() >= s.empires.size()) return 0;
     // "More than 50 turns ago": a design seen at turn T is still known at

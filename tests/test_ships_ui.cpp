@@ -82,7 +82,11 @@ TEST_CASE("ship windows: orders go to the fleet of a fleet member") {
     CHECK(owner.fleet == s.vehicle(a)->fleet);
     CHECK_FALSE(owner.vehicle.valid());
     REQUIRE(apply(r, s, me, shipui::withAppended(s, owner, Order{OrderKind::Sentry})).ok);
-    CHECK(s.fleet(owner.fleet)->orders.size() == 1);
+    CHECK(fleetOrders(s, *s.fleet(owner.fleet)).size() == 1);
+    // Every member holds a copy (spec 03 §8, §19 Q65).
+    CHECK(s.vehicle(a)->orders.size() == 1);
+    CHECK(s.vehicle(b)->orders.size() == 1);
+    CHECK(shipui::ordersOf(s, owner)->size() == 1);
     CHECK(shipui::ownerLocation(s, owner) == home);
 }
 

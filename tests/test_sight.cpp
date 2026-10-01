@@ -169,6 +169,46 @@ TEST_CASE("sight: storms and nebulae hide ships, units and planets but not stars
     CHECK_FALSE(sight::canSeePlanet(r, w.s, kA, farPlanet));
 }
 
+TEST_CASE("sight: a colony is seen by the detection rule, which needs sensors in the system") {
+    // Spec 03 §6.2, §6.4, §8, §19 Q70 (confirmed: binary): the rule of spec 01
+    // §6.3 applied to the colony's planet, unlike the map's memory of planets.
+    World w(rules(), 3);
+    const Rules& r = w.rules();
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {4, 4});
+    w.colony(home, kB, 100);
+    w.s.empire(kA).knowledge.explored[a.index()] = 1;
+    CHECK(sight::canSeePlanet(r, w.s, kA, home));          // remembered on the map since exploration
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));    // but no sensor source in the system
+    CHECK(sight::canSeeColony(r, w.s, kB, home));          // its owner always sees it
+    // A partner's sensors there count (spec 01 §6.1).
+    const VehicleId partner = w.spawn(w.ship(kC, "Partner", 1), at(a, 0, 0));
+    w.s.empire(kA).relation(kC).treaty = Treaty::Partnership;
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    w.s.empire(kA).relation(kC).treaty = Treaty::None;
+    w.v(partner).count = 0;
+    w.s.removeDeadVehicles();
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    // An own ship in the system sees it; a storm on the planet hides it from baseline sensors.
+    const VehicleId watcher = w.spawn(w.ship(kA, "Watcher", 1), at(a, 0, 0));
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    const ObjectId storm = w.object(a, ObjectKind::Storm, {4, 4});
+    w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorSightObscuration, 2));
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    w.spawn(w.ship(kA, "Eye", 1, {"Test Sensor"}), at(a, 0, 1));
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    // Omnipresence gives every empire EM Active 1 everywhere: a colony nothing hides is seen.
+    std::erase(w.s.galaxy.system(a).objects, storm);
+    w.v(watcher).count = 0;
+    for (Vehicle& v : w.s.vehicles) v.count = 0;
+    w.s.removeDeadVehicles();
+    w.s.empire(kA).knowledge.explored[a.index()] = 0;
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    w.s.options.omnipresent = true;
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+}
+
 TEST_CASE("sight: a ship or planet carrying sight obscuration hides its sector") {
     ruleset::Ruleset data = buildRuleset();
     ruleset::Component smoke = data.components[test::componentIndex(rules(), "Mv Armor")];

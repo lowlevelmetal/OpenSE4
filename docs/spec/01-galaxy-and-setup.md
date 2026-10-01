@@ -1296,7 +1296,4 @@ highlighted, and an X marks each empire that has met one.
     least one candidate, and also when size and atmosphere are both `Any` even if there is
     none (no `Comet` records exist in stock data). Then nothing is made: no object, no
     ability roll, no values. The entry keeps an empty name and counts for the letters of
-    later planets in its sector (§5.6). The engine differs: it draws no position and no
-    record for the entry, so it uses fewer random numbers than the original, does not mark
-    the sector, gives a `Same As` that names the entry sector (0,0), and leaves the entry
-    out of the letter count.
+    later planets in its sector (§5.6). The engine does the same.

@@ -675,7 +675,12 @@ private:
         return std::nullopt;
     }
 
-    Sector resolvePosition(const StarSystem& sys, const std::string& spec, const std::vector<std::optional<Sector>>& placed) {
+    // A sector an earlier template entry of this system was placed on, a comet
+    // or warp point entry included (spec 01 §4.2, §4.3, §14 Q43).
+    bool claimed(Sector s) const { return std::find(claimed_.begin(), claimed_.end(), s) != claimed_.end(); }
+
+    // `recorded`: the sector recorded for each template entry, (0, 0) until it is placed.
+    Sector resolvePosition(const StarSystem& sys, const std::string& spec, const std::vector<Sector>& recorded) {
         const Sector center{kSystemCenter, kSystemCenter};
         // Recognised by the word it contains, in this order (confirmed: binary).
         if (auto at = findWord(spec, "Ring")) {
@@ -697,7 +702,7 @@ private:
                     const int along = low + draw(rng_, side);
                     const int fixed = far ? low + side - 1 : low;
                     last = horizontal ? Sector{along, fixed} : Sector{fixed, along};
-                    if (!occupied(sys, last)) break;
+                    if (!claimed(last)) break;
                 }
                 return last;
             }
@@ -710,9 +715,9 @@ private:
                 if (x && y && Sector(*x, *y).valid()) return Sector{*x, *y};
             }
         } else if (auto atSame = findWord(spec, "Same")) {
-            // Object N's sector, or (0, 0) when it was not placed (yet).
-            if (auto n = numberAfter(spec, *atSame); n && *n >= 1 && static_cast<size_t>(*n) <= placed.size() && placed[static_cast<size_t>(*n - 1)])
-                return *placed[static_cast<size_t>(*n - 1)];
+            // Entry N's sector, or (0, 0) when it was not placed (yet).
+            if (auto n = numberAfter(spec, *atSame); n && *n >= 1 && static_cast<size_t>(*n) <= recorded.size())
+                return recorded[static_cast<size_t>(*n - 1)];
             return Sector{0, 0};
         } else if (auto atCircle = findWord(spec, "Circle Radius")) {
             if (auto r = numberAfter(spec, *atCircle)) {
@@ -722,7 +727,7 @@ private:
                     for (int x = 0; x < kSystemSize; ++x) {
                         const int d2 = (x - kSystemCenter) * (x - kSystemCenter) + (y - kSystemCenter) * (y - kSystemCenter);
                         const Sector s{x, y};
-                        if (*r * *r <= d2 && d2 < (*r + 1) * (*r + 1) && !occupied(sys, s)) ring.push_back(s);
+                        if (*r * *r <= d2 && d2 < (*r + 1) * (*r + 1) && !claimed(s)) ring.push_back(s);
                     }
                 if (ring.empty()) return Sector{0, 0};
                 return ring[static_cast<size_t>(draw(rng_, static_cast<int>(ring.size())))];
@@ -789,35 +794,52 @@ private:
         return false;
     }
 
+    // The generated galaxy fills the object list's first slots in creation
+    // order (spec 03 §19 Q62).
     ObjectId addObject(StarSystem& sys, SpaceObject obj) {
         obj.id = ObjectId{out_.galaxy.objects.size()};
+        obj.slot = static_cast<uint32_t>(obj.id.value);
         obj.system = sys.id;
         sys.objects.push_back(obj.id);
         out_.galaxy.objects.push_back(std::move(obj));
         return out_.galaxy.objects.back().id;
     }
 
+    // The template's entries in order (spec 01 §4.2, §4.3, §5.6, §14 Q43,
+    // confirmed: binary). Every entry, a comet or warp point entry included,
+    // is placed: its position is drawn with its usual random numbers, its
+    // sector is marked for the later Ring and Circle Radius entries and
+    // recorded for Same As, and a SectType record is drawn for it. Comet and
+    // warp point entries then make nothing and keep an empty name. Each
+    // object is named as it is made (nameFor).
     void instantiate(StarSystem& sys) {
         const ruleset::SystemType& type = rs_.systemTypes[sys.type.index()];
-        std::vector<std::optional<Sector>> placed;  // per template entry
-        for (const ruleset::SystemObjectTemplate& t : type.objects) {
+        std::vector<Sector> recorded(type.objects.size(), Sector{0, 0});  // the original's list starts at (0, 0)
+        std::vector<std::string> names(type.objects.size());
+        claimed_.clear();
+        numeral_ = beltNumeral_ = 0;
+        for (size_t i = 0; i < type.objects.size(); ++i) {
+            const ruleset::SystemObjectTemplate& t = type.objects[i];
             const auto kind = parseObjectKind(t.physicalType);
             if (!kind) {
                 warn(std::format("System type '{}': unsupported object type '{}'.", type.name, t.physicalType));
-                placed.push_back(std::nullopt);
-                continue;
-            }
-            // Comet and warp point entries create nothing but keep their index for
-            // Same As (confirmed: binary). The engine draws no sector for them, so no
-            // planet is named after them (inferred, spec 01 §14 Q43).
-            if (*kind == ObjectKind::Comet || *kind == ObjectKind::WarpPoint) {
-                placed.push_back(std::nullopt);
                 continue;
             }
             SpaceObject obj;
             obj.kind = *kind;
-            obj.sector = resolvePosition(sys, t.position, placed);
-            placed.push_back(obj.sector);
+            obj.sector = resolvePosition(sys, t.position, recorded);
+            recorded[i] = obj.sector;
+            claimed_.push_back(obj.sector);
+
+            if (*kind == ObjectKind::Comet || *kind == ObjectKind::WarpPoint) {
+                // The record is drawn as for any entry: one number when there is
+                // a candidate, and also with size and atmosphere both Any when
+                // there is none (no Comet records exist in stock data).
+                const std::vector<uint32_t> candidates = sectorCandidates(*kind, t, 0);
+                if (!candidates.empty()) draw(rng_, static_cast<int>(candidates.size()));
+                else if (isAny(t.size) && isAny(t.atmosphere)) rng_.next();
+                continue;  // nothing is made; the entry keeps an empty name
+            }
 
             std::vector<uint32_t> candidates;
             for (int relax = 0; relax <= 3 && candidates.empty(); ++relax) {
@@ -833,34 +855,39 @@ private:
             applySectorType(rs_, obj, candidates[static_cast<size_t>(draw(rng_, static_cast<int>(candidates.size())))]);
             rollStellarAbility(obj, t.stellarAbilityType);
             if (obj.kind == ObjectKind::Planet || obj.kind == ObjectKind::Asteroids) rollNaturalValues(rs_, obj, opt_.finiteResources, rng_);
+            obj.name = nameFor(sys, obj, i, recorded, names);
+            names[i] = obj.name;
             addObject(sys, std::move(obj));
         }
-        nameObjects(sys);
     }
 
-    // Names (spec 01 §5.4, §5.6, confirmed: binary): stars "System Star", storms
-    // "Storm"; planets numbered in template order, a planet in a sector an
-    // earlier object uses gets that object's name plus a letter; asteroid
-    // fields "System Asteroid Belt" plus their own numeral, counted apart from
-    // the planets' ("Xyz II" beside "Xyz Asteroid Belt I").
-    void nameObjects(StarSystem& sys) {
-        int numeral = 0, beltNumeral = 0;
-        for (size_t i = 0; i < sys.objects.size(); ++i) {
-            SpaceObject& o = out_.galaxy.object(sys.objects[i]);
-            std::vector<ObjectId> before;
-            for (size_t k = 0; k < i; ++k)
-                if (out_.galaxy.object(sys.objects[k]).sector == o.sector) before.push_back(sys.objects[k]);
-            switch (o.kind) {
-                case ObjectKind::Star:
-                case ObjectKind::DestroyedStar: o.name = sys.name + " Star"; break;
-                case ObjectKind::Storm: o.name = "Storm"; break;
-                case ObjectKind::Asteroids: o.name = std::format("{} Asteroid Belt {}", sys.name, romanNumeral(++beltNumeral)); break;
-                case ObjectKind::Planet:
-                    if (before.empty()) o.name = std::format("{} {}", sys.name, romanNumeral(++numeral));
-                    else o.name = std::format("{} {}", out_.galaxy.object(before.front()).name, static_cast<char>('A' + std::min<size_t>(before.size() - 1, 25)));
-                    break;
-                default: o.name = sys.name; break;
+    // Names (spec 01 §5.4, §5.6, confirmed: binary), given as each object is
+    // made: stars "System Star", storms "Storm"; asteroid fields "System
+    // Asteroid Belt" plus their own numeral, counted apart from the planets'
+    // ("Xyz II" beside "Xyz Asteroid Belt I"). A planet counts the template
+    // entries recorded in its sector, itself included, where entries not yet
+    // placed still count as (0, 0): alone there, it takes the system name and
+    // the next numeral; otherwise the name the first entry recorded there had
+    // (empty for a comet or warp point entry, or for itself) plus a letter, A
+    // for the second, B for the third.
+    std::string nameFor(const StarSystem& sys, const SpaceObject& o, size_t index, const std::vector<Sector>& recorded,
+                        const std::vector<std::string>& names) {
+        switch (o.kind) {
+            case ObjectKind::Star:
+            case ObjectKind::DestroyedStar: return sys.name + " Star";
+            case ObjectKind::Storm: return "Storm";
+            case ObjectKind::Asteroids: return std::format("{} Asteroid Belt {}", sys.name, romanNumeral(++beltNumeral_));
+            case ObjectKind::Planet: {
+                size_t count = 0, first = index;
+                for (size_t k = 0; k < recorded.size(); ++k)
+                    if (recorded[k] == o.sector) {
+                        if (count == 0) first = k;
+                        ++count;
+                    }
+                if (count <= 1) return std::format("{} {}", sys.name, romanNumeral(++numeral_));
+                return std::format("{} {}", names[first], static_cast<char>('A' + std::min<size_t>(count - 2, 25)));
             }
+            default: return sys.name;
         }
     }
 
@@ -934,6 +961,9 @@ private:
     std::map<std::pair<uint32_t, uint32_t>, ObjectId> ends_;  // (system, destination system) -> warp point
     std::set<std::string> warnedRelax_;
     bool warnedWarpType_ = false;
+    std::vector<Sector> claimed_;   // instantiate: the sectors the system's template entries were placed on
+    int numeral_ = 0;               // instantiate: the last planet numeral and asteroid belt numeral given
+    int beltNumeral_ = 0;
 };
 
 bool startEligible(const Galaxy& g, const ruleset::Ruleset& rs, SystemId s) {
@@ -951,6 +981,7 @@ ObjectId createPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sysId, Sec
     StarSystem& sys = g.system(sysId);
     SpaceObject p;
     p.id = ObjectId{g.objects.size()};
+    p.slot = static_cast<uint32_t>(p.id.value);  // made with the galaxy, before any vehicle (spec 03 §19 Q62)
     p.kind = ObjectKind::Planet;
     p.system = sysId;
     p.sector = where;

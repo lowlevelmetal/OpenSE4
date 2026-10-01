@@ -103,9 +103,8 @@ std::vector<ColonyShip> colonyShips(const game::Rules& r, const game::GameState&
         ColonyShip c;
         c.id = v.id;
         c.name = v.name;
-        // "No orders": nor its fleet's (inferred: a fleet member moves with the fleet).
-        const game::Fleet* f = v.fleet.valid() ? s.fleet(v.fleet) : nullptr;
-        c.available = v.orders.empty() && (!f || f->orders.empty()) && v.status != game::VehicleStatus::Mothballed && v.supply > 0;
+        // "No orders": a fleet member holds copies of its fleet's orders (spec 03 §19 Q65).
+        c.available = v.orders.empty() && v.status != game::VehicleStatus::Mothballed && v.supply > 0;
         for (const game::Order& o : v.orders)
             if (o.kind == game::OrderKind::Colonize && o.object.valid()) c.target = o.object;
         out.push_back(std::move(c));
