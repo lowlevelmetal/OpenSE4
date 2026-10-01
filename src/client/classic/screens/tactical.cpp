@@ -273,7 +273,7 @@ private:
     bool completePrompt(UiContext& ui) {
         constexpr const char* kId = "Combat Complete##tactical";
         if (!ImGui::IsPopupOpen(kId)) ImGui::OpenPopup(kId);
-        ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ui.size({260, 110}), ImGuiCond_Always);
         bool done = false;
         if (ImGui::BeginPopupModal(kId, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
@@ -954,7 +954,7 @@ public:
         const game::EmpireId side = b.phaseEmpire();
         const TacticalPiece* p = ownSelected(b, u);
         const Vec2 size{326, 350};
-        const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
+        const Vec2 min{(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

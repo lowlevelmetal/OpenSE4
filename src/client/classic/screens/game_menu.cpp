@@ -96,7 +96,7 @@ public:
         const Vec2 menu{173, 320};
         const Vec2 extra{173, 50};
         const Vec2 size{menu.x, menu.y + 6 + extra.y};
-        const Vec2 min{(kFrameW - menu.x) * 0.5f, (kFrameH - menu.y) * 0.5f};
+        const Vec2 min{(frameW() - menu.x) * 0.5f, (frameH() - menu.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

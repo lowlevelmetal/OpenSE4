@@ -198,7 +198,7 @@ std::optional<std::vector<size_t>> ReorderPopup::draw(UiContext& ui) {
     std::optional<std::vector<size_t>> result;
     const ImVec2 size = ui.size({460, 400});
     ImGui::SetNextWindowSize(size, ImGuiCond_Always);
-    ImGui::SetNextWindowPos(ui.at({(kFrameW - 460) * 0.5f, (kFrameH - 400) * 0.5f}), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ui.at({(frameW() - 460) * 0.5f, (frameH() - 400) * 0.5f}), ImGuiCond_Always);
     if (!ImGui::BeginPopupModal("Reorder", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
         return result;
 

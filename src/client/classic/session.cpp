@@ -380,6 +380,9 @@ void ClassicSession::endTurn() {
     std::vector<game::EmpireOrders> submitted;
     for (const game::Empire& e : state_.empires)
         if (e.alive && e.kind == game::PlayerKind::Human) submitted.push_back({e.id, state_.turn, {}});
+    // Kept for the movement log replay (docs/spec/06 §7 Q51).
+    turnStart_ = std::make_shared<const game::GameState>(state_);
+    turnStartOrders_ = submitted;
     const game::TurnResult result = game::processTurn(*rules_, state_, submitted);
     writePlayerRecords(result.records);
     strategic_.clear();
@@ -457,6 +460,15 @@ bool ClassicSession::setAutosaveTurns(int everyTurns) {
     return true;
 }
 
+bool ClassicSession::replayLastTurn(const std::function<void(int day, const game::GameState&)>& day) const {
+    if (!turnStart_) return false;
+    game::GameState again = *turnStart_;
+    game::TurnOptions options;
+    options.movementDay = day;
+    game::processTurn(*rules_, again, turnStartOrders_, options);
+    return true;
+}
+
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;
     ++revision_;
@@ -464,6 +476,7 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
+    turnStart_.reset();
     strategic_.clear();
     call_ = Call::None;
     battle_.reset();

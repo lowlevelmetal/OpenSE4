@@ -21,7 +21,7 @@ namespace opense4::client::classic {
 void introBackground(MenuContext& ctx) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const ImVec2 a{0, 0}, b = ImGui::GetIO().DisplaySize;
-    if (Sprite bg = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
+    if (Sprite bg = ctx.art.introPicture())
         dl->AddImage(ImTextureRef(static_cast<ImTextureID>(bg.tex.value)), a, b, ImVec2(bg.uv.min.x, bg.uv.min.y), ImVec2(bg.uv.max.x, bg.uv.max.y));
     else dl->AddRectFilled(a, b, IM_COL32(2, 4, 12, 255));
 }
@@ -196,7 +196,7 @@ public:
         const Painter p = ctx.painter();
         const auto& presets = ctx.rules->racePresets();
         ImGui::SetNextWindowPos(ctx.at({0, 0}));
-        ImGui::SetNextWindowSize(ctx.size({kFrameW, kFrameH}));
+        ImGui::SetNextWindowSize(ctx.size({frameW(), frameH()}));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         if (ImGui::Begin("##quick", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |

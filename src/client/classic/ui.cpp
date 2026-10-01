@@ -5,6 +5,7 @@
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/ui/bitmap_font.hpp"
+#include "assets/tiny_font.hpp"
 
 #include "core/log.hpp"
 
@@ -20,17 +21,21 @@ namespace {
 
 
 Rect dialogRect(DialogSize size) {
+    // Dialogs have the same size in both layouts, centred on the frame (docs/spec/06
+    // §2.1.1); only the four list windows follow the layout.
+    const float fw = frameW(), fh = frameH();
     Vec2 s;
     switch (size) {
-        // The original's windows are 780 wide; tall lists take the screen height less 50 at each end.
         case DialogSize::Large: s = {780, 475}; break;
-        case DialogSize::Tall: return Rect{{(kFrameW - 780) * 0.5f, 50}, {(kFrameW + 780) * 0.5f, kFrameH - 50}};
+        case DialogSize::Tall: s = {780, listWindowHeight(screenLayout(), fh)}; break;
         case DialogSize::Report: s = {400, 540}; break;
         case DialogSize::Picker: s = {540, 660}; break;
         case DialogSize::Prompt: s = {420, 190}; break;
-        case DialogSize::Full: s = {kFrameW, kFrameH}; break;
+        case DialogSize::Full: s = {fw, fh}; break;
     }
-    const Vec2 min{(kFrameW - s.x) * 0.5f, (kFrameH - s.y) * 0.5f};
+    // Our own taller windows (the pickers) fit the 800x600 frame (inferred).
+    s.y = std::min(s.y, size == DialogSize::Full ? fh : fh - 20.0f);
+    const Vec2 min{std::floor((fw - s.x) * 0.5f), std::floor((fh - s.y) * 0.5f)};
     return Rect{min, min + s};
 }
 
@@ -101,26 +106,37 @@ ImU32 empireColor(const game::GameState& s, game::EmpireId e) { return imColor(e
 
 FrameMapping frameMappingFor(float fw, float fh) {
     const GraphicsSettings& g = appSettings().graphics;
-    constexpr float kMaxWide = kFrameH * 21.0f / 9.0f;  // wider screens get bars
-    const bool extended = g.widescreen == WidescreenLayout::Extended;
+    const float frameWidth = frameW(), frameHeight = frameH();
+    const float maxWide = frameHeight * 21.0f / 9.0f;  // wider screens get bars
+    // The 800x600 layout keeps its classic 4:3 frame (inferred: its panels have no wide arrangement).
+    const bool extended = g.widescreen == WidescreenLayout::Extended && screenLayout() == ScreenLayout::Large;
     FrameMapping m;
-    float width = extended ? std::clamp(kFrameH * fw / std::max(1.0f, fh), kFrameW, kMaxWide) : kFrameW;
-    m.scale = std::min(fw / width, fh / kFrameH);
+    float width = extended ? std::clamp(frameHeight * fw / std::max(1.0f, fh), frameWidth, maxWide) : frameWidth;
+    m.scale = std::min(fw / width, fh / frameHeight);
     if (g.integerScaling && m.scale >= 1.0f) {
-        m.scale = std::floor(std::min(fw / kFrameW, fh / kFrameH));
-        if (extended) width = std::clamp(fw / m.scale, kFrameW, kMaxWide);
+        m.scale = std::floor(std::min(fw / frameWidth, fh / frameHeight));
+        if (extended) width = std::clamp(fw / m.scale, frameWidth, maxWide);
     }
-    m.left = (kFrameW - width) * 0.5f;
-    m.right = kFrameW - m.left;
-    m.offset = {(fw - width * m.scale) * 0.5f - m.left * m.scale, (fh - kFrameH * m.scale) * 0.5f};
+    m.left = (frameWidth - width) * 0.5f;
+    m.right = frameWidth - m.left;
+    m.offset = {(fw - width * m.scale) * 0.5f - m.left * m.scale, (fh - frameHeight * m.scale) * 0.5f};
     return m;
 }
 
 Fonts loadClassicFonts(const Fonts& app, const assets::InstallFiles& files) {
+    // The install's raster fonts, each from the active mod's Fonts folder first,
+    // then the base one (docs/spec/06 §5.4). The game registers FutSml, FutMed,
+    // SE4 Block 1 Large and SE4 Text button; it never selects the Block face, so
+    // only the other three are loaded. Each missing file keeps our own font.
     Fonts out = app;
+    out.ownRegular = app.ownRegular ? app.ownRegular : app.regular;
+    out.ownBold = app.ownBold ? app.ownBold : app.bold;
     auto load = [&](std::string_view file) -> ImFont* {
-        const auto path = files.find(std::string("Fonts/") + std::string(file));
-        if (!path) return nullptr;
+        const auto path = files.findModFirst(std::string("Fonts/") + std::string(file));
+        if (!path) {
+            log::warn("Font Fonts/{} is not in the install; using OpenSE4's own", file);
+            return nullptr;
+        }
         std::string error;
         auto fonts = assets::loadFon(*path, &error);
         if (fonts.empty()) {
@@ -138,6 +154,8 @@ Fonts loadClassicFonts(const Fonts& app, const assets::InstallFiles& files) {
     }
     out.small = small ? small : out.regular;
     if (title) out.bold = title;
+    // The map numbers: our own small raster face for the system's Small Fonts.
+    out.tiny = addBitmapFont(ImGui::GetIO().Fonts, assets::makeTinyFont());
     return out;
 }
 
@@ -174,10 +192,17 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float lw = lineWidth(ui);
-    const ImU32 line = imColor(enabled ? palette::kButton : palette::kDisabled);
-    const ImU32 text = imColor(!enabled ? palette::kDisabled : hovered ? palette::kButtonHot : palette::kButton);
+    // The state colour, which the caption and the outline share (docs/spec/06 §5.4);
+    // under the pointer and while held the RowGrid texture lies behind the label.
+    const uint32_t state = !enabled ? palette::kDisabled : held ? palette::kButtonHeld : hovered ? palette::kButtonHot : palette::kButton;
+    const ImU32 line = imColor(state);
+    const ImU32 text = line;
     const float h = lw * 0.5f;
-    if (held) dl->AddRectFilled(a, b, imColor(0x101c40));
+    if (hovered || held) {
+        const int gw = std::max(1, int(frameSize.x)), gh = std::max(1, int(frameSize.y));
+        if (Sprite grid = ui.art.region("Pictures/Game/Dialogs/Rowgrid.bmp", 0, 0, gw, gh, false))
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(grid.tex.value)), a, b, {grid.uv.min.x, grid.uv.min.y}, {grid.uv.max.x, grid.uv.max.y});
+    }
     if (style == 1) {
         // Tabs have the top-right corner cut off.
         const float c = ui.px(9);
@@ -213,7 +238,10 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
             x += lamp + gap;
         }
     }
-    dl->AddText({std::floor(x), std::floor(midY - ts.y * 0.5f)}, text, label, labelEnd(label));
+    // Centred across; the top of the text at (button height - text height) / 2 + 2 (spec 06 §5.4).
+    const float textH = ts.y / ui.k();
+    const float top = a.y + ui.px(std::floor((frameSize.y - textH) * 0.5f) + 2.0f);
+    dl->AddText({std::floor(x), std::floor(top)}, text, label, labelEnd(label));
     ImGui::PopFont();
     return clicked && enabled;
 }
@@ -327,7 +355,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
 
 Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
     : Dialog(ui.painter(), title,
-             Rect{Vec2{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}, Vec2{(kFrameW + size.x) * 0.5f, (kFrameH + size.y) * 0.5f}},
+             Rect{Vec2{(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f}, Vec2{(frameW() + size.x) * 0.5f, (frameH() + size.y) * 0.5f}},
              buttonColumn) {
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
 }
@@ -503,7 +531,7 @@ bool YesNoPrompt::draw(UiContext& ui) {
         ImGui::OpenPopup(id.c_str());
         pending_ = false;
     }
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ui.size({400, 0}), ImGuiCond_Always);
     if (!ImGui::BeginPopupModal(id.c_str(), nullptr,
                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |

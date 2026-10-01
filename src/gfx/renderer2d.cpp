@@ -63,6 +63,11 @@ void Renderer2D::sprite(TextureId tex, const Rect& dst, const Rect& uv, Color ti
          {uv.min, Vec2{uv.max.x, uv.min.y}, uv.max, Vec2{uv.min.x, uv.max.y}}, tint.toRgba8(), ShapeMode::Textured, 0.0f);
 }
 
+void Renderer2D::spriteQuad(TextureId tex, const std::array<Vec2, 4>& corners, const Rect& uv, Color tint) {
+    useTexture(tex);
+    quad(corners, {uv.min, Vec2{uv.max.x, uv.min.y}, uv.max, Vec2{uv.min.x, uv.max.y}}, tint.toRgba8(), ShapeMode::Textured, 0.0f);
+}
+
 void Renderer2D::triangle(Vec2 a, Vec2 b, Vec2 c, Color color) {
     const Vec2 pts[] = {a, b, c};
     convexPolygon(pts, color);

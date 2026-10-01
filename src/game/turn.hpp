@@ -31,6 +31,7 @@
 #include "game/state.hpp"
 #include "game/tactical.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -102,6 +103,11 @@ struct TurnContext {
     // the start-of-turn steps, then what the last units step left.
     int64_t unitReserve = 0;
 
+    // Simultaneous games: called after each of the 30 movement days with the
+    // state as that day left it (TurnOptions::movementDay; the client's
+    // movement log replay, docs/spec/06 §7 Q51). Observes only.
+    std::function<void(int day, const GameState&)> movementDay;
+
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
     }
@@ -114,6 +120,8 @@ struct TurnContext {
 struct TurnOptions {
     // Empires that sent no orders are played by the computer (spec 05 §9.2).
     bool aiForMissing = true;
+    // Simultaneous games: an observer of each movement day (TurnContext::movementDay).
+    std::function<void(int day, const GameState&)> movementDay;
 };
 
 struct TurnResult {

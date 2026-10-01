@@ -123,6 +123,54 @@ TEST_CASE("classic options: facility markers follow the switched-on groups") {
     CHECK(facilityMarkers(r, c, uint16_t(training | scanners | yards)) == "St Ft Slr");
 }
 
+TEST_CASE("classic options: facility marker letters and their tests (spec 06 §7 Q44)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId planet = w.planet(a, {5, 6});
+    const Colony& c = w.colony(planet, kA, 10, {"Mv Converter", "Mv Repair Shop", "Mv Upkeep Office", "Mv Nursery", "Mv Depot", "Mv Port", "Mv Yard"});
+    const uint16_t yards = 1u << 0, repair = 1u << 3, upkeep = 1u << 8, plague = 1u << 9;
+    // Rc is Resource Conversion, not Component Repair.
+    CHECK(facilityMarkerGroups(r, c, repair) == std::vector<std::string>{"Rc"});
+    // Srm is Reduced Maintenance Cost - System; Src is Modify Reproduction - System.
+    CHECK(facilityMarkerGroups(r, c, upkeep) == std::vector<std::string>{"Srm"});
+    CHECK(facilityMarkerGroups(r, c, plague) == std::vector<std::string>{"Src"});
+    // R, S, Y in the table's order; Y needs a working (uncloaked) yard.
+    CHECK(facilityMarkerGroups(r, c, yards) == std::vector<std::string>{"R", "S", "Y"});
+    CHECK(facilityMarkerGroups(r, c, yards, false) == std::vector<std::string>{"R", "S"});
+
+    // Whose colonies are marked: ours, and Military Alliance or Partnership partners'.
+    CHECK(showsFacilityMarkers(w.s, kA, kA));
+    w.setTreaty(kA, kB, Treaty::NonAggression);
+    CHECK_FALSE(showsFacilityMarkers(w.s, kA, kB));
+    w.setTreaty(kA, kB, Treaty::MilitaryAlliance);
+    CHECK(showsFacilityMarkers(w.s, kA, kB));
+    w.setTreaty(kA, kB, Treaty::Partnership);
+    CHECK(showsFacilityMarkers(w.s, kA, kB));
+}
+
+TEST_CASE("classic options: facility markers pack right to left (spec 06 §2.4)") {
+    // "CvYSR": R ends at the square's right edge, each group to the left of the one before.
+    const std::vector<MarkerPlace> p = packFacilityMarkers({4, 4, 4, 8}, 36);
+    REQUIRE(p.size() == 4);
+    CHECK(p[0].x == 32);
+    CHECK(p[1].x == 28);
+    CHECK(p[2].x == 24);
+    CHECK(p[3].x == 16);
+    for (const MarkerPlace& m : p) CHECK(m.line == 0);
+    // A group that would start at or left of the left edge starts a new line, again from the right.
+    const std::vector<MarkerPlace> q = packFacilityMarkers({12, 12, 12, 10}, 36);
+    CHECK(q[1].x == 12);
+    CHECK(q[2].line == 1);   // it would start at 0
+    CHECK(q[2].x == 24);
+    CHECK(q[3].line == 1);
+    CHECK(q[3].x == 14);
+    // A group wider than the square still takes a line of its own.
+    const std::vector<MarkerPlace> wide = packFacilityMarkers({40, 4}, 36);
+    CHECK(wide[0].line == 0);
+    CHECK(wide[1].line == 1);
+}
+
 TEST_CASE("classic options: the per-computer settings keep the Options window's switches") {
     ClassicSettings s;
     CHECK(s.musicVolume == 100);

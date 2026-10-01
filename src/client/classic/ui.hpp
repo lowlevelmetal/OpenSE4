@@ -7,6 +7,7 @@
 // docs/spec/06 §1).
 
 #include "client/classic/art.hpp"
+#include "client/classic/layout.hpp"
 #include "client/classic/screen_id.hpp"
 #include "client/classic/session.hpp"
 #include "client/fonts.hpp"
@@ -24,6 +25,8 @@
 
 namespace opense4::client::classic {
 
+// The 1024x768 frame; the frame in use (it is 800x600 in the small layout,
+// layout.hpp) is frameW() x frameH().
 inline constexpr float kFrameW = 1024.0f;
 inline constexpr float kFrameH = 768.0f;
 
@@ -33,13 +36,26 @@ inline constexpr float kFrameH = 768.0f;
 inline constexpr float kTextSize = 13.0f;
 inline constexpr float kSmallSize = 10.0f;
 inline constexpr float kTitleSize = 17.0f;
+// OpenSE4's own small raster face for the map numbers (Fonts::tiny), 8 px.
+inline constexpr float kTinySize = 8.0f;
+// Text drawn at y has its glyph cell's top this far above y (each face's
+// internal leading), so a place the spec gives as the cell's top is drawn at
+// that y plus this: Futurist Medium 3, Futurist small 2, SE4 Text button 0.
+inline constexpr float kTextLead = 3.0f;
+inline constexpr float kSmallLead = 2.0f;
+inline constexpr float kTitleLead = 0.0f;
+// The cell heights of the faces (for text placed by its bottom edge).
+inline constexpr float kTextCell = 16.0f;
+inline constexpr float kSmallCell = 12.0f;
+inline constexpr float kTinyCell = 8.0f;
 
 // The classic palette, measured on the original's screens (docs/spec/07 §UI).
 namespace palette {
 inline constexpr uint32_t kFrame = 0x4f65a2;       // panel and box lines
 inline constexpr uint32_t kFrameLight = 0x647ec7;  // the brighter rail of double lines
 inline constexpr uint32_t kButton = 0x617bc2;      // button outlines and captions
-inline constexpr uint32_t kButtonHot = 0xa8bcff;   // hovered caption (ours)
+inline constexpr uint32_t kButtonHot = 0x6c8adc;   // the same under the pointer (spec 06 §5.4)
+inline constexpr uint32_t kButtonHeld = 0x7d9fff;  // and while the mouse button is held on it
 inline constexpr uint32_t kLabel = 0x7d9fff;       // field labels
 inline constexpr uint32_t kHeading = 0xc0c0c0;     // section headings
 inline constexpr uint32_t kSecondary = 0xa0a0a0;   // second lines, notes

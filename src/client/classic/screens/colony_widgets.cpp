@@ -273,7 +273,7 @@ void StatusLine::draw(UiContext&) const {
 // ---- Popups ------------------------------------------------------------------------------------
 
 bool beginModal(UiContext& ui, const char* id, Vec2 size) {
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
     return ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 }
@@ -496,7 +496,7 @@ bool ConfirmPopup::draw(UiContext& ui) {
         ImGui::OpenPopup(id);
         pending_ = false;
     }
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ui.size({420, 170}), ImGuiCond_Always);
     if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags))
         return false;

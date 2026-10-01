@@ -4,13 +4,17 @@
 // command buttons, the order strip and selection cycles, the system panel,
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
+#include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
 #include "client/classic/reports.hpp"
+#include "client/classic/sector_view.hpp"
 #include "client/classic/ship_glides.hpp"
 #include "client/classic/ui.hpp"
 #include "gfx/renderer2d.hpp"
 
 #include <functional>
+#include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -90,8 +94,8 @@ private:
 
     // Drawing.
     void statusBar(UiContext& ui);
-    // The T button that shows the lesson panel again (docs/LEARNING.md).
-    void lessonButton(UiContext& ui);
+    // The minimize button, and the T button that shows the lesson panel again (docs/LEARNING.md).
+    void statusButtons(UiContext& ui);
     void commandPanel(UiContext& ui);
     void reportPanel(UiContext& ui);
     void overlayText(UiContext& ui);
@@ -101,8 +105,19 @@ private:
     void drawGalaxy(gfx::Renderer2D& r, UiContext& ui);
     std::optional<game::SystemId> galaxySystemAt(const UiContext& ui, Vec2 p, bool exploredOnly) const;
 
-    // Ship movement animation (ship_glides.hpp), updated once per frame.
+    // Ship movement animation (ship_glides.hpp) and the movement log replay
+    // (movement_replay.hpp), updated once per frame.
     void trackMovement(UiContext& ui);
+    // Ctrl+P, Ctrl+I, Ctrl+O, Ctrl+U: builds this turn's log first if needed.
+    void startReplay(UiContext& ui, OrderId id);
+    // What each sector of the shown system draws this frame.
+    void prepareSectors(UiContext& ui);
+    struct ShownSector {
+        game::Sector sector;
+        SectorView view;
+        std::vector<const game::Vehicle*> vehicles;
+    };
+    std::vector<ShownSector> sectors_;
 
     game::SystemId shown_;
     uint64_t selections_ = 0;   // selections the player made (selectSector, selectVehicle, selectPlanet, list rows)
@@ -126,9 +141,14 @@ private:
     std::string hintName_, hintKey_;
     std::string note_;
     double noteUntil_ = 0.0;
+    int orderPage_ = 0;   // the order strip's page at 800x600 (§2.3)
 
     ShipGlides glides_;
     MovementReplay replay_;
+    std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
+    std::optional<game::SystemId> replayShownBefore_;
+    std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn
+    uint32_t beforeTurnFor_ = UINT32_MAX;
     uint32_t seenTurn_ = UINT32_MAX;
     double trackedAt_ = -1.0;
 };

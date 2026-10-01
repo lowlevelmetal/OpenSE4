@@ -135,6 +135,14 @@ inline ruleset::Ruleset buildRuleset() {
     facility("Mv Planet Guard", {ab(AbilityKind::StopPlanetDestroyer)});
     facility("Mv Star Guard", {ab(AbilityKind::StopStarDestroyer)});
     facility("Mv Warp Guard", {ab(AbilityKind::StopOpenWarpPoint), ab(AbilityKind::StopCloseWarpPoint)});
+    // For the facility letter markers (client, spec 06 §7 Q44).
+    facility("Mv Converter", {ab(AbilityKind::ResourceConversion)});
+    facility("Mv Repair Shop", {ab(AbilityKind::ComponentRepair, 2)});
+    facility("Mv Upkeep Office", {ab(AbilityKind::ReducedMaintenanceSystem, 10)});
+    facility("Mv Nursery", {ab(AbilityKind::ModifyReproductionSystem, 5)});
+    facility("Mv Depot", {ab(AbilityKind::SupplyGeneration)});
+    facility("Mv Port", {ab(AbilityKind::Spaceport)});
+    facility("Mv Yard", {ab(AbilityKind::SpaceYard, 1, 50)});
 
     // System types for created nebulae and black holes.
     {

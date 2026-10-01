@@ -1,4 +1,5 @@
 #include "client/classic/art.hpp"
+#include "client/classic/layout.hpp"
 
 #include "core/rng.hpp"
 #include "ruleset/ruleset.hpp"
@@ -175,9 +176,18 @@ Sprite Art::eventPicture(std::string_view name) {
 }
 
 Sprite Art::systemBackground(std::string_view bitmap) {
-    // Only from Systems/<resolution>/ (confirmed: binary); the plain star field when missing.
-    if (Sprite s = image(std::format("Pictures/Systems/1024X768/{}", systemFile(bitmap)), false)) return s;
-    return image("Pictures/Systems/1024X768/Starmap.bmp", false);
+    // Only from Systems/<resolution>/ of the layout in use (confirmed: binary;
+    // docs/spec/06 §2.1.1); the plain star field when missing.
+    const char* folder = layoutGeometry().systems;
+    if (Sprite s = image(std::format("{}{}", folder, systemFile(bitmap)), false)) return s;
+    return image(std::format("{}Starmap.bmp", folder), false);
+}
+
+Sprite Art::introPicture() {
+    // The layout's own intro picture, else the other one (docs/spec/06 §1.1, §2.1.1).
+    const bool small = screenLayout() == ScreenLayout::Small;
+    return small ? imageAny({"Pictures/Game/Screens/800X600/Intro.bmp", "Pictures/Game/Screens/1024X768/Intro.bmp"}, false)
+                 : imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false);
 }
 
 Sprite Art::systemPicture(std::string_view bitmap) {

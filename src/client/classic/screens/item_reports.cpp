@@ -453,7 +453,7 @@ void ItemReportPopup::draw(UiContext& ui) {
         ImGui::OpenPopup("##itemreport");
         request_ = false;
     }
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ui.size({340, 60}), ui.size({340, 720}));
     if (ImGui::BeginPopup("##itemreport", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         itemDetail(ui, item_, DetailStyle::Report);
