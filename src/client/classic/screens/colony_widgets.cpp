@@ -201,6 +201,37 @@ void readSortSpecs(int& column, bool& ascending) {
     }
 }
 
+// ---- Classic lists -----------------------------------------------------------------------------
+
+std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width) {
+    std::vector<float> x{0.0f};
+    float fixed = 0;
+    for (const ListColumn& c : cols) fixed += ui.px(c.width);
+    for (const ListColumn& c : cols) x.push_back(x.back() + (c.width > 0 ? ui.px(c.width) : std::max(0.0f, width - fixed)));
+    return x;
+}
+
+int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, float width) {
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const std::vector<float> x = columnEdges(ui, cols, width);
+    const float h = ui.px(20);
+    ImGui::PushID(id);
+    int clicked = -1;
+    for (size_t i = 0; i < cols.size(); ++i) {
+        ImGui::SetCursorScreenPos(ImVec2(origin.x + x[i], origin.y));
+        ImGui::PushID(int(i));
+        if (ImGui::InvisibleButton("##head", ImVec2(std::max(1.0f, x[i + 1] - x[i]), h))) clicked = int(i);
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::PopID();
+        ImGui::GetWindowDrawList()->AddText(ImVec2(origin.x + x[i] + ui.px(2), origin.y + (h - ImGui::GetTextLineHeight()) * 0.5f),
+                                            hovered ? imColor(palette::kButtonHot) : imColor(palette::kLabel), cols[i].label);
+    }
+    ImGui::PopID();
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + h));
+    ImGui::Dummy(ImVec2(width, 0));
+    return clicked;
+}
+
 // ---- Text helpers ------------------------------------------------------------------------------
 
 std::string turnsText(int turns) {

@@ -1,4 +1,4 @@
-// Planets (F4) and Colonies (F5) windows (docs/spec/06 §1.2, spec 02 §11).
+// Planets (F4) and Colonies (F5) windows (docs/spec/06 §1.2, §1.8.1, spec 02 §11).
 
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/screens/colony_widgets.hpp"
@@ -28,19 +28,6 @@ std::string surfaceAndSize(const game::SpaceObject& o) {
     return o.size.empty() ? o.surface : std::format("{} {}", o.size, o.surface);
 }
 
-// Picture with the colonization hint of the system panel: a green star when
-// colonizable and breathable, red when a colony would be domed.
-void planetPicture(UiContext& ui, const game::SpaceObject& o, bool colonizable, bool breathable) {
-    cellImage(ui, objectSprite(ui, o), 22);
-    if (!colonizable) return;
-    const ImVec2 mx = ImGui::GetItemRectMax(), mn = ImGui::GetItemRectMin();
-    const float s = ui.px(8);
-    if (Sprite star = ui.art.region("Pictures/Game/General.bmp", breathable ? 237 : 261, 16, 7, 7))
-        ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(star.tex.value)), ImVec2(mx.x - s + ui.px(3), mn.y - ui.px(1)),
-                                             ImVec2(mx.x + ui.px(3), mn.y - ui.px(1) + s), ImVec2(star.uv.min.x, star.uv.min.y),
-                                             ImVec2(star.uv.max.x, star.uv.max.y));
-}
-
 // Selection with Ctrl/Shift toggling (multi-select), plain click selecting one.
 void clickSelect(std::vector<game::ObjectId>& sel, game::ObjectId id) {
     const ImGuiIO& io = ImGui::GetIO();
@@ -58,260 +45,275 @@ bool contains(const std::vector<game::ObjectId>& v, game::ObjectId id) { return 
 void stat(UiContext& ui, const char* label, const std::string& value, float column = 118.0f) { labelValue(ui, label, value, column); }
 
 // ============================================================================================
-// Planets
+// Planets (spec 06 §1.8.1, confirmed: binary)
 // ============================================================================================
 
-struct FilterButton {
-    PlanetFilter filter;
-    const char* label;
-    const char* tooltip;
-};
-constexpr std::array<FilterButton, 10> kFilters{{
-    {PlanetFilter::All, "All", "Every planet and asteroid field in the systems we have explored"},
-    {PlanetFilter::Colonizable, "Colonizable", "Free planets we have a colony module for"},
-    {PlanetFilter::AllColonies, "All Colonies", "Planets anyone has colonized, ours included"},
-    {PlanetFilter::EnemyColonies, "Enemy Colonies", "Colonies of empires we fight on contact"},
-    {PlanetFilter::AllyColonies, "Ally Colonies", "Colonies of empires with a treaty of Non-Aggression or better"},
-    {PlanetFilter::ColonizableEmpty, "Coloniz\\Empty", "Colonizable planets in systems no other empire has settled"},
-    {PlanetFilter::ColonizableBreathable, "Coloniz\\Breathe", "Colonizable planets whose atmosphere our race breathes (no domes)"},
-    {PlanetFilter::ShipEnroute, "Ship Enroute", "Planets one of our ships has orders to colonize"},
-    {PlanetFilter::Asteroids, "Asteroids", "Asteroid fields"},
-    {PlanetFilter::Special, "Special", "Planets with special features such as ruins or rich deposits"},
-}};
+constexpr std::array<const char*, 10> kFilterLabels{
+    {"All", "Colonizable", "All Colonies", "Enemy Colonies", "Ally Colonies", "Coloniz\\Empty", "Coloniz\\Breathe", "Ship Enroute", "Asteroids",
+     "Special"}};
 
-enum PlanetColumn { PcPicture, PcName, PcSystem, PcType, PcAtmosphere, PcConditions, PcMinerals, PcOrganics, PcRadioactives, PcStatus };
+enum PlanetColumn { PcPicture, PcName, PcAtmosphere, PcMinerals, PcOrganics, PcRadioactives, PcEnroute };
+constexpr std::array<ListColumn, 7> kPlanetColumns{
+    {{"", 40}, {"Name", 145}, {"Atmosphere", 95}, {"Min.", 58}, {"Org.", 58}, {"Rad.", 58}, {"Ship Enroute", 0}}};
+constexpr float kPlanetRowH = 36.0f;
+constexpr std::array<uint32_t, 3> kValueColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+
+// "Rock - Medium" (the grey second line of the Name column).
+std::string typeLine(const game::SpaceObject& o) {
+    const std::string kind = o.kind == game::ObjectKind::Asteroids ? std::string("Asteroids") : o.surface;
+    return o.size.empty() ? kind : std::format("{} - {}", kind, o.size);
+}
 
 class PlanetsScreen final : public Screen {
 public:
-    explicit PlanetsScreen(const ScreenArgs& args) {
-        if (args.planet.valid()) selected_ = args.planet;
-    }
+    explicit PlanetsScreen(const ScreenArgs&) {}
 
     bool draw(UiContext& ui) override {
+        if (!restored_) {
+            // The tab comes back from the empire (spec 06 §1.8.1).
+            filter_ = static_cast<PlanetFilter>(std::min<int>(ui.options().planetsTab, int(PlanetFilter::Count) - 1));
+            restored_ = true;
+        }
         if (revision_ != ui.session.revision()) refresh(ui);
-        bool keep = true;
+        bool leave = false;
         {
             Dialog d(ui, "Planets", DialogSize::Tall);
             if (!d.open()) return d.keepOpen();
             const game::GameState& s = ui.state();
-
-            std::vector<const PlanetInfo*> rows;
-            for (const PlanetInfo& p : all_)
-                if (matches(filter_, p) && !(noAvoid_ && p.avoided)) rows.push_back(&p);
-            const PlanetInfo* selected = nullptr;
-            for (const PlanetInfo& p : all_)
-                if (selected_ && p.id == *selected_) selected = &p;
+            const bool noAvoid = ui.options().planetsNoSysToAvoid;
+            const std::vector<const PlanetInfo*> rows = shown(ui, noAvoid);
 
             d.beginContent();
-            statistics(ui, selected);
-            ImGui::SameLine();
+            statistics(ui);
+            ImGui::SetCursorPos(ui.size({290, 3}));
             std::vector<uint8_t> marked(s.galaxy.systems.size(), 0);
             for (const PlanetInfo* p : rows) marked[p->system.index()] = 1;
             std::optional<game::SystemId> highlight;
             if (hovered_) highlight = s.galaxy.object(*hovered_).system;
-            else if (selected) highlight = selected->system;
-            quadrantMap(ui, "##map", kMapSize, marked, highlight);
-
+            quadrantMap(ui, "##map", {262, 190}, marked, highlight);
             hovered_.reset();
-            table(ui, rows);
+            ImGui::SetCursorPos(ui.size({0, 197}));
+            leave = list(ui, rows);
             status_.draw(ui);
 
             d.beginButtons();
-            for (const FilterButton& f : kFilters)
-                if (lampButton(d, ui, f.label, filter_ == f.filter, true, f.tooltip)) filter_ = f.filter;
+            for (size_t i = 0; i < kFilterLabels.size(); ++i)
+                if (d.tab(kFilterLabels[i], filter_ == static_cast<PlanetFilter>(i))) filter_ = static_cast<PlanetFilter>(i);
             d.spacer();
-            if (lampButton(d, ui, "No Sys To Avoid", noAvoid_, true, "Hide planets in the systems on our Systems To Avoid list"))
-                noAvoid_ = !noAvoid_;
-            d.spacer();
-            const bool canSend = selected && selected->colonizable && !selected->enroute;
-            if (d.button("Send Colony Ship", canSend)) sendColonyShip(ui, *selected);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                itemTooltip(!selected                 ? "Select a planet first"
-                            : selected->enroute       ? "A ship is already on its way"
-                            : !selected->colonizable ? selected->problem.c_str()
-                                                      : "Order the nearest idle colony ship to colonize the selected planet");
-            if (d.button("Goto", selected != nullptr)) goto_ = selected->id;
-            if (d.close()) return false;
+            // Stored with the empire when clicked (spec 06 §1.8.1).
+            if (d.tab("No Sys To Avoid", noAvoid)) {
+                game::InterfaceOptions o = ui.options();
+                o.planetsNoSysToAvoid = !noAvoid;
+                if (!ui.setOptions(o)) status_.fail("The option cannot be changed now.");
+            }
+            if (d.button("Send Colony Ship", stats_.available > 0)) {
+                picking_ = true;
+                pickRows_.clear();
+                for (const PlanetInfo* p : rows) pickRows_.push_back(p->id);
+                picked_.reset();
+            }
+            d.close();
             report_.draw(ui);
-            keep = d.keepOpen();
+            if (pickerPopup(ui)) leave = true;
+            leave = leave || !d.keepOpen();
         }
-        if (goto_) {
-            ui.requests.selectPlanet = *goto_;
+        if (leave) {
+            // The tab is stored with the empire when the window closes.
+            game::InterfaceOptions o = ui.options();
+            o.planetsTab = static_cast<uint8_t>(filter_);
+            ui.setOptions(o);
             return false;
         }
-        return keep;
+        return true;
     }
 
 private:
     void refresh(UiContext& ui) {
         all_ = surveyPlanets(ui.rules(), ui.state(), ui.session.player());
+        stats_ = planetStatistics(ui.state(), ui.session.player(), all_, colonyShips(ui.rules(), ui.state(), ui.session.player()));
         revision_ = ui.session.revision();
     }
 
-    void statistics(UiContext& ui, const PlanetInfo* selected) {
-        int planets = 0, asteroids = 0, colonizable = 0, breathe = 0, own = 0, ally = 0, enemy = 0, enroute = 0, systems = 0;
-        for (const PlanetInfo& p : all_) {
-            (p.asteroids ? asteroids : planets)++;
-            colonizable += p.colonizable;
-            breathe += p.colonizable && p.breathable;
-            own += p.own;
-            ally += p.ally;
-            enemy += p.enemy;
-            enroute += p.enroute;
-        }
-        for (const game::StarSystem& sys : ui.state().galaxy.systems) systems += ui.me().hasExplored(sys.id);
-        const float h = ui.px(kMapSize.y);
-        ImGui::BeginChild("##stats", ImVec2(ImGui::GetContentRegionAvail().x - ui.px(kMapSize.x) - ImGui::GetStyle().ItemSpacing.x, h));
-        ImGui::BeginGroup();
-        heading(ui, "Statistics");
-        stat(ui, "Explored systems", std::to_string(systems));
-        stat(ui, "Planets", std::format("{} (+{} asteroid fields)", planets, asteroids));
-        stat(ui, "Colonizable", std::format("{} ({} breathable)", colonizable, breathe));
-        stat(ui, "Our colonies", std::to_string(own));
-        stat(ui, "Ally / enemy", std::format("{} / {}", ally, enemy));
-        stat(ui, "Ships en route", std::to_string(enroute));
-        ImGui::EndGroup();
-        ImGui::SameLine(ui.px(300));
-        ImGui::BeginGroup();
-        if (selected) {
-            const game::GameState& s = ui.state();
-            const game::SpaceObject& o = s.galaxy.object(selected->id);
-            heading(ui, o.name.c_str());
-            stat(ui, "Type", surfaceAndSize(o), 90);
-            stat(ui, "Atmosphere", o.atmosphere, 90);
-            stat(ui, "Conditions", conditionsText(o.conditions), 90);
-            stat(ui, "Value", std::format("{}% / {}% / {}%", o.value[0], o.value[1], o.value[2]), 90);
-            if (selected->colonized) {
-                ImGui::TextColored(kTextLabel, "Owner");
-                ImGui::SameLine(ui.px(90));
-                ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, selected->owner)), "%s", s.empire(selected->owner).name.c_str());
-            } else if (selected->colonizable) {
-                ImGui::TextColored(kTextGood, "%s", selected->breathable ? "Colonizable" : "Colonizable (domed)");
-            } else {
-                ImGui::PushTextWrapPos(0.0f);
-                ImGui::TextColored(kTextDim, "%s", selected->problem.c_str());
-                ImGui::PopTextWrapPos();
-            }
-        } else {
-            ImGui::TextColored(kTextDim, "Click a planet to select it.");
-            ImGui::TextColored(kTextDim, "Double-click (or Goto) shows it");
-            ImGui::TextColored(kTextDim, "in the main window; right-click");
-            ImGui::TextColored(kTextDim, "opens its report.");
-        }
-        ImGui::EndGroup();
-        ImGui::EndChild();
-    }
-
-    void table(UiContext& ui, std::vector<const PlanetInfo*>& rows) {
+    // The current tab's planets, in the sort order.
+    std::vector<const PlanetInfo*> shown(UiContext& ui, bool noAvoid) const {
         const game::GameState& s = ui.state();
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(4), ui.px(2)));
-        const float footer = ImGui::GetTextLineHeightWithSpacing();
-        const ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
-                                      ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        if (ImGui::BeginTable("##planets", 10, flags, ImVec2(0, -footer))) {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoSort, ui.px(28), PcPicture);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultSort, 0, PcName);
-            ImGui::TableSetupColumn("System", 0, ui.px(76), PcSystem);
-            ImGui::TableSetupColumn("Type", 0, ui.px(96), PcType);
-            ImGui::TableSetupColumn("Atmosphere", 0, ui.px(92), PcAtmosphere);
-            ImGui::TableSetupColumn("Cond.", ImGuiTableColumnFlags_PreferSortDescending, ui.px(44), PcConditions);
-            ImGui::TableSetupColumn("Min.", ImGuiTableColumnFlags_PreferSortDescending, ui.px(40), PcMinerals);
-            ImGui::TableSetupColumn("Org.", ImGuiTableColumnFlags_PreferSortDescending, ui.px(40), PcOrganics);
-            ImGui::TableSetupColumn("Rad.", ImGuiTableColumnFlags_PreferSortDescending, ui.px(40), PcRadioactives);
-            ImGui::TableSetupColumn("Status", 0, ui.px(104), PcStatus);
-            ImGui::TableHeadersRow();
-            readSortSpecs(sortColumn_, ascending_);
-            auto key = [&](const PlanetInfo& p) -> SortKey {
-                const game::SpaceObject& o = s.galaxy.object(p.id);
-                switch (sortColumn_) {
-                    case PcSystem: return s.galaxy.system(p.system).name;
-                    case PcType: return surfaceAndSize(o);
-                    case PcAtmosphere: return o.atmosphere;
-                    case PcConditions: return static_cast<int64_t>(o.conditions.bits);  // ordered like the values (never negative)
-                    case PcMinerals: return int64_t{o.value[0]};
-                    case PcOrganics: return int64_t{o.value[1]};
-                    case PcRadioactives: return int64_t{o.value[2]};
-                    case PcStatus: return statusText(ui, p);
-                    default: return o.name;
+        std::vector<const PlanetInfo*> rows;
+        for (const PlanetInfo& p : all_)
+            if (matches(filter_, p) && !(noAvoid && p.avoided)) rows.push_back(&p);
+        // Fixed directions (spec 06 §1.8.1): names A to Z, values highest first,
+        // the picture and Ship Enroute by planet size, smallest first.
+        sort_.sort(rows, [&](int column, const PlanetInfo* a, const PlanetInfo* b) {
+            const game::SpaceObject& oa = s.galaxy.object(a->id);
+            const game::SpaceObject& ob = s.galaxy.object(b->id);
+            switch (column) {
+                case PcName: return compareNames(oa.name, ob.name);
+                case PcAtmosphere: return compareNames(oa.atmosphere, ob.atmosphere);
+                case PcMinerals:
+                case PcOrganics:
+                case PcRadioactives: {
+                    const size_t k = size_t(column - PcMinerals);
+                    return oa.value[k] == ob.value[k] ? 0 : oa.value[k] > ob.value[k] ? -1 : 1;
                 }
-            };
-            std::stable_sort(rows.begin(), rows.end(), [&](const PlanetInfo* a, const PlanetInfo* b) {
-                return ascending_ ? sortKeyLess(key(*a), key(*b)) : sortKeyLess(key(*b), key(*a));
-            });
-            ImGuiListClipper clipper;
-            clipper.Begin(static_cast<int>(rows.size()), ui.px(kRowHeight));
-            while (clipper.Step())
-                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) row(ui, *rows[static_cast<size_t>(i)]);
-            if (rows.empty()) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextColored(kTextDim, "No planets match this filter.");
+                default: return a->sizeRank == b->sizeRank ? 0 : a->sizeRank < b->sizeRank ? -1 : 1;
             }
-            ImGui::EndTable();
+        });
+        return rows;
+    }
+
+    void statistics(UiContext& ui) {
+        // Labels at x 18 one every 16 px from y 40, values right-aligned at x 289 (window pixels).
+        const PlanetStatistics& st = stats_;
+        const std::array<std::pair<const char*, int>, 10> lines{{{"Known Systems", st.systems},
+                                                                 {"Planets", st.planets},
+                                                                 {"Colonizable Planets", st.colonizable},
+                                                                 {"Owned By Enemies", st.enemy},
+                                                                 {"Owned By Allies", st.ally},
+                                                                 {"Owned By Non-Aligned", st.nonAligned},
+                                                                 {"Not Colonized", st.free},
+                                                                 {"Not Colonized, Breathable", st.freeBreathable},
+                                                                 {"Colonizing Ships", st.colonyShips},
+                                                                 {"Available Colonizing Ships", st.available}}};
+        for (size_t i = 0; i < lines.size(); ++i) {
+            const float y = 5.0f + 16.0f * float(i) + (i >= 8 ? 16.0f : 0.0f);
+            ImGui::SetCursorPos(ui.size({3, y}));
+            ImGui::TextColored(kLabelBlue, "%s", lines[i].first);
+            const std::string value = std::to_string(lines[i].second);
+            ImGui::SetCursorPos(ImVec2(ui.px(274) - ImGui::CalcTextSize(value.c_str()).x, ui.px(y)));
+            ImGui::TextUnformatted(value.c_str());
         }
+    }
+
+    // The list; returns true when a row was left-clicked (the window closes and shows that planet).
+    bool list(UiContext& ui, const std::vector<const PlanetInfo*>& rows) {
+        const game::GameState& s = ui.state();
+        // The rows' child has no padding; the header leaves room for its scrollbar.
+        const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
+        if (const int c = listHeader(ui, "##planethead", kPlanetColumns, width); c >= 0) sort_.click(c);
+        const std::vector<float> x = columnEdges(ui, kPlanetColumns, width);
+        bool leave = false;
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
+        ImGui::BeginChild("##planetrows", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
+        const float rowH = ui.px(kPlanetRowH);
+        ImGuiListClipper clipper;
+        clipper.Begin(int(rows.size()), rowH);
+        while (clipper.Step())
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const PlanetInfo& p = *rows[size_t(i)];
+                const game::SpaceObject& o = s.galaxy.object(p.id);
+                ImGui::PushID(int(p.id.index()));
+                const ImVec2 a = ImGui::GetCursorScreenPos();
+                const bool clicked = ImGui::Selectable("##row", false, ImGuiSelectableFlags_None, ImVec2(0, rowH - ImGui::GetStyle().ItemSpacing.y));
+                const bool hovered = ImGui::IsItemHovered();
+                if (hovered) hovered_ = p.id;
+                if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) report_.openPlanet(p.id);
+                // Left-click: the window closes and the main window shows the planet.
+                if (clicked) {
+                    ui.requests.selectPlanet = p.id;
+                    leave = true;
+                }
+                ImGui::PopID();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                const float top = a.y + ui.px(2);
+                if (Sprite pic = objectSprite(ui, o))
+                    dl->AddImage(ImTextureRef(static_cast<ImTextureID>(pic.tex.value)), ImVec2(a.x + x[0] + ui.px(2), top),
+                                 ImVec2(a.x + x[0] + ui.px(32), top + ui.px(30)), {pic.uv.min.x, pic.uv.min.y}, {pic.uv.max.x, pic.uv.max.y});
+                const ImU32 white = IM_COL32_WHITE;
+                const float lh = ImGui::GetTextLineHeight();
+                auto text = [&](float cx, float cy, ImU32 color, const std::string& t, float cw) {
+                    dl->PushClipRect(ImVec2(a.x + cx, a.y), ImVec2(a.x + cx + cw, a.y + rowH), true);
+                    dl->AddText(ImVec2(a.x + cx + ui.px(2), cy), color, t.c_str());
+                    dl->PopClipRect();
+                };
+                text(x[PcName], top, p.own ? imColor(0xffdb59) : white, o.name, x[PcName + 1] - x[PcName]);
+                ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+                text(x[PcName], top + lh + ui.px(1), imColor(palette::kSecondary), typeLine(o), x[PcName + 1] - x[PcName]);
+                ImGui::PopFont();
+                const float mid = a.y + (rowH - lh) * 0.5f;
+                text(x[PcAtmosphere], mid, white, p.asteroids ? std::string("None") : o.atmosphere, x[PcAtmosphere + 1] - x[PcAtmosphere]);
+                for (size_t k = 0; k < 3; ++k) {
+                    // A percentage, or the amount left when resources are finite.
+                    const std::string v = s.options.finiteResources ? formatNumber(o.value[k]) : std::format("{}%", o.value[k]);
+                    const int col = PcMinerals + int(k);
+                    text(x[size_t(col)], mid, imColor(kValueColors[k]), v, x[size_t(col) + 1] - x[size_t(col)]);
+                }
+                if (p.enroute) text(x[PcEnroute], mid, white, p.enrouteShip, x[PcEnroute + 1] - x[PcEnroute]);
+            }
+        if (rows.empty()) ImGui::TextColored(kTextDim, "No planets on this tab.");
+        ImGui::EndChild();
+        return leave;
     }
 
-    std::string statusText(UiContext& ui, const PlanetInfo& p) const {
-        if (p.colonized) return p.own ? "Ours" : ui.state().empire(p.owner).name;
-        if (p.enroute) return "Ship en route";
-        if (p.colonizable) return p.breathable ? "Colonizable" : "Needs a dome";
-        return "-";
-    }
-
-    void row(UiContext& ui, const PlanetInfo& p) {
-        const game::GameState& s = ui.state();
-        const game::SpaceObject& o = s.galaxy.object(p.id);
-        const RowEvents ev = tableRow(ui, static_cast<int>(p.id.index()), selected_ == p.id);
-        if (ev.hovered) hovered_ = p.id;
-        if (ev.clicked) selected_ = p.id;
-        if (ev.rightClicked) report_.openPlanet(p.id);
-        if (ev.doubleClicked) goto_ = p.id;
-        planetPicture(ui, o, p.colonizable, p.breathable);
-        ImGui::TableSetColumnIndex(1);
-        cellText(ui, o.name, p.own ? kTextHighlight : ImVec4(1, 1, 1, 1));
-        ImGui::TableSetColumnIndex(2);
-        cellText(ui, s.galaxy.system(p.system).name, kTextDim);
-        ImGui::TableSetColumnIndex(3);
-        cellText(ui, surfaceAndSize(o));
-        ImGui::TableSetColumnIndex(4);
-        cellText(ui, p.asteroids ? "-" : o.atmosphere, p.breathable ? kTextGood : ImVec4(1, 1, 1, 1));
-        ImGui::TableSetColumnIndex(5);
-        cellText(ui, conditionsText(o.conditions));
-        for (int r = 0; r < 3; ++r) {
-            ImGui::TableSetColumnIndex(6 + r);
-            cellText(ui, percent(o.value[static_cast<size_t>(r)]));
+    // "Select Planet to Colonize" over the current tab's planets; returns true
+    // when the window should close (turn-based: it shows the ship that goes).
+    bool pickerPopup(UiContext& ui) {
+        const char* id = "Select Planet to Colonize###colonizepick";
+        if (picking_) {
+            ImGui::OpenPopup(id);
+            picking_ = false;
         }
-        ImGui::TableSetColumnIndex(9);
-        const std::string st = statusText(ui, p);
-        if (p.colonized && !p.own) cellText(ui, st, ImGui::ColorConvertU32ToFloat4(empireColor(s, p.owner)));
-        else cellText(ui, st, p.own ? kTextHighlight : p.colonizable || p.enroute ? kTextGood : kTextDim);
-        if (!p.colonizable && !p.colonized && ImGui::IsItemHovered()) itemTooltip(p.problem.c_str());
+        if (!beginModal(ui, id, {420, 520})) return false;
+        const game::GameState& s = ui.state();
+        bool leave = false;
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        ImGui::BeginChild("##pick", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+        for (game::ObjectId id2 : pickRows_) {
+            const game::SpaceObject& o = s.galaxy.object(id2);
+            const std::string label = std::format("{}   ({}, {})###p{}", o.name, typeLine(o), s.galaxy.system(o.system).name, id2.index());
+            if (ImGui::Selectable(label.c_str(), picked_ == id2, ImGuiSelectableFlags_AllowDoubleClick)) picked_ = id2;
+        }
+        if (pickRows_.empty()) ImGui::TextColored(kTextDim, "No planets on this tab.");
+        ImGui::EndChild();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        ImGui::BeginDisabled(!picked_);
+        const bool go = ImGui::Button("Colonize", ImVec2(w, ui.px(26)));
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel", ImVec2(w, ui.px(26)));
+        if (go && picked_) {
+            ImGui::CloseCurrentPopup();
+            leave = send(ui, *picked_);
+        } else if (cancel) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+        return leave;
     }
 
-    void sendColonyShip(UiContext& ui, const PlanetInfo& p) {
+    bool send(UiContext& ui, game::ObjectId planet) {
         const game::GameState& s = ui.state();
-        const std::string& name = s.galaxy.object(p.id).name;
-        const auto ship = findColonyShip(ui.rules(), s, ui.session.player(), p.id);
+        const std::string name = s.galaxy.object(planet).name;
+        if (s.colony(planet)) {
+            status_.fail(std::format("{} is already colonized.", name));  // (inferred: the original's reply is not known)
+            return false;
+        }
+        const auto ship = chooseColonyShip(ui.rules(), s, ui.session.player(), planet);
         if (!ship) {
-            status_.fail(std::format("No idle ship outside a fleet can colonize {} ({} planets need a matching colony module)", name,
-                                     s.galaxy.object(p.id).surface));
-            return;
+            status_.fail(std::format("No available colony ship can colonize {} ({}).", name, s.galaxy.object(planet).surface));
+            return false;
         }
         const std::string shipName = s.vehicle(*ship)->name;
-        if (status_.issue(ui, colonizeOrders(s, *ship, p.id))) status_.info(std::format("{} is on its way to colonize {}", shipName, name));
+        if (!status_.issue(ui, sendColonyShipOrders(s, *ship, planet))) return false;
+        status_.info(std::format("{} is on its way to colonize {}.", shipName, name));
+        // Turn-based: the window closes and the main window shows the ship; a
+        // simultaneous game keeps it open (spec 06 §1.8.1).
+        if (ui.session.turnBased()) {
+            ui.requests.selectVehicle = *ship;
+            return true;
+        }
+        return false;
     }
 
     std::vector<PlanetInfo> all_;
+    PlanetStatistics stats_;
     uint64_t revision_ = 0;
+    bool restored_ = false;
     PlanetFilter filter_ = PlanetFilter::All;
-    bool noAvoid_ = false;
-    std::optional<game::ObjectId> selected_;
+    SortHistory sort_{PcName};
     std::optional<game::ObjectId> hovered_;
-    std::optional<game::ObjectId> goto_;
-    int sortColumn_ = PcName;
-    bool ascending_ = true;
+    bool picking_ = false;
+    std::vector<game::ObjectId> pickRows_;
+    std::optional<game::ObjectId> picked_;
     StatusLine status_;
     ReportPopup report_;
 };

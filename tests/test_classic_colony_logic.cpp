@@ -30,7 +30,10 @@ ObjectId freePlanet(const GameState& s, std::string_view surface) {
 }
 
 void exploreAll(GameState& s) {
-    for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), uint8_t{1});
+    for (Empire& e : s.empires) {
+        std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), uint8_t{1});
+        std::fill(e.knowledge.knownWarpLink.begin(), e.knowledge.knownWarpLink.end(), uint8_t{1});
+    }
 }
 
 // A settled colony with population and no facilities on a free planet.
@@ -91,7 +94,7 @@ TEST_CASE("classic ui: colonization technology and game options") {
     CHECK(colonizeProblem(r, s, kMe, rock, more).empty());
 }
 
-TEST_CASE("classic ui: planet survey and filters") {
+TEST_CASE("classic ui: planet survey and the Planets tabs (spec 06 §1.8.1)") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(5, 2, 12);
     exploreAll(s);
@@ -108,27 +111,55 @@ TEST_CASE("classic ui: planet survey and filters") {
     for (const SpaceObject& o : s.galaxy.objects) planets += o.kind == ObjectKind::Planet || o.kind == ObjectKind::Asteroids;
     CHECK(all.size() == planets);
     for (const PlanetInfo& p : all) {
-        CHECK(matches(PlanetFilter::All, p));
-        CHECK(matches(PlanetFilter::Asteroids, p) == (s.galaxy.object(p.id).kind == ObjectKind::Asteroids));
-        CHECK(matches(PlanetFilter::Colonizable, p) == p.problem.empty());
-        if (matches(PlanetFilter::ColonizableBreathable, p)) CHECK(p.breathable);
+        const bool asteroids = s.galaxy.object(p.id).kind == ObjectKind::Asteroids;
+        CHECK(matches(PlanetFilter::All, p) == !asteroids);  // All lists no asteroid fields
+        CHECK(matches(PlanetFilter::Asteroids, p) == asteroids);
+        // Colonizable says nothing about whether the planet is colonized.
+        CHECK(matches(PlanetFilter::Colonizable, p) == colonizableType(s, kMe, p.id, colonizeTech(r, s.empire(kMe))));
+        CHECK(matches(PlanetFilter::ColonizableEmpty, p) == (p.colonizable && !p.colonized));
+        if (matches(PlanetFilter::ColonizableBreathable, p)) CHECK((p.breathable && !p.colonized));
     }
     const PlanetInfo mine = find(all, myHome);
     CHECK(mine.own);
+    CHECK(mine.colonizable);  // our own homeworld's type
+    CHECK(matches(PlanetFilter::Colonizable, mine));
+    CHECK_FALSE(matches(PlanetFilter::ColonizableEmpty, mine));
     CHECK(matches(PlanetFilter::AllColonies, mine));
     CHECK_FALSE(matches(PlanetFilter::EnemyColonies, mine));
-    const PlanetInfo theirs = find(all, theirHome);
-    CHECK(theirs.enemy);  // no treaty: we fight on contact
-    CHECK_FALSE(theirs.ally);
+    CHECK_FALSE(matches(PlanetFilter::AllyColonies, mine));
 
+    // Not met yet: an enemy. Met at Non-Aggression or better: an ally; below it: an enemy.
+    s.empire(kMe).relation(kOther).contact = false;
     s.empire(kMe).relation(kOther).treaty = Treaty::NonAggression;
+    CHECK(find(surveyPlanets(r, s, kMe), theirHome).enemy);
+    s.empire(kMe).relation(kOther).contact = true;
     all = surveyPlanets(r, s, kMe);
     CHECK(find(all, theirHome).ally);
     CHECK(matches(PlanetFilter::AllyColonies, find(all, theirHome)));
+    for (const Treaty t : {Treaty::War, Treaty::NonIntercourse, Treaty::None}) {
+        s.empire(kMe).relation(kOther).treaty = t;
+        CHECK(matches(PlanetFilter::EnemyColonies, find(surveyPlanets(r, s, kMe), theirHome)));
+    }
+    for (const Treaty t : {Treaty::Subjugation, Treaty::Protectorate, Treaty::Partnership}) {
+        s.empire(kMe).relation(kOther).treaty = t;
+        CHECK(matches(PlanetFilter::AllyColonies, find(surveyPlanets(r, s, kMe), theirHome)));
+    }
 
-    // Planets in the other empire's home system are not "empty".
-    for (const PlanetInfo& p : all)
-        if (p.system == s.galaxy.object(theirHome).system) CHECK_FALSE(matches(PlanetFilter::ColonizableEmpty, p));
+    // Coloniz\Empty tests the planet itself, not its system.
+    for (const PlanetInfo& p : surveyPlanets(r, s, kMe))
+        if (p.system == s.galaxy.object(theirHome).system && p.id != theirHome && p.colonizable)
+            CHECK(matches(PlanetFilter::ColonizableEmpty, p));
+
+    // Special: only Ancient Ruins or Ancient Ruins Unique.
+    const ObjectId rock = freePlanet(s, "Rock");
+    s.galaxy.object(rock).abilities = {ruleset::Ability{"Planet - Change Conditions", "", "1", ""}};
+    CHECK_FALSE(find(surveyPlanets(r, s, kMe), rock).special);
+    s.galaxy.object(rock).abilities.push_back(ruleset::Ability{"Ancient Ruins Unique", "", "1", ""});
+    CHECK(matches(PlanetFilter::Special, find(surveyPlanets(r, s, kMe), rock)));
+
+    // Systems To Avoid are marked (the No Sys To Avoid toggle hides them).
+    s.empire(kMe).systemsToAvoid = {s.galaxy.object(rock).system};
+    CHECK(find(surveyPlanets(r, s, kMe), rock).avoided);
 
     // Unexplored systems are not listed.
     std::fill(s.empire(kMe).knowledge.explored.begin(), s.empire(kMe).knowledge.explored.end(), uint8_t{0});
@@ -136,30 +167,119 @@ TEST_CASE("classic ui: planet survey and filters") {
     for (const PlanetInfo& p : surveyPlanets(r, s, kMe)) CHECK(p.system == s.galaxy.object(myHome).system);
 }
 
-TEST_CASE("classic ui: Send Colony Ship picks an idle ship that can colonize") {
+TEST_CASE("classic ui: Send Colony Ship takes the available colony ship with the shortest route") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(3, 2, 12);
     exploreAll(s);
     const ObjectId rock = freePlanet(s, "Rock");
     const ObjectId ice = freePlanet(s, "Ice");
-
-    const auto ship = findColonyShip(r, s, kMe, rock);
-    REQUIRE(ship.has_value());
-    CHECK(s.vehicle(*ship)->owner == kMe);
-    CHECK(s.design(s.vehicle(*ship)->design).id == colonyShipDesign(s, r, kMe));
-    CHECK_FALSE(findColonyShip(r, s, kMe, ice).has_value());  // no ice colony module
-
-    // The nearer of two idle colony ships goes.
     const Location target = locationOf(s.galaxy, rock);
+
+    const auto ships = colonyShips(r, s, kMe);
+    REQUIRE_FALSE(ships.empty());
+    const auto first = chooseColonyShip(r, s, kMe, rock);
+    REQUIRE(first.has_value());
+    CHECK(s.vehicle(*first)->owner == kMe);
+    CHECK_FALSE(chooseColonyShip(r, s, kMe, ice).has_value());  // no ship can colonize ice
+
+    // The nearer of two available ships goes.
     Vehicle& near = addTestVehicle(s, r, colonyShipDesign(s, r, kMe), target);
     const VehicleId nearId = near.id;
-    CHECK(findColonyShip(r, s, kMe, rock) == nearId);
+    near.supply = 100;
+    CHECK(chooseColonyShip(r, s, kMe, rock) == nearId);
+    // Out of supplies or mothballed: not available.
+    s.vehicle(nearId)->supply = 0;
+    CHECK(chooseColonyShip(r, s, kMe, rock) == first);
+    s.vehicle(nearId)->supply = 100;
+    s.vehicle(nearId)->status = VehicleStatus::Mothballed;
+    CHECK(chooseColonyShip(r, s, kMe, rock) == first);
+    s.vehicle(nearId)->status = VehicleStatus::Normal;
+    // Turn-based: only ships with movement left.
+    s.options.simultaneous = false;
+    s.vehicle(nearId)->movement = 0;
+    CHECK(chooseColonyShip(r, s, kMe, rock) != nearId);
+    s.vehicle(nearId)->movement = 3;
+    CHECK(chooseColonyShip(r, s, kMe, rock) == nearId);
+    s.options.simultaneous = true;
 
-    CHECK(apply(r, s, kMe, colonizeOrders(s, nearId, rock)).ok);
-    CHECK(colonyShipEnroute(s, kMe, rock));
-    CHECK_FALSE(colonyShipEnroute(s, kOther, rock));
-    CHECK(findColonyShip(r, s, kMe, rock) == *ship);  // the busy ship is no longer idle
-    for (const PlanetInfo& p : surveyPlanets(r, s, kMe)) CHECK(matches(PlanetFilter::ShipEnroute, p) == (p.id == rock));
+    // Load Cargo (only while it carries no population), Move To, Colonize.
+    const cmd::SetOrders orders = sendColonyShipOrders(s, nearId, rock);
+    REQUIRE(orders.orders.size() == 3);
+    CHECK(orders.orders[0].kind == OrderKind::LoadCargo);
+    CHECK(orders.orders[0].location == s.vehicle(nearId)->location);
+    CHECK_FALSE(orders.orders[0].design.valid());
+    CHECK(orders.orders[1].kind == OrderKind::MoveTo);
+    CHECK(orders.orders[1].location == target);
+    CHECK(orders.orders[2].kind == OrderKind::Colonize);
+    CHECK(orders.orders[2].object == rock);
+    s.vehicle(nearId)->cargo.population.push_back({kMe, 1});
+    CHECK(sendColonyShipOrders(s, nearId, rock).orders.size() == 2);
+    s.vehicle(nearId)->cargo.population.clear();
+
+    CHECK(apply(r, s, kMe, orders).ok);
+    // A colony ship with orders is no longer available; its last Colonize order marks the planet.
+    CHECK(chooseColonyShip(r, s, kMe, rock) == first);
+    for (const PlanetInfo& p : surveyPlanets(r, s, kMe)) {
+        CHECK(matches(PlanetFilter::ShipEnroute, p) == (p.id == rock));
+        if (p.id == rock) CHECK(p.enrouteShip == s.vehicle(nearId)->name);
+    }
+    const PlanetStatistics st = planetStatistics(s, kMe, surveyPlanets(r, s, kMe), colonyShips(r, s, kMe));
+    CHECK(st.colonyShips == int(ships.size()) + 1);
+    CHECK(st.available == st.colonyShips - 1);
+}
+
+TEST_CASE("classic ui: the Planets statistics and the sort history") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 2, 12);
+    exploreAll(s);
+    s.empire(kMe).relation(kOther).contact = true;
+    s.empire(kMe).relation(kOther).treaty = Treaty::War;
+    const std::vector<PlanetInfo> all = surveyPlanets(r, s, kMe);
+    const PlanetStatistics st = planetStatistics(s, kMe, all, {});
+    CHECK(st.systems == int(s.galaxy.systems.size()));
+    int planets = 0, colonizable = 0, enemy = 0, free = 0;
+    for (const PlanetInfo& p : all) {
+        planets += !p.asteroids;
+        colonizable += p.colonizable;
+        enemy += p.colonizable && p.colonized && p.enemy;
+        free += p.colonizable && !p.colonized;
+    }
+    CHECK(st.planets == planets);
+    CHECK(st.colonizable == colonizable);
+    CHECK(st.enemy == enemy);
+    CHECK(st.ally == 0);
+    CHECK(st.nonAligned == 0);
+    CHECK(st.free == free);
+    CHECK(st.freeBreathable <= st.free);
+    CHECK(st.colonyShips == 0);
+
+    // The latest click is the first key; earlier ones break ties; at most five.
+    SortHistory h(1);
+    CHECK(h.columns() == std::vector<int>{1});
+    h.click(3);
+    h.click(2);
+    h.click(3);
+    CHECK(h.columns() == std::vector<int>{3, 2, 1});
+    for (int c : {4, 5, 6}) h.click(c);
+    CHECK(h.columns() == std::vector<int>{6, 5, 4, 3, 2});
+    struct Row {
+        int a, b;
+    };
+    std::vector<Row> rows{{1, 2}, {0, 9}, {1, 1}, {0, 3}};
+    SortHistory two(0);
+    two.click(1);  // b highest first ...
+    two.click(0);  // ... within a lowest first
+    two.sort(rows, [](int column, const Row& x, const Row& y) {
+        if (column == 0) return x.a == y.a ? 0 : x.a < y.a ? -1 : 1;
+        return x.b == y.b ? 0 : x.b > y.b ? -1 : 1;
+    });
+    CHECK(rows[0].b == 9);
+    CHECK(rows[1].b == 3);
+    CHECK(rows[2].b == 2);
+    CHECK(rows[3].b == 1);
+    CHECK(compareNames("alpha", "Beta") < 0);
+    CHECK(compareNames("Gamma", "gamma") == 0);
+    CHECK(compareNames("Ab", "a") > 0);
 }
 
 TEST_CASE("classic ui: facility upgrades and choices") {
@@ -285,7 +405,7 @@ TEST_CASE("classic ui: queue lists and item names") {
     REQUIRE(queues.size() == 2);
     CHECK(queues[0].kind == QueueKind::PlanetYard);
     CHECK(queues[0].target.planet == homeworld(s, kMe).planet);
-    CHECK(queues[1].kind == QueueKind::Ship);
+    CHECK(queues[1].kind == QueueKind::ShipYard);
     CHECK(queues[1].target.vehicle == tender);
     CHECK(queueOf(s, kMe, queues[1].target) == &s.vehicle(tender)->queue);
     CHECK(queueOf(s, kOther, queues[1].target) == nullptr);
@@ -301,6 +421,105 @@ TEST_CASE("classic ui: queue lists and item names") {
     CHECK(std::find(current.begin(), current.end(), yardShip) == current.end());
     CHECK(designChoices(r, s, kMe, true, false).empty() == std::none_of(s.empire(kMe).designs.begin(), s.empire(kMe).designs.end(),
                                                                           [&](DesignId d) { return isUnitDesign(r, s.design(d)); }));
+}
+
+TEST_CASE("classic ui: Construction Queues toggles follow a working space yard (spec 06 §1.8.2)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12);
+    const Location home = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId yardShip = addTestDesign(s, r, kMe, "Yard Tender", "Test Frigate",
+                                            {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Yard Module"});
+    const VehicleId tender = addTestVehicle(s, r, yardShip, home).id;
+    auto kindOf = [&](const cmd::QueueTarget& t) {
+        for (const QueueEntry& q : empireQueues(r, s, kMe))
+            if (sameTarget(q.target, t)) return std::optional<QueueKind>(q.kind);
+        return std::optional<QueueKind>{};
+    };
+    const cmd::QueueTarget ship{{}, tender};
+    const cmd::QueueTarget planet{homeworld(s, kMe).planet, {}};
+    CHECK(kindOf(ship) == QueueKind::ShipYard);
+    CHECK(kindOf(planet) == QueueKind::PlanetYard);
+    CHECK(queueCanBuild(r, s, kMe, ship, false));
+    CHECK(queueCanBuild(r, s, kMe, ship, true));
+    CHECK(queueCanBuild(r, s, kMe, planet, false));
+    // A cloaked yard does not work: the queue moves to Ships.
+    s.vehicle(tender)->status = VehicleStatus::Cloaked;
+    CHECK(kindOf(ship) == QueueKind::Ship);
+    CHECK_FALSE(workingVehicleYard(r, s, *s.vehicle(tender)));
+    CHECK_FALSE(queueCanBuild(r, s, kMe, ship, false));
+    s.vehicle(tender)->status = VehicleStatus::Normal;
+    // A colony without a space yard is under Planets; it builds units, not ships.
+    Colony& col = homeworld(s, kMe);
+    const auto facilities = col.facilities;
+    std::erase_if(col.facilities, [&](uint32_t f) { return game::hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
+    CHECK(kindOf(planet) == QueueKind::Planet);
+    CHECK_FALSE(queueCanBuild(r, s, kMe, planet, false));
+    CHECK(queueCanBuild(r, s, kMe, planet, true));
+    col.facilities = facilities;
+    // A ship without a yard part and with an empty queue has no queue.
+    const DesignId plain = addTestDesign(s, r, kMe, "Plain", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    const VehicleId plainShip = addTestVehicle(s, r, plain, home).id;
+    CHECK_FALSE(kindOf(cmd::QueueTarget{{}, plainShip}).has_value());
+    // The bits of the stored toggles: Ships, Planets, Ship SY, Planet SY.
+    CHECK(queueKindBit(QueueKind::Ship) == 1);
+    CHECK(queueKindBit(QueueKind::Planet) == 2);
+    CHECK(queueKindBit(QueueKind::ShipYard) == 4);
+    CHECK(queueKindBit(QueueKind::PlanetYard) == 8);
+}
+
+TEST_CASE("classic ui: queue times in years, mode notes, Multi-Add and similar abilities") {
+    CHECK(queueYearsText(0) == "0.0 Years");
+    CHECK(queueYearsText(3) == "0.3 Years");
+    CHECK(queueYearsText(25) == "2.5 Years");
+    CHECK(queueYearsText(-1) == "Never");
+    CHECK(queueYearsText(kNeverTurns) == "Never");
+    CHECK(queueYearsText(kNeverTurns - 1) == "999.8 Years");
+
+    ConstructionQueue q;
+    CHECK(queueModeNote(q).empty());
+    q.slowTurns = 4;
+    CHECK(queueModeNote(q) == "Slow (4 turns left)");
+    q.emergency = true;
+    q.emergencyTurns = 2;
+    CHECK(queueModeNote(q) == "Emergency (2 of 10 turns)");
+
+    // Every placed item, in order and with its count, goes to each tagged queue.
+    const std::vector<cmd::QueueTarget> tagged{{ObjectId{1u}, {}}, {{}, VehicleId{2u}}};
+    QueueItem a;
+    a.design = DesignId{3u};
+    a.count = 5;
+    a.spent = Resources{1, 2, 3};
+    QueueItem b;
+    b.kind = QueueItem::Kind::Facility;
+    b.facility = 4;
+    const auto adds = multiAddCommands(tagged, {a, b});
+    REQUIRE(adds.size() == 4);
+    CHECK(sameTarget(adds[0].target, tagged[0]));
+    CHECK(adds[0].item.design == DesignId{3u});
+    CHECK(adds[0].item.count == 5);
+    CHECK(adds[0].item.spent.isZero());
+    CHECK(adds[1].item.facility == 4u);
+    CHECK(sameTarget(adds[2].target, tagged[1]));
+    CHECK(adds[3].position == -1);
+    CHECK(multiAddCommands({}, {a}).empty());
+
+    // A system-wide ability another colony of ours in the system already has.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(3, 2, 12);
+    const ObjectId homePlanet = homeworld(s, kMe).planet;
+    const uint32_t medical = facilityIndex(r, "Test Medical Lab");
+    const uint32_t mine = facilityIndex(r, "Test Mine");
+    CHECK(similarSystemAbilities(r, s, kMe, homePlanet, medical).empty());
+    ObjectId neighbour;
+    for (ObjectId id : s.galaxy.system(s.galaxy.object(homePlanet).system).objects)
+        if (id != homePlanet && s.galaxy.object(id).kind == ObjectKind::Planet && !s.colony(id)) neighbour = id;
+    REQUIRE(neighbour.valid());
+    addColony(s, r, neighbour, kMe).facilities.push_back(medical);
+    const auto same = similarSystemAbilities(r, s, kMe, homePlanet, medical);
+    REQUIRE(same.size() == 1);
+    CHECK(same.front() == "Plague Prevention - System");
+    CHECK(similarSystemAbilities(r, s, kMe, homePlanet, mine).empty());  // not system-wide
+    CHECK(similarSystemAbilities(r, s, kOther, homePlanet, medical).empty());  // not their colony
 }
 
 TEST_CASE("classic ui: status icons and this turn's orders") {
