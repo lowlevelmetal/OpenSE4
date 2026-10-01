@@ -475,11 +475,23 @@ TEST_CASE("score: a human player's statistics, history and log text files") {
         const size_t first = static_cast<size_t>(std::find_if(log.begin(), log.end(), [](const LogEntry& l) { return l.title == "First Contact"; }) -
                                                  log.begin());
         REQUIRE(first < log.size());
+        // Spec 06 §6.1, §7 Q55: "Date" at column 1, "Header" at 10, "Text" at 51, then 78 dashes.
+        CHECK(copy.log[0] == "Date     Header                                   Text");
+        CHECK(copy.log[0].find("Header") == 9);
+        CHECK(copy.log[0].find("Text") == 50);
+        CHECK(copy.log[1] == std::string(78, '-'));
         const std::string& line = copy.log[2 + first];
         CHECK(line == score::logLine(5, "First Contact", diplomacy::firstContactText(s, kC)));
         CHECK(line.starts_with("2400.5   First Contact"));
         CHECK(line.substr(9, 40) == std::format("{:<40}", "First Contact"));
-        CHECK(copy.log.back() == std::format("{:<9}{:<40}{}", "2400.6", "Too New", "Two lines"));
+        CHECK(line.substr(49, 1) == " ");   // one space before the text, which starts at column 51
+        CHECK(copy.log.back() == std::format("{:<9}{:<40} {}", "2400.6", "Too New", "Two lines"));
+    }
+    {
+        // Each CR LF pair (or our single LF) becomes one space; a long title is followed by one space only.
+        CHECK(score::logLine(1, "T", "a\r\nb\nc") == std::format("{:<9}{:<40} {}", "2400.1", "T", "a b c"));
+        const std::string longTitle(45, 'x');
+        CHECK(score::logLine(1, longTitle, "text") == "2400.1   " + longTitle + " text");
     }
 
     // processTurn hands out a set of lines for each human player only.

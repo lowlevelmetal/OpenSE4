@@ -185,11 +185,23 @@ std::string historyLine(uint32_t date, EmpireId other, std::string_view text) {
 }
 
 std::string logLine(uint32_t date, std::string_view title, std::string_view text) {
-    std::string flat(text);
-    std::replace(flat.begin(), flat.end(), '\n', ' ');
-    std::replace(flat.begin(), flat.end(), '\r', ' ');
-    return std::format("{:<9}{:<40}{}", dateText(date), title, flat);
+    // Each line break becomes one space: a CR LF pair, or the single LF our
+    // engine's texts break lines with (a lone CR stays as it is).
+    std::string flat;
+    flat.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
+            flat += ' ';
+            ++i;
+        } else {
+            flat += text[i] == '\n' ? ' ' : text[i];
+        }
+    }
+    // A title longer than 40 is followed by the one space only.
+    return std::format("{:<9}{:<40} {}", dateText(date), title, flat);
 }
+
+std::string logCopyHeader() { return std::format("{:<9}{:<41}{}", "Date", "Header", "Text"); }
 
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     PlayerRecords out;
@@ -203,7 +215,7 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     const Empire& me = s.empire(e);
     // The text copy of the whole log, rewritten (spec 05 §3.4).
     if (r.settingFlag("Create Log Text Files for Players", false) && !me.log.empty()) {
-        out.log.push_back(std::format("{:<9}{:<40}{}", "Date", "Title", "Text"));
+        out.log.push_back(logCopyHeader());
         out.log.push_back(std::string(78, '-'));  // a rule of 78 dashes (docs/spec/06 §6.1)
         for (const LogEntry& l : me.log) out.log.push_back(logLine(entryDate(s, l), l.title, l.text));
     }
