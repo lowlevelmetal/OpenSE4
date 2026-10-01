@@ -22,6 +22,7 @@ add_executable(opense4_tests
     test_history.cpp
     test_integration.cpp
     test_intel.cpp
+    test_learn.cpp
     test_maps.cpp
     test_movement.cpp
     test_net.cpp
@@ -56,8 +57,9 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/ships_logic.cpp)
-target_link_libraries(opense4_tests PRIVATE opense4_game opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
+target_link_libraries(opense4_tests PRIVATE opense4_game opense4_learn opense4_net opense4_assets doctest tomlplusplus imgui SDL3::SDL3 opense4_warnings)
 target_compile_definitions(opense4_tests PRIVATE
-    OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+    OPENSE4_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 add_test(NAME opense4_tests COMMAND opense4_tests)

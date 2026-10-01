@@ -86,6 +86,17 @@ add_library(opense4_game STATIC
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
 
+# --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
+# Headless: the content model, its loaders and the condition evaluator. The
+# client draws it; the tests check the built-in content with it.
+add_library(opense4_learn STATIC
+    learn/condition.cpp
+    learn/ids.cpp
+    learn/lesson.cpp
+    learn/library.cpp
+    learn/markdown.cpp)
+target_link_libraries(opense4_learn PUBLIC opense4_game PRIVATE tomlplusplus opense4_warnings)
+
 # --- net: multiplayer (TCP host/client sessions, UPnP port mapping, PBEM files) -----
 find_package(Threads REQUIRED)
 add_library(opense4_net STATIC
