@@ -528,11 +528,13 @@ TEST_CASE("quadrant generation: system type roll") {
 }
 
 TEST_CASE("quadrant generation: position specifiers, comets and names") {
-    // Comets create nothing but keep their template index.
+    // Comets create nothing, but they are placed like any entry: their sector
+    // is drawn, marked and recorded, and they keep an empty name (spec 01
+    // §4.2, §5.6, §14 Q43).
     const ruleset::Ruleset rs = withSystem({
         obj("Star", "Ring 1"),
         obj("Comet", "Ring 6"),
-        obj("Planet", "Same As 2"),          // the comet was never placed: (0, 0)
+        obj("Planet", "Same As 2"),          // the comet's sector: an empty name plus a letter
         obj("Planet", "Ring 3", "Medium", "None", "Rock"),
         obj("Planet", "Same As 4", "Small", "Methane", "Ice"),
         obj("Planet", "Same As 4", "Small", "Methane", "Ice"),
@@ -553,13 +555,13 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
         if (g.object(id).kind != ObjectKind::WarpPoint) o.push_back(&g.object(id));
     REQUIRE(o.size() == 9);
     CHECK(o[0]->kind == ObjectKind::Star);
-    CHECK(o[1]->sector == Sector(0, 0));
-    CHECK(o[1]->name == sys.name + " I");
-    CHECK(chebyshev(o[2]->sector, Sector{}) == 2);  // Ring 3
-    CHECK(o[2]->name == sys.name + " II");
+    CHECK(chebyshev(o[1]->sector, Sector{kSystemCenter, kSystemCenter}) == 5);  // Ring 6, as the comet drew it
+    CHECK(o[1]->name == " A");  // the comet's empty name plus a letter; no numeral taken
+    CHECK(chebyshev(o[2]->sector, Sector{kSystemCenter, kSystemCenter}) == 2);  // Ring 3
+    CHECK(o[2]->name == sys.name + " I");
     CHECK(o[3]->sector == o[2]->sector);
-    CHECK(o[3]->name == sys.name + " II A");
-    CHECK(o[4]->name == sys.name + " II B");
+    CHECK(o[3]->name == sys.name + " I A");
+    CHECK(o[4]->name == sys.name + " I B");
     CHECK(o[5]->kind == ObjectKind::Asteroids);
     const int d2 = (o[5]->sector.x - 6) * (o[5]->sector.x - 6) + (o[5]->sector.y - 6) * (o[5]->sector.y - 6);
     CHECK(d2 >= 36);  // trunc(distance) == 6
@@ -567,6 +569,7 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
     CHECK(o[5]->name == sys.name + " Asteroid Belt I");  // its own count, beside "II"
     CHECK(o[6]->sector == Sector(12, 12));
     CHECK(o[6]->surface == "Gas Giant");
+    CHECK(o[6]->name == sys.name + " II");
     CHECK(o[8]->sector == Sector(6, 6));
     CHECK(o[8]->name == sys.name + " Star A");  // a planet in the star's sector
     CHECK(std::any_of(gen.warnings.begin(), gen.warnings.end(), [](const std::string& w) { return w.find("Somewhere") != std::string::npos; }));
@@ -584,6 +587,36 @@ TEST_CASE("quadrant generation: position specifiers, comets and names") {
         seen.insert(p.sector);
     }
     CHECK(seen.size() == 8);  // 101 draws find every free sector of the ring
+
+    // A warp point entry claims its sector too: the later Ring entries avoid
+    // it, and a planet placed with it is named with a letter after its empty
+    // name. A planet placed at (0, 0) while later entries remain counts them
+    // there, so it takes a letter after its own name, still empty then (spec
+    // 01 §5.6, §14 Q43, confirmed: binary).
+    std::vector<ruleset::SystemObjectTemplate> entries{obj("Planet", "Coord 0,0"), obj("Warp Point", "Ring 2")};
+    for (int k = 0; k < 7; ++k) entries.push_back(obj("Planet", "Ring 2"));
+    entries.push_back(obj("Planet", "Same As 2"));
+    entries.push_back(obj("Planet", "Coord 0,0"));
+    const Generated quirks = generate(withSystem(entries), opt, 3);
+    std::vector<const SpaceObject*> q;
+    for (ObjectId id : quirks.galaxy.systems.front().objects)
+        if (quirks.galaxy.object(id).kind != ObjectKind::WarpPoint) q.push_back(&quirks.galaxy.object(id));
+    REQUIRE(q.size() == 10);
+    const std::string name = quirks.galaxy.systems.front().name;
+    CHECK(q[0]->sector == Sector(0, 0));
+    CHECK(q[0]->name == " J");  // itself and the nine entries after it: the tenth there
+    std::set<Sector> ringSectors;
+    for (size_t k = 1; k <= 7; ++k) {
+        CHECK(chebyshev(q[k]->sector, Sector{kSystemCenter, kSystemCenter}) == 1);
+        ringSectors.insert(q[k]->sector);
+        CHECK(q[k]->name == std::format("{} {}", name, romanNumeral(static_cast<int>(k))));
+    }
+    CHECK(ringSectors.size() == 7);  // the eighth square of the ring is the warp point entry's
+    CHECK_FALSE(ringSectors.contains(q[8]->sector));
+    CHECK(chebyshev(q[8]->sector, Sector{kSystemCenter, kSystemCenter}) == 1);
+    CHECK(q[8]->name == " A");
+    CHECK(q[9]->sector == Sector(0, 0));
+    CHECK(q[9]->name == " J A");  // the first entry there, as named then, plus A
 }
 
 TEST_CASE("quadrant generation: planet values and conditions") {
