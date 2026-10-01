@@ -30,6 +30,7 @@ std::unique_ptr<Screen> makeFleetTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeCargoTransfer(const ScreenArgs& args);
 std::unique_ptr<Screen> makeLaunchRecover(const ScreenArgs& args);
 std::unique_ptr<Screen> makeScrap(const ScreenArgs& args);
+std::unique_ptr<Screen> makeAbandonPlanet(const ScreenArgs& args);   // scrap.cpp: ScreenArgs::planet
 std::unique_ptr<Screen> makeViewOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeSelectWaypoint(const ScreenArgs& args);
 std::unique_ptr<Screen> makeStellarManipulation(const ScreenArgs& args);

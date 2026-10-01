@@ -263,10 +263,25 @@ private:
             ImGui::PopID();
         }
         if (remove) {
-            auto q = e.research;
-            q.erase(q.begin() + std::ptrdiff_t(*remove));
-            set(ui, q, e.researchEvenly, e.repeatResearch);
+            // Asks first while the Empire Options' "confirm deleting a research
+            // project" is on (spec 06 §1.9).
+            removing_ = e.research[*remove].area;
+            if (ui.options().confirmDeleteResearch)
+                confirm_.open(std::format("Cancel the research project {} {}?", r.tech(*removing_).name, e.techLevel(*removing_) + 1));
+            else cancelProject(ui);
         }
+        if (confirm_.draw(ui)) cancelProject(ui);
+    }
+
+    void cancelProject(UiContext& ui) {
+        const game::Empire& e = ui.me();
+        if (!removing_) return;
+        auto q = e.research;
+        const auto it = std::find_if(q.begin(), q.end(), [&](const game::ResearchProject& p) { return p.area == *removing_; });
+        removing_.reset();
+        if (it == q.end()) return;
+        q.erase(it);
+        set(ui, q, e.researchEvenly, e.repeatResearch);
     }
 
     void detail(UiContext& ui) {
@@ -309,6 +324,8 @@ private:
     int page_ = 0;
     std::optional<TechAreaId> hovered_;
     std::optional<TechAreaId> pinned_;
+    std::optional<TechAreaId> removing_;
+    YesNoPrompt confirm_;
     ReorderPopup reorder_;
     StatusLine status_;
 };

@@ -24,6 +24,7 @@ add_executable(opense4
     client/classic/art.cpp
     client/classic/classic_mode.cpp
     client/classic/frontend.cpp
+    client/classic/facility_markers.cpp
     client/classic/main_window.cpp
     client/classic/net_transport.cpp
     client/classic/pbem_play.cpp

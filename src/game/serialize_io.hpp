@@ -506,11 +506,13 @@ template <class Ar> void io(Ar& ar, PlayerTurn& t) { fields(ar, t.empire, t.star
 
 // ---- The game -----------------------------------------------------------------------------------------
 
+template <class Ar> void io(Ar& ar, LeftFacilities& l) { fields(ar, l.planet, l.facilities); }
+
 template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
            s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng,
-           s.playerTurn, s.startingPoints);
+           s.playerTurn, s.startingPoints, s.leftFacilities);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------

@@ -60,6 +60,7 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::SelectWaypoint: return "Select Waypoint";
         case ScreenId::StellarManipulation: return "Stellar Manipulation";
         case ScreenId::Rename: return "Change Name";
+        case ScreenId::AbandonPlanet: return "Abandon Planet";
         case ScreenId::Communicate: return "Communicate";
         case ScreenId::Intelligence: return "Intelligence";
         case ScreenId::TreatyGrid: return "Treaty Grid";
@@ -143,6 +144,7 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::SelectWaypoint: return makeSelectWaypoint(args);
         case ScreenId::StellarManipulation: return makeStellarManipulation(args);
         case ScreenId::Rename: return makeRename(args);
+        case ScreenId::AbandonPlanet: return makeAbandonPlanet(args);
         case ScreenId::Communicate: return makeCommunicate(args);
         case ScreenId::Intelligence: return makeIntelligence(args);
         case ScreenId::TreatyGrid: return makeTreatyGrid(args);

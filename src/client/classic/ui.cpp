@@ -439,6 +439,38 @@ std::optional<bool> tacticalStrategicKey() {
     return std::nullopt;
 }
 
+void YesNoPrompt::open(std::string question, std::string title) {
+    question_ = std::move(question);
+    title_ = std::move(title);
+    pending_ = true;
+}
+
+bool YesNoPrompt::draw(UiContext& ui) {
+    const std::string id = title_ + "###yesno";
+    if (pending_) {
+        ImGui::OpenPopup(id.c_str());
+        pending_ = false;
+    }
+    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ui.size({400, 0}), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal(id.c_str(), nullptr,
+                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags))
+        return false;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted(question_.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    const std::optional<bool> key = yesNoKey();
+    const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    const bool yes = ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true;
+    ImGui::SameLine();
+    const bool no = ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false;
+    if (yes || no) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return yes;
+}
+
 bool UiContext::setOptions(const game::InterfaceOptions& o) {
     if (o == options()) return true;
     return session.issue(game::cmd::SetInterfaceOptions{o}).ok;

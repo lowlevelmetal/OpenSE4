@@ -524,6 +524,13 @@ struct Applier {
         if (!col) return R::fail("Not your planet");
         if (col->totalPopulation() > r.setting("Maximum Population For Abandon Planet Order", 50))
             return R::fail("Too many people live there to abandon it");
+        // Facilities the player did not scrap first stay for a later owner (spec 02 §5).
+        std::erase_if(s.leftFacilities, [&](const LeftFacilities& l) { return l.planet == c.planet; });
+        if (!col->facilities.empty()) {
+            const auto at = std::lower_bound(s.leftFacilities.begin(), s.leftFacilities.end(), c.planet,
+                                             [](const LeftFacilities& l, ObjectId p) { return l.planet < p; });
+            s.leftFacilities.insert(at, LeftFacilities{c.planet, col->facilities});
+        }
         s.colonies[c.planet.index()].reset();
         addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet));
         addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));

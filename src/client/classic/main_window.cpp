@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/classic/facility_markers.hpp"
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/settings.hpp"
 
@@ -572,9 +573,12 @@ std::vector<MainWindow::OrderButton> MainWindow::availableOrders(UiContext& ui) 
                            ui.session.issue(m);
                        }});
         out.back().lit = c->minister;
-        out.push_back({"Abandon", "Abandon Planet (Ctrl+A)",
-                       c->totalPopulation() <= r.setting("Maximum Population For Abandon Planet Order", 50) && !c->homeworld,
-                       [&ui, planet] { ui.session.issue(game::cmd::AbandonPlanet{planet}); }});
+        // Always lit: the population limit is checked after the player confirms (spec 06 §2.8).
+        out.push_back({"Abandon", "Abandon Planet (Ctrl+A)", true, [&ui, planet] {
+                           ScreenArgs a;
+                           a.planet = planet;
+                           ui.open(ScreenId::AbandonPlanet, a);
+                       }});
     }
     return out;
 }
@@ -827,6 +831,32 @@ void MainWindow::overlayText(UiContext& ui) {
             const ImVec2 size = font->CalcTextSizeA(11 * k, FLT_MAX, 0.0f, dest.c_str());
             const ImVec2 c = ui.at(sectorCenter(wp.sector) + Vec2{0, 18});
             dl->AddText(font, 11 * k, ImVec2{c.x - size.x * 0.5f, c.y}, IM_COL32(184, 200, 255, 255), dest.c_str());
+        }
+        // Empire Options, System Display (spec 06 §1.9): planet names under the
+        // planets, and the facility letter markers of our colonies above them
+        // (placement inferred).
+        const game::InterfaceOptions& opts = ui.options();
+        for (game::ObjectId id : sys.objects) {
+            const game::SpaceObject& o = s.galaxy.object(id);
+            if (o.kind != game::ObjectKind::Planet) continue;
+            if (opts.planetNames) {
+                const ImVec2 size = font->CalcTextSizeA(11 * k, FLT_MAX, 0.0f, o.name.c_str());
+                const ImVec2 c = ui.at(sectorCenter(o.sector) + Vec2{0, 18});
+                dl->AddText(font, 11 * k, ImVec2{c.x - size.x * 0.5f, c.y}, IM_COL32(220, 220, 220, 255), o.name.c_str());
+            }
+            const game::Colony* col = s.colony(id);
+            if (opts.facilityMarkers == 0 || !col || col->owner != ui.session.player()) continue;
+            const std::string markers = facilityMarkers(ui.rules(), *col, opts.facilityMarkers);
+            if (markers.empty()) continue;
+            const ImVec2 size = font->CalcTextSizeA(10 * k, FLT_MAX, 0.0f, markers.c_str());
+            const ImVec2 c = ui.at(sectorCenter(o.sector) + Vec2{0, -25});
+            dl->AddText(font, 10 * k, ImVec2{c.x - size.x * 0.5f, c.y}, IM_COL32(255, 255, 0, 255), markers.c_str());
+        }
+        // "Coordinate location": the sector under the pointer (inferred: after the system name).
+        if (opts.coordinateLocation && hover_) {
+            const std::string where = std::format("({},{})", hover_->x, hover_->y);
+            const float nameW = ui.fonts.bold->CalcTextSizeA(ui.fontPx(kTitleSize), FLT_MAX, 0.0f, sys.name.c_str()).x / k;
+            text(Vec2{geo.left + 13 + nameW + 10, 122}, 12, IM_COL32(200, 210, 230, 255), where);
         }
     }
     // Ship counts in sectors with several visible vehicles.
@@ -1115,8 +1145,18 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         return static_cast<bool>(sp);
     };
 
+    // The Empire Options' system grid (spec 06 §2.4): 14 lines each way on the cell boundaries.
+    if (explored && ui.options().systemGrid) {
+        const Color line = Color::hex(0x15203b);
+        for (int i = 0; i <= 13; ++i) {
+            const float d = kSectorSize * float(i);
+            r.line(geo.sectorOrigin + Vec2{d, 0}, geo.sectorOrigin + Vec2{d, kSectorSize * 13}, 1.0f, line);
+            r.line(geo.sectorOrigin + Vec2{0, d}, geo.sectorOrigin + Vec2{kSectorSize * 13, d}, 1.0f, line);
+        }
+    }
     if (explored) {
         const ColonizeTech tech = colonizeTech(rules, ui.me());
+        const bool hints = ui.options().colonizableMarkers;
         std::map<game::Sector, std::vector<game::ObjectId>> bySector;
         for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].push_back(id);
         for (const auto& [sector, ids] : bySector) {
@@ -1134,7 +1174,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
                     const Sprite flag = ui.art.flag(s.empire(col->owner).race.style, false);
                     if (!spriteAt(flag, c + Vec2{11, -12}, 14))
                         r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), colorOf(s.empire(col->owner).color));
-                } else if (s.galaxy.object(id).kind == game::ObjectKind::Planet &&
+                } else if (hints && s.galaxy.object(id).kind == game::ObjectKind::Planet &&
                            colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
                     const bool breathe = breathableBy(s, ui.session.player(), s.galaxy.object(id));
                     const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
@@ -1248,14 +1288,17 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
     const GalaxyTransform t = galaxyTransform(g);
     const Vec2 extent{t.sx * float(g.width), t.sy * float(g.height)};
     const Color grid = Color::hex(palette::kGrid);
-    for (int x = 0; x <= g.width; ++x)
+    // The Empire Options' Galaxy Display rows (spec 06 §1.9).
+    const bool gridLines = ui.options().galaxyGridLines, warpLines = ui.options().galaxyWarpLines;
+    for (int x = 0; gridLines && x <= g.width; ++x)
         r.line({t.origin.x + float(x) * t.sx, t.origin.y}, {t.origin.x + float(x) * t.sx, t.origin.y + extent.y}, 1.0f, grid);
-    for (int y = 0; y <= g.height; ++y)
+    for (int y = 0; gridLines && y <= g.height; ++y)
         r.line({t.origin.x, t.origin.y + float(y) * t.sy}, {t.origin.x + extent.x, t.origin.y + float(y) * t.sy}, 1.0f, grid);
 
     // Only warp links the empire knows are drawn.
     const auto& known = me.knowledge.knownWarpLink;
     for (const game::SpaceObject& o : g.objects) {
+        if (!warpLines) break;
         if (o.kind != game::ObjectKind::WarpPoint || !o.destination.valid() || o.destination < o.id) continue;
         if (o.id.index() >= known.size() || !known[o.id.index()]) continue;
         r.line(galaxyPos(g, g.system(o.system)), galaxyPos(g, g.system(g.object(o.destination).system)), 1.0f, Color::hex(0x4868a8, 0.9f));

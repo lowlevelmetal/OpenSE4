@@ -97,6 +97,12 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
         else it->millions += bonus;
     }
     c.cargo.units = v.cargo.units;
+    // Facilities an abandoned colony left here (spec 02 §5) belong to the new colony.
+    if (auto left = std::find_if(s.leftFacilities.begin(), s.leftFacilities.end(), [&](const LeftFacilities& l) { return l.planet == planet; });
+        left != s.leftFacilities.end()) {
+        c.facilities = std::move(left->facilities);
+        s.leftFacilities.erase(left);
+    }
     s.colonies[planet.index()] = std::move(c);
     Colony& col = *s.colonies[planet.index()];
     // More than the planet holds is lost (inferred).

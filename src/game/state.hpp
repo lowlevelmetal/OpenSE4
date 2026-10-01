@@ -800,6 +800,13 @@ struct PlayerTurn {
     std::vector<EntryQuestion> questions;
 };
 
+// Facilities an abandoned colony left on its planet (spec 02 §5: the player
+// may leave them for a later owner): the next colony founded there gets them.
+struct LeftFacilities {
+    ObjectId planet;
+    std::vector<uint32_t> facilities;   // Facilities.txt indices
+};
+
 // ---- The game --------------------------------------------------------------------------------
 
 struct GameState {
@@ -831,6 +838,7 @@ struct GameState {
     // the map's specific points and the common points no player took; a
     // generated game has none.
     std::vector<StartingPoint> startingPoints;
+    std::vector<LeftFacilities> leftFacilities;   // sorted by planet
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }

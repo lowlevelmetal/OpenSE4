@@ -87,7 +87,7 @@ enum class ScreenId {
     // Empire Status sub-windows.
     EmpireOptions, Ministers, SystemsToAvoid, Waypoints, Strategies, RepairPriorities,
     // Order dialogs (§1.3).
-    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename,
+    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename, AbandonPlanet,
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).
@@ -229,6 +229,19 @@ std::optional<bool> tacticalStrategicKey();
 // the focused button (the keys above decide).
 inline constexpr ImGuiWindowFlags kPromptFlags = ImGuiWindowFlags_NoNavInputs;
 
+class UiContext;
+// A Yes/No message box with those keys, centred on the frame. open() asks;
+// call draw() every frame: it returns true once, when Yes is chosen.
+class YesNoPrompt {
+public:
+    void open(std::string question, std::string title = "Confirm");
+    bool draw(UiContext& ui);
+
+private:
+    std::string question_, title_;
+    bool pending_ = false;
+};
+
 // ---- Classic dialog layout -----------------------------------------------------------------
 
 enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
@@ -245,6 +258,8 @@ public:
     Dialog& operator=(const Dialog&) = delete;
 
     bool open() const { return visible_; }
+    // Screen position (ImGui units) of a point given in frame pixels from the window's top left.
+    ImVec2 at(Vec2 windowPos) const { return ui_.at(rect_.min + windowPos); }
     // Extra text or a picture in the title strip (e.g. Research's points), at x frame pixels from the window's left.
     void titleText(float x, ImU32 color, std::string_view text);
     void titleIcon(float x, const Sprite& icon);
