@@ -16,8 +16,9 @@
 namespace opense4::client {
 
 enum class Action : uint8_t {
-    // Windows.
+    // Windows; LessonText re-opens the lesson panel, ContextHelp the manual page of the window in front.
     Help, GameMenu, Designs, Planets, Colonies, Ships, Queues, Research, Empires, Log, EmpireStatus, EndTurn, Settings,
+    LessonText, ContextHelp,
     // Orders for the selected ship or fleet.
     MoveTo, Warp, Attack, Colonize, Resupply, Repair, ClearOrders, FleetTransfer, BuildQueue, CargoTransfer, LaunchRecover,
     LoadCargo, DropCargo, Sentry, Explore, Patrol, RepeatOrders, StellarManipulation, ViewOrders, Scrap, Rename, Cloak, Decloak,

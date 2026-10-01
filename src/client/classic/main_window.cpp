@@ -8,6 +8,7 @@
 #include "game/design.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "learn/ids.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -81,7 +82,7 @@ const Color kSelectYellow = Color::hex(0xffd040);
 // original's order (verified against the running game).
 struct CommandButton {
     int icon;
-    std::optional<ScreenId> screen;
+    std::optional<ScreenId> screen;   // none: End Turn
     const char* tooltip;
 };
 constexpr std::array<CommandButton, 12> kCommands{{
@@ -259,6 +260,33 @@ void MainWindow::selectPlanet(UiContext& ui, game::ObjectId p) {
 const game::Vehicle* MainWindow::selectedVehicle(const UiContext& ui) const {
     if (!vehicle_) return nullptr;
     return ui.state().vehicle(*vehicle_);
+}
+
+std::vector<std::string> MainWindow::selectionKinds(const UiContext& ui) const {
+    std::vector<std::string> out;
+    const game::GameState& s = ui.state();
+    if (vehicle_) {
+        if (const game::Vehicle* v = s.vehicle(*vehicle_)) {
+            const ruleset::VehicleType type = game::vehicleType(ui.rules(), s, *v);
+            out.emplace_back(type == ruleset::VehicleType::Ship ? "ship" : type == ruleset::VehicleType::Base ? "base" : "unit");
+            if (fleet_ && v->owner == ui.session.player()) out.emplace_back("fleet");
+        }
+    } else if (object_) {
+        const game::SpaceObject& o = s.galaxy.object(*object_);
+        if (o.kind == game::ObjectKind::Planet || o.kind == game::ObjectKind::Asteroids) {
+            out.emplace_back("planet");
+            if (const game::Colony* c = s.colony(*object_); c && c->owner == ui.session.player()) out.emplace_back("colony");
+        } else if (game::isStarKind(o.kind)) {
+            out.emplace_back("star");
+        } else if (o.kind == game::ObjectKind::WarpPoint) {
+            out.emplace_back("warp-point");
+        }
+    } else if (listMode_ && sector_) {
+        out.emplace_back("sector");
+    } else if (shown_.valid()) {
+        out.emplace_back("system");
+    }
+    return out;
 }
 
 const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
@@ -591,6 +619,11 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     commandPanel(ui);
     reportPanel(ui);
     overlayText(ui);
+    if (ui.lessonRunning) lessonButton(ui);
+    // The panels lessons point at (docs/LEARNING.md "UI tags").
+    ui.tagFrame("panel:system", geo.systemBackground);
+    ui.tagFrame("panel:report", geo.reportPanel);
+    ui.tagFrame("panel:galaxy", geo.galaxyPanel);
     if (!blocked) {
         mouse(ui);
         hotkeys(ui);
@@ -620,6 +653,35 @@ void MainWindow::statusBar(UiContext& ui) {
         drawAt(ui, dl, ui.art.icon16(kIcons[i]), {x0 + kX[i] + w + 1, 10}, {14, 14});
     }
     if (ui.session.waitingForOthers()) text(x0 + 860, IM_COL32(255, 204, 77, 255), "Waiting...");
+    ui.tagFrame("status:empire", Rect{{x0 + 12, 4}, {x0 + 226, 26}});
+    ui.tagFrame("status:leader", Rect{{x0 + 228, 4}, {x0 + 416, 26}});
+    ui.tagFrame("status:date", Rect{{x0 + 418, 4}, {x0 + 590, 26}});
+    ui.tagFrame("status:resources", Rect{{x0 + 622, 4}, {x0 + 850, 26}});
+    for (size_t i = 0; i < 3; ++i) {
+        static constexpr std::array<const char*, 3> kTags{"status:minerals", "status:organics", "status:radioactives"};
+        ui.tagFrame(kTags[i], Rect{{x0 + kX[i] - 4, 4}, {x0 + (i + 1 < 3 ? kX[i + 1] - 4 : 850.0f), 26}});
+    }
+}
+
+void MainWindow::lessonButton(UiContext& ui) {
+    // The original re-opens its tutorial text with a T button in the status
+    // bar (spec 06 §1.7); ours shows the lesson panel again.
+    const Vec2 at{geo.right - 40, 4};
+    ImGui::SetNextWindowPos(ui.at(at));
+    ImGui::SetNextWindowSize(ui.size({24, 22}));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    if (ImGui::Begin("##lessonbutton", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                    ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoFocusOnAppearing)) {
+        if (classicButton(ui, "T##lesson", {24, 22})) {
+            audio().play("button");
+            ui.requests.toggleLessonPanel = true;
+        }
+        ui.tagItem("status:lesson");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show or hide the lesson (Ctrl+H)");
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 void MainWindow::commandPanel(UiContext& ui) {
@@ -645,6 +707,7 @@ void MainWindow::commandPanel(UiContext& ui) {
         ImGui::PushID(int(i));
         const auto [clicked, hovered] = hit("cmd", at, {34, 34});
         ImGui::PopID();
+        ui.tagItem(b.screen ? "command:" + std::string(windowId(*b.screen)) : std::string("button:end-turn"));
         const int state = hovered ? (ImGui::IsMouseDown(ImGuiMouseButton_Left) ? 2 : 1) : 0;
         drawAt(ui, dl, ui.art.commandButton(b.icon, state), at, {34, 34});
         if (hovered) ImGui::SetTooltip("%s", b.tooltip);
@@ -671,6 +734,7 @@ void MainWindow::commandPanel(UiContext& ui) {
             ImGui::PushID(int(col * 2 + row) + 100);
             const auto [clicked, hovered] = hit("order", at, {34, 34});
             ImGui::PopID();
+            if (const std::string_view id = learn::orderStripId(slot.key); !id.empty()) ui.tagItem("order:" + std::string(id));
             const int state = !enabled ? 3 : b->lit ? 2 : hovered ? 1 : 0;
             drawAt(ui, dl, orderCell(ui.art, slot.band, slot.column, state), at, {34, 34});
             if (hovered && *slot.tooltip) ImGui::SetTooltip("%s", b ? b->tooltip : slot.tooltip);
@@ -679,6 +743,8 @@ void MainWindow::commandPanel(UiContext& ui) {
                 b->action();
             }
         }
+    ui.tagFrame("panel:commands", Rect{{x0 + 13, 36}, {x0 + 13 + 6 * 34, 36 + 2 * 34}});
+    ui.tagFrame("panel:orders", Rect{{x0 + 246, 36}, {x0 + 246 + float(kOrderStrip.size()) * 34, 36 + 2 * 34}});
     // Page arrows at both ends; every order fits at this size, so they stay dim.
     for (const bool right : {false, true}) {
         const float ax = x0 + (right ? 927.0f : 231.0f);
@@ -698,6 +764,8 @@ void MainWindow::commandPanel(UiContext& ui) {
         ImGui::PopID();
         const int state = prevHover || nextHover ? 1 : 0;
         drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/Nextprev.bmp", row * 48, state * 24, 48, 24, false), at, {48, 24});
+        static constexpr std::array<const char*, 3> kCycleTags{"cycle:ship", "cycle:fleet", "cycle:colony"};
+        ui.tagFrame(kCycleTags[size_t(row)], Rect{at, at + Vec2{48, 24}});
         if (prevHover || nextHover) ImGui::SetTooltip("%s", row == 0 ? "Previous \\ next ship" : row == 1 ? "Previous \\ next fleet" : "Previous \\ next colony");
         if (prev || next) {
             const int dir = next ? 1 : -1;
@@ -780,6 +848,7 @@ void MainWindow::reportPanel(UiContext& ui) {
         const ReportTab current = planetTabs ? (tab_ == ReportTab::Components ? ReportTab::Facilities : tab_)
                                              : (tab_ == ReportTab::Facilities ? ReportTab::Components : tab_);
         tab_ = reportTabs(ui, current, planetTabs);
+        ui.tagFrame("panel:report-tabs", Rect{{geo.reportPanel.min.x - 4, geo.reportPanel.min.y + tabsY}, {geo.reportPanel.min.x + 284, geo.reportPanel.min.y + tabsY + 30}});
     }
     if (several) {
         // Back to the list of everything in the sector.

@@ -39,8 +39,9 @@ struct Hotkey {
     const char* action;
 };
 
-constexpr std::array<Hotkey, 12> kWindowKeys{{
+constexpr std::array<Hotkey, 13> kWindowKeys{{
     {"F1", "Help: this encyclopedia"},
+    {"Shift+F1", "Manual: the page about the window in front"},
     {"F2", "Game Menu: save, load, options"},
     {"F3", "Designs: create and manage designs"},
     {"F4", "Planets: every planet seen so far"},
@@ -313,11 +314,16 @@ private:
     }
 
     void topicButtons(UiContext& ui, Dialog& d) {
-        for (size_t i = 0; i < kTabCount; ++i)
+        ImVec2 first, last;
+        for (size_t i = 0; i < kTabCount; ++i) {
             if (lampButton(ui, d, kTabLabels[i], tab_ == static_cast<HelpTab>(i))) {
                 tab_ = static_cast<HelpTab>(i);
                 scrollToSelection_ = true;
             }
+            if (i == 0) first = ImGui::GetItemRectMin();
+            last = ImGui::GetItemRectMax();
+        }
+        ui.tag("help:tabs", first, last);
         d.spacer();
         if (d.button("Weapons Report")) weapons_ = true;
     }

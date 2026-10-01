@@ -81,6 +81,7 @@ public:
         ImGui::BeginChild("##areas", ImVec2(0, ui.px(245)), ImGuiChildFlags_Borders);
         areaList(ui);
         ImGui::EndChild();
+        ui.tagItem("research:areas");
         if (hovered_) {
             ImGui::SetNextWindowSize(ui.size({380, 0}));
             if (ImGui::BeginTooltip()) {
@@ -92,7 +93,10 @@ public:
         ImGui::TextColored(kTextBlue, "%zu Current Projects", e.research.size());
         ImGui::SameLine();
         note(ui, "(click a project to cancel it)");
+        ImGui::BeginGroup();
         projects(ui);
+        ImGui::EndGroup();
+        ui.tagItem("research:queue");
 
         d.beginButtons();
         projectPageButtons(d, page_);
@@ -101,6 +105,7 @@ public:
         if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
         d.spacer();
         if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
+        ui.tagItem("research:tech-tree");
         if (d.button("Reorder Projects", e.research.size() > 1)) {
             std::vector<std::string> rows;
             for (const auto& p : e.research) rows.push_back(std::format("{} {}", ui.rules().tech(p.area).name, e.techLevel(p.area) + 1));

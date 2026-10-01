@@ -97,6 +97,12 @@ std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
 // The Sound page (classic sound and music preferences), shared with the front end.
 void soundSettingsPage(float px);
 
+// learn_screens.cpp: the Learn window (ScreenArgs::text: "tutorials", "training"
+// or "manual", the tab to show) and the manual (ScreenArgs::text: "slug" or
+// "slug#anchor"; empty: the first page). docs/LEARNING.md.
+std::unique_ptr<Screen> makeLearn(const ScreenArgs& args);
+std::unique_ptr<Screen> makeManual(const ScreenArgs& args);
+
 // A stand-in for windows that are not written yet.
 std::unique_ptr<Screen> makePlaceholder(ScreenId id);
 

@@ -104,6 +104,8 @@ public:
     // Validates and applies a command for the local player (turn-based games:
     // and carries it out).
     game::CommandResult issue(game::Command c);
+    // Called with every command issue() accepted (the lesson runner counts them).
+    std::function<void(const game::Command&)> onIssued;
     const std::vector<game::Command>& ordersThisTurn() const { return orders_; }
 
     bool turnBased() const { return game::turnBased(state_); }
@@ -200,6 +202,7 @@ public:
     void simulateTurns(int n);
 
 private:
+    game::CommandResult issueCommand(game::Command c);
     void beginTurn();
     // Turn-based games: plays up to a human player's turn and hands the
     // session to that player.

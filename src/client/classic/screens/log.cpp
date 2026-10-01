@@ -118,6 +118,7 @@ public:
             ImGui::PopID();
         }
         ImGui::EndChild();
+        ui.tagItem("log:messages");
         MiniMapStyle style;
         const std::optional<game::Location> where = location(sel);
         if (where) style.highlight.push_back(where->system);

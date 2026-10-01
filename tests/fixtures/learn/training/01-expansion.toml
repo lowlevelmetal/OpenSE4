@@ -1,0 +1,40 @@
+# A training game written for the tests (and for --learn-dir).
+title = "Expansion"
+summary = "Found colonies quickly."
+minutes = 20
+
+[setup]
+seed = 777
+computer_players = 1
+quadrant_size = "small"
+turn_style = "turn-based"
+events = "none"
+
+[[objective]]
+text = "Have two colonies"
+when = { colonies = 2 }
+by_turn = 30
+
+[[objective]]
+text = "Queue a research project"
+when = { research_queued = 1 }
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "Your orders"
+text = "Settle a second world before the deadline."
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "Where to look"
+text = "The [colonies page](colonies) explains how."
+
+[[hint]]
+when = { all = [{ turn = 2 }, { not = { colonies = 2 } }] }
+text = "Build a colony ship in your home system."
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Every colony was lost."

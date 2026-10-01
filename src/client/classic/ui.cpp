@@ -75,8 +75,10 @@ void labelValue(UiContext& ui, const char* label, const std::string& value, floa
     ImGui::TextUnformatted(value.c_str());
 }
 
-void heading(UiContext& ui, const char* text) {
-    ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
+void heading(UiContext& ui, const char* text) { heading(ui.painter(), text); }
+
+void heading(const Painter& p, const char* text) {
+    ImGui::PushFont(p.fonts.bold, p.fontPx(kTitleSize));
     ImGui::TextColored(imColorV(palette::kHeading), "%s", text);
     ImGui::PopFont();
 }
@@ -287,7 +289,17 @@ std::unordered_map<ImGuiID, int>& slotCounts() {
 
 } // namespace
 
-Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn)
+void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
+    if (!drawing || windowTagged) return;
+    windowTagged = true;
+    tag(std::string("window:") + std::string(windowId(*drawing)), min, max);
+}
+
+Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn) : Dialog(ui.painter(), title, size, buttonColumn) {
+    if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
+}
+
+Dialog::Dialog(const Painter& ui, const char* title, DialogSize size, float buttonColumn)
     : ui_(ui), rect_(dialogRect(size)), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
     ImGui::SetNextWindowPos(ui.at(rect_.min), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ui.size(rect_.size()), ImGuiCond_Always);
@@ -298,7 +310,7 @@ Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonCo
                                                 ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     if (visible_) {
-        drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
+        drawWindowFrame(ui, ImGui::GetWindowDrawList(), rect_, title, buttonColumn_);
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     }
 }
@@ -371,7 +383,7 @@ bool Dialog::check(const char* label, bool on, bool enabled) { return slot(label
 void Dialog::spacer() {
     ImGui::SetCursorPos(ImVec2(0, ui_.px(float(nextSlot_) * pitch_)));
     ++nextSlot_;
-    emptySlot(ui_.painter(), {buttonColumn_, buttonH_});
+    emptySlot(ui_, {buttonColumn_, buttonH_});
 }
 
 bool Dialog::close() {

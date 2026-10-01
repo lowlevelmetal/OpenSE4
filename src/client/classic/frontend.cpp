@@ -16,16 +16,18 @@
 
 namespace opense4::client::classic {
 
-namespace {
-
 // The intro picture stretched over the whole window, as the original shows it.
-void background(MenuContext& ctx) {
+void introBackground(MenuContext& ctx) {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const ImVec2 a{0, 0}, b = ImGui::GetIO().DisplaySize;
     if (Sprite bg = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
         dl->AddImage(ImTextureRef(static_cast<ImTextureID>(bg.tex.value)), a, b, ImVec2(bg.uv.min.x, bg.uv.min.y), ImVec2(bg.uv.max.x, bg.uv.max.y));
     else dl->AddRectFilled(a, b, IM_COL32(2, 4, 12, 255));
 }
+
+namespace {
+
+void background(MenuContext& ctx) { introBackground(ctx); }
 
 // A classic window (pipe frame, title strip) with its content area as the ImGui window.
 bool beginPanel(MenuContext& ctx, const char* id, Rect r, const char* title = nullptr) {
@@ -67,19 +69,24 @@ public:
                 const char* label;
                 std::function<void()> go;
             };
-            const std::array<Entry, 8> entries{{
+            // The original's Tutorial and Scenario buttons open our Learn window
+            // (docs/LEARNING.md) on its Tutorials and Training tabs.
+            const std::array<Entry, 10> entries{{
                 {"Quick Start", [&] { ctx.go(FrontId::QuickStart); }},
                 {"New Game", [&] { ctx.go(FrontId::GameSetup); }},
                 {"Resume Game", nullptr},
                 {"Load Game", [&] { ctx.go(FrontId::LoadGame); }},
                 {"Multiplayer", [&] { ctx.go(FrontId::Multiplayer); }},
-                {"Scenario", nullptr},
+                {"Tutorial", [&] { ctx.go(FrontId::Learn); }},
+                {"Scenario", [&] { ctx.go(FrontId::LearnTraining); }},
+                {"Manual", [&] { ctx.go(FrontId::Manual); }},
                 {"Settings", [&] { ctx.go(FrontId::Settings); }},
                 {"Quit Game", [&] { ctx.quit(); }},
             }};
-            const float w = (right - left - 24 - 15) / 4;
+            constexpr size_t kColumns = 5;
+            const float w = (right - left - 24 - 5 * float(kColumns - 1)) / float(kColumns);
             for (size_t i = 0; i < entries.size(); ++i) {
-                ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % 4) * (w + 5), 700 + float(i / 4) * 30}));
+                ImGui::SetCursorScreenPos(ctx.at({left + 12 + float(i % kColumns) * (w + 5), 700 + float(i / kColumns) * 30}));
                 if (classicButton(p, entries[i].label, {w, 26}, 0, false, entries[i].go != nullptr) && entries[i].go) entries[i].go();
             }
             if (!ctx.error.empty()) dl->AddText(ctx.at({left + 12, 660}), IM_COL32(255, 128, 100, 255), ctx.error.c_str());
@@ -317,6 +324,9 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id) {
         case FrontId::Multiplayer: return makeMultiplayerScreen({});
         case FrontId::Pbem: return makePbemScreen();
         case FrontId::Settings: return std::make_unique<SettingsFrontScreen>();
+        case FrontId::Learn: return makeLearnFrontScreen("tutorials");
+        case FrontId::LearnTraining: return makeLearnFrontScreen("training");
+        case FrontId::Manual: return makeLearnFrontScreen("manual:");
     }
     return nullptr;
 }
@@ -332,6 +342,7 @@ std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name) {
     if (datafile::keysEqual(screen, "empiresetup")) return makeGameSetupScreen(std::string("empire:") + std::string(page));
     if (datafile::keysEqual(screen, "multiplayer")) return makeMultiplayerScreen(page);
     if (datafile::keysEqual(screen, "pbem")) return makePbemScreen(page);
+    if (datafile::keysEqual(screen, "learn")) return makeLearnFrontScreen(page);
     return nullptr;
 }
 

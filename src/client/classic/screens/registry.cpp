@@ -78,6 +78,8 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::SaveGame: return "Save Game";
         case ScreenId::LoadGame: return "Load Game";
         case ScreenId::Settings: return "Settings";
+        case ScreenId::Learn: return "Learn";
+        case ScreenId::Manual: return "Manual";
         case ScreenId::Count: break;
     }
     return "";
@@ -160,6 +162,8 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::SaveGame: return makeSaveGame(args);
         case ScreenId::LoadGame: return makeLoadGame(args);
         case ScreenId::Settings: return makeSettings(args);
+        case ScreenId::Learn: return makeLearn(args);
+        case ScreenId::Manual: return makeManual(args);
         case ScreenId::Count: break;
     }
     return nullptr;

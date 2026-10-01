@@ -125,6 +125,7 @@ public:
             d.spacer();
             const bool canSend = selected && selected->colonizable && !selected->enroute;
             if (d.button("Send Colony Ship", canSend)) sendColonyShip(ui, *selected);
+            ui.tagItem("planets:send-colony-ship");
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 itemTooltip(!selected                 ? "Select a planet first"
                             : selected->enroute       ? "A ship is already on its way"
@@ -249,6 +250,7 @@ private:
                 ImGui::TextColored(kTextDim, "No planets match this filter.");
             }
             ImGui::EndTable();
+            ui.tagItem("planets:list");
         }
         ImGui::PopStyleVar();
     }
@@ -408,6 +410,7 @@ public:
                 a.planet = selection_.front();
                 ui.open(ScreenId::SetQueue, a);
             }
+            ui.tagItem("colonies:queue");
             if (d.button("Goto", one)) goto_ = selection_.front();
             if (d.close()) return false;
             report_.draw(ui);
@@ -727,6 +730,7 @@ private:
                 ImGui::TextColored(kTextDim, "No colonies.");
             }
             ImGui::EndTable();
+            ui.tagItem("colonies:list");
         }
         ImGui::PopStyleVar();
     }

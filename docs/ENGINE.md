@@ -285,11 +285,41 @@ scaled to the window, drawn with the art from the player's install.
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
 | `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
+| `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
+| `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
+| `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |
+
+### Learning to play
+
+Tutorials, training games and the manual ([LEARNING.md](LEARNING.md)) are our own
+content, built into the executable from `assets/learn`. `src/learn` is a headless
+library for them:
+
+- `markdown.*`: the manual's Markdown subset as blocks (headings with anchors, inline
+  spans, lists, tables, tip boxes) and its links;
+- `lesson.*`: the TOML files of tutorials and training games, with errors that name the
+  file and line;
+- `condition.*`: the conditions (`all`, `any`, `not` and a fixed set of keys), evaluated
+  over the game state, the player's empire and client facts (open windows, the kind of
+  selection, the commands given);
+- `progress.*`: where the player is in a lesson and the rules that move it on;
+- `library.*`: the content from its sources (built in, a folder, or both), search, and
+  the check of every link, window id and UI tag;
+- `ids.*`: the vocabularies lessons use (window ids, Help tabs, order kinds, command
+  names, UI tags).
+
+The client tags windows and widgets with their rectangles each frame
+(`UiContext::tags`), so a lesson step can outline them. Lessons only read the game: the
+player's commands still go through `ClassicSession::issue()`, which reports each one to
+the lesson.
 
 ## Tests
 
 The engine tests use `tests/engine_fixture.cpp`, a complete invented rules set. Every
 subsystem has its own test file. `test_integration.cpp` runs whole games.
+
+`test_learn.cpp` covers the learning system's parser, loaders, conditions and progress,
+and checks every built-in lesson and manual page.
 
 Tests against your installed data are opt-in:
 
