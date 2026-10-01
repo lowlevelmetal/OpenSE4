@@ -1954,8 +1954,9 @@ answered from the executable. The engine was brought in line with the answers th
     when a wholly cloaked group moves in, a colony is its owner's uncloaked object only
     while the colony is not cloaked. The engine follows this since 2026-09-30: it tests a colony by the viewer's current
     sensors against its obscuration, not by the map's memory, and its old fallback for
-    vehicles (seen when uncloaked in a sector that is not obscured) is gone. It has no
-    cloaked colonies.
+    vehicles (seen when uncloaked in a sector that is not obscured) is gone. Colonies cloak
+    since 2026-10-01 (spec 01 §6.9): a cloaked colony's cloak levels count, and it is not its
+    owner's uncloaked object in the cloaked-group check.
 75. **"Uncloaked" in the simultaneous check.** **Answer:** only the cloaked flag counts
     (confirmed: binary; §2). A vehicle or unit group in the sector whose cloaked flag is
     off makes its empire a seeing side, even a fighter, satellite or drone group whose

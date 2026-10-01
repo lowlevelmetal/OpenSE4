@@ -135,8 +135,15 @@ inline ruleset::Ruleset buildRuleset() {
     facility("Mv Planet Guard", {ab(AbilityKind::StopPlanetDestroyer)});
     facility("Mv Star Guard", {ab(AbilityKind::StopStarDestroyer)});
     facility("Mv Warp Guard", {ab(AbilityKind::StopOpenWarpPoint), ab(AbilityKind::StopCloseWarpPoint)});
+    // Colony orders and colony cloaking (spec 02 §5.6, spec 01 §6.9, spec 03 §8);
+    // the converter also serves the facility letter markers (spec 06 §7 Q44).
+    facility("Mv Converter", {ab(AbilityKind::ResourceConversion, 30)});
+    facility("Mv Lossy Converter", {ab(AbilityKind::ResourceConversion, 50)});
+    facility("Mv Planet Cloak", allTypes(AbilityKind::CloakLevel, 3));
+    facility("Mv Faint Cloak", {abText(AbilityKind::CloakLevel, "EM Active", 1)});
+    facility("Mv Planet Eye", {abText(AbilityKind::SensorLevel, "Psychic", 4)});
+    facility("Mv Emergency Depot", {ab(AbilityKind::EmergencyResupply, 100)});
     // For the facility letter markers (client, spec 06 §7 Q44).
-    facility("Mv Converter", {ab(AbilityKind::ResourceConversion)});
     facility("Mv Repair Shop", {ab(AbilityKind::ComponentRepair, 2)});
     facility("Mv Upkeep Office", {ab(AbilityKind::ReducedMaintenanceSystem, 10)});
     facility("Mv Nursery", {ab(AbilityKind::ModifyReproductionSystem, 5)});
@@ -265,6 +272,14 @@ public:
         return id;
     }
 
+    // The object of that kind on the system's list in that sector (a
+    // replaced object is a new one, spec 03 §19 Q72); invalid when none.
+    ObjectId objectAt(SystemId sys, Sector at, ObjectKind kind) const {
+        for (ObjectId o : s.galaxy.system(sys).objects)
+            if (s.galaxy.object(o).sector == at && s.galaxy.object(o).kind == kind) return o;
+        return {};
+    }
+
     std::pair<ObjectId, ObjectId> link(SystemId a, Sector sa, SystemId b, Sector sb) {
         const ObjectId wa = object(a, ObjectKind::WarpPoint, sa);
         const ObjectId wb = object(b, ObjectKind::WarpPoint, sb);
@@ -280,6 +295,7 @@ public:
         c.colonyType = "Test";
         if (population > 0) c.population.push_back({owner, population});
         for (auto f : facilities) c.facilities.push_back(test::facilityIndex(r_, f));
+        sight::recalculateColony(r_, c);  // founded: its cloak and sensor levels (spec 01 §6.9)
         s.colonies[planet.index()] = c;
         return *s.colonies[planet.index()];
     }

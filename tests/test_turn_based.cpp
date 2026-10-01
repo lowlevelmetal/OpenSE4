@@ -673,3 +673,62 @@ TEST_CASE("turn-based: the computer plays a human's turn, or the rest of it, as 
     CHECK(activePlayer(s) == a);
     CHECK(s.playerTurn.started);
 }
+
+TEST_CASE("turn-based: Use Component clears the list first and takes effect as it is given (spec 03 §8)") {
+    Duel d;
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(d.s().playerTurn.started);
+    const VehicleId dasher = d.w.spawn(d.w.ship(kA, "Dasher", 3, {"Mv Energy Cell"}), at(d.a, 0, 0));
+    fuel(d.w, dasher);
+    {
+        TurnContext ctx{d.r(), d.s(), {}, {}, {}};
+        movement::startTurn(ctx, kA);  // the new ship gets its movement
+    }
+    applyLive(d.r(), d.s(), kA, ordersFor(dasher, {moveTo(d.a, 12, 0)}));
+    REQUIRE(d.w.v(dasher).location == at(d.a, 3, 0));
+    REQUIRE(d.w.v(dasher).movement == 0);
+    // The waiting Move To no longer holds it back: the list is cleared, then
+    // the use runs at once (position 7: the energy cell).
+    Order use;
+    use.kind = OrderKind::UseComponent;
+    use.amount = 7;
+    const TurnResult res = applyLive(d.r(), d.s(), kA, ordersFor(dasher, {moveTo(d.a, 12, 0), use}));
+    CHECK_FALSE(hasRejection(res));
+    CHECK(d.w.v(dasher).orders.empty());
+    CHECK_FALSE(d.w.v(dasher).repeatOrders);
+    CHECK(d.w.v(dasher).movement == 4);   // the energy's 4 this turn, without a cap
+    CHECK_FALSE(entryIntact(d.r(), d.s(), d.w.v(dasher), 7));
+    applyLive(d.r(), d.s(), kA, ordersFor(dasher, {moveTo(d.a, 12, 0)}));
+    CHECK(d.w.v(dasher).location == at(d.a, 7, 0));
+}
+
+TEST_CASE("turn-based: Use Facility clears the colony's list and waits for the colony's next run (spec 03 §8)") {
+    Duel d;
+    const ObjectId home = d.w.planet(d.a, {6, 6});
+    d.w.colony(home, kA, 1000);
+    resumeTurnBased(d.r(), d.s());
+    REQUIRE(d.s().playerTurn.empire == kA);
+    // An order already in the colony's list (as a minister might leave it).
+    Order launch;
+    launch.kind = OrderKind::LaunchUnits;
+    launch.amount = -1;
+    d.s().colony(home)->orders = {launch};
+    Order use;
+    use.kind = OrderKind::UseFacility;
+    use.amount = 0;
+    cmd::SetOrders c;
+    c.planet = home;
+    c.orders = {launch, use};
+    CHECK_FALSE(hasRejection(applyLive(d.r(), d.s(), kA, c)));
+    // Cleared first; the immediate run covers vehicle lists only, so it stays.
+    CHECK(d.s().colony(home)->orders == std::vector<Order>{use});
+    // At the start of the owner's next turn the colony's list runs: the order
+    // completes with no effect.
+    endPlayerTurn(d.r(), d.s(), kA);
+    endPlayerTurn(d.r(), d.s(), kB);
+    REQUIRE(d.s().playerTurn.empire == kA);
+    CHECK(d.s().colony(home)->orders.empty());
+    // A vehicle cannot be given it.
+    const VehicleId ship = d.w.spawn(d.w.ship(kA, "Ship", 1), at(d.a, 6, 6));
+    CHECK(hasRejection(applyLive(d.r(), d.s(), kA, ordersFor(ship, {use}))));
+}

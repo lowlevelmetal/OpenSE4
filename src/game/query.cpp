@@ -40,6 +40,8 @@ bool colonyHasSpaceYard(const Rules& r, const Colony& c) {
                        [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
 }
 
+bool colonyHasWorkingYard(const Rules& r, const Colony& c) { return !c.cloaked && colonyHasSpaceYard(r, c); }
+
 bool vehicleHasSpaceYard(const Rules& r, const GameState& s, const Vehicle& v) {
     if (v.status == VehicleStatus::Mothballed) return false;
     const Design& d = s.design(v.design);
@@ -49,7 +51,7 @@ bool vehicleHasSpaceYard(const Rules& r, const GameState& s, const Vehicle& v) {
 }
 
 bool spaceYardAt(const Rules& r, const GameState& s, EmpireId empire, Location where) {
-    if (const Colony* c = ownColonyAt(s, empire, where); c && colonyHasSpaceYard(r, *c)) return true;
+    if (const Colony* c = ownColonyAt(s, empire, where); c && colonyHasWorkingYard(r, *c)) return true;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == empire && v.location == where && vehicleHasSpaceYard(r, s, v)) return true;
     return false;

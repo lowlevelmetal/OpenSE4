@@ -3072,10 +3072,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       The culprit's own ship is destroyed too, so it is told as well; that report names
       itself and never counts.
 
-    The engine differs: it takes the witnesses before every result and leaves out mine
-    fields. For Destroy Planet it must take them after the colony is lost. For the three
-    shockwave manipulations it must include every empire that lost an object there, mine
-    field owners included.
+    The engine follows this since 2026-10-01: Destroy Planet takes the empires present after
+    its result, mine fields aside; the three shockwave manipulations take every empire with a
+    colony or an object of its own in the system as the shockwave begins, mine fields
+    included, which is every empire that loses one to it.
 51. **A "stop hostile actions against an empire" demand that names no empire** (§7.3
     term 8, question 47): the promise is about the empire the demand names. A message
     whose third empire is missing or invalid records no promise in OpenSE4 (inferred).
@@ -3091,7 +3091,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       other than itself, so a promise about an invalid empire would never be used; it would
       be forgotten at the next 10-turn clearing.
 
-    The engine has the same effect, since recording nothing is equivalent. It differs only
-    when the message is sent: the engine's send-message command does not check the third
-    empire, and only the client's picker limits it. It should refuse these requests unless
-    the third empire meets the picker's rule above.
+    The engine has the same effect, since recording nothing is equivalent. Since 2026-10-01
+    its send-message command refuses these requests from a human player unless the third
+    empire meets the picker's rule above. A computer player's (and a minister's) own
+    messages do not go through the picker, and the engine does not check them (inferred,
+    question 52).
+52. **A computer player's request about a third empire** (question 51, §7.4): the computer
+    players send "break a treaty with", "declare war on", "make peace with" and "attack an
+    empire in a system" from their own rules, not through the player's picker; the
+    "attack an empire" target comes from their list of attack candidates, whose owners they
+    may not have met. OpenSE4 checks the third empire only for human players' messages
+    (inferred). To verify: can a computer player's request name an empire it has not met,
+    or one no longer in the game?

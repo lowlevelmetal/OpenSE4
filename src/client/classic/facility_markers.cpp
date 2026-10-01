@@ -41,7 +41,8 @@ const std::array<std::vector<Marker>, game::kFacilityMarkerGroups>& groups() {
 
 } // namespace
 
-std::vector<std::string> facilityMarkerGroups(const game::Rules& r, const game::Colony& c, uint16_t on, bool yardWorks) {
+std::vector<std::string> facilityMarkerGroups(const game::Rules& r, const game::Colony& c, uint16_t on) {
+    const bool yardWorks = !c.cloaked;  // a cloaked colony's yard does not work (spec 01 §6.9)
     std::vector<std::string> out;
     if (on == 0) return out;
     auto has = [&](AbilityKind k) {

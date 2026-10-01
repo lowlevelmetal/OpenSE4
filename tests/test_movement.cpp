@@ -1714,16 +1714,18 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     w.move();
     CHECK(w.v(ship).location == at(a, 6, 6));
 
-    // The second use chains into the same action and finds nothing left: it fails.
+    // The second use chains into the same action. Nothing checks that the
+    // part is still intact: it gives its 60 again, capped at the maximum.
+    // Nothing is logged, and the order never fails (spec 03 §8, confirmed: binary).
     const VehicleId tanker = w.spawn(w.ship(kA, "Reserve", 2, {"Mv Spare Tank"}), at(a, 3, 3));
     w.v(tanker).supply = 10;
     w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.order(tanker, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
-    CHECK(w.v(tanker).supply == 70);
+    CHECK(w.v(tanker).supply == 100);
     CHECK_FALSE(entryIntact(r, w.s, w.v(tanker), 6));
     CHECK(w.v(tanker).orders.empty());
-    CHECK(w.logged(kA, "No usable component"));
+    CHECK_FALSE(w.logged(kA, "Reserve"));
 
     // Emergency resupply is capped at the maximum and does nothing for unlimited supply.
     const VehicleId full = w.spawn(w.ship(kA, "Brimming", 2, {"Mv Spare Tank"}), at(a, 4, 4));
@@ -1733,17 +1735,134 @@ TEST_CASE("movement: emergency energy and emergency resupply are one-shot compon
     CHECK(w.v(full).supply == 100);
 }
 
+TEST_CASE("movement: Jettison Cargo destroys exactly what the player moved, at once, and counts the units as lost (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Mv Fighter Engine", "Mv Fighter Tank"});
+    const DesignId spare = w.design(kA, "Spare Fighter", "Test Fighter Hull", {"Mv Fighter Engine"});
+    const VehicleId carrier = w.spawn(w.ship(kA, "Carrier", 2, {"Test Cargo Bay"}), at(a, 2, 2));
+    w.v(carrier).cargo.units = {{fighter, 10}, {spare, 5}};
+    w.v(carrier).cargo.population = {{kA, 4}, {kB, 3}};
+    w.order(carrier, moveTo(a, 5, 5), true);
+    const Vehicle before = w.v(carrier);
+    // Five of the first stack and all of the second: the original would take
+    // ten from the first (its window's position fault); OpenSE4 takes what
+    // was moved. Each race's population is its own entry.
+    REQUIRE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kB, 3}}, {{fighter, 5}, {spare, 5}}}).ok);
+    CHECK(w.v(carrier).cargo.units == std::vector<UnitStack>{{fighter, 5}});
+    CHECK(w.v(carrier).cargo.population == std::vector<PopulationGroup>{{kA, 4}});
+    CHECK(w.s.design(fighter).lost == 5);
+    CHECK(w.s.design(spare).lost == 5);
+    // Not an order: no movement or supply, the list and Repeat untouched, no log.
+    CHECK(w.v(carrier).orders == before.orders);
+    CHECK(w.v(carrier).repeatOrders);
+    CHECK(w.v(carrier).supply == before.supply);
+    CHECK(w.v(carrier).movement == before.movement);
+    CHECK(w.s.empire(kA).log.empty());
+    // More than is aboard, nothing at all, or a race not aboard: refused, nothing changes.
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 6}}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 3}, {fighter, 3}}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kB, 1}}, {}}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {}}).ok);
+    CHECK_FALSE(apply(r, w.s, kB, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    CHECK(w.v(carrier).cargo.units == std::vector<UnitStack>{{fighter, 5}});
+    // Being cloaked or in a fleet makes no difference; being mothballed does.
+    w.v(carrier).status = VehicleStatus::Cloaked;
+    CHECK(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    CHECK(w.v(carrier).cargo.totalPopulation() == 3);
+    w.v(carrier).status = VehicleStatus::Mothballed;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {{kA, 1}}, {}}).ok);
+    w.v(carrier).status = VehicleStatus::Normal;
+    // A colony jettisons its stored cargo; its own population is not cargo.
+    const ObjectId home = w.planet(a, {6, 6});
+    Colony& col = w.colony(home, kA, 1000);
+    col.cargo.units = {{fighter, 2}};
+    CHECK_FALSE(apply(r, w.s, kA, cmd::JettisonCargo{{}, home, {{kA, 10}}, {}}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::JettisonCargo{{}, home, {}, {{fighter, 2}}}).ok);
+    CHECK(w.s.colony(home)->cargo.empty());
+    CHECK(w.s.colony(home)->totalPopulation() == 1000);
+    CHECK(w.s.design(fighter).lost == 7);
+    // Turn-based games carry it out at once too.
+    w.s.options.simultaneous = false;
+    CHECK(apply(r, w.s, kA, cmd::JettisonCargo{carrier, {}, {}, {{fighter, 5}}}).ok);
+    CHECK(w.v(carrier).cargo.units.empty());
+}
+
+TEST_CASE("movement: Use Component is used by the group's first member only, with no intact or mothball check (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    // A fleet: the first member at the fleet's location in object order uses
+    // the part at the recorded position, whoever the order was given to.
+    const VehicleId first = w.spawn(w.ship(kA, "First", 2, {"Mv Spare Tank"}), at(a, 2, 2));
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 2, {"Mv Spare Tank"}), at(a, 2, 2));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {second, first}}).ok);
+    w.v(first).supply = w.v(second).supply = 10;
+    Order use = mk(OrderKind::UseComponent, {}, {}, {}, {}, 6);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{second, {}, {use}, false}).ok);
+    CHECK(w.v(first).orders == std::vector<Order>{use});  // a simultaneous game appends it to each list
+    w.move();
+    CHECK(w.v(first).supply == 70);
+    CHECK_FALSE(entryIntact(r, w.s, w.v(first), 6));
+    CHECK(w.v(second).supply == 10);
+    CHECK(entryIntact(r, w.s, w.v(second), 6));
+    CHECK(w.v(first).orders.empty());
+    CHECK(w.v(second).orders.empty());
+
+    // A mothballed vehicle uses its part too: the destroyed-on-use part goes,
+    // but supply does not come to a mothballed vehicle, and no movement to one
+    // whose maximum is 0. The order completes.
+    const VehicleId laidUp = w.spawn(w.ship(kA, "Laid Up", 2, {"Mv Spare Tank", "Mv Energy Cell"}), at(a, 5, 5));
+    w.v(laidUp).status = VehicleStatus::Mothballed;
+    w.v(laidUp).supply = 0;
+    w.order(laidUp, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
+    w.order(laidUp, mk(OrderKind::UseComponent, {}, {}, {}, {}, 7));
+    w.move();
+    CHECK(w.v(laidUp).orders.empty());
+    CHECK(w.v(laidUp).supply == 0);
+    CHECK_FALSE(entryIntact(r, w.s, w.v(laidUp), 6));
+    CHECK_FALSE(entryIntact(r, w.s, w.v(laidUp), 7));
+    CHECK(w.v(laidUp).location == at(a, 5, 5));
+    // A position past the design's parts gives nothing and completes too.
+    const VehicleId odd = w.spawn(w.ship(kA, "Odd", 2), at(a, 6, 6));
+    w.order(odd, mk(OrderKind::UseComponent, {}, {}, {}, {}, 40));
+    w.move();
+    CHECK(w.v(odd).orders.empty());
+}
+
+TEST_CASE("movement: Use Facility runs on day 1 in a colony's list and completes with no effect (spec 03 §8)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {6, 6});
+    w.colony(home, kA, 1000, {"Test Mine"});
+    const Resources before = w.s.empire(kA).stockpile;
+    Order use = mk(OrderKind::UseFacility, {}, {}, {}, {}, 3);  // no facility at that position: no matter
+    cmd::SetOrders c;
+    c.planet = home;
+    c.orders = {use};
+    REQUIRE(apply(r, w.s, kA, c).ok);
+    CHECK(w.s.colony(home)->orders == std::vector<Order>{use});  // a simultaneous game keeps it for the movement phase
+    w.move();
+    CHECK(w.s.colony(home)->orders.empty());
+    CHECK(w.s.empire(kA).stockpile == before);
+    CHECK(w.s.empire(kA).log.empty());
+}
+
 TEST_CASE("movement: self-destruct: ships and bases need the ability, satellites, mines and drones nothing, fighters never") {
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
+    // Use Component never reaches Self-Destruct: a part with neither emergency
+    // ability gives nothing, and the order completes (spec 03 §8, confirmed: binary).
     const DesignId design = w.ship(kA, "Bomb", 2, {"Test Self Destruct"});
     const VehicleId bomb = w.spawn(design, at(a, 2, 2));
     w.order(bomb, mk(OrderKind::UseComponent, {}, {}, {}, {}, 6));
     w.move();
-    CHECK(w.s.vehicle(bomb) == nullptr);
-    CHECK(w.s.design(design).lost == 1);
-    CHECK(w.logged(kA, "self-destructed"));
+    REQUIRE(w.s.vehicle(bomb) != nullptr);
+    CHECK(w.v(bomb).orders.empty());
+    CHECK(w.s.design(design).lost == 0);
 
     // The Self-Destruct order (spec 03 §8, §15).
     const VehicleId second = w.spawn(design, at(a, 2, 2));
@@ -1880,6 +1999,136 @@ TEST_CASE("movement: a fleet member gains day credit at the fleet's speed wherev
     CHECK_FALSE(w.v(fast).fleet.valid());
     CHECK_FALSE(w.v(third).fleet.valid());
     CHECK(w.v(fast).orders.empty());
+}
+
+TEST_CASE("movement: a fleet member away from the fleet's location that acts keeps its own list; the members there lose theirs (spec 03 Q73)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId away = w.spawn(w.ship(kA, "Away", 6, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId held = w.spawn(w.ship(kA, "Held", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {away, held}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    // `held` moves to (9,9) and takes the fleet's location with it; `away` is elsewhere.
+    w.v(held).location = at(a, 9, 9);
+    fleetMemberMoved(w.s, w.v(held));
+    w.v(held).orders = {moveTo(a, 1, 1), moveTo(a, 2, 2), moveTo(a, 3, 3)};
+    w.v(away).orders = {moveTo(a, 9, 9)};  // the group at (9,9) is already there
+    w.move();
+    // `away` acts first (lower slot): its Move To completes at once for the
+    // members at the location, removing the head of their lists, and chains:
+    // its own list never changes, so the same order runs again and again,
+    // wiping `held`'s list (confirmed: binary).
+    CHECK(w.v(held).orders.empty());
+    CHECK(w.v(away).orders == std::vector<Order>{moveTo(a, 9, 9)});
+    CHECK(w.v(held).location == at(a, 9, 9));
+    CHECK(w.s.fleet(fid)->location == at(a, 9, 9));
+}
+
+TEST_CASE("movement: mothballed fleet members are full members: copies of the orders, part of the group, speed 0 (spec 03 Q74)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.object(a, ObjectKind::Star, {6, 6});
+    const ObjectId home = w.planet(a, {0, 6});
+    w.colony(home, kA, 1000, {"Test Space Yard"});
+    const VehicleId active = w.spawn(w.ship(kA, "Active", 3, {"Test Quantum Reactor", "Test Cargo Bay"}), at(a, 0, 6));
+    const VehicleId laidUp = w.spawn(w.ship(kA, "Laid Up", 3), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::Mothball{laidUp, true}).ok);
+    // A mothballed ship can join a fleet: Fleet Transfer tests no status.
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Odd", {active, laidUp}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    CHECK(fleetGroup(w.s, *w.s.fleet(fid)) == std::vector<VehicleId>{active, laidUp});
+    CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fid)) == 0);
+    // Orders given to the fleet are copied into the mothballed member's list too.
+    Order load = mk(OrderKind::LoadCargo, at(a, 0, 6));
+    load.amount = -1;
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {load, moveTo(a, 3, 6)}, false}).ok);
+    CHECK(w.v(laidUp).orders.size() == 2);
+    CHECK(w.v(active).orders.size() == 2);
+    // The fleet acts once a turn, on day 1: the Load Cargo (no movement
+    // needed) is carried out and leaves every list; the move waits at speed 0.
+    w.move();
+    for (VehicleId id : {active, laidUp}) {
+        CHECK(w.v(id).location == at(a, 0, 6));
+        CHECK(w.v(id).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    }
+    // Clear Orders reaches it like any member.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {}, false}).ok);
+    CHECK(w.v(laidUp).orders.empty());
+    // A fleet member cannot be mothballed, unmothballed, scrapped or
+    // retrofitted: the Scrap window does not list it (spec 03 §15).
+    CHECK_FALSE(apply(r, w.s, kA, cmd::Mothball{laidUp, false}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::Mothball{active, true}).ok);
+    CHECK_FALSE(apply(r, w.s, kA, cmd::Scrap{active, {}, -1}).ok);
+    const DesignId refit = w.ship(kA, "Refit", 4, {"Test Quantum Reactor", "Test Cargo Bay"});
+    const CommandResult retrofit = apply(r, w.s, kA, cmd::Retrofit{active, refit});
+    CHECK_FALSE(retrofit.ok);
+    CHECK(retrofit.error.find("fleet") != std::string::npos);
+    // Out of the fleet, the same commands work again.
+    REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{laidUp}).ok);
+    CHECK(apply(r, w.s, kA, cmd::Mothball{laidUp, false}).ok);
+}
+
+TEST_CASE("movement: a computer player's ad-hoc companion joins alone and keeps its list (spec 03 Q75)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    w.s.options.simultaneous = false;
+    w.s.empire(kB).kind = PlayerKind::Computer;
+    const VehicleId actor = w.spawn(w.ship(kB, "Actor", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId mate = w.spawn(w.ship(kB, "Mate", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId other = w.spawn(w.ship(kB, "Other", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kB, cmd::CreateFleet{"Pack", {mate, other}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    // The fleet members' lists differ: only `mate`'s head matches the actor's.
+    w.v(actor).orders = {moveTo(a, 3, 6)};
+    w.v(mate).orders = {moveTo(a, 3, 6)};
+    w.v(other).orders = {moveTo(a, 0, 0)};
+    TurnContext ctx{r, w.s, {}, {}, {}};
+    movement::startTurn(ctx, kB);
+    movement::LiveMove m{kB};
+    m.vehicles = {actor};
+    movement::runLive(ctx, m, {});
+    // The actor's group took `mate` alone, not its fleet: `other` stays.
+    CHECK(w.v(actor).location == at(a, 3, 6));
+    CHECK(w.v(mate).location == at(a, 3, 6));
+    CHECK(w.v(other).location == at(a, 0, 6));
+    // Only the actor's list changed; the companion keeps its order, which
+    // completes at once when it next acts itself.
+    CHECK(w.v(actor).orders.empty());
+    CHECK(w.v(mate).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    CHECK(w.v(other).orders == std::vector<Order>{moveTo(a, 0, 0)});
+    // The companion took its fleet's location with it.
+    CHECK(w.s.fleet(fid)->location == at(a, 3, 6));
+}
+
+TEST_CASE("movement: orders, Clear and Repeat given to an away fleet member go to the members at the location only (spec 03 Q76)") {
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId x = w.spawn(w.ship(kA, "X", 3), at(a, 0, 6));
+    const VehicleId y = w.spawn(w.ship(kA, "Y", 3), at(a, 0, 6));
+    const VehicleId z = w.spawn(w.ship(kA, "Z", 3), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Trio", {x, y, z}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 1, 1)}, false}).ok);
+    w.v(z).location = at(a, 9, 9);  // away; the fleet's location stays (0,6)
+    w.v(z).orders = {mk(OrderKind::Sentry)};
+    // An order given to `z` is appended to the lists at the location; its own stays.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{z, {}, {mk(OrderKind::Sentry), moveTo(a, 2, 2)}, false}).ok);
+    for (VehicleId id : {x, y}) CHECK(w.v(id).orders == std::vector<Order>{moveTo(a, 1, 1), moveTo(a, 2, 2)});
+    CHECK(w.v(z).orders == std::vector<Order>{mk(OrderKind::Sentry)});
+    // Repeat sets each list's flag at the location; Clear empties each of them.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{z, {}, {mk(OrderKind::Sentry)}, true}).ok);
+    for (VehicleId id : {x, y}) CHECK(w.v(id).repeatOrders);
+    CHECK_FALSE(w.v(z).repeatOrders);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{z, {}, {}, false}).ok);
+    for (VehicleId id : {x, y}) {
+        CHECK(w.v(id).orders.empty());
+        CHECK_FALSE(w.v(id).repeatOrders);
+    }
+    CHECK(w.v(z).orders == std::vector<Order>{mk(OrderKind::Sentry)});
 }
 
 // ---- Hazards ------------------------------------------------------------------------------------------
@@ -2345,16 +2594,25 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     w.s.removeDeadVehicles();
 
     // The planet has exactly min(Val 1, the field's size): Small; it keeps the values.
+    // It is a new object, added while the field holds its slot; then the
+    // field is removed (spec 03 §19 Q72).
+    const uint32_t fieldSlot = w.s.galaxy.object(rocks).slot;
     w.order(maker, stellar(StellarAction::CreatePlanet, rocks));
     w.move();
-    const SpaceObject& made = w.s.galaxy.object(rocks);
+    const ObjectId planet = w.objectAt(a, {2, 2}, ObjectKind::Planet);
+    REQUIRE(planet.valid());
+    CHECK(planet != rocks);
+    CHECK_FALSE(inSystemList(w.s, rocks));
+    const SpaceObject& made = w.s.galaxy.object(planet);
     CHECK(made.kind == ObjectKind::Planet);
     CHECK(made.size == "Small");
     CHECK(made.value == std::array<int, 3>{70, 80, 90});
     CHECK(made.conditions >= Conditions::hundredths(50));
     CHECK(made.conditions <= kOptimalConditions);
-    CHECK(made.name == "A I");                    // the next free numeral
-    CHECK(w.s.galaxy.objects.size() == objects);  // converted in place
+    CHECK(made.name == "A I");                        // the next free numeral
+    CHECK(made.slot != fieldSlot);                    // never the field's own slot
+    CHECK(w.s.galaxy.objects.size() == objects + 1);  // a new record; the field's stays as a tombstone
+    CHECK(w.s.freeSlot() == fieldSlot);               // the field's slot is empty now
     CHECK_FALSE(entryIntact(r, w.s, w.v(maker), 7));
     CHECK(w.v(maker).supply == 50);
     CHECK(w.v(maker).orders.empty());
@@ -2371,14 +2629,22 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     // Destroy it again; the colony on it is lost. Colonies of empires at peace do not prevent it.
     w.s.empire(kA).relation(kB).contact = w.s.empire(kB).relation(kA).contact = true;
     w.setTreaty(kA, kB, Treaty::NonAggression);
-    w.colony(rocks, kB, 500);
+    w.colony(planet, kB, 500);
     const VehicleId breaker = w.spawn(w.ship(kA, "Breaker", 3, {"Mv Planet Breaker"}), at(a, 2, 2));
     w.order(breaker, stellar(StellarAction::DestroyPlanet));
+    const uint32_t lowestEmpty = w.s.freeSlot();
     w.move();
-    CHECK(w.s.galaxy.object(rocks).kind == ObjectKind::Asteroids);
-    CHECK(w.s.galaxy.object(rocks).name == "A I");  // keeps its name and values
-    CHECK(w.s.galaxy.object(rocks).value == std::array<int, 3>{70, 80, 90});
-    CHECK(w.s.colony(rocks) == nullptr);
+    // A new asteroid field takes the lowest empty slot, then the planet is
+    // removed with its colony (Q72).
+    const ObjectId rubble = w.objectAt(a, {2, 2}, ObjectKind::Asteroids);
+    REQUIRE(rubble.valid());
+    CHECK_FALSE(inSystemList(w.s, planet));
+    CHECK(w.s.galaxy.object(rubble).slot == lowestEmpty);
+    CHECK(w.s.freeSlot() == w.s.galaxy.object(planet).slot);
+    CHECK(w.s.galaxy.object(rubble).name == "A I");  // keeps its name and values
+    CHECK(w.s.galaxy.object(rubble).value == std::array<int, 3>{70, 80, 90});
+    CHECK(w.s.colony(planet) == nullptr);
+    CHECK(w.s.colony(rubble) == nullptr);
     CHECK(w.logged(kB, "lost"));
     CHECK(w.logged(kA, "Planet Destroyed"));
     CHECK(hasMood(w.lastMoods, kB, "Any Planet Lost"));
@@ -2395,9 +2661,10 @@ TEST_CASE("movement: stellar manipulation - planets from asteroids and back") {
     w.order(b3, stellar(StellarAction::DestroyPlanet, big));
     w.order(b4, stellar(StellarAction::DestroyPlanet, open));
     w.move();
-    CHECK(w.s.galaxy.object(guarded).kind == ObjectKind::Planet);
-    CHECK(w.s.galaxy.object(big).kind == ObjectKind::Planet);
-    CHECK(w.s.galaxy.object(open).kind == ObjectKind::Asteroids);
+    CHECK(inSystemList(w.s, guarded));
+    CHECK(inSystemList(w.s, big));
+    CHECK_FALSE(inSystemList(w.s, open));
+    CHECK(w.objectAt(a, {9, 9}, ObjectKind::Asteroids).valid());
     // The report the computer players' anger reads (spec 05 §7.3 term 2).
     CHECK(std::any_of(w.s.empire(kA).log.begin(), w.s.empire(kA).log.end(), [](const LogEntry& l) {
         return l.category == LogCategory::Events && movement::isDestructiveStellarReport(l.title);
@@ -2474,10 +2741,11 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     CHECK(w.s.vehicle(nova) == nullptr);
     CHECK(w.s.vehicle(victim) == nullptr);
     CHECK(w.s.colony(planet) == nullptr);
-    REQUIRE(inSystemList(w.s, planet));
-    CHECK(w.s.galaxy.object(planet).kind == ObjectKind::Asteroids);
-    CHECK(w.s.galaxy.object(planet).value == std::array<int, 3>{11, 22, 33});
-    CHECK(w.s.galaxy.object(planet).conditions == Conditions::hundredths(70));
+    CHECK_FALSE(inSystemList(w.s, planet));
+    const ObjectId field = w.objectAt(a, {3, 3}, ObjectKind::Asteroids);
+    REQUIRE(field.valid());
+    CHECK(w.s.galaxy.object(field).value == std::array<int, 3>{11, 22, 33});
+    CHECK(w.s.galaxy.object(field).conditions == Conditions::hundredths(70));
     CHECK_FALSE(inSystemList(w.s, storm));
     CHECK(inSystemList(w.s, ab));
     CHECK(w.logged(kA, "Star Destroyed"));
@@ -2497,7 +2765,8 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     CHECK(n.s.galaxy.system(na).abilities[0].number1() == 3);
     CHECK(n.rules().data().systemTypes[n.s.galaxy.system(na).type.index()].physicalType == "Nebulae");  // a nebula backdrop
     CHECK(countKind(n.s, na, ObjectKind::Star) == 0);
-    CHECK(n.s.galaxy.object(np).kind == ObjectKind::Asteroids);
+    CHECK_FALSE(inSystemList(n.s, np));
+    CHECK(n.objectAt(na, {2, 2}, ObjectKind::Asteroids).valid());
     CHECK(n.s.vehicle(gone) == nullptr);
     CHECK(n.s.vehicle(fog) == nullptr);
     // No stars can be made in a nebula.
@@ -2510,7 +2779,7 @@ TEST_CASE("movement: stellar manipulation - stars, nebulae and black holes") {
     n.move();
     CHECK(n.s.galaxy.system(na).physicalType == "Normal");
     CHECK(n.s.galaxy.system(na).abilities.empty());
-    CHECK(n.s.galaxy.object(np).kind == ObjectKind::Asteroids);  // objects untouched
+    CHECK(n.objectAt(na, {2, 2}, ObjectKind::Asteroids).valid());  // objects untouched
 
     // Black holes: pull 2, centre damage 5000, shield disruption 5000.
     World h;

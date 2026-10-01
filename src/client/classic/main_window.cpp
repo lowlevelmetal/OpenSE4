@@ -14,6 +14,7 @@
 #include "game/design.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 #include "learn/ids.hpp"
 
 #include <algorithm>
@@ -523,6 +524,7 @@ void MainWindow::giveOrder(UiContext& ui, game::Order o) {
             c.repeat = v->repeatOrders;
         } else if (const game::Colony* col = s.colony(w.planet)) {
             c.orders = col->orders;
+            c.repeat = col->repeatOrders;
         }
         c.orders.push_back(o);
         const game::CommandResult r = ui.session.issue(c);
@@ -747,6 +749,12 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::Cloak:
         case OrderId::Decloak:
             audio().play(id == OrderId::Cloak ? "cloakon" : "cloakoff");
+            // A colony cloaks at once, never through its order list (spec 01 §6.9).
+            if (colony && !v && tagged_.empty()) {
+                const game::CommandResult res = ui.session.issue(game::cmd::CloakColony{colony->planet, id == OrderId::Cloak});
+                if (!res.ok) note(ui, res.error);
+                return;
+            }
             simple(id == OrderId::Cloak ? game::OrderKind::Cloak : game::OrderKind::Decloak);
             return;
         case OrderId::ClearOrders: replaceOrders(ui, {}, false); return;
@@ -763,6 +771,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                 repeat = x->repeatOrders;
             } else if (const game::Colony* c = s.colony(owners.front().planet)) {
                 current = c->orders;
+                repeat = c->repeatOrders;
             }
             replaceOrders(ui, std::move(current), !repeat);
             return;
@@ -815,10 +824,14 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             chooser_ = std::move(c);
             return;
         }
+        // "Select Component": each position of the selected vehicle whose part
+        // is intact and has Emergency Resupply or Emergency Energy; "Select
+        // Facility": each facility position of the colony with either ability.
+        // The order records the position (spec 03 §8).
         case OrderId::UseComponent: {
             if (!v) return;
             Chooser c;
-            c.title = "Use Component";
+            c.title = "Select Component";
             c.note = v->name;
             const game::Design& d = s.design(v->design);
             for (size_t i = 0; i < d.entries.size(); ++i) {
@@ -828,6 +841,24 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
                     continue;
                 c.items.push_back({r.component(d.entries[i].component).name, [this, &ui, i] {
                                        game::Order o{game::OrderKind::UseComponent};
+                                       o.amount = int(i);
+                                       giveOrder(ui, o);
+                                   }});
+            }
+            if (!c.items.empty()) chooser_ = std::move(c);
+            return;
+        }
+        case OrderId::UseFacility: {
+            if (!colony) return;
+            Chooser c;
+            c.title = "Select Facility";
+            c.note = s.galaxy.object(colony->planet).name;
+            for (size_t i = 0; i < colony->facilities.size(); ++i) {
+                const auto abilities = r.facilityAbilities(colony->facilities[i]);
+                if (!game::hasAbility(abilities, game::AbilityKind::EmergencyResupply) && !game::hasAbility(abilities, game::AbilityKind::EmergencyEnergy))
+                    continue;
+                c.items.push_back({r.facility(colony->facilities[i]).name, [this, &ui, i] {
+                                       game::Order o{game::OrderKind::UseFacility};
                                        o.amount = int(i);
                                        giveOrder(ui, o);
                                    }});
@@ -852,10 +883,8 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             }
             return;
         }
-        // Our engine has no command for these yet (docs/spec/06 §7 Q4).
-        case OrderId::Jettison:
-        case OrderId::UseFacility:
-        case OrderId::ConvertResources: note(ui, std::format("{} is not in OpenSE4 yet.", orderName(id))); return;
+        case OrderId::Jettison: openFor(ui, ScreenId::JettisonCargo); return;
+        case OrderId::ConvertResources: openFor(ui, ScreenId::ConvertResources); return;
         case OrderId::ReplayPlay:
         case OrderId::ReplayShip:
         case OrderId::ReplayStep:
@@ -1320,6 +1349,7 @@ void MainWindow::overlayText(UiContext& ui) {
                 const game::SpaceObject& o = s.galaxy.object(id);
                 const game::Colony* col = s.colony(id);
                 if (o.kind != game::ObjectKind::Planet || !col || !showsFacilityMarkers(s, ui.session.player(), col->owner)) continue;
+                if (!game::sight::colonyShown(ui.rules(), s, ui.session.player(), id)) continue;  // a partner's cloak hides it too (spec 01 §6.9)
                 if (replay_.active() && replay_.colonyOwner(id) != col->owner) continue;
                 const std::vector<std::string> groups = facilityMarkerGroups(ui.rules(), *col, opts.facilityMarkers);
                 if (groups.empty()) continue;
@@ -1836,6 +1866,8 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             const game::Colony* col = s.colony(id);
             std::optional<game::EmpireId> owner = col ? std::optional(col->owner) : std::nullopt;
             if (replay_.active()) owner = replay_.colonyOwner(id);
+            // The planet is always drawn; a cloaked colony's flag only when it is seen (spec 01 §6.9).
+            if (owner && !game::sight::colonyShown(rules, s, ui.session.player(), id)) owner.reset();
             if (owner) {
                 const Sprite flag = ui.art.flag(s.empire(*owner).race.style, false);
                 if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);

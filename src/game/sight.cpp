@@ -163,14 +163,11 @@ std::optional<SightVector> vehicleSensors(const Rules& r, const GameState& s, co
     return out;
 }
 
-// Every owned planet is a sensor source; its facilities (and the planet's own
-// abilities) add their sensor levels whether or not anyone lives there
-// (spec 01 §6.1, §14 Q26, confirmed: binary).
-SightVector colonySensors(const Rules& r, const GameState& s, const Colony& c) {
-    SightVector out = baseline();
-    addLevels(out, colonyAbilities(r, s, c), AbilityKind::SensorLevel);
-    return out;
-}
+// Every owned planet is a sensor source; the sensor levels its facilities
+// give, stored with the colony (recalculateColony), count whether or not
+// anyone lives there. The planet's own abilities are not read (spec 01 §6.1,
+// §6.9, §14 Q26, confirmed: binary).
+SightVector colonySensors(const Colony& c) { return c.sensorLevels; }
 
 // reach[e][m]: empire e gets empire m's sensors. Each round raises every
 // empire, in empire order, to the empires it holds a Partnership with; five
@@ -220,7 +217,7 @@ SightVector sensorsFor(const Rules& r, const GameState& s, const std::vector<uin
         if (alive(v) && v.location.system == sys && inMask(mask, v.owner))
             if (auto sensors = vehicleSensors(r, s, v)) raise(out, *sensors);
     for (ObjectId o : s.galaxy.system(sys).objects)
-        if (const Colony* c = s.colony(o); c && inMask(mask, c->owner)) raise(out, colonySensors(r, s, *c));
+        if (const Colony* c = s.colony(o); c && inMask(mask, c->owner)) raise(out, colonySensors(*c));
     if (s.options.omnipresent) raise(out, baseline());  // every system as if present (spec 01 §6.5)
     return out;
 }
@@ -281,6 +278,8 @@ SightVector planetObscuration(const Rules& r, const GameState& s, ObjectId plane
     o.fill(1);
     const SpaceObject& obj = s.galaxy.object(planet);
     if (!hideable(obj.kind)) return o;
+    // A cloaked colony's cloak levels replace the baseline (spec 01 §6.9).
+    if (const Colony* c = s.colony(planet); c && c->cloaked) o = c->cloakLevels;
     const int env = environmentObscuration(r, s, {obj.system, obj.sector});
     for (int& x : o) x = std::max(x, env);
     return o;
@@ -318,9 +317,37 @@ bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     if (const Colony* c = s.colony(planet); c && c->owner == viewer) return true;
     const SpaceObject& obj = s.galaxy.object(planet);
     if (!explored(r, s, viewer, obj.system)) return false;
-    // A colony's own cloak levels would count while it is cloaked; colonies
-    // never cloak in the engine, so the planet's obscuration is the whole test.
+    // The planet's obscuration holds the colony's cloak levels while it is
+    // cloaked (spec 01 §6.9).
     return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), planetObscuration(r, s, planet));
+}
+
+void recalculateColony(const Rules& r, Colony& c) {
+    SightVector cloak, sensors = baseline();
+    cloak.fill(1);
+    for (uint32_t f : c.facilities) {
+        if (f >= r.data().facilities.size()) continue;
+        addLevels(cloak, r.facilityAbilities(f), AbilityKind::CloakLevel);
+        addLevels(sensors, r.facilityAbilities(f), AbilityKind::SensorLevel);
+    }
+    c.cloakLevels = cloak;
+    c.sensorLevels = sensors;
+    if (c.cloaked && !colonyCanCloak(c)) c.cloaked = false;
+}
+
+void recalculateColonies(const Rules& r, GameState& s) {
+    for (auto& c : s.colonies)
+        if (c) recalculateColony(r, *c);
+}
+
+bool colonyCanCloak(const Colony& c) {
+    return std::any_of(c.cloakLevels.begin(), c.cloakLevels.end(), [](int level) { return level >= 2; });
+}
+
+bool colonyShown(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
+    const Colony* c = s.colony(planet);
+    if (!c || c->owner == viewer || !c->cloaked) return true;
+    return canSeeColony(r, s, viewer, planet);
 }
 
 size_t forgetOldDesigns(GameState& s, EmpireId e) {
@@ -395,7 +422,7 @@ void updateKnowledge(const Rules& r, GameState& s) {
         if (!c || !c->owner.valid() || c->owner.index() >= nEmp || !inSystem(s.galaxy, c->planet)) continue;
         const size_t sys = s.galaxy.object(c->planet).system.index();
         own[c->owner.index()][sys] = 1;
-        raise(sensors[c->owner.index()][sys], colonySensors(r, s, *c));
+        raise(sensors[c->owner.index()][sys], colonySensors(*c));
     }
 
     // Exploration by the empire's own sources, and the options that reveal everything.

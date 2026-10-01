@@ -40,9 +40,11 @@ public:
         if (!d.open()) return d.keepOpen();
         const game::Colony* colony = where_ ? coloniesHere(ui) : nullptr;
         if (!colony) facilities_ = false;
+        // Only listed vehicles stay selected: none in a fleet, none cloaked
+        // (spec 03 §15, §19 Q74).
         std::erase_if(selected_, [&](game::VehicleId id) {
             const game::Vehicle* v = ownVehicle(ui, id);
-            return !v || !where_ || v->location != *where_;
+            return !v || !where_ || v->location != *where_ || !listed(*v);
         });
         if (colony) std::erase_if(slots_, [&](size_t i) { return i >= colony->facilities.size(); });
 
@@ -86,10 +88,14 @@ private:
         return colonies.front();
     }
 
+    // The window lists only own vehicles in the sector that are in no fleet
+    // and not cloaked (spec 03 §15, §19 Q74, confirmed: binary).
+    static bool listed(const game::Vehicle& v) { return !v.fleet.valid() && v.status != game::VehicleStatus::Cloaked; }
+
     std::vector<const game::Vehicle*> selection(const UiContext& ui) const {
         std::vector<const game::Vehicle*> out;
         for (game::VehicleId id : selected_)
-            if (const game::Vehicle* v = ownVehicle(ui, id)) out.push_back(v);
+            if (const game::Vehicle* v = ownVehicle(ui, id); v && listed(*v)) out.push_back(v);
         return out;
     }
 
@@ -105,6 +111,7 @@ private:
         const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 2.4f;
         beginPanel(ui, "##vehicles", "Selected Vehicles", ImVec2(listW, h));
         for (const game::Vehicle* v : ownVehiclesAt(ui, *where_)) {
+            if (!listed(*v)) continue;
             RowStyle st;
             st.lamp = isSelected(v->id) ? Lamp::On : Lamp::Off;
             std::string detail = groupDesigns(s, *v, 2);

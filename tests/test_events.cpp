@@ -948,18 +948,26 @@ TEST_CASE("events: stellar events") {
     GameState s = newPoliticsGame();
     const SystemId homeSys = s.galaxy.object(homeworld(s, kA).planet).system;
 
-    // Planet destroyed: it becomes an asteroid field and its colony is lost.
+    // Planet destroyed: it is replaced by a new asteroid field and its colony
+    // is lost (spec 01 §9, spec 03 §19 Q72).
     const ObjectId other = secondColony(s, kA, 20);
+    const SpaceObject before = s.galaxy.object(other);
     auto out = hit(s, Effect::PlanetDestroyed, onObject(kA, other), 1);
     CHECK(out.applied);
-    CHECK(s.galaxy.object(other).kind == ObjectKind::Asteroids);
+    const auto& list = s.galaxy.system(before.system).objects;
+    CHECK(std::find(list.begin(), list.end(), other) == list.end());
     CHECK(s.colony(other) == nullptr);
+    ObjectId field;
+    for (ObjectId o : list)
+        if (s.galaxy.object(o).sector == before.sector && s.galaxy.object(o).kind == ObjectKind::Asteroids) field = o;
+    REQUIRE(field.valid());
+    CHECK(s.galaxy.object(field).name == before.name);
     Rng rng(1);
     CHECK_FALSE(effects::pickTarget(r, s, Effect::PlanetDestroyed, onObject(kA, homeworld(s, kA).planet), rng).has_value());
 
     // ...and a planet may form from an asteroid field.
-    out = hit(s, Effect::PlanetCreated, onObject(kA, other), 1);
-    CHECK(s.galaxy.object(other).kind == ObjectKind::Planet);
+    out = hit(s, Effect::PlanetCreated, onObject(kA, field), 1);
+    CHECK(s.galaxy.object(field).kind == ObjectKind::Planet);
 
     // Stars and warp points may appear and vanish.
     const size_t objects = s.galaxy.objects.size();
@@ -1023,12 +1031,18 @@ TEST_CASE("events: stellar events") {
         const ObjectKind k = s.galaxy.object(o).kind;
         CHECK((k == ObjectKind::Asteroids || k == ObjectKind::WarpPoint));
     }
-    CHECK(s.galaxy.object(planet).kind == ObjectKind::Asteroids);
-    CHECK(s.galaxy.object(planet).name == planetName);
-    CHECK(s.galaxy.object(planet).value == planetValue);
+    // Each is a new field in the planet's sector (spec 03 §19 Q72).
+    const auto& left = s.galaxy.system(away).objects;
+    CHECK(std::find(left.begin(), left.end(), planet) == left.end());
+    ObjectId rubble;
+    for (ObjectId o : left)
+        if (s.galaxy.object(o).sector == s.galaxy.object(planet).sector && s.galaxy.object(o).kind == ObjectKind::Asteroids) rubble = o;
+    REQUIRE(rubble.valid());
+    CHECK(s.galaxy.object(rubble).name == planetName);
+    CHECK(s.galaxy.object(rubble).value == planetValue);
     CHECK(s.galaxy.warpPoints(away).size() == warpPoints);
     CHECK(s.colony(planet) == nullptr);
-    CHECK(s.vehicle(doomed)->count == 0);
+    CHECK(s.vehicle(doomed) == nullptr);  // it left the game in the pass
     CHECK(hasMood(ctx, kA, "Any Planet Lost"));
 }
 

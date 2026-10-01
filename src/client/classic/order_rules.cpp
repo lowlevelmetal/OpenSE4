@@ -3,6 +3,7 @@
 #include "game/abilities.hpp"
 #include "game/design.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 
@@ -175,8 +176,6 @@ std::optional<Action> orderAction(OrderId o) {
     }
     return std::nullopt;
 }
-
-bool orderNotInEngine(OrderId o) { return o == OrderId::Jettison || o == OrderId::UseFacility || o == OrderId::ConvertResources; }
 
 bool vehicleCanCloak(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     if (v.supply <= 0 && !game::vehicleHasUnlimitedSupply(r, s, v)) return false;
@@ -379,7 +378,11 @@ OrderFacts orderFacts(const game::Rules& r, const game::GameState& s, game::Empi
         f.facilities = !c->facilities.empty();
         f.emergency = anyOf(abilities, {AbilityKind::EmergencyResupply, AbilityKind::EmergencyEnergy});
         f.conversion = game::hasAbility(abilities, AbilityKind::ResourceConversion);
-        // Colonies cannot cloak in our engine yet, so Cloak and Decloak stay dim.
+        // Cloak when the colony can cloak and is not cloaked; Decloak whenever
+        // it is cloaked, even when it can no longer cloak (spec 01 §6.9).
+        f.cloaked = c->cloaked;
+        f.cloak = game::sight::colonyCanCloak(*c) && !c->cloaked;
+        f.decloak = c->cloaked;
         return f;
     }
 

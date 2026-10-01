@@ -25,6 +25,8 @@ std::string_view displayName(OrderKind k) {
         case OrderKind::StellarManipulation: return "Stellar Manipulation";
         case OrderKind::MoveToWaypoint: return "Move To Waypoint";
         case OrderKind::SelfDestruct: return "Self-Destruct";
+        case OrderKind::UseFacility: return "Use Facility";
+        case OrderKind::ConvertResources: return "Convert Resources";
         case OrderKind::Count: break;
     }
     return "?";
@@ -235,14 +237,10 @@ std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f) {
     return out;
 }
 
-std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f) {
-    std::vector<VehicleId> out = fleetMembersAt(s, f);
-    std::erase_if(out, [&](VehicleId id) { return s.vehicle(id)->status == VehicleStatus::Mothballed; });
-    return out;
-}
+std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f) { return fleetMembersAt(s, f); }
 
 bool inFleetGroup(const GameState& s, const Vehicle& v) {
-    if (!v.fleet.valid() || v.count <= 0 || v.status == VehicleStatus::Mothballed) return false;
+    if (!v.fleet.valid() || v.count <= 0) return false;
     const Fleet* f = s.fleet(v.fleet);
     return f && v.location == f->location && std::find(f->members.begin(), f->members.end(), v.id) != f->members.end();
 }

@@ -400,7 +400,8 @@ void io(Ar& ar, ConstructionQueue& q) {
 template <class Ar>
 void io(Ar& ar, Colony& c) {
     fields(ar, c.planet, c.owner, c.colonyType, c.population, c.anger, c.facilities, c.cargo, c.queue, c.plagueLevel, c.atmosphereTurns,
-           c.minister, c.homeworld, c.foundedTurn, c.militia, c.invader, c.landedTroops, c.orders);
+           c.minister, c.homeworld, c.foundedTurn, c.militia, c.invader, c.landedTroops, c.orders, c.repeatOrders);
+    fields(ar, c.cloaked, c.cloakLevels, c.sensorLevels);
 }
 
 // ---- Designs and vehicles -----------------------------------------------------------------------
@@ -414,7 +415,7 @@ void io(Ar& ar, Design& d) {
     fields(ar, d.templateName, d.everBuilt);
 }
 
-template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
+template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to); }
 
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
@@ -576,6 +577,8 @@ template <class Ar> void io(Ar& ar, cmd::SetEncounterOptions& c) {
 
 template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle, c.fleet, c.where, c.enter); }
 template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::JettisonCargo& c) { fields(ar, c.vehicle, c.planet, c.population, c.units); }
+template <class Ar> void io(Ar& ar, cmd::CloakColony& c) { fields(ar, c.planet, c.cloak); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

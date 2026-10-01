@@ -4,6 +4,7 @@
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/client.hpp"
@@ -320,6 +321,8 @@ int runServer(std::span<char*> args) {
     if (o.has("load")) {
         auto game = game::loadGame(o.get("load"));
         if (!game) return fail(game.error(), 2);
+        // Loading a game recalculates every colony's cloak and sensor levels (spec 01 §6.9).
+        game::sight::recalculateColonies(**rules, game->first);
         if (!o.has("save-dir")) saveFile = o.get("load");
         else if (!game->second.gameName.empty()) saveFile = std::filesystem::path(o.get("save-dir")) / (fileSafe(game->second.gameName) + ".gam");
         if (auto r = host.resume(std::move(game->first), game->second); !r) return fail(r.error(), 2);

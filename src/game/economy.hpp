@@ -232,6 +232,22 @@ int maintenancePercent(const Rules& r, const Empire& e);
 // One ship's or base's maintenance per turn; 0 when mothballed and for units.
 Resources vehicleMaintenance(const Rules& r, const GameState& s, const Vehicle& v);
 
+// Convert Resources (spec 02 §5.6, confirmed: binary unless marked). The
+// colony may be given the order when the largest `Resource Conversion` among
+// its planet's own abilities or its facilities' is at least 1. The loss L is
+// the largest `Resource Conversion` among its facilities alone, read when the
+// order runs; converting `amount` yields trunc(amount × (100 − L) / 100),
+// computed in exact integers (OpenSE4 choice: the original's floating point
+// comes out 1 lower for some amounts at a few L).
+bool colonyConverts(const Rules& r, const GameState& s, const Colony& c);
+int64_t conversionLoss(const Rules& r, const Colony& c);
+int64_t conversionGain(int64_t amount, int64_t loss);
+// The most one Convert Resources order converts: a window line becomes
+// (amount div 65,000) + 1 orders, each for 65,000 or what is left, so an
+// exact multiple ends with an order for 0.
+inline constexpr int kMaxConversionOrder = 65000;
+std::vector<Order> conversionOrders(Resource from, Resource to, int64_t amount);
+
 // ---- Cargo over capacity (spec 02 §2, §13 Q49) --------------------------------------------------------
 
 // A colony's cargo above its capacity (after a dome, a capture or a lost

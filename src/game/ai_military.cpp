@@ -654,14 +654,15 @@ void planTransports(Planner& p) {
 // part gets the resupply orders. Otherwise it seeks the nearest own vehicle
 // that has a destroyed part, a maximum movement of at most 2 and no own yard
 // in its sector, and waits when already there; with no such vehicle it gets
-// the resupply orders. An own yard is a colony with a Space Yard facility or
-// an uncloaked ship with a working yard, the yard ship itself included, so a
+// the resupply orders. An own yard is an uncloaked colony with a Space Yard
+// facility (a cloaked colony's yard does not work, spec 01 §6.9) or an
+// uncloaked ship with a working yard, the yard ship itself included, so a
 // vehicle it has reached is no longer a target.
 void planSpaceYardShips(Planner& p) {
     if (!p.on(Minister::SpaceYardShips)) return;
     auto yardAt = [&](Location where) {
         for (const auto& c : p.st.colonies)
-            if (c && c->owner == p.id && locationOf(p.st.galaxy, c->planet) == where && colonyHasSpaceYard(p.r, *c)) return true;
+            if (c && c->owner == p.id && locationOf(p.st.galaxy, c->planet) == where && colonyHasWorkingYard(p.r, *c)) return true;
         for (const Vehicle& o : p.st.vehicles)
             if (o.owner == p.id && o.count > 0 && o.location == where && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
                 return true;
@@ -889,6 +890,9 @@ void planStellarManipulation(Planner& p) {
                         if (o.owner == p.id) ours = ours || vehicleType(p.r, p.st, o) != ruleset::VehicleType::Mine;
                         else if (hostileTo(e, o.owner) && sight::canSeeVehicle(p.r, p.st, p.id, o)) seen = true;
                     }
+                    // A colony counts unless a cloaking facility hides it: the
+                    // planet's obscuration holds the colony's cloak levels while
+                    // it is cloaked (spec 05 §7.5, spec 01 §6.9).
                     for (ObjectId o : p.st.galaxy.system(far).objects)
                         if (const Colony* c = p.st.colony(o); c && c->owner != p.id && hostileTo(e, c->owner) && sight::canSeePlanet(p.r, p.st, p.id, o))
                             seen = true;
@@ -917,11 +921,13 @@ void planStellarManipulation(Planner& p) {
             goAndDo(locationOf(p.st.galaxy, field), stellarOrder(StellarAction::CreatePlanet, field, locationOf(p.st.galaxy, field)));
         } else if (type == "Destroy Planet") {
             // The nearest planet colonized by a hostile empire, within the ship's
-            // size limit, with no armed hostile strength in its sector and no Stop Planet Destroyer.
+            // size limit, with no armed hostile strength in its sector and no
+            // Stop Planet Destroyer, whose colony is not marked cloaked, even
+            // when it is seen (spec 01 §6.9, spec 05 §7.5, confirmed: binary).
             const int64_t limit = bestValue1(vehicleAbilities(p.r, p.st, *v), AbilityKind::DestroyPlanetSize);
             const auto target = nearestObject(ObjectKind::Planet, [&](ObjectId o) {
                 const Colony* c = p.st.colony(o);
-                if (!c || !c->owner.valid() || c->owner == p.id || !hostileTo(e, c->owner)) return false;
+                if (!c || !c->owner.valid() || c->owner == p.id || !hostileTo(e, c->owner) || c->cloaked) return false;
                 const Location at = locationOf(p.st.galaxy, o);
                 return sizeRecordNumber(p.r, p.st.galaxy.object(o)) <= limit && !armedHostileStrengthAt(at) && !stopsPlanetDestroyer(at);
             });
@@ -1364,7 +1370,7 @@ void planRepair(Planner& p) {
     };
     std::vector<Yard> yards;
     for (const auto& c : p.st.colonies)
-        if (c && c->owner == p.id && colonyHasSpaceYard(p.r, *c))
+        if (c && c->owner == p.id && colonyHasWorkingYard(p.r, *c))  // a cloaked colony's yard is passed over (spec 01 §6.9)
             yards.push_back({locationOf(p.st.galaxy, c->planet), {}, objectOrderKey(p.st, c->planet)});
     for (const Vehicle& o : p.st.vehicles)
         if (o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
@@ -1529,7 +1535,7 @@ void planRetrofit(Planner& p) {
             }
             continue;
         }
-        const auto yard = nearestColony(p, v->location.system, [&](const Colony& c) { return colonyHasSpaceYard(p.r, c); });
+        const auto yard = nearestColony(p, v->location.system, [&](const Colony& c) { return colonyHasWorkingYard(p.r, c); });
         if (yard && p.setOrders(id, {moveOrder(locationOf(p.st.galaxy, *yard))})) ++started;
     }
 }

@@ -22,6 +22,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
@@ -142,12 +143,17 @@ struct ActorRef {
 // The group that carries out one order execution (spec 03 §8).
 struct Group {
     std::vector<VehicleId> members;   // group order: a fleet's group in member order, then ad-hoc companions
+    // The lists carrying the order out changes (spec 03 §8, §19 Q73, Q75,
+    // confirmed: binary): the acting vehicle's, or its fleet's members' at
+    // the fleet's location (an away actor's own list is not one of them), and
+    // in a turn-based game the vehicles the player moves together. Ad-hoc
+    // companions keep their lists.
+    std::vector<VehicleId> holders;
     ObjectId planet;                  // a planet's own orders
     EmpireId owner;
     VehicleId actor;                  // the vehicle whose order the group carries out
     VehicleId lead;                   // the acting vehicle when it is a member, else the first member: the group's place and name
     FleetId fleet;                    // the actor's fleet: its members at the fleet's location are the group
-    std::vector<FleetId> fleets;      // fleets whose groups take part
     bool stopped = false;             // gone, or stopped by a hazard
     bool encountered = false;         // the last warp transit cleared the lists (§6.4)
 };
@@ -323,16 +329,17 @@ private:
 
     // ---- Groups ------------------------------------------------------------------------------------
 
-    // The group of one execution (spec 03 §8, §19 Q61, Q65, confirmed:
-    // binary): a fleet member's order is carried out by the fleet's members at
-    // its location (a member elsewhere is not one of them, even when it is the
-    // one acting); any other vehicle acts alone. A computer player's group
-    // also takes every own vehicle in the sector whose head order is identical
-    // (ships, bases, unit groups, fleet members with their fleets, cloaked
-    // ones); a human player's ships never group, only a drone group outside
+    // The group of one execution (spec 03 §8, §19 Q61, Q65, Q74, Q75,
+    // confirmed: binary): a fleet member's order is carried out by the fleet's
+    // members at its location, mothballed ones included (a member elsewhere is
+    // not one of them, even when it is the one acting); any other vehicle acts
+    // alone. A computer player's group also takes every own vehicle in the
+    // sector whose head order is identical (ships, bases, unit groups, fleet
+    // members, cloaked and mothballed ones), each alone, never its whole
+    // fleet; a human player's ships never group, only a drone group outside
     // fleets gathers the other drone groups there with the same head order.
     // In a turn-based game the vehicles the player moves together form the
-    // group.
+    // group. Only the holders' lists change (Group::holders).
     Group build(ActorRef ref) const {
         Group g;
         if (ref.planet.valid()) {
@@ -350,19 +357,14 @@ private:
         g.owner = v->owner;
         g.actor = v->id;
         auto has = [&](VehicleId id) { return std::find(g.members.begin(), g.members.end(), id) != g.members.end(); };
-        auto addFleet = [&](const Fleet& f) {
-            if (std::find(g.fleets.begin(), g.fleets.end(), f.id) != g.fleets.end()) return;
-            g.fleets.push_back(f.id);
-            for (VehicleId id : fleetGroup(s_, f))
-                if (!has(id)) g.members.push_back(id);
-        };
         const Fleet* own = v->fleet.valid() ? s_.fleet(v->fleet) : nullptr;
         if (own) {
             g.fleet = own->id;
-            addFleet(*own);
+            g.members = fleetGroup(s_, *own);
         } else {
             g.members.push_back(v->id);
         }
+        g.holders = g.members;
         if (g.members.empty()) {
             g.stopped = true;  // no member of the fleet can act at its location
             return g;
@@ -373,23 +375,20 @@ private:
         const Location here = s_.vehicle(g.lead)->location;
         auto joins = [&](const Vehicle& w) { return alive(w) && w.owner == v->owner && w.location == here && !has(w.id); };
         if (live_ && !live_->vehicles.empty() && !computerPlayer(s_, v->owner)) {
-            // Turn-based: the vehicles the player moves together.
+            // Turn-based: the vehicles the player moves together; each of
+            // their lists changes (spec 03 §19 Q75).
             if (own) return g;
             for (VehicleId id : live_->vehicles)
-                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->fleet.valid() && !w->orders.empty() && w->orders.front() == head)
+                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->fleet.valid() && !w->orders.empty() && w->orders.front() == head) {
                     g.members.push_back(id);
+                    g.holders.push_back(id);
+                }
             return g;
         }
         if (computerPlayer(s_, v->owner)) {
-            for (VehicleId id : objectOrder_) {
-                const Vehicle* w = s_.vehicle(id);
-                if (!w || !joins(*w) || w->orders.empty() || !(w->orders.front() == head)) continue;
-                if (const Fleet* f = w->fleet.valid() ? s_.fleet(w->fleet) : nullptr) {
-                    if (inFleetGroup(s_, *w)) addFleet(*f);  // a fleet member brings its fleet (inferred, spec 03 §19 Q75)
-                } else {
-                    g.members.push_back(id);
-                }
-            }
+            // Each vehicle joins alone, a fleet member too (spec 03 §19 Q75).
+            for (VehicleId id : objectOrder_)
+                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->orders.empty() && w->orders.front() == head) g.members.push_back(id);
         } else if (!own && vehicleType(r_, s_, *v) == VehicleType::Drone) {
             for (VehicleId id : objectOrder_) {
                 const Vehicle* w = s_.vehicle(id);
@@ -407,10 +406,12 @@ private:
             if (!c || c->owner != g.owner) g.stopped = true;
             return;
         }
-        std::erase_if(g.members, [&](VehicleId id) {
+        auto gone = [&](VehicleId id) {
             const Vehicle* v = s_.vehicle(id);
             return !v || !alive(*v) || v->owner != g.owner;
-        });
+        };
+        std::erase_if(g.members, gone);
+        std::erase_if(g.holders, gone);
         if (g.members.empty()) {
             g.stopped = true;
             return;
@@ -490,33 +491,30 @@ private:
         if (!v || !alive(*v)) v = s_.vehicle(g.lead);
         return v ? &v->orders : nullptr;
     }
-    // The vehicles whose lists a change applies to: every member's (a fleet's
-    // copies included, spec 03 §8, §19 Q65), and the acting vehicle's when it
-    // is a fleet member away from the fleet's location (inferred, spec 03 §19 Q73).
-    std::vector<VehicleId> listHolders(const Group& g) const {
-        std::vector<VehicleId> out = g.members;
-        if (g.actor.valid() && std::find(out.begin(), out.end(), g.actor) == out.end())
-            if (const Vehicle* v = s_.vehicle(g.actor); v && alive(*v)) out.push_back(g.actor);
-        return out;
-    }
-    // Every list a change to the head applies to, with its Repeat flag.
+    // Every list a change to the head applies to, with its Repeat flag: the
+    // group's holders (spec 03 §8, §19 Q65, Q73, Q75). A fleet member away
+    // from the fleet's location that acts keeps its own list, so a chained
+    // run carries its unchanged head order out again (Q73).
     template <class Fn>
     void forEachList(const Group& g, Fn&& fn) {
         if (g.planet.valid()) {
-            if (Colony* c = s_.colony(g.planet)) fn(c->orders, false);
+            if (Colony* c = s_.colony(g.planet)) fn(c->orders, c->repeatOrders);
             return;
         }
-        for (VehicleId id : listHolders(g))
+        for (VehicleId id : g.holders)
             if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders);
     }
     // Replaces every list of the group and switches Repeat off.
     void setLists(const Group& g, const std::vector<Order>& list) {
         routes_.erase(routeKey(g));
         if (g.planet.valid()) {
-            if (Colony* c = s_.colony(g.planet)) c->orders = list;
+            if (Colony* c = s_.colony(g.planet)) {
+                c->orders = list;
+                c->repeatOrders = false;
+            }
             return;
         }
-        for (VehicleId id : listHolders(g))
+        for (VehicleId id : g.holders)
             if (Vehicle* v = s_.vehicle(id)) {
                 v->orders = list;
                 v->repeatOrders = false;
@@ -709,7 +707,9 @@ private:
         // Turn-based: a maximum that dropped (engines lost in a battle) caps the movement left at once (§6.1).
         if (live_)
             for (VehicleId id : g.members) capLive(id);
-        if (immobile(g)) return held(g) ? Travel::Wait : Travel::Immobile;
+        // A fleet with a member of maximum movement 0 (a mothballed ship, a
+        // base) is frozen: its movement orders wait (spec 03 §9, §19 Q74).
+        if (immobile(g)) return held(g) || g.fleet.valid() ? Travel::Wait : Travel::Immobile;
         if (yardBusy(g)) return Travel::Busy;
         if (remaining(g) <= 0) return Travel::Wait;
         return std::nullopt;
@@ -909,7 +909,7 @@ private:
             if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
-        entered_.push_back(Entry{g.members, g.owner, next, name(g), pursuing_});
+        entered_.push_back(Entry{g.members, g.holders, g.owner, next, name(g), pursuing_});
         // A drone out of supply is destroyed after each step or warp (§12, confirmed: binary).
         for (VehicleId id : g.members)
             if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->supply <= 0 && vehicleType(r_, s_, *v) == VehicleType::Drone)
@@ -971,8 +971,16 @@ private:
 
     Exec execute(Group& g, Order& o) {
         if (g.planet.valid()) {
-            if (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits) return cargo(g, o);
-            return fail(g, o, "Planets cannot carry out that order.");
+            // A colony of a computer player, or a human's under minister
+            // control with the Ship Cloaking minister on, decloaks before each
+            // of its orders and cloaks again afterwards if it can, whether or
+            // not it was cloaked before (spec 01 §6.9, confirmed: binary).
+            Colony* c = s_.colony(g.planet);
+            const bool minister = c && colonyUnderCloakingMinister(*c);
+            if (minister) c->cloaked = false;
+            const Exec e = colonyOrder(g, o);
+            if (Colony* after = s_.colony(g.planet); minister && after && sight::colonyCanCloak(*after)) after->cloaked = true;
+            return e;
         }
         switch (o.kind) {
             case OrderKind::MoveTo: return moveTo(g, o, o.location);
@@ -999,9 +1007,21 @@ private:
             case OrderKind::UseComponent: return useComponentOrder(g, o);
             case OrderKind::StellarManipulation: return stellar(g, o);
             case OrderKind::SelfDestruct: return selfDestruct(g, o);
+            case OrderKind::UseFacility:
+            case OrderKind::ConvertResources: return fail(g, o, "Only colonies carry out that order.");
             case OrderKind::Count: break;
         }
         return fail(g, o, "Unknown order.");
+    }
+
+    Exec colonyOrder(Group& g, Order& o) {
+        if (o.kind == OrderKind::LaunchUnits || o.kind == OrderKind::RecoverUnits) return cargo(g, o);
+        // Use Facility looks up the facility at the recorded position and
+        // completes with no effect, cost or message, whether or not that
+        // facility still exists (spec 03 §8, confirmed: binary).
+        if (o.kind == OrderKind::UseFacility) return Exec::Done;
+        if (o.kind == OrderKind::ConvertResources) return convert(g, o);
+        return fail(g, o, "Planets cannot carry out that order.");
     }
 
     // A vehicle or colony of an empire whose treaty with `e` is below
@@ -1153,15 +1173,17 @@ private:
         return Exec::Acted;
     }
 
-    // The Ship Cloaking minister handles the vehicle: every vehicle of a
+    // The Ship Cloaking minister handles the vehicle or colony: every one of a
     // computer player, and a human's under minister control while that
-    // minister is on (spec 03 §6.4, §19 Q69; spec 05 §7.1).
-    bool underCloakingMinister(const Vehicle& v) const {
-        if (!v.owner.valid() || v.owner.index() >= s_.empires.size()) return false;
-        const Empire& e = s_.empire(v.owner);
+    // minister is on (spec 03 §6.4, §19 Q69; spec 05 §7.1; spec 01 §6.9).
+    bool underCloakingMinister(EmpireId owner, bool minister) const {
+        if (!owner.valid() || owner.index() >= s_.empires.size()) return false;
+        const Empire& e = s_.empire(owner);
         if (e.kind != PlayerKind::Human || e.ministerAll) return true;
-        return (e.ministers & ministerBit(Minister::ShipCloaking)) != 0 && v.minister;
+        return (e.ministers & ministerBit(Minister::ShipCloaking)) != 0 && minister;
     }
+    bool underCloakingMinister(const Vehicle& v) const { return underCloakingMinister(v.owner, v.minister); }
+    bool colonyUnderCloakingMinister(const Colony& c) const { return underCloakingMinister(c.owner, c.minister); }
 
     // After the Attack's battle check, the vehicles the Ship Cloaking minister
     // decloaked for it cloak again when they still can (§8 Cloak: a working
@@ -1306,26 +1328,60 @@ private:
         return g.stopped ? Exec::Gone : Exec::Acted;
     }
 
+    // Use Component (spec 03 §8, confirmed: binary): only the group's first
+    // member uses the part at the recorded position, whatever part sits there
+    // now: the acting vehicle itself, or for a fleet the first of its members
+    // at the fleet's location in object order. Nothing checks that the part is
+    // intact or the vehicle not mothballed; no supply is charged and nothing
+    // is logged. Emergency energy gives, in a turn-based game, V1 more
+    // movement this turn without a cap; in a simultaneous one V1 on the day
+    // counter, up to V1 more actions at one a day. It needs no movement, so it
+    // completes, never fails, and the next order runs in the same action.
     Exec useComponentOrder(Group& g, Order& o) {
-        int gained = -1;
-        for (VehicleId id : std::vector<VehicleId>(g.members)) {
-            const int n = useComponent(ctx_, id, o.amount);
-            if (n < 0) continue;
-            gained = std::max(gained, n);
-            if (n <= 0 || heldInPlace(s_, *s_.vehicle(id))) continue;
-            // Emergency energy (spec 03 §8, confirmed: binary): in a turn-based
-            // game V1 more movement this turn, without a cap; in a simultaneous
-            // one V1 on the day counter, up to V1 more actions at one a day.
+        VehicleId user = g.actor;
+        if (const Fleet* f = g.fleet.valid() ? s_.fleet(g.fleet) : nullptr) {
+            user = {};
+            for (VehicleId id : fleetGroup(s_, *f))
+                if (!user.valid() || objectOrderKey(*s_.vehicle(id)) < objectOrderKey(*s_.vehicle(user))) user = id;
+        }
+        const int n = user.valid() ? useComponent(ctx_, user, o.amount) : 0;
+        if (n > 0 && !heldInPlace(s_, *s_.vehicle(user))) {
             if (live_) {
-                s_.vehicle(id)->movement += n;
-                bonus_[id] += n;
+                s_.vehicle(user)->movement += n;
+                bonus_[user] += n;
             } else {
-                counters_[id].add(n);
+                counters_[user].add(n);
             }
         }
-        if (gained < 0) return fail(g, o, "No usable component.");
-        prune(g);
-        return g.stopped ? Exec::Gone : Exec::Acted;
+        return Exec::Done;
+    }
+
+    // Convert Resources (spec 02 §5.6, confirmed: binary): nothing happens
+    // unless the source and the target are each minerals, organics or
+    // radioactives. The amount is cut to the empire's stock of the source;
+    // what is left above 0 goes from the source, and the target gains it less
+    // the colony's loss, read now (economy::conversionGain), uncapped (the
+    // storage cap comes later in the turn). It costs nothing else and never
+    // fails. In a simultaneous game each order that converts something is
+    // logged; a turn-based player gets no entry.
+    Exec convert(Group& g, const Order& o) {
+        const Colony* c = s_.colony(g.planet);
+        if (!c || o.from >= kResources.size() || o.to >= kResources.size()) return Exec::Done;
+        Resources& bank = s_.empire(g.owner).stockpile;
+        const Resource from = kResources[o.from], to = kResources[o.to];
+        const int64_t amount = std::min<int64_t>(o.amount, bank[from]);
+        if (amount <= 0) return Exec::Done;
+        const int64_t gain = economy::conversionGain(amount, economy::conversionLoss(r_, *c));
+        bank[from] -= amount;
+        bank[to] += gain;
+        if (s_.options.simultaneous) {
+            const SpaceObject& planet = s_.galaxy.object(g.planet);
+            ctx_.log(g.owner, LogCategory::Misc, "Resources Converted",
+                     std::format("The Resource Minister reports that {} in the {} system has converted {} {} into {} {}.", planet.name,
+                                 s_.galaxy.system(planet.system).name, amount, displayName(from), gain, displayName(to)),
+                     locationOf(s_.galaxy, g.planet));
+        }
+        return Exec::Done;
     }
 
     // Self-Destruct (spec 03 §8, §15): every member that can is destroyed.
@@ -1403,6 +1459,7 @@ private:
     // One step into a sector: the group's members as they entered.
     struct Entry {
         std::vector<VehicleId> members;
+        std::vector<VehicleId> holders;   // the lists a failure clears (Group::holders)
         EmpireId owner;
         Location where;
         std::string name;
@@ -1534,7 +1591,7 @@ private:
             if (!struck) continue;
             ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
                      e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where);
-            if (!e.pursuit) clearListsOf(e.members);
+            if (!e.pursuit) clearListsOf(e.holders);
         }
     }
 

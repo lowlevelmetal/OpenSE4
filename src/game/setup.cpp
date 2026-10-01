@@ -213,6 +213,7 @@ void setUpStartingPlanet(const Rules& r, GameState& s, Empire& e, ObjectId plane
     Colony& col = *s.colonies[planet.index()];
     col.population.front().millions = maxPopulation(r, s, col);
     addStartingFacilities(r, s, e, col);
+    sight::recalculateColony(r, col);  // the colony is founded (spec 01 §6.9)
 }
 
 } // namespace

@@ -1,6 +1,7 @@
 #include "client/classic/screens/ships_logic.hpp"
 
 #include "game/design.hpp"
+#include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
 
@@ -38,7 +39,10 @@ const std::vector<game::Order>* ordersOf(const game::GameState& s, OrderOwner o)
 }
 
 bool repeatOf(const game::GameState& s, OrderOwner o) {
-    if (o.planet.valid()) return false;
+    if (o.planet.valid()) {
+        const game::Colony* c = s.colony(o.planet);
+        return c && c->repeatOrders;
+    }
     if (o.fleet.valid()) {
         const game::Fleet* f = s.fleet(o.fleet);
         return f && game::fleetRepeats(s, *f);
@@ -129,6 +133,82 @@ const char* stepLabel(Step step) {
         case Step::All: return "Move All";
     }
     return "";
+}
+
+// ---- Jettison Cargo -----------------------------------------------------------------------
+
+void JettisonLists::move(bool fromPresent, size_t line, Step step) {
+    std::vector<JettisonLine>& from = fromPresent ? present : chosen;
+    std::vector<JettisonLine>& to = fromPresent ? chosen : present;
+    if (line >= from.size()) return;
+    JettisonLine moved = from[line];
+    moved.amount = std::min(stepAmount(step, from[line].amount), from[line].amount);
+    if (moved.amount <= 0) return;
+    from[line].amount -= moved.amount;
+    if (from[line].amount <= 0) from.erase(from.begin() + static_cast<std::ptrdiff_t>(line));
+    const auto it = std::find_if(to.begin(), to.end(), [&](const JettisonLine& l) { return l.unit == moved.unit && l.race == moved.race; });
+    if (it != to.end()) it->amount += moved.amount;
+    else to.push_back(moved);
+}
+
+JettisonLists jettisonLists(const game::Cargo& cargo) {
+    JettisonLists out;
+    for (const game::PopulationGroup& p : cargo.population)
+        if (p.millions > 0) out.present.push_back({{}, p.race, p.millions});
+    for (const game::UnitStack& u : cargo.units)
+        if (u.count > 0) out.present.push_back({u.design, {}, u.count});
+    return out;
+}
+
+std::optional<game::cmd::JettisonCargo> jettisonCommand(const JettisonLists& lists, game::VehicleId vehicle, game::ObjectId planet) {
+    if (lists.chosen.empty()) return std::nullopt;
+    game::cmd::JettisonCargo c;
+    c.vehicle = vehicle;
+    c.planet = vehicle.valid() ? game::ObjectId{} : planet;
+    for (const JettisonLine& l : lists.chosen) {
+        if (l.unit.valid()) c.units.push_back({l.unit, static_cast<int>(l.amount)});
+        else c.population.push_back({l.race, l.amount});
+    }
+    return c;
+}
+
+bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::VehicleId vehicle, game::ObjectId planet) {
+    if (vehicle.valid()) {
+        const game::Vehicle* v = s.vehicle(vehicle);
+        return v && v->owner == viewer && v->count > 0 && !isUnitVehicle(r, s, *v) && v->status != game::VehicleStatus::Mothballed;
+    }
+    const game::Colony* c = s.colony(planet);
+    return c && c->owner == viewer;
+}
+
+// ---- Convert Resources --------------------------------------------------------------------
+
+void ConversionWindow::add(game::Resource from) {
+    const auto it = std::find_if(lines.begin(), lines.end(), [&](const ConversionLine& l) { return l.from == from && l.to == target; });
+    if (it != lines.end()) it->amount += step;
+    else lines.push_back({from, target, step});
+}
+
+void ConversionWindow::remove(size_t line) {
+    if (line >= lines.size()) return;
+    lines[line].amount = std::max<int64_t>(0, lines[line].amount - step);
+    if (lines[line].amount == 0) lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(line));
+}
+
+void ConversionWindow::press(int64_t bigStep) { step = step == bigStep ? 1000 : bigStep; }
+
+std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lines) {
+    std::vector<game::Order> out;
+    for (const ConversionLine& l : lines) {
+        const auto part = game::economy::conversionOrders(l.from, l.to, l.amount);
+        out.insert(out.end(), part.begin(), part.end());
+    }
+    return out;
+}
+
+bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet) {
+    const game::Colony* c = s.colony(planet);
+    return c && c->owner == viewer && game::economy::colonyConverts(r, s, *c);
 }
 
 // ---- Units --------------------------------------------------------------------------------
@@ -297,12 +377,12 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
         return c;
     }
     switch (a) {
-        case StellarAction::CreatePlanet: c.reason = "The asteroid field becomes a planet."; break;
-        case StellarAction::DestroyPlanet: c.reason = "The planet becomes an asteroid field."; break;
+        case StellarAction::CreatePlanet: c.reason = "A new planet replaces the asteroid field."; break;
+        case StellarAction::DestroyPlanet: c.reason = "A new asteroid field replaces the planet; its colony is lost."; break;
         case StellarAction::CreateStar: c.reason = "A new star forms in this sector."; break;
         case StellarAction::DestroyStar:
             c.destroysSystem = true;
-            c.reason = "The shockwave destroys everything in the system except warp points, this ship included.";
+            c.reason = "The shockwave turns every planet into an asteroid field and destroys everything else in the system but warp points, this ship included.";
             break;
         case StellarAction::OpenWarpPoint:
             c.needsDestination = true;

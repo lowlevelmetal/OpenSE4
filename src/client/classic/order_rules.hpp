@@ -36,9 +36,6 @@ std::string_view orderName(OrderId o);
 std::string_view orderSlotKey(OrderId o);
 // The rebindable hotkey that runs an order (docs/spec/06 §3.1).
 std::optional<Action> orderAction(OrderId o);
-// Orders our engine cannot carry out yet: their buttons light by the rules,
-// and using one says so (docs/spec/06 §7 Q4).
-bool orderNotInEngine(OrderId o);
 
 // What the report panel shows, as far as the order buttons care.
 enum class OrderTarget : uint8_t {

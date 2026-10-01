@@ -52,6 +52,64 @@ enum class Step { One, Five, Ten, All };
 int64_t stepAmount(Step step, int64_t available);
 const char* stepLabel(Step step);
 
+// ---- Jettison Cargo (docs/spec/03 §8) -------------------------------------------------------
+
+// One line of the Jettison Cargo window: a population race or a unit stack,
+// with its amount.
+struct JettisonLine {
+    game::DesignId unit;   // invalid: population
+    game::EmpireId race;
+    int64_t amount = 0;
+    bool operator==(const JettisonLine&) const = default;
+};
+// "Cargo Present" (the holder's cargo, one line per race, then one per unit
+// stack, each race with its own amount: an OpenSE4 choice) and "Cargo To Be
+// Jettisoned". A click on a line moves the step's amount of it, or what the
+// line holds if that is less, to the other list: onto that entry's line when
+// it is there, else onto a new line at the end; an emptied line disappears.
+struct JettisonLists {
+    std::vector<JettisonLine> present, chosen;
+    void move(bool fromPresent, size_t line, Step step);
+};
+JettisonLists jettisonLists(const game::Cargo& cargo);
+// OK: exactly the right-hand list (empty lists give no command).
+std::optional<game::cmd::JettisonCargo> jettisonCommand(const JettisonLists& lists, game::VehicleId vehicle, game::ObjectId planet);
+// Whether Jettison Cargo is for this holder: an own ship or base that is not
+// mothballed, or an own colony.
+bool canJettisonFrom(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::VehicleId vehicle, game::ObjectId planet);
+
+// ---- Convert Resources (docs/spec/02 §5.6) ----------------------------------------------------
+
+// One line of the window's "Conversions" list.
+struct ConversionLine {
+    game::Resource from = game::Resource::Minerals;
+    game::Resource to = game::Resource::Minerals;
+    int64_t amount = 0;
+    bool operator==(const ConversionLine&) const = default;
+};
+// The Convert Resources window: the target resource (Minerals when it
+// opens), the step (1,000; 10,000 or 100,000 with the "x 10000" or "x 100000"
+// button down, pressing one releasing the other) and the lines. A click on a
+// resource on the left adds a step from it to the target, onto the line with
+// the same source and target or a new line at the end; a click on a line
+// takes a step off it, and a line left below one step is removed. Neither the
+// treasury nor source = target is checked.
+struct ConversionWindow {
+    game::Resource target = game::Resource::Minerals;
+    int64_t step = 1000;
+    std::vector<ConversionLine> lines;
+    void add(game::Resource from);
+    void remove(size_t line);
+    // The "x 10000" (10'000) and "x 100000" (100'000) buttons.
+    void press(int64_t bigStep);
+};
+// OK: each line in list order as Convert Resources orders of at most 65,000
+// (economy::conversionOrders).
+std::vector<game::Order> conversionOrders(const std::vector<ConversionLine>& lines);
+// Whether Convert Resources is for this colony: an own colony whose planet or
+// facilities give `Resource Conversion` of at least 1.
+bool canConvertAt(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::ObjectId planet);
+
 // ---- Units --------------------------------------------------------------------------------
 
 bool isUnitVehicle(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);

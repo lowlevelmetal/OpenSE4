@@ -206,6 +206,27 @@ it should be, with one button per type; the computer's choice is marked *(sugges
 **Pick the colony type when a colony is founded** off in [Empire Options](settings#empire-options)
 to let the computer choose every time.
 
+## Colony orders and cloaking
+
+A colony has an order list of its own, like a ship. Its orders run on the first day of the
+month in a simultaneous game; in a turn-based game they run at the start of your turn and
+whenever you give an order that runs them at once.
+
+- **Convert Resources** (`Ctrl+V`) needs a converting facility (or a planet that converts).
+  Click a resource on the left to convert one step of it into the resource chosen below;
+  `x 10000` and `x 100000` make the step bigger. Each line shows what it will yield after the
+  colony's conversion loss. The conversion happens at once in a turn-based game, and at the
+  start of the next month otherwise.
+- **Use Facility** (`Ctrl+J`) picks one of the colony's emergency facilities. It has no effect.
+- **Jettison Cargo** (`J`) throws away units or people stored at the colony (or carried by a
+  ship): move what should go to the right-hand list and press `OK`. It happens at once and
+  cannot be undone; the units count as lost.
+- **Cloak** (`Z`) hides a colony that has a cloaking facility of level 2 or more. A cloaked
+  colony costs nothing and keeps building facilities and units, but its space yard stops
+  working, so ships and bases leave its queue. Empires whose sensors do not reach its cloak
+  level do not see it: it does not show in their Planets window and their ships cannot
+  colonize it. **Decloak** (`X`) shows it again. A battle decloaks it for as long as it lasts.
+
 ## The Planets window
 
 The [Planets](window:planets) window (`F4`) lists the planets of the systems you have explored.

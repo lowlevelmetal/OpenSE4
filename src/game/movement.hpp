@@ -258,16 +258,21 @@ void runStellarHazards(TurnContext& ctx);
 // object the manipulation would act on (none for some actions).
 std::string stellarProblem(const Rules& r, const GameState& s, VehicleId vehicle, const Order& o, ObjectId* target = nullptr);
 
-// The Destroy Planet result (spec 01 §9, confirmed: binary): the colony is
-// lost (its owner is told `cause`) and the planet becomes a random natural
-// asteroid field of the same stellar size that keeps its name, values and
-// conditions. The `Planet - Destroyed` event has the same result (spec 05 §4).
+// The Destroy Planet result (spec 01 §9, spec 03 §19 Q72, confirmed:
+// binary): the planet is replaced by a random natural asteroid field of the
+// same stellar size that keeps its name, values and conditions; the field is
+// a new object, added first, so it takes the lowest empty slot, and then the
+// planet is removed and its colony lost (its owner is told `cause`). The
+// `Planet - Destroyed` event has the same result (spec 05 §4).
 void destroyPlanet(TurnContext& ctx, ObjectId planet, std::string_view cause, Rng& rng);
-// The Destroy Star result (spec 01 §9, confirmed: binary): the shockwave. Every
-// planet and asteroid field of the star's system becomes a random natural
-// asteroid field of any size that keeps its name, values and conditions, its
-// colony lost; every other object but warp points is gone, and so is every
-// vehicle there. No destroyed star remains. Also `Star - Destroyed` (spec 05 §4).
+// The Destroy Star result (spec 01 §9, spec 03 §19 Q72, confirmed: binary):
+// the shockwave, one pass over the system's objects in slot order, vehicles
+// included. Every planet and asteroid field is replaced by a new random
+// natural asteroid field of any size that keeps its name, values and
+// conditions (in the lowest slot empty at that moment), its colony lost; every
+// vehicle and every other object but warp points and stars leaves the game in
+// the pass; the stars go after it. No destroyed star remains. Also `Star -
+// Destroyed` (spec 05 §4).
 void destroyStar(TurnContext& ctx, ObjectId star, std::string_view cause, Rng& rng);
 // The Close Warp Point result (spec 01 §8, §9): both ends leave their systems.
 // Also `Warp Point - Closed` (spec 05 §4).
