@@ -103,6 +103,7 @@ use `--renderer=opengl`.
 | `asan` | Debug | AddressSanitizer and UndefinedBehaviorSanitizer (GCC and Clang) |
 | `dist-linux` | Release | Redistributable Linux build (see "Release packages") |
 | `dist-windows` | Release | Redistributable Windows build, cross-compiled with MinGW-w64 |
+| `dist-mingw` | Release | The same Windows build, made natively in MSYS2 (MinGW-w64) |
 
 | CMake option | Default | Effect |
 |---|---|---|
@@ -119,7 +120,8 @@ The code must compile without warnings under
 ## Release packages
 
 `tools/package_release.sh [linux] [windows]` builds, tests and packages both
-platforms from one Linux machine:
+platforms from one Linux machine. In MSYS2 on Windows (the UCRT64 shell) it builds
+the Windows packages natively instead, with the `dist-mingw` preset:
 
 - `dist/OpenSE4-<version>-linux-x86_64.tar.gz`
 - `dist/OpenSE4-<version>-windows-x86_64.zip`
@@ -143,8 +145,8 @@ installed copy, without which the game does not start.
   newer), even when built on a newer distribution: `cmake/GlibcCompat.cmake` routes
   the few newer glibc functions to older versions or small built-in
   implementations. `tools/check_glibc.sh` reports what a binary needs.
-- **Windows** (`dist-windows`): cross-built with MinGW-w64 (`mingw-w64-gcc`) and
-  linked with `-static`. The executables need only Windows' own DLLs and the
+- **Windows** (`dist-windows`, or `dist-mingw` in MSYS2): built with MinGW-w64
+  (`mingw-w64-gcc` for the cross build) and linked with `-static`. The executables need only Windows' own DLLs and the
   Universal C Runtime, which ships with Windows 10 and 11. The game is a windowed
   application; started from a console it still prints `--help` and its log there.
   With Wine installed, the script runs the Windows tests through it.
@@ -155,6 +157,9 @@ Requirements beyond a normal build:
 - `mingw-w64-gcc` for Windows;
 - `bsdtar` for the zip file;
 - NSIS or Wine for the installer (see "The Windows installer").
+
+In MSYS2, install `git` and the UCRT64 packages `gcc`, `cmake`, `ninja`, `shaderc`,
+`libarchive` (for `bsdtar`) and `nsis`, each named `mingw-w64-ucrt-x86_64-<name>`.
 
 Pass `--skip-tests` to package without running the tests.
 
@@ -172,7 +177,7 @@ saved games and settings in `%APPDATA%\OpenSE4` alone. Silent use works as with 
 NSIS installer: `setup.exe /S`, and `/D=C:\path` (last, unquoted) for another folder.
 
 The script uses `makensis` when it is on the PATH (Debian and Ubuntu package it as
-`nsis`). Otherwise it runs the official Windows build of NSIS under Wine. That build
+`nsis`, MSYS2 as `mingw-w64-ucrt-x86_64-nsis`). Otherwise it runs the official Windows build of NSIS under Wine. That build
 is downloaded once into `build/_tools` and checked against a pinned SHA-256, or
 taken from `NSIS_DIR`.
 
@@ -231,6 +236,36 @@ By default the tests use only the original fixtures in `tests/fixtures/` and
 `tests/engine_fixture.cpp`. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
 directory, also runs checks against your installed game data. Those checks never
 copy anything into the repository.
+
+## Continuous integration
+
+GitHub Actions builds and tests every push and pull request
+(`.github/workflows/ci.yml`). No job needs the original game: the tests that read an
+installed copy stay off, and the installed programs are only started with `--help`.
+
+| Job | What it checks |
+|---|---|
+| Linux / GCC debug, Clang debug | The `debug` preset on Ubuntu 26.04 with the distribution's SDL3, warnings as errors; the unit tests |
+| Linux / GCC ASan+UBSan | The unit tests built with the `asan` preset, warnings as errors; they stop at the first memory error, leak or undefined behaviour |
+| Windows / MSVC release | The `release` preset with Visual Studio 2022 and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
+| Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
+| Windows / installer | Installs that installer silently (`/S`), checks the files, shortcuts and Apps & features entry, starts the installed programs, and uninstalls silently, checking that nothing is left |
+
+The Linux jobs run the tests in four processes at once
+(`.github/scripts/run_tests_parallel.sh`). The jobs keep the compiler's output
+(ccache) and the sources FetchContent downloads
+(`.github/scripts/fetchcontent_cache.cmake`) in the Actions cache. A change to
+`cmake/Dependencies.cmake` starts from fresh downloads. The packages are always
+built from fresh downloads. The workflows only read the repository, and pin every
+action to a full commit SHA (the comment beside it names the release).
+
+`.github/workflows/release.yml` runs for a version tag (`v*`), or by hand from the
+Actions tab. It builds the Linux package on Ubuntu and the Windows packages in
+MSYS2 with `tools/package_release.sh`, writes the checksums, and keeps everything as
+one artifact, `OpenSE4-<version>`. It does not publish a release.
+
+`tools/cleanroom_check.py` is not part of CI, because it needs the installed game.
+Run it yourself before committing documentation or content.
 
 ## Headless runs
 

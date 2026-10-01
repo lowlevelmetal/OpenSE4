@@ -1,0 +1,119 @@
+# Builds the release packages for a version tag (v*) with tools/package_release.sh
+# and keeps them as workflow artifacts (docs/BUILDING.md, "Release packages").
+# It publishes nothing: the owner downloads the artifacts and makes the release.
+#
+# Third-party actions are pinned to a full commit SHA; the comment names the tag.
+
+name: Release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux package
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # SDL3 is built into the game: its build needs the headers of every
+      # windowing and audio system it can use, as listed in SDL's README-linux.md.
+      # SDL loads those libraries at run time, so players need none of them.
+      - name: Install the build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends glslc pkg-config \
+            libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev \
+            libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl-dev \
+            libgles-dev libegl-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
+            libusb-1.0-0-dev libpipewire-0.3-dev libwayland-dev wayland-protocols \
+            libdecor-0-dev liburing-dev desktop-file-utils appstream
+
+      - name: Build, test and package
+        run: tools/package_release.sh linux
+
+      - name: Upload the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-linux
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows packages
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out without CRLF conversion
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-shaderc
+            mingw-w64-ucrt-x86_64-libarchive
+            mingw-w64-ucrt-x86_64-nsis
+
+      - name: Build, test and package
+        run: |
+          git config --global --add safe.directory '*'
+          tools/package_release.sh windows
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-windows
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
+          if-no-files-found: error
+
+  checksums:
+    name: Checksums
+    needs: [linux, windows]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+
+      - name: Write the checksums
+        id: sums
+        working-directory: dist
+        run: |
+          version=$(ls OpenSE4-*-linux-x86_64.tar.gz | sed 's/^OpenSE4-\(.*\)-linux-x86_64\.tar\.gz$/\1/')
+          sums=$(sha256sum OpenSE4-"$version"-*)
+          echo "$sums" | tee "OpenSE4-$version-SHA256SUMS.txt"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: OpenSE4-${{ steps.sums.outputs.version }}
+          path: dist/OpenSE4-*
+          if-no-files-found: error
