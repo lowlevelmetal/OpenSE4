@@ -52,8 +52,13 @@ class Rules;
 // marks, dated messages and the computer players' demand counts (spec 05
 // Q42, Q41, Q37, Q49); per-empire interface options and facilities left on
 // abandoned planets (spec 06 §1.9, §7).
-inline constexpr uint32_t kSaveVersion = 3;
-inline constexpr uint32_t kMinSaveVersion = 3;
+// Version 4: colony cloaking (Colony::cloaked and its cloak and sensor
+// levels), colony order Repeat, Convert Resources amounts on orders, ground
+// combat counts per round in battle records, log entry targets and messages,
+// combat piece damage, and the windows' sort history (spec 01 §6.9, spec 02
+// §5.6, spec 06 §7 Q24, Q33, Q41-Q43).
+inline constexpr uint32_t kSaveVersion = 4;
+inline constexpr uint32_t kMinSaveVersion = 4;
 
 inline constexpr size_t kEnvelopeSize = 32;
 
