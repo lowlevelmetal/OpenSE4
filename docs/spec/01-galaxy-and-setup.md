@@ -441,11 +441,12 @@ quadrant has more than 60 % of `Maximum Number Of Systems`, compared exactly).
    destinations of its warp points in the order of those warp points, skipping systems
    already listed. So the order is the home system, then its neighbours in the order of
    its warp points, then their neighbours.
-2. **Filter.** Systems that are not start-eligible are dropped (the home system always
-   stays). Unless *Allowed to start in the same system* is on, so are systems where
-   another empire has a colony and systems that are another player's home system, even
-   when that player's homeworld has not been set up yet. Every system left in the list is
-   marked explored for the player, whether or not it receives a planet.
+2. **Filter.** Systems that are not start-eligible are dropped. Unless *Allowed to start
+   in the same system* is on, so are systems where another empire has a colony and systems
+   that are another player's home system, even when that player's homeworld has not been
+   set up yet. The player's own home system always stays, whichever filter would drop it
+   (confirmed: binary). Every system left in the list is marked explored for the player,
+   whether or not it receives a planet.
 3. **Existing planets.** For each candidate system in order, sectors are scanned in order
    0..168; in each sector only the first planet (not asteroid field) is looked at. It is
    taken if it has no colony, has the player's atmosphere and planet type (and the home
@@ -504,7 +505,7 @@ The original generates a quadrant in this order (confirmed: binary):
 | `Number of Abilities` + `Ability N Type/Descr/Val 1/Val 2` | **System-wide abilities, always present with no roll.** They apply to every sector. |
 | `WP Stellar Abil Type` | StellarAbilityTypes name applied to every warp point in this system. |
 | `Number of System Objs` | Non-warp-point objects. The value 0 is legal and common: "scenic" systems such as giants, comets or star-forming regions are just a backdrop plus warp points. |
-| `Obj N Physical Type` | `Planet`, `Asteroids`, `Storm`, `Star`/`Sun`, `Destroyed Star` or `Comet`. Generation creates planets, asteroid fields, storms, stars and destroyed stars; a `Comet` (or `Warp Point`) template entry creates **nothing**, though it still occupies its template index for `Same As` (confirmed: binary). |
+| `Obj N Physical Type` | `Planet`, `Asteroids`, `Storm`, `Star`/`Sun`, `Destroyed Star` or `Comet`. Generation creates planets, asteroid fields, storms, stars and destroyed stars; a `Comet` (or `Warp Point`) template entry creates **nothing**. It is still placed like any other entry: its position is drawn (§4.3), its sector is marked occupied and kept for `Same As`, and a SectType record is drawn for it (§5.1), all with their usual random numbers (confirmed: binary). |
 | `Obj N Position` | See §4.3. |
 | `Obj N Stellar Abil Type` | StellarAbilityTypes name to roll for this object. |
 | `Obj N Size` | `Any` or Tiny..Huge. For planets and asteroids it is compared with the PlanetSize record's `Stellar Size`. |
@@ -681,9 +682,13 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
   sector, B for the third. That first object may be a star, which gives names such as
   "Xyz Star A". (Quirk: a `Comet` or `Warp Point` template entry creates nothing but still
   claims its sector with an empty name, so a planet placed on it would be named with a
-  space and a letter only.) Asteroid fields are always named "*system* Asteroid Belt" plus
-  their own Roman numeral, even when there is only one; they count separately from the
-  planets, so "Xyz II" can sit next to "Xyz Asteroid Belt I" (confirmed: binary).
+  space and a letter only.) Precisely, the letter counts every template entry recorded in
+  that sector, the planet included; entries not yet placed count as sector (0,0), so a
+  planet placed at (0,0) while later entries remain takes a letter too, after the first
+  entry recorded there, which may be itself with its name still empty (confirmed: binary).
+  Asteroid fields are always named "*system* Asteroid Belt" plus their own Roman numeral,
+  even when there is only one; they count separately from the planets, so "Xyz II" can sit
+  next to "Xyz Asteroid Belt I" (confirmed: binary).
 - **Names of made planets** (confirmed: binary). Create Planet and Construct (§9) name
   the new planet with the system name and the Roman numeral one above the highest numeral
   that ends a planet's name in that system. Only real planets count (asteroid fields do
@@ -965,7 +970,7 @@ bases, unit groups, comets) is destroyed, the acting ship included.
 | Destroy Nebulae (`Destroy Nebulae`) | The system is type Nebulae | The system becomes a Normal, start-eligible standard system with no system abilities. Its objects are untouched. |
 | Create Black Hole (`Create Black Hole`) | A visible star in the sector. Blocked by `Stop Black Hole Creator` in the system. | Shockwave, then the system becomes physical type Black Hole, with system abilities `System - Movement Towards Center` 2, `System - Destructive Center` 5000 and `Sector - Shield Disruption` 5000. Existing warp points keep their abilities. |
 | Destroy Black Hole (`Destroy Black Hole`) | The system is type Black Hole | As Destroy Nebulae: a Normal, start-eligible system with no system abilities. |
-| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` equals Val1. Every `Constructed Planet Requirements` entry must be met: the ships in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. The requirements are read from the acting ship's abilities. The count goes by design: every such component of the design counts with its mounted size, damaged or destroyed or not; mothballed ships and unit groups do not count. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists (the last such record), else a random one of that size; if no Planet record has that size, no planet is made but everything else still happens. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games), its conditions to 1.5 (Optimal), and it is named with the next numeral (§5.6). The **star is removed**. Every object of the builder in the sector that carries the construction ability or whose design has any component of a required group is destroyed, whole ship included, mothballed ships too. |
+| Construct (`Create Constructed Planet` = PlanetSize `Special Ability ID`) | A visible star in the sector, and a PlanetSize record whose `Special Ability ID` equals Val1. Every `Constructed Planet Requirements` entry must be met: the ships and bases in **this sector**, whoever owns them, must carry designs with at least Val2 kT of components whose `Custom Group` equals Val1. The requirements are read from the acting ship's abilities. The count goes by design: every such component of the design counts with its mounted size, damaged or destroyed or not; mothballed ships and unit groups do not count. No movement is needed. | A planet of that PlanetSize is created in the sector, using a Planet record of that size with the builder's planet type and atmosphere if one exists (the last such record), else a random one of that size; if no Planet record has that size, no planet is made but everything else still happens. Its three values are set to `Planet Value High Percent` (`... High Resources` in finite games), its conditions to 1.5 (Optimal), and it is named with the next numeral (§5.6). The **star is removed**. Every object of the builder in the sector that carries the construction ability or whose design has any component of a required group is destroyed, whole ship or base included, mothballed ones too. |
 
 ---
 
@@ -1270,21 +1275,28 @@ highlighted, and an X marks each empire that has met one.
 40. **No Tactical Combat default.** *Answered* (confirmed: binary): the box is clear for a new
     game (§2.2), as in OpenSE4, so turn-based games ask each human side Tactical or
     Strategic (spec 04 §3).
-41. **The home system among the starting-planet candidates.** Open. Step 2 of the
-    starting-planet rule (§3.6) drops other players' home systems unless systems may be
-    shared. When a map's starting points put two empires in one system without that
-    option, is the home system itself dropped for the second empire, leaving only
-    neighbours (and no system at all for created planets if every neighbour is dropped)?
-    The engine always keeps the empire's own home system **(inferred)**.
-42. **Bases carrying Construct materials.** Open. §9 counts the materials on "the ships in
-    this sector" and leaves out only mothballed ships and unit groups. The engine counts
-    bases' components as well **(inferred)**, and uses up the builder's bases that carry
-    a required component like its ships.
-43. **Comet and warp point entries in the names.** Open. §5.6 says that such a template
-    entry creates nothing but still claims its sector with an empty name, so a planet
-    placed on it is named with a space and a letter only. The engine gives the entry no
-    sector at all **(inferred)**: it draws no position (so it uses no random numbers), a
-    `Same As` that names it gives sector (0,0) as for an object not placed (§4.3), and no
-    later planet takes its name. Does the original draw a position for the entry (random
-    numbers for `Ring` and `Circle Radius`, a sector for `Same As`), or does the entry keep
-    sector (0,0), so that only a planet placed at (0,0) is named after it?
+41. **The home system among the starting-planet candidates.** **Answer:** the home system is
+    never dropped (confirmed: binary). Both filters of step 2 (§3.6) spare it: it stays
+    when it is not start-eligible, and when another empire has a colony there or it is
+    another player's home system. So when a map's starting points put two empires in one
+    system without *Allowed to start in the same system*, each keeps that system as a
+    candidate, and the scan still skips the other player's homeworld. The engine does the
+    same.
+42. **Bases carrying Construct materials.** **Answer:** bases count like ships (confirmed:
+    binary). The materials are summed over every object in the sector that has a design,
+    which is every ship and base, whoever owns it, except mothballed ones; unit groups have
+    none. Afterwards the builder's bases whose design holds a component of a required group
+    are destroyed like its ships, mothballed ones included. The engine does the same.
+43. **Comet and warp point entries in the names.** **Answer:** the original draws a position
+    for the entry exactly as for any other entry (confirmed: binary). The specifier is
+    resolved with its usual random numbers (`Ring`, `Circle Radius`) or its usual sector
+    (`Coord`, `Same As`). The sector is then marked occupied, so later `Ring` and `Circle
+    Radius` entries avoid it, and recorded for `Same As`. A SectType record of the entry's
+    physical type is drawn as for any entry (§5.1), using a random number when there is at
+    least one candidate, and also when size and atmosphere are both `Any` even if there is
+    none (no `Comet` records exist in stock data). Then nothing is made: no object, no
+    ability roll, no values. The entry keeps an empty name and counts for the letters of
+    later planets in its sector (§5.6). The engine differs: it draws no position and no
+    record for the entry, so it uses fewer random numbers than the original, does not mark
+    the sector, gives a `Same As` that names the entry sector (0,0), and leaves the entry
+    out of the letter count.

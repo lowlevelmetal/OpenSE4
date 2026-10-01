@@ -760,30 +760,39 @@ every vehicle regains MP and first continues its existing order list.
 **Simultaneous** (this project's mode). Players only queue orders; the host resolves all movement
 over a **30-day** month (confirmed: binary):
 
-1. At the start, every vehicle's MP is reset to its maximum, and every fleet member's MP to the
-   lowest maximum among the members in the fleet's sector. Every day counter is set to 0.
+1. At the start, every vehicle's MP is reset to its maximum, and the MP of every fleet member at
+   the fleet's location to the lowest maximum among those members. Every day counter is set
+   to 0.
 2. On each day, before anyone acts, every ship, base and unit group whose MP is above 0 adds
-   speed ÷ 30 to its counter, where speed is its current MP; for a fleet member it is the lowest
-   current MP among the members in the fleet's sector. The arithmetic is given below.
+   speed ÷ 30 to its counter, where speed is its current MP. For a fleet member, wherever it
+   is, speed is the lowest current MP among the fleet's members at the fleet's location, and 0
+   when none is there (§9) (confirmed: binary). The arithmetic is given below.
 3. On a day, a ship, base, fighter group or drone group acts when its counter is at least 1, and
    its counter then loses 1. A vehicle with 0 maximum MP that has orders acts on day 1 only, and
    so do colonized planets, minefields and satellite groups that have orders.
-4. An action runs the object's order list (§8) with exactly 1 MP. It executes the head order, and
+4. An action sets the acting object's MP to exactly 1, whatever MP it had, when its maximum is
+   at least 1 (otherwise it keeps 0), and runs its order list (§8); the other members of its
+   group keep their own MP (confirmed: binary). It executes the head order, and
    every order that completes chains into the next within the same action, up to 21 executions;
    the action ends at the first order that waits (a move once its 1 MP is used, a Sentry...) or
    fails. So a Move To that arrives, a Load Cargo and a Drop Cargo can all happen in one action,
    and an object that acts on day 1 only runs all of its orders that need no movement then.
    MP are not spent in this mode: after the action the vehicle's MP is put back to its value
    before the action, unless its maximum fell below that value during the action; then it keeps
-   what the action left (0 after a step), gains nothing on the following days and so stops for
-   the rest of the turn. A maximum lowered between actions (by combat damage) caps the MP, which
+   what the action left (0 after a step) and gains nothing on the following days. It still acts
+   while its counter holds a whole unit (speeds above 30, Emergency Energy), each time with 1 MP
+   again, so it can take one more step per such action, and then stops for the rest of the turn
+   (confirmed: binary). A maximum lowered between actions (by combat damage) caps the MP, which
    only slows the daily gain.
-5. Within a day, objects act in the order of their slots in the game's object list. A new object
-   takes the first slot freed by a destroyed object (else a new slot at the end), so this is
-   creation order only until something has been destroyed. A fleet acts when the first of its
-   members in that order is due; the members it carries along do not act again that day, but
-   those that were due still lose 1 from their counters. Ad-hoc groups are formed at each
-   execution (§8).
+5. Within a day, objects act in the order of their slots in the game's object list. That list
+   holds every object: stars, planets, asteroid fields, storms, warp points, ships, bases and
+   unit groups. A removed object of any kind leaves its slot empty in place, and a new object of
+   any kind takes the lowest empty slot, whatever kind of object left it, else a new slot at the
+   end; so the order is creation order only until something has been removed, and from then on
+   vehicles and planets mix (confirmed: binary). A fleet acts when the first of its members in
+   that order that is due and has orders acts; the members it carries along do not act again
+   that day, but those that were due still lose 1 from their counters. Ad-hoc groups are formed
+   at each execution (§8).
 6. After each day, every sector where an object carried out an order that day (any order, a
    Sentry that waits included) is checked. When an empire with an uncloaked vehicle there sees
    an object, not a minefield, of an empire it is hostile to (spec 04 §2; a colony never counts
@@ -870,9 +879,14 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
   turn-based game while MP last, while in a simultaneous game the action ends there.
 - If a vehicle's maximum MP drops mid-turn, its remaining MP are capped at once (§6.1). In a
   simultaneous game a drop during the vehicle's own action (supply running out on its step, for
-  example) stops it for the rest of the turn, and a drop between its actions slows it (§6.3).
+  example) stops it once its counter has no whole unit left (§6.3 step 4), and a drop between
+  its actions slows it (§6.3).
 - A cloaked vehicle that the enemy cannot detect passes through enemy-held sectors without combat.
-  Detection triggers combat as usual. A cloaked vehicle decloaks when it attacks (§8).
+  Detection triggers combat as usual. Attacking does not decloak a vehicle: only drones decloak,
+  when their group attacks at the target of an Attack pursuit (§8), and vehicles under the Ship
+  Cloaking minister lower their cloaks for an Attack order and raise them again afterwards
+  (spec 05). A battle decloaks every piece for as long as it lasts (spec 04 §2) (confirmed:
+  binary).
 - Treaties decide whether a meeting leads to combat: an empire whose treaty with another is
   Non-Aggression or better never fights it, so their vehicles pass through each other's sectors;
   below that (War, Non-Intercourse, None, or not yet met) the battle checks of spec 04 §2 apply.
@@ -966,8 +980,14 @@ Every ship, base, planet and fleet has an **ordered list** of orders. The list r
 - Repeat with a single order that completes without effect makes the vehicle idle. This is legal.
 - New orders are **appended**. Giving orders to a vehicle that already has some is a common player
   mistake, so the UI should show the queue.
-- **Fleets:** the members at the fleet's location act as one group on the fleet's head order, and
-  every change to the list applies to each of those members' lists.
+- **Fleets:** a fleet has no list of its own; its orders are copies in the lists of its members
+  at the fleet's location. Orders given to the fleet or to any member are appended to each of
+  those lists, and every change to the list applies to each of them. The fleet acts through the
+  first member in object order that is due and has orders: the order at that member's own
+  list position is carried out by the members at the fleet's location (a member elsewhere is not
+  one of them, even when it is the one acting), and completing it removes, or with Repeat
+  passes, that position in each of their lists. A vehicle's list is cleared when it joins or
+  leaves a fleet (§9, §19 Q65) (confirmed: binary).
 - **Ad-hoc groups:** the executing group is rebuilt every time an order is executed. For a
   computer player, every own vehicle in the sector whose head order is identical joins: ships,
   bases and unit groups, fleet members and cloaked ones included. For a human player only a drone
@@ -985,7 +1005,7 @@ sector is elsewhere) plus the action.
 | Move To (M) | sector, in any known system | Paths and warps as needed (§6.2). Done on arrival; waits when out of MP; fails on an invalid destination or a blocked path. |
 | Move To Waypoint (Ctrl 0–9) | waypoint | The waypoint is looked up when the order runs; if it has been deleted the order fails (§8.1). |
 | Set Waypoint (Alt 0–9) | sector | Empire-level. Defines a waypoint (§8.1). |
-| Attack (A) | target | In turn-based games (except for drones) it becomes Move To the target's sector plus an Attack there, which costs 1 MP and one move's supply and starts combat at once. In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed; once there it attacks (1 MP and one move's supply, cloaked drones decloaking first; the battle itself comes from the day's combat check, §6.3) and the order stays. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
+| Attack (A) | target | In turn-based games (except for drones) it becomes Move To the sector the target is in when the order is given (added even when the group is already there) plus an Attack. The stored Attack names no target and no place: it attacks wherever the group stands when it runs, which costs 1 MP and one move's supply and starts combat at once; with no MP left it is removed doing nothing. It decloaks nobody (§6.4). In simultaneous games, and for drones, it becomes a pursuit: on each action the group moves toward the target's current sector, warping as needed. Once there, a group holding a drone whose own first order pursues an object in that sector attacks: its cloaked drones decloak, then 1 MP and one move's supply (the battle itself comes from the day's combat check, §6.3, or at once in a turn-based game). A group with no such drone just waits there, spending neither MP nor supply. The order stays either way. The pursuit is done when the target no longer exists (or its slot holds another object), belongs to the attacker's owner, or is a planet without a colony; there is no visibility test. In a battle, a drone group's target is the object its first order pursues (§12). A drone given a warp point as target gets Move To plus Warp instead (confirmed: binary). |
 | Warp (W) | warp point | Composite. Needed for links to unexplored systems. The transit needs MP (else it waits), a warp point in the sector and every group member able to warp (else it fails), and no member with a space yard whose queue is not empty (else it fails). It costs 1 MP and one move's supply (§7). On each transit there is a 50 % chance that every member takes damage equal to the warp point's total `Warp Point - Turbulence`; taking that damage, or meeting mines or enemies on arrival, fails the order (confirmed: binary). |
 | Resupply (S) | — | Expanded at once into Move To the nearest depot: a colonized planet with `Supply Generation` owned by the empire or by an empire with Military Alliance or better, in an explored system, skipping sectors that hold a visible, armed, non-mothballed hostile, nearest by travel distance (the first one found wins a tie). The Move To is added even when the depot is in the current sector, where it completes at once; with no reachable depot nothing is added (confirmed: binary). |
 | Repair (R) | — | Expanded at once into Move To the nearest own object with `Component Repair`, preferring immobile sources (planets, bases); repair ships are used only if there is no immobile source. As for Resupply, the Move To is added even for the current sector, and nothing is added without a reachable source (confirmed: binary). |
@@ -1030,7 +1050,9 @@ sector is elsewhere) plus the action.
 - The colony type: when the empire's option to choose it on colonization is on (it is on for a
   new empire) and the colonizing empire is a human player in a turn-based game, the player picks
   it in a dialog; otherwise it is chosen automatically, as a computer player chooses it
-  (spec 05 §7.5).
+  (spec 05 §7.5). The dialog interrupts the order: the colony is made when it closes, with the
+  type picked, or with no type at all (an empty name) when the player cancels (confirmed:
+  binary).
 - When two ships target the same planet, the first one processed wins; the other's order fails.
 - A colony with 0 population is legal but cannot build facilities.
 
@@ -1078,21 +1100,32 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 
 - An empire can have any number of named fleets. The name gets a default and is editable. A new
   fleet starts with the first formation and the first strategy. A fleet is deleted when its last
-  member leaves.
+  member at its location leaves (below).
 - A fleet has one location. Its members are the owner's vehicles in that sector that carry the
-  fleet's tag.
+  fleet's tag. The location is the fleet's own record: it is set where the fleet is formed and
+  follows any member that moves, whatever moved it (a group step, a warp, stellar drift, an
+  event), so it is the sector of the member that moved last.
+- When a vehicle leaves a fleet, or is removed from the game, and no member is left at the
+  fleet's location, the fleet is disbanded: every vehicle still carrying its tag leaves it,
+  normally losing its orders. The `Ship - Moved` event moves the ship first and then takes it out
+  of its fleet, so the fleet's location goes with it and the whole fleet is disbanded.
 - **Who can join:** ships always; bases only when `Bases Can Join Fleets` is True; fighter groups
   yes; drones, satellites and mines never. Fleet Transfer offers only own vehicles in the same
   sector that are not already in a fleet. "Add All" and "Remove All" are available. Joining or
-  leaving a fleet can clear the vehicle's own orders.
+  leaving a fleet clears the vehicle's own orders (below).
 - **Leader:** the player-chosen leader when one is set, otherwise the first member in the sector's
   object order. If the chosen leader leaves or is destroyed, the choice is cleared and the first
   member leads again. The leader only matters for the formation.
 - **Movement:** the fleet's movement is the minimum of its members' MP left (and of their maximum
-  MP for display). During turn processing every member's MP is set to that minimum, so the fleet
-  moves at its slowest member's speed; a member with 0 maximum MP freezes the fleet. Members at the
-  fleet's location execute the fleet's orders as one group; the orders are copies held in each
-  member's own list, and members elsewhere are not part of the group (§8).
+  MP for display), over the members at its location. During turn processing every member's MP
+  there is set to that minimum, so the fleet moves at its slowest member's speed; a member with
+  0 maximum MP freezes the fleet. In a simultaneous game every member, wherever it is, gains
+  day credit at that speed (§6.3). Members at the fleet's location execute the fleet's orders
+  as one group; the orders are copies held in each member's own list, and members elsewhere are
+  not part of the group (§8).
+- **Orders on joining and leaving:** joining a fleet (by Fleet Transfer or the Join Fleet order)
+  clears the vehicle's list, and so does leaving it by Fleet Transfer. The joining vehicle does
+  not get the orders the fleet already has (§8, §19 Q65).
 - **Supply display:** the Fleet Report sums the members' current supply, maximum supply and
   per-move cost, leaving out fighter groups and members with unlimited supply, and shows "Endless"
   when every member has unlimited supply. Supply is pooled among the members in the fleet's
@@ -1142,13 +1175,17 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 - Members leave the formation only during automated moves (every piece in strategic combat): a
   piece leaves when its strategy in effect is Don't Get Hurt, Drop Troops, Board or Ram, or when
   the strategy's `Break Formation` flag covers its category (spec 04 §16.1). The whole group
-  dissolves when the leader is destroyed or removed from the group, when the leader of an automated
-  side is left with 0 movement by damage, or when the leader's turn to act comes in an automated
-  phase and every square on the map around its footprint is already occupied; this is tested before
-  it moves, and it then does not move (spec 04 §16.1). When the leader itself leaves formation,
-  only its own marks are cleared: the members stay in the group, keep the fleet strategy, but have
-  no leader to follow and move on their own. In tactical combat the player's combat group orders
-  also change groups (spec 04 §5).
+  dissolves when the leader is destroyed or removed from the group, when the leader of an
+  automated side survives a hit (even one its shields absorb completely) and has no movement
+  left this combat turn once its movement is capped at its new maximum (so a leader that has
+  already moved its full allowance is enough), or when the leader's turn to act comes in an
+  automated phase and every square on the map around its footprint is already occupied; this is
+  tested before it moves, and it then does not move (spec 04 §16.1). The computer players' sides
+  are automated; so is every side in strategic combat, in a battle fought without a window, in
+  tactical combat while the Auto button is down, and after Resolve Combat (§19 Q60). When the
+  leader itself leaves formation, only its own marks are cleared: the members stay in the group,
+  keep the fleet strategy, but have no leader to follow and move on their own. In tactical combat
+  the player's combat group orders also change groups (spec 04 §5).
 - Fleet Transfer and Change Formation\Strategy select the formation. The Formation Report draws the
   grid.
 
@@ -1256,7 +1293,7 @@ All rules in this section are (confirmed: binary) unless marked otherwise.
 | Fighter | Moves like a ship inside its system; cannot use warp points (§6.2). |
 | Satellite | Stationary. Fires on enemies in its sector. |
 | Mine | Hidden: hull cloak level 5 in all sight types (stock data). Strikes hostile groups that enter the sector (below). Its owner sees it, as every owner sees its own objects. |
-| Drone | A launch takes no target and adds no order. A drone group follows orders like any vehicle: an Attack order makes it pursue its target, through warp points too, and ram it in combat (§8, spec 04 §10.7). Out of supply it is destroyed, after each step or warp and at the end of the turn. |
+| Drone | A launch takes no target and adds no order. A drone group follows orders like any vehicle: an Attack order makes it pursue its target, through warp points too, and ram it in combat (§8, spec 04 §10.7). When a battle starts, a drone group's target is the object named by the first order in its list, if that order is an Attack pursuit and the object (of any kind) is in the battle; otherwise its target is chosen as for a computer player's piece (confirmed: binary). Out of supply it is destroyed, after each step or warp and at the end of the turn. |
 
 - **Mine encounter.** When a group enters a sector (by a step or a warp arrival), and when it runs
   a Sweep Mines order, the minefields there act, unless some vehicle of the group belongs to the
@@ -1765,45 +1802,129 @@ centre (§6.2), how prototype status gates Edit and what Upgrade makes (§4.1), 
 let vehicles pass without combat (§6.4). Nothing in this spec's body is left unverified.
 
 The questions below came up while the engine was brought in line with the settled rules. Each
-gives the engine's choice, marked (inferred), until it is checked.
+gave the engine's choice, marked (inferred); all of them are answered now.
 
-60. **Formations of a player's side in tactical combat (§10):** the group dissolves when the
-    leader of an automated side is left with 0 movement. Does that ever happen to a human side
-    in tactical combat? The engine dissolves it for every side in strategic combat and for a
-    player's side in tactical combat while Auto is on, so that a tactical battle fought on Auto
-    stays the strategic battle; a side the player moves keeps its group (inferred).
-61. **Fleet members away from the fleet's sector (§6.3 step 2):** their day speed is their own
-    movement points, not the lowest among the members in the fleet's sector (inferred).
-62. **Object slots (§6.3 step 5):** the engine keeps a slot per vehicle; planets come before every
-    vehicle (the galaxy is made first), and a new vehicle reuses only a slot a removed vehicle
-    freed, not one a removed stellar object freed (inferred).
-63. **A stopped vehicle's later actions (§6.3 step 4):** a vehicle left with 0 movement points by
-    a drop during its own action gains nothing more, but one whose counter is still at 1 or more
-    (speeds above 30) acts again; the engine runs such an action with 0 movement points, so its
-    moves wait and only orders that need no movement complete (inferred).
-64. **Which check comes first:** a Move To whose destination cannot be reached, executed with no
-    movement point left in the action (after a chained arrival), waits; it fails on the next
-    action that has one (inferred).
-65. **Fleet members' own lists:** the engine keeps a member's own list apart from its fleet's.
-    While the fleet has orders, a member at the fleet's location carries out only the fleet's;
-    a failed order or the Ship Orders options clear the member's own list too (inferred, as each
-    member's list holds the fleet's orders in the original).
-66. **The Launch/Recover window in simultaneous games:** the engine's window gives Recover Units
-    orders that name one group and one design of it, with an amount; the Recover Units order
-    that names only a kind recovers every design of each group, as §8 says (OpenSE4 extension).
-67. **The Colonize dialog (§8):** until the player picks the colony type, the colony has the type
-    the computer would pick; the pending choice is kept in the game (Empire::colonyTypeChoices)
-    and the dialog comes back until it is answered (inferred).
-68. **A drone's Attack target in battle (§8, §12, spec 04 §10.7):** the engine hands the Attack
-    order's target to the drone as its battle target when the pursuit attacks (inferred).
-69. **Turn-based Attack by a group that is not all drones (§8):** it decloaks every member when it
-    attacks, as §6.4 says of any attacker; in the pursuit form only drones decloak (inferred).
-70. **Colonies "seen" (§6.2, §6.4, §8):** a colony counts as seen when its planet is on the
-    viewer's map now (a planet hidden by a storm or nebula needs sensors that pierce it)
-    (inferred). The battle check is combat's and treats colonies its own way (spec 04 §19
-    Q74).
-71. **The turn-based Attack as one order (§8):** the engine keeps a turn-based Attack as one
-    stored order instead of a Move To plus an Attack: the order carries the target's sector
-    as it was when given (`Order::location`), goes there and attacks there, whatever became
-    of the target, which has the same effect. An Attack with no sector recorded follows its
-    target (inferred).
+60. **Formations of a player's side in tactical combat (§10):** **Answer:** yes, while that side
+    is automated, and the engine picks the automated sides correctly. At the start of a battle
+    the computer players' sides are automated. Strategic combat, and every battle fought without
+    a window, automates every side. In tactical combat, pressing the window's Auto button
+    automates every side and releasing it hands the human sides back to their players; Resolve
+    Combat automates every side for the rest of the battle (confirmed: binary). The trigger is
+    wider than the engine's, though. After every hit that a group's leader (its anchor, §10)
+    survives, even one its shields absorb completely, its movement left for this combat turn is
+    lowered to its new maximum; if that leaves 0 and its side is automated, the whole group
+    dissolves. A leader that has already used up its movement this combat turn is therefore
+    enough (confirmed: binary). The engine differs: it dissolves the group only when the hit
+    takes the leader's maximum to 0 and the leader had movement at the start of the combat turn.
+61. **Fleet members away from the fleet's sector (§6.3 step 2):** **Answer:** no. Every fleet
+    member's daily gain uses the fleet's figure, wherever the member is: the lowest MP left among
+    the fleet's members at the fleet's location. A member elsewhere is not counted in it. With no
+    member at the location the figure is 0, so the members gain nothing. The member's own MP only
+    decides whether it gains at all (it must be above 0). At the start of the turn only the
+    members at the location get the fleet's lowest maximum (confirmed: binary). A member
+    elsewhere never moves by its own orders either: when it is the one to act, its order is
+    carried out by the members at the fleet's location, without it (§8). Members rarely end up
+    apart, because the fleet's location follows any member that moves and a fleet left with no
+    member at its location is disbanded at once (§9). The engine differs: it ties the fleet's
+    location to the leader and lets a member elsewhere use its own MP.
+62. **Object slots (§6.3 step 5):** **Answer:** the original keeps one list of every object:
+    stars, planets, asteroid fields, storms, warp points, ships, bases and unit groups alike. A
+    removed object of any kind leaves its slot empty where it is, and a new object of any kind
+    takes the lowest empty slot, whatever kind of object left it, else a new slot at the end
+    (confirmed: binary). The generated galaxy comes first (the homeworlds and starting planets
+    made at setup included), but afterwards kinds mix: a new ship can take the slot of a planet
+    replaced by stellar manipulation, of a closed warp point or of a destroyed storm, and a
+    planet, storm, star or warp point made by stellar manipulation can take a destroyed ship's
+    slot or a new slot after every ship. Colonized planets then act on day 1 in their slot's
+    place among the vehicles. The engine differs: it numbers vehicles apart, puts every planet
+    before every vehicle, and lets a new vehicle reuse only a slot a vehicle freed.
+63. **A stopped vehicle's later actions (§6.3 step 4):** **Answer:** every action sets the acting
+    vehicle's MP to exactly 1 when its maximum is at least 1, whatever MP it had, so such a
+    vehicle moves again, one step per remaining action. After the action its MP goes back to
+    the 0 it had, so its counter gains nothing and it stops once the counter falls below 1. Only
+    a vehicle whose maximum is 0 acts with 0 MP, so that its moves wait. Only the acting vehicle
+    gets the 1 MP; another group member with 0 MP still holds the group back (confirmed:
+    binary). The engine differs: it runs the action with 0 MP.
+64. **Which check comes first:** **Answer:** as the engine does it. Each time a Move To runs it
+    fails at once only when the destination is not a valid system and sector. Then it is done
+    when the group is already at the destination, and it waits when the group is empty or any
+    member has no MP left. Only after that does the step look for a route, and fail when there
+    is none (or when a member's space yard is building). So with no MP left it waits, and it
+    fails on the next action that has MP (confirmed: binary).
+65. **Fleet members' own lists:** **Answer:** the original has no fleet list. Each vehicle has
+    exactly one list, and a fleet's orders are the lists of its members at the fleet's location
+    (confirmed: binary):
+    - Orders given to a fleet, or to any vehicle in a fleet, are appended to the list of every
+      member at the fleet's location. Clear Orders and Repeat Orders change all of those lists
+      the same way.
+    - A vehicle's list is cleared when it joins a fleet, by Fleet Transfer or by the Join Fleet
+      order, and when it leaves one by Fleet Transfer or because the fleet is disbanded (§9). A
+      vehicle that joins does not receive the orders the fleet already has, only those given
+      after it joined.
+    - The fleet acts when its first member in object order that is due that day and has a
+      non-empty list acts. The order at that member's current position is carried out by the
+      members at the fleet's location (§8). Completing it removes the order at that same
+      position from each of their lists; with Repeat on, each list moves on to its next order.
+      A failure, a refused sector entry or the Ship Orders options clear all of their lists.
+    - So the lists act as one shared list while they hold the same orders. A member that joined
+      after orders were given holds only the later ones. If it is the one to act, its own next
+      order is carried out for the fleet, and completing it removes the order at that position
+      from every other member's list, whichever order that is.
+
+    The engine differs: it keeps a fleet list apart from the members' lists, lets a vehicle
+    keep its own orders when it joins a fleet, and gives a vehicle that leaves the fleet's
+    orders. The original clears the vehicle's list in both cases.
+66. **The Launch/Recover window in simultaneous games:** **Answer:** OpenSE4 choice; the
+    original has nothing to compare it with. It offers the window only in turn-based games; in
+    a simultaneous game the command does nothing (confirmed: binary). Units are then launched
+    and recovered only by the Launch Units Remotely and Recover Units Remotely orders, and that
+    Recover order names a unit kind, never a group or a design (§8). The engine's window and
+    its Recover orders for one design of one group remain an OpenSE4 extension.
+67. **The Colonize dialog (§8):** **Answer:** the original asks at once and keeps nothing
+    pending. The Colonize order stops in the middle of its execution for a dialog, and the
+    colony is made after the dialog closes, with the type picked. Closing it without a pick
+    (Cancel) leaves the colony with no type (an empty name). The dialog comes only in a
+    turn-based game, when the player whose turn it is is human and the colonizing empire's
+    option is on; otherwise the type is chosen automatically (spec 05 §7.5) (confirmed:
+    binary). The engine cannot stop an order for a dialog, so its pending choice, with the
+    automatic type standing until the player answers, is an OpenSE4 choice; the result is the
+    same once the player picks. The engine's dialog has no Cancel.
+68. **A drone's Attack target in battle (§8, §12, spec 04 §10.7):** **Answer:** yes in effect,
+    but the original reads the target from the order instead of storing it. When a battle
+    starts, each drone group's target is the object named by the first order in the group's
+    list, if that order is an Attack pursuit and the object is a piece in the battle, whatever
+    its kind (ship, base, planet or unit group). Otherwise, and for drones launched during the
+    battle (they have no orders), the target is chosen as for a computer player's piece (spec 04
+    §10.7) (confirmed: binary). So a pursuing drone caught in a battle on its way attacks its own
+    target only if that target is there. The engine differs: it records the target when the
+    pursuit attacks, keeps it after the order has ended, and ignores a planet target.
+69. **Turn-based Attack by a group that is not all drones (§8):** **Answer:** no member decloaks.
+    The Attack spends 1 MP and one move's supply per member and runs the battle check at once; a
+    battle that starts decloaks every piece for that battle (spec 04 §2). The only exception is
+    the Ship Cloaking minister: vehicles under it (all of a computer player's, and a human's
+    vehicles under minister control while that minister is on) lower their cloaks for the Attack
+    and raise them again afterwards if they can (spec 05). In the pursuit form only drones
+    decloak, and only when the group attacks at its target (confirmed: binary). The engine
+    differs: it decloaks every member. §6.4 said otherwise and is corrected. Also in the pursuit
+    form, only a group holding a drone that pursues an object in that sector attacks at all
+    (§8). A group of other vehicles that has reached its target's sector just waits there and
+    spends neither MP nor supply (confirmed: binary). The engine differs here too: it spends
+    1 MP and one move's supply on every such action.
+70. **Colonies "seen" (§6.2, §6.4, §8):** **Answer:** "seen" is the detection rule of spec 01
+    §6.3 applied to the colony's planet, the same test as for a ship. Its owner always sees
+    it. Any other empire sees it only when it has explored the system and its sensor level
+    there, in some sight type, reaches the planet's obscuration: 1, or the colony's cloak levels
+    while the colony is cloaked, raised by the sector's and the system's obscuration (spec 01
+    §6.2). With no sensor source in the system (and no partner's sensors there and no
+    omnipresent view, spec 01 §6.1, §6.5), no colony is seen, even one shown on the map from
+    memory (confirmed: binary). The engine differs: it counts a planet that nothing obscures as
+    seen by every empire that has explored the system, sensors or not. The battle check remains
+    combat's own (spec 04 §19 Q74).
+71. **The turn-based Attack as one order (§8):** **Answer:** the original stores two orders: a
+    Move To the sector the target was in when the order was given (added even when the group is
+    already there, where it completes at once) and an Attack. The stored Attack names no target
+    and checks no place: it attacks wherever the group stands when it runs (confirmed: binary).
+    The engine's single order does the same as that pair: the move, its waits and failures,
+    an arrival with no MP left (the Attack is then removed doing nothing), and Repeat. The single
+    order is an OpenSE4 choice. One thing differs: an Attack with no sector recorded should
+    attack where the group stands, not follow its target.
