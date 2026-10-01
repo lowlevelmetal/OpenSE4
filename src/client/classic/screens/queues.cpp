@@ -132,8 +132,11 @@ public:
             status_.draw(ui);
 
             d.beginButtons();
-            for (size_t i = 0; i < kQueueTabLabels.size(); ++i)
+            static constexpr std::array<const char*, 5> kTabIds{{"rate", "usage", "planet-value", "facilities", "cargo"}};
+            for (size_t i = 0; i < kQueueTabLabels.size(); ++i) {
                 if (d.tab(kQueueTabLabels[i], tab_ == static_cast<QueueTab>(i))) tab_ = static_cast<QueueTab>(i);
+                ui.tagTab(kTabIds[i], tab_ == static_cast<QueueTab>(i));
+            }
             d.spacer();
             for (const auto& [kind, label] : kQueueToggles)
                 if (d.tab(label, (shown_ & queueKindBit(kind)) != 0)) shown_ = uint8_t(shown_ ^ queueKindBit(kind));
@@ -552,8 +555,11 @@ public:
 
         d.beginButtons();
         const bool planet = !multi_ && !target_.vehicle.valid();
-        for (const auto& [tab, label] : kBuildTabs)
+        static constexpr std::array<const char*, 4> kBuildTabIds{{"ships", "facilities", "units", "upgrades"}};
+        for (const auto& [tab, label] : kBuildTabs) {
             if (lampButton(d, ui, label, tab_ == tab, tabEnabled(tab, planet))) tab_ = tab;
+            ui.tagTab(kBuildTabIds[static_cast<size_t>(tab)], tab_ == tab);
+        }
         if (lampButton(d, ui, "Only Latest", onlyLatest_, true, "Show only the newest level of each facility and no obsolete designs"))
             onlyLatest_ = !onlyLatest_;
         d.spacer();

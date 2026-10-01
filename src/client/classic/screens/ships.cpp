@@ -87,8 +87,11 @@ public:
                                                                                {ShipsTab::Cargo, "Cargo"},
                                                                                {ShipsTab::Fleet, "Fleet"},
                                                                                {ShipsTab::Maintenance, "Maintenance"}}};
-        for (const auto& [tab, label] : kTabs)
-            if (d.tab(label, tab_ == tab)) tab_ = tab;
+        static constexpr std::array<const char*, 5> kTabIds{{"general", "orders", "cargo", "fleet", "maintenance"}};
+        for (size_t i = 0; i < kTabs.size(); ++i) {
+            if (d.tab(kTabs[i].second, tab_ == kTabs[i].first)) tab_ = kTabs[i].first;
+            ui.tagTab(kTabIds[i], tab_ == kTabs[i].first);
+        }
         d.spacer();
         if (d.check("Show Ships", ships_)) ships_ = !ships_;
         if (d.check("Show Units", units_)) units_ = !units_;

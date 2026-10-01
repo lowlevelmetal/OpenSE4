@@ -23,6 +23,7 @@ std::string oneLine(const std::vector<Block>& blocks) {
 
 LessonProgress::LessonProgress(Lesson lesson, const game::Rules& rules, const game::GameState& state, game::EmpireId empire)
     : lesson_(std::move(lesson)) {
+    tracker_.observe(state, empire);   // who owns what, and the battles already fought, are not the lesson's
     gameMark_ = markNow(rules, state, empire, tracker_);
     stepMarks_.resize(lesson_.steps.size());
     completed_.assign(lesson_.steps.size(), 0);
@@ -36,7 +37,7 @@ LessonProgress::LessonProgress(Lesson lesson, const game::Rules& rules, const ga
 void LessonProgress::enter(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
     step_ = step;
     // A step counts commands, turns and research from the first time it is shown.
-    if (!stepMarks_[step]) stepMarks_[step] = markNow(rules, state, empire, tracker_);
+    if (!stepMarks_[step]) stepMarks_[step] = markNow(rules, state, empire, tracker_, selections_);
 }
 
 void LessonProgress::finish(Result r, std::string why) {
@@ -80,6 +81,7 @@ LessonProgress::Changes LessonProgress::update(const game::Rules& rules, const g
                                                const ClientFacts& client) {
     Changes ch;
     tracker_.observe(state, empire);
+    selections_ = client.selections;
     if (result_ != Result::None) return ch;
 
     if (lesson_.kind == LessonKind::Tutorial) {

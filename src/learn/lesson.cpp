@@ -174,26 +174,35 @@ private:
         }
         c.op = Condition::Op::Fact;
         c.fact = fact->fact;
-        if (fact->text) {
+        if (fact->value == FactValue::Flag) {
+            const auto* b = value.as_boolean();
+            if (!b) {
+                error(value, std::format("'{}' takes true or false", key));
+                return std::nullopt;
+            }
+            c.number = b->get() ? 1 : 0;
+            return c;
+        }
+        if (fact->value == FactValue::Text) {
             const auto* s = value.as_string();
             if (!s) {
                 error(value, std::format("'{}' takes a string", key));
                 return std::nullopt;
             }
             c.text = s->get();
-            bool known = true;
+            const char* what = nullptr;   // the vocabulary the value is not in
             switch (fact->fact) {
-                case Fact::Window: known = findWindow(c.text) != nullptr; break;
-                case Fact::Selected: known = isSelectionKind(c.text); break;
-                case Fact::Command: known = isCommandName(c.text); break;
-                case Fact::Order: known = orderKindFromId(c.text).has_value(); break;
+                case Fact::Window: what = findWindow(c.text) ? nullptr : "window id"; break;
+                case Fact::Selected: what = isSelectionKind(c.text) ? nullptr : "selection kind"; break;
+                case Fact::Command: what = isCommandName(c.text) ? nullptr : "command name"; break;
+                case Fact::Order: what = orderKindFromId(c.text) ? nullptr : "order kind"; break;
+                case Fact::Tab: what = isWindowTab(c.text) ? nullptr : "window tab"; break;
+                case Fact::Option: what = isOptionName(c.text) ? nullptr : "option"; break;
+                case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
                 default: break;
             }
-            if (!known) {
-                error(value, std::format("unknown {} '{}'", fact->fact == Fact::Window ? "window id" : fact->fact == Fact::Selected ? "selection kind"
-                                                              : fact->fact == Fact::Command                     ? "command name"
-                                                                                                                 : "order kind",
-                                         c.text));
+            if (what) {
+                error(value, std::format("unknown {} '{}'", what, c.text));
                 return std::nullopt;
             }
             return c;
@@ -280,7 +289,8 @@ Setup readSetup(Reader& rd, const toml::table& t) {
 
 std::string_view kindName(LessonKind k) { return k == LessonKind::Tutorial ? "tutorial" : "training"; }
 
-void applySetup(const Setup& s, game::GameOptions& o) {
+void applySetup(const Setup& s, game::GameSetup& g) {
+    game::GameOptions& o = g.options;
     if (s.systems) o.systemCount = *s.systems;
     if (!s.quadrant.empty()) o.quadrantType = s.quadrant;
     if (s.quadrantSize) o.quadrantSize = *s.quadrantSize;
@@ -290,11 +300,16 @@ void applySetup(const Setup& s, game::GameOptions& o) {
     if (s.startingResources) o.startingResources = game::Resources{*s.startingResources, *s.startingResources, *s.startingResources};
     if (s.startingPlanets) o.startingPlanets = *s.startingPlanets;
     if (s.events) o.eventFrequency = *s.events;
-    if (s.aiDifficulty) o.aiDifficulty = *s.aiDifficulty;
     if (s.noTacticalCombat) o.noTacticalCombat = *s.noTacticalCombat;
     if (s.allSystemsSeen) o.allSystemsSeen = *s.allSystemsSeen;
     if (s.omnipresent) o.omnipresent = *s.omnipresent;
     if (s.noRuins) o.noRuins = *s.noRuins;
+    if (s.aiDifficulty) {
+        o.aiDifficulty = *s.aiDifficulty;
+        o.randomAiPlayers.assign(g.empires.size(), 0);
+        for (size_t i = 0; i < g.empires.size(); ++i)
+            if (g.empires[i].kind == game::PlayerKind::Computer) o.randomAiPlayers[i] = 1;
+    }
 }
 
 std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, LessonKind kind, std::vector<Diagnostic>& problems) {

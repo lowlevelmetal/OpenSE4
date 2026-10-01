@@ -51,6 +51,9 @@ void stat(UiContext& ui, const char* label, const std::string& value, float colu
 constexpr std::array<const char*, 10> kFilterLabels{
     {"All", "Colonizable", "All Colonies", "Enemy Colonies", "Ally Colonies", "Coloniz\\Empty", "Coloniz\\Breathe", "Ship Enroute", "Asteroids",
      "Special"}};
+// The filters' ids for lessons (learn/ids.hpp windowTabs).
+constexpr std::array<const char*, 10> kFilterIds{{"all", "colonizable", "all-colonies", "enemy-colonies", "ally-colonies", "colonizable-empty",
+                                                  "colonizable-breathable", "ship-enroute", "asteroids", "special"}};
 
 enum PlanetColumn { PcPicture, PcName, PcAtmosphere, PcMinerals, PcOrganics, PcRadioactives, PcEnroute };
 constexpr std::array<ListColumn, 7> kPlanetColumns{
@@ -97,8 +100,14 @@ public:
             status_.draw(ui);
 
             d.beginButtons();
-            for (size_t i = 0; i < kFilterLabels.size(); ++i)
+            ImVec2 filtersMin, filtersMax;
+            for (size_t i = 0; i < kFilterLabels.size(); ++i) {
                 if (d.tab(kFilterLabels[i], filter_ == static_cast<PlanetFilter>(i))) filter_ = static_cast<PlanetFilter>(i);
+                ui.tagTab(kFilterIds[i], filter_ == static_cast<PlanetFilter>(i));
+                if (i == 0) filtersMin = ImGui::GetItemRectMin();
+                filtersMax = ImGui::GetItemRectMax();
+            }
+            ui.tag("planets:filters", filtersMin, filtersMax);
             d.spacer();
             // Stored with the empire when clicked (spec 06 §1.8.1).
             if (d.tab("No Sys To Avoid", noAvoid)) {
@@ -106,6 +115,7 @@ public:
                 o.planetsNoSysToAvoid = !noAvoid;
                 if (!ui.setOptions(o)) status_.fail("The option cannot be changed now.");
             }
+            ui.tagItem("planets:no-sys-to-avoid");
             const bool send = d.button("Send Colony Ship", stats_.available > 0);
             ui.tagItem("planets:send-colony-ship");
             if (send) {
@@ -339,6 +349,9 @@ constexpr std::array<std::pair<ColonyTab, const char*>, 9> kColonyTabs{{
     {ColonyTab::Orders, "Orders"},
 }};
 
+constexpr std::array<const char*, 9> kColonyTabIds{
+    {"general", "value", "production", "facilities", "cargo", "construction", "status", "races", "orders"}};
+
 // Everything a Colonies row shows, computed once per state revision.
 struct ColonyRow {
     game::ObjectId planet;
@@ -396,8 +409,10 @@ public:
             status_.draw(ui);
 
             d.beginButtons();
-            for (const auto& [tab, label] : kColonyTabs)
+            for (const auto& [tab, label] : kColonyTabs) {
                 if (lampButton(d, ui, label, tab_ == tab)) setTab(tab);
+                ui.tagTab(kColonyTabIds[static_cast<size_t>(tab)], tab_ == tab);
+            }
             d.spacer();
             if (d.button("Scrap Facil Types")) scrapTypes_.open(selection_.size() > 1 ? selection_ : std::vector<game::ObjectId>{});
             if (ImGui::IsItemHovered())

@@ -126,18 +126,28 @@ A condition is a table with one key, or `all = [...]` / `any = [...]` / `not = {
 over conditions; a table with several keys needs all of them. Numbers mean "at least",
 so "fewer than" is written with `not` (`not = { colonies = 1 }`: no colony); a count of
 0 always holds and is an error (`turn = 0`, "from the first turn", is allowed). The set is
-fixed in code (`learn/condition.hpp`); an unknown key, window id, command name, order
-kind or kind of selection is a load error that names the file and line.
+fixed in code (`learn/condition.hpp`); an unknown key, or a value outside its key's
+vocabulary (window id, kind of selection, command name, order kind, window tab, option,
+treaty kind), is a load error that names the file and line. A few keys take `true` or
+`false`.
 
 Counters marked "since" count from where the step began (the first time it was shown)
-in a tutorial, and from the start of the game in a training game.
+in a tutorial, and from the start of the game in a training game. `selected` is one of
+them: it holds only for a selection the player made since the step began, so the
+homeworld a game starts with, or a ship selected for an earlier step, does not count
+until the player selects it again.
 
 | Key | Holds when |
 |---|---|
 | `window = "<id>"` | that window is open |
-| `selected = "<kind>"` | the main window has that kind of thing selected (planet, ship, fleet, system, ...) |
+| `tab = "<window>:<tab>"` | an open window shows that tab or filter (`log:combat`, `planets:colonizable`) |
+| `selected = "<kind>"` | since: the player selected that kind of thing in the main window (planet, ship, fleet, system, ...) |
 | `command = "<name>"` | since: the player gave a command of that type |
 | `order = "<kind>"` | since: the player gave a ship, fleet or planet an order of that kind |
+| `design_components = N`, `design_hull_chosen = true` | the open Create Design window's design has N components; the player picked its hull |
+| `simulator_owners = N`, `simulator_items = N` | the open Combat Simulator has items for N races; N items |
+| `option = "<name>"` | that setting of the empire is on (`research-evenly`, `planet-names`, ...; `not` for off) |
+| `treaty = "<kind>"` | the empire holds that treaty with another empire (`war`: is at war with one) |
 | `turn = N` | the game has reached turn N (the first turn is 0) |
 | `turns_passed = N` | since: N turns have ended |
 | `colonies`, `ships`, `bases`, `units`, `fleets`, `designs` `= N` | the player's empire has N of them |
@@ -145,6 +155,7 @@ in a tutorial, and from the start of the game in a training game.
 | `techs_researched = N` | since: N tech levels researched |
 | `systems_explored = N`, `empires_met = N`, `treaties = N` | as named |
 | `enemy_ships_destroyed = N` | since: N enemy ships or bases destroyed in the empire's battles |
+| `planets_captured = N` | since: the empire took N colonies from empires it is hostile to |
 | `score`, `population`, `minerals`, `organics`, `radioactives` `= N` | as named |
 
 The reference section at the end lists the exact keys, values and command names.
@@ -161,13 +172,18 @@ done. Tags are:
   strip, `button:end-turn`, `status:<item>` for the status bar;
 - `panel:system`, `panel:report`, `panel:galaxy` and a few more parts of the main
   window;
-- `<window id>:<widget>` for a few widgets inside windows that lessons need, and
-  `lesson:<button>` for the lesson panel's own (all listed in the reference).
+- `<window id>:<widget>` for a few widgets inside windows that lessons need,
+  `<window id>:<tab>` for the tabs and filters of some windows (the same names `tab`
+  conditions use), and `lesson:<button>` for the lesson panel's own (all listed in
+  the reference). Debug builds log a tag the client registers that the list lacks.
 
 ## The lesson panel
 
-A movable panel, at the bottom left of the system view at first, shows the lesson's
-title, the step (N of M) or the objectives with check marks, and the text.
+A movable panel shows the lesson's title, the step (N of M) or the objectives with check
+marks, and the text. Until the player moves it, it sits over the galaxy panel while
+only the main window shows, and at the bottom left of the system view while a window is
+open, where it hides the least of the classic windows (their buttons are on the right).
+Once dragged, it stays where it was put.
 
 - Tutorials: Back and Next. A step with a `done` condition moves on by itself the
   moment its condition holds (at once if it already holds when it is shown); Next stays
@@ -179,6 +195,8 @@ title, the step (N of M) or the objectives with check marks, and the text.
   and Next through its series. Pages come up at the start of their turn.
 - **Hide** closes the panel; Ctrl+H or the status bar's **T** button re-opens it. A new
   step, page or hint opens it again.
+- Leave Lesson and Start (in the Learn window) ask with a Yes/No box: Y means Yes; N,
+  Esc and Enter mean No (spec 06 §3.4). Esc or Enter in the result box is Keep Playing.
 
 Finishing a lesson or winning a training game shows the result (Next Lesson, Keep
 Playing, Learn); losing one offers Try Again. The Learn window then marks it done.
@@ -216,16 +234,20 @@ opense4 --manual[=<slug>[#<anchor>]]   # open the manual
 opense4 --learn-dir=<dir>        # read the content from this folder only
 ```
 
-They combine with `--screenshot` for headless checks, and `--tutorial` with `--open` to
-show a window over the lesson. `--open=learn[:<tab>]` shows the front end's Learn
-window, and `--open=manual` the manual in a quick game.
+They combine with `--screenshot` for headless checks. With `--tutorial` and
+`--training`, `--turns=N` lets the computer play every empire for N turns first (the
+lesson's counters still start at its first turn), and `--open` shows a window over the
+lesson as with a quick start, `--open=tactical` (and the other battle windows) a sample
+battle, `--open=none` just the main window. `--open=learn[:<tab>]` shows the front end's
+Learn window, and `--open=manual` the manual in a quick game.
 
 ## Tests
 
 A test (`tests/test_learn.cpp`) loads every built-in lesson, training game and manual
 page from `assets/learn` and checks:
 
-- every condition key, command name, order kind and kind of selection is known;
+- every condition key and value (command name, order kind, kind of selection, window
+  tab, option, treaty kind) is known;
 - every manual link (and every `manual` of a step) points at an existing page and
   anchor, every `window:` link at a window that can be opened, every `help:` link at a
   Help tab;
@@ -240,8 +262,8 @@ ids are the ones lessons use.
 
 The code that defines these lists: `src/learn/lesson.cpp` (keys of the files),
 `src/learn/condition.cpp` (condition keys), `src/learn/ids.cpp` (window ids, Help tabs,
-kinds of selection, order kinds, UI tags); the command names come from
-`src/game/commands.hpp`.
+kinds of selection, order kinds, window tabs, options, treaty kinds, UI tags); the
+command names come from `src/game/commands.hpp`.
 
 ### Lesson and training files
 
@@ -279,7 +301,7 @@ set the game options. Keys left out keep the quick start's values.
 | `starting_resources` | of each resource | 20000 |
 | `starting_planets` | 1, 3, 5 or 10 | 1 |
 | `events` | `"none"`, `"low"`, `"medium"`, `"high"` | low |
-| `ai_difficulty` | `"low"`, `"medium"`, `"high"` | medium |
+| `ai_difficulty` | `"low"`, `"medium"`, `"high"`: the level of the lesson's computer empires | medium |
 | `no_tactical_combat` | true or false | false |
 | `all_systems_seen` | true or false | false |
 | `omnipresent` | true or false | false |
@@ -292,9 +314,16 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | Key | Value | Holds when |
 |---|---|---|
 | `window` | a window id | that window is open |
-| `selected` | a kind of selection | the main window has it selected |
+| `tab` | a window tab (below) | an open window shows that tab or filter |
+| `selected` | a kind of selection | since: the player selected it in the main window, and it is still selected |
 | `command` | a command name | since: the player gave a command of that type that the game accepted |
 | `order` | an order kind | since: the player gave a ship, fleet or planet an order of that kind |
+| `design_components` | N | the Create Design window is open and its design has N components |
+| `design_hull_chosen` | true or false | the Create Design window is open and the player picked a hull in its Size list (`false`: has not yet) |
+| `simulator_owners` | N | the Combat Simulator is open and N races ("Owner For Item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
+| `simulator_items` | N | the Combat Simulator is open and the battle has N items |
+| `option` | an option (below) | that setting of the empire is on; write `not = { option = "..." }` for off |
+| `treaty` | a treaty kind (below) | the empire holds that treaty with another empire it has met that is still alive (`war`: is at war with one; `subjugation` and `protectorate` hold for either side) |
 | `turn` | N | the game has reached turn N (the first turn is 0) |
 | `turns_passed` | N | since: N turns have ended (in a turn-based game, game turns) |
 | `colonies` | N | the empire has N colonies |
@@ -311,6 +340,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | `empires_met` | N | it has met N other empires that are still alive |
 | `treaties` | N | it holds N treaties of Non-Aggression or better |
 | `enemy_ships_destroyed` | N | since: N ships or bases of other empires were destroyed in battles it fought (the engine keeps no kill counter, so each battle is counted when the client sees it) |
+| `planets_captured` | N | since: N colonies passed to it from empires it is hostile to (taken by invasion; a colony handed over by a friend does not count) |
 | `score` | N | its score is N |
 | `minerals`, `organics`, `radioactives` | N | it has N of that resource stored |
 
@@ -328,6 +358,41 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 `explore`, `colonize`, `sentry`, `load-cargo`, `drop-cargo`, `launch-units`,
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
 `stellar-manipulation`, `move-to-waypoint`, `self-destruct`.
+
+**Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
+
+| Window | Tabs |
+|---|---|
+| `planets` (its filters) | `all`, `colonizable`, `all-colonies`, `enemy-colonies`, `ally-colonies`, `colonizable-empty`, `colonizable-breathable`, `ship-enroute`, `asteroids`, `special` |
+| `colonies` | `general`, `value`, `production`, `facilities`, `cargo`, `construction`, `status`, `races`, `orders` |
+| `ships` | `general`, `orders`, `cargo`, `fleet`, `maintenance` |
+| `designs` | `ship-designs`, `unit-designs`, `enemy-ship-designs`, `enemy-unit-designs` |
+| `queues` | `rate`, `usage`, `planet-value`, `facilities`, `cargo` |
+| `set-queue` | `ships`, `facilities`, `units`, `upgrades` |
+| `tech-tree` | `tech-areas`, `tech-levels` |
+| `empires` | `treaty`, `trade`, `tariff` (none while Borders is on) |
+| `log` (its categories) | `all`, `construction`, `research`, `intelligence`, `events`, `politics`, `combat`, `misc` |
+| `combat-simulator` | `tactical`, `strategic` |
+
+**Options** (`option`), the empire's on/off settings:
+
+- the Research and Intelligence windows: `research-evenly` (Divide Pts Evenly),
+  `research-repeat`, `intel-evenly`, `intel-repeat`;
+- movement and colonization: `avoid-tagged-minefields`, `avoid-restricted-systems`,
+  `choose-colony-type`;
+- the Empire Options window: `show-log-at-turn-start`, `confirm-end-turn`,
+  `confirm-scrap`, `confirm-stellar-manipulation`, `confirm-delete-research`,
+  `confirm-delete-intel`, `confirm-delete-first-queue-item`, `note-similar-abilities`,
+  `skip-under-construction`, `skip-damaged`, `stop-once-per-location`,
+  `skip-in-fleets`, `warp-point-names`, `planet-names`, `colonizable-markers`,
+  `system-grid`, `coordinate-location`, `galaxy-grid-lines`, `galaxy-warp-lines`,
+  `latest-construction-only`, `latest-components-only`, `auto-claim-colonized`;
+- what windows remember: `planets-no-sys-to-avoid`, `simulator-no-obsolete`,
+  `replay-animate`, `replay-fast`, `replay-view-rect`, `replay-grid`.
+
+**Treaty kinds** (`treaty`): `war`, `non-intercourse`, `non-aggression`,
+`subjugation`, `protectorate`, `trade-alliance`, `trade-research-alliance`,
+`military-alliance`, `partnership`.
 
 ### Command names
 
@@ -402,11 +467,19 @@ the Weapons Report.
 | `create-design:on-design`, `create-design:components` | the components on the design, those that can be added |
 | `create-design:warnings`, `create-design:save` | the problems box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
-| `combat-simulator:begin` | the Combat Simulator's Begin |
+| `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list, the Items list (a click adds the item for the chosen race), the Owner For Item list (Race 1 to Race 10) |
+| `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |
+| `tactical-combat:map`, `tactical-combat:piece`, `tactical-combat:target` | Tactical Combat: the battle map, the selected piece's panel, the target's panel |
+| `tactical-combat:weapons` | the selected piece's weapon list (a click switches a weapon on or off) |
+| `tactical-combat:options`, `tactical-combat:orders`, `tactical-combat:auto`, `tactical-combat:end-turn` | its Options, Orders and Auto buttons, and Begin (End Turn once the battle has begun) |
 | `planets:list`, `planets:send-colony-ship` | Planets: the list, Send Colony Ship |
+| `planets:filters`, `planets:no-sys-to-avoid` | the Planets filters (each one is `planets:<filter>`, above), No Sys To Avoid |
 | `colonies:list`, `colonies:queue` | Colonies: the list, Constr. Queue |
-| `log:messages` | the Log's messages |
-| `empires:list` | the Empires window's empires |
+| `research:divide-evenly`, `research:repeat` | Research: Divide Pts Evenly, Repeat Projects |
+| `log:messages`, `log:categories`, `log:send-reply` | the Log's messages, its category buttons (All to Misc; each one is `log:<category>`, above), Send Reply |
+| `empires:list`, `empires:intelligence` | the Empires window's empires, its Intelligence button |
+| `communicate:message-type`, `communicate:treaty`, `communicate:send` | Communicate: the Message Type list, the treaty list (for treaty messages), Send Message |
+| `<window>:<tab>` | a tab or filter button of the windows above (window tabs) |
 | `help:tabs` | the Help window's tabs |
 | `lesson:panel`, `lesson:next`, `lesson:read-more` | the lesson panel, its Next and Read More |
 
@@ -419,5 +492,6 @@ Order strip ids (`order:<id>`): `move-to`, `warp`, `move-to-waypoint`, `colonize
 `abandon-planet`, `convert-resources`, `minister`, `replay-play`, `replay-ship`,
 `replay-step`, `replay-rewind`.
 
-To add a tag: tag the item in the client (`ui.tagItem("<tag>")` after it, or
-`ui.tagFrame` with a frame rectangle) and list it in `src/learn/ids.cpp`.
+To add a tag: tag the item in the client (`ui.tagItem("<tag>")` after it, `ui.tagFrame`
+with a frame rectangle, or `ui.tagTab("<tab>", shown)` after a tab button) and list it in
+`src/learn/ids.cpp`.

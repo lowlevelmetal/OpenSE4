@@ -129,14 +129,13 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             error = *problem;
             return nullptr;
         }
+        // Automation, as with a quick start: the computer plays every empire
+        // for a while, then a window (or a sample battle) opens.
+        mode->session_->simulateTurns(options.autoTurns);
         if (step > 0) mode->lesson_->jumpTo(*mode->ui_, step);
-        if (!options.openWindow.empty()) {
-            const auto id = screenFromName(options.openWindow);
-            if (!id) {
-                error = std::format("Unknown window '{}'", options.openWindow);
-                return nullptr;
-            }
-            mode->openScreen(*id, {});
+        if (auto problem = mode->openAutomationWindow(options.openWindow)) {
+            error = *problem;
+            return nullptr;
         }
     } else if (options.manual) {
         // --manual[=slug]: the manual on its own.
@@ -168,37 +167,37 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->startGame(std::move(*session));
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
-        if (options.openWindow == "none") {
-            mode->openLogOnTurn_ = false;  // automation: just the main window
-        } else if (!options.openWindow.empty()) {
-            mode->openLogOnTurn_ = false;  // the requested window stays in front
-            // "window:text" passes the text as the window's argument (e.g. help:hotkeys).
-            const size_t colon = options.openWindow.find(':');
-            const auto id = screenFromName(options.openWindow.substr(0, colon));
-            if (!id) {
-                error = std::format("Unknown window '{}'", options.openWindow);
-                return nullptr;
-            }
-            if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions ||
-                *id == ScreenId::TacticalLaunch || *id == ScreenId::CombatPieceReport || *id == ScreenId::StrategicCombat) {
-                // A sample battle to show: the player's warships against copies of them
-                // (fought by the strategies for Strategic Combat).
-                if (!startDemoSimulation(*mode->ui_, *id != ScreenId::StrategicCombat)) {
-                    error = "No armed ship design to fight a sample battle with.";
-                    return nullptr;
-                }
-                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id, ScreenArgs{.index = 0});
-            } else {
-                ScreenArgs args;
-                if (*id == ScreenId::CombatSimulator) args.text = "demo";
-                if (colon != std::string::npos) args.text = options.openWindow.substr(colon + 1);
-                mode->openScreen(*id, std::move(args));
-            }
+        if (auto problem = mode->openAutomationWindow(options.openWindow)) {
+            error = *problem;
+            return nullptr;
         }
     } else {
         mode->front_ = makeFrontScreen(FrontId::Intro);
     }
     return mode;
+}
+
+std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& name) {
+    if (name.empty()) return std::nullopt;
+    openLogOnTurn_ = false;   // the requested window (or none) stays in front
+    if (name == "none") return std::nullopt;   // just the main window
+    // "window:text" passes the text as the window's argument (e.g. help:hotkeys).
+    const size_t colon = name.find(':');
+    const auto id = screenFromName(name.substr(0, colon));
+    if (!id) return std::format("Unknown window '{}'", name);
+    if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions || *id == ScreenId::TacticalLaunch ||
+        *id == ScreenId::CombatPieceReport || *id == ScreenId::StrategicCombat) {
+        // A sample battle to show: the player's warships against copies of them
+        // (fought by the strategies for Strategic Combat).
+        if (!startDemoSimulation(*ui_, *id != ScreenId::StrategicCombat)) return std::string("No armed ship design to fight a sample battle with.");
+        if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) ui_->open(*id, ScreenArgs{.index = 0});
+        return std::nullopt;
+    }
+    ScreenArgs args;
+    if (*id == ScreenId::CombatSimulator) args.text = "demo";
+    if (colon != std::string::npos) args.text = name.substr(colon + 1);
+    openScreen(*id, std::move(args));
+    return std::nullopt;
 }
 
 ClassicMode::~ClassicMode() {
@@ -256,7 +255,7 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
             }
     }
     game::GameSetup setup = quickStartSetup(*rules_, race, lesson->setup.seed.value_or(options_.seed), lesson->setup.computerPlayers);
-    learn::applySetup(lesson->setup, setup.options);
+    learn::applySetup(lesson->setup, setup);
     auto session = startLocalGame(rules_, setup);
     if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
     startGame(std::move(*session));
@@ -291,9 +290,10 @@ void ClassicMode::updateLesson(UiContext& ui) {
     ui.requests.toggleLessonPanel = false;
     if (!lesson_) return;
     if (toggle || keys.pressed(Action::LessonText)) lesson_->togglePanel();
-    learn::ClientFacts facts;
+    learn::ClientFacts facts = std::move(ui.facts);   // what the windows told this frame
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
     facts.selected = main_.selectionKinds(ui);
+    facts.selections = main_.selections();
     lesson_->frame(ui, facts);
 }
 
@@ -407,6 +407,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.time = fs.time;
     ui.dt = fs.dt;
     ui.tags.clear();
+    ui.facts = {};
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
 
@@ -555,9 +556,9 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::SetNextWindowPos(ui.at({312, 320}));
         ImGui::SetNextWindowSize(ui.size({400, 0}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-        ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
         ImGui::TextWrapped("%s", lessonError_.c_str());
-        if (ImGui::Button("OK", ui.size({120, 26}))) lessonError_.clear();
+        if (ImGui::Button("OK", ui.size({120, 26})) || okKey()) lessonError_.clear();   // a message box: Esc or Enter is OK
         ImGui::End();
         ImGui::PopFont();
     }
