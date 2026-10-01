@@ -363,27 +363,10 @@ private:
         return *yardShips_;
     }
 
-    // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the
-    // start-of-turn AI step resets the reserve to 0 and only a units step
-    // loads it, after its empire's vehicle list. So this empire's vehicle
-    // list applies what the previous empire's units step left in the same
-    // round: the reserve of the last living empire before it, in empire
-    // order, whose Ship Construction minister acts and that has a units
-    // file; 0 for the first, and always 0 in turn-based games, whose
-    // start-of-turn steps come between two players' end-of-turn processing.
-    // An empire without a units file leaves the value as it was (inferred).
-    int64_t unitReserve() const {
-        if (!p_.st.options.simultaneous) return 0;
-        for (size_t j = p_.id.index(); j-- > 0;) {
-            const Empire& o = p_.st.empires[j];
-            if (!o.alive) continue;
-            const bool acts = o.kind != PlayerKind::Human || (ministersActive(p_.st, o.id) && ministerOn(o, Minister::ShipConstruction));
-            if (!acts) continue;
-            const AiProfile& prof = profileFor(p_.r, o);
-            if (prof.unitsFile) return prof.unitReservePercent;
-        }
-        return 0;
-    }
+    // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): what
+    // the turn hands over, the value left by the nearest empire before this
+    // one whose units step ran (ai::unitReserveLeft).
+    int64_t unitReserve() const { return p_.unitReserve; }
 
     // The design an entry builds (spec 05 §7.5, confirmed: binary): first the
     // AI's own buildable design made from the AI_DesignCreation template of

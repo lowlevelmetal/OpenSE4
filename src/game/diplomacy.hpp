@@ -5,6 +5,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -25,13 +26,30 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // treaty, declare war, surrender, grant independence). Expired messages are
 // removed. The turn calls it for the players' messages (spec 05 §8 step 2)
 // and after each computer player's and minister's orders (step 4: their
-// messages take effect as they are sent).
-void deliverMessages(TurnContext& ctx);
-// First contact between every pair of living empires that have not met and
-// that each detect the other in one system (spec 05 §3.1, confirmed: binary),
-// after sight::updateKnowledge. Contact is never lost; only the destruction
-// of an empire (forgetEmpire) ends it.
+// messages take effect as they are sent). Each delivered message is dated
+// `date` (DiplomaticMessage::dated; by default GameState::turn): a
+// simultaneous turn passes the advanced date for step 4.
+void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
+// First contact between every pair of living empires that have not met,
+// that each detect the other in one system and that a warp path links (spec
+// 05 §3.1, confirmed: binary), after sight::updateKnowledge. An empire
+// without colonies makes no contact.
 void updateContacts(TurnContext& ctx);
+// The contact check (spec 05 §3.1, §8 step 7, confirmed: binary), once per
+// game turn in both turn styles, after the design cleanup and before the
+// victory check: each living empire A checks every empire B it has contact
+// with, in empire order. When no colony of B lies in a system warpReach
+// finds from A's colonies, A's side returns to "no contact" (contact off,
+// treaty None), A's intelligence projects against B are removed, and A logs
+// "Contact Lost" (a history line, §3.4). A's anger is unchanged; B's side
+// changes when B is checked.
+void checkContacts(TurnContext& ctx);
+// The systems (per SystemId, 1 = reached) that warp points lead to from the
+// systems holding `e`'s colonies, those systems included: every warp point,
+// known or not, followed in its own direction (spec 05 §3.1).
+std::vector<uint8_t> warpReach(const GameState& s, EmpireId e);
+// Whether a colony of `to` lies in a system warpReach(`from`) finds.
+bool warpLinked(const GameState& s, EmpireId from, EmpireId to);
 // One empire's treaty step (spec 05 §8 end-of-turn step 6, §3.2–§3.3), in
 // this order: the consistency check (two sides that record different
 // treaties both fall to None), a master's view of its subject's designs, the
@@ -54,6 +72,8 @@ void makeContact(TurnContext& ctx, EmpireId a, EmpireId b);
 // The log text of a first contact with `other` (the history file finds the
 // empire by it).
 std::string firstContactText(const GameState& s, EmpireId other);
+// The log text of a contact lost with `other` (likewise).
+std::string contactLostText(const GameState& s, EmpireId other);
 // Declare War (spec 05 §3.4): both sides are at War whatever the treaty was,
 // and both are told. Also used by `Politics - Fake Messages` (§2.3).
 void declareWar(TurnContext& ctx, EmpireId from, EmpireId to);

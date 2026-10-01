@@ -279,6 +279,12 @@ void closeWarpPoint(GameState& s, ObjectId warpPoint);
 // destroyed planet or star (a new nebula or black hole reports the star it
 // consumed, once): what the computer players' anger term 2 counts (spec 05 §7.3).
 bool isDestructiveStellarReport(std::string_view title);
+// The text of a stellar manipulation report, naming the vehicle and the
+// empire responsible; and whether a log entry is a destructive report that
+// names `culprit` (spec 05 §7.3 term 2: each empire present in the system
+// gets the report in its own log).
+std::string stellarReportText(const GameState& s, EmpireId culprit, std::string_view vehicle);
+bool stellarReportNames(const GameState& s, const LogEntry& entry, EmpireId culprit);
 
 // Why this vehicle cannot colonize that planet (empty = it can, ignoring distance).
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet);

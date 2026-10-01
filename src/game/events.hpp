@@ -148,7 +148,6 @@ std::optional<Location> targetLocation(const GameState& s, const Target& t);
 
 struct Outcome {
     bool applied = false;
-    bool silent = false;              // applied, but nobody is told (Planet - Conditions Change)
     int64_t actual = 0;               // the realized amount ([%ActualAmount])
     Tokens tokens;                    // object tokens (vehicle, planet, system, ...)
     std::vector<std::string> report;  // espionage findings for the source

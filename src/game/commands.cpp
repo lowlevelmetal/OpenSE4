@@ -521,6 +521,7 @@ struct Applier {
         const std::string name = newD.name;
         // A design a ship is retrofitted to is no longer a prototype (spec 03 §4.1).
         s.design(c.design).retrofitted = true;
+        s.design(c.design).everBuilt = true;  // what design theft reads (spec 05 §2.3)
         v->design = c.design;
         v->damage = std::move(damage);
         // Movement and supply recomputed and clamped to the new maxima.
@@ -674,6 +675,7 @@ struct Applier {
         current.strategy = d.strategy < std::max<size_t>(1, emp().strategies.size()) ? d.strategy : 0;
         current.obsolete = false;
         current.retrofitted = false;
+        current.everBuilt = false;
         current.createdTurn = s.turn;
         resetDesignStatistics(current);
         for (Empire& other : s.empires) std::erase_if(other.knowledge.seenDesigns, [&](const SeenDesign& x) { return x.design == c.design; });
@@ -743,8 +745,15 @@ struct Applier {
         if (!m.to.valid() || m.to.index() >= s.empires.size() || m.to == e) return R::fail("Invalid recipient");
         if (!emp().relation(m.to).contact) return R::fail("No contact with that empire");
         if (emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
-        if (!s.options.allowGifts && (m.type == MessageType::Gift || m.type == MessageType::Tribute))
-            return R::fail("Gifts are disabled in this game");
+        // The game option limits the message types a player picks; the
+        // answer to a request for a gift or tribute (the computer player's,
+        // spec 05 §7.4, which never reads the option) is always allowed.
+        if (!s.options.allowGifts && (m.type == MessageType::Gift || m.type == MessageType::Tribute)) {
+            const auto request = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& x) { return x.id == m.inReplyTo; });
+            const bool answersRequest = m.inReplyTo.valid() && request != s.messages.end() && request->from == m.to && request->to == e &&
+                                        (request->type == MessageType::DemandGift || request->type == MessageType::DemandTribute);
+            if (!answersRequest) return R::fail("Gifts are disabled in this game");
+        }
         m.id = MessageId{s.nextMessageId++};
         m.from = e;
         m.sentTurn = s.turn;
@@ -790,6 +799,57 @@ struct Applier {
         Relation& rel = emp().relation(c.target);
         if (!rel.contact) return R::fail("No contact with that empire");
         rel.anger = kMaxAnger;
+        return {};
+    }
+
+    R operator()(const cmd::CarryOutDemand& c) {
+        auto it = std::find_if(s.messages.begin(), s.messages.end(), [&](const DiplomaticMessage& m) { return m.id == c.demand; });
+        if (it == s.messages.end() || it->to != e || !it->delivered) return R::fail("No such message");
+        if (it->type < MessageType::DemandRemoveShips || it->type > MessageType::DemandStopAttacks) return R::fail("Not a demand or request");
+        const DiplomaticMessage d = *it;
+        Empire& me = emp();
+        auto addUnique = [](std::vector<SystemId>& list, SystemId sys) {
+            if (sys.valid() && std::find(list.begin(), list.end(), sys) == list.end()) list.push_back(sys);
+        };
+        const SystemId planetSystem = d.planet.valid() && d.planet.index() < s.galaxy.objects.size() ? s.galaxy.object(d.planet).system : SystemId{};
+        // The empire the demand names (a valid other empire), else nothing.
+        Relation* named = d.thirdEmpire.valid() && d.thirdEmpire.index() < me.relations.size() && d.thirdEmpire != e ? &me.relation(d.thirdEmpire)
+                                                                                                                       : nullptr;
+        switch (d.type) {
+            case MessageType::DemandRemoveShips:
+            case MessageType::DemandRemoveColonies: addUnique(me.aiMemory.avoid, d.system); break;
+            case MessageType::DemandLeavePlanet: addUnique(me.aiMemory.avoid, d.system.valid() ? d.system : planetSystem); break;
+            case MessageType::RequestBreakTreaty:
+                if (named) ++named->queuedBreak;
+                break;
+            case MessageType::RequestDeclareWar:
+            case MessageType::RequestSupport:
+                if (named) ++named->queuedWar;
+                break;
+            case MessageType::RequestMakePeace:
+                if (named) ++named->queuedPeace;
+                break;
+            case MessageType::RequestAttackEmpire: addUnique(me.aiMemory.attackSystems, d.system); break;
+            case MessageType::RequestAttackPlanet: addUnique(me.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
+            // A promise about the empire the demand names, not the requester
+            // (spec 05 open question 47). None named: nothing (inferred, spec
+            // 05 open question 51).
+            case MessageType::RequestStopHostilities:
+                if (named) ++named->promises;
+                break;
+            case MessageType::DemandStopEspionage:
+            case MessageType::DemandStopSabotage: std::erase_if(me.intel, [&](const IntelProjectOrder& o) { return o.target == d.from; }); break;
+            default: break;  // stop attacks in a system: nothing
+        }
+        return {};
+    }
+
+    R operator()(const cmd::UseDemandEntry& c) {
+        if (!c.about.valid() || c.about.index() >= emp().relations.size() || c.about == e) return R::fail("Invalid empire");
+        Relation& rel = emp().relation(c.about);
+        int& entries = c.list == cmd::DemandList::War ? rel.queuedWar : c.list == cmd::DemandList::Break ? rel.queuedBreak : rel.queuedPeace;
+        if (entries <= 0) return R::fail("No such entry");
+        --entries;
         return {};
     }
 
@@ -1022,6 +1082,8 @@ OPENSE4_CMD_NAME(OpenVehicleReport)
 OPENSE4_CMD_NAME(QueueReplaceFacility)
 OPENSE4_CMD_NAME(DecideWar)
 OPENSE4_CMD_NAME(SetInterfaceOptions)
+OPENSE4_CMD_NAME(CarryOutDemand)
+OPENSE4_CMD_NAME(UseDemandEntry)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

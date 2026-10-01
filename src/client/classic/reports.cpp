@@ -231,16 +231,18 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
 namespace {
 
 // A human player who opens the report of a foreign vehicle its long-range
-// scanners reach learns the designs the report shows (spec 05 §8 "Design
-// knowledge"): the command is given once a turn, when it would date one
-// (inferred, spec 05 open question 43).
+// scanners reach learns the designs the report dates (spec 05 §8 "Design
+// knowledge", open question 43): the command is given once a turn, when it
+// would date one; in a simultaneous game never for a unit group, whose
+// report does not reach the host.
 void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     if (!me.valid() || me.index() >= s.empires.size() || s.empire(me).kind != game::PlayerKind::Human) return;
     if (ui.session.waitingForOthers() || (ui.session.turnBased() && !ui.session.myTurn())) return;  // no orders now
     if (!game::sight::scannerReaches(ui.rules(), s, me, v)) return;
-    for (game::DesignId d : game::sight::reportDesigns(s, v))
+    if (s.options.simultaneous && game::isUnitType(game::vehicleType(ui.rules(), s, v))) return;
+    for (game::DesignId d : game::sight::reportDesigns(ui.rules(), s, v))
         if (s.design(d).owner != me && game::designSeenTurn(s.empire(me).knowledge, d) != std::optional<uint32_t>(s.turn)) {
             ui.session.issue(game::cmd::OpenVehicleReport{v.id});
             return;

@@ -321,13 +321,13 @@ void io(Ar& ar, IntelProjectOrder& p) {
 template <class Ar>
 void io(Ar& ar, Relation& r) {
     fields(ar, r.contact, r.treaty, r.dominant, r.tradeTurns, r.treatyTurn, r.lastWarTurn, r.anger, r.messageSentThisTurn);
-    fields(ar, r.turnsSinceWar, r.treatyAge, r.agedTreaty, r.promise, r.queuedWar, r.queuedBreak, r.queuedPeace, r.attackedUs,
+    fields(ar, r.turnsSinceWar, r.treatyAge, r.agedTreaty, r.promises, r.queuedWar, r.queuedBreak, r.queuedPeace, r.attackedUs,
            r.spiedOnUs, r.attackedIn, r.combatsThisTurn, r.combatsLastTurn);
 }
 
 template <class Ar>
 void io(Ar& ar, AiMemory& m) {
-    fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield);
+    fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield, m.designsFought);
 }
 
 template <class Ar> void io(Ar& ar, PoliticsMark& m) { fields(ar, m.set, m.turn, m.battles, m.logs, m.nextMessage); }
@@ -375,7 +375,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
     fields(ar, e.intel, e.intelEvenly, e.repeatIntel, e.intelPool);
     fields(ar, e.relations, e.knowledge);
-    fields(ar, e.homeSystem, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
+    fields(ar, e.homeSystem, e.homeSector, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
@@ -410,7 +410,7 @@ template <class Ar>
 void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
            d.enemyTonnageDestroyed);
-    fields(ar, d.templateName);
+    fields(ar, d.templateName, d.everBuilt);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
@@ -438,7 +438,7 @@ void io(Ar& ar, PackageItem& p) {
 template <class Ar>
 void io(Ar& ar, DiplomaticMessage& m) {
     fields(ar, m.id, m.from, m.to, m.sentTurn, m.type, m.tone, m.text, m.treaty, m.offer, m.request, m.thirdEmpire, m.system, m.planet,
-           m.inReplyTo, m.delivered, m.answered);
+           m.inReplyTo, m.delivered, m.answered, m.dated);
 }
 
 // ---- Combat records, events, options --------------------------------------------------------------
@@ -554,6 +554,8 @@ template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message)
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
 template <class Ar> void io(Ar& ar, cmd::SetInterfaceOptions& c) { fields(ar, c.options); }
+template <class Ar> void io(Ar& ar, cmd::CarryOutDemand& c) { fields(ar, c.demand); }
+template <class Ar> void io(Ar& ar, cmd::UseDemandEntry& c) { fields(ar, c.list, c.about); }
 template <class Ar> void io(Ar& ar, cmd::SetWaypoint& c) { fields(ar, c.slot, c.waypoint); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemFlags& c) { fields(ar, c.system, c.avoid, c.claim); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemNote& c) { fields(ar, c.system, c.note); }

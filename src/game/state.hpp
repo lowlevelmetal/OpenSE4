@@ -78,16 +78,30 @@ struct Relation {
     int turnsSinceWar = 999;    // 0 while at war, +1 each turn otherwise
     int treatyAge = 0;          // turns since the treaty changed (moves between Trade Alliance and better do not count)
     Treaty agedTreaty = Treaty::None;  // the treaty treatyAge was last updated for
-    bool promise = false;       // we accepted their "stop hostile actions" request (-20 anger once)
-    bool queuedWar = false;     // an accepted request asks us to declare war on them
-    bool queuedBreak = false;   // ... to break our treaty with them
-    bool queuedPeace = false;   // ... to make peace with them
+    // The Politics minister's demand lists (spec 05 §7.4 "Demand lists", §7.3
+    // term 8, confirmed: binary), as the number of entries naming that empire
+    // (the lists keep duplicates): each carried-out demand adds one, each
+    // check that gets far enough uses one up, and all are emptied on the
+    // dates that are multiples of 10.
+    int promises = 0;           // promises about them: "stop hostile actions against" them accepted (-20 anger each, one a turn)
+    int queuedWar = 0;          // the war list: "declare war on" or "support against" them accepted
+    int queuedBreak = 0;        // the break list: "break with" them accepted
+    int queuedPeace = 0;        // the peace list: "make peace with" them accepted
     bool attackedUs = false;    // their ships attacked ours or our planets
     bool spiedOnUs = false;     // one of their intelligence operations against us was traced to them
     SystemId attackedIn;        // where they last attacked us
     int combatsThisTurn = 0;    // combats with them in the last processed turn
     int combatsLastTurn = 0;    // ... and in the turn before
 };
+
+// A foreign design an empire knows and the turn it last saw it. Knowledge of
+// a design not seen for more than kDesignMemoryTurns is forgotten in the
+// empire's end-of-turn processing (spec 05 §8 step 12).
+struct SeenDesign {
+    DesignId design;
+    uint32_t turn = 0;
+};
+inline constexpr uint32_t kDesignMemoryTurns = 50;
 
 // A computer player's plans between turns (spec 05 §7.2, §7.4).
 struct AiMemory {
@@ -99,12 +113,18 @@ struct AiMemory {
     std::vector<SystemId> avoid;          // systems we agreed to leave (accepted demands)
     std::vector<SystemId> attackSystems;  // systems an accepted request asked us to attack
     bool metMinefield = false;            // our ships have run into a mine field
+    // Our own designs that fought in a battle, with the turn of the latest
+    // (spec 05 §8 "Design knowledge": every participant dates every piece;
+    // the layers' star-destroyer flag reads it, §7.5). Foreign designs are in
+    // Knowledge::seenDesigns.
+    std::vector<SeenDesign> designsFought;
 };
 
 // Turn-based games: how far an empire's last political step counted (spec 05
 // §7.3 "What it counts"): the game turn it ran in, how many battles
 // (GameState::combats) and log entries of each empire were dated that turn
 // then, and the next message id. The next step counts what came after.
+// Simultaneous games use only the message id (ai::simultaneousWindow).
 struct PoliticsMark {
     bool set = false;
     uint32_t turn = 0;
@@ -158,15 +178,6 @@ struct EconomyReport {
     int64_t research = 0;
     int64_t intelligence = 0;
 };
-
-// A foreign design an empire knows and the turn it last saw it. Knowledge of
-// a design not seen for more than kDesignMemoryTurns is forgotten in the
-// empire's end-of-turn processing (spec 05 §8 step 12).
-struct SeenDesign {
-    DesignId design;
-    uint32_t turn = 0;
-};
-inline constexpr uint32_t kDesignMemoryTurns = 50;
 
 // What an empire knows about the galaxy (spec 01 §6).
 struct Knowledge {
@@ -275,6 +286,11 @@ struct Empire {
     // a capital (Colony::homeworld), so that flag alone does not tell which
     // one is home.
     SystemId homeSystem;
+    // The home planet's sector, recorded with the home system on the same
+    // occasions and never moved either, not even when the empire is
+    // destroyed: with it, the home planet location that High and Catastrophic
+    // events spare (spec 05 §4, open question 42, confirmed: binary).
+    Sector homeSector;
     std::vector<SystemId> claimedSystems;
     std::vector<SystemId> systemsToAvoid;
     std::vector<Location> taggedMinefields;
@@ -486,6 +502,12 @@ struct Design {
     // A ship was retrofitted to it: it is no longer a prototype, even with
     // nothing built (spec 03 §4.1; designIsPrototype, design.hpp).
     bool retrofitted = false;
+    // "Built at least once", what design theft reads (spec 05 §2.3, open
+    // question 41, confirmed: binary): set when a queue completes a vehicle
+    // or unit of it or a ship is retrofitted to it, cleared only when the
+    // design is saved again in the designer (cmd::EditDesign). No statistics
+    // reset clears it, and the starting ships of a new game do not set it.
+    bool everBuilt = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     // There is no kill counter (confirmed: binary).
     int built = 0;
@@ -603,6 +625,13 @@ struct DiplomaticMessage {
     MessageId inReplyTo;
     bool delivered = false;
     bool answered = false;
+    // The date of its political entry in the recipient's log, set at delivery
+    // (spec 05 §7.4 "Answer window", confirmed: binary), as a GameState::turn
+    // number: the unadvanced date for the players' messages of a simultaneous
+    // turn and in turn-based games, the advanced date (turn + 1) for those a
+    // computer player or minister sends during the start-of-turn step of a
+    // simultaneous turn.
+    uint32_t dated = 0;
 };
 
 // ---- Combat records (replays and reports) ----------------------------------------------------

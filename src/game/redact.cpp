@@ -36,6 +36,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         e.historyEvents.clear();
         e.waypoints = {};
         e.homeSystem = {};  // where another empire started is not ours to know
+        e.homeSector = {};
         e.systemsToAvoid.clear();
         e.taggedMinefields.clear();
         e.repairPriorities.clear();

@@ -476,10 +476,12 @@ bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const V
     return false;
 }
 
-std::vector<DesignId> reportDesigns(const GameState& s, const Vehicle& v) {
+std::vector<DesignId> reportDesigns(const Rules& r, const GameState& s, const Vehicle& v) {
     std::vector<DesignId> out;
-    for (const UnitStack& st : groupStacks(v)) insertSorted(out, st.design);
-    for (const UnitStack& u : v.cargo.units) insertSorted(out, u.design);
+    if (isUnitType(vehicleType(r, s, v)))
+        for (const UnitStack& st : groupStacks(v)) insertSorted(out, st.design);
+    else
+        insertSorted(out, v.design);
     std::erase_if(out, [&](DesignId d) { return !d.valid() || d.index() >= s.designs.size(); });
     return out;
 }
@@ -488,8 +490,9 @@ bool learnFromReport(const Rules& r, GameState& s, EmpireId viewer, VehicleId ve
     const Vehicle* v = s.vehicle(vehicle);
     if (!v || !viewer.valid() || viewer.index() >= s.empires.size() || s.empire(viewer).kind != PlayerKind::Human) return false;
     if (!scannerReaches(r, s, viewer, *v)) return false;
+    if (s.options.simultaneous && isUnitType(vehicleType(r, s, *v))) return false;
     bool changed = false;
-    for (DesignId d : reportDesigns(s, *v)) {
+    for (DesignId d : reportDesigns(r, s, *v)) {
         if (s.design(d).owner == viewer) continue;
         changed = changed || designSeenTurn(s.empire(viewer).knowledge, d) != std::optional<uint32_t>(s.turn);
         seeDesign(s.empire(viewer).knowledge, d, s.turn);

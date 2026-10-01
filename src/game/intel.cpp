@@ -127,10 +127,9 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     full.actualAmount = out.actual < 0 ? -out.actual : out.actual;
     std::string suspicion;
     if (rng.range(1, kSuspectRoll) == 1) suspicion = suspectLine(full.sourceEmpireName);
-    // An effect that tells nobody (Planet - Conditions Change) leaves the
-    // victim unaware; the source still hears of its success (inferred, spec 05
-    // open question 39).
-    projectMessages(ctx, p, source, out.silent ? EmpireId{} : target, full, "The operation succeeded.", "A hostile intelligence operation struck us.",
+    // Every successful effect sends the source and the victim their messages,
+    // Planet - Conditions Change included (spec 05 open question 39).
+    projectMessages(ctx, p, source, target, full, "The operation succeeded.", "A hostile intelligence operation struck us.",
                     suspicion, where, rng);
     if (!out.report.empty()) {
         std::string text;

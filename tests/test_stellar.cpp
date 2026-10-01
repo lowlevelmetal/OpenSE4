@@ -4,6 +4,7 @@
 #include "movement_fixture.hpp"
 
 #include "game/economy.hpp"
+#include "game/movement.hpp"
 
 #include <doctest/doctest.h>
 
@@ -91,6 +92,34 @@ TEST_CASE("stellar manipulation: only visible, active ships and bases and coloni
     // The colony type decides Homeworld Lost (spec 02 §2).
     CHECK(hasMood(w.lastMoods, kB, "Homeworld Lost"));
     CHECK(hasMood(w.lastMoods, kB, "Any Planet Lost"));
+}
+
+TEST_CASE("stellar manipulation: a destroyed planet is reported to every empire present, mine fields aside (spec 05 Q44)") {
+    World w(opense4::mvtest::rules(), 3);
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A");
+    w.object(a, ObjectKind::Star, {6, 6});
+    meet(w, Treaty::War);
+    const ObjectId target = w.planet(a, {8, 8});
+    w.colony(target, kB, 500);
+    // C has only a mine field in the system: not present.
+    w.spawn(w.design(kC, "Mine", "Mv Mine Hull", {}), at(a, 1, 1));
+    const VehicleId breaker = w.spawn(w.ship(kA, "Breaker", 3, {"Mv Planet Breaker"}), at(a, 8, 8));
+    w.order(breaker, stellar(StellarAction::DestroyPlanet, target));
+    w.move();
+    REQUIRE(w.s.galaxy.object(target).kind == ObjectKind::Asteroids);
+    auto report = [&](EmpireId e) -> const LogEntry* {
+        for (const LogEntry& l : w.s.empire(e).log)
+            if (movement::isDestructiveStellarReport(l.title)) return &l;
+        return nullptr;
+    };
+    // B's colony was there when it happened: it gets the report naming A.
+    const LogEntry* seen = report(kB);
+    REQUIRE(seen != nullptr);
+    CHECK(movement::stellarReportNames(w.s, *seen, kA));
+    CHECK_FALSE(movement::stellarReportNames(w.s, *seen, kB));
+    REQUIRE(report(kA) != nullptr);
+    CHECK(report(kC) == nullptr);
 }
 
 TEST_CASE("stellar manipulation: Create Planet needs an asteroid field without a colony and names the planet after the planets") {

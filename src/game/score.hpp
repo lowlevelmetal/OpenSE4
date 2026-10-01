@@ -64,36 +64,52 @@ void recordStatistics(TurnContext& ctx, EmpireId e);
 
 // ---- Human players' files (spec 05 §3.4, §5, §8 step 2, confirmed: binary) --------------------
 //
-// At step 2 of a human player's end-of-turn processing the game appends to
-// three plain-text files of that player: statistics, history and a text copy
-// of the log. The engine makes the lines (TurnResult::records); whoever runs
-// the game writes them (the classic client: a folder per game in the user
-// data directory). Fixed-width columns, one record per line.
+// At step 2 of a human player's end-of-turn processing the game writes three
+// plain-text files of that player: statistics and history (appended) and a
+// text copy of the log (rewritten). The engine makes the lines
+// (TurnResult::records); whoever runs the game writes them (the classic
+// client: a folder per game in the user data directory, an OpenSE4 choice,
+// spec 05 open question 40). Fixed-width columns, one record per line.
 struct PlayerRecords {
     EmpireId empire;
     uint32_t turn = 0;  // the turn processed (the first is 0: the files start afresh)
-    // One row per empire whose score the player may see (scoreVisible):
-    // statisticsLine.
+    // Appended: one row per empire whose score the player may see
+    // (scoreVisible), statisticsLine with the date the end-of-turn processing
+    // sees (fileDate).
     std::vector<std::string> statistics;
-    // The entries dated the turn before: treaties accepted, treaties broken
-    // and declarations of war among the political messages the player sent
-    // or received, and the empires destroyed and first contacts of its log
-    // (a surrender is never recorded): historyLine.
+    // Appended, and the file opened only when there is a line: the entries
+    // dated the turn before: treaties accepted, treaties broken and
+    // declarations of war among the political messages the player sent or
+    // received, and the empires destroyed, first contacts and contacts lost
+    // of its log (a surrender is never recorded): historyLine.
     std::vector<std::string> history;
-    // The player's log entries dated the turn before, when `Create Log Text
-    // Files for Players` is on (the default, inferred).
+    // The whole file, rewritten (empty: the file is not written): only when
+    // `Create Log Text Files for Players` is true (off when the key is
+    // missing) and the log is not empty; two header lines, then logLine for
+    // every entry of the log as it stands.
     std::vector<std::string> log;
 };
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e);
+// The date an empire's end-of-turn processing sees, as a GameState::turn
+// number: advanced in a simultaneous game (turn + 1), unadvanced in a
+// turn-based one (spec 05 §5, §8).
+uint32_t fileDate(const GameState& s);
 // "2401.3": the date of a turn number (2400.0 + turn / 10).
 std::string dateText(uint32_t turn);
-// A statistics row: the empire's number (EmpireId + 1), the date and the
-// Score window's columns: score, resources, research, intelligence, tech
-// levels, systems, planets, population, units, ships, bases (widths inferred).
-std::string statisticsLine(EmpireId e, const TurnStats& t);
-// A history row: the date, the other empire's number (0 for none), two flags
-// always 0, and the text.
-std::string historyLine(uint32_t turn, EmpireId other, std::string_view text);
+// A statistics row (spec 05 §5, confirmed: binary): the empire's number
+// (EmpireId + 1) in 5 characters, the date as a whole number of tenths of a
+// year (24001 for 2400.1) in 8, then the Score window's eleven columns in 12
+// each (score, resources, research, intelligence, tech levels, systems,
+// planets, population, units, ships, bases), all right-aligned.
+std::string statisticsLine(EmpireId e, uint32_t date, const TurnStats& t);
+// A history row (spec 05 §3.4, confirmed: binary): the entry's date as tenths
+// in 8 characters, the other empire's number in 5 (0 for none), two flags
+// always 0 in 5 each, a space, then the text.
+std::string historyLine(uint32_t date, EmpireId other, std::string_view text);
+// A line of the log copy (spec 05 §3.4, confirmed: binary): the date as
+// 2400.1 left-aligned in 9 characters, the title padded to 40, then the text
+// with its line breaks turned into spaces.
+std::string logLine(uint32_t date, std::string_view title, std::string_view text);
 // The log text of a destroyed empire's announcement (the history file finds
 // the empire by it).
 std::string destroyedText(const GameState& s, EmpireId gone);

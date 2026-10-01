@@ -10,6 +10,7 @@
 #include "game/turn.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <format>
 #include <map>
 
@@ -237,18 +238,28 @@ int moodReproduction(Mood m) {
 
 // ---- Conditions -------------------------------------------------------------------------------------
 
+namespace {
+
+// The band edges: the 64-bit doubles nearest 0.3, 0.5, 1.0, 1.3 and 1.5
+// (confirmed: binary, spec 02 §2, §13 Q51).
+constexpr Conditions conditionsEdge(int tenths) { return Conditions::of(xmath::Ext(tenths) / xmath::Ext(10)); }
+constexpr Conditions kEdgeHarsh = conditionsEdge(3), kEdgeUnpleasant = conditionsEdge(5), kEdgeMild = conditionsEdge(10),
+                     kEdgeGood = conditionsEdge(13), kEdgeOptimal = conditionsEdge(15);
+static_assert(kEdgeHarsh.bits == std::bit_cast<uint64_t>(0.3) && kEdgeUnpleasant.bits == std::bit_cast<uint64_t>(0.5) &&
+              kEdgeMild.bits == std::bit_cast<uint64_t>(1.0) && kEdgeGood.bits == std::bit_cast<uint64_t>(1.3) &&
+              kEdgeOptimal.bits == std::bit_cast<uint64_t>(1.5));
+
+} // namespace
+
 ConditionsBand conditionsBand(Conditions conditions) {
-    // Edges 0.3, 0.5, 1.0, 1.3 and 1.5 (confirmed: binary). The stored double is
-    // compared with each edge as an x87 constant (inferred, spec 02 §13 Q51), so
-    // a double just below an edge, such as the double nearest 0.3, is in the
-    // band below it.
-    const xmath::Ext c = conditions.value();
-    const auto atLeast = [&](int tenths) { return c >= xmath::Ext(tenths) / xmath::Ext(10); };
-    if (atLeast(15)) return ConditionsBand::Optimal;
-    if (atLeast(13)) return ConditionsBand::Good;
-    if (atLeast(10)) return ConditionsBand::Mild;
-    if (atLeast(5)) return ConditionsBand::Unpleasant;
-    if (atLeast(3)) return ConditionsBand::Harsh;
+    // The stored double is compared exactly with each edge, and a value equal
+    // to an edge is in the band above it (confirmed: binary): the double
+    // nearest 0.3 is Harsh, the double nearest 1.3 Good.
+    if (conditions >= kEdgeOptimal) return ConditionsBand::Optimal;
+    if (conditions >= kEdgeGood) return ConditionsBand::Good;
+    if (conditions >= kEdgeMild) return ConditionsBand::Mild;
+    if (conditions >= kEdgeUnpleasant) return ConditionsBand::Unpleasant;
+    if (conditions >= kEdgeHarsh) return ConditionsBand::Harsh;
     return ConditionsBand::Deadly;
 }
 

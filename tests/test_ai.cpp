@@ -1093,12 +1093,24 @@ MessageId deliver(GameState& s, EmpireId from, EmpireId to, MessageType type, Tr
     return m.id;
 }
 
-// The AI answers messages of this turn or the turn before: the message is
-// dated the turn it is answered in.
+// The date that puts a message in the AI's answer window now (spec 05 §7.4
+// "Answer window"): in a simultaneous game the ministers' date − 2 (a
+// player's message of the turn processed before), in a turn-based game the
+// current date (sent earlier in this game turn).
+uint32_t answerDate(const GameState& s) {
+    const uint32_t date = ai::aiDate(s);
+    if (!s.options.simultaneous) return date;
+    return date >= 2 ? date - 2 : uint32_t{0xffffffffu};
+}
+
+// The message dated so that the AI answers it now.
 GameState datedNow(const GameState& s, MessageId id) {
     GameState g = s;
     for (DiplomaticMessage& m : g.messages)
-        if (m.id == id) m.sentTurn = g.turn;
+        if (m.id == id) {
+            m.sentTurn = g.turn;
+            m.dated = answerDate(g);
+        }
     return g;
 }
 
@@ -1347,47 +1359,178 @@ TEST_CASE("ai: trades are judged on item values") {
     CHECK(trade(900000, 60000) == false);
 }
 
-TEST_CASE("ai: an accepted request is carried out half of the time and queues a war") {
+TEST_CASE("ai: an accepted demand is carried out half of the time, before the reply, even when the reply's pool is empty") {
     TempTree t("request");
     t.write("Ai/Default_AI_Politics.txt",
             "Score Percent To Accept Declare war on empire := 0\nWill Accept From Enemy Declare war on empire := True\n"
             "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    // No `Response ... YES ...` pool (as in the stock files): no Accept Demand reply is ever sent.
+    t.write("Ai/Default_AI_Speech.txt", "Number of Send General Message := 1\nSend General Message 1 := Hello.\n");
     const Rules r{buildEngineRuleset(), t.root};
     GameState s = computerGame(7, 3, 0, 12, r);
     const EmpireId asker{0u}, cpu{1u}, third{2u};
     meet(s, asker, cpu);
     meet(s, cpu, third);
     meet(s, asker, third);
-    bool queued = false;
-    int accepted = 0;
-    for (uint32_t turn = 1; turn < 30 && !queued; ++turn) {
+    int carried = 0, turns = 0;
+    for (uint32_t turn = 1; turn < 41; ++turn) {
         s.turn = turn;
         s.messages.clear();
-        DiplomaticMessage m;
-        m.id = MessageId{s.nextMessageId++};
-        m.from = asker;
-        m.to = cpu;
-        m.type = MessageType::RequestDeclareWar;
-        m.thirdEmpire = third;
-        m.sentTurn = turn;
-        m.delivered = true;
-        s.messages.push_back(m);
-        const auto cmds = ai::planTurn(r, s, cpu);
-        REQUIRE(applyAll(r, s, cpu, cmds).empty());
-        for (const DiplomaticMessage& reply : s.messages) accepted += reply.from == cpu && reply.type == MessageType::AcceptDemand;
-        for (Empire& e : s.empires)
-            for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
-        TurnContext ctx{r, s, {}, {}, {}};
-        ai::updateAnger(ctx);
-        queued = s.empire(cpu).relation(third).queuedWar;
+        const MessageId id = deliver(s, asker, cpu, MessageType::RequestDeclareWar);
+        s.messages.back().thirdEmpire = third;
+        const auto cmds = ai::planTurn(r, datedNow(s, id), cpu);
+        ++turns;
+        bool carriedNow = false;
+        for (const Command& c : cmds) {
+            if (const auto* d = as<cmd::CarryOutDemand>(c); d && d->demand == id) carriedNow = true;
+            if (const auto* a = as<cmd::AnswerMessage>(c)) CHECK(a->message != id);  // the empty pool: no reply
+        }
+        carried += carriedNow;
     }
-    CHECK(accepted > 0);
-    REQUIRE(queued);
-    // The queued war is declared at the next opportunity.
-    bool declared = false;
-    for (const Command& c : ai::planTurn(r, s, cpu))
-        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == third && m->message.type == MessageType::DeclareWar) declared = true;
-    CHECK(declared);
+    CHECK(carried > 0);
+    CHECK(carried < turns);
+    // Carried out: one entry naming the third empire on the war list.
+    GameState g = s;
+    const MessageId id = g.messages.back().id;
+    REQUIRE(apply(r, g, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(g.empire(cpu).relation(third).queuedWar == 1);
+    REQUIRE(apply(r, g, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(g.empire(cpu).relation(third).queuedWar == 2);  // duplicates are kept
+    CHECK_FALSE(apply(r, g, asker, cmd::CarryOutDemand{id}).ok);  // not the recipient
+}
+
+TEST_CASE("ai: demand-list entries are used up one per check, and promises name the empire the demand names") {
+    TempTree t("lists");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 3, 0, 12, r);
+    const EmpireId asker{0u}, cpu{1u}, third{2u};
+    meet(s, asker, cpu);
+    meet(s, cpu, third);
+    for (uint32_t turn = 21; turn < 29; ++turn) {
+        s.turn = turn;
+        // Two war entries: the first check uses one, and the initiative's check
+        // (in either branch) answers yes too: war is declared every time.
+        GameState g = s;
+        g.empire(cpu).relation(third).queuedWar = 2;
+        const auto cmds = ai::planTurn(r, g, cpu);
+        bool declared = false;
+        for (const Command& c : cmds) {
+            if (const auto* m = as<cmd::SendMessage>(c); m && m->message.to == third && m->message.type == MessageType::DeclareWar) declared = true;
+            if (const auto* d = as<cmd::DecideWar>(c); d && d->target == third) declared = true;
+        }
+        CHECK(declared);
+        REQUIRE(applyAll(r, g, cpu, cmds).empty());
+        CHECK(g.empire(cpu).relation(third).queuedWar <= 1);
+        // One entry is always used up, declared or not.
+        GameState one = s;
+        one.empire(cpu).relation(third).queuedWar = 1;
+        REQUIRE(applyAll(r, one, cpu, ai::planTurn(r, one, cpu)).empty());
+        CHECK(one.empire(cpu).relation(third).queuedWar == 0);
+        // A peace entry forces a proposal and is used up even when no treaty
+        // qualifies and nothing is sent.
+        GameState peace = s;
+        peace.empire(cpu).relation(third).queuedPeace = 1;
+        peace.empire(cpu).relation(third).anger = 100;
+        REQUIRE(applyAll(r, peace, cpu, ai::planTurn(r, peace, cpu)).empty());
+        CHECK(peace.empire(cpu).relation(third).queuedPeace == 0);
+    }
+    // A check that stops earlier leaves the entries alone: already at war.
+    s.turn = 21;
+    s.empire(cpu).relation(third).treaty = s.empire(third).relation(cpu).treaty = Treaty::War;
+    s.empire(cpu).relation(third).queuedWar = 1;
+    s.empire(cpu).relation(third).queuedBreak = 1;
+    REQUIRE(applyAll(r, s, cpu, ai::planTurn(r, s, cpu)).empty());
+    CHECK(s.empire(cpu).relation(third).queuedWar == 1);
+    CHECK(s.empire(cpu).relation(third).queuedBreak == 1);
+    // "Stop hostile actions against" an empire: a promise about that empire,
+    // not about the requester (spec 05 open question 47).
+    const MessageId id = deliver(s, asker, cpu, MessageType::RequestStopHostilities);
+    s.messages.back().thirdEmpire = third;
+    REQUIRE(apply(r, s, cpu, cmd::CarryOutDemand{id}).ok);
+    CHECK(s.empire(cpu).relation(third).promises == 1);
+    CHECK(s.empire(cpu).relation(asker).promises == 0);
+}
+
+TEST_CASE("ai: an accepted gift request: concrete items go in, the gifts option is not read, an empty package is a refusal") {
+    TempTree t("giftrequest");
+    t.write("Ai/Default_AI_Politics.txt",
+            "Score Percent To Accept Want a gift := 0\nWill Accept From Enemy Want a gift := True\nGift to Enemy Max Anger := 100\n"
+            "Gift Value Base to Enemy := 1000\nGift Value to Enemy Per Percentage Greater Score := 0\n"
+            "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 2, 0, 10, r);
+    const EmpireId asker{0u}, cpu{1u};
+    meet(s, asker, cpu);
+    s.turn = 30;
+    s.options.allowGifts = false;  // only limits what a human picks
+    s.empire(cpu).stockpile = {5000, 5000, 5000};
+    // A planet the AI does not own is a concrete item it cannot hand over:
+    // it goes in anyway, adding no value; then resources up to the value.
+    PackageItem planet;
+    planet.kind = PackageItem::Kind::Planet;
+    planet.planet = homeworld(s, asker).planet;
+    PackageItem cash;
+    cash.resources = {3000, 0, 0};
+    const MessageId id = deliver(s, asker, cpu, MessageType::DemandGift);
+    s.messages.back().request = {planet, cash};
+    GameState g = datedNow(s, id);
+    const auto cmds = ai::planTurn(r, g, cpu);
+    std::optional<DiplomaticMessage> gift;
+    for (const Command& c : cmds)
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.inReplyTo == id) gift = m->message;
+    REQUIRE(gift);
+    CHECK(gift->type == MessageType::Gift);
+    REQUIRE(gift->offer.size() == 2);
+    CHECK(gift->offer[0].kind == PackageItem::Kind::Planet);
+    CHECK(applyAll(r, g, cpu, cmds).empty());
+    // Accepted, its items move although gifts are off.
+    TurnContext ctx{r, g, {}, {}, {}};
+    diplomacy::deliverMessages(ctx);
+    const MessageId sent = g.messages.back().id;
+    const Resources before = g.empire(asker).stockpile;
+    REQUIRE(apply(r, g, asker, cmd::AnswerMessage{sent, true, {}}).ok);
+    diplomacy::deliverMessages(ctx);
+    CHECK(g.empire(asker).stockpile[Resource::Minerals] == before[Resource::Minerals] + 3000);
+    // A value of 0: the package stays empty and the answer is the General refusal.
+    TempTree t2("giftrequest0");
+    t2.write("Ai/Default_AI_Politics.txt",
+             "Score Percent To Accept Want a gift := 0\nWill Accept From Enemy Want a gift := True\nGift to Enemy Max Anger := 100\n"
+             "Gift Value Base to Enemy := 0\nGift Value to Enemy Per Percentage Greater Score := 0\n"
+             "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r0{buildEngineRuleset(), t2.root};
+    std::optional<DiplomaticMessage> refusal;
+    for (const Command& c : ai::planTurn(r0, datedNow(s, id), cpu))
+        if (const auto* m = as<cmd::SendMessage>(c); m && m->message.inReplyTo == id) refusal = m->message;
+    REQUIRE(refusal);
+    CHECK(refusal->type == MessageType::General);
+}
+
+TEST_CASE("ai: the demand lists are emptied at the start of turns whose date is a multiple of 10") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(7, 2, 0, 10);
+    const EmpireId cpu{1u}, other{0u};
+    auto fill = [&] {
+        Relation& rel = s.empire(cpu).relation(other);
+        rel.queuedWar = rel.queuedBreak = rel.queuedPeace = rel.promises = 2;
+        s.empire(cpu).aiMemory.avoid = {SystemId{0u}};
+        s.empire(cpu).aiMemory.attackSystems = {SystemId{1u}};
+    };
+    TurnContext ctx{r, s, {}, {}, {}};
+    fill();
+    s.turn = 8;  // the ministers see 9
+    ai::updateAiState(ctx, cpu);
+    CHECK(s.empire(cpu).relation(other).queuedWar == 2);
+    s.turn = 9;  // the ministers see 10
+    ai::updateAiState(ctx, cpu);
+    const Relation& rel = s.empire(cpu).relation(other);
+    CHECK(rel.queuedWar == 0);
+    CHECK(rel.queuedBreak == 0);
+    CHECK(rel.queuedPeace == 0);
+    CHECK(rel.promises == 0);
+    CHECK(s.empire(cpu).aiMemory.avoid.empty());
+    CHECK(s.empire(cpu).aiMemory.attackSystems.empty());
 }
 
 TEST_CASE("ai: a furious AI declares war, and the declaration sets anger to 100") {
@@ -1576,16 +1719,86 @@ TEST_CASE("ai: intruders in our territory and a promise change anger") {
     CHECK(std::binary_search(s.empire(a).claimedSystems.begin(), s.empire(a).claimedSystems.end(), home.system));
     // At war: Per Enemy Ship. A promise to stop hostile actions: -20, once.
     s.empire(a).relation(b).treaty = Treaty::War;
-    s.empire(a).relation(b).promise = true;
+    s.empire(a).relation(b).promises = 2;
     s.empire(a).relation(b).anger = 50;
     ai::updateAnger(ctx);
     CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease - 20 + 2 * table.perEnemyShip);
-    CHECK_FALSE(s.empire(a).relation(b).promise);
+    CHECK(s.empire(a).relation(b).promises == 1);
+    // Two promises: -20 on two turns (spec 05 open question 47).
+    s.empire(a).relation(b).anger = 50;
+    ai::updateAnger(ctx);
+    CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease - 20 + 2 * table.perEnemyShip);
+    CHECK(s.empire(a).relation(b).promises == 0);
     // Friends' ships do not count.
     s.empire(a).relation(b).treaty = Treaty::NonAggression;
     s.empire(a).relation(b).anger = 50;
     ai::updateAnger(ctx);
     CHECK(s.empire(a).relation(b).anger == 50 + table.regularDecrease);
+}
+
+TEST_CASE("ai: anger term 2 counts the stellar manipulation reports of the empire's own log (spec 05 Q44)") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 3, 0, 10);
+    const EmpireId a{0u}, b{1u}, c{2u};
+    meet(s, a, b);
+    meet(s, a, c);
+    const auto& table = ai::builtinProfile().anger;
+    s.turn = 1;
+    s.empire(a).relation(b).anger = 50;
+    s.empire(a).relation(c).anger = 50;
+    // A report in our own log naming B; the same report in C's own log does
+    // not count for us.
+    const Location where = locationOf(s.galaxy, homeworld(s, a).planet);
+    const LogEntry entry{s.turn, LogCategory::Events, "Planet Destroyed: Somewhere", movement::stellarReportText(s, b, "Breaker 1"), where, {}};
+    s.empire(a).log.push_back(entry);
+    s.empire(c).log.push_back(entry);
+    TurnContext ctx{r, s, {}, {}, {}};
+    ai::politicalStep(ctx, a, s.turn);
+    const int expected = std::clamp(50 + 2 * table.defendingLost, 0, 100);
+    CHECK(s.empire(a).relation(b).anger == std::max(std::clamp(expected + table.regularDecrease, 0, 100), table.minimum));
+    CHECK(s.empire(a).relation(c).anger == std::max(std::clamp(50 + table.regularDecrease, 0, 100), table.minimum));
+}
+
+TEST_CASE("ai: a simultaneous political step counts the messages delivered since the previous one, step 2's included") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 3, 12, false);
+    const EmpireId human{0u}, cpu{1u}, later{2u};
+    meet(s, human, cpu);
+    meet(s, later, cpu);
+    s.turn = 5;
+    const auto& table = ai::builtinProfile().anger;
+    TurnContext ctx{r, s, {}, {}, {}};
+    // A player's message of this turn's step 2 (dated 5) and a computer
+    // player's message delivered after our previous step (dated 5 too).
+    DiplomaticMessage demand;
+    demand.to = cpu;
+    demand.type = MessageType::DemandTribute;
+    REQUIRE(apply(r, s, human, cmd::SendMessage{demand}).ok);
+    DiplomaticMessage war = demand;
+    war.type = MessageType::DemandSurrender;
+    REQUIRE(apply(r, s, later, cmd::SendMessage{war}).ok);
+    diplomacy::deliverMessages(ctx);
+    s.empire(cpu).relation(human).anger = 30;
+    s.empire(cpu).relation(later).anger = 30;
+    ai::politicalStep(ctx, cpu, ai::simultaneousWindow(s, cpu));
+    ai::recordPoliticalStep(s, cpu);
+    auto expected = [&](int receive) { return std::max(std::clamp(30 + receive + table.regularDecrease, 0, 100), table.minimum); };
+    const int fromHuman = s.empire(cpu).relation(human).anger;
+    CHECK(fromHuman <= expected(table.receive[static_cast<size_t>(MessageType::DemandTribute)]));
+    CHECK(fromHuman >= expected(table.receive[static_cast<size_t>(MessageType::DemandTribute)]) - 10);
+    // Counted once: the next step does not count them again.
+    ++s.turn;
+    s.empire(cpu).relation(human).anger = 30;
+    ai::politicalStep(ctx, cpu, ai::simultaneousWindow(s, cpu));
+    CHECK(s.empire(cpu).relation(human).anger <= expected(0));
+    // Without the delivery-based window, step 2's message was not counted in its own turn.
+    s.turn = 5;
+    s.empire(cpu).politicsMark = PoliticsMark{};
+    s.empire(cpu).relation(human).anger = 30;
+    ai::PoliticalWindow old = ai::simultaneousWindow(s, cpu);
+    old.messagesByDelivery = false;
+    ai::politicalStep(ctx, cpu, old);
+    CHECK(s.empire(cpu).relation(human).anger < fromHuman);
 }
 
 TEST_CASE("ai: the Mega Evil Empire is judged per AI with the strict threshold") {
@@ -1993,9 +2206,15 @@ TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
     CHECK_FALSE(disbanded());
     v.damage[10] = entryStructure(r, s.design(warship), 10);
     CHECK(disbanded());
-    // A ship without a part it needs to operate is unfit too.
+    // A ship without a part it needs to operate is unfit too: no working
+    // bridge, auxiliary control or Master Computer (spec 05 §7.5). Life
+    // support, crew quarters and engines are not checked.
     for (size_t i = 6; i < 11; ++i) v.damage[i] = 0;
     v.damage[1] = entryStructure(r, s.design(warship), 1);  // life support
+    v.damage[3] = entryStructure(r, s.design(warship), 3);  // an engine
+    CHECK_FALSE(disbanded());
+    v.damage[1] = v.damage[3] = 0;
+    v.damage[0] = entryStructure(r, s.design(warship), 0);  // the bridge
     CHECK(disbanded());
 }
 
@@ -2426,15 +2645,18 @@ TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
         m.type = type;
         m.treaty = Treaty::NonAggression;
         m.sentTurn = sent;
+        m.dated = sent;
         m.delivered = true;
         s.messages.push_back(m);
         return m.id;
     };
     // Acknowledgements are marked answered on delivery (they need no answer).
+    // The answer window of a simultaneous turn: messages dated the ministers'
+    // date (6) − 2.
     const MessageId proposal = message(a, b, MessageType::ProposeTreaty, 3);
-    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // too old to reply to now
+    const MessageId stale = message(b, a, MessageType::RefuseTreaty, 1);    // outside the window
     const MessageId chatter = message(b, a, MessageType::General, 4);      // plain chatter gets no reply
-    const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4);
+    const MessageId accepted = message(b, a, MessageType::AcceptTreaty, 4); // the newest in the window
     s.messages.back().inReplyTo = proposal;
     for (DiplomaticMessage& m : s.messages) m.answered = true;
 
@@ -2454,8 +2676,9 @@ TEST_CASE("ai: acknowledgements get a chatter reply from the response pools") {
     CHECK(applyAll(r, s, a, cmds).empty());
     for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != stale);
     for (const DiplomaticMessage& m : s.messages) CHECK(m.inReplyTo != chatter);
-    // Acknowledged once: nothing more next turn.
+    // Acknowledged once: the next turn's window holds nothing from b.
     for (Relation& rel : s.empire(a).relations) rel.messageSentThisTurn = false;
+    ++s.turn;
     CHECK(replies(ai::planTurn(r, s, a)).empty());
 }
 
@@ -2521,6 +2744,34 @@ TEST_CASE("ai: Construction_Units rows fill the cargo of full colonies whose que
         if (each[k] > 0) batch = std::min(batch, rate[k] / each[k]);
     CHECK(q.items[0].count == std::max<int64_t>(1, batch));
     CHECK(p.dropped.empty());
+}
+
+TEST_CASE("ai: the units reserve is what the nearest acting empire's units step left, 0 without a units file") {
+    TempTree t("reserve");
+    t.write("Ai/Default_AI_Construction_Units.txt", "Percentage of Resources To Reserve For Unit Construction := 25\n");
+    const Rules withFile{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 3, 0, 10, withFile);
+    CHECK(ai::unitReserveLeft(withFile, s.empire(EmpireId{0u})) == 25);
+    CHECK(ai::unitReserveLeft(engineRules(), s.empire(EmpireId{0u})) == 0);
+    // An acting empire's units step sets it (to 0 without a units file), an
+    // empire whose ministers do not act leaves it alone.
+    TurnContext ctx{withFile, s, {}, {}, {}};
+    empireEndOfTurn(ctx, EmpireId{0u}, true);
+    CHECK(ctx.unitReserve == 25);
+    GameState g = computerGame(8, 3, 0, 10);
+    TurnContext plain{engineRules(), g, {}, {}, {}};
+    plain.unitReserve = 25;
+    empireEndOfTurn(plain, EmpireId{1u}, false);  // ministers not acting
+    CHECK(plain.unitReserve == 25);
+    empireEndOfTurn(plain, EmpireId{1u}, true);   // acting, no units file
+    CHECK(plain.unitReserve == 0);
+    // A human whose Ship Construction minister is off leaves it alone too.
+    g.empire(EmpireId{2u}).kind = PlayerKind::Human;
+    g.empire(EmpireId{2u}).ministerAll = false;
+    g.empire(EmpireId{2u}).ministers = ministerBit(Minister::Research);
+    plain.unitReserve = 25;
+    empireEndOfTurn(plain, EmpireId{2u}, true);
+    CHECK(plain.unitReserve == 25);
 }
 
 TEST_CASE("ai: a random player's planet type and atmosphere: every pair but a Gas Giant without atmosphere") {
@@ -3468,7 +3719,7 @@ TEST_CASE("ai: trade values of systems, ships and planets") {
     CHECK(ai::detail::tradeItemValue(moth, planet, cpu, human) == 0);  // no longer the giver's
 }
 
-TEST_CASE("ai: only the newest unanswered message is answered, and an empty pool sends nothing") {
+TEST_CASE("ai: only the newest message in the answer window is answered, and an empty pool sends nothing") {
     TempTree t("speechpool");
     t.write("Ai/Default_AI_Speech.txt", "Number of Send Refuse Treaty := 1\nSend Refuse Treaty 1 := No.\n");
     t.write("Ai/Default_AI_Politics.txt", "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
@@ -3491,15 +3742,56 @@ TEST_CASE("ai: only the newest unanswered message is answered, and an empty pool
     }
     REQUIRE(refused);
     CHECK_FALSE(*refused);
-    // A newer General message is the newest: nothing is answered.
+    // A newer General message in the window is the newest: nothing is answered.
     const MessageId chat = deliver(s, asker, cpu, MessageType::General);
     for (uint32_t turn = 60; turn < 70; ++turn) {
         s.turn = turn;
         GameState g = datedNow(s, offer);
         for (DiplomaticMessage& m : g.messages)
-            if (m.id == chat) m.sentTurn = g.turn;
+            if (m.id == chat) m.dated = answerDate(g);
         for (const Command& c : ai::planTurn(r, g, cpu)) CHECK_FALSE((as<cmd::AnswerMessage>(c) && as<cmd::AnswerMessage>(c)->message == offer));
     }
+    // The window (simultaneous): exactly the ministers' date − 2. An older
+    // offer is never answered, a newer one not yet.
+    for (const int shift : {-1, 1}) {
+        s.turn = 60;
+        GameState g = datedNow(s, offer);
+        g.messages.erase(std::remove_if(g.messages.begin(), g.messages.end(), [&](const DiplomaticMessage& m) { return m.id == chat; }),
+                         g.messages.end());
+        for (DiplomaticMessage& m : g.messages)
+            if (m.id == offer) m.dated = static_cast<uint32_t>(static_cast<int>(m.dated) + shift);
+        for (const Command& c : ai::planTurn(r, g, cpu)) CHECK_FALSE((as<cmd::AnswerMessage>(c) && as<cmd::AnswerMessage>(c)->message == offer));
+    }
+}
+
+TEST_CASE("ai: the turn-based answer window holds what the other empire sent since our previous turn") {
+    TempTree t("tbwindow");
+    t.write("Ai/Default_AI_Politics.txt", "Declare War Base Anger Level := 1000\nBreak Treaty Base Anger Level := 1000\nPropose Treaty Percent Chance Per Turn := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(7, 3, 0, 10, r);
+    s.options.simultaneous = false;
+    const EmpireId low{0u}, cpu{1u}, high{2u};
+    meet(s, low, cpu);
+    meet(s, high, cpu);
+    s.turn = 60;  // the ministers' date in a turn-based game
+    s.empire(cpu).relation(low).anger = 0;
+    s.empire(cpu).relation(high).anger = 0;
+    auto answered = [&](EmpireId from, uint32_t dated) {
+        GameState g = s;
+        const MessageId id = deliver(g, from, cpu, MessageType::ProposeTreaty, Treaty::NonAggression);
+        for (DiplomaticMessage& m : g.messages)
+            if (m.id == id) m.dated = dated;
+        for (const Command& c : ai::planTurn(r, g, cpu))
+            if (const auto* a = as<cmd::AnswerMessage>(c); a && a->message == id) return true;
+        return false;
+    };
+    // A lower player number played before us this game turn: only this date.
+    CHECK(answered(low, 60));
+    CHECK_FALSE(answered(low, 59));
+    // A higher one played after us in the game turn before: that date too.
+    CHECK(answered(high, 60));
+    CHECK(answered(high, 59));
+    CHECK_FALSE(answered(high, 58));
 }
 
 TEST_CASE("ai: a vehicle-list entry first looks for a design made from the template of that name") {
@@ -3530,6 +3822,483 @@ TEST_CASE("ai: a vehicle-list entry first looks for a design made from the templ
     ai::detail::Planner q(rules, s, me, ai::detail::Mode::Computer, 3);
     ai::detail::planShips(q);
     CHECK(q.st.colony(homeworld(s, me).planet)->queue.items.empty());
+}
+
+// ---- Spec 05 open question 37: the logistics ministers (confirmed: binary) -----------------------
+
+TEST_CASE("ai: transports deliver only when more than half full, never fall back to loading, and deliver after a load only in the same sector") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(21, 2, 0, 10);
+    const EmpireId me{0u};
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    const Location homeAt = locationOf(s.galaxy, homePlanet);
+    const SystemId homeSys = homeAt.system;
+    const auto spare = freePlanetIn(s, homeSys);
+    REQUIRE(spare);
+    s.galaxy.object(*spare).atmosphere = s.empire(me).race.atmosphere;
+    addColony(s, *spare, me, {{me, 1}});
+    REQUIRE(homeworld(s, me).totalPopulation() >= 1000);
+    const DesignId hauler = addTestDesign(s, r, me, "Hauler", "Test Transport Hull",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay", "Test Cargo Bay"});
+    s.design(hauler).designType = "Population Transport";
+    Vehicle& v = addTestVehicle(s, r, hauler, homeAt);
+    const VehicleId id = v.id;
+    const int capacity = vehicleCargoCapacity(r, s, v);
+    REQUIRE(capacity > 2);
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 5);
+        ai::detail::planTransports(p);
+        return ordersOf(p, id);
+    };
+    // A few people aboard (not more than half full): load here at the
+    // homeworld, then deliver what is aboard to the other colony.
+    v.cargo.population = {{me, 1}};
+    REQUIRE(cargoSpaceUsed(r, s, v.cargo) * 2 <= capacity);
+    auto orders = plan(s);
+    REQUIRE(orders.size() == 3);
+    CHECK(orders[0].kind == OrderKind::LoadCargo);
+    CHECK(orders[1].kind == OrderKind::MoveTo);
+    CHECK(orders[2].kind == OrderKind::DropCargo);
+    CHECK(orders[2].object == *spare);
+    // Empty: the load only; nothing aboard is never delivered.
+    s.vehicle(id)->cargo = {};
+    orders = plan(s);
+    REQUIRE(orders.size() == 1);
+    CHECK(orders[0].kind == OrderKind::LoadCargo);
+    // The source in another sector: a move and the load, no delivery.
+    Location away = homeAt;
+    away.sector = Sector{homeAt.sector.x == 0 ? 1 : 0, homeAt.sector.y};
+    s.vehicle(id)->location = away;
+    s.vehicle(id)->cargo.population = {{me, 1}};
+    orders = plan(s);
+    REQUIRE(orders.size() == 2);
+    CHECK(orders[0].kind == OrderKind::MoveTo);
+    CHECK(orders[1].kind == OrderKind::LoadCargo);
+    // In another system: only a move to the source's sector.
+    const SystemId next = s.galaxy.neighbors(homeSys).front();
+    s.vehicle(id)->location = Location{next, Sector{kSystemCenter, kSystemCenter}};
+    orders = plan(s);
+    REQUIRE(orders.size() == 1);
+    CHECK(orders[0].kind == OrderKind::MoveTo);
+    CHECK(orders[0].location == homeAt);
+    // More than half full with nowhere to deliver: no fall back to loading,
+    // the resupply orders instead (here: home, the depot).
+    s.vehicle(id)->location = homeAt;
+    s.colonies[spare->index()].reset();
+    int64_t each = 1;
+    for (s.vehicle(id)->cargo.population = {{me, each}}; cargoSpaceUsed(r, s, s.vehicle(id)->cargo) * 2 <= capacity;)
+        s.vehicle(id)->cargo.population = {{me, ++each}};
+    orders = plan(s);
+    CHECK(std::none_of(orders.begin(), orders.end(), [](const Order& o) { return o.kind == OrderKind::LoadCargo; }));
+    CHECK(std::none_of(orders.begin(), orders.end(), [](const Order& o) { return o.kind == OrderKind::DropCargo; }));
+}
+
+TEST_CASE("ai: the Repair minister: mothballed ships lose orders and fleet, yards by system then object order, a yard ship is its own yard") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    Location away = homeAt;
+    away.sector = Sector{homeAt.sector.x == 0 ? 1 : 0, homeAt.sector.y};
+    const DesignId warship = addWarship(s, r, me, "Lancer");
+    const VehicleId sleeper = addTestVehicle(s, r, warship, away).id;
+    const VehicleId mate = addTestVehicle(s, r, warship, away).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Pair", {mate, sleeper}}).ok);
+    destroyEntry(r, s, sleeper, "Test Laser");
+    s.vehicle(sleeper)->status = VehicleStatus::Mothballed;
+    s.vehicle(sleeper)->orders = {ai::detail::moveOrder(homeAt)};
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        CHECK_FALSE(p.st.vehicle(sleeper)->fleet.valid());
+        CHECK(ordersOf(p, sleeper).empty());
+    }
+    // A damaged yard ship with a working yard is its own nearest yard: it stays.
+    const DesignId yardShip = addTestDesign(s, r, me, "Tender", "Test Cruiser",
+                                            {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine",
+                                             "Test Yard Module", "Test Laser"});
+    s.design(yardShip).designType = "Attack Ship";
+    const VehicleId tender = addTestVehicle(s, r, yardShip, away).id;
+    destroyEntry(r, s, tender, "Test Laser");
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        CHECK(ordersOf(p, tender).empty());
+    }
+    // Two yards at the same travel distance: the one in the lower-numbered system wins.
+    GameState g = s;
+    for (auto& c : g.colonies)
+        if (c && c->owner == me) std::erase_if(c->facilities, [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
+    exploreEverything(g);
+    g.vehicles.erase(std::remove_if(g.vehicles.begin(), g.vehicles.end(), [&](const Vehicle& x) { return x.id == tender; }), g.vehicles.end());
+    std::vector<SystemId> around = g.galaxy.neighbors(homeAt.system);
+    std::sort(around.begin(), around.end());
+    around.erase(std::unique(around.begin(), around.end()), around.end());
+    if (around.size() >= 2) {
+        const DesignId post = addTestDesign(g, r, me, "Dock", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+        // The yard ships sit on the warp point that leads back home, so both are one jump away.
+        auto backHome = [&](SystemId sys) {
+            for (ObjectId wp : g.galaxy.warpPoints(sys))
+                if (g.galaxy.object(wp).destination.valid() && g.galaxy.object(g.galaxy.object(wp).destination).system == homeAt.system)
+                    return locationOf(g.galaxy, wp);
+            return Location{sys, Sector{kSystemCenter, kSystemCenter}};
+        };
+        const Location high = backHome(around[1]), low = backHome(around[0]);
+        addTestVehicle(g, r, post, high);  // created first: earlier in object order, but a higher system
+        addTestVehicle(g, r, post, low);
+        // A sector of the home system as far from one yard as from the other.
+        std::optional<Location> start;
+        for (int y = 0; y < kSystemSize && !start; ++y)
+            for (int x = 0; x < kSystemSize && !start; ++x) {
+                const Location at{homeAt.system, Sector{x, y}};
+                const auto a = movement::findPath(r, g, me, at, high), b = movement::findPath(r, g, me, at, low);
+                if (a && b && a->length == b->length) start = at;
+            }
+        REQUIRE(start);
+        const VehicleId hurt = addTestVehicle(g, r, warship, *start).id;
+        destroyEntry(r, g, hurt, "Test Laser");
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        REQUIRE(ordersOf(p, hurt).size() == 1);
+        CHECK(ordersOf(p, hurt).front().location == low);
+    }
+}
+
+TEST_CASE("ai: a fleet's supply totals leave out the members with unlimited supply") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (auto& c : rs.components)
+        if (c.name == "Test Engine") c.supplyUsed = 10;
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 10, r);
+    const EmpireId me{0u};
+    researchEverything(r, s.empire(me));
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const Location there{next, Sector{kSystemCenter, kSystemCenter}};
+    const DesignId tanker = addTestDesign(s, r, me, "Tanker", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod"});
+    const DesignId reactor = addTestDesign(s, r, me, "Reactor", "Test Cruiser",
+                                           {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Quantum Reactor"});
+    const VehicleId ship = addTestVehicle(s, r, tanker, there).id;
+    const VehicleId endless = addTestVehicle(s, r, reactor, there).id;
+    REQUIRE(vehicleHasUnlimitedSupply(r, s, *s.vehicle(endless)));
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Pair", {ship, endless}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    const int64_t cost = movement::moveSupplyCost(r, s, *s.vehicle(ship));
+    REQUIRE(cost > 0);
+    // One jump from the depot: 26 moves. The reactor ship's own supply and
+    // cost would lift the fleet above that; only the tanker counts.
+    s.vehicle(ship)->supply = 26 * cost - 1;
+    s.vehicle(endless)->supply = 1'000'000;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+    ai::detail::planRepairAndResupply(p, false);
+    CHECK_FALSE(fleetOrders(p.st, *p.st.fleet(fleet)).empty());
+}
+
+TEST_CASE("ai: a space yard ship counts itself as a yard, and one in a fleet is planned too") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const DesignId yardShip = addTestDesign(s, r, me, "Tender", "Test Cruiser",
+                                            {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Yard Module"});
+    s.design(yardShip).designType = "Space Yard Ship";
+    const Location dock{next, Sector{3, 3}};
+    Vehicle& tender = addTestVehicle(s, r, yardShip, dock);
+    tender.movement = 2;
+    const VehicleId tenderId = tender.id;
+    const DesignId station = addTestDesign(s, r, me, "Post", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    const VehicleId base = addTestVehicle(s, r, station, dock).id;
+    destroyEntry(r, s, base, "Test Laser");
+    const DesignId warship = addWarship(s, r, me, "Escort");
+    const VehicleId escort = addTestVehicle(s, r, warship, dock).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Yard", {tenderId, escort}}).ok);
+    // The base it reached is no longer a target: the yard ship itself is a
+    // yard there. Nothing else to fix: the resupply orders (home).
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+    ai::detail::planSpaceYardShips(p);
+    REQUIRE(ordersOf(p, tenderId).size() == 1);
+    CHECK(ordersOf(p, tenderId).front().location.system == homeAt.system);
+}
+
+// ---- Spec 05 open question 37: Stellar Manipulation (confirmed: binary) ----------------------------
+
+TEST_CASE("ai: an Open Warp Point ship gets the resupply orders while a frontier point is free or when no edge sector is empty") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (const auto& c : std::vector<ruleset::Component>(rs.components))
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Component opener = c;
+            opener.name = "Test Warp Opener";
+            opener.abilities.clear();
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::OpenWarpPointDistance));
+            a.value1 = "100000";
+            opener.abilities.push_back(a);
+            rs.components.push_back(opener);
+        }
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const DesignId opener = addTestDesign(s, r, me, "Opener", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Warp Opener"});
+    s.design(opener).designType = "Open Warp Point";
+    const VehicleId id = addTestVehicle(s, r, opener, Location{next, Sector{kSystemCenter, kSystemCenter}}).id;
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        const bool freePoint = !p.sit.freeFrontier.empty();
+        ai::detail::planStellarManipulation(p);
+        return std::pair{freePoint, ordersOf(p, id)};
+    };
+    // A free frontier point: the resupply orders (home, the depot).
+    {
+        const auto [freePoint, orders] = plan(s);
+        REQUIRE(freePoint);
+        REQUIRE(orders.size() == 1);
+        CHECK(orders.front().kind == OrderKind::MoveTo);
+        CHECK(orders.front().location == homeAt);
+    }
+    // Every system explored but the last; ships of ours head for every
+    // frontier point, so none is free. Every edge sector of every explored
+    // system holds a vehicle: no draw succeeds, and the ship gets the
+    // resupply orders again.
+    const SystemId last{s.galaxy.systems.size() - 1};
+    for (Empire& e : s.empires) {
+        e.knowledge.explored.assign(s.galaxy.systems.size(), 1);
+        e.knowledge.explored[last.index()] = 0;
+        e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 1);
+    }
+    const DesignId marker = addWarship(s, r, me, "Marker");
+    for (size_t i = 0; i + 1 < s.galaxy.systems.size(); ++i)
+        for (ObjectId wp : s.galaxy.warpPoints(SystemId{i}))
+            if (s.galaxy.object(wp).destination.valid() && s.galaxy.object(s.galaxy.object(wp).destination).system == last)
+                addTestVehicle(s, r, marker, homeAt).orders = {ai::detail::moveOrder(locationOf(s.galaxy, wp))};
+    {
+        GameState g = s;
+        for (size_t i = 0; i + 1 < g.galaxy.systems.size(); ++i)
+            for (int k = 0; k < kSystemSize; ++k)
+                for (Sector at : {Sector{k, 0}, Sector{k, kSystemSize - 1}, Sector{0, k}, Sector{kSystemSize - 1, k}})
+                    addTestVehicle(g, r, marker, Location{SystemId{i}, at});
+        const auto [freePoint, orders] = plan(g);
+        REQUIRE_FALSE(freePoint);
+        REQUIRE(orders.size() == 1);
+        CHECK(orders.front().kind == OrderKind::MoveTo);
+        CHECK(orders.front().location.system == homeAt.system);
+    }
+    // With room on the edges: a move to an empty edge sector, then the order.
+    const auto [freePoint, orders] = plan(s);
+    REQUIRE_FALSE(freePoint);
+    REQUIRE_FALSE(orders.empty());
+    const Order& open = orders.back();
+    CHECK(open.kind == OrderKind::StellarManipulation);
+    CHECK(open.amount == static_cast<int>(StellarAction::OpenWarpPoint));
+    const Location at = orders.size() == 2 ? orders.front().location : s.vehicle(id)->location;
+    CHECK((at.sector.x == 0 || at.sector.y == 0 || at.sector.x == kSystemSize - 1 || at.sector.y == kSystemSize - 1));
+}
+
+TEST_CASE("ai: a Destroy Black Hole ship seeks sector 36 of the system and is planned again every turn") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    std::optional<SystemId> hole;
+    for (const StarSystem& sys : s.galaxy.systems)
+        if (sys.id != homeAt.system && !hole) hole = sys.id;
+    REQUIRE(hole);
+    s.galaxy.system(*hole).physicalType = "Black Hole";
+    const DesignId fixer = addTestDesign(s, r, me, "Fixer", "Test Cruiser", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    s.design(fixer).designType = "Destroy Black Hole";
+    const VehicleId id = addTestVehicle(s, r, fixer, homeAt).id;
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        return ordersOf(p, id);
+    };
+    const auto seek = plan(s);
+    REQUIRE(seek.size() == 1);
+    CHECK(seek.front().kind == OrderKind::MoveTo);
+    CHECK(seek.front().location == Location{*hole, Sector{10, 2}});
+    // Still on its way next turn, now inside the system: the order at once.
+    s.vehicle(id)->orders = seek;
+    s.vehicle(id)->location = Location{*hole, Sector{1, 1}};
+    const auto act = plan(s);
+    REQUIRE(act.size() == 1);
+    CHECK(act.front().kind == OrderKind::StellarManipulation);
+    CHECK(act.front().amount == static_cast<int>(StellarAction::DestroyBlackHole));
+}
+
+TEST_CASE("ai: Close Warp Point needs a seen hostile empire where we have no presence; satellites are presence, mines are not") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 12);
+    const EmpireId me{0u}, them{1u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    std::optional<ObjectId> gate;
+    SystemId far;
+    for (ObjectId wp : s.galaxy.warpPoints(homeAt.system)) {
+        const ObjectId dest = s.galaxy.object(wp).destination;
+        if (!dest.valid() || gate) continue;
+        const SystemId sys = s.galaxy.object(dest).system;
+        bool colonized = false;
+        for (ObjectId o : s.galaxy.system(sys).objects) colonized = colonized || s.colony(o) != nullptr;
+        if (!colonized && freePlanetIn(s, sys)) {
+            gate = wp;
+            far = sys;
+        }
+    }
+    REQUIRE(gate);
+    exploreEverything(s);
+    addColony(s, *freePlanetIn(s, far), them, {{them, 100}});
+    const DesignId closer = addTestDesign(s, r, me, "Closer", "Test Cruiser", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    s.design(closer).designType = "Close Warp Point";
+    const VehicleId id = addTestVehicle(s, r, closer, homeAt).id;
+    auto closes = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        const auto orders = ordersOf(p, id);
+        return !orders.empty() && orders.back().kind == OrderKind::StellarManipulation;
+    };
+    // The hostile colony we see in the explored far system is enough (only
+    // the warp points into it qualify, so the pick is ours to check).
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        const auto orders = ordersOf(p, id);
+        REQUIRE_FALSE(orders.empty());
+        CHECK(orders.back().kind == OrderKind::StellarManipulation);
+        CHECK(s.galaxy.object(s.galaxy.object(orders.back().object).destination).system != homeAt.system);
+    }
+    // A mine field of ours there is no presence.
+    GameState mined = s;
+    const DesignId mine = addTestDesign(mined, r, me, "Mine", "Test Mine Hull", {});
+    addTestVehicle(mined, r, mine, Location{far, Sector{1, 1}});
+    CHECK(closes(mined));
+    // Every system next to home but this one blocked by our presence, and a
+    // satellite group of ours in this one: no candidate left.
+    GameState watched = s;
+    const DesignId eye = addTestDesign(watched, r, me, "Eye", "Test Satellite Hull", {"Test Satellite Gun"});
+    for (ObjectId wp : watched.galaxy.warpPoints(homeAt.system))
+        if (const ObjectId dest = watched.galaxy.object(wp).destination; dest.valid())
+            addTestVehicle(watched, r, eye, Location{watched.galaxy.object(dest).system, Sector{2, 2}});
+    for (auto& c : watched.colonies)
+        if (c && c->owner == me && c->planet != homeworld(watched, me).planet) c.reset();
+    CHECK_FALSE(closes(watched));
+}
+
+// ---- Spec 05 open question 37: mine and satellite layers (confirmed: binary) ---------------------
+
+TEST_CASE("ai: layer weights add up over the empires in the far system; the cap counts only the layer's kind") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.settings.set("Maximum Mines Per Player Per Sector", "5");
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(13, 3, 0, 12, r);
+    const EmpireId me{0u}, war{1u}, stranger{2u};
+    meet(s, me, war);
+    s.empire(me).relation(war).treaty = s.empire(war).relation(me).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Clear every other empire out of the systems next to home, then put a
+    // ship of each of the other two beyond one gate.
+    const ObjectId gate = s.galaxy.warpPoints(home.system).front();
+    const SystemId far = s.galaxy.object(s.galaxy.object(gate).destination).system;
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner != me; });
+    for (auto& c : s.colonies)
+        if (c && c->owner != me && s.galaxy.object(c->planet).system != s.galaxy.object(homeworld(s, war).planet).system &&
+            s.galaxy.object(c->planet).system != s.galaxy.object(homeworld(s, stranger).planet).system)
+            c.reset();
+    for (EmpireId x : {war, stranger}) {
+        const SystemId theirs = s.galaxy.object(homeworld(s, x).planet).system;
+        REQUIRE(theirs != far);
+        for (SystemId nb : s.galaxy.neighbors(home.system)) REQUIRE(nb != theirs);
+    }
+    addTestVehicle(s, r, addWarship(s, r, war, "Raider"), Location{far, Sector{4, 4}});
+    addTestVehicle(s, r, addWarship(s, r, stranger, "Visitor"), Location{far, Sector{5, 5}});
+    auto weights = [&](const GameState& g, bool mines) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 3);
+        return ai::detail::layerCandidates(p, mines);
+    };
+    const Location at = locationOf(s.galaxy, gate);
+    auto weightAt = [&](const std::vector<std::pair<Location, int>>& list) {
+        int w = 0;
+        for (const auto& [where, weight] : list)
+            if (where == at) w += weight;
+        return w;
+    };
+    // Mines: 7 at war + 4 for the stranger (not met: hostile); satellites 2 + 2.
+    CHECK(weightAt(weights(s, true)) == 11);
+    CHECK(weightAt(weights(s, false)) == 4);
+    // The cap: our satellites at the far system's sector of the gate's number
+    // do not stop a mine layer, our mines do.
+    const Location capped{far, at.sector};
+    GameState sats = s;
+    addTestVehicle(sats, r, addTestDesign(sats, r, me, "Eye", "Test Satellite Hull", {"Test Satellite Gun"}), capped).count = 5;
+    CHECK(weightAt(weights(sats, true)) == 11);
+    CHECK(weightAt(weights(sats, false)) == 0);
+    GameState mined = s;
+    addTestVehicle(mined, r, addTestDesign(mined, r, me, "Spike", "Test Mine Hull", {}), capped).count = 5;
+    CHECK(weightAt(weights(mined, true)) == 0);
+    CHECK(weightAt(weights(mined, false)) == 4);
+}
+
+TEST_CASE("ai: the layers' star-destroyer flag: dates that are multiples of 20, designs seen within 20 turns, ours included") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (const auto& c : std::vector<ruleset::Component>(rs.components))
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Component nova = c;
+            nova.name = "Test Nova Charge";
+            nova.abilities.clear();
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::CreateNebulae));
+            nova.abilities.push_back(a);
+            rs.components.push_back(nova);
+        }
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 10, r);
+    const EmpireId me{0u}, other{1u};
+    const DesignId theirs = addTestDesign(s, r, other, "Nova", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Nova Charge"});
+    auto flag = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 3);
+        return ai::detail::starDestroyerFlag(p);
+    };
+    s.turn = 39;  // simultaneous: the ministers see date 40
+    REQUIRE(ai::aiDate(s) == 40);
+    CHECK_FALSE(flag(s));
+    seeDesign(s.empire(me).knowledge, theirs, 19);
+    CHECK(flag(s));  // 39 - 19 = 20 turns old: at most 20, still recent
+    s.empire(me).knowledge.seenDesigns.clear();
+    seeDesign(s.empire(me).knowledge, theirs, 18);
+    CHECK_FALSE(flag(s));  // 21 turns old
+    s.empire(me).knowledge.seenDesigns.clear();
+    seeDesign(s.empire(me).knowledge, theirs, 30);
+    CHECK(flag(s));
+    s.turn = 40;  // date 41: not a multiple of 20
+    CHECK_FALSE(flag(s));
+    // Our own design that fought counts too.
+    s.turn = 39;
+    s.empire(me).knowledge.seenDesigns.clear();
+    const DesignId ours = addTestDesign(s, r, me, "Own Nova", "Test Cruiser",
+                                        {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Nova Charge"});
+    CHECK_FALSE(flag(s));
+    s.empire(me).aiMemory.designsFought = {{ours, 35}};
+    CHECK(flag(s));
+    // The AI's memory of the turn dates our designs that fought in a battle.
+    s.empire(me).aiMemory.designsFought.clear();
+    CombatRecord battle;
+    battle.turn = s.turn;
+    battle.participants = {me, other};
+    CombatPiece piece;
+    piece.owner = me;
+    piece.design = ours;
+    battle.pieces = {piece};
+    s.combats = {battle};
+    TurnContext ctx{r, s, {}, {}, {}};
+    ai::rememberAiEvents(ctx);
+    REQUIRE(s.empire(me).aiMemory.designsFought.size() == 1);
+    CHECK(s.empire(me).aiMemory.designsFought.front().design == ours);
+    CHECK(s.empire(me).aiMemory.designsFought.front().turn == s.turn);
+    CHECK(flag(s));
 }
 
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {

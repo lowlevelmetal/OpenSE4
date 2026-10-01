@@ -150,6 +150,20 @@ TEST_CASE("intel: a funded project runs, logs both sides and leaves the queue") 
     CHECK(tgt->text.find("[%") == std::string::npos);
 }
 
+TEST_CASE("intel: Planet - Conditions Change tells the victim like any other effect (spec 05 open question 39)") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    IntelProjectOrder o = order(Effect::PlanetConditionsChange, kB);
+    o.targetPlanet = homeworld(s, kB).planet;
+    s.empire(kA).intel = {o};
+    step(s, kA, 1000);
+    CHECK(s.empire(kA).intel.empty());
+    CHECK(findLog(s, kA, politicsRules().data().intelProjects[projectFor(Effect::PlanetConditionsChange)].name) != nullptr);
+    const LogEntry* tgt = findLog(s, kB, "Probe Hit");
+    REQUIRE(tgt);
+    CHECK(tgt->text.starts_with("Intelligence Minister: They got "));
+}
+
 TEST_CASE("intel: there is no success roll, and the source is named one time in five") {
     int named = 0, runs = 0;
     const GameState base = newPoliticsGame(5);
@@ -395,14 +409,20 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     CHECK(s.empire(kB).stockpile == Resources{0, 19000, 0});
     CHECK(s.empire(kA).stockpile == before + Resources{500, 1000, 0});
 
-    // Ship Designs - Steal: we learn the newest built design we do not know
-    // and they can build; nothing joins our own designs (spec 05 §2.3).
+    // Ship Designs - Steal: we learn the newest design built at least once
+    // (a queue completed one, or a ship was retrofitted to it) that we do not
+    // know and they can build; nothing joins our own designs (spec 05 §2.3,
+    // open question 41). The starting ships do not mark their designs.
     const size_t designs = s.empire(kA).designs.size();
     const size_t allDesigns = s.designs.size();
     std::vector<DesignId> built;
     for (DesignId d : s.empire(kB).designs)
         if (s.design(d).built > 0 && !isUnitType(r.hull(s.design(d).hull).type)) built.push_back(d);
     REQUIRE(built.size() >= 2);
+    CHECK_FALSE(run(s, Effect::ShipDesignsSteal, {}).applied);
+    for (DesignId d : built) s.design(d).everBuilt = true;
+    resetDesignStatistics(s.design(built.front()));  // no statistics reset clears the mark
+    CHECK(s.design(built.front()).everBuilt);
     const DesignId unbuilt = addTestDesign(s, r, kB, "Paper Ship", "Test Frigate", {"Test Bridge"});
     out = run(s, Effect::ShipDesignsSteal, {});
     REQUIRE(out.applied);
@@ -413,7 +433,7 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     CHECK_FALSE(knowsDesign(s.empire(kA).knowledge, unbuilt));
     // The next theft takes the next newest; one they can no longer build is skipped.
     const DesignId cruiser = addTestDesign(s, r, kB, "Big Ship", "Test Cruiser", {"Test Bridge"});
-    s.design(cruiser).built = 1;
+    s.design(cruiser).everBuilt = true;
     s.empire(kB).techLevels[techArea(r, "Test Construction").index()] = 1;  // the cruiser hull needs level 2
     out = run(s, Effect::ShipDesignsSteal, {});
     REQUIRE(out.applied);
@@ -424,7 +444,7 @@ TEST_CASE("intel: theft of technology, resources and designs") {
     const DesignId wasp = addTestDesign(s, r, kB, "Wasp", "Test Fighter Hull", {"Test Fighter Gun", "Test Fighter Engine"});
     s.empire(kB).techLevels = s.empire(kA).techLevels;
     CHECK_FALSE(run(s, Effect::UnitDesignsSteal, {}).applied);
-    s.design(wasp).built = 3;
+    s.design(wasp).everBuilt = true;
     out = run(s, Effect::UnitDesignsSteal, {});
     CHECK(out.applied);
     CHECK(out.tokens.designName == "Wasp");
@@ -575,11 +595,20 @@ TEST_CASE("intel: political operations") {
     };
 
     // Disrupt Trade needs trade between the target and a third empire; its
-    // counter restarts. "Any" draws any third empire; the handler checks.
+    // counter restarts. "Any" draws among the living empires the source has
+    // contact with, other than the source and the target (spec 05 open
+    // question 38); the handler checks the rest.
     Rng rng(2);
     const auto any = effects::pickTarget(r, s, Effect::PoliticsDisruptTrade, target(kB, kA), rng);
     REQUIRE(any.has_value());
     CHECK(any->other == kC);
+    for (const bool destroyed : {false, true}) {
+        GameState g = s;
+        if (destroyed) g.empire(kC).alive = false;
+        else g.empire(kA).relation(kC).contact = false;
+        Rng again(2);
+        CHECK_FALSE(effects::pickTarget(r, g, Effect::PoliticsDisruptTrade, target(kB, kA), again).has_value());
+    }
     CHECK_FALSE(run(s, Effect::PoliticsDisruptTrade, {}).applied);
     // Intercept Messages with nothing to report fails.
     CHECK_FALSE(run(s, Effect::PoliticsInterceptMessages, third(kC)).applied);

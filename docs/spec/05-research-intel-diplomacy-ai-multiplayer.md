@@ -3040,3 +3040,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     "wants war" and "wants to break" once per turn. It must keep counts (or lists) per
     empire, add one per carried-out demand, use one up at each check described above, and
     clear them all on the dates that are multiples of 10.
+50. **When the empires present at a stellar manipulation are taken** (§7.3 term 2): the
+    report goes to every empire with a ship, base, colony, or fighter, satellite or drone
+    group in the system "at that moment". Destroy Planet removes the colony and Destroy Star
+    everything in the system, so it matters whether that moment is before or after the
+    result. OpenSE4 takes the empires present as the manipulation is carried out, before
+    its result removes anything, so the owner of a destroyed colony and the empires whose
+    ships a shockwave destroys are told (inferred). To verify: does the victim of a
+    destroyed planet, with nothing else in the system, count it in its anger?
+51. **A "stop hostile actions against an empire" demand that names no empire** (§7.3
+    term 8, question 47): the promise is about the empire the demand names. A message
+    whose third empire is missing or invalid records no promise in OpenSE4 (inferred).
+    To verify: what the original records when the named empire is missing.

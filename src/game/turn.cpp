@@ -72,7 +72,13 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // Research, Intelligence and the construction ministers. The queues need
     // no refresh of their own: their rates are worked out when they run
     // (inferred).
-    if (ministers) applyCommands(ctx, e, ai::planEconomyStep(r, s, e));
+    // The units reserve the vehicle list applies is what the nearest empire
+    // before it left; in a turn-based game its own start-of-turn step has
+    // just reset it to 0 (spec 05 §7.5 "Units file").
+    if (ministers) {
+        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0));
+        if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
+    }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
     // OpenSE4 keeps every empire's in the save), and for a human player the
     // lines of its statistics, history and log text files (TurnResult::records).
@@ -172,21 +178,25 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 
     // ---- 4. Start of turn, empire by empire: the AI state update, the
     // political step (counting the turn processed before: its battles are
-    // still in GameState::combats), then the ministers that act while orders
-    // are given. The Politics minister acts first and its messages take
+    // still in GameState::combats; and the messages delivered since the
+    // empire's previous step, those of step 2 included), then the ministers
+    // that act while orders are given. The Politics minister acts first and its messages take
     // effect as they are sent, so the other ministers already see the
     // treaties it changed (spec 05 §8 step 4, confirmed: binary).
-    const std::optional<uint32_t> previousTurn = s.turn > 0 ? std::optional<uint32_t>(s.turn - 1) : std::nullopt;
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
         ai::updateAiState(ctx, id);
-        if (controlOf(i) != Control::Absent) ai::politicalStep(ctx, id, previousTurn);
+        if (controlOf(i) != Control::Absent) {
+            ai::politicalStep(ctx, id, ai::simultaneousWindow(s, id));
+            ai::recordPoliticalStep(s, id);
+        }
+        // Messages sent now carry the advanced date (spec 05 §7.4 "Answer window").
         if (ministersPlan(s, id, controlOf(i))) {
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
-            diplomacy::deliverMessages(ctx);
+            diplomacy::deliverMessages(ctx, date);
             applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id));
-            diplomacy::deliverMessages(ctx);
+            diplomacy::deliverMessages(ctx, date);
         }
     }
     ai::recordAiDecisions(ctx);
@@ -213,8 +223,11 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
         score::checkDestruction(ctx, id);
     }
 
-    // ---- 7. Design cleanup when a new year starts.
+    // ---- 7. Design cleanup when a new year starts; then, every turn, the
+    // contact check: empires that no warp path links any more lose contact
+    // (spec 05 §3.1, confirmed: binary).
     if (date % 10 == 0) movement::purgeObsoleteDesigns(ctx);
+    diplomacy::checkContacts(ctx);
 
     // ---- 8. Victory check.
     score::checkVictory(ctx, date);

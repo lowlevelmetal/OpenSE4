@@ -82,13 +82,17 @@ bool isSensorSource(ruleset::VehicleType t);
 // Scanner - System and the target is a ship or base (unit groups are not
 // covered by it).
 bool scannerReaches(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& target);
-// The designs a vehicle's report shows: every design of the group and of the
-// units in its cargo, sorted.
-std::vector<DesignId> reportDesigns(const GameState& s, const Vehicle& v);
+// The designs a vehicle's report dates (spec 05 §8 "Design knowledge", open
+// question 43, confirmed: binary): a ship's or base's own design, never the
+// units in its cargo; every design of a unit group, sorted.
+std::vector<DesignId> reportDesigns(const Rules& r, const GameState& s, const Vehicle& v);
 // A human player opens the report of a foreign vehicle its scanners reach:
-// the designs the report shows are dated as seen this turn. Nothing is
-// learned from scanners otherwise, and computer players never learn this
-// way. True when a date changed (cmd::OpenVehicleReport).
+// the designs the report shows are dated as seen this turn, whatever tab
+// shows. Nothing is learned from scanners otherwise, and computer players
+// never learn this way. In a simultaneous game only ship and base reports
+// reach the host, so a unit group's report dates nothing (OpenSE4 skips it
+// on the player's machine too, where the original dates it until the turn
+// ends). True when a date changed (cmd::OpenVehicleReport).
 bool learnFromReport(const Rules& r, GameState& s, EmpireId viewer, VehicleId vehicle);
 
 // End-of-turn step 12 (spec 05 §8, confirmed: binary): the empire forgets the

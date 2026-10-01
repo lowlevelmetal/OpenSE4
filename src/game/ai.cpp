@@ -857,12 +857,18 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
     return p.report().commands;
 }
 
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e) {
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
+    p.unitReserve = unitReserve;
     p.runEconomy();
     return p.report().commands;
+}
+
+int64_t unitReserveLeft(const Rules& r, const Empire& e) {
+    const AiProfile& prof = profileFor(r, e);
+    return prof.unitsFile ? prof.unitReservePercent : 0;
 }
 
 bool ministersActive(const GameState& s, EmpireId e) {
