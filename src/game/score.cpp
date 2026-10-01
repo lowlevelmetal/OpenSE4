@@ -158,21 +158,36 @@ std::string destroyedText(const GameState& s, EmpireId gone) {
 
 std::string dateText(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
 
-std::string statisticsLine(EmpireId e, const TurnStats& t) {
-    return std::format("{:>5}{:>8}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}", e.value + 1, 24000 + t.turn, t.score,
+uint32_t fileDate(const GameState& s) { return s.options.simultaneous ? s.turn + 1 : s.turn; }
+
+namespace {
+
+// A date as a whole number of tenths of a year: 24001 for 2400.1.
+uint64_t tenths(uint32_t date) { return uint64_t{24000} + date; }
+
+// The date of a log entry as the original dates it: an entry of a
+// simultaneous turn processing is made after the date has advanced (the
+// engine dates it with the unadvanced turn number); in a turn-based game the
+// date never advances during the game turn.
+uint32_t entryDate(const GameState& s, const LogEntry& l) { return s.options.simultaneous ? l.turn + 1 : l.turn; }
+
+} // namespace
+
+std::string statisticsLine(EmpireId e, uint32_t date, const TurnStats& t) {
+    return std::format("{:>5}{:>8}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}{:>12}", e.value + 1, tenths(date), t.score,
                        t.production.total(), t.research, t.intelligence, t.techLevels, t.systems, t.planets, t.population, t.units, t.ships,
                        t.bases);
 }
 
-std::string historyLine(uint32_t turn, EmpireId other, std::string_view text) {
-    return std::format("{:>8}{:>5}{:>5}{:>5} {}", 24000 + turn, other.valid() ? other.value + 1 : 0u, 0, 0, text);
+std::string historyLine(uint32_t date, EmpireId other, std::string_view text) {
+    return std::format("{:>8}{:>5}{:>5}{:>5} {}", tenths(date), other.valid() ? other.value + 1 : 0u, 0, 0, text);
 }
 
-std::string logCopyLine(uint32_t turn, std::string_view title, std::string_view text) {
-    std::string body(text);
-    std::replace(body.begin(), body.end(), '\n', ' ');
-    std::erase(body, '\r');
-    return std::format("{:<9}{:<40}{}", dateText(turn), title, body);
+std::string logLine(uint32_t date, std::string_view title, std::string_view text) {
+    std::string flat(text);
+    std::replace(flat.begin(), flat.end(), '\n', ' ');
+    std::replace(flat.begin(), flat.end(), '\r', ' ');
+    return std::format("{:<9}{:<40}{}", dateText(date), title, flat);
 }
 
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
@@ -180,19 +195,28 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     out.empire = e;
     out.turn = s.turn;
     if (!validEmpire(s, e)) return out;
+    const uint32_t date = fileDate(s);
     // Statistics: every empire whose score the player may see (spec 05 §5).
     for (const Empire& x : s.empires)
-        if (x.alive && scoreVisible(s, e, x.id)) out.statistics.push_back(statisticsLine(x.id, currentStats(r, s, x.id)));
-    if (s.turn == 0) return out;
-    const uint32_t before = s.turn - 1;
-    // History: the political messages of the turn before (spec 05 §3.4).
+        if (x.alive && scoreVisible(s, e, x.id)) out.statistics.push_back(statisticsLine(x.id, date, currentStats(r, s, x.id)));
+    const Empire& me = s.empire(e);
+    // The text copy of the whole log, rewritten (spec 05 §3.4).
+    if (r.settingFlag("Create Log Text Files for Players", false) && !me.log.empty()) {
+        out.log.push_back(std::format("{:<9}{:<40}{}", "Date", "Title", "Text"));
+        out.log.push_back(std::string(78, '-'));  // a rule of 78 dashes (docs/spec/06 §6.1)
+        for (const LogEntry& l : me.log) out.log.push_back(logLine(entryDate(s, l), l.title, l.text));
+    }
+    if (date == 0) return out;
+    const uint32_t before = date - 1;
+    // History: the political messages dated the turn before (spec 05 §3.4),
+    // by the date of their political entry (DiplomaticMessage::dated).
     auto findMessage = [&](MessageId id) -> const DiplomaticMessage* {
         for (const DiplomaticMessage& m : s.messages)
             if (m.id == id) return &m;
         return nullptr;
     };
     for (const DiplomaticMessage& m : s.messages) {
-        if (m.sentTurn != before || (m.from != e && m.to != e)) continue;
+        if (!m.delivered || m.dated != before || (m.from != e && m.to != e)) continue;
         const EmpireId other = m.from == e ? m.to : m.from;
         const DiplomaticMessage* answered = findMessage(m.inReplyTo);
         const bool acceptsTreaty = m.type == MessageType::AcceptTreaty ||
@@ -201,23 +225,21 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
         else if (m.type == MessageType::BreakTreaty) out.history.push_back(historyLine(before, other, "Treaty broken"));
         else if (m.type == MessageType::DeclareWar) out.history.push_back(historyLine(before, other, "War declared"));
     }
-    // ... and the player's own log: empires destroyed and first contacts.
-    const Empire& me = s.empire(e);
+    // ... and the player's own log: empires destroyed, first contacts and
+    // contacts lost (the contact check's lines, spec 05 §3.1; a destruction
+    // writes only its own line).
     for (const LogEntry& l : me.log) {
-        if (l.turn != before) continue;
+        if (entryDate(s, l) != before) continue;
         for (const Empire& x : s.empires) {
             if (x.id == e) continue;
             if (l.title == "Empire Destroyed" && l.text == destroyedText(s, x.id))
                 out.history.push_back(historyLine(before, x.id, std::format("The {} was destroyed", effects::empireFullName(x))));
             else if (l.title == "First Contact" && l.text == diplomacy::firstContactText(s, x.id))
                 out.history.push_back(historyLine(before, x.id, std::format("First contact with the {}", effects::empireFullName(x))));
+            else if (l.title == "Contact Lost" && l.text == diplomacy::contactLostText(s, x.id))
+                out.history.push_back(historyLine(before, x.id, std::format("Lost contact with the {}", effects::empireFullName(x))));
         }
     }
-    // The text copy of the log.
-    if (r.settingFlag("Create Log Text Files for Players", true))
-        for (const LogEntry& l : me.log)
-            if (l.turn == before)
-                out.log.push_back(logCopyLine(l.turn, l.title, l.text));
     return out;
 }
 

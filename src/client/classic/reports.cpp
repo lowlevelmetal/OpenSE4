@@ -1,5 +1,6 @@
 #include "client/classic/reports.hpp"
 
+#include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/status_icons.hpp"
 
 #include "game/combat.hpp"
@@ -239,16 +240,18 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
 namespace {
 
 // A human player who opens the report of a foreign vehicle its long-range
-// scanners reach learns the designs the report shows (spec 05 §8 "Design
-// knowledge"): the command is given once a turn, when it would date one
-// (inferred, spec 05 open question 43).
+// scanners reach learns the designs the report dates (spec 05 §8 "Design
+// knowledge", open question 43): the command is given once a turn, when it
+// would date one; in a simultaneous game never for a unit group, whose
+// report does not reach the host.
 void noteForeignReport(UiContext& ui, const game::Vehicle& v) {
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     if (!me.valid() || me.index() >= s.empires.size() || s.empire(me).kind != game::PlayerKind::Human) return;
     if (ui.session.waitingForOthers() || (ui.session.turnBased() && !ui.session.myTurn())) return;  // no orders now
     if (!game::sight::scannerReaches(ui.rules(), s, me, v)) return;
-    for (game::DesignId d : game::sight::reportDesigns(s, v))
+    if (s.options.simultaneous && game::isUnitType(game::vehicleType(ui.rules(), s, v))) return;
+    for (game::DesignId d : game::sight::reportDesigns(ui.rules(), s, v))
         if (s.design(d).owner != me && game::designSeenTurn(s.empire(me).knowledge, d) != std::optional<uint32_t>(s.turn)) {
             ui.session.issue(game::cmd::OpenVehicleReport{v.id});
             return;
@@ -373,8 +376,9 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
             ImGui::Text("%s%s", v->name.c_str(), id == f.leader ? " (leader)" : "");
         }
     heading(ui, "Orders");
-    if (f.orders.empty()) ImGui::TextColored(kDim, "None");
-    for (const auto& o : f.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
+    const std::vector<game::Order>& orders = game::fleetOrders(s, f);  // the copies its members at its location hold
+    if (orders.empty()) ImGui::TextColored(kDim, "None");
+    for (const auto& o : orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
 }
 
 void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
@@ -456,6 +460,11 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 building = q.kind == game::QueueItem::Kind::Facility  ? r.facility(q.facility).name
                            : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
                                                                       : s.design(q.design).name;
+                // What the item under construction still needs at this turn's rate,
+                // in years as the Construction Queues window shows times (inferred).
+                const game::cmd::QueueTarget target{c->planet, {}};
+                const auto est = estimateQueue(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target));
+                remaining = c->queue.onHold ? std::string("On Hold") : queueYearsText(est.front().turns);
             }
             line("Under Construction", building);
             line("Time Remaining", remaining);

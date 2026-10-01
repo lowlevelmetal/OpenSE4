@@ -72,7 +72,7 @@ The [Intelligence](window:intelligence) window opens from the **Intelligence** b
 - The top shows the points available this turn, the points produced per turn, the points held by your defenses, how many projects run (at most 12) and how points are shared.
 - The left list shows the projects you can start, grouped, with their cost. **Left-click** a project to add it. **Right-click** it to read its description.
 - The right side shows your projects, four at a time. Each slot has a **Remove** button, the target choices and a progress bar.
-- `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window.
+- `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch pages. `Repeat Projects`, `Divide Evenly` and `Reorder Projects` work as in the [Research](research#the-research-queue) window. Divide Evenly is on for a new empire.
 
 ## Intelligence advice
 

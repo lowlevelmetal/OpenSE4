@@ -333,7 +333,7 @@ OrderFacts orderFacts(const game::Rules& r, const game::GameState& s, game::Empi
         const game::Fleet* fleet = s.fleet(*sel.fleet);
         if (fleet && fleet->owner == viewer) {
             f.target = OrderTarget::Fleet;
-            f.hasOrders = !fleet->orders.empty();
+            f.hasOrders = !game::fleetOrders(s, *fleet).empty();
             int speed = fleet->members.empty() ? 0 : 1 << 30;
             for (game::VehicleId id : fleet->members) {
                 const game::Vehicle* v = s.vehicle(id);

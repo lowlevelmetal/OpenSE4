@@ -10,9 +10,10 @@ std::string_view windowId(ScreenId id) {
         "game-menu", "designs", "create-design", "planets", "colonies", "ships", "queues", "set-queue", "research", "tech-tree",
         "empires", "log", "empire-status", "help", "galaxy-map", "empire-options", "ministers", "systems-to-avoid", "waypoints",
         "strategies", "repair-priorities", "fleet-transfer", "cargo-transfer", "launch-recover", "scrap", "view-orders",
-        "select-waypoint", "stellar-manipulation", "rename", "communicate", "intelligence", "treaty-grid", "scores", "comparisons",
-        "history", "race-report", "victory-conditions", "combat-replay", "tactical-combat", "tactical-orders", "tactical-options",
-        "combat-simulator", "strategic-combat", "ground-combat", "save-game", "load-game", "settings", "learn", "manual"};
+        "select-waypoint", "stellar-manipulation", "rename", "abandon-planet", "communicate", "intelligence", "treaty-grid", "scores",
+        "comparisons", "history", "race-report", "victory-conditions", "combat-replay", "tactical-combat", "tactical-orders", "tactical-options",
+        "tactical-launch", "combat-piece-report", "combat-replay-options", "combat-simulator", "strategic-combat", "ground-combat",
+        "save-game", "load-game", "options", "settings", "learn", "manual"};
     static_assert(std::size(kIds) == static_cast<size_t>(ScreenId::Count));
     const auto i = static_cast<size_t>(id);
     return i < std::size(kIds) ? kIds[i] : std::string_view{};

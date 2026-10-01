@@ -5,8 +5,6 @@
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
-#include "client/classic/screens/setup_model.hpp"
-#include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/ai_data.hpp"
 
@@ -196,102 +194,102 @@ private:
 
 // ---- Empire Options --------------------------------------------------------------------------
 
+// The facility marker rows of System Display (spec 06 §1.9), our wording.
+constexpr std::array<const char*, game::kFacilityMarkerGroups> kMarkerRows{{
+    "Markers R / S / Y: resupply depots, spaceports, space yards",
+    "Markers Ca / Cc / Cv: atmosphere, conditions and value changers",
+    "Markers St / Ft: ship and fleet training",
+    "Markers Rc / Rr: component repair, resource reclamation",
+    "Markers Sst / Sft: system-wide ship and fleet training",
+    "Markers Spv / Spc: system-wide value and conditions changes",
+    "Markers Sph / Spa: system-wide happiness and population changes",
+    "Markers Scm / Sdm: system-wide combat and damage modifiers",
+    "Markers Srm / Ssm: system-wide reproduction and shield modifiers",
+    "Markers Spp / Src: system-wide plague prevention, reduced maintenance",
+    "Markers Sbe / Sbi: system-wide bad event and bad intelligence chances",
+    "Marker Slr: system-wide long range scanners",
+}};
+
+// Every row belongs to the empire and is saved with the game (spec 06 §1.9,
+// confirmed: binary): the InterfaceOptions through cmd::SetInterfaceOptions,
+// the colony type picker through cmd::SetEmpireOptions, Ship Movement and
+// Ship Orders through cmd::SetEncounterOptions.
 class EmpireOptionsScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
         Dialog d(ui, "Empire Options", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
-        ClassicSettings& s = settings();
-        d.beginContent();
-        wrappedDim("These switches are kept on this computer and apply to every game played here; the Ship Movement and Ship "
-                   "Orders ones belong to your empire in this game.");
-        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_None);
-        const char* group = nullptr;
-        bool changed = false;
-        bool gameOptionsShown = false;
-        for (const BoolOption& o : boolOptions()) {
-            if (!group || std::string_view(group) != o.group) {
-                if (group) ImGui::Spacing();
-                if (!gameOptionsShown && std::string_view(o.group) == "System Display") {
-                    gameOptions(ui);  // in the window's order: after Next \ Previous
-                    gameOptionsShown = true;
-                    ImGui::Spacing();
-                }
-                group = o.group;
-                heading(ui, group);
-            }
-            changed |= lampToggle(ui, o.label, &(s.*o.member));
-        }
-        if (!gameOptionsShown) {
-            ImGui::Spacing();
-            gameOptions(ui);
-        }
-        ImGui::Spacing();
-        ImGui::SetNextItemWidth(ui.px(260));
-        changed |= ImGui::SliderFloat("Effects volume", &s.soundVolume, 0.0f, 1.0f, "%.2f");
-        ImGui::SetNextItemWidth(ui.px(260));
-        changed |= ImGui::SliderFloat("Music volume", &s.musicVolume, 0.0f, 1.0f, "%.2f");
-        ImGui::EndChild();
-        d.beginButtons();
-        if (d.button("Defaults")) {
-            const ClassicSettings defaults;
-            for (const BoolOption& o : boolOptions()) s.*o.member = defaults.*o.member;
-            s.soundVolume = defaults.soundVolume;
-            s.musicVolume = defaults.musicVolume;
-            changed = true;
-            const game::Empire fresh;  // a new empire's game options
-            const game::Empire& me = ui.me();
-            if (me.avoidTaggedMinefields != fresh.avoidTaggedMinefields || me.avoidRestrictedSystems != fresh.avoidRestrictedSystems ||
-                me.clearOrdersOnEncounter != fresh.clearOrdersOnEncounter)
-                status_.issue(ui, cmd::SetEncounterOptions{fresh.clearOrdersOnEncounter, fresh.avoidTaggedMinefields, fresh.avoidRestrictedSystems});
-            if (me.chooseColonyType != fresh.chooseColonyType) status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = fresh.chooseColonyType});
-        }
-        if (changed) saveSettings();
-        d.close();
-        return d.keepOpen();
-    }
-
-private:
-    // Ship Movement and Ship Orders: kept with the empire in the game (spec 03
-    // §6.2, §6.4); every change is a cmd::SetEncounterOptions.
-    void gameOptions(UiContext& ui) {
         const game::Empire& me = ui.me();
+        game::InterfaceOptions o = ui.options();
+        d.beginContent();
+        ImGui::TextColored(kLabelBlue, "Options In Use");
+        ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        heading(ui, "General Options");
+        lampToggle(ui, "Show the log at the start of each turn", &o.showLogAtTurnStart);
+        lampToggle(ui, "Confirm ending the turn", &o.confirmEndTurn);
+        lampToggle(ui, "Confirm scrapping", &o.confirmScrap);
+        lampToggle(ui, "Confirm stellar manipulation", &o.confirmStellarManipulation);
+        lampToggle(ui, "Confirm deleting a research project", &o.confirmDeleteResearch);
+        lampToggle(ui, "Confirm deleting an intelligence project", &o.confirmDeleteIntel);
+        lampToggle(ui, "Confirm deleting the first item of a construction queue", &o.confirmDeleteFirstQueueItem);
+        bool choose = me.chooseColonyType;
+        if (lampToggle(ui, "Pick the colony type when a colony is founded", &choose))
+            status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = choose});
+        lampToggle(ui, "Note when a similar system-wide ability already exists", &o.noteSimilarAbilities);
+        ImGui::Spacing();
+        heading(ui, "Next / Previous");
+        lampToggle(ui, "Skip ships under construction", &o.skipUnderConstruction);
+        lampToggle(ui, "Skip damaged ships", &o.skipDamaged);
+        lampToggle(ui, "Stop only once per location", &o.stopOncePerLocation);
+        lampToggle(ui, "Skip ships in fleets", &o.skipInFleets);
+        ImGui::Spacing();
         heading(ui, "Ship Movement");
         bool minefields = me.avoidTaggedMinefields;
-        if (lampToggle(ui, "Route around tagged minefields (a mine sweeper may still use their warp points)", &minefields))
-            status_.issue(ui, cmd::SetEncounterOptions{.avoidTaggedMinefields = minefields});
+        if (lampToggle(ui, "Avoid minefields", &minefields)) status_.issue(ui, cmd::SetEncounterOptions{.avoidTaggedMinefields = minefields});
         bool restricted = me.avoidRestrictedSystems;
-        if (lampToggle(ui, "Never route through the systems to avoid", &restricted))
+        if (lampToggle(ui, "Avoid restricted systems", &restricted))
             status_.issue(ui, cmd::SetEncounterOptions{.avoidRestrictedSystems = restricted});
         ImGui::Spacing();
         heading(ui, "Ship Orders");
         const game::EncounterClear clear = me.clearOrdersOnEncounter;
         bool onEnemy = clear != game::EncounterClear::Never;
         bool onAny = clear == game::EncounterClear::Any;
-        if (lampToggle(ui, "Clear orders on warping into a system with enemies", &onEnemy))
+        if (lampToggle(ui, "Clear orders on entering a system with an enemy", &onEnemy))
             status_.issue(ui, cmd::SetEncounterOptions{onEnemy ? game::EncounterClear::Enemy : game::EncounterClear::Never});
-        if (lampToggle(ui, "Clear orders on warping into a system with any other empire", &onAny))
+        if (lampToggle(ui, "Clear orders on entering a system with any other empire", &onAny))
             status_.issue(ui, cmd::SetEncounterOptions{onAny ? game::EncounterClear::Any : game::EncounterClear::Enemy});
         ImGui::Spacing();
-        heading(ui, "Colonies");
-        bool choose = me.chooseColonyType;
-        if (lampToggle(ui, "Choose the colony type when a colony is founded (turn-based games)", &choose))
-            status_.issue(ui, cmd::SetEmpireOptions{.chooseColonyType = choose});
-        // The game's Autosave choice can be changed during the game (spec 01
-        // §2.2); network and e-mail games are saved by their host.
-        if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) {
-            ImGui::Spacing();
-            heading(ui, "Autosave (this game)");
-            const int current = ui.state().options.autosaveTurns;
-            for (const int n : setup::kAutosaveTurns) {
-                bool on = n == current;
-                const std::string label = n == 0 ? std::string("None") : n == 1 ? std::string("Every turn") : std::format("Every {} turns", n);
-                if (lampToggle(ui, label.c_str(), &on) && on) ui.session.setAutosaveTurns(n);
-            }
+        heading(ui, "System Display");
+        lampToggle(ui, "Warp point names", &o.warpPointNames);
+        lampToggle(ui, "Planet names", &o.planetNames);
+        lampToggle(ui, "Colonizable planets", &o.colonizableMarkers);
+        lampToggle(ui, "System grid", &o.systemGrid);
+        lampToggle(ui, "Coordinate location", &o.coordinateLocation);
+        for (int i = 0; i < game::kFacilityMarkerGroups; ++i) {
+            const uint16_t bit = uint16_t(1u << i);
+            bool on = (o.facilityMarkers & bit) != 0;
+            if (lampToggle(ui, kMarkerRows[size_t(i)], &on)) o.facilityMarkers = uint16_t(on ? o.facilityMarkers | bit : o.facilityMarkers & ~bit);
         }
+        ImGui::Spacing();
+        heading(ui, "Galaxy Display");
+        lampToggle(ui, "Show grid lines", &o.galaxyGridLines);
+        lampToggle(ui, "Show warp lines", &o.galaxyWarpLines);
+        ImGui::Spacing();
+        heading(ui, "Latest Items");
+        lampToggle(ui, "Only the latest items for construction", &o.latestConstructionOnly);
+        lampToggle(ui, "Only the latest components for designs", &o.latestComponentsOnly);
+        ImGui::Spacing();
+        heading(ui, "Politics");
+        lampToggle(ui, "Claim every system we colonize", &o.autoClaimColonized);
         status_.draw();
+        ImGui::EndChild();
+        if (!ui.setOptions(o)) status_.error = "The options cannot be changed now.";
+        d.beginButtons();
+        d.close();
+        return d.keepOpen();
     }
 
+private:
     CommandStatus status_;
 };
 
@@ -499,7 +497,7 @@ public:
                 return false;
             };
             for (const game::Fleet& f : s.fleets)
-                if (f.owner == me.id && headingThere(f.orders)) {
+                if (f.owner == me.id && headingThere(game::fleetOrders(s, f))) {
                     ImGui::Text("%s (fleet, %zu ships)", f.name.c_str(), f.members.size());
                     ++shown;
                 }

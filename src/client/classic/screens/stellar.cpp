@@ -44,12 +44,12 @@ public:
         for (int i = 0; i < static_cast<int>(game::StellarAction::Count); ++i) {
             const auto a = static_cast<game::StellarAction>(i);
             const StellarCheck check = v ? checkStellar(ui.rules(), ui.state(), *v, a) : StellarCheck{};
-            if (d.button(stellarInfo(a).name, check.possible)) act(ui, *v, a, check);
+            if (d.button(stellarInfo(a).name, check.possible)) ask(ui, *v, a, check);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) hovered_ = a;
         }
         if (d.close()) return false;
         if (confirm_.draw(ui))
-            if (const game::Vehicle* cv = ownVehicle(ui, vehicle_)) give(ui, *cv, pending_, checkStellar(ui.rules(), ui.state(), *cv, pending_));
+            if (const game::Vehicle* cv = ownVehicle(ui, vehicle_)) act(ui, *cv, pending_, checkStellar(ui.rules(), ui.state(), *cv, pending_));
         if (closeForPick_) return false;
         return d.keepOpen();
     }
@@ -140,16 +140,22 @@ private:
         ImGui::EndGroup();
     }
 
+    // Every manipulation asks first while the Empire Options' "confirm stellar
+    // manipulation" is on (spec 06 §1.9); otherwise it is given at once.
+    void ask(UiContext& ui, const game::Vehicle& v, game::StellarAction a, const StellarCheck& check) {
+        if (ui.options().confirmStellarManipulation) {
+            pending_ = a;
+            confirm_.open(stellarInfo(a).name, check.reason.empty() ? std::string("Give the order?") : check.reason + " Give the order?");
+            return;
+        }
+        act(ui, v, a, check);
+    }
+
     void act(UiContext& ui, const game::Vehicle& v, game::StellarAction a, const StellarCheck& check) {
         if (check.needsDestination) {
             pickLocationForOrder(ui, orderOwner(ui.state(), v.id), stellarOrder(v, a, {}),
                                  "Open Warp Point: pick a sector of the destination system", true);
             closeForPick_ = true;
-            return;
-        }
-        if (check.destroysSystem || a == game::StellarAction::DestroyPlanet) {
-            pending_ = a;
-            confirm_.open(stellarInfo(a).name, check.reason + " Give the order?");
             return;
         }
         give(ui, v, a, check);

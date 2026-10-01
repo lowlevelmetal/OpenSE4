@@ -180,14 +180,14 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 return nullptr;
             }
             if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions ||
-                *id == ScreenId::StrategicCombat) {
+                *id == ScreenId::TacticalLaunch || *id == ScreenId::CombatPieceReport || *id == ScreenId::StrategicCombat) {
                 // A sample battle to show: the player's warships against copies of them
                 // (fought by the strategies for Strategic Combat).
                 if (!startDemoSimulation(*mode->ui_, *id != ScreenId::StrategicCombat)) {
                     error = "No armed ship design to fight a sample battle with.";
                     return nullptr;
                 }
-                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id);
+                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id, ScreenArgs{.index = 0});
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";
@@ -327,7 +327,7 @@ void ClassicMode::cueMusic(MusicCue cue) {
 
 void ClassicMode::updateAudio() {
     const ClassicSettings& prefs = settings();
-    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, prefs.musicVolume, prefs.remasteredSounds});
+    audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, float(prefs.musicVolume) / 100.0f, !prefs.classicSoundEffects});
     // The music rules (docs/spec/06 §5.5): the cues come from the intro, loading,
     // new turns and the combat windows; here music off stops it, and music on
     // with nothing playing starts the intro or background list.
@@ -449,7 +449,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     const std::optional<game::ObjectId> choosing = screens_.empty() && !asking && !battleAsking ? colonyTypeChoice(ui) : std::nullopt;
 
     // Classic windows are modal: while one is open the main window takes no input.
-    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value());
+    main_.update(ui, !screens_.empty() || asking || battleAsking || choosing.has_value() || confirmEndTurn_);
     drawNetwork(ui);
     drawPbem(ui);
     if (asking) drawEntryQuestion(ui);
@@ -474,27 +474,35 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
 
     if (ui.requests.endTurn) {
         ui.requests.endTurn = false;
-        if (settings().confirmEndTurn) confirmEndTurn_ = true;
+        // The Empire Options' "confirm ending the turn" (spec 06 §1.9).
+        if (ui.options().confirmEndTurn) confirmEndTurn_ = true;
         else endTurn();
     }
     if (confirmEndTurn_) {
+        // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
+        // §3.4). The key that asked for the end of the turn does not answer it.
         ImGui::SetNextWindowPos(ui.at({362, 330}));
         ImGui::SetNextWindowSize(ui.size({300, 110}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+        ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
         ImGui::TextUnformatted("End the turn now?");
-        if (ImGui::Button("End Turn", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
-            confirmEndTurn_ = false;
-            endTurn();
-        }
+        const std::optional<bool> key = yesNoKey();
+        const bool yes = ImGui::Button("Yes", ui.size({120, 28})) || key == true;
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ui.size({120, 28})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) confirmEndTurn_ = false;
+        const bool no = ImGui::Button("No", ui.size({120, 28})) || key == false;
         ImGui::End();
         ImGui::PopFont();
+        if (yes) {
+            confirmEndTurn_ = false;
+            endTurn();
+        } else if (no) {
+            confirmEndTurn_ = false;
+        }
     }
     if (openLogOnTurn_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
         openLogOnTurn_ = false;
-        if (settings().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
+        if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});
     }
     if (ui.requests.loadGame) {
@@ -652,14 +660,19 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     ImGui::SetNextWindowPos(ui.at({312, 290}));
     ImGui::SetNextWindowSize(ui.size({400, 150}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+    if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     ImGui::TextWrapped("%s", std::format("Enemy forces are in {}. Should {} enter the sector and attack?", where, who.empty() ? "the ship" : who).c_str());
     ImGui::TextDisabled("Declining stops the move and cancels its orders.");
     ImGui::Spacing();
-    if (ImGui::Button("Attack", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) session_->answer(true);
+    // A Yes/No prompt (spec 06 §1.3): Y means Yes; N, Esc and Enter mean No (§3.4).
+    const std::optional<bool> key = yesNoKey();
+    const bool yes = ImGui::Button("Yes", ui.size({140, 30})) || key == true;
     ImGui::SameLine();
-    if (ImGui::Button("Stay Back", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) session_->answer(false);
+    const bool no = ImGui::Button("No", ui.size({140, 30})) || key == false;
     ImGui::End();
+    if (yes) session_->answer(true);
+    else if (no) session_->answer(false);
     ImGui::PopFont();
 }
 
@@ -697,9 +710,9 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
 
 void ClassicMode::drawBattleQuestion(UiContext& ui) {
     // One question per battle, answered at the machine, for every human empire
-    // in it, hostile or not (spec 04 §3 step 1). When the player whose turn it
-    // is is a computer empire, a notice naming the system and the empires
-    // comes first.
+    // in it, hostile or not (spec 04 §3 step 1, spec 06 §1.10.5). When the
+    // player whose turn it is is a computer empire, a notice naming the system
+    // and the empires comes first.
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
@@ -708,54 +721,43 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
         const game::EmpireId turn = game::activePlayer(s);
         battleNotice_ = !s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() && s.empire(turn).kind != game::PlayerKind::Human;
     }
-    std::string sides;
-    for (size_t i = 0; i < q.participants.size(); ++i)
-        sides += (i == 0 ? "" : i + 1 == q.participants.size() ? " and " : ", ") + s.empire(q.participants[i]).name;
+    if (!battleNotice_) {
+        // The question itself is the Strategic Combat window with Strategic and Tactical.
+        const bool open = std::any_of(screens_.begin(), screens_.end(), [](const auto& sc) { return sc.first == ScreenId::StrategicCombat; });
+        if (!open) {
+            ScreenArgs args;
+            args.index = kStrategicQuestion;
+            openScreen(ScreenId::StrategicCombat, std::move(args));
+        }
+        return;
+    }
+    // The 253x150 notice: the system, and each empire's flag and name; Begin, Esc or Enter go on.
     const std::string system = q.where.system.index() < s.galaxy.systems.size() ? s.galaxy.system(q.where.system).name : std::string("?");
-    const float h = 150.0f;
-    // A modal prompt: nothing else takes input until the battle is answered.
-    constexpr const char* kPopup = "Combat##battlequestion";
+    constexpr const char* kPopup = "Combat##battlenotice";
     if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
-    ImGui::SetNextWindowPos(ui.at({302, 384 - h * 0.5f}));
-    ImGui::SetNextWindowSize(ui.size({420, h}));
+    const Vec2 size{253, 150};
+    ImGui::SetNextWindowPos(ui.at({(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}));
+    ImGui::SetNextWindowSize(ui.size(size));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
-    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
         ImGui::PopFont();
         return;
     }
-    if (battleNotice_) {
-        ImGui::TextWrapped("%s", std::format("Combat in the {} system between {}.", system, sides).c_str());
-        ImGui::Spacing();
-        if (ImGui::Button("OK", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) battleNotice_ = false;
-        ImGui::EndPopup();
-        ImGui::PopFont();
-        return;
+    ImGui::TextUnformatted(std::format("Combat in the {} system", system).c_str());
+    for (game::EmpireId e : q.participants) {
+        if (!e.valid() || e.index() >= s.empires.size()) continue;
+        if (Sprite flag = art_->flag(s.empire(e).race.style, false)) {
+            image(ui, flag, {20, 14});
+            ImGui::SameLine(0, ui.px(5));
+        }
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, e)), "%s", s.empire(e).name.c_str());
     }
-    ImGui::TextWrapped("%s", std::format("Battle at {} between {}.", sectorName(s, q.where, session_->player()), sides).c_str());
-    ImGui::TextDisabled("Tactical: the players give the orders. Strategic: the ships follow their strategies.");
-    ImGui::Spacing();
-    auto fight = [&](std::vector<game::EmpireId> tactical) {
+    // A battle notice: Esc and Enter both mean Begin (spec 06 §3.4).
+    ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), ImGui::GetWindowHeight() - ui.px(36)));
+    if (ImGui::Button("Begin", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+        battleNotice_ = false;
         ImGui::CloseCurrentPopup();
-        if (tactical.empty()) {
-            session_->answerBattle(game::BattleAnswer{});
-            return;
-        }
-        auto battle = std::make_unique<game::combat::TacticalBattle>(*rules_, *q.state, game::combat::TacticalBattle::Setup{q.where, q.entering, tactical, std::nullopt, std::nullopt, std::nullopt, q.check});
-        if (!battle->started()) {
-            session_->answerBattle(game::BattleAnswer{});
-            return;
-        }
-        TacticalFight f;
-        f.kind = TacticalFight::Kind::Game;
-        f.battle = std::move(battle);
-        f.players = std::move(tactical);
-        f.title = "Tactical Combat";
-        session_->startTactical(std::move(f));
-        openScreen(ScreenId::TacticalCombat, {});
-    };
-    if (ImGui::Button("Tactical", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) fight(q.humans);
-    ImGui::SameLine();
-    if (ImGui::Button("Strategic", ui.size({140, 30})) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) fight({});
+    }
     ImGui::EndPopup();
     ImGui::PopFont();
 }
@@ -782,7 +784,9 @@ void ClassicMode::drawHandoff(UiContext& ui) {
             begin = true;
         handoffPassword_ = buffer;
     }
-    if (ImGui::Button("Begin Turn", ui.size({140, 30}))) begin = true;
+    // The Next Player notice: Esc or Enter continue (spec 06 §3.4); with a
+    // password, Enter in its field submits it.
+    if (ImGui::Button("Begin Turn", ui.size({140, 30})) || (!needsPassword && okKey())) begin = true;
     ImGui::SameLine();
     if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
     if (begin) {

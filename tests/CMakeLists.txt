@@ -6,10 +6,13 @@ add_executable(opense4_tests
     test_app_settings.cpp
     test_audio.cpp
     test_classic_colony_logic.cpp
+    test_classic_options.cpp
     test_client_logic.cpp
     test_combat.cpp
     test_combat_rules.cpp
+    test_combat_planning.cpp
     test_combat_replay.cpp
+    test_combat_windows.cpp
     test_tactical.cpp
     test_design_tools.cpp
     test_diplomacy.cpp
@@ -50,6 +53,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/order_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
@@ -60,6 +64,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/ship_glides.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/status_icons.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/colony_logic.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/screens/combat_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/design_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/empire_logic.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screens/setup_model.cpp

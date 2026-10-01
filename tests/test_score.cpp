@@ -391,68 +391,96 @@ TEST_CASE("score: the turn pipeline keeps history and stops at game over") {
 }
 
 TEST_CASE("score: a human player's statistics, history and log text files") {
-    // Spec 05 §3.4, §5, §8 step 2: written for human players at the start of
-    // their end-of-turn processing; the engine makes the lines.
+    // Spec 05 §3.4, §5, §8 step 2 (open question 40): written for human
+    // players at the start of their end-of-turn processing; the engine makes
+    // the lines.
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
+    REQUIRE(s.options.simultaneous);
     s.empire(kC).kind = PlayerKind::Computer;
     TurnContext ctx = context(s);
     setContact(s, kA, kB);
     diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
 
-    // Statistics: a row per empire whose score the player may see.
+    // Statistics: a row per empire whose score the player may see; the empire
+    // number in 5, the date in tenths (advanced in a simultaneous game) in 8,
+    // then eleven columns of 12.
+    CHECK(score::fileDate(s) == 1);
     score::PlayerRecords rec = score::playerRecords(r, s, kA);
     REQUIRE(rec.statistics.size() == 2);
     const TurnStats mine = score::currentStats(r, s, kA);
-    CHECK(rec.statistics[0] == score::statisticsLine(kA, mine));
-    CHECK(rec.statistics[0].starts_with("    1   24000"));  // widths 5 and 8 (docs/spec/06 §6.1)
+    CHECK(rec.statistics[0] == score::statisticsLine(kA, 1, mine));
+    CHECK(rec.statistics[0].starts_with("    1   24001"));
     CHECK(rec.statistics[0].size() == 5 + 8 + 11 * 12);
+    CHECK(rec.statistics[0].substr(13, 12) == std::format("{:>12}", mine.score));
     CHECK(rec.statistics[1].starts_with("    2"));
-    CHECK(rec.statistics[0].find(std::to_string(mine.score)) != std::string::npos);
     s.options.scoreDisplay = 2;
     CHECK(score::playerRecords(r, s, kA).statistics.size() == 3);
     s.options.scoreDisplay = 0;
     CHECK(score::playerRecords(r, s, kA).statistics.size() == 1);
-    CHECK(rec.history.empty());  // nothing dated before the first turn
+    // A turn-based game's processing sees the unadvanced date.
+    s.options.simultaneous = false;
+    CHECK(score::playerRecords(r, s, kA).statistics[0].starts_with("    1   24000"));
+    s.options.simultaneous = true;
 
-    // History: the turn before's accepted treaties, broken treaties, wars,
-    // first contacts and destroyed empires, each naming the other empire.
+    // History: the entries dated the turn before (the processing sees 6 at
+    // turn 5): accepted treaties, broken treaties, wars, first contacts,
+    // contacts lost and destroyed empires, each naming the other empire.
     s.turn = 5;
-    auto message = [&](EmpireId from, EmpireId to, MessageType type, uint32_t turn, Treaty t = Treaty::None, MessageId reply = {}) {
+    auto message = [&](EmpireId from, EmpireId to, MessageType type, uint32_t dated, Treaty t = Treaty::None, MessageId reply = {}) {
         DiplomaticMessage m;
         m.id = MessageId{s.nextMessageId++};
         m.from = from;
         m.to = to;
         m.type = type;
-        m.sentTurn = turn;
+        m.sentTurn = dated;
+        m.dated = dated;
         m.treaty = t;
         m.inReplyTo = reply;
         m.delivered = true;
         s.messages.push_back(m);
         return m.id;
     };
-    const MessageId proposal = message(kA, kB, MessageType::ProposeTreaty, 3, Treaty::TradeAlliance);
-    message(kB, kA, MessageType::AcceptTreaty, 4, Treaty::None, proposal);
-    message(kC, kA, MessageType::DeclareWar, 4);
-    message(kA, kC, MessageType::BreakTreaty, 5);  // this turn: next time
-    message(kB, kC, MessageType::DeclareWar, 4);    // not ours
-    message(kC, kA, MessageType::Surrender, 4);     // never recorded
+    const MessageId proposal = message(kA, kB, MessageType::ProposeTreaty, 4, Treaty::TradeAlliance);
+    message(kB, kA, MessageType::AcceptTreaty, 5, Treaty::None, proposal);
+    message(kC, kA, MessageType::DeclareWar, 5);
+    message(kA, kC, MessageType::BreakTreaty, 6);  // dated now: next time
+    message(kB, kC, MessageType::DeclareWar, 5);    // not ours
+    message(kC, kA, MessageType::Surrender, 5);     // never recorded
+    // Log entries of the turn processed before (engine turn 4, dated 5).
     s.empire(kA).log.push_back(LogEntry{4, LogCategory::Politics, "First Contact", diplomacy::firstContactText(s, kC), std::nullopt, {}});
     s.empire(kA).log.push_back(LogEntry{4, LogCategory::Politics, "Empire Destroyed", score::destroyedText(s, kB), std::nullopt, {}});
-    s.empire(kA).log.push_back(LogEntry{5, LogCategory::Misc, "Too New", "", std::nullopt, {}});
+    s.empire(kA).log.push_back(LogEntry{5, LogCategory::Misc, "Too New", "Two\nlines", std::nullopt, {}});
     rec = score::playerRecords(r, s, kA);
     REQUIRE(rec.history.size() == 4);
-    CHECK(rec.history[0] == score::historyLine(4, kB, "Trade Alliance established"));
-    CHECK(rec.history[0] == "   24004    2    0    0 Trade Alliance established");
-    CHECK(rec.history[1] == score::historyLine(4, kC, "War declared"));
+    CHECK(rec.history[0] == score::historyLine(5, kB, "Trade Alliance established"));
+    CHECK(rec.history[0] == "   24005    2    0    0 Trade Alliance established");
+    CHECK(rec.history[1] == score::historyLine(5, kC, "War declared"));
     CHECK(rec.history[2].find("First contact with") != std::string::npos);
-    CHECK(rec.history[2].starts_with("   24004    3    0    0 "));
+    CHECK(rec.history[2].starts_with("   24005    3    0    0 "));
     CHECK(rec.history[3].find("was destroyed") != std::string::npos);
     CHECK(score::historyLine(4, {}, "x") == "   24004    0    0    0 x");
-    // The log copy: the entries of the turn before.
-    REQUIRE(rec.log.size() == 2);
-    CHECK(rec.log[0].find("First Contact") != std::string::npos);
-    CHECK(score::logCopyLine(4, "Title", "two\nlines") == std::format("{:<9}{:<40}two lines", "2400.4", "Title"));
+    // The log copy: none while `Create Log Text Files for Players` is off,
+    // which it is when the key is missing.
+    CHECK(rec.log.empty());
+    {
+        ruleset::Ruleset rs = buildPoliticsRuleset();
+        rs.settings.set("Create Log Text Files for Players", "TRUE");
+        rs.reindex();
+        const Rules withLog{std::move(rs)};
+        const score::PlayerRecords copy = score::playerRecords(withLog, s, kA);
+        // Two header lines, then the whole log as it stands.
+        REQUIRE(copy.log.size() == 2 + s.empire(kA).log.size());
+        const auto& log = s.empire(kA).log;
+        const size_t first = static_cast<size_t>(std::find_if(log.begin(), log.end(), [](const LogEntry& l) { return l.title == "First Contact"; }) -
+                                                 log.begin());
+        REQUIRE(first < log.size());
+        const std::string& line = copy.log[2 + first];
+        CHECK(line == score::logLine(5, "First Contact", diplomacy::firstContactText(s, kC)));
+        CHECK(line.starts_with("2400.5   First Contact"));
+        CHECK(line.substr(9, 40) == std::format("{:<40}", "First Contact"));
+        CHECK(copy.log.back() == std::format("{:<9}{:<40}{}", "2400.6", "Too New", "Two lines"));
+    }
 
     // processTurn hands out a set of lines for each human player only.
     GameState g = newPoliticsGame();

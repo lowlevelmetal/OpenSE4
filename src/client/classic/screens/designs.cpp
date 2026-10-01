@@ -447,6 +447,8 @@ private:
 
     void init(UiContext& ui) {
         initialized_ = true;
+        // Only Latest starts as the Empire Options' Latest Items row says (spec 06 §1.9).
+        onlyLatest_ = ui.options().latestComponentsOnly;
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();

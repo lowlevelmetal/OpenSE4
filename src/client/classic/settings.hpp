@@ -1,11 +1,15 @@
 #pragma once
 
-// Client-side preferences of the classic client: the Empire Options switches
-// (docs/spec/06 §1.2) and a few window preferences. They belong to whoever
-// plays on this machine, not to the game, and live in
-// <userDataDir>/classic_settings.toml. The minister switches belong to the
-// empire (game::cmd::SetMinisters).
+// Client-side preferences of the classic client that belong to this computer,
+// not to a game: the Options window (Game Menu → Options) and the tactical
+// display switches of Combat Options (docs/spec/06 §1.9, §1.10.3), plus a few
+// of OpenSE4's own. They live in <userDataDir>/classic_settings.toml.
+//
+// The Empire Options belong to the empire and are saved with the game
+// (game::InterfaceOptions, UiContext::options()); so do the minister switches
+// and the game's autosave choice.
 
+#include <array>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,53 +18,29 @@
 namespace opense4::client::classic {
 
 struct ClassicSettings {
-    // General.
-    bool showLogAtTurnStart = true;
-    bool confirmEndTurn = false;
-    bool confirmScrap = true;
-    bool confirmStellarManipulation = true;
-    bool confirmDeleteProjects = true;
-    bool pickColonyTypeOnColonize = false;
-    // Next / previous selection cycles.
-    bool cycleSkipsUnderConstruction = true;
-    bool cycleSkipsDamaged = false;
-    bool cycleOncePerLocation = false;
-    // Ship Movement and Ship Orders: part of the game (Empire::avoidTaggedMinefields,
-    // avoidRestrictedSystems, clearOrdersOnEncounter; spec 03 §6.2, §6.4), set
-    // with cmd::SetEncounterOptions from the Empire Options window.
-    // System display.
-    bool showWarpPointNames = true;
-    bool showPlanetNames = false;
-    bool showFacilityMarkers = false;
-    bool showMovementLines = true;
-    bool showWaypointMarkers = true;
-    bool showColonizationMarkers = true;
-    bool systemGrid = false;           // grid lines on the system panel (docs/spec/06 §2.4)
-    bool animateShipMovement = true;   // ships glide to their new square instead of jumping
-    // Galaxy Display (§1.9, §2.6): the galaxy panel's grid and warp lines.
-    bool galaxyGridLines = true;
-    bool galaxyWarpLines = true;
-
-    // Sound and music (docs/spec/06 §5.5).
+    // Options window (spec 06 §1.9, confirmed: binary); the defaults are a
+    // fresh install's.
+    bool animateSystemMovement = true;   // ships glide to their new square in the system window
+    bool animateCombatMovement = true;   // pieces move and fire step by step in tactical combat
     bool soundOn = true;
+    bool classicSoundEffects = false;    // the original set in Sounds/ instead of the remastered Sounds/New/
     bool musicOn = true;
-    bool remasteredSounds = true;
-    float soundVolume = 0.8f;
-    float musicVolume = 1.0f;   // in the six steps of client::musicStep (100 % on a fresh install, §1.9)
+    int musicVolume = 100;               // percent, one of kMusicVolumes
+    bool fastTacticalCombat = false;     // no pauses between animation steps
+    bool showMovementLines = false;      // the system window's movement lines (Ctrl+L)
 
-    // Combat Replay playback speed (1 = normal).
-    float replaySpeed = 1.0f;
+    // Combat Options' display switches (spec 06 §1.10.3), shared by every
+    // tactical battle on this computer.
+    bool showGroupIdentifiers = false;
+    bool showViewingRectangle = true;    // the dotted box on the overview map
+    bool centerOnCurrentShip = true;
+    bool showToHitChances = false;
+    bool tacticalGrid = false;
 
-    // Tactical Combat Options (docs/spec/06 §1.6: animation, speed and display
-    // options, not itemised by the manual; this list is ours).
-    bool tacticalAnimate = true;     // play moves and shots; off: show the result at once
-    float tacticalSpeed = 2.0f;      // animation speed (1 = the replay's normal pace)
-    bool tacticalGrid = true;        // the square grid
-    bool tacticalRanges = true;      // the selected piece's weapon ranges and movement
-    bool tacticalNames = false;      // names under the pieces
-    bool tacticalAutoEnd = true;     // end the phase when nothing is left to fight
+    // OpenSE4's own.
+    float soundVolume = 0.8f;            // effects volume (the original has none)
 
-    // The last game saved on this machine, which Resume Game loads (docs/spec/06 §1.9, §6.1).
+    // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
     std::string lastSavedGame;
 
     // Learning to play (docs/LEARNING.md): the tutorials and training games
@@ -68,16 +48,17 @@ struct ClassicSettings {
     std::vector<std::string> learnDone;
 };
 
+// The Options window's music steps (spec 06 §1.9).
+inline constexpr std::array<int, 5> kMusicVolumes{20, 40, 60, 80, 100};
+
 // The settings of this machine, loaded on first use.
 ClassicSettings& settings();
 // Writes the settings file; returns false (and logs) on failure.
 bool saveSettings();
 
-// One on/off switch of the Empire Options window.
+// One on/off switch kept in the settings file.
 struct BoolOption {
-    const char* group;   // heading in the Empire Options list
     const char* key;     // TOML key
-    const char* label;   // our own wording
     bool ClassicSettings::*member;
 };
 std::span<const BoolOption> boolOptions();

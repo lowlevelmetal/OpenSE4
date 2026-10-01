@@ -1,0 +1,95 @@
+# OpenSE4's own training game (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Research sprint"
+summary = "A rich start and cheap research: turn your head start into eight new technology levels."
+minutes = 40
+
+[setup]
+seed = 52
+systems = 20
+computer_players = 1
+starting_resources = 100000
+tech_cost = "low"
+events = "none"
+
+[[objective]]
+text = "Research 8 technology levels"
+when = { techs_researched = 8 }
+by_turn = 50
+
+[[objective]]
+text = "Keep 4 research projects queued at once"
+when = { research_queued = 4 }
+
+[[objective]]
+text = "Hold 3 colonies"
+when = { colonies = 3 }
+by_turn = 50
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "A head start"
+text = """
+Your treasury and your research pool start full: **100,000** of everything. Technology is cheap
+in this game. Spend it well.
+
+Your orders, by **2405.0**:
+
+- research **8 technology levels**;
+- hold **3 colonies**, so that your research can keep growing;
+- and at some point keep **4 projects** queued at once.
+"""
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "How research is paid"
+text = """
+The research points you see in the [Research](window:research) window (`F8`) are spent at the end
+of the turn, and points no project can use are lost.
+
+- The **Cost** column tells you what the next level of each area costs. Cheap levels count just
+  as much toward your objective as expensive ones.
+- **Divide Pts Evenly** shares the points between all projects. Switched off, the points go to
+  the first project until it is paid for, then to the next.
+- Research facilities on your colonies produce more points every turn.
+
+Read more in the [research chapter](research#the-research-queue).
+"""
+
+[[page]]
+turn = 25
+series = "reports"
+title = "Halfway"
+text = """
+Halfway through. If your research has slowed down, look at your income of research points in
+[Empire Status](window:empire-status), and queue research facilities on your colonies.
+"""
+
+[[hint]]
+title = "An empty queue"
+when = { all = [{ turn = 1 }, { not = { research_queued = 1 } }] }
+text = """
+Your research queue is empty, and this turn's points will be lost. Open Research (`F8`) and click
+a few areas to queue them.
+"""
+
+[[hint]]
+title = "Cheap levels first"
+when = { all = [{ turn = 10 }, { not = { techs_researched = 2 } }] }
+text = """
+Progress is slow. Put the areas with the lowest cost at the top of your queue, and switch
+**Divide Pts Evenly** off so that they finish one after another.
+"""
+
+[[hint]]
+title = "More research"
+when = { techs_researched = 4 }
+text = """
+Halfway to your goal. The levels get dearer as you go: build research facilities on your new
+colonies (the Facilities tab of their construction queue) to raise your income.
+"""
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Your last colony was lost."

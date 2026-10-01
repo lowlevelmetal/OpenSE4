@@ -36,6 +36,7 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
         e.historyEvents.clear();
         e.waypoints = {};
         e.homeSystem = {};  // where another empire started is not ours to know
+        e.homeSector = {};
         e.systemsToAvoid.clear();
         e.taggedMinefields.clear();
         e.repairPriorities.clear();
@@ -135,6 +136,8 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
 
     // A map's starting points tell where the players started.
     v.startingPoints.clear();
+    // Facilities left on abandoned planets are seen only by whoever colonizes them.
+    v.leftFacilities.clear();
 
     // The random stream would let a client predict the next turn.
     v.rng = Rng(0);

@@ -1,0 +1,93 @@
+# OpenSE4's own training game (docs/LEARNING.md). Written from docs/spec and the client.
+title = "The diplomat"
+summary = "Four other empires and no army to speak of: meet them, make friends of two, and grow in peace."
+minutes = 60
+
+[setup]
+seed = 71
+systems = 20
+computer_players = 4
+events = "none"
+
+[[objective]]
+text = "Meet 3 other empires"
+when = { empires_met = 3 }
+by_turn = 40
+
+[[objective]]
+text = "Hold 2 treaties of Non-Aggression or better at once"
+when = { treaties = 2 }
+by_turn = 70
+
+[[objective]]
+text = "Hold 4 colonies"
+when = { colonies = 4 }
+by_turn = 70
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "Words before weapons"
+text = """
+Four empires share this quadrant with you. You will not out-fight all of them, so make friends.
+
+Your orders:
+
+- meet **3 other empires** by **2404.0**;
+- hold **2 treaties** of Non-Aggression or better at the same time by **2407.0**;
+- hold **4 colonies** by **2407.0**.
+"""
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "How to make friends"
+text = """
+- You meet an empire when your ships and theirs are in the same system. Keep your scouts
+  exploring.
+- In the [Empires](window:empires) window (`F9`) each computer player's **mood** toward you shows
+  how it feels about you. Click a portrait to talk.
+- A computer player accepts a treaty only when it is calm enough. **Gifts** calm it; your ships
+  and colonies in its territory, and battles against it, anger it.
+- Start with **Non-Aggression**. Trade treaties come later and pay for themselves.
+
+Read more in the [diplomacy chapter](diplomacy#how-computer-players-feel-about-you).
+"""
+
+[[page]]
+turn = 30
+series = "reports"
+title = "Three years in"
+text = """
+Check the [Treaty Grid](window:treaty-grid): it shows the treaties of your partners as well.
+Empires already allied with each other are easier to befriend together.
+"""
+
+[[hint]]
+title = "First contact"
+when = { empires_met = 1 }
+text = """
+You have met another empire. Open the Empires window (`F9`), click its portrait and propose a
+treaty of **Non-Aggression**. You can send each empire one message per turn.
+"""
+
+[[hint]]
+title = "Refused?"
+when = { all = [{ turn = 25 }, { empires_met = 1 }, { not = { treaties = 1 } }] }
+text = """
+No treaty yet. Look at their mood first: the angrier a computer player is, the more likely it
+refuses. Send a **Gift** of resources (a package with a few thousand minerals), wait a turn or
+two, then propose again. Keep your warships out of their systems.
+"""
+
+[[hint]]
+title = "A first treaty"
+when = { treaties = 1 }
+text = """
+Your first treaty is signed. From Non-Aggression up, your ships and theirs no longer fight. A
+**Trade Alliance** would also bring you a share of their production every turn.
+"""
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Your last colony was lost."

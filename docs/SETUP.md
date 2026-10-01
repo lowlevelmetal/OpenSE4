@@ -86,10 +86,11 @@ OpenSE4 plays the game's own sound effects and music from `Sounds/` and `Music/`
 uses the playlists defined in the game's settings file. If the install includes the
 remastered sounds in `Sounds/New/`, those are used by default.
 
-You can control sound in Empire Status → Empire Options:
-- effects and music can each be switched off;
-- both volumes can be set;
-- the classic sound set can be chosen instead of the remastered one.
+You can control sound in Game Menu → Options (kept on this computer):
+- sound effects can be switched off, and the classic sound set chosen instead of the
+  remastered one;
+- music can be switched off or set to one of five volumes;
+- the effects volume is in Options → Settings → Sound.
 
 `--no-audio` starts without sound.
 

@@ -8,6 +8,7 @@
 #include "game/commands.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
+#include "game/serialize.hpp"
 #include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
@@ -60,6 +61,15 @@ bool inSystemList(const GameState& s, ObjectId o) {
     const auto& list = s.galaxy.system(s.galaxy.object(o).system).objects;
     return std::find(list.begin(), list.end(), o) != list.end();
 }
+// Gives a fleet orders: copies in the lists of its members at its location,
+// as cmd::SetOrders on the fleet leaves them (spec 03 §8, §19 Q65).
+void fleetGets(World& w, FleetId f, const std::vector<Order>& list, bool repeat = false) {
+    for (VehicleId id : fleetGroup(w.s, *w.s.fleet(f))) {
+        w.v(id).orders = list;
+        w.v(id).repeatOrders = repeat;
+    }
+}
+const std::vector<Order>& fleetList(World& w, FleetId f) { return fleetOrders(w.s, *w.s.fleet(f)); }
 size_t countKind(const GameState& s, SystemId sys, ObjectKind k) {
     size_t n = 0;
     for (ObjectId o : s.galaxy.system(sys).objects) n += s.galaxy.object(o).kind == k;
@@ -458,12 +468,12 @@ TEST_CASE("movement: vehicles held in place by sabotage keep their orders and wa
     const VehicleId free = w.spawn(w.ship(kA, "Free", 3, {"Test Quantum Reactor"}), at(a, 9, 9));
     const VehicleId stuck = w.spawn(w.ship(kA, "Stuck", 3, {"Test Quantum Reactor"}), at(a, 9, 9));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Anchor", {free, stuck}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 12, 12)};
+    fleetGets(w, w.s.fleets.back().id, {moveTo(a, 12, 12)});
     w.v(stuck).immobileUntil = w.s.turn + 1;
     w.move();
     CHECK(w.v(free).location == at(a, 9, 9));
     CHECK(w.v(stuck).location == at(a, 9, 9));
-    CHECK(w.s.fleets.back().orders.size() == 1);
+    CHECK(fleetList(w, w.s.fleets.back().id).size() == 1);
 }
 
 TEST_CASE("movement: a warp order jumps an unknown link, learns it and explores the far system") {
@@ -537,7 +547,7 @@ TEST_CASE("movement: fleets move together at the slowest member's speed") {
     const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pack", {fast, slow}}).ok);
     const FleetId fleet = w.s.fleets.back().id;
-    w.s.fleet(fleet)->orders = {moveTo(a, 10, 6)};
+    fleetGets(w, fleet, {moveTo(a, 10, 6)});
     CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fleet)) == 3);
     CHECK(movement::etaTurns(r, w.s, w.v(fast), at(a, 10, 6)) == 5);  // 2 steps a turn at speed 3
     w.move();
@@ -547,13 +557,16 @@ TEST_CASE("movement: fleets move together at the slowest member's speed") {
     for (int i = 0; i < 4; ++i) w.move();
     CHECK(w.v(fast).location == at(a, 10, 6));
     CHECK(w.v(slow).location == at(a, 10, 6));
-    CHECK(w.s.fleet(fleet)->orders.empty());
+    CHECK(fleetList(w, fleet).empty());
+    CHECK(w.s.fleet(fleet)->location == at(a, 10, 6));  // the fleet's location follows its members (spec 03 §9)
 
-    // Without fleet orders, a member with its own orders moves alone.
+    // A fleet has no list of its own: an order in one member's list is carried
+    // out by every member at the fleet's location (spec 03 §8, §19 Q65).
     w.order(fast, moveTo(a, 12, 6));
     w.move();
     CHECK(w.v(fast).location == at(a, 12, 6));
-    CHECK(w.v(slow).location == at(a, 10, 6));
+    CHECK(w.v(slow).location == at(a, 12, 6));
+    CHECK(w.v(fast).orders.empty());
 }
 
 TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the turn") {
@@ -564,7 +577,7 @@ TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the tu
     const VehicleId empty = w.spawn(w.ship(kA, "Empty", 1), at(a, 0, 6));
     w.v(empty).supply = 0;
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {full, empty}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 5, 6)};
+    fleetGets(w, w.s.fleets.back().id, {moveTo(a, 5, 6)});
     w.move();
     // Speed 1 (and a member out of supply has 1 MP) never moves in a simultaneous game (spec 03 §6.3).
     CHECK(w.v(full).location == at(a, 0, 6));
@@ -888,7 +901,7 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
         fuel(l.w, gunboat);
         const VehicleId picket = picketAt(l, 5, 5);
-        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(gunboat, mk(OrderKind::Attack, at(l.a, 5, 5), {}, picket));
         l.w.order(gunboat, moveTo(l.a, 0, 0));
         l.run();
         CHECK(l.spy.asked == std::vector<Location>{at(l.a, 4, 5), at(l.a, 5, 5)});
@@ -913,6 +926,45 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         CHECK(l.w.v(gunboat).orders.empty());
         CHECK(l.w.v(gunboat).movement == 0);
     }
+    SUBCASE("an Attack with no sector recorded attacks where the group stands") {
+        // Spec 03 §8, §19 Q71: the stored Attack names no place; it does not follow its target.
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.run();
+        CHECK(l.spy.asked == std::vector<Location>{at(l.a, 3, 5)});
+        CHECK(l.w.v(gunboat).location == at(l.a, 3, 5));
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.v(gunboat).movement == 2);  // the attack's 1 movement point
+    }
+    SUBCASE("the Attack decloaks nobody; the Ship Cloaking minister's vehicles cloak again afterwards") {
+        // Spec 03 §6.4, §8, §19 Q69 (confirmed: binary).
+        for (const bool minister : {false, true}) {
+            CAPTURE(minister);
+            Live l;
+            const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Cloak"}), at(l.a, 5, 5));
+            fuel(l.w, gunboat);
+            l.w.v(gunboat).status = VehicleStatus::Cloaked;
+            if (minister) {
+                l.w.s.empire(kA).ministers |= ministerBit(Minister::ShipCloaking);
+                l.w.v(gunboat).minister = true;
+            }
+            const VehicleId picket = picketAt(l, 5, 5);
+            l.w.order(gunboat, mk(OrderKind::Attack, at(l.a, 5, 5), {}, picket));
+            std::optional<VehicleStatus> during;
+            l.spy.fight = [&](const GameState& s, Location) {
+                during = s.vehicle(gunboat)->status;
+                return false;
+            };
+            l.run();
+            REQUIRE(during);
+            CHECK(*during == (minister ? VehicleStatus::Normal : VehicleStatus::Cloaked));
+            CHECK(l.w.v(gunboat).status == VehicleStatus::Cloaked);  // raised again, or never lowered
+            CHECK(l.w.v(gunboat).orders.empty());
+        }
+    }
     SUBCASE("a Seek at its target attacks every time its list runs and stays") {
         Live l;
         const DesignId dart = l.w.design(kA, "Dart", "Test Drone Hull", {"Mv Engine", "Mv Engine", "Mv Engine", "Test Warhead", "Mv Drone Tank"});
@@ -926,13 +978,23 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         l.run(false);  // the list runs again, as it does when orders are given
         CHECK(l.spy.fought.size() == 2);
         CHECK(l.w.v(drone).orders.size() == 1);
-        // A Seek that steps into its target's sector: a movement step, so the battle clears its list.
+        // A Seek that steps into its target's sector and meets a battle there
+        // only stops for this run of its list: its order and list are kept, and
+        // it attacks at the next run (spec 04 §2, §19.2 Q76).
         const VehicleId late = l.w.spawn(dart, at(l.a, 3, 5));
         l.w.order(late, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(late, moveTo(l.a, 0, 0));
         l.w.v(drone).orders.clear();
+        const size_t battles = l.spy.fought.size();
         l.run();
         CHECK(l.w.v(late).location == at(l.a, 5, 5));
-        CHECK(l.w.v(late).orders.empty());
+        CHECK(l.spy.fought.size() == battles + 1);
+        CHECK(l.w.v(late).orders.size() == 2);
+        CHECK_FALSE(l.w.logged(kA, "Combat on entering the sector."));
+        l.run(false);
+        CHECK(l.spy.fought.size() == battles + 2);
+        CHECK(l.spy.checkers.back() == std::vector<VehicleId>{late});
+        CHECK(l.w.v(late).orders.size() == 2);
     }
 }
 
@@ -1218,6 +1280,13 @@ TEST_CASE("movement: attack pursues a moving target and stays until it is gone")
     CHECK(l.v(sneaky).location == at(la, 3, 3));
     CHECK(l.v(sneaky).status == VehicleStatus::Cloaked);
     CHECK(l.v(sneaky).orders.size() == 1);
+    // A group with no drone does not attack at its target: it waits there and
+    // spends neither movement nor supply (spec 03 §8, §19 Q69).
+    const int64_t supply = l.v(sneaky).supply;
+    l.move();
+    CHECK(l.v(sneaky).supply == supply);
+    CHECK(l.v(sneaky).location == at(la, 3, 3));
+    CHECK(l.v(sneaky).orders.size() == 1);
 }
 
 TEST_CASE("movement: repeat orders cycle; a repeating list that never moves idles") {
@@ -1468,15 +1537,17 @@ TEST_CASE("movement: drones move only by orders; an Attack order pursues its tar
     CHECK(w.v(drone).location == at(a, 6, 0));
     REQUIRE(spy.fought.size() == 1);
     CHECK(spy.fought[0].second == at(a, 6, 0));
-    // At its target a cloaked drone decloaks, takes the target for the battle and
-    // pays one move's supply; the order stays (spec 03 §8).
+    // At its target a cloaked drone decloaks and pays one move's supply; the
+    // order stays (spec 03 §8). A battle reads the drone's target from that
+    // order; nothing is stored (spec 03 §19 Q68).
     w.v(drone).status = VehicleStatus::Cloaked;
     const int64_t before = w.v(drone).supply;
     w.move(spy.hooks());
     CHECK(w.v(drone).status == VehicleStatus::Normal);
-    CHECK(w.v(drone).targetVehicle == prey);
+    CHECK_FALSE(w.v(drone).targetVehicle.valid());
     CHECK(w.v(drone).supply < before);
-    CHECK(w.v(drone).orders.size() == 1);
+    REQUIRE(w.v(drone).orders.size() == 1);
+    CHECK(w.v(drone).orders.front().vehicle == prey);
 
     // Out of supply after a step, a drone is destroyed at once (spec 03 §12).
     const VehicleId thirsty = w.spawn(droneDesign, at(a, 0, 9));
@@ -1606,6 +1677,24 @@ TEST_CASE("movement: cloak and decloak orders") {
     CHECK(w.logged(kA, "cloaking device"));
 }
 
+TEST_CASE("movement: every action gives the acting vehicle exactly 1 movement point, a stopped one too") {
+    // Spec 03 §6.3 step 4, §19 Q63 (confirmed: binary).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId ship = w.spawn(w.ship(kA, "Dash", 5, {"Mv Energy Cell"}), at(a, 0, 6));
+    w.v(ship).supply = 10;  // the first step empties the tank: the maximum falls from 5 to 1
+    w.order(ship, mk(OrderKind::UseComponent, {}, {}, {}, {}, 9));
+    w.order(ship, moveTo(a, 12, 6));
+    w.move();
+    // Speed 5 acts on day 7: the use chains into a step that runs the supply
+    // out, so the ship keeps the 0 the action left and gains no more day
+    // credit. The energy's 4 on the counter still give actions on days 8 to
+    // 11, each with 1 movement point again: one step each.
+    CHECK(w.v(ship).location == at(a, 5, 6));
+    CHECK(w.v(ship).movement == 0);
+    CHECK(w.v(ship).supply == 0);
+}
+
 TEST_CASE("movement: emergency energy and emergency resupply are one-shot components") {
     World w;
     const Rules& r = w.rules();
@@ -1685,23 +1774,112 @@ TEST_CASE("movement: self-destruct: ships and bases need the ability, satellites
     CHECK_FALSE(movement::canSelfDestruct(r, w.s, w.v(laidUp)));
 }
 
-TEST_CASE("movement: fleet members at the fleet's location carry out only the fleet's orders") {
+TEST_CASE("movement: a fleet's orders are copies in its members' lists, carried out position by position") {
+    // Spec 03 §8, §9, §19 Q65 (confirmed: binary): joining clears a vehicle's
+    // list and gives it none of the fleet's orders, only those given later;
+    // the first member in object order with orders acts for the members at
+    // the fleet's location, and completing an order removes the head of each
+    // of their lists, whichever order that is.
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const VehicleId lead = w.spawn(w.ship(kA, "Lead", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
-    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 4, {"Test Quantum Reactor", "Mv Cloak"}), at(a, 0, 6));
-    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {lead, shade}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 3, 6)};
-    w.order(shade, mk(OrderKind::Cloak));
-    w.order(shade, moveTo(a, 0, 0));
+    const VehicleId mate = w.spawn(w.ship(kA, "Mate", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId late = w.spawn(w.ship(kA, "Late", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
+    w.order(lead, moveTo(a, 0, 0));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {lead, mate}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    CHECK(w.v(lead).orders.empty());  // joining clears the list
+    CHECK(w.s.fleet(fid)->location == at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 3, 6)}, false}).ok);
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    CHECK(w.v(mate).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    w.order(late, moveTo(a, 9, 9));
+    REQUIRE(apply(r, w.s, kA, cmd::JoinFleet{fid, late}).ok);
+    CHECK(w.v(late).orders.empty());  // none of the fleet's orders
+    // An order given to any member is appended to every member's list.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{late, {}, {moveTo(a, 5, 6)}, false}).ok);
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 3, 6), moveTo(a, 5, 6)});
+    CHECK(w.v(late).orders == std::vector<Order>{moveTo(a, 5, 6)});
+    CHECK(fleetOrders(w.s, *w.s.fleet(fid)) == w.v(lead).orders);
     w.move();
-    // Members hold only the fleet's orders (spec 03 §6.3 step 5, confirmed: binary).
-    CHECK(w.v(shade).status == VehicleStatus::Normal);
-    CHECK(w.v(shade).location == at(a, 3, 6));
-    CHECK(w.v(lead).location == at(a, 3, 6));
-    CHECK(w.s.fleets.back().orders.empty());
-    CHECK(w.v(shade).orders.size() == 2);
+    // Speed 4: three steps; the arrival removes the head of every list, so
+    // `late` loses its only order, the one still to come for the others.
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).location == at(a, 3, 6));
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 5, 6)});
+    CHECK(w.v(late).orders.empty());
+    w.move();
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).location == at(a, 5, 6));
+    CHECK(fleetOrders(w.s, *w.s.fleet(fid)).empty());
+
+    // Clear Orders and Repeat apply to every copy; leaving by Fleet Transfer clears the list.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 6, 6), moveTo(a, 5, 6)}, true}).ok);
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).repeatOrders);
+    REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{mate}).ok);
+    CHECK(w.v(mate).orders.empty());
+    CHECK_FALSE(w.v(mate).repeatOrders);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {}, false}).ok);
+    for (VehicleId id : {lead, late}) {
+        CHECK(w.v(id).orders.empty());
+        CHECK_FALSE(w.v(id).repeatOrders);
+    }
+    // "Remove All": every member leaves and loses its orders.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 7, 7)}, false}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::DisbandFleet{fid}).ok);
+    for (VehicleId id : {lead, late}) {
+        CHECK_FALSE(w.v(id).fleet.valid());
+        CHECK(w.v(id).orders.empty());
+    }
+
+    // Turn-based: orders given to one member move the fleet at once, through
+    // its first member in object order with orders.
+    w.s.options.simultaneous = false;
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Again", {late, lead}}).ok);
+    const FleetId again = w.s.fleets.back().id;
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{late, {}, {moveTo(a, 5, 9)}, false}).ok);
+    TurnContext ctx{r, w.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    movement::LiveMove m{kA};
+    m.vehicles = {late};
+    movement::runLive(ctx, m, {});
+    CHECK(w.v(lead).location == at(a, 5, 9));
+    CHECK(w.v(late).location == at(a, 5, 9));
+    CHECK(fleetOrders(w.s, *w.s.fleet(again)).empty());
+}
+
+TEST_CASE("movement: a fleet member gains day credit at the fleet's speed wherever it is; a fleet with nobody at its location is disbanded") {
+    // Spec 03 §6.3 step 2, §9, §19 Q61 (confirmed: binary).
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId fast = w.spawn(w.ship(kA, "Fast", 6, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId third = w.spawn(w.ship(kA, "Third", 6, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Trio", {fast, slow, third}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    // The location follows whichever member moved last, by any means: here
+    // the slow member is moved away alone, as an event might.
+    w.v(slow).location = at(a, 9, 9);
+    fleetMemberMoved(w.s, w.v(slow));
+    CHECK(w.s.fleet(fid)->location == at(a, 9, 9));
+    // The fleet's speed is the slow member's alone, the only one at its
+    // location; the members elsewhere move only with it, never on their own.
+    CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fid)) == 3);
+    w.order(fast, moveTo(a, 9, 12));
+    w.move();
+    // Speed 3 acts twice (days 11 and 21): the order of `fast`, away from the
+    // fleet's location, is carried out by the slow member alone.
+    CHECK(w.v(slow).location == at(a, 9, 11));
+    CHECK(w.v(fast).location == at(a, 0, 6));
+    CHECK(w.v(third).location == at(a, 0, 6));
+    CHECK(w.s.fleet(fid)->location == at(a, 9, 11));
+    // The slow member leaves: nobody is at the location, and the fleet is
+    // disbanded at once; the others lose their orders.
+    REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{slow}).ok);
+    CHECK(w.s.fleet(fid) == nullptr);
+    CHECK_FALSE(w.v(fast).fleet.valid());
+    CHECK_FALSE(w.v(third).fleet.valid());
+    CHECK(w.v(fast).orders.empty());
 }
 
 // ---- Hazards ------------------------------------------------------------------------------------------
@@ -1793,6 +1971,48 @@ TEST_CASE("movement: a storm may hit a group stepping in, stopping it; it never 
     CHECK(misses > 0);
 }
 
+TEST_CASE("movement: a pursuit that meets a storm or mines only stops; its order and list are kept") {
+    // Spec 03 §6.4, spec 04 §19.2 Q76 (confirmed: binary). In a simultaneous
+    // game every Attack is a pursuit.
+    int hits = 0;
+    for (uint64_t seed = 1; seed <= 24; ++seed) {
+        World w;
+        const SystemId a = w.system("A");
+        const ObjectId storm = w.object(a, ObjectKind::Storm, {3, 6});
+        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 30));
+        const VehicleId prey = w.spawn(w.ship(kB, "Prey", 1, {"Mv Armor"}), at(a, 3, 6));
+        const VehicleId hunter = w.spawn(w.ship(kA, "Hunter", 4, {"Mv Armor"}), at(a, 2, 6));
+        fuel(w, hunter);
+        w.order(hunter, mk(OrderKind::Attack, {}, {}, prey));
+        w.order(hunter, moveTo(a, 0, 0));
+        w.s.rng.reseed(seed);
+        w.move();
+        CHECK(w.v(hunter).location == at(a, 3, 6));
+        if (totalDamage(w.v(hunter)) == 0) continue;
+        ++hits;
+        REQUIRE(w.v(hunter).orders.size() == 2);   // the storm stopped it; nothing was cleared
+        CHECK(w.v(hunter).orders.front().kind == OrderKind::Attack);
+        CHECK_FALSE(w.logged(kA, "order cancelled"));
+    }
+    CHECK(hits > 0);
+
+    // Mines strike a pursuit stepping in: it keeps its orders (with the real combat module).
+    World m;
+    const SystemId ma = m.system("A");
+    const VehicleId field = m.spawn(m.design(kB, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(ma, 1, 6));
+    const VehicleId far = m.spawn(m.ship(kB, "Far", 1, {"Mv Armor"}), at(ma, 6, 6));
+    const VehicleId tough = m.spawn(m.ship(kA, "Tough", 3, {"Mv Armor", "Mv Armor", "Mv Armor"}), at(ma, 0, 6));
+    fuel(m, tough);
+    m.order(tough, mk(OrderKind::Attack, {}, {}, far));
+    m.move(movement::defaultCombatHooks());
+    CHECK(m.s.vehicle(field) == nullptr);   // the mine was used up
+    REQUIRE(m.s.vehicle(tough));
+    CHECK(totalDamage(m.v(tough)) > 0);
+    REQUIRE(m.v(tough).orders.size() == 1);
+    CHECK(m.v(tough).orders.front().kind == OrderKind::Attack);
+    CHECK(m.logged(kA, "keeps its orders"));
+}
+
 TEST_CASE("movement: warp point turbulence hits half the transits and ends the move") {
     int hits = 0, misses = 0;
     for (uint64_t seed = 1; seed <= 24; ++seed) {
@@ -1823,6 +2043,89 @@ TEST_CASE("movement: warp point turbulence hits half the transits and ends the m
 }
 
 // ---- Colonization -----------------------------------------------------------------------------------
+
+TEST_CASE("movement: a human empire claims the systems it colonizes while its Politics option is on") {
+    // Empire Options, Politics (spec 06 §1.9): on for a new empire.
+    for (const bool on : {true, false}) {
+        World w;
+        const Rules& r = w.rules();
+        CHECK(w.s.empire(kA).interfaceOptions.autoClaimColonized);
+        InterfaceOptions o = w.s.empire(kA).interfaceOptions;
+        o.autoClaimColonized = on;
+        REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+        const SystemId a = w.system("A");
+        const SystemId b = w.system("B", 10, 0);
+        const ObjectId target = w.planet(b, {5, 6});
+        w.s.empire(kA).claimedSystems = {a};
+        const VehicleId ship = w.spawn(w.ship(kA, "Settler", 4, {"Test Rock Pod"}), at(b, 5, 6));
+        fuel(w, ship);
+        w.v(ship).cargo.population.push_back({kA, 2});
+        w.order(ship, mk(OrderKind::Colonize, {}, target));
+        w.colonize();
+        REQUIRE(w.s.colony(target));
+        const auto& claimed = w.s.empire(kA).claimedSystems;
+        CHECK(std::is_sorted(claimed.begin(), claimed.end()));
+        CHECK((std::find(claimed.begin(), claimed.end(), b) != claimed.end()) == on);
+        CHECK(std::find(claimed.begin(), claimed.end(), a) != claimed.end());
+    }
+}
+
+TEST_CASE("commands: an abandoned colony leaves its facilities to the next colony on the planet") {
+    // Spec 02 §5: the player scraps the facilities first, or leaves them for a later owner.
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId planet = w.planet(a, {5, 6});
+    w.colony(planet, kA, 10, {"Mv Trainer", "Mv System Scanner"});
+    const std::vector<uint32_t> facilities = w.s.colony(planet)->facilities;
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{planet}).ok);
+    CHECK_FALSE(w.s.colony(planet));
+    REQUIRE(w.s.leftFacilities.size() == 1);
+    CHECK(w.s.leftFacilities.front().planet == planet);
+    CHECK(w.s.leftFacilities.front().facilities == facilities);
+    // Another empire colonizes it and finds them.
+    const VehicleId ship = w.spawn(w.ship(kB, "Settler", 4, {"Test Rock Pod"}), at(a, 5, 6));
+    fuel(w, ship);
+    w.v(ship).cargo.population.push_back({kB, 2});
+    w.order(ship, mk(OrderKind::Colonize, {}, planet));
+    w.colonize();
+    REQUIRE(w.s.colony(planet));
+    CHECK(w.s.colony(planet)->owner == kB);
+    CHECK(w.s.colony(planet)->facilities == facilities);
+    CHECK(w.s.leftFacilities.empty());
+
+    // Scrapped first: a refund now and nothing left behind.
+    const ObjectId other = w.planet(a, {8, 8});
+    w.colony(other, kA, 10, {"Mv Trainer"});
+    const Resources before = w.s.empire(kA).stockpile;
+    REQUIRE(apply(r, w.s, kA, cmd::Scrap{{}, other, 0}).ok);
+    CHECK(w.s.empire(kA).stockpile.total() > before.total());
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{other}).ok);
+    CHECK(w.s.leftFacilities.empty());
+    CHECK(validateState(w.s, &r).empty());
+}
+
+TEST_CASE("commands: the Empire Options are replaced as a whole and checked") {
+    World w;
+    const Rules& r = w.rules();
+    InterfaceOptions o;
+    o.confirmEndTurn = false;
+    o.logFilter = uint8_t(LogCategory::Combat) + 1;
+    o.facilityMarkers = 0x0801;
+    REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+    CHECK(w.s.empire(kA).interfaceOptions == o);
+    CHECK(w.s.empire(kB).interfaceOptions == InterfaceOptions{});
+    InterfaceOptions bad = o;
+    bad.logFilter = 99;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    bad = o;
+    bad.facilityMarkers = 0x1000;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    bad = o;
+    bad.queuesShown = 0x10;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    CHECK(w.s.empire(kA).interfaceOptions == o);
+}
 
 TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     World w;
@@ -1932,7 +2235,7 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     fuel(w, settler);
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Convoy", {escort, settler}}).ok);
     const FleetId convoy = w.s.fleets.back().id;
-    w.s.fleet(convoy)->orders = {mk(OrderKind::Colonize, {}, other)};
+    fleetGets(w, convoy, {mk(OrderKind::Colonize, {}, other)});
     w.move();
     CHECK(w.v(escort).location == at(a, 9, 9));
     w.colonize();
@@ -1940,7 +2243,7 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     CHECK(w.s.vehicle(settler) == nullptr);
     REQUIRE(w.s.vehicle(escort));
     REQUIRE(w.s.fleet(convoy));
-    CHECK(w.s.fleet(convoy)->orders.empty());
+    CHECK(fleetList(w, convoy).empty());
 }
 
 TEST_CASE("movement: ruins give technology; automatic colonists are added") {
@@ -2399,18 +2702,19 @@ TEST_CASE("movement: a failed order clears every fleet member's list and switche
     const VehicleId one = w.spawn(w.ship(kA, "One", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
     const VehicleId two = w.spawn(w.ship(kA, "Two", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {one, two}}).ok);
-    Fleet& f = w.s.fleets.back();
-    f.orders = {moveTo(a, 1, 0), moveTo(b, 3, 3), moveTo(a, 2, 0)};  // B is not linked: the second order fails
-    f.repeatOrders = true;
-    w.v(one).orders = {moveTo(a, 5, 5)};  // a member's own list goes too
-    w.v(one).repeatOrders = true;
+    const FleetId fid = w.s.fleets.back().id;
+    // B is not linked: the second order fails.
+    fleetGets(w, fid, {moveTo(a, 1, 0), moveTo(b, 3, 3), moveTo(a, 2, 0)}, true);
     w.move();  // the step that arrives uses the action's movement point: the next order waits
-    CHECK(w.s.fleets.back().orders.size() == 3);
+    CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 3);
     w.move();
-    CHECK(w.s.fleets.back().orders.empty());
-    CHECK_FALSE(w.s.fleets.back().repeatOrders);
-    CHECK(w.v(one).orders.empty());
-    CHECK_FALSE(w.v(one).repeatOrders);
+    CHECK(fleetList(w, fid).empty());
+    CHECK_FALSE(fleetRepeats(w.s, *w.s.fleet(fid)));
+    for (VehicleId id : {one, two}) {
+        CHECK(w.v(id).orders.empty());
+        CHECK_FALSE(w.v(id).repeatOrders);
+    }
     CHECK(w.v(one).location == at(a, 1, 0));
     CHECK(w.logged(kA, "No known route"));
 
@@ -2629,7 +2933,7 @@ TEST_CASE("movement: colonizing fails with a cloaked member; the last suitable m
     const VehicleId first = w.spawn(w.ship(kA, "First", 3, {"Test Rock Pod"}), at(a, 5, 5));
     const VehicleId last = w.spawn(w.ship(kA, "Last", 3, {"Test Rock Pod"}), at(a, 5, 5));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Settlers", {first, last}}).ok);
-    w.s.fleets.back().orders = {mk(OrderKind::Colonize, {}, target)};
+    fleetGets(w, w.s.fleets.back().id, {mk(OrderKind::Colonize, {}, target)});
     w.colonize();
     REQUIRE(w.s.colony(target));
     CHECK(w.s.vehicle(last) == nullptr);
@@ -2782,7 +3086,7 @@ TEST_CASE("movement: damage outside combat cuts supply and cargo back at once") 
     }
 }
 
-TEST_CASE("movement: objects act in object order; a new vehicle takes the first slot a removed one freed") {
+TEST_CASE("movement: objects act in object order; a new object takes the first slot any removed object freed") {
     World w;
     const SystemId a = w.system("A");
     const DesignId d = w.ship(kA, "Hull", 2);
@@ -2798,17 +3102,53 @@ TEST_CASE("movement: objects act in object order; a new vehicle takes the first 
     CHECK(w.v(fourth).slot == freed);  // before `third` in object order, though created after it
     CHECK(fourth > third);
 
-    // Planets with orders act on day 1 before every vehicle: the colony's launch
-    // comes first, so a base acting on day 1 recovers the group at once.
+    // Planets with orders act on day 1 where their slots put them among the
+    // vehicles (spec 03 §6.3 step 5, §19 Q62): a colony whose slot comes first
+    // launches before a base acting on day 1, which recovers the group at once.
     const ObjectId home = w.planet(a, {5, 5});
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
     w.colony(home, kA, 100).cargo.units.push_back({fighter, 3});
     w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
-    const VehicleId dock = w.spawn(w.design(kA, "Dock", "Test Station", {"Test Bridge", "Mv Fighter Bay"}), at(a, 5, 5));
+    const DesignId dockDesign = w.design(kA, "Dock", "Test Station", {"Test Bridge", "Mv Fighter Bay"});
+    const VehicleId dock = w.spawn(dockDesign, at(a, 5, 5));
+    REQUIRE(w.s.galaxy.object(home).slot < w.v(dock).slot);
     w.order(dock, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1));
     w.move();
     CHECK(w.v(dock).cargo.unitCount(fighter) == 3);
     CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 0);
+
+    // A base whose slot comes before the planet's acts first: it finds nothing
+    // to recover, and the colony's launch follows.
+    const VehicleId early = w.spawn(dockDesign, at(a, 6, 6));
+    const ObjectId later = w.planet(a, {6, 6});
+    REQUIRE(w.v(early).slot < w.s.galaxy.object(later).slot);
+    w.colony(later, kA, 100).cargo.units.push_back({fighter, 2});
+    w.s.colony(later)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
+    w.order(early, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1));
+    w.move();
+    CHECK(w.v(early).cargo.unitCount(fighter) == 0);
+    CHECK(w.s.colony(later)->cargo.unitCount(fighter) == 0);  // launched into space
+
+    // The order holds stars, planets, storms, warp points and vehicles alike: a
+    // ship takes the slot a storm left, and a new storm the slot a ship left.
+    const ObjectId storm = w.object(a, ObjectKind::Storm, {9, 9});
+    const uint32_t stormSlot = w.s.galaxy.object(storm).slot;
+    std::erase(w.s.galaxy.system(a).objects, storm);  // taken off the map: its slot is free
+    const VehicleId heir = w.spawn(d, at(a, 0, 0));
+    CHECK(w.v(heir).slot == stormSlot);
+    const uint32_t shipSlot = w.v(third).slot;
+    w.v(third).count = 0;
+    w.s.removeDeadVehicles();
+    SpaceObject made;
+    made.kind = ObjectKind::Storm;
+    made.sector = Sector{8, 8};
+    const ObjectId newStorm = w.s.addObject(made, a);
+    CHECK(w.s.galaxy.object(newStorm).slot == shipSlot);
+    const std::vector<ObjectRef> order = objectOrder(w.s);
+    for (size_t i = 1; i < order.size(); ++i) CHECK(order[i - 1].slot < order[i].slot);
+    // The system lists its objects in object order.
+    const auto& list = w.s.galaxy.system(a).objects;
+    for (size_t i = 1; i < list.size(); ++i) CHECK(w.s.galaxy.object(list[i - 1]).slot < w.s.galaxy.object(list[i]).slot);
 }
 
 TEST_CASE("movement: the Attack Sector question: seen enemies on in-system steps, not for cloaked or drone groups, not on warp jumps") {
@@ -3187,14 +3527,15 @@ TEST_CASE("orders: composite orders are expanded into simple ones when they are 
     w.give(docked, {mk(OrderKind::Resupply)});
     CHECK(w.v(docked).orders.empty());
 
-    // Fleets: expanded from the leader's sector, into the fleet's list.
+    // Fleets: expanded once from the fleet's location, into every member's copy.
     const VehicleId f1 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
     const VehicleId f2 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Wing", {f1, f2}}).ok);
     const FleetId fid = w.v(f1).fleet;
     REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {mk(OrderKind::Warp, {}, ab)}, false}).ok);
-    REQUIRE(w.s.fleet(fid)->orders.size() == 2);
-    CHECK(w.s.fleet(fid)->orders[0] == moveTo(a, 12, 6));
+    REQUIRE(w.v(f1).orders.size() == 2);
+    CHECK(w.v(f1).orders[0] == moveTo(a, 12, 6));
+    CHECK(w.v(f2).orders == w.v(f1).orders);
     (void)ba;
 }
 

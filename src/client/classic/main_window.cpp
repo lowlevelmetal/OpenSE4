@@ -2,6 +2,7 @@
 
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
+#include "client/classic/facility_markers.hpp"
 #include "client/classic/map_style.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/colony_logic.hpp"
@@ -206,7 +207,6 @@ bool turnsToHeading(const game::Rules& r, const game::GameState& s, const game::
 
 void MainWindow::reset(UiContext& ui) {
     clearSelection();
-    showMovementLines_ = settings().showMovementLines;
     const game::GameState& s = ui.state();
     // Every starting planet is a capital: the one in the home system first.
     const game::EmpireId me = ui.session.player();
@@ -324,7 +324,9 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
 }
 
 void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
-    const ClassicSettings& prefs = settings();
+    // The Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3). "Skip
+    // ships under construction" has nothing to skip: our ships appear finished.
+    const game::InterfaceOptions& prefs = ui.options();
     const game::Vehicle* current = selectedVehicle(ui);
     std::vector<game::VehicleId> list;
     for (const game::Vehicle& v : ui.state().vehicles) {
@@ -332,11 +334,12 @@ void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
         // "Next ship": in a turn-based game the ships that still have movement
         // points, in a simultaneous game those without orders (spec 03 §17).
         if (idleOnly && ui.session.turnBased() && v.movement <= 0) continue;
-        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty())))
+        if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || game::fleetOrders(ui.state(), *ui.state().fleet(v.fleet)).empty())))
             continue;
-        if (prefs.cycleSkipsDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
+        if (prefs.skipDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
+        if (prefs.skipInFleets && v.fleet.valid() && !(current && v.id == current->id)) continue;
         // "Stop once per location": skip other ships in the sector we are leaving.
-        if (prefs.cycleOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
+        if (prefs.stopOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
         list.push_back(v.id);
     }
     if (list.empty()) return;
@@ -354,7 +357,7 @@ void MainWindow::cycleFleet(UiContext& ui, int dir) {
     auto it = fleet_ ? std::find(list.begin(), list.end(), *fleet_) : list.end();
     size_t i = it == list.end() ? 0 : (size_t(it - list.begin()) + list.size() + size_t(dir + int(list.size()))) % list.size();
     const game::Fleet* f = ui.state().fleet(list[i]);
-    if (f && !f->members.empty()) selectVehicle(ui, f->leader.valid() ? f->leader : f->members.front());
+    if (const game::Vehicle* leader = f ? game::fleetLeader(ui.state(), *f) : nullptr) selectVehicle(ui, leader->id);
 }
 
 void MainWindow::cycleColony(UiContext& ui, int dir) {
@@ -470,8 +473,9 @@ void MainWindow::giveOrder(UiContext& ui, game::Order o) {
         c.fleet = w.fleet;
         c.planet = w.planet;
         if (const game::Fleet* f = s.fleet(w.fleet)) {
-            c.orders = f->orders;
-            c.repeat = f->repeatOrders;
+            // The fleet's orders: copies in its members' lists (spec 03 §8).
+            c.orders = game::fleetOrders(s, *f);
+            c.repeat = game::fleetRepeats(s, *f);
         } else if (const game::Vehicle* v = s.vehicle(w.vehicle)) {
             c.orders = v->orders;
             c.repeat = v->repeatOrders;
@@ -710,8 +714,8 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             std::vector<game::Order> current;
             bool repeat = false;
             if (const game::Fleet* f = s.fleet(owners.front().fleet)) {
-                current = f->orders;
-                repeat = f->repeatOrders;
+                current = game::fleetOrders(s, *f);
+                repeat = game::fleetRepeats(s, *f);
             } else if (const game::Vehicle* x = s.vehicle(owners.front().vehicle)) {
                 current = x->orders;
                 repeat = x->repeatOrders;
@@ -792,19 +796,10 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             if (!c.items.empty()) chooser_ = std::move(c);
             return;
         }
-        case OrderId::AbandonPlanet: {
-            if (!colony) return;
-            Chooser c;
-            c.title = "Abandon Planet";
-            c.note = std::format("Abandon {}?", s.galaxy.object(colony->planet).name);
-            const game::ObjectId planet = colony->planet;
-            c.items.push_back({"Abandon it", [this, &ui, planet] {
-                                   const game::CommandResult res = ui.session.issue(game::cmd::AbandonPlanet{planet});
-                                   if (!res.ok) note(ui, res.error);
-                               }});
-            chooser_ = std::move(c);
+        case OrderId::AbandonPlanet:
+            // Always lit; the population limit is checked after the player confirms (§2.8).
+            openFor(ui, ScreenId::AbandonPlanet);
             return;
-        }
         case OrderId::Minister: {
             if (!tagged_.empty()) {
                 const game::Vehicle* first = s.vehicle(tagged_.front());
@@ -1011,7 +1006,7 @@ void MainWindow::commandPanel(UiContext& ui) {
                     ui.tagItem("order:" + std::string(tagId));
             // Repeat Orders and Minister Control show their pressed state when on.
             bool on = false;
-            if (enabled && slot.order == OrderId::RepeatOrders) on = f ? f->repeatOrders : v && v->repeatOrders;
+            if (enabled && slot.order == OrderId::RepeatOrders) on = f ? game::fleetRepeats(s, *f) : v && v->repeatOrders;
             if (enabled && slot.order == OrderId::Minister) on = tagged_.empty() && (v ? v->minister : c && c->minister);
             const int state = !enabled ? 3 : on ? 2 : hovered ? 1 : 0;
             drawAt(ui, dl, orderCell(ui.art, slot.band, slot.column, state), at, {34, 34});
@@ -1199,7 +1194,7 @@ void MainWindow::overlayText(UiContext& ui) {
     if (!explored) {
         centred(ui.fonts.bold, kTitleSize, panel.min.x + panel.size().x * 0.5f, panel.min.y + panel.size().y / 3.0f, IM_COL32_WHITE, "Unexplored");
     } else {
-        for (game::ObjectId id : settings().showWarpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
+        for (game::ObjectId id : ui.options().warpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
             // A warp point is named after its destination once we have explored it
             // (docs/spec/01 §5.4, sight::warpPointName).
             const game::SpaceObject& wp = s.galaxy.object(id);
@@ -1207,6 +1202,25 @@ void MainWindow::overlayText(UiContext& ui) {
             const game::SystemId to = s.galaxy.object(wp.destination).system;
             if (!s.options.omnipresent && !ui.me().hasExplored(to)) continue;
             centred(font, 11, sectorCenter(wp.sector).x, sectorCenter(wp.sector).y + 18, IM_COL32(184, 200, 255, 255), s.galaxy.system(to).name);
+        }
+        // Empire Options, System Display (spec 06 §1.9): planet names under the
+        // planets, and the facility letter markers of our colonies above them
+        // (placement inferred).
+        const game::InterfaceOptions& opts = ui.options();
+        for (game::ObjectId id : sys.objects) {
+            const game::SpaceObject& o = s.galaxy.object(id);
+            if (o.kind != game::ObjectKind::Planet) continue;
+            if (opts.planetNames) centred(font, 11, sectorCenter(o.sector).x, sectorCenter(o.sector).y + 18, IM_COL32(220, 220, 220, 255), o.name);
+            const game::Colony* col = s.colony(id);
+            if (opts.facilityMarkers == 0 || !col || col->owner != ui.session.player()) continue;
+            const std::string markers = facilityMarkers(ui.rules(), *col, opts.facilityMarkers);
+            if (!markers.empty()) centred(font, 10, sectorCenter(o.sector).x, sectorCenter(o.sector).y - 25, IM_COL32(255, 255, 0, 255), markers);
+        }
+        // "Coordinate location": the sector under the pointer (inferred: after the system name).
+        if (opts.coordinateLocation && hover_) {
+            const std::string where = std::format("({},{})", hover_->x, hover_->y);
+            const float nameW = ui.fonts.bold->CalcTextSizeA(ui.fontPx(kTitleSize), FLT_MAX, 0.0f, sys.name.c_str()).x / k;
+            text(Vec2{geo.left + 13 + nameW + 10, 122}, 12, IM_COL32(200, 210, 230, 255), where);
         }
     }
 
@@ -1244,9 +1258,8 @@ void MainWindow::overlayText(UiContext& ui) {
     // Waypoints 1–10 (the number in cyan) and the tagged minefields ("M"), §2.4.
     const ImU32 cyan = imColor(map_style::kWaypoint);
     const auto& wps = ui.me().waypoints;
-    if (settings().showWaypointMarkers)
-        for (size_t i = 0; i < wps.size(); ++i)
-            if (wps[i].set && wps[i].location.system == shown_) text(cellOrigin(wps[i].location.sector) + Vec2{3, 2}, 10, cyan, std::to_string(i));
+    for (size_t i = 0; i < wps.size(); ++i)
+        if (wps[i].set && wps[i].location.system == shown_) text(cellOrigin(wps[i].location.sector) + Vec2{3, 2}, 10, cyan, std::to_string(i));
     for (const game::Location& m : ui.me().taggedMinefields)
         if (m.system == shown_) text(cellOrigin(m.sector) + Vec2{40, 2}, 10, cyan, "M");
 
@@ -1372,7 +1385,11 @@ void MainWindow::hotkeys(UiContext& ui) {
     if (pressed(Action::PreviousColony)) cycleColony(ui, -1);
     if (pressed(Action::TagAll)) tagAll(ui);
     if (pressed(Action::ClearTags)) tagged_.clear();
-    if (pressed(Action::MovementLines)) showMovementLines_ = !showMovementLines_;
+    // Ctrl+L flips the Options window's "Display Ship Movement Lines" (spec 06 §1.9).
+    if (pressed(Action::MovementLines)) {
+        settings().showMovementLines = !settings().showMovementLines;
+        saveSettings();
+    }
     if (pressed(Action::ToggleSound)) {
         // The Sound On switch; music is not touched (§3.2).
         settings().soundOn = !settings().soundOn;
@@ -1503,7 +1520,7 @@ void MainWindow::trackMovement(UiContext& ui) {
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : ui.state().vehicles)
         if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
-    glides_.track(ui.time, shown_, settings().animateShipMovement && !replay_.active(), visible);
+    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible);
 }
 
 void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
@@ -1523,7 +1540,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         r.sprite(bg.tex, Rect::fromPosSize(panel.min, size), Rect{bg.uv.min, bg.uv.min + Vec2{su.x * size.x / bg.size.x, su.y * size.y / bg.size.y}});
     }
     // Grid lines with the empire option (§1.9): 14 each way on the cell boundaries.
-    if (settings().systemGrid)
+    if (ui.options().systemGrid)
         for (int i = 0; i <= 13; ++i) {
             const float x = geo.sectorOrigin.x + kSectorSize * float(i), y = geo.sectorOrigin.y + kSectorSize * float(i);
             const Color c = rgb(map_style::kGrid);
@@ -1562,7 +1579,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
                     const Sprite flag = ui.art.flag(s.empire(col->owner).race.style, false);
                     if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
                     else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, col->owner));
-                } else if (settings().showColonizationMarkers && s.galaxy.object(id).kind == game::ObjectKind::Planet &&
+                } else if (ui.options().colonizableMarkers && s.galaxy.object(id).kind == game::ObjectKind::Planet &&
                            colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
                     const bool breathe = breathableBy(s, ui.session.player(), s.galaxy.object(id));
                     const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
@@ -1629,9 +1646,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     }
 
     // Movement line for the selected own vehicle.
-    if (const game::Vehicle* v = selectedVehicle(ui); v && showMovementLines_ && v->owner == ui.session.player()) {
+    if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player()) {
         const game::Fleet* f = s.fleet(v->fleet);
-        const auto& orders = f ? f->orders : v->orders;
+        const auto& orders = f ? game::fleetOrders(s, *f) : v->orders;
         game::Location from = v->location;
         for (const game::Order& o : orders) {
             game::Location to = o.location;
@@ -1657,12 +1674,11 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     if (sector_) brackets(*sector_, kSelectYellow);
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
-    // Waypoints: a cyan frame around the sector (the number is drawn by overlayText).
-    if (settings().showWaypointMarkers)
-        for (const auto& w : ui.me().waypoints)
-            if (w.set && w.location.system == shown_)
-                r.rectOutline(Rect::fromPosSize(cellOrigin(w.location.sector) + Vec2{1, 1}, {kSectorSize - 2, kSectorSize - 2}), 1.0f,
-                              rgb(map_style::kWaypoint));
+    // Waypoints, always marked: a cyan frame around the sector (the number is drawn by overlayText).
+    for (const auto& w : ui.me().waypoints)
+        if (w.set && w.location.system == shown_)
+            r.rectOutline(Rect::fromPosSize(cellOrigin(w.location.sector) + Vec2{1, 1}, {kSectorSize - 2, kSectorSize - 2}), 1.0f,
+                          rgb(map_style::kWaypoint));
 }
 
 void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
@@ -1672,7 +1688,7 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
     const GalaxyGrid grid = galaxyGrid();
     r.rect(geo.galaxyPanel, Color::hex(0x000000));
     // The 68 × 47 grid, with the empire option Show Grid Lines (§2.6).
-    if (settings().galaxyGridLines) {
+    if (ui.options().galaxyGridLines) {
         const Color c = rgb(map_style::kGrid);
         const float w = grid.cw * float(map_style::kGridColumns), h = grid.ch * float(map_style::kGridRows);
         for (int x = 0; x <= map_style::kGridColumns; ++x)
@@ -1681,7 +1697,7 @@ void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {
             r.line(grid.origin + Vec2{0, grid.ch * float(y)}, grid.origin + Vec2{w, grid.ch * float(y)}, 1.0f, c);
     }
     // Warp lines from explored systems; a link to an unexplored one is a stub two cells long.
-    if (settings().galaxyWarpLines)
+    if (ui.options().galaxyWarpLines)
         for (const game::SpaceObject& o : g.objects) {
             if (o.kind != game::ObjectKind::WarpPoint || !o.destination.valid() || !me.hasExplored(o.system)) continue;
             const game::SystemId to = g.object(o.destination).system;

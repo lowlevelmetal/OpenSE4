@@ -46,8 +46,14 @@ class Rules;
 // (spec 05 §7); planet orders (Colony::orders, spec 03 §12); the Quadrant
 // Size and All Planets Same Size options (spec 01 §2); mood events waiting
 // for an empire's next happiness update (GameState::pendingMood, spec 05 §8).
-inline constexpr uint32_t kSaveVersion = 2;
-inline constexpr uint32_t kMinSaveVersion = 2;
+// Version 3: one object slot order for every object (SpaceObject::slot) and
+// fleets whose orders are their members' copies, with their own location
+// (spec 03 §19 Q62, Q65); the recorded home sector, design "ever built"
+// marks, dated messages and the computer players' demand counts (spec 05
+// Q42, Q41, Q37, Q49); per-empire interface options and facilities left on
+// abandoned planets (spec 06 §1.9, §7).
+inline constexpr uint32_t kSaveVersion = 3;
+inline constexpr uint32_t kMinSaveVersion = 3;
 
 inline constexpr size_t kEnvelopeSize = 32;
 

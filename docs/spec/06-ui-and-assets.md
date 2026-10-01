@@ -1423,9 +1423,10 @@ All of this subsection is (confirmed: binary).
 
 Questions 2 and 4–23 were settled from the executable (code and form resources). Each
 answer gives the result, points to the main section that now holds the details, and says
-where our client differs. Only Q18 keeps an open part. Questions 24–30 came up while the
-client was brought in line with these answers; each says what the client does for now
-(inferred).
+where our client differs. Only Q18 keeps an open part. Questions 24–48 are OpenSE4's
+own choices (inferred) where those rules leave something open, in the windows brought in
+line with Q8, Q11, Q16 and Q19–Q23; questions 49–55 are those of the main window, maps,
+art, sound and files brought in line with Q2, Q4–Q7, Q9, Q10, Q12–Q15, Q17 and Q18.
 
 1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
    Exact panel rectangles; what fills the 67 px right strip and
@@ -1442,7 +1443,7 @@ client was brought in line with these answers; each says what the client does fo
    centres measured on a capture in spec 07; use the executable's.
    Our client follows this at 1024x768 (the panel, the 1 px margin, the cropped
    background, 36x36 sprites at native size, the grid lines). It differs: it has only the
-   1024x768 layout, and its system-grid switch is kept per computer, not per empire.
+   1024x768 layout.
 3. **Order icon map.** *Answered in spec 07 §UI (the 20×2 strip and every cell).*
    Which `Orders.bmp` cell is which order; what the extra icons are
    (59 used vs about 43 documented orders); which `Main.bmp` icon is the 13th.
@@ -1464,8 +1465,7 @@ client was brought in line with these answers; each says what the client does fo
    - Jettison Cargo, Use Facility and Convert Resources light by the rules, but our engine
      cannot carry them out yet: using one says so.
    - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies.
-   - Abandon Planet does not offer to scrap the facilities afterwards.
-   - The movement log is replayed from what the client saw (Q26).
+   - The movement log is replayed from what the client saw (Q51).
    - An 800x600 layout, if added, needs the 4 wrapping pages.
 5. **System art.** Where are the 128x128 `Systems/*.bmp` and the 72x72 storm and
    asteroid tiles drawn, and what do `Mask Background Objs` and `Non-Tiled Center Pic`
@@ -1513,18 +1513,13 @@ client was brought in line with these answers; each says what the client does fo
    lines, autosave, and Reset Passwords on a simultaneous host). Empire Status → Empire
    Options is per empire and saved with the game. Both full lists, with defaults, are in
    §1.9 (confirmed: binary).
-   Our client differs: its Game Menu → Options opens our Empire Options, its Game Menu
-   has an extra Settings button, Save Empire is always disabled, and Players cannot
-   switch computer control. Its Empire Options merges both windows and keeps most
-   switches per computer, with only Ship Movement, Ship Orders and the colony-type picker
-   per empire; in the original every Empire Options row belongs to the empire, while
-   sound, music, the sound-set choice, movement animation, movement lines and autosave
-   belong to the Options window. Missing from ours: the similar-abilities note, the
-   first-queue-item confirmation, skip ships in fleets, coordinate location, the 12
-   facility-marker rows, both Latest Items rows, Politics auto-claim, separate research
-   and intelligence delete confirmations (ours has one), and Fast Tactical Combat; the
-   system grid and the two Galaxy Display rows are there, kept per computer. Ours has
-   waypoint-marker and colonization-marker rows that the original does not have.
+   Our client follows this: Game Menu → Options opens the per-computer Options window
+   (with an extra Settings button for OpenSE4's graphics, controls and effects volume),
+   Empire Options lists every row of the table above with its default, kept with the
+   empire and saved with the game, and the Game Menu has the original ten buttons; Save
+   Empire writes an empire file (ours holds no designs, so it does not ask about them).
+   It still differs: Players cannot switch computer control; there is no Reset
+   Passwords; no Settings.txt switch turns music off; our own choices are in Q41–Q48.
 9. **Start-up menu (1.95).** What is the `StartMenu.bmp` window? **Answer:** a launcher
    built into the game (the 736x536 window spec 07 saw), shown only when the program
    starts without arguments, as the Steam shortcut does. Play opens the Intro; the other
@@ -1543,9 +1538,8 @@ client was brought in line with these answers; each says what the client does fo
     hovered system cyan. Avoided systems use the viewer's own colour, not yellow.
     Our client follows these colours, symbols and overlays, the 68 × 47 grid and the
     hover name, and its system panel draws owner-coloured ship counts and cloak rings. It
-    differs: Show Grid Lines, Show Warp Lines and the system grid are kept per computer;
-    Systems To Avoid also rings avoided systems on its other tabs (ours); quadrant maps
-    in other windows fit the 68 × 47 grid to their own size.
+    differs: Systems To Avoid also rings avoided systems on its other tabs (ours); quadrant
+    maps in other windows fit the 68 × 47 grid to their own size.
 11. **Log details.** Meaning of the bullets, sort order, filter persistence?
     **Answer:** a green lamp marks the selected entry and a blue one every other row; the
     colour carries no category. Only the current turn's entries are listed, in the order
@@ -1554,13 +1548,10 @@ client was brought in line with these answers; each says what the client does fo
     position and the scroll position come back too. Full rules in §4.1, which is also
     corrected: a combat entry lists each object's damage (a percentage, Dead or Taken),
     not Start and Lost counts (confirmed: binary).
-    Our client differs: its bullets are coloured by category; it remembers the filter
-    and selection only in memory within one turn; it has an "Earlier turns" checkbox and
-    sorts newest first with dates; its Goto only jumps to locations (the original also
-    opens the target window, Construction Queues, Research, Intelligence, Empire Options,
-    Designs or Empires, over the Log); its Combat Forces table shows Start/Lost counts per
-    hull kind. Make sure Combat Replay is dim when `Create Combat Replay` is FALSE and
-    that Send Reply refuses when a message already went to that empire this turn.
+    Our client follows this, with the choices of Q41–Q48. It still differs: messages from
+    other empires are rows of their own (taken from the game's messages, listed before
+    the log entries) and keep our layout whatever `Use Old Log Political Message
+    Display` says; refused orders are rows of their own too.
 12. **Save folder contents.** **Answer:** see §6.1: the folders created at start-up; the
     names and places of saves, maps, empires and autosaves (`AutoSav<d>.gam`); the
     per-player turn saves; the `.plr`, `.trn` and `.cmb` names; the `History/plr_<N>_*`
@@ -1570,7 +1561,7 @@ client was brought in line with these answers; each says what the client does fo
     the layouts above, copies them next to each Save Game and autosave and restores them
     on loading. It differs: its saves and `History/` live in the user-data folder, not
     the install, and keep our own save format (fine, §6); the log copy's header words are
-    ours (Q30).
+    ours (Q55).
 13. **Status icons.** **Answer:** drones in cargo use cell 37, not 34. The executable
     draws 23 cells and never the other 15. §4.4 lists each cell, its condition and the
     drawing order for ships, planets and fleets, including cell 36 (remote mining),
@@ -1578,7 +1569,7 @@ client was brought in line with these answers; each says what the client does fo
     Our client draws these cells in this order for ships, fleets, planets, ship-list rows,
     reports and the Colonies list. It differs: colonies cannot cloak in our engine, so a
     colony never shows cell 9; what counts as "building", a cloaked fleet and "the first
-    miner" are our choices (Q25).
+    miner" are our choices (Q50).
 14. **Transparency.** **Answer:** the colour key is exact black, RGB(0,0,0), and there
     is no additive or alpha blending anywhere: every sprite is copied opaque or drawn
     with black transparent, explosions, shield hits, beams and torpedoes included
@@ -1598,7 +1589,7 @@ client was brought in line with these answers; each says what the client does fo
     steps. It differs: it plays no `boom1`/`boom2` per ground combat round and draws no
     small explosion over a system-panel sector; of the TCP/IP sounds only sending a chat
     line plays (`ordbtn`); a stellar manipulation sounds when the player's log reports it;
-    a game loaded from the Game Menu keeps the music (Q28); it keeps an effects volume of
+    a game loaded from the Game Menu keeps the music (Q53); it keeps an effects volume of
     its own.
 16. **Tooltips and focus.** **Answer:** there are no pop-up tooltips. Hovering a command
     or order button writes its name and key as white text at the top of the system panel,
@@ -1606,11 +1597,12 @@ client was brought in line with these answers; each says what the client does fo
     nothing while one is open, and nothing while the turn is being ended or the movement
     log replayed. Esc and Enter close only some windows; §3.4 lists the keys of each
     kind. In Yes/No prompts Enter means No (confirmed: binary).
-    Our client differs: its command and order buttons write the hint text of §2.3, but
-    other controls still show tooltips beside the pointer after a delay. Enter does not
-    close Close-type dialogs. Its Yes/No popups take Enter as Yes (original: No). Esc in
-    the main window clears targeting or the selection (the original does nothing; this can
-    stay as an extra). It already blocks main-window hotkeys while a window is open. Its
+    Our client follows §3.4 in its prompts: Yes/No boxes (Y; N, Esc and Enter mean No; the
+    key that opened a box does not answer it), windows with Close (Esc and Enter), battle
+    notices (Esc and Enter mean Begin), the Tactical/Strategic question (T and S) and Next
+    Player (Esc and Enter), and its command and order buttons write the hint text of §2.3.
+    It still differs: other controls show tooltips beside the pointer after a delay, and
+    Esc in the main window clears targeting or the selection (an extra that can stay). Its
     own extra keys are listed at the end of §3.
 17. **Weapon graphic index base.** **Answer:** beams and torpedoes are both 1-based:
     cell = `Weapon Display` − 1, and 0 means no picture (only warheads use 0 in stock
@@ -1635,27 +1627,9 @@ client was brought in line with these answers; each says what the client does fo
     Colonizable does not exclude colonized planets, and All lists no asteroid fields.
     The full tab table, the statistics, columns, sorting and Send Colony Ship are in
     §1.8.1 (confirmed: binary).
-    Our client differs:
-    - All lists asteroid fields; Colonizable excludes colonized planets; Coloniz\Empty
-      requires that no other empire has a colony in the system; Special means "has any
-      stellar ability"; Ship Enroute also counts fleet orders and Colonize orders of any
-      vehicle (original: only the own orders of ships with a Colonize ability). It
-      ignores cloaking when deciding colony status.
-    - No Sys To Avoid and the tab reset on every opening (original: kept per empire and
-      saved).
-    - Columns: ours are picture, Name, System, Type, Atmosphere, Cond., Min., Org., Rad.,
-      Status; the original's are picture, Name with type and size on a grey second line,
-      Atmosphere, three Values, and Ship Enroute with the colony ship's name.
-    - Sorting: ours is one key with an up/down toggle (original: the five-key history
-      with fixed directions). Statistics: ours differ from the ten lines of §1.8.1.
-    - Send Colony Ship: ours acts on the selected row, is lit when that planet is
-      colonizable and not targeted, picks an idle ship outside fleets by arrival time and
-      gives only a Colonize order. The original opens a planet picker, is lit whenever an
-      available colony ship exists, picks by shortest route (in turn-based games only
-      ships with movement left), gives Load Population, Move To and Colonize, and in
-      turn-based games then closes and shows the ship.
-    - Ours has an extra Goto button and a left-click only selects the row; in the
-      original a left-click goes to the planet.
+    Our client follows this (its own choices where the rules are silent are Q24–Q29). It
+    still differs only where our engine has nothing to test: it has no planetary cloak,
+    so no planet is left out for one and every colony is seen.
 20. **Construction Queues toggles.** What do Ships and Ship SY each include?
     **Answer:** the split is by whether a vehicle's space yard works right now, not by
     hull. Ship SY holds every ship and base queue with a working yard; Ships holds vehicle
@@ -1663,22 +1637,9 @@ client was brought in line with these answers; each says what the client does fo
     the next update, so it is normally empty. Planets and Planet SY split colonies the
     same way: a cloaked colony's yard does not count. All four are on by default. Rules,
     columns, statistics and the three action buttons are in §1.8.2 (confirmed: binary).
-    Our client differs:
-    - Ships means mobile ships with a yard and Ship SY means bases with one (original:
-      both under Ship SY); its Planets/Planet SY test ignores cloaking.
-    - The tab and the toggles reset on every opening (original: kept per empire).
-    - Columns: ours are picture, Queue, System, Building, Time and two tab columns; the
-      original has the three columns of §1.8.2, with the time in years and Never / On
-      Hold. Sorting and statistics differ as for Planets.
-    - Selection: ours also tags with Ctrl and has a Select All/None button (original:
-      Shift+click only).
-    - Multi-Add: ours is dim with nothing tagged and adds one item through a popup; the
-      original is always lit, shows a message when nothing is tagged, and uses the real
-      Set Construction Queue window (Ships and Units only), appending any number of
-      items.
-    - Scrap Facilities: ours acts on the tagged planets; the original always asks for one
-      planet through a picker. Upgrade Facilities: ours limits itself to the tagged
-      colonies; the original always upgrades every colony.
+    Our client follows this (its own choices are Q24–Q29). It still differs in: no
+    colony cloaking exists in our engine, so a colony's yard always works; status icons
+    on a row's second line are drawn for colonies only (ships and bases have none yet).
 21. **Tactical Combat details.** The Options list; which Orders act at once and which
     need a target click; the pointers; the right-click report. **Answer:** §1.10.1–
     §1.10.3 and §3.3 (confirmed: binary). The Options window has nine switches under
@@ -1687,42 +1648,21 @@ client was brought in line with these answers; each says what the client does fo
     Launch Units. The battle starts with a Begin button and ends with a message, after
     which the window closes. The install's `.cur` files are the pointers. Right-click
     opens a full Combat Piece Report window.
-    Our client differs:
-    - Its Options offer animation, a speed choice, the grid, the selected piece's reach,
-      piece names and ending the phase when no enemy is left (original: the list of
-      §1.10.3).
-    - It starts the battle at once with End Turn (original: Begin first, Orders dim) and
-      ends with an End Battle button (original: a message, then the window closes).
-    - Drop Troops (and T) waits for a target click (original: at once). L opens the Orders
-      window (original: Launch Units). Alt/Ctrl+0 picks group 0 (original: clears the
-      group marks).
-    - Its Orders window has a group-number slider, a formation list, inline launch buttons
-      and "Auto This Phase" (original: a plain 11-button menu whose items open their own
-      pickers).
-    - It draws its own move and crosshair pointers (original: the `.cur` files).
-    - Its piece report is a small text popup (original: the full report window).
-    - Its replay window has Play/Pause, previous and next round, next event, rewind,
-      speed, Ground Combat and previous and next battle (original: Options and Next
-      only, with the Replay Options of §1.10.3).
+    Our client follows this, with the choices of Q34–Q37 and Q39–Q40. It still differs:
+    it draws its own move and target pointers (no loader for the `.cur` files yet); its
+    piece report has no tabs; Drop Troops is still refused by the engine for an empire
+    it is not hostile to (Q37); its replay keeps the turn's events and the summary in
+    words beside the map (Q39).
 22. **Combat Simulator details.** How many sides, how items are removed, what Fleets for
     Plr does. **Answer:** always 10 sides, "Race 1" to "Race 10"; a left-click on a combat
     vehicle removes it; Fleets For Plr opens Fleet Transfer for the chosen side. Each click
     on an item adds one vehicle. Begin with Tactical fights in the Tactical Combat window
     and reopens the simulator with the same setup afterwards; Strategic opens the
     Strategic Combat window over it. Details in §1.10.4 (confirmed: binary).
-    Our client differs (it already allows 10 sides, so the "up to four" once noted here
-    is out of date):
-    - It starts with two sides named "Side N" and adds more with Add Side (original:
-      Race 1 to Race 10 always listed).
-    - It keeps one entry per design with a count slider and a strategy per item, and
-      removes with a right-click (original: one row per vehicle, no per-item strategy,
-      removal by left-click, right-click opens the report).
-    - Fleets For Plr toggles the selected item in one fleet per side (original: Fleet
-      Transfer for the side). Change Cargo opens a +/- popup (original: Cargo Transfer).
-    - Its home-system items are planets only (original: every colonized or unowned
-      object).
-    - It ties the Tactical/Strategic tabs to computer control (original: independent),
-      and it keeps the setup after Cancel (original: discards it).
+    Our client follows this, with the choices of Q38. It still differs: Fleets For Plr and
+    Change Cargo open our own pickers for the simulated ships, not the Fleet Transfer and
+    Cargo Transfer windows (those work on the real game), and Designs stays open under a
+    tactical simulation.
 23. **Strategic Combat and Ground Combat details.** **Answer:** in a turn-based game on
     one machine, every battle with a piece of a human-controlled empire asks Tactical or
     Strategic when it starts, during computer turns too (with a notice first); on
@@ -1734,43 +1674,149 @@ client was brought in line with these answers; each says what the client does fo
     (tactical, or a computer side in a strategic battle) and for a continuing ground
     stalemate; it fights round by round. Details in §1.10.5 and §1.10.6 (confirmed:
     binary).
-    Our client differs:
-    - It shows only battles the player's own orders started or that the player answered
-      Strategic, plus simultaneous ones (original: as above, at the moment each battle
-      starts).
-    - It plays back a precomputed record with Begin, Pause, Continue, Skip to End and
-      Ground Combat buttons, and Close works at any time (original: live, only Begin or
-      Strategic/Tactical and Close, Close dim until the end).
-    - Its layout puts the map on the left and the forces on the right (original: forces
-      list on the left, a small 218×191 map on the right). It groups all planets in one
-      row (original: up to 5 by name, 1/0 counts).
-    - Its Ground Combat shows the outcome at once on Begin, has Previous/Next buttons, and
-      opens from buttons in the Strategic Combat and Combat Replay windows (original:
-      round by round, "Victorious!" at the end, opens only at the moments above; neither
-      of those windows has a Ground Combat button).
-24. **Ships beside a planet.** Where exactly do the small flags and their counts go in a
+    Our client follows this, with the choices of Q30–Q33. It still differs: the engine
+    fights the battle and the window then shows it one combat turn at a time; with No
+    Tactical Combat on, battles are shown after the engine call that fought them (Q32);
+    Ground Combat shows the counts at the start and the end only, and does not open for a
+    ground stalemate at the end of the colony owner's turn (Q33).
+
+The Planets and Construction Queues windows follow §1.8, and these choices of ours fill
+what the executable's rules leave open (inferred; each needs a look at the running game):
+
+24. **Sort history.** We read the "five-key history" as: the last column header clicked is
+    the first key, the ones clicked before it break ties, up to five, each in its fixed
+    direction. Is that the original's order, and does a second click on the same header
+    change anything?
+25. **Available colony ships.** We count a ship as having orders when its fleet has orders,
+    and as out of supplies at 0 supply. Send Colony Ship on a planet that is already
+    colonized (possible from the Colonizable tab) refuses with a message. What does the
+    original do in each case?
+26. **Planets statistics.** We leave our own colonies out of "owned by enemies" and "owned
+    by allies". Does the original count them in one of the groups?
+27. **Construction Queues rows.** We take the time at the right as the whole queue's time,
+    show it as "N.N Years", make rows 40 px tall and mark a tagged row with the green lamp
+    at its top left. The Ships toggle lists ships and bases that still have a yard part or
+    a queue while their yard does not work (cloaked, mothballed or lost). The statistics'
+    "resources generated" is the empire's total income per turn. Which of these match?
+28. **First-item confirmation.** With "confirm deleting the first item" on we ask whenever
+    the first item is removed, with or without progress, and before Clear Queue. Does the
+    original ask in both cases, and only for the first item?
+29. **Similar system-wide abilities.** We note it after a facility is queued whose
+    abilities include one with "System" in its identifier that a facility of one of our
+    colonies in the same system already has. Which abilities count, does the original
+    also look at queued facilities, and is it a note or a question?
+
+The combat windows (Tactical Combat and its Orders, Launch Units, Combat Options and
+Combat Piece Report windows, Combat Replay, Combat Simulator, Strategic Combat and Ground
+Combat) were brought in line with Q21–Q23; these choices of ours are (inferred) and open:
+
+30. **Strategic Combat pace.** The original fights each combat turn with no coded delay.
+    Our window plays the engine's finished battle back and holds each combat turn for
+    0.45 s; how long does a turn stay on screen in the original on a period machine?
+31. **Strategic Combat details.** Where in the title strip do the system name and the
+    coordinates go (ours: x 270 and 450, as in Ground Combat)? Are the 5 planets of the
+    forces list counted per empire (ours) or for the whole battle? Under which hull does a
+    unit group that mixes designs count its units (ours: its first design's)?
+32. **Battles without tactical combat.** With No Tactical Combat on, ours shows every
+    battle with a human player's piece after the engine call that fought it, not as the
+    battle starts (the engine does not stop for them). Is the window shown before or after
+    the battle's results in the original?
+33. **Ground Combat rounds.** Our record keeps a ground fight's start and end only, so the
+    window counts the rounds and shows the new numbers at the end. Do the original's unit
+    counts change after every round? Ours does not yet open Ground Combat for a stalemate
+    at the end of the colony owner's turn (that needs the engine to stop there).
+34. **Fast Tactical Combat.** Ours plays the animation three times faster instead of
+    dropping the pauses between steps; the same for Fast Tactical Combat in Combat Replay
+    Options.
+35. **Combat Piece Report.** Ours shows Damage as structure taken / maximum for a ship and
+    as a percentage otherwise, Supply as "-" for a planet, a fleet's own group as "Fleet -
+    Leader" or "Fleet - Wingman", Formation only for fleet members, and no tabs; a neutral
+    obstacle gets a one-line note instead of its ordinary report. What do the original's
+    tabs and these lines show?
+36. **Tactical Combat Orders.** Ours stacks the 11 buttons with no gap and no title, and
+    the pickers (group size, group number 1–9, formation, the Resolve Combat question)
+    replace the menu in the same window. Are they separate windows in the original, and
+    can a group number be 0 there?
+37. **Drop Troops.** Ours picks the first adjacent colony of another empire that the
+    battle accepts. The engine still refuses an empire it is not hostile to (spec 04 §11),
+    while §1.10.2 says hostility is not checked: one of the two needs to change.
+38. **Combat Simulator.** A race's flag is that of the empire its first item belongs to,
+    or the player's while it has none. Every object of the home system is offered,
+    asteroid fields and storms included. Fleets For Plr is our list of the race's ships
+    with one fleet per race (formation and strategy), and Change Cargo our holder picker,
+    not the original's Fleet Transfer and Cargo Transfer windows. Ships are numbered per
+    race and design ("Name 0001"). While a tactical simulation is fought, Designs stays
+    open underneath. Which of these match the original?
+39. **Combat Replay.** Ours keeps, beside the map and its overview, the turn's events in
+    words and the battle's summary (OpenSE4's own help); it has no Close button (Esc and
+    Stop Replay close it). Does the original replay keep a log of any kind?
+40. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
+    install's `.cur` files exists yet.
+
+The Options windows, the Log, the system window's display options and Abandon Planet
+follow §1.9, §4.1 and §2.8; these choices of ours fill what the rules leave open
+(inferred; each needs a look at the running game):
+
+41. **Log Goto to a window.** Goto on an entry without a location opens a window chosen by
+    the entry's category: Construction → Construction Queues, Research → Research,
+    Intelligence → Intelligence, Politics → Empires; Events, Combat and Misc open none.
+    Which entries name which window, and which ones open Empire Options or Designs?
+42. **Log order and selection.** Messages from other empires come first, then the log
+    entries in the order they were made, then the orders the turn refused; a filter click
+    selects the first row. Is that the original's order, and what does a filter click
+    select?
+43. **Log damage of planets.** Our battle records keep no planet hit points, so a planet
+    that stands shows "0%" when untouched and "Hit" otherwise; ships and bases show their
+    damage now, unit groups the share of their units lost. What does the original show
+    for a planet?
+44. **Facility markers.** We read the letters as: R Supply Generation, S Spaceport, Y Space
+    Yard; Ca, Cc, Cv the planet atmosphere, conditions and value changers; St, Ft ship and
+    fleet training; Rc Component Repair; Rr Resource Reclamation; Sst, Sft the system-wide
+    ship and fleet training; Spv, Spc the system-wide value and conditions changes; Sph
+    the system-wide happiness change; Spa the system-wide population change; Scm, Sdm the
+    system combat and damage modifiers; Srm the system reproduction modifier; Ssm the
+    system shield modifier; Spp the system plague prevention; Src the system reduced
+    maintenance; Sbe, Sbi the system bad event and bad intelligence chances; Slr the
+    system long range scanner. We draw them in yellow above our own colonies. Which
+    abilities, where, and for which colonies does the original draw them?
+45. **Planet names and coordinate location.** We draw a planet's name under it, like a
+    warp point's destination, and the coordinates of the sector under the pointer after
+    the system name. Where does the original show them?
+46. **Confirmations.** "Confirm stellar manipulation" asks before every action. "Confirm
+    scrapping" asks before scrapping vehicles or facilities and before self-destruction.
+    Do the original's ask in the same cases?
+47. **Claims and abandoned planets.** "Claim every system we colonize" applies to human
+    empires when the colony is founded (computer players work out their claims each
+    turn). Facilities left on an abandoned planet go, all of them, to the next colony
+    founded there by any empire. Do these match?
+48. **Smaller choices.** The planet report's Time Remaining uses the Construction
+    Queues' years ("0.3 Years", "On Hold", "Never"). "Skip ships under construction"
+    skips nothing: our ships appear finished, with no Under Construction status. Save
+    Empire writes our empire file, which holds no designs, so it does not ask whether to
+    include them. Which of these differ from the original?
+49. **Ships beside a planet.** Where exactly do the small flags and their counts go in a
     sector that holds a planet, or several empires, and does a sector with a star,
     storm or warp point count like a planet? Our client draws the flags left to right
     along the bottom of the 36x36 sprite area, each count after its flag, and treats any
     stellar object like a planet (inferred).
-25. **Status icon conditions.** What makes an object "building", which fleet shows the
+50. **Status icon conditions.** What makes an object "building", which fleet shows the
     cloaked icon, and in what order "the first miner" is found? Our client: a ship whose
     yard works (not cloaked) with items queued, or a colony with items queued, held or
     not; a fleet with any member cloaked; the first in the game's vehicle order
     (inferred).
-26. **Movement log replay.** What does one Ctrl+I step show, and how does Ctrl+U differ
+51. **Movement log replay.** What does one Ctrl+I step show, and how does Ctrl+U differ
     from Ctrl+P? Our engine keeps no day-by-day log, so our client moves each vehicle it
     saw in a straight line from where it was before the turn to where it is, in ten
     steps, and plays Ctrl+U like Ctrl+P (inferred).
-27. **Tagged groups.** What do Scrap and Move To Waypoint show for a tagged group? Our
+52. **Tagged groups.** What do Scrap and Move To Waypoint show for a tagged group? Our
     client asks to confirm the scrapping of every tagged object, and lists the set
     waypoints (inferred).
-28. **Resume Game and the music after loading.** Does an autosave become the "last saved
+53. **Resume Game and the music after loading.** Does an autosave become the "last saved
     game", and does Load Game from the Game Menu change the music? Our client: only Save
     Game sets it, and an in-game load keeps the music (inferred).
-29. **Low supply of fighter groups.** Do the Sentry button and the low-supply icon of a
+54. **Low supply of fighter groups.** Do the Sentry button and the low-supply icon of a
     fighter group use a tenth of `Supply Amount for Low Supply Warning`, as Sentry's own
     end does? Our client lights the button by a tenth and draws the icon by the full
     level (inferred).
-30. **The log copy's header.** What words head `plr_<N>_log.txt`? Our client writes
-    "Date", "Header" and "Text" in the columns of §6.1 (inferred).
+55. **The log copy's header.** What words head `plr_<N>_log.txt`? Our engine writes
+    "Date", "Title" and "Text" in the columns of §6.1, then the rule (inferred).

@@ -1,5 +1,5 @@
 ---
-windows: game-menu, save-game, load-game
+windows: game-menu, save-game, load-game, learn
 ---
 # Getting started
 
@@ -29,8 +29,8 @@ The title screen offers:
 | `New Game` | Set up every detail of a new game and the empires in it. |
 | `Resume Game` | Continue the game you saved last. |
 | `Load Game` | Continue a saved game. |
-| `Tutorial` | Guided lessons, practice games and this manual. |
-| `Scenario` | The practice games. |
+| `Tutorial` | Guided lessons that walk you through the game step by step (see [below](#learning-the-game)). |
+| `Scenario` | Training games: practice games with objectives. |
 | `Credits` | Who made OpenSE4, and what it is built with. |
 | `Quit Game` | Leave OpenSE4. |
 
@@ -106,6 +106,7 @@ Press `F2` (or the first command button) to open the [Game Menu](window:game-men
 | `Players` | Show which empires the computer plays. |
 | `Options` | Your [Empire Options](settings#empire-options). |
 | `Settings` | Graphics, controls and sound. |
+| `Learn` | Tutorials, training games and this manual. Starting one replaces the game you are playing, so the window asks first. |
 | `Delete Game` | Remove a saved game. |
 | `Quit` | Leave OpenSE4. |
 
@@ -124,6 +125,23 @@ folder:
 | Linux | `~/.local/share/OpenSE4/` |
 | Windows | `%APPDATA%\OpenSE4\` |
 | macOS | `~/Library/Application Support/OpenSE4/` |
+
+## Learning the game
+
+The **Learn** window gathers OpenSE4's three ways to learn the game. The title screen's
+`Tutorial` button opens it on its tutorials, `Scenario` on its training games and `Manual` on
+this manual; during a game, the Game Menu's `Learn` button opens it.
+
+- **Tutorials** are guided lessons. Each starts a small prepared game, and a panel at the bottom
+  left of the system view tells you what to do, outlines the button it is about and moves on when
+  you have done it. `Read More` opens the manual page about the step.
+- **Training games** are practice games with objectives and deadlines. The panel shows the
+  objectives, which light up as you meet them, the briefing pages and the hints.
+- The **manual** has a contents tree, a search box and links that open the game's windows.
+
+`Hide` puts the lesson panel away, and `Ctrl+H` or the **T** button at the top right of the status
+bar brings it back. In any window, `Shift+F1` opens the manual page about it. The Learn window
+marks the lessons and training games you have finished.
 
 ## Your first turns
 

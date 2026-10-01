@@ -36,7 +36,7 @@ people take 5 kT with the stock settings; a unit takes its hull's size. Cargo ca
 between your own ships, bases and colonies in the same sector. You can never take a colony's last
 1M of people.
 
-[Cargo Transfer](window:cargo-transfer) (`T`) moves cargo at once. Pick a holder on each side,
+[Cargo Transfer](window:cargo-transfer) (`T`) moves cargo at once, in both turn styles. Pick a holder on each side,
 choose how much to move with `Move One`, `Move Five`, `Move Ten` or `Move All`, then click an item
 to move it across. `Load Cargo Order` and `Drop Cargo Order` instead give the ship an order to
 load or unload at a sector you pick later.

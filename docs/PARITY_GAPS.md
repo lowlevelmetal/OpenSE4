@@ -27,13 +27,23 @@ facilities, events, combat, stellar manipulation), and setup's racial point cost
 2026-09-30 the engine's remaining guesses (spec 02 §13 items 33 and 37–50) and the other
 open items of spec 02 were settled from the executable, and the rows found then were
 implemented the same day (the opening pools of spec 02 §9 followed with the turn order).
-Built units go to the holders in the game's object order (spec 02 §6.5): with the
-engine's object slots every planet comes before every vehicle, so after the builder they
-try the planets, then the ships and bases by slot (spec 02 §13 Q52). A queued facility
+Built units go to the holders in the game's object order (spec 02 §6.5), planets and ships
+mixed: since 2026-10-01 stellar objects and vehicles share one list of object slots, where
+a new object of any kind takes the lowest slot any kind left (spec 02 §13 Q52). A queued facility
 switches to a newer level in place, keeping what was paid (`cmd::QueueReplaceFacility`,
-spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades. The
-engine's own choices where the spec is silent are spec 02 §13 items 51–56. No row
-remains.
+spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades.
+
+On 2026-09-30 the engine's own choices where the spec had been silent (spec 02 §13 items
+51–56) were answered from the executable, and on 2026-10-01 the engine followed the answers:
+the conditions bands compare the stored double with the doubles nearest their edges, a value
+on an edge in the band above (`economy::conditionsBand`, Q51); the queue removal pass takes
+only a yard ship's facility items and, on a colony without a working yard, its ship and base
+items and its upgrades with nothing left, so an upgrade with nothing left on a colony with a
+yard is paid in full and converts nothing, and a repeated space yard item stops once the
+colony has a yard (`economy::itemObsolete`, `stillBuildable`, Q53). Q55 and Q56 needed no
+change (Q56's command check stays an OpenSE4 choice). Q52 (the shared object slots) came with
+the movement work and Q54 (the cargo trim after each qualifying hit) with the combat work,
+both on 2026-10-01. No row remains.
 
 ## Vehicles, movement and logistics (spec 03)
 
@@ -44,14 +54,51 @@ are expanded when given (`orders.hpp`), and units in space are held in groups th
 line with the rules of spec 03 §19 as settled from the executable: the stored-double day counter,
 chained actions in object-slot order, ad-hoc groups, the Ship Orders options, launches and
 recovery, hazard damage, repeat battles, Sweep Mines, repair and training sources, ruins, the
-destructive-centre cost map, design editing and the smaller rules. The engine's own choices
-where the spec is silent are spec 03 §19 Q60–Q71. Long-range scanning follows §3.3: a
-design is learned only when a human opens the report of a vehicle the scanners reach
+destructive-centre cost map, design editing and the smaller rules. Long-range scanning follows
+§3.3: a design is learned only when a human opens the report of a vehicle the scanners reach
 (`cmd::OpenVehicleReport`), a ranged scanner works from any own object within its reach,
 and `Long Range Scanner - System` works from any own object in the system (colonies
 without population too) and covers ships and bases, not unit groups (`sight.cpp`
-`scannerReaches`). A turn-based Attack goes to the sector its target was in when the order
-was given and attacks there (§8, Q71). No row remains.
+`scannerReaches`).
+
+On 2026-10-01 the answers to §19 Q61–Q71 found six rows (the combat rules of Q60 and Q68
+belong with spec 04), and they were closed the same day:
+
+- **One object list** (Q62, spec 02 §13 Q52; `GameState::freeSlot`, `addObject`,
+  `objectOrder`). The engine numbered vehicles apart and put every planet before every
+  vehicle. Now stars, planets, storms, warp points, ships, bases and unit groups share one
+  list of slots, a new object of any kind takes the lowest slot any kind left, and colonized
+  planets act on day 1 in their slot's place; movement, built units, training, remote mining,
+  the colony steps and the computer's repair yards follow that order.
+- **Fleet orders** (§8, §9, Q65; `fleetOrders`, `cmd::SetOrders`). The engine kept a fleet
+  list apart from the members' lists. Now a fleet's orders are copies in the lists of its
+  members at its location: orders given to it or to any member are appended to each copy,
+  joining and leaving clear the vehicle's list, and the members at the location carry out
+  the head order of the member that acts, each list moving on. The client and the computer
+  players read and give fleet orders the same way.
+- **Fleet location and speed** (§6.3 step 2, §9, Q61; `Fleet::location`,
+  `GameState::tidyFleets`). The fleet followed its leader, and a member elsewhere used its
+  own movement. Now the location is the fleet's own record, following whichever member
+  moved last; every member gains day credit at the lowest movement among the members at the
+  location, 0 when none is there; a fleet with nobody there is disbanded at once.
+- **A stopped vehicle's later actions** (§6.3 step 4, Q63). The action ran with 0 movement
+  points and set every member to 1. Now it gives the acting vehicle exactly 1 when its
+  maximum is at least 1, and the other members keep theirs.
+- **Turn-based Attack and pursuits** (§6.4, §8, Q69, Q71). The Attack decloaked every member,
+  one with no sector recorded followed its target, and a pursuit without a drone spent 1
+  movement point and supply at its target. Now the turn-based Attack goes to the sector its
+  target was in when it was given (or stays where the group stands when none was recorded)
+  and decloaks nobody but the Ship Cloaking minister's vehicles, which cloak again
+  afterwards; a pursuit group without a drone pursuing there waits at the target and spends
+  nothing.
+- **Colonies "seen"** (§6.2, §6.4, §8, Q70; `sight::canSeeColony`). A planet nothing
+  obscures counted as a seen colony without sensors. Now the detection rule of spec 01 §6.3
+  applies, which needs sensors in the system.
+
+The engine's own choices where the spec is silent are spec 03 §19 Q72–Q76: objects changed
+in place by stellar manipulation, a fleet member away from the fleet's location that acts,
+mothballed members, fleet members in a computer player's ad-hoc group, and changes to a
+fleet's orders other than adding. No row remains.
 
 ## Combat (spec 04)
 
@@ -68,35 +115,83 @@ attacks again every time its list runs, and other participants lose only a Sentr
 head of their lists. In simultaneous games every sector where an object carried out an
 order that day, a waiting Sentry included, is checked from the side of each empire with
 an uncloaked vehicle there, and a sector fights again in the same turn only when
-newcomers arrive or a survivor was damaged. The details the spec leaves open are the
-engine's choices in spec 04 §19.1. The questions of §19.2, answered from the executable
-on 2026-09-30, found the differences below.
+newcomers arrive or a survivor was damaged.
 
-| Item | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Planning targets (`planTarget`, `chooseMode`, `assigned_`, `incomingSeekerDamage`, `buildWeapons`) | Each weapon gets the first sorted target it can hit and affect, with no budget, no overkill total and no push/pull spreading; point-defense and warheads get none; a fighter group's weapons get separate targets; the main target is the first some weapon can engage. The overkill total adds up a side's assignments over the combat turn, counts seekers in flight and uses current hit points | Spec 04 §16 "How the computer gives out targets" and "Overkill limit", §19.2 Q60: the firing steps without the distance check; first B candidates in rounds; totals from 0 at every choice, full hit points, seekers in flight never counted | M |
-| Attack map and square choice (`attackMap`, `rangeSquare`, Optimal, Maximum Range) | The mover may keep its own square; the attack map leaves point-defense and warheads out, compares unweighted damage with emissive armor, then scales and truncates, and has no border over-count; Optimal takes the lowest ratio even at 9999 or more; Maximum Range leaves point-defense out and breaks ring ties 1 in 10 | Spec 04 §16.1 "Attack map", "Choosing the square", Optimal and Maximum Range; §19.2 Q61 | M |
-| Surrounded pieces and group dissolving (`combat_space.cpp`, after the leader's walk; `afterDamage`) | Surrounded is checked after the leader's move, for leaders only; a hit dissolves the group only when it takes the leader's maximum movement to 0 and the leader had movement at the start of the combat turn | Surrounded is checked once, when any computer piece not following a slot is picked, before it plans: it does not move but fires, and a leader's whole group dissolves first; after any hit, even one fully absorbed, a leader of an automated side left with 0 movement this combat turn dissolves its group, so any hit after its action is enough (spec 04 §5, §9.1 step 10, §16.1; spec 03 §10, §19 Q60) | L |
-| Launching (`phasePieces`, `launchFrom`) | Each carrier is handled once per phase, so it never launches a second wave; Anti-Planet Drone designs are launched like other drones | The search restarts after every action, so a carrier launches again in the same phase when its limits and rate allow; Anti-Planet Drone stacks are not launched by the computer's batches (spec 04 §16.1, §10.7, §19.2 Q62) | M |
-| Board, Ram and Drop Troops strategies (`boardTarget`, the ram target, `pathToward`, `troopTarget`) | Board without a target uses Don't Get Hurt and targets any shields-down ship, nearest first; the ram target is the first sorted target (planets and unit groups possible) and Ram without one uses Don't Get Hurt; ramming steps greedily; Drop Troops skips contested colonies and reads only Attack orders | Spec 04 §16.1 Board, Ram, Drop Troops; §19.2 Q69 | M |
-| Combat groups (`setGroup`, fleet groups in `Battle::place`, `strategyIndex`) | A member keeps the offset it got when it joined; member numbers come from a counter that never reuses them; fleet groups have no number; a fleet ship in a tactical group uses its design's strategy | Places from the member number and the current leader's formation; 1 + the highest number held; fleet groups numbered 1, 2, 3… with the tactical groups; a fleet ship in any group uses the fleet's strategy (spec 04 §3 steps 5 and 8, §5, §19.2 Q64, §19.1 Q50) | L |
-| Start positions (`Battle::place`, `Battle::settle`) | Middle empires ranked by colonies and vehicles anywhere in the system, vehicles by creation order; hops may leave the map; the search scans row by row and refuses a 4×4 footprint that sticks out | Ranked by the first piece already in the battle sector, by object slot; hops clamped to the map; column-by-column search; footprint squares off the map ignored (spec 04 §3 step 4, §19.2 Q57, Q58) | L |
-| Battle checks (`battleForces`, `visibleTo`, `seesHostile`, `combat.cpp`) | A passed check with nobody hostile having pieces fights no battle and the mover keeps its orders; colonies are always seen and every colony counts as an uncloaked watcher; vehicles have an extra "uncloaked in an unobscured sector" fallback; in simultaneous games a minefield makes its owner a seeing side | A passed check always fights (ending at the first end check), clearing the mover's orders; colonies follow the sight rules and a cloaked colony is no watcher; no fallback; minefields take no part in the simultaneous check (spec 04 §2, §19.2 Q73–Q75) | L |
-| Pursuits meeting a battle (`movement.cpp`, `entryCombat`) | A battle on a pursuit's step fails its order and clears the lists | The pursuit only stops moving for this run; its order and list are kept, also after mines, storm or turbulence damage (spec 04 §2, spec 03 §6.4, §19.2 Q76) | M |
-| Mine strikes on unit groups (`combat.cpp`, mine strike) | One shield pool per unit group for the whole strike; emptied stacks kept until it ends; the mine's credit uses the tonnage at the group's first strike | Both pools reset and the dead removed after every warhead; credit per mine, from the units the group had when that mine picked it (spec 04 §10.6, §15, §19.2 Q68) | L |
-| Combat simulator strategies (`simulator.cpp`) | Every side uses the viewer's strategies | Each side keeps its copied empire's list; design strategies come from the design's real owner; planets use the viewer's planet strategy (spec 04 §17, §19.2 Q71) | L |
-| Unit group supply (`combat_space.cpp`, `joinUnit`, `shoot`) | Supply per unit; a group that mixes designs keeps the smallest full load | One pool per group, capacity the total `Supply Storage` of its units, refilled at every launch into it (spec 04 §19.1, Q56 bullet) | L |
-| Cloaking after a battle | The battle leaves a vehicle's cloaked status as it was; end-of-turn upkeep decloaks one that can no longer cloak | Every surviving piece cloaked at the start is decloaked and cloaks again at the battle's end only if it still can; a captured ship cloaks for its new owner (spec 04 §2) | L |
-| Small details (`seekerHit`, `Battle::advance`) | Seekers ignore the planet-only types and Crew Conversion; a strategic or unseen battle ends without the next turn's upkeep | Those types damage seekers like other non-hull types (modded data only); the upkeep runs once more before the end check (one more organic armor restore) (spec 04 §10.1, §4, §19.2 Q66, Q70) | L |
+On 2026-09-30 the engine was brought in line with the answers of spec 04 §19.2 (Q57-Q77)
+and with spec 03 §19 Q60 and Q68 and spec 02 §13 Q54. A computer piece gives its weapons
+targets at every choice by the steps of §16 (the first B candidates in rounds, the
+overkill totals from 0 with full hit points, push weapons spread, point-defense and
+warheads included, a fighter group's single target), builds the attack map and chooses
+its square as §16.1 says (`Battle::chooseTargets`, `attackMap`, `rangeSquare`); a
+surrounded piece makes no plan and its group dissolves first; a carrier reached again
+launches again in the same phase, and Anti-Planet Drones are left out of the batches
+(`phasePieces`, `launchFrom`); Board, Ram and Drop Troops pick their targets and squares
+by §16.1, and drone groups move by their strategies like any piece, their target read
+from their first Attack order when the battle starts. Combat groups keep only member
+numbers, places come from the current leader's formation, fleet groups are numbered with
+the tactical groups, and a fleet ship uses the fleet's strategy in any group; the group
+of an automated side dissolves when its leader, left without movement, survives a hit.
+Start positions rank the empires in the middle by object order (`objectOrderKey`, the
+slots of the one object list of spec 03 §19 Q62, planets and vehicles mixed) and hops stay
+on the map. A
+check that passes always fights, colonies are seen by current sensors, minefields never
+see; a pursuit meeting a battle, mines, a storm or turbulence keeps its order. Mines
+strike unit groups with fresh pools per warhead and credit per mine. A fighter group has
+one supply pool, refilled at every launch into it; pieces cloaked at the start cloak again
+afterwards if they can; seekers take every damage type but Shields Only and the reload
+types; an unseen battle runs the next turn's upkeep before it ends; the simulator keeps
+each side's copied strategy list; a planet hit past its shields trims its cargo at once.
+
+The engine's own choices where the spec is silent are spec 04 §19.1 and the open
+questions of §19.3 (Q78-Q86). No row remains. Combat reads a drone group's first order
+and a troop ship's Attack orders from the vehicle's own list, which holds a fleet member's
+copy of its fleet's orders (spec 03 §19 Q65).
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
-Every rule of this section follows the spec (2026-09-30). Where the spec leaves a detail
-open, the engine's choices are spec 05 open questions 38–46: third empires for "Any"
-political operations, who hears of an operation that tells nobody, the place and layout
-of the players' statistics, history and log files, rebel empire details, home planet
-locations, when opening a report dates a design, how a turn-based political step knows
-what it counted, the 21-order limit and step 16.
+Every rule of this section follows the spec. On 2026-09-30 the engine's own choices (spec
+05 open questions 38–46) were answered from the executable, and contact loss was found
+(question 13, corrected). The rows found then were implemented on 2026-10-01:
+
+- Contact is lost when no warp path leads from an empire's colonies to a colony of the
+  other: checked once per game turn in both turn styles, after the design cleanup and before
+  the victory check, it returns that side to "no contact", drops its intelligence projects
+  against the other and logs "Contact Lost", which the human player's history file records;
+  first contact needs the same path (`diplomacy::checkContacts`, `updateContacts`,
+  `warpReach`; Q13, §3.1).
+- An "Any" political operation draws its third empire among the living empires the source
+  has met, other than the source and the target, and fails without one (`effects::pickTarget`, Q38).
+- Planet - Conditions Change sends its messages like any other effect (Q39).
+- The players' files use the original's layouts: statistics with the date the end-of-turn
+  processing sees, history lines dated as tenths with the contact-lost lines, and the log
+  copy only when `Create Log Text Files for Players` is true, rewritten each turn with its
+  header (`score::playerRecords`, Q40). Their folder and names stay an OpenSE4 choice.
+- A rebel empire keeps its former owner's experience, minister style and AI state, plans and
+  anger; its name and pictures are drawn as §2.3 says; design theft reads a built-at-least-once
+  mark (`Design::everBuilt`, Q41). OpenSE4 stops drawing names after 1,000 draws and numbers
+  the name (the original would draw for ever).
+- Every empire records its home sector (`Empire::homeSector`), and High and Catastrophic
+  events spare every empire's recorded location (Q42).
+- A ship's or base's report dates only its own design; a unit group's report dates nothing
+  in a simultaneous game (Q43). OpenSE4 skips it on the player's machine too, where the
+  original dates it until the turn ends.
+- Stellar manipulation reports go to every empire present in the system, and anger term 2
+  counts them in the counting empire's own log (`movement::stellarReportNames`, Q44). The
+  per-empire mark of what a turn-based step counted stays; opening the Log window marks
+  nothing in OpenSE4.
+- A simultaneous political step counts the messages delivered since the empire's previous
+  step (`ai::simultaneousWindow`), so a player's message of step 2 counts in its own turn as
+  question 24 states; it counted a turn late before.
+- `Ship - Moved` draws one sector number and disbands the moved ship's fleet (§4; done
+  with the movement work, 2026-10-01).
+
+Q45 and Q46 needed no change. The "(inferred)" markers of these choices are gone (the third
+empire draw, the silent Conditions Change, the log copy's default and the files' widths, the
+rebel's pictures, the theft's built count, the capitals standing for home locations, the
+report's cargo designs, the culprit's log in anger term 2), and the 21-order limit's is now
+"(confirmed: binary)". The engine's remaining choices are open questions 50 (when the
+empires present at a stellar manipulation are taken) and 51 (a stop-hostilities demand that
+names no empire). No row remains.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 
@@ -110,9 +205,11 @@ turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 Map writes (`GameState::startingPoints`). The autosave choices are applied after each
 processed game turn in local and hotseat games of either turn style, into files named
 after the last digit of the turn count, and can be changed during the game (Empire
-Options). Spec 01 §14 Q41–Q43 are the engine's remaining guesses here (Q43: how a comet or
-warp point entry of a system template claims a sector for the planets' names). This row
-is where the engine differs:
+Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
+and since 2026-10-01 a comet or warp point entry of a system template is placed like any
+other entry (its position and a record drawn, its sector marked and recorded for `Same As`)
+and keeps an empty name for the letters of later planets there (Q43). This row is where
+the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
@@ -142,6 +239,48 @@ facilities switched by an upgrade change in place and keep what was paid
 (`cmd::QueueReplaceFacility`); a war declaration whose speech pool is empty declares
 nothing but still sets the anger to 100 (`cmd::DecideWar`); a new design's fallback
 strategy follows the design type as §7.5 lists it, so transports, colony ships and the
-other unarmed types get Don't Get Hurt. The engine's own choices where the spec is silent
-are spec 05 open question 37. No row remains.
+other unarmed types get Don't Get Hurt.
+
+On 2026-09-30 the engine's own choices (spec 05 open question 37) were answered from the
+executable, with the demand lists (questions 47 and 49). The rows found then were implemented
+on 2026-10-01:
+
+- The Politics minister answers only the newest message from an empire in its date window
+  (`DiplomaticMessage::dated`: the unadvanced date for players' messages, the advanced one for
+  those sent in a simultaneous start-of-turn step), keeps no answered mark, tests "waiting"
+  on any message dated after the date − 2, runs the initiative again after a 50 % initiative
+  that sent nothing, and rolls "wants war" and "wants to break" at every check.
+- The demand lists keep duplicates as counts per empire (war, break, peace, promises); each
+  check that gets far enough uses one up (`cmd::UseDemandEntry`); all, with the systems to
+  avoid or attack, are emptied at the start of turns whose date is a multiple of 10, before
+  the Politics minister. A promise names the empire the demand names (Q47, Q49).
+- An accepted demand is carried out with its 50 % chance before the reply, even when the
+  reply's pool is empty (`cmd::CarryOutDemand`). A request for a gift or tribute takes
+  concrete items it cannot hand over, refuses with the General reply when its package is
+  empty, and never reads the gifts option; accepted gifts move their items whatever it says.
+- Transports deliver only more than half full with people aboard, never fall back to
+  loading, deliver after a load only from their own sector, move only toward a target in
+  another system and otherwise get the resupply orders.
+- The units reserve is the value the nearest earlier empire's units step left
+  (`TurnContext::unitReserve`, `ai::unitReserveLeft`).
+- "Lacks a part to operate" means no working bridge, auxiliary control or Master Computer;
+  the Repair minister handles mothballed vehicles, visits yards by system then object order
+  and counts a vehicle's own yard; a fleet's supply totals leave out members with unlimited
+  supply; Space Yard Ships count themselves as a yard and are planned in fleets too.
+- Open Warp Point gets the resupply orders while a frontier point is free or no edge sector
+  is drawn (99 draws, corners twice as likely, vehicles fill a sector); Destroy Black Hole and
+  Destroy Nebulae seek sector 36, and Close Warp Point uses our presence (fighter, satellite
+  and drone groups included, mines not) and the Sentry detection test.
+- Mine and satellite layers add up the weights, cap only their own kind, evaluate the
+  star-destroyer flag on dates that are multiples of 20 (our own designs that fought count,
+  `AiMemory::designsFought`) and draw a quiet colony system first in the fallback.
+
+OpenSE4 choices: a design name when every name is used (question 37), and the one-turn Seek
+of Destroy Black Hole and Destroy Nebulae ships, which the engine gives as a Move To to
+sector 36 that the minister plans again every turn. The record of our designs that fought
+lists the first design of a group that mixes designs. The "(inferred)" markers of question
+37 in `ai*.cpp` are gone (the operating part, mothballed repairs, the yard ship's own yard,
+the unlimited-supply test, the warp-point draws and the top-left sector, Close Warp Point's
+sight, the layers' weights, cap and flag, the empty transport, the answer window, the
+waiting test, the units reserve). No row remains.
 

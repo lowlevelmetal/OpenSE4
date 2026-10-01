@@ -117,10 +117,12 @@ public:
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
     // Battles for the local player to watch in the Strategic Combat window
-    // (spec 06 §1.6, spec 04 §2), as indices into GameState::combats, oldest
+    // (spec 06 §1.10.5, spec 04 §2), as indices into GameState::combats, oldest
     // first, then forgotten: turn-based games, those the player's orders
-    // started and those in which the player answered Strategic (never one
-    // fought in the Tactical Combat window); simultaneous games, when the
+    // started and those in which the player answered Strategic without
+    // watching them (never one fought or watched in a window), and on one
+    // machine without tactical combat every battle with a human player's
+    // piece; simultaneous games, when the
     // Settings flag `Simultaneous Games Show Strategic Combat` is on, every
     // battle of the processed turn the player fought in. Hotseat: battles
     // listed for another player than the one now playing are dropped.
@@ -130,12 +132,16 @@ public:
     // answer, if any: while it waits the game is as before the call.
     const std::optional<game::BattleQuestion>& battleQuestion() const { return battle_; }
     // Answers it and carries on (the next battle of the same call may ask next).
-    void answerBattle(game::BattleAnswer answer);
+    // `watched`: the player saw it fought in a window, so it is not listed
+    // again in takeStrategicBattles().
+    void answerBattle(game::BattleAnswer answer, bool watched = false);
     // The tactical battle in the Tactical Combat window, if any.
     TacticalFight* tactical() { return tactical_.get(); }
     void startTactical(TacticalFight fight);
     // Closes it: a game battle is finished (the strategies play what is left)
-    // and its orders answer the battle question; a simulation is dropped.
+    // and its orders answer the battle question; a simulation is dropped. A
+    // game battle without player sides is one answered Strategic and watched
+    // in the Strategic Combat window (spec 06 §1.10.5).
     void endTactical();
 
     // Ends the local player's turn. Local: every computer empire plays and the
@@ -202,6 +208,8 @@ public:
     void simulateTurns(int n);
 
 private:
+    // Adds a command to this turn's orders.
+    void record(game::Command c);
     game::CommandResult issueCommand(game::Command c);
     void beginTurn();
     // Turn-based games: plays up to a human player's turn and hands the

@@ -79,7 +79,7 @@ void pruneQuestions(GameState& s) {
     std::erase_if(s.playerTurn.questions, [&](const EntryQuestion& q) {
         if (q.fleet.valid()) {
             const Fleet* f = s.fleet(q.fleet);
-            return !f || f->orders.empty();
+            return !f || fleetOrders(s, *f).empty();
         }
         const Vehicle* v = s.vehicle(q.vehicle);
         return !v || v->orders.empty();
@@ -268,13 +268,15 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     return true;
 }
 
-// The once-per-game-turn steps after the last player (spec 05 §8 steps 7-10).
+// The once-per-game-turn steps after the last player (spec 05 §8 steps 7-10):
+// the design cleanup, the contact check, the victory check and the event step.
 void endGameTurn(TurnContext& ctx) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     // The date advances; GameState::turn follows at the end, as in processTurn.
     const uint32_t date = s.turn + 1;
     if (date % 10 == 0) movement::purgeObsoleteDesigns(ctx);
+    diplomacy::checkContacts(ctx);
     score::checkVictory(ctx, date);
     movement::runStellarHazards(ctx);
     {

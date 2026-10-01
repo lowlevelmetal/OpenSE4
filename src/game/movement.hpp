@@ -52,9 +52,9 @@ struct RouteOptions {
 // Sweeper` (spec 03 §6.2, confirmed: binary). For a fleet the first member is
 // the first one at the fleet's location in object order (sweeperOf).
 bool leadsSweeperGroup(const GameState& s, const Vehicle& first);
-// The member a group's Mine Sweeper exemption is tested on: for a vehicle
-// that follows its fleet's orders, the fleet's first member at its location
-// in object order; otherwise the vehicle itself.
+// The member a group's Mine Sweeper exemption is tested on: for a fleet
+// member, the fleet's first member at its location in object order;
+// otherwise the vehicle itself.
 const Vehicle& sweeperOf(const GameState& s, const Vehicle& v);
 
 // Shortest route using only what empire `e` knows: systems it explored and
@@ -113,11 +113,11 @@ std::vector<int> actionDays(int speed, DayCounterMode mode = kDayCounterMode);
 // the days of actionDays, in a turn-based game its movement points.
 int movesPerTurn(const GameState& s, int speed);
 
-// Movement points of the slowest member of a fleet (its speed).
+// The lowest maximum movement among the members at a fleet's location (its speed).
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f);
 
 // Turn start: every vehicle's movement points reset to its maximum, fleet
-// members in the fleet's sector to the fleet's lowest maximum.
+// members at the fleet's location to the lowest maximum among them.
 void startTurn(TurnContext& ctx);
 
 // How movement asks for space combat. The default calls combat::combatPossible
@@ -134,15 +134,19 @@ CombatHooks defaultCombatHooks();
 
 // The 30-day movement phase (spec 03 §6.3, confirmed: binary). Every ship,
 // base and unit group keeps a day counter that gains its current movement
-// points / 30 each day (a fleet member: the lowest among the members in the
-// fleet's sector); at 1 or more it acts and loses 1. Objects act in object
-// order; colonized planets, minefields, satellite groups and vehicles without
-// movement act on day 1 only. A fleet acts when its first member is due and
-// carries its members along; ad-hoc groups form at every order execution
-// (spec 03 §8). An action runs the order list with exactly 1 movement point:
-// orders that complete chain into the next, up to 21 executions, until one
-// waits or fails. Movement points are not spent: they come back after the
-// action, unless the maximum fell below them during it. After each day every
+// points / 30 each day (a fleet member, wherever it is: the lowest among the
+// members at the fleet's location, 0 when none is there); at 1 or more it
+// acts and loses 1. Objects act in object order (objectOrder: planets and
+// vehicles mixed); colonized planets, minefields, satellite groups and
+// vehicles without movement act on day 1 only. A fleet acts when its first
+// member in object order that is due and has orders acts: the members at the
+// fleet's location carry out that member's order and each of their lists
+// moves on (spec 03 §8, §19 Q61, Q65); ad-hoc groups form at every order
+// execution (spec 03 §8). An action gives the acting vehicle exactly 1
+// movement point (0 when its maximum is 0; the other members keep theirs) and
+// runs its order list: orders that complete chain into the next, up to 21
+// executions, until one waits or fails. Movement points are not spent: they
+// come back after the action, unless the maximum fell below them during it. After each day every
 // sector where an object carried out an order (any order, a waiting Sentry
 // included) runs a battle check, unless the latest battle there this turn
 // left every object in the sector as an undamaged survivor;
@@ -169,10 +173,11 @@ void runColonization(TurnContext& ctx);
 // What runLive carries out.
 struct LiveMove {
     EmpireId empire;
-    // Only these groups act: vehicles on their own orders, fleets, planets.
-    // With all three empty, every group of the empire that has orders. A
-    // human player's vehicles listed together move as one group when their
-    // head orders are identical (spec 03 §8).
+    // Only these groups act: vehicles, fleets (a fleet member listed in
+    // `vehicles` names its fleet), planets. With all three empty, every group
+    // of the empire that has orders. A human player's vehicles listed
+    // together move as one group when their head orders are identical (spec
+    // 03 §8).
     std::vector<VehicleId> vehicles;
     std::vector<FleetId> fleets;
     std::vector<ObjectId> planets;
@@ -185,7 +190,7 @@ struct LiveMove {
 };
 
 // A turn-based player's turn starts: the empire's vehicles regain their
-// movement (fleet members in the fleet's sector the fleet's lowest maximum),
+// movement (fleet members at the fleet's location the lowest maximum among them),
 // and the turn's records of steps, emergency movement and launches
 // (GameState::playerTurn) start afresh.
 void startTurn(TurnContext& ctx, EmpireId empire);
@@ -198,11 +203,16 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 // with movement left founds its colony. Only three things run a battle check
 // (spec 04 §2, combat::BattleCheck, confirmed: binary): a group's movement
 // step (a warp jump included), once the mines there have struck: a battle is
-// fought at once, the order fails and every member's list is cleared; the
-// Attack order where its target is (1 movement point, decloaking): the order
-// is used up, the rest of the list goes on, and without movement left it is
-// removed doing nothing; and a drone group's pursuit (a Seek) at its target,
-// which attacks every time the list runs and stays. Other participants lose
+// fought at once, the order fails and every member's list is cleared (a
+// pursuit's step only stops for this run and keeps its list, spec 04 §19.2
+// Q76); the
+// Attack order, in the sector its target was in when it was given (or where
+// the group stands when none was recorded), for 1 movement point and with
+// nobody decloaking but the vehicles under the Ship Cloaking minister, which
+// cloak again afterwards: the order is used up, the rest of the list goes on,
+// and without movement left it is removed doing nothing; and a drone group's
+// pursuit (a Seek) at its target, which attacks every time the list runs and
+// stays (a group with no drone pursuing there waits). Other participants lose
 // only a Sentry at the head of their lists. No other order, Sentry included,
 // starts a battle, nor do groups that merely sit. Returns the questions of
 // the groups that stopped before a sector with enemies.
@@ -269,6 +279,12 @@ void closeWarpPoint(GameState& s, ObjectId warpPoint);
 // destroyed planet or star (a new nebula or black hole reports the star it
 // consumed, once): what the computer players' anger term 2 counts (spec 05 §7.3).
 bool isDestructiveStellarReport(std::string_view title);
+// The text of a stellar manipulation report, naming the vehicle and the
+// empire responsible; and whether a log entry is a destructive report that
+// names `culprit` (spec 05 §7.3 term 2: each empire present in the system
+// gets the report in its own log).
+std::string stellarReportText(const GameState& s, EmpireId culprit, std::string_view vehicle);
+bool stellarReportNames(const GameState& s, const LogEntry& entry, EmpireId culprit);
 
 // Why this vehicle cannot colonize that planet (empty = it can, ignoring distance).
 std::string colonizeProblem(const Rules& r, const GameState& s, const Vehicle& v, ObjectId planet);

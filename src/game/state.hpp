@@ -78,16 +78,30 @@ struct Relation {
     int turnsSinceWar = 999;    // 0 while at war, +1 each turn otherwise
     int treatyAge = 0;          // turns since the treaty changed (moves between Trade Alliance and better do not count)
     Treaty agedTreaty = Treaty::None;  // the treaty treatyAge was last updated for
-    bool promise = false;       // we accepted their "stop hostile actions" request (-20 anger once)
-    bool queuedWar = false;     // an accepted request asks us to declare war on them
-    bool queuedBreak = false;   // ... to break our treaty with them
-    bool queuedPeace = false;   // ... to make peace with them
+    // The Politics minister's demand lists (spec 05 §7.4 "Demand lists", §7.3
+    // term 8, confirmed: binary), as the number of entries naming that empire
+    // (the lists keep duplicates): each carried-out demand adds one, each
+    // check that gets far enough uses one up, and all are emptied on the
+    // dates that are multiples of 10.
+    int promises = 0;           // promises about them: "stop hostile actions against" them accepted (-20 anger each, one a turn)
+    int queuedWar = 0;          // the war list: "declare war on" or "support against" them accepted
+    int queuedBreak = 0;        // the break list: "break with" them accepted
+    int queuedPeace = 0;        // the peace list: "make peace with" them accepted
     bool attackedUs = false;    // their ships attacked ours or our planets
     bool spiedOnUs = false;     // one of their intelligence operations against us was traced to them
     SystemId attackedIn;        // where they last attacked us
     int combatsThisTurn = 0;    // combats with them in the last processed turn
     int combatsLastTurn = 0;    // ... and in the turn before
 };
+
+// A foreign design an empire knows and the turn it last saw it. Knowledge of
+// a design not seen for more than kDesignMemoryTurns is forgotten in the
+// empire's end-of-turn processing (spec 05 §8 step 12).
+struct SeenDesign {
+    DesignId design;
+    uint32_t turn = 0;
+};
+inline constexpr uint32_t kDesignMemoryTurns = 50;
 
 // A computer player's plans between turns (spec 05 §7.2, §7.4).
 struct AiMemory {
@@ -99,12 +113,18 @@ struct AiMemory {
     std::vector<SystemId> avoid;          // systems we agreed to leave (accepted demands)
     std::vector<SystemId> attackSystems;  // systems an accepted request asked us to attack
     bool metMinefield = false;            // our ships have run into a mine field
+    // Our own designs that fought in a battle, with the turn of the latest
+    // (spec 05 §8 "Design knowledge": every participant dates every piece;
+    // the layers' star-destroyer flag reads it, §7.5). Foreign designs are in
+    // Knowledge::seenDesigns.
+    std::vector<SeenDesign> designsFought;
 };
 
 // Turn-based games: how far an empire's last political step counted (spec 05
 // §7.3 "What it counts"): the game turn it ran in, how many battles
 // (GameState::combats) and log entries of each empire were dated that turn
 // then, and the next message id. The next step counts what came after.
+// Simultaneous games use only the message id (ai::simultaneousWindow).
 struct PoliticsMark {
     bool set = false;
     uint32_t turn = 0;
@@ -159,15 +179,6 @@ struct EconomyReport {
     int64_t intelligence = 0;
 };
 
-// A foreign design an empire knows and the turn it last saw it. Knowledge of
-// a design not seen for more than kDesignMemoryTurns is forgotten in the
-// empire's end-of-turn processing (spec 05 §8 step 12).
-struct SeenDesign {
-    DesignId design;
-    uint32_t turn = 0;
-};
-inline constexpr uint32_t kDesignMemoryTurns = 50;
-
 // What an empire knows about the galaxy (spec 01 §6).
 struct Knowledge {
     std::vector<uint8_t> explored;        // per SystemId: stellar bodies known
@@ -178,6 +189,61 @@ struct Knowledge {
     std::vector<SeenDesign> seenDesigns;     // foreign designs learned (sorted by design), with the turn last seen
     std::vector<std::string> notes;          // per SystemId, player notes
 };
+
+// The Empire Options window's switches and what some windows remember
+// (spec 06 §1.9, §1.8, §1.10.3, §1.10.4, §4.1; confirmed: binary). They belong
+// to the empire and are saved with the game, so each hotseat player keeps
+// their own; a new empire starts with these defaults. The engine reads only
+// autoClaimColonized; the rest is for the client. Players change them with
+// cmd::SetInterfaceOptions.
+struct InterfaceOptions {
+    // General.
+    bool showLogAtTurnStart = true;
+    bool confirmEndTurn = true;
+    bool confirmScrap = true;
+    bool confirmStellarManipulation = true;
+    bool confirmDeleteResearch = true;
+    bool confirmDeleteIntel = true;
+    bool confirmDeleteFirstQueueItem = true;
+    bool noteSimilarAbilities = true;
+    // Next / Previous (the main window's selection cycles).
+    bool skipUnderConstruction = false;
+    bool skipDamaged = false;
+    bool stopOncePerLocation = false;
+    bool skipInFleets = false;
+    // System Display.
+    bool warpPointNames = true;
+    bool planetNames = false;
+    bool colonizableMarkers = true;
+    bool systemGrid = false;
+    bool coordinateLocation = true;
+    uint16_t facilityMarkers = 0;        // bit i: facility marker group i (12 groups)
+    // Galaxy Display.
+    bool galaxyGridLines = true;
+    bool galaxyWarpLines = true;
+    // Latest Items.
+    bool latestConstructionOnly = false;
+    bool latestComponentsOnly = false;
+    // Politics: a system we colonize joins Empire::claimedSystems.
+    bool autoClaimColonized = true;
+    // Remembered by the windows.
+    uint8_t logFilter = 0;               // 0 All, else LogCategory + 1
+    int32_t logPosition = 0;             // the selected row of the filtered list
+    int32_t logScroll = 0;               // the list's scroll position, in rows
+    uint8_t planetsTab = 0;              // the Planets window's tab (0 All)
+    bool planetsNoSysToAvoid = false;
+    uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
+    uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
+    bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // Combat Replay Options.
+    bool replayAnimate = true;
+    bool replayFast = false;
+    bool replayViewRect = true;
+    bool replayGrid = false;
+
+    bool operator==(const InterfaceOptions&) const = default;
+};
+inline constexpr int kFacilityMarkerGroups = 12;
 
 struct Empire {
     EmpireId id;
@@ -220,6 +286,11 @@ struct Empire {
     // a capital (Colony::homeworld), so that flag alone does not tell which
     // one is home.
     SystemId homeSystem;
+    // The home planet's sector, recorded with the home system on the same
+    // occasions and never moved either, not even when the empire is
+    // destroyed: with it, the home planet location that High and Catastrophic
+    // events spare (spec 05 §4, open question 42, confirmed: binary).
+    Sector homeSector;
     std::vector<SystemId> claimedSystems;
     std::vector<SystemId> systemsToAvoid;
     std::vector<Location> taggedMinefields;
@@ -257,7 +328,7 @@ struct Empire {
     EncounterClear clearOrdersOnEncounter = EncounterClear::Enemy;
     // Ship Movement options (spec 03 §6.2): routes go around the tagged
     // minefields, and never cross the systems to avoid, only while these are
-    // on. Both are on for a new empire (inferred, spec 03 §19 Q58). Players set
+    // on. Both are on for a new empire (spec 03 §19 Q58, confirmed: binary). Players set
     // them with cmd::SetEncounterOptions; computer players copy them from their
     // AI_Settings each turn (spec 05 §7.5).
     bool avoidTaggedMinefields = true;
@@ -268,6 +339,8 @@ struct Empire {
     // (cmd::SetColonyType); until then it has the type the computer would pick.
     bool chooseColonyType = true;
     std::vector<ObjectId> colonyTypeChoices;
+    // Empire Options and window memories (spec 06 §1.9).
+    InterfaceOptions interfaceOptions;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }
@@ -429,6 +502,12 @@ struct Design {
     // A ship was retrofitted to it: it is no longer a prototype, even with
     // nothing built (spec 03 §4.1; designIsPrototype, design.hpp).
     bool retrofitted = false;
+    // "Built at least once", what design theft reads (spec 05 §2.3, open
+    // question 41, confirmed: binary): set when a queue completes a vehicle
+    // or unit of it or a ship is retrofitted to it, cleared only when the
+    // design is saved again in the designer (cmd::EditDesign). No statistics
+    // reset clears it, and the starting ships of a new game do not set it.
+    bool everBuilt = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     // There is no kill counter (confirmed: binary).
     int built = 0;
@@ -440,12 +519,12 @@ enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
 
 struct Vehicle {
     VehicleId id;
-    // Its slot in the game's object list: the order objects act in during the
-    // simultaneous movement phase (spec 03 §6.3). A new vehicle takes the
-    // first slot a removed vehicle freed, else a new one at the end
-    // (GameState::addVehicle); planets come before every vehicle (inferred:
-    // the galaxy is made before any vehicle, and slots freed by removed
-    // stellar objects are not reused by vehicles).
+    // Its slot in the game's one object list, shared with the stellar objects
+    // (SpaceObject::slot): the order objects act in during the simultaneous
+    // movement phase and every other "object order" (spec 03 §6.3 step 5,
+    // §19 Q62, confirmed: binary). A new vehicle takes the lowest slot no
+    // object of any kind holds, else a new one at the end
+    // (GameState::addVehicle).
     uint32_t slot = 0;
     EmpireId owner;
     DesignId design;                // a unit group that mixes designs: its first design
@@ -481,18 +560,22 @@ struct Vehicle {
     uint32_t cameFromTurn = 0;
 };
 
+// A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:
+// its orders are copies in the lists of its members at its location (spec 03
+// §8, §19 Q65; fleetOrders). Its location is its own record: set where it is
+// formed, it follows whichever member moved last (fleetMemberMoved), and a
+// fleet left with no member there is disbanded at once (GameState::tidyFleets).
 struct Fleet {
     FleetId id;
     EmpireId owner;
     std::string name;
     std::vector<VehicleId> members;
-    VehicleId leader;
+    VehicleId leader;               // the chosen leader; invalid: the first member in object order leads (fleetLeader)
+    Location location;
     uint32_t formation = 0;         // Formations.txt index
     uint32_t strategy = 0;          // owner's strategy index
     int experience = 0;
     int experienceTenths = 0;       // tenths beyond `experience` (0-9)
-    std::vector<Order> orders;
-    bool repeatOrders = false;
     bool minister = false;
 };
 
@@ -542,6 +625,13 @@ struct DiplomaticMessage {
     MessageId inReplyTo;
     bool delivered = false;
     bool answered = false;
+    // The date of its political entry in the recipient's log, set at delivery
+    // (spec 05 §7.4 "Answer window", confirmed: binary), as a GameState::turn
+    // number: the unadvanced date for the players' messages of a simultaneous
+    // turn and in turn-based games, the advanced date (turn + 1) for those a
+    // computer player or minister sends during the start-of-turn step of a
+    // simultaneous turn.
+    uint32_t dated = 0;
 };
 
 // ---- Combat records (replays and reports) ----------------------------------------------------
@@ -743,6 +833,13 @@ struct PlayerTurn {
     std::vector<EntryQuestion> questions;
 };
 
+// Facilities an abandoned colony left on its planet (spec 02 §5: the player
+// may leave them for a later owner): the next colony founded there gets them.
+struct LeftFacilities {
+    ObjectId planet;
+    std::vector<uint32_t> facilities;   // Facilities.txt indices
+};
+
 // ---- The game --------------------------------------------------------------------------------
 
 struct GameState {
@@ -774,6 +871,7 @@ struct GameState {
     // the map's specific points and the common points no player took; a
     // generated game has none.
     std::vector<StartingPoint> startingPoints;
+    std::vector<LeftFacilities> leftFacilities;   // sorted by planet
 
     // Accessors.
     Empire& empire(EmpireId id) { return empires[id.index()]; }
@@ -802,13 +900,74 @@ struct GameState {
     int year() const { return 2400 + static_cast<int>(turn / 10); }
 
     // Adds with a fresh id (keeps `vehicles`/`fleets` sorted). References are
-    // invalidated by the next add.
+    // invalidated by the next add. A new vehicle takes freeSlot(); a new fleet
+    // without a location is placed at its first member's.
     Vehicle& addVehicle(Vehicle v);
     Fleet& addFleet(Fleet f);
-    // Drops vehicles with count <= 0, cleans fleet membership and empty fleets.
+    // The game's one object list (spec 03 §6.3 step 5, §19 Q62; spec 02 §13
+    // Q52, confirmed: binary): stars, planets, asteroid fields, storms, warp
+    // points, ships, bases and unit groups each hold a slot. A removed object
+    // (a vehicle taken out of `vehicles`, a stellar object taken off its
+    // system's list) leaves its slot empty; freeSlot() is the lowest slot no
+    // object holds, so a new object of any kind takes the slot any kind left.
+    uint32_t freeSlot() const;
+    // A stellar object made during play (stellar manipulation, events): a fresh
+    // id, freeSlot(), its place in the system's list (kept in object order),
+    // and the per-object lists (colonies, known warp links) grown to match.
+    ObjectId addObject(SpaceObject obj, SystemId system);
+    // Drops vehicles with count <= 0, then tidyFleets().
     void removeDeadVehicles();
+    // Fleet membership after vehicles left or were removed (spec 03 §9): a
+    // member that is gone or no longer carries the fleet's tag is dropped, a
+    // chosen leader that left is no longer chosen, and a fleet with no member
+    // left at its location is disbanded (disbandFleet).
+    void tidyFleets();
     std::vector<const Vehicle*> vehiclesAt(Location where) const;
 };
+
+// One entry of the game's object list: a stellar object (`object`) or a
+// vehicle (`vehicle`); exactly one is valid.
+struct ObjectRef {
+    ObjectId object;
+    VehicleId vehicle;
+    uint32_t slot = 0;
+    bool operator==(const ObjectRef&) const = default;
+};
+// Every object in the game's object order, by slot: the stellar objects on
+// their systems' lists and every vehicle (dead ones not yet removed
+// included). Whatever the rules do "in object order" follows this list.
+std::vector<ObjectRef> objectOrder(const GameState& s);
+// The vehicles alone, in object order.
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
+
+// ---- Fleets (spec 03 §8, §9, §19 Q61, Q65; confirmed: binary) ---------------------------------------
+
+// The chosen leader, else the first member in object order.
+const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
+// The members at the fleet's location, alive, in member order.
+std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f);
+// The members that carry out the fleet's orders as one group: those at its
+// location that are not mothballed, in member order. A mothballed member only
+// holds the fleet's speed at 0 (inferred, spec 03 §19 Q74).
+std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f);
+// The vehicle is one of its fleet's group (fleetGroup).
+bool inFleetGroup(const GameState& s, const Vehicle& v);
+// The fleet's orders as one list: the list of the first member of its group,
+// in object order, that has orders; that member acts for the fleet. Each
+// member holds its own copy, so a member that joined after orders were given
+// holds only the later ones. nullptr / an empty list when nobody has orders.
+const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f);
+const std::vector<Order>& fleetOrders(const GameState& s, const Fleet& f);
+bool fleetRepeats(const GameState& s, const Fleet& f);
+// A fleet member moved, by any means (a step, a warp, drift, an event): the
+// fleet's location goes with it.
+void fleetMemberMoved(GameState& s, const Vehicle& v);
+// The vehicle leaves its fleet and loses its orders; a chosen leader is no
+// longer chosen, and a fleet left with no member at its location is
+// disbanded.
+void leaveFleet(GameState& s, Vehicle& v);
+// Every member leaves the fleet and loses its orders; the fleet is deleted.
+void disbandFleet(GameState& s, FleetId id);
 
 // Appends to an empire's log for the current turn.
 void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},

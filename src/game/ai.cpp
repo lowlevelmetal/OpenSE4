@@ -293,10 +293,8 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             if (o.kind == OrderKind::MoveTo) headedTo.insert(o.location);
         }
     };
-    for (const Vehicle& v : s.vehicles)
+    for (const Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
         if (v.owner == id) note(v.orders);
-    for (const Fleet& f : s.fleets)
-        if (f.owner == id) note(f.orders);
     for (size_t i = 0; i < nSys && !neutral; ++i) {
         if (!e.hasExplored(SystemId{i})) continue;
         for (ObjectId wp : s.galaxy.system(SystemId{i}).objects) {
@@ -364,13 +362,9 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         else if (!hostileTo(e, c->owner)) friendlyColony[sys] = 1;
     }
     std::set<ObjectId> targeted;
-    for (const Vehicle& v : s.vehicles)
+    for (const Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
         if (v.owner == id)
             for (const Order& o : v.orders)
-                if (o.kind == OrderKind::Colonize) targeted.insert(o.object);
-    for (const Fleet& f : s.fleets)
-        if (f.owner == id)
-            for (const Order& o : f.orders)
                 if (o.kind == OrderKind::Colonize) targeted.insert(o.object);
     std::vector<int> danger(nSys, -1);
     for (size_t i = 0; i < nSys; ++i) {
@@ -572,7 +566,7 @@ std::vector<VehicleId> Planner::ownVehicles(Minister m) const {
 
 bool Planner::idle(const Vehicle& v) const {
     if (busy.contains(v.id) || v.status == VehicleStatus::Mothballed || !v.orders.empty()) return false;
-    if (const Fleet* f = st.fleet(v.fleet); f && !f->orders.empty()) return false;
+    if (const Fleet* f = st.fleet(v.fleet); f && !fleetOrders(st, *f).empty()) return false;
     return true;
 }
 
@@ -614,7 +608,7 @@ bool Planner::setFleetOrders(FleetId fid, std::vector<Order> orders) {
     if (!f) return false;
     busyFleets.insert(fid);
     for (VehicleId m : f->members) busy.insert(m);
-    if (f->orders == orders && !f->repeatOrders) return true;
+    if (fleetOrders(st, *f) == orders && !fleetRepeats(st, *f)) return true;
     return emit(cmd::SetOrders{{}, fid, std::move(orders), false});
 }
 
@@ -863,12 +857,18 @@ std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s,
     return p.report().commands;
 }
 
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e) {
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
+    p.unitReserve = unitReserve;
     p.runEconomy();
     return p.report().commands;
+}
+
+int64_t unitReserveLeft(const Rules& r, const Empire& e) {
+    const AiProfile& prof = profileFor(r, e);
+    return prof.unitsFile ? prof.unitReservePercent : 0;
 }
 
 bool ministersActive(const GameState& s, EmpireId e) {

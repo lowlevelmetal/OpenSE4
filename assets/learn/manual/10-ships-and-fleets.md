@@ -45,8 +45,9 @@ or press its key.
 | Minister Control | button | Let the computer handle this ship ([Computer players and ministers](computer-players-and-ministers)). |
 
 The **Attack** order works differently in the two turn styles. In a turn-based game the ship
-goes to the target's sector and attacks it there. In a simultaneous game it pursues the target
-wherever it goes, and the battle comes when they meet.
+goes to the sector the target was in when you gave the order and attacks there. In a
+simultaneous game it pursues the target wherever it goes, and the battle comes when they meet.
+Attacking does not decloak a ship; only drones decloak to strike their target.
 
 **Sentry** is useful for guards: the order ends the moment an enemy appears in the system, so
 the ship's next orders start then.
@@ -77,10 +78,10 @@ A **fleet** is a group of ships that move and fight together. Ships and fighter 
 fleets; drones, satellites and mines cannot. Bases cannot either, with the stock settings.
 
 - All members must be in the same sector to join. The fleet moves at the speed of its slowest member.
-- The fleet has one list of orders, which every member at the fleet's location follows.
+- Orders given to the fleet, or to any of its ships, go to every member at the fleet's location, and they carry them out together. Each member keeps its own copy, so a ship that joins gets only the orders given after it joined; joining or leaving a fleet clears the ship's own orders.
 - The fleet's **formation** sets where its ships stand in combat, and its **strategy** tells the armed members how to fight (see [Combat](combat#formations)).
 - A fleet earns **fleet experience** in battle, which helps every member hit. It is kept as long as the fleet exists, even when members join or leave.
-- A fleet whose last member leaves is gone.
+- A fleet is gone once no member is left where the fleet is; any members elsewhere leave it and lose their orders.
 
 Open [Fleet Transfer](window:fleet-transfer) with `F`. It lists the ships in the sector that are
 not in a fleet, and the fleets there. `Create Fleet` makes a new fleet; then **click** ships to
@@ -91,7 +92,7 @@ combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do 
 
 **Waypoints** are ten named places, numbered 0 to 9, that you can send ships to quickly.
 
-- `Alt+0` to `Alt+9` sets that waypoint at the selected sector.
+- `Alt+0` to `Alt+9` sets that waypoint at the sector of what you have selected: a ship, a planet, a warp point. An empty sector cannot be selected, so select something in it first.
 - `Ctrl+0` to `Ctrl+9` orders the selected ship to go there. The **Move To Waypoint** button opens a list instead.
 - A construction queue's **Move To** sends every new ship to a waypoint.
 

@@ -134,6 +134,39 @@ struct HistoryLine {
 std::vector<HistoryLine> historyLines(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::EmpireId empire,
                                       bool stats);
 
+// ---- Log (spec 06 §4.1) ------------------------------------------------------------------------
+
+inline constexpr int kLogCategories = int(game::LogCategory::Misc) + 1;
+
+// The filter the Log opens with: the one stored with the empire
+// (InterfaceOptions::logFilter: 0 All, else the category + 1), or All when
+// this turn has no entry of that category. `counts` holds the entries per category.
+uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts);
+// The row the Log opens on: the stored position when the filtered list has
+// it, else the first row; -1 for an empty list.
+int logOpeningRow(int32_t stored, size_t rows);
+
+// Windows Goto opens over the Log for an entry without a location (spec 06
+// §4.1). Which entries name which window is not settled: we take it from the
+// entry's category (inferred, spec 06 §7).
+enum class LogWindow : uint8_t { ConstructionQueues, Research, Intelligence, EmpireOptions, Designs, Empires };
+std::optional<LogWindow> logWindowTarget(game::LogCategory c);
+
+// The Combat Forces / Damage list of a combat entry (spec 06 §4.1): for each
+// empire in the battle a header row, then one row per ship, unit group and
+// planet with its damage as a percentage, "Dead" (destroyed) or "Taken"
+// (captured). Ships and bases left in the game show their damage now; unit
+// groups the share of their units lost; planets the share of their hit points
+// the record cannot give, so "0%" untouched and "Hit" otherwise (inferred).
+struct CombatDamageRow {
+    game::EmpireId empire;
+    bool header = false;        // the empire's own row (flag and name)
+    uint32_t piece = 0;         // index into CombatRecord::pieces (rows that are not headers)
+    std::string name;
+    std::string damage;
+};
+std::vector<CombatDamageRow> combatDamageRows(const game::Rules& r, const game::GameState& s, const game::CombatRecord& c);
+
 // ---- Lists ---------------------------------------------------------------------------------
 
 // Moves v[from] to position `to` (both clamped); returns false when nothing moved.

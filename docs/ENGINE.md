@@ -17,7 +17,7 @@ player / AI / network ─> game::Command ────┘         │
 |---|---|
 | `types.hpp` | Ids, `Resources`, treaties, moods, sight types, characteristics |
 | `galaxy.hpp` | Systems, space objects, warp links, `Location` (system + sector) |
-| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists), colonies, designs, vehicles, fleets, messages, pending events, combat records, options |
+| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records, facilities left on abandoned planets, options |
 | `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets) |
 | `abilities.hpp` | The closed list of ability identifiers used by the data, parsed once |
 | `design.hpp` | Mounts, design validation, unique design names and statistics, movement points, supply, cargo, and generated starting designs |
@@ -27,6 +27,21 @@ player / AI / network ─> game::Command ────┘         │
 
 `GameState` is plain data. Every field is serialized (`serialize.hpp`), and
 `stateChecksum` hashes the serialized bytes for desync detection.
+
+- **One object list.** Stars, planets, asteroid fields, storms, warp points, ships, bases
+  and unit groups each hold a slot of one object list (`SpaceObject::slot`,
+  `Vehicle::slot`). A removed object leaves its slot free, and a new object of any kind
+  takes the lowest free slot (`GameState::freeSlot`, `addObject`, `addVehicle`); a system
+  lists its objects in slot order. `objectOrder` returns every object by slot, and
+  whatever the rules do "in object order" follows it: the acting order of the movement
+  phase, colonized planets included, where built units go, training sources and so on
+  (spec 03 §6.3 step 5, §19 Q62).
+- **Fleets** have no order list of their own (spec 03 §8, §9). Their orders are copies in
+  the lists of the members at the fleet's location (`fleetOrders`, `fleetGroup`): orders
+  given to the fleet or to any member are appended to every copy, and joining or leaving
+  clears a vehicle's list. The location is the fleet's own record (`Fleet::location`): it
+  follows whichever member moved last (`fleetMemberMoved`), and a fleet left with no member
+  there is disbanded (`GameState::tidyFleets`, `leaveFleet`, `disbandFleet`).
 
 ## Changing state
 
@@ -55,29 +70,36 @@ empires are skipped.
 3. **Date.** `GameState::turn` stays the number the orders were given for until the end
    of the turn, so log entries and records carry it. The steps that depend on the date
    get `turn + 1`.
-4. **Start of turn**, for each empire: `ai::updateAiState`, `ai::politicalStep` (it counts
-   the turn processed before, whose battles `GameState::combats` still holds), then the
-   ministers that act while orders are given (every minister for a computer player, the
-   active ones for a human): the Politics minister alone first
-   (`ai::planPoliticsOrders`), whose messages take effect at once, then the others
+4. **Start of turn**, for each empire: `ai::updateAiState` (on dates that are multiples
+   of 10 it first empties the Politics minister's demand lists), `ai::politicalStep` (it
+   counts the turn processed before, whose battles `GameState::combats` still holds, and
+   the messages delivered since the empire's previous step, `ai::simultaneousWindow`),
+   then the ministers that act while orders are given (every minister for a computer
+   player, the active ones for a human): the Politics minister alone first
+   (`ai::planPoliticsOrders`), whose messages take effect at once and carry the advanced
+   date (`DiplomaticMessage::dated`, which the answer window reads), then the others
    (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Afterwards
    `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
-   vehicle, fleet and planet with orders carries out one order whenever its day counter
-   reaches 1. After each day every sector where an object carried out an order (any order,
+   vehicle, fleet and planet with orders acts, in object order, whenever its day counter
+   reaches 1: the acting vehicle gets exactly 1 movement point and its list runs, orders
+   that complete chaining into the next; a fleet acts through its first member with orders,
+   and the members at its location carry that order out together. After each day every sector where an object carried out an order (any order,
    a waiting Sentry included) runs a battle check, and `combat::resolveSpaceCombat` fights
    where an empire with an uncloaked vehicle there sees a hostile object; a sector gets a
    second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase. Sight and first
-   contact are then updated.
+   contact are then updated: two empires meet when each detects the other in one system
+   and a warp path links their colonies (`diplomacy::updateContacts`).
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
       Intelligence and construction);
    2. the statistics row (`score::recordStatistics`), and for a human player the lines of
-      its statistics, history and log text files, handed out in `TurnResult::records`
-      (the classic client appends them under `history/<game>/` in its user data folder);
+      its statistics, history and log text files in the original's layouts, handed out
+      in `TurnResult::records` (the classic client writes them under `history/<game>/` in
+      its user data folder: statistics and history appended, the log copy rewritten);
    3. intelligence (`intel::intelStep`) and
    4. research (`research::researchStep`), each spending the pool the previous turn filled;
    5. income (`economy::collectIncome`): production, tariffs (the master receives its
@@ -99,7 +121,10 @@ empires are skipped.
    18. the log keeps only this turn's entries; the long record of the History window is
       `Empire::historyEvents`, which is never pruned (`addHistory`).
 
-7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`).
+7. **Design cleanup** when a new year starts (`movement::purgeObsoleteDesigns`), then,
+   every turn, the **contact check** (`diplomacy::checkContacts`): an empire from whose
+   colonies no warp path leads to a colony of an empire it has met returns to "no
+   contact" with it, drops its intelligence projects against it and logs "Contact Lost".
 8. **Victory check** (`score::checkVictory`).
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
@@ -134,9 +159,13 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    action until each has spent its movement points, waits or fails. Only three things run
    a battle check (spec 04 §2, `combat::BattleCheck`): a movement step (a warp jump
    included), after the mines there have struck, which fights at once, fails the order
-   and clears the group's whole list; the Attack order where its target is, which is then
-   used up; and a drone group's pursuit (a Seek) at its target, which attacks every time
-   the list runs and stays. The check is one-directional: the group's owner must see a
+   and clears the group's whole list (a pursuit's step only stops it for this run and
+   keeps its orders, as mines, storms and turbulence do, spec 04 §19.2 Q76); the Attack
+   order, in the sector its target was in when it was given (or where the group stands),
+   which decloaks nobody but the Ship Cloaking minister's vehicles and is then used up;
+   and a drone group's pursuit (a Seek) at its target, which attacks every time the list
+   runs and stays (a pursuit without a drone pursuing there waits and spends nothing).
+   The check is one-directional: the group's owner must see a
    hostile object there, or, for a wholly cloaked group, another empire must see it. A
    human is first asked whether to enter a sector with visible enemies, and answers with
    `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
@@ -146,7 +175,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    empire's turn starts. Computer players take their turns the same way, one after
    another (`resumeTurnBased`).
 4. **After the last player** the date advances, then the design cleanup (a new year), the
-   victory check and the event step run, the per-turn flags are cleared and the AI
+   contact check, the victory check and the event step run, the per-turn flags are cleared and the AI
    remembers the turn, as in steps 7 to 10. `GameState::combats` keeps the battles of the
    game turn in progress and of the one before, so each empire's political step counts
    every battle since its previous step exactly once.
@@ -191,8 +220,10 @@ own copy of the game, forking the random numbers and striking with mines exactly
 
 The accepted orders are the battle's `script()`: the same start and script give the same
 battle. Tests check that a player side whose phases the strategies play (AutoPhase), the
-strategies' orders given by hand, and the replayed script all give the strategic battle,
-bit for bit.
+strategies' orders given by hand, and the replayed script all give the same battle, bit
+for bit, and the strategic battle unless a player side has a fleet: a player's side is
+not automated, so a hit on its group's leader never dissolves the group as it does for
+an automated side (spec 03 §19 Q60).
 
 In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
 play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
@@ -217,9 +248,10 @@ keep `design` (the first stack's) and `count` (the total) in step, and
 whose weapons refer to its design stacks.
 
 The combat simulator (`simulator.hpp`) builds a sandbox copy of the game: one virtual
-empire per side (a copy of the player's, at war with the others), the chosen designs,
-seen enemy designs and sample planets in an empty new system, cargo, fleets, strategies,
-and the sides the computer controls. `startSimulation` returns the `TacticalBattle`;
+empire per side (a copy of the empire that owns the side's first item, its strategy list
+included, at war with the others), the chosen designs, seen enemy designs and sample
+planets in an empty new system, cargo, fleets with their strategies, and the sides the
+computer controls. `startSimulation` returns the `TacticalBattle`;
 the real game is never changed.
 
 ## Determinism
@@ -280,13 +312,15 @@ scaled to the window, drawn with the art from the player's install.
 |---|---|
 | `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers; it lists the battles to watch in the Strategic Combat window |
 | `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, and each empire's colour from its race's swatch |
-| `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
+| `ui.*` | The frame mapping, `UiContext`, the modal window stack, the classic dialog layout, and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
+| `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
+| `facility_markers.*` | The facility letter markers the Empire Options can show on colonies in the system window |
 | `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay, and hotkeys |
 | `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
 | `ship_glides.*` | Ships gliding to their new square, the headings of minis, and the movement log replay |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question) and Ground Combat; `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |

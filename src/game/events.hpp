@@ -148,7 +148,6 @@ std::optional<Location> targetLocation(const GameState& s, const Target& t);
 
 struct Outcome {
     bool applied = false;
-    bool silent = false;              // applied, but nobody is told (Planet - Conditions Change)
     int64_t actual = 0;               // the realized amount ([%ActualAmount])
     Tokens tokens;                    // object tokens (vehicle, planet, system, ...)
     std::vector<std::string> report;  // espionage findings for the source
@@ -183,7 +182,8 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet);
 // Damage to a vehicle in the standard order: armor first (design order),
 // then the other intact components at random. Returns the damage applied.
 int64_t damageVehicle(const Rules& r, GameState& s, Vehicle& v, int64_t amount, Rng& rng);
-// Removes a vehicle from its fleet (empty fleets are deleted).
+// Takes a vehicle out of its fleet (game::leaveFleet): it loses its orders,
+// and a fleet left with no member at its location is disbanded.
 void detachFromFleet(GameState& s, Vehicle& v);
 
 } // namespace opense4::game::effects

@@ -169,6 +169,46 @@ TEST_CASE("sight: storms and nebulae hide ships, units and planets but not stars
     CHECK_FALSE(sight::canSeePlanet(r, w.s, kA, farPlanet));
 }
 
+TEST_CASE("sight: a colony is seen by the detection rule, which needs sensors in the system") {
+    // Spec 03 §6.2, §6.4, §8, §19 Q70 (confirmed: binary): the rule of spec 01
+    // §6.3 applied to the colony's planet, unlike the map's memory of planets.
+    World w(rules(), 3);
+    const Rules& r = w.rules();
+    const EmpireId kC{2u};
+    const SystemId a = w.system("A");
+    const ObjectId home = w.planet(a, {4, 4});
+    w.colony(home, kB, 100);
+    w.s.empire(kA).knowledge.explored[a.index()] = 1;
+    CHECK(sight::canSeePlanet(r, w.s, kA, home));          // remembered on the map since exploration
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));    // but no sensor source in the system
+    CHECK(sight::canSeeColony(r, w.s, kB, home));          // its owner always sees it
+    // A partner's sensors there count (spec 01 §6.1).
+    const VehicleId partner = w.spawn(w.ship(kC, "Partner", 1), at(a, 0, 0));
+    w.s.empire(kA).relation(kC).treaty = Treaty::Partnership;
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    w.s.empire(kA).relation(kC).treaty = Treaty::None;
+    w.v(partner).count = 0;
+    w.s.removeDeadVehicles();
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    // An own ship in the system sees it; a storm on the planet hides it from baseline sensors.
+    const VehicleId watcher = w.spawn(w.ship(kA, "Watcher", 1), at(a, 0, 0));
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    const ObjectId storm = w.object(a, ObjectKind::Storm, {4, 4});
+    w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorSightObscuration, 2));
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    w.spawn(w.ship(kA, "Eye", 1, {"Test Sensor"}), at(a, 0, 1));
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+    // Omnipresence gives every empire EM Active 1 everywhere: a colony nothing hides is seen.
+    std::erase(w.s.galaxy.system(a).objects, storm);
+    w.v(watcher).count = 0;
+    for (Vehicle& v : w.s.vehicles) v.count = 0;
+    w.s.removeDeadVehicles();
+    w.s.empire(kA).knowledge.explored[a.index()] = 0;
+    CHECK_FALSE(sight::canSeeColony(r, w.s, kA, home));
+    w.s.options.omnipresent = true;
+    CHECK(sight::canSeeColony(r, w.s, kA, home));
+}
+
 TEST_CASE("sight: a ship or planet carrying sight obscuration hides its sector") {
     ruleset::Ruleset data = buildRuleset();
     ruleset::Component smoke = data.components[test::componentIndex(rules(), "Mv Armor")];
@@ -332,12 +372,13 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(farV)));
     CHECK_FALSE(sight::scannerReaches(r, w.s, kA, w.v(jamV)));
     CHECK_FALSE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
-    // The report shows the ship's design and the units in its cargo.
+    // A ship's report dates only its own design, never the units in its
+    // cargo (spec 05 §8, open question 43).
     const DesignId sat = w.ship(kB, "Cargo Sat", 1);
     w.v(nearV).cargo.units = {{sat, 2}};
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearV}).ok);
     CHECK(seen(w.s, kA, nearD));
-    CHECK(seen(w.s, kA, sat));
+    CHECK_FALSE(seen(w.s, kA, sat));
     CHECK(designSeenTurn(w.s.empire(kA).knowledge, nearD) == w.s.turn);
     // Each opening dates the sighting anew (spec 05 §8 step 12 counts from it).
     w.s.turn += 7;
@@ -361,6 +402,16 @@ TEST_CASE("sight: long range scanners reveal designs when a human opens the repo
     REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{farV}).ok);
     CHECK(seen(w.s, kA, farD));
     CHECK_FALSE(seen(w.s, kA, jamD));
+    // A unit group's report dates its units' design, but in a simultaneous
+    // game it never reaches the host.
+    const DesignId nearSatD = w.v(nearSat).design;
+    REQUIRE(w.s.options.simultaneous);
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearSat}).ok);
+    CHECK_FALSE(seen(w.s, kA, nearSatD));
+    w.s.options.simultaneous = false;
+    REQUIRE(apply(r, w.s, kA, cmd::OpenVehicleReport{nearSat}).ok);
+    CHECK(seen(w.s, kA, nearSatD));
+    w.s.options.simultaneous = true;
     CHECK_FALSE(apply(r, w.s, kB, cmd::OpenVehicleReport{nearV}).ok);  // never one's own vehicles
     // A computer player never learns this way.
     w.s.empire(kA).kind = PlayerKind::Computer;

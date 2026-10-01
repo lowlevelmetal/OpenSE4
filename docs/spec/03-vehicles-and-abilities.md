@@ -1816,12 +1816,10 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     survives, even one its shields absorb completely, its movement left for this combat turn is
     lowered to its new maximum; if that leaves 0 and its side is automated, the whole group
     dissolves. A leader that has already used up its movement this combat turn is therefore
-    enough (confirmed: binary). The engine differs: it dissolves the group only when the hit
-    takes the leader's maximum to 0 and the leader had movement at the start of the combat turn.
-    The other trigger, a surrounded leader, is tested once, when the leader's turn to act comes
-    in an automated phase, before it plans and moves; there is no test after the move, and a
-    surrounded leader does not move (spec 04 §16.1) (confirmed: binary). The engine differs
-    there too: it tests after the leader's move.
+    enough (confirmed: binary). The other trigger, a surrounded leader, is tested once, when the
+    leader's turn to act comes in an automated phase, before it plans and moves; there is no
+    test after the move, and a surrounded leader does not move (spec 04 §16.1) (confirmed:
+    binary). The engine follows both since 2026-09-30.
 61. **Fleet members away from the fleet's sector (§6.3 step 2):** **Answer:** no. Every fleet
     member's daily gain uses the fleet's figure, wherever the member is: the lowest MP left among
     the fleet's members at the fleet's location. A member elsewhere is not counted in it. With no
@@ -1831,8 +1829,8 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     elsewhere never moves by its own orders either: when it is the one to act, its order is
     carried out by the members at the fleet's location, without it (§8). Members rarely end up
     apart, because the fleet's location follows any member that moves and a fleet left with no
-    member at its location is disbanded at once (§9). The engine differs: it ties the fleet's
-    location to the leader and lets a member elsewhere use its own MP.
+    member at its location is disbanded at once (§9). The engine does the same (question 73
+    records its choice for the list of a member elsewhere that acts).
 62. **Object slots (§6.3 step 5):** **Answer:** the original keeps one list of every object:
     stars, planets, asteroid fields, storms, warp points, ships, bases and unit groups alike. A
     removed object of any kind leaves its slot empty where it is, and a new object of any kind
@@ -1842,15 +1840,15 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     replaced by stellar manipulation, of a closed warp point or of a destroyed storm, and a
     planet, storm, star or warp point made by stellar manipulation can take a destroyed ship's
     slot or a new slot after every ship. Colonized planets then act on day 1 in their slot's
-    place among the vehicles. The engine differs: it numbers vehicles apart, puts every planet
-    before every vehicle, and lets a new vehicle reuse only a slot a vehicle freed.
+    place among the vehicles. The engine does the same (question 72 records its choice for
+    objects that stellar manipulation changes in place).
 63. **A stopped vehicle's later actions (§6.3 step 4):** **Answer:** every action sets the acting
     vehicle's MP to exactly 1 when its maximum is at least 1, whatever MP it had, so such a
     vehicle moves again, one step per remaining action. After the action its MP goes back to
     the 0 it had, so its counter gains nothing and it stops once the counter falls below 1. Only
     a vehicle whose maximum is 0 acts with 0 MP, so that its moves wait. Only the acting vehicle
     gets the 1 MP; another group member with 0 MP still holds the group back (confirmed:
-    binary). The engine differs: it runs the action with 0 MP.
+    binary). The engine does the same.
 64. **Which check comes first:** **Answer:** as the engine does it. Each time a Move To runs it
     fails at once only when the destination is not a valid system and sector. Then it is done
     when the group is already at the destination, and it waits when the group is empty or any
@@ -1877,9 +1875,8 @@ gave the engine's choice, marked (inferred); all of them are answered now.
       order is carried out for the fleet, and completing it removes the order at that position
       from every other member's list, whichever order that is.
 
-    The engine differs: it keeps a fleet list apart from the members' lists, lets a vehicle
-    keep its own orders when it joins a fleet, and gives a vehicle that leaves the fleet's
-    orders. The original clears the vehicle's list in both cases.
+    The engine does the same; questions 73–76 record its choices where this leaves something
+    open.
 66. **The Launch/Recover window in simultaneous games:** **Answer:** OpenSE4 choice; the
     original has nothing to compare it with. It offers the window only in turn-based games; in
     a simultaneous game the command does nothing (confirmed: binary). Units are then launched
@@ -1902,8 +1899,8 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     its kind (ship, base, planet or unit group). Otherwise, and for drones launched during the
     battle (they have no orders), the target is chosen as for a computer player's piece (spec 04
     §10.7) (confirmed: binary). So a pursuing drone caught in a battle on its way attacks its own
-    target only if that target is there. The engine differs: it records the target when the
-    pursuit attacks, keeps it after the order has ended, and ignores a planet target.
+    target only if that target is there. The engine follows this since 2026-09-30: combat reads the target from the order, and
+    nothing is stored.
 69. **Turn-based Attack by a group that is not all drones (§8):** **Answer:** no member decloaks.
     The Attack spends 1 MP and one move's supply per member and runs the battle check at once; a
     battle that starts decloaks every piece for that battle (spec 04 §2). The only exception is
@@ -1911,11 +1908,10 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     vehicles under minister control while that minister is on) lower their cloaks for the Attack
     and raise them again afterwards if they can (spec 05). In the pursuit form only drones
     decloak, and only when the group attacks at its target (confirmed: binary). The engine
-    differs: it decloaks every member. §6.4 said otherwise and is corrected. Also in the pursuit
-    form, only a group holding a drone that pursues an object in that sector attacks at all
-    (§8). A group of other vehicles that has reached its target's sector just waits there and
-    spends neither MP nor supply (confirmed: binary). The engine differs here too: it spends
-    1 MP and one move's supply on every such action.
+    does the same. §6.4 said otherwise and is corrected. Also in the pursuit form, only a group
+    holding a drone that pursues an object in that sector attacks at all (§8). A group of other
+    vehicles that has reached its target's sector just waits there and spends neither MP nor
+    supply (confirmed: binary). The engine does the same here too.
 70. **Colonies "seen" (§6.2, §6.4, §8):** **Answer:** "seen" is the detection rule of spec 01
     §6.3 applied to the colony's planet, the same test as for a ship. Its owner always sees
     it. Any other empire sees it only when it has explored the system and its sensor level
@@ -1923,14 +1919,38 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     while the colony is cloaked, raised by the sector's and the system's obscuration (spec 01
     §6.2). With no sensor source in the system (and no partner's sensors there and no
     omnipresent view, spec 01 §6.1, §6.5), no colony is seen, even one shown on the map from
-    memory (confirmed: binary). The engine differs: it counts a planet that nothing obscures as
-    seen by every empire that has explored the system, sensors or not. The battle check remains
-    combat's own (spec 04 §19 Q74).
+    memory (confirmed: binary). The engine does the same. The battle check remains combat's own
+    (spec 04 §19 Q74).
 71. **The turn-based Attack as one order (§8):** **Answer:** the original stores two orders: a
     Move To the sector the target was in when the order was given (added even when the group is
     already there, where it completes at once) and an Attack. The stored Attack names no target
     and checks no place: it attacks wherever the group stands when it runs (confirmed: binary).
     The engine's single order does the same as that pair: the move, its waits and failures,
     an arrival with no MP left (the Attack is then removed doing nothing), and Repeat. The single
-    order is an OpenSE4 choice. One thing differs: an Attack with no sector recorded should
-    attack where the group stands, not follow its target.
+    order is an OpenSE4 choice. An Attack with no sector recorded attacks where the group
+    stands, as the original's does.
+
+The questions below came up while the engine was brought in line with the answers to 60–71.
+Each gives the engine's choice, marked (inferred) in the code.
+
+72. **Objects replaced in place (§6.3 step 5, spec 01 §9):** Create Planet turns an asteroid
+    field into a planet, and Destroy Planet and the shockwave turn a planet or asteroid field
+    into an asteroid field. The engine changes the object where it stands, so it keeps its slot
+    in the object list. Does the original remove the old object and make a new one, which
+    would take the lowest free slot (perhaps another one) and leave the old slot free?
+73. **A fleet member away from the fleet's location that acts (§8, Q61):** its order is carried
+    out by the members at the location. The engine also moves that member's own list on (the
+    order leaves it, or goes to its back under Repeat), so the member does not carry out the same
+    order again on its next action. Does the original leave that member's list as it is?
+74. **Mothballed fleet members (§9):** the engine leaves them out of the group that carries out
+    the fleet's orders and gives them no copies of orders given to the fleet; they still count
+    for the fleet's speed, which their 0 maximum holds at 0. Does the original give them copies
+    and make them part of the group?
+75. **Fleet members in a computer player's ad-hoc group (§8, Q51):** when a member's head order
+    is identical to the acting group's, the engine takes in every member of its fleet at the
+    fleet's location. Does the original take only that member?
+76. **Changes to a fleet's orders other than adding (§8, Q65):** the engine appends added orders
+    to every copy, as the original does; for any other change (Clear Orders, an order taken back
+    or put in front) it makes every copy the new list. Orders given to a member away from the
+    fleet's location also go to that member's own list. Does the original apply such changes
+    position by position to each list, and leave the away member's list alone?

@@ -287,11 +287,20 @@ TEST_CASE("economy: population modifier rows, mood percentages and condition ban
     CHECK(band(31) == ConditionsBand::Harsh);
     CHECK(band(29) == ConditionsBand::Deadly);
     CHECK(band(0) == ConditionsBand::Deadly);
-    // The edges are x87 constants (inferred): the double nearest 1.3 lies above
-    // 1.3 and is Good, the double nearest 0.3 lies below 0.3 and is Deadly.
+    // The edges are the doubles nearest 0.3 .. 1.5, compared exactly, a value
+    // equal to an edge in the band above (confirmed: binary, spec 02 §13 Q51):
+    // the double nearest 0.3 lies below 0.3 but is Harsh; the double nearest
+    // 1.3 is Good.
     CHECK(Conditions::hundredths(130).value() > xmath::Ext(13) / xmath::Ext(10));
     CHECK(Conditions::hundredths(30).value() < xmath::Ext(3) / xmath::Ext(10));
-    CHECK(band(30) == ConditionsBand::Deadly);
+    CHECK(band(30) == ConditionsBand::Harsh);
+    CHECK(band(130) == ConditionsBand::Good);
+    // An asteroid field's 0.6 / 2 and 0.5 lowered by an event of -0.2 give that double.
+    CHECK(economy::conditionsBand(Conditions::of(Conditions::hundredths(60).value() / xmath::Ext(2))) == ConditionsBand::Harsh);
+    CHECK(economy::conditionsBand(conditionsPlus(Conditions::hundredths(50), xmath::Ext(-2) / xmath::Ext(10))) == ConditionsBand::Harsh);
+    // The next double below it is Deadly.
+    CHECK(economy::conditionsBand(Conditions{Conditions::hundredths(30).bits - 1}) == ConditionsBand::Deadly);
+    CHECK(economy::conditionsBand(Conditions{Conditions::hundredths(130).bits - 1}) == ConditionsBand::Mild);
     CHECK(economy::conditionsBand(Conditions::of(xmath::Ext(3) / xmath::Ext(10) + xmath::Ext(1) / xmath::Ext(1'000'000))) == ConditionsBand::Harsh);
     CHECK(economy::conditionsName(ConditionsBand::Good) == "Good");
     CHECK(economy::conditionsReproduction(ConditionsBand::Optimal) == 5);
@@ -1028,10 +1037,10 @@ TEST_CASE("economy: units go into cargo, one at a time, in the same sector only"
 }
 
 TEST_CASE("economy: built units go to the holders in the game's object order") {
-    // Spec 02 §6.5: the builder, then the other planets and ships of the
-    // empire in the sector in object order. Planets come before every vehicle
-    // (spec 03 §19 Q62), and a vehicle that took a freed slot comes before
-    // later ones, wherever it is in the vehicle list.
+    // Spec 02 §6.5, §13 Q52: the builder, then the other planets and ships of
+    // the empire in the sector in object order, planets and ships mixed: a
+    // vehicle that took a freed slot comes before later ones, wherever it is
+    // in the vehicle list, and before a planet made after it.
     const Rules& r = engineRules();
     GameState s = newEngineGame();
     dropVehicles(s, kMe);
@@ -1056,6 +1065,35 @@ TEST_CASE("economy: built units go to the holders in the game's object order") {
     economyTurn(r, s);
     CHECK(s.vehicle(first)->cargo.unitCount(fighter) == 2);
     CHECK(s.vehicle(second)->cargo.unitCount(fighter) == 0);
+
+    // A stellar object's slot taken by a new ship puts that ship before a
+    // planet made later in the same sector (spec 03 §19 Q62): the units go to
+    // the ship, not to the colony on the new planet.
+    s.vehicle(first)->cargo.units.clear();
+    s.vehicle(first)->cargo.population = {{kMe, 1'000'000}};
+    s.vehicle(second)->cargo.population = {{kMe, 1'000'000}};
+    ObjectId stellar;
+    for (const StarSystem& sys : s.galaxy.systems)
+        if (sys.id != homeLoc.system && !sys.objects.empty()) stellar = sys.objects.front();
+    REQUIRE(stellar.valid());
+    const uint32_t freed = s.galaxy.object(stellar).slot;
+    std::erase(s.galaxy.system(s.galaxy.object(stellar).system).objects, stellar);  // taken off the map
+    const VehicleId early = addTestVehicle(s, r, hauler, homeLoc).id;
+    REQUIRE(s.vehicle(early)->slot == freed);
+    SpaceObject moon = s.galaxy.object(home.planet);
+    moon.name = "Moon";
+    const ObjectId late = s.addObject(std::move(moon), homeLoc.system);
+    REQUIRE(s.galaxy.object(late).slot > s.vehicle(early)->slot);
+    Colony other;
+    other.planet = late;
+    other.owner = kMe;
+    other.population = {{kMe, 10}};
+    s.colonies[late.index()] = other;
+    REQUIRE(colonyCargoCapacity(r, s, *s.colony(late)) > 40);
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, item}).ok);
+    economyTurn(r, s);
+    CHECK(s.vehicle(early)->cargo.unitCount(fighter) == 2);
+    CHECK(s.colony(late)->cargo.unitCount(fighter) == 0);
 }
 
 TEST_CASE("economy: facilities need a free slot; with one the whole count is built") {
@@ -1194,6 +1232,75 @@ TEST_CASE("economy: an upgrade with fewer facilities left converts those, at the
     CHECK(home.queue.items[0].kind == QueueItem::Kind::Facility);
 }
 
+TEST_CASE("economy: on a colony with a yard an upgrade with nothing left stays, is paid and converts nothing (spec 02 Q53)") {
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    const uint32_t yard = facilityIndex(*r, "Test Space Yard");
+    Colony& home = plainHome(*r, s, {"Test Space Yard", "Test Mine", "Test Mine"});
+    const cmd::QueueTarget q{home.planet, {}};
+    home.queue.items = {economy::upgradeItem(*r, home, facilityIndex(*r, "Test Mine III"))};
+    REQUIRE(home.queue.items[0].count == 2);
+    home.facilities = {yard};  // both mines are lost
+    home.queue.onHold = true;
+    CHECK_FALSE(economy::itemObsolete(*r, s, q, home.queue.items[0]));
+    economyTurn(*r, s);
+    REQUIRE(home.queue.items.size() == 1);
+    home.queue.onHold = false;
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    // Charged in full at the stored count, nothing converted, the message sent, removed.
+    CHECK(s.empire(kMe).economy.construction == Resources{300 * 2, 10 * 2, 0});
+    CHECK(home.facilities == std::vector<uint32_t>{yard});
+    CHECK(logged(s, kMe, "0 facilities are now Test Mine III"));
+    CHECK(home.queue.items.empty());
+}
+
+TEST_CASE("economy: a yard ship's queue keeps its ship items and loses facility items (spec 02 Q53)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = plainHome(r, s, {});
+    const Location spot{s.galaxy.object(home.planet).system, Sector{1, 1}};
+    const DesignId tender = addTestDesign(s, r, kMe, "Tender", "Test Station",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+    const VehicleId yard = addTestVehicle(s, r, tender, spot).id;
+    QueueItem warship;
+    warship.design = frigate(s, r, kMe);
+    const cmd::QueueTarget q{{}, yard};
+    REQUIRE(apply(r, s, kMe, cmd::QueueAdd{q, warship}).ok);
+    QueueItem mine;
+    mine.kind = QueueItem::Kind::Facility;
+    mine.facility = facilityIndex(r, "Test Mine");
+    s.vehicle(yard)->queue.items.push_back(mine);
+    s.vehicle(yard)->status = VehicleStatus::Mothballed;
+    CHECK_FALSE(economy::itemObsolete(r, s, q, s.vehicle(yard)->queue.items[0]));
+    CHECK(economy::itemObsolete(r, s, q, s.vehicle(yard)->queue.items[1]));
+    economyTurn(r, s);
+    REQUIRE(s.vehicle(yard)->queue.items.size() == 1);
+    CHECK(s.vehicle(yard)->queue.items[0].design == warship.design);
+    CHECK(s.vehicle(yard)->queue.items[0].spent.isZero());
+}
+
+TEST_CASE("economy: a repeated space yard item stops once the colony has a yard (spec 02 §6.3)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(r, s, {});
+    const cmd::QueueTarget q{home.planet, {}};
+    QueueItem yard;
+    yard.kind = QueueItem::Kind::Facility;
+    yard.facility = facilityIndex(r, "Test Space Yard");
+    home.queue.items = {yard};
+    home.queue.repeat = true;
+    for (int turn = 0; turn < 20 && !home.queue.items.empty(); ++turn) {
+        s.empire(kMe).stockpile = {400000, 400000, 400000};
+        economyTurn(r, s);
+    }
+    CHECK(home.queue.items.empty());
+    CHECK(std::count(home.facilities.begin(), home.facilities.end(), yard.facility) == 1);
+    (void)q;
+}
+
 TEST_CASE("economy: upgrade prices truncate per facility") {
     auto r = tweakedRules([](ruleset::Ruleset& rs) { setKey(rs, "Upgrade Facility Cost Percent", 33); });
     GameState s = newGame(*r);
@@ -1228,6 +1335,8 @@ TEST_CASE("economy: ships leave a queue that has lost its yard at the start of i
     CHECK(s.vehicles.size() == before);
     CHECK(home.queue.items.empty());
     CHECK(home.cargo.unitCount(fighter) == 1);
+    CHECK(s.design(fighter).everBuilt);  // built at least once (spec 05 §2.3)
+    CHECK_FALSE(s.design(ship).everBuilt);
     CHECK_FALSE(logged(s, kMe, "cannot build"));
 }
 
@@ -1253,6 +1362,7 @@ TEST_CASE("economy: space yard ships build where they are, but not while cloaked
     REQUIRE(s.vehicles.size() == before + 1);
     CHECK(s.vehicles.back().location == spot);
     CHECK(s.vehicle(yard)->queue.items.empty());
+    CHECK(s.design(ship).everBuilt);
 }
 
 TEST_CASE("economy: empire experience is capped and gives the race age") {

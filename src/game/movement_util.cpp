@@ -46,38 +46,8 @@ int turnMovement(const Rules& r, const GameState& s, const Vehicle& v) { return 
 bool isShipOrBase(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Base; }
 bool isMobileType(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Fighter || t == VehicleType::Drone; }
 
-std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
-    std::vector<std::pair<uint32_t, VehicleId>> slots;
-    slots.reserve(s.vehicles.size());
-    for (const Vehicle& v : s.vehicles) slots.emplace_back(v.slot, v.id);
-    std::sort(slots.begin(), slots.end());
-    std::vector<VehicleId> out;
-    out.reserve(slots.size());
-    for (const auto& [slot, id] : slots) out.push_back(id);
-    return out;
-}
-
 bool computerPlayer(const GameState& s, EmpireId e) {
     return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != PlayerKind::Human;
-}
-
-// The chosen leader, else the first member in object order (spec 03 §9).
-const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
-    if (const Vehicle* v = s.vehicle(f.leader); v && alive(*v) && v->fleet == f.id) return v;
-    const Vehicle* first = nullptr;
-    for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && alive(*v) && (!first || std::pair(v->slot, v->id) < std::pair(first->slot, first->id)))
-            first = v;
-    return first;
-}
-
-// Fleet orders take precedence over a member's own while it is with the leader (inferred).
-bool followsFleetOrders(const GameState& s, const Vehicle& v) {
-    if (!v.fleet.valid()) return false;
-    const Fleet* f = s.fleet(v.fleet);
-    if (!f || f->orders.empty()) return false;
-    const Vehicle* lead = fleetLeader(s, *f);
-    return lead && lead->location == v.location && v.status != VehicleStatus::Mothballed;
 }
 
 bool pursuitOver(const GameState& s, EmpireId owner, const Order& o) {

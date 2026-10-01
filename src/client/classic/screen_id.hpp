@@ -17,15 +17,16 @@ enum class ScreenId {
     // Empire Status sub-windows.
     EmpireOptions, Ministers, SystemsToAvoid, Waypoints, Strategies, RepairPriorities,
     // Order dialogs (§1.3).
-    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename,
+    FleetTransfer, CargoTransfer, LaunchRecover, Scrap, ViewOrders, SelectWaypoint, StellarManipulation, Rename, AbandonPlanet,
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).
-    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
+    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, TacticalLaunch, CombatPieceReport, CombatReplayOptions, CombatSimulator,
+    StrategicCombat, GroundCombat,
     // Files.
     SaveGame, LoadGame,
-    // Graphics, controls and sound.
-    Settings,
+    // Game Menu → Options (per computer), and OpenSE4's graphics, controls and sound.
+    Options, Settings,
     // Learning to play (docs/LEARNING.md): tutorials, training games and the manual.
     Learn, Manual,
     Count

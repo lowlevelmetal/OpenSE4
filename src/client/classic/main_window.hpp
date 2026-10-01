@@ -109,7 +109,6 @@ private:
     bool listMode_ = false;
     std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
-    bool showMovementLines_ = true;
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;

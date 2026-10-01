@@ -98,6 +98,9 @@ struct TurnContext {
     // Human players' file lines made at step 2 of their end-of-turn
     // processing (score::recordStatistics), handed out in TurnResult::records.
     std::vector<score::PlayerRecords> records;
+    // The units reserve shared by all empires (ai::unitReserveLeft): 0 after
+    // the start-of-turn steps, then what the last units step left.
+    int64_t unitReserve = 0;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});

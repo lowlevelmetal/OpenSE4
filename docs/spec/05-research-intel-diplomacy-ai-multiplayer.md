@@ -596,17 +596,13 @@ up the trade chain [M].
       inclusive. Both use the game's ordinary between-two-bounds draw (the R[a,b] of spec 01),
       which takes exactly one number from the shared random sequence. The sector is s mod 13
       for x and s div 13 for y, the game's sector numbering y × 13 + x (spec 01 §4.1), so
-      every one of the 169 sectors is equally likely, whatever it holds. The engine differs:
-      it draws x and then y as two separate rolls of 0 to 12, which gives the same spread but
-      uses two numbers from the sequence instead of one; it should draw one sector number
-      from 0 to 168 and split it as above.
+      every one of the 169 sectors is equally likely, whatever it holds. The engine does the
+      same.
     - **The fleet** (confirmed: binary): the ship is moved first and only then taken out of
       its fleet. A fleet's location follows any member that moves (spec 03 §9), so the
       location goes with the ship, and once the ship has left, no member is at the fleet's
       location any more. The fleet is therefore disbanded: every other member leaves it,
-      normally losing its orders, and the fleet itself is deleted. The engine differs: it
-      only takes the moved ship out of the fleet, so the remaining members stay a fleet and
-      keep their orders.
+      normally losing its orders, and the fleet itself is deleted. The engine does the same.
   - `Planet - Destroyed`, `Star - Destroyed`, `Warp Point - Closed`: the same result as the
     stellar manipulation of that name (spec 01 §9).
   - `Planet - Population Riot`: sets the planet rioting unless the race has `Population
@@ -2922,9 +2918,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     tenths, and in the statistics always the unadvanced turn; its log copy (its own line
     layout, on when the key is missing, appended, last turn's entries only, no header); and
     the missing contact-lost lines. It must follow §3.4 and §5. Spec 06 §6.1 lists the
-    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`). OpenSE4 choice: the folder and file names in the
-    user data directory (`history/<game seed>/player<N>_…`), which have no counterpart since
-    the original keeps the files in the installation and copies them with each save. That
+    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`); our
+    client uses them, with `History/` in the user data directory instead of the
+    installation (an OpenSE4 choice), copies them next to each save and restores them
+    when a game is loaded (spec 06 §6.1, Q12). That
     OpenSE4's network and e-mail hosts write no files is also an OpenSE4 choice; the
     original's TCP/IP host sends each player its history and statistics files.
 41. **Rebel empire details** (§2.3): **Answer** (confirmed: binary, §2.3 "The new empire"):
@@ -3044,3 +3041,15 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     "wants war" and "wants to break" once per turn. It must keep counts (or lists) per
     empire, add one per carried-out demand, use one up at each check described above, and
     clear them all on the dates that are multiples of 10.
+50. **When the empires present at a stellar manipulation are taken** (§7.3 term 2): the
+    report goes to every empire with a ship, base, colony, or fighter, satellite or drone
+    group in the system "at that moment". Destroy Planet removes the colony and Destroy Star
+    everything in the system, so it matters whether that moment is before or after the
+    result. OpenSE4 takes the empires present as the manipulation is carried out, before
+    its result removes anything, so the owner of a destroyed colony and the empires whose
+    ships a shockwave destroys are told (inferred). To verify: does the victim of a
+    destroyed planet, with nothing else in the system, count it in its anger?
+51. **A "stop hostile actions against an empire" demand that names no empire** (§7.3
+    term 8, question 47): the promise is about the empire the demand names. A message
+    whose third empire is missing or invalid records no promise in OpenSE4 (inferred).
+    To verify: what the original records when the named empire is missing.

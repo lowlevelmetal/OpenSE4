@@ -67,8 +67,8 @@ You can run up to **12 projects** at once. A project is always the next level of
 an area can be in the queue only once. At the end of each turn the pool is shared out in one of
 two ways:
 
-- **In queue order** (the default): the first project takes what it needs to finish its level, then the next, and so on until the points run out. With 10,000 points and three projects that each need 4,000, the first two finish and the third gets 2,000.
-- **Divide Pts Evenly**: every project gets an equal share, whether it needs it or not.
+- **Divide Pts Evenly** (on for a new empire): every project gets an equal share, whether it needs it or not.
+- **In queue order** (with Divide Pts Evenly off): the first project takes what it needs to finish its level, then the next, and so on until the points run out. With 10,000 points and three projects that each need 4,000, the first two finish and the third gets 2,000.
 
 A project finishes when its progress reaches the cost of the level. The area gains exactly one
 level and the project leaves the queue; points beyond the cost are lost. A project can finish
@@ -80,7 +80,7 @@ level, until it reaches its maximum.
 Removing a project throws away its progress. Reordering keeps it: progress moves with the
 project.
 
-> In queue order, put the one thing you need most at the top. Use Divide Pts Evenly only when several areas matter equally, because it slows every one of them down.
+> Switch Divide Pts Evenly off and put the one thing you need most at the top. Dividing evenly slows every project down, and only pays when several areas matter equally.
 
 ## The Research window
 
@@ -114,7 +114,8 @@ can research now.
 
 ## Research advice
 
-- Early on, research the technologies that grow your economy: colonizing other planet types, better mines and farms, and a cheap engine or two. More colonies mean more research later.
+- Watch the **Cost** column. At the start of a game some levels cost a few turns of research and others a hundred turns or more. Mix a few cheap, useful levels with one long-term goal, such as colonizing another planet type.
+- Research grows with your economy: more colonies and research facilities mean more points, and every later level gets there sooner.
 - Do not neglect weapons and armor for long. Computer players will notice a weak neighbour.
 - Upgraded facilities do not appear by themselves: after you research a better facility, use **Upgrade Facilities** in the [Construction Queues](window:queues) window.
 - After you research better components, use **Upgrade** in the [Designs](window:designs) window to make new designs with the newest parts (see [Ship design](ship-design)).

@@ -1,11 +1,14 @@
 // Stellar manipulation (spec 01 §9, confirmed: binary).
 //
 // Object ids stay stable: objects are converted in place where possible
-// (asteroids <-> planet); new objects are appended; removed objects leave
-// their system's object list and keep their record.
+// (asteroids <-> planet), keeping their slot (inferred, spec 03 §19 Q72); new
+// objects take the lowest free slot of the object list (GameState::addObject);
+// removed objects leave their system's object list, which frees their slot,
+// and keep their record.
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
+#include "game/events.hpp"
 #include "game/generate.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
@@ -24,6 +27,15 @@ constexpr std::string_view kStarDestroyed = "Star Destroyed: ";
 } // namespace
 
 bool isDestructiveStellarReport(std::string_view title) { return title.starts_with(kPlanetDestroyed) || title.starts_with(kStarDestroyed); }
+
+std::string stellarReportText(const GameState& s, EmpireId culprit, std::string_view vehicle) {
+    return std::format("By {} of the {}.", vehicle, effects::empireFullName(s.empire(culprit)));
+}
+
+bool stellarReportNames(const GameState& s, const LogEntry& entry, EmpireId culprit) {
+    if (!isDestructiveStellarReport(entry.title) || !culprit.valid() || culprit.index() >= s.empires.size()) return false;
+    return entry.text.ends_with(std::format(" of the {}.", effects::empireFullName(s.empire(culprit))));
+}
 
 } // namespace opense4::game::movement
 
@@ -214,7 +226,7 @@ protected:
                 return true;
         for (ObjectId o : cs_.galaxy.system(here_.system).objects) {
             if (cs_.galaxy.object(o).sector != here_.sector) continue;
-            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, cs_, owner_, o)) return true;
+            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeeColony(r_, cs_, owner_, o)) return true;
         }
         return false;
     }
@@ -375,7 +387,7 @@ protected:
         // least Val 2 kT of components whose Custom Group is Val 1. The count goes
         // by design: every such component, damaged or not, with its mounted size;
         // mothballed ships and unit groups do not count (spec 01 §9, §14 Q33,
-        // confirmed: binary). Bases count like ships (inferred, spec 01 §14 Q42).
+        // confirmed: binary). Bases count like ships (spec 01 §14 Q42, confirmed: binary).
         for (const ParsedAbility& a : abilities_)
             if (a.kind == AbilityKind::ConstructedPlanetRequirements) plan_.needs.emplace_back(static_cast<int>(a.value1), a.value2);
         for (const auto& [group, tons] : plan_.needs) {
@@ -434,14 +446,9 @@ private:
 
     uint32_t pick(const std::vector<uint32_t>& types) { return types[s_.rng.below(types.size())]; }
 
-    ObjectId append(SpaceObject obj, SystemId sys) {
-        obj.id = ObjectId{s_.galaxy.objects.size()};
-        obj.system = sys;
-        s_.galaxy.system(sys).objects.push_back(obj.id);
-        s_.galaxy.objects.push_back(std::move(obj));
-        objectsAppended(s_);
-        return s_.galaxy.objects.back().id;
-    }
+    // A new object takes the lowest free slot of the object list, whatever
+    // kind of object left it (spec 03 §19 Q62).
+    ObjectId append(SpaceObject obj, SystemId sys) { return s_.addObject(std::move(obj), sys); }
 
     void remove(ObjectId id) { removeObject(s_, id); }
 
@@ -472,13 +479,43 @@ private:
 
     void announce(std::string title) {
         addHistory(s_, owner_, owner_, std::format("{} (by {})", title, name_), here_);
-        ctx_.log(owner_, LogCategory::Events, std::move(title), std::format("By {}.", name_), here_);
+        const std::string text = stellarReportText(s_, owner_, name_);
+        // A destroyed planet or star (a new nebula or black hole reports the
+        // star it consumed) is reported to every empire present in the system
+        // when it happens, naming the empire responsible: what the computer
+        // players' anger term 2 counts in their own logs (spec 05 §7.3, open
+        // question 44, confirmed: binary).
+        if (isDestructiveStellarReport(title))
+            for (EmpireId w : witnesses_)
+                if (w != owner_) ctx_.log(w, LogCategory::Events, title, text, here_);
+        ctx_.log(owner_, LogCategory::Events, std::move(title), text, here_);
     }
+
+    // The empires present in the system: a ship, base, colony, or fighter,
+    // satellite or drone group there; mine fields do not count (spec 05 §7.3).
+    // Taken as the manipulation is carried out, before its result removes
+    // anything (inferred, spec 05 open question 50).
+    void noteWitnesses() {
+        witnesses_.clear();
+        auto add = [&](EmpireId e) {
+            if (e.valid() && std::find(witnesses_.begin(), witnesses_.end(), e) == witnesses_.end()) witnesses_.push_back(e);
+        };
+        for (const Vehicle& v : s_.vehicles) {
+            if (!alive(v) || v.location.system != here_.system) continue;
+            const ruleset::VehicleType t = vehicleType(r_, s_, v);
+            if (t != ruleset::VehicleType::Mine && t != ruleset::VehicleType::Troop) add(v.owner);
+        }
+        for (ObjectId o : s_.galaxy.system(here_.system).objects)
+            if (const Colony* c = s_.colony(o)) add(c->owner);
+        std::sort(witnesses_.begin(), witnesses_.end());
+    }
+    std::vector<EmpireId> witnesses_;
 
     std::string planetName(SystemId sys) const { return std::format("{} {}", s_.galaxy.system(sys).name, romanNumeral(nextPlanetNumeral(s_.galaxy, sys))); }
 
     // The result, after every check has passed.
     void perform() {
+        noteWitnesses();
         StarSystem& sys = system();
         const auto& rs = r_.data();
         switch (action_) {
@@ -668,11 +705,6 @@ std::optional<Location> stellarTarget(const GameState& s, const Order& o, Locati
 std::string stellarManipulation(TurnContext& ctx, std::span<const VehicleId> members, const Order& o, bool& consumed) {
     Manipulation m(ctx, o);
     return m.run(members, consumed);
-}
-
-void objectsAppended(GameState& s) {
-    s.colonies.resize(s.galaxy.objects.size());
-    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), s.options.omnipresent ? 1 : 0);
 }
 
 } // namespace opense4::game::movement::detail

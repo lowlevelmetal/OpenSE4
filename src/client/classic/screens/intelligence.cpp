@@ -326,14 +326,32 @@ private:
             ImGui::PopID();
         }
         if (remove) {
-            auto q = e.intel;
-            q.erase(q.begin() + std::ptrdiff_t(*remove));
-            set(ui, q, e.intelEvenly, e.repeatIntel);
+            // Asks first while the Empire Options' "confirm deleting an
+            // intelligence project" is on (spec 06 §1.9).
+            removing_ = *remove;
+            removingOrder_ = e.intel[*remove];
+            if (ui.options().confirmDeleteIntel) confirm_.open(std::format("Cancel the intelligence project {}?", orderLabel(ui, e.intel[*remove])));
+            else cancelProject(ui);
         } else if (change) {
             auto q = e.intel;
             q[change->first] = change->second;
             set(ui, q, e.intelEvenly, e.repeatIntel);
         }
+        if (confirm_.draw(ui)) cancelProject(ui);
+    }
+
+    void cancelProject(UiContext& ui) {
+        const game::Empire& e = ui.me();
+        // The project still at that place (nothing else changed it meanwhile).
+        if (!removing_ || *removing_ >= e.intel.size() || e.intel[*removing_].project != removingOrder_.project ||
+            e.intel[*removing_].target != removingOrder_.target) {
+            removing_.reset();
+            return;
+        }
+        auto q = e.intel;
+        q.erase(q.begin() + std::ptrdiff_t(*removing_));
+        removing_.reset();
+        set(ui, q, e.intelEvenly, e.repeatIntel);
     }
 
     void detail(UiContext& ui) {
@@ -368,6 +386,9 @@ private:
     int page_ = 0;
     std::optional<uint32_t> hovered_;
     std::optional<uint32_t> pinned_;
+    std::optional<size_t> removing_;
+    game::IntelProjectOrder removingOrder_;
+    YesNoPrompt confirm_;
     ReorderPopup reorder_;
     StatusLine status_;
 };

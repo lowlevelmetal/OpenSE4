@@ -409,8 +409,12 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
     auto homes = placeHomeworlds(s.galaxy, r.data(), starts, po, s.rng, &s.startingPoints);
     if (!homes) return std::unexpected(homes.error());
     objectsGrown(s);  // placement may have created planets
-    // The home systems are recorded now and never move (spec 02 §2).
-    for (size_t i = 0; i < n; ++i) s.empires[i].homeSystem = s.galaxy.object((*homes)[i]).system;
+    // The home systems and sectors are recorded now and never move (spec 02
+    // §2, spec 05 §4).
+    for (size_t i = 0; i < n; ++i) {
+        s.empires[i].homeSystem = s.galaxy.object((*homes)[i]).system;
+        s.empires[i].homeSector = s.galaxy.object((*homes)[i]).sector;
+    }
 
     // ---- Each empire's starting planets, in player order (step 8, spec 02 §9).
     for (size_t i = 0; i < n; ++i) {
