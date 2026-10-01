@@ -3500,7 +3500,7 @@ void Battle::finish() {
         // order's conditions (a working part giving cloak level 2 or more in
         // some sight type, and supplies), a unit group always; a captured or
         // converted ship for its new owner. The simulator does not (spec 04 §2,
-        // confirmed: binary). The engine has no cloaked colonies.
+        // confirmed: binary). Colonies are handled with the planets below.
         if (p.wasCloaked && !simulated()) {
             bool can = p.kind == Kind::UnitGroup;
             if (!can) {

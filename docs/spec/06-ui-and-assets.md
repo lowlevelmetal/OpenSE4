@@ -1816,11 +1816,6 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
    Our client lights the buttons by the rules of §2.8, for every kind of selection
    including tagged groups (Shift+click in the list, Shift+A, Shift+C), and binds every
    key of §3.1 (rebindable). It differs:
-   - Jettison Cargo, Use Facility and Convert Resources light by the rules, but our engine
-     cannot carry them out yet: using one says so. Their rules are in spec 03 §8 and spec 02
-     §5.6.
-   - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies. The
-     colony cloaking rules are in spec 01 §6.9.
    - The movement log is replayed from what the client saw (Q51).
    - An 800x600 layout, if added, needs the 4 wrapping pages.
 5. **System art.** Where are the 128x128 `Systems/*.bmp` and the 72x72 storm and
@@ -1923,9 +1918,8 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     drawing order for ships, planets and fleets, including cell 36 (remote mining),
     which the manual does not mention (confirmed: binary).
     Our client draws these cells in this order for ships, fleets, planets, ship-list rows,
-    reports and the Colonies list. It differs: colonies cannot cloak in our engine, so a
-    colony never shows cell 9; what counts as "building", a cloaked fleet and "the first
-    miner" are our choices (Q50).
+    reports and the Colonies list, a cloaked colony's cell 9 first (since 2026-10-01). What
+    counts as "building", a cloaked fleet and "the first miner" are our choices (Q50).
 14. **Transparency.** **Answer:** the colour key is exact black, RGB(0,0,0), and there
     is no additive or alpha blending anywhere: every sprite is copied opaque or drawn
     with black transparent, explosions, shield hits, beams and torpedoes included
@@ -1990,9 +1984,8 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     Colonizable does not exclude colonized planets, and All lists no asteroid fields.
     The full tab table, the statistics, columns, sorting and Send Colony Ship are in
     §1.8.1 (confirmed: binary).
-    Our client follows this (its own choices where the rules are silent are Q24–Q29). It
-    still differs only where our engine has nothing to test: it has no planetary cloak,
-    so no planet is left out for one and every colony is seen.
+    Our client follows this (its own choices where the rules are silent are Q24–Q29),
+    planetary cloaks included since 2026-10-01.
 20. **Construction Queues toggles.** What do Ships and Ship SY each include?
     **Answer:** the split is by whether a vehicle's space yard works right now, not by
     hull. Ship SY holds every ship and base queue with a working yard; Ships holds vehicle

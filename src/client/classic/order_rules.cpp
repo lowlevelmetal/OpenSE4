@@ -177,8 +177,6 @@ std::optional<Action> orderAction(OrderId o) {
     return std::nullopt;
 }
 
-bool orderNotInEngine(OrderId) { return false; }
-
 bool vehicleCanCloak(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     if (v.supply <= 0 && !game::vehicleHasUnlimitedSupply(r, s, v)) return false;
     const auto abilities = game::vehicleAbilities(r, s, v);

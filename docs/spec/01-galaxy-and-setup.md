@@ -895,7 +895,7 @@ turn. A ship differs: it needs supply and pays upkeep (spec 03 §8).
   §3.1 at once. Cloaking runs no contact check.
 - Open: needs observation. How the host of a simultaneous game receives a colony's Cloak or
   Decloak given during the turn. The player's copy changes at once; presumably the turn file
-  carries it like the rest of the colony (inferred).
+  carries it like the rest of the colony (inferred). OpenSE4's choice is below (§14 Q44).
 
 **When a colony decloaks or cloaks by itself.**
 - **Recalculation.** At each recalculation above, a cloaked colony that can no longer cloak
@@ -975,43 +975,20 @@ turn. A ship differs: it needs supply and pays upkeep (spec 03 §8).
   the can-repair cell (11) instead, when it has `Component Repair`. The building cell (12)
   is unaffected.
 
-**The engine differs: it has no planetary cloak at all.** To implement this subsection:
-- **State.** A cloaked flag on the colony, saved with the game and kept on every change of
-  owner.
-- **Levels.** Colony cloak and sensor levels from facilities only. The engine's sensor levels
-  also read the planet's own abilities today, and must not. Recalculate at the moments above;
-  that recalculation decloaks a colony that can no longer cloak. Do not recalculate after
-  intelligence facility damage.
-- **Sight.** The planet's obscuration, colony detection, the sight cache and the Omnipresent
-  path must use the cloak levels while the colony is cloaked. The "obscuration 1 means seen
-  from memory" shortcut for planets must use the cloak-aware obscuration.
-- **Contact.** First contact today counts a colony as met by its mere presence. It must pass
-  the cloak-aware test. A Decloak must run the contact check at once.
-- **Commands.** An immediate colony Cloak command (refused unless the colony can cloak) and
-  Decloak command (refused unless it is cloaked), with no cost and no queue change. The
-  colony order runner must decloak before and cloak after the orders listed above, for
-  computer players and under the Ship Cloaking minister.
-- **Combat.** Decloak colonies when a battle begins and cloak the surviving ones that were
-  cloaked, without a can-cloak test. In the turn-based cloaked-group check a cloaked colony
-  must not count as an uncloaked object; today every colony owner counts.
-- **Yards and construction.** Split "has a Space Yard facility" (rate, one-yard limit) from
-  "working yard" (also not cloaked). Use the working-yard test:
-  - for the yard in a sector (scrap, analyze, mothball, unmothball, retrofit);
-  - for the repair rule for emergency parts;
-  - for removing ship and base items from the queue;
-  - for the computer players' yard searches.
-
-  Do not block a cloaked colony's construction, and move its emergency/slow counter twice per
-  turn.
-- **Orders that need sight.** Colonize must fail when the colonizer cannot see the target.
-  Stellar manipulation, Sentry and the computer players' Close Warp Point must use the
-  cloak-aware colony test, and their Destroy Planet choice must skip colonies marked cloaked.
-- **Intelligence.** The target picker lists only planets the player sees; "Any" stays
-  unfiltered.
-- **Client.**
-  - Light Cloak and Decloak for colonies as above.
-  - Draw the cloaked cell first, and the yard cell only for a working yard.
-  - The Planets list and the map's colony mark follow the cloak-aware test.
+**The engine follows this subsection since 2026-10-01.** The colony keeps its cloaked mark and
+its cloak and sensor levels (`Colony::cloaked`, `cloakLevels`, `sensorLevels`), recalculated
+only at the moments above (`sight::recalculateColony`); the immediate command
+`cmd::CloakColony` cloaks and decloaks; sight, contact, the battle checks, yards, construction,
+the orders that need sight, the computer players and the client follow the effects above. Its
+own choices, marked (inferred) in the code (§14 Q44):
+- A simultaneous game's host carries out a colony Cloak or Decloak given during the turn when
+  it applies that player's orders at the start of turn processing, in player and command
+  order, like every other command; a Decloak's contact check runs then.
+- The "game is loaded" recalculation happens when a saved game is loaded (Load Game, a
+  network host started from a save). A play-by-e-mail game file, which the players and the
+  host pass between them, is not recalculated when it is opened, so that both sides keep the
+  same state.
+- An upgrade that converts facilities counts as completing them: it recalculates too.
 
 ---
 
@@ -1463,3 +1440,15 @@ highlighted, and an X marks each empire that has met one.
     none (no `Comet` records exist in stock data). Then nothing is made: no object, no
     ability roll, no values. The entry keeps an empty name and counts for the letters of
     later planets in its sector (§5.6). The engine does the same.
+44. **Colony cloaking: the engine's choices (§6.9).** OpenSE4 chose, marked (inferred) in the
+    code:
+    - A colony Cloak or Decloak given during a simultaneous turn reaches the host in the
+      player's orders and is carried out when the host applies them at the start of turn
+      processing, in player and command order; a Decloak's first-contact check runs then. How
+      does the original's host receive it, and when does its contact check run?
+    - "When the game is loaded" is taken as loading a saved game (Load Game, a network host
+      started from a save). A play-by-e-mail game file opened by a player or by the host is
+      not recalculated, so both sides keep the same state. Does opening a PBEM turn file
+      recalculate?
+    - An upgrade that converts a colony's facilities counts as completing facilities and
+      recalculates the levels. Does it?

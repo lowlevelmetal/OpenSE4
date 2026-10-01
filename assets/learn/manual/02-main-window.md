@@ -54,9 +54,9 @@ open its space yard's queue, manipulate stars and planets, scrap it, view or cle
 and rename it. See [Ships and fleets](ships-and-fleets#orders) for every order.
 
 With one of your **colonies** selected you can open its construction queue, transfer cargo,
-scrap facilities, launch or recover units, rename it, put it under minister control and
-abandon it. A few buttons (Jettison Cargo, Use Facility, Convert Resources) are not in OpenSE4
-yet: they say so when you press them.
+scrap facilities, launch or recover units, jettison cargo, convert resources, cloak it, rename
+it, put it under minister control and abandon it. See
+[Planets and colonies](planets-and-colonies#colony-orders-and-cloaking).
 
 Some orders need you to pick a place. The bottom of the system panel then shows a prompt, such
 as `Move To: pick a destination`, and the sector under the pointer gets green corner marks. Click
