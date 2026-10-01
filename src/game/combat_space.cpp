@@ -32,6 +32,7 @@
 #include <memory>
 #include <set>
 #include <tuple>
+#include <utility>
 
 namespace opense4::game::combat {
 
@@ -576,6 +577,14 @@ void Battle::place() {
     };
 
     std::vector<char> placed(n, 0);
+    // A random square in a box: y is drawn before x. (Function arguments have no
+    // set order of evaluation in C++, so the draws must not be written as two
+    // arguments of one call: the compilers would differ.)
+    auto randomIn = [&](int x0, int x1, int y0, int y1) {
+        const int y = rng_.rangeInt(y0, y1);
+        const int x = rng_.rangeInt(x0, x1);
+        return std::pair{x, y};
+    };
     auto put = [&](size_t i, int x, int y) {
         const Settled at = settle(x, y, pieces_[i].size, static_cast<int>(i));
         pieces_[i].x = at.x;
@@ -586,13 +595,15 @@ void Battle::place() {
     auto putRandom = [&](size_t i) {
         const Box b = boxOf(pieces_[i]);
         pieces_[i].facing = facingFor(pieces_[i]);
-        put(i, rng_.rangeInt(b.x, b.x + b.w), rng_.rangeInt(b.y, b.y + b.h));
+        const auto [x, y] = randomIn(b.x, b.x + b.w, b.y, b.y + b.h);
+        put(i, x, y);
     };
     // Planets and obstacles first, at a random top-left square in x 33-39, y 28-34.
     for (size_t i = 0; i < n; ++i)
         if (pieces_[i].kind == Kind::Planet || pieces_[i].kind == Kind::Obstacle) {
             pieces_[i].facing = rng_.rangeInt(1, 4);
-            put(i, rng_.rangeInt(33, 39), rng_.rangeInt(28, 34));
+            const auto [x, y] = randomIn(33, 39, 28, 34);
+            put(i, x, y);
         }
 
     // Then the fleets' leaders: a fleet's armed members form its combat group,
@@ -638,7 +649,10 @@ void Battle::place() {
         // A leader in an edge box starts on the box's inner line at a random point along it.
         if (b.edge && b.innerY >= 0) put(leader, rng_.rangeInt(b.x, b.x + b.w), b.innerY);
         else if (b.edge) put(leader, b.innerX, rng_.rangeInt(b.y, b.y + b.h));
-        else put(leader, rng_.rangeInt(b.x, b.x + b.w), rng_.rangeInt(b.y, b.y + b.h));
+        else {
+            const auto [x, y] = randomIn(b.x, b.x + b.w, b.y, b.y + b.h);
+            put(leader, x, y);
+        }
         int number = 0;
         for (size_t i : members) {
             if (i == leader || !armed(i)) continue;

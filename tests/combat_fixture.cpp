@@ -335,8 +335,15 @@ std::pair<GameState, Location> battleScenario(int variant, uint64_t seed) {
         if (kind == 2) s.vehicle(v)->cargo.units.push_back({drone, 2 + pick.rangeInt(0, 3)});
         // B arrives: from a neighbouring sector (an edge of the map), or through a
         // warp point (the middle, beside A, spec 04 §3).
-        if (pick.rangeInt(0, 2) == 0) arriveFrom(s, v, pick.rangeInt(-1, 1), pick.rangeInt(-1, 1));
-        else warpIn(s, v);
+        // (dy is drawn before dx: two draws as arguments of one call would come
+        // in a different order with different compilers.)
+        if (pick.rangeInt(0, 2) == 0) {
+            const int dy = pick.rangeInt(-1, 1);
+            const int dx = pick.rangeInt(-1, 1);
+            arriveFrom(s, v, dx, dy);
+        } else {
+            warpIn(s, v);
+        }
     }
     if (variant % 3 == 1) spawn(s, sat, ar.loc, 3);
     if (variant % 3 == 2) {
