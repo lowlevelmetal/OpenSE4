@@ -137,7 +137,8 @@ public:
                 if (auto c = single(key.str(), value)) all.children.push_back(std::move(*c));
             return all;
         }
-        const auto& [key, value] = *t->begin();
+        const auto first = t->begin();   // toml++ iterators own the pair they point at
+        const auto& [key, value] = *first;
         return single(key.str(), value);
     }
 
