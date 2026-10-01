@@ -46,8 +46,17 @@ struct Row {
     const std::string* notice = nullptr;
 };
 
+// The categories' ids for lessons (learn/ids.hpp windowTabs), in LogCategory order.
+constexpr std::array<const char*, kLogCategories> kCategoryIds{{"construction", "research", "intelligence", "events", "politics", "combat", "misc"}};
+
 class LogScreen final : public Screen {
 public:
+    // `--open=log:<category id>` (automation) opens on that filter, once, without storing it.
+    explicit LogScreen(std::string_view category) {
+        for (int c = 0; c < kLogCategories; ++c)
+            if (category == kCategoryIds[size_t(c)]) startFilter_ = uint8_t(c + 1);
+    }
+
     bool draw(UiContext& ui) override {
         const game::GameState& s = ui.state();
         const std::vector<Row> all = rows(ui);
@@ -65,8 +74,8 @@ public:
             // shows it, else the first row (spec 06 §4.1, §7 Q42).
             opened_ = true;
             const game::InterfaceOptions& o = ui.options();
-            filter_ = logOpeningFilter(o.logFilter, counts);
-            if (filter_ != o.logFilter) {
+            filter_ = logOpeningFilter(startFilter_ ? startFilter_ : o.logFilter, counts);
+            if (!startFilter_ && filter_ != o.logFilter) {
                 game::InterfaceOptions changed = o;
                 changed.logFilter = filter_;
                 ui.setOptions(changed);
@@ -74,7 +83,7 @@ public:
             filterRows();
             std::vector<int32_t> indices;
             for (const Row* r : shown) indices.push_back(r->index);
-            selected_ = logOpeningRow(ui.options().logPosition, indices);
+            selected_ = logOpeningRow(startFilter_ ? -1 : ui.options().logPosition, indices);
             scrollRows_ = ui.options().logScroll;
             restoreScroll_ = true;
         } else {
@@ -112,9 +121,6 @@ public:
         if (d.tab("All", filter_ == 0)) setFilter(ui, 0);
         ui.tagTab("all", filter_ == 0);
         const ImVec2 categoriesMin = ImGui::GetItemRectMin();
-        // The categories' ids for lessons (learn/ids.hpp windowTabs), in LogCategory order.
-        static constexpr std::array<const char*, kLogCategories> kCategoryIds{
-            {"construction", "research", "intelligence", "events", "politics", "combat", "misc"}};
         for (int c = 0; c < kLogCategories; ++c) {
             if (d.tab(filterLabel(c), filter_ == c + 1, counts[size_t(c)] > 0)) setFilter(ui, uint8_t(c + 1));
             ui.tagTab(kCategoryIds[size_t(c)], filter_ == c + 1);
@@ -413,6 +419,7 @@ private:
     }
 
     bool opened_ = false;
+    uint8_t startFilter_ = 0;     // automation's filter for the first opening (0: the stored one)
     uint8_t filter_ = 0;          // 0 All, else the category + 1
     int selected_ = 0;            // row of the filtered list (-1: none)
     int scrollRows_ = 0;
@@ -421,6 +428,6 @@ private:
 
 } // namespace
 
-std::unique_ptr<Screen> makeLog(const ScreenArgs&) { return std::make_unique<LogScreen>(); }
+std::unique_ptr<Screen> makeLog(const ScreenArgs& args) { return std::make_unique<LogScreen>(args.text); }
 
 } // namespace opense4::client::classic
