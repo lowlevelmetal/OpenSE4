@@ -3902,6 +3902,120 @@ TEST_CASE("ai: Close Warp Point needs a seen hostile empire where we have no pre
     CHECK_FALSE(closes(watched));
 }
 
+// ---- Spec 05 open question 37: mine and satellite layers (confirmed: binary) ---------------------
+
+TEST_CASE("ai: layer weights add up over the empires in the far system; the cap counts only the layer's kind") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.settings.set("Maximum Mines Per Player Per Sector", "5");
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(13, 3, 0, 12, r);
+    const EmpireId me{0u}, war{1u}, stranger{2u};
+    meet(s, me, war);
+    s.empire(me).relation(war).treaty = s.empire(war).relation(me).treaty = Treaty::War;
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Clear every other empire out of the systems next to home, then put a
+    // ship of each of the other two beyond one gate.
+    const ObjectId gate = s.galaxy.warpPoints(home.system).front();
+    const SystemId far = s.galaxy.object(s.galaxy.object(gate).destination).system;
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner != me; });
+    for (auto& c : s.colonies)
+        if (c && c->owner != me && s.galaxy.object(c->planet).system != s.galaxy.object(homeworld(s, war).planet).system &&
+            s.galaxy.object(c->planet).system != s.galaxy.object(homeworld(s, stranger).planet).system)
+            c.reset();
+    for (EmpireId x : {war, stranger}) {
+        const SystemId theirs = s.galaxy.object(homeworld(s, x).planet).system;
+        REQUIRE(theirs != far);
+        for (SystemId nb : s.galaxy.neighbors(home.system)) REQUIRE(nb != theirs);
+    }
+    addTestVehicle(s, r, addWarship(s, r, war, "Raider"), Location{far, Sector{4, 4}});
+    addTestVehicle(s, r, addWarship(s, r, stranger, "Visitor"), Location{far, Sector{5, 5}});
+    auto weights = [&](const GameState& g, bool mines) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 3);
+        return ai::detail::layerCandidates(p, mines);
+    };
+    const Location at = locationOf(s.galaxy, gate);
+    auto weightAt = [&](const std::vector<std::pair<Location, int>>& list) {
+        int w = 0;
+        for (const auto& [where, weight] : list)
+            if (where == at) w += weight;
+        return w;
+    };
+    // Mines: 7 at war + 4 for the stranger (not met: hostile); satellites 2 + 2.
+    CHECK(weightAt(weights(s, true)) == 11);
+    CHECK(weightAt(weights(s, false)) == 4);
+    // The cap: our satellites at the far system's sector of the gate's number
+    // do not stop a mine layer, our mines do.
+    const Location capped{far, at.sector};
+    GameState sats = s;
+    addTestVehicle(sats, r, addTestDesign(sats, r, me, "Eye", "Test Satellite Hull", {"Test Satellite Gun"}), capped).count = 5;
+    CHECK(weightAt(weights(sats, true)) == 11);
+    CHECK(weightAt(weights(sats, false)) == 0);
+    GameState mined = s;
+    addTestVehicle(mined, r, addTestDesign(mined, r, me, "Spike", "Test Mine Hull", {}), capped).count = 5;
+    CHECK(weightAt(weights(mined, true)) == 0);
+    CHECK(weightAt(weights(mined, false)) == 4);
+}
+
+TEST_CASE("ai: the layers' star-destroyer flag: dates that are multiples of 20, designs seen within 20 turns, ours included") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (const auto& c : std::vector<ruleset::Component>(rs.components))
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Component nova = c;
+            nova.name = "Test Nova Charge";
+            nova.abilities.clear();
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::CreateNebulae));
+            nova.abilities.push_back(a);
+            rs.components.push_back(nova);
+        }
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 10, r);
+    const EmpireId me{0u}, other{1u};
+    const DesignId theirs = addTestDesign(s, r, other, "Nova", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Nova Charge"});
+    auto flag = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 3);
+        return ai::detail::starDestroyerFlag(p);
+    };
+    s.turn = 39;  // simultaneous: the ministers see date 40
+    REQUIRE(ai::aiDate(s) == 40);
+    CHECK_FALSE(flag(s));
+    seeDesign(s.empire(me).knowledge, theirs, 19);
+    CHECK(flag(s));  // 39 - 19 = 20 turns old: at most 20, still recent
+    s.empire(me).knowledge.seenDesigns.clear();
+    seeDesign(s.empire(me).knowledge, theirs, 18);
+    CHECK_FALSE(flag(s));  // 21 turns old
+    s.empire(me).knowledge.seenDesigns.clear();
+    seeDesign(s.empire(me).knowledge, theirs, 30);
+    CHECK(flag(s));
+    s.turn = 40;  // date 41: not a multiple of 20
+    CHECK_FALSE(flag(s));
+    // Our own design that fought counts too.
+    s.turn = 39;
+    s.empire(me).knowledge.seenDesigns.clear();
+    const DesignId ours = addTestDesign(s, r, me, "Own Nova", "Test Cruiser",
+                                        {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Nova Charge"});
+    CHECK_FALSE(flag(s));
+    s.empire(me).aiMemory.designsFought = {{ours, 35}};
+    CHECK(flag(s));
+    // The AI's memory of the turn dates our designs that fought in a battle.
+    s.empire(me).aiMemory.designsFought.clear();
+    CombatRecord battle;
+    battle.turn = s.turn;
+    battle.participants = {me, other};
+    CombatPiece piece;
+    piece.owner = me;
+    piece.design = ours;
+    battle.pieces = {piece};
+    s.combats = {battle};
+    TurnContext ctx{r, s, {}, {}, {}};
+    ai::rememberAiEvents(ctx);
+    REQUIRE(s.empire(me).aiMemory.designsFought.size() == 1);
+    CHECK(s.empire(me).aiMemory.designsFought.front().design == ours);
+    CHECK(s.empire(me).aiMemory.designsFought.front().turn == s.turn);
+    CHECK(flag(s));
+}
+
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {
     const Rules* r = installedRules();
     if (!r) return;

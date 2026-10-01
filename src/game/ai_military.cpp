@@ -978,6 +978,79 @@ void planStellarManipulation(Planner& p) {
     }
 }
 
+// The star-destroyer flag of the mine layers (spec 05 §7.5 "Layer
+// fallback", confirmed: binary): evaluated only on dates that are multiples
+// of 20 (off on all others), set when some design, our own included, whose
+// seen date for us is at most 20 turns old has `Destroy Star`, `Create
+// Nebulae` or `Create Black Hole`.
+bool starDestroyerFlag(const Planner& p) {
+    if (p.date % 20 != 0) return false;
+    const auto destroys = [&](DesignId d) {
+        if (!d.valid() || d.index() >= p.st.designs.size()) return false;
+        const Design& design = p.st.design(d);
+        const auto any = [](std::span<const ParsedAbility> list) {
+            return hasAbility(list, AbilityKind::DestroyStar) || hasAbility(list, AbilityKind::CreateNebulae) ||
+                   hasAbility(list, AbilityKind::CreateBlackHole);
+        };
+        if (any(p.r.hullAbilities(design.hull))) return true;
+        return std::any_of(design.entries.begin(), design.entries.end(),
+                           [&](const DesignEntry& en) { return any(p.r.componentAbilities(en.component)); });
+    };
+    // Both dates in GameState::turn numbers: the seen dates are, and the
+    // ministers' date is that turn in either turn style.
+    const auto recent = [&](uint32_t seen) { return seen <= p.st.turn && p.st.turn - seen <= 20; };
+    for (const SeenDesign& seen : p.emp().knowledge.seenDesigns)
+        if (recent(seen.turn) && destroys(seen.design)) return true;
+    for (const SeenDesign& seen : p.emp().aiMemory.designsFought)
+        if (recent(seen.turn) && destroys(seen.design)) return true;
+    return false;
+}
+
+std::vector<std::pair<Location, int>> layerCandidates(Planner& p, bool mines) {
+    const Empire& e = p.emp();
+    const size_t nSys = p.st.galaxy.systems.size();
+    // Every other empire owning any object in each system.
+    std::vector<std::vector<EmpireId>> others(nSys);
+    auto note = [&](SystemId sys, EmpireId owner) {
+        if (owner == p.id || !owner.valid() || sys.index() >= nSys) return;
+        auto& list = others[sys.index()];
+        if (std::find(list.begin(), list.end(), owner) == list.end()) list.push_back(owner);
+    };
+    for (const auto& c : p.st.colonies)
+        if (c) note(p.st.galaxy.object(c->planet).system, c->owner);
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.count > 0) note(v.location.system, v.owner);
+    std::vector<uint8_t> colonySystem(nSys, 0);
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id) colonySystem[p.st.galaxy.object(c->planet).system.index()] = 1;
+    // The per-sector cap counts only our units of the layer's kind in the far
+    // system at the sector number of the warp point in our system; both kinds
+    // are compared with the mine limit.
+    const int64_t cap = p.r.setting("Maximum Mines Per Player Per Sector", 100);
+    const ruleset::VehicleType kind = mines ? ruleset::VehicleType::Mine : ruleset::VehicleType::Satellite;
+    auto ourUnitsAt = [&](Location where) {
+        int64_t n = 0;
+        for (const Vehicle& v : p.st.vehicles)
+            if (v.owner == p.id && v.count > 0 && v.location == where && vehicleType(p.r, p.st, v) == kind) n += v.count;
+        return n;
+    };
+    std::vector<std::pair<Location, int>> weighted;
+    for (size_t i = 0; i < nSys; ++i) {
+        if (!colonySystem[i]) continue;
+        for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) {
+            const SpaceObject& obj = p.st.galaxy.object(wp);
+            if (!obj.destination.valid()) continue;
+            const SystemId far = p.st.galaxy.object(obj.destination).system;
+            if (others[far.index()].empty() || ourUnitsAt({far, obj.sector}) >= cap) continue;
+            int weight = 0;
+            for (EmpireId x : others[far.index()])
+                weight += mines ? (p.atWarWith(x) ? 7 : hostileTo(e, x) ? 4 : 1) : (hostileTo(e, x) ? 2 : 1);
+            weighted.emplace_back(Location{obj.system, obj.sector}, weight);
+        }
+    }
+    return weighted;
+}
+
 namespace {
 
 using ruleset::VehicleType;
@@ -1142,81 +1215,48 @@ void sendDrones(Planner& p) {
 
 // The warp-point sector a loaded mine or satellite layer lays at (spec 05
 // §7.5, confirmed: binary).
+// Where a loaded mine or satellite layer lays its units (spec 05 §7.5
+// "Layers", "Layer fallback", confirmed: binary): a weighted draw among the
+// candidates; a mine layer ignores them on a flag turn. Without one, the
+// fallback: one random quiet colony system (no other empire has any object
+// there; none: no order). With the flag set, half the time a random star of
+// it (none: no order this turn), otherwise a random warp-point sector of it
+// (none: no order).
 std::optional<Location> layingSite(Planner& p, bool mines) {
-    const Empire& e = p.emp();
-    const size_t nSys = p.st.galaxy.systems.size();
-    // Every other empire owning any object in each system.
-    std::vector<std::vector<EmpireId>> others(nSys);
-    auto note = [&](SystemId sys, EmpireId owner) {
-        if (owner == p.id || !owner.valid() || sys.index() >= nSys) return;
-        auto& list = others[sys.index()];
-        if (std::find(list.begin(), list.end(), owner) == list.end()) list.push_back(owner);
-    };
-    for (const auto& c : p.st.colonies)
-        if (c) note(p.st.galaxy.object(c->planet).system, c->owner);
-    for (const Vehicle& v : p.st.vehicles)
-        if (v.count > 0) note(v.location.system, v.owner);
-    std::vector<uint8_t> colonySystem(nSys, 0);
-    for (const auto& c : p.st.colonies)
-        if (c && c->owner == p.id) colonySystem[p.st.galaxy.object(c->planet).system.index()] = 1;
-    const int64_t cap = p.r.setting("Maximum Mines Per Player Per Sector", 100);  // the mine limit, for satellites too
-    // The cap counts every unit group of ours at that sector (inferred).
-    auto ourUnitsAt = [&](Location where) {
-        int64_t n = 0;
-        for (const Vehicle& v : p.st.vehicles)
-            if (v.owner == p.id && v.count > 0 && v.location == where && isUnitType(vehicleType(p.r, p.st, v))) n += v.count;
-        return n;
-    };
-    // Star-destroying designs among the enemy designs we have seen: those with Destroy Star (inferred).
-    bool starDestroyers = false;
-    for (const SeenDesign& seen : e.knowledge.seenDesigns)
-        if (seen.design.index() < p.st.designs.size())
-            for (const DesignEntry& en : p.st.design(seen.design).entries)
-                starDestroyers = starDestroyers || hasAbility(p.r.componentAbilities(en.component), AbilityKind::DestroyStar);
-
-    std::vector<std::pair<Location, int>> weighted;
-    if (!(mines && starDestroyers))
-        for (size_t i = 0; i < nSys; ++i) {
-            if (!colonySystem[i]) continue;
-            for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) {
-                const SpaceObject& obj = p.st.galaxy.object(wp);
-                if (!obj.destination.valid()) continue;
-                const SystemId far = p.st.galaxy.object(obj.destination).system;
-                if (others[far.index()].empty() || ourUnitsAt({far, obj.sector}) >= cap) continue;
-                int weight = 1;  // the largest weight among the empires there (inferred)
-                for (EmpireId x : others[far.index()]) {
-                    if (mines) weight = std::max(weight, p.atWarWith(x) ? 7 : hostileTo(e, x) ? 4 : 1);
-                    else weight = std::max(weight, hostileTo(e, x) ? 2 : 1);
-                }
-                weighted.emplace_back(obj.system == SystemId{i} ? Location{obj.system, obj.sector} : locationOf(p.st.galaxy, wp), weight);
-            }
-        }
-    if (!weighted.empty()) {
+    const bool flag = starDestroyerFlag(p);
+    if (!(mines && flag)) {
+        const auto weighted = layerCandidates(p, mines);
         int64_t total = 0;
         for (const auto& [where, w] : weighted) total += w;
-        int64_t roll = static_cast<int64_t>(p.rng.below(static_cast<uint64_t>(total)));
-        for (const auto& [where, w] : weighted) {
-            if (roll < w) return where;
-            roll -= w;
+        if (total > 0) {
+            int64_t roll = static_cast<int64_t>(p.rng.below(static_cast<uint64_t>(total)));
+            for (const auto& [where, w] : weighted) {
+                if (roll < w) return where;
+                roll -= w;
+            }
         }
     }
-    // Mine layers facing star destroyers: half the time a random star's
-    // sector of our colony systems (inferred which stars).
-    if (mines && starDestroyers && p.rng.percent(50)) {
-        std::vector<Location> stars;
-        for (size_t i = 0; i < nSys; ++i)
-            if (colonySystem[i])
-                for (ObjectId o : p.st.galaxy.system(SystemId{i}).objects)
-                    if (p.st.galaxy.object(o).kind == ObjectKind::Star) stars.push_back(locationOf(p.st.galaxy, o));
-        if (!stars.empty()) return stars[static_cast<size_t>(p.rng.below(stars.size()))];
-    }
-    // A random warp-point sector of a colony system where no other empire has any object.
-    std::vector<Location> fallback;
+    const size_t nSys = p.st.galaxy.systems.size();
+    std::vector<uint8_t> quietSystem(nSys, 0);
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id) quietSystem[p.st.galaxy.object(c->planet).system.index()] = 1;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner != p.id && c->owner.valid()) quietSystem[p.st.galaxy.object(c->planet).system.index()] = 0;
+    for (const Vehicle& v : p.st.vehicles)
+        if (v.count > 0 && v.owner != p.id && v.owner.valid() && v.location.system.index() < nSys) quietSystem[v.location.system.index()] = 0;
+    std::vector<SystemId> quiet;
     for (size_t i = 0; i < nSys; ++i)
-        if (colonySystem[i] && others[i].empty())
-            for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) fallback.push_back(locationOf(p.st.galaxy, wp));
-    if (fallback.empty()) return std::nullopt;
-    return fallback[static_cast<size_t>(p.rng.below(fallback.size()))];
+        if (quietSystem[i]) quiet.push_back(SystemId{i});
+    if (quiet.empty()) return std::nullopt;
+    const SystemId sys = quiet[static_cast<size_t>(p.rng.below(quiet.size()))];
+    std::vector<Location> spots;
+    const bool star = flag && p.rng.percent(50);
+    for (ObjectId o : p.st.galaxy.system(sys).objects) {
+        const ObjectKind k = p.st.galaxy.object(o).kind;
+        if (star ? isStarKind(k) : k == ObjectKind::WarpPoint) spots.push_back(locationOf(p.st.galaxy, o));
+    }
+    if (spots.empty()) return std::nullopt;
+    return spots[static_cast<size_t>(p.rng.below(spots.size()))];
 }
 
 } // namespace

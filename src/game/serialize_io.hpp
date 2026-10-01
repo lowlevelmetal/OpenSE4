@@ -327,7 +327,7 @@ void io(Ar& ar, Relation& r) {
 
 template <class Ar>
 void io(Ar& ar, AiMemory& m) {
-    fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield);
+    fields(ar, m.targets, m.staging, m.secured, m.defend, m.afterAttack, m.avoid, m.attackSystems, m.metMinefield, m.designsFought);
 }
 
 template <class Ar> void io(Ar& ar, PoliticsMark& m) { fields(ar, m.set, m.turn, m.battles, m.logs, m.nextMessage); }

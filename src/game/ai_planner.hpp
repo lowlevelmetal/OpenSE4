@@ -278,6 +278,14 @@ std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireI
 // What an item of a trade, gift or tribute is worth to the receiving side
 // (spec 05 §7.4 item values).
 int64_t tradeItemValue(const Planner& p, const PackageItem& item, EmpireId giver, EmpireId receiver);
+// The mine and satellite layers (spec 05 §7.5 "Layers", confirmed: binary):
+// the warp points of our colony systems whose far system holds any object of
+// another empire, each with the sum of those empires' weights (mines 1, 4
+// when hostile, 7 at war; satellites 1, 2 when hostile), less those whose
+// sector already holds the cap of our units of the layer's kind.
+std::vector<std::pair<Location, int>> layerCandidates(Planner& p, bool mines);
+// The mine layers' star-destroyer flag of this turn (spec 05 §7.5 "Layer fallback").
+bool starDestroyerFlag(const Planner& p);
 // Order helpers.
 Order moveOrder(Location where);
 Order simpleOrder(OrderKind k);

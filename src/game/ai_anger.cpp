@@ -506,6 +506,21 @@ void rememberEvents(GameState& s, Empire& e, const std::vector<SystemId>& territ
     // Contract with the combat module: a ship struck by mines logs "Mines at <sector>".
     for (const LogEntry& l : e.log)
         if (l.turn == s.turn && l.category == LogCategory::Combat && l.title.starts_with("Mines at ")) e.aiMemory.metMinefield = true;
+    // Our own designs that fought this turn get a seen date too (spec 05 §8
+    // "Design knowledge", §7.5 "Layer fallback"): the record's pieces (a group
+    // that mixes designs lists its first). Only the last 20 turns matter.
+    std::vector<SeenDesign>& fought = e.aiMemory.designsFought;
+    for (const CombatRecord& rec : s.combats) {
+        if (rec.turn != s.turn || !involves(rec, e.id)) continue;
+        for (const CombatPiece& piece : rec.pieces) {
+            if (piece.owner != e.id || !piece.design.valid() || piece.kind == CombatPiece::Kind::Seeker) continue;
+            auto it = std::find_if(fought.begin(), fought.end(), [&](const SeenDesign& d) { return d.design == piece.design; });
+            if (it == fought.end()) fought.push_back({piece.design, s.turn});
+            else it->turn = std::max(it->turn, s.turn);
+        }
+    }
+    std::erase_if(fought, [&](const SeenDesign& d) { return d.turn + 20 < s.turn; });
+    std::sort(fought.begin(), fought.end(), [](const SeenDesign& a, const SeenDesign& b) { return a.design < b.design; });
 }
 
 } // namespace

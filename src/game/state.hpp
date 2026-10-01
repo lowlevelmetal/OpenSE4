@@ -89,6 +89,15 @@ struct Relation {
     int combatsLastTurn = 0;    // ... and in the turn before
 };
 
+// A foreign design an empire knows and the turn it last saw it. Knowledge of
+// a design not seen for more than kDesignMemoryTurns is forgotten in the
+// empire's end-of-turn processing (spec 05 §8 step 12).
+struct SeenDesign {
+    DesignId design;
+    uint32_t turn = 0;
+};
+inline constexpr uint32_t kDesignMemoryTurns = 50;
+
 // A computer player's plans between turns (spec 05 §7.2, §7.4).
 struct AiMemory {
     std::vector<SystemId> targets;        // attack targets, at most 3
@@ -99,6 +108,11 @@ struct AiMemory {
     std::vector<SystemId> avoid;          // systems we agreed to leave (accepted demands)
     std::vector<SystemId> attackSystems;  // systems an accepted request asked us to attack
     bool metMinefield = false;            // our ships have run into a mine field
+    // Our own designs that fought in a battle, with the turn of the latest
+    // (spec 05 §8 "Design knowledge": every participant dates every piece;
+    // the layers' star-destroyer flag reads it, §7.5). Foreign designs are in
+    // Knowledge::seenDesigns.
+    std::vector<SeenDesign> designsFought;
 };
 
 // Turn-based games: how far an empire's last political step counted (spec 05
@@ -158,15 +172,6 @@ struct EconomyReport {
     int64_t research = 0;
     int64_t intelligence = 0;
 };
-
-// A foreign design an empire knows and the turn it last saw it. Knowledge of
-// a design not seen for more than kDesignMemoryTurns is forgotten in the
-// empire's end-of-turn processing (spec 05 §8 step 12).
-struct SeenDesign {
-    DesignId design;
-    uint32_t turn = 0;
-};
-inline constexpr uint32_t kDesignMemoryTurns = 50;
 
 // What an empire knows about the galaxy (spec 01 §6).
 struct Knowledge {
