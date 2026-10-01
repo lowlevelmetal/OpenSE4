@@ -1522,18 +1522,13 @@ where our client differs. Only Q18 keeps an open part.
    lines, autosave, and Reset Passwords on a simultaneous host). Empire Status → Empire
    Options is per empire and saved with the game. Both full lists, with defaults, are in
    §1.9 (confirmed: binary).
-   Our client differs: its Game Menu → Options opens our Empire Options, its Game Menu
-   has an extra Settings button, Save Empire is always disabled, and Players cannot
-   switch computer control. Its Empire Options merges both windows and keeps most
-   switches per computer, with only Ship Movement, Ship Orders and the colony-type picker
-   per empire; in the original every Empire Options row belongs to the empire, while
-   sound, music, the sound-set choice, movement animation, movement lines and autosave
-   belong to the Options window. Missing from ours: the similar-abilities note, the
-   first-queue-item confirmation, skip ships in fleets, system grid, coordinate
-   location, the 12 facility-marker rows, the Galaxy Display rows, both Latest Items
-   rows, Politics auto-claim, separate research and intelligence delete confirmations
-   (ours has one), and Fast Tactical Combat. Ours has waypoint-marker and
-   colonization-marker rows that the original does not have.
+   Our client follows this: Game Menu → Options opens the per-computer Options window
+   (with an extra Settings button for OpenSE4's graphics, controls and effects volume),
+   Empire Options lists every row of the table above with its default, kept with the
+   empire and saved with the game, and the Game Menu has the original ten buttons; Save
+   Empire writes an empire file (ours holds no designs, so it does not ask about them).
+   It still differs: Players cannot switch computer control; there is no Reset
+   Passwords; no Settings.txt switch turns music off; our own choices are in Q30–Q37.
 9. **Start-up menu (1.95).** What is the `StartMenu.bmp` window? **Answer:** a launcher
    built into the game (the 736x536 window spec 07 saw), shown only when the program
    starts without arguments, as the Steam shortcut does. Play opens the Intro; the other
@@ -1565,13 +1560,10 @@ where our client differs. Only Q18 keeps an open part.
     position and the scroll position come back too. Full rules in §4.1, which is also
     corrected: a combat entry lists each object's damage (a percentage, Dead or Taken),
     not Start and Lost counts (confirmed: binary).
-    Our client differs: its bullets are coloured by category; it remembers the filter
-    and selection only in memory within one turn; it has an "Earlier turns" checkbox and
-    sorts newest first with dates; its Goto only jumps to locations (the original also
-    opens the target window, Construction Queues, Research, Intelligence, Empire Options,
-    Designs or Empires, over the Log); its Combat Forces table shows Start/Lost counts per
-    hull kind. Make sure Combat Replay is dim when `Create Combat Replay` is FALSE and
-    that Send Reply refuses when a message already went to that empire this turn.
+    Our client follows this, with the choices of Q30–Q37. It still differs: messages from
+    other empires are rows of their own (taken from the game's messages, listed before
+    the log entries) and keep our layout whatever `Use Old Log Political Message
+    Display` says; refused orders are rows of their own too.
 12. **Save folder contents.** **Answer:** see §6.1: the folders created at start-up; the
     names and places of saves, maps, empires and autosaves (`AutoSav<d>.gam`); the
     per-player turn saves; the `.plr`, `.trn` and `.cmb` names; the `History/plr_<N>_*`
@@ -1621,12 +1613,13 @@ where our client differs. Only Q18 keeps an open part.
     nothing while one is open, and nothing while the turn is being ended or the movement
     log replayed. Esc and Enter close only some windows; §3.4 lists the keys of each
     kind. In Yes/No prompts Enter means No (confirmed: binary).
-    Our client differs: it shows tooltips beside the pointer after a delay; draw the hint
-    text of §2.3 instead. Enter does not close Close-type dialogs. Its Yes/No popups take
-    Enter as Yes (original: No). Esc in the main window clears targeting or the
-    selection (the original does nothing; this can stay as an extra). It already blocks
-    main-window hotkeys while a window is open. The keys it does not bind yet are listed
-    at the end of §3.
+    Our client follows §3.4 in its prompts: Yes/No boxes (Y; N, Esc and Enter mean No; the
+    key that opened a box does not answer it), windows with Close (Esc and Enter), battle
+    notices (Esc and Enter mean Begin), the Tactical/Strategic question (T and S) and Next
+    Player (Esc and Enter). It still differs: it shows tooltips beside the pointer after a
+    delay instead of the hint text of §2.3, and Esc in the main window clears targeting or
+    the selection (an extra that can stay). The keys it does not bind yet are listed at
+    the end of §3.
 17. **Weapon graphic index base.** **Answer:** beams and torpedoes are both 1-based:
     cell = `Weapon Display` − 1, and 0 means no picture (only warheads use 0 in stock
     data). Seekers use the 20x20 slot at x = 40 + 20 × `Weapon Display` of the owner's
