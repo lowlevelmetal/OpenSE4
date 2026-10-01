@@ -52,9 +52,9 @@ struct RouteOptions {
 // Sweeper` (spec 03 §6.2, confirmed: binary). For a fleet the first member is
 // the first one at the fleet's location in object order (sweeperOf).
 bool leadsSweeperGroup(const GameState& s, const Vehicle& first);
-// The member a group's Mine Sweeper exemption is tested on: for a vehicle
-// that follows its fleet's orders, the fleet's first member at its location
-// in object order; otherwise the vehicle itself.
+// The member a group's Mine Sweeper exemption is tested on: for a fleet
+// member, the fleet's first member at its location in object order;
+// otherwise the vehicle itself.
 const Vehicle& sweeperOf(const GameState& s, const Vehicle& v);
 
 // Shortest route using only what empire `e` knows: systems it explored and
@@ -113,11 +113,11 @@ std::vector<int> actionDays(int speed, DayCounterMode mode = kDayCounterMode);
 // the days of actionDays, in a turn-based game its movement points.
 int movesPerTurn(const GameState& s, int speed);
 
-// Movement points of the slowest member of a fleet (its speed).
+// The lowest maximum movement among the members at a fleet's location (its speed).
 int fleetSpeed(const Rules& r, const GameState& s, const Fleet& f);
 
 // Turn start: every vehicle's movement points reset to its maximum, fleet
-// members in the fleet's sector to the fleet's lowest maximum.
+// members at the fleet's location to the lowest maximum among them.
 void startTurn(TurnContext& ctx);
 
 // How movement asks for space combat. The default calls combat::combatPossible
@@ -134,12 +134,15 @@ CombatHooks defaultCombatHooks();
 
 // The 30-day movement phase (spec 03 §6.3, confirmed: binary). Every ship,
 // base and unit group keeps a day counter that gains its current movement
-// points / 30 each day (a fleet member: the lowest among the members in the
-// fleet's sector); at 1 or more it acts and loses 1. Objects act in object
-// order; colonized planets, minefields, satellite groups and vehicles without
-// movement act on day 1 only. A fleet acts when its first member is due and
-// carries its members along; ad-hoc groups form at every order execution
-// (spec 03 §8). An action runs the order list with exactly 1 movement point:
+// points / 30 each day (a fleet member, wherever it is: the lowest among the
+// members at the fleet's location, 0 when none is there); at 1 or more it
+// acts and loses 1. Objects act in object order (objectOrder: planets and
+// vehicles mixed); colonized planets, minefields, satellite groups and
+// vehicles without movement act on day 1 only. A fleet acts when its first
+// member in object order that is due and has orders acts: the members at the
+// fleet's location carry out that member's order and each of their lists
+// moves on (spec 03 §8, §19 Q61, Q65); ad-hoc groups form at every order
+// execution (spec 03 §8). An action runs the order list with exactly 1 movement point:
 // orders that complete chain into the next, up to 21 executions, until one
 // waits or fails. Movement points are not spent: they come back after the
 // action, unless the maximum fell below them during it. After each day every
@@ -169,10 +172,11 @@ void runColonization(TurnContext& ctx);
 // What runLive carries out.
 struct LiveMove {
     EmpireId empire;
-    // Only these groups act: vehicles on their own orders, fleets, planets.
-    // With all three empty, every group of the empire that has orders. A
-    // human player's vehicles listed together move as one group when their
-    // head orders are identical (spec 03 §8).
+    // Only these groups act: vehicles, fleets (a fleet member listed in
+    // `vehicles` names its fleet), planets. With all three empty, every group
+    // of the empire that has orders. A human player's vehicles listed
+    // together move as one group when their head orders are identical (spec
+    // 03 §8).
     std::vector<VehicleId> vehicles;
     std::vector<FleetId> fleets;
     std::vector<ObjectId> planets;
@@ -185,7 +189,7 @@ struct LiveMove {
 };
 
 // A turn-based player's turn starts: the empire's vehicles regain their
-// movement (fleet members in the fleet's sector the fleet's lowest maximum),
+// movement (fleet members at the fleet's location the lowest maximum among them),
 // and the turn's records of steps, emergency movement and launches
 // (GameState::playerTurn) start afresh.
 void startTurn(TurnContext& ctx, EmpireId empire);

@@ -64,10 +64,8 @@ bool colonyShipEnroute(const game::GameState& s, game::EmpireId e, game::ObjectI
         return std::any_of(orders.begin(), orders.end(),
                            [&](const game::Order& o) { return o.kind == game::OrderKind::Colonize && o.object == planet; });
     };
-    for (const game::Vehicle& v : s.vehicles)
+    for (const game::Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
         if (v.owner == e && targets(v.orders)) return true;
-    for (const game::Fleet& f : s.fleets)
-        if (f.owner == e && targets(f.orders)) return true;
     return false;
 }
 
@@ -126,10 +124,8 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
         for (const game::Order& o : orders)
             if (o.kind == game::OrderKind::Colonize && o.object.valid()) enroute.insert(o.object);
     };
-    for (const game::Vehicle& v : s.vehicles)
+    for (const game::Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
         if (v.owner == e) collect(v.orders);
-    for (const game::Fleet& f : s.fleets)
-        if (f.owner == e) collect(f.orders);
 
     for (const game::StarSystem& sys : s.galaxy.systems) {
         if (!me.hasExplored(sys.id)) continue;

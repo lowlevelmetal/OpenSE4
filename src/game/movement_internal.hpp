@@ -41,12 +41,6 @@ bool isMobileType(ruleset::VehicleType t);  // ships, fighters, drones
 // vehicle with an identical head order (spec 03 §8).
 bool computerPlayer(const GameState& s, EmpireId e);
 
-// The chosen leader, else the first member in object order (spec 03 §9).
-// A member of a fleet that has orders, in the leader's sector, follows the
-// fleet's orders instead of its own.
-const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
-bool followsFleetOrders(const GameState& s, const Vehicle& v);
-
 // An Attack order's pursuit is over: the target no longer exists, belongs to
 // `owner`, or is a planet without a colony; there is no visibility test
 // (spec 03 §8, confirmed: binary).

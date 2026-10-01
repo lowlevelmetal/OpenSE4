@@ -50,25 +50,6 @@ bool computerPlayer(const GameState& s, EmpireId e) {
     return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != PlayerKind::Human;
 }
 
-// The chosen leader, else the first member in object order (spec 03 §9).
-const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
-    if (const Vehicle* v = s.vehicle(f.leader); v && alive(*v) && v->fleet == f.id) return v;
-    const Vehicle* first = nullptr;
-    for (VehicleId id : f.members)
-        if (const Vehicle* v = s.vehicle(id); v && alive(*v) && (!first || std::pair(v->slot, v->id) < std::pair(first->slot, first->id)))
-            first = v;
-    return first;
-}
-
-// Fleet orders take precedence over a member's own while it is with the leader (inferred).
-bool followsFleetOrders(const GameState& s, const Vehicle& v) {
-    if (!v.fleet.valid()) return false;
-    const Fleet* f = s.fleet(v.fleet);
-    if (!f || f->orders.empty()) return false;
-    const Vehicle* lead = fleetLeader(s, *f);
-    return lead && lead->location == v.location && v.status != VehicleStatus::Mothballed;
-}
-
 bool pursuitOver(const GameState& s, EmpireId owner, const Order& o) {
     if (o.vehicle.valid()) {
         const Vehicle* t = s.vehicle(o.vehicle);

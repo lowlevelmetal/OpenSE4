@@ -1354,14 +1354,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
     return out;
 }
 
+// The vehicle leaves its fleet and loses its orders; a fleet left with no
+// member at its location is disbanded (spec 03 §9, game::leaveFleet).
 void detachFromFleet(GameState& s, Vehicle& v) {
-    if (!v.fleet.valid()) return;
-    if (Fleet* f = s.fleet(v.fleet)) {
-        std::erase(f->members, v.id);
-        if (f->leader == v.id) f->leader = f->members.empty() ? VehicleId{} : f->members.front();
-    }
-    v.fleet = FleetId{};
-    std::erase_if(s.fleets, [](const Fleet& f) { return f.members.empty(); });
+    if (v.fleet.valid()) leaveFleet(s, v);
 }
 
 } // namespace opense4::game::effects

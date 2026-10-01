@@ -499,7 +499,7 @@ public:
                 return false;
             };
             for (const game::Fleet& f : s.fleets)
-                if (f.owner == me.id && headingThere(f.orders)) {
+                if (f.owner == me.id && headingThere(game::fleetOrders(s, f))) {
                     ImGui::Text("%s (fleet, %zu ships)", f.name.c_str(), f.members.size());
                     ++shown;
                 }

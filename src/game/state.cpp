@@ -157,17 +157,29 @@ Vehicle& GameState::addVehicle(Vehicle v) {
 
 Fleet& GameState::addFleet(Fleet f) {
     f.id = FleetId{nextFleetId++};
+    if (!f.location.system.valid() && !f.members.empty())
+        if (const Vehicle* first = vehicle(f.members.front())) f.location = first->location;
     fleets.push_back(std::move(f));
     return fleets.back();
 }
 
 void GameState::removeDeadVehicles() {
     std::erase_if(vehicles, [](const Vehicle& v) { return v.count <= 0; });
+    tidyFleets();
+}
+
+void GameState::tidyFleets() {
+    std::vector<FleetId> abandoned;
     for (Fleet& f : fleets) {
-        std::erase_if(f.members, [this](VehicleId id) { return vehicle(id) == nullptr; });
-        if (f.leader.valid() && !vehicle(f.leader)) f.leader = f.members.empty() ? VehicleId{} : f.members.front();
+        std::erase_if(f.members, [&](VehicleId id) {
+            const Vehicle* v = vehicle(id);
+            return !v || v->count <= 0 || v->fleet != f.id;
+        });
+        // A chosen leader that left or was destroyed is no longer chosen (spec 03 §9).
+        if (f.leader.valid() && std::find(f.members.begin(), f.members.end(), f.leader) == f.members.end()) f.leader = {};
+        if (fleetMembersAt(*this, f).empty()) abandoned.push_back(f.id);
     }
-    std::erase_if(fleets, [](const Fleet& f) { return f.members.empty(); });
+    for (FleetId id : abandoned) disbandFleet(*this, id);
 }
 
 std::vector<ObjectRef> objectOrder(const GameState& s) {
@@ -192,6 +204,97 @@ std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
     out.reserve(slots.size());
     for (const auto& [slot, id] : slots) out.push_back(id);
     return out;
+}
+
+// ---- Fleets ----------------------------------------------------------------------------------------
+
+namespace {
+
+bool earlierInObjectOrder(const Vehicle& a, const Vehicle& b) { return std::pair(a.slot, a.id) < std::pair(b.slot, b.id); }
+
+const std::vector<Order>& noOrders() {
+    static const std::vector<Order> none;
+    return none;
+}
+
+} // namespace
+
+const Vehicle* fleetLeader(const GameState& s, const Fleet& f) {
+    if (const Vehicle* v = s.vehicle(f.leader); v && v->count > 0 && v->fleet == f.id) return v;
+    const Vehicle* first = nullptr;
+    for (VehicleId id : f.members)
+        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->fleet == f.id && (!first || earlierInObjectOrder(*v, *first))) first = v;
+    return first;
+}
+
+std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f) {
+    std::vector<VehicleId> out;
+    for (VehicleId id : f.members)
+        if (const Vehicle* v = s.vehicle(id); v && v->count > 0 && v->fleet == f.id && v->location == f.location) out.push_back(id);
+    return out;
+}
+
+std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f) {
+    std::vector<VehicleId> out = fleetMembersAt(s, f);
+    std::erase_if(out, [&](VehicleId id) { return s.vehicle(id)->status == VehicleStatus::Mothballed; });
+    return out;
+}
+
+bool inFleetGroup(const GameState& s, const Vehicle& v) {
+    if (!v.fleet.valid() || v.count <= 0 || v.status == VehicleStatus::Mothballed) return false;
+    const Fleet* f = s.fleet(v.fleet);
+    return f && v.location == f->location && std::find(f->members.begin(), f->members.end(), v.id) != f->members.end();
+}
+
+const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f) {
+    const Vehicle* holder = nullptr;
+    for (VehicleId id : fleetGroup(s, f))
+        if (const Vehicle* v = s.vehicle(id); !v->orders.empty() && (!holder || earlierInObjectOrder(*v, *holder))) holder = v;
+    return holder;
+}
+
+const std::vector<Order>& fleetOrders(const GameState& s, const Fleet& f) {
+    const Vehicle* holder = fleetOrderHolder(s, f);
+    return holder ? holder->orders : noOrders();
+}
+
+bool fleetRepeats(const GameState& s, const Fleet& f) {
+    if (const Vehicle* holder = fleetOrderHolder(s, f)) return holder->repeatOrders;
+    // Nobody has orders: the first member's switch (Repeat is set on every list alike).
+    const std::vector<VehicleId> group = fleetGroup(s, f);
+    const Vehicle* first = nullptr;
+    for (VehicleId id : group)
+        if (const Vehicle* v = s.vehicle(id); !first || earlierInObjectOrder(*v, *first)) first = v;
+    return first && first->repeatOrders;
+}
+
+void fleetMemberMoved(GameState& s, const Vehicle& v) {
+    if (!v.fleet.valid()) return;
+    if (Fleet* f = s.fleet(v.fleet)) f->location = v.location;
+}
+
+void leaveFleet(GameState& s, Vehicle& v) {
+    const FleetId id = v.fleet;
+    v.fleet = {};
+    v.orders.clear();
+    v.repeatOrders = false;
+    if (Fleet* f = s.fleet(id)) {
+        std::erase(f->members, v.id);
+        if (f->leader == v.id) f->leader = {};  // the first member leads again (spec 03 §9)
+    }
+    s.tidyFleets();
+}
+
+void disbandFleet(GameState& s, FleetId id) {
+    Fleet* f = s.fleet(id);
+    if (!f) return;
+    for (VehicleId m : f->members)
+        if (Vehicle* v = s.vehicle(m); v && v->fleet == id) {
+            v->fleet = {};
+            v->orders.clear();
+            v->repeatOrders = false;
+        }
+    std::erase_if(s.fleets, [&](const Fleet& x) { return x.id == id; });
 }
 
 std::vector<const Vehicle*> GameState::vehiclesAt(Location where) const {

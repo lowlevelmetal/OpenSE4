@@ -60,6 +60,15 @@ bool inSystemList(const GameState& s, ObjectId o) {
     const auto& list = s.galaxy.system(s.galaxy.object(o).system).objects;
     return std::find(list.begin(), list.end(), o) != list.end();
 }
+// Gives a fleet orders: copies in the lists of its members at its location,
+// as cmd::SetOrders on the fleet leaves them (spec 03 §8, §19 Q65).
+void fleetGets(World& w, FleetId f, const std::vector<Order>& list, bool repeat = false) {
+    for (VehicleId id : fleetGroup(w.s, *w.s.fleet(f))) {
+        w.v(id).orders = list;
+        w.v(id).repeatOrders = repeat;
+    }
+}
+const std::vector<Order>& fleetList(World& w, FleetId f) { return fleetOrders(w.s, *w.s.fleet(f)); }
 size_t countKind(const GameState& s, SystemId sys, ObjectKind k) {
     size_t n = 0;
     for (ObjectId o : s.galaxy.system(sys).objects) n += s.galaxy.object(o).kind == k;
@@ -458,12 +467,12 @@ TEST_CASE("movement: vehicles held in place by sabotage keep their orders and wa
     const VehicleId free = w.spawn(w.ship(kA, "Free", 3, {"Test Quantum Reactor"}), at(a, 9, 9));
     const VehicleId stuck = w.spawn(w.ship(kA, "Stuck", 3, {"Test Quantum Reactor"}), at(a, 9, 9));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Anchor", {free, stuck}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 12, 12)};
+    fleetGets(w, w.s.fleets.back().id, {moveTo(a, 12, 12)});
     w.v(stuck).immobileUntil = w.s.turn + 1;
     w.move();
     CHECK(w.v(free).location == at(a, 9, 9));
     CHECK(w.v(stuck).location == at(a, 9, 9));
-    CHECK(w.s.fleets.back().orders.size() == 1);
+    CHECK(fleetList(w, w.s.fleets.back().id).size() == 1);
 }
 
 TEST_CASE("movement: a warp order jumps an unknown link, learns it and explores the far system") {
@@ -537,7 +546,7 @@ TEST_CASE("movement: fleets move together at the slowest member's speed") {
     const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pack", {fast, slow}}).ok);
     const FleetId fleet = w.s.fleets.back().id;
-    w.s.fleet(fleet)->orders = {moveTo(a, 10, 6)};
+    fleetGets(w, fleet, {moveTo(a, 10, 6)});
     CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fleet)) == 3);
     CHECK(movement::etaTurns(r, w.s, w.v(fast), at(a, 10, 6)) == 5);  // 2 steps a turn at speed 3
     w.move();
@@ -547,13 +556,16 @@ TEST_CASE("movement: fleets move together at the slowest member's speed") {
     for (int i = 0; i < 4; ++i) w.move();
     CHECK(w.v(fast).location == at(a, 10, 6));
     CHECK(w.v(slow).location == at(a, 10, 6));
-    CHECK(w.s.fleet(fleet)->orders.empty());
+    CHECK(fleetList(w, fleet).empty());
+    CHECK(w.s.fleet(fleet)->location == at(a, 10, 6));  // the fleet's location follows its members (spec 03 §9)
 
-    // Without fleet orders, a member with its own orders moves alone.
+    // A fleet has no list of its own: an order in one member's list is carried
+    // out by every member at the fleet's location (spec 03 §8, §19 Q65).
     w.order(fast, moveTo(a, 12, 6));
     w.move();
     CHECK(w.v(fast).location == at(a, 12, 6));
-    CHECK(w.v(slow).location == at(a, 10, 6));
+    CHECK(w.v(slow).location == at(a, 12, 6));
+    CHECK(w.v(fast).orders.empty());
 }
 
 TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the turn") {
@@ -564,7 +576,7 @@ TEST_CASE("movement: fleet supply is pooled in equal shares at the end of the tu
     const VehicleId empty = w.spawn(w.ship(kA, "Empty", 1), at(a, 0, 6));
     w.v(empty).supply = 0;
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {full, empty}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 5, 6)};
+    fleetGets(w, w.s.fleets.back().id, {moveTo(a, 5, 6)});
     w.move();
     // Speed 1 (and a member out of supply has 1 MP) never moves in a simultaneous game (spec 03 §6.3).
     CHECK(w.v(full).location == at(a, 0, 6));
@@ -1685,23 +1697,112 @@ TEST_CASE("movement: self-destruct: ships and bases need the ability, satellites
     CHECK_FALSE(movement::canSelfDestruct(r, w.s, w.v(laidUp)));
 }
 
-TEST_CASE("movement: fleet members at the fleet's location carry out only the fleet's orders") {
+TEST_CASE("movement: a fleet's orders are copies in its members' lists, carried out position by position") {
+    // Spec 03 §8, §9, §19 Q65 (confirmed: binary): joining clears a vehicle's
+    // list and gives it none of the fleet's orders, only those given later;
+    // the first member in object order with orders acts for the members at
+    // the fleet's location, and completing an order removes the head of each
+    // of their lists, whichever order that is.
     World w;
     const Rules& r = w.rules();
     const SystemId a = w.system("A");
     const VehicleId lead = w.spawn(w.ship(kA, "Lead", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
-    const VehicleId shade = w.spawn(w.ship(kA, "Shade", 4, {"Test Quantum Reactor", "Mv Cloak"}), at(a, 0, 6));
-    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {lead, shade}}).ok);
-    w.s.fleets.back().orders = {moveTo(a, 3, 6)};
-    w.order(shade, mk(OrderKind::Cloak));
-    w.order(shade, moveTo(a, 0, 0));
+    const VehicleId mate = w.spawn(w.ship(kA, "Mate", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId late = w.spawn(w.ship(kA, "Late", 4, {"Test Quantum Reactor"}), at(a, 0, 6));
+    w.order(lead, moveTo(a, 0, 0));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {lead, mate}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    CHECK(w.v(lead).orders.empty());  // joining clears the list
+    CHECK(w.s.fleet(fid)->location == at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 3, 6)}, false}).ok);
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    CHECK(w.v(mate).orders == std::vector<Order>{moveTo(a, 3, 6)});
+    w.order(late, moveTo(a, 9, 9));
+    REQUIRE(apply(r, w.s, kA, cmd::JoinFleet{fid, late}).ok);
+    CHECK(w.v(late).orders.empty());  // none of the fleet's orders
+    // An order given to any member is appended to every member's list.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{late, {}, {moveTo(a, 5, 6)}, false}).ok);
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 3, 6), moveTo(a, 5, 6)});
+    CHECK(w.v(late).orders == std::vector<Order>{moveTo(a, 5, 6)});
+    CHECK(fleetOrders(w.s, *w.s.fleet(fid)) == w.v(lead).orders);
     w.move();
-    // Members hold only the fleet's orders (spec 03 §6.3 step 5, confirmed: binary).
-    CHECK(w.v(shade).status == VehicleStatus::Normal);
-    CHECK(w.v(shade).location == at(a, 3, 6));
-    CHECK(w.v(lead).location == at(a, 3, 6));
-    CHECK(w.s.fleets.back().orders.empty());
-    CHECK(w.v(shade).orders.size() == 2);
+    // Speed 4: three steps; the arrival removes the head of every list, so
+    // `late` loses its only order, the one still to come for the others.
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).location == at(a, 3, 6));
+    CHECK(w.v(lead).orders == std::vector<Order>{moveTo(a, 5, 6)});
+    CHECK(w.v(late).orders.empty());
+    w.move();
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).location == at(a, 5, 6));
+    CHECK(fleetOrders(w.s, *w.s.fleet(fid)).empty());
+
+    // Clear Orders and Repeat apply to every copy; leaving by Fleet Transfer clears the list.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 6, 6), moveTo(a, 5, 6)}, true}).ok);
+    for (VehicleId id : {lead, mate, late}) CHECK(w.v(id).repeatOrders);
+    REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{mate}).ok);
+    CHECK(w.v(mate).orders.empty());
+    CHECK_FALSE(w.v(mate).repeatOrders);
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {}, false}).ok);
+    for (VehicleId id : {lead, late}) {
+        CHECK(w.v(id).orders.empty());
+        CHECK_FALSE(w.v(id).repeatOrders);
+    }
+    // "Remove All": every member leaves and loses its orders.
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {moveTo(a, 7, 7)}, false}).ok);
+    REQUIRE(apply(r, w.s, kA, cmd::DisbandFleet{fid}).ok);
+    for (VehicleId id : {lead, late}) {
+        CHECK_FALSE(w.v(id).fleet.valid());
+        CHECK(w.v(id).orders.empty());
+    }
+
+    // Turn-based: orders given to one member move the fleet at once, through
+    // its first member in object order with orders.
+    w.s.options.simultaneous = false;
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Again", {late, lead}}).ok);
+    const FleetId again = w.s.fleets.back().id;
+    REQUIRE(apply(r, w.s, kA, cmd::SetOrders{late, {}, {moveTo(a, 5, 9)}, false}).ok);
+    TurnContext ctx{r, w.s, {}, {}, {}};
+    movement::startTurn(ctx, kA);
+    movement::LiveMove m{kA};
+    m.vehicles = {late};
+    movement::runLive(ctx, m, {});
+    CHECK(w.v(lead).location == at(a, 5, 9));
+    CHECK(w.v(late).location == at(a, 5, 9));
+    CHECK(fleetOrders(w.s, *w.s.fleet(again)).empty());
+}
+
+TEST_CASE("movement: a fleet member gains day credit at the fleet's speed wherever it is; a fleet with nobody at its location is disbanded") {
+    // Spec 03 §6.3 step 2, §9, §19 Q61 (confirmed: binary).
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const VehicleId fast = w.spawn(w.ship(kA, "Fast", 6, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId slow = w.spawn(w.ship(kA, "Slow", 3, {"Test Quantum Reactor"}), at(a, 0, 6));
+    const VehicleId third = w.spawn(w.ship(kA, "Third", 6, {"Test Quantum Reactor"}), at(a, 0, 6));
+    REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Trio", {fast, slow, third}}).ok);
+    const FleetId fid = w.s.fleets.back().id;
+    // The location follows whichever member moved last, by any means: here
+    // the slow member is moved away alone, as an event might.
+    w.v(slow).location = at(a, 9, 9);
+    fleetMemberMoved(w.s, w.v(slow));
+    CHECK(w.s.fleet(fid)->location == at(a, 9, 9));
+    // The fleet's speed is the slow member's alone, the only one at its
+    // location; the members elsewhere move only with it, never on their own.
+    CHECK(movement::fleetSpeed(r, w.s, *w.s.fleet(fid)) == 3);
+    w.order(fast, moveTo(a, 9, 12));
+    w.move();
+    // Speed 3 acts twice (days 11 and 21): the order of `fast`, away from the
+    // fleet's location, is carried out by the slow member alone.
+    CHECK(w.v(slow).location == at(a, 9, 11));
+    CHECK(w.v(fast).location == at(a, 0, 6));
+    CHECK(w.v(third).location == at(a, 0, 6));
+    CHECK(w.s.fleet(fid)->location == at(a, 9, 11));
+    // The slow member leaves: nobody is at the location, and the fleet is
+    // disbanded at once; the others lose their orders.
+    REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{slow}).ok);
+    CHECK(w.s.fleet(fid) == nullptr);
+    CHECK_FALSE(w.v(fast).fleet.valid());
+    CHECK_FALSE(w.v(third).fleet.valid());
+    CHECK(w.v(fast).orders.empty());
 }
 
 // ---- Hazards ------------------------------------------------------------------------------------------
@@ -1932,7 +2033,7 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     fuel(w, settler);
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Convoy", {escort, settler}}).ok);
     const FleetId convoy = w.s.fleets.back().id;
-    w.s.fleet(convoy)->orders = {mk(OrderKind::Colonize, {}, other)};
+    fleetGets(w, convoy, {mk(OrderKind::Colonize, {}, other)});
     w.move();
     CHECK(w.v(escort).location == at(a, 9, 9));
     w.colonize();
@@ -1940,7 +2041,7 @@ TEST_CASE("movement: the first colony ship at a planet wins; fleets colonize wit
     CHECK(w.s.vehicle(settler) == nullptr);
     REQUIRE(w.s.vehicle(escort));
     REQUIRE(w.s.fleet(convoy));
-    CHECK(w.s.fleet(convoy)->orders.empty());
+    CHECK(fleetList(w, convoy).empty());
 }
 
 TEST_CASE("movement: ruins give technology; automatic colonists are added") {
@@ -2399,18 +2500,19 @@ TEST_CASE("movement: a failed order clears every fleet member's list and switche
     const VehicleId one = w.spawn(w.ship(kA, "One", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
     const VehicleId two = w.spawn(w.ship(kA, "Two", 2, {"Test Quantum Reactor"}), at(a, 0, 0));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Pair", {one, two}}).ok);
-    Fleet& f = w.s.fleets.back();
-    f.orders = {moveTo(a, 1, 0), moveTo(b, 3, 3), moveTo(a, 2, 0)};  // B is not linked: the second order fails
-    f.repeatOrders = true;
-    w.v(one).orders = {moveTo(a, 5, 5)};  // a member's own list goes too
-    w.v(one).repeatOrders = true;
+    const FleetId fid = w.s.fleets.back().id;
+    // B is not linked: the second order fails.
+    fleetGets(w, fid, {moveTo(a, 1, 0), moveTo(b, 3, 3), moveTo(a, 2, 0)}, true);
     w.move();  // the step that arrives uses the action's movement point: the next order waits
-    CHECK(w.s.fleets.back().orders.size() == 3);
+    CHECK(w.v(one).orders.size() == 3);
+    CHECK(w.v(two).orders.size() == 3);
     w.move();
-    CHECK(w.s.fleets.back().orders.empty());
-    CHECK_FALSE(w.s.fleets.back().repeatOrders);
-    CHECK(w.v(one).orders.empty());
-    CHECK_FALSE(w.v(one).repeatOrders);
+    CHECK(fleetList(w, fid).empty());
+    CHECK_FALSE(fleetRepeats(w.s, *w.s.fleet(fid)));
+    for (VehicleId id : {one, two}) {
+        CHECK(w.v(id).orders.empty());
+        CHECK_FALSE(w.v(id).repeatOrders);
+    }
     CHECK(w.v(one).location == at(a, 1, 0));
     CHECK(w.logged(kA, "No known route"));
 
@@ -2629,7 +2731,7 @@ TEST_CASE("movement: colonizing fails with a cloaked member; the last suitable m
     const VehicleId first = w.spawn(w.ship(kA, "First", 3, {"Test Rock Pod"}), at(a, 5, 5));
     const VehicleId last = w.spawn(w.ship(kA, "Last", 3, {"Test Rock Pod"}), at(a, 5, 5));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Settlers", {first, last}}).ok);
-    w.s.fleets.back().orders = {mk(OrderKind::Colonize, {}, target)};
+    fleetGets(w, w.s.fleets.back().id, {mk(OrderKind::Colonize, {}, target)});
     w.colonize();
     REQUIRE(w.s.colony(target));
     CHECK(w.s.vehicle(last) == nullptr);
@@ -3223,14 +3325,15 @@ TEST_CASE("orders: composite orders are expanded into simple ones when they are 
     w.give(docked, {mk(OrderKind::Resupply)});
     CHECK(w.v(docked).orders.empty());
 
-    // Fleets: expanded from the leader's sector, into the fleet's list.
+    // Fleets: expanded once from the fleet's location, into every member's copy.
     const VehicleId f1 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
     const VehicleId f2 = w.spawn(w.ship(kA, "Wing", 3), at(a, 12, 0));
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Wing", {f1, f2}}).ok);
     const FleetId fid = w.v(f1).fleet;
     REQUIRE(apply(r, w.s, kA, cmd::SetOrders{{}, fid, {mk(OrderKind::Warp, {}, ab)}, false}).ok);
-    REQUIRE(w.s.fleet(fid)->orders.size() == 2);
-    CHECK(w.s.fleet(fid)->orders[0] == moveTo(a, 12, 6));
+    REQUIRE(w.v(f1).orders.size() == 2);
+    CHECK(w.v(f1).orders[0] == moveTo(a, 12, 6));
+    CHECK(w.v(f2).orders == w.v(f1).orders);
     (void)ba;
 }
 

@@ -279,16 +279,9 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
         if (alive(v) && v.owner == e && v.status == VehicleStatus::Cloaked && !canCloak(r, s, v)) decloak(v);
     for (Vehicle& v : s.vehicles)
         if (alive(v) && v.owner == e && resupplyDepotAt(r, s, e, v.location)) refillSupply(r, s, v);
-    // Fleet pooling among the members in the fleet's sector, at the end of the turn only.
-    for (const Fleet& f : s.fleets) {
-        if (f.owner != e) continue;
-        const Vehicle* lead = fleetLeader(s, f);
-        if (!lead) continue;
-        std::vector<VehicleId> together;
-        for (VehicleId id : f.members)
-            if (const Vehicle* v = s.vehicle(id); v && alive(*v) && v->location == lead->location) together.push_back(id);
-        poolSupply(r, s, together);
-    }
+    // Fleet pooling among the members at the fleet's location, at the end of the turn only.
+    for (const Fleet& f : s.fleets)
+        if (f.owner == e) poolSupply(r, s, fleetMembersAt(s, f));
     for (Vehicle& v : s.vehicles) {
         if (!alive(v) || v.owner != e) continue;
         // Capacity lost to damage takes supply with it. Cargo is cut when the
@@ -317,8 +310,7 @@ void trainEmpire(TurnContext& ctx, EmpireId e) {
         const Training fleet = trainingOf(list, AbilityKind::FleetTraining);
         if (fleet.perTurn > 0)
             for (Fleet& f : s.fleets)
-                if (f.owner == e)
-                    if (const Vehicle* lead = fleetLeader(s, f); lead && lead->location == where) train(f.experience, f.experienceTenths, fleet, true);
+                if (f.owner == e && f.location == where && !fleetMembersAt(s, f).empty()) train(f.experience, f.experienceTenths, fleet, true);
     };
     // Sector sources, in object order: colonized planets and vehicles share
     // the object list (spec 03 §19 Q44, Q62).
@@ -354,9 +346,7 @@ void trainEmpire(TurnContext& ctx, EmpireId e) {
                     train(v.experience, v.experienceTenths, ship, true);
         if (fleet.perTurn > 0)
             for (Fleet& f : s.fleets)
-                if (f.owner == e)
-                    if (const Vehicle* lead = fleetLeader(s, f); lead && lead->location.system == sys.id)
-                        train(f.experience, f.experienceTenths, fleet, true);
+                if (f.owner == e && f.location.system == sys.id && !fleetMembersAt(s, f).empty()) train(f.experience, f.experienceTenths, fleet, true);
     }
 }
 
@@ -403,44 +393,53 @@ namespace {
 void colonizeWaiting(TurnContext& ctx, std::optional<EmpireId> only) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
-    // Fleets: the first member able to colonize founds the colony.
-    for (size_t fi = 0; fi < s.fleets.size(); ++fi) {
-        Fleet& f = s.fleets[fi];
-        if (f.orders.empty() || f.orders.front().kind != OrderKind::Colonize) continue;
-        if (only && f.owner != *only) continue;
-        const Vehicle* lead = fleetLeader(s, f);
-        const Order o = f.orders.front();
-        if (!lead || !colonizeAt(s, o, lead->location)) continue;
-        if (only && lead->movement <= 0) continue;
+    // Fleets: the group at the fleet's location carries out the order of the
+    // member that acts for it (spec 03 §8, §19 Q65).
+    std::vector<FleetId> fleets;
+    for (const Fleet& f : s.fleets) fleets.push_back(f.id);
+    for (FleetId fid : fleets) {
+        const Fleet* f = s.fleet(fid);
+        if (!f || (only && f->owner != *only)) continue;
+        const Vehicle* holder = fleetOrderHolder(s, *f);
+        if (!holder || !colonizeAt(s, holder->orders.front(), f->location)) continue;
+        const Order o = holder->orders.front();
+        const std::vector<VehicleId> group = fleetGroup(s, *f);
+        if (only && std::any_of(group.begin(), group.end(), [&](VehicleId id) { return s.vehicle(id)->movement <= 0; })) continue;
+        const EmpireId owner = f->owner;
+        const std::string name = f->name;
+        const Location where = f->location;
         // The colonizer is the last suitable member in group order; a cloaked member stops it (§8, confirmed: binary).
         VehicleId colonizer;
         std::string why;
-        for (VehicleId id : f.members) {
-            const Vehicle* v = s.vehicle(id);
-            if (!v || !alive(*v) || !followsFleetOrders(s, *v)) continue;
-            if (v->status == VehicleStatus::Cloaked) {
+        for (VehicleId id : group) {
+            const Vehicle& v = *s.vehicle(id);
+            if (v.status == VehicleStatus::Cloaked) {
                 why = "A cloaked ship cannot colonize.";
                 colonizer = {};
                 break;
             }
-            const std::string p = colonizeProblem(r, s, *v, o.object);
+            const std::string p = colonizeProblem(r, s, v, o.object);
             if (p.empty()) colonizer = id;
             else if (why.empty()) why = p;
         }
         if (colonizer.valid()) {
             colonize(ctx, colonizer, o.object);
-            popFront(s.fleets[fi].orders, s.fleets[fi].repeatOrders);
+            for (VehicleId id : group)
+                if (Vehicle* v = s.vehicle(id); v && alive(*v)) popFront(v->orders, v->repeatOrders);
         } else {
-            // A failed order clears the list and switches Repeat off (§8).
-            ctx.log(f.owner, LogCategory::Misc, std::format("{}: colonization failed", f.name), why, lead->location);
-            s.fleets[fi].orders.clear();
-            s.fleets[fi].repeatOrders = false;
+            // A failed order clears the lists and switches Repeat off (§8).
+            ctx.log(owner, LogCategory::Misc, std::format("{}: colonization failed", name), why, where);
+            for (VehicleId id : group)
+                if (Vehicle* v = s.vehicle(id)) {
+                    v->orders.clear();
+                    v->repeatOrders = false;
+                }
         }
     }
     // Single ships, in id order (the first to arrive at a planet wins).
     for (size_t i = 0; i < s.vehicles.size(); ++i) {
         Vehicle& v = s.vehicles[i];
-        if (!alive(v) || v.orders.empty() || followsFleetOrders(s, v)) continue;
+        if (!alive(v) || v.orders.empty() || v.fleet.valid()) continue;
         if (only && (v.owner != *only || v.movement <= 0)) continue;
         const Order o = v.orders.front();
         if (!colonizeAt(s, o, v.location)) continue;

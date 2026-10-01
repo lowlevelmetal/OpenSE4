@@ -1937,3 +1937,19 @@ Each gives the engine's choice, marked (inferred) in the code.
     into an asteroid field. The engine changes the object where it stands, so it keeps its slot
     in the object list. Does the original remove the old object and make a new one, which
     would take the lowest free slot (perhaps another one) and leave the old slot free?
+73. **A fleet member away from the fleet's location that acts (§8, Q61):** its order is carried
+    out by the members at the location. The engine also moves that member's own list on (the
+    order leaves it, or goes to its back under Repeat), so the member does not carry out the same
+    order again on its next action. Does the original leave that member's list as it is?
+74. **Mothballed fleet members (§9):** the engine leaves them out of the group that carries out
+    the fleet's orders and gives them no copies of orders given to the fleet; they still count
+    for the fleet's speed, which their 0 maximum holds at 0. Does the original give them copies
+    and make them part of the group?
+75. **Fleet members in a computer player's ad-hoc group (§8, Q51):** when a member's head order
+    is identical to the acting group's, the engine takes in every member of its fleet at the
+    fleet's location. Does the original take only that member?
+76. **Changes to a fleet's orders other than adding (§8, Q65):** the engine appends added orders
+    to every copy, as the original does; for any other change (Clear Orders, an order taken back
+    or put in front) it makes every copy the new list. Orders given to a member away from the
+    fleet's location also go to that member's own list. Does the original apply such changes
+    position by position to each list, and leave the away member's list alone?

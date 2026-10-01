@@ -132,8 +132,31 @@ struct Applier {
         }
     }
 
-    // The chosen leader, else the first member in object order (spec 03 §9).
-    const Vehicle* fleetLeaderOf(const Fleet& f) const { return movement::detail::fleetLeader(s, f); }
+    // Orders for a fleet, given to the fleet or to any of its members (spec 03
+    // §8, §9, §19 Q65, confirmed: binary): the fleet has no list of its own;
+    // every member at its location holds a copy, and every change applies to
+    // each copy. `base` is the list the player changed (the addressed
+    // member's, else the fleet's as fleetOrders shows it): orders added after
+    // it are appended to every copy, expanded once from where the base leaves
+    // the fleet. Any other change (Clear Orders, an order taken back or put in
+    // front) makes every copy the new list (inferred, spec 03 §19 Q76). Repeat
+    // is set on every copy. An addressed member away from the fleet's
+    // location gets the change too (inferred).
+    R setFleetOrders(const Fleet& f, const Vehicle* addressed, const std::vector<Order>& given, bool repeat) {
+        std::vector<VehicleId> holders = fleetGroup(s, f);
+        if (addressed && std::find(holders.begin(), holders.end(), addressed->id) == holders.end()) holders.push_back(addressed->id);
+        if (holders.empty()) return R::fail("The fleet has no member at its location");
+        const std::vector<Order> base = addressed ? addressed->orders : fleetOrders(s, f);
+        const std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
+        const bool appended = given.size() >= base.size() && std::equal(base.begin(), base.end(), given.begin());
+        for (VehicleId id : holders) {
+            Vehicle& v = *s.vehicle(id);
+            if (appended) v.orders.insert(v.orders.end(), full.begin() + static_cast<std::ptrdiff_t>(base.size()), full.end());
+            else v.orders = full;
+            v.repeatOrders = repeat;
+        }
+        return {};
+    }
 
     R operator()(const cmd::SetOrders& c) {
         for (const Order& o : c.orders)
@@ -149,14 +172,13 @@ struct Applier {
         // Explore, Resupply, Repair and the composite orders are expanded into
         // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
-            Fleet* f = ownFleet(s, e, c.fleet);
+            const Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
-            f->orders = expandGivenOrders(r, s, orderContextOf(s, *f), f->orders, c.orders);
-            f->repeatOrders = c.repeat;
-            return {};
+            return setFleetOrders(*f, nullptr, c.orders, c.repeat);
         }
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
+        if (const Fleet* f = v->fleet.valid() ? s.fleet(v->fleet) : nullptr) return setFleetOrders(*f, v, c.orders, c.repeat);
         v->orders = expandGivenOrders(r, s, orderContextOf(s, *v), v->orders, c.orders);
         v->repeatOrders = c.repeat;
         return {};
@@ -179,8 +201,15 @@ struct Applier {
         f.name = c.name.empty() ? std::format("Fleet {}", s.nextFleetId + 1) : c.name;
         f.members = c.members;
         f.leader = c.members.front();
+        f.location = where;  // the fleet's own record of where it is (spec 03 §9)
         const FleetId id = s.addFleet(std::move(f)).id;
-        for (VehicleId v : c.members) s.vehicle(v)->fleet = id;
+        // Joining a fleet clears the vehicle's list (spec 03 §9, §19 Q65).
+        for (VehicleId v : c.members) {
+            Vehicle& member = *s.vehicle(v);
+            member.fleet = id;
+            member.orders.clear();
+            member.repeatOrders = false;
+        }
         return {};
     }
 
@@ -189,39 +218,31 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!f || !v) return R::fail("Not yours");
         if (v->fleet.valid()) return R::fail("Already in a fleet");
-        const Vehicle* leader = fleetLeaderOf(*f);
-        if (leader && leader->location != v->location) return R::fail("Must be in the fleet's sector");
+        if (f->location != v->location) return R::fail("Must be in the fleet's sector");
         if (auto why = fleetJoinProblem(*v); !why.empty()) return R::fail(why);
         f->members.push_back(v->id);
         v->fleet = f->id;
+        // Joining clears the vehicle's list: it does not get the orders the
+        // fleet already has, only those given after it joined (spec 03 §9, §19 Q65).
+        v->orders.clear();
+        v->repeatOrders = false;
         return {};
     }
 
+    // Leaving by Fleet Transfer clears the vehicle's list; a fleet left with no
+    // member at its location is disbanded, its members losing their orders
+    // (spec 03 §9, §19 Q65).
     R operator()(const cmd::LeaveFleet& c) {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v || !v->fleet.valid()) return R::fail("Not in a fleet");
-        Fleet* f = s.fleet(v->fleet);
-        v->fleet = {};
-        if (f) {
-            std::erase(f->members, v->id);
-            // A chosen leader that leaves is no longer chosen: the first member leads (spec 03 §9).
-            if (f->leader == v->id) f->leader = {};
-            // Members that leave take the fleet's orders with them.
-            if (v->orders.empty()) v->orders = f->orders;
-        }
-        std::erase_if(s.fleets, [](const Fleet& x) { return x.members.empty(); });
+        leaveFleet(s, *v);
         return {};
     }
 
+    // Every member leaves ("Remove All") and loses its orders.
     R operator()(const cmd::DisbandFleet& c) {
-        Fleet* f = ownFleet(s, e, c.fleet);
-        if (!f) return R::fail("Not your fleet");
-        for (VehicleId id : f->members)
-            if (Vehicle* v = s.vehicle(id)) {
-                v->fleet = {};
-                if (v->orders.empty()) v->orders = f->orders;
-            }
-        std::erase_if(s.fleets, [&](const Fleet& x) { return x.id == c.fleet; });
+        if (!ownFleet(s, e, c.fleet)) return R::fail("Not your fleet");
+        disbandFleet(s, c.fleet);
         return {};
     }
 
@@ -900,18 +921,15 @@ struct Applier {
         if (c.fleet.valid()) {
             Fleet* f = ownFleet(s, e, c.fleet);
             if (!f) return R::fail("Not your fleet");
-            if (f->orders.empty()) return R::fail("The fleet has no orders");
+            if (fleetOrders(s, *f).empty()) return R::fail("The fleet has no orders");
             if (c.enter) return {};
             name = f->name;
-            f->orders.clear();
-            f->repeatOrders = false;
-            // Like any failed order: the members moving with the fleet lose theirs too.
-            const Vehicle* leader = fleetLeaderOf(*f);
-            for (VehicleId id : f->members)
-                if (Vehicle* v = s.vehicle(id); v && leader && v->location == leader->location) {
-                    v->orders.clear();
-                    v->repeatOrders = false;
-                }
+            // Like any failed order: every copy of the fleet's orders is cleared.
+            for (VehicleId id : fleetGroup(s, *f)) {
+                Vehicle& v = *s.vehicle(id);
+                v.orders.clear();
+                v.repeatOrders = false;
+            }
         } else {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");

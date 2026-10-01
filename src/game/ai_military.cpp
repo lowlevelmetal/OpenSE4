@@ -240,7 +240,7 @@ void planFleets(Planner& p) {
     std::vector<FleetId> keep;
     for (FleetId fid : fleets) {
         const Fleet* f = p.st.fleet(fid);
-        const Vehicle* leader = f ? p.st.vehicle(f->leader) : nullptr;
+        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
         if (!f || static_cast<int>(keep.size()) >= wanted || !leader || unfit(p, *leader)) {
             if (f) p.emit(cmd::DisbandFleet{fid});
             continue;
@@ -278,7 +278,7 @@ void planFleets(Planner& p) {
     // Recruits: idle ships outside fleets within 3 jumps.
     for (size_t k = 0; k < keep.size(); ++k) {
         const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = f ? p.st.vehicle(f->leader) : nullptr;
+        const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
         if (!leader) continue;
         const bool defenceLed = p.info(leader->design).role == Role::Defense;
         const Location at = leader->location;
@@ -303,7 +303,7 @@ void planFleets(Planner& p) {
     // Orders go to idle fleets only.
     std::vector<size_t> idleFleets;
     for (size_t k = 0; k < keep.size(); ++k)
-        if (const Fleet* f = p.st.fleet(keep[k]); f && f->orders.empty() && !f->members.empty()) idleFleets.push_back(k);
+        if (const Fleet* f = p.st.fleet(keep[k]); f && fleetOrders(p.st, *f).empty() && !f->members.empty()) idleFleets.push_back(k);
         else if (f) p.busyFleets.insert(keep[k]);
     std::vector<uint8_t> done(keep.size(), 0);
     if (p.state == AiState::DefendShortTerm) {
@@ -312,7 +312,7 @@ void planFleets(Planner& p) {
             int bestJ = 0;
             for (size_t k : idleFleets) {
                 if (done[k] || attack[k]) continue;
-                const Vehicle* leader = p.st.vehicle(p.st.fleet(keep[k])->leader);
+                const Vehicle* leader = fleetLeader(p.st, *p.st.fleet(keep[k]));
                 const int j = p.jumpsFrom(leader->location.system)[threat.system.index()];
                 if (!best || j < bestJ) {
                     best = k;
@@ -338,7 +338,7 @@ void planFleets(Planner& p) {
     for (size_t k : idleFleets) {
         if (done[k]) continue;
         const Fleet* f = p.st.fleet(keep[k]);
-        const Vehicle* leader = p.st.vehicle(f->leader);
+        const Vehicle* leader = fleetLeader(p.st, *f);
         if (defendAt < toDefend.size()) {
             if (auto orders = engage(p, toDefend[defendAt++]->latest); !orders.empty() && p.setFleetOrders(keep[k], std::move(orders))) done[k] = 1;
             if (done[k]) continue;
@@ -1307,7 +1307,7 @@ void planResupply(Planner& p) {
     // orders its leader would get.
     for (const Fleet& f : p.st.fleets) {
         if (!p.controlsFleet(f, Minister::Resupply) || f.members.empty()) continue;
-        const Vehicle* leader = p.st.vehicle(f.leader);
+        const Vehicle* leader = fleetLeader(p.st, f);
         if (!leader) continue;
         int64_t supply = 0, cost = 0;
         bool unlimited = true;  // on unlimited supply when every member is (inferred)

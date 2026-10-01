@@ -481,18 +481,22 @@ struct Vehicle {
     uint32_t cameFromTurn = 0;
 };
 
+// A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:
+// its orders are copies in the lists of its members at its location (spec 03
+// §8, §19 Q65; fleetOrders). Its location is its own record: set where it is
+// formed, it follows whichever member moved last (fleetMemberMoved), and a
+// fleet left with no member there is disbanded at once (GameState::tidyFleets).
 struct Fleet {
     FleetId id;
     EmpireId owner;
     std::string name;
     std::vector<VehicleId> members;
-    VehicleId leader;
+    VehicleId leader;               // the chosen leader; invalid: the first member in object order leads (fleetLeader)
+    Location location;
     uint32_t formation = 0;         // Formations.txt index
     uint32_t strategy = 0;          // owner's strategy index
     int experience = 0;
     int experienceTenths = 0;       // tenths beyond `experience` (0-9)
-    std::vector<Order> orders;
-    bool repeatOrders = false;
     bool minister = false;
 };
 
@@ -802,7 +806,8 @@ struct GameState {
     int year() const { return 2400 + static_cast<int>(turn / 10); }
 
     // Adds with a fresh id (keeps `vehicles`/`fleets` sorted). References are
-    // invalidated by the next add. A new vehicle takes freeSlot().
+    // invalidated by the next add. A new vehicle takes freeSlot(); a new fleet
+    // without a location is placed at its first member's.
     Vehicle& addVehicle(Vehicle v);
     Fleet& addFleet(Fleet f);
     // The game's one object list (spec 03 §6.3 step 5, §19 Q62; spec 02 §13
@@ -816,8 +821,13 @@ struct GameState {
     // id, freeSlot(), its place in the system's list (kept in object order),
     // and the per-object lists (colonies, known warp links) grown to match.
     ObjectId addObject(SpaceObject obj, SystemId system);
-    // Drops vehicles with count <= 0, cleans fleet membership and empty fleets.
+    // Drops vehicles with count <= 0, then tidyFleets().
     void removeDeadVehicles();
+    // Fleet membership after vehicles left or were removed (spec 03 §9): a
+    // member that is gone or no longer carries the fleet's tag is dropped, a
+    // chosen leader that left is no longer chosen, and a fleet with no member
+    // left at its location is disbanded (disbandFleet).
+    void tidyFleets();
     std::vector<const Vehicle*> vehiclesAt(Location where) const;
 };
 
@@ -835,6 +845,35 @@ struct ObjectRef {
 std::vector<ObjectRef> objectOrder(const GameState& s);
 // The vehicles alone, in object order.
 std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
+
+// ---- Fleets (spec 03 §8, §9, §19 Q61, Q65; confirmed: binary) ---------------------------------------
+
+// The chosen leader, else the first member in object order.
+const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
+// The members at the fleet's location, alive, in member order.
+std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f);
+// The members that carry out the fleet's orders as one group: those at its
+// location that are not mothballed, in member order. A mothballed member only
+// holds the fleet's speed at 0 (inferred, spec 03 §19 Q74).
+std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f);
+// The vehicle is one of its fleet's group (fleetGroup).
+bool inFleetGroup(const GameState& s, const Vehicle& v);
+// The fleet's orders as one list: the list of the first member of its group,
+// in object order, that has orders; that member acts for the fleet. Each
+// member holds its own copy, so a member that joined after orders were given
+// holds only the later ones. nullptr / an empty list when nobody has orders.
+const Vehicle* fleetOrderHolder(const GameState& s, const Fleet& f);
+const std::vector<Order>& fleetOrders(const GameState& s, const Fleet& f);
+bool fleetRepeats(const GameState& s, const Fleet& f);
+// A fleet member moved, by any means (a step, a warp, drift, an event): the
+// fleet's location goes with it.
+void fleetMemberMoved(GameState& s, const Vehicle& v);
+// The vehicle leaves its fleet and loses its orders; a chosen leader is no
+// longer chosen, and a fleet left with no member at its location is
+// disbanded.
+void leaveFleet(GameState& s, Vehicle& v);
+// Every member leaves the fleet and loses its orders; the fleet is deleted.
+void disbandFleet(GameState& s, FleetId id);
 
 // Appends to an empire's log for the current turn.
 void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
