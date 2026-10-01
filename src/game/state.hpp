@@ -235,6 +235,13 @@ struct InterfaceOptions {
     uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
     uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
     bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // The sort keys of the four list windows (spec 06 §7 Q24): five slots of
+    // column numbers each, newest click first; a slot holds column + 1, 0 is
+    // empty. All empty: the window's Name column alone (the default).
+    std::array<uint8_t, 5> planetsSort{};
+    std::array<uint8_t, 5> coloniesSort{};
+    std::array<uint8_t, 5> shipsSort{};
+    std::array<uint8_t, 5> queuesSort{};
     // Combat Replay Options.
     bool replayAnimate = true;
     bool replayFast = false;

@@ -364,6 +364,7 @@ void io(Ar& ar, InterfaceOptions& o) {
     fields(ar, o.galaxyGridLines, o.galaxyWarpLines, o.latestConstructionOnly, o.latestComponentsOnly, o.autoClaimColonized);
     fields(ar, o.logFilter, o.logPosition, o.logScroll, o.planetsTab, o.planetsNoSysToAvoid, o.queuesTab, o.queuesShown,
            o.simulatorNoObsolete);
+    fields(ar, o.planetsSort, o.coloniesSort, o.shipsSort, o.queuesSort);
     fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
 }
 

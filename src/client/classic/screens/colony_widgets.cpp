@@ -201,37 +201,6 @@ void readSortSpecs(int& column, bool& ascending) {
     }
 }
 
-// ---- Classic lists -----------------------------------------------------------------------------
-
-std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width) {
-    std::vector<float> x{0.0f};
-    float fixed = 0;
-    for (const ListColumn& c : cols) fixed += ui.px(c.width);
-    for (const ListColumn& c : cols) x.push_back(x.back() + (c.width > 0 ? ui.px(c.width) : std::max(0.0f, width - fixed)));
-    return x;
-}
-
-int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, float width) {
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const std::vector<float> x = columnEdges(ui, cols, width);
-    const float h = ui.px(20);
-    ImGui::PushID(id);
-    int clicked = -1;
-    for (size_t i = 0; i < cols.size(); ++i) {
-        ImGui::SetCursorScreenPos(ImVec2(origin.x + x[i], origin.y));
-        ImGui::PushID(int(i));
-        if (ImGui::InvisibleButton("##head", ImVec2(std::max(1.0f, x[i + 1] - x[i]), h))) clicked = int(i);
-        const bool hovered = ImGui::IsItemHovered();
-        ImGui::PopID();
-        ImGui::GetWindowDrawList()->AddText(ImVec2(origin.x + x[i] + ui.px(2), origin.y + (h - ImGui::GetTextLineHeight()) * 0.5f),
-                                            hovered ? imColor(palette::kButtonHot) : imColor(palette::kLabel), cols[i].label);
-    }
-    ImGui::PopID();
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + h));
-    ImGui::Dummy(ImVec2(width, 0));
-    return clicked;
-}
-
 // ---- Text helpers ------------------------------------------------------------------------------
 
 std::string turnsText(int turns) {
@@ -268,6 +237,17 @@ bool StatusLine::issue(UiContext& ui, game::Command c) {
 void StatusLine::draw(UiContext&) const {
     if (text.empty()) return;
     ImGui::TextColored(error ? kTextWarn : kTextDim, "%s", text.c_str());
+}
+
+void StatusLine::drawAt(UiContext& ui, Vec2 at, float width) const {
+    if (text.empty()) return;
+    const ImVec2 back = ImGui::GetCursorPos();
+    ImGui::SetCursorPos(ui.size(at));
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->PushClipRect(min, ImVec2(min.x + ui.px(width), min.y + ImGui::GetTextLineHeightWithSpacing()), true);
+    ImGui::GetWindowDrawList()->AddText(min, ImGui::GetColorU32(error ? kTextWarn : kTextDim), text.c_str());
+    ImGui::GetWindowDrawList()->PopClipRect();
+    ImGui::SetCursorPos(back);
 }
 
 // ---- Popups ------------------------------------------------------------------------------------
@@ -485,13 +465,15 @@ void ScrapTypePopup::draw(UiContext& ui, StatusLine& status) {
     ImGui::EndPopup();
 }
 
-void ConfirmPopup::open(std::string question) {
+void ConfirmPopup::open(std::string question, std::string title) {
     question_ = std::move(question);
+    title_ = std::move(title);
     pending_ = true;
 }
 
 bool ConfirmPopup::draw(UiContext& ui) {
-    const char* id = "Confirm###confirm";
+    const std::string idText = title_ + "###confirm";
+    const char* id = idText.c_str();
     if (pending_) {
         ImGui::OpenPopup(id);
         pending_ = false;
@@ -510,6 +492,33 @@ bool ConfirmPopup::draw(UiContext& ui) {
     if (b >= 0) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
     return b == 0;
+}
+
+void NoticePopup::open(std::string text, std::string title) {
+    text_ = std::move(text);
+    title_ = std::move(title);
+    pending_ = true;
+}
+
+void NoticePopup::draw(UiContext& ui) {
+    const std::string idText = title_ + "###notice";
+    if (pending_) {
+        ImGui::OpenPopup(idText.c_str());
+        pending_ = false;
+    }
+    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ui.size({400, 0}), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal(idText.c_str(), nullptr,
+                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags))
+        return;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted(text_.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    // Esc or Enter = OK (spec 06 §3.4).
+    if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 } // namespace opense4::client::classic

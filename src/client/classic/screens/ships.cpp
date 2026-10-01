@@ -4,6 +4,8 @@
 // for its report.
 
 #include "client/classic/reports.hpp"
+#include "client/classic/screens/colony_logic.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/screens/ships_common.hpp"
 
@@ -48,11 +50,13 @@ struct Column {
 
 std::vector<Column> columnsOf(ShipsTab tab) {
     switch (tab) {
-        case ShipsTab::General: return {{"Size", 118}, {"Type", 118}, {"Move", 56}, {"Dmg", 70}, {"Supplies", 104}};
+        // With the picture (42), the name (120), the cells' padding and a scroll
+        // bar these fit the list's 556 px.
+        case ShipsTab::General: return {{"Size", 92}, {"Type", 84}, {"Move", 44}, {"Dmg", 60}, {"Supplies", 74}};
         case ShipsTab::Orders: return {{"Class", 150}, {"Orders", 0}};
         case ShipsTab::Cargo: return {{"Space", 64}, {"Max", 64}, {"Cargo", 0}};
         case ShipsTab::Fleet: return {{"Experience", 90}, {"Fleet", 0}};
-        case ShipsTab::Maintenance: return {{"Minerals", 96}, {"Organics", 96}, {"Radioactives", 104}};
+        case ShipsTab::Maintenance: return {{"Minerals", 110}, {"Organics", 110}, {"Radioactives", 110}};
     }
     return {};
 }
@@ -109,9 +113,10 @@ private:
     // Rows and totals are rebuilt only when the game, the tab, the filters or the sort change.
     void refresh(UiContext& ui) {
         const uint64_t key = ui.session.revision() * 64 + static_cast<uint64_t>(tab_) * 8 + (ships_ ? 4u : 0u) + (units_ ? 2u : 0u) + (fleets_ ? 1u : 0u);
-        if (key == cacheKey_ && !sortDirty_) return;
+        if (built_ && key == cacheKey_ && ui.options().shipsSort == sortedBy_) return;
+        built_ = true;
         cacheKey_ = key;
-        sortDirty_ = false;
+        sortedBy_ = ui.options().shipsSort;
         rows_ = buildRows(ui);
         sortRows(rows_);
 
@@ -151,7 +156,7 @@ private:
         ImGui::Dummy(ImVec2(0, ui.px(8)));
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kDim, "Left-click a row to select it in the main window; right-click for its report. "
-                                 "Click a column header to sort.");
+                                 "Click a column heading to sort by it.");
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
         ImGui::SameLine();
@@ -281,22 +286,19 @@ private:
         return {};
     }
 
+    // The sort keys stored with the empire (spec 06 §7 Q24): the name A to Z,
+    // numbers highest first, other text A to Z (inferred: the directions of
+    // this window's columns); column numbers are the table's (1 the name).
     void sortRows(std::vector<ListRow>& rows) const {
-        if (sortColumn_ < 1) return;  // unsorted: ships, units, fleets as the engine lists them
-        const int col = sortColumn_;
-        const bool desc = sortDescending_;
-        std::stable_sort(rows.begin(), rows.end(), [&](const ListRow& a, const ListRow& b) {
-            int c = 0;
-            if (col == 1) {
-                c = a.name.compare(b.name);
-            } else {
-                const size_t i = static_cast<size_t>(col - 2);
-                if (i >= a.cells.size() || i >= b.cells.size()) return false;
-                const Cell& x = a.cells[i];
-                const Cell& y = b.cells[i];
-                c = x.numeric && y.numeric ? (x.key < y.key ? -1 : x.key > y.key ? 1 : 0) : x.text.compare(y.text);
-            }
-            return desc ? c > 0 : c < 0;
+        sortByKeys(rows, sortKeys(sortedBy_, 1), [&](int col, const ListRow& a, const ListRow& b) {
+            if (col == 1) return compareNames(a.name, b.name);
+            if (col < 2) return 0;
+            const size_t i = static_cast<size_t>(col - 2);
+            if (i >= a.cells.size() || i >= b.cells.size()) return 0;
+            const Cell& x = a.cells[i];
+            const Cell& y = b.cells[i];
+            if (x.numeric && y.numeric) return x.key == y.key ? 0 : x.key > y.key ? -1 : 1;
+            return compareNames(x.text, y.text);
         });
     }
 
@@ -304,35 +306,35 @@ private:
         const std::vector<ListRow>& rows = rows_;
         const std::vector<Column> cols = columnsOf(tab_);
         const int ncols = static_cast<int>(cols.size()) + 2;
-        const ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_SortTristate | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
-                                      ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        ImGui::Dummy(ImVec2(0, ui.px(4)));
-        // A new ID per tab so each tab keeps its own column setup and sort.
+        const ImGuiTableFlags flags =
+            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        // The list from y 232 (headings) and 252 (rows); the rows take the window's height less 265 (spec 06 §2.1.1).
+        ImGui::SetCursorPos(ui.size({0, 197}));
+        // A new ID per tab so each tab keeps its own column setup.
         ImGui::PushID(static_cast<int>(tab_));
-        if (!ImGui::BeginTable("##ships", ncols, flags, ImVec2(0, 0))) {
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
+        if (!ImGui::BeginTable("##ships", ncols, flags, ImVec2(0, listRowsHeight(ui) + ui.px(20)))) {
+            ImGui::PopStyleVar();
             ImGui::PopID();
             return;
         }
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Pic", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, ui.px(42));
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("Pic", ImGuiTableColumnFlags_WidthFixed, ui.px(42));
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ui.px(120));
         for (const Column& c : cols) {
             if (c.width > 0) ImGui::TableSetupColumn(c.name, ImGuiTableColumnFlags_WidthFixed, ui.px(c.width));
             else ImGui::TableSetupColumn(c.name, ImGuiTableColumnFlags_WidthStretch, 1.4f);
         }
-        ImGui::TableHeadersRow();
-        if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsDirty) {
-            if (specs->SpecsCount > 0) {
-                sortColumn_ = specs->Specs[0].ColumnIndex;
-                sortDescending_ = specs->Specs[0].SortDirection == ImGuiSortDirection_Descending;
-            } else {
-                sortColumn_ = -1;
-            }
-            specs->SpecsDirty = false;
-            sortDirty_ = true;  // re-sorted from the engine's order next frame
+        // A heading click adds a sort key in the column's fixed direction (spec 06 §7 Q24).
+        std::vector<ListColumn> headings{{"", 0, 0, false}, {"Name", 0}};
+        for (const Column& c : cols) headings.push_back({c.name, 0});
+        if (const int clicked = tableHeadings(ui, headings); clicked >= 0) {
+            game::InterfaceOptions o = ui.options();
+            o.shipsSort = clickSort(o.shipsSort, clicked, 1);
+            ui.setOptions(o);
         }
 
-        const float rowH = ui.px(38);
+        const float rowH = ui.px(kListRowH);
         const float textH = ImGui::GetTextLineHeight();
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(rows.size()), rowH);
@@ -343,21 +345,23 @@ private:
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(i);
                 const ImVec2 p0 = ImGui::GetCursorScreenPos();
+                // The row is 36 px with the cells' padding (spec 06 §1.8).
+                const float inner = rowH - 2.0f * ImGui::GetStyle().CellPadding.y;
                 const bool left = ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
-                                                    ImVec2(0, rowH));
+                                                    ImVec2(0, inner));
                 if (ImGui::IsItemHovered()) hovered_ = row.system;
                 const bool right = ImGui::IsItemClicked(ImGuiMouseButton_Right);
                 ImGui::PopID();
                 if (row.picture) {
                     const float ps = ui.px(32);
-                    const ImVec2 a{p0.x + ui.px(3), p0.y + (rowH - ps) * 0.5f};
+                    const ImVec2 a{p0.x + ui.px(3), p0.y + (inner - ps) * 0.5f};
                     ImGui::GetWindowDrawList()->AddImage(ImTextureRef(static_cast<ImTextureID>(row.picture.tex.value)), a, ImVec2(a.x + ps, a.y + ps),
                                                          ImVec2(row.picture.uv.min.x, row.picture.uv.min.y),
                                                          ImVec2(row.picture.uv.max.x, row.picture.uv.max.y));
                 }
                 auto cell = [&](int column, const std::string& str) {
                     ImGui::TableSetColumnIndex(column);
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (rowH - textH) * 0.5f);
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (inner - textH) * 0.5f);
                     ImGui::TextUnformatted(str.c_str());
                 };
                 cell(1, row.name);
@@ -379,6 +383,7 @@ private:
             ImGui::TextColored(kDim, "Nothing to show.");
         }
         ImGui::EndTable();
+        ImGui::PopStyleVar();
         ImGui::PopID();
     }
 
@@ -391,11 +396,10 @@ private:
     ShipsTab tab_ = ShipsTab::General;
     bool ships_ = true, units_ = true, fleets_ = true;
     uint64_t cacheKey_ = 0;
-    bool sortDirty_ = false;
+    bool built_ = false;
+    SortSlots sortedBy_{};
     std::vector<ListRow> rows_;
     Totals totals_;
-    int sortColumn_ = -1;
-    bool sortDescending_ = false;
     std::optional<game::SystemId> hovered_;
     std::optional<game::VehicleId> selected_;
     ReportPopup report_;

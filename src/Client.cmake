@@ -58,6 +58,7 @@ add_executable(opense4
     client/classic/screens/item_reports.cpp
     client/classic/screens/intelligence.cpp
     client/classic/screens/launch_recover.cpp
+    client/classic/screens/list_widgets.cpp
     client/classic/screens/learn_screens.cpp
     client/classic/screens/log.cpp
     client/classic/screens/markdown_view.cpp
