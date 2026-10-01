@@ -8,7 +8,7 @@ that must be rewritten in our own words (see docs/CLEANROOM.md).
 
     tools/cleanroom_check.py [--install DIR] [--min-words N] [paths...]
 
-Default paths: docs/ src/ tests/ README.md. Exit status 1 if matches are found.
+Default paths: docs/ src/ tests/ assets/ packaging/ README.md. Exit status 1 if matches are found.
 
 It also rejects traces of reverse-engineering output in tracked text: addresses in
 the executable's range (eight hex digits starting with 004 or 005) and
@@ -125,7 +125,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--install", help="original game directory (containing Data/ and Manual/)")
     ap.add_argument("--min-words", type=int, default=10)
-    ap.add_argument("paths", nargs="*", default=["docs", "src", "tests", "README.md"])
+    ap.add_argument("paths", nargs="*", default=["docs", "src", "tests", "assets", "packaging", "README.md"])
     args = ap.parse_args()
 
     install = args.install or next((d for d in DEFAULT_INSTALLS if os.path.isdir(os.path.join(d, "Data"))), None)
@@ -138,7 +138,7 @@ def main():
     for p in args.paths:
         if os.path.isdir(p):
             for root, _, names in os.walk(p):
-                files += [os.path.join(root, f) for f in names if f.endswith((".md", ".txt", ".cpp", ".hpp", ".toml", ".py"))]
+                files += [os.path.join(root, f) for f in names if f.endswith((".md", ".txt", ".cpp", ".hpp", ".toml", ".py", ".xml", ".nsi", ".desktop", ".sh", ".in"))]
         elif os.path.exists(p):
             files.append(p)
 
