@@ -2155,7 +2155,7 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     Our client follows this, with Q38 brought in line on 2026-10-01: Fleets For Plr and
     Change Cargo open the Fleet Transfer and Cargo Transfer windows over a sandbox of the
     setup, Designs closes during a tactical simulation, sides show numbered colour boxes,
-    and one counter per side numbers the ships. Its own choices there are Q56–Q61.
+    and one counter per side numbers the ships. Its own choices there are Q60–Q65.
 23. **Strategic Combat and Ground Combat details.** **Answer:** in a turn-based game on
     one machine, every battle with a piece of a human-controlled empire asks Tactical or
     Strategic when it starts, during computer turns too (with a notice first); on
@@ -2400,7 +2400,7 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     own switches, in Combat Replay (client/classic/replay.hpp): every frame of every
     animation is drawn, followed without the switch by the wait of §1.10.3 and with it by
     none; no speed factor is left. Each frame stays on screen for at least one display
-    refresh, and how many frames our own drawings take is ours (Q56) (inferred).
+    refresh, and how many frames our own drawings take is ours (Q60) (inferred).
 35. **Combat Piece Report.** Ours shows Damage as structure taken / maximum for a ship and
     as a percentage otherwise, Supply as "-" for a planet, a fleet's own group as "Fleet -
     Leader" or "Fleet - Wingman", Formation only for fleet members, and no tabs; a neutral
@@ -2422,7 +2422,7 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     Since 2026-10-01 our client follows the table of §1.10.1 line by line and draws the
     report as §1.10.1 lays it out, with the tabs along the bottom, the unit grid of a
     unit group and the launching weapon's picture for a seeker; a neutral obstacle opens
-    its object report. Its own choices are in Q57.
+    its object report. Its own choices are in Q61.
 36. **Tactical Combat Orders.** Ours stacks the 11 buttons with no gap and no title, and
     the pickers (group size, group number 1–9, formation, the Resolve Combat question)
     replace the menu in the same window. Are they separate windows in the original, and
@@ -2496,7 +2496,7 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     (game::combat::simulatorNumberShips). Fleets For Plr and Change Cargo open the real
     Fleet Transfer and Cargo Transfer windows over a sandbox of the setup, and the setup
     takes back the fleets or the cargo when the window closes; the real game never
-    changes (Q58–Q60). Designs closes when a tactical simulation begins and opens again
+    changes (Q62–Q64). Designs closes when a tactical simulation begins and opens again
     with the simulator when the battle is over.
 39. **Combat Replay.** Ours keeps, beside the map and its overview, the turn's events in
     words and the battle's summary (OpenSE4's own help); it has no Close button (Esc and
@@ -2906,9 +2906,10 @@ each marked "(inferred)" in the client:
     turn has no such empire; ours shows no notice there. Does the original?
 
 Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
-choices of ours (inferred), each to check in the running game:
+choices of ours (inferred), each to check in the running game (Q56–Q59 are those of
+the live battle flow):
 
-56. **Animation frames.** How many frames does the original's slide over one square
+60. **Animation frames.** How many frames does the original's slide over one square
     take, and how many its turn to a new facing (one per 45 degrees?), its torpedo's
     flight (one per square?) and a beam (one stamp per square?)? Ours: 6 for a slide, one
     per 45 degrees, one per square, and one stretched stamp drawn then erased; a
@@ -2916,22 +2917,22 @@ choices of ours (inferred), each to check in the running game:
     with the hit's waits; a miss adds nothing to its shot; a launch, a landing or a
     capture flashes for 4 frames without a wait. Every frame stays at least one display
     refresh.
-57. **Combat Piece Report details.** Ours writes "K" thousands truncated (150999 →
+61. **Combat Piece Report details.** Ours writes "K" thousands truncated (150999 →
     "150K"); a drone whose drone target has died shows None until it picks another; the
     Facil and Ability tabs show the colony or ship as the battle began; the report has a
     Close button in its title strip, as our tab strip leaves no room under the page.
-58. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
+62. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
     game's fleet list) while it works on the simulator's sandbox. Is it there in the
     original, and what does it list?
-59. **Change Cargo.** Ours lists every vehicle and colony of the setup in one Cargo
+63. **Change Cargo.** Ours lists every vehicle and colony of the setup in one Cargo
     Transfer window by giving them all to the chosen side in the sandbox; the deferred
     Load and Drop Cargo orders are hidden; population moved onto a ship is not kept; and
     the setup then accepts any unit design a sample colony stores, foreign ones
     included. How does the original list the holders of different sides, and where do
     units for a ship come from without a sample colony that stores them?
-60. **Ship numbers of items without one.** An item put in the setup without a number
+64. **Ship numbers of items without one.** An item put in the setup without a number
     (a sample setup made by the program) takes the next numbers of its side, in item
     order, after the side's counter and every number already given.
-61. **Side colours.** Ours uses the plain colours of those names (red 255,0,0; blue
+65. **Side colours.** Ours uses the plain colours of those names (red 255,0,0; blue
     0,0,255; green 0,128,0; yellow 255,255,0; purple 128,0,128; white; aqua 0,255,255;
     lime 0,255,0; maroon 128,0,0; olive 128,128,0). Are these the original's values?
