@@ -74,11 +74,12 @@ std::string_view displayName(MessageType t) {
     return "?";
 }
 
-void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text, std::optional<Location> where,
-            std::string picture) {
-    if (!empire.valid() || empire.index() >= s.empires.size()) return;
-    s.empire(empire).log.push_back(
-        LogEntry{s.turn, category, std::move(title), std::move(text), where, std::move(picture)});
+LogEntry* addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text, std::optional<Location> where,
+                 std::string picture) {
+    if (!empire.valid() || empire.index() >= s.empires.size()) return nullptr;
+    const LogGoto target = category == LogCategory::Research ? LogGoto::Research : LogGoto::Location;
+    return &s.empire(empire).log.emplace_back(
+        LogEntry{s.turn, category, std::move(title), std::move(text), where, std::move(picture), target, {}});
 }
 
 void addHistory(GameState& s, EmpireId empire, EmpireId about, std::string text, std::optional<Location> where) {

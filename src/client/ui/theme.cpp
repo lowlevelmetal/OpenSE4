@@ -28,6 +28,8 @@ Fonts loadFonts(const std::filesystem::path& assetsDir) {
     if (!fonts.regular) fonts.regular = io.Fonts->AddFontDefault();
     if (!fonts.medium) fonts.medium = fonts.regular;
     if (!fonts.bold) fonts.bold = fonts.medium;
+    fonts.ownRegular = fonts.regular;
+    fonts.ownBold = fonts.bold;
     io.FontDefault = fonts.regular;
     return fonts;
 }

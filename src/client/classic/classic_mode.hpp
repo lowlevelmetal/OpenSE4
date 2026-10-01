@@ -81,6 +81,9 @@ private:
     // Switches the music for a cue (docs/spec/06 §5.5), when music is on.
     void cueMusic(MusicCue cue);
     bool updateFrame(const FrameState& fs);
+    // The screen layout of this frame (docs/spec/06 §2.1.1): the setting, else the desktop's.
+    void applyLayout();
+    classic::ScreenLayout desktopLayout_ = classic::ScreenLayout::Large;
 
     Platform platform_;
     Fonts fonts_;  // the classic game's fonts, else the app's

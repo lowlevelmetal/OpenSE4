@@ -27,13 +27,13 @@ int resizeCallback(ImGuiInputTextCallbackData* data) {
 
 SetupFrame::SetupFrame(MenuContext& ctx, const char* title) : ctx_(ctx) {
     ImDrawList* bg = ImGui::GetBackgroundDrawList();
-    const ImVec2 a = ctx.at({0, 0}), b = ctx.at({kFrameW, kFrameH});
-    if (Sprite art = ctx.art.imageAny({"Pictures/Game/Screens/1024X768/Intro.bmp", "Pictures/Game/Screens/800X600/Intro.bmp"}, false))
+    const ImVec2 a = ctx.at({0, 0}), b = ctx.at({frameW(), frameH()});
+    if (Sprite art = ctx.art.introPicture())
         bg->AddImage(texRef(art), a, b, ImVec2(art.uv.min.x, art.uv.min.y), ImVec2(art.uv.max.x, art.uv.max.y));
     bg->AddRectFilled(a, b, IM_COL32(0, 0, 0, 170));
 
     ImGui::SetNextWindowPos(ctx.at({6, 6}));
-    ImGui::SetNextWindowSize(ctx.size({kFrameW - 12, kFrameH - 12}));
+    ImGui::SetNextWindowSize(ctx.size({frameW() - 12, frameH() - 12}));
     ImGui::PushFont(ctx.fonts.regular, kTextSize * ctx.k());
     visible_ = ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |

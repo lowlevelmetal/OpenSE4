@@ -4,6 +4,7 @@
 #include "client/audio.hpp"
 #include "client/classic/facility_markers.hpp"
 #include "client/classic/map_style.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/colony_logic.hpp"
 #include "client/classic/settings.hpp"
@@ -20,51 +21,71 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <numbers>
 #include <tuple>
 
 namespace opense4::client::classic {
 
 namespace {
 
-// Classic main-window geometry at 1024×768 (docs/spec/06 §2.1, §2.4,
-// confirmed: binary): the frame is drawn from the Screens/1024X768 strips,
-// the panels sit between them.
-constexpr float kSectorSize = 50.0f;   // a system-panel cell
+// Classic main-window geometry (docs/spec/06 §2.1, §2.1.1, §2.4, confirmed:
+// binary) for the layout in use (layout.hpp): the frame is drawn from the
+// layout's Screens strips, the panels sit between them.
 constexpr float kSpriteSize = 36.0f;   // sprites are never scaled
-constexpr const char* kScreens = "Pictures/Game/Screens/1024X768/";
 
-// Panel rectangles for the frame's current extent. Classic 4:3 (left 0,
-// right 1024) gives the original layout; a wider frame keeps the system view
-// and moves the right-hand panels to the right edge, and with enough room puts
-// a full-height galaxy map beside the report.
+// Panel rectangles for the frame's current extent. The classic frame (left 0,
+// right 1024 or 800) gives the original layout; a wider 1024x768 frame keeps
+// the system view and moves the right-hand panels to the right edge, and with
+// enough room puts a full-height galaxy map beside the report (OpenSE4's).
 struct Geometry {
+    const LayoutGeometry* layout = &geometryFor(ScreenLayout::Large);
     float left = 0, right = kFrameW;
-    Rect statusBar{{0, 0}, {1024, 29}};
-    Rect commandPanel{{0, 29}, {957, 106}};
-    // The system panel: 652×652 at (8,113); its 13 cells start after a 1 px margin.
+    Rect commandArea{{0, 29}, {1024, 106}};  // command buttons, order strip and selectors
     Rect systemPanel{{8, 113}, {660, 765}};
     Vec2 sectorOrigin{9, 114};
+    float cell = 50.0f;
     Rect reportPanel{{671, 117}, {957, 470}};
     Rect galaxyPanel{{671, 479}, {1013, 763}};
+    Vec2 selectors{965, 34};
     std::optional<Rect> strip = Rect{{958, 107}, {1020, 472}};  // the circuit-board filler
     std::optional<Rect> gap;   // more filler where a wider frame leaves room beside the report
     float divider = 655;       // x of the Middle strip between the system view and the right panels
     std::optional<float> wideDivider;  // second Middle strip (wide layout)
     bool wide = false;  // side-by-side report and galaxy map
+    bool extended = false;  // a wider frame than the layout's
 };
 Geometry geo;
 
 void layOut(float left, float right) {
     Geometry g;
+    const LayoutGeometry& l = layoutGeometry();
+    g.layout = &l;
     g.left = left;
     g.right = right;
-    const float extra = right - left - kFrameW;
-    if (extra > 0.5f) {
-        g.statusBar = Rect{{left, 0}, {right, 29}};
-        g.commandPanel = Rect{{left, 29}, {right - 67, 106}};
+    // The classic places (§2.1). Our report panel starts 4 px right of and 8 px
+    // below the spec's region, under the frame rail its portrait reaches over.
+    const bool small = l.layout == ScreenLayout::Small;
+    g.commandArea = small ? Rect{{0, 29}, {l.commandPanel.max.x, 106}} : Rect{{0, 29}, {l.frame.x, 106}};
+    g.systemPanel = l.systemPanel;
+    g.cell = l.cell;
+    g.sectorOrigin = l.systemPanel.min + Vec2{l.margin, l.margin};
+    g.reportPanel = Rect{l.reportPanel.min + Vec2{4, 8}, l.reportPanel.max};
+    g.galaxyPanel = l.galaxyPanel;
+    g.selectors = l.selectors;
+    g.strip.reset();
+    for (int i = 0; i < l.pieceCount; ++i) {
+        const FramePiece& p = l.pieces[size_t(i)];
+        if (std::string_view(p.file) == "RightFiller.bmp") g.strip = Rect{p.at, {1020, 472}};
+        if (std::string_view(p.file) == "Middle.bmp") g.divider = p.at.x;
+    }
+    const float extra = right - left - l.frame.x;
+    if (!small && extra > 0.5f) {
+        g.extended = true;
+        g.commandArea = Rect{{left, 29}, {right, 106}};
         g.systemPanel = Rect{{left + 8, 113}, {left + 660, 765}};
         g.sectorOrigin = {left + 9, 114};
         g.divider = left + 655;
+        g.selectors = {right - 59, 34};
         const float x0 = left + 671, x1 = right - 67;
         if (right - 12 - x0 >= 640.0f) {
             // Report, then a full-height galaxy map up to the right edge.
@@ -163,33 +184,44 @@ void drawAt(UiContext& ui, ImDrawList* dl, const Sprite& s, Vec2 min, Vec2 size)
                  {s.uv.max.x, s.uv.max.y});
 }
 
-// A sector's cell and its centre: (9 + 50c, 114 + 50r) and (34 + 50c, 139 + 50r) at 1024×768.
-Vec2 cellOrigin(game::Sector s) { return geo.sectorOrigin + Vec2{kSectorSize * float(s.x), kSectorSize * float(s.y)}; }
-Vec2 sectorCenter(game::Sector s) { return cellOrigin(s) + Vec2{kSectorSize * 0.5f, kSectorSize * 0.5f}; }
+// A sector's cell and its centre: (16 + 36c, 121 + 36r) at 800x600, (9 + 50c, 114 + 50r) at 1024x768.
+Vec2 cellOrigin(game::Sector s) { return geo.sectorOrigin + Vec2{geo.cell * float(s.x), geo.cell * float(s.y)}; }
+Vec2 sectorCenter(game::Sector s) { return cellOrigin(s) + Vec2{geo.cell * 0.5f, geo.cell * 0.5f}; }
+// The 36x36 sprite square of a sector, centred in its cell (offset 0 or 7).
+Vec2 spriteSquare(game::Sector s) { return cellOrigin(s) + Vec2{(geo.cell - kSpriteSize) * 0.5f, (geo.cell - kSpriteSize) * 0.5f}; }
 // A point on the system grid in sector units (ship_glides.hpp).
-Vec2 gridPoint(Vec2 cell) { return geo.sectorOrigin + cell * kSectorSize; }
+Vec2 gridPoint(Vec2 cell) { return geo.sectorOrigin + cell * geo.cell; }
 
 // A click maps to (x − panel x − margin) div cell, the same for the row;
 // anything outside 0..12 is ignored (the margin counts as row or column 0).
 std::optional<game::Sector> sectorAt(Vec2 p) {
     if (!geo.systemPanel.contains(p)) return std::nullopt;
-    const Vec2 rel = (p - geo.sectorOrigin) / kSectorSize;
+    const Vec2 rel = (p - geo.sectorOrigin) / geo.cell;
     const game::Sector s{static_cast<int>(rel.x), static_cast<int>(rel.y)};  // truncated toward zero
     return s.valid() ? std::optional(s) : std::nullopt;
 }
 
-// The galaxy panel: always 68 × 47 cells from its top-left corner (§2.6).
+// The galaxy panel's map: always 68 × 47 cells (§2.6), in the layout's map
+// area: 4 px cells from the panel's (7,0) at 800x600, 5 px from (0,20) at 1024x768.
 struct GalaxyGrid {
     Vec2 origin;
     float cw = 1, ch = 1;
 };
 GalaxyGrid galaxyGrid() {
-    const map_style::GridCell c = map_style::gridCell(int(geo.galaxyPanel.size().x), int(geo.galaxyPanel.size().y));
-    if (!geo.wide) return {geo.galaxyPanel.min, float(c.w), float(c.h)};
-    // Our tall panel beside the report (wide frames): square cells, centred.
-    const float cell = float(std::min(c.w, c.h));
-    const Vec2 extent{cell * map_style::kGridColumns, cell * map_style::kGridRows};
-    return {geo.galaxyPanel.min + (geo.galaxyPanel.size() - extent) * 0.5f, cell, cell};
+    if (geo.wide) {
+        // Our tall panel beside the report (wide frames): square cells, centred.
+        const map_style::GridCell c = map_style::gridCell(int(geo.galaxyPanel.size().x), int(geo.galaxyPanel.size().y));
+        const float cell = float(std::min(c.w, c.h));
+        const Vec2 extent{cell * map_style::kGridColumns, cell * map_style::kGridRows};
+        return {geo.galaxyPanel.min + (geo.galaxyPanel.size() - extent) * 0.5f, cell, cell};
+    }
+    const LayoutGeometry& l = *geo.layout;
+    const float cell = l.galaxyCell;
+    Vec2 origin = geo.galaxyPanel.min + l.galaxyMap.min;
+    // A wider panel (an extended frame) centres the map across it.
+    if (geo.galaxyPanel.size().x > l.galaxyPanel.size().x + 0.5f)
+        origin.x = geo.galaxyPanel.min.x + std::floor((geo.galaxyPanel.size().x - cell * map_style::kGridColumns) * 0.5f);
+    return {origin, cell, cell};
 }
 Vec2 galaxyCell(const GalaxyGrid& g, const game::StarSystem& s) {
     return g.origin + Vec2{float(s.position.x) * g.cw, float(s.position.y) * g.ch};
@@ -197,6 +229,10 @@ Vec2 galaxyCell(const GalaxyGrid& g, const game::StarSystem& s) {
 Vec2 galaxyCenter(const GalaxyGrid& g, const game::StarSystem& s) { return galaxyCell(g, s) + Vec2{g.cw * 0.5f, g.ch * 0.5f}; }
 
 // The minis turned to their heading: hulls that use engines, fighter and drone groups (§2.4).
+bool isReplayOrder(OrderId o) {
+    return o == OrderId::ReplayPlay || o == OrderId::ReplayShip || o == OrderId::ReplayStep || o == OrderId::ReplayRewind;
+}
+
 bool turnsToHeading(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     const ruleset::VehicleSize& hull = r.hull(s.design(v.design).hull);
     return hull.usesEngines || hull.type == ruleset::VehicleType::Fighter || hull.type == ruleset::VehicleType::Drone;
@@ -753,22 +789,19 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::LaunchRemote: chooseCargo(ui, Pick::LaunchRemote); return;
         case OrderId::RecoverRemote: chooseCargo(ui, Pick::RecoverRemote); return;
         case OrderId::Scrap:
-            if (tagged_.empty()) {
-                openFor(ui, ScreenId::Scrap);
+            if (!tagged_.empty()) {
+                // A tagged group: the ordinary Scrap window for the sector of the
+                // first tagged object; the tags pre-select nothing (§7 Q52).
+                if (const game::Vehicle* first = s.vehicle(tagged_.front())) {
+                    ScreenArgs a;
+                    a.vehicle = first->id;
+                    a.location = first->location;
+                    orderDone();
+                    ui.open(ScreenId::Scrap, a);
+                }
                 return;
-            } else {
-                Chooser c;
-                c.title = "Scrap";
-                c.note = std::format("Scrap the {} tagged objects?", tagged_.size());
-                c.items.push_back({"Scrap them", [this, &ui] {
-                                       for (game::VehicleId t : std::vector<game::VehicleId>(tagged_)) {
-                                           const game::CommandResult res = ui.session.issue(game::cmd::Scrap{t, {}, -1});
-                                           if (!res.ok) note(ui, res.error);
-                                       }
-                                       orderDone();
-                                   }});
-                chooser_ = std::move(c);
             }
+            openFor(ui, ScreenId::Scrap);
             return;
         case OrderId::Strategy: {
             const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr;
@@ -839,9 +872,9 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
             return;
         case OrderId::Minister: {
             if (!tagged_.empty()) {
-                const game::Vehicle* first = s.vehicle(tagged_.front());
-                const bool on = !(first && first->minister);
-                for (game::VehicleId t : std::vector<game::VehicleId>(tagged_)) ui.session.issue(game::cmd::SetMinister{t, {}, false, on});
+                // Each tagged object's own flag flips, so a mixed group stays mixed (§7 Q52).
+                for (game::VehicleId t : std::vector<game::VehicleId>(tagged_))
+                    if (const game::Vehicle* x = s.vehicle(t)) ui.session.issue(game::cmd::SetMinister{t, {}, false, !x->minister});
                 orderDone();
             } else if (v) {
                 ui.session.issue(game::cmd::SetMinister{v->id, {}, false, !v->minister});
@@ -854,11 +887,8 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
         case OrderId::ConvertResources: openFor(ui, ScreenId::ConvertResources); return;
         case OrderId::ReplayPlay:
         case OrderId::ReplayShip:
-            if (!replay_.available()) note(ui, "No movement to replay yet.");
-            replay_.play(ui.time);
-            return;
-        case OrderId::ReplayStep: replay_.step(); return;
-        case OrderId::ReplayRewind: replay_.rewind(); return;
+        case OrderId::ReplayStep:
+        case OrderId::ReplayRewind: startReplay(ui, id); return;
         case OrderId::Count: return;
     }
 }
@@ -868,6 +898,7 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
+    prepareSectors(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     // Selections can vanish when a turn is processed.
     if (vehicle_ && !ui.state().vehicle(*vehicle_)) clearSelection();
@@ -883,7 +914,7 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     commandPanel(ui);
     reportPanel(ui);
     overlayText(ui);
-    if (ui.lessonRunning) lessonButton(ui);
+    statusButtons(ui);
     // The panels lessons point at (docs/LEARNING.md "UI tags").
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
@@ -930,62 +961,81 @@ void MainWindow::drawChooser(UiContext& ui) {
 }
 
 void MainWindow::statusBar(UiContext& ui) {
-    // Flag, empire, leader, game date and the treasury, at the original's places.
+    // Flag, empire, leader, game date and the treasury at the original's places
+    // (§2.2): x from the status bar's left edge (11), text in Futurist Medium
+    // with its cell's top at y 4.
     const game::Empire& e = ui.me();
+    const LayoutGeometry& l = *geo.layout;
     const float x0 = geo.left;
+    const float textY = 9 + kTextLead;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     drawAt(ui, dl, ui.art.flag(e.race.style), {x0 + 15, 8}, {26, 18});
-    ImFont* font = ImGui::GetFont();
-    const float size = ImGui::GetFontSize();
-    auto text = [&](float x, ImU32 color, const std::string& t) { dl->AddText(font, size, ui.at({x, 12}), color, t.c_str()); };
+    ImFont* font = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+    const float size = ui.fontPx(kTextSize);
+    auto width = [&](const std::string& t) { return font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x / ui.k(); };
+    auto text = [&](float x, ImU32 color, const std::string& t) { dl->AddText(font, size, ui.at({x, textY}), color, t.c_str()); };
     text(x0 + 47, IM_COL32_WHITE, std::format("{} {}", e.name, e.empireType));
     text(x0 + 231, IM_COL32_WHITE, std::format("{} {}", e.leaderTitle, e.leaderName));
-    text(x0 + 421, ImGui::GetColorU32(kLabelBlue), "Game Date");
-    text(x0 + 501, IM_COL32_WHITE, formatDate(ui.state().turn));
+    const float dateX = x0 + l.gameDateX;
+    text(dateX, imColor(palette::kLabel), "Game Date");
+    text(dateX + width("Game Date "), IM_COL32_WHITE, formatDate(ui.state().turn));
+    // Each stockpile ends 2 px left of its 16 px icon.
     static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
     static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
-    static constexpr std::array<float, 3> kX{627, 700, 771};
     for (size_t i = 0; i < 3; ++i) {
+        const float iconX = x0 + l.resourceIconX[i];
         const std::string amount = std::to_string(e.stockpile.v[i]);
-        text(x0 + kX[i], imColor(kColors[i]), amount);
-        const float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, amount.c_str()).x / ui.k();
-        drawAt(ui, dl, ui.art.icon16(kIcons[i]), {x0 + kX[i] + w + 1, 10}, {14, 14});
+        text(iconX - 2 - width(amount), imColor(kColors[i]), amount);
+        drawAt(ui, dl, ui.art.icon16(kIcons[i]), {iconX, 9}, {16, 16});
     }
-    if (ui.session.waitingForOthers()) text(x0 + 860, IM_COL32(255, 204, 77, 255), "Waiting...");
+    if (ui.session.waitingForOthers() && l.layout == ScreenLayout::Large) text(geo.right - 164, IM_COL32(255, 204, 77, 255), "Waiting...");
     ui.tagFrame("status:empire", Rect{{x0 + 12, 4}, {x0 + 226, 26}});
-    ui.tagFrame("status:leader", Rect{{x0 + 228, 4}, {x0 + 416, 26}});
-    ui.tagFrame("status:date", Rect{{x0 + 418, 4}, {x0 + 590, 26}});
-    ui.tagFrame("status:resources", Rect{{x0 + 622, 4}, {x0 + 850, 26}});
+    ui.tagFrame("status:leader", Rect{{x0 + 228, 4}, {dateX - 4, 26}});
+    ui.tagFrame("status:date", Rect{{dateX - 2, 4}, {x0 + l.resourceIconX[0] - 70, 26}});
+    ui.tagFrame("status:resources", Rect{{x0 + l.resourceIconX[0] - 66, 4}, {x0 + l.resourceIconX[2] + 18, 26}});
     for (size_t i = 0; i < 3; ++i) {
         static constexpr std::array<const char*, 3> kTags{"status:minerals", "status:organics", "status:radioactives"};
-        ui.tagFrame(kTags[i], Rect{{x0 + kX[i] - 4, 4}, {x0 + (i + 1 < 3 ? kX[i + 1] - 4 : 850.0f), 26}});
+        ui.tagFrame(kTags[i], Rect{{x0 + l.resourceIconX[i] - 66, 4}, {x0 + l.resourceIconX[i] + 18, 26}});
     }
 }
 
-void MainWindow::lessonButton(UiContext& ui) {
-    // The original re-opens its tutorial text with a T button in the status
-    // bar (spec 06 §1.7); ours shows the lesson panel again.
-    const Vec2 at{geo.right - 40, 4};
-    ImGui::SetNextWindowPos(ui.at(at));
-    ImGui::SetNextWindowSize(ui.size({24, 22}));
+void MainWindow::statusButtons(UiContext& ui) {
+    // The 20x20 buttons of Close.bmp (minimize, close, "T"; rows: normal, under
+    // the pointer, held): minimize 2 px from the status bar's right end and 2 px
+    // below its top, the T button just left of it while a lesson runs (§2.2;
+    // ours shows the lesson panel again, docs/LEARNING.md).
+    const float barRight = geo.right - 11;
+    ImGui::SetNextWindowPos(ui.at({barRight - 44, 7}));
+    ImGui::SetNextWindowSize(ui.size({44, 20}));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    if (ImGui::Begin("##lessonbutton", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-                                                    ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoFocusOnAppearing)) {
-        if (classicButton(ui, "T##lesson", {24, 22})) {
-            audio().play("button");
-            ui.requests.toggleLessonPanel = true;
+    if (ImGui::Begin("##statusbuttons", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                                     ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoFocusOnAppearing)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        auto button = [&](const char* id, int column, Vec2 at) {
+            ImGui::SetCursorScreenPos(ui.at(at));
+            const bool clicked = ImGui::InvisibleButton(id, ui.size({20, 20}));
+            const int state = ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+            drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/Close.bmp", column * 20, state * 20, 20, 20, false), at, {20, 20});
+            return clicked;
+        };
+        if (button("##minimize", 0, {barRight - 22, 7}) && ui.app) ui.app->minimize();
+        if (ui.lessonRunning) {
+            if (button("##lesson", 2, {barRight - 42, 7})) {
+                audio().play("button");
+                ui.requests.toggleLessonPanel = true;
+            }
+            ui.tagItem("status:lesson");
         }
-        ui.tagItem("status:lesson");
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show or hide the lesson (%s)", chordName(appSettings().controls.bindings.chords(Action::LessonText)[0]).c_str());
     }
     ImGui::End();
     ImGui::PopStyleVar(2);
 }
 
 void MainWindow::commandPanel(UiContext& ui) {
-    ImGui::SetNextWindowPos(ui.at(geo.commandPanel.min));
-    ImGui::SetNextWindowSize(ui.size(geo.commandPanel.size() + Vec2{67, 0}));
+    const LayoutGeometry& l = *geo.layout;
+    ImGui::SetNextWindowPos(ui.at(geo.commandArea.min));
+    ImGui::SetNextWindowSize(ui.size(geo.commandArea.size()));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -993,10 +1043,14 @@ void MainWindow::commandPanel(UiContext& ui) {
                                             ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float x0 = geo.left;
-    auto hit = [&](const char* id, Vec2 min, Vec2 size) {
+    // While the movement log plays the command buttons and selectors are disabled (§7 Q51).
+    const bool replaying = replay_.active();
+    auto hit = [&](const char* id, Vec2 min, Vec2 size, bool enabled = true) {
         ImGui::SetCursorScreenPos(ui.at(min));
+        ImGui::BeginDisabled(!enabled);
         const bool clicked = ImGui::InvisibleButton(id, ui.size(size));
-        return std::pair{clicked, ImGui::IsItemHovered()};
+        ImGui::EndDisabled();
+        return std::pair{clicked && enabled, enabled && ImGui::IsItemHovered()};
     };
 
     // Command buttons: 34-px cells from (13, 36).
@@ -1004,7 +1058,7 @@ void MainWindow::commandPanel(UiContext& ui) {
         const CommandButton& b = kCommands[i];
         const Vec2 at{x0 + 13 + float(i % 6) * 34, 36 + float(i / 6) * 34};
         ImGui::PushID(int(i));
-        const auto [clicked, hovered] = hit("cmd", at, {34, 34});
+        const auto [clicked, hovered] = hit("cmd", at, {34, 34}, !replaying);
         ImGui::PopID();
         ui.tagItem(b.screen ? "command:" + std::string(windowId(*b.screen)) : std::string("button:end-turn"));
         const int state = hovered ? (ImGui::IsMouseDown(ImGuiMouseButton_Left) ? 2 : 1) : 0;
@@ -1022,23 +1076,36 @@ void MainWindow::commandPanel(UiContext& ui) {
     }
 
     // The order strip: every order at its own place, lit only when the selection
-    // can carry it out (§2.8). At 1024×768 all 40 places fit on one page.
+    // can carry it out (§2.8). At 1024x768 all 40 places fit on one page; at
+    // 800x600 five columns show at a time, on four pages the arrows turn (§2.3).
     const LitOrders lit = litNow(ui);
     const game::GameState& s = ui.state();
     const game::Vehicle* v = selectedVehicle(ui);
     const game::Colony* c = selectedColony(ui);
     const game::Fleet* f = fleet_ ? s.fleet(*fleet_) : nullptr;
+    orderPage_ = std::clamp(orderPage_, 0, l.orderPages - 1);
+    const float stripX = x0 + l.orderStrip.x + 16;
+    const std::array<Vec2, 2> pagerAt{Vec2{x0 + l.pagerLeft, 44}, Vec2{x0 + l.pagerRight, 44}};
+    // Orders on another page: their lesson tags outline the arrow that leads there (ours).
+    std::array<std::vector<std::string>, 2> pagerTags;
     for (size_t col = 0; col < kOrderStrip.size(); ++col)
         for (size_t row = 0; row < 2; ++row) {
             const OrderSlot& slot = kOrderStrip[col][row];
-            const Vec2 at{x0 + 246 + float(col) * 34, 36 + float(row) * 34};
+            const OrderPlace place = orderPlace(l, int(col * 2 + row));
+            const std::string_view tagId = slot.order ? learn::orderStripId(orderSlotKey(*slot.order)) : std::string_view{};
+            if (place.page != orderPage_) {
+                if (!tagId.empty()) {
+                    const int forward = (place.page - orderPage_ + l.orderPages) % l.orderPages;
+                    pagerTags[forward <= l.orderPages / 2 ? 1 : 0].push_back("order:" + std::string(tagId));
+                }
+                continue;
+            }
+            const Vec2 at{stripX + float(place.column) * 34, 36 + float(place.row) * 34};
             const bool enabled = slot.order && lit[static_cast<size_t>(*slot.order)];
             ImGui::PushID(int(col * 2 + row) + 100);
             const auto [clicked, hovered] = hit("order", at, {34, 34});
             ImGui::PopID();
-            if (slot.order)
-                if (const std::string_view tagId = learn::orderStripId(orderSlotKey(*slot.order)); !tagId.empty())
-                    ui.tagItem("order:" + std::string(tagId));
+            if (!tagId.empty()) ui.tagItem("order:" + std::string(tagId));
             // Repeat Orders and Minister Control show their pressed state when on.
             bool on = false;
             if (enabled && slot.order == OrderId::RepeatOrders) on = f ? game::fleetRepeats(s, *f) : v && v->repeatOrders;
@@ -1055,25 +1122,31 @@ void MainWindow::commandPanel(UiContext& ui) {
             }
         }
     ui.tagFrame("panel:commands", Rect{{x0 + 13, 36}, {x0 + 13 + 6 * 34, 36 + 2 * 34}});
-    ui.tagFrame("panel:orders", Rect{{x0 + 246, 36}, {x0 + 246 + float(kOrderStrip.size()) * 34, 36 + 2 * 34}});
-    // Page arrows at both ends; one page holds every order at this size, so they stay dim.
-    for (const bool right : {false, true}) {
-        const float ax = x0 + (right ? 927.0f : 231.0f);
-        dl->AddRect(ui.at({ax - 2, 37}), ui.at({ax + 15, 104}), imColor(palette::kDisabled));
-        drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/BigLeftRightArrows.bmp", right ? 14 : 0, 150, 14, 50, false), {ax, 44}, {14, 50});
+    ui.tagFrame("panel:orders", Rect{{stripX, 36}, {stripX + float(l.orderColumns) * 34, 36 + 2 * 34}});
+    // Page arrows at both ends: they turn the pages at 800x600 (wrapping) and are dim at 1024x768.
+    const bool paging = l.orderPages > 1;
+    for (const int side : {0, 1}) {
+        const Vec2 at = pagerAt[size_t(side)];
+        ImGui::PushID(400 + side);
+        const auto [clicked, hovered] = hit("pager", at, {14, 50}, paging);
+        ImGui::PopID();
+        for (const std::string& tag : pagerTags[size_t(side)]) ui.tagItem(tag);
+        const int state = !paging ? 3 : ImGui::IsItemActive() ? 2 : hovered ? 1 : 0;
+        dl->AddRect(ui.at(at - Vec2{2, 7}), ui.at(at + Vec2{15, 60}), imColor(palette::kDisabled));
+        drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/BigLeftRightArrows.bmp", side * 14, state * 50, 14, 50, false), at, {14, 50});
+        if (clicked) orderPage_ = turnOrderPage(l, orderPage_, side == 0 ? -1 : 1);
     }
 
-    // Selection cycles (ship, fleet, colony): the Nextprev.bmp selectors at the top right.
-    const float sx = geo.right - 59;
+    // Selection cycles (ship, fleet, colony): the Nextprev.bmp selectors at the panel's top right.
     for (int row = 0; row < 3; ++row) {
-        const Vec2 at{sx, 34 + float(row) * 24};
+        const Vec2 at = geo.selectors + Vec2{0, float(row) * 24};
         ImGui::PushID(200 + row);
-        const auto [prev, prevHover] = hit("prev", at, {16, 24});
+        const auto [prev, prevHover] = hit("prev", at, {16, 24}, !replaying);
         ImGui::PopID();
         ImGui::PushID(300 + row);
-        const auto [next, nextHover] = hit("next", at + Vec2{32, 0}, {16, 24});
+        const auto [next, nextHover] = hit("next", at + Vec2{32, 0}, {16, 24}, !replaying);
         ImGui::PopID();
-        const int state = prevHover || nextHover ? 1 : 0;
+        const int state = replaying ? 3 : prevHover || nextHover ? 1 : 0;
         drawAt(ui, dl, ui.art.region("Pictures/Game/Buttons/Nextprev.bmp", row * 48, state * 24, 48, 24, false), at, {48, 24});
         static constexpr std::array<const char*, 3> kCycleTags{"cycle:ship", "cycle:fleet", "cycle:colony"};
         ui.tagFrame(kCycleTags[size_t(row)], Rect{at, at + Vec2{48, 24}});
@@ -1213,114 +1286,149 @@ void MainWindow::reportPanel(UiContext& ui) {
 }
 
 void MainWindow::overlayText(UiContext& ui) {
+    // Text in the system panel (§2.4 "Text in the system panel"): fonts of
+    // §5.4, transparent backgrounds, places given as the text cell's top (or
+    // its bottom), so each is drawn below that by the face's internal leading.
     const game::GameState& s = ui.state();
     if (!shown_.valid()) return;
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float k = ui.k();
-    ImFont* font = ui.fonts.medium;
-    auto text = [&](Vec2 p, float size, ImU32 c, const std::string& str) { dl->AddText(font, size * k, ui.at(p), c, str.c_str()); };
-    auto centred = [&](ImFont* f, float size, float cx, float y, ImU32 c, const std::string& str) {
-        const ImVec2 ts = f->CalcTextSizeA(size * k, FLT_MAX, 0.0f, str.c_str());
-        const ImVec2 at = ui.at({cx, y});
-        dl->AddText(f, size * k, ImVec2{at.x - ts.x * 0.5f, at.y}, c, str.c_str());
+    ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+    ImFont* button = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+    ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+    ImFont* tiny = ui.fonts.tiny ? ui.fonts.tiny : small;
+    const float tinySize = ui.fonts.tiny ? kTinySize : kSmallSize;
+    auto widthOf = [&](ImFont* f, float size, const std::string& str) { return f->CalcTextSizeA(ui.fontPx(size), FLT_MAX, 0.0f, str.c_str()).x / k; };
+    auto put = [&](ImFont* f, float size, Vec2 at, ImU32 c, const std::string& str) { dl->AddText(f, ui.fontPx(size), ui.at(at), c, str.c_str()); };
+    // A Small text centred on x with its cell's bottom at `bottom`.
+    auto smallAbove = [&](float cx, float bottom, ImU32 c, const std::string& str) {
+        put(small, kSmallSize, {std::floor(cx - widthOf(small, kSmallSize, str) * 0.5f), bottom - kSmallCell + kSmallLead}, c, str);
     };
     const game::StarSystem& sys = s.galaxy.system(shown_);
     const Rect& panel = geo.systemPanel;
-    dl->AddText(ui.fonts.bold, ui.fontPx(kTitleSize), ui.at(Vec2{geo.left + 13, 120}), IM_COL32_WHITE, sys.name.c_str());
+    const game::InterfaceOptions& opts = ui.options();
+
+    // The system name: SE4 Text button, white, at (5,10) of the panel; during
+    // the movement log replay the day follows it (§7 Q51).
+    std::string title = sys.name;
+    if (replay_.active()) title += std::format("  (Day {})", replay_.day());
+    put(button, kTitleSize, panel.min + Vec2{5, 10 + kTitleLead}, IM_COL32_WHITE, title);
     const bool explored = ui.me().hasExplored(shown_);
     if (!explored) {
-        centred(ui.fonts.bold, kTitleSize, panel.min.x + panel.size().x * 0.5f, panel.min.y + panel.size().y / 3.0f, IM_COL32_WHITE, "Unexplored");
+        const std::string word = "Unexplored";
+        put(button, kTitleSize, {std::floor(panel.center().x - widthOf(button, kTitleSize, word) * 0.5f), panel.min.y + std::floor(panel.size().y / 3.0f) + kTitleLead},
+            IM_COL32_WHITE, word);
     } else {
-        for (game::ObjectId id : ui.options().warpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
-            // A warp point is named after its destination once we have explored it
-            // (docs/spec/01 §5.4, sight::warpPointName).
-            const game::SpaceObject& wp = s.galaxy.object(id);
-            if (!wp.destination.valid()) continue;
-            const game::SystemId to = s.galaxy.object(wp.destination).system;
-            if (!s.options.omnipresent && !ui.me().hasExplored(to)) continue;
-            centred(font, 11, sectorCenter(wp.sector).x, sectorCenter(wp.sector).y + 18, IM_COL32(184, 200, 255, 255), s.galaxy.system(to).name);
-        }
-        // Empire Options, System Display (spec 06 §1.9): planet names under the
-        // planets, and the facility letter markers of our colonies above them
-        // (placement inferred).
-        const game::InterfaceOptions& opts = ui.options();
-        for (game::ObjectId id : sys.objects) {
-            const game::SpaceObject& o = s.galaxy.object(id);
-            if (o.kind != game::ObjectKind::Planet) continue;
-            if (opts.planetNames) centred(font, 11, sectorCenter(o.sector).x, sectorCenter(o.sector).y + 18, IM_COL32(220, 220, 220, 255), o.name);
-            const game::Colony* col = s.colony(id);
-            if (opts.facilityMarkers == 0 || !col || col->owner != ui.session.player()) continue;
-            const std::string markers = facilityMarkers(ui.rules(), *col, opts.facilityMarkers);
-            if (!markers.empty()) centred(font, 10, sectorCenter(o.sector).x, sectorCenter(o.sector).y - 25, IM_COL32(255, 255, 0, 255), markers);
-        }
-        // "Coordinate location": the sector under the pointer (inferred: after the system name).
-        if (opts.coordinateLocation && hover_) {
-            const std::string where = std::format("({},{})", hover_->x, hover_->y);
-            const float nameW = ui.fonts.bold->CalcTextSizeA(ui.fontPx(kTitleSize), FLT_MAX, 0.0f, sys.name.c_str()).x / k;
-            text(Vec2{geo.left + 13 + nameW + 10, 122}, 12, IM_COL32(200, 210, 230, 255), where);
-        }
-    }
-
-    // Ship counts in the owner's colour: at the bottom right of a lone stack's
-    // sprite, or beside each flag (§2.4). Mirrors the layout of drawSystem.
-    std::map<game::Sector, std::vector<const game::Vehicle*>> ships;
-    for (const game::Vehicle& v : s.vehicles)
-        if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id, ui.time) &&
-            !replay_.position(v.id, v.location, shown_, ui.time))
-            ships[v.location.sector].push_back(&v);
-    for (const auto& [sector, list] : ships) {
-        std::vector<std::pair<game::EmpireId, int>> owners;
-        for (const game::Vehicle* v : list) {
-            auto it = std::find_if(owners.begin(), owners.end(), [&](const auto& o) { return o.first == v->owner; });
-            const int n = std::max(1, v->count);
-            if (it == owners.end()) owners.emplace_back(v->owner, n);
-            else it->second += n;
-        }
-        const Vec2 c = sectorCenter(sector);
-        const bool flags = owners.size() > 1 || (explored && !objectsAt(ui, sector).empty());
-        if (flags) {
-            float dx = 0;
-            for (const auto& [owner, n] : owners) {
-                text(c + Vec2{-18 + dx + 15, 6}, 10, empireColor(s, owner), std::to_string(n));
-                dx += 15 + 6 + 6 * float(std::to_string(n).size());
+        // Warp point names (on by default): the explored destination's name in
+        // Futurist small, white, centred, its bottom on the cell's bottom edge;
+        // a second name in the same sector goes one line lower.
+        std::map<game::Sector, int> warpLines, planetLines;
+        if (opts.warpPointNames)
+            for (game::ObjectId id : s.galaxy.warpPoints(sys.id)) {
+                const game::SpaceObject& wp = s.galaxy.object(id);
+                if (!wp.destination.valid()) continue;
+                const game::SystemId to = s.galaxy.object(wp.destination).system;
+                if (!s.options.omnipresent && !ui.me().hasExplored(to)) continue;
+                const int line = warpLines[wp.sector]++;
+                smallAbove(sectorCenter(wp.sector).x, cellOrigin(wp.sector).y + geo.cell + kSmallCell * float(line), IM_COL32_WHITE, s.galaxy.system(to).name);
             }
-        } else if (owners.front().second > 1) {
-            const std::string n = std::to_string(owners.front().second);
-            const ImVec2 ts = font->CalcTextSizeA(10 * k, FLT_MAX, 0.0f, n.c_str());
-            const ImVec2 at = ui.at(c + Vec2{18, 18});
-            dl->AddText(font, 10 * k, ImVec2{at.x - ts.x, at.y - ts.y}, empireColor(s, owners.front().first), n.c_str());
+        // Planet names (off by default), stacked apart from the warp point names;
+        // the planet in sector (0,0) never gets its name.
+        if (opts.planetNames)
+            for (game::ObjectId id : sys.objects) {
+                const game::SpaceObject& o = s.galaxy.object(id);
+                if (o.kind != game::ObjectKind::Planet || (o.sector.x == 0 && o.sector.y == 0)) continue;
+                const int line = planetLines[o.sector]++;
+                smallAbove(sectorCenter(o.sector).x, cellOrigin(o.sector).y + geo.cell + kSmallCell * float(line), IM_COL32_WHITE, o.name);
+            }
+        // Facility letter markers (§2.4, §7 Q44): on colonies of ours and of our
+        // Military Alliance and Partnership partners, in the owner's colour, in
+        // the small face, packed right to left from the sprite square's bottom right.
+        if (opts.facilityMarkers != 0)
+            for (game::ObjectId id : sys.objects) {
+                const game::SpaceObject& o = s.galaxy.object(id);
+                const game::Colony* col = s.colony(id);
+                if (o.kind != game::ObjectKind::Planet || !col || !showsFacilityMarkers(s, ui.session.player(), col->owner)) continue;
+                if (!game::sight::colonyShown(ui.rules(), s, ui.session.player(), id)) continue;  // a partner's cloak hides it too (spec 01 §6.9)
+                if (replay_.active() && replay_.colonyOwner(id) != col->owner) continue;
+                const std::vector<std::string> groups = facilityMarkerGroups(ui.rules(), *col, opts.facilityMarkers);
+                if (groups.empty()) continue;
+                std::vector<int> widths;
+                for (const std::string& g : groups) widths.push_back(int(std::lround(widthOf(tiny, tinySize, g))));
+                const std::vector<MarkerPlace> places = packFacilityMarkers(widths, int(kSpriteSize));
+                const Vec2 square = spriteSquare(o.sector);
+                const ImU32 color = empireColor(s, col->owner);
+                for (size_t i = 0; i < groups.size(); ++i)
+                    put(tiny, tinySize, square + Vec2{float(places[i].x), kSpriteSize - kTinyCell * float(places[i].line + 1)}, color, groups[i]);
+            }
+        // Coordinate location (on by default): the sector under the pointer, and
+        // the range from the selected sector of this system.
+        if (opts.coordinateLocation && hover_) {
+            std::string line = std::format("Coordinates ({}, {})", hover_->x, hover_->y);
+            if (sector_) line += std::format("   Range: {}", std::max(std::abs(hover_->x - sector_->x), std::abs(hover_->y - sector_->y)));
+            put(small, kSmallSize, geo.layout->coordinateLine + Vec2{geo.left, kSmallLead}, IM_COL32_WHITE, line);
         }
     }
 
-    // Waypoints 1–10 (the number in cyan) and the tagged minefields ("M"), §2.4.
+    // Numbers in the sectors, in the small map face (§2.4 "Sector contents"):
+    // vehicle counts in the owner's colour on a black box the size of the text,
+    // a lone unit group's units in white, the number of stellar objects in white.
+    auto count = [&](Vec2 at, ImU32 color, bool box, const std::string& n) {
+        const float w = widthOf(tiny, tinySize, n);
+        if (box) dl->AddRectFilled(ui.at(at), ui.at(at + Vec2{w, kTinyCell}), IM_COL32_BLACK);
+        put(tiny, tinySize, at, color, n);
+    };
+    for (const ShownSector& sec : sectors_) {
+        const SectorView& view = sec.view;
+        const Vec2 square = spriteSquare(sec.sector);
+        if (view.stellarCount > 1) count(square + Vec2{0, kSpriteSize - kTinyCell}, IM_COL32_WHITE, false, std::to_string(view.stellarCount));
+        if (view.flags) {
+            for (size_t i = 0; i < view.owners.size(); ++i)
+                count(square + Vec2{14, float(view.flagStep) * float(i)}, empireColor(s, view.owners[i].empire), true, std::to_string(view.owners[i].count));
+        } else if (view.count) {
+            const std::string n = std::to_string(*view.count);
+            const ImU32 color = view.unitCount ? IM_COL32_WHITE : empireColor(s, view.owners.front().empire);
+            count(square + Vec2{kSpriteSize - widthOf(tiny, tinySize, n), kSpriteSize - kTinyCell}, color, !view.unitCount, n);
+        }
+    }
+
+    // Waypoints 1–10 and the tagged minefields ("M"): Futurist small cyan at the
+    // cell's bottom-right inner corner (§2.4); their frames are drawn with the panel.
     const ImU32 cyan = imColor(map_style::kWaypoint);
+    auto corner = [&](game::Sector sec, const std::string& str) {
+        const Vec2 cell = cellOrigin(sec);
+        put(small, kSmallSize, {cell.x + geo.cell - 1 - widthOf(small, kSmallSize, str), cell.y + geo.cell - kSmallCell + kSmallLead}, cyan, str);
+    };
     const auto& wps = ui.me().waypoints;
     for (size_t i = 0; i < wps.size(); ++i)
-        if (wps[i].set && wps[i].location.system == shown_) text(cellOrigin(wps[i].location.sector) + Vec2{3, 2}, 10, cyan, std::to_string(i));
+        if (wps[i].set && wps[i].location.system == shown_) corner(wps[i].location.sector, std::to_string(i));
     for (const game::Location& m : ui.me().taggedMinefields)
-        if (m.system == shown_) text(cellOrigin(m.sector) + Vec2{40, 2}, 10, cyan, "M");
+        if (m.system == shown_) corner(m.sector, "M");
 
-    // The hover hint (§2.3): the button's name and its key, centred at the top of the system panel.
+    // The hover hint (§2.3): the button's name and its key, centred in the hint area.
     if (!hintName_.empty()) {
-        const float cx = panel.min.x + panel.size().x * 0.5f;
-        centred(ui.fonts.bold, kTitleSize, cx, panel.min.y + 10, IM_COL32_WHITE, hintName_);  // y 123..153 at 1024x768
-        if (!hintKey_.empty()) centred(ui.fonts.small, kSmallSize, cx, panel.min.y + 28, IM_COL32_WHITE, hintKey_);  // 18 px below the name
+        const Rect& hint = geo.layout->hint;
+        const float cx = geo.left + hint.center().x;
+        put(button, kTitleSize, {std::floor(cx - widthOf(button, kTitleSize, hintName_) * 0.5f), hint.min.y + kTitleLead}, IM_COL32_WHITE, hintName_);
+        if (!hintKey_.empty())
+            put(small, kSmallSize, {std::floor(cx - widthOf(small, kSmallSize, hintKey_) * 0.5f), hint.min.y + 18 + kSmallLead}, IM_COL32_WHITE, hintKey_);
     }
 
-    if (pick_ != Pick::None) text(panel.min + Vec2{6, 632}, 14, IM_COL32(255, 220, 90, 255), pickPrompt_ + "   (Esc to cancel)");
-    else if (!note_.empty() && ui.time < noteUntil_) text(panel.min + Vec2{6, 632}, 14, IM_COL32(255, 220, 90, 255), note_);
-    if (replay_.active()) text(panel.min + Vec2{6, 612}, 12, cyan, std::format("Movement log: day {} of {}", int(replay_.progress(ui.time) * MovementReplay::kDays + 1e-6), MovementReplay::kDays));
+    // Our own notices (a pick waiting for its target, refused orders): above the coordinate line.
+    const Vec2 noteAt{panel.min.x + 6, panel.max.y - 40};
+    if (pick_ != Pick::None) put(body, kTextSize, noteAt, IM_COL32(255, 220, 90, 255), pickPrompt_ + "   (Esc to cancel)");
+    else if (!note_.empty() && ui.time < noteUntil_) put(body, kTextSize, noteAt, IM_COL32(255, 220, 90, 255), note_);
 
-    // The hovered system on the galaxy panel: its name in cyan at the first corner that fits (§2.6).
+    // The hovered system on the galaxy panel: its name in cyan, in the Body face,
+    // at the first corner that fits (§2.6, §5.4).
     if (galaxyHover_) {
         const GalaxyGrid g = galaxyGrid();
         const game::StarSystem& h = s.galaxy.system(*galaxyHover_);
         const Vec2 cell = galaxyCell(g, h);
-        const float fs = 11;
-        const ImVec2 ts = font->CalcTextSizeA(fs * k, FLT_MAX, 0.0f, h.name.c_str());
-        const map_style::Point p = map_style::nameCorner(cell.x - geo.galaxyPanel.min.x, cell.y - geo.galaxyPanel.min.y, g.cw, g.ch,
-                                                         ts.x / k + 2, ts.y / k, geo.galaxyPanel.size().x, geo.galaxyPanel.size().y);
-        text(geo.galaxyPanel.min + Vec2{p.x + 1, p.y}, fs, imColor(map_style::kHover), h.name);
+        const float w = widthOf(body, kTextSize, h.name);
+        const map_style::Point p = map_style::nameCorner(cell.x - geo.galaxyPanel.min.x, cell.y - geo.galaxyPanel.min.y, g.cw, g.ch, w + 2,
+                                                         kTextCell - kTextLead, geo.galaxyPanel.size().x, geo.galaxyPanel.size().y);
+        put(body, kTextSize, geo.galaxyPanel.min + Vec2{p.x + 1, p.y}, imColor(map_style::kHover), h.name);
     }
 }
 
@@ -1396,6 +1504,15 @@ void MainWindow::hotkeys(UiContext& ui) {
     const Bindings& keys = appSettings().controls.bindings;
     auto pressed = [&](Action a) { return keys.pressed(a); };
 
+    // The four movement-log keys start the replay whatever their buttons show
+    // (§2.8); while it plays no other main-window key works (§3).
+    for (const OrderId o : {OrderId::ReplayPlay, OrderId::ReplayShip, OrderId::ReplayStep, OrderId::ReplayRewind})
+        if (const auto a = orderAction(o); a && pressed(*a)) {
+            startReplay(ui, o);
+            return;
+        }
+    if (replay_.active()) return;
+
     // Windows (F1..F11 by default).
     for (const CommandButton& b : kCommands)
         if (b.screen && pressed(b.key)) ui.open(*b.screen);
@@ -1462,7 +1579,7 @@ void MainWindow::hotkeys(UiContext& ui) {
     for (size_t i = 0; i < kOrderCount; ++i) {
         const OrderId o = static_cast<OrderId>(i);
         const auto a = orderAction(o);
-        if (!a || !pressed(*a)) continue;
+        if (!a || !pressed(*a) || isReplayOrder(o)) continue;
         if (!lit) lit = litNow(ui);
         if ((*lit)[i]) runOrder(ui, o);
     }
@@ -1473,19 +1590,30 @@ void MainWindow::hotkeys(UiContext& ui) {
 void MainWindow::render(gfx::Renderer2D& r, UiContext& ui) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
-    r.rect(Rect{{geo.left, 0}, {geo.right, kFrameH}}, Color::hex(0x000000));
+    r.rect(Rect{{geo.left, 0}, {geo.right, frameH()}}, Color::hex(0x000000));
     drawSystem(r, ui);
     drawGalaxy(r, ui);
     drawFrame(r, ui);
 }
 
 void MainWindow::drawFrame(gfx::Renderer2D& r, UiContext& ui) {
-    // The original's frame strips, at their measured places; black is see-through.
-    auto strip = [&](const char* name) { return ui.art.image(std::string(kScreens) + name); };
+    // The original's frame strips at their places (§2.1); black is see-through.
+    const LayoutGeometry& l = *geo.layout;
+    auto strip = [&](const char* name) { return ui.art.image(std::string(l.screens) + name); };
     auto put = [&](const Sprite& s, Vec2 at) {
         if (s) r.sprite(s.tex, Rect::fromPosSize(at, s.size), s.uv);
     };
-    // A horizontal strip on a wider frame: its two halves at the ends, the middle column stretched between.
+    if (!geo.extended) {
+        for (int i = 0; i < l.pieceCount; ++i) {
+            const FramePiece& p = l.pieces[size_t(i)];
+            const Sprite s = strip(p.file);
+            // The 800x600 RightFiller is a 1x1 file the game skips.
+            if (s && s.size.x > 1) put(s, p.at);
+        }
+        return;
+    }
+    // A wider 1024x768 frame (OpenSE4's extended layout): the strips stretched.
+    // A horizontal strip: its two halves at the ends, the middle column stretched between.
     auto wideStrip = [&](const Sprite& s, float y, float x0, float x1, float split) {
         if (!s) return;
         const float w = s.size.x;
@@ -1543,22 +1671,138 @@ void MainWindow::drawFrame(gfx::Renderer2D& r, UiContext& ui) {
     }
 }
 
-// ---- Ship movement animation ---------------------------------------------------------------
+// ---- Ship movement animation and the movement log replay -----------------------------------
 
 void MainWindow::trackMovement(UiContext& ui) {
     // Once per frame: update() and render() both call this.
     if (ui.time == trackedAt_) return;
     trackedAt_ = ui.time;
-    // A new turn: where everything was before it, for the movement log (simultaneous games).
-    if (ui.state().turn != seenTurn_) {
-        if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) replay_.newTurn(glides_.lastSeen());
-        seenTurn_ = ui.state().turn;
+    const game::GameState& s = ui.state();
+    // A new turn: where the vehicles were seen before it (a network game's replay is rebuilt from it).
+    if (s.turn != seenTurn_) {
+        if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) {
+            beforeTurn_ = glides_.lastSeen();
+            beforeTurnFor_ = s.turn;
+        }
+        replay_.stop();
+        seenTurn_ = s.turn;
     }
-    replay_.update(ui.time);
+    const bool wasReplaying = replay_.active();
+    MovementReplay::Frame f;
+    f.now = ui.time;
+    f.shown = shown_;
+    f.animate = settings().animateSystemMovement;
+    f.cellPixels = geo.cell;
+    f.seen = [this](game::VehicleId id) { return replaySeen_.contains(id); };
+    f.turns = [&](game::VehicleId id) {
+        const MovementLog* log = replay_.log();
+        const auto it = log ? log->vehicles.find(id) : decltype(log->vehicles.end()){};
+        return log && it != log->vehicles.end() && turnsToHeading(ui.rules(), s, it->second);
+    };
+    replay_.update(f);
+    // Ctrl+U: the view follows the object, to its system before each day.
+    if (const auto followed = replay_.following())
+        for (const game::Vehicle& v : replay_.vehicles())
+            if (v.id == *followed) {
+                shown_ = v.location.system;
+                sector_ = v.location.sector;
+                break;
+            }
+    // The end of the replay brings back the current turn and the system shown before it.
+    if (wasReplaying && !replay_.active() && replayShownBefore_) {
+        shown_ = *replayShownBefore_;
+        replayShownBefore_.reset();
+        clearSelection();
+    }
     std::vector<ShipGlides::Seen> visible;
-    for (const game::Vehicle& v : ui.state().vehicles)
+    for (const game::Vehicle& v : s.vehicles)
         if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
     glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible);
+}
+
+void MainWindow::startReplay(UiContext& ui, OrderId id) {
+    // The four keys start the replay whatever their buttons show (§2.8, §7 Q51).
+    const game::GameState& s = ui.state();
+    const game::EmpireId me = ui.session.player();
+    if (!replay_.available(s.turn)) {
+        replaySeen_.clear();
+        const game::GameState* start = ui.session.turnStart();
+        if (ui.session.canReplayLastTurn() && start && start->turn + 1 == s.turn) {
+            // Play the turn again from its start and record its 30 days.
+            const BusyPointer busy;
+            MovementRecorder recorder(*start);
+            ui.session.replayLastTurn([&recorder](int day, const game::GameState& at) { recorder.day(day, at); });
+            auto log = std::make_shared<MovementLog>(recorder.take(s.turn));
+            // What the viewer sees: its own objects, those it saw at the start and those it sees now.
+            for (const auto& [vid, v] : log->vehicles)
+                if (v.owner == me) replaySeen_.insert(vid);
+            if (me.valid() && me.index() < start->empires.size())
+                for (const game::VehicleId vid : start->empire(me).knowledge.visibleVehicles) replaySeen_.insert(vid);
+            for (const game::VehicleId vid : ui.me().knowledge.visibleVehicles) replaySeen_.insert(vid);
+            replay_.setLog(std::move(log));
+        } else if (!ui.session.turnBased() && beforeTurnFor_ == s.turn && !beforeTurn_.empty()) {
+            // Only our own view of the turn: rebuilt from where we saw everything (inferred).
+            std::set<game::VehicleId> seenNow;
+            for (const game::Vehicle& v : s.vehicles)
+                if (knownVehicle(ui, v)) seenNow.insert(v.id);
+            auto log = std::make_shared<MovementLog>(approximateLog(beforeTurn_, s, seenNow, s.turn));
+            for (const auto& [vid, v] : log->vehicles) replaySeen_.insert(vid);
+            replay_.setLog(std::move(log));
+        }
+    }
+    if (!replay_.available(s.turn)) {
+        note(ui, "Replay Unavailable: there is no movement log for this turn.");
+        return;
+    }
+    const bool wasActive = replay_.active();
+    switch (id) {
+        case OrderId::ReplayPlay: replay_.play(); break;
+        case OrderId::ReplayStep: replay_.step(); break;
+        case OrderId::ReplayRewind: replay_.rewind(); break;
+        case OrderId::ReplayShip: {
+            const std::vector<game::VehicleId> movers = replay_.log()->movers(me);
+            if (movers.empty()) {
+                note(ui, "None of your ships moved this turn.");
+                return;
+            }
+            replay_.playFollowing(movers);
+            break;
+        }
+        default: return;
+    }
+    if (replay_.active() && !wasActive) {
+        replayShownBefore_ = shown_;
+        tagged_.clear();
+    }
+}
+
+void MainWindow::prepareSectors(UiContext& ui) {
+    // What each sector of the shown system draws this frame (sector_view.hpp):
+    // the game's vehicles the player sees, or the replay's at its day; those
+    // gliding to their square or animated by the replay are drawn on their way.
+    sectors_.clear();
+    if (!shown_.valid()) return;
+    const game::GameState& s = ui.state();
+    const game::StarSystem& sys = s.galaxy.system(shown_);
+    const bool explored = ui.me().hasExplored(shown_);
+    std::map<game::Sector, std::pair<std::vector<game::ObjectId>, std::vector<const game::Vehicle*>>> bySector;
+    if (explored)
+        for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].first.push_back(id);
+    if (replay_.active()) {
+        for (const game::Vehicle& v : replay_.vehicles())
+            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id, ui.time))
+                bySector[v.location.sector].second.push_back(&v);
+    } else {
+        for (const game::Vehicle& v : s.vehicles)
+            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id, ui.time)) bySector[v.location.sector].second.push_back(&v);
+    }
+    for (auto& [sector, contents] : bySector) {
+        ShownSector out;
+        out.sector = sector;
+        out.view = sectorView(ui.rules(), s, ui.session.player(), contents.first, contents.second, int(geo.cell));
+        out.vehicles = std::move(contents.second);
+        sectors_.push_back(std::move(out));
+    }
 }
 
 void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
@@ -1578,114 +1822,139 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
         r.sprite(bg.tex, Rect::fromPosSize(panel.min, size), Rect{bg.uv.min, bg.uv.min + Vec2{su.x * size.x / bg.size.x, su.y * size.y / bg.size.y}});
     }
     // Grid lines with the empire option (§1.9): 14 each way on the cell boundaries.
-    if (ui.options().systemGrid)
+    const bool grid = ui.options().systemGrid;
+    if (grid)
         for (int i = 0; i <= 13; ++i) {
-            const float x = geo.sectorOrigin.x + kSectorSize * float(i), y = geo.sectorOrigin.y + kSectorSize * float(i);
+            const float x = geo.sectorOrigin.x + geo.cell * float(i), y = geo.sectorOrigin.y + geo.cell * float(i);
             const Color c = rgb(map_style::kGrid);
-            r.line({x, geo.sectorOrigin.y}, {x, geo.sectorOrigin.y + 13 * kSectorSize}, 1.0f, c);
-            r.line({geo.sectorOrigin.x, y}, {geo.sectorOrigin.x + 13 * kSectorSize, y}, 1.0f, c);
+            r.line({x, geo.sectorOrigin.y}, {x, geo.sectorOrigin.y + 13 * geo.cell}, 1.0f, c);
+            r.line({geo.sectorOrigin.x, y}, {geo.sectorOrigin.x + 13 * geo.cell, y}, 1.0f, c);
         }
-    // Sprites are copied opaque unless the system type masks black (Mask Background Objs).
-    const bool keyed = type.maskBackgroundObjects;
+    // Stellar objects are copied opaque unless the system type masks black (Mask
+    // Background Objs), or at 800x600 while the grid shows; vehicles are always keyed.
+    const bool keyed = type.maskBackgroundObjects || (geo.layout->keyWithGrid && grid);
 
-    // Every sprite is drawn 36×36, centred in its cell, never scaled.
-    auto spriteAt = [&](const Sprite& sp, Vec2 c) {
-        if (sp) r.sprite(sp.tex, Rect::fromCenter(c, {kSpriteSize * 0.5f, kSpriteSize * 0.5f}), sp.uv);
+    // Every sprite is drawn 36×36 in its sector's sprite square, never scaled.
+    auto spriteAt = [&](const Sprite& sp, Vec2 topLeft) {
+        if (sp) r.sprite(sp.tex, Rect::fromPosSize(topLeft, {kSpriteSize, kSpriteSize}), sp.uv);
         return static_cast<bool>(sp);
     };
-    auto miniOf = [&](const game::Vehicle& v) {
-        const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
-        return ui.art.shipMini(style, rules.hull(s.design(v.design).hull), keyed, turnsToHeading(rules, s, v) ? glides_.heading(v.id) : 0);
+    auto headingOf = [&](const game::Vehicle& v) {
+        if (!turnsToHeading(rules, s, v)) return 0;
+        return replay_.active() ? replay_.heading(v.id) : glides_.heading(v.id);
     };
+    auto miniOf = [&](const game::Vehicle& v, int heading) {
+        const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
+        return ui.art.shipMini(style, rules.hull(s.design(v.design).hull), true, heading);
+    };
+    auto placeholder = [&](Vec2 c, game::EmpireId owner) { r.triangle(c + Vec2{0, -9}, c + Vec2{-7, 7}, c + Vec2{7, 7}, empireCol(s, owner)); };
 
     if (explored) {
         const ColonizeTech tech = colonizeTech(rules, ui.me());
-        std::map<game::Sector, std::vector<game::ObjectId>> bySector;
-        for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].push_back(id);
-        for (const auto& [sector, ids] : bySector) {
-            game::ObjectId shown = ids.front();
-            for (game::ObjectId id : ids)
-                if (s.galaxy.object(id).kind == game::ObjectKind::Star) shown = id;
-            const game::SpaceObject& o = s.galaxy.object(shown);
-            const Vec2 c = sectorCenter(sector);
-            if (!spriteAt(ui.art.planet(rules.data().sectorObjectTypes[o.sectorType].picture, keyed), c))
-                r.disc(c, 12.0f, o.kind == game::ObjectKind::Star ? Color::hex(0xffe080) : Color::hex(0x8090a0));
-            // Colonies carry the owner's small flag at the top right; planets we could
-            // colonise get the classic star (green: breathable, red: needs domes).
-            for (game::ObjectId id : ids) {
-                // The planet is always drawn; a cloaked colony's mark only when it is seen (spec 01 §6.9).
-                if (const game::Colony* col = s.colony(id); col && game::sight::colonyShown(rules, s, ui.session.player(), id)) {
-                    const Sprite flag = ui.art.flag(s.empire(col->owner).race.style, false);
-                    if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
-                    else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, col->owner));
-                } else if (ui.options().colonizableMarkers && s.galaxy.object(id).kind == game::ObjectKind::Planet &&
-                           colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
-                    const bool breathe = breathableBy(s, ui.session.player(), s.galaxy.object(id));
-                    const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
-                    if (star) r.sprite(star.tex, Rect::fromPosSize(c + Vec2{11, -17}, {7, 7}), star.uv);
-                }
+        for (const ShownSector& sec : sectors_) {
+            if (!sec.view.stellar) continue;
+            const game::SpaceObject& o = s.galaxy.object(*sec.view.stellar);
+            const Vec2 square = spriteSquare(sec.sector);
+            if (!spriteAt(ui.art.planet(rules.data().sectorObjectTypes[o.sectorType].picture, keyed), square))
+                r.disc(square + Vec2{18, 18}, 12.0f, o.kind == game::ObjectKind::Star ? Color::hex(0xffe080) : Color::hex(0x8090a0));
+        }
+        // Colonies carry the owner's small flag at the top right; planets we could
+        // colonise get the classic star (green: breathable, red: needs domes).
+        for (game::ObjectId id : sys.objects) {
+            const game::SpaceObject& o = s.galaxy.object(id);
+            const Vec2 c = sectorCenter(o.sector);
+            const game::Colony* col = s.colony(id);
+            std::optional<game::EmpireId> owner = col ? std::optional(col->owner) : std::nullopt;
+            if (replay_.active()) owner = replay_.colonyOwner(id);
+            // The planet is always drawn; a cloaked colony's flag only when it is seen (spec 01 §6.9).
+            if (owner && !game::sight::colonyShown(rules, s, ui.session.player(), id)) owner.reset();
+            if (owner) {
+                const Sprite flag = ui.art.flag(s.empire(*owner).race.style, false);
+                if (flag) r.sprite(flag.tex, Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), flag.uv);
+                else r.rect(Rect::fromPosSize(c + Vec2{4, -17}, {14, 10}), empireCol(s, *owner));
+            } else if (ui.options().colonizableMarkers && o.kind == game::ObjectKind::Planet &&
+                       colonizeProblem(rules, s, ui.session.player(), id, tech).empty()) {
+                const bool breathe = breathableBy(s, ui.session.player(), o);
+                const Sprite star = ui.art.region("Pictures/Game/General.bmp", breathe ? 237 : 261, 16, 7, 7);
+                if (star) r.sprite(star.tex, Rect::fromPosSize(c + Vec2{11, -17}, {7, 7}), star.uv);
             }
         }
     }
 
-    // Vehicles (§2.4): a single-owner stack shows one ship sprite; a sector with
-    // several empires, or ships beside a planet or other object, shows small
-    // flags instead (their counts are drawn by overlayText). A ship gliding to
-    // its square, or moved by the movement log, is drawn on the way instead.
+    // Vehicles (§2.4 "Sector contents"): one owner without a stellar object
+    // shows its largest vehicle (or the fleet's icon), otherwise the owners'
+    // small flags stacked down the left edge; counts are drawn by overlayText.
+    for (const ShownSector& sec : sectors_) {
+        const SectorView& view = sec.view;
+        const Vec2 square = spriteSquare(sec.sector);
+        if (view.flags) {
+            for (size_t i = 0; i < view.owners.size(); ++i) {
+                const Rect box = Rect::fromPosSize(square + Vec2{0, float(view.flagStep) * float(i)}, {14, 10});
+                if (const Sprite flag = ui.art.flag(s.empire(view.owners[i].empire).race.style, false)) r.sprite(flag.tex, box, flag.uv);
+                else r.rect(box, empireCol(s, view.owners[i].empire));
+            }
+            continue;
+        }
+        if (!view.sprite) continue;
+        const auto it = std::find_if(sec.vehicles.begin(), sec.vehicles.end(), [&](const game::Vehicle* v) { return v->id == *view.sprite; });
+        if (it == sec.vehicles.end()) continue;
+        const game::Vehicle& v = **it;
+        const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
+        const Sprite sprite = view.fleetIcon ? ui.art.groupMini(style, "Fleet", true) : miniOf(v, headingOf(v));
+        if (!spriteAt(sprite, square)) placeholder(square + Vec2{18, 18}, v.owner);
+        // A cloaked vehicle shown this way: a 1 px dotted circle inscribed in its square.
+        if (view.cloakRing) {
+            const Color c = v.owner.valid() ? empireCol(s, v.owner) : rgb(map_style::kCloakNoColor);
+            const Vec2 centre = square + Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f};
+            constexpr int kDots = 56;
+            for (int d = 0; d < kDots; ++d) {
+                const float a = float(d) * 2.0f * std::numbers::pi_v<float> / float(kDots);
+                const Vec2 p = centre + Vec2{std::cos(a), std::sin(a)} * (kSpriteSize * 0.5f - 0.5f);
+                r.rect(Rect::fromPosSize({std::floor(p.x), std::floor(p.y)}, {1, 1}), c);
+            }
+        }
+    }
+
+    // Ships on their way: gliding to their new square, or moved by the replay
+    // (turning in 5° steps, then sliding).
+    const double now = ui.time;
     auto largestFirst = [&](std::vector<const game::Vehicle*>& list) {
         std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
             return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
         });
     };
-    const double now = ui.time;
-    std::map<game::Sector, std::vector<const game::Vehicle*>> ships;
-    std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
-    std::map<std::pair<float, float>, std::vector<const game::Vehicle*>> replaying;
-    for (const game::Vehicle& v : s.vehicles) {
-        if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
-        if (const auto at = replay_.position(v.id, v.location, shown_, now)) replaying[{at->x, at->y}].push_back(&v);
-        else if (const ShipGlides::Glide* g = glides_.find(v.id, now))
-            gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
-        else
-            ships[v.location.sector].push_back(&v);
-    }
-    auto moving = [&](std::vector<const game::Vehicle*>& list, Vec2 at) {
-        largestFirst(list);
-        if (!spriteAt(miniOf(*list.front()), at))
-            r.triangle(at + Vec2{0, -9}, at + Vec2{-7, 7}, at + Vec2{7, 7}, empireCol(s, list.front()->owner));
-    };
-    for (auto& [key, list] : gliding) moving(list, gridPoint(ShipGlides::position(*glides_.find(list.front()->id, now), now)));
-    for (auto& [key, list] : replaying) moving(list, gridPoint(Vec2{key.first, key.second}));
-    for (auto& [sector, list] : ships) {
-        const Vec2 c = sectorCenter(sector);
-        largestFirst(list);
-        std::vector<game::EmpireId> owners;
-        for (const game::Vehicle* v : list)
-            if (std::find(owners.begin(), owners.end(), v->owner) == owners.end()) owners.push_back(v->owner);
-        const bool flags = owners.size() > 1 || (explored && !objectsAt(ui, sector).empty());
-        if (flags) {
-            float dx = 0;
-            for (game::EmpireId e : owners) {
-                int n = 0;
-                for (const game::Vehicle* v : list) n += v->owner == e ? std::max(1, v->count) : 0;
-                const Rect box = Rect::fromPosSize(c + Vec2{-18 + dx, 6}, {14, 10});
-                if (const Sprite flag = ui.art.flag(s.empire(e).race.style, false)) r.sprite(flag.tex, box, flag.uv);
-                else r.rect(box, empireCol(s, e));
-                dx += 15 + 6 + 6 * float(std::to_string(n).size());
+    if (replay_.active()) {
+        for (const game::Vehicle& v : replay_.vehicles()) {
+            if (v.location.system != shown_ || !replaySeen_.contains(v.id)) continue;
+            const auto m = replay_.motion(v.id, now);
+            if (!m) continue;
+            const Vec2 c = gridPoint(m->at);
+            const Sprite sp = miniOf(v, 0);
+            if (!sp) {
+                placeholder(c, v.owner);
+                continue;
             }
-        } else if (!spriteAt(miniOf(*list.front()), c)) {
-            r.triangle(c + Vec2{0, -9}, c + Vec2{-7, 7}, c + Vec2{7, 7}, empireCol(s, list.front()->owner));
+            // Any angle while turning: the quad turned about its centre, sampled like the art.
+            const float a = float(m->angle) * std::numbers::pi_v<float> / 180.0f, ca = std::cos(a), sa = std::sin(a);
+            auto at = [&](float x, float y) { return c + Vec2{x * ca - y * sa, x * sa + y * ca}; };
+            const float h = kSpriteSize * 0.5f;
+            r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
         }
-        // A cloaked ship: a ring around its cell in its empire's colour.
-        for (const game::Vehicle* v : list)
-            if (v->status == game::VehicleStatus::Cloaked) {
-                r.ring(c, kSpriteSize * 0.5f + 2.0f, 1.0f, v->owner.valid() ? empireCol(s, v->owner) : rgb(map_style::kCloakNoColor));
-                break;
-            }
+    } else {
+        std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
+        for (const game::Vehicle& v : s.vehicles) {
+            if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
+            if (const ShipGlides::Glide* g = glides_.find(v.id, now)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
+        }
+        for (auto& [key, list] : gliding) {
+            largestFirst(list);
+            const Vec2 at = gridPoint(ShipGlides::position(*glides_.find(list.front()->id, now), now));
+            if (!spriteAt(miniOf(*list.front(), headingOf(*list.front())), at - Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f})) placeholder(at, list.front()->owner);
+        }
     }
 
     // Movement line for the selected own vehicle.
-    if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player()) {
+    if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player() && !replay_.active()) {
         const game::Fleet* f = s.fleet(v->fleet);
         const auto& orders = f ? game::fleetOrders(s, *f) : v->orders;
         game::Location from = v->location;
@@ -1713,11 +1982,13 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     if (sector_) brackets(*sector_, kSelectYellow);
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
-    // Waypoints, always marked: a cyan frame around the sector (the number is drawn by overlayText).
+    // Waypoints and tagged minefields: a cyan 1 px rectangle on the cell's edges
+    // (the number or "M" is drawn by overlayText).
+    auto cellFrame = [&](game::Sector sec) { r.rectOutline(Rect::fromPosSize(cellOrigin(sec), {geo.cell, geo.cell}), 1.0f, rgb(map_style::kWaypoint)); };
     for (const auto& w : ui.me().waypoints)
-        if (w.set && w.location.system == shown_)
-            r.rectOutline(Rect::fromPosSize(cellOrigin(w.location.sector) + Vec2{1, 1}, {kSectorSize - 2, kSectorSize - 2}), 1.0f,
-                          rgb(map_style::kWaypoint));
+        if (w.set && w.location.system == shown_) cellFrame(w.location.sector);
+    for (const game::Location& m : ui.me().taggedMinefields)
+        if (m.system == shown_) cellFrame(m.sector);
 }
 
 void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {

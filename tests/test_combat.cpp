@@ -727,6 +727,37 @@ TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the 
     CHECK(s.vehicle(prey) == nullptr);
 }
 
+TEST_CASE("combat: the record fixes the Log's damage and the survivors when the battle ends") {
+    // Spec 06 §4.1, §7 Q43 (confirmed: binary): the damage against the
+    // design's whole structure, damage from before the battle included.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    const DesignId hunterDesign = frigate(s, ar.a, "Hunter", 3, {"CT Big Gun", "CT Big Armor"});
+    const DesignId preyDesign = frigate(s, ar.b, "Prey", 1, {});
+    const VehicleId hunter = spawn(s, hunterDesign, ar.loc);
+    const VehicleId prey = spawn(s, preyDesign, ar.loc);
+    // The hunter starts the battle with a destroyed part.
+    Vehicle& h = *s.vehicle(hunter);
+    const Design& hd = s.design(hunterDesign);
+    h.damage.assign(hd.entries.size(), 0);
+    const size_t last = hd.entries.size() - 1;
+    h.damage[last] = combat::detail::combatStructure(combatRules(), hd.entries[last]);
+    const int full = combat::detail::designStructure(combatRules(), hd);
+    const int remaining = combat::detail::remainingStructure(combatRules(), s, h);
+    REQUIRE(remaining < full);
+
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, ar.loc);
+    REQUIRE(s.combats.size() == 1);
+    const CombatRecord& rec = s.combats.front();
+    REQUIRE(rec.pieces.size() == 2);
+    CHECK(s.vehicle(prey)->count == 0);
+    CHECK(rec.pieces[0].damage == logDamagePercent(full, remaining));   // the unarmed prey never hit back
+    CHECK(rec.pieces[0].survivor == ar.a);
+    CHECK(rec.pieces[1].damage >= 0);
+    CHECK_FALSE(rec.pieces[1].survivor.valid());                       // destroyed: "Dead"
+}
+
 TEST_CASE("combat: unarmed sides end in a stalemate after one turn fewer than the setting") {
     Arena ar = makeArena();
     GameState& s = ar.s;

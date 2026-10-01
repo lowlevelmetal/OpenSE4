@@ -466,7 +466,7 @@ private:
 
     void loadMapPopup(MenuContext& ctx) {
         ImGui::SetNextWindowSize(ctx.size({520, 420}), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(ctx.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ctx.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         if (!ImGui::BeginPopupModal("Load Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
         ImGui::PushStyleColor(ImGuiCol_Text, kDim);
         ImGui::TextWrapped("Map files in %s", mapsDir().string().c_str());
@@ -500,7 +500,7 @@ private:
 
     void saveMapPopup(MenuContext& ctx) {
         ImGui::SetNextWindowSize(ctx.size({440, 150}), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(ctx.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ctx.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         if (!ImGui::BeginPopupModal("Save Map", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
         ImGui::TextColored(kLabelBlue, "Map name");
         ImGui::SetNextItemWidth(-FLT_MIN);
@@ -861,7 +861,7 @@ private:
 
     void addExistingPopup(MenuContext& ctx) {
         ImGui::SetNextWindowSize(ctx.size({520, 460}), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(ctx.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ctx.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         if (!ImGui::BeginPopupModal("Add Existing Empire", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) return;
         const std::filesystem::path dir = userDataDir() / "empires";
         ImGui::PushStyleColor(ImGuiCol_Text, kDim);

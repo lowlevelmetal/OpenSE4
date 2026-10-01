@@ -30,6 +30,8 @@ class ScrapScreen final : public Screen {
 public:
     explicit ScrapScreen(const ScreenArgs& args) : planet_(args.planet), facilities_(!args.vehicle.valid() && args.planet.valid()) {
         if (args.vehicle.valid()) selected_.push_back(args.vehicle);
+        // A tagged group opens the window on its sector with nothing selected (spec 06 §7 Q52).
+        if (!args.vehicle.valid() && !args.planet.valid() && args.location) where_ = args.location;
     }
 
     bool draw(UiContext& ui) override {
@@ -38,9 +40,11 @@ public:
         if (!d.open()) return d.keepOpen();
         const game::Colony* colony = where_ ? coloniesHere(ui) : nullptr;
         if (!colony) facilities_ = false;
+        // Only listed vehicles stay selected: none in a fleet, none cloaked
+        // (spec 03 §15, §19 Q74).
         std::erase_if(selected_, [&](game::VehicleId id) {
             const game::Vehicle* v = ownVehicle(ui, id);
-            return !v || !where_ || v->location != *where_;
+            return !v || !where_ || v->location != *where_ || !listed(*v);
         });
         if (colony) std::erase_if(slots_, [&](size_t i) { return i >= colony->facilities.size(); });
 
@@ -182,8 +186,8 @@ private:
         if (d.button("Scrap", yard && any)) {
             game::Resources value;
             for (const game::Vehicle* v : sel) value += scrapValue(r, s, *v);
-            ask(ui, Action::Scrap, "Scrap",
-                std::format("Scrap {} vehicle{}? The empire gets back {} minerals, {} organics and {} radioactives.", sel.size(),
+            ask(ui, Action::Scrap,
+                std::format("Scrap {} vehicle{} for their raw materials? The empire gets back {} minerals, {} organics and {} radioactives.", sel.size(),
                             sel.size() == 1 ? "" : "s", formatNumber(value.v[0]), formatNumber(value.v[1]), formatNumber(value.v[2])));
         }
         d.button("Analyze", false);
@@ -206,8 +210,7 @@ private:
             if (done > 0) status_.ok(std::format("{} vehicle{} back in service.", done, done == 1 ? "" : "s"));
         }
         if (d.button("Self-Destruct", anyDestruct)) {
-            ask(ui, Action::SelfDestruct, "Self-Destruct",
-                "Order the selected vehicles to self-destruct? They are destroyed when the turn is processed.");
+            ask(ui, Action::SelfDestruct, "Order the selected vehicles to destroy themselves? They are lost when the order is carried out.");
         }
         d.button("Fire On", false);
         tooltip("Destroying your own vehicles by gunfire is not supported by the engine yet.");
@@ -279,10 +282,9 @@ private:
     }
 
     void facilityButtons(UiContext& ui, Dialog& d, const game::Colony& c) {
-        if (d.button("Scrap Facilities", !slots_.empty())) {
-            ask(ui, Action::ScrapFacilities, "Scrap Facilities",
-                std::format("Scrap {} facilit{} on {}?", slots_.size(), slots_.size() == 1 ? "y" : "ies", ui.state().galaxy.object(c.planet).name));
-        }
+        // The facility check list never asks, whatever "confirm scrapping" says (spec 06 §7 Q46).
+        if (d.button("Scrap Facilities", !slots_.empty())) perform(ui, Action::ScrapFacilities);
+        (void)c;
         if (d.button("Select All", !c.facilities.empty())) {
             slots_.clear();
             for (size_t i = 0; i < c.facilities.size(); ++i) slots_.push_back(i);
@@ -294,12 +296,15 @@ private:
 
     enum class Action { Scrap, SelfDestruct, ScrapFacilities };
 
-    // Scrapping and self-destruction ask first while the Empire Options'
-    // "confirm scrapping" is on (spec 06 §1.9); otherwise they act at once.
-    void ask(UiContext& ui, Action a, const char* title, std::string text) {
+    // Scrap and Self-Destruct (with Analyze and Fire On, which our engine does
+    // not have yet) ask a "Confirm Action" Yes/No first while the Empire
+    // Options' "confirm scrapping" is on; otherwise they act at once.
+    // Retrofit, Mothball, Unmothball and the facility check lists never ask
+    // (spec 06 §7 Q46).
+    void ask(UiContext& ui, Action a, std::string text) {
         if (ui.options().confirmScrap) {
             confirmAction_ = a;
-            confirm_.open(title, std::move(text));
+            confirm_.open("Confirm Action", std::move(text));
         } else {
             perform(ui, a);
         }
@@ -390,7 +395,7 @@ public:
         switch (step_) {
             case Step::Confirm:
                 if (const auto a = yesNoBox(ui, "Abandon Planet###abandon1",
-                                            std::format("Abandon {}? Its people leave and the planet is free for anyone to colonize.", name))) {
+                                            std::format("Abandon {}? Its people leave.", name))) {
                     if (!*a) return false;
                     const int64_t limit = ui.rules().setting("Maximum Population For Abandon Planet Order", 50);
                     if (c->totalPopulation() > limit) {
@@ -406,7 +411,7 @@ public:
             case Step::Scrap:
                 if (const auto a = yesNoBox(ui, "Abandon Planet###abandon2",
                                             std::format("Scrap the {} facilit{} on {} first? Scrapping returns part of their cost now; "
-                                                        "otherwise they stay on the planet for its next owner.",
+                                                        "otherwise they stay, and the planet stays your colony with nobody living there.",
                                                         c->facilities.size(), c->facilities.size() == 1 ? "y" : "ies", name)))
                     abandon(ui, *a);
                 break;
@@ -462,7 +467,7 @@ private:
     }
 
     static bool beginBox(UiContext& ui, const char* id) {
-        ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ui.size({420, 0}), ImGuiCond_Always);
         const bool open = ImGui::Begin(id, nullptr,
                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |

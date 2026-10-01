@@ -566,11 +566,14 @@ void decideState(const Rules& r, GameState& s, EmpireId id) {
     }
 }
 
-// Territory: computer players claim theirs anew; the systems they agreed to
-// leave are their systems to avoid.
+// Territory: every empire whose Politics minister is on (every computer
+// player, and a human who turns that minister on) claims its territory anew
+// (spec 06 §7 Q47, confirmed: binary). Computer players also make the systems
+// they agreed to leave their systems to avoid.
 void claimTerritory(const Rules& r, GameState& s, Empire& e) {
-    if (!e.alive || e.kind == PlayerKind::Human) return;
+    if (!politicsOn(e)) return;
     e.claimedSystems = computeTerritory(s, e.id);
+    if (e.kind == PlayerKind::Human) return;
     e.systemsToAvoid = e.aiMemory.avoid;
     std::sort(e.systemsToAvoid.begin(), e.systemsToAvoid.end());
     // The four AI_Settings movement flags become the empire's own Ship

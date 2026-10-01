@@ -194,6 +194,7 @@ public:
             }
             resolveCombat();
             endPursuits();
+            if (ctx_.movementDay) ctx_.movementDay(day, s_);
         }
     }
 

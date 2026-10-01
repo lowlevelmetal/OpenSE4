@@ -37,6 +37,11 @@ struct EmpireSetup {
     // Experience kept with the empire (spec 02 §9): it comes from the empire
     // file, becomes Empire::experience and grows during play. Only shown.
     int experience = 0;
+    // Designs saved with the empire (Save Empire with its designs, spec 06
+    // §7 Q48): the new game gives them to the empire after its starting
+    // designs. Only name, type, hull, entries, strategy and the obsolete
+    // flag are read; ids, owners and statistics are the new game's.
+    std::vector<Design> designs;
 };
 
 struct GameSetup {

@@ -377,12 +377,12 @@ StellarCheck checkStellar(const game::Rules& r, const game::GameState& s, const 
         return c;
     }
     switch (a) {
-        case StellarAction::CreatePlanet: c.reason = "The asteroid field becomes a planet."; break;
-        case StellarAction::DestroyPlanet: c.reason = "The planet becomes an asteroid field."; break;
+        case StellarAction::CreatePlanet: c.reason = "A new planet replaces the asteroid field."; break;
+        case StellarAction::DestroyPlanet: c.reason = "A new asteroid field replaces the planet; its colony is lost."; break;
         case StellarAction::CreateStar: c.reason = "A new star forms in this sector."; break;
         case StellarAction::DestroyStar:
             c.destroysSystem = true;
-            c.reason = "The shockwave destroys everything in the system except warp points, this ship included.";
+            c.reason = "The shockwave turns every planet into an asteroid field and destroys everything else in the system but warp points, this ship included.";
             break;
         case StellarAction::OpenWarpPoint:
             c.needsDestination = true;

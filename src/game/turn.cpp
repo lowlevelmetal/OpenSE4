@@ -130,6 +130,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
     if (s.gameOver) return {};
     if (!s.options.simultaneous) return detail::playTurnBasedTurn(r, s, orders, options);
     TurnContext ctx{r, s, {}, {}, {}};
+    ctx.movementDay = options.movementDay;
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
     s.pendingMood.clear();

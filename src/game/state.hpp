@@ -133,6 +133,13 @@ struct PoliticsMark {
     uint32_t nextMessage = 0;
 };
 
+// Where the Log's Goto takes an entry (spec 06 §4.1, §7 Q41, confirmed:
+// binary): fixed per kind of entry when it is made. Location closes the Log
+// and shows the entry's system with the sector selected (nothing happens when
+// the entry names none); the windows open over the Log. Nothing makes an
+// entry with the last three, which the original's handler also knows.
+enum class LogGoto : uint8_t { None, Location, Research, Intelligence, Empires, ConstructionQueues, EmpireOptions, Designs };
+
 struct LogEntry {
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
@@ -140,6 +147,11 @@ struct LogEntry {
     std::string text;
     std::optional<Location> location;
     std::string picture;  // Events/ picture name, if any
+    // Goto's target; addLog gives Research entries the Research window and
+    // every other entry its location, and callers change it (logGoto).
+    LogGoto target = LogGoto::Location;
+    // A delivered diplomatic message's entry: the message (Send Reply, the details).
+    MessageId message;
 };
 
 // One dated line of an empire's long record, the History window (spec 05
@@ -228,13 +240,20 @@ struct InterfaceOptions {
     bool autoClaimColonized = true;
     // Remembered by the windows.
     uint8_t logFilter = 0;               // 0 All, else LogCategory + 1
-    int32_t logPosition = 0;             // the selected row of the filtered list
+    int32_t logPosition = 0;             // the selected entry's index in the empire's whole log (spec 06 §4.1)
     int32_t logScroll = 0;               // the list's scroll position, in rows
     uint8_t planetsTab = 0;              // the Planets window's tab (0 All)
     bool planetsNoSysToAvoid = false;
     uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
     uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
     bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // The sort keys of the four list windows (spec 06 §7 Q24): five slots of
+    // column numbers each, newest click first; a slot holds column + 1, 0 is
+    // empty. All empty: the window's Name column alone (the default).
+    std::array<uint8_t, 5> planetsSort{};
+    std::array<uint8_t, 5> coloniesSort{};
+    std::array<uint8_t, 5> shipsSort{};
+    std::array<uint8_t, 5> queuesSort{};
     // Combat Replay Options.
     bool replayAnimate = true;
     bool replayFast = false;
@@ -678,7 +697,29 @@ struct CombatPiece {
     std::string name;
     int16_t startX = 0, startY = 0;
     int32_t count = 1;                 // units in a group at the start (seekers: members)
+    // Fixed when the battle ends, for the Log's combat details (spec 06 §4.1,
+    // §7 Q43, confirmed: binary): the Damage percentage (logDamagePercent) of
+    // a piece present when the battle began, -1 for one without a row (a unit
+    // group launched during the battle, a seeker, a neutral obstacle); and the
+    // empire owning it then if it survived (invalid: destroyed, or a planet
+    // whose colony died), from which the Log reads "Dead" and "Taken".
+    int16_t damage = -1;
+    EmpireId survivor;
 };
+
+// The Log's Damage of a piece (spec 06 §4.1, confirmed: binary): 100 less
+// remaining / full in percent rounded half to even; 100 when full is 0 and 0
+// when remaining exceeds full.
+constexpr int logDamagePercent(int64_t full, int64_t remaining) {
+    if (full <= 0) return 100;
+    if (remaining > full) return 0;
+    if (remaining < 0) remaining = 0;
+    const int64_t scaled = remaining * 100;
+    int64_t kept = scaled / full;
+    const int64_t twice = (scaled % full) * 2;
+    if (twice > full || (twice == full && kept % 2 == 1)) ++kept;
+    return static_cast<int>(100 - kept);
+}
 
 // A ground combat fought during a space battle, when troops landed (spec 04
 // §11, §13): what the Ground Combat window shows (spec 06 §1.6).
@@ -852,8 +893,10 @@ struct PlayerTurn {
     std::vector<EntryQuestion> questions;
 };
 
-// Facilities an abandoned colony left on its planet (spec 02 §5: the player
-// may leave them for a later owner): the next colony founded there gets them.
+// Facilities left on a planet for a later owner. Nothing makes these any
+// more: an abandoned colony that keeps facilities stays with its owner (spec
+// 06 §7 Q47, confirmed: binary). The list stays in the state, always empty in
+// a new game, so that the save format is unchanged.
 struct LeftFacilities {
     ObjectId planet;
     std::vector<uint32_t> facilities;   // Facilities.txt indices
@@ -991,9 +1034,16 @@ void leaveFleet(GameState& s, Vehicle& v);
 // Every member leaves the fleet and loses its orders; the fleet is deleted.
 void disbandFleet(GameState& s, FleetId id);
 
-// Appends to an empire's log for the current turn.
-void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
-            std::optional<Location> where = std::nullopt, std::string picture = {});
+// Appends to an empire's log for the current turn and returns the entry (null
+// for an invalid empire; valid until the log changes again). Goto's target is
+// the Research window for Research entries, else the entry's location.
+LogEntry* addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
+                 std::optional<Location> where = std::nullopt, std::string picture = {});
+// Sets the Goto target of an entry addLog just made (null: nothing).
+inline LogEntry* logGoto(LogEntry* entry, LogGoto target) {
+    if (entry) entry->target = target;
+    return entry;
+}
 
 // Appends a line dated the current turn to an empire's history record.
 // `about` is the empire the event concerns (invalid: the General list).

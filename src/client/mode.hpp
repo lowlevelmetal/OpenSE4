@@ -34,6 +34,8 @@ public:
     virtual std::string rendererInfo() const = 0;
     virtual gfx::Backend backend() const = 0;
     virtual float fps() const = 0;
+    // The status bar's minimize button (docs/spec/06 §2.2).
+    virtual void minimize() {}
 };
 
 // Shell services available to a mode.

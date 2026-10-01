@@ -201,9 +201,13 @@ TEST_CASE("classic ui: Send Colony Ship takes the available colony ship with the
     s.vehicle(nearId)->movement = 3;
     CHECK(chooseColonyShip(r, s, kMe, rock) == nearId);
     s.options.simultaneous = true;
+    // The planet is not checked: an already colonized planet of the right type still gets a ship.
+    const ObjectId ours = homeworld(s, kMe).planet;
+    if (s.galaxy.object(ours).surface == s.galaxy.object(rock).surface) CHECK(chooseColonyShip(r, s, kMe, ours).has_value());
 
-    // Load Cargo (only while it carries no population), Move To, Colonize.
-    const cmd::SetOrders orders = sendColonyShipOrders(s, nearId, rock);
+    // Load Cargo (only while it has cargo space and carries no population), Move To, Colonize.
+    REQUIRE(vehicleCargoCapacity(r, s, *s.vehicle(nearId)) > 0);
+    const cmd::SetOrders orders = sendColonyShipOrders(r, s, nearId, rock);
     REQUIRE(orders.orders.size() == 3);
     CHECK(orders.orders[0].kind == OrderKind::LoadCargo);
     CHECK(orders.orders[0].location == s.vehicle(nearId)->location);
@@ -213,7 +217,7 @@ TEST_CASE("classic ui: Send Colony Ship takes the available colony ship with the
     CHECK(orders.orders[2].kind == OrderKind::Colonize);
     CHECK(orders.orders[2].object == rock);
     s.vehicle(nearId)->cargo.population.push_back({kMe, 1});
-    CHECK(sendColonyShipOrders(s, nearId, rock).orders.size() == 2);
+    CHECK(sendColonyShipOrders(r, s, nearId, rock).orders.size() == 2);
     s.vehicle(nearId)->cargo.population.clear();
 
     CHECK(apply(r, s, kMe, orders).ok);
@@ -253,23 +257,32 @@ TEST_CASE("classic ui: the Planets statistics and the sort history") {
     CHECK(st.freeBreathable <= st.free);
     CHECK(st.colonyShips == 0);
 
-    // The latest click is the first key; earlier ones break ties; at most five.
-    SortHistory h(1);
-    CHECK(h.columns() == std::vector<int>{1});
-    h.click(3);
-    h.click(2);
-    h.click(3);
-    CHECK(h.columns() == std::vector<int>{3, 2, 1});
-    for (int c : {4, 5, 6}) h.click(c);
-    CHECK(h.columns() == std::vector<int>{6, 5, 4, 3, 2});
+    // Five slots per window, newest click first (spec 06 §7 Q24): a never-sorted
+    // window sorts by Name alone; a click shifts the slots down and drops the
+    // fifth; an earlier copy of the column stays.
+    SortSlots slots{};
+    CHECK(sortKeys(slots, 1) == std::vector<int>{1});
+    slots = clickSort(slots, 3, 1);
+    CHECK(sortKeys(slots, 1) == std::vector<int>{3, 1});
+    CHECK(slots == SortSlots{4, 2, 0, 0, 0});  // stored as column + 1, 0 empty
+    slots = clickSort(slots, 2, 1);
+    slots = clickSort(slots, 3, 1);
+    CHECK(sortKeys(slots, 1) == std::vector<int>{3, 2, 3, 1});
+    // Clicking the first key again changes nothing on screen but pushes the oldest key out.
+    slots = clickSort(slots, 3, 1);
+    slots = clickSort(slots, 3, 1);
+    CHECK(sortKeys(slots, 1) == std::vector<int>{3, 3, 3, 2, 3});
+    for (int c : {4, 5, 6, 0, 2}) slots = clickSort(slots, c, 1);
+    CHECK(sortKeys(slots, 1) == std::vector<int>{2, 0, 6, 5, 4});
+    // Empty slots are skipped.
+    CHECK(sortKeys(SortSlots{0, 5, 0, 2, 0}, 1) == std::vector<int>{4, 1});
     struct Row {
         int a, b;
     };
     std::vector<Row> rows{{1, 2}, {0, 9}, {1, 1}, {0, 3}};
-    SortHistory two(0);
-    two.click(1);  // b highest first ...
-    two.click(0);  // ... within a lowest first
-    two.sort(rows, [](int column, const Row& x, const Row& y) {
+    SortSlots two = clickSort(SortSlots{}, 1, 0);  // b highest first ...
+    two = clickSort(two, 0, 0);                     // ... within a lowest first
+    sortByKeys(rows, sortKeys(two, 0), [](int column, const Row& x, const Row& y) {
         if (column == 0) return x.a == y.a ? 0 : x.a < y.a ? -1 : 1;
         return x.b == y.b ? 0 : x.b > y.b ? -1 : 1;
     });
@@ -410,10 +423,22 @@ TEST_CASE("classic ui: queue lists and item names") {
     CHECK(queueOf(s, kMe, queues[1].target) == &s.vehicle(tender)->queue);
     CHECK(queueOf(s, kOther, queues[1].target) == nullptr);
 
+    // "<name> x <count>" for every kind of item; upgrades are "Upg. <facility>" (spec 06 §1.8.2, §7 Q48).
     QueueItem unit;
     unit.design = yardShip;
     unit.count = 3;
-    CHECK(queueItemName(r, s, unit) == "Yard Tender x3");
+    CHECK(queueItemName(r, s, unit) == "Yard Tender x 3");
+    CHECK(queueItemBaseName(r, s, unit) == "Yard Tender");
+    QueueItem upgrade;
+    upgrade.kind = QueueItem::Kind::Upgrade;
+    upgrade.facility = facilityIndex(r, "Test Mine II");
+    CHECK(queueItemName(r, s, upgrade) == "Upg. Test Mine II");
+    upgrade.count = 2;
+    CHECK(queueItemName(r, s, upgrade) == "Upg. Test Mine II x 2");
+    ConstructionQueue empty;
+    CHECK(underConstructionText(r, s, empty) == "None");
+    empty.items.push_back(unit);
+    CHECK(underConstructionText(r, s, empty) == "Yard Tender x 3");
     const auto ships = designChoices(r, s, kMe, false, false);
     CHECK(std::find(ships.begin(), ships.end(), yardShip) != ships.end());
     s.design(yardShip).obsolete = true;
@@ -442,12 +467,21 @@ TEST_CASE("classic ui: Construction Queues toggles follow a working space yard (
     CHECK(queueCanBuild(r, s, kMe, ship, false));
     CHECK(queueCanBuild(r, s, kMe, ship, true));
     CHECK(queueCanBuild(r, s, kMe, planet, false));
-    // A cloaked yard does not work: the queue moves to Ships.
+    // A cloaked yard does not work: a queue that still holds items is under
+    // Ships; an empty one is not listed (the original empties it at once).
     s.vehicle(tender)->status = VehicleStatus::Cloaked;
+    CHECK_FALSE(kindOf(ship).has_value());
+    QueueItem frigate;
+    frigate.design = yardShip;
+    s.vehicle(tender)->queue.items.push_back(frigate);
     CHECK(kindOf(ship) == QueueKind::Ship);
     CHECK_FALSE(workingVehicleYard(r, s, *s.vehicle(tender)));
     CHECK_FALSE(queueCanBuild(r, s, kMe, ship, false));
+    // Mothballed vehicles are never listed, even with items queued.
+    s.vehicle(tender)->status = VehicleStatus::Mothballed;
+    CHECK_FALSE(kindOf(ship).has_value());
     s.vehicle(tender)->status = VehicleStatus::Normal;
+    s.vehicle(tender)->queue.items.clear();
     // A colony without a space yard is under Planets; it builds units, not ships.
     Colony& col = homeworld(s, kMe);
     const auto facilities = col.facilities;
@@ -468,12 +502,49 @@ TEST_CASE("classic ui: Construction Queues toggles follow a working space yard (
 }
 
 TEST_CASE("classic ui: queue times in years, mode notes, Multi-Add and similar abilities") {
-    CHECK(queueYearsText(0) == "0.0 Years");
-    CHECK(queueYearsText(3) == "0.3 Years");
-    CHECK(queueYearsText(25) == "2.5 Years");
+    // Time Remaining (spec 06 §7 Q48): years in lower case; 0 turns shows as one.
+    CHECK(queueYearsText(0) == "0.1 years");
+    CHECK(queueYearsText(1) == "0.1 years");
+    CHECK(queueYearsText(3) == "0.3 years");
+    CHECK(queueYearsText(25) == "2.5 years");
     CHECK(queueYearsText(-1) == "Never");
     CHECK(queueYearsText(kNeverTurns) == "Never");
-    CHECK(queueYearsText(kNeverTurns - 1) == "999.8 Years");
+    CHECK(queueYearsText(kNeverTurns - 1) == "999.8 years");
+    // The largest ceil(left / rate) over the resources produced; a resource with
+    // no rate does not count; Never when no resource is produced.
+    CHECK(timeRemainingTurns(Resources{6000, 0, 0}, Resources{2000, 0, 0}) == 3);
+    CHECK(timeRemainingTurns(Resources{6001, 0, 0}, Resources{2000, 0, 0}) == 4);
+    CHECK(timeRemainingTurns(Resources{6000, 500, 0}, Resources{2000, 0, 0}) == 3);
+    CHECK(timeRemainingTurns(Resources{600, 500, 90}, Resources{200, 100, 10}) == 9);
+    CHECK(timeRemainingTurns(Resources{0, 0, 0}, Resources{10, 10, 10}) == 0);
+    CHECK(timeRemainingTurns(Resources{100, 0, 0}, Resources{}) == kNeverTurns);
+    CHECK(timeRemainingTurns(Resources{100'000'000, 0, 0}, Resources{1, 0, 0}) == kNeverTurns);
+
+    {
+        // The texts of the reports, the Colonies list and the queue rows.
+        const Rules& rr = engineRules();
+        GameState gs = newEngineGame(3, 2, 12);
+        Colony& home = homeworld(gs, kMe);
+        const cmd::QueueTarget target{home.planet, {}};
+        home.queue.items.clear();
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, Resources{100, 100, 100}).empty());
+        QueueItem mine;
+        mine.kind = QueueItem::Kind::Facility;
+        mine.facility = facilityIndex(rr, "Test Mine");
+        home.queue.items.push_back(mine);
+        const Resources cost = displayCost(rr, gs, kMe, target, mine);
+        REQUIRE(cost.v[0] > 0);
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, Resources{}) == "Never");
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, Resources{cost.v[0], cost.v[1], cost.v[2]}) == "0.1 years");
+        // A third of the cost per turn: 0.3 years.
+        const Resources third{std::max<int64_t>(1, (cost.v[0] + 2) / 3), std::max<int64_t>(1, (cost.v[1] + 2) / 3), std::max<int64_t>(1, (cost.v[2] + 2) / 3)};
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, third) == "0.3 years");
+        home.queue.items.front().spent = cost;  // fully paid: 0 turns shows as one
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, Resources{1, 1, 1}) == "0.1 years");
+        home.queue.onHold = true;
+        CHECK(timeRemainingText(rr, gs, kMe, target, home.queue, Resources{1, 1, 1}) == "On Hold");
+        CHECK(underConstructionText(rr, gs, home.queue) == "Test Mine");
+    }
 
     ConstructionQueue q;
     CHECK(queueModeNote(q).empty());
@@ -520,6 +591,43 @@ TEST_CASE("classic ui: queue times in years, mode notes, Multi-Add and similar a
     CHECK(same.front() == "Plague Prevention - System");
     CHECK(similarSystemAbilities(r, s, kMe, homePlanet, mine).empty());  // not system-wide
     CHECK(similarSystemAbilities(r, s, kOther, homePlanet, medical).empty());  // not their colony
+    // A queued facility does not count, a built one does.
+    Colony& next = *s.colony(neighbour);
+    next.facilities.pop_back();
+    QueueItem lab;
+    lab.kind = QueueItem::Kind::Facility;
+    lab.facility = medical;
+    next.queue.items.push_back(lab);
+    CHECK(similarSystemAbilities(r, s, kMe, homePlanet, medical).empty());
+    // The queue's own colony counts too.
+    homeworld(s, kMe).facilities.push_back(medical);
+    CHECK(similarSystemAbilities(r, s, kMe, homePlanet, medical).size() == 1);
+    // Exactly 18 system-wide abilities count; the planet value and conditions
+    // changes and the "System - ..." ones do not.
+    int counted = 0;
+    for (int k = 0; k < int(AbilityKind::Unknown); ++k) counted += similarAbilityCounts(AbilityKind(k));
+    CHECK(counted == 18);
+    CHECK(similarAbilityCounts(AbilityKind::PlaguePreventionSystem));
+    CHECK(similarAbilityCounts(AbilityKind::ResourceGenModSystemOrganics));
+    CHECK(similarAbilityCounts(AbilityKind::ShieldModifierSystem));
+    CHECK_FALSE(similarAbilityCounts(AbilityKind::PlanetValueChangeSystem));
+    CHECK_FALSE(similarAbilityCounts(AbilityKind::PlanetConditionsChangeSystem));
+    CHECK_FALSE(similarAbilityCounts(AbilityKind::SystemDamage));
+
+    // Reorder Queue: the moves put the entries in the order the reorder list returns.
+    auto applyMoves = [](std::vector<size_t> order) {
+        std::vector<size_t> items(order.size());
+        for (size_t i = 0; i < items.size(); ++i) items[i] = i;
+        for (const auto& [from, to] : reorderMoves(order)) {
+            const size_t x = items[from];
+            items.erase(items.begin() + std::ptrdiff_t(from));
+            items.insert(items.begin() + std::ptrdiff_t(to), x);
+        }
+        return items;
+    };
+    CHECK(reorderMoves({0, 1, 2}).empty());
+    for (const std::vector<size_t>& order : std::vector<std::vector<size_t>>{{2, 0, 1}, {1, 0}, {3, 2, 1, 0}, {0, 2, 1, 3}, {1, 3, 0, 2}})
+        CHECK(applyMoves(order) == order);
 }
 
 TEST_CASE("classic ui: status icons and this turn's orders") {
@@ -629,4 +737,20 @@ TEST_CASE("classic ui: the Planets window leaves out a cloaked colony's planet i
     mine.cloaked = true;
     const auto all = surveyPlanets(r, s, kMe);
     CHECK(std::any_of(all.begin(), all.end(), [&](const PlanetInfo& p) { return p.id == mine.planet && p.own; }));
+}
+
+TEST_CASE("classic ui: a cloaked colony's queue is listed under Planets, its yard not working (spec 06 §1.8.2, spec 01 §6.9)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 2, 12);
+    Colony& home = homeworld(s, kMe);
+    REQUIRE(colonyHasSpaceYard(r, home));
+    auto kindOf = [&]() {
+        for (const QueueEntry& q : empireQueues(r, s, kMe))
+            if (q.target.planet == home.planet) return q.kind;
+        FAIL("no queue");
+        return QueueKind::Planet;
+    };
+    CHECK(kindOf() == QueueKind::PlanetYard);
+    home.cloaked = true;
+    CHECK(kindOf() == QueueKind::Planet);
 }

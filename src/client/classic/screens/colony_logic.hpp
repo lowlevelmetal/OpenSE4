@@ -9,6 +9,8 @@
 #include "game/state.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -57,14 +59,15 @@ struct ColonyShip {
 };
 std::vector<ColonyShip> colonyShips(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 
-// Send Colony Ship: among the available colony ships that can colonize the
-// planet's type (in a turn-based game only those with movement left), the
-// one with the shortest route to it (the first such ship on a tie). Nothing
-// when none can go.
+// Send Colony Ship (spec 06 §7 Q25, confirmed: binary): among the available
+// colony ships that can colonize the planet's type (in a turn-based game
+// only those with movement left), the one with the shortest route to it
+// (the first such ship in vehicle order on a tie). Nothing when none can go.
+// Whether the planet is already colonized is not checked.
 std::optional<game::VehicleId> chooseColonyShip(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet);
-// Its orders: Load Cargo of population where it is (only while it carries
-// none), Move To the planet, Colonize.
-game::cmd::SetOrders sendColonyShipOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet);
+// Its orders: Load Cargo of population where it is (only when it has cargo
+// space and carries no population), Move To the planet, Colonize.
+game::cmd::SetOrders sendColonyShipOrders(const game::Rules& r, const game::GameState& s, game::VehicleId ship, game::ObjectId planet);
 
 // ---- Planets window (spec 06 §1.8.1) ----------------------------------------------------------
 
@@ -115,29 +118,28 @@ struct PlanetStatistics {
 PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, const std::vector<PlanetInfo>& planets,
                                   const std::vector<ColonyShip>& ships);
 
-// Sorting by the latest header clicks (spec 06 §1.8.1, §1.8.2): each column
-// has a fixed direction; the last column clicked is the first key and the
-// ones clicked before it break ties, up to five (inferred).
-class SortHistory {
-public:
-    static constexpr size_t kKeys = 5;
-    explicit SortHistory(int defaultColumn) : columns_{defaultColumn} {}
-    void click(int column);
-    const std::vector<int>& columns() const { return columns_; }
-    // `compare(column, a, b)` is negative, zero or positive in the column's
-    // own direction. A stable sort: equal rows keep their order.
-    template <class Row, class Compare>
-    void sort(std::vector<Row>& rows, Compare&& compare) const {
-        std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) {
-            for (int c : columns_)
-                if (const int d = compare(c, a, b); d != 0) return d < 0;
-            return false;
-        });
-    }
-
-private:
-    std::vector<int> columns_;
-};
+// Sorting by the latest header clicks (spec 06 §7 Q24, confirmed: binary).
+// Each list window keeps five slots of column numbers with the empire
+// (InterfaceOptions::planetsSort and the others): a slot holds column + 1,
+// 0 is empty, and all-empty stands for the window's start, Name alone. A
+// click shifts every slot down by one, drops the fifth and puts the clicked
+// column first; an earlier copy of the same column stays (so a repeated
+// click pushes the oldest key out). Empty slots are skipped. Each column
+// sorts in its own fixed direction; a second click never reverses it.
+using SortSlots = std::array<uint8_t, 5>;
+// The keys in order, newest first: the Name column alone while every slot is empty.
+std::vector<int> sortKeys(const SortSlots& slots, int nameColumn);
+SortSlots clickSort(SortSlots slots, int column, int nameColumn);
+// Sorts by the keys; `compare(column, a, b)` is negative, zero or positive in
+// the column's own direction. (Stable, which the original is not: harmless.)
+template <class Row, class Compare>
+void sortByKeys(std::vector<Row>& rows, const std::vector<int>& keys, Compare&& compare) {
+    std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) {
+        for (int c : keys)
+            if (const int d = compare(c, a, b); d != 0) return d < 0;
+        return false;
+    });
+}
 // Case-insensitive comparison of names (A to Z): negative, zero or positive.
 int compareNames(std::string_view a, std::string_view b);
 
@@ -177,9 +179,11 @@ struct QueueEntry {
     std::string name;
 };
 
-// Every queue the empire has: all own colonies, then its ships and bases with
-// a working space yard, and those whose yard stopped working (cloaked, lost
-// or mothballed) while they still have a yard part or a queue.
+// Every queue the empire has (spec 06 §1.8.2, §7 Q27): all own colonies, then
+// its ships and bases that are not mothballed and have a working space yard
+// ("Ship SY"), or whose yard stopped working while their queue still holds
+// items ("Ships": the original empties such a queue at once, so in practice
+// this group is empty). Mothballed vehicles are never listed.
 std::vector<QueueEntry> empireQueues(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 // A vehicle's space yard works: an intact Space Yard part, not mothballed, not cloaked.
 bool workingVehicleYard(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
@@ -189,7 +193,12 @@ bool queueCanBuild(const game::Rules& r, const game::GameState& s, game::EmpireI
 const game::ConstructionQueue* queueOf(const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t);
 bool sameTarget(const game::cmd::QueueTarget& a, const game::cmd::QueueTarget& b);
 
+// An item as the queue lists and reports name it (spec 06 §1.8.2, §7 Q48):
+// the design or facility name, upgrades as "Upg. <facility>", and
+// " x <count>" after it when the count is above 1, for every kind of item.
 std::string queueItemName(const game::Rules& r, const game::GameState& s, const game::QueueItem& item);
+// The name alone, without the count.
+std::string queueItemBaseName(const game::Rules& r, const game::GameState& s, const game::QueueItem& item);
 
 // The item's full cost from the economy; when the economy reports nothing
 // (not yet computed), the base price of the design or facility.
@@ -209,11 +218,22 @@ std::vector<ItemEstimate> estimateQueue(const game::Rules& r, const game::GameSt
 game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
                            const game::ConstructionQueue& q, const game::Resources& rate);
 
-// The Construction Queues window's time column (spec 06 §1.8.2): turns as
-// years (one turn is 0.1 year), "Never" at 9999 turns or more (or when the
-// queue never finishes).
-std::string queueYearsText(int turns);
+// Time Remaining (spec 06 §7 Q48, confirmed: binary): the first item with
+// its whole count. For each resource whose construction rate is above 0,
+// ceil(what is left / rate) turns; the largest of these. kNeverTurns when all
+// three rates are 0.
 inline constexpr int kNeverTurns = 9999;
+int timeRemainingTurns(const game::Resources& remaining, const game::Resources& rate);
+// Turns as years, one turn being 0.1 year: "0.3 years"; 0 turns shows as one
+// turn ("0.1 years"); "Never" at kNeverTurns or more.
+std::string queueYearsText(int turns);
+// The text the planet and ship reports, the Colonies list and the
+// Construction Queues rows show: nothing for an empty queue, "On Hold" for a
+// held one, else the first item's time in years.
+std::string timeRemainingText(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
+                              const game::ConstructionQueue& q, const game::Resources& rate);
+// "Under Construction": "None", or the first item's name (queueItemName).
+std::string underConstructionText(const game::Rules& r, const game::GameState& s, const game::ConstructionQueue& q);
 // The queue's build-mode note (the yellow line under the tab value): empty
 // when the queue builds normally.
 std::string queueModeNote(const game::ConstructionQueue& q);
@@ -222,11 +242,20 @@ std::string queueModeNote(const game::ConstructionQueue& q);
 // order and with its count, appended to each tagged queue.
 std::vector<game::cmd::QueueAdd> multiAddCommands(const std::vector<game::cmd::QueueTarget>& tagged, const std::vector<game::QueueItem>& items);
 
-// A note for the "similar system-wide abilities" Empire Option (inferred):
-// the system-wide abilities of `facility` (identifiers naming "System") that
-// a facility of one of our colonies in the planet's system already has.
+// The "Note" after a facility is added by hand to a planet's queue (spec 06
+// §7 Q29, confirmed: binary): the abilities of `facility`, among the 18
+// system-wide ones that count (similarAbilityCounts), that an object of ours
+// in the planet's system already has: a built facility of one of our
+// colonies (the queue's own included) or a component of one of our ships
+// or bases. Queued facilities do not count. Empty: no note.
 std::vector<std::string> similarSystemAbilities(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
                                                 uint32_t facility);
+bool similarAbilityCounts(game::AbilityKind k);
+
+// Reorder Queue (spec 06 §7 Q28): the moves (from, to), applied in turn with
+// cmd::QueueMove, that put the items in `order` (indices into the queue as it
+// is now, as the reorder list returns them).
+std::vector<std::pair<uint32_t, uint32_t>> reorderMoves(const std::vector<size_t>& order);
 
 // Upgrade items this colony could queue: one per facility family that has an
 // older level than the newest one researched, skipping families already queued.

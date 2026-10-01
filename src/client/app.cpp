@@ -161,10 +161,12 @@ bool App::createWindowAndDevice() {
 
     rendererInfo_ = std::format("{}: {}", gfx::backendName(device_->backend()), device_->deviceName());
     log::info("Renderer: {}", rendererInfo_);
-    SDL_SetWindowMinimumSize(window_, 960, 600);
+    SDL_SetWindowMinimumSize(window_, 800, 600);  // the classic 800x600 layout fits (docs/spec/06 §2.1.1)
     renderer_ = std::make_unique<gfx::Renderer2D>(*device_);
     return true;
 }
+
+void App::minimize() { SDL_MinimizeWindow(window_); }
 
 void App::applyGraphics() {
     const GraphicsSettings& g = appSettings().graphics;

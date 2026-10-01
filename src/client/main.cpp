@@ -48,6 +48,8 @@ Rendering:
   --no-vsync                      Disable vertical sync
   --fullscreen                    Start in fullscreen (Alt+Enter toggles)
   --size=WxH                      Window size (default 1600x900)
+  --layout=auto|800x600|1024x768  The classic screen layout (default: auto, 800x600 on a desktop
+                                  800 px wide or less, as the original; forcing one is OpenSE4's)
   --no-audio                      No sound or music
 
 Game:
@@ -144,6 +146,12 @@ int main(int argc, char** argv) {
             saved.displayMode = client::DisplayMode::Windowed;
             saved.windowWidth = options.width;
             saved.windowHeight = options.height;
+        } else if (key == "--layout") {
+            // The classic screen layout for this run (an OpenSE4 extension; docs/spec/06 §2.1.1).
+            if (value == "auto") saved.layout = client::LayoutChoice::Auto;
+            else if (value == "800x600") saved.layout = client::LayoutChoice::Small800;
+            else if (value == "1024x768") saved.layout = client::LayoutChoice::Large1024;
+            else ok = false;
         } else if (key == "--seed") {
             ok = parseInt(value, options.seed);
         } else if (key == "--systems") {

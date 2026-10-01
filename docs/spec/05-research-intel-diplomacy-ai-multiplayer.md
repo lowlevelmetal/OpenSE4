@@ -1037,7 +1037,9 @@ territory §7.2 uses):
 - except the home system of any computer empire, and systems we agreed to leave by
   accepting a "remove ships", "remove colonies" or "leave planet" demand (§7.4).
 
-Human players claim systems by hand; their home system starts claimed.
+Human players claim systems by hand; their home system starts claimed. The step runs
+for every empire whose Politics minister is on, so a human who turns that minister on
+gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
 
 **Per-turn update** toward empire X, in this order:
 
@@ -2206,6 +2208,9 @@ game the limit therefore lasts until the game turn ends.
     Non-Aggression with this one (spec 04 §13). The fight runs in the defending owner's
     processing, not the invader's. If the landed troops belong to the owner itself or to an
     empire now at Non-Aggression or better, they are put into the colony's cargo instead.
+    In a turn-based game a fight is shown, after a notice, in the Ground Combat window
+    unless both empires are computer-controlled, and the processing waits for it (spec 06
+    §1.10.6) (confirmed: binary).
 18. The log is pruned to the last turn's entries (§3.4).
 
 **Computer-player bonus** (confirmed: binary): for a computer-controlled empire, each of

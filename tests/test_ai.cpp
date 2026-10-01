@@ -1507,6 +1507,27 @@ TEST_CASE("ai: an accepted gift request: concrete items go in, the gifts option 
     CHECK(refusal->type == MessageType::General);
 }
 
+TEST_CASE("ai: the territory pass claims for exactly the empires whose Politics minister is on") {
+    // Spec 06 §7 Q47 (confirmed: binary): every computer player, and a human
+    // who turns that minister on; a human without it keeps its claims as set.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, true);
+    const EmpireId human{0u};
+    const SystemId home = s.galaxy.object(homeworld(s, human).planet).system;
+    const SystemId elsewhere = home == SystemId{0u} ? SystemId{1u} : SystemId{0u};
+    TurnContext ctx{r, s, {}, {}, {}};
+    Empire& e = s.empire(human);
+    REQUIRE_FALSE(ai::ministerOn(e, Minister::Politics));   // off for a new human empire
+    e.claimedSystems = {elsewhere};
+    ai::updateAiState(ctx, human);
+    CHECK(s.empire(human).claimedSystems == std::vector<SystemId>{elsewhere});
+    s.empire(human).ministers |= ministerBit(Minister::Politics);
+    ai::updateAiState(ctx, human);
+    const auto& claimed = s.empire(human).claimedSystems;
+    CHECK(std::binary_search(claimed.begin(), claimed.end(), home));
+    CHECK(claimed == ai::detail::computeTerritory(s, human));
+}
+
 TEST_CASE("ai: the demand lists are emptied at the start of turns whose date is a multiple of 10") {
     const Rules& r = engineRules();
     GameState s = computerGame(7, 2, 0, 10);

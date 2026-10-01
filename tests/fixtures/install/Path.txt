@@ -1,0 +1,3 @@
+*BEGIN*
+Using Mod Directory   := TestMod
+*END*

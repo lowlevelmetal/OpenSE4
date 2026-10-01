@@ -168,10 +168,20 @@ afterwards if they can; seekers take every damage type but Shields Only and the 
 types; an unseen battle runs the next turn's upkeep before it ends; the simulator keeps
 each side's copied strategy list; a planet hit past its shields trims its cargo at once.
 
-The engine's own choices where the spec is silent are spec 04 §19.1 and the open
-questions of §19.3 (Q78-Q86). No row remains. Combat reads a drone group's first order
-and a troop ship's Attack orders from the vehicle's own list, which holds a fleet member's
-copy of its fleet's orders (spec 03 §19 Q65).
+The engine's own choices where the spec is silent are spec 04 §19.1. Combat reads a drone
+group's first order and a troop ship's Attack orders from the vehicle's own list, which
+holds a fleet member's copy of its fleet's orders (spec 03 §19 Q65). On 2026-10-01 the
+questions of spec 04 §19.3 (Q78-Q86) and spec 06 §7 Q30-Q40 were settled from the
+executable; Q78, Q79, Q81-Q83 and Q85 need no change, the rest left these rows:
+
+| Item | Engine now | Original | Spec | Impact |
+|---|---|---|---|---|
+| Drop Troops (`combat_tactical.cpp` check, `Battle::dropTroops`, the computer's move) | Refuses a colony it is not hostile to; lands on the planet the order names (the client names the first adjacent colony); a computer carrier lands only on its chosen target; the planet's piece is reset only when it falls | No treaty is checked: the colony is the adjacent colony of another empire last in piece order, and only that one is looked at; a computer piece with Drop Troops in effect tries the landing after every move, on whatever foreign colony is adjacent; the ground fight runs whatever the treaty; after every landing the planet's piece gets its weapons ready, shields full and targets cleared | Spec 04 §11, §13, §16.1; §19.3 and spec 06 §7 Q37 | M |
+| Drone targets and the overkill totals (`Battle::chooseTargets` and the drone choice) | The first weapon's target, else the main target; totals cleared at each phase of the drones' side; the drone's damage not added | The main target of a drone choice: the first sorted candidate still below its limit that a drone may take (the Anti-Planet and Anti-Ship rule for drones without other weapons); no first total cleared, the drone's warhead damage added to its target's; seeking totals cleared at every choice, a first total when an ordinary choice takes the piece as a candidate | Spec 04 §10.7, §16 "Overkill limit"; §19.3 Q80 | L |
+| Range of the firing choice | Each weapon's whole reach | The largest range from 1 to 20 with damage, for the piece and for each weapon | Spec 04 §16 step 1; §19.3 Q84 | L |
+| Battle verdict (`Battle::finish`) | Counts only hostile empires' survivors | Counts every other empire's survivors, whatever the treaty | Spec 04 §15 "The verdict"; §19.3 Q86 | L |
+| Battles shown in the Strategic Combat window (`turn.hpp` battle questions, the session) | Only battles that ask stop the call; the others are fought within it and shown after the whole call | The window opens when the battle is set up, before combat turn 1; the battle is fought while shown and its results come after Close; the call must stop there (or fight and yield at once) and resume after Close. The record keeps every step, launch, loss and change of owner with its combat turn and phase, and each ground combat at its point | Spec 06 §1.10.5 "The sequence"; §7 Q30, Q32 | M |
+| Ground combat records and the end-of-turn fight (`GroundCombat`, `runGroundCombat`) | Start and end counts only; the colony owner's fights run silently | Counts of every troop and militia stack after every round; in a turn-based game the owner's end-of-turn fight is shown (notice, then window) unless both empires are computers, and the processing waits for it | Spec 06 §1.10.6; §7 Q33; spec 05 §8 step 17 | L |
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 

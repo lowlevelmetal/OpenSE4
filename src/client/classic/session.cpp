@@ -1,6 +1,7 @@
 #include "client/classic/session.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/settings.hpp"
 #include "core/log.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
@@ -36,20 +37,22 @@ void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) 
         log::warn("Cannot create {}: {}", dir.string(), ec.message());
         return;
     }
-    auto write = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh) {
+    auto write = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh, std::string_view end = "\n") {
         if (lines.empty()) {
             if (fresh) std::filesystem::remove(file, ec);
             return;
         }
-        std::ofstream out(file, fresh ? std::ios::trunc : std::ios::app);
-        for (const std::string& line : lines) out << line << '\n';
+        // Binary when the line end is spelled out, so that it is written as given.
+        std::ofstream out(file, (fresh ? std::ios::trunc : std::ios::app) | (end == "\n" ? std::ios::openmode{} : std::ios::binary));
+        for (const std::string& line : lines) out << line << end;
         if (!out) log::warn("Cannot write {}", file.string());
     };
     for (const game::score::PlayerRecords& rec : records) {
         const bool fresh = rec.turn == 0;
         write(dir / historyFileName(rec.empire, "stats.txt"), rec.statistics, fresh);
         write(dir / historyFileName(rec.empire, "events.txt"), rec.history, fresh);
-        if (!rec.log.empty()) write(dir / historyFileName(rec.empire, "log.txt"), rec.log, true);
+        // The log copy's lines end in CR LF (docs/spec/06 §6.1).
+        if (!rec.log.empty()) write(dir / historyFileName(rec.empire, "log.txt"), rec.log, true, "\r\n");
         else if (fresh) std::filesystem::remove(dir / historyFileName(rec.empire, "log.txt"), ec);
     }
 }
@@ -381,6 +384,9 @@ void ClassicSession::endTurn() {
     std::vector<game::EmpireOrders> submitted;
     for (const game::Empire& e : state_.empires)
         if (e.alive && e.kind == game::PlayerKind::Human) submitted.push_back({e.id, state_.turn, {}});
+    // Kept for the movement log replay (docs/spec/06 §7 Q51).
+    turnStart_ = std::make_shared<const game::GameState>(state_);
+    turnStartOrders_ = submitted;
     const game::TurnResult result = game::processTurn(*rules_, state_, submitted);
     writePlayerRecords(result.records);
     strategic_.clear();
@@ -458,6 +464,15 @@ bool ClassicSession::setAutosaveTurns(int everyTurns) {
     return true;
 }
 
+bool ClassicSession::replayLastTurn(const std::function<void(int day, const game::GameState&)>& day) const {
+    if (!turnStart_) return false;
+    game::GameState again = *turnStart_;
+    game::TurnOptions options;
+    options.movementDay = day;
+    game::processTurn(*rules_, again, turnStartOrders_, options);
+    return true;
+}
+
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;
     ++revision_;
@@ -465,6 +480,7 @@ void ClassicSession::setPlayer(game::EmpireId e) {
 
 void ClassicSession::replaceState(game::GameState s) {
     state_ = std::move(s);
+    turnStart_.reset();
     strategic_.clear();
     call_ = Call::None;
     battle_.reset();
@@ -492,7 +508,11 @@ std::expected<void, std::string> ClassicSession::save(const std::filesystem::pat
     info.dataSet = rules_->data().dataDir.parent_path().filename().string();
     info.turn = state_.turn;
     for (const game::Empire& e : state_.empires) info.empires.push_back(e.name);
-    return game::saveGame(file, state_, info);
+    auto saved = game::saveGame(file, state_, info);
+    // Every game saved, Save Game and every autosave alike, becomes the one
+    // Resume Game loads (docs/spec/06 §6.1, §7 Q53).
+    if (saved) rememberSavedGame(file.string());
+    return saved;
 }
 
 std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load(std::shared_ptr<const game::Rules> rules,

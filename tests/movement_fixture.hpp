@@ -135,13 +135,21 @@ inline ruleset::Ruleset buildRuleset() {
     facility("Mv Planet Guard", {ab(AbilityKind::StopPlanetDestroyer)});
     facility("Mv Star Guard", {ab(AbilityKind::StopStarDestroyer)});
     facility("Mv Warp Guard", {ab(AbilityKind::StopOpenWarpPoint), ab(AbilityKind::StopCloseWarpPoint)});
-    // Colony orders and colony cloaking (spec 02 §5.6, spec 01 §6.9, spec 03 §8).
+    // Colony orders and colony cloaking (spec 02 §5.6, spec 01 §6.9, spec 03 §8);
+    // the converter also serves the facility letter markers (spec 06 §7 Q44).
     facility("Mv Converter", {ab(AbilityKind::ResourceConversion, 30)});
     facility("Mv Lossy Converter", {ab(AbilityKind::ResourceConversion, 50)});
     facility("Mv Planet Cloak", allTypes(AbilityKind::CloakLevel, 3));
     facility("Mv Faint Cloak", {abText(AbilityKind::CloakLevel, "EM Active", 1)});
     facility("Mv Planet Eye", {abText(AbilityKind::SensorLevel, "Psychic", 4)});
     facility("Mv Emergency Depot", {ab(AbilityKind::EmergencyResupply, 100)});
+    // For the facility letter markers (client, spec 06 §7 Q44).
+    facility("Mv Repair Shop", {ab(AbilityKind::ComponentRepair, 2)});
+    facility("Mv Upkeep Office", {ab(AbilityKind::ReducedMaintenanceSystem, 10)});
+    facility("Mv Nursery", {ab(AbilityKind::ModifyReproductionSystem, 5)});
+    facility("Mv Depot", {ab(AbilityKind::SupplyGeneration)});
+    facility("Mv Port", {ab(AbilityKind::Spaceport)});
+    facility("Mv Yard", {ab(AbilityKind::SpaceYard, 1, 50)});
 
     // System types for created nebulae and black holes.
     {
