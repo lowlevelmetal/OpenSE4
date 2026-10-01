@@ -2206,6 +2206,9 @@ game the limit therefore lasts until the game turn ends.
     Non-Aggression with this one (spec 04 §13). The fight runs in the defending owner's
     processing, not the invader's. If the landed troops belong to the owner itself or to an
     empire now at Non-Aggression or better, they are put into the colony's cargo instead.
+    In a turn-based game a fight is shown, after a notice, in the Ground Combat window
+    unless both empires are computer-controlled, and the processing waits for it (spec 06
+    §1.10.6) (confirmed: binary).
 18. The log is pruned to the last turn's entries (§3.4).
 
 **Computer-player bonus** (confirmed: binary): for a computer-controlled empire, each of

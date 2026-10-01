@@ -230,8 +230,11 @@ on, the combat window offers only the strategic view, so every battle is strateg
    the tactical window (§5). Otherwise, and once it has left every group (broken
    formation, group dissolved), it uses its design's strategy (history 1.84). A unit
    group uses its first stack's design's strategy (its fleet's under the same condition).
-   A planet uses the strategy its empire chose for planets. The strategy is looked up
-   each time it is needed.
+   A planet uses the first strategy in its empire's strategy list: the empire keeps a
+   number for its planets' strategy, set to 1 when the empire is created and saved with
+   the game, and no window or rule ever changes it (confirmed: binary). In the combat
+   simulator every planet uses the viewer's first strategy (§17). The strategy is looked
+   up each time it is needed.
 
 ## 4. Combat turn sequence
 
@@ -852,10 +855,27 @@ same (§10.6).
   after its drones died ramming. That option is set in the strategies window
   and stored with the game; it is not a key of DefaultStrategies.txt (confirmed: binary).
   A player launches drones with the "Launch Units" window, still one per group.
-- A drone picks its own targets among ships, planets and satellites, never fighters,
-  seekers, mines or other drones (history 1.53, 1.65). If its target is absent or gone,
-  it picks temporary targets until the battle ends (history 1.58). Drones aimed at a
-  ship that changes owner pick a new target (confirmed: binary).
+- **The drone target** (confirmed: binary; history 1.53, 1.58, 1.65). Each drone group
+  has one drone target, the piece its Ram strategy goes for (§16.1). It is chosen for
+  every drone group in space when the battle is set up (in piece order), for each drone
+  group as it is launched, again in the drone's own planning when its target is no
+  longer in the battle, and when its target changes owner (§12). If the group's first
+  order is the pursuit form of Attack (spec 03 §6.4) and the object pursued is a piece of
+  this battle, that piece is the target. Otherwise the drone's weapons are given targets
+  by the steps of §16, except that the overkill totals are not cleared first (§16
+  "Overkill limit"), and the drone target is the first candidate in the sorted list
+  whose first overkill total is still below its limit and which a drone may take, else
+  the first sorted candidate. A drone never takes a seeker, a fighter group, a drone
+  group or a neutral obstacle; a drone whose only weapons are point-defense and warheads
+  takes only planets when its design type is Anti-Planet Drone, and only ships, bases
+  and satellite groups when it is Anti-Ship Drone. The chosen target's first overkill
+  total then grows by the group's warhead damage: for each stack, once whatever its
+  size, the largest damage (ranges 1 to 20, with mounts) of each warhead of the stack's
+  design whose damage type harms hulls (Normal, Skips Normal Shields, Only Engines, Only
+  Weapons, Only Shield Gens, Skips Armor, Skips Shields And Armor, Skips All Shields,
+  Only Master Computers). So drones that choose one after another spread over the
+  targets. A drone keeps its target as long as that piece is in the battle; its weapons
+  get targets at every choice like any piece's.
 - A drone attacks by ramming (§10.3); its warheads strike separately. Drones also fire
   any weapons they carry. Drone hulls give +50 defense.
 
@@ -895,12 +915,31 @@ same (§10.6).
   drop when a shield facility is destroyed (the facility keeps working until the end).
 - A colony whose population reaches 0 is lost; the planet stays on the map as an
   unowned obstacle for the rest of the battle.
-- **Drop Troops.** A ship carrying troops may drop all of them onto an **adjacent**
-  hostile colony that is not already contested by another empire's troops. Ground combat
-  (§13) is fought **at once**, in the middle of the space battle. If the planet falls, its
-  piece changes sides immediately. Planet shields do not stop the landing. An AI ship with
-  a Drop Troops or Capture Planet strategy heads for the planet it was ordered to take,
-  otherwise for the most populous enemy planet (history 1.59).
+- **Drop Troops** (confirmed: binary). A ship or base carrying troops drops all of them,
+  of whatever design, onto an **adjacent** colony of another empire. **The treaty is not
+  checked**: the colony may belong to an empire at Non-Aggression or better with the
+  ship's owner, an ally included, and the landing goes ahead all the same. The order
+  names no planet: among the colonized planet pieces of other empires adjacent to the
+  ship, the one that comes **last in piece order** is taken, and only that one is looked
+  at. The landing is refused when that colony already holds landed troops of an empire
+  other than the ship's owner, and does nothing when the ship carries no troops. It
+  needs no movement points and uses none; planet shields do not stop it. The troops land
+  for the empire that owns the ship at that moment.
+- **The ground combat that follows** is fought **at once** (§13), in the middle of the
+  space battle, whatever the treaty: troops landed on a friendly or allied colony fight
+  it exactly as on an enemy one, and take it if they win. Then the planet's piece is
+  reset, whether or not the planet fell: it belongs to the colony's owner after the fight
+  (the invader if the planet fell), its weapon targets and its list of targets engaged
+  this combat turn are cleared, every weapon's reload counter goes back to 0, so every
+  weapon is ready again, its shields go back to their maximum, and its offense, defense
+  and target budget are worked out again. So each landing also refills the planet's
+  shields and reloads its weapons.
+- **Computer sides.** A computer piece whose strategy in effect is Drop Troops tries a
+  landing by the same rule after every move it plans (§16.1), whether it went for a
+  colony or waited (Don't Get Hurt): it lands on whichever colony of another empire is
+  then adjacent, hostile or not. A computer ship with a Drop Troops strategy heads for
+  the colony named by its Attack orders, otherwise for the most populous hostile colony
+  (§16.1; history 1.59).
 
 ## 12. Boarding, capture, conversion, self-destruct (confirmed: binary)
 
@@ -928,11 +967,23 @@ same (§10.6).
 
 - **Triggers:** troops dropped during a space battle (fought at once), or troops still
   landed on a colony at turn processing. The latter is fought in the **colony owner's**
-  end-of-turn processing, at its ground-combat step (spec 05 §8), for each of the owner's
-  colonies that has landed troops, without asking anyone (strategic). If by then the
-  colony's owner is the landed empire, or is at Non-Aggression or better with it, there
-  is no fight: the landed troops join the colony's cargo, where they serve the owner,
-  and the invasion ends (confirmed: binary).
+  end-of-turn processing, at its ground-combat step (spec 05 §8), for each of the
+  owner's colonies that has landed troops, without asking anyone; in a turn-based game
+  it is shown in the Ground Combat window, after a notice, unless both empires are
+  computer-controlled (spec 06 §1.10.6). If by then the colony's owner is the landed
+  empire, or is at Non-Aggression or better with it, there is no fight: the landed
+  troops join the colony's cargo, where they serve the owner, and the invasion ends
+  (confirmed: binary).
+- **Treaties** (confirmed: binary). The landing (§11) and the fight it starts do not look
+  at treaties at all: troops dropped on the colony of an empire at Non-Aggression or
+  better fight at once like any others, and take the colony if they win. The treaty
+  counts only at the colony owner's ground-combat step above, which hands surviving
+  invaders of a friendly empire over to the colony.
+- **Log** (confirmed: binary). After every ground combat outside the combat simulator,
+  shown in a window or not, the invader and the colony's owner each get a combat log
+  entry titled with the system, naming the planet and the other empire, and ending with
+  the outcome: the planet taken, the invaders defeated, still a stalemate, or the colony
+  or planet destroyed.
 - **Sides.** The attacker has its landed troops. The defender has the units in the
   planet's cargo plus militia. Units in cargo have no owner of their own: a ship drops
   every troop unit aboard, of whatever design, for the empire that owns the ship at that
@@ -983,8 +1034,11 @@ same (§10.6).
   has troops, the attacker takes the planet with its surviving facilities, stored units
   and population. When the attackers are gone, the fight ends. No facilities are lost in
   ground combat.
-- **Reinforcing.** Either side may drop more troops at any time. A third empire may not
-  land on a planet already contested by two other empires.
+- **Reinforcing** (confirmed: binary). The invading empire may drop more troops at any
+  time, in the same battle or a later one; they join the landed ones and a new fight is
+  fought at once. Drop Troops never lands on a colony of the ship's own empire (§11), so
+  the defender cannot reinforce this way. A third empire may not land on a planet where
+  another empire's troops are already landed.
 - **Invaders of a destroyed empire** (confirmed: binary). When an empire is destroyed, its
   troops already landed on other empires' colonies stay there. Every treaty with it goes
   back to "not yet met", which is hostile, so they keep fighting at each colony owner's
@@ -1054,6 +1108,18 @@ command exists). The only ways to disengage are:
   battle alike (confirmed: binary). A human player also gets a message box on a capture.
   If Settings `Create Combat Replay` is on, also record a replay stream (§17); a boarding
   capture is recorded in it, a conversion is not.
+- **The verdict** (confirmed: binary). A participant is an empire that had a piece when
+  the battle was set up; each gets a report. Its survivors are its pieces still in the
+  battle at the end, after carriers have recovered their units, seekers left out and
+  pieces it took during the battle counted. Against the survivors of every other empire
+  in the battle, **whatever the treaties**, the report is a victory when the empire has
+  survivors and no other empire has any; a defeat when it has none and another empire
+  has some; otherwise a stalemate, also when nobody survives. The same verdict picks the
+  battle's Win, Loss or Stalemate happiness event (spec 02 §1.8), and the computer's
+  anger judges battles the same way (spec 05 §7.3). So an empire that fought nobody, as
+  in a battle started on a minefield alone (§2), gets a victory when it is the only
+  empire with pieces there, and a stalemate when an empire it is not hostile to also had
+  pieces in the sector.
 - Each participant learns the designs it fought.
 - Happiness events (battle won or lost in a system, ships lost) are covered in the
   happiness spec.
@@ -1085,9 +1151,12 @@ it fires. Both use the same steps; only the firing choice checks distance.
 1. **Candidates.** Every hostile piece of another empire (never a neutral obstacle),
    except the categories of its strategy's `Dont Fire On` flags and the planets of
    "Holding fire" below. When firing, only candidates within the piece's longest ready
-   range (range distance, §1) count. The `Damage Percent` filters (table above) apply
-   first; if they leave nothing, the candidates are taken again without them. The list
-   is sorted by the strategy's priorities.
+   range (range distance, §1) count. A weapon's range here is the largest range from 1
+   to 20 at which it does damage with its mount (spec 03 §19 Q42), so the firing choice
+   never reaches past 20 squares, even for a mounted weapon whose range-20 entry is
+   above 0 (confirmed: binary). The `Damage Percent` filters (table above) apply first;
+   if they leave nothing, the candidates are taken again without them. The list is
+   sorted by the strategy's priorities.
 2. **Main target.** The first candidate of the sorted list, whether or not any weapon of
    the piece can hit it. The range strategies measure their distances from it (§16.1).
 3. **Budget.** Only the first B candidates are used, where B is the piece's target budget
@@ -1096,25 +1165,37 @@ it fires. Both use the same steps; only the firing choice checks distance.
    candidates (at least two). In each round every candidate in turn takes each weapon,
    in design order, that is intact and ready, has no target yet, has the candidate's
    category in its target set and a damage type that can affect it (and, when firing,
-   reaches it), until the candidate's total reaches its limit (below). A push, pull or
-   teleport weapon closes its candidate for the rest of that round, which spreads such
-   weapons over several enemies (history 1.73). Every weapon component takes part,
-   point-defense and warheads included; warheads get targets but never fire.
+   whose range, as in step 1, reaches it), until the candidate's total reaches its limit
+   (below). A push, pull or teleport weapon closes its candidate for the rest of that
+   round, which spreads such weapons over several enemies (history 1.73). Every weapon
+   component takes part, point-defense and warheads included; warheads get targets but
+   never fire.
 5. **Fighter groups** give all their weapons one target: the first sorted candidate that
    the group's first ready weapon can hit and affect (else the next ready weapon's).
 
-**Overkill limit** (confirmed: binary). During one choice the piece keeps two totals for
-each candidate, both starting from 0: the damage, at the current distance, of every
-weapon given to it, and the part of that from seeking weapons. A candidate stops taking
-direct-fire and point-defense weapons once the first total reaches 1.5 × (its current
-shields + its full hit points) for a ship, base or planet, or 1 × that for a unit group
-or seeker; seeking weapons are checked the same way against the second total. Full hit
+**Overkill limit** (confirmed: binary). Every piece carries two totals: the damage, at
+the current distance, of every weapon given to it as a target, and the part of that
+from seeking weapons. A candidate stops taking direct-fire, point-defense and warhead
+weapons once the first total reaches 1.5 × (its current shields + its full hit points)
+for a ship, base or planet, or 1 × that for a unit group or seeker (a total of 0 never
+stops it); seeking weapons are checked the same way against the second total. Full hit
 points are a ship's full design structure, a unit group's units at full health, a
-seeker's resistance and a planet's hit points at the battle's start. The totals start
-again from 0 at every choice, so damage given by other pieces or in earlier choices, and
-seekers already in flight, are never counted; only drones choosing new targets carry the
-totals over from one drone to the next. (History 1.82 and 1.86 speak of not overkilling
-and of counting seekers; the original does not count seekers in flight.)
+seeker's resistance and a planet's hit points at the battle's start. When the totals
+are cleared:
+
+- the seeking total of every piece is set to 0 at the start of every choice, a drone's
+  included;
+- the first total of a piece is set to 0 when an ordinary choice takes it as a
+  candidate. Every choice made to plan a move or to fire is ordinary, a drone's
+  included; only the choice of a drone target (§10.7) is not.
+
+So in an ordinary choice both totals start from 0: damage given by other pieces or in
+earlier choices, and seekers already in flight, are never counted. A drone's choice of
+its drone target (§10.7) clears no first total and adds its own warhead damage to its
+target's, so drones that choose one after another carry the first totals over until an
+ordinary choice takes those pieces as candidates again. (History 1.82 and 1.86 speak of
+not overkilling and of counting seekers; the original does not count seekers in
+flight.)
 
 **Holding fire for an invasion** (confirmed: binary). While a side has in the battle at
 least one ship carrying troops whose strategy in effect is Drop Troops (§16.1), none of
@@ -1226,7 +1307,12 @@ obstacle adds 30 to its own square, any of them that close counts.
   such in piece order), else the most populous (the first on ties). While that planet
   still has a weapon other than point-defense and warheads and the side has an armed
   escort (a piece with such a weapon and a range strategy in effect), the carrier waits
-  (Don't Get Hurt); otherwise it goes to the planet's Point Blank square and lands.
+  (Don't Get Hurt); otherwise it goes to the planet's Point Blank square. After the
+  move, whichever square it reached and whether it went for a colony or waited, it
+  tries a landing by the rule of §11: on the colony of another empire adjacent to it
+  that comes last in piece order, **hostile or not**, refused if a third empire's troops
+  are there (confirmed: binary). So a carrier waiting next to a friendly colony lands
+  on it.
 - **Board Enemy Ships:** its target is a hostile ship or base whose shields are exactly 0
   and whose boarding defense (§12: `Boarding Defense` + 4 × crew quarters + `Boarding
   Attack`) is below the boarder's `Boarding Attack`; among those, the one whose hull
@@ -1293,6 +1379,24 @@ describes this effect).
   - Ships are new vehicles built from the designs, fully supplied, with no experience. A
     sample planet is a copy of the real colony, owned by its side and moved to the battle
     sector.
+  - **Names** (confirmed: binary). A ship is named after its design followed by a space
+    and a four-digit number: each side has one counter for all its ships, whatever the
+    design, starting at 0 when the setup is made; a ship takes counter + 1 and the
+    counter goes up. Removing a ship does not lower it, and it lasts as long as the
+    setup (also across a tactical simulation and the reopening of the simulator). So the
+    first two ships given to a side are "A 0001" and "B 0002" even when A and B are
+    different designs.
+  - **Unowned objects** of the home system can be added as neutral items; stars, warp
+    points, comets and uncolonised planets become neutral obstacles, while storms and
+    uncolonised asteroid fields take no part in the battle, as in a real one (§1)
+    (confirmed: binary).
+  - **Sides on screen** (confirmed: binary). The Owner for item and Computer Control
+    lists, the Tactical and Strategic Combat windows of a simulation and the reports
+    opened from them show a side not by a flag but by a box in the side's fixed colour
+    holding its number: 1 red, 2 blue, 3 green, 4 yellow, 5 purple, 6 white, 7 aqua, 8
+    lime, 9 maroon, 10 olive, the number in white on the dark colours (1, 2, 3, 5, 9,
+    10) and in black on the others. (What the Flag column of the Combat Vehicles list
+    draws was not traced; open: needs observation.)
   - Start positions go by side number, as if each side had arrived from a neighbouring
     sector (§3): 1 from the north, 2 south, 3 west, 4 east, 5 north-west, 6 south-west, 7
     north-east, 8 south-east; sides 9 and 10, and any side that owns a planet or a base,
@@ -1877,45 +1981,118 @@ answered from the executable. The engine was brought in line with the answers th
 
 ### 19.3 Questions from implementing §19.2
 
-Each is an engine choice marked "(inferred)" in the code, where the answers of §19.2
-leave a detail open. To check in the executable.
+Each was an engine choice marked "(inferred)" in the code, where the answers of §19.2
+left a detail open. On 2026-10-01 all of them were answered from the executable. Where
+the engine differs, the answer says so; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those
+rows.
 
 78. **A surrounded piece's targets.** A piece found surrounded makes no plan, and its
     fire-first test measures from square (0, 0) (§16.1). Are its weapons given their
     targets before that test, so that it can fire first? The engine gives them out first,
     as for any moving piece, then tests; such a piece fires before its (empty) move
     whenever its first ready weapon's target is nearer to it than to square (0, 0).
+    **Answer:** yes. The surrounded test comes after the attack map is built, and
+    building it gives every weapon its target (§16); so a surrounded piece has targets,
+    its planned square stays (0, 0), and it fires first exactly when the target of its
+    first ready weapon (design order, not point-defense, a warhead counting) lies farther
+    from square (0, 0) than from the piece's own square (aim distance). Its move toward
+    (0, 0) then fails on the first step, every square around it being taken, and it fires
+    again with what is still ready (confirmed: binary). The engine matches.
 79. **Warheads and the overkill limit.** §16 checks direct fire and point-defense against
     the first total and seeking weapons against the second. Which total stops a warhead?
     The engine checks warheads against the first, like direct fire.
+    **Answer:** the first. Only a weapon whose kind is seeking is checked against, and
+    adds its damage to, the second total; direct fire, point-defense and warheads are
+    checked against the first, and their damage at the current distance is added to the
+    first only (confirmed: binary; §16). The engine matches.
 80. **A drone's new target.** Drones choosing new targets carry the overkill totals over
     from one to the next (§16). Which result of a drone's choice becomes its drone target,
     and how long do the totals carry over? The engine takes the target of its first
     weapon (design order) that got one, else the main target, with candidates among
     ships, planets and satellites, and starts the totals afresh with each phase of the
     drones' side.
+    **Answer** (confirmed: binary; §10.7, §16 "Overkill limit"): the drone target is not a
+    weapon's target. A drone group whose first order pursues a piece of the battle takes
+    that piece. Otherwise its choice is the targeting of §16 with two changes: no first
+    total is cleared, and the drone target is the first candidate of the sorted list
+    whose first total is still below its overkill limit and that a drone may take (never
+    a seeker, fighter group, drone group or neutral obstacle; for a drone whose only
+    weapons are point-defense and warheads, only planets if its design type is
+    Anti-Planet Drone, only ships, bases and satellite groups if it is Anti-Ship Drone),
+    else the first sorted candidate. That target's first total then grows by the group's
+    warhead damage (per stack, the largest damage of each hull-damaging warhead of its
+    design). There is no per-phase reset: the seeking totals of all pieces are cleared at
+    the start of every choice, and a piece's first total is cleared only when an ordinary
+    choice (planning or firing, any piece's) takes it as a candidate; the drone choices
+    in between keep adding to it. A drone target is chosen at set-up for every drone
+    group in space, at each launch, when the drone's target has left the battle (in the
+    drone's own planning) and when the target changes owner.
+    The engine differs: it uses the first weapon's target (else the main target), so
+    it neither skips candidates already at their limit nor applies the Anti-Planet and
+    Anti-Ship rule; it does not add the drone's warhead damage to its target; and it
+    clears the totals at each phase of the drones' side instead of as above. Its
+    candidates (ships, bases, planets and satellite groups) are the original's. It must
+    take the drone target as above, keep each piece's two totals between choices and
+    clear them only as above.
 81. **Ram's approach square.** "The first found on ties" (§16.1): in what order are the
     boxes scanned, and is the rammer's own square free? The engine scans each box column
     by column from the left, each column from the top, like the other scans, and treats
     the rammer's own square as taken, as the range strategies do (§19.2 Q61).
+    **Answer:** as the engine does. For r = 0, 1, … 5 the whole box from (x − r, y − r)
+    to (x + r, y + r) around the target's top-left square is scanned column by column
+    from the left, each column from the top; a square is a candidate when the rammer's
+    footprint fits there on free squares, where every piece but seekers fills its
+    squares, the rammer included, and a square whose top-left lies off the map is never
+    free. The candidate nearest the rammer (aim distance) wins, the first found on ties,
+    and the first box with any candidate ends the search (confirmed: binary). The engine
+    matches.
 82. **Warheads in Maximum Weapons Range.** Do warheads count as ready weapons for "with
     no ready weapon", and in the target's longest range for the ring? The engine counts
     them in both, as it counts point-defense.
+    **Answer:** yes to both. The ready count takes every intact weapon component that is
+    ready, of any kind, and the target's longest range every intact weapon component of
+    any kind, ready or not, each with its own longest range (1 to 20) (confirmed: binary;
+    §16.1). The engine matches.
 83. **Optimal's "fewer own pieces".** The third case of Optimal Weapons Range breaks ties
     by fewer own pieces. Fewer where? The engine counts the mover's own pieces on the
     square itself; since a chosen square holds no piece that blocks it, only seekers can
     be counted.
+    **Answer:** the number of pieces of the mover's side whose top-left square is that
+    square, seekers included, counted when the piece plans its move (confirmed:
+    binary). As the engine says, only own seekers can be there. The engine matches.
 84. **Distances in the attack map and in firing.** How far out does a weapon's ring of the
     attack map go, and how far does "the longest ready range" of the firing choice reach?
     The engine draws the attack map out to the weapon's longest range as the strategies
     see it (at most 20, spec 03 §19 Q42), as the danger map does, and lets the firing
     choice use each weapon's whole reach, so a mounted weapon whose entry 20 is above 0
     counts candidates anywhere on the map (no stock weapon does).
+    **Answer:** both use the range the strategies see: the largest range from 1 to 20 at
+    which the weapon, with its mount, does damage. The attack map draws each weapon out
+    to that range, as the engine does. The firing choice takes candidates within the
+    largest such range among the piece's ready weapons, and gives each weapon only
+    candidates within its own such range, so it never reaches past 20 (confirmed:
+    binary; §16 step 1). The engine differs in the firing choice: it must use the same
+    capped range there instead of each weapon's whole reach. (Fire by hand is not
+    limited this way: a weapon fires whenever it does damage at the distance, spec 03
+    §19 Q42.)
 85. **The strategy for planets.** §3 step 8 has a planet use "the strategy its empire
     chose for planets". Where is that choice made, and what is it by default? The engine
     has no such setting: a planet uses its empire's first strategy, and in the combat
     simulator the viewer's first one (§17).
+    **Answer:** nowhere. The empire keeps a number for its planets' strategy, set to 1
+    when the empire is created and saved with the game, and nothing changes it: no
+    window offers it and no rule writes it. So a planet uses the first strategy of its
+    empire's list, and in the simulator the viewer's (confirmed: binary; §3 step 8). The
+    engine matches.
 86. **Reports of a battle with nobody to fight.** Every participant gets a battle report
     (§15, §19.2 Q73), also in a battle that the check started on a minefield alone. What
     does the report of an empire that fought nobody say? The engine judges it like the
     others: victory when it still has pieces and no hostile empire there has any.
+    **Answer:** it is judged by the same rule as every report, which looks at every other
+    empire in the battle whatever the treaty: victory when the empire has survivors and
+    no other empire has any, defeat when it has none and another has some, otherwise a
+    stalemate (also when nobody survives). So in a minefield-only battle the moving
+    empire gets a victory when it is alone in the sector, and a stalemate when an empire
+    it is not hostile to also had pieces there (confirmed: binary; §15 "The verdict").
+    The engine differs: it counts only hostile empires' survivors; it must count every
+    other empire's.
