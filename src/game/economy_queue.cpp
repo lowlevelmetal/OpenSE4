@@ -324,6 +324,7 @@ bool placeUnits(TurnContext& ctx, EmpireId e, const QueueRef& q, DesignId design
         ++placed;
     }
     s.design(design).built += placed;
+    if (placed > 0) s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
     if (placed > 0)
         ctx.log(e, LogCategory::Construction, std::format("{} x {} completed", placed, name), std::format("Built at {}.", where), q.location);
     return last;
@@ -347,6 +348,7 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                 }
                 const DesignId design = item.design;
                 const int64_t tonnage = designTonnage(r, d);
+                s.design(design).everBuilt = true;  // built at least once (spec 05 §2.3)
                 for (int k = 0; k < count; ++k) {
                     const Vehicle& v = movement::spawnVehicle(r, s, e, design, q.location, autoWaypoint);
                     ctx.log(e, LogCategory::Construction, std::format("{} completed", v.name), std::format("Built at {}.", where), q.location);

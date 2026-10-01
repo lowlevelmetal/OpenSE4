@@ -652,26 +652,44 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     const int difficulty = ai::rebelDifficulty(s);
     Rng rng = s.rng.fork();
 
-    // A copy of the former owner (spec 05 §2.3, confirmed: binary): race,
-    // traits, characteristics, culture, technology, queues and options.
+    // A copy of the former owner (spec 05 §2.3, open question 41, confirmed:
+    // binary): race, traits, characteristics, culture, research, the
+    // intelligence and construction queues, options, experience, and the
+    // ministers' state (style, anger toward each empire, turns since war with
+    // each, AI state and turns in it, target, staging, secured and defended
+    // systems, attack timer).
     const EmpireId id{s.empires.size()};
     Empire e = s.empire(former);
     e.id = id;
     e.alive = true;
-    // Named after the system, or a random empire name when another empire has that name.
+    // Named after the system; when that is empty or any empire (destroyed
+    // ones included) has the name, lines of the empire-names file are drawn
+    // until one is unique. OpenSE4 stops after 1,000 draws and numbers the
+    // name instead (the original would draw for ever).
     auto taken = [&](std::string_view name) {
         return std::any_of(s.empires.begin(), s.empires.end(), [&](const Empire& x) { return x.name == name; });
     };
     e.name = s.galaxy.system(system).name;
     const auto& names = r.data().names;
-    if (taken(e.name) && !names.empireNames.empty()) e.name = names.empireNames[rng.below(names.empireNames.size())];
-    // A new leader name and the pictures of an unused neutral race (the
-    // former owner's when none is left, inferred, spec 05 open question 41).
+    for (int draw = 0; (e.name.empty() || taken(e.name)) && !names.empireNames.empty() && draw < 1000; ++draw)
+        e.name = names.empireNames[rng.below(names.empireNames.size())];
+    if (e.name.empty()) e.name = "Rebels";
+    for (int n = 2; taken(e.name); ++n)
+        if (const std::string numbered = std::format("{} {}", e.name, n); !taken(numbered)) e.name = numbered;
+    // A new leader name and the pictures of a random neutral race that no
+    // empire uses for its race or pictures; when all are in use, a random one
+    // of all the neutral races.
     if (!names.emperorNames.empty()) e.leaderName = names.emperorNames[rng.below(names.emperorNames.size())];
-    std::vector<const ruleset::RacePreset*> pictures;
-    for (const ruleset::RacePreset& p : r.racePresets())
-        if (p.neutral && std::none_of(s.empires.begin(), s.empires.end(), [&](const Empire& x) { return datafile::keysEqual(x.race.style, p.folder); }))
-            pictures.push_back(&p);
+    std::vector<const ruleset::RacePreset*> neutrals, unused;
+    for (const ruleset::RacePreset& p : r.racePresets()) {
+        if (!p.neutral) continue;
+        neutrals.push_back(&p);
+        const bool used = std::any_of(s.empires.begin(), s.empires.end(), [&](const Empire& x) {
+            return datafile::keysEqual(x.race.style, p.folder) || (!p.name.empty() && datafile::keysEqual(x.race.name, p.name));
+        });
+        if (!used) unused.push_back(&p);
+    }
+    const auto& pictures = unused.empty() ? neutrals : unused;
     if (!pictures.empty()) e.race.style = pictures[rng.below(pictures.size())]->folder;
     // Its home planet type and atmosphere are the planet's.
     if (!obj.surface.empty()) e.race.nativeSurface = obj.surface;
@@ -684,24 +702,34 @@ EmpireId breakAway(TurnContext& ctx, ObjectId planet) {
     e.ministerAll = true;
     e.aiMinimalChanges = false;
     e.aiDifficulty = difficulty;
-    e.aiState = 0;
-    e.aiTurnsInState = 0;
-    e.aiMemory = AiMemory{};
-    e.ministerStyle.clear();  // a rebel empire always gets an empty style (spec 02 §10)
+    // The AI memory keeps its plans; the systems accepted demands marked to
+    // avoid or to attack start empty, and so does what it learned from its
+    // log and battles.
+    e.aiMemory.avoid.clear();
+    e.aiMemory.attackSystems.clear();
+    e.aiMemory.metMinefield = false;
+    e.aiMemory.designsFought.clear();
     e.politicsMark = PoliticsMark{};
-    e.experience = 0;
     // Its own things start empty: no designs, no contact with anyone (its
-    // treaties all "no contact"), an empty log and record.
+    // treaties all "no contact", the accepted-demand lists empty; the anger
+    // toward each empire and the turns since war are kept), an empty log and
+    // record.
     e.designs.clear();
     e.stockpile = {};
     e.economy = EconomyReport{};
     e.researchPool = e.intelPool = 0;
-    e.relations.clear();
+    for (Relation& rel : e.relations) {
+        Relation fresh;
+        fresh.anger = rel.anger;
+        fresh.turnsSinceWar = rel.turnsSinceWar;
+        rel = fresh;
+    }
     e.log.clear();
     e.historyEvents.clear();
     e.history.clear();
     e.claimedSystems = {system};
-    e.homeSystem = system;  // the capital's system, never moved (spec 02 §2)
+    e.homeSystem = system;  // the capital's system and sector, never moved (spec 02 §2, spec 05 §4)
+    e.homeSector = obj.sector;
     e.colonyTypeChoices.clear();
     e.systemsToAvoid.clear();
     e.taggedMinefields.clear();
@@ -912,18 +940,18 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         case Effect::UnitDesignsSteal: {
             // The thief learns exactly one design of the target: the newest of
             // the right class (ship or base, or a unit type) that has been
-            // built at least once, that the thief does not know and that its
-            // owner can still build. It is dated as seen this turn and is not
-            // copied into the thief's designs; with no such design the
-            // operation fails (spec 05 §2.3, §8, confirmed: binary). "Built at
-            // least once" reads Design::built (inferred, spec 05 open question 41).
+            // built at least once (Design::everBuilt: a queue completed one, or
+            // a ship was retrofitted to it), that the thief does not know and
+            // that its owner can still build. It is dated as seen this turn and
+            // is not copied into the thief's designs; with no such design the
+            // operation fails (spec 05 §2.3, §8, open question 41, confirmed: binary).
             if (!victim || !living(s, t.source)) return out;
             const bool units = e == Effect::UnitDesignsSteal;
             const Knowledge& known = s.empire(t.source).knowledge;
             std::optional<DesignId> newest;
             for (DesignId d : designsOfClass(r, s, t.empire, units)) {
                 const Design& design = s.design(d);
-                if (design.built <= 0 || knowsDesign(known, d) || !r.designTechnology(*victim, design)) continue;
+                if (!design.everBuilt || knowsDesign(known, d) || !r.designTechnology(*victim, design)) continue;
                 if (!newest || d > *newest) newest = d;   // designs are numbered in creation order
             }
             if (!newest) return out;
@@ -1400,13 +1428,12 @@ bool inSystem(const GameState& s, ObjectId o) {
     return std::find(objs.begin(), objs.end(), o) != objs.end();
 }
 
-// An empire's home planet location, system and sector (spec 05 §4): where a
-// capital colony (Colony::homeworld) lies (inferred: the engine records only
-// the home system, Empire::homeSystem, not the sector; spec 05 open question 42).
+// Some empire's recorded home planet location, system and sector (spec 05 §4,
+// open question 42, confirmed: binary): every empire's counts, destroyed ones
+// included, whoever owns the planet now; other capitals are not protected.
 bool atHomeLocation(const GameState& s, Location where) {
-    for (const auto& c : s.colonies)
-        if (c && c->homeworld && inSystem(s, c->planet) && locationOf(s.galaxy, c->planet) == where) return true;
-    return false;
+    return std::any_of(s.empires.begin(), s.empires.end(),
+                       [&](const Empire& e) { return e.homeSystem.valid() && Location{e.homeSystem, e.homeSector} == where; });
 }
 
 // Empires that hear about an event under its `Message To` setting.

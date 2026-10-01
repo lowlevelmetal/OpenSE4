@@ -3,6 +3,7 @@
 
 #include "engine_fixture.hpp"
 #include "politics_fixture.hpp"
+#include "temp_dir.hpp"
 
 #include "game/ai.hpp"
 #include "game/combat_detail.hpp"
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <map>
 #include <memory>
 
@@ -418,6 +420,35 @@ TEST_CASE("events: High and Catastrophic planet events spare homeworlds") {
     CHECK(highHomes == 0);
 }
 
+TEST_CASE("events: severe events spare every empire's recorded home location, whoever owns it now (spec 05 Q42)") {
+    auto high = rulesWith({event(Effect::PlanetValueChange, 1, "High")});
+    GameState s = newPoliticsGame();
+    // The recorded locations are set at creation and never move.
+    for (const Empire& e : s.empires) {
+        REQUIRE(e.homeSystem.valid());
+        CHECK(locationOf(s.galaxy, homeworld(s, e.id).planet) == Location{e.homeSystem, e.homeSector});
+    }
+    const ObjectId homeA = homeworld(s, kA).planet, homeB = homeworld(s, kB).planet, homeC = homeworld(s, kC).planet;
+    // B takes A's home planet; C is destroyed and A holds its home planet.
+    diplomacy::transferColony(s, homeA, kB);
+    diplomacy::transferColony(s, homeC, kA);
+    s.empire(kC).alive = false;
+    // Another capital (a second starting planet) is not protected.
+    const ObjectId other = secondColony(s, kB, 50);
+    s.colony(other)->homeworld = true;
+    int otherPicked = 0;
+    Rng rng(7);
+    for (int i = 0; i < 1500; ++i) {
+        const auto t = events::pickEventTarget(*high, s, 0, rng);
+        if (!t) continue;
+        CHECK(t->object != homeA);
+        CHECK(t->object != homeC);
+        CHECK(t->object != homeB);
+        otherPicked += t->object == other;
+    }
+    CHECK(otherPicked > 0);
+}
+
 TEST_CASE("events: the bad-event ability counts only unowned objects and positive values") {
     const Rules& pr = politicsRules();
     auto r = rulesWith({event(Effect::PoliticsTreatyInfo, 1)});
@@ -795,6 +826,75 @@ TEST_CASE("events: planet effects") {
     out = hit(s, Effect::PlanetPopulationRebel, target(third), 1);
     CHECK_FALSE(out.applied);
     CHECK(s.colony(third)->owner == kA);
+}
+
+TEST_CASE("events: a rebel empire keeps its former owner's ministers' state, anger and experience (spec 05 Q41)") {
+    // Two neutral races in a scratch install: one whose pictures an empire
+    // uses, one free.
+    test::TempDir dir("rebel_pictures");
+    auto general = [&](std::string_view folder) {
+        const std::filesystem::path file = dir.path() / "Pictures" / "RaceNeutral" / folder / std::format("{}_AI_General.txt", folder);
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file, std::ios::binary) << "Test file written by opense4 tests.\n*BEGIN*\nName := " << folder << "\n*END*\n";
+    };
+    general("Hermit");
+    general("Drifter");
+    ruleset::Ruleset rs = buildPoliticsRuleset();
+    rs.names.empireNames = {"Realm 2 Union", "Realm 2", "Free Traders"};  // drawn until one is unique
+    const Rules r{std::move(rs), dir.path()};
+    REQUIRE(r.racePresets().size() == 2);
+
+    GameState s = newPoliticsGame();
+    Empire& owner = s.empire(kA);
+    owner.experience = 1234;
+    owner.ministerStyle = "Aggressive";
+    owner.aiState = 3;
+    owner.aiTurnsInState = 7;
+    owner.aiMemory.targets = {SystemId{1u}};
+    owner.aiMemory.staging = SystemId{2u};
+    owner.aiMemory.afterAttack = 4;
+    owner.aiMemory.avoid = {SystemId{3u}};
+    owner.relation(kB).anger = 77;
+    owner.relation(kB).turnsSinceWar = 3;
+    owner.relation(kB).queuedWar = 2;
+    owner.relation(kB).promises = 1;
+    owner.relation(kB).contact = true;
+    owner.relation(kB).treaty = Treaty::TradeAlliance;
+    s.empire(kB).race.style = "Hermit";
+    const ObjectId planet = secondColony(s, kA, 50);
+    s.galaxy.system(s.galaxy.object(planet).system).name.clear();  // an empty system name draws from the list
+    TurnContext ctx = context(r, s);
+    const EmpireId id = effects::breakAway(ctx, planet);
+    REQUIRE(id.valid());
+    const Empire& reb = s.empire(id);
+    CHECK(reb.name == "Free Traders");
+    CHECK(reb.race.style == "Drifter");
+    CHECK(reb.experience == 1234);
+    CHECK(reb.ministerStyle == "Aggressive");
+    CHECK(reb.aiState == 3);
+    CHECK(reb.aiTurnsInState == 7);
+    CHECK(reb.aiMemory.targets == std::vector<SystemId>{SystemId{1u}});
+    CHECK(reb.aiMemory.staging == SystemId{2u});
+    CHECK(reb.aiMemory.afterAttack == 4);
+    CHECK(reb.aiMemory.avoid.empty());
+    // Anger and the turns since war are kept; treaties and demand lists start afresh.
+    const Relation& rel = reb.relation(kB);
+    CHECK(rel.anger == 77);
+    CHECK(rel.turnsSinceWar == 3);
+    CHECK_FALSE(rel.contact);
+    CHECK(rel.treaty == Treaty::None);
+    CHECK(rel.queuedWar == 0);
+    CHECK(rel.promises == 0);
+    // Its home is the planet's system and sector.
+    CHECK(reb.homeSystem == s.galaxy.object(planet).system);
+    CHECK(reb.homeSector == s.galaxy.object(planet).sector);
+    // All neutral races in use: one of them anyway.
+    GameState again = s;
+    again.empire(kC).race.style = "Drifter";
+    TurnContext actx = context(r, again);
+    const EmpireId second = effects::breakAway(actx, secondColony(again, kA, 30));
+    REQUIRE(second.valid());
+    CHECK((again.empire(second).race.style == "Hermit" || again.empire(second).race.style == "Drifter"));
 }
 
 TEST_CASE("events: points and projects") {

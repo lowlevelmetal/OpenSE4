@@ -239,7 +239,9 @@ TEST_CASE("engine: scrap refunds and retrofit keeps damage") {
     v.damage[0] = 5;
     const VehicleId id = v.id;
     const Resources before = s.empires[0].stockpile;
+    CHECK_FALSE(s.design(b).everBuilt);
     REQUIRE(apply(r, s, me, cmd::Retrofit{id, b}).ok);
+    CHECK(s.design(b).everBuilt);  // design theft can take it now (spec 05 §2.3)
     const Vehicle* after = s.vehicle(id);
     CHECK(after->design == b);
     CHECK(after->damage[0] == 5);

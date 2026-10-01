@@ -500,6 +500,7 @@ struct Applier {
         const std::string name = newD.name;
         // A design a ship is retrofitted to is no longer a prototype (spec 03 §4.1).
         s.design(c.design).retrofitted = true;
+        s.design(c.design).everBuilt = true;  // what design theft reads (spec 05 §2.3)
         v->design = c.design;
         v->damage = std::move(damage);
         // Movement and supply recomputed and clamped to the new maxima.
@@ -646,6 +647,7 @@ struct Applier {
         current.strategy = d.strategy < std::max<size_t>(1, emp().strategies.size()) ? d.strategy : 0;
         current.obsolete = false;
         current.retrofitted = false;
+        current.everBuilt = false;
         current.createdTurn = s.turn;
         resetDesignStatistics(current);
         for (Empire& other : s.empires) std::erase_if(other.knowledge.seenDesigns, [&](const SeenDesign& x) { return x.design == c.design; });

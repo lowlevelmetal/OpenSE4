@@ -230,6 +230,11 @@ struct Empire {
     // a capital (Colony::homeworld), so that flag alone does not tell which
     // one is home.
     SystemId homeSystem;
+    // The home planet's sector, recorded with the home system on the same
+    // occasions and never moved either, not even when the empire is
+    // destroyed: with it, the home planet location that High and Catastrophic
+    // events spare (spec 05 §4, open question 42, confirmed: binary).
+    Sector homeSector;
     std::vector<SystemId> claimedSystems;
     std::vector<SystemId> systemsToAvoid;
     std::vector<Location> taggedMinefields;
@@ -439,6 +444,12 @@ struct Design {
     // A ship was retrofitted to it: it is no longer a prototype, even with
     // nothing built (spec 03 §4.1; designIsPrototype, design.hpp).
     bool retrofitted = false;
+    // "Built at least once", what design theft reads (spec 05 §2.3, open
+    // question 41, confirmed: binary): set when a queue completes a vehicle
+    // or unit of it or a ship is retrofitted to it, cleared only when the
+    // design is saved again in the designer (cmd::EditDesign). No statistics
+    // reset clears it, and the starting ships of a new game do not set it.
+    bool everBuilt = false;
     // Statistics (spec 03 §4.1, spec 04 §15); resetDesignStatistics (design.hpp) zeroes them.
     // There is no kill counter (confirmed: binary).
     int built = 0;

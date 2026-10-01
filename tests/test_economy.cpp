@@ -1306,6 +1306,8 @@ TEST_CASE("economy: ships leave a queue that has lost its yard at the start of i
     CHECK(s.vehicles.size() == before);
     CHECK(home.queue.items.empty());
     CHECK(home.cargo.unitCount(fighter) == 1);
+    CHECK(s.design(fighter).everBuilt);  // built at least once (spec 05 §2.3)
+    CHECK_FALSE(s.design(ship).everBuilt);
     CHECK_FALSE(logged(s, kMe, "cannot build"));
 }
 
@@ -1331,6 +1333,7 @@ TEST_CASE("economy: space yard ships build where they are, but not while cloaked
     REQUIRE(s.vehicles.size() == before + 1);
     CHECK(s.vehicles.back().location == spot);
     CHECK(s.vehicle(yard)->queue.items.empty());
+    CHECK(s.design(ship).everBuilt);
 }
 
 TEST_CASE("economy: empire experience is capped and gives the race age") {

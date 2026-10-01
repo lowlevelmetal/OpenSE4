@@ -363,7 +363,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.techLevels, e.research, e.researchEvenly, e.repeatResearch, e.uniqueAreasUnlocked, e.researchPool);
     fields(ar, e.intel, e.intelEvenly, e.repeatIntel, e.intelPool);
     fields(ar, e.relations, e.knowledge);
-    fields(ar, e.homeSystem, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
+    fields(ar, e.homeSystem, e.homeSector, e.claimedSystems, e.systemsToAvoid, e.taggedMinefields, e.waypoints, e.designTypes, e.colonyTypes, e.strategies,
            e.repairPriorities, e.designs);
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
@@ -398,7 +398,7 @@ template <class Ar>
 void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
            d.enemyTonnageDestroyed);
-    fields(ar, d.templateName);
+    fields(ar, d.templateName, d.everBuilt);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount); }
