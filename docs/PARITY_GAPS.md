@@ -68,26 +68,39 @@ attacks again every time its list runs, and other participants lose only a Sentr
 head of their lists. In simultaneous games every sector where an object carried out an
 order that day, a waiting Sentry included, is checked from the side of each empire with
 an uncloaked vehicle there, and a sector fights again in the same turn only when
-newcomers arrive or a survivor was damaged. The details the spec leaves open are the
-engine's choices in spec 04 §19.1. The questions of §19.2, answered from the executable
-on 2026-09-30, found the differences below.
+newcomers arrive or a survivor was damaged.
 
-| Item | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Planning targets (`planTarget`, `chooseMode`, `assigned_`, `incomingSeekerDamage`, `buildWeapons`) | Each weapon gets the first sorted target it can hit and affect, with no budget, no overkill total and no push/pull spreading; point-defense and warheads get none; a fighter group's weapons get separate targets; the main target is the first some weapon can engage. The overkill total adds up a side's assignments over the combat turn, counts seekers in flight and uses current hit points | Spec 04 §16 "How the computer gives out targets" and "Overkill limit", §19.2 Q60: the firing steps without the distance check; first B candidates in rounds; totals from 0 at every choice, full hit points, seekers in flight never counted | M |
-| Attack map and square choice (`attackMap`, `rangeSquare`, Optimal, Maximum Range) | The mover may keep its own square; the attack map leaves point-defense and warheads out, compares unweighted damage with emissive armor, then scales and truncates, and has no border over-count; Optimal takes the lowest ratio even at 9999 or more; Maximum Range leaves point-defense out and breaks ring ties 1 in 10 | Spec 04 §16.1 "Attack map", "Choosing the square", Optimal and Maximum Range; §19.2 Q61 | M |
-| Surrounded pieces (`combat_space.cpp`, after the leader's walk) | Checked after the leader's move; only leaders | Checked when any computer piece not following a slot is picked, before it plans: it does not move but fires, and a leader's whole group dissolves first (spec 04 §16.1, spec 03 §10) | L |
-| Launching (`phasePieces`, `launchFrom`) | Each carrier is handled once per phase, so it never launches a second wave; Anti-Planet Drone designs are launched like other drones | The search restarts after every action, so a carrier launches again in the same phase when its limits and rate allow; Anti-Planet Drone stacks are not launched by the computer's batches (spec 04 §16.1, §10.7, §19.2 Q62) | M |
-| Board, Ram and Drop Troops strategies (`boardTarget`, the ram target, `pathToward`, `troopTarget`) | Board without a target uses Don't Get Hurt and targets any shields-down ship, nearest first; the ram target is the first sorted target (planets and unit groups possible) and Ram without one uses Don't Get Hurt; ramming steps greedily; Drop Troops skips contested colonies and reads only Attack orders | Spec 04 §16.1 Board, Ram, Drop Troops; §19.2 Q69 | M |
-| Combat groups (`setGroup`, fleet groups in `Battle::place`, `strategyIndex`) | A member keeps the offset it got when it joined; member numbers come from a counter that never reuses them; fleet groups have no number; a fleet ship in a tactical group uses its design's strategy | Places from the member number and the current leader's formation; 1 + the highest number held; fleet groups numbered 1, 2, 3… with the tactical groups; a fleet ship in any group uses the fleet's strategy (spec 04 §3 steps 5 and 8, §5, §19.2 Q64, §19.1 Q50) | L |
-| Start positions (`Battle::place`, `Battle::settle`) | Middle empires ranked by colonies and vehicles anywhere in the system, vehicles by creation order; hops may leave the map; the search scans row by row and refuses a 4×4 footprint that sticks out | Ranked by the first piece already in the battle sector, by object slot; hops clamped to the map; column-by-column search; footprint squares off the map ignored (spec 04 §3 step 4, §19.2 Q57, Q58) | L |
-| Battle checks (`battleForces`, `visibleTo`, `seesHostile`, `combat.cpp`) | A passed check with nobody hostile having pieces fights no battle and the mover keeps its orders; colonies are always seen and every colony counts as an uncloaked watcher; vehicles have an extra "uncloaked in an unobscured sector" fallback; in simultaneous games a minefield makes its owner a seeing side | A passed check always fights (ending at the first end check), clearing the mover's orders; colonies follow the sight rules and a cloaked colony is no watcher; no fallback; minefields take no part in the simultaneous check (spec 04 §2, §19.2 Q73–Q75) | L |
-| Pursuits meeting a battle (`movement.cpp`, `entryCombat`) | A battle on a pursuit's step fails its order and clears the lists | The pursuit only stops moving for this run; its order and list are kept, also after mines, storm or turbulence damage (spec 04 §2, spec 03 §6.4, §19.2 Q76) | M |
-| Mine strikes on unit groups (`combat.cpp`, mine strike) | One shield pool per unit group for the whole strike; emptied stacks kept until it ends; the mine's credit uses the tonnage at the group's first strike | Both pools reset and the dead removed after every warhead; credit per mine, from the units the group had when that mine picked it (spec 04 §10.6, §15, §19.2 Q68) | L |
-| Combat simulator strategies (`simulator.cpp`) | Every side uses the viewer's strategies | Each side keeps its copied empire's list; design strategies come from the design's real owner; planets use the viewer's planet strategy (spec 04 §17, §19.2 Q71) | L |
-| Unit group supply (`combat_space.cpp`, `joinUnit`, `shoot`) | Supply per unit; a group that mixes designs keeps the smallest full load | One pool per group, capacity the total `Supply Storage` of its units, refilled at every launch into it (spec 04 §19.1, Q56 bullet) | L |
-| Cloaking after a battle | The battle leaves a vehicle's cloaked status as it was; end-of-turn upkeep decloaks one that can no longer cloak | Every surviving piece cloaked at the start is decloaked and cloaks again at the battle's end only if it still can; a captured ship cloaks for its new owner (spec 04 §2) | L |
-| Small details (`seekerHit`, `Battle::advance`) | Seekers ignore the planet-only types and Crew Conversion; a strategic or unseen battle ends without the next turn's upkeep | Those types damage seekers like other non-hull types (modded data only); the upkeep runs once more before the end check (one more organic armor restore) (spec 04 §10.1, §4, §19.2 Q66, Q70) | L |
+On 2026-09-30 the engine was brought in line with the answers of spec 04 §19.2 (Q57-Q77)
+and with spec 03 §19 Q60 and Q68 and spec 02 §13 Q54. A computer piece gives its weapons
+targets at every choice by the steps of §16 (the first B candidates in rounds, the
+overkill totals from 0 with full hit points, push weapons spread, point-defense and
+warheads included, a fighter group's single target), builds the attack map and chooses
+its square as §16.1 says (`Battle::chooseTargets`, `attackMap`, `rangeSquare`); a
+surrounded piece makes no plan and its group dissolves first; a carrier reached again
+launches again in the same phase, and Anti-Planet Drones are left out of the batches
+(`phasePieces`, `launchFrom`); Board, Ram and Drop Troops pick their targets and squares
+by §16.1, and drone groups move by their strategies like any piece, their target read
+from their first Attack order when the battle starts. Combat groups keep only member
+numbers, places come from the current leader's formation, fleet groups are numbered with
+the tactical groups, and a fleet ship uses the fleet's strategy in any group; the group
+of an automated side dissolves when its leader, left without movement, survives a hit.
+Start positions rank the empires in the middle by object order (`objectOrderKey`, one
+helper shared with the coming slot order of spec 03 §19 Q62) and hops stay on the map. A
+check that passes always fights, colonies are seen by current sensors, minefields never
+see; a pursuit meeting a battle, mines, a storm or turbulence keeps its order. Mines
+strike unit groups with fresh pools per warhead and credit per mine. A fighter group has
+one supply pool, refilled at every launch into it; pieces cloaked at the start cloak again
+afterwards if they can; seekers take every damage type but Shields Only and the reload
+types; an unseen battle runs the next turn's upkeep before it ends; the simulator keeps
+each side's copied strategy list; a planet hit past its shields trims its cargo at once.
+
+The engine's own choices where the spec is silent are spec 04 §19.1 and the open
+questions of §19.3 (Q78-Q86). No row remains. Two details wait on other work: combat
+reads a drone group's first order and a troop ship's Attack orders from the vehicle's own
+list, so a fleet member's orders are seen once fleet lists become the members' lists
+(spec 03 §19 Q65); and the start positions take the object order from `objectOrderKey`,
+which puts every planet before every vehicle until the shared slot order of spec 03 §19
+Q62 is in place.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
