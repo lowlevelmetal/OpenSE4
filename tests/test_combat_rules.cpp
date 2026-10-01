@@ -253,7 +253,40 @@ TEST_CASE("combat rules: mines strike unit groups by the unit group rule") {
     CHECK(spent);
     CHECK((s.vehicle(group) == nullptr || s.vehicle(group)->count == 0));
     CHECK(s.design(sat).lost == 12);
-    CHECK(s.design(mine).enemyTonnageDestroyed == 12 * int64_t{r.hull(s.design(sat).hull).tonnage});
+    // The mine that destroys the group is credited with the units the group
+    // had when that mine picked it: six (spec 04 §15, §19.2 Q68).
+    CHECK(s.design(mine).enemyTonnageDestroyed == 6 * int64_t{r.hull(s.design(sat).hull).tonnage});
+}
+
+TEST_CASE("combat rules: every mine warhead strikes a unit group with fresh pools") {
+    // Spec 04 §10.6, §19.2 Q68 (confirmed: binary): after each warhead the dead
+    // leave and both pools go back to 0, so a Shields Only warhead does nothing
+    // to a unit group; a hull-damaging warhead's rest is the strike's shared
+    // leftover and joins the next one.
+    ruleset::Ruleset rs = buildCombatRuleset();
+    gun(rs, "CT Shield Warhead", ruleset::WeaponKind::Warhead, {100}, "Shields Only");
+    gun(rs, "CT Small Warhead", ruleset::WeaponKind::Warhead, {12}, "Normal");
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    Arena ar = makeArena(rules);
+    GameState& s = ar.s;
+    const DesignId mine = addTestDesign(s, rules, ar.b, "Sparkler", "Test Mine Hull", {"CT Shield Warhead", "CT Small Warhead"});
+    Vehicle& laid = opense4::test::addTestVehicle(s, rules, mine, ar.loc);
+    laid.count = 2;
+    const DesignId sat = addTestDesign(s, rules, ar.a, "Bulwark", "Test Satellite Hull", {"Test Satellite Gun", "CT Phased Shield"});
+    REQUIRE(combat::detail::unitHitPoints(rules, s.design(sat)) == 40);   // 20 structure + 20 shields
+    Vehicle& buoys = opense4::test::addTestVehicle(s, rules, sat, ar.loc);
+    buoys.count = 5;
+    const VehicleId group = buoys.id;
+    TurnContext ctx = context(s, rules);
+    const std::vector<VehicleId> entering{group};
+    combat::resolveSpaceCombat(ctx, ar.loc, entering);
+    // First mine: 100 into the shield pool is lost, then 12 < 40 kills nobody
+    // and stays as the leftover. Second mine: 100 lost again, then 12 + 12 = 24 < 40.
+    // (Were the shield pool kept, 112 would have killed units.)
+    REQUIRE(s.vehicle(group) != nullptr);
+    CHECK(s.vehicle(group)->count == 5);
+    CHECK(s.design(sat).lost == 0);
 }
 
 TEST_CASE("combat rules: a mine picks immune vehicles too, and is spent") {
@@ -796,6 +829,46 @@ TEST_CASE("combat rules: the simulator's sides copy the empire of their first it
         if (p.kind != CombatPiece::Kind::Vehicle) continue;
         if (p.owner == b.participants().front()) CHECK(p.startY <= 6);   // the top edge
     }
+}
+
+TEST_CASE("combat rules: the simulator's sides keep their copied strategy lists; designs fight with their real owner's strategy") {
+    // Spec 04 §17, §19.2 Q71 (confirmed: binary).
+    const Rules& r = combatRules();
+    Arena ar = makeArena(19);
+    GameState& s = ar.s;
+    s.empire(ar.a).strategies = {ruleset::CombatStrategy{"Mine A", {{"Primary Movement Strategy", "Optimal Weapons Range"}}},
+                                 ruleset::CombatStrategy{"Mine B", {{"Primary Movement Strategy", "Point Blank"}}}};
+    s.empire(ar.b).strategies = {ruleset::CombatStrategy{"Theirs A", {{"Primary Movement Strategy", "Ram"}}},
+                                 ruleset::CombatStrategy{"Theirs B", {{"Primary Movement Strategy", "Don't Get Hurt"}}}};
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser", "Test Armor Plate"});
+    const DesignId raider = frigate(s, ar.b, "Raider", 3, {"Test Laser", "Test Armor Plate"});
+    s.design(raider).strategy = 1;
+    seeDesign(s.empire(ar.a).knowledge, raider, s.turn);
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    setup.sides = {{"Blue", true}, {"Red", true}};
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, raider, {}, 1, 1});   // Red is a copy of B
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, lancer, {}, 0, 1});
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, lancer, {}, 1, 1});   // A's design on B's side
+    setup.items.push_back({combat::SimulatorItem::Kind::Planet, {}, homeworld(s, ar.a).planet, 1});
+    REQUIRE(combat::simulatorProblem(r, s, setup).empty());
+    combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    const Empire& red = sim.state.empire(sim.sides[1]);
+    REQUIRE(red.strategies.size() >= 2);
+    CHECK(red.strategies[0].name == "Theirs A");   // B's list, copied
+    CHECK(red.strategies[1].name == "Theirs B");
+    CHECK(sim.state.empire(sim.sides[0]).strategies.front().name == "Mine A");
+    auto strategyOf = [&](EmpireId side, std::string_view design) -> std::string {
+        for (const Design& d : sim.state.designs)
+            if (d.owner == side && d.name == design) return sim.state.empire(side).strategies[d.strategy].name;
+        return "?";
+    };
+    CHECK(strategyOf(sim.sides[1], "Raider") == "Theirs B");   // the enemy design's own strategy
+    CHECK(strategyOf(sim.sides[1], "Lancer") == "Mine A");     // from its real owner's list
+    // Every planet uses the viewer's strategy for planets (its first).
+    REQUIRE(sim.planetStrategies.size() == 1);
+    CHECK(sim.planetStrategies.front().first == sim.sides[1]);
+    CHECK(red.strategies[sim.planetStrategies.front().second].name == "Mine A");
 }
 
 TEST_CASE("combat rules: in the simulator only side 1 gets hand control back when Auto is released") {

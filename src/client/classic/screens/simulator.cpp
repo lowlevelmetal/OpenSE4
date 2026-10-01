@@ -217,7 +217,9 @@ private:
         ImGui::EndChild();
     }
 
-    // Count, strategy, fleet formation and cargo of the selected item.
+    // Count, fleet formation and strategy, and cargo of the selected item. A
+    // ship outside a fleet fights with its design's strategy, from the list of
+    // the design's real owner (spec 04 §17).
     void details(UiContext& ui) {
         if (selected_ < 0 || size_t(selected_) >= setup_.items.size()) {
             dimText("Right-click an item to remove it.");
@@ -231,13 +233,9 @@ private:
             ImGui::SameLine(ui.px(200));
             ImGui::SetNextItemWidth(ui.px(110));
             ImGui::SliderInt("##count", &i.count, 1, game::combat::kSimulatorMaxCount, "%d");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(ui.px(170));
-            const std::string current = i.strategy < me.strategies.size() ? me.strategies[i.strategy].name : std::string("Default");
-            if (ImGui::BeginCombo("##strategy", current.c_str())) {
-                for (uint32_t k = 0; k < me.strategies.size(); ++k)
-                    if (ImGui::Selectable(me.strategies[k].name.c_str(), i.strategy == k)) i.strategy = k;
-                ImGui::EndCombo();
+            if (const game::Design& d = s.design(i.design); d.owner == me.id && d.strategy < me.strategies.size()) {
+                ImGui::SameLine();
+                dimText(me.strategies[d.strategy].name.c_str());
             }
         }
         if (i.fleet >= 0 && size_t(i.fleet) < setup_.fleets.size()) {

@@ -127,7 +127,6 @@ std::string simulatorProblem(const Rules& r, const GameState& s, const Simulator
     for (const SimulatorItem& item : setup.items) {
         if (item.side < 0 || static_cast<size_t>(item.side) >= setup.sides.size()) return "An item belongs to no side.";
         if (item.count < 1 || item.count > kSimulatorMaxCount) return std::format("Between 1 and {} of each item.", kSimulatorMaxCount);
-        if (item.strategy >= strategies) return "An item has no such strategy.";
         if (item.kind == SimulatorItem::Kind::Planet) {
             if (std::find(samples.begin(), samples.end(), item.planet) == samples.end()) return "Sample planets come from the home system.";
             if (item.count != 1) return "Each sample planet can be used once.";
@@ -187,8 +186,9 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
     sim.where = Location{arena.id, Sector{kSystemCenter, kSystemCenter}};
 
     // One empire per side: a copy of the real empire that owns the side's first
-    // item (the viewer's for a planet or an empty side), at war with every
-    // other side. Every side uses the viewer's strategies (inferred).
+    // item (the viewer's for a planet or an empty side), its strategy list
+    // included, at war with every other side (spec 04 §17, §19.2 Q71).
+    std::vector<EmpireId> copiedFrom;
     for (size_t k = 0; k < setup.sides.size(); ++k) {
         EmpireId owner = viewer;
         for (const SimulatorItem& item : setup.items)
@@ -199,7 +199,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
                 break;
             }
         Empire e = real.empire(owner);
-        e.strategies = real.empire(viewer).strategies;
+        copiedFrom.push_back(owner);
         e.id = EmpireId{sb.empires.size()};
         e.name = setup.sides[k].name.empty() ? std::format("Side {}", k + 1) : setup.sides[k].name;
         e.kind = setup.sides[k].computer ? PlayerKind::Computer : PlayerKind::Human;
@@ -231,14 +231,32 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
                 rel.treaty = Treaty::War;
             }
 
-    // Each side's own copies of the designs it uses, with the item's strategy.
-    std::map<std::tuple<size_t, uint32_t, uint32_t>, DesignId> copies;
-    auto copyOf = [&](size_t side, DesignId d, uint32_t strategy) {
-        const auto key = std::tuple{side, d.value, strategy};
+    // A side's index for strategy `index` of real empire `from`: the same
+    // index when the side copies that empire, else the record added to the
+    // side's list (once).
+    std::map<std::tuple<size_t, uint32_t, uint32_t>, uint32_t> added;
+    auto strategyFor = [&](size_t side, EmpireId from, uint32_t index) -> uint32_t {
+        if (!from.valid() || from.index() >= real.empires.size() || from == copiedFrom[side]) return index;
+        const auto& list = real.empire(from).strategies;
+        if (list.empty()) return index;
+        const uint32_t pick = index < list.size() ? index : 0;
+        const auto key = std::tuple{side, from.value, pick};
+        if (auto it = added.find(key); it != added.end()) return it->second;
+        auto& own = sb.empire(sim.sides[side]).strategies;
+        const uint32_t at = static_cast<uint32_t>(own.size());
+        own.push_back(list[pick]);
+        added.emplace(key, at);
+        return at;
+    };
+    // Each side's own copies of the designs it uses, each with its real
+    // owner's strategy for it.
+    std::map<std::pair<size_t, uint32_t>, DesignId> copies;
+    auto copyOf = [&](size_t side, DesignId d) {
+        const auto key = std::pair{side, d.value};
         if (auto it = copies.find(key); it != copies.end()) return it->second;
         Design c = real.design(d);
         c.owner = sim.sides[side];
-        c.strategy = strategy;
+        c.strategy = strategyFor(side, real.design(d).owner, real.design(d).strategy);
         c.obsolete = false;
         c.built = c.lost = 0;
         c.enemyTonnageDestroyed = 0;
@@ -249,7 +267,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
     auto copyCargo = [&](size_t side, const std::vector<UnitStack>& units) {
         std::vector<UnitStack> out;
         for (const UnitStack& u : units)
-            if (u.count > 0) out.push_back({copyOf(side, u.design, 0), u.count});
+            if (u.count > 0) out.push_back({copyOf(side, u.design), u.count});
         return out;
     };
 
@@ -277,9 +295,13 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
             sb.galaxy.objects.push_back(std::move(obj));
             if (sb.colonies.size() < sb.galaxy.objects.size()) sb.colonies.resize(sb.galaxy.objects.size());
             sb.colonies[c.planet.index()] = std::move(c);
+            // Every planet uses the viewer's strategy for planets (spec 04 §17, §19.2 Q71).
+            const uint32_t planets = strategyFor(side, viewer, 0);
+            if (std::none_of(sim.planetStrategies.begin(), sim.planetStrategies.end(), [&](const auto& ps) { return ps.first == owner; }))
+                sim.planetStrategies.emplace_back(owner, planets);
             continue;
         }
-        const DesignId d = copyOf(side, item.design, item.strategy);
+        const DesignId d = copyOf(side, item.design);
         const VehicleType type = r.hull(sb.design(d).hull).type;
         const bool units = isUnitType(type);
         if (units && type != VehicleType::Drone) {
@@ -354,6 +376,7 @@ TacticalBattle startSimulation(const Rules& r, Simulation sim) {
     if (!sim.sides.empty()) setup.release = std::vector<EmpireId>{sim.sides.front()};
     setup.interference = sim.interference;
     setup.disruption = sim.disruption;
+    setup.planetStrategies = sim.planetStrategies;
     return TacticalBattle(r, std::move(sim.state), std::move(setup));
 }
 

@@ -1816,12 +1816,10 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     survives, even one its shields absorb completely, its movement left for this combat turn is
     lowered to its new maximum; if that leaves 0 and its side is automated, the whole group
     dissolves. A leader that has already used up its movement this combat turn is therefore
-    enough (confirmed: binary). The engine differs: it dissolves the group only when the hit
-    takes the leader's maximum to 0 and the leader had movement at the start of the combat turn.
-    The other trigger, a surrounded leader, is tested once, when the leader's turn to act comes
-    in an automated phase, before it plans and moves; there is no test after the move, and a
-    surrounded leader does not move (spec 04 §16.1) (confirmed: binary). The engine differs
-    there too: it tests after the leader's move.
+    enough (confirmed: binary). The other trigger, a surrounded leader, is tested once, when the
+    leader's turn to act comes in an automated phase, before it plans and moves; there is no
+    test after the move, and a surrounded leader does not move (spec 04 §16.1) (confirmed:
+    binary). The engine follows both since 2026-09-30.
 61. **Fleet members away from the fleet's sector (§6.3 step 2):** **Answer:** no. Every fleet
     member's daily gain uses the fleet's figure, wherever the member is: the lowest MP left among
     the fleet's members at the fleet's location. A member elsewhere is not counted in it. With no
@@ -1902,8 +1900,8 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     its kind (ship, base, planet or unit group). Otherwise, and for drones launched during the
     battle (they have no orders), the target is chosen as for a computer player's piece (spec 04
     §10.7) (confirmed: binary). So a pursuing drone caught in a battle on its way attacks its own
-    target only if that target is there. The engine differs: it records the target when the
-    pursuit attacks, keeps it after the order has ended, and ignores a planet target.
+    target only if that target is there. The engine follows this since 2026-09-30: combat reads the target from the order, and
+    nothing is stored.
 69. **Turn-based Attack by a group that is not all drones (§8):** **Answer:** no member decloaks.
     The Attack spends 1 MP and one move's supply per member and runs the battle check at once; a
     battle that starts decloaks every piece for that battle (spec 04 §2). The only exception is

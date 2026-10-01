@@ -191,8 +191,10 @@ own copy of the game, forking the random numbers and striking with mines exactly
 
 The accepted orders are the battle's `script()`: the same start and script give the same
 battle. Tests check that a player side whose phases the strategies play (AutoPhase), the
-strategies' orders given by hand, and the replayed script all give the strategic battle,
-bit for bit.
+strategies' orders given by hand, and the replayed script all give the same battle, bit
+for bit, and the strategic battle unless a player side has a fleet: a player's side is
+not automated, so a hit on its group's leader never dissolves the group as it does for
+an automated side (spec 03 §19 Q60).
 
 In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
 play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
@@ -217,9 +219,10 @@ keep `design` (the first stack's) and `count` (the total) in step, and
 whose weapons refer to its design stacks.
 
 The combat simulator (`simulator.hpp`) builds a sandbox copy of the game: one virtual
-empire per side (a copy of the player's, at war with the others), the chosen designs,
-seen enemy designs and sample planets in an empty new system, cargo, fleets, strategies,
-and the sides the computer controls. `startSimulation` returns the `TacticalBattle`;
+empire per side (a copy of the empire that owns the side's first item, its strategy list
+included, at war with the others), the chosen designs, seen enemy designs and sample
+planets in an empty new system, cargo, fleets with their strategies, and the sides the
+computer controls. `startSimulation` returns the `TacticalBattle`;
 the real game is never changed.
 
 ## Determinism

@@ -571,15 +571,87 @@ TEST_CASE("combat: the battle check - one-directional in turn-based games; colon
     CHECK(combat::battleCheck(r, t, there, daily));
 
     // A minefield is never what a simultaneous check sees; a turn-based step
-    // that sees one passes the check, but with nobody to fight no battle starts.
+    // that sees one passes the check, and a check that passes always starts a
+    // battle (spec 04 §2, §19.2 Q73).
     Arena mf = makeArena();
     const VehicleId walker = spawn(mf.s, frigate(mf.s, mf.a, "Walker", 1, {}), mf.loc);
     const VehicleId field = spawn(mf.s, design(mf.s, mf.b, "Mine", "Test Mine Hull", {"Test Warhead"}), mf.loc, 3);
     mf.s.empire(mf.b).relation(mf.a).treaty = Treaty::NonAggression;  // only A's view counts
     CHECK_FALSE(combat::battleCheck(r, mf.s, mf.loc, daily));
-    CHECK(combat::battleCheck(r, mf.s, mf.loc, combat::BattleCheck{{walker}}) ==
-          combat::detail::visibleTo(r, mf.s, mf.a, *mf.s.vehicle(field)));
-    CHECK_FALSE(combat::detail::battleForces(r, mf.s, mf.loc, combat::BattleCheck{{walker}}).battle);
+    const bool seen = combat::detail::visibleTo(r, mf.s, mf.a, *mf.s.vehicle(field));
+    CHECK(seen);   // the fixture's mines have no cloak
+    CHECK(combat::battleCheck(r, mf.s, mf.loc, combat::BattleCheck{{walker}}));
+    CHECK(combat::detail::battleForces(r, mf.s, mf.loc, combat::BattleCheck{{walker}}).battle);
+}
+
+TEST_CASE("combat: a check that sees only a minefield fights a battle that ends at once") {
+    // Spec 04 §2, §19.2 Q73 (confirmed: binary): the battle is set up as usual,
+    // ends at its first end check (after one whole combat turn when unseen), and
+    // every participant gets a report.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    s.options.simultaneous = false;
+    const VehicleId walker = spawn(s, frigate(s, ar.a, "Walker", 2, {"CT Gun"}), ar.loc);
+    spawn(s, design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"}), ar.loc, 3);
+    s.vehicle(walker)->orders.push_back(Order{OrderKind::MoveTo, ar.loc});
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, ar.loc, std::vector<VehicleId>{}, combat::BattleCheck{{walker}});
+    REQUIRE(s.combats.size() == 1);
+    const CombatRecord& rec = s.combats.front();
+    CHECK(rec.participants == std::vector<EmpireId>{ar.a});
+    for (const CombatEvent& e : rec.events) CHECK(e.round == 1);   // one combat turn
+    bool reported = false;
+    for (const LogEntry& l : s.empire(ar.a).log) reported = reported || l.title.starts_with("Battle at");
+    CHECK(reported);
+    CHECK(s.vehicle(walker)->count == 1);
+}
+
+TEST_CASE("combat: the battle check sees colonies by current sensors; minefields never see") {
+    // Spec 04 §2, §19.2 Q74, Q75 (confirmed: binary).
+    const Rules& r = combatRules();
+    {
+        // A colony hidden by a storm in its sector starts no battle for a ship
+        // whose sensors do not pierce it.
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        const Colony& home = homeworld(s, ar.b);
+        const Location there = locationOf(s.galaxy, home.planet);
+        const VehicleId scout = spawn(s, frigate(s, ar.a, "Scout", 1, {}), there);
+        sight::markExplored(s, ar.a, there.system);
+        const combat::BattleCheck byScout{{scout}};
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::battleCheck(r, s, there, byScout));
+        SpaceObject storm;
+        storm.id = ObjectId{s.galaxy.objects.size()};
+        storm.kind = ObjectKind::Storm;
+        storm.system = there.system;
+        storm.sector = there.sector;
+        storm.name = "Squall";
+        storm.abilities.push_back(ab(AbilityKind::SectorSightObscuration, 3));
+        s.galaxy.system(there.system).objects.push_back(storm.id);
+        s.galaxy.objects.push_back(storm);
+        s.colonies.resize(s.galaxy.objects.size());
+        CHECK_FALSE(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK_FALSE(combat::battleCheck(r, s, there, byScout));
+        // Its owner always sees it; sensors that pierce the storm see it too.
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.b, home.planet));
+        spawn(s, frigate(s, ar.a, "Eye", 1, {"CT Sensor"}), Location{there.system, Sector{0, 0}});
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::battleCheck(r, s, there, byScout));
+    }
+    {
+        // Simultaneous games: a minefield never makes its owner a seeing side.
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        spawn(s, frigate(s, ar.a, "Walker", 1, {}), ar.loc);
+        const VehicleId field = spawn(s, design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"}), ar.loc, 3);
+        s.empire(ar.a).relation(ar.b).treaty = Treaty::NonAggression;   // A fights nobody; B's view alone would
+        REQUIRE(s.vehicle(field)->status != VehicleStatus::Cloaked);
+        CHECK_FALSE(combat::battleCheck(r, s, ar.loc, combat::BattleCheck{}));
+        // A vehicle of B there does see.
+        spawn(s, frigate(s, ar.b, "Picket", 1, {}), ar.loc);
+        CHECK(combat::battleCheck(r, s, ar.loc, combat::BattleCheck{}));
+    }
 }
 
 TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the record") {
@@ -1271,25 +1343,30 @@ TEST_CASE("combat: conditions weapons lower a planet's conditions by D x 0.1") {
     CHECK(s.colony(home.planet)->totalPopulation() == 1000);
 }
 
-TEST_CASE("combat: a planet that takes damage sheds cargo above its capacity") {
-    // Spec 02 §2, §13 Q49: the population held as cargo goes first, 1M at a time.
+TEST_CASE("combat: a planet hit past its shields sheds cargo above its capacity; planet-only weapons never trim") {
+    // Spec 02 §2, §13 Q49, Q54 (confirmed: binary): after each hit of a
+    // hull-damaging type that gets past the shields, inside the battle; the
+    // population held as cargo goes first, 1M at a time. The planet-only types never trim.
     const Rules& r = combatRules();
-    Arena ar = makeArena();
-    GameState& s = ar.s;
-    Colony& home = homeworld(s, ar.b);
-    home.population = {{ar.b, 1000}};
-    const int64_t capacity = colonyCargoCapacity(r, s, home);
-    const int64_t mass = r.setting("Population Mass", 5);
-    home.cargo.units.clear();
-    home.cargo.population = {{ar.b, capacity / mass + 3}};
-    REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
-    spawn(s, frigate(s, ar.a, "Bomber", 3, {"CT Neutron Bomb", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
-    TurnContext ctx = context(s);
-    combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
-    REQUIRE(s.colony(home.planet) != nullptr);
-    REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
-    REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
-    CHECK(s.colony(home.planet)->cargo.population[0].millions == capacity / mass);
+    for (const bool bomb : {true, false}) {
+        CAPTURE(bomb);
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        Colony& home = homeworld(s, ar.b);
+        home.population = {{ar.b, 1000}};
+        home.cargo.units.clear();
+        const int64_t capacity = colonyCargoCapacity(r, s, home);
+        const int64_t mass = r.setting("Population Mass", 5);
+        home.cargo.population = {{ar.b, capacity / mass + 3}};
+        REQUIRE(cargoSpaceUsed(r, s, home.cargo) > capacity);
+        spawn(s, frigate(s, ar.a, "Bomber", 3, {bomb ? "CT Neutron Bomb" : "CT Gun", "CT Big Armor"}), locationOf(s.galaxy, home.planet));
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, locationOf(s.galaxy, home.planet));
+        REQUIRE(s.colony(home.planet) != nullptr);
+        REQUIRE(s.colony(home.planet)->totalPopulation() < 1000);  // it took damage
+        REQUIRE(s.colony(home.planet)->cargo.population.size() == 1);
+        CHECK(s.colony(home.planet)->cargo.population[0].millions == (bomb ? capacity / mass + 3 : capacity / mass));
+    }
 }
 
 TEST_CASE("combat: the empire that destroys a ship gains its hull tonnage div 10 as experience") {
@@ -1387,10 +1464,14 @@ TEST_CASE("combat: boarding captures ships; crew quarters, security and self-des
         CHECK(lost == 1);
     }
     {
+        // 40 attack against 40 + 4: a strict comparison. The strategy only boards
+        // a ship whose defense is below its attack, so it makes no attempt and
+        // keeps its boarding parties (spec 04 §16.1, §19.2 Q69).
         auto [ar, boarder, target, moods] = board({"Test Security Station", "Test Security Station"});
         const GameState& s = ar.s;
-        CHECK(s.vehicle(target)->owner == ar.b);   // 40 attack against 40 + 4: a strict comparison
-        CHECK_FALSE(entryIntact(combatRules(), s, *s.vehicle(boarder), 7));
+        CHECK(s.vehicle(target)->owner == ar.b);
+        CHECK(entryIntact(combatRules(), s, *s.vehicle(boarder), 7));
+        CHECK(countEvents(s.combats.front(), CombatEvent::Kind::Captured) == 0);
     }
     {
         auto [ar, boarder, target, moods] = board({"Test Crew Quarters", "Test Crew Quarters", "Test Crew Quarters", "Test Crew Quarters",
@@ -1599,7 +1680,10 @@ TEST_CASE("combat: kamikaze ships and drones ram") {
         Arena ar = makeArena();
         GameState& s = ar.s;
         useStrategy(s, ar.a, {{"Primary Movement Strategy", "Don't Get Hurt"}});   // the carrier keeps away
+        // Drones move by their strategies like any piece; Ram makes them ram (spec 04 §16.1).
+        s.empire(ar.a).strategies.push_back(ruleset::CombatStrategy{"Drone Attack", {{"Primary Movement Strategy", "Ram"}}});
         const DesignId drone = design(s, ar.a, "Dart", "Test Drone Hull", {"Test Engine", "Test Engine", "Test Warhead"});
+        s.design(drone).strategy = 1;
         const VehicleId carrier = spawn(s, frigate(s, ar.a, "Drone Carrier", 1, {"CT Drone Bay", "CT Big Armor"}), ar.loc);
         s.vehicle(carrier)->cargo.units.push_back({drone, 2});
         const VehicleId hulk = spawn(s, design(s, ar.b, "Hulk", "Test Station", {"Test Bridge", "CT Big Armor"}), ar.loc);

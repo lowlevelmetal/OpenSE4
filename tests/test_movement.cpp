@@ -926,13 +926,23 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         l.run(false);  // the list runs again, as it does when orders are given
         CHECK(l.spy.fought.size() == 2);
         CHECK(l.w.v(drone).orders.size() == 1);
-        // A Seek that steps into its target's sector: a movement step, so the battle clears its list.
+        // A Seek that steps into its target's sector and meets a battle there
+        // only stops for this run of its list: its order and list are kept, and
+        // it attacks at the next run (spec 04 §2, §19.2 Q76).
         const VehicleId late = l.w.spawn(dart, at(l.a, 3, 5));
         l.w.order(late, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(late, moveTo(l.a, 0, 0));
         l.w.v(drone).orders.clear();
+        const size_t battles = l.spy.fought.size();
         l.run();
         CHECK(l.w.v(late).location == at(l.a, 5, 5));
-        CHECK(l.w.v(late).orders.empty());
+        CHECK(l.spy.fought.size() == battles + 1);
+        CHECK(l.w.v(late).orders.size() == 2);
+        CHECK_FALSE(l.w.logged(kA, "Combat on entering the sector."));
+        l.run(false);
+        CHECK(l.spy.fought.size() == battles + 2);
+        CHECK(l.spy.checkers.back() == std::vector<VehicleId>{late});
+        CHECK(l.w.v(late).orders.size() == 2);
     }
 }
 
@@ -1468,15 +1478,17 @@ TEST_CASE("movement: drones move only by orders; an Attack order pursues its tar
     CHECK(w.v(drone).location == at(a, 6, 0));
     REQUIRE(spy.fought.size() == 1);
     CHECK(spy.fought[0].second == at(a, 6, 0));
-    // At its target a cloaked drone decloaks, takes the target for the battle and
-    // pays one move's supply; the order stays (spec 03 §8).
+    // At its target a cloaked drone decloaks and pays one move's supply; the
+    // order stays (spec 03 §8). A battle reads the drone's target from that
+    // order; nothing is stored (spec 03 §19 Q68).
     w.v(drone).status = VehicleStatus::Cloaked;
     const int64_t before = w.v(drone).supply;
     w.move(spy.hooks());
     CHECK(w.v(drone).status == VehicleStatus::Normal);
-    CHECK(w.v(drone).targetVehicle == prey);
+    CHECK_FALSE(w.v(drone).targetVehicle.valid());
     CHECK(w.v(drone).supply < before);
-    CHECK(w.v(drone).orders.size() == 1);
+    REQUIRE(w.v(drone).orders.size() == 1);
+    CHECK(w.v(drone).orders.front().vehicle == prey);
 
     // Out of supply after a step, a drone is destroyed at once (spec 03 §12).
     const VehicleId thirsty = w.spawn(droneDesign, at(a, 0, 9));
@@ -1791,6 +1803,48 @@ TEST_CASE("movement: a storm may hit a group stepping in, stopping it; it never 
     }
     CHECK(hits > 0);
     CHECK(misses > 0);
+}
+
+TEST_CASE("movement: a pursuit that meets a storm or mines only stops; its order and list are kept") {
+    // Spec 03 §6.4, spec 04 §19.2 Q76 (confirmed: binary). In a simultaneous
+    // game every Attack is a pursuit.
+    int hits = 0;
+    for (uint64_t seed = 1; seed <= 24; ++seed) {
+        World w;
+        const SystemId a = w.system("A");
+        const ObjectId storm = w.object(a, ObjectKind::Storm, {3, 6});
+        w.s.galaxy.object(storm).abilities.push_back(ab(AbilityKind::SectorDamage, 30));
+        const VehicleId prey = w.spawn(w.ship(kB, "Prey", 1, {"Mv Armor"}), at(a, 3, 6));
+        const VehicleId hunter = w.spawn(w.ship(kA, "Hunter", 4, {"Mv Armor"}), at(a, 2, 6));
+        fuel(w, hunter);
+        w.order(hunter, mk(OrderKind::Attack, {}, {}, prey));
+        w.order(hunter, moveTo(a, 0, 0));
+        w.s.rng.reseed(seed);
+        w.move();
+        CHECK(w.v(hunter).location == at(a, 3, 6));
+        if (totalDamage(w.v(hunter)) == 0) continue;
+        ++hits;
+        REQUIRE(w.v(hunter).orders.size() == 2);   // the storm stopped it; nothing was cleared
+        CHECK(w.v(hunter).orders.front().kind == OrderKind::Attack);
+        CHECK_FALSE(w.logged(kA, "order cancelled"));
+    }
+    CHECK(hits > 0);
+
+    // Mines strike a pursuit stepping in: it keeps its orders (with the real combat module).
+    World m;
+    const SystemId ma = m.system("A");
+    const VehicleId field = m.spawn(m.design(kB, "Mine", "Mv Mine Hull", {"Test Warhead"}), at(ma, 1, 6));
+    const VehicleId far = m.spawn(m.ship(kB, "Far", 1, {"Mv Armor"}), at(ma, 6, 6));
+    const VehicleId tough = m.spawn(m.ship(kA, "Tough", 3, {"Mv Armor", "Mv Armor", "Mv Armor"}), at(ma, 0, 6));
+    fuel(m, tough);
+    m.order(tough, mk(OrderKind::Attack, {}, {}, far));
+    m.move(movement::defaultCombatHooks());
+    CHECK(m.s.vehicle(field) == nullptr);   // the mine was used up
+    REQUIRE(m.s.vehicle(tough));
+    CHECK(totalDamage(m.v(tough)) > 0);
+    REQUIRE(m.v(tough).orders.size() == 1);
+    CHECK(m.v(tough).orders.front().kind == OrderKind::Attack);
+    CHECK(m.logged(kA, "keeps its orders"));
 }
 
 TEST_CASE("movement: warp point turbulence hits half the transits and ends the move") {

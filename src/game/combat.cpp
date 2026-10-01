@@ -393,18 +393,6 @@ ruleset::VehicleType typeOf(const Rules& r, const GameState& s, const Vehicle& v
 bool canBePiece(VehicleType t) { return t != VehicleType::Mine && t != VehicleType::Troop && t != VehicleType::WeaponPlatform; }
 
 namespace {
-bool sectorObscured(const GameState& s, Location where) {
-    for (ObjectId o : s.galaxy.system(where.system).objects) {
-        const SpaceObject& obj = s.galaxy.object(o);
-        if (obj.sector != where.sector) continue;
-        for (const auto& a : obj.abilities)
-            if (parseAbilityKind(a.type) == AbilityKind::SectorSightObscuration) return true;
-    }
-    for (const auto& a : s.galaxy.system(where.system).abilities)
-        if (parseAbilityKind(a.type) == AbilityKind::SectorSightObscuration) return true;
-    return false;
-}
-
 // Families of the intact components of a vehicle that have ability k, with their best Value 1.
 template <class Each>
 void forIntactParts(const Rules& r, const GameState& s, const Vehicle& v, Each&& each) {
@@ -420,11 +408,21 @@ void forIntactParts(const Rules& r, const GameState& s, const Vehicle& v, Each&&
 }
 } // namespace
 
+// The sight rules of spec 01 §6.3, worked out afresh (spec 04 §2, §19.2 Q74, confirmed: binary).
 bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v) {
-    if (v.owner == viewer) return true;
-    if (sight::canSeeVehicle(r, s, viewer, v)) return true;
-    if (v.status == VehicleStatus::Cloaked) return false;
-    return !sectorObscured(s, v.location);
+    return v.owner == viewer || sight::canSeeVehicle(r, s, viewer, v);
+}
+
+// A colony is seen like a vehicle: by its owner, or by an empire that has
+// explored the system and whose current sensors there reach the planet's
+// obscuration in some sight type (1, raised by a storm or nebula), not by the
+// map's memory of the explored system (spec 04 §2, §19.2 Q74, confirmed:
+// binary). The engine has no cloaked colonies.
+bool colonyVisibleTo(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
+    const Colony* c = s.colony(planet);
+    if (c && c->owner == viewer) return true;
+    if (!sight::canSeePlanet(r, s, viewer, planet)) return false;
+    return sight::detects(sight::sensorLevels(r, s, viewer, s.galaxy.object(planet).system), sight::planetObscuration(r, s, planet));
 }
 
 int64_t componentSum(const Rules& r, const GameState& s, const Vehicle& v, AbilityKind k) {
@@ -1018,8 +1016,9 @@ bool arrivedByWarp(const GameState& s, const Vehicle& v) { return arrivedThisTur
 
 std::pair<int, int> arrivalDirection(const GameState& s, const Vehicle& v) {
     if (!arrivedThisTurn(s, v) || v.cameFrom.system != v.location.system) return {0, 0};
-    // Movement records every step, so the sector left is a neighbour; one
-    // farther away gives the edge in its direction (inferred).
+    // Movement records every step, so the sector left is a neighbour. The
+    // original has no rule for one farther away (it cannot arise); the edge in
+    // its direction is the engine's stand-in, which may stay (spec 04 §19.2 Q59).
     auto sign = [](int d) { return (d > 0) - (d < 0); };
     return {sign(v.cameFrom.sector.x - v.location.sector.x), sign(v.cameFrom.sector.y - v.location.sector.y)};
 }
@@ -1041,13 +1040,10 @@ Forces battleForces(const Rules& r, const GameState& s, Location where, const Ba
         }
     std::sort(present.begin(), present.end());
     present.erase(std::unique(present.begin(), present.end()), present.end());
-    // The check passes, and two empires with pieces are hostile, one way or
-    // the other: a check that finds only minefields fights nothing (inferred).
-    bool opponents = false;
-    for (EmpireId a : present)
-        for (EmpireId b : present)
-            if (a < b && enemies(s, a, b)) opponents = true;
-    f.battle = opponents && battleCheck(r, s, where, check);
+    // A check that passes always starts a battle, even when the only hostile
+    // objects it saw are minefields; such a battle ends at its first end check
+    // (spec 04 §2, §19.2 Q73, confirmed: binary).
+    f.battle = !present.empty() && battleCheck(r, s, where, check);
     if (!f.battle) {
         f.colonies.clear();
         return f;
@@ -1158,7 +1154,7 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         for (VehicleId mid : fields) {
             if (capacity <= 0) break;
             Vehicle* m = s.vehicle(mid);
-            // A minefield that mixes designs loses its mines in the order they were laid (inferred).
+            // A minefield that mixes designs loses its mines design by design, in the order they joined (spec 03 §19 Q43, confirmed: binary).
             for (const UnitStack& st : groupStacks(*m)) {
                 if (capacity <= 0) break;
                 const int n = removeGroupUnits(s, *m, st.design, static_cast<int>(std::min<int64_t>(capacity, st.count)));
@@ -1182,17 +1178,17 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
         // On a ship the damage goes straight to the components; on a unit group
         // it goes to the units by the unit group rule. Leftover damage of
         // hull-damaging warheads is shared by the whole strike (history 1.70,
-        // 1.78); another type striking a unit group wipes it.
+        // 1.78); another type striking a unit group wipes it. After every
+        // warhead that strikes a unit group, the units it killed are removed at
+        // once and both of the group's pools go back to 0 (spec 04 §10.6, §19.2
+        // Q68, confirmed: binary).
         int64_t pool = 0;
-        std::map<uint32_t, int64_t> shieldPools;   // unit groups: their shield pool during the strike
-        std::map<uint32_t, int64_t> hadTonnage;    // unit groups: the tonnage of every unit they had
-        std::map<uint32_t, std::vector<UnitStack>> rosters;   // unit groups: every design entry, dead ones too
         std::map<uint32_t, int> struck, lost;      // victim vehicle -> mines, units lost
         for (VehicleId mid : fields) {
             int used = 0, kills = 0;
             while (s.vehicle(mid)->count > 0) {
-                // The minefield's mines go off in the order they were laid: the front
-                // design first (a minefield that mixes designs, inferred).
+                // The minefield's mines go off in the order their designs joined: the
+                // front design first (spec 03 §19 Q43, confirmed: binary).
                 const DesignId mineDesign = s.vehicle(mid)->design;
                 std::vector<VehicleId> targets;
                 for (VehicleId id : group) {
@@ -1202,12 +1198,10 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                 if (targets.empty()) break;
                 Vehicle& victim = *s.vehicle(targets[rng.below(targets.size())]);
                 const bool unitGroup = isUnitType(typeOf(r, s, victim));
-                if (unitGroup && !rosters.count(victim.id.value)) {
-                    int64_t tons = 0;
-                    for (const UnitStack& st : groupStacks(victim)) tons += designTonnage(r, s.design(st.design)) * st.count;
-                    hadTonnage[victim.id.value] = tons;
-                    rosters[victim.id.value] = groupStacks(victim);
-                }
+                // A unit group's value for the mine's credit: the units it had when this mine picked it.
+                int64_t hadTonnage = 0;
+                if (unitGroup)
+                    for (const UnitStack& st : groupStacks(victim)) hadTonnage += designTonnage(r, s.design(st.design)) * st.count;
                 const Design& md = s.design(mineDesign);
                 for (size_t w : mineWarheads(r, s, mineDesign, victim)) {
                     if (victim.count <= 0) break;
@@ -1215,19 +1209,22 @@ void resolveMines(TurnContext& ctx, Location where, std::span<const VehicleId> e
                     const int64_t dmg = weaponLargestDamage(r, md.entries[w]);
                     const bool hull = damageRule(type).hullDamaging;
                     if (unitGroup) {
-                        std::vector<UnitStack>& stacks = rosters[victim.id.value];
+                        // Fresh pools for every warhead: the shared leftover joins a
+                        // hull-damaging one, and its rest is the new leftover.
+                        std::vector<UnitStack> stacks = groupStacks(victim);
                         std::vector<size_t> entries(stacks.size());
                         for (size_t k = 0; k < entries.size(); ++k) entries[k] = k;
+                        int64_t damagePool = hull ? pool : 0, shieldPool = 0;
                         std::vector<int> killed;
-                        const int n = hitUnits(r, s, stacks, entries, pool, shieldPools[victim.id.value], dmg, type, rng, killed);
-                        if (!hull) pool = 0;
+                        const int n = hitUnits(r, s, stacks, entries, damagePool, shieldPool, dmg, type, rng, killed);
+                        pool = hull ? damagePool : 0;
                         if (n <= 0) continue;
                         for (size_t k = 0; k < stacks.size(); ++k) s.design(stacks[k].design).lost += killed[k];
                         kills += n;
                         lost[victim.id.value] += n;
-                        setGroupStacks(s, victim, stacks);
+                        setGroupStacks(s, victim, stacks);   // the dead leave at once; emptied stacks leave the group
                         if (victim.count <= 0)   // the whole group: the mine's design gets its tonnage (confirmed: binary)
-                            s.design(mineDesign).enemyTonnageDestroyed += hadTonnage[victim.id.value];
+                            s.design(mineDesign).enemyTonnageDestroyed += hadTonnage;
                         continue;
                     }
                     int64_t hit = dmg;
@@ -1289,22 +1286,23 @@ bool battleCheck(const Rules& r, const GameState& s, Location where, const Battl
     std::vector<const Colony*> colonies;
     for (ObjectId o : planetsAt(s, where))
         if (const Colony* c = s.colony(o); c && c->owner.valid()) colonies.push_back(c);
+    auto mine = [&](const Vehicle& v) { return detail::typeOf(r, s, v) == VehicleType::Mine; };
     // `viewer` sees an object of an empire it is hostile to (minefields only when `mines`).
     auto seesHostile = [&](EmpireId viewer, bool mines) {
         for (const Vehicle* v : here)
-            if (v->owner != viewer && hostile(s, viewer, v->owner) && (mines || detail::typeOf(r, s, *v) != VehicleType::Mine) &&
-                detail::visibleTo(r, s, viewer, *v))
-                return true;
+            if (v->owner != viewer && hostile(s, viewer, v->owner) && (mines || !mine(*v)) && detail::visibleTo(r, s, viewer, *v)) return true;
         for (const Colony* c : colonies)
-            if (c->owner != viewer && hostile(s, viewer, c->owner)) return true;  // planets cannot hide (inferred)
+            if (c->owner != viewer && hostile(s, viewer, c->owner) && detail::colonyVisibleTo(r, s, viewer, c->planet)) return true;
         return false;
     };
     if (check.group.empty()) {
-        // Simultaneous games: an empire with an uncloaked vehicle here sees a
-        // hostile object that is not a minefield; colonies never see.
+        // Simultaneous games: an empire with a vehicle or unit group here whose
+        // cloaked flag is off sees a hostile object that is not a minefield;
+        // colonies never count as the side that sees, and minefields take no
+        // part at all (spec 04 §2, §19.2 Q75, confirmed: binary).
         std::vector<EmpireId> seeing;
         for (const Vehicle* v : here)
-            if (v->status != VehicleStatus::Cloaked && std::find(seeing.begin(), seeing.end(), v->owner) == seeing.end())
+            if (v->status != VehicleStatus::Cloaked && !mine(*v) && std::find(seeing.begin(), seeing.end(), v->owner) == seeing.end())
                 seeing.push_back(v->owner);
         for (EmpireId e : seeing)
             if (seesHostile(e, false)) return true;
@@ -1319,7 +1317,8 @@ bool battleCheck(const Rules& r, const GameState& s, Location where, const Battl
     const bool cloaked = std::all_of(group.begin(), group.end(), [](const Vehicle* v) { return v->status == VehicleStatus::Cloaked; });
     if (!cloaked) return seesHostile(mover, true);
     // A wholly cloaked group: another empire present with an uncloaked object
-    // must see one of the group's vehicles and be hostile to its owner.
+    // (a vehicle, a minefield included, or a colony that is not cloaked) must
+    // see one of the group's vehicles and be hostile to its owner.
     std::vector<EmpireId> watchers;
     for (const Vehicle* v : here)
         if (v->owner != mover && v->status != VehicleStatus::Cloaked) watchers.push_back(v->owner);
