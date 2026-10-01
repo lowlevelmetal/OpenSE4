@@ -183,7 +183,11 @@ struct GalaxyGrid {
 };
 GalaxyGrid galaxyGrid() {
     const map_style::GridCell c = map_style::gridCell(int(geo.galaxyPanel.size().x), int(geo.galaxyPanel.size().y));
-    return {geo.galaxyPanel.min, float(c.w), float(c.h)};
+    if (!geo.wide) return {geo.galaxyPanel.min, float(c.w), float(c.h)};
+    // Our tall panel beside the report (wide frames): square cells, centred.
+    const float cell = float(std::min(c.w, c.h));
+    const Vec2 extent{cell * map_style::kGridColumns, cell * map_style::kGridRows};
+    return {geo.galaxyPanel.min + (geo.galaxyPanel.size() - extent) * 0.5f, cell, cell};
 }
 Vec2 galaxyCell(const GalaxyGrid& g, const game::StarSystem& s) {
     return g.origin + Vec2{float(s.position.x) * g.cw, float(s.position.y) * g.ch};
