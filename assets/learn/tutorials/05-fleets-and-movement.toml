@@ -84,8 +84,8 @@ manual = "ships-and-fleets#moving-around"
 title = "Movement points"
 text = """
 The fleet moved at once, one sector per **movement point**, and stopped when its points ran out;
-the rest of the move continues next turn. The dashed line shows its route. `Ctrl+L` hides or shows
-it. Press **Next**.
+the rest of the move continues next turn. Press `Ctrl+L` to see its route as a dashed line, and
+again to hide it. Press **Next**.
 """
 highlight = ["panel:system"]
 manual = "ships-and-fleets#moving-around"
@@ -93,9 +93,9 @@ manual = "ships-and-fleets#moving-around"
 [[step]]
 title = "Set a waypoint"
 text = """
-**Waypoints** are ten places you can send ships to quickly. Click something in the system view,
-for example a warp point or a planet (an empty sector cannot be selected), then press `Alt+1`:
-its sector becomes waypoint 1.
+**Waypoints** are ten places you can send ships to quickly. Click a sector in the system view
+(for example the one with a warp point), then press `Alt+1`: that sector becomes waypoint 1, and
+a cyan frame with the number marks it.
 
 Then select your fleet again (a scout, with the ship arrows).
 """
