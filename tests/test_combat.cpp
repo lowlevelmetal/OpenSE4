@@ -571,15 +571,87 @@ TEST_CASE("combat: the battle check - one-directional in turn-based games; colon
     CHECK(combat::battleCheck(r, t, there, daily));
 
     // A minefield is never what a simultaneous check sees; a turn-based step
-    // that sees one passes the check, but with nobody to fight no battle starts.
+    // that sees one passes the check, and a check that passes always starts a
+    // battle (spec 04 §2, §19.2 Q73).
     Arena mf = makeArena();
     const VehicleId walker = spawn(mf.s, frigate(mf.s, mf.a, "Walker", 1, {}), mf.loc);
     const VehicleId field = spawn(mf.s, design(mf.s, mf.b, "Mine", "Test Mine Hull", {"Test Warhead"}), mf.loc, 3);
     mf.s.empire(mf.b).relation(mf.a).treaty = Treaty::NonAggression;  // only A's view counts
     CHECK_FALSE(combat::battleCheck(r, mf.s, mf.loc, daily));
-    CHECK(combat::battleCheck(r, mf.s, mf.loc, combat::BattleCheck{{walker}}) ==
-          combat::detail::visibleTo(r, mf.s, mf.a, *mf.s.vehicle(field)));
-    CHECK_FALSE(combat::detail::battleForces(r, mf.s, mf.loc, combat::BattleCheck{{walker}}).battle);
+    const bool seen = combat::detail::visibleTo(r, mf.s, mf.a, *mf.s.vehicle(field));
+    CHECK(seen);   // the fixture's mines have no cloak
+    CHECK(combat::battleCheck(r, mf.s, mf.loc, combat::BattleCheck{{walker}}));
+    CHECK(combat::detail::battleForces(r, mf.s, mf.loc, combat::BattleCheck{{walker}}).battle);
+}
+
+TEST_CASE("combat: a check that sees only a minefield fights a battle that ends at once") {
+    // Spec 04 §2, §19.2 Q73 (confirmed: binary): the battle is set up as usual,
+    // ends at its first end check (after one whole combat turn when unseen), and
+    // every participant gets a report.
+    Arena ar = makeArena();
+    GameState& s = ar.s;
+    s.options.simultaneous = false;
+    const VehicleId walker = spawn(s, frigate(s, ar.a, "Walker", 2, {"CT Gun"}), ar.loc);
+    spawn(s, design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"}), ar.loc, 3);
+    s.vehicle(walker)->orders.push_back(Order{OrderKind::MoveTo, ar.loc});
+    TurnContext ctx = context(s);
+    combat::resolveSpaceCombat(ctx, ar.loc, std::vector<VehicleId>{}, combat::BattleCheck{{walker}});
+    REQUIRE(s.combats.size() == 1);
+    const CombatRecord& rec = s.combats.front();
+    CHECK(rec.participants == std::vector<EmpireId>{ar.a});
+    for (const CombatEvent& e : rec.events) CHECK(e.round == 1);   // one combat turn
+    bool reported = false;
+    for (const LogEntry& l : s.empire(ar.a).log) reported = reported || l.title.starts_with("Battle at");
+    CHECK(reported);
+    CHECK(s.vehicle(walker)->count == 1);
+}
+
+TEST_CASE("combat: the battle check sees colonies by current sensors; minefields never see") {
+    // Spec 04 §2, §19.2 Q74, Q75 (confirmed: binary).
+    const Rules& r = combatRules();
+    {
+        // A colony hidden by a storm in its sector starts no battle for a ship
+        // whose sensors do not pierce it.
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        const Colony& home = homeworld(s, ar.b);
+        const Location there = locationOf(s.galaxy, home.planet);
+        const VehicleId scout = spawn(s, frigate(s, ar.a, "Scout", 1, {}), there);
+        sight::markExplored(s, ar.a, there.system);
+        const combat::BattleCheck byScout{{scout}};
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::battleCheck(r, s, there, byScout));
+        SpaceObject storm;
+        storm.id = ObjectId{s.galaxy.objects.size()};
+        storm.kind = ObjectKind::Storm;
+        storm.system = there.system;
+        storm.sector = there.sector;
+        storm.name = "Squall";
+        storm.abilities.push_back(ab(AbilityKind::SectorSightObscuration, 3));
+        s.galaxy.system(there.system).objects.push_back(storm.id);
+        s.galaxy.objects.push_back(storm);
+        s.colonies.resize(s.galaxy.objects.size());
+        CHECK_FALSE(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK_FALSE(combat::battleCheck(r, s, there, byScout));
+        // Its owner always sees it; sensors that pierce the storm see it too.
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.b, home.planet));
+        spawn(s, frigate(s, ar.a, "Eye", 1, {"CT Sensor"}), Location{there.system, Sector{0, 0}});
+        CHECK(combat::detail::colonyVisibleTo(r, s, ar.a, home.planet));
+        CHECK(combat::battleCheck(r, s, there, byScout));
+    }
+    {
+        // Simultaneous games: a minefield never makes its owner a seeing side.
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        spawn(s, frigate(s, ar.a, "Walker", 1, {}), ar.loc);
+        const VehicleId field = spawn(s, design(s, ar.b, "Mine", "Test Mine Hull", {"Test Warhead"}), ar.loc, 3);
+        s.empire(ar.a).relation(ar.b).treaty = Treaty::NonAggression;   // A fights nobody; B's view alone would
+        REQUIRE(s.vehicle(field)->status != VehicleStatus::Cloaked);
+        CHECK_FALSE(combat::battleCheck(r, s, ar.loc, combat::BattleCheck{}));
+        // A vehicle of B there does see.
+        spawn(s, frigate(s, ar.b, "Picket", 1, {}), ar.loc);
+        CHECK(combat::battleCheck(r, s, ar.loc, combat::BattleCheck{}));
+    }
 }
 
 TEST_CASE("combat: a won battle - damage, kills, experience, mood, logs and the record") {

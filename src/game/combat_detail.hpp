@@ -20,17 +20,19 @@ namespace opense4::game::combat::detail {
 bool enemies(const GameState& s, EmpireId a, EmpireId b);   // hostile in either direction
 // Mines, troops and weapon platforms are never combat pieces.
 bool canBePiece(ruleset::VehicleType t);
-// Whether `viewer`, which has pieces in the vehicle's sector, sees it:
-// uncloaked vehicles sharing a sector are seen unless a storm or nebula
-// obscures it; otherwise the sight module decides (spec 04 §2).
+// Whether `viewer` sees a vehicle, or a colony, for the battle check: the
+// sight rules of spec 01 §6.3 worked out afresh, by current sensors (spec 04
+// §2, §19.2 Q74).
 bool visibleTo(const Rules& r, const GameState& s, EmpireId viewer, const Vehicle& v);
+bool colonyVisibleTo(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 
-// Who is in a sector (spec 04 §2, §3). A battle starts when the battle
-// check passes (BattleCheck) and two empires with pieces there are hostile.
-// Once it starts, every owned vehicle that can be a piece and every colony
-// there take part, including empires hostile to nobody present.
+// Who is in a sector (spec 04 §2, §3). A battle starts whenever the battle
+// check passes (BattleCheck), even with nobody hostile having pieces there
+// (only minefields seen): it then ends at its first end check. Once it
+// starts, every owned vehicle that can be a piece and every colony there take
+// part, including empires hostile to nobody present.
 struct Forces {
-    bool battle = false;               // the check passed and there is someone to fight
+    bool battle = false;               // the check passed
     std::vector<EmpireId> empires;     // every empire with a piece, by id
     std::vector<VehicleId> vehicles;   // every vehicle that becomes a piece, by id
     std::vector<ObjectId> colonies;    // every colony there, in object order

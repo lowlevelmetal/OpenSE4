@@ -253,7 +253,40 @@ TEST_CASE("combat rules: mines strike unit groups by the unit group rule") {
     CHECK(spent);
     CHECK((s.vehicle(group) == nullptr || s.vehicle(group)->count == 0));
     CHECK(s.design(sat).lost == 12);
-    CHECK(s.design(mine).enemyTonnageDestroyed == 12 * int64_t{r.hull(s.design(sat).hull).tonnage});
+    // The mine that destroys the group is credited with the units the group
+    // had when that mine picked it: six (spec 04 §15, §19.2 Q68).
+    CHECK(s.design(mine).enemyTonnageDestroyed == 6 * int64_t{r.hull(s.design(sat).hull).tonnage});
+}
+
+TEST_CASE("combat rules: every mine warhead strikes a unit group with fresh pools") {
+    // Spec 04 §10.6, §19.2 Q68 (confirmed: binary): after each warhead the dead
+    // leave and both pools go back to 0, so a Shields Only warhead does nothing
+    // to a unit group; a hull-damaging warhead's rest is the strike's shared
+    // leftover and joins the next one.
+    ruleset::Ruleset rs = buildCombatRuleset();
+    gun(rs, "CT Shield Warhead", ruleset::WeaponKind::Warhead, {100}, "Shields Only");
+    gun(rs, "CT Small Warhead", ruleset::WeaponKind::Warhead, {12}, "Normal");
+    rs.reindex();
+    const Rules rules{std::move(rs)};
+    Arena ar = makeArena(rules);
+    GameState& s = ar.s;
+    const DesignId mine = addTestDesign(s, rules, ar.b, "Sparkler", "Test Mine Hull", {"CT Shield Warhead", "CT Small Warhead"});
+    Vehicle& laid = opense4::test::addTestVehicle(s, rules, mine, ar.loc);
+    laid.count = 2;
+    const DesignId sat = addTestDesign(s, rules, ar.a, "Bulwark", "Test Satellite Hull", {"Test Satellite Gun", "CT Phased Shield"});
+    REQUIRE(combat::detail::unitHitPoints(rules, s.design(sat)) == 40);   // 20 structure + 20 shields
+    Vehicle& buoys = opense4::test::addTestVehicle(s, rules, sat, ar.loc);
+    buoys.count = 5;
+    const VehicleId group = buoys.id;
+    TurnContext ctx = context(s, rules);
+    const std::vector<VehicleId> entering{group};
+    combat::resolveSpaceCombat(ctx, ar.loc, entering);
+    // First mine: 100 into the shield pool is lost, then 12 < 40 kills nobody
+    // and stays as the leftover. Second mine: 100 lost again, then 12 + 12 = 24 < 40.
+    // (Were the shield pool kept, 112 would have killed units.)
+    REQUIRE(s.vehicle(group) != nullptr);
+    CHECK(s.vehicle(group)->count == 5);
+    CHECK(s.design(sat).lost == 0);
 }
 
 TEST_CASE("combat rules: a mine picks immune vehicles too, and is spent") {
