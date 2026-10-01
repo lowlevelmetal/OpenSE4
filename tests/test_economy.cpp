@@ -287,11 +287,20 @@ TEST_CASE("economy: population modifier rows, mood percentages and condition ban
     CHECK(band(31) == ConditionsBand::Harsh);
     CHECK(band(29) == ConditionsBand::Deadly);
     CHECK(band(0) == ConditionsBand::Deadly);
-    // The edges are x87 constants (inferred): the double nearest 1.3 lies above
-    // 1.3 and is Good, the double nearest 0.3 lies below 0.3 and is Deadly.
+    // The edges are the doubles nearest 0.3 .. 1.5, compared exactly, a value
+    // equal to an edge in the band above (confirmed: binary, spec 02 §13 Q51):
+    // the double nearest 0.3 lies below 0.3 but is Harsh; the double nearest
+    // 1.3 is Good.
     CHECK(Conditions::hundredths(130).value() > xmath::Ext(13) / xmath::Ext(10));
     CHECK(Conditions::hundredths(30).value() < xmath::Ext(3) / xmath::Ext(10));
-    CHECK(band(30) == ConditionsBand::Deadly);
+    CHECK(band(30) == ConditionsBand::Harsh);
+    CHECK(band(130) == ConditionsBand::Good);
+    // An asteroid field's 0.6 / 2 and 0.5 lowered by an event of -0.2 give that double.
+    CHECK(economy::conditionsBand(Conditions::of(Conditions::hundredths(60).value() / xmath::Ext(2))) == ConditionsBand::Harsh);
+    CHECK(economy::conditionsBand(conditionsPlus(Conditions::hundredths(50), xmath::Ext(-2) / xmath::Ext(10))) == ConditionsBand::Harsh);
+    // The next double below it is Deadly.
+    CHECK(economy::conditionsBand(Conditions{Conditions::hundredths(30).bits - 1}) == ConditionsBand::Deadly);
+    CHECK(economy::conditionsBand(Conditions{Conditions::hundredths(130).bits - 1}) == ConditionsBand::Mild);
     CHECK(economy::conditionsBand(Conditions::of(xmath::Ext(3) / xmath::Ext(10) + xmath::Ext(1) / xmath::Ext(1'000'000))) == ConditionsBand::Harsh);
     CHECK(economy::conditionsName(ConditionsBand::Good) == "Good");
     CHECK(economy::conditionsReproduction(ConditionsBand::Optimal) == 5);
