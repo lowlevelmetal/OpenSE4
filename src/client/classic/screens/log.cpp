@@ -81,6 +81,7 @@ public:
         dl->AddText(d.at({530, 40}), IM_COL32_WHITE, date.c_str());
 
         list(ui, d, shown);
+        ui.tagItem("log:messages");
         MiniMapStyle style;
         const std::optional<game::Location> where = location(sel);
         if (where) style.highlight.push_back(where->system);

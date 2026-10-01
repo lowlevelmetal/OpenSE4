@@ -4,11 +4,16 @@ add_library(opense4_core STATIC
 target_include_directories(opense4_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(opense4_core PRIVATE opense4_warnings)
 
-# --- embedded: our own fonts built into the executable ------------------------------
+# --- embedded: our own fonts and learning content built into the executable ---------
 # (core/embedded.hpp). Only our own files: nothing from the original game.
 if(OPENSE4_EMBED_RESOURCES)
     file(GLOB embedded_files RELATIVE "${CMAKE_SOURCE_DIR}" CONFIGURE_DEPENDS
         "${CMAKE_SOURCE_DIR}/assets/fonts/*.ttf")
+    # Manual pages, tutorials and training games (docs/LEARNING.md).
+    file(GLOB_RECURSE embedded_learn RELATIVE "${CMAKE_SOURCE_DIR}" CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/assets/learn/*.md"
+        "${CMAKE_SOURCE_DIR}/assets/learn/*.toml")
+    list(APPEND embedded_files ${embedded_learn})
     list(SORT embedded_files)
     list(TRANSFORM embedded_files PREPEND "${CMAKE_SOURCE_DIR}/" OUTPUT_VARIABLE embedded_paths)
     list(JOIN embedded_files "|" embedded_arg)
@@ -18,7 +23,7 @@ if(OPENSE4_EMBED_RESOURCES)
         COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${embedded_cpp}" "-DROOT=${CMAKE_SOURCE_DIR}" "-DFILES=${embedded_arg}"
                 -P "${CMAKE_SOURCE_DIR}/cmake/EmbedResources.cmake"
         DEPENDS ${embedded_paths} "${CMAKE_SOURCE_DIR}/cmake/EmbedResources.cmake"
-        COMMENT "Embedding fonts"
+        COMMENT "Embedding fonts and learning content"
         VERBATIM)
     add_library(opense4_embedded STATIC "${embedded_cpp}")
 else()
@@ -85,6 +90,18 @@ add_library(opense4_game STATIC
     game/turn_based.cpp
     game/types.cpp)
 target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus opense4_warnings)
+
+# --- learn: tutorials, training games and the manual (docs/LEARNING.md) --------------
+# Headless: the content model, its loaders and the condition evaluator. The
+# client draws it; the tests check the built-in content with it.
+add_library(opense4_learn STATIC
+    learn/condition.cpp
+    learn/ids.cpp
+    learn/lesson.cpp
+    learn/library.cpp
+    learn/markdown.cpp
+    learn/progress.cpp)
+target_link_libraries(opense4_learn PUBLIC opense4_game PRIVATE tomlplusplus opense4_warnings)
 
 # --- net: multiplayer (TCP host/client sessions, UPnP port mapping, PBEM files) -----
 find_package(Threads REQUIRED)

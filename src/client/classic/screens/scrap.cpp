@@ -467,6 +467,7 @@ private:
             return false;
         }
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        ui.tagWindow(ImGui::GetWindowPos(), ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x, ImGui::GetWindowPos().y + ImGui::GetWindowSize().y));
         return true;
     }
 

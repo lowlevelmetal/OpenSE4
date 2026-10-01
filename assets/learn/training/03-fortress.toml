@@ -1,0 +1,93 @@
+# OpenSE4's own training game (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Fortress"
+summary = "Two neighbours share a crowded little quadrant with you. Build defenses and a fleet, and hold on to what you settle."
+minutes = 60
+
+[setup]
+seed = 83
+systems = 8
+computer_players = 2
+events = "none"
+
+[[objective]]
+text = "Guard your homeworld with 3 bases"
+when = { bases = 3 }
+by_turn = 40
+
+[[objective]]
+text = "Command 10 ships"
+when = { ships = 10 }
+by_turn = 60
+
+[[objective]]
+text = "Still hold 3 colonies on 2408.0"
+when = { all = [{ turn = 80 }, { colonies = 3 }] }
+by_turn = 80
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "A crowded corner"
+text = """
+Only eight star systems, and two other empires in them. Sooner or later someone will come for
+your planets. Be ready.
+
+Your orders:
+
+- guard your homeworld with **3 bases** by **2404.0**;
+- command **10 ships** by **2406.0**;
+- still hold **3 colonies** on **2408.0**.
+"""
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "Building defenses"
+text = """
+- A **base** cannot move, but it never runs out of supplies and pays half the upkeep of a ship.
+  Your **Defense Base** design is ready: build it at your homeworld (select it and press `Q`).
+- Design better warships as your technology grows, and test them in the
+  [Combat Simulator](window:combat-simulator) before you build many.
+- Watch your budget in [Empire Status](window:empire-status): every ship and base costs upkeep
+  every turn.
+- A treaty of Non-Aggression stops the fighting. If a neighbour is willing, it buys you time.
+
+See the manual on [combat](combat) and [diplomacy](diplomacy#treaties).
+"""
+
+[[page]]
+turn = 40
+series = "reports"
+title = "Four years in"
+text = """
+The neighbours have grown too. Keep your fleets near home, close to a resupply depot, and set
+your guards on **Sentry** (`Y`) so that their orders end as soon as an enemy appears.
+"""
+
+[[hint]]
+title = "Contact"
+when = { empires_met = 1 }
+text = """
+You have met a neighbour. Look at its mood in the [Empires](window:empires) window (`F9`). An
+angry neighbour is a dangerous one.
+"""
+
+[[hint]]
+title = "Bases"
+when = { all = [{ turn = 10 }, { not = { bases = 1 } }] }
+text = """
+No base yet. Select your homeworld, press `Q` and click **Defense Base** on the Ships tab, once
+for each base you want.
+"""
+
+[[hint]]
+title = "Your first battle"
+when = { enemy_ships_destroyed = 1 }
+text = """
+You have destroyed your first enemy ship. Send your damaged ships home: the **Repair** order
+(`R`) takes a ship to the nearest place that can repair it.
+"""
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Your last colony fell."

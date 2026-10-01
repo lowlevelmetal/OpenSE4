@@ -25,11 +25,14 @@ add_executable(opense4
     client/classic/classic_mode.cpp
     client/classic/frontend.cpp
     client/classic/facility_markers.cpp
+    client/classic/learn_content.cpp
+    client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
     client/classic/net_transport.cpp
     client/classic/pbem_play.cpp
     client/classic/quadrant_map.cpp
     client/classic/replay.cpp
+    client/classic/screen_id.cpp
     client/classic/ship_glides.cpp
     client/classic/reports.cpp
     client/classic/screens/cargo_transfer.cpp
@@ -52,7 +55,9 @@ add_executable(opense4
     client/classic/screens/item_reports.cpp
     client/classic/screens/intelligence.cpp
     client/classic/screens/launch_recover.cpp
+    client/classic/screens/learn_screens.cpp
     client/classic/screens/log.cpp
+    client/classic/screens/markdown_view.cpp
     client/classic/screens/multiplayer.cpp
     client/classic/screens/pbem.cpp
     client/classic/screens/planets.cpp
@@ -82,7 +87,7 @@ add_executable(opense4
     client/main.cpp
     client/ui/bitmap_font.cpp
     client/ui/theme.cpp)
-target_link_libraries(opense4 PRIVATE opense4_game opense4_net opense4_assets opense4_gfx opense4_embedded imgui tomlplusplus drlibs opense4_warnings)
+target_link_libraries(opense4 PRIVATE opense4_game opense4_learn opense4_net opense4_assets opense4_gfx opense4_embedded imgui tomlplusplus drlibs opense4_warnings)
 target_compile_definitions(opense4 PRIVATE OPENSE4_CLIENT_VERSION="${PROJECT_VERSION}")
 if(OPENSE4_DEV_PATHS)
     # Developer convenience: find assets/ in the source tree. Release builds

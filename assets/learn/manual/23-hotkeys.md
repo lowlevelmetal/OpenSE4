@@ -22,6 +22,7 @@ open and no text field has the keyboard.
 | End Turn | `F12` or `Enter` |
 | Settings | `Ctrl+,` |
 | The manual page for the window in front | `Shift+F1` |
+| Show the lesson or training panel again | `Ctrl+H` |
 
 ## Orders
 
@@ -32,7 +33,7 @@ button is enabled.
 |---|---|
 | Move To | `M` |
 | Move To Waypoint 0 to 9 | `Ctrl+0` to `Ctrl+9` |
-| Set waypoint 0 to 9 at the selected sector | `Alt+0` to `Alt+9` |
+| Set waypoint 0 to 9 where the selected object is | `Alt+0` to `Alt+9` |
 | Warp | `W` |
 | Attack | `A` |
 | Colonize | `C` |
@@ -89,8 +90,8 @@ Planet have buttons only.
 
 | Key | Action |
 |---|---|
-| `Enter` | Confirm: End Turn, Attack, Tactical, OK, Yes |
-| `Esc` | Cancel, Stay Back, Strategic, No; close the window |
+| `Enter` | In the battle questions: `Attack` (enter the sector) and `Tactical`; `End Turn` when the game asks before ending the turn; `OK` in notices |
+| `Esc` | `Stay Back`, `Strategic`, `Cancel` or `No`; closes most windows |
 | `Delete` | Remove the selected item from a construction queue |
 
 ## Tactical combat

@@ -90,6 +90,10 @@ int App::run(const AppOptions& options) {
     co.pbemOrdersDir = options.pbemOrdersDir;
     co.pbemEndTurn = options.pbemEndTurn;
     co.pbemExit = options.pbemEndTurn && options.screenshotPath.empty();
+    co.tutorial = options.tutorial;
+    co.training = options.training;
+    co.manual = options.manual;
+    co.learnDir = options.learnDir;
     mode_ = ClassicMode::create(platform, co, error);
     if (!mode_) {
         fatal(error);

@@ -39,6 +39,10 @@ struct ClassicSettings {
 
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
+
+    // Learning to play (docs/LEARNING.md): the tutorials and training games
+    // finished on this machine, as "tutorial:<slug>" and "training:<slug>".
+    std::vector<std::string> learnDone;
 };
 
 // The Options window's music steps (spec 06 §1.9).

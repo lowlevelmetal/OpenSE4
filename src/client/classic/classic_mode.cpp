@@ -8,12 +8,15 @@
 #include "client/classic/settings.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
+#include "learn/markdown.hpp"
 
 #include "core/log.hpp"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <format>
 
 namespace opense4::client {
@@ -63,6 +66,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->fonts_ = loadClassicFonts(*platform.fonts, mode->art_->files());
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
+    mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
     if (!options.pbemFile.empty()) {
         // --pbem: play a play-by-e-mail game file at once.
@@ -110,6 +114,37 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             }
             mode->openScreen(*id, {});
         }
+    } else if (!options.tutorial.empty() || !options.training.empty()) {
+        // --tutorial / --training: the lesson's game at once; "<slug>:<step>"
+        // starts a tutorial at that step (1-based), for checking content.
+        const bool training = options.tutorial.empty();
+        std::string slug = training ? options.training : options.tutorial;
+        size_t step = 0;
+        if (const size_t colon = slug.find(':'); colon != std::string::npos && !training) {
+            step = static_cast<size_t>(std::max(1, std::atoi(slug.c_str() + colon + 1))) - 1;
+            slug.resize(colon);
+        }
+        if (auto problem = mode->startLesson(training ? learn::LessonKind::Training : learn::LessonKind::Tutorial, slug)) {
+            error = *problem;
+            return nullptr;
+        }
+        if (step > 0) mode->lesson_->jumpTo(*mode->ui_, step);
+        if (!options.openWindow.empty()) {
+            const auto id = screenFromName(options.openWindow);
+            if (!id) {
+                error = std::format("Unknown window '{}'", options.openWindow);
+                return nullptr;
+            }
+            mode->openScreen(*id, {});
+        }
+    } else if (options.manual) {
+        // --manual[=slug]: the manual on its own.
+        const learn::Link at = learn::parseLink(*options.manual);
+        if (!options.manual->empty() && (at.kind != learn::Link::Kind::Page || !mode->learn_->library.page(at.target))) {
+            error = std::format("No manual page '{}'", *options.manual);
+            return nullptr;
+        }
+        mode->front_ = makeLearnFrontScreen("manual:" + *options.manual);
     } else if (auto front = frontScreenByName(options.openWindow)) {
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
     } else if (options.skipIntro) {
@@ -162,6 +197,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
 
 ClassicMode::~ClassicMode() {
     screens_.clear();
+    lesson_.reset();
     ui_.reset();
     session_.reset();
     art_.reset();
@@ -169,9 +205,14 @@ ClassicMode::~ClassicMode() {
 
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     screens_.clear();
+    lesson_.reset();
     session_ = std::move(session);
     ui_ = std::make_unique<UiContext>(*session_, *art_, fonts_);
     ui_->app = platform_.app;
+    ui_->learn = learn_.get();
+    session_->onIssued = [this](const game::Command& c) {
+        if (lesson_) lesson_->issued(c);
+    };
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] {
         openLogOnTurn_ = true;
@@ -182,6 +223,70 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     handoffPlayer_ = {};
     handoff_ = false;
     front_.reset();
+}
+
+std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, const std::string& slug) {
+    const learn::Library& lib = learn_->library;
+    const learn::Lesson* lesson = lib.lesson(kind, slug);
+    const char* what = kind == learn::LessonKind::Tutorial ? "tutorial" : "training game";
+    if (!lesson) {
+        std::string known;
+        for (const learn::Lesson& l : lib.lessons(kind)) known += (known.empty() ? "" : ", ") + l.slug;
+        return std::format("No {} named '{}' ({}).", what, slug, known.empty() ? "none are installed" : "there are: " + known);
+    }
+    // The lesson's game: a quick start for its race, then its options.
+    std::string race;
+    if (!lesson->setup.race.empty()) {
+        const ruleset::RacePreset* preset = game::findPreset(*rules_, lesson->setup.race);
+        if (!preset) return std::format("The {} '{}' plays the race '{}', which this data set does not have.", what, slug, lesson->setup.race);
+        race = preset->folder;
+    } else {
+        for (const auto& p : rules_->racePresets())
+            if (!p.neutral) {
+                race = p.folder;
+                break;
+            }
+    }
+    game::GameSetup setup = quickStartSetup(*rules_, race, lesson->setup.seed.value_or(options_.seed), lesson->setup.computerPlayers);
+    learn::applySetup(lesson->setup, setup.options);
+    auto session = startLocalGame(rules_, setup);
+    if (!session) return std::format("The {} '{}' could not start its game: {}", what, slug, session.error());
+    startGame(std::move(*session));
+    lesson_ = std::make_unique<LessonRunner>(*lesson, *session_);
+    openLogOnTurn_ = false;
+    log::info("Started the {} '{}'", what, slug);
+    return std::nullopt;
+}
+
+void ClassicMode::quitToLearn(learn::LessonKind kind) {
+    screens_.clear();
+    lesson_.reset();
+    ui_.reset();
+    session_.reset();
+    front_ = makeLearnFrontScreen(kind == learn::LessonKind::Tutorial ? "tutorials" : "training");
+}
+
+void ClassicMode::contextHelp() {
+    // The page that explains the window in front (the main window when none is open).
+    const std::string_view id = screens_.empty() ? std::string_view("main") : windowId(screens_.back().first);
+    if (id == "manual") return;
+    const learn::ManualPage* page = learn_->library.pageForWindow(id);
+    ScreenArgs args;
+    if (page) args.text = page->slug;
+    openScreen(ScreenId::Manual, std::move(args));
+}
+
+void ClassicMode::updateLesson(UiContext& ui) {
+    const Bindings& keys = appSettings().controls.bindings;
+    if (keys.pressed(Action::ContextHelp)) contextHelp();
+    const bool toggle = ui.requests.toggleLessonPanel;
+    ui.requests.toggleLessonPanel = false;
+    if (!lesson_) return;
+    if (toggle || keys.pressed(Action::LessonText)) lesson_->togglePanel();
+    learn::ClientFacts facts;
+    for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
+    facts.selected = main_.selectionKinds(ui);
+    lesson_->frame(ui, facts);
 }
 
 void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
@@ -233,7 +338,19 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
+        ctx.learn = learn_.get();
+        ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) { pendingLesson_ = {kind, slug}; };
         if (front_) front_->draw(ctx);
+        if (pendingLesson_ && !session_) {
+            // Started after the screen drew: starting replaces it.
+            const auto [kind, slug] = *pendingLesson_;
+            pendingLesson_.reset();
+            if (auto problem = startLesson(kind, slug)) {
+                frontError_ = *problem;
+                front_ = makeFrontScreen(FrontId::Intro);
+            }
+            return !quit_;
+        }
         if (nextFront_ && !session_) {
             front_ = makeFrontScreen(*nextFront_);
             nextFront_.reset();
@@ -247,6 +364,8 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.fbScale = fs.fbScale;
     ui.time = fs.time;
     ui.dt = fs.dt;
+    ui.tags.clear();
+    ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
 
     // Hotseat: when the turn passes to another human, hide the map until that
@@ -297,12 +416,16 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     // Windows, oldest first; the newest draws on top.
     for (size_t i = 0; i < screens_.size();) {
         ImGui::PushID(int(i));
+        ui.drawing = screens_[i].first;   // its Dialog registers window:<id>
+        ui.windowTagged = false;
         const bool keep = screens_[i].second->draw(ui);
+        ui.drawing.reset();
         ImGui::PopID();
         if (keep) ++i;
         else screens_.erase(screens_.begin() + std::ptrdiff_t(i));
     }
     if (battleAsking) drawBattleQuestion(ui);
+    updateLesson(ui);
     for (auto& [id, args] : pendingOpen_) openScreen(id, std::move(args));
     pendingOpen_.clear();
     main_.applyRequests(ui);
@@ -355,10 +478,44 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (ui.requests.quitToIntro) {
         ui.requests.quitToIntro = false;
         screens_.clear();
+        lesson_.reset();
         ui_.reset();
         session_.reset();
         front_ = makeFrontScreen(FrontId::Intro);
         return true;
+    }
+    // The learning system: a lesson chosen in the Learn window, or what the
+    // player chose in the lesson panel or its result. Each replaces the game.
+    if (ui.requests.startLesson) {
+        const auto [kind, slug] = *ui.requests.startLesson;
+        ui.requests.startLesson.reset();
+        if (auto problem = startLesson(kind, slug)) lessonError_ = *problem;
+        return true;
+    }
+    if (lesson_) {
+        const learn::LessonKind kind = lesson_->lesson().kind;
+        const std::string slug = lesson_->lesson().slug;
+        switch (lesson_->takeRequest()) {
+            case LessonRunner::Request::None: break;
+            case LessonRunner::Request::Leave: quitToLearn(kind); return true;
+            case LessonRunner::Request::Restart:
+                if (auto problem = startLesson(kind, slug)) lessonError_ = *problem;
+                return true;
+            case LessonRunner::Request::Next:
+                if (const learn::Lesson* next = learn_->library.next(kind, slug))
+                    if (auto problem = startLesson(kind, next->slug)) lessonError_ = *problem;
+                return true;
+        }
+    }
+    if (!lessonError_.empty()) {
+        ImGui::SetNextWindowPos(ui.at({312, 320}));
+        ImGui::SetNextWindowSize(ui.size({400, 0}));
+        ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
+        ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::TextWrapped("%s", lessonError_.c_str());
+        if (ImGui::Button("OK", ui.size({120, 26}))) lessonError_.clear();
+        ImGui::End();
+        ImGui::PopFont();
     }
     return !ui.requests.quitGame;
 }

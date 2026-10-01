@@ -372,6 +372,7 @@ private:
         }
         if (rows.empty()) ImGui::TextColored(kTextDim, "%s", shown_ == 0 ? "Every toggle is off." : "No queues of the shown kinds.");
         ImGui::EndChild();
+        ui.tagItem("queues:list");
     }
 
     void upgradeAll(UiContext& ui) {
@@ -538,10 +539,12 @@ public:
         ImGui::BeginChild("##available", ImVec2(half, listsH));
         available(ui);
         ImGui::EndChild();
+        ui.tagItem("set-queue:available");
         ImGui::SameLine();
         ImGui::BeginChild("##queue", ImVec2(0, listsH));
         queueList(ui, *q);
         ImGui::EndChild();
+        ui.tagItem("set-queue:queue");
         ImGui::BeginChild("##detail", ImVec2(0, detailH), ImGuiChildFlags_Borders);
         detail(ui, *q);
         ImGui::EndChild();

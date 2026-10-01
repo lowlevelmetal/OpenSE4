@@ -141,7 +141,9 @@ public:
         if (d.button("Computer Control")) ImGui::OpenPopup("Player Computer Control##sim");
         if (d.button("Fleets For Plr")) ImGui::OpenPopup("Fleets##sim");
         if (d.button("Change Cargo")) ImGui::OpenPopup("Change Cargo##sim");
-        if (d.button("Begin")) {
+        const bool beginClicked = d.button("Begin");
+        ui.tagItem("combat-simulator:begin");
+        if (beginClicked) {
             if (tactical_) savedSetup() = setup_;
             if (begin(ui, setup_, tactical_, message_)) {
                 if (tactical_) return false;   // it opens again when the battle is over

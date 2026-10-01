@@ -1,0 +1,154 @@
+# OpenSE4's own lesson (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Diplomacy and intelligence"
+summary = "Meet your neighbours, propose a treaty, read their answer and start your first intelligence project."
+minutes = 20
+
+[setup]
+seed = 11
+computer_players = 3
+systems = 6
+events = "none"
+
+[[step]]
+title = "Neighbours"
+text = """
+This quadrant is small and crowded: three other empires live close by. In this lesson you meet
+them, talk to them and start an intelligence project.
+
+First you have to find them. You make **contact** with an empire when your ships and theirs are
+in the same system and each side can see the other.
+"""
+highlight = ["lesson:panel"]
+manual = "diplomacy#meeting-other-empires"
+
+[[step]]
+title = "Send out a scout"
+text = """
+Select one of your scouts with the ship arrows (or `Space`) and give it the **Explore** order
+(`E`). Send the second scout exploring too.
+"""
+highlight = ["cycle:ship", "order:explore"]
+done = { order = "explore" }
+manual = "galaxy#exploring"
+
+[[step]]
+title = "First contact"
+text = """
+Now end turns until you meet another empire: the Log then reports a **first contact**. Give each
+scout a new Explore order when it arrives. Your neighbours' scouts may also find you first.
+"""
+highlight = ["button:end-turn", "order:explore"]
+done = { empires_met = 1 }
+manual = "diplomacy#meeting-other-empires"
+
+[[step]]
+title = "The Empires window"
+text = """
+You have met a neighbour. Open the **Empires** window with its command button (the alien face) or
+`F9`.
+"""
+highlight = ["command:empires"]
+done = { window = "empires" }
+manual = "diplomacy#the-empires-window"
+
+[[step]]
+title = "The empires you know"
+text = """
+Each empire you have met has a portrait and a column of facts: your **treaty** with it, whether a
+human or the computer plays it, and for computer players their **mood** toward you, from
+Brotherly to Murderous.
+
+You start with no treaty, and ships of empires without a treaty of **Non-Aggression** or better
+fight on sight. Press **Next**.
+"""
+highlight = ["empires:list"]
+manual = "diplomacy#treaties"
+
+[[step]]
+title = "Open a channel"
+text = """
+Left-click a portrait to open the **Communicate** window with that empire. (Right-clicking a
+portrait shows its race report.)
+"""
+highlight = ["empires:list"]
+done = { window = "communicate" }
+manual = "diplomacy#the-communicate-window"
+
+[[step]]
+title = "Propose a treaty"
+text = """
+Choose **Propose Treaty** as the message type and **Non-Aggression** as the treaty. Pick a tone,
+edit the text if you like, and press **Send Message**.
+
+You can send each empire one message per turn. In a turn-based game a message takes effect the
+moment it is sent; an answer comes in the other empire's turn.
+"""
+highlight = ["window:communicate"]
+done = { command = "SendMessage" }
+manual = "diplomacy#messages"
+
+[[step]]
+title = "Wait for the answer"
+text = """
+Close the windows and end the turn. The computer player answers during its own turn.
+"""
+highlight = ["button:end-turn"]
+done = { turns_passed = 1 }
+manual = "diplomacy#how-computer-players-feel-about-you"
+
+[[step]]
+title = "Read the answer"
+text = """
+Open the **Log** (`F10`) and look under **Politics**. A message from another empire can be
+answered with **Send Reply**.
+
+A computer player accepts a treaty only when its anger toward you is low enough. If it refused,
+try again later, or soften it with a gift.
+"""
+highlight = ["command:log"]
+done = { window = "log" }
+manual = "diplomacy#how-computer-players-feel-about-you"
+
+[[step]]
+title = "More about other empires"
+text = """
+The Empires window has more on its right side: the **Treaty Grid** of who is at peace with whom,
+the **Scores**, the **Victory Conditions** of this game, and your own race report under **Our
+Race**. Press **Next**.
+"""
+highlight = ["command:empires"]
+manual = "diplomacy#the-empires-window"
+
+[[step]]
+title = "Intelligence"
+text = """
+Open the Empires window again and press **Intelligence**. Intelligence projects let you spy on
+other empires and sabotage them, and protect you from their agents.
+"""
+highlight = ["command:empires", "window:empires"]
+done = { window = "intelligence" }
+manual = "intelligence#the-intelligence-window"
+
+[[step]]
+title = "A first project"
+text = """
+The list on the left shows the projects your technology allows. Click a **defense** project to add
+it: it stores points in your queue and stops enemy projects aimed at you.
+
+Your intelligence points come from intelligence facilities, which you build like any other
+facility. Without them the project waits.
+"""
+highlight = ["window:intelligence"]
+done = { command = "SetIntel" }
+manual = "intelligence#defense-projects"
+
+[[step]]
+title = "Well done"
+text = """
+You have met a neighbour, proposed a treaty and started an intelligence project.
+
+A few tips: sign Non-Aggression with neighbours you are not ready to fight, sign trade treaties
+for free income, and keep a small defense project running once a neighbour turns hostile.
+"""
+highlight = ["lesson:panel"]
+manual = "diplomacy#diplomacy-advice"

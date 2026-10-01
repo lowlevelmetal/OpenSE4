@@ -953,6 +953,7 @@ public:
         ImGui::PopStyleVar(2);
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+            ui.tagWindow(ui.at(min), ui.at(min + size));
             drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
             int row = 0;
             auto button = [&](const std::string& label, bool enabled = true) {

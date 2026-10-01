@@ -132,11 +132,13 @@ TEST_CASE("classic options: the per-computer settings keep the Options window's 
     s.fastTacticalCombat = true;
     s.musicVolume = 40;
     s.showToHitChances = true;
+    s.learnDone = {"tutorial:first-steps"};   // lesson progress lives in the same file
     const ClassicSettings back = settingsFromToml(settingsToToml(s));
     CHECK_FALSE(back.animateCombatMovement);
     CHECK(back.fastTacticalCombat);
     CHECK(back.musicVolume == 40);
     CHECK(back.showToHitChances);
+    CHECK(back.learnDone == s.learnDone);
     // A volume between the steps comes back as the nearest step.
     const ClassicSettings odd = settingsFromToml("[sound]\nmusic_percent = 57\n");
     CHECK(odd.musicVolume == 60);

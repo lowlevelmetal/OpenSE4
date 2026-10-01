@@ -102,6 +102,14 @@ void ClassicSession::record(game::Command c) {
 }
 
 game::CommandResult ClassicSession::issue(game::Command c) {
+    if (!onIssued) return issueCommand(std::move(c));
+    const game::Command copy = c;
+    game::CommandResult r = issueCommand(std::move(c));
+    if (r.ok) onIssued(copy);
+    return r;
+}
+
+game::CommandResult ClassicSession::issueCommand(game::Command c) {
     if (waiting_ && kind_ == SessionKind::Pbem)
         return game::CommandResult::fail(ordersFile_.empty() ? "It is not your turn." : "This turn's orders are saved; the turn is over here.");
     if (waiting_) return game::CommandResult::fail("Waiting for the other players");

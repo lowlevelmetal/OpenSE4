@@ -90,9 +90,12 @@ class GameMenuScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
         // The original's 173×320 menu: a column of 150×26 buttons, one every
-        // 30 px, in the pipe frame (spec 06 §1.2).
-        const Vec2 size{173, 320};
-        const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
+        // 30 px, in the pipe frame (spec 06 §1.2). OpenSE4's Learn button sits
+        // in a small frame of its own just below it.
+        const Vec2 menu{173, 320};
+        const Vec2 extra{173, 50};
+        const Vec2 size{menu.x, menu.y + 6 + extra.y};
+        const Vec2 min{(kFrameW - menu.x) * 0.5f, (kFrameH - menu.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -103,7 +106,10 @@ public:
         ImGui::PopStyleVar(2);
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
-            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
+            ui.tagWindow(ui.at(min), ui.at(min + size));
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + menu}, nullptr, 0);
+            const Vec2 extraMin = min + Vec2{0, menu.y + 6};
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{extraMin, extraMin + extra}, nullptr, 0);
             int row = 0;
             auto button = [&](const char* label, bool enabled = true) {
                 ImGui::SetCursorPos(ImVec2(ui.px(12), ui.px(12 + 30 * float(row++))));
@@ -151,6 +157,14 @@ public:
             }
             if (button("Quit")) ImGui::OpenPopup("Quit Game");
             if (button("Close")) keep = false;
+            // Tutorials, training games and the manual (docs/LEARNING.md): an
+            // OpenSE4 extension below the original's ten buttons.
+            ImGui::SetCursorPos(ImVec2(ui.px(12), ui.px(menu.y + 6 + 12)));
+            if (classicButton(ui, "Learn", {149, 26}, 0, false, ui.learn != nullptr)) {
+                audio().play("button");
+                ui.open(ScreenId::Learn);
+                keep = false;
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                 !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
                 keep = false;

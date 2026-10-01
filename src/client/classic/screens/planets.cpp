@@ -106,7 +106,9 @@ public:
                 o.planetsNoSysToAvoid = !noAvoid;
                 if (!ui.setOptions(o)) status_.fail("The option cannot be changed now.");
             }
-            if (d.button("Send Colony Ship", stats_.available > 0)) {
+            const bool send = d.button("Send Colony Ship", stats_.available > 0);
+            ui.tagItem("planets:send-colony-ship");
+            if (send) {
                 picking_ = true;
                 pickRows_.clear();
                 for (const PlanetInfo* p : rows) pickRows_.push_back(p->id);
@@ -241,6 +243,7 @@ private:
             }
         if (rows.empty()) ImGui::TextColored(kTextDim, "No planets on this tab.");
         ImGui::EndChild();
+        ui.tagItem("planets:list");
         return leave;
     }
 
@@ -410,6 +413,7 @@ public:
                 a.planet = selection_.front();
                 ui.open(ScreenId::SetQueue, a);
             }
+            ui.tagItem("colonies:queue");
             if (d.button("Goto", one)) goto_ = selection_.front();
             if (d.close()) return false;
             report_.draw(ui);
@@ -729,6 +733,7 @@ private:
                 ImGui::TextColored(kTextDim, "No colonies.");
             }
             ImGui::EndTable();
+            ui.tagItem("colonies:list");
         }
         ImGui::PopStyleVar();
     }
