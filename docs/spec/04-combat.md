@@ -328,7 +328,12 @@ moment, including during other empires' phases (§10.2).
   effect or its category's `Break Formation` flag says so (§16.1). The manual's "leader
   surrounded" case (history 1.21) is a rule of its own: when a computer-played leader's
   turn to act comes and every square on the map around it is taken, its whole group is
-  dissolved before it moves (§16.1 "Surrounded pieces"; confirmed: binary).
+  dissolved before it moves, and the leader does not move (§16.1 "Surrounded pieces");
+  nothing is tested after a move. A whole group also dissolves when its leader is
+  destroyed or removed, and, on an automated side, when its leader survives any hit
+  (even one its shields absorb) with no movement left this combat turn, which is always
+  the case once a computer-played leader has acted (§9.1 step 10, spec 03 §10)
+  (confirmed: binary).
 - **Point-defense on the move** (confirmed: binary). After every step of a fighter or
   drone group, hostile point-defense in range may fire at it. After every step of any
   other piece, that piece's own point-defense may fire at a hostile target now in
@@ -518,7 +523,10 @@ Let D be the hit's damage after §8.
    target: components of a ship (§9.1a), units of a group (§9.4), cargo and population
    of a planet (§11), or a seeker (§10.1).
 10. If the target survives, its shields are capped at their new maximum, and its
-    movement points at the new movement allowance.
+    movement points at the new movement allowance. This runs after every hit, one that
+    did no damage included. If it leaves the leader of a combat group on an automated
+    side with no movement points this combat turn, the whole group dissolves (spec 03
+    §10) (confirmed: binary).
 
 **§9.1a Components of a ship or base** (confirmed: binary).
 
@@ -1135,7 +1143,8 @@ acted fires.
 formation slot checks whether every square on the map around its footprint is taken
 (squares off the map do not count). If so, it makes no plan and does not move, though it
 still fires (its fire-first test then measures from square (0, 0)), and if it leads a
-group, that whole group is dissolved first (spec 03 §10).
+group, that whole group is dissolved first (spec 03 §10). This is the only surrounded
+test: nothing is tested after a piece has moved.
 
 **Strategy in effect.** The primary strategy is used unless it is impossible: Drop Troops
 needs a ship carrying troops; the four range strategies (Maximum, Optimal, Short, Point
