@@ -596,7 +596,9 @@ void ClassicMode::drawHandoff(UiContext& ui) {
             begin = true;
         handoffPassword_ = buffer;
     }
-    if (ImGui::Button("Begin Turn", ui.size({140, 30}))) begin = true;
+    // The Next Player notice: Esc or Enter continue (spec 06 §3.4); with a
+    // password, Enter in its field submits it.
+    if (ImGui::Button("Begin Turn", ui.size({140, 30})) || (!needsPassword && okKey())) begin = true;
     ImGui::SameLine();
     if (ImGui::Button("Quit Game", ui.size({140, 30}))) ui.requests.quitGame = true;
     if (begin) {
