@@ -7,6 +7,7 @@
 
 #include "learn/condition.hpp"
 #include "learn/markdown.hpp"
+#include "game/setup.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -41,9 +42,12 @@ struct Setup {
     std::optional<bool> omnipresent;
     std::optional<bool> noRuins;
 };
-// Applies the options the setup sets (the quick start's race, seed and
-// opponents are the client's to apply).
-void applySetup(const Setup& setup, game::GameOptions& options);
+// Applies the options the setup sets to a quick start's setup (the race,
+// the seed and the opponents are the client's to choose). With
+// `ai_difficulty`, the computer empires play at that level: they count as
+// random computer players (GameOptions::randomAiPlayers), which the
+// difficulty applies to.
+void applySetup(const Setup& setup, game::GameSetup& game);
 
 // A tutorial step.
 struct Step {

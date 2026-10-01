@@ -11,6 +11,7 @@
 #include "game/state.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,19 +21,26 @@ namespace opense4::learn {
 
 enum class Fact : uint8_t {
     // Client facts.
-    Window, Selected, Command, Order,
+    Window, Selected, Command, Order, Tab,
+    // Windows' work in progress.
+    DesignComponents, DesignHullChosen, SimulatorOwners, SimulatorItems,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
     Colonies, Population, Ships, Bases, Units, Fleets, Designs, ResearchQueued, ConstructionQueued, TechsResearched,
-    SystemsExplored, EmpiresMet, Treaties, EnemyShipsDestroyed, Score, Minerals, Organics, Radioactives,
+    SystemsExplored, EmpiresMet, Treaties, Treaty, EnemyShipsDestroyed, PlanetsCaptured, Score, Minerals, Organics, Radioactives,
+    Option,
     Count
 };
+
+// What a key takes: a whole number ("at least"), a string from a fixed
+// vocabulary, or true / false.
+enum class FactValue : uint8_t { Number, Text, Flag };
 
 struct FactInfo {
     Fact fact;
     std::string_view key;          // the TOML key
-    bool text;                     // takes a string (else a whole number)
+    FactValue value;
     bool sinceMark;                // counts from the step's (or the game's) start
     std::string_view description;  // for the reference (docs/LEARNING.md)
 };
@@ -44,8 +52,8 @@ struct Condition {
     enum class Op : uint8_t { All, Any, Not, Fact };
     Op op = Op::All;
     Fact fact = Fact::Turn;
-    int64_t number = 0;            // numeric facts: at least this
-    std::string text;              // text facts: the window id, kind, command or order
+    int64_t number = 0;            // numeric facts: at least this; flags: 1 true, 0 false
+    std::string text;              // text facts: the window id, kind, command, order, tab, option or treaty
     std::vector<Condition> children;  // All, Any: any number; Not: one
     int line = 0;                  // where it is written (diagnostics)
 };
@@ -59,6 +67,21 @@ struct ClientFacts {
     // "warp-point"; "sector" while the report lists everything in a sector;
     // "system" when nothing is selected and the report shows the system.
     std::vector<std::string> selected;
+    // Selections the player made in the main window so far (the selection
+    // a game starts with is not one): `selected` holds only for a selection
+    // made since the step began.
+    uint64_t selections = 0;
+    // The tabs (and filters) the open windows show, as "<window>:<tab>"
+    // (learn/ids.hpp windowTabs).
+    std::vector<std::string> tabs;
+    // The Create Design window, while it is open: the components on the
+    // design being built, and whether the player picked a hull in its Size list.
+    std::optional<int64_t> designComponents;
+    bool designHullChosen = false;
+    // The Combat Simulator, while it is open: the races ("owners") that have
+    // items in the battle, and the items.
+    int64_t simulatorOwners = 0;
+    int64_t simulatorItems = 0;
 };
 
 // The player's commands and the enemy losses seen during a lesson: what the
@@ -68,16 +91,22 @@ public:
     // A command the player issued successfully.
     void issued(const game::Command& c) { commands_.push_back(c); }
     // Counts the enemy ships and bases destroyed in the battles of `state`
-    // the empire fought in, each battle once (call whenever the state changed).
+    // the empire fought in, each battle once, and the colonies it took from
+    // empires it is hostile to (call whenever the state changed; the first
+    // call only notes who owns what).
     void observe(const game::GameState& state, game::EmpireId empire);
 
     const std::vector<game::Command>& commands() const { return commands_; }
     int64_t enemyShipsDestroyed() const { return destroyed_; }
+    int64_t planetsCaptured() const { return captured_; }
 
 private:
     std::vector<game::Command> commands_;
     std::vector<uint64_t> battles_;   // signatures of the battles counted (sorted)
     int64_t destroyed_ = 0;
+    std::vector<game::EmpireId> owners_;   // per ObjectId: the colony's owner when last observed
+    bool seeded_ = false;
+    int64_t captured_ = 0;
 };
 
 // Where a step (or the game) began: the counters `sinceMark` facts start from.
@@ -86,8 +115,12 @@ struct Mark {
     size_t commands = 0;
     int techLevels = 0;
     int64_t enemyShipsDestroyed = 0;
+    int64_t planetsCaptured = 0;
+    uint64_t selections = 0;
 };
-Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker);
+// `selections`: ClientFacts::selections now.
+Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker,
+             uint64_t selections = 0);
 
 struct EvalContext {
     const game::Rules& rules;

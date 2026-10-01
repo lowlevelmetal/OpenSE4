@@ -117,18 +117,100 @@ constexpr std::string_view kOtherTags[] = {
     "create-design:hull", "create-design:name", "create-design:on-design", "create-design:components",
     "create-design:warnings", "create-design:save",
     "fleet-transfer:ships", "fleet-transfer:fleets", "fleet-transfer:create-fleet",
+    "combat-simulator:vehicles", "combat-simulator:items", "combat-simulator:owners", "combat-simulator:strategies",
     "combat-simulator:begin",
-    "planets:list", "planets:send-colony-ship",
+    "tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target",
+    "tactical-combat:options", "tactical-combat:orders", "tactical-combat:auto", "tactical-combat:end-turn",
+    "planets:list", "planets:filters", "planets:no-sys-to-avoid", "planets:send-colony-ship",
     "colonies:list", "colonies:queue",
-    "log:messages",
-    "empires:list",
+    "research:divide-evenly", "research:repeat",
+    "log:messages", "log:categories", "log:send-reply",
+    "empires:list", "empires:intelligence",
+    "communicate:message-type", "communicate:treaty", "communicate:send",
     // The lesson panel itself.
     "lesson:panel", "lesson:next", "lesson:read-more",
     "help:tabs",
 };
 
+// The tabs and filters windows show (UiContext::tagTab): each is a UI tag and
+// what a `tab` condition names.
+constexpr std::string_view kWindowTabs[] = {
+    "planets:all", "planets:colonizable", "planets:all-colonies", "planets:enemy-colonies", "planets:ally-colonies",
+    "planets:colonizable-empty", "planets:colonizable-breathable", "planets:ship-enroute", "planets:asteroids", "planets:special",
+    "colonies:general", "colonies:value", "colonies:production", "colonies:facilities", "colonies:cargo", "colonies:construction",
+    "colonies:status", "colonies:races", "colonies:orders",
+    "ships:general", "ships:orders", "ships:cargo", "ships:fleet", "ships:maintenance",
+    "designs:ship-designs", "designs:unit-designs", "designs:enemy-ship-designs", "designs:enemy-unit-designs",
+    "queues:rate", "queues:usage", "queues:planet-value", "queues:facilities", "queues:cargo",
+    "set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades",
+    "tech-tree:tech-areas", "tech-tree:tech-levels",
+    "empires:treaty", "empires:trade", "empires:tariff",
+    "log:all", "log:construction", "log:research", "log:intelligence", "log:events", "log:politics", "log:combat", "log:misc",
+    "combat-simulator:tactical", "combat-simulator:strategic",
+};
+
+// On/off settings of the player's empire for `option` conditions.
+struct OptionInfo {
+    std::string_view id;
+    bool (*get)(const game::Empire&);
+};
+constexpr OptionInfo kOptions[] = {
+    // Research and Intelligence windows.
+    {"research-evenly", [](const game::Empire& e) { return e.researchEvenly; }},
+    {"research-repeat", [](const game::Empire& e) { return e.repeatResearch; }},
+    {"intel-evenly", [](const game::Empire& e) { return e.intelEvenly; }},
+    {"intel-repeat", [](const game::Empire& e) { return e.repeatIntel; }},
+    // Ship Movement and Ship Orders, colonization.
+    {"avoid-tagged-minefields", [](const game::Empire& e) { return e.avoidTaggedMinefields; }},
+    {"avoid-restricted-systems", [](const game::Empire& e) { return e.avoidRestrictedSystems; }},
+    {"choose-colony-type", [](const game::Empire& e) { return e.chooseColonyType; }},
+    // Empire Options (game::InterfaceOptions).
+    {"show-log-at-turn-start", [](const game::Empire& e) { return e.interfaceOptions.showLogAtTurnStart; }},
+    {"confirm-end-turn", [](const game::Empire& e) { return e.interfaceOptions.confirmEndTurn; }},
+    {"confirm-scrap", [](const game::Empire& e) { return e.interfaceOptions.confirmScrap; }},
+    {"confirm-stellar-manipulation", [](const game::Empire& e) { return e.interfaceOptions.confirmStellarManipulation; }},
+    {"confirm-delete-research", [](const game::Empire& e) { return e.interfaceOptions.confirmDeleteResearch; }},
+    {"confirm-delete-intel", [](const game::Empire& e) { return e.interfaceOptions.confirmDeleteIntel; }},
+    {"confirm-delete-first-queue-item", [](const game::Empire& e) { return e.interfaceOptions.confirmDeleteFirstQueueItem; }},
+    {"note-similar-abilities", [](const game::Empire& e) { return e.interfaceOptions.noteSimilarAbilities; }},
+    {"skip-under-construction", [](const game::Empire& e) { return e.interfaceOptions.skipUnderConstruction; }},
+    {"skip-damaged", [](const game::Empire& e) { return e.interfaceOptions.skipDamaged; }},
+    {"stop-once-per-location", [](const game::Empire& e) { return e.interfaceOptions.stopOncePerLocation; }},
+    {"skip-in-fleets", [](const game::Empire& e) { return e.interfaceOptions.skipInFleets; }},
+    {"warp-point-names", [](const game::Empire& e) { return e.interfaceOptions.warpPointNames; }},
+    {"planet-names", [](const game::Empire& e) { return e.interfaceOptions.planetNames; }},
+    {"colonizable-markers", [](const game::Empire& e) { return e.interfaceOptions.colonizableMarkers; }},
+    {"system-grid", [](const game::Empire& e) { return e.interfaceOptions.systemGrid; }},
+    {"coordinate-location", [](const game::Empire& e) { return e.interfaceOptions.coordinateLocation; }},
+    {"galaxy-grid-lines", [](const game::Empire& e) { return e.interfaceOptions.galaxyGridLines; }},
+    {"galaxy-warp-lines", [](const game::Empire& e) { return e.interfaceOptions.galaxyWarpLines; }},
+    {"latest-construction-only", [](const game::Empire& e) { return e.interfaceOptions.latestConstructionOnly; }},
+    {"latest-components-only", [](const game::Empire& e) { return e.interfaceOptions.latestComponentsOnly; }},
+    {"auto-claim-colonized", [](const game::Empire& e) { return e.interfaceOptions.autoClaimColonized; }},
+    // Remembered by windows.
+    {"planets-no-sys-to-avoid", [](const game::Empire& e) { return e.interfaceOptions.planetsNoSysToAvoid; }},
+    {"simulator-no-obsolete", [](const game::Empire& e) { return e.interfaceOptions.simulatorNoObsolete; }},
+    {"replay-animate", [](const game::Empire& e) { return e.interfaceOptions.replayAnimate; }},
+    {"replay-fast", [](const game::Empire& e) { return e.interfaceOptions.replayFast; }},
+    {"replay-view-rect", [](const game::Empire& e) { return e.interfaceOptions.replayViewRect; }},
+    {"replay-grid", [](const game::Empire& e) { return e.interfaceOptions.replayGrid; }},
+};
+
+constexpr std::pair<game::Treaty, std::string_view> kTreaties[] = {
+    {game::Treaty::War, "war"},
+    {game::Treaty::NonIntercourse, "non-intercourse"},
+    {game::Treaty::NonAggression, "non-aggression"},
+    {game::Treaty::Subjugation, "subjugation"},
+    {game::Treaty::Protectorate, "protectorate"},
+    {game::Treaty::TradeAlliance, "trade-alliance"},
+    {game::Treaty::TradeResearchAlliance, "trade-research-alliance"},
+    {game::Treaty::MilitaryAlliance, "military-alliance"},
+    {game::Treaty::Partnership, "partnership"},
+};
+
 std::vector<std::string_view> buildFixedTags() {
     std::vector<std::string_view> out(std::begin(kOtherTags), std::end(kOtherTags));
+    out.insert(out.end(), std::begin(kWindowTabs), std::end(kWindowTabs));
     static std::vector<std::string> orderTags = [] {
         std::vector<std::string> v;
         for (const auto& [key, id] : kOrderStrip) v.push_back("order:" + std::string(id));
@@ -192,6 +274,38 @@ std::string_view orderStripId(std::string_view slotKey) {
     for (const auto& [key, id] : kOrderStrip)
         if (key == slotKey) return id;
     return {};
+}
+
+std::span<const std::string_view> windowTabs() { return kWindowTabs; }
+
+bool isWindowTab(std::string_view tab) { return std::find(std::begin(kWindowTabs), std::end(kWindowTabs), tab) != std::end(kWindowTabs); }
+
+std::vector<std::string_view> optionNames() {
+    std::vector<std::string_view> out;
+    for (const OptionInfo& o : kOptions) out.push_back(o.id);
+    return out;
+}
+
+std::optional<bool> optionValue(const game::Empire& e, std::string_view id) {
+    for (const OptionInfo& o : kOptions)
+        if (o.id == id) return o.get(e);
+    return std::nullopt;
+}
+
+bool isOptionName(std::string_view id) {
+    return std::any_of(std::begin(kOptions), std::end(kOptions), [&](const OptionInfo& o) { return o.id == id; });
+}
+
+std::vector<std::string_view> treatyKinds() {
+    std::vector<std::string_view> out;
+    for (const auto& [treaty, id] : kTreaties) out.push_back(id);
+    return out;
+}
+
+std::optional<game::Treaty> treatyFromId(std::string_view id) {
+    for (const auto& [treaty, name] : kTreaties)
+        if (name == id) return treaty;
+    return std::nullopt;
 }
 
 bool isUiTag(std::string_view tag) {

@@ -102,7 +102,9 @@ public:
         projectPageButtons(d, page_);
         d.spacer();
         if (d.check("Repeat Projects", e.repeatResearch)) set(ui, e.research, e.researchEvenly, !e.repeatResearch);
+        ui.tagItem("research:repeat");
         if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
+        ui.tagItem("research:divide-evenly");
         d.spacer();
         if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
         ui.tagItem("research:tech-tree");
@@ -348,7 +350,9 @@ public:
         else areasView(ui);
         d.beginButtons();
         if (d.tab("Tech Areas", !levels_)) levels_ = false;
+        ui.tagTab("tech-areas", !levels_);
         if (d.tab("Tech Levels", levels_)) levels_ = true;
+        ui.tagTab("tech-levels", levels_);
         d.spacer();
         if (d.button("Export")) exportView(ui);
         d.close();

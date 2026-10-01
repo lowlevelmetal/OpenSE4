@@ -70,6 +70,9 @@ private:
     // Back to the front end's Learn window (after a lesson).
     void quitToLearn(learn::LessonKind kind);
     void openScreen(classic::ScreenId id, classic::ScreenArgs args);
+    // Automation (--open): a window, or a sample battle for the battle
+    // windows, over the game just started; "none" keeps the Log closed.
+    std::optional<std::string> openAutomationWindow(const std::string& name);
     // The lesson panel and its requests, Ctrl+H and Shift+F1.
     void updateLesson(classic::UiContext& ui);
     void contextHelp();

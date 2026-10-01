@@ -91,6 +91,7 @@ private:
     std::vector<uint8_t> pageSeen_;
     std::optional<size_t> page_;
     std::optional<uint32_t> lastTurn_;
+    uint64_t selections_ = 0;   // ClientFacts::selections at the last update (a new step's mark)
 
     Result result_ = Result::None;
     std::string why_;

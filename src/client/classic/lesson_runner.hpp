@@ -59,7 +59,9 @@ private:
     uint64_t seen_ = 0;   // what the conditions read when they were last checked
     bool showResult_ = false;
     bool panelOpen_ = true;
-    bool confirmLeave_ = false;
+    bool moved_ = false;        // the player moved the panel: it keeps its place
+    bool windowsOpen_ = false;  // a classic window is open (the panel's default place)
+    YesNoPrompt leave_;
     Request request_ = Request::None;
 };
 

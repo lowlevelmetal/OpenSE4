@@ -219,6 +219,7 @@ private:
                 if (ImGui::Selectable(std::string(game::displayName(t)).c_str(), t == draft_.type)) setType(t);
             ImGui::EndCombo();
         }
+        ui.tagItem("communicate:message-type");
 
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(kTextBlue, "Tone");
@@ -278,6 +279,7 @@ private:
                 }
             ImGui::EndCombo();
         }
+        ui.tagItem("communicate:treaty");
     }
 
     void thirdEmpirePicker(UiContext& ui, float labelW, float fieldW) {
@@ -424,7 +426,9 @@ private:
         if (d.button("Start Again")) startAgain(ui);
         if (received && d.button("Back To Message")) mode_ = Mode::Received;
         d.spacer();
-        if (d.button("Send Message", !relation(ui).messageSentThisTurn)) {
+        const bool sendClicked = d.button("Send Message", !relation(ui).messageSentThisTurn);
+        ui.tagItem("communicate:send");
+        if (sendClicked) {
             if (draft_.type == MessageType::Surrender || draft_.type == MessageType::DeclareWar) confirm_ = true;
             else send(ui);
         }

@@ -199,7 +199,7 @@ public:
     // window (Dialog registers it), the main window's buttons and panels and
     // a few widgets inside windows (learn/ids.hpp lists them all).
     std::vector<UiTag> tags;
-    void tag(std::string_view name, ImVec2 min, ImVec2 max) { tags.push_back({std::string(name), min, max}); }
+    void tag(std::string_view name, ImVec2 min, ImVec2 max);
     // The last ImGui item (a button, a child window).
     void tagItem(std::string_view name) { tag(name, ImGui::GetItemRectMin(), ImGui::GetItemRectMax()); }
     void tagFrame(std::string_view name, const Rect& frameRect) { tag(name, at(frameRect.min), at(frameRect.max)); }
@@ -208,10 +208,18 @@ public:
     std::optional<ScreenId> drawing;
     bool windowTagged = false;
     void tagWindow(ImVec2 min, ImVec2 max);
+    // A tab or filter button of the window being drawn, just drawn: tags it
+    // `<window>:<tab>` and, when it is the one shown, reports it to lessons
+    // (facts.tabs). learn/ids.hpp windowTabs lists them.
+    void tagTab(std::string_view tab, bool shown);
 
     // The learning content and whether a lesson is running (its T button).
     const LearnContent* learn = nullptr;
     bool lessonRunning = false;
+    // What windows tell lessons this frame (cleared at its start): their
+    // tabs, the designer's and the simulator's work in progress. The mode
+    // adds the open windows and the selection.
+    learn::ClientFacts facts;
 };
 
 // ---- Drawing helpers (ImGui, sizes in frame pixels) --------------------------------------

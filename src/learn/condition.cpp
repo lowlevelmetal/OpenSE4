@@ -14,34 +14,49 @@ namespace opense4::learn {
 
 namespace {
 
+// In the order of Fact (factInfo indexes it).
+constexpr FactValue N = FactValue::Number, T = FactValue::Text, F = FactValue::Flag;
 constexpr FactInfo kFacts[] = {
-    {Fact::Window, "window", true, false, "that window is open (a window id)"},
-    {Fact::Selected, "selected", true, false, "the main window has that kind of thing selected"},
-    {Fact::Command, "command", true, true, "the player gave a command of that type (game/commands.hpp)"},
-    {Fact::Order, "order", true, true, "the player gave a ship, fleet or planet an order of that kind"},
-    {Fact::Turn, "turn", false, false, "the game has reached turn N (the first turn is 0)"},
-    {Fact::TurnsPassed, "turns_passed", false, true, "N turns have ended"},
-    {Fact::Colonies, "colonies", false, false, "the empire has N colonies"},
-    {Fact::Population, "population", false, false, "the empire's colonies hold N million people"},
-    {Fact::Ships, "ships", false, false, "the empire has N ships (mothballed ones not counted)"},
-    {Fact::Bases, "bases", false, false, "the empire has N bases (mothballed ones not counted)"},
-    {Fact::Units, "units", false, false, "the empire has N units (fighters, satellites, mines, troops, drones, platforms)"},
-    {Fact::Fleets, "fleets", false, false, "the empire has N fleets"},
-    {Fact::Designs, "designs", false, false, "the empire has N designs that are not obsolete"},
-    {Fact::ResearchQueued, "research_queued", false, false, "N research projects are queued"},
-    {Fact::ConstructionQueued, "construction_queued", false, false, "N items wait in the empire's construction queues"},
-    {Fact::TechsResearched, "techs_researched", false, true, "N tech levels have been researched"},
-    {Fact::SystemsExplored, "systems_explored", false, false, "the empire has explored N systems (its home system included)"},
-    {Fact::EmpiresMet, "empires_met", false, false, "the empire has met N other empires"},
-    {Fact::Treaties, "treaties", false, false, "the empire holds N treaties (Non-Aggression or better)"},
-    {Fact::EnemyShipsDestroyed, "enemy_ships_destroyed", false, true,
+    {Fact::Window, "window", T, false, "that window is open (a window id)"},
+    {Fact::Selected, "selected", T, true, "the player selected that kind of thing in the main window, and it is still selected"},
+    {Fact::Command, "command", T, true, "the player gave a command of that type (game/commands.hpp)"},
+    {Fact::Order, "order", T, true, "the player gave a ship, fleet or planet an order of that kind"},
+    {Fact::Tab, "tab", T, false, "an open window shows that tab or filter (\"<window>:<tab>\")"},
+    {Fact::DesignComponents, "design_components", N, false, "the design being built in the open Create Design window has N components"},
+    {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
+    {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races"},
+    {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle"},
+    {Fact::Turn, "turn", N, false, "the game has reached turn N (the first turn is 0)"},
+    {Fact::TurnsPassed, "turns_passed", N, true, "N turns have ended"},
+    {Fact::Colonies, "colonies", N, false, "the empire has N colonies"},
+    {Fact::Population, "population", N, false, "the empire's colonies hold N million people"},
+    {Fact::Ships, "ships", N, false, "the empire has N ships (mothballed ones not counted)"},
+    {Fact::Bases, "bases", N, false, "the empire has N bases (mothballed ones not counted)"},
+    {Fact::Units, "units", N, false, "the empire has N units (fighters, satellites, mines, troops, drones, platforms)"},
+    {Fact::Fleets, "fleets", N, false, "the empire has N fleets"},
+    {Fact::Designs, "designs", N, false, "the empire has N designs that are not obsolete"},
+    {Fact::ResearchQueued, "research_queued", N, false, "N research projects are queued"},
+    {Fact::ConstructionQueued, "construction_queued", N, false, "N items wait in the empire's construction queues"},
+    {Fact::TechsResearched, "techs_researched", N, true, "N tech levels have been researched"},
+    {Fact::SystemsExplored, "systems_explored", N, false, "the empire has explored N systems (its home system included)"},
+    {Fact::EmpiresMet, "empires_met", N, false, "the empire has met N other empires"},
+    {Fact::Treaties, "treaties", N, false, "the empire holds N treaties (Non-Aggression or better)"},
+    {Fact::Treaty, "treaty", T, false, "the empire holds a treaty of that kind with another empire (\"war\": is at war with one)"},
+    {Fact::EnemyShipsDestroyed, "enemy_ships_destroyed", N, true,
      "N ships or bases of other empires were destroyed in battles the empire fought"},
-    {Fact::Score, "score", false, false, "the empire's score is N"},
-    {Fact::Minerals, "minerals", false, false, "the empire has N minerals stored"},
-    {Fact::Organics, "organics", false, false, "the empire has N organics stored"},
-    {Fact::Radioactives, "radioactives", false, false, "the empire has N radioactives stored"},
+    {Fact::PlanetsCaptured, "planets_captured", N, true, "the empire took N colonies from empires it is hostile to"},
+    {Fact::Score, "score", N, false, "the empire's score is N"},
+    {Fact::Minerals, "minerals", N, false, "the empire has N minerals stored"},
+    {Fact::Organics, "organics", N, false, "the empire has N organics stored"},
+    {Fact::Radioactives, "radioactives", N, false, "the empire has N radioactives stored"},
+    {Fact::Option, "option", T, false, "that setting of the empire is on"},
 };
 static_assert(std::size(kFacts) == static_cast<size_t>(Fact::Count));
+static_assert([] {
+    for (size_t i = 0; i < std::size(kFacts); ++i)
+        if (static_cast<size_t>(kFacts[i].fact) != i) return false;
+    return true;
+}());
 
 bool validEmpire(const game::GameState& s, game::EmpireId e) { return e.valid() && e.index() < s.empires.size(); }
 
@@ -66,6 +81,16 @@ const FactInfo* findFact(std::string_view key) {
 const FactInfo& factInfo(Fact f) { return kFacts[static_cast<size_t>(f)]; }
 
 void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
+    // Colonies that came to us from an empire we are hostile to were taken
+    // (by invasion: a gift needs a treaty).
+    owners_.resize(std::max(owners_.size(), state.colonies.size()));
+    for (size_t i = 0; i < state.colonies.size(); ++i) {
+        const game::EmpireId now = state.colonies[i] ? state.colonies[i]->owner : game::EmpireId{};
+        const game::EmpireId before = owners_[i];
+        if (seeded_ && now == empire && before.valid() && before != empire && game::hostile(state, empire, before)) ++captured_;
+        owners_[i] = now;
+    }
+    seeded_ = true;
     for (const game::CombatRecord& rec : state.combats) {
         if (std::find(rec.participants.begin(), rec.participants.end(), empire) == rec.participants.end()) continue;
         // A battle is known by where and when it was fought and what happened in it.
@@ -88,12 +113,14 @@ void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
     }
 }
 
-Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker) {
+Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker, uint64_t selections) {
     Mark m;
     m.turn = state.turn;
     m.commands = tracker.commands().size();
     m.techLevels = validEmpire(state, empire) ? game::research::totalLevels(rules, state.empire(empire)) : 0;
     m.enemyShipsDestroyed = tracker.enemyShipsDestroyed();
+    m.planetsCaptured = tracker.planetsCaptured();
+    m.selections = selections;
     return m;
 }
 
@@ -103,6 +130,11 @@ int64_t factValue(Fact f, const EvalContext& ctx) {
     if (f == Fact::Turn) return s.turn;
     if (f == Fact::TurnsPassed) return s.turn >= ctx.mark.turn ? int64_t(s.turn - ctx.mark.turn) : 0;
     if (f == Fact::EnemyShipsDestroyed) return ctx.tracker.enemyShipsDestroyed() - ctx.mark.enemyShipsDestroyed;
+    if (f == Fact::PlanetsCaptured) return ctx.tracker.planetsCaptured() - ctx.mark.planetsCaptured;
+    // A window's work in progress; -1 while the window is closed, so no count holds.
+    if (f == Fact::DesignComponents) return ctx.client.designComponents.value_or(-1);
+    if (f == Fact::SimulatorOwners) return ctx.client.simulatorOwners;
+    if (f == Fact::SimulatorItems) return ctx.client.simulatorItems;
     if (!validEmpire(s, me)) return 0;
     const game::Empire& e = s.empire(me);
     auto ownVehicles = [&](ruleset::VehicleType type) {
@@ -169,7 +201,23 @@ bool holds(const Condition& c, const EvalContext& ctx) {
     }
     switch (c.fact) {
         case Fact::Window: return contains(ctx.client.openWindows, c.text);
-        case Fact::Selected: return contains(ctx.client.selected, c.text);
+        // Only a selection the player made since the step began: the one a
+        // game starts with, or one made for an earlier step, does not count.
+        case Fact::Selected: return contains(ctx.client.selected, c.text) && ctx.client.selections > ctx.mark.selections;
+        case Fact::Tab: return contains(ctx.client.tabs, c.text);
+        case Fact::DesignHullChosen: return ctx.client.designComponents.has_value() && ctx.client.designHullChosen == (c.number != 0);
+        case Fact::Option: {
+            if (!validEmpire(ctx.state, ctx.empire)) return false;
+            return optionValue(ctx.state.empire(ctx.empire), c.text).value_or(false);
+        }
+        case Fact::Treaty: {
+            const auto kind = treatyFromId(c.text);
+            if (!kind || !validEmpire(ctx.state, ctx.empire)) return false;
+            const game::Empire& e = ctx.state.empire(ctx.empire);
+            for (size_t i = 0; i < e.relations.size() && i < ctx.state.empires.size(); ++i)
+                if (i != ctx.empire.index() && ctx.state.empires[i].alive && e.relations[i].contact && e.relations[i].treaty == *kind) return true;
+            return false;
+        }
         case Fact::Command:
             for (const game::Command& cmd : commandsSince(ctx))
                 if (game::commandName(cmd) == c.text) return true;
@@ -200,7 +248,12 @@ std::string describe(const Condition& c) {
         case Condition::Op::Fact: break;
     }
     const FactInfo& info = factInfo(c.fact);
-    return info.text ? std::format("{} = \"{}\"", info.key, c.text) : std::format("{} = {}", info.key, c.number);
+    switch (info.value) {
+        case FactValue::Text: return std::format("{} = \"{}\"", info.key, c.text);
+        case FactValue::Flag: return std::format("{} = {}", info.key, c.number != 0 ? "true" : "false");
+        case FactValue::Number: break;
+    }
+    return std::format("{} = {}", info.key, c.number);
 }
 
 } // namespace opense4::learn

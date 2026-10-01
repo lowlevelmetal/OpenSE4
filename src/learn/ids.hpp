@@ -41,9 +41,25 @@ std::optional<game::OrderKind> orderKindFromId(std::string_view id);
 std::span<const std::string_view> commandNames();
 bool isCommandName(std::string_view name);
 
+// The tabs and filters windows show, as "<window>:<tab>" ("log:combat",
+// "planets:colonizable"): what `tab = "<window>:<tab>"` names; each is a UI tag too.
+std::span<const std::string_view> windowTabs();
+bool isWindowTab(std::string_view tab);
+
+// On/off settings of an empire for `option = "<name>"`: the research and
+// intelligence switches, the movement and colonization options, and the
+// Empire Options (game::InterfaceOptions), in kebab case.
+std::vector<std::string_view> optionNames();
+bool isOptionName(std::string_view id);
+std::optional<bool> optionValue(const game::Empire& e, std::string_view id);
+
+// Treaties for `treaty = "<kind>"`: "war", "non-aggression", "trade-alliance", ...
+std::vector<std::string_view> treatyKinds();
+std::optional<game::Treaty> treatyFromId(std::string_view id);
+
 // The main window's tags (command buttons, the order strip, End Turn, the
-// status bar, the panels) and the widget tags inside windows, without the
-// `window:<id>` tags, which exist for every window.
+// status bar, the panels), the widget tags inside windows and the window
+// tabs, without the `window:<id>` tags, which exist for every window.
 std::span<const std::string_view> fixedUiTags();
 // The id of an order-strip slot ("Move" -> "move-to"); empty for an empty slot.
 std::string_view orderStripId(std::string_view slotKey);

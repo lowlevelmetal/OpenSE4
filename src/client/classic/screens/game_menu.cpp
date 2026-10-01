@@ -281,7 +281,8 @@ private:
         ImGui::Spacing();
         wrappedDim("Handing an empire to the computer or taking it back is not possible yet in this version.");
         ImGui::Spacing();
-        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        // A check list: no keys at all (spec 06 §3.4).
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26)))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 };

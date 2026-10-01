@@ -97,11 +97,21 @@ public:
         // Send Reply, Combat Replay, Constr. Queues, Goto, Close.
         d.beginButtons();
         if (d.tab("All", filter_ == 0)) setFilter(ui, 0);
-        for (int c = 0; c < kLogCategories; ++c)
+        ui.tagTab("all", filter_ == 0);
+        const ImVec2 categoriesMin = ImGui::GetItemRectMin();
+        // The categories' ids for lessons (learn/ids.hpp windowTabs), in LogCategory order.
+        static constexpr std::array<const char*, kLogCategories> kCategoryIds{
+            {"construction", "research", "intelligence", "events", "politics", "combat", "misc"}};
+        for (int c = 0; c < kLogCategories; ++c) {
             if (d.tab(filterLabel(c), filter_ == c + 1, counts[size_t(c)] > 0)) setFilter(ui, uint8_t(c + 1));
+            ui.tagTab(kCategoryIds[size_t(c)], filter_ == c + 1);
+        }
+        ui.tag("log:categories", categoriesMin, ImGui::GetItemRectMax());
         d.spacer();
         const game::DiplomaticMessage* msg = sel ? sel->message : nullptr;
-        if (d.button("Send Reply", msg != nullptr)) {
+        const bool reply = d.button("Send Reply", msg != nullptr);
+        ui.tagItem("log:send-reply");
+        if (reply) {
             // One message per empire per turn: a second one is refused (spec 05 §3).
             if (msg->from.index() < ui.me().relations.size() && ui.me().relation(msg->from).messageSentThisTurn) {
                 ImGui::OpenPopup("Cannot Reply");

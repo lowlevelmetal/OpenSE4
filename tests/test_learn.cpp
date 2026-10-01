@@ -5,6 +5,7 @@
 
 #include "engine_fixture.hpp"
 
+#include "game/ai.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
 #include "learn/condition.hpp"
@@ -221,11 +222,36 @@ TEST_CASE("learn: a training game loads with objectives, pages, hints and a fail
     CHECK(l->setup.quadrantSize == 0);
     CHECK(l->setup.events == 0);
 
-    game::GameOptions o;
-    applySetup(l->setup, o);
-    CHECK(o.quadrantSize == 0);
-    CHECK(o.eventFrequency == 0);
-    CHECK_FALSE(o.simultaneous);
+    game::GameSetup g;
+    applySetup(l->setup, g);
+    CHECK(g.options.quadrantSize == 0);
+    CHECK(g.options.eventFrequency == 0);
+    CHECK_FALSE(g.options.simultaneous);
+    CHECK(g.options.randomAiPlayers.empty());   // no ai_difficulty: the computer empires play as a quick start's
+}
+
+TEST_CASE("learn: ai_difficulty sets the level of the lesson's computer empires") {
+    std::vector<Diagnostic> problems;
+    const auto l = parseLesson("title = \"t\"\n[setup]\nai_difficulty = \"high\"\n[[objective]]\ntext = \"o\"\nwhen = { turn = 3 }\n", "d.toml",
+                               LessonKind::Training, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    game::GameSetup g;
+    g.seed = 7;
+    g.options.systemCount = 12;
+    for (int i = 0; i < 3; ++i) {
+        game::EmpireSetup e;
+        e.name = std::format("Empire {}", i + 1);
+        e.kind = i == 0 ? game::PlayerKind::Human : game::PlayerKind::Computer;
+        g.empires.push_back(e);
+    }
+    applySetup(l->setup, g);
+    CHECK(g.options.aiDifficulty == game::kDifficultyHigh);
+    CHECK(g.options.randomAiPlayers == std::vector<uint8_t>{0, 1, 1});
+    auto s = game::createGame(engineRules(), g);
+    REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
+    CHECK(game::ai::difficultyOf(*s, game::EmpireId{1u}) == game::kDifficultyHigh);
+    CHECK(game::ai::difficultyOf(*s, game::EmpireId{2u}) == game::kDifficultyHigh);
+    CHECK(game::ai::difficultyOf(*s, game::EmpireId{0u}) == game::kDifficultyMedium);   // the player's ministers
 }
 
 TEST_CASE("learn: lesson errors name the file and line") {
@@ -284,6 +310,26 @@ done = { turn = "five" }
     CHECK(hasProblem(problems, 0, "at least one [[objective]]"));
 }
 
+TEST_CASE("learn: the new condition keys check their values") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "Keys"
+[[objective]]
+text = "o"
+when = { all = [{ tab = "log:nothing" }, { option = "loud" }, { treaty = "friendship" }, { design_hull_chosen = 1 }, { simulator_owners = 0 }] }
+)";
+    CHECK_FALSE(parseLesson(text, "k.toml", LessonKind::Training, problems));
+    CHECK(hasProblem(problems, 4, "unknown window tab 'log:nothing'"));
+    CHECK(hasProblem(problems, 4, "unknown option 'loud'"));
+    CHECK(hasProblem(problems, 4, "unknown treaty kind 'friendship'"));
+    CHECK(hasProblem(problems, 4, "'design_hull_chosen' takes true or false"));
+    CHECK(hasProblem(problems, 4, "'simulator_owners = 0' always holds"));
+    problems.clear();
+    CHECK(parseLesson("title = \"k\"\n[[objective]]\ntext = \"o\"\nwhen = { tab = \"planets:colonizable\", option = \"research-evenly\", "
+                      "treaty = \"non-aggression\", design_hull_chosen = true, design_components = 2, planets_captured = 1 }\n",
+                      "ok.toml", LessonKind::Training, problems));
+    CHECK_MESSAGE(problems.empty(), problemsText(problems));
+}
+
 TEST_CASE("learn: slugs drop the order number and the extension") {
     CHECK(slugOf("03-first-colony.toml") == "first-colony");
     CHECK(slugOf("manual/10-ship-design.md") == "ship-design");
@@ -320,7 +366,10 @@ TEST_CASE("learn conditions: client facts") {
     ev.client.openWindows = {"designs", "research"};
     CHECK(ev("{ window = \"research\" }"));
     CHECK_FALSE(ev("{ selected = \"planet\" }"));
+    // The selection a game starts with is not one the player made.
     ev.client.selected = {"planet", "colony"};
+    CHECK_FALSE(ev("{ selected = \"colony\" }"));
+    ev.client.selections = 1;
     CHECK(ev("{ selected = \"colony\" }"));
     CHECK(ev("{ all = [{ window = \"designs\" }, { selected = \"planet\" }] }"));
     CHECK(ev("{ any = [{ window = \"log\" }, { selected = \"planet\" }] }"));
@@ -328,6 +377,112 @@ TEST_CASE("learn conditions: client facts") {
     // Several keys in one table must all hold.
     CHECK(ev("{ window = \"designs\", selected = \"planet\" }"));
     CHECK_FALSE(ev("{ window = \"log\", selected = \"planet\" }"));
+}
+
+TEST_CASE("learn conditions: a selection counts when it was made since the step began") {
+    Eval ev;
+    ev.client.selected = {"ship"};
+    ev.client.selections = 4;
+    CHECK(ev("{ selected = \"ship\" }"));
+    // A new step: the ship selected before it does not count until it is selected again.
+    ev.mark = markNow(ev.rules, ev.state, ev.me, ev.tracker, ev.client.selections);
+    CHECK_FALSE(ev("{ selected = \"ship\" }"));
+    ev.client.selections = 5;
+    CHECK(ev("{ selected = \"ship\" }"));
+}
+
+TEST_CASE("learn conditions: window tabs and work in progress") {
+    Eval ev;
+    CHECK_FALSE(ev("{ tab = \"log:combat\" }"));
+    ev.client.tabs = {"log:combat"};
+    CHECK(ev("{ tab = \"log:combat\" }"));
+    CHECK_FALSE(ev("{ tab = \"log:all\" }"));
+
+    // The designer, only while it is open.
+    CHECK_FALSE(ev("{ design_components = 1 }"));
+    CHECK_FALSE(ev("{ design_hull_chosen = false }"));
+    ev.client.designComponents = 3;
+    CHECK(ev("{ design_components = 3 }"));
+    CHECK_FALSE(ev("{ design_components = 4 }"));
+    CHECK(ev("{ design_hull_chosen = false }"));
+    CHECK_FALSE(ev("{ design_hull_chosen = true }"));
+    ev.client.designHullChosen = true;
+    CHECK(ev("{ design_hull_chosen = true }"));
+
+    // The simulator's sides.
+    CHECK_FALSE(ev("{ simulator_owners = 2 }"));
+    ev.client.simulatorOwners = 2;
+    ev.client.simulatorItems = 5;
+    CHECK(ev("{ simulator_owners = 2, simulator_items = 5 }"));
+    CHECK(describe(condition("{ design_hull_chosen = true }")) == "design_hull_chosen = true");
+}
+
+TEST_CASE("learn conditions: the empire's options") {
+    Eval ev;
+    CHECK(ev("{ option = \"research-evenly\" }"));   // on for a new empire
+    ev.empire().researchEvenly = false;
+    CHECK_FALSE(ev("{ option = \"research-evenly\" }"));
+    CHECK(ev("{ not = { option = \"research-evenly\" } }"));
+    CHECK_FALSE(ev("{ option = \"planet-names\" }"));
+    ev.empire().interfaceOptions.planetNames = true;
+    CHECK(ev("{ option = \"planet-names\" }"));
+    CHECK(ev("{ option = \"auto-claim-colonized\" }"));
+    ev.empire().repeatIntel = true;
+    CHECK(ev("{ option = \"intel-repeat\" }"));
+    for (std::string_view name : optionNames()) CHECK(optionValue(ev.empire(), name).has_value());
+}
+
+TEST_CASE("learn conditions: a treaty of a kind with anyone") {
+    Eval ev;
+    game::Relation& rel = ev.empire().relation(game::EmpireId{1u});
+    rel.contact = true;
+    rel.treaty = game::Treaty::War;
+    CHECK(ev("{ treaty = \"war\" }"));
+    CHECK_FALSE(ev("{ treaty = \"trade-alliance\" }"));
+    rel.treaty = game::Treaty::TradeAlliance;
+    CHECK(ev("{ treaty = \"trade-alliance\" }"));
+    CHECK_FALSE(ev("{ treaty = \"war\" }"));
+    rel.contact = false;   // only empires we have met
+    CHECK_FALSE(ev("{ treaty = \"trade-alliance\" }"));
+    rel.contact = true;
+    ev.state.empires[1].alive = false;
+    CHECK_FALSE(ev("{ treaty = \"trade-alliance\" }"));
+}
+
+TEST_CASE("learn conditions: planets captured from hostile empires") {
+    Eval ev;
+    game::GameState& s = ev.state;
+    const game::EmpireId them{1u};
+    ev.tracker.observe(s, ev.me);   // the lesson's start: who owns what
+    ev.mark = markNow(ev.rules, s, ev.me, ev.tracker);
+    game::Colony* theirs = nullptr;
+    for (auto& c : s.colonies)
+        if (c && c->owner == them) theirs = &*c;
+    REQUIRE(theirs);
+    ev.empire().relation(them).contact = true;
+    s.empires[1].relation(ev.me).contact = true;
+    ev.empire().relation(them).treaty = game::Treaty::War;
+    s.empires[1].relation(ev.me).treaty = game::Treaty::War;
+    CHECK_FALSE(ev("{ planets_captured = 1 }"));
+    theirs->owner = ev.me;
+    ev.tracker.observe(s, ev.me);
+    CHECK(ev("{ planets_captured = 1 }"));
+    ev.tracker.observe(s, ev.me);   // seen again: still one
+    CHECK_FALSE(ev("{ planets_captured = 2 }"));
+
+    // A colony handed over by a friend is no capture.
+    Eval friendly;
+    game::GameState& f = friendly.state;
+    friendly.tracker.observe(f, friendly.me);
+    friendly.mark = markNow(friendly.rules, f, friendly.me, friendly.tracker);
+    friendly.empire().relation(them).contact = true;
+    friendly.empire().relation(them).treaty = game::Treaty::TradeAlliance;
+    f.empires[1].relation(friendly.me).contact = true;
+    f.empires[1].relation(friendly.me).treaty = game::Treaty::TradeAlliance;
+    for (auto& c : f.colonies)
+        if (c && c->owner == them) c->owner = friendly.me;
+    friendly.tracker.observe(f, friendly.me);
+    CHECK_FALSE(friendly("{ planets_captured = 1 }"));
 }
 
 TEST_CASE("learn conditions: commands and orders count from the mark") {

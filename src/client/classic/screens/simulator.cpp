@@ -123,6 +123,7 @@ public:
         vehicles(ui);
         items(ui);
         owners(ui);
+        reportSides(ui);
         if (!message_.empty()) {
             ImGui::SetCursorScreenPos(ui.at(largeOrigin() + Vec2{17, 450}));
             ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", message_.c_str());
@@ -130,7 +131,9 @@ public:
 
         d.beginButtons();
         if (d.tab("Tactical", tactical_)) tactical_ = true;
+        ui.tagTab("tactical", tactical_);
         if (d.tab("Strategic", !tactical_)) tactical_ = false;
+        ui.tagTab("strategic", !tactical_);
         // No Obsolete: kept with the empire; hides only the player's own obsolete designs.
         if (d.check("No Obsolete", ui.options().simulatorNoObsolete)) {
             game::InterfaceOptions o = ui.options();
@@ -138,6 +141,7 @@ public:
             ui.setOptions(o);
         }
         if (d.button("Strategies")) ui.open(ScreenId::Strategies);
+        ui.tagItem("combat-simulator:strategies");
         if (d.button("Computer Control")) ImGui::OpenPopup("Player Computer Control##sim");
         if (d.button("Fleets For Plr")) ImGui::OpenPopup("Fleets##sim");
         if (d.button("Change Cargo")) ImGui::OpenPopup("Change Cargo##sim");
@@ -221,6 +225,7 @@ private:
         }
         if (rows.empty()) dimText("Click items on the right to add them to the chosen race; click a vehicle here to remove it.");
         ImGui::EndChild();
+        ui.tagItem("combat-simulator:vehicles");
         if (remove) {
             simulatorRemove(setup_, rows[*remove]);
             message_.clear();
@@ -266,6 +271,7 @@ private:
             if (click == 2) report_.openPlanet(obj);
         }
         ImGui::EndChild();
+        ui.tagItem("combat-simulator:items");
     }
 
     // "Owner for item" at (322,325), 250x120: Race 1 to Race 10 with their flags.
@@ -285,6 +291,20 @@ private:
             ImGui::PopID();
         }
         ImGui::EndChild();
+        ui.tagItem("combat-simulator:owners");
+    }
+
+    // For lessons: the races that have items in the battle (an unowned object
+    // is a neutral obstacle and counts for none), and the items.
+    void reportSides(UiContext& ui) const {
+        const game::GameState& s = ui.state();
+        std::vector<int> sides;
+        for (const SimulatorItem& i : setup_.items) {
+            if (i.kind == SimulatorItem::Kind::Planet && !s.colony(i.planet)) continue;
+            if (std::find(sides.begin(), sides.end(), i.side) == sides.end()) sides.push_back(i.side);
+        }
+        ui.facts.simulatorOwners = static_cast<int64_t>(sides.size());
+        ui.facts.simulatorItems = static_cast<int64_t>(setup_.items.size());
     }
 
     void add(UiContext& ui, SimulatorItem item) {

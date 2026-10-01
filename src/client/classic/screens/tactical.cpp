@@ -215,11 +215,15 @@ public:
         const CombatMapPainter paint(ui, s, b.record(), playback_);
         statusBar(ui, b, paint);
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        drawMap(ui, *f, paint, ImVec2(ui.px(kMapW), ImGui::GetContentRegionAvail().y));
+        const ImVec2 mapSize(ui.px(kMapW), ImGui::GetContentRegionAvail().y);
+        drawMap(ui, *f, paint, mapSize);
+        ui.tag("tactical-combat:map", origin, ImVec2(origin.x + mapSize.x, origin.y + mapSize.y));
         ImGui::SetCursorScreenPos({origin.x + ui.px(kSideX), origin.y});
         ImGui::BeginGroup();
         currentPanel(ui, *f);
+        ui.tagItem("tactical-combat:piece");
         targetPanel(ui, *f, paint);
+        ui.tagItem("tactical-combat:target");
         overviewAndButtons(ui, *f, paint);
         ImGui::EndGroup();
         keys(ui, *f);
@@ -696,6 +700,7 @@ private:
             const bool ours = u.begun && b.phaseEmpire().valid() && p.owner == b.phaseEmpire() && commandable(p, p.owner);
             const int chancesAt = settings().showToHitChances && u.hoverEnemy && ours ? u.target : -1;
             int col = 0;
+            ImGui::BeginGroup();
             for (size_t w = 0; w < p.weapons.size(); ++w) {
                 const TacticalWeapon& tw = p.weapons[w];
                 if (col > 0) ImGui::SameLine(0, ui.px(2));
@@ -716,6 +721,8 @@ private:
                 ImGui::PopID();
                 col = (col + 1) % 6;
             }
+            ImGui::EndGroup();
+            ui.tagItem("tactical-combat:weapons");
         }
         ImGui::EndChild();
     }
@@ -831,19 +838,24 @@ private:
         const game::EmpireId side = b.phaseEmpire();
         const bool orders = u.begun && side.valid() && !animating();
         if (classicButton(ui, "Options", {150, 28})) ui.open(ScreenId::TacticalOptions);
+        ui.tagItem("tactical-combat:options");
         if (classicButton(ui, "Orders", {150, 28}, 0, false, orders && !b.paused())) {
             u.ordersMode = OrdersMode::Menu;
             ui.open(ScreenId::TacticalOrders);
         }
+        ui.tagItem("tactical-combat:orders");
         // Auto: one toggle for every empire, from the next phase on (spec 04 §4).
         TacticalOrder toggle{OK::Auto, side};
         toggle.on = !b.autoOn();
         if (classicButton(ui, b.autoOn() ? "Auto: On" : "Auto: Off", {150, 28}, 0, false, orders)) submit(f, toggle);
+        ui.tagItem("tactical-combat:auto");
+        // Begin, then End Turn in the same place: one tag.
         if (!u.begun) {
             if (classicButton(ui, "Begin", {150, 28})) begin(b);
         } else if (classicButton(ui, "End Turn", {150, 28}, 0, false, orders)) {
             submit(f, TacticalOrder{OK::EndPhase, side});
         }
+        ui.tagItem("tactical-combat:end-turn");
         ImGui::EndGroup();
         ImGui::Spacing();
         if (u.aim != Aim::None) ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", u.aim == Aim::Ram ? "Click the enemy to ram." : "Click the enemy ship to board.");

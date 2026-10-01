@@ -17,11 +17,18 @@ namespace opense4::client::classic {
 
 namespace {
 
-// The panel: a classic window at the bottom left of the system view, where it
-// hides the least of the classic windows (their buttons are on the right). Movable.
-constexpr Vec2 kPanelSize{330, 300};
-constexpr float kPanelTop = 462;
+// The panel: a classic window, movable. Until the player moves it, it sits
+// over the galaxy panel while only the main window shows, and at the bottom
+// left of the system view while a window is open, where it hides the least
+// of the classic windows (their buttons are on the right).
+constexpr Vec2 kPanelSize{330, 280};
 constexpr float kButtonsH = 66.0f;
+
+const UiTag* findTag(const UiContext& ui, std::string_view name) {
+    for (const UiTag& t : ui.tags)
+        if (t.name == name) return &t;
+    return nullptr;
+}
 
 const ImVec4 kGood{0.45f, 0.9f, 0.45f, 1.0f};
 const ImVec4 kBad{1.0f, 0.5f, 0.42f, 1.0f};
@@ -39,6 +46,7 @@ LessonRunner::LessonRunner(learn::Lesson lesson, const ClassicSession& session)
     : progress_(std::move(lesson), session.rules(), session.state(), session.player()) {}
 
 void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts) {
+    windowsOpen_ = !facts.openWindows.empty();
     evaluate(ui, facts);
     drawPanel(ui);
     drawOutlines(ui);
@@ -66,6 +74,9 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     for (const std::string& w : facts.openWindows) h.add(std::string_view(w));
     h.add(std::string_view("|"));
     for (const std::string& k : facts.selected) h.add(std::string_view(k));
+    h.add(facts.selections);
+    for (const std::string& t : facts.tabs) h.add(std::string_view(t));
+    h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
     const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);
@@ -179,7 +190,16 @@ void LessonRunner::trainingBody(UiContext& ui) {
 void LessonRunner::drawPanel(UiContext& ui) {
     if (!panelOpen_) return;
     const Painter p = ui.painter();
-    ImGui::SetNextWindowPos(ui.at({ui.map.left + 6, kPanelTop}), ImGuiCond_FirstUseEver);
+    if (!moved_) {
+        const ImVec2 size = ui.size(kPanelSize);
+        const float gap = ui.px(4);
+        ImVec2 at = ui.at({ui.map.left + 6, kFrameH - kPanelSize.y - 6});
+        if (const UiTag* galaxy = findTag(ui, "panel:galaxy"); galaxy && !windowsOpen_)
+            at = ImVec2(galaxy->max.x - size.x, galaxy->max.y - size.y);
+        else if (const UiTag* system = findTag(ui, "panel:system"))
+            at = ImVec2(system->min.x + gap, system->max.y - size.y - gap);
+        ImGui::SetNextWindowPos(at, ImGuiCond_Always);
+    }
     ImGui::SetNextWindowSize(ui.size(kPanelSize), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -190,7 +210,10 @@ void LessonRunner::drawPanel(UiContext& ui) {
     ImGui::PopStyleVar(2);
     if (open) {
         // Above the classic windows, which take the focus when they open.
-        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        ImGui::BringWindowToDisplayFront(window);
+        // Once the player drags it, it stays where they put it.
+        if (ImGui::GetCurrentContext()->MovingWindow == window) moved_ = true;
         const ImVec2 pos = ImGui::GetWindowPos();
         const Vec2 at = ui.map.fromFb(Vec2{pos.x, pos.y} * ui.fbScale);
         drawWindowFrame(p, ImGui::GetWindowDrawList(), Rect{at, at + kPanelSize}, lesson().title.c_str(), 0);
@@ -250,28 +273,13 @@ void LessonRunner::drawPanel(UiContext& ui) {
         const char* leave = over ? "Learn" : l.kind == learn::LessonKind::Tutorial ? "Leave Lesson" : "Leave Game";
         if (button(leave, half + 4, half, y0 + 31, true)) {
             if (over) request_ = Request::Leave;
-            else confirmLeave_ = true;
+            else leave_.open("Leave the lesson? Its game ends; anything not saved is lost.", "Leave Lesson");
         }
     }
     ImGui::End();
 
-    if (confirmLeave_) {
-        ImGui::OpenPopup("Leave Lesson");
-        confirmLeave_ = false;
-    }
-    ImGui::SetNextWindowSize(ui.size({380, 0}));
-    if (ImGui::BeginPopupModal("Leave Lesson", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextWrapped("Leave the lesson? Its game ends; anything not saved is lost.");
-        ImGui::Spacing();
-        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Leave", ImVec2(w, ui.px(26)))) {
-            request_ = Request::Leave;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Stay", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
+    // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+    if (leave_.draw(ui)) request_ = Request::Leave;
 }
 
 void LessonRunner::drawResult(UiContext& ui) {
@@ -282,7 +290,8 @@ void LessonRunner::drawResult(UiContext& ui) {
     }
     ImGui::SetNextWindowSize(ui.size({400, 0}));
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) return;
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | kPromptFlags))
+        return;
     using Result = learn::LessonProgress::Result;
     const Result result = progress_.result();
     const bool won = result == Result::Done || result == Result::Won;
@@ -311,7 +320,8 @@ void LessonRunner::drawResult(UiContext& ui) {
         }
         ImGui::SameLine();
     }
-    if (ImGui::Button("Keep Playing", size) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+    // A message box: Esc or Enter is its OK, Keep Playing (spec 06 §3.4).
+    if (ImGui::Button("Keep Playing", size) || okKey()) ImGui::CloseCurrentPopup();
     ImGui::SameLine();
     if (ImGui::Button("Learn", size)) {
         request_ = Request::Leave;

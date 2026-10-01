@@ -330,11 +330,14 @@ private:
     }
 
     void buttons(UiContext& ui, Dialog& d) {
-        for (size_t i = 0; i < kDesignTabs.size(); ++i)
+        static constexpr std::array<const char*, 4> kTabIds{"ship-designs", "unit-designs", "enemy-ship-designs", "enemy-unit-designs"};
+        for (size_t i = 0; i < kDesignTabs.size(); ++i) {
             if (lampButton(ui, d, kDesignTabs[i], tab_ == static_cast<DesignTab>(i))) {
                 tab_ = static_cast<DesignTab>(i);
                 note_.clear();
             }
+            ui.tagTab(kTabIds[i], tab_ == static_cast<DesignTab>(i));
+        }
         d.spacer();
         const game::Design* own = selectedOwn(ui);
         auto openDesigner = [&](const char* mode) {
@@ -516,6 +519,9 @@ private:
     bool drawDialog(UiContext& ui) {
         Dialog d(ui, "Create Design", DialogSize::Tall);
         if (!d.open()) return d.keepOpen();
+        // For lessons: the design being built.
+        ui.facts.designComponents = static_cast<int64_t>(entries_.size());
+        ui.facts.designHullChosen = hullChosen_;
         const game::DesignStats st = game::computeDesignStats(ui.rules(), &ui.me(), hull_, entries_);
         d.beginContent();
         const float warningsH = ui.px(96);
@@ -551,7 +557,10 @@ private:
                 const ruleset::VehicleSize& vs = r.hull(h);
                 if (vs.type != lastType) ImGui::SeparatorText(std::string(ruleset::displayName(vs.type)).c_str());
                 lastType = vs.type;
-                if (ImGui::Selectable(std::format("{} ({} kT)##{}", vs.name, vs.tonnage, h).c_str(), h == hull_)) setHull(ui, h);
+                if (ImGui::Selectable(std::format("{} ({} kT)##{}", vs.name, vs.tonnage, h).c_str(), h == hull_)) {
+                    setHull(ui, h);
+                    hullChosen_ = true;
+                }
             }
             ImGui::EndCombo();
         }
@@ -824,6 +833,7 @@ private:
     bool done_ = false;
     game::DesignId editing_;  // Edit: the prototype changed in place
     uint32_t hull_ = 0;
+    bool hullChosen_ = false;   // the player picked a hull in the Size list
     std::string designType_;
     bool designTypeChosen_ = false;
     std::array<char, 64> name_{};

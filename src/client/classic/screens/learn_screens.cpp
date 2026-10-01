@@ -352,29 +352,16 @@ public:
     bool draw(UiContext& ui) override {
         if (!ui.learn) return false;
         LearnHost host = gameHost(ui);
-        bool ask = false;
-        host.start = [this, &ask](learn::LessonKind kind, const std::string& slug) {
+        host.start = [this](learn::LessonKind kind, const std::string& slug) {
             pending_ = {kind, slug};
-            ask = true;
+            confirm_.open("Leave this game and start the lesson's game? Anything not saved is lost.", "Start Lesson");
         };
         bool keep = true;
         {
             Dialog d(ui, "Learn", DialogSize::Large);
             keep = view_.draw(ui.painter(), d, host);
-            if (ask) ImGui::OpenPopup("Start Lesson");
-            ImGui::SetNextWindowSize(ui.size({380, 0}));
-            if (ImGui::BeginPopupModal("Start Lesson", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::TextWrapped("Leave this game and start the lesson's? Anything not saved is lost.");
-                ImGui::Spacing();
-                const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-                if (ImGui::Button("Start", ImVec2(w, ui.px(26)))) {
-                    ui.requests.startLesson = pending_;
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-            }
+            // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+            if (confirm_.draw(ui)) ui.requests.startLesson = pending_;
         }
         return keep;
     }
@@ -382,6 +369,7 @@ public:
 private:
     LearnView view_;
     std::pair<learn::LessonKind, std::string> pending_;
+    YesNoPrompt confirm_;
 };
 
 class ManualScreen final : public Screen {

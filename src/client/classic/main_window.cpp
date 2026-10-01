@@ -206,6 +206,8 @@ bool turnsToHeading(const game::Rules& r, const game::GameState& s, const game::
 // ---- Selection ---------------------------------------------------------------------------
 
 void MainWindow::reset(UiContext& ui) {
+    // The homeworld selected here is not a selection the player made.
+    const uint64_t made = selections_;
     clearSelection();
     const game::GameState& s = ui.state();
     // Every starting planet is a capital: the one in the home system first.
@@ -215,6 +217,7 @@ void MainWindow::reset(UiContext& ui) {
         for (const auto& c : s.colonies)
             if (c && c->owner == me && c->homeworld && (!inHome || s.galaxy.object(c->planet).system == home)) {
                 selectPlanet(ui, c->planet);
+                selections_ = made;
                 return;
             }
     if (!s.galaxy.systems.empty()) shown_ = s.galaxy.systems.front().id;
@@ -245,6 +248,7 @@ std::vector<const game::Vehicle*> MainWindow::vehiclesAt(const UiContext& ui, ga
 }
 
 void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
+    ++selections_;
     const auto objects = objectsAt(ui, sec);
     const auto vehicles = vehiclesAt(ui, {shown_, sec});
     const size_t total = objects.size() + vehicles.size();
@@ -268,6 +272,7 @@ void MainWindow::selectSector(UiContext& ui, game::Sector sec, bool cycle) {
 void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
     const game::Vehicle* v = ui.state().vehicle(id);
     if (!v) return;
+    ++selections_;
     const bool sameSector = sector_ && *sector_ == v->location.sector && shown_ == v->location.system;
     clearSelection();
     if (!sameSector) tagged_.clear();
@@ -278,6 +283,7 @@ void MainWindow::selectVehicle(UiContext& ui, game::VehicleId id) {
 }
 
 void MainWindow::selectPlanet(UiContext& ui, game::ObjectId p) {
+    ++selections_;
     const game::SpaceObject& o = ui.state().galaxy.object(p);
     clearSelection();
     tagged_.clear();
@@ -1124,6 +1130,7 @@ void MainWindow::reportPanel(UiContext& ui) {
                 tagged_.clear();
                 sector_ = o.sector;
                 object_ = id;
+                ++selections_;
             }
             iconStrip(ui, dl, planetStatusCells(r, s, me, id), {ImGui::GetItemRectMax().x, ImGui::GetItemRectMin().y});
             ImGui::PopID();
@@ -1168,6 +1175,7 @@ void MainWindow::reportPanel(UiContext& ui) {
             vehicle_.reset();
             fleet_.reset();
             listMode_ = true;
+            ++selections_;
         }
         ImGui::PopFont();
     }
@@ -1325,6 +1333,7 @@ void MainWindow::mouse(UiContext& ui) {
             if (pick_ == Pick::None) {
                 clearSelection();
                 tagged_.clear();
+                ++selections_;   // the system, with nothing in it selected
             }
         }
         return;

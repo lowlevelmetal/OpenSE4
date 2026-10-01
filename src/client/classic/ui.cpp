@@ -1,5 +1,7 @@
 #include "client/classic/ui.hpp"
 
+#include "learn/ids.hpp"
+
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/ui/bitmap_font.hpp"
@@ -292,6 +294,25 @@ std::unordered_map<ImGuiID, int>& slotCounts() {
 }
 
 } // namespace
+
+void UiContext::tag(std::string_view name, ImVec2 min, ImVec2 max) {
+#ifndef NDEBUG
+    // Every tag a window registers must be one lessons can name (learn/ids.cpp).
+    static std::vector<std::string> reported;
+    if (!learn::isUiTag(name) && std::find(reported.begin(), reported.end(), name) == reported.end()) {
+        reported.emplace_back(name);
+        log::warn("UI tag '{}' is not listed in learn/ids.cpp", name);
+    }
+#endif
+    tags.push_back({std::string(name), min, max});
+}
+
+void UiContext::tagTab(std::string_view tab, bool shown) {
+    if (!drawing) return;
+    std::string name = std::string(windowId(*drawing)) + ":" + std::string(tab);
+    if (shown) facts.tabs.push_back(name);
+    tagItem(name);
+}
 
 void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
     if (!drawing || windowTagged) return;

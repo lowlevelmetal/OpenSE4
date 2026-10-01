@@ -28,8 +28,11 @@ public:
     void applyRequests(UiContext& ui);
 
     game::SystemId shownSystem() const { return shown_; }
-    // What is selected, as lessons name it (learn::ClientFacts::selected).
+    // What is selected, as lessons name it (learn::ClientFacts::selected),
+    // and how many selections the player has made (the one a game starts
+    // with is not counted).
     std::vector<std::string> selectionKinds(const UiContext& ui) const;
+    uint64_t selections() const { return selections_; }
 
 private:
     enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, LaunchRemote, RecoverRemote, Callback };
@@ -102,6 +105,7 @@ private:
     void trackMovement(UiContext& ui);
 
     game::SystemId shown_;
+    uint64_t selections_ = 0;   // selections the player made (selectSector, selectVehicle, selectPlanet, list rows)
     std::optional<game::Sector> sector_;
     std::optional<game::ObjectId> object_;
     std::optional<game::VehicleId> vehicle_;

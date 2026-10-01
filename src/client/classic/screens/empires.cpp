@@ -113,12 +113,16 @@ public:
 
         d.beginButtons();
         if (d.tab("Treaty", !borders_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
+        ui.tagTab("treaty", !borders_ && tab_ == Tab::Treaty);
         if (d.tab("Trade", !borders_ && tab_ == Tab::Trade)) select(Tab::Trade);
+        ui.tagTab("trade", !borders_ && tab_ == Tab::Trade);
         if (d.tab("Tariff", !borders_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
+        ui.tagTab("tariff", !borders_ && tab_ == Tab::Tariff);
         d.spacer();
         if (d.button("History")) ui.open(ScreenId::History);
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
         if (d.button("Intelligence")) ui.open(ScreenId::Intelligence);
+        ui.tagItem("empires:intelligence");
         if (d.check("Borders", borders_)) borders_ = !borders_;
         if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
         if (d.button("Scores")) ui.open(ScreenId::Scores);
