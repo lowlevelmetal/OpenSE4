@@ -974,13 +974,10 @@ void MainWindow::commandPanel(UiContext& ui) {
             hintKey_ = hintKey(b.key);
         }
         if (clicked) {
-            // A left click plays cmdbtn (End Turn plays endturn when the turn ends, §5.5).
-            if (b.screen) {
-                audio().play("cmdbtn");
-                ui.open(*b.screen);
-            } else {
-                ui.requests.endTurn = true;
-            }
+            // A left click on any command button plays cmdbtn; End Turn adds endturn when the turn ends (§5.5).
+            audio().play("cmdbtn");
+            if (b.screen) ui.open(*b.screen);
+            else ui.requests.endTurn = true;
         }
     }
 

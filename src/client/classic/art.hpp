@@ -82,6 +82,12 @@ public:
     // when missing), and the 128x128 picture of the System Report (Systems/<bitmap>).
     Sprite systemBackground(std::string_view bitmap);
     Sprite systemPicture(std::string_view bitmap);
+    // The tactical and replay maps' background (docs/spec/06 §5.3): 432x432,
+    // 6 x 6 tiles of 72x72, each picked by `seed` among Systems/<name>Tile<n>.bmp;
+    // the top-left 432x432 of the 1024x768 star field when `name` has no tiles.
+    // Opaque; it repeats every 12 combat squares.
+    Sprite combatBackground(std::string_view name, uint64_t seed);
+    bool hasCombatTiles(std::string_view name);
 
     // An empire's colour: the pixel at (28,13) of its style's _Main.bmp, inside
     // the colour swatch (docs/spec/06 §5.3), as 0xRRGGBB; nullopt without the picture.

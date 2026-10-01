@@ -1,6 +1,9 @@
 #include "client/classic/art.hpp"
 
+#include "core/rng.hpp"
 #include "ruleset/ruleset.hpp"
+
+#include <cstring>
 
 #include <format>
 
@@ -193,6 +196,45 @@ std::optional<uint32_t> Art::swatchColor(std::string_view style) {
         }
     swatches_.emplace(key, color);
     return color;
+}
+
+bool Art::hasCombatTiles(std::string_view name) {
+    return !name.empty() && files_.find(std::format("Pictures/Systems/{}Tile1.bmp", name)).has_value();
+}
+
+Sprite Art::combatBackground(std::string_view name, uint64_t seed) {
+    constexpr int kSize = 432, kTile = 72;
+    const std::string key = std::format("#combat#{}#{}", lower(name), seed);
+    if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
+    std::vector<assets::Image> tiles;
+    for (int n = 1; n <= 100 && hasCombatTiles(name); ++n) {
+        const auto path = files_.find(std::format("Pictures/Systems/{}Tile{}.bmp", name, n));
+        if (!path) break;
+        if (auto img = assets::loadImage(*path, false); img && img->width >= kTile && img->height >= kTile) tiles.push_back(std::move(*img));
+    }
+    assets::Image picture;
+    if (!tiles.empty()) {
+        picture.width = picture.height = kSize;
+        picture.rgba.assign(size_t(kSize) * kSize * 4, 255);
+        Rng rng(seed);
+        for (int ty = 0; ty < kSize / kTile; ++ty)
+            for (int tx = 0; tx < kSize / kTile; ++tx) {
+                const assets::Image& t = tiles[static_cast<size_t>(rng.below(tiles.size()))];
+                for (int y = 0; y < kTile; ++y)
+                    std::memcpy(&picture.rgba[(size_t(ty * kTile + y) * kSize + size_t(tx * kTile)) * 4], &t.rgba[size_t(y) * size_t(t.width) * 4],
+                                size_t(kTile) * 4);
+            }
+    } else if (auto path = files_.find("Pictures/Systems/1024X768/Starmap.bmp")) {
+        if (auto img = assets::loadImage(*path, false)) picture = assets::crop(*img, 0, 0, kSize, kSize);
+    }
+    Texture t;
+    if (!picture.empty()) {
+        t.id = device_.createTexture(gfx::TextureDesc{picture.width, picture.height, filter_, key.c_str()}, picture.rgba.data());
+        t.width = picture.width;
+        t.height = picture.height;
+    }
+    textures_.emplace(key, t);
+    return t.id ? whole(t.id, t.width, t.height) : Sprite{};
 }
 
 void Art::setColorSource(Art* art) { gColorSource = art; }

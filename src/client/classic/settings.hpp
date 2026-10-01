@@ -46,7 +46,7 @@ struct ClassicSettings {
     bool musicOn = true;
     bool remasteredSounds = true;
     float soundVolume = 0.8f;
-    float musicVolume = 0.5f;
+    float musicVolume = 1.0f;   // in the six steps of client::musicStep (100 % on a fresh install, §1.9)
 
     // Combat Replay playback speed (1 = normal).
     float replaySpeed = 1.0f;

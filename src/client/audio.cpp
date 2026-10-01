@@ -10,7 +10,6 @@
 #include <dr_mp3.h>
 
 #include <algorithm>
-#include <chrono>
 #include <format>
 #include <map>
 
@@ -18,7 +17,6 @@ namespace opense4::client {
 
 namespace {
 
-constexpr size_t kMaxVoices = 16;
 constexpr int kMusicBufferSeconds = 2;
 
 } // namespace
@@ -36,14 +34,12 @@ struct Audio::Impl {
     std::map<std::string, std::optional<Clip>> clips;  // misses are cached too
     std::vector<SDL_AudioStream*> voices;
 
-    // Music.
-    std::vector<std::string> playlist;
-    size_t track = 0;
+    // Music: one track, looped.
+    std::string trackFile;
     bool musicPlaying = false;
     drmp3 mp3{};
     bool mp3Open = false;
     SDL_AudioStream* musicStream = nullptr;
-    Rng rng{static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
 
     const Clip* clip(std::string_view name) {
         const std::string key = std::string(name) + (options.remastered ? "#new" : "#old");
@@ -73,25 +69,23 @@ struct Audio::Impl {
         musicStream = nullptr;
     }
 
+    float musicGainNow() const { return musicGain(musicStep(options.musicVolume)); }
+
+    // Opens the track (again, to loop it); a missing file plays nothing.
     bool openTrack() {
         closeTrack();
-        if (!files || playlist.empty()) return false;
-        for (size_t attempt = 0; attempt < playlist.size(); ++attempt) {
-            const std::string& name = playlist[track % playlist.size()];
-            track = (track + 1) % playlist.size();
-            auto path = files->find("Music/" + name);
-            if (!path || !drmp3_init_file(&mp3, path->string().c_str(), nullptr)) continue;
-            mp3Open = true;
-            SDL_AudioSpec src{SDL_AUDIO_S16, static_cast<int>(mp3.channels), static_cast<int>(mp3.sampleRate)};
-            musicStream = SDL_CreateAudioStream(&src, &deviceSpec);
-            if (!musicStream || !SDL_BindAudioStream(device, musicStream)) {
-                closeTrack();
-                continue;
-            }
-            SDL_SetAudioStreamGain(musicStream, options.musicVolume);
-            return true;
+        if (!files || trackFile.empty()) return false;
+        auto path = files->find("Music/" + trackFile);
+        if (!path || !drmp3_init_file(&mp3, path->string().c_str(), nullptr)) return false;
+        mp3Open = true;
+        SDL_AudioSpec src{SDL_AUDIO_S16, static_cast<int>(mp3.channels), static_cast<int>(mp3.sampleRate)};
+        musicStream = SDL_CreateAudioStream(&src, &deviceSpec);
+        if (!musicStream || !SDL_BindAudioStream(device, musicStream)) {
+            closeTrack();
+            return false;
         }
-        return false;
+        SDL_SetAudioStreamGain(musicStream, musicGainNow());
+        return true;
     }
 
     void feedMusic() {
@@ -106,7 +100,7 @@ struct Audio::Impl {
         while (SDL_GetAudioStreamQueued(musicStream) < want) {
             const drmp3_uint64 frames = drmp3_read_pcm_frames_s16(&mp3, 4096, pcm.data());
             if (frames == 0) {
-                // Track finished: let the queued tail play out, then open the next one.
+                // Track finished: let the queued tail play out, then start it again.
                 if (SDL_GetAudioStreamQueued(musicStream) + SDL_GetAudioStreamAvailable(musicStream) == 0) openTrack();
                 return;
             }
@@ -155,7 +149,7 @@ void Audio::setOptions(const AudioOptions& options) {
     impl_->options = options;
     impl_->options.soundVolume = std::clamp(options.soundVolume, 0.0f, 1.0f);
     impl_->options.musicVolume = std::clamp(options.musicVolume, 0.0f, 1.0f);
-    if (impl_->musicStream) SDL_SetAudioStreamGain(impl_->musicStream, impl_->options.musicVolume);
+    if (impl_->musicStream) SDL_SetAudioStreamGain(impl_->musicStream, impl_->musicGainNow());
     if (musicWasOn && !options.music) impl_->closeTrack();
 }
 
@@ -163,9 +157,12 @@ const AudioOptions& Audio::options() const { return impl_->options; }
 
 void Audio::play(std::string_view name) {
     Impl& a = *impl_;
-    if (!a.device || !a.options.sound || name.empty() || a.voices.size() >= kMaxVoices) return;
+    if (!a.device || !a.options.sound || name.empty()) return;
     const Impl::Clip* c = a.clip(name);
     if (!c) return;
+    // One effect at a time: the new one cuts off the one playing.
+    for (SDL_AudioStream* v : a.voices) SDL_DestroyAudioStream(v);
+    a.voices.clear();
     SDL_AudioStream* s = SDL_CreateAudioStream(&c->spec, &a.deviceSpec);
     if (!s) return;
     if (!SDL_BindAudioStream(a.device, s)) {
@@ -178,26 +175,22 @@ void Audio::play(std::string_view name) {
     a.voices.push_back(s);
 }
 
-void Audio::playMusic(const std::vector<std::string>& files) {
+void Audio::playTrack(const std::string& file) {
     Impl& a = *impl_;
-    if (!a.device) return;
-    std::vector<std::string> list = files;
-    std::vector<std::string> current = a.playlist;
-    std::sort(list.begin(), list.end());
-    std::sort(current.begin(), current.end());
-    if (a.musicPlaying && list == current) return;  // already playing this list
-    a.playlist = files;
-    a.rng.shuffle(a.playlist);
-    a.track = 0;
+    if (!a.device || file.empty()) return;
+    if (a.musicPlaying && a.trackFile == file) return;  // already playing it
+    a.trackFile = file;
     a.closeTrack();
-    a.musicPlaying = !a.playlist.empty();
+    a.musicPlaying = true;
 }
 
 void Audio::stopMusic() {
     impl_->musicPlaying = false;
-    impl_->playlist.clear();
+    impl_->trackFile.clear();
     impl_->closeTrack();
 }
+
+bool Audio::musicPlaying() const { return impl_->musicPlaying; }
 
 void Audio::update() {
     Impl& a = *impl_;
