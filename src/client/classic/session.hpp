@@ -213,6 +213,17 @@ public:
     // Automation: the computer plays every empire (humans too) for n turns.
     void simulateTurns(int n);
 
+    // The movement log replay (docs/spec/06 §7 Q51): a local or hotseat
+    // simultaneous game keeps the state the last turn started from and plays
+    // that turn again from it, calling `day` after each of the 30 movement
+    // days (the engine is deterministic, so it comes out as it did). False
+    // when there is no such turn (turn-based, network and PBEM games, a game
+    // just loaded).
+    bool canReplayLastTurn() const { return turnStart_ != nullptr; }
+    bool replayLastTurn(const std::function<void(int day, const game::GameState&)>& day) const;
+    // The state the last processed turn started from, if kept.
+    const game::GameState* turnStart() const { return turnStart_.get(); }
+
 private:
     // Adds a command to this turn's orders.
     void record(game::Command c);
@@ -265,6 +276,9 @@ private:
     std::string pbemError_;
     std::filesystem::path pbemDrafts_;
     size_t pbemResumed_ = 0;
+    // The last simultaneous turn processed here: its starting state and orders.
+    std::shared_ptr<const game::GameState> turnStart_;
+    std::vector<game::EmpireOrders> turnStartOrders_;
 };
 
 // Where OpenSE4 keeps saves and settings (created on demand).

@@ -15,6 +15,10 @@ enum class RendererChoice { Auto, Vulkan, OpenGL };
 enum class DisplayMode { Windowed, Borderless, Fullscreen };
 // How the classic 4:3 screens use a wider window.
 enum class WidescreenLayout { Extended, Classic };
+// The classic game's screen layout (docs/spec/06 §2.1.1): chosen by the desktop
+// width as the original does (800 px or less: 800x600), or forced either way
+// (an OpenSE4 extension, for testing and for players with large screens).
+enum class LayoutChoice { Auto, Small800, Large1024 };
 
 struct GraphicsSettings {
     RendererChoice renderer = RendererChoice::Auto;  // applies when the game starts
@@ -27,6 +31,7 @@ struct GraphicsSettings {
     bool vsync = true;
     int frameLimit = 0;          // frames per second without vsync; 0 = unlimited
     WidescreenLayout widescreen = WidescreenLayout::Extended;
+    LayoutChoice layout = LayoutChoice::Auto;
     bool sharpPixels = false;    // nearest-neighbour scaling of the classic art
     bool integerScaling = false; // scale the classic screens by whole multiples only
     float textScale = 1.0f;      // text size in the classic windows
@@ -55,5 +60,6 @@ AppSettings appSettingsFromToml(std::string_view text, std::string* error = null
 const char* displayName(RendererChoice r);
 const char* displayName(DisplayMode m);
 const char* displayName(WidescreenLayout w);
+const char* displayName(LayoutChoice l);
 
 } // namespace opense4::client

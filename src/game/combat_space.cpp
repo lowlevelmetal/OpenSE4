@@ -237,7 +237,7 @@ int Battle::addPiece(Piece p) {
     const bool big = q.kind == Kind::Planet || q.kind == Kind::Obstacle;
     const int32_t count = q.kind == Kind::UnitGroup ? q.unit.count : q.kind == Kind::Seeker ? q.members : 1;
     rec_.pieces.push_back(CombatPiece{q.kind, q.owner, q.source, q.object, big ? DesignId{} : q.unit.design, q.name,
-                                      static_cast<int16_t>(q.x), static_cast<int16_t>(q.y), count});
+                                      static_cast<int16_t>(q.x), static_cast<int16_t>(q.y), count, -1, {}});
     return i;
 }
 
@@ -3777,6 +3777,31 @@ void Battle::finish() {
             for (const UnitStack& st : designs) see(st.design);
             for (const UnitStack& u : p.unit.cargo.units) see(u.design);
         }
+    }
+
+    // What the Log's combat details show of each piece (spec 06 §4.1, §7 Q43):
+    // the damage of those present at the start, fixed now, and who holds each
+    // survivor. Full hit points: a ship's or base's whole design structure, a
+    // unit group's units at full health at the start, a planet's hit points
+    // at the start; remaining: the intact parts' structure, the living units'
+    // or the planet's hit points, less the damage pool.
+    for (size_t k = 0; k < pieces_.size() && k < rec_.pieces.size(); ++k) {
+        const Piece& p = pieces_[k];
+        CombatPiece& out = rec_.pieces[k];
+        const Kind startKind = out.kind;   // a planet that lost its colony is an obstacle now
+        int64_t full = -1, remaining = 0;
+        if (startKind == Kind::Vehicle && p.unit.design.valid()) {
+            full = detail::designStructure(r_, s_.design(p.unit.design));
+            remaining = std::max<int64_t>(0, detail::remainingStructure(r_, s_, p.unit) - p.pool);
+        } else if (startKind == Kind::UnitGroup && !p.launched) {
+            full = p.hpStart;
+            remaining = std::max<int64_t>(0, groupHitPoints(p) - p.pool);
+        } else if (startKind == Kind::Planet) {
+            full = p.hpStart;
+            remaining = p.kind == Kind::Planet ? planetHp(p) : 0;
+        }
+        if (full >= 0) out.damage = static_cast<int16_t>(logDamagePercent(full, remaining));
+        if (p.alive && p.kind != Kind::Obstacle && p.kind != Kind::Seeker && p.owner.valid()) out.survivor = p.owner;
     }
 
     if (!cs_.createReplay) rec_.events.clear();

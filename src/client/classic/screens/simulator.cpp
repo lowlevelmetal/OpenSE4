@@ -46,7 +46,7 @@ using game::combat::SimulatorSide;
 
 constexpr size_t kSides = size_t(game::combat::kSimulatorMaxSides);
 
-Vec2 largeOrigin() { return {(kFrameW - 780.0f) * 0.5f, (kFrameH - 475.0f) * 0.5f}; }
+Vec2 largeOrigin() { return {(frameW() - 780.0f) * 0.5f, (frameH() - 475.0f) * 0.5f}; }
 
 // The ten sides, always listed: side 1 played by hand, the others by the computer at first.
 SimulatorSetup defaultSetup(game::EmpireId viewer) {

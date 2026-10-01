@@ -17,7 +17,7 @@ player / AI / network ─> game::Command ────┘         │
 |---|---|
 | `types.hpp` | Ids, `Resources`, treaties, moods, sight types, characteristics |
 | `galaxy.hpp` | Systems, space objects, warp links, `Location` (system + sector) |
-| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records, facilities left on abandoned planets, options |
+| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records (with each piece's damage at the end, for the Log), options |
 | `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets) |
 | `abilities.hpp` | The closed list of ability identifiers used by the data, parsed once |
 | `design.hpp` | Mounts, design validation, unique design names and statistics, movement points, supply, cargo, and generated starting designs |
@@ -89,7 +89,10 @@ empires are skipped.
    where an empire with an uncloaked vehicle there sees a hostile object; a sector gets a
    second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
-   acting day with movement left, so a colony can appear in any phase. Sight and first
+   acting day with movement left, so a colony can appear in any phase.
+   `TurnOptions::movementDay` lets a caller watch the state after each day without
+   changing it (the client's movement log replay plays a turn again from its start
+   with it, docs/spec/06 §7 Q51). Sight and first
    contact are then updated: two empires meet when each detects the other in one system
    and a warp path links their colonies (`diplomacy::updateContacts`).
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
@@ -331,20 +334,31 @@ grow, for example with more pipelines or offscreen targets, without touching gam
 explains where it looked and exits with an error. It then opens the window, the render
 device (Vulkan, else OpenGL) and Dear ImGui, and runs the frame loop and screenshots.
 
-`src/client/classic` presents the engine in the classic layout: a 1024×768 frame
-scaled to the window, drawn with the art from the player's install.
+`src/client/classic` presents the engine in the classic layouts: a 1024×768 or
+800×600 frame scaled to the window, drawn with the art, raster fonts and mouse
+pointers from the player's install (docs/spec/06 §2.1.1, §5.4, §5.8). The layout
+follows the desktop width as in the original (800 px or less: 800×600); the Graphics
+setting or `--layout` can force one. `src/assets` reads the install's files: pictures
+(`assets.*`, with case-insensitive lookup and, for fonts and pointers, the mod folder
+named by `Path.txt` first), Windows raster fonts (`winfont.*`) and cursors
+(`wincursor.*`); `tiny_font.*` is OpenSE4's own small raster face for the map numbers,
+which the original draws in the system's Small Fonts.
 
 | Part | Role |
 |---|---|
 | `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat games it holds the battle (or ground fight) that stops the engine call to be shown, and the battle being fought in a window, and makes the engine call again with the answers; it lists the battles of network and PBEM games, shown afterwards |
-| `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, and each empire's colour from its race's swatch |
+| `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, the layout's system backgrounds and intro picture, and each empire's colour from its race's swatch |
+| `layout.*` | The two screen layouts: regions, frame strips, sector grid, order strip pages, status bar and title strip places, and how the layout is chosen (headless) |
+| `pointers.*`, `pointer_rules.*` | The install's twelve `.cur` pointers as SDL cursors, the Hourglass while the program is busy (`BusyPointer`), and which pointer the tactical map shows (headless rules) |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, the classic dialog layout, and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
 | `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
 | `facility_markers.*` | The facility letter markers the Empire Options can show on colonies in the system window |
-| `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay, and hotkeys |
+| `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay's controls, and hotkeys |
 | `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
-| `ship_glides.*` | Ships gliding to their new square, the headings of minis, and the movement log replay |
+| `ship_glides.*` | Ships gliding to their new square and the headings of minis |
+| `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
+| `sector_view.*` | What a sector of the system panel shows: the stellar object, one vehicle or the owners' flags, and the counts (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |

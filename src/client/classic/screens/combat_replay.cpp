@@ -60,6 +60,12 @@ public:
 
         Dialog d(ui, "Combat Replay", DialogSize::Full);
         if (!d.open()) return d.keepOpen();
+        {
+            // The title strip at the layout's places (spec 06 §2.1.1).
+            std::vector<std::string> flags;
+            for (game::EmpireId e : record_.participants) flags.push_back(painter(ui).styleOf(e));
+            combatTitleStrip(ui, d, sectorName(ui.state(), record_.location, ui.session.player()), std::to_string(std::max(playback_.round(), 0)), flags, -1);
+        }
         d.beginContent();
         statusBar(ui);
         const ImVec2 avail = ImGui::GetContentRegionAvail();

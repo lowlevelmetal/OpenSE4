@@ -20,7 +20,8 @@ namespace {
 using datafile::keysEqual;
 
 constexpr std::array<std::string_view, 3> kLevelNames{"Low", "Medium", "High"};
-constexpr int kEmpireFileFormat = 1;
+// 2: designs saved with the empire (spec 06 §7 Q48); format 1 files still load.
+constexpr int kEmpireFileFormat = 2;
 
 bool isNone(std::string_view s) { return s.empty() || keysEqual(s, "None"); }
 
@@ -529,6 +530,33 @@ std::string empireToToml(const game::Rules& r, const game::EmpireSetup& e) {
         {"experience", static_cast<int64_t>(e.experience)},
         {"race", std::move(raceTable)},
     };
+    // Designs saved with the empire (spec 06 §7 Q48), by the data set's names.
+    if (!e.designs.empty()) {
+        const auto& data = r.data();
+        toml::array designs;
+        for (const game::Design& d : e.designs) {
+            if (d.hull >= data.vehicleSizes.size()) continue;
+            toml::array components, mounts;
+            bool anyMount = false;
+            for (const game::DesignEntry& entry : d.entries) {
+                if (entry.component >= data.components.size()) continue;
+                components.push_back(data.components[entry.component].name);
+                const bool mounted = entry.mount >= 0 && static_cast<size_t>(entry.mount) < data.weaponMounts.size();
+                mounts.push_back(mounted ? data.weaponMounts[static_cast<size_t>(entry.mount)].longName : std::string{});
+                anyMount = anyMount || mounted;
+            }
+            toml::table t{
+                {"name", d.name},
+                {"type", d.designType},
+                {"hull", data.vehicleSizes[d.hull].name},
+                {"obsolete", d.obsolete},
+                {"components", std::move(components)},
+            };
+            if (anyMount) t.insert("mounts", std::move(mounts));
+            designs.push_back(std::move(t));
+        }
+        root.insert("design", std::move(designs));
+    }
     std::ostringstream os;
     os << "# OpenSE4 empire file\n" << root << "\n";
     return os.str();
@@ -619,6 +647,43 @@ std::expected<LoadedEmpire, std::string> empireFromToml(const game::Rules& r, st
                 out.warnings.push_back(std::format("Trait {} dropped: {}.", r.data().racialTraits[t].name, canAddTrait(r, race, t).reason));
     }
     out.empire = collapse(r, d);
+    // Designs saved with the empire: each one the data set can still build
+    // (its hull, components and mounts by name) comes along (spec 06 §7 Q48).
+    if (const toml::array* designs = root["design"].as_array())
+        for (const toml::node& node : *designs) {
+            const toml::table* t = node.as_table();
+            if (!t) continue;
+            game::Design design;
+            design.name = (*t)["name"].value_or(std::string{});
+            design.designType = (*t)["type"].value_or(std::string{});
+            design.obsolete = (*t)["obsolete"].value_or(false);
+            const std::string hull = (*t)["hull"].value_or(std::string{});
+            std::string missing;
+            if (auto h = indexByName(r.data().vehicleSizes, hull)) design.hull = *h;
+            else missing = std::format("the hull {}", hull);
+            const toml::array* components = (*t)["components"].as_array();
+            const toml::array* mounts = (*t)["mounts"].as_array();
+            for (size_t k = 0; components && k < components->size() && missing.empty(); ++k) {
+                const std::string name = (*components)[k].value_or(std::string{});
+                game::DesignEntry entry;
+                if (auto c = indexByName(r.data().components, name)) entry.component = *c;
+                else missing = std::format("the component {}", name);
+                const std::string mount = mounts && k < mounts->size() ? (*mounts)[k].value_or(std::string{}) : std::string{};
+                if (!mount.empty()) {
+                    const auto& all = r.data().weaponMounts;
+                    const auto m = std::find_if(all.begin(), all.end(), [&](const ruleset::WeaponMount& x) { return keysEqual(x.longName, mount); });
+                    if (m != all.end()) entry.mount = static_cast<int32_t>(m - all.begin());
+                    else missing = std::format("the mount {}", mount);
+                }
+                design.entries.push_back(entry);
+            }
+            if (design.name.empty()) continue;
+            if (!missing.empty()) {
+                out.warnings.push_back(std::format("Design {} left out: this data set has no {}.", design.name, missing));
+                continue;
+            }
+            out.empire.designs.push_back(std::move(design));
+        }
     return out;
 }
 

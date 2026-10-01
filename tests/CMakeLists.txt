@@ -7,6 +7,7 @@ add_executable(opense4_tests
     test_audio.cpp
     test_classic_colony_logic.cpp
     test_classic_options.cpp
+    test_client_layout.cpp
     test_client_logic.cpp
     test_combat.cpp
     test_combat_rules.cpp
@@ -44,6 +45,7 @@ add_executable(opense4_tests
     test_turn_based.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
+    test_wincursor.cpp
     test_winfont.cpp
     test_xmath.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
@@ -54,11 +56,15 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/order_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/pointer_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/screen_id.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/sector_view.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/settings.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/session.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/ship_glides.cpp

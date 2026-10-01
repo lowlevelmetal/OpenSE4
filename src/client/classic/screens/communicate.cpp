@@ -725,7 +725,7 @@ private:
             showOffer_ = false;
         }
         ImGui::SetNextWindowSize(ui.size({520, 440}), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(ui.at({(kFrameW - 520) * 0.5f, (kFrameH - 440) * 0.5f}), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ui.at({(frameW() - 520) * 0.5f, (frameH() - 440) * 0.5f}), ImGuiCond_Always);
         if (!ImGui::BeginPopupModal("Last Offer", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
             return;
         if (const game::DiplomaticMessage* m = lastOffer(ui)) {
@@ -746,7 +746,7 @@ private:
             confirm_ = false;
         }
         ImGui::SetNextWindowSize(ui.size({420, 170}), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(ui.at({(kFrameW - 420) * 0.5f, (kFrameH - 170) * 0.5f}), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ui.at({(frameW() - 420) * 0.5f, (frameH() - 170) * 0.5f}), ImGuiCond_Always);
         if (!ImGui::BeginPopupModal("Are you sure?", nullptr,
                                     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags))
             return;

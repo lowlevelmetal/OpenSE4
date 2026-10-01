@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 
 namespace opense4::assets {
 
@@ -113,12 +115,45 @@ InstallFiles::InstallFiles(std::filesystem::path root) : root_(std::move(root)) 
         const auto rel = std::filesystem::relative(it->path(), root_, ec);
         index_.emplace(lowerSlashed(rel.generic_string()), it->path());
     }
+    if (const auto path = find("Path.txt")) {
+        std::ifstream in(*path, std::ios::binary);
+        const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+        mod_ = lowerSlashed(modDirectoryFromPathTxt(text));
+        if (!mod_.empty()) log::info("Mod folder from Path.txt: {}", mod_);
+    }
+}
+
+std::string modDirectoryFromPathTxt(std::string_view text) {
+    // One record, "Using Mod Directory := <name>"; the record markers and other lines are ignored.
+    constexpr std::string_view kKey = "using mod directory";
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string_view::npos) end = text.size();
+        const std::string_view line = text.substr(start, end - start);
+        start = end + 1;
+        const size_t key = lowerSlashed(line).find(kKey), sep = line.find(":=");
+        if (key == std::string::npos || sep == std::string_view::npos || sep < key) continue;
+        std::string_view value = line.substr(sep + 2);
+        auto blank = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '/' || c == '\\'; };
+        while (!value.empty() && blank(value.front())) value.remove_prefix(1);
+        while (!value.empty() && blank(value.back())) value.remove_suffix(1);
+        if (value.empty() || lowerSlashed(value) == "none") return {};
+        return std::string(value);
+    }
+    return {};
 }
 
 std::optional<std::filesystem::path> InstallFiles::find(std::string_view relative) const {
     const auto it = index_.find(lowerSlashed(relative));
     if (it == index_.end()) return std::nullopt;
     return it->second;
+}
+
+std::optional<std::filesystem::path> InstallFiles::findModFirst(std::string_view relative) const {
+    if (!mod_.empty())
+        if (auto p = find(mod_ + "/" + std::string(relative))) return p;
+    return find(relative);
 }
 
 std::optional<std::filesystem::path> InstallFiles::findAny(std::initializer_list<std::string_view> candidates) const {

@@ -125,6 +125,12 @@ bool saveSettings() {
     return true;
 }
 
+void rememberSavedGame(const std::string& file) {
+    if (settings().lastSavedGame == file) return;
+    settings().lastSavedGame = file;
+    saveSettings();
+}
+
 std::string hashPassword(std::string_view password) { return game::hashPassword(password); }
 
 } // namespace opense4::client::classic

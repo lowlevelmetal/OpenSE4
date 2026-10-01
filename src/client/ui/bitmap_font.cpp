@@ -67,25 +67,18 @@ bool loadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void*,
     buf.resize(w * h);
     std::memset(buf.Data, 0, size_t(w * h));
 
-    // Area coverage: each destination pixel averages the source pixels it overlaps.
+    // No smoothing (docs/spec/06 §5.4): every destination pixel takes the source
+    // pixel under its centre, so each pixel is either ink or nothing. Whole
+    // scales reproduce the original pixels exactly.
     const float sx = float(g->width) / float(w), sy = float(f.pixelHeight) / float(h);
     bool any = false;
     for (int dy = 0; dy < h; ++dy) {
-        const float y0 = float(dy) * sy, y1 = y0 + sy;
+        const int yy = std::min(f.pixelHeight - 1, int((float(dy) + 0.5f) * sy));
         for (int dx = 0; dx < w; ++dx) {
-            const float x0 = float(dx) * sx, x1 = x0 + sx;
-            float ink = 0.0f;
-            for (int yy = int(y0); yy < f.pixelHeight && float(yy) < y1; ++yy) {
-                const float oy = std::min(y1, float(yy + 1)) - std::max(y0, float(yy));
-                if (oy <= 0) continue;
-                for (int xx = int(x0); xx < g->width && float(xx) < x1; ++xx) {
-                    const float ox = std::min(x1, float(xx + 1)) - std::max(x0, float(xx));
-                    if (ox > 0 && f.ink(*g, xx, yy)) ink += ox * oy;
-                }
-            }
-            const float a = std::clamp(ink / (sx * sy), 0.0f, 1.0f);
-            if (a > 0) any = true;
-            buf.Data[dy * w + dx] = static_cast<unsigned char>(std::lround(a * 255.0f));
+            const int xx = std::min(g->width - 1, int((float(dx) + 0.5f) * sx));
+            const bool ink = f.ink(*g, xx, yy);
+            any = any || ink;
+            buf.Data[dy * w + dx] = ink ? 255 : 0;
         }
     }
 

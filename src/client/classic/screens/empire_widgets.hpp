@@ -6,6 +6,7 @@
 // for command results.
 
 #include "client/classic/screens/empire_logic.hpp"
+#include "client/classic/screens/reorder_popup.hpp"
 #include "client/classic/ui.hpp"
 
 #include <optional>
@@ -60,21 +61,6 @@ inline constexpr int kProjectsPerPage = 4;
 inline constexpr int kMaxProjects = 12;
 // "Projects 1-4", "Projects 5-8", "Projects 9-12" tab buttons in the button column.
 void projectPageButtons(Dialog& d, int& page);
-
-// The generic Reorder dialog (docs/spec/06 §1.3): Move Up / Down / To Top / To
-// Bottom, OK, Cancel. Call open() with the rows, draw() every frame; draw()
-// returns the new order (indices into the original rows) when OK is pressed.
-class ReorderPopup {
-public:
-    void open(std::vector<std::string> rows);
-    std::optional<std::vector<size_t>> draw(UiContext& ui);
-
-private:
-    bool pending_ = false;
-    std::vector<std::string> rows_;
-    std::vector<size_t> order_;
-    int selected_ = 0;
-};
 
 // The last command result or notice, shown under a window's content.
 class StatusLine {

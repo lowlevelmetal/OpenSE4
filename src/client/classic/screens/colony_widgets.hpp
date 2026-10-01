@@ -6,8 +6,10 @@
 
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/colony_logic.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/ui.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -61,18 +63,6 @@ bool sortKeyLess(const SortKey& a, const SortKey& b);
 // Reads the current table's sort column (by user id) and direction.
 void readSortSpecs(int& column, bool& ascending);
 
-// ---- Classic lists (the Planets and Construction Queues windows, spec 06 §1.8) --------------------
-
-struct ListColumn {
-    const char* label;
-    float width;  // frame pixels; 0 takes what is left
-};
-// Left edges of the columns, in ImGui units from the list's left, plus the right edge.
-std::vector<float> columnEdges(UiContext& ui, std::span<const ListColumn> cols, float width);
-// The column headers in label blue at the cursor, each a click target, over
-// `width` ImGui units; returns the column clicked, or -1.
-int listHeader(UiContext& ui, const char* id, std::span<const ListColumn> cols, float width);
-
 // ---- Text helpers ------------------------------------------------------------------------------
 
 std::string turnsText(int turns);                     // "3 turns", "1 turn", "never"
@@ -90,6 +80,8 @@ struct StatusLine {
     // Issues a command; on failure records the reason. Returns success.
     bool issue(UiContext& ui, game::Command c);
     void draw(UiContext& ui) const;
+    // At a cursor position of the window's content (frame pixels), cut to `width`.
+    void drawAt(UiContext& ui, Vec2 at, float width) const;
 };
 
 // ---- Popups --------------------------------------------------------------------------------------
@@ -144,12 +136,25 @@ private:
 // A yes/no question; draw() returns true once when confirmed.
 class ConfirmPopup {
 public:
-    void open(std::string question);
+    void open(std::string question, std::string title = "Confirm");
     bool draw(UiContext& ui);
 
 private:
     bool pending_ = false;
     std::string question_;
+    std::string title_ = "Confirm";
+};
+
+// A message box with OK only (Esc or Enter also close it).
+class NoticePopup {
+public:
+    void open(std::string text, std::string title);
+    void draw(UiContext& ui);
+
+private:
+    bool pending_ = false;
+    std::string text_;
+    std::string title_;
 };
 
 } // namespace opense4::client::classic

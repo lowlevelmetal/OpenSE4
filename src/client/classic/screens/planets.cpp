@@ -56,9 +56,14 @@ constexpr std::array<const char*, 10> kFilterIds{{"all", "colonizable", "all-col
                                                   "colonizable-breathable", "ship-enroute", "asteroids", "special"}};
 
 enum PlanetColumn { PcPicture, PcName, PcAtmosphere, PcMinerals, PcOrganics, PcRadioactives, PcEnroute };
-constexpr std::array<ListColumn, 7> kPlanetColumns{
-    {{"", 40}, {"Name", 145}, {"Atmosphere", 95}, {"Min.", 58}, {"Org.", 58}, {"Rad.", 58}, {"Ship Enroute", 0}}};
-constexpr float kPlanetRowH = 36.0f;
+// The three Value columns' headings are always in their resource colours (spec 06 §5.4).
+constexpr std::array<ListColumn, 7> kPlanetColumns{{{"", 40},
+                                                    {"Name", 145},
+                                                    {"Atmosphere", 95},
+                                                    {"Min.", 58, palette::kMinerals},
+                                                    {"Org.", 58, palette::kOrganics},
+                                                    {"Rad.", 58, palette::kRadioactives},
+                                                    {"Ship Enroute", 0}}};
 constexpr std::array<uint32_t, 3> kValueColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
 
 // "Rock - Medium" (the grey second line of the Name column).
@@ -97,7 +102,8 @@ public:
             hovered_.reset();
             ImGui::SetCursorPos(ui.size({0, 197}));
             leave = list(ui, rows);
-            status_.draw(ui);
+            // Our command results, under the statistics (the list fills the window below).
+            status_.drawAt(ui, {3, 183}, 280);
 
             d.beginButtons();
             ImVec2 filtersMin, filtersMax;
@@ -154,7 +160,7 @@ private:
             if (matches(filter_, p) && !(noAvoid && p.avoided)) rows.push_back(&p);
         // Fixed directions (spec 06 §1.8.1): names A to Z, values highest first,
         // the picture and Ship Enroute by planet size, smallest first.
-        sort_.sort(rows, [&](int column, const PlanetInfo* a, const PlanetInfo* b) {
+        sortByKeys(rows, sortKeys(ui.options().planetsSort, PcName), [&](int column, const PlanetInfo* a, const PlanetInfo* b) {
             const game::SpaceObject& oa = s.galaxy.object(a->id);
             const game::SpaceObject& ob = s.galaxy.object(b->id);
             switch (column) {
@@ -200,13 +206,18 @@ private:
         const game::GameState& s = ui.state();
         // The rows' child has no padding; the header leaves room for its scrollbar.
         const float width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 2.0f;
-        if (const int c = listHeader(ui, "##planethead", kPlanetColumns, width); c >= 0) sort_.click(c);
+        if (const int c = listHeader(ui, "##planethead", kPlanetColumns, width); c >= 0) {
+            // The sort keys are stored with the empire at once (spec 06 §7 Q24).
+            game::InterfaceOptions o = ui.options();
+            o.planetsSort = clickSort(o.planetsSort, c, PcName);
+            ui.setOptions(o);
+        }
         const std::vector<float> x = columnEdges(ui, kPlanetColumns, width);
         bool leave = false;
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(1, 1));
-        ImGui::BeginChild("##planetrows", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##planetrows", ImVec2(0, listRowsHeight(ui)), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PopStyleVar();
-        const float rowH = ui.px(kPlanetRowH);
+        const float rowH = ui.px(kListRowH);
         ImGuiListClipper clipper;
         clipper.Begin(int(rows.size()), rowH);
         while (clipper.Step())
@@ -294,20 +305,13 @@ private:
     }
 
     bool send(UiContext& ui, game::ObjectId planet) {
+        // The planet is not checked (an already colonized one gets the orders
+        // anyway: Colonize fails when the ship arrives), and nothing is said
+        // when no ship can go (spec 06 §7 Q25, confirmed: binary).
         const game::GameState& s = ui.state();
-        const std::string name = s.galaxy.object(planet).name;
-        if (s.colony(planet)) {
-            status_.fail(std::format("{} is already colonized.", name));  // (inferred: the original's reply is not known)
-            return false;
-        }
         const auto ship = chooseColonyShip(ui.rules(), s, ui.session.player(), planet);
-        if (!ship) {
-            status_.fail(std::format("No available colony ship can colonize {} ({}).", name, s.galaxy.object(planet).surface));
-            return false;
-        }
-        const std::string shipName = s.vehicle(*ship)->name;
-        if (!status_.issue(ui, sendColonyShipOrders(s, *ship, planet))) return false;
-        status_.info(std::format("{} is on its way to colonize {}.", shipName, name));
+        if (!ship) return false;
+        if (!status_.issue(ui, sendColonyShipOrders(ui.rules(), s, *ship, planet))) return false;
         // Turn-based: the window closes and the main window shows the ship; a
         // simultaneous game keeps it open (spec 06 §1.8.1).
         if (ui.session.turnBased()) {
@@ -322,7 +326,6 @@ private:
     uint64_t revision_ = 0;
     bool restored_ = false;
     PlanetFilter filter_ = PlanetFilter::All;
-    SortHistory sort_{PcName};
     std::optional<game::ObjectId> hovered_;
     bool picking_ = false;
     std::vector<game::ObjectId> pickRows_;
@@ -364,9 +367,10 @@ struct ColonyRow {
     game::economy::ColonyOutput out;
     int64_t cargoUsed = 0, cargoCapacity = 0;
     game::Resources rate;
-    std::string building;
+    std::string building;             // "Under Construction" (spec 06 §7 Q48)
+    std::string time;                 // "Time Remaining"
     float progress = 0;
-    int turns = -1;
+    int turns = -1;                   // the first item's time (kNeverTurns: never)
     int queueLength = 0;
     std::string queueMode;
     std::vector<int> icons;
@@ -405,8 +409,9 @@ public:
             else if (!selection_.empty()) highlight = ui.state().galaxy.object(selection_.front()).system;
             quadrantMap(ui, "##map", kMapSize, marked, highlight);
             hovered_.reset();
+            status_.drawAt(ui, {3, 183}, 280);
+            ImGui::SetCursorPos(ui.size({0, 197}));
             table(ui);
-            status_.draw(ui);
 
             d.beginButtons();
             for (const auto& [tab, label] : kColonyTabs) {
@@ -447,8 +452,6 @@ private:
     void setTab(ColonyTab t) {
         if (t == tab_) return;
         tab_ = t;
-        sortColumn_ = 1;
-        ascending_ = true;
         tableId_ = std::format("##colonies{}", static_cast<int>(t));
     }
 
@@ -479,13 +482,14 @@ private:
             const game::cmd::QueueTarget target{c->planet, {}};
             row.rate = game::economy::constructionRate(r, s, me, target);
             row.queueLength = static_cast<int>(c->queue.items.size());
+            row.building = underConstructionText(r, s, c->queue);
+            row.time = timeRemainingText(r, s, me, target, c->queue, row.rate);
             if (!c->queue.items.empty()) {
                 const game::QueueItem& top = c->queue.items.front();
-                row.building = queueItemName(r, s, top);
-                const auto est = estimateQueue(r, s, me, target, c->queue, row.rate);
-                const int64_t total = est.front().cost.total();
+                const game::Resources cost = displayCost(r, s, me, target, top);
+                const int64_t total = cost.total();
                 row.progress = total > 0 ? float(top.spent.total()) / float(total) : 0.0f;
-                row.turns = est.front().turns;
+                row.turns = timeRemainingTurns(cost - top.spent, row.rate);
             }
             if (c->queue.onHold) row.queueMode = "On hold";
             else if (c->queue.emergency) row.queueMode = "Emergency";
@@ -551,44 +555,46 @@ private:
         std::vector<ColonyColumn> c;
         switch (tab_) {
             case ColonyTab::General:
-                c.push_back({"System", 90, [](R r) { return SortKey{r.system}; }, [=](UiContext& u, R r) { cellText(u, r.system, kTextDim); }});
-                c.push_back({"Type", 104, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
-                c.push_back({"Colony Type", 100, [](R r) { return SortKey{r.colonyType}; }, [=](UiContext& u, R r) { text(u, r.colonyType); }});
-                c.push_back({"Population", 118, [=](R r) { return num(r.population); },
+                // The widths, with 2 px of padding each side, fit the list's 556 px
+                // with the picture, the name and a scroll bar (the system shows on the
+                // mini-map under the pointer).
+                c.push_back({"Type", 84, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
+                c.push_back({"Colony Type", 96, [](R r) { return SortKey{r.colonyType}; }, [=](UiContext& u, R r) { text(u, r.colonyType); }});
+                c.push_back({"Population", 90, [=](R r) { return num(r.population); },
                              [=](UiContext& u, R r) {
                                  text(u, std::format("{}M / {}M", formatNumber(r.population), formatNumber(r.maxPopulation)));
                              },
                              true});
-                c.push_back({"Mood", 78, [=](R r) { return num(r.anger); },
+                c.push_back({"Mood", 64, [=](R r) { return num(r.anger); },
                              [=](UiContext& u, R r) {
                                  cellText(u, r.moodName, r.mood >= game::Mood::Unhappy ? kTextWarn : ImVec4(1, 1, 1, 1));
                              }});
-                c.push_back({"Facil.", 60, [=](R r) { return num(r.facilities); },
+                c.push_back({"Facil.", 44, [=](R r) { return num(r.facilities); },
                              [=](UiContext& u, R r) { text(u, std::format("{} / {}", r.facilities, r.slots)); }, true});
                 break;
             case ColonyTab::Value:
-                c.push_back({"Type", 104, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
-                c.push_back({"Atmosphere", 84, [&s](R r) { return SortKey{s.galaxy.object(r.planet).atmosphere}; },
+                c.push_back({"Type", 84, [](R r) { return SortKey{r.type}; }, [=](UiContext& u, R r) { text(u, r.type); }});
+                c.push_back({"Atmosphere", 76, [&s](R r) { return SortKey{s.galaxy.object(r.planet).atmosphere}; },
                              [&s](UiContext& u, R r) {
                                  cellText(u, s.galaxy.object(r.planet).atmosphere + (r.breathable ? "" : " (dome)"),
                                           r.breathable ? ImVec4(1, 1, 1, 1) : kTextWarn);
                              }});
-                c.push_back({"Conditions", 76, [&s](R r) { return SortKey{static_cast<int64_t>(s.galaxy.object(r.planet).conditions.bits)}; },
+                c.push_back({"Conditions", 66, [&s](R r) { return SortKey{static_cast<int64_t>(s.galaxy.object(r.planet).conditions.bits)}; },
                              [&s](UiContext& u, R r) { cellText(u, conditionsText(s.galaxy.object(r.planet).conditions)); }, true});
                 for (size_t i = 0; i < 3; ++i)
-                    c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 72,
+                    c.push_back({i == 0 ? "Min." : i == 1 ? "Org." : "Rad.", 52,
                                  [&s, i](R r) { return SortKey{int64_t{s.galaxy.object(r.planet).value[i]}}; },
                                  [&s, i](UiContext& u, R r) { cellText(u, percent(s.galaxy.object(r.planet).value[i])); }, true});
                 break;
             case ColonyTab::Production:
                 for (size_t i = 0; i < 3; ++i)
-                    c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 76, [i](R r) { return SortKey{r.out.production.v[i]}; },
+                    c.push_back({i == 0 ? "Minerals" : i == 1 ? "Organics" : "Radioact.", 58, [i](R r) { return SortKey{r.out.production.v[i]}; },
                                  [i](UiContext& u, R r) { cellText(u, formatNumber(r.out.production.v[i])); }, true});
-                c.push_back({"Research", 72, [](R r) { return SortKey{r.out.research}; },
+                c.push_back({"Research", 60, [](R r) { return SortKey{r.out.research}; },
                              [](UiContext& u, R r) { cellText(u, formatNumber(r.out.research)); }, true});
-                c.push_back({"Intel", 60, [](R r) { return SortKey{r.out.intelligence}; },
+                c.push_back({"Intel", 48, [](R r) { return SortKey{r.out.intelligence}; },
                              [](UiContext& u, R r) { cellText(u, formatNumber(r.out.intelligence)); }, true});
-                c.push_back({"Delivery", 104, [](R r) { return SortKey{int64_t{r.out.connected && !r.out.blockaded}}; },
+                c.push_back({"Delivery", 96, [](R r) { return SortKey{int64_t{r.out.connected && !r.out.blockaded}}; },
                              [](UiContext& u, R r) {
                                  cellText(u, r.out.blockaded ? "Blockaded" : r.out.connected ? "Delivered" : "No spaceport",
                                           r.out.connected && !r.out.blockaded ? kTextDim : kTextWarn);
@@ -609,14 +615,14 @@ private:
                 break;
             case ColonyTab::Construction:
                 c.push_back({"Building", 0, [](R r) { return SortKey{r.building}; },
-                             [](UiContext& u, R r) { cellText(u, r.building.empty() ? "Nothing" : r.building, r.building.empty() ? kTextWarn : ImVec4(1, 1, 1, 1)); }});
+                             [](UiContext& u, R r) { cellText(u, r.building, r.queueLength == 0 ? kTextWarn : ImVec4(1, 1, 1, 1)); }});
                 c.push_back({"Progress", 90, [](R r) { return SortKey{int64_t(r.progress * 1000)}; },
                              [](UiContext& u, R r) {
                                  if (r.queueLength > 0) cellProgress(u, r.progress, std::format("{}%", int(r.progress * 100)));
                              },
                              true});
-                c.push_back({"Time", 64, [](R r) { return SortKey{int64_t{r.turns < 0 ? 1 << 30 : r.turns}}; },
-                             [](UiContext& u, R r) { cellText(u, r.queueLength > 0 ? turnsText(r.turns) : "", kTextDim); }});
+                c.push_back({"Time", 72, [](R r) { return SortKey{int64_t{r.queueLength == 0 ? 1 << 30 : r.turns}}; },
+                             [](UiContext& u, R r) { cellText(u, r.time, kTextDim); }});
                 c.push_back({"Items", 46, [](R r) { return SortKey{int64_t{r.queueLength}}; },
                              [](UiContext& u, R r) { cellText(u, std::to_string(r.queueLength)); }, true});
                 c.push_back({"Mode", 84, [](R r) { return SortKey{r.queueMode}; }, [](UiContext& u, R r) { cellText(u, r.queueMode, kTextDim); }});
@@ -701,32 +707,39 @@ private:
     void table(UiContext& ui) {
         const game::GameState& s = ui.state();
         const std::vector<ColonyColumn> cols = columns(ui);
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(4), ui.px(2)));
-        const float footer = ImGui::GetTextLineHeightWithSpacing();
-        const ImGuiTableFlags flags = ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
-                                      ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-        const bool nameStretches = std::none_of(cols.begin(), cols.end(), [](const ColonyColumn& c) { return c.width == 0; });
-        if (ImGui::BeginTable(tableId_.c_str(), static_cast<int>(cols.size()) + 2, flags, ImVec2(0, -footer))) {
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui.px(2), ui.px(2)));
+        // Our own headings (tableHeadings): a click adds a sort key, in the
+        // column's fixed direction (spec 06 §7 Q24); nothing reverses it.
+        const ImGuiTableFlags flags =
+            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+        // The rows take the window's height less 265 (spec 06 §2.1.1), under 20 px of headings.
+        if (ImGui::BeginTable(tableId_.c_str(), static_cast<int>(cols.size()) + 2, flags, ImVec2(0, listRowsHeight(ui) + ui.px(20)))) {
             ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_NoSort, ui.px(28), 0);
-            ImGui::TableSetupColumn("Name", (nameStretches ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_WidthFixed) |
-                                               ImGuiTableColumnFlags_DefaultSort,
-                                    nameStretches ? 0.0f : ui.px(150), 1);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ui.px(24), 0);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ui.px(110), 1);
             for (size_t i = 0; i < cols.size(); ++i)
-                ImGui::TableSetupColumn(cols[i].name,
-                                        (cols[i].width == 0 ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_WidthFixed) |
-                                            (cols[i].descendingFirst ? ImGuiTableColumnFlags_PreferSortDescending : 0),
+                ImGui::TableSetupColumn(cols[i].name, cols[i].width == 0 ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_WidthFixed,
                                         cols[i].width == 0 ? 0.0f : ui.px(cols[i].width), static_cast<ImGuiID>(i + 2));
-            ImGui::TableHeadersRow();
-            readSortSpecs(sortColumn_, ascending_);
+            std::vector<ListColumn> headings{{"", 0, 0, false}, {"Name", 0}};
+            for (const ColonyColumn& c : cols) headings.push_back({c.name, 0});
+            if (const int clicked = tableHeadings(ui, headings); clicked >= 0) {
+                game::InterfaceOptions o = ui.options();
+                o.coloniesSort = clickSort(o.coloniesSort, clicked, 1);
+                ui.setOptions(o);
+            }
             std::vector<const ColonyRow*> rows;
             for (const ColonyRow& r : rows_) rows.push_back(&r);
-            auto key = [&](const ColonyRow& r) -> SortKey {
-                if (sortColumn_ >= 2 && static_cast<size_t>(sortColumn_ - 2) < cols.size()) return cols[static_cast<size_t>(sortColumn_ - 2)].key(r);
-                return r.name;
-            };
-            std::stable_sort(rows.begin(), rows.end(), [&](const ColonyRow* a, const ColonyRow* b) {
-                return ascending_ ? sortKeyLess(key(*a), key(*b)) : sortKeyLess(key(*b), key(*a));
+            // Column numbers are the table's: 1 the name, 2 on the tab's own
+            // columns, so a key stands for whatever that column of the tab
+            // shown measures (inferred, like Construction Queues' middle column).
+            sortByKeys(rows, sortKeys(ui.options().coloniesSort, 1), [&](int column, const ColonyRow* a, const ColonyRow* b) {
+                if (column == 1) return compareNames(a->name, b->name);
+                if (column < 2 || static_cast<size_t>(column - 2) >= cols.size()) return 0;
+                const ColonyColumn& c = cols[static_cast<size_t>(column - 2)];
+                const SortKey x = c.key(*a), y = c.key(*b);
+                if (!sortKeyLess(x, y) && !sortKeyLess(y, x)) return 0;
+                // Numbers highest first, names A to Z.
+                return (c.descendingFirst ? sortKeyLess(y, x) : sortKeyLess(x, y)) ? -1 : 1;
             });
             for (const ColonyRow* r : rows) {
                 const RowEvents ev = tableRow(ui, static_cast<int>(r->planet.index()), contains(selection_, r->planet));
@@ -795,8 +808,6 @@ private:
     std::vector<game::ObjectId> selection_;
     std::optional<game::ObjectId> hovered_;
     std::optional<game::ObjectId> goto_;
-    int sortColumn_ = 1;
-    bool ascending_ = true;
     StatusLine status_;
     ReportPopup report_;
     ScrapTypePopup scrapTypes_;

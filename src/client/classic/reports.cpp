@@ -304,6 +304,13 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
                 labelValue(ui, "Experience", game::combat::experienceLabel(v.experience, v.experienceTenths));
                 if (const game::Fleet* f = s.fleet(v.fleet)) labelValue(ui, "Fleet", f->name);
                 labelValue(ui, "Location", sectorName(s, v.location, ui.session.player()));
+                // A ship or base with a working space yard: its queue's first item and time (spec 06 §7 Q48).
+                if (workingVehicleYard(r, s, v) || !v.queue.items.empty()) {
+                    const game::cmd::QueueTarget target{{}, v.id};
+                    labelValue(ui, "Under Construction", underConstructionText(r, s, v.queue), 140);
+                    labelValue(ui, "Time Remaining",
+                               timeRemainingText(r, s, v.owner, target, v.queue, game::economy::constructionRate(r, s, v.owner, target)), 140);
+                }
                 heading(ui, "Orders");
                 if (v.orders.empty()) ImGui::TextColored(kDim, "None");
                 for (const auto& o : v.orders) ImGui::BulletText("%s", orderText(s, o, ui.session.player()).c_str());
@@ -455,20 +462,11 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
             pen.rightAligned(163, row, IM_COL32_WHITE, std::to_string(out.intelligence));
             pen.sprite(ui.art.icon16(Icon::Intelligence), 165, row - 2, 14, 14);
             row += 22;
-            std::string building = "None", remaining;
-            if (!c->queue.items.empty()) {
-                const game::QueueItem& q = c->queue.items.front();
-                building = q.kind == game::QueueItem::Kind::Facility  ? r.facility(q.facility).name
-                           : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
-                                                                      : s.design(q.design).name;
-                // What the item under construction still needs at this turn's rate,
-                // in years as the Construction Queues window shows times (inferred).
-                const game::cmd::QueueTarget target{c->planet, {}};
-                const auto est = estimateQueue(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target));
-                remaining = c->queue.onHold ? std::string("On Hold") : queueYearsText(est.front().turns);
-            }
-            line("Under Construction", building);
-            line("Time Remaining", remaining);
+            // The first item and its time (spec 06 §7 Q48).
+            const game::cmd::QueueTarget target{c->planet, {}};
+            line("Under Construction", underConstructionText(r, s, c->queue));
+            line("Time Remaining",
+                 timeRemainingText(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target)));
             break;
         }
         case ReportTab::Facilities:

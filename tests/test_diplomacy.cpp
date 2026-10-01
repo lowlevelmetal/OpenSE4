@@ -67,6 +67,13 @@ const DiplomaticMessage* message(const GameState& s, MessageId id) {
     return nullptr;
 }
 
+// The log entry a delivered message made (spec 06 §7 Q42): titled "Message".
+const LogEntry* messageEntry(const GameState& s, EmpireId e, MessageId id) {
+    for (const LogEntry& l : s.empire(e).log)
+        if (l.message == id) return &l;
+    return nullptr;
+}
+
 PackageItem resources(int64_t m, int64_t o, int64_t r) {
     PackageItem p;
     p.kind = PackageItem::Kind::Resources;
@@ -105,7 +112,8 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
     diplomacy::deliverMessages(ctx);
     CHECK(message(s, id)->delivered);
     CHECK_FALSE(message(s, id)->answered);
-    CHECK(hasLog(s, kB, "Propose Treaty"));
+    REQUIRE(messageEntry(s, kB, id));
+    CHECK(messageEntry(s, kB, id)->title == "Message");
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
 
     nextTurn(s);
@@ -119,7 +127,7 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
     CHECK(hasMood(ctx, kA, "New Treaty Trade"));
     CHECK(hasMood(ctx, kB, "New Treaty Trade"));
     CHECK(hasLog(s, kA, "New Treaty"));
-    CHECK(hasLog(s, kA, "Accept Treaty"));
+    CHECK(hasLog(s, kA, "Message"));
 
     // Trade starts at 1 % after the signing turn and grows to the maximum.
     CHECK(tradePct(s, kA, kB) == 0);
@@ -129,6 +137,79 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
     CHECK(tradePct(s, kA, kB) == 20);
     CHECK(tradePct(s, kB, kA) == 20);
     CHECK(s.empire(kA).relation(kB).tradeTurns == 31);  // the counter itself is not capped
+}
+
+TEST_CASE("diplomacy: a delivered message is an ordinary Politics entry whose Goto opens Empires") {
+    // Spec 06 §4.1, §7 Q41-Q42 (confirmed: binary): "Message", category
+    // Politics, naming the sender and quoting the message; made when it
+    // arrives, among the other entries in the order they were made.
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    DiplomaticMessage m;
+    m.to = kB;
+    m.type = MessageType::General;
+    m.text = "Greetings";
+    REQUIRE(apply(politicsRules(), s, kA, cmd::SendMessage{m}).ok);
+    const MessageId id = s.messages.back().id;
+    addLog(s, kB, LogCategory::Misc, "Before");
+    diplomacy::deliverMessages(ctx);
+    addLog(s, kB, LogCategory::Misc, "After");
+    const auto& log = s.empire(kB).log;
+    REQUIRE(log.size() >= 3);
+    const LogEntry* entry = messageEntry(s, kB, id);
+    REQUIRE(entry);
+    CHECK(entry->title == "Message");
+    CHECK(entry->category == LogCategory::Politics);
+    CHECK(entry->target == LogGoto::Empires);
+    CHECK(entry->text.find(s.empire(kA).name) != std::string::npos);
+    CHECK(entry->text.find("\"Greetings\"") != std::string::npos);
+    CHECK(log[log.size() - 3].title == "Before");
+    CHECK(&log[log.size() - 2] == entry);
+    CHECK(log.back().title == "After");
+    // A plain entry's Goto: its location; a Research entry's: the Research window.
+    CHECK(log.back().target == LogGoto::Location);
+    CHECK(addLog(s, kB, LogCategory::Research, "New Tech Level")->target == LogGoto::Research);
+}
+
+TEST_CASE("diplomacy: Goto targets of treaties, trades and contact") {
+    // Spec 06 §7 Q41: treaties enacted or lost open Empires; technology
+    // received opens Research; resources received open Empires.
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    agree(s, kA, kB, Treaty::TradeAlliance);
+    const LogEntry* treaty = findLog(s, kA, "New Treaty");
+    REQUIRE(treaty);
+    CHECK(treaty->target == LogGoto::Empires);
+
+    TurnContext ctx = context(s);
+    const auto beams = techArea(r, "Test Beams");
+    s.empire(kA).techLevels[beams.index()] = 4;
+    s.empire(kA).stockpile = {5000, 5000, 5000};
+    const MessageId gift = send(s, kA, kB, MessageType::Gift, Treaty::None, {tech(beams)});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, gift, true);
+    diplomacy::deliverMessages(ctx);
+    const LogEntry* techGift = findLog(s, kB, "Gift Completed");
+    REQUIRE(techGift);
+    CHECK(techGift->target == LogGoto::Research);
+    nextTurn(s);
+    const MessageId cash = send(s, kA, kB, MessageType::Gift, Treaty::None, {resources(10, 0, 0)});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, cash, true);
+    diplomacy::deliverMessages(ctx);
+    const LogEntry* last = nullptr;
+    for (const LogEntry& l : s.empire(kB).log)
+        if (l.title == "Gift Completed") last = &l;
+    REQUIRE(last);
+    CHECK(last->target == LogGoto::Empires);
+
+    diplomacy::declareWar(ctx, kA, kB);
+    REQUIRE(findLog(s, kB, "War Declared"));
+    CHECK(findLog(s, kB, "War Declared")->target == LogGoto::Empires);
 }
 
 TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
@@ -142,7 +223,7 @@ TEST_CASE("diplomacy: refusals, counter-proposals and forged acceptances") {
     answer(s, kB, id, false);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).relation(kB).treaty == Treaty::None);
-    CHECK(hasLog(s, kA, "Refuse Treaty"));
+    CHECK(hasLog(s, kA, "Message"));
 
     // B counters A's proposal; A accepts the counter.
     nextTurn(s);

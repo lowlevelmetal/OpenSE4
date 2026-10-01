@@ -39,11 +39,14 @@ bool LearnView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     if (!d.open()) return d.keepOpen();
     const learn::Library& lib = host.content->library;
     d.beginContent();
+    // OpenSE4's own window: its own text font (docs/spec/06 §5.4).
+    ImGui::PushFont(p.fonts.readingFont(), p.fontPx(kTextSize));
     switch (tab_) {
         case Tab::Tutorials: lessons(p, host, learn::LessonKind::Tutorial); break;
         case Tab::Training: lessons(p, host, learn::LessonKind::Training); break;
         case Tab::Manual: contents(p, host); break;
     }
+    ImGui::PopFont();
 
     d.beginButtons();
     if (d.tab("Tutorials", tab_ == Tab::Tutorials)) tab_ = Tab::Tutorials;
@@ -254,6 +257,7 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
     page_ = page ? page->slug : std::string{};
 
     d.beginContent();
+    ImGui::PushFont(p.fonts.readingFont(), p.fontPx(kTextSize));
     if (!page) {
         heading(p, "Manual");
         dim("No manual pages are installed yet.");
@@ -280,6 +284,7 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
         }
         ImGui::EndChild();
     }
+    ImGui::PopFont();
 
     d.beginButtons();
     if (d.button("Back", at_ > 0)) {

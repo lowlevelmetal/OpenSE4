@@ -112,6 +112,8 @@ void graphicsSettingsPage(SettingsPanelState& state, AppControl& app, float px) 
     save |= ImGui::Checkbox("Show frame rate", &g.showFps);
 
     section("Classic screens");
+    save |= choice("Screen layout", g.layout, std::array{LayoutChoice::Auto, LayoutChoice::Small800, LayoutChoice::Large1024}, w);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("The classic game's 800x600 or 1024x768 layout (OpenSE4 can force either)");
     save |= choice("Widescreen layout", g.widescreen, std::array{WidescreenLayout::Extended, WidescreenLayout::Classic}, w);
     save |= ImGui::Checkbox("Sharp pixels (no smoothing of the game's art)", &g.sharpPixels);
     save |= ImGui::Checkbox("Scale by whole multiples only", &g.integerScaling);

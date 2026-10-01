@@ -6,7 +6,9 @@
 
 #include "assets/assets.hpp"
 #include "client/classic/map_style.hpp"
+#include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
+#include "client/classic/sector_view.hpp"
 #include "client/classic/session.hpp"
 #include "client/classic/ship_glides.hpp"
 #include "client/classic/status_icons.hpp"
@@ -19,7 +21,9 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <format>
 #include <fstream>
+#include <map>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -317,6 +321,53 @@ TEST_CASE("main window: status icons of ships, colonies and fleets") {
     CHECK(fleetStatusCells(s, f) == std::vector<int>{cell::kMinister});
 }
 
+TEST_CASE("main window: status icons of yards, fleets and fighter groups (spec 06 §7 Q50, Q54)") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    namespace cell = status_cell;
+    const DesignId yardShip = design(s, r, "Builder", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+    Vehicle& y = addTestVehicle(s, r, yardShip, where);
+    QueueItem item;
+    item.kind = QueueItem::Kind::Facility;
+    item.facility = facilityIndex(r, "Test Mine");
+    y.queue.items.push_back(item);
+    std::vector<int> icons = vehicleStatusCells(r, s, y);
+    CHECK(has(icons, cell::kSpaceYard));
+    CHECK(has(icons, cell::kBuilding));
+    // Mothballed: the yard icon stays, building does not.
+    y.status = VehicleStatus::Mothballed;
+    icons = vehicleStatusCells(r, s, y);
+    CHECK(has(icons, cell::kSpaceYard));
+    CHECK_FALSE(has(icons, cell::kBuilding));
+    // Cloaked: no working yard.
+    y.status = VehicleStatus::Cloaked;
+    icons = vehicleStatusCells(r, s, y);
+    CHECK_FALSE(has(icons, cell::kSpaceYard));
+    CHECK_FALSE(has(icons, cell::kBuilding));
+    CHECK(has(icons, cell::kCloaked));
+
+    // A fleet is cloaked when a member of its owner is.
+    Fleet f;
+    f.owner = kMe;
+    f.members = {y.id};
+    CHECK(fleetStatusCells(s, f) == std::vector<int>{cell::kCloaked});
+    f.owner = EmpireId{1u};
+    CHECK(fleetStatusCells(s, f).empty());
+
+    // A fighter group: low below a tenth of the warning level, and only while it holds a fighter.
+    const DesignId wasp = design(s, r, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    Vehicle& g = addTestVehicle(s, r, wasp, where);
+    const int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
+    g.count = 3;
+    g.supply = warning / 10;
+    CHECK_FALSE(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
+    g.supply = warning / 10 - 1;
+    CHECK(has(vehicleStatusCells(r, s, g), cell::kLowSupply));
+    g.supply = 0;
+    CHECK(has(vehicleStatusCells(r, s, g), cell::kNoSupply));
+}
+
 // ---- Map colours and symbols (docs/spec/06 §2.6) ----
 
 TEST_CASE("main window: galaxy symbols") {
@@ -453,22 +504,270 @@ TEST_CASE("main window: minis turn nearest-neighbour, and the client follows hea
     CHECK(g.heading(ship) == 0);
 }
 
-TEST_CASE("main window: the movement log replay") {
-    MovementReplay r;
-    CHECK_FALSE(r.available());
-    const VehicleId ship{1u};
-    const SystemId sys{2u};
-    r.newTurn({{ship, Location{sys, {0, 0}}}});
-    CHECK(r.available());
-    CHECK_FALSE(r.position(ship, {sys, {10, 0}}, sys, 0.0).has_value());  // not replaying
-    r.rewind();
-    REQUIRE(r.position(ship, {sys, {10, 0}}, sys, 0.0).has_value());
-    CHECK(r.position(ship, {sys, {10, 0}}, sys, 0.0)->x == doctest::Approx(0.5));
-    r.step();
-    CHECK(r.position(ship, {sys, {10, 0}}, sys, 0.0)->x == doctest::Approx(1.5));  // one day of ten
-    r.play(100.0);
-    r.update(100.0 + MovementReplay::kDays * MovementReplay::kSecondsPerDay);
-    CHECK_FALSE(r.active());
+TEST_CASE("main window: the movement log is recorded day by day") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = homeworld(s, kMe);
+    const Location where = locationOf(s.galaxy, home.planet);
+    const DesignId d = design(s, r, "Scout", "Test Frigate", kShipBasics);
+    Vehicle& v = addTestVehicle(s, r, d, where);
+    const VehicleId ship = v.id;
+    MovementRecorder rec(s);
+    // Day 1: the ship moves a sector; day 2: nothing; day 3: it is destroyed.
+    GameState day = s;
+    Location next = where;
+    next.sector.x = static_cast<decltype(next.sector.x)>(next.sector.x + 1);
+    day.vehicle(ship)->location = next;
+    rec.day(1, day);
+    rec.day(2, day);
+    day.vehicle(ship)->count = 0;
+    rec.day(3, day);
+    const MovementLog log = rec.take(s.turn + 1);
+    CHECK(log.exact);
+    CHECK(log.days.size() == MovementLog::kDays);
+    REQUIRE(log.days[0].moves.size() == 1);
+    CHECK(log.days[0].moves[0].from == where);
+    CHECK(log.days[0].moves[0].to == next);
+    CHECK(log.days[1].moves.empty());
+    CHECK(log.days[2].removed == std::vector<VehicleId>{ship});
+    CHECK(log.movers(kMe) == std::vector<VehicleId>{ship});
+    CHECK(log.movers(EmpireId{1u}).empty());
+}
+
+TEST_CASE("main window: a local simultaneous turn is played again for its movement log") {
+    auto rules = std::make_shared<const Rules>(buildEngineRuleset());
+    GameState start = newEngineGame(5, 3);
+    // A ship of ours with somewhere to go.
+    const Location home = locationOf(start.galaxy, homeworld(start, kMe).planet);
+    const DesignId scout = addTestDesign(start, *rules, kMe, "Runner", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Supply Pod"});
+    Vehicle& runner = addTestVehicle(start, *rules, scout, home);
+    runner.supply = 1000;
+    const VehicleId ship = runner.id;
+    ClassicSession session(rules, std::move(start), kMe, SessionKind::Local);
+    CHECK_FALSE(session.canReplayLastTurn());
+    session.endTurn();
+    Location there = home;
+    there.sector.x = static_cast<decltype(there.sector.x)>(there.sector.x > 2 ? there.sector.x - 2 : there.sector.x + 2);
+    const CommandResult given = session.issue(cmd::SetOrders{ship, {}, {Order{OrderKind::MoveTo, there}}, false});
+    REQUIRE_MESSAGE(given.ok, given.error);
+    session.endTurn();
+    REQUIRE(session.canReplayLastTurn());
+    REQUIRE(session.turnStart());
+    CHECK(session.turnStart()->turn + 1 == session.state().turn);
+    auto record = [&] {
+        MovementRecorder rec(*session.turnStart());
+        int days = 0;
+        CHECK(session.replayLastTurn([&](int day, const GameState& at) {
+            rec.day(day, at);
+            days = day;
+        }));
+        CHECK(days == MovementLog::kDays);
+        return rec.take(session.state().turn);
+    };
+    const MovementLog first = record();
+    const MovementLog second = record();
+    // The same turn twice: the same log (the engine is deterministic).
+    REQUIRE(first.days.size() == second.days.size());
+    size_t moves = 0;
+    for (size_t d = 0; d < first.days.size(); ++d) {
+        REQUIRE(first.days[d].moves.size() == second.days[d].moves.size());
+        moves += first.days[d].moves.size();
+        for (size_t m = 0; m < first.days[d].moves.size(); ++m) CHECK(first.days[d].moves[m].to == second.days[d].moves[m].to);
+    }
+    // After day 30 the vehicles stand where the processed turn left them.
+    std::map<VehicleId, Location> end = first.start;
+    for (const MovementLog::Day& d : first.days) {
+        for (const MovementLog::Move& m : d.moves) end[m.id] = m.to;
+        for (const auto& [id, at] : d.appeared) end[id] = at;
+        for (VehicleId id : d.removed) end.erase(id);
+    }
+    size_t compared = 0;
+    for (const Vehicle& v : session.state().vehicles)
+        if (const auto it = end.find(v.id); it != end.end()) {
+            CHECK(it->second == v.location);
+            ++compared;
+        }
+    CHECK(compared > 0);
+    CHECK(moves > 0);
+    CHECK(first.movers(kMe) == std::vector<VehicleId>{ship});
+}
+
+TEST_CASE("main window: the movement log replay's keys") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    Colony& home = homeworld(s, kMe);
+    const Location where = locationOf(s.galaxy, home.planet);
+    const DesignId d = design(s, r, "Scout", "Test Frigate", kShipBasics);
+    const VehicleId ship = addTestVehicle(s, r, d, where).id;
+    MovementRecorder rec(s);
+    GameState day = s;
+    Location step = where;
+    for (int i = 1; i <= 3; ++i) {
+        step.sector.y = static_cast<decltype(step.sector.y)>(step.sector.y + 1);
+        day.vehicle(ship)->location = step;
+        rec.day(i, day);
+    }
+    auto log = std::make_shared<MovementLog>(rec.take(7));
+    MovementReplay replay;
+    CHECK_FALSE(replay.available(7));
+    replay.setLog(log);
+    CHECK(replay.available(7));
+    CHECK_FALSE(replay.available(8));  // another turn's log: "Replay Unavailable"
+    auto at = [&] {
+        for (const Vehicle& v : replay.vehicles())
+            if (v.id == ship) return v.location;
+        return Location{};
+    };
+    MovementReplay::Frame f;
+    f.shown = where.system;
+    f.animate = false;
+
+    // Ctrl+I: the first press shows Day 0, each later one applies a day.
+    replay.step();
+    CHECK(replay.active());
+    CHECK(replay.day() == 0);
+    CHECK(at() == where);
+    replay.update(f);
+    CHECK(replay.day() == 0);
+    replay.step();
+    replay.update(f);
+    CHECK(replay.day() == 1);
+    CHECK(at().sector.y == where.sector.y + 1);
+    // Ctrl+O: back to Day 0, waiting for steps.
+    replay.rewind();
+    CHECK(replay.day() == 0);
+    CHECK(at() == where);
+    // Ctrl+P: every day in one go, a day a frame, then the current turn again.
+    replay.play();
+    for (int i = 0; i < MovementLog::kDays; ++i) replay.update(f);
+    CHECK(replay.day() == MovementLog::kDays);
+    CHECK(at().sector.y == where.sector.y + 3);
+    replay.update(f);
+    CHECK_FALSE(replay.active());
+    // Stepping past day 30 ends the replay.
+    replay.rewind();
+    for (int i = 0; i < MovementLog::kDays; ++i) {
+        replay.step();
+        replay.update(f);
+    }
+    CHECK(replay.active());
+    replay.step();
+    replay.update(f);
+    CHECK_FALSE(replay.active());
+    // Ctrl+U follows each mover in turn.
+    replay.playFollowing(log->movers(kMe));
+    CHECK(replay.following() == ship);
+    for (int i = 0; i <= MovementLog::kDays; ++i) replay.update(f);
+    CHECK_FALSE(replay.active());
+}
+
+TEST_CASE("main window: the replay animates a move in the shown system") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const VehicleId ship = addTestVehicle(s, r, design(s, r, "Scout", "Test Frigate", kShipBasics), where).id;
+    MovementRecorder rec(s);
+    GameState day = s;
+    Location east = where;
+    east.sector.x = static_cast<decltype(east.sector.x)>(east.sector.x + 1);
+    day.vehicle(ship)->location = east;
+    rec.day(1, day);
+    MovementReplay replay;
+    replay.setLog(std::make_shared<MovementLog>(rec.take(3)));
+    MovementReplay::Frame f;
+    f.shown = where.system;
+    f.animate = true;
+    f.cellPixels = 50;
+    f.turns = [](VehicleId) { return true; };
+    replay.play();
+    f.now = 10.0;
+    replay.update(f);  // day 1 applied, its move waits for the animation
+    REQUIRE(replay.motion(ship, 10.0));
+    // Facing east: 90° clockwise from up, turned in 5° steps of 10 ms, then 50 px at 1 ms each.
+    replay.update(f);  // starts the clock
+    CHECK(replay.motion(ship, 10.0)->angle == doctest::Approx(0.0));
+    CHECK(replay.motion(ship, 10.05)->angle == doctest::Approx(25.0));
+    const double turned = 10.0 + 18 * MovementReplay::kSecondsPerTurnStep;
+    CHECK(replay.motion(ship, turned + 0.025)->angle == doctest::Approx(90.0));
+    CHECK(replay.motion(ship, turned + 0.025)->at.x == doctest::Approx(float(where.sector.x) + 1.0f));
+    f.now = turned + 0.06;
+    replay.update(f);
+    CHECK_FALSE(replay.motion(ship, f.now));
+    CHECK(replay.heading(ship) == 2);
+    CHECK(replay.day() == 2);  // no pause: the next day follows at once
+}
+
+TEST_CASE("main window: a network client's log is rebuilt from what it saw") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    Vehicle& v = addTestVehicle(s, r, design(s, r, "Scout", "Test Frigate", kShipBasics), where);
+    Location before = where;
+    before.sector.x = static_cast<decltype(before.sector.x)>(before.sector.x - 3);
+    const MovementLog log = approximateLog({{v.id, before}}, s, {v.id}, s.turn);
+    CHECK_FALSE(log.exact);
+    int steps = 0;
+    for (const MovementLog::Day& d : log.days) steps += int(d.moves.size());
+    CHECK(steps == 3);
+    CHECK(log.days[9].moves.size() == 1);   // three steps spread over the month: days 10, 20 and 30
+    CHECK(log.days[29].moves.back().to == where);
+}
+
+// ---- Sector contents (docs/spec/06 §2.4) ----
+
+TEST_CASE("main window: what a sector shows") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    const Location where = locationOf(s.galaxy, homeworld(s, kMe).planet);
+    const DesignId d = design(s, r, "Scout", "Test Frigate", kShipBasics);
+    Vehicle& a = addTestVehicle(s, r, d, where);
+    Vehicle& b = addTestVehicle(s, r, d, where);
+    const std::vector<const Vehicle*> both{&a, &b};
+    // Beside a planet: the owner's flag and a count, even of 1.
+    const std::vector<ObjectId> planet{homeworld(s, kMe).planet};
+    SectorView view = sectorView(r, s, kMe, planet, std::vector<const Vehicle*>{&a}, 50);
+    CHECK(view.flags);
+    CHECK_FALSE(view.sprite);
+    REQUIRE(view.owners.size() == 1);
+    CHECK(view.owners[0].count == 1);
+    CHECK(view.stellar == planet.front());
+    CHECK(view.stellarCount == 1);
+    // In empty space: the vehicle and the count of objects.
+    view = sectorView(r, s, kMe, {}, both, 50);
+    CHECK_FALSE(view.flags);
+    CHECK(view.sprite.has_value());
+    CHECK(view.count == 2);
+    CHECK_FALSE(view.unitCount);
+    view = sectorView(r, s, kMe, {}, std::vector<const Vehicle*>{&a}, 50);
+    CHECK_FALSE(view.count);
+    // A cloaked vehicle shown gets the dotted ring.
+    a.status = VehicleStatus::Cloaked;
+    CHECK(sectorView(r, s, kMe, {}, std::vector<const Vehicle*>{&a}, 50).cloakRing);
+    // Owners stacked by player number, 10 px apart unless they would not fit.
+    CHECK(flagStep(3, 36) == 10);
+    CHECK(flagStep(4, 36) == 9);
+    CHECK(flagStep(5, 36) == 7);
+    CHECK(flagStep(5, 50) == 10);
+    CHECK(flagStep(6, 50) == 8);
+}
+
+TEST_CASE("main window: the stellar object a sector shows") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame();
+    // Two planets in one list: the first, unless a later one is larger.
+    std::vector<ObjectId> ids;
+    for (const SpaceObject& o : s.galaxy.objects)
+        if (o.kind == ObjectKind::Planet && ids.size() < 2) ids.push_back(o.id);
+    REQUIRE(ids.size() == 2);
+    s.galaxy.object(ids[0]).size = "Small";
+    s.galaxy.object(ids[1]).size = "Small";
+    CHECK(sectorView(r, s, kMe, ids, {}, 50).stellar == ids[0]);
+    CHECK(sectorView(r, s, kMe, ids, {}, 50).stellarCount == 2);
+    if (stellarSizeRank(r, s.galaxy.object(ids[0])) > 0) {
+        s.galaxy.object(ids[1]).size = "Large";
+        if (stellarSizeRank(r, s.galaxy.object(ids[1])) > stellarSizeRank(r, s.galaxy.object(ids[0])))
+            CHECK(sectorView(r, s, kMe, ids, {}, 50).stellar == ids[1]);
+    }
 }
 
 // ---- Files the game writes (docs/spec/06 §6.1) ----

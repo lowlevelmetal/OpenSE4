@@ -63,7 +63,7 @@ constexpr int kExplosionFrames = 8;
 constexpr float kGroundRound = kExplosionFrame * float(kExplosionFrames + 1);
 
 // The Large dialog's top-left corner, for the positions spec 06 gives in window pixels.
-Vec2 largeOrigin() { return {(kFrameW - 780.0f) * 0.5f, (kFrameH - 475.0f) * 0.5f}; }
+Vec2 largeOrigin() { return {(frameW() - 780.0f) * 0.5f, (frameH() - 475.0f) * 0.5f}; }
 
 // Ground Combat windows open now: a Strategic Combat battle waits while one is.
 int gGroundWindows = 0;

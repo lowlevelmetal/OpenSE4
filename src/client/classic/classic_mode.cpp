@@ -3,6 +3,7 @@
 #include "client/app_settings.hpp"
 #include "client/audio.hpp"
 #include "client/classic/net_transport.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
@@ -13,6 +14,7 @@
 #include "core/log.hpp"
 
 #include <imgui.h>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -65,6 +67,16 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
               mode->rules_->racePresets().size());
     audio().setInstall(&mode->art_->files());
     mode->fonts_ = loadClassicFonts(*platform.fonts, mode->art_->files());
+    // The pointers (docs/spec/06 §5.8): with the install's Normal pointer the
+    // classic pointers replace ImGui's (no text beam, no resize arrows).
+    pointers().load(mode->art_->files());
+    if (pointers().loaded()) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    // The layout the original would pick: from the desktop width alone (§2.1.1).
+    int desktopWidth = 1024;
+    if (platform.window)
+        if (const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(platform.window))) desktopWidth = desktop->w;
+    mode->desktopLayout_ = layoutForDesktop(desktopWidth);
+    mode->applyLayout();
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
     applyClassicStyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
@@ -206,6 +218,17 @@ ClassicMode::~ClassicMode() {
     ui_.reset();
     session_.reset();
     art_.reset();
+    pointers().release();
+    ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+}
+
+void ClassicMode::applyLayout() {
+    // The setting or --layout forces one; Auto follows the desktop as the original does.
+    switch (appSettings().graphics.layout) {
+        case LayoutChoice::Auto: setScreenLayout(desktopLayout_); break;
+        case LayoutChoice::Small800: setScreenLayout(ScreenLayout::Small); break;
+        case LayoutChoice::Large1024: setScreenLayout(ScreenLayout::Large); break;
+    }
 }
 
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
@@ -316,6 +339,7 @@ void ClassicMode::endTurn() {
     if (!session_ || session_->waitingForOthers()) return;
     audio().play("endturn");
     screens_.clear();
+    const BusyPointer busy;  // the Hourglass while the turn is processed (§5.8)
     session_->endTurn();
 }
 
@@ -356,11 +380,14 @@ void ClassicMode::updateAudio() {
 
 bool ClassicMode::update(const FrameState& fs) {
     updateAudio();
+    applyLayout();
     mapping_ = frameMappingFor(float(fs.frame.width), float(fs.frame.height));
     // Every classic window defaults to the game's text font at its native size.
     ImGui::PushFont(fonts_.regular, kTextSize * mapping_.scale / fs.fbScale * appSettings().graphics.textScale);
     const bool keepRunning = updateFrame(fs);
     ImGui::PopFont();
+    // The frame's pointer, grown with the classic screens by whole multiples.
+    if (pointers().loaded()) pointers().apply(int(std::lround(mapping_.scale / std::max(0.01f, fs.fbScale))));
     return keepRunning;
 }
 
@@ -482,7 +509,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (confirmEndTurn_) {
         // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06
         // §3.4). The key that asked for the end of the turn does not answer it.
-        ImGui::SetNextWindowPos(ui.at({362, 330}));
+        ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), std::floor((frameH() - 110) * 0.5f)}));
         ImGui::SetNextWindowSize(ui.size({300, 110}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
@@ -509,6 +536,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (ui.requests.loadGame) {
         const std::filesystem::path file = *ui.requests.loadGame;
         ui.requests.loadGame.reset();
+        const BusyPointer busy;
         auto loaded = ClassicSession::load(rules_, file);
         if (loaded) {
             restoreHistoryFrom(file);
@@ -553,7 +581,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         }
     }
     if (!lessonError_.empty()) {
-        ImGui::SetNextWindowPos(ui.at({312, 320}));
+        ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 320 * frameH() / kFrameH}));
         ImGui::SetNextWindowSize(ui.size({400, 0}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
@@ -571,7 +599,7 @@ void ClassicMode::drawNetwork(UiContext& ui) {
     // A status strip at the bottom of the system panel: who we wait for, the
     // latest line. As narrow as the PBEM strip, so the planet panel's buttons
     // stay clear; the full lines show as a tooltip.
-    ImGui::SetNextWindowPos(ui.at({8, 712}));
+    ImGui::SetNextWindowPos(ui.at({8, frameH() - 56}));
     ImGui::SetNextWindowSize(ui.size({478, 50}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
@@ -619,7 +647,7 @@ void ClassicMode::drawPbem(UiContext& ui) {
     if (!turn) return;
     // A status strip at the bottom of the system panel: where End Turn saves
     // the orders, then where it saved them.
-    ImGui::SetNextWindowPos(ui.at({8, 712}));
+    ImGui::SetNextWindowPos(ui.at({8, frameH() - 56}));
     ImGui::SetNextWindowSize(ui.size({478, 50}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.035f, 0.09f, 0.75f));
@@ -658,7 +686,7 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     std::string where = "an adjacent sector";
     if (q.where.system.valid() && q.where.system.index() < s.galaxy.systems.size())
         where = std::format("{} ({}, {})", s.galaxy.system(q.where.system).name, q.where.sector.x, q.where.sector.y);
-    ImGui::SetNextWindowPos(ui.at({312, 290}));
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 290 * frameH() / kFrameH}));
     ImGui::SetNextWindowSize(ui.size({400, 150}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
@@ -696,7 +724,7 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
     std::vector<std::string> types = me.colonyTypes;
     if (std::find(types.begin(), types.end(), c.colonyType) == types.end()) types.insert(types.begin(), c.colonyType);
     const float h = 110.0f + 30.0f * float(types.size());
-    ImGui::SetNextWindowPos(ui.at({362, 384 - h * 0.5f}));
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 300) * 0.5f), frameH() * 0.5f - h * 0.5f}));
     ImGui::SetNextWindowSize(ui.size({300, h}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
@@ -744,7 +772,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
     constexpr const char* kPopup = "Combat##battlenotice";
     if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
     const Vec2 size{253, 150};
-    ImGui::SetNextWindowPos(ui.at({(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}));
+    ImGui::SetNextWindowPos(ui.at({(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f}));
     ImGui::SetNextWindowSize(ui.size(size));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags)) {
@@ -772,7 +800,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
 
 void ClassicMode::drawHandoff(UiContext& ui) {
     const game::Empire& e = ui.me();
-    ImGui::SetNextWindowPos(ui.at({312, 250}));
+    ImGui::SetNextWindowPos(ui.at({std::floor((frameW() - 400) * 0.5f), 250 * frameH() / kFrameH}));
     ImGui::SetNextWindowSize(ui.size({400, 230}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Next Player", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
@@ -817,7 +845,7 @@ void ClassicMode::render(gfx::Renderer2D& r, const FrameState& fs) {
     const Vec2 bottomRight = mapping_.fromFb({fw, fh});
     r.begin(Mat4::ortho2D(topLeft.x, bottomRight.x, topLeft.y, bottomRight.y), fs.frame, mapping_.scale);
     if (session_ && ui_ && !handoff_) main_.render(r, *ui_);
-    else r.rect(Rect{{mapping_.left, 0}, {mapping_.right, kFrameH}}, Color::hex(0x000000));
+    else r.rect(Rect{{mapping_.left, 0}, {mapping_.right, frameH()}}, Color::hex(0x000000));
     r.flush();
 }
 

@@ -126,7 +126,7 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     const std::string text = destroyedText(s, id);
     for (const Empire& x : s.empires)
         if (x.id == id || (x.alive && x.relation(id).contact)) {
-            ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text);
+            logGoto(ctx.log(x.id, LogCategory::Politics, "Empire Destroyed", text), LogGoto::None);
             addHistory(s, x.id, id, std::format("The {} was destroyed", effects::empireFullName(s.empire(id))));
         }
     // Intelligence projects aimed at it go; every treaty with it returns to "no contact".
@@ -139,7 +139,8 @@ void checkDestruction(TurnContext& ctx, EmpireId id) {
     for (const Empire& x : s.empires)
         if (x.alive && x.kind != PlayerKind::Neutral) left.push_back(x.id);
     if (left.size() == 1) {
-        ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on.");
+        logGoto(ctx.log(left.front(), LogCategory::Politics, "Last Empire Standing", "Every other empire has been destroyed. The game goes on."),
+                LogGoto::None);
         addHistory(s, left.front(), {}, "Every other empire has been destroyed");
     }
 }
@@ -184,11 +185,23 @@ std::string historyLine(uint32_t date, EmpireId other, std::string_view text) {
 }
 
 std::string logLine(uint32_t date, std::string_view title, std::string_view text) {
-    std::string flat(text);
-    std::replace(flat.begin(), flat.end(), '\n', ' ');
-    std::replace(flat.begin(), flat.end(), '\r', ' ');
-    return std::format("{:<9}{:<40}{}", dateText(date), title, flat);
+    // Each line break becomes one space: a CR LF pair, or the single LF our
+    // engine's texts break lines with (a lone CR stays as it is).
+    std::string flat;
+    flat.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
+            flat += ' ';
+            ++i;
+        } else {
+            flat += text[i] == '\n' ? ' ' : text[i];
+        }
+    }
+    // A title longer than 40 is followed by the one space only.
+    return std::format("{:<9}{:<40} {}", dateText(date), title, flat);
 }
+
+std::string logCopyHeader() { return std::format("{:<9}{:<41}{}", "Date", "Header", "Text"); }
 
 PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     PlayerRecords out;
@@ -202,7 +215,7 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     const Empire& me = s.empire(e);
     // The text copy of the whole log, rewritten (spec 05 §3.4).
     if (r.settingFlag("Create Log Text Files for Players", false) && !me.log.empty()) {
-        out.log.push_back(std::format("{:<9}{:<40}{}", "Date", "Title", "Text"));
+        out.log.push_back(logCopyHeader());
         out.log.push_back(std::string(78, '-'));  // a rule of 78 dashes (docs/spec/06 §6.1)
         for (const LogEntry& l : me.log) out.log.push_back(logLine(entryDate(s, l), l.title, l.text));
     }
@@ -322,8 +335,9 @@ void checkVictory(TurnContext& ctx, uint32_t date) {
             best = sc;
         }
     for (const Empire& e : s.empires) {
-        ctx.log(e.id, LogCategory::Misc, "Game Over",
-                std::format("This is the last turn: {}. The Scores window shows the final ranking.", reason));
+        logGoto(ctx.log(e.id, LogCategory::Misc, "Game Over",
+                        std::format("This is the last turn: {}. The Scores window shows the final ranking.", reason)),
+                LogGoto::None);
         addHistory(s, e.id, {}, std::format("The game ended: {}", reason));
     }
 }

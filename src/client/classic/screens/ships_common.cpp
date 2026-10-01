@@ -21,7 +21,7 @@ void drawSprite(ImDrawList* dl, const Sprite& s, ImVec2 p0, ImVec2 p1, ImU32 tin
 // Centers the next modal popup in the frame at a fixed frame size.
 void placePopup(UiContext& ui, Vec2 size) {
     ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 }
 
 constexpr ImGuiWindowFlags kPopupFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;

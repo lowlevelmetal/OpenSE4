@@ -221,7 +221,8 @@ void hullDetail(UiContext& ui, const ItemRef& item, DetailStyle st) {
     const std::string& style = ui.me().race.style;
     const Sprite pic = st == DetailStyle::Compact ? ui.art.shipMini(style, h) : ui.art.shipPortrait(style, h);
     beginHeader(ui, pic, st);
-    title(ui, h.code.empty() ? h.name : std::format("{} ({})", h.name, h.code));
+    // The hull Code appears only in the Log's combat rows, never here (spec 06 §7 Q18).
+    title(ui, h.name);
     row(ui, "Class", std::string(ruleset::displayName(h.type)), st);
     row(ui, "Tonnage", std::format("{} kT", h.tonnage), st);
     ImGui::EndGroup();
@@ -453,7 +454,7 @@ void ItemReportPopup::draw(UiContext& ui) {
         ImGui::OpenPopup("##itemreport");
         request_ = false;
     }
-    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSizeConstraints(ui.size({340, 60}), ui.size({340, 720}));
     if (ImGui::BeginPopup("##itemreport", ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         itemDetail(ui, item_, DetailStyle::Report);

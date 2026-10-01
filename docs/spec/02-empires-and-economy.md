@@ -560,7 +560,10 @@ system is added each turn to every colony of the owner there. Negative values do
 - Each 1M of population takes `Population Mass` kT of cargo.
 - You cannot load away a colony's last 1M.
 - Abandon Planet is allowed only at or below the Settings maximum. The player chooses
-  whether to scrap the facilities (with a refund) or leave them for a later owner.
+  whether to scrap the facilities (with a refund). The people leave and the colony's
+  anger returns to 25; the colony goes only when no facility is left, otherwise the
+  planet stays the owner's, empty, and nobody can colonize it (spec 06 §7 Q47,
+  confirmed: binary).
 
 **Death and defence**
 - Bombardment kills 1M for every `Damage Points To Kill One Population` points of damage.

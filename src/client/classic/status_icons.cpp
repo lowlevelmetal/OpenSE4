@@ -32,6 +32,15 @@ void cargoCells(const game::Rules& r, const game::GameState& s, const game::Carg
     if (c.totalPopulation() > 0) out.push_back(cell::kPopulation);
 }
 
+// An intact component with the Space Yard ability, whatever the vehicle's
+// status (a mothballed yard ship keeps its icon, §7 Q50).
+bool yardPart(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
+    const game::Design& d = s.design(v.design);
+    for (size_t i = 0; i < d.entries.size(); ++i)
+        if (game::entryIntact(r, s, v, i) && game::hasAbility(r.componentAbilities(d.entries[i].component), AbilityKind::SpaceYard)) return true;
+    return false;
+}
+
 bool damagedParts(const game::Vehicle& v) {
     return std::any_of(v.damage.begin(), v.damage.end(), [](int d) { return d > 0; });
 }
@@ -58,10 +67,18 @@ bool repairSourceHere(const game::Rules& r, const game::GameState& s, const game
 std::vector<int> vehicleStatusCells(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
     std::vector<int> out;
     const bool mothballed = v.status == game::VehicleStatus::Mothballed;
-    // 1. Supplies.
-    if (!mothballed && game::vehicleUsesSupply(r, s, v) && !game::vehicleHasUnlimitedSupply(r, s, v)) {
+    const bool cloaked = v.status == game::VehicleStatus::Cloaked;
+    const VehicleType type = game::vehicleType(r, s, v);
+    // 1. Supplies: out at 0, else low strictly below the warning level; not for
+    // mothballed ships, with no exception for ships that use no supply or have
+    // unlimited supply. A fighter group is low below a tenth of the level, and
+    // only while it holds a fighter (§7 Q54). Other unit groups carry no
+    // supplies, so they show neither (inferred).
+    const int64_t warning = r.setting("Supply Amount for Low Supply Warning", 1000);
+    if (!mothballed && (!game::isUnitType(type) || type == VehicleType::Fighter)) {
+        const bool fighters = type == VehicleType::Fighter;
         if (v.supply <= 0) out.push_back(cell::kNoSupply);
-        else if (v.supply < r.setting("Supply Amount for Low Supply Warning", 1000)) out.push_back(cell::kLowSupply);
+        else if (fighters ? v.count >= 1 && v.supply < warning / 10 : v.supply < warning) out.push_back(cell::kLowSupply);
     }
     // 2-3. Damage, and a repair source in the sector.
     if (damagedParts(v)) {
@@ -71,27 +88,30 @@ std::vector<int> vehicleStatusCells(const game::Rules& r, const game::GameState&
     // 4. Sentry first.
     if (!v.orders.empty() && v.orders.front().kind == game::OrderKind::Sentry) out.push_back(cell::kSentry);
     // 5. Cloaked.
-    if (v.status == game::VehicleStatus::Cloaked) out.push_back(cell::kCloaked);
-    // 6. A space yard, else repair.
-    const bool yard = game::vehicleHasSpaceYard(r, s, v);
+    if (cloaked) out.push_back(cell::kCloaked);
+    // 6. A working space yard (not cloaked; a mothballed yard ship still shows
+    // it), else repair (§7 Q50).
+    const bool yard = yardPart(r, s, v) && !cloaked;
     if (yard) out.push_back(cell::kSpaceYard);
     else if (game::hasAbility(game::vehicleAbilities(r, s, v), AbilityKind::ComponentRepair)) out.push_back(cell::kCanRepair);
     // 7-9.
     if (v.repeatOrders) out.push_back(cell::kRepeatOrders);
     if (v.minister) out.push_back(cell::kMinister);
     if (mothballed) out.push_back(cell::kMothballed);
-    // 10. Building: a yard that can work (not cloaked; inferred) with a non-empty queue.
-    if (yard && v.status != game::VehicleStatus::Cloaked && !v.queue.items.empty()) out.push_back(cell::kBuilding);
+    // 10. Building: not mothballed, a working yard, an item in the queue (held or not).
+    if (yard && !mothballed && !v.queue.items.empty()) out.push_back(cell::kBuilding);
     // 11. Cargo.
     cargoCells(r, s, v.cargo, out);
-    // 12. Remote mining: the first such miner of the owner in a sector with an uncolonized planet or asteroid field.
+    // 12. Remote mining: in a sector with an uncolonized planet or asteroid
+    // field, only the first object there with the ability, whatever its owner
+    // (in the game's vehicle order; §4.4, §7 Q50).
     if (remoteMiner(r, s, v)) {
         bool target = false;
         for (game::ObjectId p : game::planetsAt(s, v.location)) target = target || !s.colony(p);
         bool first = true;
         for (const game::Vehicle& o : s.vehicles) {
             if (o.id == v.id) break;
-            if (o.owner == v.owner && o.location == v.location && remoteMiner(r, s, o)) first = false;
+            if (o.location == v.location && o.count > 0 && remoteMiner(r, s, o)) first = false;
         }
         if (target && first) out.push_back(cell::kRemoteMining);
     }
@@ -132,9 +152,9 @@ std::vector<int> planetStatusCells(const game::Rules& r, const game::GameState& 
 std::vector<int> fleetStatusCells(const game::GameState& s, const game::Fleet& f) {
     std::vector<int> out;
     if (f.minister) out.push_back(cell::kMinister);
-    // Cloaked: any member (inferred).
+    // Cloaked: any member belonging to the fleet's owner (§4.4).
     for (game::VehicleId id : f.members)
-        if (const game::Vehicle* v = s.vehicle(id); v && v->status == game::VehicleStatus::Cloaked) {
+        if (const game::Vehicle* v = s.vehicle(id); v && v->owner == f.owner && v->status == game::VehicleStatus::Cloaked) {
             out.push_back(cell::kCloaked);
             break;
         }
