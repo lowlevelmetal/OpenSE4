@@ -2027,13 +2027,9 @@ rows.
     in between keep adding to it. A drone target is chosen at set-up for every drone
     group in space, at each launch, when the drone's target has left the battle (in the
     drone's own planning) and when the target changes owner.
-    The engine differs: it uses the first weapon's target (else the main target), so
-    it neither skips candidates already at their limit nor applies the Anti-Planet and
-    Anti-Ship rule; it does not add the drone's warhead damage to its target; and it
-    clears the totals at each phase of the drones' side instead of as above. Its
-    candidates (ships, bases, planets and satellite groups) are the original's. It must
-    take the drone target as above, keep each piece's two totals between choices and
-    clear them only as above.
+    The engine follows this since 2026-10-01 (`Battle::chooseDroneTarget`,
+    `chooseTargets`): every piece keeps its two totals between choices, cleared only as
+    above, and a drone target's first total grows by the group's warhead damage.
 81. **Ram's approach square.** "The first found on ties" (§16.1): in what order are the
     boxes scanned, and is the rammer's own square free? The engine scans each box column
     by column from the left, each column from the top, like the other scans, and treats
@@ -2071,10 +2067,9 @@ rows.
     to that range, as the engine does. The firing choice takes candidates within the
     largest such range among the piece's ready weapons, and gives each weapon only
     candidates within its own such range, so it never reaches past 20 (confirmed:
-    binary; §16 step 1). The engine differs in the firing choice: it must use the same
-    capped range there instead of each weapon's whole reach. (Fire by hand is not
-    limited this way: a weapon fires whenever it does damage at the distance, spec 03
-    §19 Q42.)
+    binary; §16 step 1). The engine follows this since 2026-10-01: the firing choice
+    uses the same capped range. (Fire by hand is not limited this way: a weapon fires
+    whenever it does damage at the distance, spec 03 §19 Q42.)
 85. **The strategy for planets.** §3 step 8 has a planet use "the strategy its empire
     chose for planets". Where is that choice made, and what is it by default? The engine
     has no such setting: a planet uses its empire's first strategy, and in the combat
@@ -2094,5 +2089,4 @@ rows.
     stalemate (also when nobody survives). So in a minefield-only battle the moving
     empire gets a victory when it is alone in the sector, and a stalemate when an empire
     it is not hostile to also had pieces there (confirmed: binary; §15 "The verdict").
-    The engine differs: it counts only hostile empires' survivors; it must count every
-    other empire's.
+    The engine follows this since 2026-10-01 (`Battle::finish`).
