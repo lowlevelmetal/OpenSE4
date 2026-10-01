@@ -1069,9 +1069,11 @@ Human players claim systems by hand; their home system starts claimed.
 6. **Mega Evil Empire.** Add `Mega Evil Empire` if X is the MEE as this empire sees it
    (§7.6).
 7. **Team Mode.** −20 toward an empire on our side, +20 toward one on the other side.
-8. **Promise.** If we accepted X's "stop hostile actions" demand, −20, once. Accepting
-   records the promise only half the time, and such records are forgotten every 10
-   turns.
+8. **Promise.** −20 for a promise about X, once. Accepting a "stop hostile actions
+   against an empire" demand records a promise about the empire the demand names,
+   whoever sent it (only half the time, §7.4). Each accepted demand adds a promise, and
+   each turn uses up one promise about X, so two promises about X give −20 on two turns.
+   All promises are forgotten every 10 turns (confirmed: binary).
 9. **Attack locations.** Count N:
    - +1 for each colony of X, in a system we have explored, on a planet we could colonize.
      That means we have the colonization technology for its planet type, and the
@@ -1328,6 +1330,8 @@ Team mates are always accepted, and team enemies always refused.
     for the matching decision above;
   - attack an empire in a system, or attack a planet: that system becomes an attack target;
   - stop espionage or sabotage: intelligence projects against the requester are cancelled;
+  - stop hostile actions against an empire: a promise about the empire the demand names,
+    not the requester (§7.3 term 8);
   - stop attacks in a system: nothing happens.
 - These queues are cleared every 10 turns.
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
@@ -2355,6 +2359,23 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 - Players reconnect by player name, and the host then resends the current turn.
 - There is a broadcast chat.
 - Resuming means loading the game as host.
+- **Computer players' messages are delivered twice** (confirmed: binary). In a
+  simultaneous game every message a computer player sends during the host's start-of-turn
+  step (§8 step 4) takes effect at once and is also kept in that empire's outbox. Step 2
+  of the next turn processing delivers every empire's outbox, then empties it. The outbox
+  is saved only in a player's orders file, never in the game file. An e-mail or
+  shared-folder host quits after it processes a turn and loads the game file again for
+  the next one, and a Hotseat game reloads the game file after each processing, so their
+  outboxes are always empty and each message arrives once. A TCP/IP host keeps the game
+  in memory from turn to turn, so at its next step 2 it delivers each computer player's
+  messages of the turn before a second time. Each lands in the recipient's log again,
+  dated the date before it advances (the same date as the first delivery), and its effect
+  is applied again: a treaty accepted, a treaty broken or a declaration of war sets the
+  treaties again, and a surrender hands over whatever the surrendered empire still owns.
+  A repeated acceptance of a trade, gift or tribute moves items only when the newest
+  political message from the other empire in the accepting empire's log, among those
+  dated the turn before or later, is an offer of that kind; it is then that newer offer
+  that is carried out. The offer accepted the first time is too old to be found.
 - The stock ports are UDP 6716 for control and TCP 6720 for files.
 
 ### 9.5 Mapping to OpenSE4
@@ -2938,3 +2959,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     their current sector. Satellites, mines, planets and other objects do nothing, and
     troops are never in space. The step is part of every empire's end-of-turn processing,
     so it runs in both turn styles (confirmed: binary, §8 step 16). The engine matches.
+47. **Promises to stop hostile actions** (§7.3 term 8, §7.4): **Answer:** an accepted
+    "stop hostile actions against an empire" demand records a promise about the empire the
+    demand names, not about the requester. Each promise gives −20 toward that empire once,
+    one promise per turn, and all are forgotten every 10 turns (confirmed: binary). The
+    computer player never sends this demand itself (§7.4 "Demands the AI starts"), so it
+    comes from human players, whose message names the empire. The engine differs: it sets
+    a single promise flag on the requester, so the −20 goes to the requester even when the
+    demand names another empire, and a second promise before the first is used adds
+    nothing. It must record the promise about the named empire and count promises instead
+    of setting a flag.
+48. **Computer players' messages in a TCP/IP game** (§9.4): **Answer:** in a simultaneous
+    game a computer player's messages take effect when sent and are also kept in its
+    outbox, which step 2 of the next turn processing delivers. Only a TCP/IP host keeps
+    the outbox from one turn to the next (an e-mail or shared-folder host quits after the
+    turn and Hotseat reloads the game file), so a TCP/IP host delivers every computer
+    player's messages a second time, with the effects listed in §9.4 (confirmed: binary).
+    The engine differs for TCP/IP games only: it marks each message delivered and never
+    delivers one twice, in any mode, which matches the original's e-mail, shared-folder
+    and Hotseat hosts. Reproducing the TCP/IP double delivery would mean delivering the
+    computer players' messages of the turn before again at step 2 of a network host's turn
+    processing; whether to copy this fault of the original is the project's choice.
