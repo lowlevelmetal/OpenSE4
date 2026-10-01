@@ -106,15 +106,13 @@ bool computerControlled(const game::GameState& s, game::EmpireId e) {
     return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != game::PlayerKind::Human;
 }
 
+// The empire's flag (in a simulation the side's numbered box, spec 04 §17) and its name.
 void flagAndName(UiContext& ui, const game::GameState& s, game::EmpireId e) {
     if (!e.valid() || e.index() >= s.empires.size()) {
         dimText("Nobody");
         return;
     }
-    if (Sprite flag = ui.art.flag(s.empire(e).race.style, false)) {
-        image(ui, flag, {20, 14});
-        ImGui::SameLine(0, ui.px(5));
-    }
+    if (ownerMark(ui, s, e, {20, 14})) ImGui::SameLine(0, ui.px(5));
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, e)), "%s", s.empire(e).name.c_str());
 }
 

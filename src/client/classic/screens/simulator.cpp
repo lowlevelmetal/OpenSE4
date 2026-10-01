@@ -113,7 +113,8 @@ bool begin(UiContext& ui, SimulatorSetup setup, bool tactical, std::string& mess
     game::combat::Simulation sim = game::combat::buildSimulation(ui.rules(), ui.state(), setup);
     std::vector<game::EmpireId> players = sim.players;
     std::vector<game::EmpireId> sides = sim.sides;
-    auto battle = std::make_unique<game::combat::TacticalBattle>(game::combat::startSimulation(ui.rules(), std::move(sim)));
+    // A strategic simulation is fought in the Strategic Combat window as it is shown (spec 06 §1.10.4, §1.10.5).
+    auto battle = std::make_unique<game::combat::TacticalBattle>(game::combat::startSimulation(ui.rules(), std::move(sim), !tactical));
     if (!battle->started()) {
         message = "Nobody on the field can see an enemy.";
         return false;

@@ -467,7 +467,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
     return sim;
 }
 
-TacticalBattle startSimulation(const Rules& r, Simulation sim) {
+TacticalBattle startSimulation(const Rules& r, Simulation sim, bool stepped) {
     // No minefields in the simulator: nobody entered, so no mines strike. Only
     // side 1 gets hand control back when Auto is released (spec 04 §4).
     TacticalBattle::Setup setup{sim.where, std::vector<VehicleId>{}, sim.players};
@@ -475,6 +475,7 @@ TacticalBattle startSimulation(const Rules& r, Simulation sim) {
     setup.interference = sim.interference;
     setup.disruption = sim.disruption;
     setup.planetStrategies = sim.planetStrategies;
+    setup.stepped = stepped && sim.players.empty();
     return TacticalBattle(r, std::move(sim.state), std::move(setup));
 }
 

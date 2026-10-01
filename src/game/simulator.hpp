@@ -143,7 +143,9 @@ struct Simulation {
 // The sandbox for a valid setup (see simulatorProblem). `real` is not changed.
 Simulation buildSimulation(const Rules& r, const GameState& real, const SimulatorSetup& setup);
 // The battle, ready to fight: tactical for the player's sides (none: strategic,
-// already fought to the end; call finish() for the results).
-TacticalBattle startSimulation(const Rules& r, Simulation sim);
+// already fought to the end, or with `stepped` set up and stopped before combat
+// turn 1 for the Strategic Combat window to fight phase by phase,
+// TacticalBattle::Setup::stepped; call finish() for the results).
+TacticalBattle startSimulation(const Rules& r, Simulation sim, bool stepped = false);
 
 } // namespace opense4::game::combat
