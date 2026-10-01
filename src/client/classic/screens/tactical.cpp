@@ -43,7 +43,7 @@ using game::combat::TacticalWeapon;
 using OK = TacticalOrder::Kind;
 using PieceKind = game::CombatPiece::Kind;
 
-constexpr float kStatusH = 46;       // frame pixels
+[[maybe_unused]] constexpr float kStatusH = 46;  // frame pixels
 constexpr float kMapW = 676;
 constexpr float kSideX = 684;
 constexpr float kSideW = 310;

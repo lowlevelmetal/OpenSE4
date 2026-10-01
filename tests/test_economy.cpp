@@ -2059,7 +2059,7 @@ TEST_CASE("economy: every 10th turn: planet values sum, conditions multiply") {
     p.value = {1001, 0, 50};
     s.turn = 59;
     populationTurn(*r, s);
-    CHECK(p.value == std::array<int, 3>{pctTrunc(1001, 105), 0, pctTrunc(50, 105)});
+    CHECK(p.value == std::array<int, 3>{static_cast<int>(pctTrunc(1001, 105)), 0, static_cast<int>(pctTrunc(50, 105))});
 }
 
 // ---- Reports and determinism --------------------------------------------------------------------------

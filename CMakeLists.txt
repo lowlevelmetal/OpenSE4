@@ -44,6 +44,9 @@ include(Shaders)
 add_library(opense4_warnings INTERFACE)
 if(MSVC)
     target_compile_options(opense4_warnings INTERFACE /W4 /permissive- /utf-8)
+    # The C library's getenv, fopen and the like are standard: no "use the _s
+    # variant" deprecation warnings (C4996).
+    target_compile_definitions(opense4_warnings INTERFACE _CRT_SECURE_NO_WARNINGS)
     if(OPENSE4_WARNINGS_AS_ERRORS)
         target_compile_options(opense4_warnings INTERFACE /WX)
     endif()

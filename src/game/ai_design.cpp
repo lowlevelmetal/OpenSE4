@@ -193,7 +193,7 @@ public:
 
 private:
     const Rules& r_;
-    const GameState& s_;
+    [[maybe_unused]] const GameState& s_;
     const Empire& e_;
     const DesignTemplate& t_;
     const ruleset::VehicleSize& hull_;
