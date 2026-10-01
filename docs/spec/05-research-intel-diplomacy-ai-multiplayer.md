@@ -1034,7 +1034,9 @@ territory §7.2 uses):
 - except the home system of any computer empire, and systems we agreed to leave by
   accepting a "remove ships", "remove colonies" or "leave planet" demand (§7.4).
 
-Human players claim systems by hand; their home system starts claimed.
+Human players claim systems by hand; their home system starts claimed. The step runs
+for every empire whose Politics minister is on, so a human who turns that minister on
+gets the same claims each turn (spec 06 §7 Q47, confirmed: binary).
 
 **Per-turn update** toward empire X, in this order:
 

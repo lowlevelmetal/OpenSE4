@@ -1913,10 +1913,11 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     position and the scroll position come back too. Full rules in §4.1, which is also
     corrected: a combat entry lists each object's damage (a percentage, Dead or Taken),
     not Start and Lost counts (confirmed: binary).
-    Our client follows this, with the choices of Q41–Q48. It still differs: messages from
-    other empires are rows of their own (taken from the game's messages, listed before
-    the log entries) and keep our layout whatever `Use Old Log Political Message
-    Display` says; refused orders are rows of their own too.
+    Our client follows this, with the answers of Q41–Q43: messages from other empires are
+    ordinary "Message" entries in the order they arrived, and a combat entry lists each
+    piece's damage fixed when the battle ended. It still differs: a message's details keep
+    our layout whatever `Use Old Log Political Message Display` says; commands a network
+    or play-by-e-mail host refused follow the entries as Misc rows (Q71).
 12. **Save folder contents.** **Answer:** see §6.1: the folders created at start-up; the
     names and places of saves, maps, empires and autosaves (`AutoSav<d>.gam`); the
     per-player turn saves; the `.plr`, `.trn` and `.cmb` names; the `History/plr_<N>_*`
@@ -1925,8 +1926,8 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     Our client names autosaves `AutoSav<d>.gam` and writes `History/plr_<N>_*.txt` with
     the layouts above, copies them next to each Save Game and autosave and restores them
     on loading. It differs: its saves and `History/` live in the user-data folder, not
-    the install, and keep our own save format (fine, §6); the log copy's header words are
-    ours (Q55).
+    the install, and keep our own save format (fine, §6). The log copy's layout matches
+    (Q55).
 13. **Status icons.** **Answer:** drones in cargo use cell 37, not 34. The executable
     draws 23 cells and never the other 15. §4.4 lists each cell, its condition and the
     drawing order for ships, planets and fleets, including cell 36 (remote mining),
@@ -1987,9 +1988,9 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
     in the Help window belongs to the Weapon Mount report and shows the mount's code
     (confirmed: binary). Captures in the manual that show the code elsewhere come from an
     older version (inferred); nothing remains open.
-    Our client follows the serial rule (`game::nextVehicleName`), and its ship-size report
-    shows the hull name without the code. It differs: its Log combat rows lack the
-    "(<Code>)" suffix (Q43).
+    Our client follows the serial rule (`game::nextVehicleName`), its Log combat rows
+    carry the "(<Code>)" suffix (Q43), and its ship-size report shows the hull name
+    without the code.
 19. **Planets filters.** What does Coloniz\Empty add to Colonizable, which treaties make
     a colony an ally one, and what makes a planet Special? **Answer:** Coloniz\Empty means
     the planet itself is not colonized (not a test on the system). Ally means
@@ -2269,12 +2270,13 @@ something open; all are now settled from the executable:
       location; maximum ships reached; an empire destroyed; a password reset.
 
     (confirmed: binary)
-    Our client differs: it picks the window by category. It needs a target per kind of
-    entry as above: Construction entries never open Construction Queues; technology
-    trades open Research; planet, vehicle, star-chart and mood entries go to their
-    location; lost contact opens Empires; failed intelligence projects have no Goto;
-    Empire Options and Designs are never targets; a location entry without a system
-    leaves the Log open.
+    Our client follows this: each entry keeps the target it was made with
+    (`game::LogGoto`), Goto opens that window over the Log or shows the location, and a
+    location entry without a system leaves the Log open. It differs where our engine's
+    entries have no exact counterpart: a trade, gift or tribute is one entry for the whole
+    package, whose target follows the first kind of item it holds (Q70); declarations of
+    war, refused treaties, missing package items and cancelled trades open Empires
+    (inferred); first contact has no location, so its Goto does nothing.
 42. **Log order and selection.** Messages from other empires come first, then the log
     entries in the order they were made, then the orders the turn refused; a filter click
     selects the first row. Is that the original's order, and what does a filter click
@@ -2289,11 +2291,12 @@ something open; all are now settled from the executable:
     When the stored category has no entries, the window opens on All and stores All. The
     stored selection is the entry's index in the whole log, not its row in the filtered
     list (§4.1) (confirmed: binary).
-    Our client differs: it lists messages first, as rows titled "<empire>: <message
-    type>" built from the message list, then the log entries; refused orders are client
-    notices titled "Order not carried out", added at the end without a Goto; when it falls
-    back to All on opening it does not store All; it stores the row position in the
-    filtered list. The filter click matches.
+    Our client follows this: each delivered message is a "Message" entry (it also names
+    the message, for the details and Send Reply), the Log lists only entries in the
+    order they were made, stores the entry's index in the whole log and, falling back to
+    All, stores All. It differs only for commands a network or play-by-e-mail host
+    refused, which have no counterpart in the original: they follow the entries as Misc
+    rows "Order not carried out" without a Goto (Q71).
 43. **Log damage of planets.** Our battle records keep no planet hit points, so a planet
     that stands shows "0%" when untouched and "Hit" otherwise; ships and bases show their
     damage now, unit groups the share of their units lost. What does the original show
@@ -2305,10 +2308,10 @@ something open; all are now settled from the executable:
     Rows list only the pieces present at the start; ships and bases add "(<hull Code>)"
     to the name; "Dead" and "Taken" are found by name among the survivors; all of it is
     white. Formula and details in §4.1 (confirmed: binary).
-    Our client differs: planets show "0%" or "Hit"; ships show their damage at viewing
-    time, truncated; unit groups show the share of units lost; no "(Code)" suffix; Dead is
-    red and Taken yellow; names start at 16 px instead of 12; it may list pieces that were
-    not there at the start.
+    Our client follows this: the battle record keeps, for each piece present at the
+    start, the damage fixed when the battle ended and who held it then
+    (`CombatPiece::damage`, `survivor`), and the Log reads Dead and Taken from them by
+    name. No difference is known.
 44. **Facility markers.** We read the letters as: R Supply Generation, S Spaceport, Y Space
     Yard; Ca, Cc, Cv the planet atmosphere, conditions and value changers; St, Ft ship and
     fleet training; Rc Component Repair; Rr Resource Reclamation; Sst, Sft the system-wide
@@ -2402,12 +2405,9 @@ something open; all are now settled from the executable:
       a colony is already there). In a turn-based game this happens at once.
 
     (confirmed: binary)
-    Our client and engine differ: the engine claims the system when a human with the
-    option on founds a colony (the option should do nothing); the territory pass runs for
-    every computer empire whatever its ministers and never for humans (it should run for
-    exactly the empires whose Politics minister is on); Abandon Planet always removes the
-    colony and keeps the facilities for the next colonizer (when facilities remain, the
-    colony should stay with its owner, empty, and nothing should be handed on).
+    Our engine follows this: founding a colony claims nothing, the territory pass claims
+    for exactly the empires whose Politics minister is on, and an abandoned colony that
+    keeps facilities stays with its owner, empty, with anger 25.
 48. **Smaller choices.** The planet report's Time Remaining uses the Construction
     Queues' years ("0.3 Years", "On Hold", "Never"). "Skip ships under construction"
     skips nothing: our ships appear finished, with no Under Construction status. Save
@@ -2436,9 +2436,9 @@ something open; all are now settled from the executable:
     Our client follows Time Remaining and Under Construction in the planet and ship
     reports, the Colonies list and the Construction Queues rows ("0.3 years", "0.1 years"
     for 0 turns, "Never", "On Hold", nothing for an empty queue; " x N" for any item;
-    "Upg. <facility>"). It differs: Save Empire does not ask about designs and saves none
-    (to match, our empire file needs designs). "Skip ships under construction" skipping
-    nothing already matches.
+    "Upg. <facility>"). Save Empire asks about the designs first and our empire file
+    keeps them on Yes; it differs only in having no file picker (Q72). "Skip ships under
+    construction" skipping nothing already matches.
 
 Questions 49–55 were our own choices for the main window, maps, art, sound and files;
 all are now settled from the executable:
@@ -2569,9 +2569,10 @@ all are now settled from the executable:
     (§6.1). Resume Game loads that path when the file exists and starts a background
     track; otherwise it does nothing. Load Game from the Game Menu does not change the
     music (confirmed: binary).
-    Our client differs: only Save Game sets the last saved game; autosaves and turn
-    saves should too (copying the replay temp-file quirk is not needed, since our replay
-    writes no such file). The music after an in-game load matches.
+    Our client follows this: every successful save of a game, Save Game and every
+    autosave (also a hosting player's), becomes the last saved game; our movement-log
+    replay writes no temporary save, so that quirk does not arise. The music after an
+    in-game load matches.
 54. **Low supply of fighter groups.** Do the Sentry button and the low-supply icon of a
     fighter group use a tenth of `Supply Amount for Low Supply Warning`, as Sentry's own
     end does? Our client lights the button by a tenth and draws the icon by the full
@@ -2587,9 +2588,8 @@ all are now settled from the executable:
     the text with each CR LF pair turned into one space; CR LF line ends; the file is
     rewritten only when the setting is on and the log is not empty (§6.1) (confirmed:
     binary).
-    Our client differs (the engine's log writer): "Title" instead of "Header" and "Text"
-    at column 50; no separating space before the text, so it starts at column 50 instead
-    of 51; every CR and every LF becomes a space instead of one space per CR LF pair.
+    Our engine's log writer matches. Our engine's texts break lines with a single LF,
+    which it turns into one space like a CR LF pair.
 
 Raised while implementing the answers above (inferred, open):
 
@@ -2626,3 +2626,22 @@ Questions 60–64 are choices of ours made while implementing the fonts, pointer
 64. **The coordinate line's text.** Ours reads "Coordinates (3, 4)   Range: 2". What
     separates the parts in the original, and is the range shown when the selected sector
     is the one under the pointer (Range 0)?
+
+Our own choices made while implementing Q41–Q55 for the Log, the engine and Save Empire
+(inferred, open):
+
+70. **One entry per package.** Our engine logs a completed trade, gift or tribute as one
+    entry for the whole package, where the original makes one entry per item. Its Goto
+    follows the first of these the package holds: technology (Research), then resources,
+    treaties or communication channels (Empires), else planets, vehicles and star charts
+    (the first planet's or vehicle's location). Does the original's entry per item use
+    these targets, and in what order are the entries made?
+71. **Refused commands.** A network or play-by-e-mail host can refuse a command that the
+    player's client accepted; the original has no such case. Ours lists each one after
+    the turn's entries as a Misc row "Order not carried out" without a Goto, not stored in
+    the empire's log. Should they become ordinary log entries?
+72. **Save Empire.** Ours writes the empire file under the empire's name in our own
+    folder, without the original's file picker. Designs come back in a new game after its
+    starting designs, renamed when another design has their name, with the obsolete flag
+    they had and the first combat strategy; designs whose hull, components or mounts the
+    data set lacks are left out with a warning. Does the original keep the strategy?

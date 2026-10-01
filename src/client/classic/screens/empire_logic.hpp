@@ -140,24 +140,29 @@ inline constexpr int kLogCategories = int(game::LogCategory::Misc) + 1;
 
 // The filter the Log opens with: the one stored with the empire
 // (InterfaceOptions::logFilter: 0 All, else the category + 1), or All when
-// this turn has no entry of that category. `counts` holds the entries per category.
+// this turn has no entry of that category (the window then stores All).
+// `counts` holds the entries per category.
 uint8_t logOpeningFilter(uint8_t stored, const std::vector<int>& counts);
-// The row the Log opens on: the stored position when the filtered list has
-// it, else the first row; -1 for an empty list.
-int logOpeningRow(int32_t stored, size_t rows);
+// The row the Log opens on (spec 06 §4.1, §7 Q42, confirmed: binary): the
+// stored selection is an entry's index in the empire's whole log
+// (InterfaceOptions::logPosition); the row of the filtered list that shows
+// that entry, else the first row; -1 for an empty list. `shown` lists the
+// log index of each row.
+int logOpeningRow(int32_t stored, const std::vector<int32_t>& shown);
 
-// Windows Goto opens over the Log for an entry without a location (spec 06
-// §4.1). Which entries name which window is not settled: we take it from the
-// entry's category (inferred, spec 06 §7).
+// Windows Goto opens over the Log (game::LogGoto; spec 06 §4.1, §7 Q41).
 enum class LogWindow : uint8_t { ConstructionQueues, Research, Intelligence, EmpireOptions, Designs, Empires };
-std::optional<LogWindow> logWindowTarget(game::LogCategory c);
+// The window of a window target; none for None and Location.
+std::optional<LogWindow> logWindowTarget(game::LogGoto target);
 
-// The Combat Forces / Damage list of a combat entry (spec 06 §4.1): for each
-// empire in the battle a header row, then one row per ship, unit group and
-// planet with its damage as a percentage, "Dead" (destroyed) or "Taken"
-// (captured). Ships and bases left in the game show their damage now; unit
-// groups the share of their units lost; planets the share of their hit points
-// the record cannot give, so "0%" untouched and "Hit" otherwise (inferred).
+// The Combat Forces / Damage list of a combat entry (spec 06 §4.1, §7 Q43,
+// confirmed: binary): for each empire in the battle a header row, then one
+// row per piece of that empire present when the battle began, in setup order
+// (CombatPiece::damage >= 0: no seekers, neutral obstacles or units launched
+// during the battle). A ship or base reads "<name> (<hull Code>)". The damage
+// is the percentage fixed at the battle's end; a piece whose name is not
+// among its empire's survivors is "Taken" when the name is among another
+// empire's survivors, else "Dead".
 struct CombatDamageRow {
     game::EmpireId empire;
     bool header = false;        // the empire's own row (flag and name)

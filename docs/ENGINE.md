@@ -17,7 +17,7 @@ player / AI / network ─> game::Command ────┘         │
 |---|---|
 | `types.hpp` | Ids, `Resources`, treaties, moods, sight types, characteristics |
 | `galaxy.hpp` | Systems, space objects, warp links, `Location` (system + sector) |
-| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records, facilities left on abandoned planets, options |
+| `state.hpp` | The whole game: empires (race, research, intel, relations, knowledge, lists, Empire Options), colonies, designs, vehicles, fleets, messages, pending events, combat records (with each piece's damage at the end, for the Log), options |
 | `rules.hpp` | `Rules`: the loaded data set plus caches (parsed abilities, tech gates, settings with defaults, race presets) |
 | `abilities.hpp` | The closed list of ability identifiers used by the data, parsed once |
 | `design.hpp` | Mounts, design validation, unique design names and statistics, movement points, supply, cargo, and generated starting designs |

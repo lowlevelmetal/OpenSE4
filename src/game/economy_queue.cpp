@@ -339,8 +339,10 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             if (isShipOrBase(r.hull(d.hull).type)) {
                 // At the ship limit nothing is built; the progress is already spent (confirmed: binary).
                 if (shipCount(r, s, e) >= s.options.maxShipsPerPlayer) {
-                    ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name),
-                            "The empire has reached its limit on ships.", q.location);
+                    // No Goto for the ship limit (spec 06 §7 Q41).
+                    logGoto(ctx.log(e, LogCategory::Construction, std::format("{} cannot build {}", where, d.name),
+                                    "The empire has reached its limit on ships.", q.location),
+                            LogGoto::None);
                     return Outcome::Blocked;
                 }
                 const DesignId design = item.design;
