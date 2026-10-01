@@ -72,7 +72,13 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // Research, Intelligence and the construction ministers. The queues need
     // no refresh of their own: their rates are worked out when they run
     // (inferred).
-    if (ministers) applyCommands(ctx, e, ai::planEconomyStep(r, s, e));
+    // The units reserve the vehicle list applies is what the nearest empire
+    // before it left; in a turn-based game its own start-of-turn step has
+    // just reset it to 0 (spec 05 §7.5 "Units file").
+    if (ministers) {
+        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0));
+        if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
+    }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
     // OpenSE4 keeps every empire's in the save), and for a human player the
     // lines of its statistics, history and log text files (TurnResult::records).

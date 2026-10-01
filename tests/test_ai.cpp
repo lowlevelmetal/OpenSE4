@@ -2530,6 +2530,34 @@ TEST_CASE("ai: Construction_Units rows fill the cargo of full colonies whose que
     CHECK(p.dropped.empty());
 }
 
+TEST_CASE("ai: the units reserve is what the nearest acting empire's units step left, 0 without a units file") {
+    TempTree t("reserve");
+    t.write("Ai/Default_AI_Construction_Units.txt", "Percentage of Resources To Reserve For Unit Construction := 25\n");
+    const Rules withFile{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 3, 0, 10, withFile);
+    CHECK(ai::unitReserveLeft(withFile, s.empire(EmpireId{0u})) == 25);
+    CHECK(ai::unitReserveLeft(engineRules(), s.empire(EmpireId{0u})) == 0);
+    // An acting empire's units step sets it (to 0 without a units file), an
+    // empire whose ministers do not act leaves it alone.
+    TurnContext ctx{withFile, s, {}, {}, {}};
+    empireEndOfTurn(ctx, EmpireId{0u}, true);
+    CHECK(ctx.unitReserve == 25);
+    GameState g = computerGame(8, 3, 0, 10);
+    TurnContext plain{engineRules(), g, {}, {}, {}};
+    plain.unitReserve = 25;
+    empireEndOfTurn(plain, EmpireId{1u}, false);  // ministers not acting
+    CHECK(plain.unitReserve == 25);
+    empireEndOfTurn(plain, EmpireId{1u}, true);   // acting, no units file
+    CHECK(plain.unitReserve == 0);
+    // A human whose Ship Construction minister is off leaves it alone too.
+    g.empire(EmpireId{2u}).kind = PlayerKind::Human;
+    g.empire(EmpireId{2u}).ministerAll = false;
+    g.empire(EmpireId{2u}).ministers = ministerBit(Minister::Research);
+    plain.unitReserve = 25;
+    empireEndOfTurn(plain, EmpireId{2u}, true);
+    CHECK(plain.unitReserve == 25);
+}
+
 TEST_CASE("ai: a random player's planet type and atmosphere: every pair but a Gas Giant without atmosphere") {
     TempTree t("environment");
     t.write("Pictures/Races/Floater/Floater_AI_General.txt", "Name := Floater\nPlanet Type := Gas Giant\nAtmosphere := None\n");

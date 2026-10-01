@@ -168,6 +168,7 @@ public:
     int difficulty = kDifficultyMedium;
     Rng rng;
     uint32_t date = 0;      // the date the ministers see (aiDate, spec 05 §7.5 "The date")
+    int64_t unitReserve = 0;  // the units reserve the vehicle list applies (ai::unitReserveLeft)
     bool neutral = false;
     std::vector<int64_t> scores;   // politicalScores
     Situation sit;

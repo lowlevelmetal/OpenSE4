@@ -79,7 +79,20 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
 std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e);
+// `unitReserve`: the percentage the vehicle list holds back for units, which
+// the turn passes on (the reserve quirk of spec 05 §7.5 "Units file"; see
+// unitReserveLeft).
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0);
+// The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the
+// reserve is one value shared by all empires. Each empire's start-of-turn AI
+// step resets it to 0; the units step of every empire whose Ship
+// Construction minister acts sets it to its units file's `Percentage of
+// Resources To Reserve For Unit Construction`, or 0 without a units file
+// (this function); an empire whose ministers do not act leaves it alone. So
+// in a simultaneous game an empire's vehicle list applies the value left by
+// the nearest empire before it whose units step ran; in a turn-based game,
+// and with the stock install, it is always 0.
+int64_t unitReserveLeft(const Rules& r, const Empire& e);
 // Orders for a human empire's active ministers (both groups): the global
 // ministers switched on in Empire::ministers take over their area, the
 // individual ones act on the colonies and vehicles whose minister flag is on.
