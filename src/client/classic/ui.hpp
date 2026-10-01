@@ -342,6 +342,14 @@ private:
     float buttonH_ = 28.0f;
 };
 
+// The Tactical Combat and Combat Replay title strip (spec 06 §2.1.1, §5.4):
+// "Location", "Turn" and "Empires" (label blue) with their values (white) at
+// the layout's places, the empires' large flags 28 px apart from the
+// layout's x (6 of them on a frame narrower than 1024, else 10), the flag of
+// the empire whose phase it is (`phase`, or -1) framed in yellow.
+void combatTitleStrip(UiContext& ui, const Dialog& d, std::string_view location, std::string_view turn, const std::vector<std::string>& flagStyles,
+                      int phase);
+
 // A classic text button drawn at the cursor: 1 px outline and caption in the
 // button blue. `style` 0 plain, 1 tab (chamfer, lamp when on), 2 check box.
 bool classicButton(const Painter& p, const char* label, Vec2 frameSize, int style = 0, bool on = false, bool enabled = true);

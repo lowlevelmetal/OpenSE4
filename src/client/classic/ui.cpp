@@ -246,6 +246,33 @@ bool classicButton(const Painter& ui, const char* label, Vec2 frameSize, int sty
     return clicked && enabled;
 }
 
+void combatTitleStrip(UiContext& ui, const Dialog& d, std::string_view location, std::string_view turn, const std::vector<std::string>& flagStyles,
+                      int phase) {
+    const TitleStrip& t = layoutGeometry().tacticalTitle;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImFont* body = ui.fonts.medium ? ui.fonts.medium : ImGui::GetFont();
+    const float size = ui.fontPx(kTextSize);
+    // Each text stops short of the next one (ours: a long name would run over it).
+    auto text = [&](float x, float until, ImU32 color, std::string_view str) {
+        dl->PushClipRect(d.at({x, 4}), d.at({until - 4, 31}), true);
+        dl->AddText(body, size, d.at({x, 9 + kTextLead}), color, str.data(), str.data() + str.size());
+        dl->PopClipRect();
+    };
+    text(t.location, t.locationValue, imColor(palette::kLabel), "Location");
+    text(t.locationValue, t.turn, IM_COL32_WHITE, location);
+    text(t.turn, t.turnValue, imColor(palette::kLabel), "Turn");
+    text(t.turnValue, t.empires, IM_COL32_WHITE, turn);
+    text(t.empires, t.flags, imColor(palette::kLabel), "Empires");
+    const size_t room = frameW() < 1024.0f ? 6 : 10;
+    for (size_t i = 0; i < flagStyles.size() && i < room; ++i) {
+        const Vec2 at{t.flags + 28.0f * float(i), 7};
+        if (const Sprite flag = ui.art.flag(flagStyles[i], true))
+            dl->AddImage(ImTextureRef(static_cast<ImTextureID>(flag.tex.value)), d.at(at), d.at(at + Vec2{26, 18}), {flag.uv.min.x, flag.uv.min.y},
+                         {flag.uv.max.x, flag.uv.max.y});
+        if (int(i) == phase) dl->AddRect(d.at(at - Vec2{1, 0}), d.at(at + Vec2{27, 19}), IM_COL32(255, 255, 0, 255));
+    }
+}
+
 void emptySlot(const Painter& ui, Vec2 frameSize) {
     const ImVec2 a = ImGui::GetCursorScreenPos();
     const ImVec2 size = ui.size(frameSize);
@@ -300,7 +327,8 @@ void drawWindowFrame(const Painter& ui, ImDrawList* dl, const Rect& r, const cha
     if (title && *title) {
         ImGui::PushFont(ui.fonts.bold, ui.fontPx(kTitleSize));
         const char* end = labelEnd(title);
-        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), P(18, 8), IM_COL32_WHITE, title, end);
+        // Large dialog titles: the Button face, white, at (17,11) (spec 06 §5.4).
+        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), P(17, 11 + kTitleLead), IM_COL32_WHITE, title, end);
         ImGui::PopFont();
     }
 }

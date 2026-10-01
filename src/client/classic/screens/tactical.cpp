@@ -17,6 +17,7 @@
 #include "client/classic/replay.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/combat_logic.hpp"
+#include "client/classic/pointers.hpp"
 #include "client/classic/screens/combat_map.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
@@ -44,9 +45,11 @@ using OK = TacticalOrder::Kind;
 using PieceKind = game::CombatPiece::Kind;
 
 constexpr float kStatusH = 46;       // frame pixels
-constexpr float kMapW = 676;
-constexpr float kSideX = 684;
+// The map takes the window's width less the side panel: the window covers
+// the whole frame in both layouts (spec 06 §2.1.1, §1.10.1).
 constexpr float kSideW = 310;
+float mapWidth() { return frameW() - 348; }   // 676 in the 1024x768 layout
+float sideX() { return mapWidth() + 8; }
 
 // Animation pace: Fast Tactical Combat drops the pauses between steps (spec 06
 // §1.10.3); our playback runs faster instead (inferred).
@@ -210,25 +213,38 @@ public:
 
         Dialog d(ui, f->title.c_str(), DialogSize::Full, 0);
         if (!d.open()) return d.keepOpen();
-        d.beginContent();
         const game::GameState& s = b.state();
         const CombatMapPainter paint(ui, s, b.record(), playback_);
+        {
+            // The title strip at the layout's places (spec 06 §2.1.1).
+            std::vector<std::string> flags;
+            int phase = -1;
+            for (game::EmpireId e : b.participants()) {
+                if (e == b.phaseEmpire()) phase = int(flags.size());
+                flags.push_back(paint.styleOf(e));
+            }
+            combatTitleStrip(ui, d, sectorName(s, b.record().location, ui.session.player()), std::to_string(std::max(b.round(), 0)), flags, phase);
+        }
+        d.beginContent();
         statusBar(ui, b, paint);
         const ImVec2 origin = ImGui::GetCursorScreenPos();
-        const ImVec2 mapSize(ui.px(kMapW), ImGui::GetContentRegionAvail().y);
+        const ImVec2 mapSize(ui.px(mapWidth()), ImGui::GetContentRegionAvail().y);
         drawMap(ui, *f, paint, mapSize);
         ui.tag("tactical-combat:map", origin, ImVec2(origin.x + mapSize.x, origin.y + mapSize.y));
-        ImGui::SetCursorScreenPos({origin.x + ui.px(kSideX), origin.y});
+        ImGui::SetCursorScreenPos({origin.x + ui.px(sideX()), origin.y});
         ImGui::BeginGroup();
         currentPanel(ui, *f);
         ui.tagItem("tactical-combat:piece");
-        targetPanel(ui, *f, paint);
-        ui.tagItem("tactical-combat:target");
+        // The target-piece panel only on a window at least 1024 wide (§2.1.1).
+        if (frameW() >= 1024.0f) {
+            targetPanel(ui, *f, paint);
+            ui.tagItem("tactical-combat:target");
+        }
         overviewAndButtons(ui, *f, paint);
         ImGui::EndGroup();
         keys(ui, *f);
         if (!u.message.empty()) {
-            ImGui::SetCursorScreenPos({origin.x + ui.px(kSideX), origin.y + ui.px(636)});
+            ImGui::SetCursorScreenPos({origin.x + ui.px(sideX()), origin.y + ui.px(frameH() - 132)});
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(kSideW));
             ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", u.message.c_str());
             ImGui::PopTextWrapPos();
@@ -379,9 +395,9 @@ private:
         const std::string turn = !u.begun     ? std::string("Press Begin to start the battle")
                                  : b.finished() ? std::string("The battle is over")
                                                 : std::format("Combat turn {} of {}", std::min(b.round(), b.lastRound()), b.lastRound());
-        ImGui::SameLine(ui.px(kMapW) - ImGui::CalcTextSize(turn.c_str()).x);
+        ImGui::SameLine(ui.px(mapWidth()) - ImGui::CalcTextSize(turn.c_str()).x);
         ImGui::TextColored(kLabelBlue, "%s", turn.c_str());
-        ImGui::SameLine(ui.px(kSideX));
+        ImGui::SameLine(ui.px(sideX()));
         if (u.begun && b.awaitingOrders()) {
             const std::string who = paint.empireName(b.phaseEmpire());
             const std::string what = animating() ? "wait for orders" : b.paused() ? "paused (Auto)" : "give orders";
@@ -408,7 +424,7 @@ private:
         // Next / previous selectors: pieces that can move, pieces that can fire.
         const game::EmpireId side = b.phaseEmpire();
         if (side.valid() && u.begun) {
-            ImGui::SameLine(ui.px(kSideX));
+            ImGui::SameLine(ui.px(sideX()));
             selector(ui, b, "Move", [&](const TacticalPiece& p) { return canMove(p, side); });
             ImGui::SameLine(0, ui.px(10));
             selector(ui, b, "Fire", [&](const TacticalPiece& p) { return canFire(p, side); });
@@ -520,18 +536,35 @@ private:
         u.hoverEnemy = enemy;
         if (enemy) u.target = int(*hovered);
         bool hidePointer = false;
+        // The install's pointers (spec 06 §5.8, §1.10.1): Target, Select and the
+        // eight arrows over the map; our drawn ones only when a file is missing.
+        TacticalPointerFacts pf;
+        pf.begun = u.begun;
+        pf.busy = animating();
+        pf.overMap = hoveredBox;
+        pf.aiming = u.aim != Aim::None;
+        pf.selected = sel && side.valid() && sel->owner == side;
+        pf.selectedIsDrone = sel && isDrone(*sel);
+        pf.overOtherEmpire = over && side.valid() && over->owner != side && over->kind != PieceKind::Obstacle;
+        if (sel) {
+            pf.dx = hx - sel->x;
+            pf.dy = hy - sel->y;
+        }
+        const Pointer classic = tacticalPointer(pf);
+        const bool filePointer = pointers().has(classic);
+        if (filePointer) pointers().request(classic);
         if (hoveredBox && ours && !animating()) {
             if (u.aim != Aim::None) {
-                pointerCross(ui, dl, io.MousePos, enemy ? IM_COL32(255, 200, 60, 255) : IM_COL32(150, 150, 150, 200));
-                hidePointer = true;
+                if (!filePointer) pointerCross(ui, dl, io.MousePos, enemy ? IM_COL32(255, 200, 60, 255) : IM_COL32(150, 150, 150, 200));
+                hidePointer = !filePointer;
             } else if (enemy) {
                 const std::string why = b.check(TacticalOrder{OK::Fire, side, u.selected, int(*hovered)});
-                pointerCross(ui, dl, io.MousePos, why.empty() ? IM_COL32(80, 255, 90, 255) : IM_COL32(255, 70, 60, 255));
-                hidePointer = true;
+                if (!filePointer) pointerCross(ui, dl, io.MousePos, why.empty() ? IM_COL32(80, 255, 90, 255) : IM_COL32(255, 70, 60, 255));
+                hidePointer = !filePointer;
             } else if (!over && canMove(*sel, side)) {
                 const std::vector<Square> path = b.pathTo(u.selected, hx, hy);
                 for (const Square& sq : path) dl->AddCircleFilled(v.at(float(sq.x) + 0.5f, float(sq.y) + 0.5f), std::max(2.0f, v.cell * 0.12f), IM_COL32(120, 220, 255, 200));
-                if (!path.empty()) {
+                if (!path.empty() && !filePointer) {
                     pointerArrow(ui, dl, io.MousePos, directionOf(hx - sel->x, hy - sel->y), IM_COL32(120, 220, 255, 255));
                     hidePointer = true;
                 }
