@@ -1994,9 +1994,15 @@ TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
     CHECK_FALSE(disbanded());
     v.damage[10] = entryStructure(r, s.design(warship), 10);
     CHECK(disbanded());
-    // A ship without a part it needs to operate is unfit too.
+    // A ship without a part it needs to operate is unfit too: no working
+    // bridge, auxiliary control or Master Computer (spec 05 §7.5). Life
+    // support, crew quarters and engines are not checked.
     for (size_t i = 6; i < 11; ++i) v.damage[i] = 0;
     v.damage[1] = entryStructure(r, s.design(warship), 1);  // life support
+    v.damage[3] = entryStructure(r, s.design(warship), 3);  // an engine
+    CHECK_FALSE(disbanded());
+    v.damage[1] = v.damage[3] = 0;
+    v.damage[0] = entryStructure(r, s.design(warship), 0);  // the bridge
     CHECK(disbanded());
 }
 
@@ -3531,6 +3537,204 @@ TEST_CASE("ai: a vehicle-list entry first looks for a design made from the templ
     ai::detail::Planner q(rules, s, me, ai::detail::Mode::Computer, 3);
     ai::detail::planShips(q);
     CHECK(q.st.colony(homeworld(s, me).planet)->queue.items.empty());
+}
+
+// ---- Spec 05 open question 37: the logistics ministers (confirmed: binary) -----------------------
+
+TEST_CASE("ai: transports deliver only when more than half full, never fall back to loading, and deliver after a load only in the same sector") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(21, 2, 0, 10);
+    const EmpireId me{0u};
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    const Location homeAt = locationOf(s.galaxy, homePlanet);
+    const SystemId homeSys = homeAt.system;
+    const auto spare = freePlanetIn(s, homeSys);
+    REQUIRE(spare);
+    s.galaxy.object(*spare).atmosphere = s.empire(me).race.atmosphere;
+    addColony(s, *spare, me, {{me, 1}});
+    REQUIRE(homeworld(s, me).totalPopulation() >= 1000);
+    const DesignId hauler = addTestDesign(s, r, me, "Hauler", "Test Transport Hull",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay", "Test Cargo Bay"});
+    s.design(hauler).designType = "Population Transport";
+    Vehicle& v = addTestVehicle(s, r, hauler, homeAt);
+    const VehicleId id = v.id;
+    const int capacity = vehicleCargoCapacity(r, s, v);
+    REQUIRE(capacity > 2);
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 5);
+        ai::detail::planTransports(p);
+        return ordersOf(p, id);
+    };
+    // A few people aboard (not more than half full): load here at the
+    // homeworld, then deliver what is aboard to the other colony.
+    v.cargo.population = {{me, 1}};
+    REQUIRE(cargoSpaceUsed(r, s, v.cargo) * 2 <= capacity);
+    auto orders = plan(s);
+    REQUIRE(orders.size() == 3);
+    CHECK(orders[0].kind == OrderKind::LoadCargo);
+    CHECK(orders[1].kind == OrderKind::MoveTo);
+    CHECK(orders[2].kind == OrderKind::DropCargo);
+    CHECK(orders[2].object == *spare);
+    // Empty: the load only; nothing aboard is never delivered.
+    s.vehicle(id)->cargo = {};
+    orders = plan(s);
+    REQUIRE(orders.size() == 1);
+    CHECK(orders[0].kind == OrderKind::LoadCargo);
+    // The source in another sector: a move and the load, no delivery.
+    Location away = homeAt;
+    away.sector = Sector{homeAt.sector.x == 0 ? 1 : 0, homeAt.sector.y};
+    s.vehicle(id)->location = away;
+    s.vehicle(id)->cargo.population = {{me, 1}};
+    orders = plan(s);
+    REQUIRE(orders.size() == 2);
+    CHECK(orders[0].kind == OrderKind::MoveTo);
+    CHECK(orders[1].kind == OrderKind::LoadCargo);
+    // In another system: only a move to the source's sector.
+    const SystemId next = s.galaxy.neighbors(homeSys).front();
+    s.vehicle(id)->location = Location{next, Sector{kSystemCenter, kSystemCenter}};
+    orders = plan(s);
+    REQUIRE(orders.size() == 1);
+    CHECK(orders[0].kind == OrderKind::MoveTo);
+    CHECK(orders[0].location == homeAt);
+    // More than half full with nowhere to deliver: no fall back to loading,
+    // the resupply orders instead (here: home, the depot).
+    s.vehicle(id)->location = homeAt;
+    s.colonies[spare->index()].reset();
+    int64_t each = 1;
+    for (s.vehicle(id)->cargo.population = {{me, each}}; cargoSpaceUsed(r, s, s.vehicle(id)->cargo) * 2 <= capacity;)
+        s.vehicle(id)->cargo.population = {{me, ++each}};
+    orders = plan(s);
+    CHECK(std::none_of(orders.begin(), orders.end(), [](const Order& o) { return o.kind == OrderKind::LoadCargo; }));
+    CHECK(std::none_of(orders.begin(), orders.end(), [](const Order& o) { return o.kind == OrderKind::DropCargo; }));
+}
+
+TEST_CASE("ai: the Repair minister: mothballed ships lose orders and fleet, yards by system then object order, a yard ship is its own yard") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    Location away = homeAt;
+    away.sector = Sector{homeAt.sector.x == 0 ? 1 : 0, homeAt.sector.y};
+    const DesignId warship = addWarship(s, r, me, "Lancer");
+    const VehicleId sleeper = addTestVehicle(s, r, warship, away).id;
+    const VehicleId mate = addTestVehicle(s, r, warship, away).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Pair", {mate, sleeper}}).ok);
+    destroyEntry(r, s, sleeper, "Test Laser");
+    s.vehicle(sleeper)->status = VehicleStatus::Mothballed;
+    s.vehicle(sleeper)->orders = {ai::detail::moveOrder(homeAt)};
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        CHECK_FALSE(p.st.vehicle(sleeper)->fleet.valid());
+        CHECK(ordersOf(p, sleeper).empty());
+    }
+    // A damaged yard ship with a working yard is its own nearest yard: it stays.
+    const DesignId yardShip = addTestDesign(s, r, me, "Tender", "Test Cruiser",
+                                            {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine",
+                                             "Test Yard Module", "Test Laser"});
+    s.design(yardShip).designType = "Attack Ship";
+    const VehicleId tender = addTestVehicle(s, r, yardShip, away).id;
+    destroyEntry(r, s, tender, "Test Laser");
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        CHECK(ordersOf(p, tender).empty());
+    }
+    // Two yards at the same travel distance: the one in the lower-numbered system wins.
+    GameState g = s;
+    for (auto& c : g.colonies)
+        if (c && c->owner == me) std::erase_if(c->facilities, [&](uint32_t f) { return hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard); });
+    exploreEverything(g);
+    g.vehicles.erase(std::remove_if(g.vehicles.begin(), g.vehicles.end(), [&](const Vehicle& x) { return x.id == tender; }), g.vehicles.end());
+    std::vector<SystemId> around = g.galaxy.neighbors(homeAt.system);
+    std::sort(around.begin(), around.end());
+    around.erase(std::unique(around.begin(), around.end()), around.end());
+    if (around.size() >= 2) {
+        const DesignId post = addTestDesign(g, r, me, "Dock", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+        // The yard ships sit on the warp point that leads back home, so both are one jump away.
+        auto backHome = [&](SystemId sys) {
+            for (ObjectId wp : g.galaxy.warpPoints(sys))
+                if (g.galaxy.object(wp).destination.valid() && g.galaxy.object(g.galaxy.object(wp).destination).system == homeAt.system)
+                    return locationOf(g.galaxy, wp);
+            return Location{sys, Sector{kSystemCenter, kSystemCenter}};
+        };
+        const Location high = backHome(around[1]), low = backHome(around[0]);
+        addTestVehicle(g, r, post, high);  // created first: earlier in object order, but a higher system
+        addTestVehicle(g, r, post, low);
+        // A sector of the home system as far from one yard as from the other.
+        std::optional<Location> start;
+        for (int y = 0; y < kSystemSize && !start; ++y)
+            for (int x = 0; x < kSystemSize && !start; ++x) {
+                const Location at{homeAt.system, Sector{x, y}};
+                const auto a = movement::findPath(r, g, me, at, high), b = movement::findPath(r, g, me, at, low);
+                if (a && b && a->length == b->length) start = at;
+            }
+        REQUIRE(start);
+        const VehicleId hurt = addTestVehicle(g, r, warship, *start).id;
+        destroyEntry(r, g, hurt, "Test Laser");
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planRepairAndResupply(p, true);
+        REQUIRE(ordersOf(p, hurt).size() == 1);
+        CHECK(ordersOf(p, hurt).front().location == low);
+    }
+}
+
+TEST_CASE("ai: a fleet's supply totals leave out the members with unlimited supply") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (auto& c : rs.components)
+        if (c.name == "Test Engine") c.supplyUsed = 10;
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 10, r);
+    const EmpireId me{0u};
+    researchEverything(r, s.empire(me));
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const Location there{next, Sector{kSystemCenter, kSystemCenter}};
+    const DesignId tanker = addTestDesign(s, r, me, "Tanker", "Test Frigate",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod"});
+    const DesignId reactor = addTestDesign(s, r, me, "Reactor", "Test Cruiser",
+                                           {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Quantum Reactor"});
+    const VehicleId ship = addTestVehicle(s, r, tanker, there).id;
+    const VehicleId endless = addTestVehicle(s, r, reactor, there).id;
+    REQUIRE(vehicleHasUnlimitedSupply(r, s, *s.vehicle(endless)));
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Pair", {ship, endless}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    const int64_t cost = movement::moveSupplyCost(r, s, *s.vehicle(ship));
+    REQUIRE(cost > 0);
+    // One jump from the depot: 26 moves. The reactor ship's own supply and
+    // cost would lift the fleet above that; only the tanker counts.
+    s.vehicle(ship)->supply = 26 * cost - 1;
+    s.vehicle(endless)->supply = 1'000'000;
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+    ai::detail::planRepairAndResupply(p, false);
+    CHECK_FALSE(p.st.fleet(fleet)->orders.empty());
+}
+
+TEST_CASE("ai: a space yard ship counts itself as a yard, and one in a fleet is planned too") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 10);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const DesignId yardShip = addTestDesign(s, r, me, "Tender", "Test Cruiser",
+                                            {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Engine", "Test Yard Module"});
+    s.design(yardShip).designType = "Space Yard Ship";
+    const Location dock{next, Sector{3, 3}};
+    Vehicle& tender = addTestVehicle(s, r, yardShip, dock);
+    tender.movement = 2;
+    const VehicleId tenderId = tender.id;
+    const DesignId station = addTestDesign(s, r, me, "Post", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    const VehicleId base = addTestVehicle(s, r, station, dock).id;
+    destroyEntry(r, s, base, "Test Laser");
+    const DesignId warship = addWarship(s, r, me, "Escort");
+    const VehicleId escort = addTestVehicle(s, r, warship, dock).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{"Yard", {tenderId, escort}}).ok);
+    // The base it reached is no longer a target: the yard ship itself is a
+    // yard there. Nothing else to fix: the resupply orders (home).
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+    ai::detail::planSpaceYardShips(p);
+    REQUIRE(ordersOf(p, tenderId).size() == 1);
+    CHECK(ordersOf(p, tenderId).front().location.system == homeAt.system);
 }
 
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {
