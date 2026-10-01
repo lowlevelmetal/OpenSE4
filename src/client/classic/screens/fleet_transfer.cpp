@@ -40,8 +40,10 @@ public:
             const float w = (ImGui::GetContentRegionAvail().x - spacing) * 0.5f;
             const float h = ImGui::GetContentRegionAvail().y - ImGui::GetTextLineHeightWithSpacing() * 4.4f;
             vehiclesPanel(ui, loose, ImVec2(w, h));
+            ui.tagItem("fleet-transfer:ships");
             ImGui::SameLine();
             fleetsPanel(ui, fleets, ImVec2(w, h));
+            ui.tagItem("fleet-transfer:fleets");
             applyClicks(ui);
             status_.draw(ui);
         }
@@ -55,6 +57,7 @@ public:
             createPrompt_.open("Create Fleet", std::format("Name of the new fleet. It starts with {}; add more ships afterwards.", first->name),
                                std::format("Fleet {}", s.nextFleetId + 1));
         }
+        ui.tagItem("fleet-transfer:create-fleet");
         if (d.button("Formation", fleet && !formations.empty())) {
             std::vector<ListPicker::Item> items;
             for (const auto& f : formations) items.push_back({f.name, f.description, true, {}});

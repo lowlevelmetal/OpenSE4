@@ -5,5 +5,6 @@
 namespace opense4 {
 
 std::span<const unsigned char> embeddedResource(std::string_view) { return {}; }
+std::vector<std::string_view> embeddedResourcePaths(std::string_view) { return {}; }
 
 } // namespace opense4

@@ -116,6 +116,7 @@ public:
             setup_.sides.push_back(SimulatorSide{kSideNames[setup_.sides.size()], true});
         d.spacer();
         if (d.button("Begin", !setup_.items.empty())) begin(ui, setup_, message_);
+        ui.tagItem("combat-simulator:begin");
         computerPopup(ui);
         cargoPopup(ui);
         if (d.close()) return false;

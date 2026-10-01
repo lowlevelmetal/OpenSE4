@@ -15,7 +15,10 @@
 
 namespace opense4::client::classic {
 
-enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings };
+// Learn opens on the Tutorials tab, LearnTraining on Training; Manual is the manual alone.
+enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings, Learn, LearnTraining, Manual };
+
+struct LearnContent;
 
 struct MenuContext {
     std::shared_ptr<const game::Rules> rules;
@@ -32,6 +35,9 @@ struct MenuContext {
     std::function<void(FrontId)> go;
     std::function<void()> quit;
     std::string error;  // shown by the intro screen
+    // The learning content, and starting a lesson's game (docs/LEARNING.md).
+    const LearnContent* learn = nullptr;
+    std::function<void(learn::LessonKind, const std::string&)> startLesson;
 
     float k() const { return map.scale / fbScale; }
     ImVec2 at(Vec2 framePos) const {
@@ -54,7 +60,9 @@ std::unique_ptr<FrontScreen> makeFrontScreen(FrontId id);
 // setup[:page] (Game Setup page, e.g. setup:players), empiresetup[:page]
 // (Empire Setup for a new empire, e.g. empiresetup:traits), multiplayer,
 // multiplayer:host, multiplayer:browse, multiplayer:join=ADDR[:PORT],
-// pbem[:GAME.gam] (Play by E-mail, with that game file opened).
+// pbem[:GAME.gam] (Play by E-mail, with that game file opened),
+// learn[:tab] (the Learn window: tutorials, training, manual). The manual
+// alone is --manual; --open=manual opens it in a quick game.
 // Returns nullptr if NAME is not a front-end screen.
 std::unique_ptr<FrontScreen> frontScreenByName(std::string_view name);
 
@@ -73,5 +81,8 @@ std::unique_ptr<FrontScreen> makeGameSetupScreen(std::string_view startPage = {}
 std::unique_ptr<FrontScreen> makeMultiplayerScreen(std::string_view automation);
 // Play by E-mail (screens/pbem.cpp): `file` non-empty opens that game file at once.
 std::unique_ptr<FrontScreen> makePbemScreen(std::string_view file = {});
+// Learn (screens/learn_screens.cpp): `start` is the tab ("tutorials",
+// "training", "manual"), or "manual:<slug#anchor>" for the manual alone.
+std::unique_ptr<FrontScreen> makeLearnFrontScreen(std::string_view start = {});
 
 } // namespace opense4::client::classic

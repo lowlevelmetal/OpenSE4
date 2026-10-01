@@ -55,6 +55,10 @@ struct ClassicSettings {
     bool tacticalRanges = true;      // the selected piece's weapon ranges and movement
     bool tacticalNames = false;      // names under the pieces
     bool tacticalAutoEnd = true;     // end the phase when nothing is left to fight
+
+    // Learning to play (docs/LEARNING.md): the tutorials and training games
+    // finished on this machine, as "tutorial:<slug>" and "training:<slug>".
+    std::vector<std::string> learnDone;
 };
 
 // The settings of this machine, loaded on first use.

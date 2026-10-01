@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 struct SDL_Window;
@@ -46,6 +47,13 @@ struct AppOptions {
     std::string pbemPassword;
     std::string pbemOrdersDir;       // empty = the game file's folder
     bool pbemEndTurn = false;        // automation: end the turn at once (writes the .plr)
+
+    // Learning to play (docs/LEARNING.md): start a tutorial or training game,
+    // or open the manual (empty value: its first page); content from another folder.
+    std::string tutorial;
+    std::string training;
+    std::optional<std::string> manual;
+    std::string learnDir;
 
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;

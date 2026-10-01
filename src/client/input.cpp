@@ -21,6 +21,8 @@ constexpr std::array<ActionInfo, kActionCount> kActions{{
     {Action::EmpireStatus, "Windows", "Empire status", "empire_status"},
     {Action::EndTurn, "Windows", "End turn", "end_turn"},
     {Action::Settings, "Windows", "Settings", "settings"},
+    {Action::LessonText, "Windows", "Show the lesson or training panel", "lesson_text"},
+    {Action::ContextHelp, "Windows", "Manual page of the window in front", "context_help"},
     {Action::MoveTo, "Orders", "Move to", "move_to"},
     {Action::Warp, "Orders", "Warp", "warp"},
     {Action::Attack, "Orders", "Attack", "attack"},
@@ -136,6 +138,8 @@ void Bindings::resetAll() {
     def(Action::EmpireStatus, k(ImGuiKey_F11));
     def(Action::EndTurn, k(ImGuiKey_F12), k(ImGuiKey_Enter));
     def(Action::Settings, k(ImGuiKey_Comma, true));
+    def(Action::LessonText, k(ImGuiKey_H, true));
+    def(Action::ContextHelp, k(ImGuiKey_F1, false, true));
     def(Action::MoveTo, k(ImGuiKey_M));
     def(Action::Warp, k(ImGuiKey_W));
     def(Action::Attack, k(ImGuiKey_A));
