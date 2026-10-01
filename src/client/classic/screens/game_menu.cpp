@@ -339,11 +339,9 @@ private:
     void save(UiContext& ui, const std::filesystem::path& file, const std::string& name) {
         const auto result = ui.session.save(file, name);
         if (result) {
-            // The players' History files go beside the save, and this becomes the
-            // game Resume Game loads (docs/spec/06 §6.1).
+            // The players' History files go beside the save; the session has
+            // made it the game Resume Game loads (docs/spec/06 §6.1).
             if (ui.session.kind() == SessionKind::Local || ui.session.kind() == SessionKind::Hotseat) copyHistoryNextTo(file);
-            settings().lastSavedGame = file.string();
-            saveSettings();
             error_.clear();
             saved_ = name;
             saves_ = listSaves();

@@ -1,6 +1,7 @@
 #include "client/classic/session.hpp"
 
 #include "client/classic/screens/setup_model.hpp"
+#include "client/classic/settings.hpp"
 #include "core/log.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
@@ -493,7 +494,11 @@ std::expected<void, std::string> ClassicSession::save(const std::filesystem::pat
     info.dataSet = rules_->data().dataDir.parent_path().filename().string();
     info.turn = state_.turn;
     for (const game::Empire& e : state_.empires) info.empires.push_back(e.name);
-    return game::saveGame(file, state_, info);
+    auto saved = game::saveGame(file, state_, info);
+    // Every game saved, Save Game and every autosave alike, becomes the one
+    // Resume Game loads (docs/spec/06 §6.1, §7 Q53).
+    if (saved) rememberSavedGame(file.string());
+    return saved;
 }
 
 std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load(std::shared_ptr<const game::Rules> rules,
