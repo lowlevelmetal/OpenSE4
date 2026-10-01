@@ -443,10 +443,7 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 // in years as the Construction Queues window shows times (inferred).
                 const game::cmd::QueueTarget target{c->planet, {}};
                 const auto est = estimateQueue(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target));
-                const int turns = est.front().turns;
-                remaining = c->queue.onHold                 ? std::string("On Hold")
-                            : turns < 0 || turns >= 9999 ? std::string("Never")
-                                                           : std::format("{}.{} years", turns / 10, turns % 10);
+                remaining = c->queue.onHold ? std::string("On Hold") : queueYearsText(est.front().turns);
             }
             line("Under Construction", building);
             line("Time Remaining", remaining);
