@@ -4,6 +4,7 @@
 // command buttons, the order strip and selection cycles, the system panel,
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
+#include "client/classic/order_rules.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/ship_glides.hpp"
 #include "client/classic/ui.hpp"
@@ -11,6 +12,7 @@
 
 #include <functional>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace opense4::client::classic {
@@ -30,13 +32,24 @@ public:
     std::vector<std::string> selectionKinds(const UiContext& ui) const;
 
 private:
-    enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, Callback };
-    struct OrderButton {
-        const char* label;  // the slot key in the order strip
-        const char* tooltip;
-        bool enabled;
-        std::function<void()> action;
-        bool lit = false;   // toggles that are on (Repeat Orders, Minister)
+    enum class Pick { None, MoveTo, Warp, Colonize, Attack, Patrol, LoadCargo, DropCargo, LaunchRemote, RecoverRemote, Callback };
+    // Who an order goes to: a vehicle, a fleet or a colony.
+    struct OrderOwner {
+        game::VehicleId vehicle;
+        game::FleetId fleet;
+        game::ObjectId planet;
+    };
+    // A small picker over the main window (a cargo type, a component, a
+    // formation, a confirmation...).
+    struct Choice {
+        std::string label;
+        std::function<void()> action;   // none: a heading row
+        bool chosen = false;            // drawn with the green lamp
+    };
+    struct Chooser {
+        std::string title;
+        std::string note;
+        std::vector<Choice> items;
     };
 
     // Selection.
@@ -51,14 +64,26 @@ private:
     void cycleVehicle(UiContext& ui, int dir, bool idleOnly);
     void cycleFleet(UiContext& ui, int dir);
     void cycleColony(UiContext& ui, int dir);
+    // Tagging (Shift+click, Shift+A, Shift+C; §2.5): a vehicle in a fleet tags the fleet.
+    void toggleTag(UiContext& ui, game::VehicleId v);
+    void tagAll(UiContext& ui);
+    bool tagged(game::VehicleId v) const;
 
     // Orders.
-    std::vector<OrderButton> availableOrders(UiContext& ui);
+    LitOrders litNow(UiContext& ui) const;
+    std::vector<OrderOwner> orderOwners(UiContext& ui) const;
+    void runOrder(UiContext& ui, OrderId o);
     void giveOrder(UiContext& ui, game::Order o);
     void replaceOrders(UiContext& ui, std::vector<game::Order> orders, bool repeat);
+    void orderDone();  // the tagged group dissolves after an order
     void startPick(UiContext& ui, Pick p, std::string prompt);
     void completePick(UiContext& ui, game::Location where, std::optional<game::ObjectId> object);
+    void finishPatrol(UiContext& ui);
+    void openFor(UiContext& ui, ScreenId id);   // a window about the selected vehicle, fleet or colony
+    void chooseCargo(UiContext& ui, Pick p);    // Load / Drop Cargo, Launch / Recover Units Remotely: the type first
+    void note(UiContext& ui, std::string text);
     void hotkeys(UiContext& ui);
+    void drawChooser(UiContext& ui);
 
     // Drawing.
     void statusBar(UiContext& ui);
@@ -71,6 +96,7 @@ private:
     void drawSystem(gfx::Renderer2D& r, UiContext& ui);
     void drawFrame(gfx::Renderer2D& r, UiContext& ui);
     void drawGalaxy(gfx::Renderer2D& r, UiContext& ui);
+    std::optional<game::SystemId> galaxySystemAt(const UiContext& ui, Vec2 p, bool exploredOnly) const;
 
     // Ship movement animation (ship_glides.hpp), updated once per frame.
     void trackMovement(UiContext& ui);
@@ -81,6 +107,7 @@ private:
     std::optional<game::VehicleId> vehicle_;
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
+    std::vector<game::VehicleId> tagged_;
     ReportTab tab_ = ReportTab::Detail;
 
     Pick pick_ = Pick::None;
@@ -89,8 +116,16 @@ private:
     std::function<void(game::Location)> pickCallback_;
     game::DesignId pickDesign_;
     std::optional<game::Sector> hover_;
+    std::optional<game::SystemId> galaxyHover_;
+    std::optional<Chooser> chooser_;
+    // The hover hint over the system panel (§2.3): the button's name and key.
+    std::string hintName_, hintKey_;
+    std::string note_;
+    double noteUntil_ = 0.0;
 
     ShipGlides glides_;
+    MovementReplay replay_;
+    uint32_t seenTurn_ = UINT32_MAX;
     double trackedAt_ = -1.0;
 };
 

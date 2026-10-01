@@ -60,6 +60,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     mode->options_ = options;
     mode->rules_ = std::make_shared<const game::Rules>(std::move(*loaded.ruleset), gameRoot);
     mode->art_ = std::make_unique<Art>(*platform.device, assets::InstallFiles(gameRoot));
+    Art::setColorSource(mode->art_.get());  // empire colours come from the race art (docs/spec/06 §5.3)
     log::info("Classic data set: {} ({} components, {} race presets)", dataDir->string(), mode->rules_->data().components.size(),
               mode->rules_->racePresets().size());
     audio().setInstall(&mode->art_->files());
@@ -167,9 +168,13 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->startGame(std::move(*session));
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
-        if (!options.openWindow.empty()) {
+        if (options.openWindow == "none") {
+            mode->openLogOnTurn_ = false;  // automation: just the main window
+        } else if (!options.openWindow.empty()) {
             mode->openLogOnTurn_ = false;  // the requested window stays in front
-            const auto id = screenFromName(options.openWindow);
+            // "window:text" passes the text as the window's argument (e.g. help:hotkeys).
+            const size_t colon = options.openWindow.find(':');
+            const auto id = screenFromName(options.openWindow.substr(0, colon));
             if (!id) {
                 error = std::format("Unknown window '{}'", options.openWindow);
                 return nullptr;
@@ -186,6 +191,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";
+                if (colon != std::string::npos) args.text = options.openWindow.substr(colon + 1);
                 mode->openScreen(*id, std::move(args));
             }
         }
@@ -215,11 +221,13 @@ void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     };
     ui_->opener = [this](ScreenId id, ScreenArgs args) { pendingOpen_.emplace_back(id, std::move(args)); };
     session_->onNewTurn = [this] {
+        cueMusic(MusicCue::TurnProcessed);  // a new background track every 5 turns
         openLogOnTurn_ = true;
         strategicQueue_.clear();   // battles of the turn before: GameState::combats holds the new ones
     };
     main_ = MainWindow{};
     main_.reset(*ui_);
+    logSeen_ = session_->me().log.size();  // what the game brought is not news
     handoffPlayer_ = {};
     handoff_ = false;
     front_.reset();
@@ -297,7 +305,11 @@ void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
             screens_.erase(it);
             break;
         }
-    if (auto screen = makeScreen(id, args)) screens_.emplace_back(id, std::move(screen));
+    if (auto screen = makeScreen(id, args)) {
+        // Tactical Combat and a Combat Replay start a combat track; nothing switches back after tactical combat.
+        if (id == ScreenId::TacticalCombat || id == ScreenId::CombatReplay) cueMusic(MusicCue::CombatOpened);
+        screens_.emplace_back(id, std::move(screen));
+    }
 }
 
 void ClassicMode::endTurn() {
@@ -307,17 +319,39 @@ void ClassicMode::endTurn() {
     session_->endTurn();
 }
 
+void ClassicMode::cueMusic(MusicCue cue) {
+    if (!settings().musicOn) return;
+    const std::string track = music_.cue(cue, playlists_, session_ ? session_->state().turn : 0, session_ != nullptr);
+    if (!track.empty()) audio().playTrack(track);
+}
+
 void ClassicMode::updateAudio() {
     const ClassicSettings& prefs = settings();
     audio().setOptions(AudioOptions{prefs.soundOn, prefs.musicOn, prefs.soundVolume, float(prefs.musicVolume) / 100.0f, !prefs.classicSoundEffects});
-    // Intro music in the front end, battle music while a replay is open, background music otherwise.
-    bool combat = false;
-    for (const auto& [id, screen] : screens_)
-        combat = combat || id == ScreenId::CombatReplay || id == ScreenId::TacticalCombat || id == ScreenId::StrategicCombat ||
-                 id == ScreenId::GroundCombat;
-    const std::vector<std::string>& list = !session_ ? playlists_.intro : combat ? playlists_.combat : playlists_.background;
-    if (prefs.musicOn && !list.empty()) audio().playMusic(list);
-    else audio().stopMusic();
+    // The music rules (docs/spec/06 §5.5): the cues come from the intro, loading,
+    // new turns and the combat windows; here music off stops it, and music on
+    // with nothing playing starts the intro or background list.
+    if (!prefs.musicOn) {
+        audio().stopMusic();
+    } else if (!audio().musicPlaying()) {
+        cueMusic(MusicCue::NothingPlaying);
+    }
+    // A stellar manipulation the player sees plays its sound when its log entry appears.
+    if (session_) {
+        const auto& log = session_->me().log;
+        if (log.size() < logSeen_) logSeen_ = 0;
+        for (size_t i = logSeen_; i < log.size(); ++i)
+            if (const std::string_view sound = stellarSound(log[i].title); !sound.empty()) {
+                audio().play(sound);
+                break;
+            }
+        logSeen_ = log.size();
+    }
+    // Closing a Combat Replay starts a new background track.
+    bool replayOpen = false;
+    for (const auto& [id, screen] : screens_) replayOpen = replayOpen || id == ScreenId::CombatReplay;
+    if (replayWasOpen_ && !replayOpen) cueMusic(MusicCue::ReplayClosed);
+    replayWasOpen_ = replayOpen;
 }
 
 bool ClassicMode::update(const FrameState& fs) {
@@ -334,13 +368,17 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
     if (!session_) {
-        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, frontError_};
-        ctx.startGame = [this](std::unique_ptr<ClassicSession> s) { startGame(std::move(s)); };
+        MenuContext ctx{rules_, *art_, fonts_, mapping_, fs.fbScale, fs.time, options_.seed, platform_.app, {}, {}, {}, {}, frontError_};
+        // The game starts once the screen has drawn: starting it replaces the screen.
+        std::unique_ptr<ClassicSession> started;
+        ctx.startGame = [&started](std::unique_ptr<ClassicSession> s) { started = std::move(s); };
         ctx.go = [this](FrontId id) { nextFront_ = id; };
         ctx.quit = [this] { quit_ = true; };
         ctx.learn = learn_.get();
         ctx.startLesson = [this](learn::LessonKind kind, const std::string& slug) { pendingLesson_ = {kind, slug}; };
+        ctx.loadedFromIntro = [this] { loadedFromIntro_ = true; };
         if (front_) front_->draw(ctx);
+        if (started) startGame(std::move(started));
         if (pendingLesson_ && !session_) {
             // Started after the screen drew: starting replaces it.
             const auto [kind, slug] = *pendingLesson_;
@@ -348,9 +386,13 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             if (auto problem = startLesson(kind, slug)) {
                 frontError_ = *problem;
                 front_ = makeFrontScreen(FrontId::Intro);
+            } else {
+                cueMusic(MusicCue::GameLoaded);  // Tutorial and Scenario: background music
             }
             return !quit_;
         }
+        if (loadedFromIntro_ && session_) cueMusic(MusicCue::GameLoaded);  // Resume Game, Load Game
+        loadedFromIntro_ = false;
         if (nextFront_ && !session_) {
             front_ = makeFrontScreen(*nextFront_);
             nextFront_.reset();
@@ -468,6 +510,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui.requests.loadGame.reset();
         auto loaded = ClassicSession::load(rules_, file);
         if (loaded) {
+            restoreHistoryFrom(file);
             startGame(std::move(*loaded));
             return true;
         }
@@ -482,6 +525,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui_.reset();
         session_.reset();
         front_ = makeFrontScreen(FrontId::Intro);
+        cueMusic(MusicCue::IntroOpened);
         return true;
     }
     // The learning system: a lesson chosen in the Learn window, or what the
@@ -555,7 +599,10 @@ void ClassicMode::drawNetwork(UiContext& ui) {
             std::snprintf(buffer, sizeof buffer, "%s", chatInput_.c_str());
             ImGui::SetNextItemWidth(-FLT_MIN);
             if (ImGui::InputText("##say", buffer, sizeof buffer, ImGuiInputTextFlags_EnterReturnsTrue)) {
-                if (buffer[0]) net->chat(buffer);
+                if (buffer[0]) {
+                    audio().play("ordbtn");  // sending a chat line (docs/spec/06 §5.5)
+                    net->chat(buffer);
+                }
                 buffer[0] = 0;
                 ImGui::SetKeyboardFocusHere(-1);
             }

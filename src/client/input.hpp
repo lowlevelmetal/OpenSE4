@@ -19,13 +19,17 @@ enum class Action : uint8_t {
     // Windows; LessonText re-opens the lesson panel, ContextHelp the manual page of the window in front.
     Help, GameMenu, Designs, Planets, Colonies, Ships, Queues, Research, Empires, Log, EmpireStatus, EndTurn, Settings,
     LessonText, ContextHelp,
-    // Orders for the selected ship or fleet.
+    // Orders for the selection (each works only while its button is lit, docs/spec/06 §2.8).
     MoveTo, Warp, Attack, Colonize, Resupply, Repair, ClearOrders, FleetTransfer, BuildQueue, CargoTransfer, LaunchRecover,
     LoadCargo, DropCargo, Sentry, Explore, Patrol, RepeatOrders, StellarManipulation, ViewOrders, Scrap, Rename, Cloak, Decloak,
+    MoveToWaypoint, LaunchRemote, RecoverRemote, Strategy, Jettison, SweepMines, TagMinefield, UntagMinefield, AbandonPlanet,
+    ConvertResources, UseComponent, UseFacility, ScrapFacilities, Minister,
+    // The movement log of a simultaneous game.
+    ReplayPlay, ReplayRewind, ReplayStep, ReplayShip,
     // Selection.
-    NextIdleShip, NextShip, PreviousShip, NextFleet, PreviousFleet, NextColony, PreviousColony,
+    NextIdleShip, NextShip, PreviousShip, NextFleet, PreviousFleet, NextColony, PreviousColony, TagAll, ClearTags,
     // Display and interface.
-    MovementLines, Cancel, ToggleFullscreen,
+    MovementLines, ToggleSound, Cancel, ToggleFullscreen,
     Count
 };
 inline constexpr size_t kActionCount = static_cast<size_t>(Action::Count);

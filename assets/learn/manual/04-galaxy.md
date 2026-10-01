@@ -118,16 +118,19 @@ You also learn designs by fighting them, and through intelligence.
 ## The galaxy panel and the Galaxy Map
 
 The galaxy panel at the bottom right of the main window shows the whole quadrant on a fine grid.
-Systems are small markers, and the warp links you know are lines between them.
+Systems are small rings. Warp lines start from the systems you have explored; a link to a system
+you have not explored is a short stub.
 
 | Marker | Meaning |
 |---|---|
-| Grey ring | No empire known to be there |
-| Filled circle in an empire's colour | That empire, and only that one, is there (your colour for you) |
-| White triangle | Several empires are there |
-| Yellow ring around a marker | The system shown in the system panel |
+| Dark grey ring | A system you have not explored |
+| Light grey ring | Explored, and no empire seen there |
+| Ring in an empire's colour | That empire, and only that one, is seen there (your colour for you) |
+| Triangle | Several empires are there: in your colour if you are one of them |
+| Filled marker with a ring around it | The system shown in the system panel |
 
-Hover over a system to see its name, once you have explored it. Left-click a system to show it
+Each empire's colour is the colour swatch of its race's flag. Point at the panel to see the name
+of the nearest explored system in cyan. Left-click a system to show it
 in the system panel. Right-click the panel to open the [Galaxy Map](window:galaxy-map).
 
 The Galaxy Map is a larger map with overlay tabs: **Presence**, **Avoid** (the systems you avoid),

@@ -2,6 +2,7 @@
 // panel (docs/spec/06 §2.6), with overlays, Goto System, distances, names
 // and per-system player notes.
 
+#include "client/classic/map_style.hpp"
 #include "client/classic/quadrant_map.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/widgets.hpp"
@@ -21,7 +22,6 @@ std::string noteOf(const game::Empire& me, game::SystemId sys) {
 
 class GalaxyMapScreen final : public Screen {
 public:
-    explicit GalaxyMapScreen(std::optional<game::SystemId> current) : current_(current) {}
 
     bool draw(UiContext& ui) override {
         Dialog d(ui, "Galaxy Map", DialogSize::Large);
@@ -31,15 +31,13 @@ public:
         bool keep = true;
         d.beginContent();
 
+        // The window's map is 544×376 (§2.6); the hovered or edited system's notes go below it.
         QuadrantMapOptions opt;
         opt.overlay = overlay_;
         opt.names = names_;
         opt.distances = distances_;
-        opt.current = current_;
         if (editing_) opt.highlight.push_back(*editing_);
-        const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float noteHeight = 98;
-        const QuadrantMapResult r = quadrantMap(ui, "##map", {avail.x / ui.k(), avail.y / ui.k() - noteHeight}, opt);
+        const QuadrantMapResult r = quadrantMap(ui, "##map", {544, 376}, opt);
         if (r.clicked) {
             editing_ = *r.clicked;
             draft_ = noteOf(me, *r.clicked);
@@ -48,32 +46,31 @@ public:
         if (r.hovered) hovered_ = r.hovered;
 
         // Notes: the system being edited, else the hovered one.
-        ImGui::BeginChild("##notes", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        ImGui::BeginChild("##notes", ImVec2(ui.px(544), 0));
         if (editing_) {
             ImGui::TextColored(kLabelBlue, "Notes on %s", s.galaxy.system(*editing_).name.c_str());
             if (focusNote_) {
                 ImGui::SetKeyboardFocusHere();
                 focusNote_ = false;
             }
-            const float bw = ui.px(90);
-            inputMultiline("##note", draft_, ImVec2(ImGui::GetContentRegionAvail().x - bw - ImGui::GetStyle().ItemSpacing.x, ui.px(44)));
+            const float bw = ui.px(70);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 2 * (bw + ImGui::GetStyle().ItemSpacing.x));
+            const bool enter = inputString("##note", draft_, 400, ImGuiInputTextFlags_EnterReturnsTrue);
             ImGui::SameLine();
-            ImGui::BeginGroup();
-            if (ImGui::Button("Save Note", ImVec2(bw, ui.px(20)))) {
+            if (ImGui::Button("Save", ImVec2(bw, 0)) || enter) {
                 const game::CommandResult res = ui.session.issue(game::cmd::SetSystemNote{*editing_, draft_});
                 error_ = res.ok ? std::string{} : res.error;
                 if (res.ok) editing_.reset();
             }
-            if (ImGui::Button("Cancel", ImVec2(bw, ui.px(20)))) editing_.reset();
-            ImGui::EndGroup();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(bw, 0))) editing_.reset();
         } else if (hovered_) {
             const game::StarSystem& sys = s.galaxy.system(*hovered_);
             ImGui::TextColored(kLabelBlue, "%s", sys.name.c_str());
             ImGui::SameLine();
-            dimText(me.hasExplored(sys.id) ? std::format("at {}, {}", sys.position.x, sys.position.y).c_str() : "unexplored");
             const std::string note = noteOf(me, sys.id);
-            if (note.empty()) dimText("No notes. Click the system to write some.");
-            else ImGui::TextWrapped("%s", note.c_str());
+            if (note.empty()) dimText(me.hasExplored(sys.id) ? "No notes. Click the system to write some." : "Unexplored");
+            else ImGui::TextUnformatted(note.c_str());
         } else {
             dimText("Point at a system to read its notes; click it to edit them.");
         }
@@ -141,6 +138,7 @@ private:
     }
 
     void legend(UiContext& ui) {
+        // Our own key to the symbols (the original has none).
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float r = ui.px(4);
         auto row = [&](auto&& symbol, const char* text) {
@@ -150,33 +148,31 @@ private:
             ImGui::SetCursorScreenPos({p.x + ui.px(20), p.y});
             dimText(text);
         };
-        const float t = ui.px(1.5f);
+        auto ring = [&](ImU32 c) { return [&, c](ImVec2 at) { dl->AddCircle(at, r, c, 0, ui.px(1.5f)); }; };
+        const ImU32 own = empireColor(ui.state(), ui.me().id);
+        row(ring(imColor(map_style::kUnexplored)), "Unexplored");
+        row(ring(imColor(map_style::kExplored)), "Explored");
         switch (overlay_) {
-            case MapOverlay::Presence: {
-                const ImU32 own = empireColor(ui.state(), ui.me().id);
-                row([&](ImVec2 c) { dl->AddCircle(c, r, IM_COL32(80, 88, 102, 255), 0, t); }, "Unexplored");
-                row([&](ImVec2 c) { dl->AddCircle(c, r, IM_COL32(200, 208, 220, 255), 0, t); }, "Explored");
-                row([&](ImVec2 c) { dl->AddCircle(c, r, own, 0, t); }, "Only us present");
+            case MapOverlay::Presence:
+                row(ring(own), "Only us seen there");
                 row([&](ImVec2 c) {
-                    dl->AddTriangleFilled({c.x, c.y - r * 1.25f}, {c.x - r * 1.1f, c.y + r * 0.85f}, {c.x + r * 1.1f, c.y + r * 0.85f}, IM_COL32_WHITE);
+                    dl->AddTriangleFilled({c.x - r, c.y + r}, {c.x + r, c.y + r}, {c.x, c.y - r}, own);
                 }, "Several empires");
                 break;
-            }
-            case MapOverlay::Avoid: row([&](ImVec2 c) { dl->AddCircleFilled(c, r, IM_COL32(255, 208, 64, 255)); }, "Avoided"); break;
+            case MapOverlay::Avoid: row(ring(own), "Avoided"); break;
             case MapOverlay::AllyClaimed:
             case MapOverlay::EnemyClaimed:
-                row([&](ImVec2 c) { dl->AddCircleFilled(c, r, IM_COL32(200, 208, 220, 255)); }, "Claimed (claimant's colour)");
+                row(ring(own), "Claimed (the claimant's colour)");
+                row([&](ImVec2 c) { dl->AddCircleFilled(c, r, imColor(map_style::kYellow)); }, "Several claimants");
                 break;
             case MapOverlay::Spaceports:
             case MapOverlay::ResupplyDepots:
-                row([&](ImVec2 c) { dl->AddCircleFilled(c, r, IM_COL32(80, 220, 90, 255)); },
-                    overlay_ == MapOverlay::Spaceports ? "Colony with a spaceport" : "Colony with a depot");
-                row([&](ImVec2 c) { dl->AddCircleFilled(c, r, IM_COL32(255, 208, 64, 255)); }, "Colony without");
+                row(ring(imColor(map_style::kGreen)), overlay_ == MapOverlay::Spaceports ? "Colony with a spaceport" : "Colony with a depot");
+                row(ring(imColor(map_style::kYellow)), "Colony without");
                 break;
         }
     }
 
-    std::optional<game::SystemId> current_;
     std::optional<game::SystemId> hovered_;
     std::optional<game::SystemId> editing_;
     std::string draft_;
@@ -190,10 +186,9 @@ private:
 
 } // namespace
 
-std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs& args) {
-    std::optional<game::SystemId> current;
-    if (args.location) current = args.location->system;
-    return std::make_unique<GalaxyMapScreen>(current);
+std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs&) {
+    // The window marks no current system (only the galaxy panel does, §2.6).
+    return std::make_unique<GalaxyMapScreen>();
 }
 
 } // namespace opense4::client::classic

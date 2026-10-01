@@ -19,23 +19,23 @@ namespace opense4::client::classic {
 namespace {
 
 // Human players' statistics, history and log text files (spec 05 §3.4, §5,
-// §8 step 2): the lines the engine made, in per-player files in a folder of
-// the game under the user data directory, named after its seed
-// (history/<seed>/player<N>_stats.txt, _events.txt, _log.txt; an OpenSE4
-// choice, the original keeps them in its installation, spec 05 open question
-// 40). Statistics and history are appended, the history file opened only
-// when there is a line; the log copy is rewritten whenever the engine made it.
-void writePlayerRecords(const game::GameState& s, const std::vector<game::score::PlayerRecords>& records) {
+// §8 step 2; docs/spec/06 §6.1): the lines the engine made, in
+// History/plr_<N>_stats.txt, plr_<N>_events.txt and plr_<N>_log.txt. The
+// original keeps History/ in its installation; ours is in the user data
+// folder, and saves carry copies (copyHistoryNextTo, restoreHistoryFrom).
+// Statistics and history are appended, the history file opened only when
+// there is a line; the log copy is rewritten whenever the engine made it. A
+// new game's first turn starts the files afresh.
+void writePlayerRecords(const std::vector<game::score::PlayerRecords>& records) {
     if (records.empty()) return;
     std::error_code ec;
-    const std::filesystem::path dir = userDataDir() / "history" / std::format("{:016x}", s.seed);
+    const std::filesystem::path dir = historyDir();
     std::filesystem::create_directories(dir, ec);
     if (ec) {
         log::warn("Cannot create {}: {}", dir.string(), ec.message());
         return;
     }
-    // The first turn of a game starts its files afresh (a new game with the same seed).
-    auto append = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh) {
+    auto write = [&](const std::filesystem::path& file, const std::vector<std::string>& lines, bool fresh) {
         if (lines.empty()) {
             if (fresh) std::filesystem::remove(file, ec);
             return;
@@ -45,12 +45,11 @@ void writePlayerRecords(const game::GameState& s, const std::vector<game::score:
         if (!out) log::warn("Cannot write {}", file.string());
     };
     for (const game::score::PlayerRecords& rec : records) {
-        const std::string base = std::format("player{}", rec.empire.value + 1);
         const bool fresh = rec.turn == 0;
-        append(dir / (base + "_stats.txt"), rec.statistics, fresh);
-        append(dir / (base + "_events.txt"), rec.history, fresh);
-        if (!rec.log.empty()) append(dir / (base + "_log.txt"), rec.log, true);
-        else if (fresh) std::filesystem::remove(dir / (base + "_log.txt"), ec);
+        write(dir / historyFileName(rec.empire, "stats.txt"), rec.statistics, fresh);
+        write(dir / historyFileName(rec.empire, "events.txt"), rec.history, fresh);
+        if (!rec.log.empty()) write(dir / historyFileName(rec.empire, "log.txt"), rec.log, true);
+        else if (fresh) std::filesystem::remove(dir / historyFileName(rec.empire, "log.txt"), ec);
     }
 }
 
@@ -232,7 +231,7 @@ void ClassicSession::runCall() {
         return;
     }
     const Call call = std::exchange(call_, Call::None);
-    if (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) writePlayerRecords(state_, res.records);
+    if (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) writePlayerRecords(res.records);
     // The battles fought in the Tactical Combat window must have come out the same here.
     for (const game::CombatRecord& fought : fought_) {
         const auto same = [&](const game::CombatRecord& r) {
@@ -382,7 +381,7 @@ void ClassicSession::endTurn() {
     for (const game::Empire& e : state_.empires)
         if (e.alive && e.kind == game::PlayerKind::Human) submitted.push_back({e.id, state_.turn, {}});
     const game::TurnResult result = game::processTurn(*rules_, state_, submitted);
-    writePlayerRecords(state_, result.records);
+    writePlayerRecords(result.records);
     strategic_.clear();
     notices_.clear();
     for (const auto& [empire, text] : result.rejected)
@@ -409,6 +408,7 @@ std::optional<std::filesystem::path> ClassicSession::autosave() {
         log::warn("{}", autosaveNote_);
         return std::nullopt;
     }
+    copyHistoryNextTo(file);
     autosaveNote_ = std::format("Saved as {}", *name);
     return file;
 }
@@ -478,7 +478,7 @@ void ClassicSession::simulateTurns(int n) {
     // A turn-based game plays whole game turns the same way (processTurn).
     for (int i = 0; i < n && !state_.gameOver; ++i) {
         const game::TurnResult result = game::processTurn(*rules_, state_, {});
-        if (kind_ != SessionKind::NetworkClient) writePlayerRecords(state_, result.records);
+        if (kind_ != SessionKind::NetworkClient) writePlayerRecords(result.records);
     }
     if (n > 0 && turnBased() && kind_ != SessionKind::NetworkClient) resumeTurnBased();
     if (n > 0) beginTurn();
@@ -526,6 +526,36 @@ std::filesystem::path userDataDir() {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir;
+}
+
+std::filesystem::path historyDir() { return userDataDir() / "History"; }
+
+std::string historyFileName(game::EmpireId empire, std::string_view kind) { return std::format("plr_{}_{}", empire.value + 1, kind); }
+
+void copyHistoryNextTo(const std::filesystem::path& saveFile, const std::filesystem::path& history) {
+    std::error_code ec;
+    const std::string prefix = saveFile.stem().string() + "_";
+    for (const auto& e : std::filesystem::directory_iterator(history, ec)) {
+        if (!e.is_regular_file(ec)) continue;
+        std::filesystem::copy_file(e.path(), saveFile.parent_path() / (prefix + e.path().filename().string()),
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) log::warn("Cannot copy {} next to {}: {}", e.path().string(), saveFile.string(), ec.message());
+    }
+}
+
+void restoreHistoryFrom(const std::filesystem::path& saveFile, const std::filesystem::path& history) {
+    std::error_code ec;
+    const std::filesystem::path& dir = history;
+    for (const auto& e : std::filesystem::directory_iterator(dir, ec))
+        if (e.is_regular_file(ec)) std::filesystem::remove(e.path(), ec);
+    std::filesystem::create_directories(dir, ec);
+    const std::string prefix = saveFile.stem().string() + "_plr_";
+    for (const auto& e : std::filesystem::directory_iterator(saveFile.parent_path(), ec)) {
+        const std::string name = e.path().filename().string();
+        if (!e.is_regular_file(ec) || !name.starts_with(prefix) || !name.ends_with(".txt")) continue;
+        std::filesystem::copy_file(e.path(), dir / name.substr(saveFile.stem().string().size() + 1), std::filesystem::copy_options::overwrite_existing,
+                                   ec);
+    }
 }
 
 std::filesystem::path savesDir() {

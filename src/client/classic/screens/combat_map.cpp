@@ -142,12 +142,32 @@ std::string CombatMapPainter::eventText(const game::CombatEvent& e) const {
 
 void CombatMapPainter::background(ImDrawList* dl, ImVec2 min, ImVec2 max, const CombatView& v, ImU32 gridColor) const {
     dl->AddRectFilled(min, max, IM_COL32(0, 0, 0, 255));
+    // The tiled background of docs/spec/06 §5.3, opaque, repeating every 12 squares:
+    // the system's own tiles when its type masks black and has them, else the
+    // Combat Tile of a storm or asteroid field in the sector, else the star field.
     const game::Location where = record_.location;
+    std::string tiles;
     if (where.system.valid() && where.system.index() < s_.galaxy.systems.size()) {
         const game::StarSystem& sys = s_.galaxy.system(where.system);
-        if (sys.type.index() < ui_.rules().data().systemTypes.size())
-            drawSprite(dl, ui_.art.systemBackground(ui_.rules().data().systemTypes[sys.type.index()].backgroundBitmap), min, max,
-                       IM_COL32(255, 255, 255, 120));
+        const auto& types = ui_.rules().data().systemTypes;
+        if (sys.type.index() < types.size() && types[sys.type.index()].maskBackgroundObjects) {
+            std::string name = types[sys.type.index()].backgroundBitmap;
+            if (name.size() > 4 && (name.ends_with(".bmp") || name.ends_with(".BMP"))) name.resize(name.size() - 4);
+            if (ui_.art.hasCombatTiles(name)) tiles = name;
+        }
+        for (game::ObjectId id : sys.objects) {
+            const game::SpaceObject& o = s_.galaxy.object(id);
+            if (!tiles.empty() || o.sector != where.sector || (o.kind != game::ObjectKind::Storm && o.kind != game::ObjectKind::Asteroids)) continue;
+            if (o.sectorType < ui_.rules().data().sectorObjectTypes.size()) tiles = ui_.rules().data().sectorObjectTypes[o.sectorType].combatTile;
+        }
+    }
+    if (const Sprite pic = ui_.art.combatBackground(tiles, (uint64_t(where.system.value) << 16) ^ uint64_t(where.sector.x * 13 + where.sector.y))) {
+        dl->PushClipRect(min, max, true);
+        const float x0 = std::floor((v.cx - (max.x - min.x) * 0.5f / v.cell) / 12.0f) * 12.0f;
+        const float y0 = std::floor((v.cy - (max.y - min.y) * 0.5f / v.cell) / 12.0f) * 12.0f;
+        for (float y = y0; v.at(0, y).y < max.y; y += 12.0f)
+            for (float x = x0; v.at(x, 0).x < max.x; x += 12.0f) drawSprite(dl, pic, v.at(x, y), v.at(x + 12.0f, y + 12.0f));
+        dl->PopClipRect();
     }
     if (gridColor == 0) return;
     const float w = max.x - min.x, h = max.y - min.y;
@@ -287,13 +307,14 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             const std::string type = w ? w->displayType : std::string();
             const int index = w ? toInt(w->display) : 0;
             if (type == "Beam") {
-                const Sprite beam = ui_.art.cell("Pictures/Combat/Beams.bmp", std::max(0, index - 1), 20, 20);
-                const float a = std::sin(std::numbers::pi_v<float> * std::clamp(t, 0.0f, 1.0f));
-                if (beam) drawSpriteAlong(dl, beam, from, to, v.cell * 0.5f, IM_COL32(255, 255, 255, int(255 * a)));
-                else dl->AddLine(from, to, withAlpha(shooter, a), ui_.px(2.5f));
+                // Beams and torpedoes are 1-based: cell = Weapon Display - 1, 0 = no picture (§5.2).
+                // Drawn opaque with black keyed, never faded (§5.1).
+                const Sprite beam = index > 0 ? ui_.art.cell("Pictures/Combat/Beams.bmp", index - 1, 20, 20) : Sprite{};
+                if (beam) drawSpriteAlong(dl, beam, from, to, v.cell * 0.5f, IM_COL32_WHITE);
+                else dl->AddLine(from, to, shooter, ui_.px(2.5f));
             } else {
                 const Sprite shot = type == "Seeker" ? raceCell(ui_.art, styleOf(pieces[e.piece].owner), "Main.bmp", 40 + 20 * std::clamp(index, 0, 2), 0, 20, 20)
-                                                     : ui_.art.cell("Pictures/Combat/Torps.bmp", std::max(0, index), 20, 20);
+                                                     : index > 0 ? ui_.art.cell("Pictures/Combat/Torps.bmp", index - 1, 20, 20) : Sprite{};
                 const float k = smooth(t);
                 const ImVec2 p{from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k};
                 const float sz = v.cell * 0.6f;
@@ -304,7 +325,7 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
         }
         case Kind::Hit: {
             if (!hasTarget) break;
-            if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, withAlpha(shooter, 0.6f * (1 - t)), ui_.px(1.5f));
+            if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, shooter, ui_.px(1.5f));
             const int row = e.amount <= 5 ? 1 : e.amount <= 20 ? 2 : e.amount <= 60 ? 3 : 4;
             const int frame = std::min(7, int(t * 8.0f));
             const float sz = v.cell * 1.2f;
@@ -316,7 +337,7 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
         }
         case Kind::Miss:
             if (!hasTarget) break;
-            if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, withAlpha(shooter, 0.4f * (1 - t)), ui_.px(1.0f));
+            if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, shooter, ui_.px(1.0f));
             label({to.x + v.cell * 0.4f, to.y - v.cell * (0.6f + 0.3f * t)}, IM_COL32(190, 195, 210, 230), "miss");
             break;
         case Kind::Destroyed: {
@@ -348,7 +369,9 @@ void CombatMapPainter::sounds(size_t from, size_t to) const {
     for (size_t i = from; i < to; ++i) {
         const game::CombatEvent& e = playback_.event(i);
         if (e.kind == Kind::Fire && e.component < ui_.rules().data().components.size()) audio().play(ui_.rules().component(e.component).weapon.sound);
-        else if (e.kind == Kind::Destroyed) audio().play(std::array<std::string_view, 3>{"boom1", "boom2", "boom3"}[i % 3]);
+        // boom3 for a destroyed piece; a damaging hit boom1 under 4 damage, else boom2 (§5.5).
+        else if (e.kind == Kind::Destroyed) audio().play("boom3");
+        else if (e.kind == Kind::Hit && e.amount > 0) audio().play(e.amount < 4 ? "boom1" : "boom2");
     }
 }
 

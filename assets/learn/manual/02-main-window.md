@@ -43,8 +43,10 @@ function key.
 ## Order buttons
 
 The strip of small buttons in the middle of the command panel holds the **orders** for what you
-have selected. Buttons that do not apply are dimmed. Hover over a button to see its name and its
-key. Most orders have a letter key, listed in [Hotkeys](hotkeys).
+have selected. Buttons that do not apply are dimmed. Point at a button to see its name and its
+key at the top of the system panel. Most orders have a key, listed in [Hotkeys](hotkeys). To give
+one order to several ships, hold `Shift` and click them in the list of a sector (`Shift+A` tags
+them all); the next order goes to every tagged ship.
 
 With one of your **ships** selected you can, for example, move it, warp, attack, colonize,
 explore, resupply, repair, set a patrol, change its fleet, transfer cargo, launch units, cloak,

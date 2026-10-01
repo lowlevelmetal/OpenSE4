@@ -1,6 +1,9 @@
 #include "client/classic/art.hpp"
 
+#include "core/rng.hpp"
 #include "ruleset/ruleset.hpp"
+
+#include <cstring>
 
 #include <format>
 
@@ -17,6 +20,14 @@ std::string lower(std::string_view s) {
 
 Sprite whole(gfx::TextureId id, int w, int h) { return {id, Rect{{0, 0}, {1, 1}}, Vec2{float(w), float(h)}}; }
 
+Art* gColorSource = nullptr;
+
+std::string systemFile(std::string_view bitmap) {
+    std::string file(bitmap);
+    if (!lower(file).ends_with(".bmp")) file += ".bmp";
+    return file;
+}
+
 Sprite sub(gfx::TextureId id, int texW, int texH, int x, int y, int w, int h) {
     if (!id || texW <= 0 || texH <= 0 || x < 0 || y < 0 || x + w > texW || y + h > texH) return {};
     const float u0 = float(x) / float(texW), v0 = float(y) / float(texH);
@@ -28,6 +39,7 @@ Sprite sub(gfx::TextureId id, int texW, int texH, int x, int y, int w, int h) {
 Art::Art(gfx::Device& device, assets::InstallFiles files) : device_(device), files_(std::move(files)) {}
 
 Art::~Art() {
+    if (gColorSource == this) gColorSource = nullptr;
     for (auto& [key, t] : textures_)
         if (t.id) device_.destroyTexture(t.id);
 }
@@ -78,7 +90,7 @@ Sprite Art::region(std::string_view picture, int x, int y, int w, int h, bool co
     return t ? sub(t->id, t->width, t->height, x, y, w, h) : Sprite{};
 }
 
-Sprite Art::planet(int picture) { return cell("Pictures/Planets/Planets.bmp", picture, 36, 36); }
+Sprite Art::planet(int picture, bool colorKey) { return cell("Pictures/Planets/Planets.bmp", picture, 36, 36, colorKey); }
 
 Sprite Art::planetPortrait(int picture) { return image(std::format("Pictures/Planets/p{:04d}.bmp", picture + 1)); }
 
@@ -99,9 +111,30 @@ std::string Art::raceFile(std::string_view style, std::string_view suffix) {
     return std::format("Pictures/RaceGeneric/Generic_{}", suffix);
 }
 
-Sprite Art::shipMini(std::string_view style, const ruleset::VehicleSize& hull) {
-    if (Sprite s = image(raceFile(style, std::format("Mini_{}.bmp", hull.primaryBitmap)))) return s;
-    return image(raceFile(style, std::format("Mini_{}.bmp", hull.alternateBitmap)));
+Sprite Art::rotated(std::string_view relative, int heading, bool colorKey) {
+    heading = ((heading % 8) + 8) % 8;
+    if (heading == 0) return image(relative, colorKey);
+    const std::string key = lower(relative) + std::format("#r{}", heading) + (colorKey ? "#k" : "#o");
+    if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
+    Texture t;
+    if (auto path = files_.find(relative))
+        if (auto img = assets::loadImage(*path, colorKey); img && !img->empty()) {
+            const assets::Image turned = assets::rotateNearest(*img, 45.0 * heading, colorKey);
+            t.id = device_.createTexture(gfx::TextureDesc{turned.width, turned.height, filter_, key.c_str()}, turned.rgba.data());
+            t.width = turned.width;
+            t.height = turned.height;
+        }
+    textures_.emplace(key, t);
+    return t.id ? whole(t.id, t.width, t.height) : Sprite{};
+}
+
+Sprite Art::shipMini(std::string_view style, const ruleset::VehicleSize& hull, bool colorKey, int heading) {
+    for (const std::string* bitmap : {&hull.primaryBitmap, &hull.alternateBitmap}) {
+        const std::string file = raceFile(style, std::format("Mini_{}.bmp", *bitmap));
+        if (files_.find(file))
+            if (Sprite s = rotated(file, heading, colorKey)) return s;
+    }
+    return {};
 }
 
 Sprite Art::shipPortrait(std::string_view style, const ruleset::VehicleSize& hull) {
@@ -109,7 +142,9 @@ Sprite Art::shipPortrait(std::string_view style, const ruleset::VehicleSize& hul
     return image(raceFile(style, std::format("Portrait_{}.bmp", hull.alternateBitmap)));
 }
 
-Sprite Art::groupMini(std::string_view style, std::string_view group) { return image(raceFile(style, std::format("Mini_{}.bmp", group))); }
+Sprite Art::groupMini(std::string_view style, std::string_view group, bool colorKey, int heading) {
+    return rotated(raceFile(style, std::format("Mini_{}.bmp", group)), heading, colorKey);
+}
 
 Sprite Art::flag(std::string_view style, bool large) {
     const std::string file = raceFile(style, "Main.bmp");
@@ -140,12 +175,70 @@ Sprite Art::eventPicture(std::string_view name) {
 }
 
 Sprite Art::systemBackground(std::string_view bitmap) {
-    std::string file(bitmap);
-    if (!file.ends_with(".bmp") && !file.ends_with(".BMP")) file += ".bmp";
-    if (Sprite s = imageAny({std::format("Pictures/Systems/1024X768/{}", file), std::format("Pictures/Game/Screens/1024X768/{}", file)},
-                            false))
-        return s;
-    return image("Pictures/Game/Screens/1024X768/Starmap.bmp", false);
+    // Only from Systems/<resolution>/ (confirmed: binary); the plain star field when missing.
+    if (Sprite s = image(std::format("Pictures/Systems/1024X768/{}", systemFile(bitmap)), false)) return s;
+    return image("Pictures/Systems/1024X768/Starmap.bmp", false);
 }
+
+Sprite Art::systemPicture(std::string_view bitmap) {
+    if (bitmap.empty()) return {};
+    return image(std::format("Pictures/Systems/{}", systemFile(bitmap)), false);
+}
+
+std::optional<uint32_t> Art::swatchColor(std::string_view style) {
+    const std::string key(style);
+    if (auto it = swatches_.find(key); it != swatches_.end()) return it->second;
+    std::optional<uint32_t> color;
+    if (auto path = files_.find(raceFile(style, "Main.bmp")))
+        if (auto img = assets::loadImage(*path, false); img && img->width > 28 && img->height > 13) {
+            const uint8_t* p = &img->rgba[(static_cast<size_t>(13) * static_cast<size_t>(img->width) + 28) * 4];
+            color = (uint32_t{p[0]} << 16) | (uint32_t{p[1]} << 8) | uint32_t{p[2]};
+        }
+    swatches_.emplace(key, color);
+    return color;
+}
+
+bool Art::hasCombatTiles(std::string_view name) {
+    return !name.empty() && files_.find(std::format("Pictures/Systems/{}Tile1.bmp", name)).has_value();
+}
+
+Sprite Art::combatBackground(std::string_view name, uint64_t seed) {
+    constexpr int kSize = 432, kTile = 72;
+    const std::string key = std::format("#combat#{}#{}", lower(name), seed);
+    if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
+    std::vector<assets::Image> tiles;
+    for (int n = 1; n <= 100 && hasCombatTiles(name); ++n) {
+        const auto path = files_.find(std::format("Pictures/Systems/{}Tile{}.bmp", name, n));
+        if (!path) break;
+        if (auto img = assets::loadImage(*path, false); img && img->width >= kTile && img->height >= kTile) tiles.push_back(std::move(*img));
+    }
+    assets::Image picture;
+    if (!tiles.empty()) {
+        picture.width = picture.height = kSize;
+        picture.rgba.assign(size_t(kSize) * kSize * 4, 255);
+        Rng rng(seed);
+        for (int ty = 0; ty < kSize / kTile; ++ty)
+            for (int tx = 0; tx < kSize / kTile; ++tx) {
+                const assets::Image& t = tiles[static_cast<size_t>(rng.below(tiles.size()))];
+                for (int y = 0; y < kTile; ++y)
+                    std::memcpy(&picture.rgba[(size_t(ty * kTile + y) * kSize + size_t(tx * kTile)) * 4], &t.rgba[size_t(y) * size_t(t.width) * 4],
+                                size_t(kTile) * 4);
+            }
+    } else if (auto path = files_.find("Pictures/Systems/1024X768/Starmap.bmp")) {
+        if (auto img = assets::loadImage(*path, false)) picture = assets::crop(*img, 0, 0, kSize, kSize);
+    }
+    Texture t;
+    if (!picture.empty()) {
+        t.id = device_.createTexture(gfx::TextureDesc{picture.width, picture.height, filter_, key.c_str()}, picture.rgba.data());
+        t.width = picture.width;
+        t.height = picture.height;
+    }
+    textures_.emplace(key, t);
+    return t.id ? whole(t.id, t.width, t.height) : Sprite{};
+}
+
+void Art::setColorSource(Art* art) { gColorSource = art; }
+
+Art* Art::colorSource() { return gColorSource; }
 
 } // namespace opense4::client::classic

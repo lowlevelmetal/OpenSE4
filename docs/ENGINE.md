@@ -311,14 +311,17 @@ scaled to the window, drawn with the art from the player's install.
 | Part | Role |
 |---|---|
 | `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers; it lists the battles to watch in the Strategic Combat window |
-| `art.*` | Pictures from the install, cached as textures |
+| `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, and each empire's colour from its race's swatch |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, the classic dialog layout, and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
-| `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches and OpenSE4's effects volume, in `classic_settings.toml` |
+| `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
 | `facility_markers.*` | The facility letter markers the Empire Options can show on colonies in the system window |
-| `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |
+| `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay, and hotkeys |
+| `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
+| `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
+| `ship_glides.*` | Ships gliding to their new square, the headings of minis, and the movement log replay |
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question) and Ground Combat; `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
-| `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
+| `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
 | `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |

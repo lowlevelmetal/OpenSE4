@@ -11,6 +11,7 @@
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
 
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -74,6 +75,8 @@ private:
     void contextHelp();
     void endTurn();
     void updateAudio();
+    // Switches the music for a cue (docs/spec/06 §5.5), when music is on.
+    void cueMusic(MusicCue cue);
     bool updateFrame(const FrameState& fs);
 
     Platform platform_;
@@ -84,6 +87,10 @@ private:
     std::unique_ptr<classic::LearnContent> learn_;
     classic::FrameMapping mapping_;
     Playlists playlists_;
+    MusicDirector music_{static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
+    bool replayWasOpen_ = false;
+    bool loadedFromIntro_ = false;   // a game loaded from the intro this frame (background music)
+    size_t logSeen_ = 0;             // the player's log entries already heard (stellar manipulation sounds)
 
     // Before a game: the front end.
     std::unique_ptr<classic::FrontScreen> front_;

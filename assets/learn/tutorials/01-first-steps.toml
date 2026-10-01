@@ -96,7 +96,8 @@ manual = "planets-and-colonies#colonizing"
 title = "The whole quadrant"
 text = """
 The map at the bottom right is the **galaxy panel**: every star system of the quadrant, and the
-warp links you know as lines. Your home system has a yellow ring.
+warp links you know as lines. The system shown in the system view is filled in, with a ring
+around it.
 
 Right-click the galaxy panel to open the larger **Galaxy Map**.
 """

@@ -54,6 +54,8 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
     sound.insert("music_percent", s.musicVolume);
+    toml::table games;
+    games.insert("last_saved", s.lastSavedGame);
     toml::array done;
     for (const std::string& d : s.learnDone) done.push_back(d);
     toml::table learn;
@@ -62,6 +64,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     root.insert("options", std::move(options));
     root.insert("sound", std::move(sound));
     root.insert("learn", std::move(learn));
+    root.insert("games", std::move(games));
     std::ostringstream out;
     out << "# OpenSE4 classic client preferences\n" << root << "\n";
     return out.str();
@@ -87,6 +90,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
             if (std::abs(int(*v) - step) < std::abs(int(*v) - best)) best = step;
         s.musicVolume = best;
     }
+    if (auto v = root["games"]["last_saved"].value<std::string>()) s.lastSavedGame = *v;
     if (const toml::array* done = root["learn"]["done"].as_array())
         for (const toml::node& d : *done)
             if (auto v = d.value<std::string>()) s.learnDone.push_back(*v);

@@ -30,6 +30,12 @@ std::optional<Image> loadImage(const std::filesystem::path& path, bool blackIsTr
 // Copies a w×h rectangle; out-of-range parts are transparent.
 Image crop(const Image& src, int x, int y, int w, int h);
 
+// The image turned clockwise about its centre by `degrees`, the same size,
+// sampling the nearest source pixel with no smoothing (docs/spec/06 §2.4).
+// Pixels whose source falls outside the picture come out black: transparent
+// when `transparentOutside`, else opaque.
+Image rotateNearest(const Image& src, double degrees, bool transparentOutside);
+
 // True if the image has no visible pixel (e.g. an unused sprite-sheet cell).
 bool isBlank(const Image& img);
 

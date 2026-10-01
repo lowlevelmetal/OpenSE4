@@ -1,8 +1,9 @@
 # Hotkeys
 
 These are the default keys. Most of them can be changed in the Controls tab of the
-[Settings](settings#controls) window. The keys of the main window work while no other window is
-open and no text field has the keyboard.
+[Settings](settings#controls) window, and the [Hotkeys](help:hotkeys) tab of Help lists them as
+they are bound now. The keys of the main window work while no other window is open and no text
+field has the keyboard.
 
 ## Windows
 
@@ -26,8 +27,8 @@ open and no text field has the keyboard.
 
 ## Orders
 
-These work for the selected ship or fleet, or colony where it applies, when the matching order
-button is enabled.
+These work for the selected ship, fleet, colony or tagged group when the matching order button
+is lit; pointing at a button shows its name and key at the top of the system panel.
 
 | Order | Key |
 |---|---|
@@ -56,9 +57,23 @@ button is enabled.
 | Change Name | `N` |
 | Cloak | `Z` |
 | Decloak | `X` |
+| Move To Waypoint (from a list) | `Ctrl+W` |
+| Launch units at a place | `I` |
+| Recover units at a place | `O` |
+| Fleet formation and strategy | `H` |
+| Sweep Mines | `Ctrl+M` |
+| Use Component | `Ctrl+Z` |
+| Scrap Facilities | `Ctrl+K` |
+| Abandon Planet | `Ctrl+A` |
+| Minister Control on or off | `Ctrl+Y` |
+| Tag, untag the selected sector as a minefield | `Ctrl+T`, `Ctrl+R` |
 
-Sweep Mines, Move To Waypoint (from a list), Minister Control, Scrap Facilities and Abandon
-Planet have buttons only.
+Jettison Cargo (`J`), Use Facility (`Ctrl+J`) and Convert Resources (`Ctrl+V`) have their
+buttons and keys, but OpenSE4 cannot carry them out yet.
+
+In a simultaneous game, `Ctrl+P` plays the movement of the last turn again, `Ctrl+O` puts the
+ships back where they started, `Ctrl+I` moves them on by one day and `Ctrl+U` plays it for
+every ship.
 
 ## Selecting
 
@@ -68,6 +83,8 @@ Planet have buttons only.
 | `Ctrl+N`, `Ctrl+B` | Next, previous ship |
 | `Ctrl+F`, `Ctrl+D` | Next, previous fleet |
 | `Ctrl+C`, `Ctrl+X` | Next, previous colony |
+| `Shift`+click in the list | Tag a ship (a ship in a fleet tags the fleet); orders then go to every tagged ship |
+| `Shift+A`, `Shift+C` | Tag every ship of yours in the list, clear the tags |
 | `Esc` | Cancel picking a target; otherwise clear the selection |
 
 ## Display
@@ -75,6 +92,7 @@ Planet have buttons only.
 | Key | Action |
 |---|---|
 | `Ctrl+L` | Show or hide the selected ship's movement line |
+| `Ctrl+S` | Sound effects on or off |
 | `Alt+Enter` | Switch between window and fullscreen |
 
 ## Mouse in the main window

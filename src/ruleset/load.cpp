@@ -464,7 +464,7 @@ private:
         s.backgroundBitmap = r.str("Background Bitmap", Need::Optional);
         s.empiresCanStartIn = r.boolean("Empires Can Start In", Need::Optional);
         s.maskBackgroundObjects = r.boolean("Mask Background Objs", Need::Optional);
-        s.nonTiledCenterPicture = r.str("Non-Tiled Center Pic", Need::Optional);
+        s.nonTiledCenterPicture = r.boolean("Non-Tiled Center Pic", Need::Optional);
         s.abilities = abilities(r);
         s.warpPointStellarAbilityType = r.str("WP Stellar Abil Type", Need::Optional);
         const int count = r.int32("Number of System Objs");

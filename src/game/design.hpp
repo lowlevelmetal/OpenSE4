@@ -97,6 +97,11 @@ void resetDesignStatistics(Design& d);
 // A design is a prototype until a construction queue completes a vehicle or
 // unit of it, or a ship is retrofitted to it (spec 03 §4.1, confirmed: binary).
 bool designIsPrototype(const Design& d);
+// A new ship's name (docs/spec/06 §6, §7 Q18, confirmed: binary): the design's
+// name, a space and a four-digit serial with leading zeros ("Hood 0007"), one
+// more than the highest serial among the existing vehicles of the design (the
+// last four characters of their names), so a number freed at the top is used again.
+std::string nextVehicleName(const GameState& s, const Design& d);
 // One of the empire's construction queues (planets and space yard ships) holds it.
 bool designInQueue(const GameState& s, EmpireId empire, DesignId design);
 // What a destroyed vehicle of this design adds to its killer's "enemy tonnage

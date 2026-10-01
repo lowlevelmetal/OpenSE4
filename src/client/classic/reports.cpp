@@ -1,6 +1,7 @@
 #include "client/classic/reports.hpp"
 
 #include "client/classic/screens/colony_logic.hpp"
+#include "client/classic/status_icons.hpp"
 
 #include "game/combat.hpp"
 #include "game/design.hpp"
@@ -62,6 +63,14 @@ void abilityList(const std::vector<game::ParsedAbility>& list) {
                                                               static_cast<long long>(a.value2));
         else if (!a.text1.empty() && a.text1 != "0") ImGui::BulletText("%s (%s)", name.c_str(), a.text1.c_str());
         else ImGui::BulletText("%s", name.c_str());
+    }
+}
+
+// Status icons (docs/spec/06 §4.4) in a row, in the order they are drawn.
+void statusRow(UiContext& ui, const std::vector<int>& cells) {
+    for (size_t i = 0; i < cells.size(); ++i) {
+        if (i > 0) ImGui::SameLine(0, 0);
+        image(ui, ui.art.statusIcon(cells[i] + 1), {20, 20});
     }
 }
 
@@ -281,6 +290,8 @@ void vehicleReport(UiContext& ui, const game::Vehicle& v, ReportTab tab) {
             if (v.status != game::VehicleStatus::Normal)
                 labelValue(ui, "Status", v.status == game::VehicleStatus::Mothballed ? "Mothballed" : "Cloaked", 70);
             ImGui::EndGroup();
+            // The status icons under the portrait, for own vehicles only.
+            if (own) statusRow(ui, vehicleStatusCells(r, s, v));
             const int structure = game::vehicleStructure(r, s, v);
             const int damage = std::min(structure, game::vehicleDamageTaken(s, v));
             labelValue(ui, "Movement", std::format("{} / {}", v.movement, game::vehicleMaxMovement(r, s, v)));
@@ -336,6 +347,7 @@ void fleetReport(UiContext& ui, const game::Fleet& f) {
     const game::GameState& s = ui.state();
     const game::Rules& r = ui.rules();
     title(ui, f.name);
+    if (f.owner == ui.session.player()) statusRow(ui, fleetStatusCells(s, f));
     int mp = 1 << 30;
     int64_t supply = 0, capacity = 0;
     bool endless = !f.members.empty();
@@ -404,6 +416,12 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
             field("Conditions", std::string(game::economy::conditionsName(game::economy::conditionsBand(o.conditions))));
             pen.text(126, y, kLabelBlue, "Value");
             pen.resourceRow({o.value[0], o.value[1], o.value[2]}, {138, 194, 242}, y + 12, "%");
+            // Status icons over the foot of the portrait: an own colony's, or the ruins on any planet.
+            {
+                const std::vector<int> cells = own ? colonyStatusCells(r, s, *c, game::economy::colonyOutput(r, s, *c).connected)
+                                                   : planetStatusCells(r, s, ui.session.player(), planet);
+                for (size_t i = 0; i < cells.size() && i < 6; ++i) pen.sprite(ui.art.statusIcon(cells[i] + 1), -3 + 20 * float(i), 96, 20, 20);
+            }
             pen.wrapped(ui.fonts.small, kSmallSize, -1, 134, 286, imColor(palette::kHeading), type.description);
             if (!c) break;
             float row = 177;
@@ -489,6 +507,8 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
         ImGui::TextColored(kDim, "Unexplored");
         return;
     }
+    // The system type's 128x128 picture (Systems/<Background Bitmap>, docs/spec/06 §5.3).
+    if (const Sprite picture = ui.art.systemPicture(type.backgroundBitmap)) image(ui, picture, {128, 128});
     labelValue(ui, "System Type", type.name);
     labelValue(ui, "Location", std::format("{}, {}", sys.position.x, sys.position.y));
     wrapped(type.description);

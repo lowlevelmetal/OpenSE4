@@ -35,8 +35,8 @@ manual = "main-window#selecting-things"
 [[step]]
 title = "Explore"
 text = """
-Give the scout the **Explore** order: the order button with its tooltip `Explore (E)`, or simply
-press `E`.
+Give the scout the **Explore** order: the order button named `Explore` (point at a button to see
+its name and key at the top of the system view), or simply press `E`.
 
 Explore picks the nearest warp point that leads to a system you have not visited, flies there
 and jumps through. The scout leaves at once.

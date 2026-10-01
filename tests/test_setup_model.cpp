@@ -632,14 +632,14 @@ TEST_CASE("setup model: autosave every N turns, named after the last digit of th
     CHECK(setup::kAutosaveTurns == std::array<int, 6>{0, 1, 2, 3, 5, 10});
     // After a turn is processed, when the turns since 2400.0 are a multiple of N;
     // the file is that number's last digit (spec 01 §14 Q38, confirmed: binary).
-    CHECK(setup::autosaveName(1, 1) == "Autosave 1");
-    CHECK(setup::autosaveName(1, 10) == "Autosave 0");
-    CHECK(setup::autosaveName(1, 11) == "Autosave 1");
-    CHECK(setup::autosaveName(1, 127) == "Autosave 7");
+    CHECK(setup::autosaveName(1, 1) == "AutoSav1");
+    CHECK(setup::autosaveName(1, 10) == "AutoSav0");
+    CHECK(setup::autosaveName(1, 11) == "AutoSav1");
+    CHECK(setup::autosaveName(1, 127) == "AutoSav7");
     CHECK_FALSE(setup::autosaveName(5, 4).has_value());
-    CHECK(setup::autosaveName(5, 5) == "Autosave 5");
-    CHECK(setup::autosaveName(5, 15) == "Autosave 5");
-    CHECK(setup::autosaveName(3, 12) == "Autosave 2");
+    CHECK(setup::autosaveName(5, 5) == "AutoSav5");
+    CHECK(setup::autosaveName(5, 15) == "AutoSav5");
+    CHECK(setup::autosaveName(3, 12) == "AutoSav2");
     CHECK_FALSE(setup::autosaveName(3, 0).has_value());
     // Every 2 turns keeps five files, every 5 two and every 10 one; any N at most ten.
     auto files = [](int every) {

@@ -16,7 +16,7 @@
 namespace opense4::client::classic {
 
 // Learn opens on the Tutorials tab, LearnTraining on Training; Manual is the manual alone.
-enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings, Learn, LearnTraining, Manual };
+enum class FrontId { Intro, QuickStart, GameSetup, LoadGame, Multiplayer, Pbem, Settings, Learn, LearnTraining, Manual, Credits };
 
 struct LearnContent;
 
@@ -34,6 +34,9 @@ struct MenuContext {
     std::function<void(std::unique_ptr<ClassicSession>)> startGame;
     std::function<void(FrontId)> go;
     std::function<void()> quit;
+    // A game was loaded from the intro (Resume Game, Load Game): the music
+    // changes to the background list (docs/spec/06 §5.5).
+    std::function<void()> loadedFromIntro;
     std::string error;  // shown by the intro screen
     // The learning content, and starting a lesson's game (docs/LEARNING.md).
     const LearnContent* learn = nullptr;

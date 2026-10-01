@@ -1017,7 +1017,7 @@ private:
             if (lampChoice(ctx, "##autosave", current, std::span<const std::string>(choices)))
                 o.autosaveTurns = kAutosaveTurns[static_cast<size_t>(std::clamp(current, 0, static_cast<int>(kAutosaveTurns.size()) - 1))];
             note("Saves the game after a turn is processed when the number of turns since 2400.0 is a multiple of the choice. "
-                 "The file is named after that number's last digit (Autosave 0 to Autosave 9), so every 2 turns keeps five "
+                 "The file is named after that number's last digit (AutoSav0 to AutoSav9), so every 2 turns keeps five "
                  "files, every 5 turns two and every 10 turns one.");
         }
         ImGui::Dummy(ImVec2(0, ctx.px(8)));

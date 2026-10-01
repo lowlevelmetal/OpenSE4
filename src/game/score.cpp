@@ -203,7 +203,7 @@ PlayerRecords playerRecords(const Rules& r, const GameState& s, EmpireId e) {
     // The text copy of the whole log, rewritten (spec 05 §3.4).
     if (r.settingFlag("Create Log Text Files for Players", false) && !me.log.empty()) {
         out.log.push_back(std::format("{:<9}{:<40}{}", "Date", "Title", "Text"));
-        out.log.push_back(std::string(80, '-'));
+        out.log.push_back(std::string(78, '-'));  // a rule of 78 dashes (docs/spec/06 §6.1)
         for (const LogEntry& l : me.log) out.log.push_back(logLine(entryDate(s, l), l.title, l.text));
     }
     if (date == 0) return out;

@@ -7,6 +7,7 @@
 // and every call is a cheap no-op.
 
 #include "assets/assets.hpp"
+#include "core/rng.hpp"
 
 #include <memory>
 #include <string>
@@ -23,15 +24,50 @@ struct AudioOptions {
     bool sound = true;
     bool music = true;
     float soundVolume = 0.8f;   // 0..1
-    float musicVolume = 0.5f;
+    float musicVolume = 1.0f;   // 0..1, played in the six steps of musicStep()
     bool remastered = true;     // prefer Sounds/New/ when the install has it
 };
 
-// The three playlists of Settings.txt ("Num Intro Songs", "Intro Song N Filename", ...).
+// The three playlists of Settings.txt ("Num Intro Songs", "Intro Song N
+// Filename", ...; without a file name, "Intro Song N" gives a CD track T and
+// the file is the install's MP3 numbered T - 1). All empty when Settings.txt
+// does not allow music (docs/spec/06 §5.5).
 struct Playlists {
     std::vector<std::string> intro, background, combat;
 };
 Playlists readPlaylists(const ruleset::Settings& settings);
+
+// The sound of a stellar manipulation the player sees, from the title of the
+// engine's log entry about it (docs/spec/06 §5.5); empty for other entries.
+std::string_view stellarSound(std::string_view logTitle);
+
+// Music volume (docs/spec/06 §5.5): Music Off, then 20, 40, 60, 80 and 100 %,
+// played at -30, -20, -10, -5 and 0 dB. A volume 0..1 maps to its step 0..5.
+int musicStep(float volume);
+float musicGain(int step);   // linear gain of a step (0 for Off)
+
+// When the music changes (docs/spec/06 §5.5, confirmed: binary). Every change
+// picks one random track of a list and loops it. The tracks come from their
+// own random source, never the game's.
+enum class MusicCue {
+    IntroOpened,     // the intro screen opens: an intro track
+    GameLoaded,      // Resume Game, Load Game, Tutorial or Scenario from the intro: background
+    TurnProcessed,   // a new turn: a new background track when its number is a multiple of 5
+    CombatOpened,    // Tactical Combat or a Combat Replay opens: a combat track
+    ReplayClosed,    // a Combat Replay closes: background
+    NothingPlaying,  // music on and silent: intro in the front end, background in a game
+};
+class MusicDirector {
+public:
+    explicit MusicDirector(uint64_t seed) : rng_(seed) {}
+    // The track to switch to (a file in Music/), or empty to keep what plays.
+    // New Game and Quick Start give no cue: the intro track plays on into the game.
+    std::string cue(MusicCue c, const Playlists& lists, uint32_t turn = 0, bool inGame = true);
+
+private:
+    std::string pick(const std::vector<std::string>& list);
+    Rng rng_;
+};
 
 // Sound file for a name: "button" -> "Sounds/New/button.wav" or "Sounds/button.wav";
 // a name with an extension ("zap.wav", from Components.txt) is used as is.
@@ -54,10 +90,12 @@ public:
     void setOptions(const AudioOptions& options);
     const AudioOptions& options() const;
 
+    // One effect at a time: a new one cuts off the one playing (docs/spec/06 §5.5).
     void play(std::string_view name);
-    // Plays the list (file names in Music/), shuffled, looping; the same list keeps playing.
-    void playMusic(const std::vector<std::string>& files);
+    // Loops one track (a file name in Music/); the same track keeps playing.
+    void playTrack(const std::string& file);
     void stopMusic();
+    bool musicPlaying() const;
     // Call every frame: keeps the music fed and frees finished sounds.
     void update();
 

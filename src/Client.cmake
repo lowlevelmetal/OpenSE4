@@ -28,12 +28,15 @@ add_executable(opense4
     client/classic/learn_content.cpp
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
+    client/classic/map_style.cpp
     client/classic/net_transport.cpp
+    client/classic/order_rules.cpp
     client/classic/pbem_play.cpp
     client/classic/quadrant_map.cpp
     client/classic/replay.cpp
     client/classic/screen_id.cpp
     client/classic/ship_glides.cpp
+    client/classic/status_icons.cpp
     client/classic/reports.cpp
     client/classic/screens/cargo_transfer.cpp
     client/classic/screens/colony_logic.cpp

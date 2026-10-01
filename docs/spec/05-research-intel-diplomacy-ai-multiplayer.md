@@ -2918,9 +2918,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     tenths, and in the statistics always the unadvanced turn; its log copy (its own line
     layout, on when the key is missing, appended, last turn's entries only, no header); and
     the missing contact-lost lines. It must follow §3.4 and §5. Spec 06 §6.1 lists the
-    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`). OpenSE4 choice: the folder and file names in the
-    user data directory (`history/<game seed>/player<N>_…`), which have no counterpart since
-    the original keeps the files in the installation and copies them with each save. That
+    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`); our
+    client uses them, with `History/` in the user data directory instead of the
+    installation (an OpenSE4 choice), copies them next to each save and restores them
+    when a game is loaded (spec 06 §6.1, Q12). That
     OpenSE4's network and e-mail hosts write no files is also an OpenSE4 choice; the
     original's TCP/IP host sends each player its history and statistics files.
 41. **Rebel empire details** (§2.3): **Answer** (confirmed: binary, §2.3 "The new empire"):

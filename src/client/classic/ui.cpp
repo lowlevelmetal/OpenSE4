@@ -87,11 +87,15 @@ std::string formatNumber(int64_t v) { return std::to_string(v); }
 
 std::string formatDate(uint32_t turn) { return std::format("{}.{}", 2400 + turn / 10, turn % 10); }
 
-ImU32 empireColor(const game::GameState& s, game::EmpireId e) {
-    if (!e.valid() || e.index() >= s.empires.size()) return IM_COL32(200, 200, 200, 255);
-    const uint32_t c = s.empire(e).color;
-    return IM_COL32((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff, 255);
+uint32_t empireRgb(const game::GameState& s, game::EmpireId e) {
+    if (!e.valid() || e.index() >= s.empires.size()) return 0xc8c8c8;
+    // The swatch in the race's _Main.bmp (docs/spec/06 §5.3); the setup's colour without the art.
+    if (Art* art = Art::colorSource())
+        if (auto c = art->swatchColor(s.empire(e).race.style)) return *c;
+    return s.empire(e).color;
 }
+
+ImU32 empireColor(const game::GameState& s, game::EmpireId e) { return imColor(empireRgb(s, e)); }
 
 FrameMapping frameMappingFor(float fw, float fh) {
     const GraphicsSettings& g = appSettings().graphics;

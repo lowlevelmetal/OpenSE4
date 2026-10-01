@@ -794,7 +794,8 @@ Vehicle& spawnVehicle(const Rules& r, GameState& s, EmpireId owner, DesignId des
     Vehicle v;
     v.owner = owner;
     v.design = design;
-    v.name = std::format("{} {}", d.name, ++d.built);
+    v.name = nextVehicleName(s, d);
+    ++d.built;
     v.location = where;
     v.damage.assign(d.entries.size(), 0);
     v.builtTurn = s.turn;

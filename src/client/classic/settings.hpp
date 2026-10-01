@@ -40,6 +40,9 @@ struct ClassicSettings {
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
 
+    // The last game saved on this computer, which Resume Game loads (spec 06 §1.9, §6.1).
+    std::string lastSavedGame;
+
     // Learning to play (docs/LEARNING.md): the tutorials and training games
     // finished on this machine, as "tutorial:<slug>" and "training:<slug>".
     std::vector<std::string> learnDone;

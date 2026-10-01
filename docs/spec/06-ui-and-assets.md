@@ -950,11 +950,12 @@ Every window opens modally. Keys each kind of window handles (confirmed: binary)
 | TCP/IP host and player | Enter sends the chat line |
 | Selection pickers, check lists (Players, Scrap Facilities), Reorder lists, setup screens, ship and planet report pop-ups | no keys at all |
 
-Discrepancies: the Readme calls the Ctrl+P/O/I/U family "Phase Replay". Our current
-client binds Enter (end turn), G (galaxy), Tab (next idle ship) and F11; for SE4 parity G
-must become Scrap, F11 Empire Status, and End Turn F12 (Enter can stay as an extra).
-Our client does not yet bind I, O, J, H, Ctrl+M, Ctrl+A, Ctrl+V, Ctrl+T, Ctrl+R, the
-Ctrl+P/O/I/U family, Ctrl+S, Ctrl+H, Shift+A, Shift+C, or Ctrl+W/Y/Z/J/K (§7 Q4, Q16).
+Discrepancies: the Readme calls the Ctrl+P/O/I/U family "Phase Replay". Our client binds
+every key of §3.1 and §3.2, rebindable in Settings → Controls, and Help → Hotkeys lists
+them as bound. It keeps a few of its own: Enter also ends the turn (and finishes a
+patrol route), Esc clears a pick or the selection, Ctrl+Comma opens Settings, Alt+Enter
+switches full screen, Ctrl+H shows the lesson panel and Shift+F1 the manual page of the
+window in front (§7 Q4, Q16).
 
 ---
 
@@ -1424,7 +1425,8 @@ Questions 2 and 4–23 were settled from the executable (code and form resources
 answer gives the result, points to the main section that now holds the details, and says
 where our client differs. Only Q18 keeps an open part. Questions 24–48 are OpenSE4's
 own choices (inferred) where those rules leave something open, in the windows brought in
-line with Q8, Q11, Q16 and Q19–Q23.
+line with Q8, Q11, Q16 and Q19–Q23; questions 49–55 are those of the main window, maps,
+art, sound and files brought in line with Q2, Q4–Q7, Q9, Q10, Q12–Q15, Q17 and Q18.
 
 1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
    Exact panel rectangles; what fills the 67 px right strip and
@@ -1439,12 +1441,9 @@ line with Q8, Q11, Q16 and Q19–Q23.
    draws grid lines. Details in §2.4 (confirmed: binary). The executable's sector
    centres at 1024x768, (34 + 50c, 139 + 50r), lie 1 px right of and 4 px below the
    centres measured on a capture in spec 07; use the executable's.
-   Our client differs: it starts the grid at (8,110) with no margin and draws the whole
-   660x660 background at (3,105); the original starts the first cell at (9,114) and shows
-   only the background's top-left 652x652 at (8,113), cropped, not scaled. It draws a
-   ship at 24 px, offset by (−12,+12), when the sector also holds a planet; the original
-   always draws 36x36 sprites at native size. It has no system-grid option. It has only
-   the 1024x768 layout.
+   Our client follows this at 1024x768 (the panel, the 1 px margin, the cropped
+   background, 36x36 sprites at native size, the grid lines). It differs: it has only the
+   1024x768 layout.
 3. **Order icon map.** *Answered in spec 07 §UI (the 20×2 strip and every cell).*
    Which `Orders.bmp` cell is which order; what the extra icons are
    (59 used vs about 43 documented orders); which `Main.bmp` icon is the 13th.
@@ -1460,28 +1459,13 @@ line with Q8, Q11, Q16 and Q19–Q23.
    1024x768 one page of 40. The page never follows the selection. A hotkey works only
    when its button is lit, and five more keys exist (Ctrl+W, Ctrl+Y, Ctrl+Z, Ctrl+J,
    Ctrl+K; §3.1).
-   Our client differs:
-   - It has no tagging (Shift+click, Shift+A), no mothball rule, and no separate rules
-     for fleets or for fighter, satellite, mine and drone groups.
-   - It never lights Launch Units Remotely, Recover Units Remotely, Jettison Cargo, Use
-     Component, Use Facility, Convert Resources, Change Formation\Strategy or the four
-     movement-log buttons, nor, for colonies, Clear, View and Repeat Orders, Cloak and
-     Decloak.
-   - Ship rules: Warp needs warp points in the system (original: a mobile hull that can
-     warp); Attack needs weapons (original: any mobile ship); Sentry is always lit
-     (original: supplies not low); Repeat and View Orders are always lit (original: the
-     ship has orders); Drop Cargo needs cargo and Cargo Transfer needs capacity
-     (original: both always); Launch\Recover Units needs capacity and works in
-     simultaneous games (original: turn-based only, no capacity check); Stellar
-     Manipulation is always lit (original: needs the ability); Move To Waypoint needs no
-     waypoint (original: one must be set); Cloak has no supply check; Build Queue stays
-     lit while cloaked (original: dim).
-   - Colony rules: Build Queue needs population (original: always lit); Scrap needs
-     facilities (original: always lit; only Scrap Facilities needs them); Abandon Planet
-     is dim for the homeworld and above the population limit (original: always lit; the
-     limit is checked after the player confirms).
-   - It binds none of H, J, I, O, Ctrl+M, Ctrl+A, Ctrl+V, Ctrl+W, Ctrl+Y, Ctrl+Z,
-     Ctrl+J, Ctrl+K.
+   Our client lights the buttons by the rules of §2.8, for every kind of selection
+   including tagged groups (Shift+click in the list, Shift+A, Shift+C), and binds every
+   key of §3.1 (rebindable). It differs:
+   - Jettison Cargo, Use Facility and Convert Resources light by the rules, but our engine
+     cannot carry them out yet: using one says so.
+   - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies.
+   - The movement log is replayed from what the client saw (Q51).
    - An 800x600 layout, if added, needs the 4 wrapping pages.
 5. **System art.** Where are the 128x128 `Systems/*.bmp` and the 72x72 storm and
    asteroid tiles drawn, and what do `Mask Background Objs` and `Non-Tiled Center Pic`
@@ -1492,20 +1476,22 @@ line with Q8, Q11, Q16 and Q19–Q23.
    draws sprites with black transparent or as opaque squares (§2.4), and gates the
    system's tiles in combat. `Non-Tiled Center Pic` only switches the Stellar
    Manipulation preview to the plain starfield (confirmed: binary).
-   Our client differs: it always keys out black for sector sprites (original: opaque
-   unless the type is masked, or at 800x600 with the grid on). Its System Report has no
-   picture. Its combat background is the system background stretched at about 47 %
-   opacity (original: the 432x432 tiled or starfield picture, repeating every 12
-   squares, opaque). Its Stellar Manipulation preview always shows the system
-   background. Its ruleset reads `Non-Tiled Center Pic` as text; it is a TRUE/FALSE flag.
+   Our client follows this: sector sprites are keyed only for masked types, the System
+   Report shows the 128x128 picture, the combat maps use the tiled or star-field picture,
+   opaque, repeating every 12 squares, and `Non-Tiled Center Pic` is read as a flag for
+   the Stellar Manipulation preview. It differs: it picks the combat tiles from a seed
+   made from the battle's place, not from the game's random numbers (inferred); the
+   800x600 exception does not arise.
 6. **Empire colour.** From the `_Main.bmp` swatch or chosen per player, and what if two
    players share a style? **Answer:** from the art: the pixel at (28,13) of the empire's
    `_Main.bmp`, inside the swatch, read when the game is created and on every load.
    Players cannot choose it. Two empires with the same style get the same flag and the
    same colour; nothing adjusts it (§5.3) (confirmed: binary). No setup check against
    duplicate styles was found.
-   Our client differs: it gives each player a palette colour, by player index or chosen
-   in setup. It should sample the swatch pixel and drop the colour choice.
+   Our client samples the swatch pixel and draws every empire colour from it. It differs:
+   the colour a game setup gives an empire (a palette colour by player number, or a
+   server setup file's `color`) is kept in the game and used only where the art is
+   missing, such as the dedicated server's logs.
 7. **Sprite rotation.** Heading steps for top-down minis? **Answer:** 8 headings in 45°
    steps. Only hulls that use engines, and fighter and drone groups, are turned; the
    heading follows the bearing of each move within a system, rounded to the nearest 45°,
@@ -1514,10 +1500,13 @@ line with Q8, Q11, Q16 and Q19–Q23.
    a change of heading turns the sprite 5° per step the shorter way round, with a short
    pause per step unless Fast Tactical Combat is on. Seekers and torpedoes point at the
    exact bearing of their target, in whole degrees (confirmed: binary).
-   Our client differs: its system view draws every mini upright. Its combat map and
-   replay turn pieces to the exact angle of each move, start them at a free angle and do
-   not animate turns; they should snap to the 8 headings and animate 5° steps. Its
-   numbering of the 8 directions already matches the original's.
+   Our client turns the system view's minis to the 8 headings, nearest-neighbour, for
+   the same hulls. It differs: the client follows the moves it sees, so a simultaneous
+   turn's moves give one bearing, and after a game is loaded the minis face up until they
+   move (the heading is not saved). Its combat map and replay turn pieces to the exact
+   angle of each move, start them at a free angle and do not animate turns; they should
+   snap to the 8 headings and animate 5° steps. Its numbering of the 8 directions already
+   matches the original's.
 8. **Options windows.** Is Game Menu → Options the same window as Empire Options?
    **Answer:** no. Game Menu → Options opens a per-computer Options window (animation,
    sound, the classic or remastered sound set, music volume, fast combat, movement
@@ -1536,24 +1525,21 @@ line with Q8, Q11, Q16 and Q19–Q23.
    starts without arguments, as the Steam shortcut does. Play opens the Intro; the other
    buttons open documents, web pages or the map editor. Before the intro picture come
    the publisher's and developer's logos, 4 s each (§1.1) (confirmed: binary).
-   Our client differs: it has no launcher and no logo sequence (the launcher is optional
-   for parity: it only opens documents). Its intro buttons are Quick Start, New Game,
-   Resume Game (always disabled), Load Game, Multiplayer, Scenario, Settings, Quit Game;
-   the original has Tutorial where we have Multiplayer and Credits where we have
-   Settings, and its Resume Game loads the last saved game.
+   Our client's intro has the original's buttons in its order, and Resume Game loads the
+   last game saved with Save Game. It differs: it has no launcher and no logo sequence
+   (the launcher is optional for parity: it only opens documents); Tutorial and Scenario
+   open OpenSE4's Learn window; Credits shows our own credits; OpenSE4's Multiplayer,
+   Settings and Manual sit in a small row at the top right.
 10. **Map colours.** **Answer:** every colour and overlay rule is in §2.6 (galaxy panel,
     Galaxy Map window, Systems To Avoid, Borders) and §2.4 (system grid, waypoint
     markers) (confirmed: binary). Unexplored systems are (126,126,126) rings, explored
     ones (238,238,238), one empire its colour (Q6), several empires a solid triangle;
     the grid is (21,32,59) and always 68 × 47 cells; warp lines (165,176,179); the
     hovered system cyan. Avoided systems use the viewer's own colour, not yellow.
-    Our client differs: its unexplored (80,88,102), explored (200,208,220), grid
-    (16,34,74, partly transparent) and warp lines (72,104,168) must change; its
-    multi-empire triangle is white; Avoid is a yellow filled disc; Claimed shows one
-    claimant as a filled disc and several as a white triangle; the current system is a
-    yellow ring with a dot; hover is a white ring with a name box; its grid cell size
-    follows the galaxy's size; and its system panel has no owner-coloured ship counts and
-    no cloak ring.
+    Our client follows these colours, symbols and overlays, the 68 × 47 grid and the
+    hover name, and its system panel draws owner-coloured ship counts and cloak rings. It
+    differs: Systems To Avoid also rings avoided systems on its other tabs (ours); quadrant
+    maps in other windows fit the 68 × 47 grid to their own size.
 11. **Log details.** Meaning of the bullets, sort order, filter persistence?
     **Answer:** a green lamp marks the selected entry and a blue one every other row; the
     colour carries no category. Only the current turn's entries are listed, in the order
@@ -1571,44 +1557,40 @@ line with Q8, Q11, Q16 and Q19–Q23.
     per-player turn saves; the `.plr`, `.trn` and `.cmb` names; the `History/plr_<N>_*`
     files and their copies next to each save; what goes into `temp/`; and the fixed-width
     layouts of the history files, which are plain text (confirmed: binary).
-    Our client differs: its autosaves are named `Autosave <d>.gam` (original
-    `AutoSav<d>.gam`); its per-player records go to `history/<seed>/player<N>_*.txt` in
-    the user-data folder, with our own column widths (original `History/plr_<N>_*.txt`
-    in the install, copied next to each save). Keeping our own save format is fine (§6).
+    Our client names autosaves `AutoSav<d>.gam` and writes `History/plr_<N>_*.txt` with
+    the layouts above, copies them next to each Save Game and autosave and restores them
+    on loading. It differs: its saves and `History/` live in the user-data folder, not
+    the install, and keep our own save format (fine, §6); the log copy's header words are
+    ours (Q55).
 13. **Status icons.** **Answer:** drones in cargo use cell 37, not 34. The executable
     draws 23 cells and never the other 15. §4.4 lists each cell, its condition and the
     drawing order for ships, planets and fleets, including cell 36 (remote mining),
     which the manual does not mention (confirmed: binary).
-    Our client differs: it draws status icons only in the Planets and Colonies lists,
-    none for ships, fleets, ship-list rows or reports; its colony icon order differs; it
-    omits cloaked (cell 9) and drones (cell 37); it shows "can repair" even when the
-    planet has a space yard (original: only without one); and its "building" test (queue
-    not empty and not on hold) should follow the original's (the object is building and
-    its queue is not empty).
+    Our client draws these cells in this order for ships, fleets, planets, ship-list rows,
+    reports and the Colonies list. It differs: colonies cannot cloak in our engine, so a
+    colony never shows cell 9; what counts as "building", a cloaked fleet and "the first
+    miner" are our choices (Q50).
 14. **Transparency.** **Answer:** the colour key is exact black, RGB(0,0,0), and there
     is no additive or alpha blending anywhere: every sprite is copied opaque or drawn
     with black transparent, explosions, shield hits, beams and torpedoes included
     (§5.1, §5.3). Sector sprites follow `Mask Background Objs` (§2.4) (confirmed:
     binary).
-    Our client differs: the key matches, but it fades beams and the combat background
-    with alpha and draws hits as alpha lines. Draw them at full opacity with only the
-    black key.
+    Our client draws beams, the combat background and hit and miss lines opaque. It
+    differs: its own overlays on the combat maps (firing lines, the squares of big pieces,
+    seeker dots, the capture ring) still use alpha.
 15. **UI sounds and music.** **Answer:** the sound-to-action table, the sound-set choice
     and the music rules are in §5.5, the fresh-install defaults in §1.9 (confirmed:
     binary). One effect plays at a time. Command and order buttons play `cmdbtn` and
     `ordbtn`. Each music switch picks one random track and loops it; the background
     track is re-picked every 5 turns; combat music starts with Tactical Combat or a
     Combat Replay and does not switch back.
-    Our client differs: it cycles `boom1`–`boom3` on destructions (original: `boom3` for
-    a destroyed piece, `boom1`/`boom2` for hits by damage, and at random per ground
-    combat round). It plays none of the cloak, stellar-manipulation or TCP/IP sounds. It
-    shuffles whole playlists (original: one random track looped, background re-picked
-    only on turns that are multiples of 5, the intro track kept into a New Game or Quick
-    Start game). It plays combat music in the Strategic and Ground Combat windows and
-    switches back when they close (original: only Tactical Combat and Combat Replay, no
-    switch back after tactical combat). Its music volume is continuous (original: Off
-    and five steps). Its `cmdbtn`, `ordbtn`, `button`, `close` and `endturn` uses already
-    match.
+    Our client follows the playback and music rules, the cloak and stellar-manipulation
+    sounds and the `boom` rules of the combat maps, and its music volume is Off and five
+    steps. It differs: it plays no `boom1`/`boom2` per ground combat round and draws no
+    small explosion over a system-panel sector; of the TCP/IP sounds only sending a chat
+    line plays (`ordbtn`); a stellar manipulation sounds when the player's log reports it;
+    a game loaded from the Game Menu keeps the music (Q53); it keeps an effects volume of
+    its own.
 16. **Tooltips and focus.** **Answer:** there are no pop-up tooltips. Hovering a command
     or order button writes its name and key as white text at the top of the system panel,
     at once, with no delay (§2.3). Every window is modal, so main-window hotkeys do
@@ -1618,16 +1600,15 @@ line with Q8, Q11, Q16 and Q19–Q23.
     Our client follows §3.4 in its prompts: Yes/No boxes (Y; N, Esc and Enter mean No; the
     key that opened a box does not answer it), windows with Close (Esc and Enter), battle
     notices (Esc and Enter mean Begin), the Tactical/Strategic question (T and S) and Next
-    Player (Esc and Enter). It still differs: it shows tooltips beside the pointer after a
-    delay instead of the hint text of §2.3, and Esc in the main window clears targeting or
-    the selection (an extra that can stay). The keys it does not bind yet are listed at
-    the end of §3.
+    Player (Esc and Enter), and its command and order buttons write the hint text of §2.3.
+    It still differs: other controls show tooltips beside the pointer after a delay, and
+    Esc in the main window clears targeting or the selection (an extra that can stay). Its
+    own extra keys are listed at the end of §3.
 17. **Weapon graphic index base.** **Answer:** beams and torpedoes are both 1-based:
     cell = `Weapon Display` − 1, and 0 means no picture (only warheads use 0 in stock
     data). Seekers use the 20x20 slot at x = 40 + 20 × `Weapon Display` of the owner's
     `_Main.bmp` (§5.2) (confirmed: binary).
-    Our client differs: it uses `Weapon Display` directly as the torpedo cell, one cell
-    too far; use value − 1, as it already does for beams. Seekers already match.
+    Our client follows this for beams, torpedoes and seekers.
 18. **Ship naming.** **Answer:** a new ship is named with its design name, a space and a
     four-digit serial with leading zeros ("Hood 0007"). The serial is one more than the
     highest serial among existing objects of that design, read from the last four
@@ -1637,8 +1618,7 @@ line with Q8, Q11, Q16 and Q19–Q23.
     a ship's name. **Open: needs observation.** Where, if anywhere, the bracketed code of
     the manual's captures appears in 1.95 (perhaps appended in a list row, perhaps only in
     an older version) needs a look at a ship list in the running game.
-    Our client differs: it names ships `<design> <count>`, where the count is the
-    design's built total and is not padded. Use the serial rule above.
+    Our client follows the serial rule (`game::nextVehicleName`).
 19. **Planets filters.** What does Coloniz\Empty add to Colonizable, which treaties make
     a colony an ally one, and what makes a planet Special? **Answer:** Coloniz\Empty means
     the planet itself is not colonized (not a test on the system). Ally means
@@ -1814,3 +1794,29 @@ follow §1.9, §4.1 and §2.8; these choices of ours fill what the rules leave o
     skips nothing: our ships appear finished, with no Under Construction status. Save
     Empire writes our empire file, which holds no designs, so it does not ask whether to
     include them. Which of these differ from the original?
+49. **Ships beside a planet.** Where exactly do the small flags and their counts go in a
+    sector that holds a planet, or several empires, and does a sector with a star,
+    storm or warp point count like a planet? Our client draws the flags left to right
+    along the bottom of the 36x36 sprite area, each count after its flag, and treats any
+    stellar object like a planet (inferred).
+50. **Status icon conditions.** What makes an object "building", which fleet shows the
+    cloaked icon, and in what order "the first miner" is found? Our client: a ship whose
+    yard works (not cloaked) with items queued, or a colony with items queued, held or
+    not; a fleet with any member cloaked; the first in the game's vehicle order
+    (inferred).
+51. **Movement log replay.** What does one Ctrl+I step show, and how does Ctrl+U differ
+    from Ctrl+P? Our engine keeps no day-by-day log, so our client moves each vehicle it
+    saw in a straight line from where it was before the turn to where it is, in ten
+    steps, and plays Ctrl+U like Ctrl+P (inferred).
+52. **Tagged groups.** What do Scrap and Move To Waypoint show for a tagged group? Our
+    client asks to confirm the scrapping of every tagged object, and lists the set
+    waypoints (inferred).
+53. **Resume Game and the music after loading.** Does an autosave become the "last saved
+    game", and does Load Game from the Game Menu change the music? Our client: only Save
+    Game sets it, and an in-game load keeps the music (inferred).
+54. **Low supply of fighter groups.** Do the Sentry button and the low-supply icon of a
+    fighter group use a tenth of `Supply Amount for Low Supply Warning`, as Sentry's own
+    end does? Our client lights the button by a tenth and draws the icon by the full
+    level (inferred).
+55. **The log copy's header.** What words head `plr_<N>_log.txt`? Our engine writes
+    "Date", "Title" and "Text" in the columns of §6.1, then the rule (inferred).
