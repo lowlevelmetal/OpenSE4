@@ -11,15 +11,22 @@
 //
 // The sandbox (spec 04 §17, confirmed: binary unless marked): a copy of the
 // game with one new empire per side (up to 10), each a copy of the real
-// empire that owns the side's first item (race, culture, technology), at war
-// with every other side. The battle stands for one in the viewer's home
-// sector: that sector's `Sector - Sensor Interference` and `Sector - Shield
-// Disruption` apply, and no system modifier totals are worked out (they are
-// 0). (inferred) It is fought in a new, empty system of the home system's
-// type, so that nothing else in the home sector takes part, and every side
-// uses the viewer's strategies, which the simulator's items and fleets pick
-// from. Each design used is copied for the side that uses it, with the item's
-// strategy; vehicles start undamaged with full supplies and no experience.
+// empire that owns the side's first item (race, culture, technology, and its
+// strategy list), at war with every other side. The battle stands for one in
+// the viewer's home sector: that sector's `Sector - Sensor Interference` and
+// `Sector - Shield Disruption` apply, and no system modifier totals are worked
+// out (they are 0). It is fought in a new, empty system of the home system's
+// type, so that nothing else in the home sector takes part (the original's
+// home sector with no real object taking part is the same, §19.2 Q71).
+// Strategies (§17, §19.2 Q71): a ship outside any combat group uses its
+// design's strategy from the list of the design's real owner, so an enemy
+// design fights with that enemy's strategy (a unit group likewise, by its
+// first design); a ship of a fleet formed in the simulator uses, while in its
+// combat group, the fleet's strategy from its side's copied list; every
+// planet uses the viewer's strategy for planets (the empire's first). A
+// record a side's list lacks is added to that side's copy. Each design used
+// is copied for the side that uses it; vehicles start undamaged with full
+// supplies and no experience.
 // Sample planets are copies of the colonies (population, facilities and
 // stored units) moved into the battle sector. Start positions go by side
 // number, as if arriving from a neighbouring sector: 1 north, 2 south, 3
@@ -48,7 +55,6 @@ struct SimulatorItem {
     std::vector<UnitStack> cargo;
     bool replaceCargo = false;
     int fleet = -1;                // index into SimulatorSetup::fleets (same side), -1: none
-    uint32_t strategy = 0;         // index into the viewer's strategies
 };
 
 struct SimulatorSide {
@@ -60,7 +66,7 @@ struct SimulatorFleet {
     int side = 0;
     std::string name;
     uint32_t formation = 0;        // Formations.txt index
-    uint32_t strategy = 0;         // index into the viewer's strategies
+    uint32_t strategy = 0;         // index into its side's strategies (the copied empire's list)
 };
 
 struct SimulatorSetup {
@@ -99,6 +105,7 @@ struct Simulation {
     std::vector<EmpireId> players;   // the sides the player controls
     int interference = 0;            // the home sector's, applied to the battle
     int disruption = 0;
+    std::vector<std::pair<EmpireId, uint32_t>> planetStrategies;   // each side's planets' strategy in its list
 };
 // The sandbox for a valid setup (see simulatorProblem). `real` is not changed.
 Simulation buildSimulation(const Rules& r, const GameState& real, const SimulatorSetup& setup);

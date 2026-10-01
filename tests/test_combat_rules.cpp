@@ -831,6 +831,46 @@ TEST_CASE("combat rules: the simulator's sides copy the empire of their first it
     }
 }
 
+TEST_CASE("combat rules: the simulator's sides keep their copied strategy lists; designs fight with their real owner's strategy") {
+    // Spec 04 §17, §19.2 Q71 (confirmed: binary).
+    const Rules& r = combatRules();
+    Arena ar = makeArena(19);
+    GameState& s = ar.s;
+    s.empire(ar.a).strategies = {ruleset::CombatStrategy{"Mine A", {{"Primary Movement Strategy", "Optimal Weapons Range"}}},
+                                 ruleset::CombatStrategy{"Mine B", {{"Primary Movement Strategy", "Point Blank"}}}};
+    s.empire(ar.b).strategies = {ruleset::CombatStrategy{"Theirs A", {{"Primary Movement Strategy", "Ram"}}},
+                                 ruleset::CombatStrategy{"Theirs B", {{"Primary Movement Strategy", "Don't Get Hurt"}}}};
+    const DesignId lancer = frigate(s, ar.a, "Lancer", 3, {"Test Laser", "Test Armor Plate"});
+    const DesignId raider = frigate(s, ar.b, "Raider", 3, {"Test Laser", "Test Armor Plate"});
+    s.design(raider).strategy = 1;
+    seeDesign(s.empire(ar.a).knowledge, raider, s.turn);
+    combat::SimulatorSetup setup;
+    setup.viewer = ar.a;
+    setup.sides = {{"Blue", true}, {"Red", true}};
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, raider, {}, 1, 1});   // Red is a copy of B
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, lancer, {}, 0, 1});
+    setup.items.push_back({combat::SimulatorItem::Kind::Design, lancer, {}, 1, 1});   // A's design on B's side
+    setup.items.push_back({combat::SimulatorItem::Kind::Planet, {}, homeworld(s, ar.a).planet, 1});
+    REQUIRE(combat::simulatorProblem(r, s, setup).empty());
+    combat::Simulation sim = combat::buildSimulation(r, s, setup);
+    const Empire& red = sim.state.empire(sim.sides[1]);
+    REQUIRE(red.strategies.size() >= 2);
+    CHECK(red.strategies[0].name == "Theirs A");   // B's list, copied
+    CHECK(red.strategies[1].name == "Theirs B");
+    CHECK(sim.state.empire(sim.sides[0]).strategies.front().name == "Mine A");
+    auto strategyOf = [&](EmpireId side, std::string_view design) -> std::string {
+        for (const Design& d : sim.state.designs)
+            if (d.owner == side && d.name == design) return sim.state.empire(side).strategies[d.strategy].name;
+        return "?";
+    };
+    CHECK(strategyOf(sim.sides[1], "Raider") == "Theirs B");   // the enemy design's own strategy
+    CHECK(strategyOf(sim.sides[1], "Lancer") == "Mine A");     // from its real owner's list
+    // Every planet uses the viewer's strategy for planets (its first).
+    REQUIRE(sim.planetStrategies.size() == 1);
+    CHECK(sim.planetStrategies.front().first == sim.sides[1]);
+    CHECK(red.strategies[sim.planetStrategies.front().second].name == "Mine A");
+}
+
 TEST_CASE("combat rules: in the simulator only side 1 gets hand control back when Auto is released") {
     const Rules& r = combatRules();
     Arena ar = makeArena(19);
