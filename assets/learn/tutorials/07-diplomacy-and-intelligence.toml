@@ -90,7 +90,7 @@ manual = "diplomacy#messages"
 [[step]]
 title = "Wait for the answer"
 text = """
-Close the windows and end the turn. The computer player answers during its own turn.
+Close the windows and end the turn (**End Turn**, then **Yes**). The computer player answers during its own turn.
 """
 highlight = ["button:end-turn"]
 done = { turns_passed = 1 }

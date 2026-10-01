@@ -86,15 +86,15 @@ project.
 
 Open [Research](window:research) with `F8` or the flask button.
 
-- The top line shows the **Research Points Available** this turn.
-- The left list shows every area you can research now, grouped by kind, with your current level and the cost of the next level. Hover over an area to see its description and what its next level unlocks. **Click an area** to add it to the end of the queue. Areas already queued read `Queued`.
-- The right side shows your projects, four at a time, with an estimate of when each will finish and a progress bar. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. **Click a project** to cancel it. There is no confirmation, and its progress is lost.
+- The title strip shows the **Research Points Available** this turn.
+- The list fills the top of the window: every area you can research now, grouped by kind, with your current level and the cost of the next level. Hover over an area to see its description and what its next level unlocks. **Click an area** to add it to the end of the queue.
+- Below the list, your current projects appear four at a time, each with an estimate of when it will finish and a progress bar. The page buttons `Projects 1-4`, `Projects 5-8` and `Projects 9-12` switch between them. **Click a project** to cancel it; the game asks first (switch this off with the Empire Option *Confirm deleting a research project*), because its progress is lost.
 - `Repeat Projects` and `Divide Pts Evenly` switch the two options above.
-- `Reorder Projects` opens a window where you move projects up, down, to the top or to the bottom.
+- `Reorder Projects` (with at least two projects) opens a window where you move projects up, down, to the top or to the bottom.
 - `Tech Tree` opens the [Tech Tree](window:tech-tree).
 
-The estimate uses this turn's points and your current production for the turns after. It is
-shown in years: 0.1 years is one turn.
+The estimate uses this turn's points and your current production for the turns after. It reads
+*This turn*, a number of years (0.1 years is one turn) or *Never*.
 
 ## The Tech Tree window
 

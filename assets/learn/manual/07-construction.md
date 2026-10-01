@@ -76,45 +76,46 @@ removes the ships from that planet's queue.
 ## The Construction Queues window
 
 [Construction Queues](window:queues) (`F7`) lists every queue you have. The statistics at the top
-show how many queues are building, idle or on hold, and your total rate, usage and stockpile.
+show your resources and queue usage per turn, how many space yards you have (on planets and on
+ships) and how many queues are on hold.
 
-- Each row shows the queue, its system, what it is building and how long that will take. Hover over the time to see how long the whole queue will take.
-- The tabs add columns: **Rate** (rate and mode), **Usage** (what it spends), **Planet Value**, **Facilities** (slots free after the queue) and **Cargo**.
-- The lamps **Ships**, **Planets**, **Ship SY** and **Planet SY** choose which queues to list: mobile ships with a yard, colonies without a yard, bases with a yard and colonies with a yard.
-- **Click** a row to open that queue. **Ctrl+click** or **Shift+click** selects several rows. **Right-click** shows the planet's or ship's report.
+- Each row shows the queue's owner with its status icons, the column of the chosen tab, and the first three items of the queue with the time the whole queue needs: in years, or `Never` when it cannot finish, or `On Hold`. A yellow note shows an emergency or a slow period.
+- The tabs choose that column: **Rate**, **Usage Per Turn**, **Planet Value**, **Number of Facilities** (built and slots) and **Cargo Space**. Click a column heading to sort.
+- The lamps **Ships**, **Planets**, **Ship SY** and **Planet SY** choose which queues to list: ships and bases whose space yard is not working now (cloaked or mothballed), colonies without a working yard, ships and bases with a working yard, and colonies with one.
+- **Click** a row to open that queue. **Shift+click** tags a queue for Multi-Add. **Right-click** shows the planet's or ship's report.
 
-The buttons:
+The window remembers the tab and the lamps.
 
 | Button | What it does |
 |---|---|
-| `Multi-Add` | Add the same ship, unit or facility to every selected queue. |
-| `Scrap Facilities` | Scrap facilities on the selected colonies. |
-| `Upgrade Facilities` | Queue every possible facility upgrade, on the selected colonies or on all of them. |
-| `Select All` | Select every listed queue, or none. |
+| `Multi-Add` | Opens a queue editor whose items go to every tagged queue when you close it. Only ships (when every tagged queue can build them) and units can be added this way. |
+| `Scrap Facilities` | Pick a colony, then tick the facilities to scrap there. |
+| `Upgrade Facilities` | Queue every possible facility upgrade on all your colonies, and move facilities waiting in your queues to the newest level. |
 
 ## The Set Construction Queue window
 
 [Set Construction Queue](window:set-queue) opens when you click a queue, or with the order `Q`
 for a selected colony or ship.
 
-- The top shows the queue's owner, its rate, your stockpile, its facility slots and population, its cargo space, its mode and where new ships go.
-- The list on the left shows what this queue can build, with the build time. The tabs are **Ships**, **Facilities**, **Units** and **Upgrades**. **Only Latest** hides old facility levels and obsolete designs. On the Units tab, choose how many to build at once. Items that cannot be built here are greyed; click one to see why. **Click** an item to add it to the end of the queue.
-- The queue on the right shows each item's progress. `Top`, `Up`, `Down`, `Bottom` and `Remove` change it; `Delete` removes the selected item too. Removing the item in progress asks first, because its progress is lost.
+- The top shows the queue's owner, its rate, your stockpile, its facility slots (and how many are free after the queue) and population, its cargo space, its mode and where new ships go.
+- The list on the left shows what this queue can build, with the build time in turns. The tabs are **Ships**, **Facilities**, **Units** and **Upgrades** (ships and bases have only the first and third). **Only Latest** hides old facility levels and obsolete designs. On the Units tab, `1`, `5`, `10` and `20` choose how many to build at once. Items that cannot be built here are greyed; click one to see why. **Click** an item to add it to the end of the queue.
+- The queue on the right shows each item's progress and when it will be done, in turns. `Top`, `Up`, `Down`, `Bottom` and `Remove` change it, and `-` and `+` change the count of a unit item; `Delete` removes the selected item too. Removing the first item asks first (an Empire Option), because its progress is lost.
 - Hover over an item to see its cost, build time and details.
 
 The buttons on the right:
 
 | Button | What it does |
 |---|---|
-| `Emergency Build`, `Repeat Build`, `Queue On Hold` | The build modes above. |
-| `Set Move To`, `Clear Move To` | Send new ships to a waypoint, or stop doing so. |
+| `Emergency Build`, `Repeat Build`, `Queue On Hold` | The build modes above. Emergency Build is dim while the yard recovers from an emergency. |
+| `Set Move To`, `Clear Move To` | Send new ships to one of your waypoints, or stop doing so. |
 | `Fill Queue` | Add a saved list of items (a queue type). |
-| `Clear Queue` | Empty the queue. |
+| `Clear Queue` | Empty the queue (it asks first). |
 
 **Queue types** save typing. `Fill Queue` offers ready-made types that fill a planet's free
 facility slots with the best producer of one kind (minerals, organics, radioactives, research,
-intelligence) or a balanced mix, and the types you saved yourself. `Add Type` saves the current
-queue as a new type, which you can use in every game.
+intelligence) or a balanced mix, and the types you saved yourself. Type a name and press
+`Add Type` to save the current queue as a new type, which you can use in every game; `Delete Type`
+removes one of yours.
 
 ## Construction advice
 

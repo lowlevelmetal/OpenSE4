@@ -81,15 +81,15 @@ manual = "planets-and-colonies#the-planets-window"
 [[step]]
 title = "Find a good planet"
 text = """
-Each row shows a planet's type, atmosphere, conditions and value for minerals, organics and
-radioactives. The filter buttons on the right narrow the list:
+Each row shows a planet's name and type, its atmosphere, and its value for minerals, organics
+and radioactives. The tabs on the right choose which planets are listed:
 
 - **Colonizable** shows the planets you can settle now;
 - **Coloniz\\Breathe** shows those your people can also breathe on. They make the best colonies:
   a domed colony holds far fewer people and facilities.
 
-Click a column heading to sort. Planets with a **green star** are colonizable and breathable.
-Press **Next**.
+Choose **Coloniz\\Breathe** now. Click a column heading to sort the list; clicking a planet
+closes the window and shows the planet in the main window. Press **Next**.
 """
 highlight = ["planets:list"]
 manual = "planets-and-colonies#what-a-planet-is-like"
@@ -97,10 +97,12 @@ manual = "planets-and-colonies#what-a-planet-is-like"
 [[step]]
 title = "Send the colony ship"
 text = """
-Click a colonizable planet with a green star in the list, then press **Send Colony Ship**. Your
-idle colony ship gets a Colonize order for it.
+Press **Send Colony Ship**. A list of the planets on the current tab opens: pick one and press
+**Colonize**. Your colony ship gets its orders, the window closes and the main window shows the
+ship.
 
-(Another way: select the colony ship, press `C` and click the planet in the system view.)
+(Another way: select the colony ship, press `C` and click the planet in the system view. In the
+system view a small **green star** marks a planet you can settle and breathe on.)
 """
 highlight = ["planets:list", "planets:send-colony-ship"]
 done = { order = "colonize" }
@@ -111,7 +113,7 @@ title = "Founding the colony"
 text = """
 The colony ship first takes people aboard at your homeworld, then flies to the planet and
 settles it. If it still has movement left when it arrives, the colony is founded at once;
-otherwise end the turn with **End Turn** (`F12`).
+otherwise end the turn with **End Turn** (`F12`) and answer **Yes**.
 
 When the colony is founded you may be asked what kind of colony it should be. Pick the suggested
 type: it only guides the ministers.

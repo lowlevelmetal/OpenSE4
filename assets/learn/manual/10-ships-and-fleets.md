@@ -10,7 +10,8 @@ supplied, loaded and repaired is explained in [Supply, cargo and repair](logisti
 ## Orders
 
 Every ship (and every fleet) has a **list of orders**. Select a ship, then click an order button
-or press its key.
+or press its key. New ships and bases are named after their design and a four-digit number, such
+as *Escort 0003*; `N` renames them.
 
 - New orders are **added to the end** of the list. If a ship seems to ignore you, it is probably still busy with older orders: press `V` to see them, or `Del` to clear them first.
 - The ship carries out its orders from the top. An order that is done is removed, and the next one starts at once.
@@ -20,29 +21,32 @@ or press its key.
 | Order | Key | What it does |
 |---|---|---|
 | Move To | `M` | Go to a sector, in this system or another explored one. Right-clicking a sector does the same. |
-| Move To Waypoint | `Ctrl+0` to `Ctrl+9` | Go to one of your waypoints. |
+| Move To Waypoint | `Ctrl+W`, or `Ctrl+0` to `Ctrl+9` | Go to one of your waypoints: pick it from a list, or name it by its number. |
 | Warp | `W` | Jump through a warp point, even into an unexplored system. |
 | Attack | `A` | Go after an enemy ship or colony and fight it. |
 | Colonize | `C` | Settle a planet ([Planets and colonies](planets-and-colonies#colonizing)). |
 | Explore | `E` | Go through the nearest warp point that leads somewhere new. |
-| Resupply | `S` | Go to the nearest resupply depot ([Supply, cargo and repair](logistics#supply)). |
-| Repair | `R` | Go to the nearest place that can repair ships ([Supply, cargo and repair](logistics#repair)). |
+| Resupply At Nearest | `S` | Go to the nearest resupply depot ([Supply, cargo and repair](logistics#supply)). |
+| Repair At Nearest | `R` | Go to the nearest place that can repair ships ([Supply, cargo and repair](logistics#repair)). |
 | Sentry | `Y` | Wait until an enemy is seen in the system or supplies run low. |
-| Set Patrol | `P` | Click several sectors, then press `Enter` or right-click: the ship moves between them forever. |
+| Set Patrol | `P` | Click several sectors, then press `Enter` or right-click: the ship's orders are replaced by moves between them, repeated forever. |
 | Repeat Orders | `K` | Switch repeating on or off. |
 | Clear Orders | `Del` | Remove every order. |
 | Fleet Transfer | `F` | Form fleets (below). |
-| Load Cargo, Drop Cargo | `L`, `D` | Load or unload population at a sector you pick. |
+| Change Formation \ Strategy | `H` | Choose a fleet's formation and strategy. |
+| Load Cargo, Drop Cargo | `L`, `D` | Pick what (population or a kind of unit), then the sector where the ship loads or unloads it. |
 | Cargo Transfer | `T` | Move cargo now ([Supply, cargo and repair](logistics#cargo)). |
-| Launch and Recover Units | `U` | Launch or pick up fighters, satellites, mines and drones ([Units](units)). |
+| Launch and Recover Units | `U` | Launch or pick up fighters, satellites, mines and drones now, in turn-based games ([Units](units)). |
+| Launch Units Remotely, Recover Units Remotely | `I`, `O` | Pick a kind of unit, then the sector where the ship launches or recovers it. |
 | Cloak, Decloak | `Z`, `X` | Hide the ship, or show it again (below). |
-| Sweep Mines | button | Clear mines in this sector ([Units](units#mines)). |
+| Sweep Mines | `Ctrl+M` | Clear mines in this sector ([Units](units#mines)). |
+| Use Component | `Ctrl+Z` | Use a component that works on demand, such as an emergency supply or energy component. |
 | Build Queue | `Q` | The ship's own construction queue, if it has a space yard. |
 | Stellar Manipulation | `B` | Create or destroy planets, stars and more ([Events and stellar manipulation](events-and-stellar-manipulation#stellar-manipulation)). |
 | Scrap | `G` | Scrap, mothball, retrofit or self-destruct ([Supply, cargo and repair](logistics#scrapping-and-mothballing)). |
 | View Orders | `V` | See and edit the order list. |
 | Change Name | `N` | Rename the ship. |
-| Minister Control | button | Let the computer handle this ship ([Computer players and ministers](computer-players-and-ministers)). |
+| Toggle Minister Control | `Ctrl+Y` | Let the computer handle this ship ([Computer players and ministers](computer-players-and-ministers)). |
 
 The **Attack** order works differently in the two turn styles. In a turn-based game the ship
 goes to the sector the target was in when you gave the order and attacks there. In a
@@ -69,8 +73,8 @@ of a turn are lost; the ship gets its full speed again next turn.
 - Flying into a damaging storm has an even chance of hurting every ship that enters. If it does, the ships stop for the turn and their orders are cleared. The same goes for a turbulent warp point, and for a minefield.
 - With the Empire Options switches on, your ships clear their orders when they warp into a system with an enemy (on for a new empire) or with any other empire. This stops ships from flying blindly into danger.
 
-Your selected ship's route is shown as a dashed line in the system panel; `Ctrl+L` hides or
-shows it.
+`Ctrl+L` (or *Display Ship Movement Lines* in the [Options](settings#the-options-window) window)
+shows the route of your selected ship as a dashed line in the system panel.
 
 ## Fleets
 
@@ -84,16 +88,21 @@ fleets; drones, satellites and mines cannot. Bases cannot either, with the stock
 - A fleet is gone once no member is left where the fleet is; any members elsewhere leave it and lose their orders.
 
 Open [Fleet Transfer](window:fleet-transfer) with `F`. It lists the ships in the sector that are
-not in a fleet, and the fleets there. `Create Fleet` makes a new fleet; then **click** ships to
-add them, and click members to take them out. `Formation` and `Strategy` choose the fleet's
-combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say.
+not in a fleet (**Vehicles in sector**) and the fleets there (**Fleets in sector**, the leader
+marked). `Create Fleet` asks for a name and makes a new fleet with your ship; then **click** ships
+to add them, and click members to take them out. `Formation` and `Strategy` choose the fleet's
+combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
+`Existing Fleets` lists all your fleets in the Ships and Units window.
+
+A ship can also leave its fleet without you: when it is captured or given away, or when an event
+or an enemy agent sends it somewhere else.
 
 ## Waypoints
 
 **Waypoints** are ten named places, numbered 0 to 9, that you can send ships to quickly.
 
-- `Alt+0` to `Alt+9` sets that waypoint at the sector of what you have selected: a ship, a planet, a warp point. An empty sector cannot be selected, so select something in it first.
-- `Ctrl+0` to `Ctrl+9` orders the selected ship to go there. The **Move To Waypoint** button opens a list instead.
+- `Alt+0` to `Alt+9` sets that waypoint at the selected sector: click a sector (an empty one will do), then press the key.
+- `Ctrl+0` to `Ctrl+9` orders the selected ship to go there. The **Move To Waypoint** button (`Ctrl+W`) opens a list instead.
 - A construction queue's **Move To** sends every new ship to a waypoint.
 
 The [Waypoints](window:waypoints) window (from Empire Status) lists your waypoints, the ships
@@ -119,14 +128,14 @@ battle is decloaked until the battle ends.
 ## The Ships and Units window
 
 The [Ships and Units](window:ships) window (`F6`, titled `Ships \ Units`) lists your ships, unit
-groups in space and fleets, with your total maintenance per turn. Its tabs show different
-columns:
+groups in space and fleets. The totals at the top count your ships, units in space and fleets,
+and your maintenance per turn. Its tabs show different columns:
 
 - **General**: size, type, movement, damage and supplies;
-- **Orders**: each ship's first order;
+- **Orders**: the class and each ship's first order, with the number of further orders and whether they repeat;
 - **Cargo**: space used and what is carried;
 - **Fleet**: experience and fleet;
 - **Maintenance**: the cost of each ship per turn.
 
 `Show Ships`, `Show Units` and `Show Fleets` choose what to list. Click a column heading to sort.
-**Left-click** a row to select it in the main window; **right-click** it for its report.
+**Left-click** a row to close the window and select the ship in the main window (for a fleet, its leader); **right-click** it for its report.

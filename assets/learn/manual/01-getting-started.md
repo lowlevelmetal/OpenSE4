@@ -40,8 +40,8 @@ e-mail (see [Multiplayer](multiplayer)), `Settings` sets graphics, controls and 
 
 ## Quick Start
 
-Quick Start is the fastest way into a game. Click an empire's portrait to read about it, then
-press `Begin Game` (or double-click the portrait).
+Quick Start is the fastest way into a game. Each empire is shown with its portrait, name and
+description. Click one to choose it, then press `Begin Game`; `Cancel` goes back.
 
 You play against four computer empires, in a medium-sized quadrant, with turn-based play and
 every other option at its default. It is a good way to learn the game.
@@ -99,23 +99,29 @@ Press `F2` (or the first command button) to open the [Game Menu](window:game-men
 
 | Button | What it does |
 |---|---|
-| `New` | Leave this game and return to the title screen. |
-| `Load` | Open a saved game. |
-| `Save Game` | Save the game. The name starts as your empire and the date; click an existing save to overwrite it. |
-| `Save Map` | Save the quadrant as a map, if the game allows it. |
+| `New` | Leave this game and return to the title screen (it asks first). |
+| `Load` | Open a saved game: click one in the list. |
+| `Save Game` | Save the game. The name starts as your empire and the date; clicking an existing save copies its name, and saving over it asks first. In a play-by-e-mail game it saves your turn so far. |
+| `Save Map` | Save the quadrant as a map. It is dim unless the game was set up with *Players can save the map during the game*. |
+| `Save Empire` | Save your empire (its name, leader, race and ministers' style) for later games. |
 | `Players` | Show which empires the computer plays. |
-| `Options` | Your [Empire Options](settings#empire-options). |
-| `Settings` | Graphics, controls and sound. |
-| `Learn` | Tutorials, training games and this manual. Starting one replaces the game you are playing, so the window asks first. |
-| `Delete Game` | Remove a saved game. |
-| `Quit` | Leave OpenSE4. |
+| `Options` | The [Options](window:options) of this computer: animation, sound, music and autosave (see [Settings](settings#the-options-window)). |
+| `Delete Game` | Remove a saved game (it asks first). |
+| `Quit` | Leave OpenSE4 (it asks first). |
+| `Close` | Close the menu. |
 
-There is no saving in the middle of a battle.
+Below the menu, `Learn` opens the tutorials, training games and this manual. Starting one replaces
+the game you are playing, so the window asks first.
+
+In these Yes/No questions, `Y` answers Yes; `N`, `Esc` and `Enter` answer No. There is no saving
+in the middle of a battle. `Resume Game` on the title screen loads the game you last saved with
+`Save Game` on this computer.
 
 **Autosave** is off unless you choose it. Choose it on the Mechanics page of Game Setup, or later
-in the game in [Empire Options](window:empire-options). The game then saves every 1, 2, 3, 5 or 10
-turns, into the files `AutoSav0` to `AutoSav9`, named after the last digit of the turn. So
-you always have up to ten recent turns to go back to.
+under *Autosave For This Game* in the [Options](window:options) window, in local and hotseat
+games. The game then saves every 1, 2, 3, 5 or 10 turns, into the files `AutoSav0` to `AutoSav9`,
+named after the last digit of the turn. So you always have up to ten recent turns to go back
+to.
 
 Saved games, maps, empires and settings live in your OpenSE4 user folder, never in the game
 folder:

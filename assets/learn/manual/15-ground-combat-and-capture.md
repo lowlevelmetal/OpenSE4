@@ -13,7 +13,7 @@ To take a planet you need **troops**: ground units you design on the Unit Design
 in the cargo of your ships (see [Units](units)).
 
 1. Bring the troop ships to the enemy colony's sector. A battle starts there (see [Combat](combat#when-battles-happen)).
-2. In the battle, move a ship carrying troops next to the planet and give the **Drop Troops** order. The ship drops all the troops it carries. Planetary shields do not stop a landing.
+2. In the battle, move a ship carrying troops next to the planet, select it and press `T` (or **Drop Troops** in the Orders window). The ship lands all the troops it carries at once on the adjacent colony. Planetary shields do not stop a landing.
 3. The ground combat is fought at once, in the middle of the space battle.
 
 In a strategic battle, ships with the **Drop Troops** strategy do this by themselves. They wait
@@ -52,11 +52,14 @@ may suffer.
 
 ## The Ground Combat window
 
-The **Ground Combat** window shows a ground combat fought in a battle: the
-planet, its owner, its population and facilities, and the defending and attacking units. `Begin`
-shows the outcome: how many rounds were fought, and whether the planet fell, the invasion failed
-or the fight goes on. When a battle had several ground combats, `Previous` and `Next` step
-between them.
+The **Ground Combat** window shows a ground combat fought in a battle: the planet with its
+type, atmosphere, conditions, value, population and facilities, and the defending and attacking
+units with their counts (the militia among the defenders). `Begin` plays it round by round;
+*Victorious!* appears beside the winner, and `Close` stays dim until the end.
+
+It opens by itself once your troops have landed in the Tactical Combat window, or when a
+computer player's troops land during a battle you watch, unless both empires are played by the
+computer. Each landing opens its own window, one after another.
 
 ## Capturing ships
 
@@ -65,7 +68,7 @@ A ship with **boarding parties** can try to capture an enemy ship or base:
 - the target must be next to the boarding ship, on the battle map;
 - the target's shields must be down.
 
-Give the **Capture Ship** order in a tactical battle, or use the **Board Enemy Ships** strategy.
+Give the **Capture Ship** order in a tactical battle (`C`, then click the target), or use the **Board Enemy Ships** strategy.
 The game compares the two sides:
 
 - the boarders' strength is the total of their boarding components;
