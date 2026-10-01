@@ -735,10 +735,10 @@ magnitude larger. Asteroid rows also define capacities, which only matter for mo
    points) are remembered from then on. Enemy vehicles are invisible.
 3. **Present.** The empire has a **sensor source** in the system: a ship or base, a
    fighter, satellite or drone group, or an owned planet (populated or not). An owned
-   planet's sensor levels come from its colony's facilities (and its own rolled
-   abilities), whether or not anyone lives there. Mine fields are not sensor sources
-   (confirmed: binary). The empire then sees the live system through the sight rules
-   below.
+   planet's sensor levels come from its colony's facilities only, not from the planet's
+   own rolled abilities, whether or not anyone lives there (§6.9). Mine fields are not
+   sensor sources (confirmed: binary). The empire then sees the live system through the
+   sight rules below.
 
 *All systems seen* marks every system explored for every empire at the start (level 2)
 (confirmed: binary). A **Partnership** treaty shares sight: in each system, an empire's
@@ -761,7 +761,7 @@ The rules of this section are confirmed: binary.
   - `Cloak Level` abilities (Val1 = type, Val2 = level), highest value per type. A ship's
     cloak levels count **only while the ship is cloaked**. Unit groups (mines, satellites,
     fighters, drones) always use theirs. A planet uses its colony's cloak levels only while
-    the colony is cloaked.
+    the colony is cloaked (§6.9).
   - The **environment**: the largest `Sector - Sight Obscuration` among the storms, ships
     and planets in the object's sector, and the system-wide value (at least 1). It raises
     all five types alike. It applies to planets, asteroid fields, ships, unit groups and
@@ -814,6 +814,8 @@ components destroyed, cloak toggled, movement, or a nebula created or destroyed.
   through.
 - Cloaked ships cannot build; cloaking clears their construction queue and disables space
   yards. They may launch and recover units, and they do not upset populations.
+- A cloaked colony keeps building everything but ships and bases, because only its space
+  yard stops working (§6.9).
 - Planets hidden by a storm or nebula are not drawn for observers who cannot see them.
 
 ### 6.5 Omnipresent view
@@ -855,6 +857,161 @@ explored systems only.
   highlighted. Every empire sees every claim. Filters: all, allies, enemies, us.
 - **Systems to avoid.** A private set that long-range pathfinding tries to route around.
 - **Notes.** Free text for each system.
+
+### 6.9 Colony (planetary) cloaking
+
+This subsection gathers every rule about cloaked colonies. All of it is (confirmed: binary)
+unless marked otherwise.
+
+**Cloak levels.**
+- For each sight type t, a colony's cloak level is max(1, the largest `Cloak Level` V2 among
+  its facilities' abilities whose V1 is t).
+- Only facilities count. The planet's own abilities (its rolled abilities, its size, its
+  ruins) are not read. Population, facility damage and racial traits play no part.
+- A colony's sensor levels (§6.1) are worked out the same way: the largest `Sensor Level` per
+  type among its facilities, with EM Active at least 1.
+- Both are stored with the colony and recalculated only:
+  - when a facility is completed there;
+  - when Scrap Facilities is used;
+  - when the planet takes damage that destroys facilities (in combat, or from a storm);
+  - when the colony is founded;
+  - when the game is loaded.
+- Facilities destroyed by the intelligence project `Planet - Facility Damage` do not cause a
+  recalculation. A colony that loses its cloaking or sensor facility that way keeps its old
+  levels until the next recalculation.
+
+**Can cloak, and cost.** A colony can cloak when its cloak level is 2 or more in some sight
+type. There is no supply test and no cost: a cloaked colony pays nothing, at once or per
+turn. A ship differs: it needs supply and pays upkeep (spec 03 §8).
+
+**The Cloak and Decloak orders.**
+- Both are for an own colony. Cloak (Z) is lit when the colony can cloak and is not cloaked.
+  Decloak (X) is lit whenever the colony is cloaked, even when it can no longer cloak.
+- Both act at once and are never queued, in both turn styles. They play the `cloakon` and
+  `cloakoff` sounds and write no log entry.
+- Cloak marks the colony cloaked and recalculates the system's sight. It does not touch the
+  construction queue (cloaking a ship clears its queue).
+- Decloak clears the mark, recalculates sight and runs the first-contact check of spec 05
+  §3.1 at once. Cloaking runs no contact check.
+- Open: needs observation. How the host of a simultaneous game receives a colony's Cloak or
+  Decloak given during the turn. The player's copy changes at once; presumably the turn file
+  carries it like the rest of the colony (inferred).
+
+**When a colony decloaks or cloaks by itself.**
+- **Recalculation.** At each recalculation above, a cloaked colony that can no longer cloak
+  is decloaked, without a message. Nothing else checks it each turn, unlike ships (spec 03
+  §8).
+- **Battle.** Every colony in the sector is decloaked when a battle begins (spec 04 §2).
+  After the battle, a colony that was cloaked when it began cloaks again if the planet still
+  has a colony. Its cloaking facilities do not matter here: even one that lost them in the
+  battle cloaks again. So does a colony captured in the battle, because the cloaked mark
+  survives every change of owner (ground combat, surrender, gift, intelligence). Such a
+  colony is marked cloaked while hiding nothing (its cloak level may be 1). Its yard does not
+  work, Decloak stays lit and the cloak icon shows, until the player decloaks it or the next
+  recalculation does.
+- **Computer players and the Ship Cloaking minister.** The colony is decloaked before it
+  carries out any of these colony orders, and cloaked again afterwards if it can, whether or
+  not it was cloaked before: Launch Units Remotely, Recover Units Remotely, Use Facility and
+  Convert Resources. Before Abandon Planet it is only decloaked. This applies to every
+  computer player's colony, and to a human player's colony under minister control while the
+  empire's Ship Cloaking minister is on (spec 05 §7.1). Computer players give their colonies
+  Launch Units Remotely orders for satellites, so their colonies with a cloaking facility end
+  up cloaked. Nothing else ever cloaks a computer player's colony.
+- **Abandon Planet** removes the colony, and its cloak with it.
+
+**Effects of a cloaked colony.**
+- **Detection.** While the colony is cloaked, the planet's obscuration in each sight type is
+  the colony's cloak level, raised by the sector's and the system's obscuration (§6.2, §6.3).
+  The Omnipresent view does not reveal it (§6.5), and partners get no exception. Everything
+  that depends on seeing a colony follows from this:
+  - first contact (spec 05 §3.1);
+  - Sentry (spec 03 §8);
+  - the turn-based battle check (spec 04 §2);
+  - the "visible hostile" test that blocks stellar manipulation (§9);
+  - the computer players' Close Warp Point choice (spec 05 §7.5);
+  - the Planets window and the map (below).
+- **Targets.** A ship ordered to colonize a planet whose colony it cannot see fails with a
+  "no planet here to colonize" notice (spec 03 §8). Destroy Planet also needs a visible
+  target (§9).
+- **Unaffected.**
+  - The colony stays a full sensor source for its owner (§6.1).
+  - It stays a supply depot for its owner and for empires with a Military Alliance or
+    Partnership treaty (spec 03 §7).
+  - It still counts as a repair source and for training.
+  - Its production, population, spaceport connection, happiness and score do not change.
+- **Space yard.** The colony's yard does not work while it is cloaked.
+  - Ship and base items are removed from its queue every turn (spec 02 §6.1).
+  - Vehicles in its sector cannot be scrapped, analyzed, mothballed, unmothballed or
+    retrofitted through it (spec 03 §15).
+  - Repairs there cannot fix `Emergency Energy` or `Emergency Resupply` parts (spec 03 §13).
+  - The computer players' searches for a yard (repair, yard ships) pass it over (spec 05
+    §7.5).
+  - Its status cell shows no yard (spec 06 §4.4).
+- **Construction.**
+  - The colony still builds facilities, units and upgrades, at its normal rate (the yard's
+    rate counts), and its queue is kept.
+  - The one-space-yard limit still refuses a second yard.
+  - Its emergency or slow-mode counter (spec 02 §6.4) moves twice per turn: once in normal
+    processing, and once more in a pass that handles only cloaked objects' queues.
+- **Combat.**
+  - The colony fights normally, because a battle decloaks it for its whole length (above).
+  - In the turn-based check for a wholly cloaked moving group, it is not its owner's
+    "uncloaked object" (spec 04 §2).
+  - The simultaneous battle check, which reads cloak marks only for vehicles and unit groups,
+    is unaffected.
+- **Intelligence.** The player's picker for a project's target planet lists only planets the
+  player sees now. A project aimed at "Any" target can hit a cloaked colony (spec 05 §2).
+- **Computer players.**
+  - Their scan of planets has no sight or cloak test, so they know about cloaked colonies:
+    as attack candidates, in their colonization lists, and as enemies in their territory.
+  - Their Destroy Planet minister skips every planet whose colony is marked cloaked, even
+    one it can see (spec 05 §7.5).
+- **Lists and map.** The Planets window leaves out a cloaked colony's planet that the viewer
+  cannot see. When the viewer can see it, the planet is listed as a colony (spec 06 §1.8.1).
+  On the map the planet is always drawn, but its colony mark appears only when the colony is
+  seen.
+- **Status icons** (own colonies only, spec 06 §4.4). The cloaked cell (9) is drawn first.
+  The space-yard cell (0) needs a working yard. A cloaked colony with a yard therefore shows
+  the can-repair cell (11) instead, when it has `Component Repair`. The building cell (12)
+  is unaffected.
+
+**The engine differs: it has no planetary cloak at all.** To implement this subsection:
+- **State.** A cloaked flag on the colony, saved with the game and kept on every change of
+  owner.
+- **Levels.** Colony cloak and sensor levels from facilities only. The engine's sensor levels
+  also read the planet's own abilities today, and must not. Recalculate at the moments above;
+  that recalculation decloaks a colony that can no longer cloak. Do not recalculate after
+  intelligence facility damage.
+- **Sight.** The planet's obscuration, colony detection, the sight cache and the Omnipresent
+  path must use the cloak levels while the colony is cloaked. The "obscuration 1 means seen
+  from memory" shortcut for planets must use the cloak-aware obscuration.
+- **Contact.** First contact today counts a colony as met by its mere presence. It must pass
+  the cloak-aware test. A Decloak must run the contact check at once.
+- **Commands.** An immediate colony Cloak command (refused unless the colony can cloak) and
+  Decloak command (refused unless it is cloaked), with no cost and no queue change. The
+  colony order runner must decloak before and cloak after the orders listed above, for
+  computer players and under the Ship Cloaking minister.
+- **Combat.** Decloak colonies when a battle begins and cloak the surviving ones that were
+  cloaked, without a can-cloak test. In the turn-based cloaked-group check a cloaked colony
+  must not count as an uncloaked object; today every colony owner counts.
+- **Yards and construction.** Split "has a Space Yard facility" (rate, one-yard limit) from
+  "working yard" (also not cloaked). Use the working-yard test:
+  - for the yard in a sector (scrap, analyze, mothball, unmothball, retrofit);
+  - for the repair rule for emergency parts;
+  - for removing ship and base items from the queue;
+  - for the computer players' yard searches.
+
+  Do not block a cloaked colony's construction, and move its emergency/slow counter twice per
+  turn.
+- **Orders that need sight.** Colonize must fail when the colonizer cannot see the target.
+  Stellar manipulation, Sentry and the computer players' Close Warp Point must use the
+  cloak-aware colony test, and their Destroy Planet choice must skip colonies marked cloaked.
+- **Intelligence.** The target picker lists only planets the player sees; "Any" stays
+  unfiltered.
+- **Client.**
+  - Light Cloak and Decloak for colonies as above.
+  - Draw the cloaked cell first, and the yard cell only for a working yard.
+  - The Planets list and the map's colony mark follow the cloak-aware test.
 
 ---
 
@@ -924,8 +1081,10 @@ or system: the system-wide value plus the values of the objects in that sector.
 
 ## 9. Stellar manipulation
 
-Stellar manipulation is triggered by a ship through a special window; ship and planet
-orders can also reach it through Use Component or Use Facility. Common rules:
+Stellar manipulation is given to a ship (or base) through the Stellar Manipulation order and
+its window. Planets cannot manipulate, and Use Component and Use Facility never reach it: those
+two orders use only `Emergency Resupply` and `Emergency Energy`, and Use Facility has no effect
+at all (spec 03 §8) (confirmed: binary). Common rules:
 
 - The ship must be **at the target location** when the order executes. The history fixed
   execution after the ship had moved away.
@@ -956,9 +1115,16 @@ Asteroids record of any size) that keeps its name, values and conditions, and ev
 colony on them is lost; every other object except warp points (stars, storms, ships and
 bases, unit groups, comets) is destroyed, the acting ship included.
 
+"Replaced" always means that a new object is made and the old one removed, never a change in
+place. The new object is added first, while the old one still holds its slot, so it takes the
+lowest empty slot (or a new one at the end); then the old object is removed and its slot left
+empty. The shockwave is one pass over the system's objects in slot order, so a replacement made
+late in the pass can reuse a slot emptied earlier in it. Orders aimed at the old object find it
+gone (spec 03 §19 Q72) (confirmed: binary).
+
 | Action (ability) | Precondition | Result |
 |---|---|---|
-| Create Planet (`Create Planet Size` = max size) | A visible asteroid field **without a colony** in the sector, and at least one star (destroyed stars count) in the system. A colonized asteroid field is not a valid target. | The asteroid field is replaced by a planet of stellar size exactly min(Val1, the field's size): a random Planet record of that size (so its atmosphere and type are random). It keeps the field's values and is named with the next numeral (§5.6); conditions are rolled as for a natural planet. |
+| Create Planet (`Create Planet Size` = max size) | A visible asteroid field **without a colony** in the sector, and at least one star (destroyed stars count) in the system. A colonized asteroid field is not a valid target. | The asteroid field is replaced by a planet of stellar size exactly min(Val1, the field's size): a random Planet record of that size (so its atmosphere and type are random). It keeps the field's values and is named with the next numeral (§5.6); conditions are rolled as for a natural planet. If no Planet record of that size exists, no planet is made, but the field is still removed, the cost is paid and the result reported (confirmed: binary). |
 | Destroy Planet (`Destroy Planet Size` = max size) | A visible planet in the sector whose PlanetSize record number (its position in PlanetSize.txt; stock Tiny..Huge are 1..5, the constructed worlds come after) is at most Val1. Blocked by `Stop Planet Destroyer` on any owned object in that sector. | The planet is replaced by a random natural asteroid field of the same stellar size that keeps its name, values and conditions. The colony is lost. |
 | Create Star (`Create Star`) | The system is neither Nebulae nor Black Hole, has no star (destroyed stars count) and no constructed planet. The centre sector is **not** required. | A random natural star record is placed in the ship's sector and named after the system. |
 | Destroy Star (`Destroy Star`) | A visible star in the sector. Blocked by `Stop Star Destroyer` in the system. | Shockwave (above). The system type and its abilities do not change, and no destroyed star remains. |

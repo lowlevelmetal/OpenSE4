@@ -194,8 +194,9 @@ All of this subsection is (confirmed: binary).
 **What is listed.** Planets in systems the empire has explored. Planets hidden by a
 planetary cloak stronger than the empire's sensors are left out; with the Omnipresent
 view option only this cloak test applies. Asteroid fields appear only under the
-Asteroids tab. A planet counts as a colony only while the empire can see the colony, so a
-cloaked colony looks uncolonized.
+Asteroids tab. A planet counts as a colony only while the empire can see the colony. A
+cloaked colony is therefore either left out or listed as a colony; only the map, which always
+draws the planet, shows a hidden colony's planet without its colony mark (spec 01 §6.9).
 
 Terms used by the tabs:
 
@@ -1291,13 +1292,13 @@ viewer's own colonies.
 | 11 | 25, 18, 20, 19, 26, 37, 22 | cargo, in this order: troops, fighters, mines, satellites, weapon platforms, drones, population |
 | 12 | 36 | remote mining: the design has `Remote Resource Generation`, the sector holds an uncolonized planet or asteroid field (visible or not), and this is the first object with that ability in the system's object list in that sector, whatever its owner (the list keeps the order in which objects entered the system (inferred)); only that object shows it |
 
-**Planets:** cell 9 cloaked; 0 space yard; 10 minister control; 12 building, with at
-least one item in the queue, held or not (every colony has a queue); 15 `Ancient Ruins`
-or `Ancient Ruins Unique` (shown on any planet); 17 domed (the population cannot breathe
-the atmosphere); 11 can repair, only when there is
-no space yard; then the seven cargo cells in the ship order; 30 not connected (the empire
-has a spaceport-type facility somewhere and none serves this colony, so its resources are
-not delivered). The planet report also draws the domed icon at (230,196).
+**Planets:** cell 9 cloaked; 0 working space yard (a cloaked colony's yard does not work,
+spec 01 §6.9); 10 minister control; 12 building, with at least one item in the queue, held
+or not (every colony has a queue); 15 `Ancient Ruins` or `Ancient Ruins Unique` (shown on any
+planet); 17 domed (the population cannot breathe the atmosphere); 11 can repair, only when
+cell 0 is not shown; then the seven cargo cells in the ship order; 30 not connected (the
+empire has a spaceport-type facility somewhere and none serves this colony, so its resources
+are not delivered). The planet report also draws the domed icon at (230,196).
 
 **Fleets:** cell 10 when the fleet's own minister flag is set, then 9 when any member
 belonging to the fleet's owner is cloaked (confirmed: binary). Unit groups' list rows use
@@ -1816,8 +1817,10 @@ pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
    including tagged groups (Shift+click in the list, Shift+A, Shift+C), and binds every
    key of §3.1 (rebindable). It differs:
    - Jettison Cargo, Use Facility and Convert Resources light by the rules, but our engine
-     cannot carry them out yet: using one says so.
-   - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies.
+     cannot carry them out yet: using one says so. Their rules are in spec 03 §8 and spec 02
+     §5.6.
+   - Colonies cannot cloak in our engine, so Cloak and Decloak stay dim for colonies. The
+     colony cloaking rules are in spec 01 §6.9.
    - The movement log is replayed from what the client saw (Q51).
    - An 800x600 layout, if added, needs the 4 wrapping pages.
 5. **System art.** Where are the 128x128 `Systems/*.bmp` and the 72x72 storm and

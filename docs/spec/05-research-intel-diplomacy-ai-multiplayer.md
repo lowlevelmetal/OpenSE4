@@ -727,7 +727,10 @@ window, where the ranking shows the result.
   - The Expenses and Production Output ministers do nothing: their turn steps are empty
     (confirmed: binary). Ship Cloaking has no turn step of its own. Ships under it raise
     and lower their cloaks as their movement, repair and yard orders need (confirmed:
-    binary).
+    binary). Colonies under it are decloaked before their Launch Units Remotely, Recover
+    Units Remotely, Use Facility, Convert Resources and Abandon Planet orders and cloaked
+    again afterwards when they can (not after Abandon Planet); for a computer player this
+    is how its colonies come to be cloaked (spec 01 §6.9, confirmed: binary).
   - "Minister Style" selects a personality folder (§7.2), and "Use Race Minister Style"
     selects the race's own files instead. The style also applies to an empire marked
     "Computer Controlled" in the player setup, unless "Use Race Minister Style" is ticked.
@@ -1056,9 +1059,13 @@ Human players claim systems by hand; their home system starts claimed.
 2. **Stellar manipulation.** Each report this turn that X destroyed a planet, destroyed a
    star (making a nebula is reported the same way) or created a black hole adds 2 ×
    `Combat Defending Lost`. The report is an entry of our own log, counted like the
-   others: when the manipulation happens, it is logged, naming the empire responsible, to
-   every empire with a ship, base, colony, or fighter, satellite or drone group (not mine
-   fields) in that system at that moment (confirmed: binary).
+   others: when the manipulation happens, it is logged, naming the empire responsible. For
+   Destroy Planet it goes to every empire that, once the planet is gone, still has a ship,
+   base, colony, or fighter, satellite or drone group (not mine fields) in that system; the
+   destroyed colony does not count. For Destroy Star, Create Nebulae and Create Black Hole it
+   goes to every empire that lost a colony or any object of its own in the system to the
+   shockwave, mine fields included, the culprit too (a report naming oneself never counts)
+   (confirmed: binary, question 50).
 3. **Intelligence.** Each successful project by X against us adds `Intelligence Against
    Us`, but only when we learn who did it. After a success, the target is told the culprit
    with a 1 in 5 chance. Blocked attempts and counter-intelligence projects add nothing.
@@ -1717,8 +1724,8 @@ binary).
 
     Every turn, such a vehicle loses all its orders (Colonize included) and leaves its
     fleet, before any destination is looked for. If it can move, it seeks the nearest of the
-    empire's space yards by travel distance (a colony with a Space Yard facility, or an
-    uncloaked ship with a working yard) and waits when it is already there or a yard ship
+    empire's space yards by travel distance (an uncloaked colony with a Space Yard facility,
+    or an uncloaked ship with a working yard) and waits when it is already there or a yard ship
     is within that ship's own speed. With no yard it is left without orders. Details
     (confirmed: binary):
     - Mothballed vehicles are not skipped. One with a destroyed part loses its orders and
@@ -1746,11 +1753,11 @@ binary).
     of at most 2 and no own yard in its sector (in practice mostly bases, and mothballed
     vehicles), and waits when already there. With no such vehicle it gets the resupply
     orders. Details (confirmed: binary):
-    - "Own yard in its sector" is any of our objects there with a space yard: a colony with
-      a Space Yard facility, or an uncloaked ship with a working yard, the yard ship itself
-      included. So a vehicle the yard ship has reached is no longer a target, and the yard
-      ship goes on to the next one or gets the resupply orders. It waits beside a vehicle
-      only while it is cloaked.
+    - "Own yard in its sector" is any of our objects there with a working space yard: an
+      uncloaked colony with a Space Yard facility, or an uncloaked ship with a working yard,
+      the yard ship itself included. So a vehicle the yard ship has reached is no longer a
+      target, and the yard ship goes on to the next one or gets the resupply orders. It waits
+      beside a vehicle only while it is cloaked.
     - "Movement left" is the movement the yard ship still has when the start-of-turn
       ministers act. Movement is refilled later (spec 03 §6.3, §8 here), so this is what
       its last movement left.
@@ -1782,7 +1789,8 @@ binary).
       random.
     - Destroy Planet: the nearest planet colonized by a hostile empire, within the ship's
       size limit, with no armed hostile strength in its sector and no `Stop Planet
-      Destroyer`.
+      Destroyer`, and whose colony is not marked cloaked, even when it is seen (spec 01
+      §6.9, confirmed: binary).
     - Create Star: the nearest explored system without a star whose centre sector holds no
       visible, armed, non-mothballed hostile. Nebulae, black holes and constructed planets
       are not checked, so the order can then fail by spec 01 §9.
@@ -3049,7 +3057,36 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     its result removes anything, so the owner of a destroyed colony and the empires whose
     ships a shockwave destroys are told (inferred). To verify: does the victim of a
     destroyed planet, with nothing else in the system, count it in its anger?
+    **Answer:** no. The moment depends on the manipulation (confirmed: binary):
+    - Destroy Planet tests presence after its result: the planet (and its colony) is
+      already gone. The colony's owner is told, and so counts the report in its anger, only
+      if it still has a ship, base, another colony, or a fighter, satellite or drone group
+      in that system. Mine fields never count.
+    - Destroy Star, Create Nebulae and Create Black Hole report to every empire that lost a
+      colony or any object of its own in the system to the shockwave, mine fields included.
+      The culprit's own ship is destroyed too, so it is told as well; that report names
+      itself and never counts.
+
+    The engine differs: it takes the witnesses before every result and leaves out mine
+    fields. For Destroy Planet it must take them after the colony is lost. For the three
+    shockwave manipulations it must include every empire that lost an object there, mine
+    field owners included.
 51. **A "stop hostile actions against an empire" demand that names no empire** (§7.3
     term 8, question 47): the promise is about the empire the demand names. A message
     whose third empire is missing or invalid records no promise in OpenSE4 (inferred).
     To verify: what the original records when the named empire is missing.
+    **Answer:** the original cannot send one (confirmed: binary).
+    - The sender must pick the empire from a list of the empires it has met that are still
+      in the game, other than itself and the recipient. The same picker serves "break a
+      treaty with", "declare war on", "make peace with" and "support us against" (and
+      "attack an empire in a system"). Cancelling the pick abandons the message.
+    - The computer players never send this demand (§7.4).
+    - When a computer player carries the demand out (half the time), it records the named
+      empire without any check. Promises are used up only for living empires it has met,
+      other than itself, so a promise about an invalid empire would never be used; it would
+      be forgotten at the next 10-turn clearing.
+
+    The engine has the same effect, since recording nothing is equivalent. It differs only
+    when the message is sent: the engine's send-message command does not check the third
+    empire, and only the client's picker limits it. It should refuse these requests unless
+    the third empire meets the picker's rule above.
