@@ -995,7 +995,8 @@ private:
         if (lampChoice(ctx, "##turns", style, {"One player after another", "Simultaneous"})) o.simultaneous = style == 1;
         note(o.simultaneous ? "Everyone gives orders, then all of them are carried out together."
                             : "Players move one after another. Orders are carried out as soon as they are given, and a ship "
-                              "that meets the enemy fights at once. Network games are always simultaneous.");
+                              "that meets the enemy fights at once. Network and e-mail games can be played either way (set up "
+                              "from Multiplayer).");
         ImGui::Dummy(ImVec2(0, ctx.px(8)));
         heading(ctx, "Combat");
         int combat = o.noTacticalCombat ? 1 : 0;

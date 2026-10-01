@@ -135,6 +135,8 @@ GameState redactForEmpire(const GameState& s, EmpireId viewer) {
 
     // A map's starting points tell where the players started.
     v.startingPoints.clear();
+    // Facilities left on abandoned planets are seen only by whoever colonizes them.
+    v.leftFacilities.clear();
 
     // The random stream would let a client predict the next turn.
     v.rng = Rng(0);

@@ -363,14 +363,18 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `galaxy-map`, `empire-options`, `ministers`, `systems-to-avoid`, `waypoints`,
 `strategies`, `repair-priorities`, `fleet-transfer`, `cargo-transfer`,
 `launch-recover`, `scrap`, `view-orders`, `select-waypoint`, `stellar-manipulation`,
-`rename`, `communicate`, `intelligence`, `treaty-grid`, `scores`, `comparisons`,
-`history`, `race-report`, `victory-conditions`, `combat-replay`, `tactical-combat`,
-`tactical-orders`, `tactical-options`, `combat-simulator`, `strategic-combat`,
-`ground-combat`, `save-game`, `load-game`, `settings`, `learn`, `manual`.
+`rename`, `abandon-planet`, `communicate`, `intelligence`, `treaty-grid`, `scores`,
+`comparisons`, `history`, `race-report`, `victory-conditions`, `combat-replay`,
+`tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
+`tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
+`combat-simulator`, `strategic-combat`, `ground-combat`, `save-game`, `load-game`,
+`options` (Game Menu → Options), `settings`, `learn`, `manual`.
 
 A `window:` link cannot open the battle windows (`combat-replay`, `tactical-combat`,
-`tactical-orders`, `tactical-options`, `strategic-combat`, `ground-combat`): they need a
-battle. Front matter may also name `main`, the main window.
+`tactical-orders`, `tactical-options`, `tactical-launch`, `combat-piece-report`,
+`combat-replay-options`, `strategic-combat`, `ground-combat`): they need a battle; nor
+`abandon-planet`, which needs a planet. Front matter may also name `main`, the main
+window.
 
 **Help tabs** (`help:` links): `components`, `facilities`, `ship-sizes`, `unit-sizes`,
 `tech-areas`, `treaties`, `intel-projects`, `formations`, `hotkeys`, and `weapons` for

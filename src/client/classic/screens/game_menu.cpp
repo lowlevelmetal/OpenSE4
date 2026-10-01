@@ -3,6 +3,7 @@
 
 #include "client/audio.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/screens/setup_model.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/map_file.hpp"
 
@@ -66,16 +67,18 @@ std::string cleanName(std::string_view in) {
 bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
     bool yes = false;
     ImGui::SetNextWindowSize(ui.size({340, 0}));
-    if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
         ImGui::TextWrapped("%s", question.c_str());
         ImGui::Spacing();
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || (!ImGui::IsWindowAppearing() && ImGui::IsKeyPressed(ImGuiKey_Enter, false))) {
+        // Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+        const std::optional<bool> key = yesNoKey();
+        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true) {
             yes = true;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     return yes;
@@ -86,10 +89,13 @@ bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
 class GameMenuScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
-        // The original's 173×320 menu (here two rows taller for Settings and
-        // Learn): a column of 150×26 buttons, one every 30 px, in the pipe frame.
-        const Vec2 size{173, 380};
-        const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
+        // The original's 173×320 menu: a column of 150×26 buttons, one every
+        // 30 px, in the pipe frame (spec 06 §1.2). OpenSE4's Learn button sits
+        // in a small frame of its own just below it.
+        const Vec2 menu{173, 320};
+        const Vec2 extra{173, 50};
+        const Vec2 size{menu.x, menu.y + 6 + extra.y};
+        const Vec2 min{(kFrameW - menu.x) * 0.5f, (kFrameH - menu.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -101,7 +107,9 @@ public:
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
             ui.tagWindow(ui.at(min), ui.at(min + size));
-            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + menu}, nullptr, 0);
+            const Vec2 extraMin = min + Vec2{0, menu.y + 6};
+            drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{extraMin, extraMin + extra}, nullptr, 0);
             int row = 0;
             auto button = [&](const char* label, bool enabled = true) {
                 ImGui::SetCursorPos(ImVec2(ui.px(12), ui.px(12 + 30 * float(row++))));
@@ -132,19 +140,15 @@ public:
                 mapNote_.clear();
                 ImGui::OpenPopup("Save Map");
             }
-            button("Save Empire", false);
+            if (button("Save Empire")) {
+                saveEmpire(ui);
+                ImGui::OpenPopup("Save Empire");
+            }
             if (button("Players")) ImGui::OpenPopup("Player Computer Control");
+            // The per-computer Options window (spec 06 §1.9); Empire Options opens
+            // from Empire Status. OpenSE4's graphics and controls open from Options.
             if (button("Options")) {
-                ui.open(ScreenId::EmpireOptions);
-                keep = false;
-            }
-            if (button("Settings")) {
-                ui.open(ScreenId::Settings);
-                keep = false;
-            }
-            // Tutorials, training games and the manual (docs/LEARNING.md).
-            if (button("Learn", ui.learn != nullptr)) {
-                ui.open(ScreenId::Learn);
+                ui.open(ScreenId::Options);
                 keep = false;
             }
             if (button("Delete Game")) {
@@ -153,6 +157,14 @@ public:
             }
             if (button("Quit")) ImGui::OpenPopup("Quit Game");
             if (button("Close")) keep = false;
+            // Tutorials, training games and the manual (docs/LEARNING.md): an
+            // OpenSE4 extension below the original's ten buttons.
+            ImGui::SetCursorPos(ImVec2(ui.px(12), ui.px(menu.y + 6 + 12)));
+            if (classicButton(ui, "Learn", {149, 26}, 0, false, ui.learn != nullptr)) {
+                audio().play("button");
+                ui.open(ScreenId::Learn);
+                keep = false;
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                 !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
                 keep = false;
@@ -163,6 +175,7 @@ public:
             playersPopup(ui);
             saveMapPopup(ui);
             draftPopup(ui);
+            notePopup(ui, "Save Empire", empireNote_);
         }
         ImGui::End();
         return keep;
@@ -200,9 +213,39 @@ private:
         ImGui::EndPopup();
     }
 
+    // Save Empire (spec 06 §6.1): the empire's name, leader, race and minister
+    // style as an empire file for a later game's setup (our format, under
+    // <user data>/empires). Our empire files hold no designs, so the original's
+    // question whether to include them is not asked.
+    void saveEmpire(UiContext& ui) {
+        const game::Empire& e = ui.me();
+        game::EmpireSetup out;
+        out.name = e.name;
+        out.empireType = e.empireType;
+        out.leaderTitle = e.leaderTitle;
+        out.leaderName = e.leaderName;
+        out.customRace = e.race;
+        out.ministerStyle = e.ministerStyle;
+        out.useRaceMinisterStyle = e.useRaceMinisterStyle;
+        out.experience = e.experience;
+        const auto saved = setup::saveEmpireFile(ui.rules(), userDataDir() / "empires", out);
+        empireNote_ = saved ? std::format("The {} empire is saved as {}. New games can use it in the empire setup.", e.name, saved->string())
+                            : std::format("The empire was not saved: {}", saved.error());
+    }
+
+    void notePopup(UiContext& ui, const char* id, const std::string& note) {
+        ImGui::SetNextWindowSize(ui.size({380, 0}));
+        if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) return;
+        ImGui::TextWrapped("%s", note.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     std::string mapName_;
     std::string mapNote_;
     std::string draftNote_;
+    std::string empireNote_;
     bool mapSaved_ = false;
 
     void draftPopup(UiContext& ui) {
@@ -210,9 +253,7 @@ private:
         if (!ImGui::BeginPopupModal("Turn Saved", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
         ImGui::TextWrapped("%s", draftNote_.c_str());
         ImGui::Spacing();
-        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
-            ImGui::IsKeyPressed(ImGuiKey_Enter, false))
-            ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 

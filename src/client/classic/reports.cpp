@@ -1,5 +1,7 @@
 #include "client/classic/reports.hpp"
 
+#include "client/classic/screens/colony_logic.hpp"
+
 #include "game/combat.hpp"
 #include "game/design.hpp"
 #include "game/economy.hpp"
@@ -437,6 +439,11 @@ void planetReport(UiContext& ui, game::ObjectId planet, ReportTab tab) {
                 building = q.kind == game::QueueItem::Kind::Facility  ? r.facility(q.facility).name
                            : q.kind == game::QueueItem::Kind::Upgrade ? "Upgrade " + r.facility(q.facility).name
                                                                       : s.design(q.design).name;
+                // What the item under construction still needs at this turn's rate,
+                // in years as the Construction Queues window shows times (inferred).
+                const game::cmd::QueueTarget target{c->planet, {}};
+                const auto est = estimateQueue(r, s, c->owner, target, c->queue, game::economy::constructionRate(r, s, c->owner, target));
+                remaining = c->queue.onHold ? std::string("On Hold") : queueYearsText(est.front().turns);
             }
             line("Under Construction", building);
             line("Time Remaining", remaining);

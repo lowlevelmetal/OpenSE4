@@ -524,6 +524,13 @@ struct Applier {
         if (!col) return R::fail("Not your planet");
         if (col->totalPopulation() > r.setting("Maximum Population For Abandon Planet Order", 50))
             return R::fail("Too many people live there to abandon it");
+        // Facilities the player did not scrap first stay for a later owner (spec 02 §5).
+        std::erase_if(s.leftFacilities, [&](const LeftFacilities& l) { return l.planet == c.planet; });
+        if (!col->facilities.empty()) {
+            const auto at = std::lower_bound(s.leftFacilities.begin(), s.leftFacilities.end(), c.planet,
+                                             [](const LeftFacilities& l, ObjectId p) { return l.planet < p; });
+            s.leftFacilities.insert(at, LeftFacilities{c.planet, col->facilities});
+        }
         s.colonies[c.planet.index()].reset();
         addLog(s, e, LogCategory::Misc, std::format("{} abandoned", s.galaxy.object(c.planet).name), {}, locationOf(s.galaxy, c.planet));
         addHistory(s, e, e, std::format("Abandoned {}", s.galaxy.object(c.planet).name), locationOf(s.galaxy, c.planet));
@@ -888,6 +895,17 @@ struct Applier {
         return {};
     }
 
+    // ---- Empire Options and window memories (spec 06 §1.9) -----------------------------------------
+    R operator()(const cmd::SetInterfaceOptions& c) {
+        const InterfaceOptions& o = c.options;
+        if (o.logFilter > uint8_t(LogCategory::Misc) + 1) return R::fail("Unknown log filter");
+        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f) return R::fail("Unknown window choice");
+        if (o.facilityMarkers >= (1u << kFacilityMarkerGroups)) return R::fail("Unknown facility markers");
+        if (o.logPosition < 0 || o.logScroll < 0) return R::fail("Invalid log position");
+        emp().interfaceOptions = o;
+        return {};
+    }
+
     // ---- Turn-based games ----------------------------------------------------------------------
 
     // The Attack Sector answer (spec 03 §6.2). Entering is carried out by the
@@ -985,6 +1003,7 @@ OPENSE4_CMD_NAME(EditDesign)
 OPENSE4_CMD_NAME(OpenVehicleReport)
 OPENSE4_CMD_NAME(QueueReplaceFacility)
 OPENSE4_CMD_NAME(DecideWar)
+OPENSE4_CMD_NAME(SetInterfaceOptions)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

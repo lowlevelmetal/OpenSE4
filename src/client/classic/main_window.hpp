@@ -82,7 +82,6 @@ private:
     std::optional<game::FleetId> fleet_;
     bool listMode_ = false;
     ReportTab tab_ = ReportTab::Detail;
-    bool showMovementLines_ = true;
 
     Pick pick_ = Pick::None;
     std::string pickPrompt_;

@@ -94,6 +94,13 @@ const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
     return myTurn() ? state_.playerTurn.questions : none;
 }
 
+void ClassicSession::record(game::Command c) {
+    // The Empire Options are replaced as a whole: only the last change counts.
+    if (std::holds_alternative<game::cmd::SetInterfaceOptions>(c))
+        std::erase_if(orders_, [](const game::Command& o) { return std::holds_alternative<game::cmd::SetInterfaceOptions>(o); });
+    orders_.push_back(std::move(c));
+}
+
 game::CommandResult ClassicSession::issue(game::Command c) {
     if (!onIssued) return issueCommand(std::move(c));
     const game::Command copy = c;
@@ -122,7 +129,7 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
         if (!r.ok) return r;
         if (const auto* o = std::get_if<game::cmd::SetOrders>(&c); o && !o->planet.valid()) drop(o->vehicle, o->fleet);
         if (transport_) transport_->playCommand(c);
-        orders_.push_back(std::move(c));
+        record(std::move(c));
         ++revision_;
         return r;
     }
@@ -136,7 +143,7 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
     }
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
     if (r.ok) {
-        orders_.push_back(std::move(c));
+        record(std::move(c));
         ++revision_;
     }
     return r;
@@ -238,8 +245,19 @@ void ClassicSession::runCall() {
     // Battles to watch (spec 06 §1.6): those the player's order started, and
     // those the player answered Strategic; never one fought in the window.
     auto listed = [](const std::vector<game::Location>& list, game::Location at) { return std::find(list.begin(), list.end(), at) != list.end(); };
+    // Turn-based on one machine without tactical combat, every battle with a
+    // piece of a human player is shown (spec 06 §1.10.5); here after the call,
+    // not as it starts (the engine does not stop for them).
+    const bool everyHumanBattle = (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) && turnBased() && state_.options.noTacticalCombat;
     for (size_t i = std::min(callBattles_, state_.combats.size()); i < state_.combats.size(); ++i) {
         const game::CombatRecord& rec = state_.combats[i];
+        const bool human = std::any_of(rec.participants.begin(), rec.participants.end(), [&](game::EmpireId e) {
+            return e.valid() && e.index() < state_.empires.size() && state_.empire(e).kind == game::PlayerKind::Human;
+        });
+        if (everyHumanBattle && human) {
+            strategic_.emplace_back(player_, i);
+            continue;
+        }
         if (std::find(rec.participants.begin(), rec.participants.end(), player_) == rec.participants.end()) continue;
         if (listed(answeredTactical_, rec.location)) continue;
         if (call == Call::Issue || listed(answeredStrategic_, rec.location)) strategic_.emplace_back(player_, i);
@@ -255,12 +273,12 @@ void ClassicSession::runCall() {
             // Attack Sector questions stay in the game (GameState::playerTurn.questions).
             // PBEM: the host replays every command given, refused ones too (a
             // refused answer still settles its question), so all are kept.
-            if (kind_ == SessionKind::Pbem) orders_.push_back(*callCommand_);
+            if (kind_ == SessionKind::Pbem) record(*callCommand_);
             if (!res.rejected.empty()) {
                 issued_ = game::CommandResult::fail(res.rejected.front().second);
                 if (answered) notices_.push_back(res.rejected.front().second);
             } else {
-                if (kind_ != SessionKind::Pbem) orders_.push_back(std::move(*callCommand_));
+                if (kind_ != SessionKind::Pbem) record(std::move(*callCommand_));
                 issued_ = {};
             }
             break;
@@ -283,12 +301,13 @@ void ClassicSession::runCall() {
     callCommand_.reset();
 }
 
-void ClassicSession::answerBattle(game::BattleAnswer answer) {
+void ClassicSession::answerBattle(game::BattleAnswer answer, bool watched) {
     if (!battle_ || call_ == Call::None) return;
-    // What the local player chose, to show a strategic battle when the call is done.
+    // What the local player chose, to show a strategic battle when the call is
+    // done; a battle already watched in a window is not shown again.
     if (std::find(battle_->humans.begin(), battle_->humans.end(), player_) != battle_->humans.end()) {
         const bool tactical = std::find(answer.tactical.begin(), answer.tactical.end(), player_) != answer.tactical.end();
-        (tactical ? answeredTactical_ : answeredStrategic_).push_back(battle_->where);
+        (tactical || watched ? answeredTactical_ : answeredStrategic_).push_back(battle_->where);
     }
     answers_.push_back(std::move(answer));
     battle_.reset();
@@ -304,7 +323,8 @@ void ClassicSession::endTactical() {
     // Phases left are played by the strategies, as a script that runs out does.
     fight->battle->finish();
     fought_.push_back(fight->battle->record());
-    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()});
+    // Fought by hand, or by the strategies while the Strategic Combat window watched it.
+    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()}, true);
 }
 
 void ClassicSession::endTurn() {

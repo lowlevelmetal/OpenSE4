@@ -196,6 +196,12 @@ std::string validateState(const GameState& s, const Rules* rules) {
             for (uint32_t f : c->facilities)
                 if (f >= rules->data().facilities.size()) return std::format("colony {} has a facility the data set lacks", i);
     }
+    for (const LeftFacilities& l : s.leftFacilities) {
+        if (!l.planet.valid() || l.planet.index() >= nObj) return "facilities are left on a missing planet";
+        if (rules)
+            for (uint32_t f : l.facilities)
+                if (f >= rules->data().facilities.size()) return "a planet holds a left facility the data set lacks";
+    }
     for (size_t i = 0; i < nEmp; ++i) {
         const Empire& e = s.empires[i];
         if (e.id.index() != i) return std::format("empire {} has id {}", i, e.id.value);

@@ -8,6 +8,7 @@
 #include "game/commands.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
+#include "game/serialize.hpp"
 #include "game/xmath.hpp"
 
 #include <doctest/doctest.h>
@@ -1877,6 +1878,89 @@ TEST_CASE("movement: warp point turbulence hits half the transits and ends the m
 }
 
 // ---- Colonization -----------------------------------------------------------------------------------
+
+TEST_CASE("movement: a human empire claims the systems it colonizes while its Politics option is on") {
+    // Empire Options, Politics (spec 06 §1.9): on for a new empire.
+    for (const bool on : {true, false}) {
+        World w;
+        const Rules& r = w.rules();
+        CHECK(w.s.empire(kA).interfaceOptions.autoClaimColonized);
+        InterfaceOptions o = w.s.empire(kA).interfaceOptions;
+        o.autoClaimColonized = on;
+        REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+        const SystemId a = w.system("A");
+        const SystemId b = w.system("B", 10, 0);
+        const ObjectId target = w.planet(b, {5, 6});
+        w.s.empire(kA).claimedSystems = {a};
+        const VehicleId ship = w.spawn(w.ship(kA, "Settler", 4, {"Test Rock Pod"}), at(b, 5, 6));
+        fuel(w, ship);
+        w.v(ship).cargo.population.push_back({kA, 2});
+        w.order(ship, mk(OrderKind::Colonize, {}, target));
+        w.colonize();
+        REQUIRE(w.s.colony(target));
+        const auto& claimed = w.s.empire(kA).claimedSystems;
+        CHECK(std::is_sorted(claimed.begin(), claimed.end()));
+        CHECK((std::find(claimed.begin(), claimed.end(), b) != claimed.end()) == on);
+        CHECK(std::find(claimed.begin(), claimed.end(), a) != claimed.end());
+    }
+}
+
+TEST_CASE("commands: an abandoned colony leaves its facilities to the next colony on the planet") {
+    // Spec 02 §5: the player scraps the facilities first, or leaves them for a later owner.
+    World w;
+    const Rules& r = w.rules();
+    const SystemId a = w.system("A");
+    const ObjectId planet = w.planet(a, {5, 6});
+    w.colony(planet, kA, 10, {"Mv Trainer", "Mv System Scanner"});
+    const std::vector<uint32_t> facilities = w.s.colony(planet)->facilities;
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{planet}).ok);
+    CHECK_FALSE(w.s.colony(planet));
+    REQUIRE(w.s.leftFacilities.size() == 1);
+    CHECK(w.s.leftFacilities.front().planet == planet);
+    CHECK(w.s.leftFacilities.front().facilities == facilities);
+    // Another empire colonizes it and finds them.
+    const VehicleId ship = w.spawn(w.ship(kB, "Settler", 4, {"Test Rock Pod"}), at(a, 5, 6));
+    fuel(w, ship);
+    w.v(ship).cargo.population.push_back({kB, 2});
+    w.order(ship, mk(OrderKind::Colonize, {}, planet));
+    w.colonize();
+    REQUIRE(w.s.colony(planet));
+    CHECK(w.s.colony(planet)->owner == kB);
+    CHECK(w.s.colony(planet)->facilities == facilities);
+    CHECK(w.s.leftFacilities.empty());
+
+    // Scrapped first: a refund now and nothing left behind.
+    const ObjectId other = w.planet(a, {8, 8});
+    w.colony(other, kA, 10, {"Mv Trainer"});
+    const Resources before = w.s.empire(kA).stockpile;
+    REQUIRE(apply(r, w.s, kA, cmd::Scrap{{}, other, 0}).ok);
+    CHECK(w.s.empire(kA).stockpile.total() > before.total());
+    REQUIRE(apply(r, w.s, kA, cmd::AbandonPlanet{other}).ok);
+    CHECK(w.s.leftFacilities.empty());
+    CHECK(validateState(w.s, &r).empty());
+}
+
+TEST_CASE("commands: the Empire Options are replaced as a whole and checked") {
+    World w;
+    const Rules& r = w.rules();
+    InterfaceOptions o;
+    o.confirmEndTurn = false;
+    o.logFilter = uint8_t(LogCategory::Combat) + 1;
+    o.facilityMarkers = 0x0801;
+    REQUIRE(apply(r, w.s, kA, cmd::SetInterfaceOptions{o}).ok);
+    CHECK(w.s.empire(kA).interfaceOptions == o);
+    CHECK(w.s.empire(kB).interfaceOptions == InterfaceOptions{});
+    InterfaceOptions bad = o;
+    bad.logFilter = 99;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    bad = o;
+    bad.facilityMarkers = 0x1000;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    bad = o;
+    bad.queuesShown = 0x10;
+    CHECK_FALSE(apply(r, w.s, kA, cmd::SetInterfaceOptions{bad}).ok);
+    CHECK(w.s.empire(kA).interfaceOptions == o);
+}
 
 TEST_CASE("movement: colony ships load colonists, travel and found a colony") {
     World w;

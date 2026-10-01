@@ -24,6 +24,7 @@ add_executable(opense4
     client/classic/art.cpp
     client/classic/classic_mode.cpp
     client/classic/frontend.cpp
+    client/classic/facility_markers.cpp
     client/classic/learn_content.cpp
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
@@ -37,6 +38,7 @@ add_executable(opense4
     client/classic/screens/cargo_transfer.cpp
     client/classic/screens/colony_logic.cpp
     client/classic/screens/colony_widgets.cpp
+    client/classic/screens/combat_logic.cpp
     client/classic/screens/combat_map.cpp
     client/classic/screens/combat_replay.cpp
     client/classic/screens/design_tools.cpp

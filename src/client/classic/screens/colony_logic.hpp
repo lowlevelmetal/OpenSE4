@@ -8,6 +8,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -36,18 +37,38 @@ bool breathableBy(const game::GameState& s, game::EmpireId e, const game::SpaceO
 std::string colonizeProblem(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
                             const ColonizeTech& tech);
 
-// An own vehicle or fleet already has a Colonize order for the planet.
-bool colonyShipEnroute(const game::GameState& s, game::EmpireId e, game::ObjectId planet);
+// The planet's surface is one the empire may colonize (spec 06 §1.8.1
+// "Colonizable"): a planet (not an asteroid field) of a type it has a colony
+// module for, within the game options "only breathable" and "only home planet
+// type". It says nothing about whether the planet is already colonized.
+bool colonizableType(const game::GameState& s, game::EmpireId e, game::ObjectId planet, const ColonizeTech& tech);
 
-// The nearest idle own ship (no orders, not in a fleet, not mothballed) that
-// can colonize the planet's surface. Nearest by movement ETA when the engine
-// can route, else by straight-line distance.
-std::optional<game::VehicleId> findColonyShip(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet);
-// The order that sends a ship to colonize a planet.
-game::cmd::SetOrders colonizeOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet);
+// ---- Colony ships (spec 06 §1.8.1) ------------------------------------------------------------
 
-// ---- Planets window -----------------------------------------------------------------------------
+// One of our ships (or bases) with a Colonize Planet ability. It is available
+// when it has no orders (nor has its fleet), is not mothballed and still has
+// supplies. A colony ship with orders has the planet of its last Colonize
+// order as its target.
+struct ColonyShip {
+    game::VehicleId id;
+    std::string name;
+    bool available = false;
+    game::ObjectId target;  // invalid without a Colonize order
+};
+std::vector<ColonyShip> colonyShips(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 
+// Send Colony Ship: among the available colony ships that can colonize the
+// planet's type (in a turn-based game only those with movement left), the
+// one with the shortest route to it (the first such ship on a tie). Nothing
+// when none can go.
+std::optional<game::VehicleId> chooseColonyShip(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet);
+// Its orders: Load Cargo of population where it is (only while it carries
+// none), Move To the planet, Colonize.
+game::cmd::SetOrders sendColonyShipOrders(const game::GameState& s, game::VehicleId ship, game::ObjectId planet);
+
+// ---- Planets window (spec 06 §1.8.1) ----------------------------------------------------------
+
+// The ten tabs, in the button column's order (InterfaceOptions::planetsTab).
 enum class PlanetFilter : uint8_t {
     All, Colonizable, AllColonies, EnemyColonies, AllyColonies, ColonizableEmpty, ColonizableBreathable, ShipEnroute, Asteroids, Special,
     Count
@@ -58,23 +79,68 @@ struct PlanetInfo {
     game::ObjectId id;
     game::SystemId system;
     bool asteroids = false;
-    bool colonized = false;
+    bool colonized = false;       // the planet itself holds a colony we see
     game::EmpireId owner;
     bool own = false;
-    bool enemy = false;           // colony of an empire we fight on contact
-    bool ally = false;            // colony of another empire we do not fight
-    bool colonizable = false;     // colonizeProblem() is empty
+    bool enemy = false;           // another empire below Non-Aggression with us, or not met yet
+    bool ally = false;            // another empire at Non-Aggression or better
+    bool colonizable = false;     // colonizableType()
     bool breathable = false;      // our race breathes the atmosphere
-    bool special = false;         // has stellar abilities (ruins, value bonuses, ...)
-    bool enroute = false;         // an own ship has orders to colonize it
-    bool foreignSystem = false;   // another empire has a colony in the same system
+    bool special = false;         // Ancient Ruins or Ancient Ruins Unique
+    bool enroute = false;         // the target of one of our colony ships
+    std::string enrouteShip;      // that ship's name
     bool avoided = false;         // the system is on our Systems To Avoid list
-    std::string problem;          // why it is not colonizable
+    int sizeRank = 0;             // the planet size's place in the data set's size list (smallest first)
+    std::string problem;          // why we cannot colonize it now (empty: we can)
 };
 
 // Every planet and asteroid field in the systems the empire has explored.
+// (Our engine has no planetary cloak, so none is left out for one, and every
+// colony is seen.)
 std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 bool matches(PlanetFilter f, const PlanetInfo& p);
+
+// The statistics box: counts over every listed planet, by the real owner.
+struct PlanetStatistics {
+    int systems = 0;            // known (explored) systems
+    int planets = 0;            // planets, no asteroid fields
+    int colonizable = 0;        // of a colonizable type
+    int enemy = 0;              // colonizable and owned by an enemy
+    int ally = 0;               // colonizable and owned by an ally
+    int nonAligned = 0;         // always 0: the treaty test puts every empire in one of the groups above
+    int free = 0;               // colonizable and not colonized
+    int freeBreathable = 0;     // and breathable
+    int colonyShips = 0;
+    int available = 0;          // colony ships that are available
+};
+PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, const std::vector<PlanetInfo>& planets,
+                                  const std::vector<ColonyShip>& ships);
+
+// Sorting by the latest header clicks (spec 06 §1.8.1, §1.8.2): each column
+// has a fixed direction; the last column clicked is the first key and the
+// ones clicked before it break ties, up to five (inferred).
+class SortHistory {
+public:
+    static constexpr size_t kKeys = 5;
+    explicit SortHistory(int defaultColumn) : columns_{defaultColumn} {}
+    void click(int column);
+    const std::vector<int>& columns() const { return columns_; }
+    // `compare(column, a, b)` is negative, zero or positive in the column's
+    // own direction. A stable sort: equal rows keep their order.
+    template <class Row, class Compare>
+    void sort(std::vector<Row>& rows, Compare&& compare) const {
+        std::stable_sort(rows.begin(), rows.end(), [&](const Row& a, const Row& b) {
+            for (int c : columns_)
+                if (const int d = compare(c, a, b); d != 0) return d < 0;
+            return false;
+        });
+    }
+
+private:
+    std::vector<int> columns_;
+};
+// Case-insensitive comparison of names (A to Z): negative, zero or positive.
+int compareNames(std::string_view a, std::string_view b);
 
 // ---- Colonies ------------------------------------------------------------------------------------
 
@@ -92,12 +158,18 @@ std::vector<std::string> planetOrders(const std::vector<game::Command>& orders, 
 
 // ---- Construction queues -------------------------------------------------------------------------
 
+// Which of the Construction Queues window's four toggles shows a queue (spec
+// 06 §1.8.2, confirmed: binary): the split is by whether the space yard works
+// right now, not by hull.
 enum class QueueKind : uint8_t {
-    Planet,       // a colony without a space yard (facilities and units only)
-    PlanetYard,   // a colony with a space yard
-    Ship,         // a mobile ship with a space yard component
-    Base,         // a stationary vehicle (base) with a space yard component
+    Ship,         // "Ships": a ship or base whose yard does not work now (cloaked, or the yard is gone);
+                  // its queue is cleared at its next update, so this is normally empty
+    Planet,       // "Planets": a colony without a working space yard
+    ShipYard,     // "Ship SY": a ship or base with a working space yard
+    PlanetYard,   // "Planet SY": a colony with a working space yard
 };
+// The bit of InterfaceOptions::queuesShown for each toggle (the order above).
+constexpr uint8_t queueKindBit(QueueKind k) { return uint8_t(1u << static_cast<unsigned>(k)); }
 
 struct QueueEntry {
     game::cmd::QueueTarget target;
@@ -106,8 +178,15 @@ struct QueueEntry {
     std::string name;
 };
 
-// Every queue the empire has: all own colonies, then vehicles with a space yard.
+// Every queue the empire has: all own colonies, then its ships and bases with
+// a working space yard, and those whose yard stopped working (cloaked, lost
+// or mothballed) while they still have a yard part or a queue.
 std::vector<QueueEntry> empireQueues(const game::Rules& r, const game::GameState& s, game::EmpireId e);
+// A vehicle's space yard works: an intact Space Yard part, not mothballed, not cloaked.
+bool workingVehicleYard(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
+// Whether a queue can take ships and bases (`units` false) or units: a colony
+// with population (ships only with a space yard), or a vehicle with a working yard.
+bool queueCanBuild(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t, bool units);
 const game::ConstructionQueue* queueOf(const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t);
 bool sameTarget(const game::cmd::QueueTarget& a, const game::cmd::QueueTarget& b);
 
@@ -130,6 +209,25 @@ std::vector<ItemEstimate> estimateQueue(const game::Rules& r, const game::GameSt
 // What the queue will spend this turn (the top item, capped by the rate).
 game::Resources queueUsage(const game::Rules& r, const game::GameState& s, game::EmpireId e, const game::cmd::QueueTarget& t,
                            const game::ConstructionQueue& q, const game::Resources& rate);
+
+// The Construction Queues window's time column (spec 06 §1.8.2): turns as
+// years (one turn is 0.1 year), "Never" at 9999 turns or more (or when the
+// queue never finishes).
+std::string queueYearsText(int turns);
+inline constexpr int kNeverTurns = 9999;
+// The queue's build-mode note (the yellow line under the tab value): empty
+// when the queue builds normally.
+std::string queueModeNote(const game::ConstructionQueue& q);
+
+// Multi-Add (spec 06 §1.8.2): every item placed in the temporary queue, in
+// order and with its count, appended to each tagged queue.
+std::vector<game::cmd::QueueAdd> multiAddCommands(const std::vector<game::cmd::QueueTarget>& tagged, const std::vector<game::QueueItem>& items);
+
+// A note for the "similar system-wide abilities" Empire Option (inferred):
+// the system-wide abilities of `facility` (identifiers naming "System") that
+// a facility of one of our colonies in the planet's system already has.
+std::vector<std::string> similarSystemAbilities(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
+                                                uint32_t facility);
 
 // Upgrade items this colony could queue: one per facility family that has an
 // older level than the newest one researched, skipping families already queued.

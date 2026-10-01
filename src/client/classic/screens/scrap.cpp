@@ -177,9 +177,9 @@ private:
         if (d.button("Scrap", yard && any)) {
             game::Resources value;
             for (const game::Vehicle* v : sel) value += scrapValue(r, s, *v);
-            confirmAction_ = Action::Scrap;
-            confirm_.open("Scrap", std::format("Scrap {} vehicle{}? The empire gets back {} minerals, {} organics and {} radioactives.", sel.size(),
-                                               sel.size() == 1 ? "" : "s", formatNumber(value.v[0]), formatNumber(value.v[1]), formatNumber(value.v[2])));
+            ask(ui, Action::Scrap, "Scrap",
+                std::format("Scrap {} vehicle{}? The empire gets back {} minerals, {} organics and {} radioactives.", sel.size(),
+                            sel.size() == 1 ? "" : "s", formatNumber(value.v[0]), formatNumber(value.v[1]), formatNumber(value.v[2])));
         }
         d.button("Analyze", false);
         tooltip("Analyzing captured technology is not supported by the engine yet.");
@@ -201,8 +201,8 @@ private:
             if (done > 0) status_.ok(std::format("{} vehicle{} back in service.", done, done == 1 ? "" : "s"));
         }
         if (d.button("Self-Destruct", anyDestruct)) {
-            confirmAction_ = Action::SelfDestruct;
-            confirm_.open("Self-Destruct", "Order the selected vehicles to self-destruct? They are destroyed when the turn is processed.");
+            ask(ui, Action::SelfDestruct, "Self-Destruct",
+                "Order the selected vehicles to self-destruct? They are destroyed when the turn is processed.");
         }
         d.button("Fire On", false);
         tooltip("Destroying your own vehicles by gunfire is not supported by the engine yet.");
@@ -275,9 +275,8 @@ private:
 
     void facilityButtons(UiContext& ui, Dialog& d, const game::Colony& c) {
         if (d.button("Scrap Facilities", !slots_.empty())) {
-            confirmAction_ = Action::ScrapFacilities;
-            confirm_.open("Scrap Facilities", std::format("Scrap {} facilit{} on {}?", slots_.size(), slots_.size() == 1 ? "y" : "ies",
-                                                          ui.state().galaxy.object(c.planet).name));
+            ask(ui, Action::ScrapFacilities, "Scrap Facilities",
+                std::format("Scrap {} facilit{} on {}?", slots_.size(), slots_.size() == 1 ? "y" : "ies", ui.state().galaxy.object(c.planet).name));
         }
         if (d.button("Select All", !c.facilities.empty())) {
             slots_.clear();
@@ -288,47 +287,63 @@ private:
 
     // ---- Popups ----
 
+    enum class Action { Scrap, SelfDestruct, ScrapFacilities };
+
+    // Scrapping and self-destruction ask first while the Empire Options'
+    // "confirm scrapping" is on (spec 06 §1.9); otherwise they act at once.
+    void ask(UiContext& ui, Action a, const char* title, std::string text) {
+        if (ui.options().confirmScrap) {
+            confirmAction_ = a;
+            confirm_.open(title, std::move(text));
+        } else {
+            perform(ui, a);
+        }
+    }
+
+    void perform(UiContext& ui, Action a) {
+        const game::GameState& s = ui.state();
+    switch (a) {
+        case Action::Scrap: {
+            std::vector<game::VehicleId> ids = selected_;
+            int done = 0;
+            for (game::VehicleId id : ids)
+                if (status_.issue(ui, game::cmd::Scrap{id, {}, -1})) ++done;
+            if (done > 0) status_.ok(std::format("{} vehicle{} scrapped.", done, done == 1 ? "" : "s"));
+            break;
+        }
+        case Action::SelfDestruct: {
+            int done = 0;
+            for (game::VehicleId id : std::vector<game::VehicleId>(selected_)) {
+                const game::Vehicle* v = ownVehicle(ui, id);
+                if (!v) continue;
+                if (!canSelfDestruct(ui.rules(), s, *v)) continue;
+                // A per-vehicle action: the order goes to the vehicle even inside a fleet.
+                game::Order o{game::OrderKind::SelfDestruct, v->location};
+                OrderOwner owner;
+                owner.vehicle = id;
+                if (status_.issue(ui, withImmediate(s, owner, o))) ++done;
+            }
+            if (done > 0) status_.ok(std::format("{} vehicle{} will self-destruct when the turn is processed.", done, done == 1 ? "" : "s"));
+            break;
+        }
+        case Action::ScrapFacilities: {
+            const game::Colony* c = ownColony(ui, planet_);
+            if (!c) break;
+            std::vector<size_t> slots = slots_;
+            std::sort(slots.rbegin(), slots.rend());  // highest slot first keeps the others valid
+            int done = 0;
+            for (size_t i : slots)
+                if (status_.issue(ui, game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)})) ++done;
+            slots_.clear();
+            if (done > 0) status_.ok(std::format("{} facilit{} scrapped.", done, done == 1 ? "y" : "ies"));
+            break;
+        }
+    }
+    }
+
     void popups(UiContext& ui) {
         const game::GameState& s = ui.state();
-        if (confirm_.draw(ui)) {
-            switch (confirmAction_) {
-                case Action::Scrap: {
-                    std::vector<game::VehicleId> ids = selected_;
-                    int done = 0;
-                    for (game::VehicleId id : ids)
-                        if (status_.issue(ui, game::cmd::Scrap{id, {}, -1})) ++done;
-                    if (done > 0) status_.ok(std::format("{} vehicle{} scrapped.", done, done == 1 ? "" : "s"));
-                    break;
-                }
-                case Action::SelfDestruct: {
-                    int done = 0;
-                    for (game::VehicleId id : std::vector<game::VehicleId>(selected_)) {
-                        const game::Vehicle* v = ownVehicle(ui, id);
-                        if (!v) continue;
-                        if (!canSelfDestruct(ui.rules(), s, *v)) continue;
-                        // A per-vehicle action: the order goes to the vehicle even inside a fleet.
-                        game::Order o{game::OrderKind::SelfDestruct, v->location};
-                        OrderOwner owner;
-                        owner.vehicle = id;
-                        if (status_.issue(ui, withImmediate(s, owner, o))) ++done;
-                    }
-                    if (done > 0) status_.ok(std::format("{} vehicle{} will self-destruct when the turn is processed.", done, done == 1 ? "" : "s"));
-                    break;
-                }
-                case Action::ScrapFacilities: {
-                    const game::Colony* c = ownColony(ui, planet_);
-                    if (!c) break;
-                    std::vector<size_t> slots = slots_;
-                    std::sort(slots.rbegin(), slots.rend());  // highest slot first keeps the others valid
-                    int done = 0;
-                    for (size_t i : slots)
-                        if (status_.issue(ui, game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)})) ++done;
-                    slots_.clear();
-                    if (done > 0) status_.ok(std::format("{} facilit{} scrapped.", done, done == 1 ? "y" : "ies"));
-                    break;
-                }
-            }
-        }
+        if (confirm_.draw(ui)) perform(ui, confirmAction_);
         if (auto i = retrofit_.draw(ui); i && *i < retrofitDesigns_.size()) {
             const game::DesignId target = retrofitDesigns_[*i];
             int done = 0;
@@ -338,8 +353,6 @@ private:
         }
         report_.draw(ui);
     }
-
-    enum class Action { Scrap, SelfDestruct, ScrapFacilities };
 
     std::optional<game::Location> where_;
     game::ObjectId planet_;
@@ -354,8 +367,118 @@ private:
     ReportPopup report_;
 };
 
+// ---- Abandon Planet -------------------------------------------------------------------------------
+
+// The Abandon Planet order (Ctrl+A, spec 06 §1.3, §2.8; spec 02 §5): the
+// player confirms; the order is refused when more people live there than
+// Settings allow; otherwise, when the planet has facilities, the player
+// chooses whether to scrap them for a refund or leave them for a later owner.
+class AbandonPlanetScreen final : public Screen {
+public:
+    explicit AbandonPlanetScreen(const ScreenArgs& args) : planet_(args.planet) {}
+    bool modal() const override { return true; }
+
+    bool draw(UiContext& ui) override {
+        const game::Colony* c = ownColony(ui, planet_);
+        if (!c && step_ != Step::Notice) return false;
+        const std::string name = ui.state().galaxy.object(planet_).name;
+        switch (step_) {
+            case Step::Confirm:
+                if (const auto a = yesNoBox(ui, "Abandon Planet###abandon1",
+                                            std::format("Abandon {}? Its people leave and the planet is free for anyone to colonize.", name))) {
+                    if (!*a) return false;
+                    const int64_t limit = ui.rules().setting("Maximum Population For Abandon Planet Order", 50);
+                    if (c->totalPopulation() > limit) {
+                        notice_ = std::format("{} cannot be abandoned: more than {}M people live there.", name, limit);
+                        step_ = Step::Notice;
+                    } else if (!c->facilities.empty()) {
+                        step_ = Step::Scrap;
+                    } else {
+                        abandon(ui, false);
+                    }
+                }
+                break;
+            case Step::Scrap:
+                if (const auto a = yesNoBox(ui, "Abandon Planet###abandon2",
+                                            std::format("Scrap the {} facilit{} on {} first? Scrapping returns part of their cost now; "
+                                                        "otherwise they stay on the planet for its next owner.",
+                                                        c->facilities.size(), c->facilities.size() == 1 ? "y" : "ies", name)))
+                    abandon(ui, *a);
+                break;
+            case Step::Notice:
+                if (noticeBox(ui, "Abandon Planet###abandon3", notice_)) return false;
+                break;
+            case Step::Done: break;
+        }
+        return step_ != Step::Done;
+    }
+
+private:
+    enum class Step { Confirm, Scrap, Notice, Done };
+
+    void abandon(UiContext& ui, bool scrap) {
+        if (scrap) {
+            // Highest slot first, so the others keep their places.
+            const game::Colony* c = ownColony(ui, planet_);
+            for (size_t i = c ? c->facilities.size() : 0; i-- > 0;)
+                if (!ui.session.issue(game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)}).ok) break;
+        }
+        const game::CommandResult r = ui.session.issue(game::cmd::AbandonPlanet{planet_});
+        if (r.ok) {
+            step_ = Step::Done;
+        } else {
+            notice_ = r.error;
+            step_ = Step::Notice;
+        }
+    }
+
+    // A small message box in the middle of the frame (spec 06 §3.4 keys).
+    static std::optional<bool> yesNoBox(UiContext& ui, const char* id, const std::string& text) {
+        std::optional<bool> answer;
+        if (!beginBox(ui, id)) return answer;
+        ImGui::TextWrapped("%s", text.c_str());
+        ImGui::Spacing();
+        const std::optional<bool> key = yesNoKey();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true) answer = true;
+        ImGui::SameLine();
+        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false) answer = false;
+        ImGui::End();
+        return answer;
+    }
+
+    static bool noticeBox(UiContext& ui, const char* id, const std::string& text) {
+        if (!beginBox(ui, id)) return false;
+        ImGui::TextWrapped("%s", text.c_str());
+        ImGui::Spacing();
+        const bool ok = ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey();
+        ImGui::End();
+        return ok;
+    }
+
+    static bool beginBox(UiContext& ui, const char* id) {
+        ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ui.size({420, 0}), ImGuiCond_Always);
+        const bool open = ImGui::Begin(id, nullptr,
+                                       ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
+        if (!open) {
+            ImGui::End();
+            return false;
+        }
+        if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+        ui.tagWindow(ImGui::GetWindowPos(), ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x, ImGui::GetWindowPos().y + ImGui::GetWindowSize().y));
+        return true;
+    }
+
+    game::ObjectId planet_;
+    Step step_ = Step::Confirm;
+    std::string notice_;
+};
+
 } // namespace
 
 std::unique_ptr<Screen> makeScrap(const ScreenArgs& args) { return std::make_unique<ScrapScreen>(args); }
+std::unique_ptr<Screen> makeAbandonPlanet(const ScreenArgs& args) { return std::make_unique<AbandonPlanetScreen>(args); }
 
 } // namespace opense4::client::classic

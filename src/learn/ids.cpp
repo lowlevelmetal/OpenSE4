@@ -10,18 +10,19 @@ namespace opense4::learn {
 
 namespace {
 
-// In the order of the client's ScreenId enum (client/classic/ui.hpp).
+// In the order of the client's ScreenId enum (client/classic/screen_id.hpp).
 constexpr WindowInfo kWindows[] = {
     {"game-menu"}, {"designs"}, {"create-design"}, {"planets"}, {"colonies"}, {"ships"}, {"queues"}, {"set-queue"},
     {"research"}, {"tech-tree"}, {"empires"}, {"log"}, {"empire-status"}, {"help"}, {"galaxy-map"},
     {"empire-options"}, {"ministers"}, {"systems-to-avoid"}, {"waypoints"}, {"strategies"}, {"repair-priorities"},
     {"fleet-transfer"}, {"cargo-transfer"}, {"launch-recover"}, {"scrap"}, {"view-orders"}, {"select-waypoint"},
-    {"stellar-manipulation"}, {"rename"},
+    {"stellar-manipulation"}, {"rename"}, {"abandon-planet", false},
     {"communicate"}, {"intelligence"}, {"treaty-grid"}, {"scores"}, {"comparisons"}, {"history"}, {"race-report"},
     {"victory-conditions"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
+    {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
     {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false},
-    {"save-game"}, {"load-game"}, {"settings"},
+    {"save-game"}, {"load-game"}, {"options"}, {"settings"},
     {"learn"}, {"manual"},
 };
 

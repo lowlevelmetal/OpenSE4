@@ -28,7 +28,8 @@
 // is copied for the side that uses it; vehicles start undamaged with full
 // supplies and no experience.
 // Sample planets are copies of the colonies (population, facilities and
-// stored units) moved into the battle sector. Start positions go by side
+// stored units) moved into the battle sector; unowned objects of the home
+// system are copied there as neutral objects. Start positions go by side
 // number, as if arriving from a neighbouring sector: 1 north, 2 south, 3
 // west, 4 east, 5 north-west, 6 south-west, 7 north-east, 8 south-east;
 // sides 9 and 10, and a side that owns a planet or a base, start in the
@@ -47,7 +48,11 @@ struct SimulatorItem {
     enum class Kind : uint8_t { Design, Planet };
     Kind kind = Kind::Design;
     DesignId design;               // Design: own, or foreign and seen by the viewer
-    ObjectId planet;               // Planet: a colony of the viewer in its home system
+    // Planet: an object of the viewer's home system (simulatorPlanets): a
+    // colony of any empire joins `side`; an unowned object (a star, warp
+    // point, storm, empty planet...) stands in the battle as a neutral
+    // obstacle, whatever `side` says (spec 06 §1.10.4).
+    ObjectId planet;
     int side = 0;                  // index into SimulatorSetup::sides
     int count = 1;                 // ships of the design; unit designs: units in one group
     // Units carried (the viewer's own unit designs). Planets: replaces the
@@ -88,9 +93,17 @@ std::vector<DesignId> simulatorDesigns(const Rules& r, const GameState& s, Empir
 // Unit designs the viewer may load as cargo (fighters, satellites, drones,
 // troops, weapon platforms; no mines).
 std::vector<DesignId> simulatorCargoDesigns(const Rules& r, const GameState& s, EmpireId viewer, bool hideObsolete);
-// The sample planets: the viewer's colonies in its home system (the system
-// of its capital).
+// The objects of the viewer's home system on offer (spec 06 §1.10.4,
+// confirmed: binary): every colony, whoever owns it, and every unowned object.
 std::vector<ObjectId> simulatorPlanets(const GameState& s, EmpireId viewer);
+// Whether a Planet item is a colony (it joins its side) rather than a neutral object.
+bool simulatorColony(const GameState& s, const SimulatorItem& item);
+// The name of what each item puts on the field, as buildSimulation names it:
+// a ship or base is "<design> <serial>", the serial counting that design's
+// ships on the item's side from 0001 (spec 06 §7 Q18: the simulator counts per
+// side; inferred: per side and design); a unit item, its design's name; a
+// Planet item, the object's name.
+std::vector<std::string> simulatorItemNames(const Rules& r, const GameState& s, const SimulatorSetup& setup);
 // Cargo space an item has, and what its cargo takes up.
 int64_t simulatorCargoCapacity(const Rules& r, const GameState& s, const SimulatorItem& item);
 int64_t simulatorCargoUsed(const Rules& r, const GameState& s, const SimulatorItem& item);
