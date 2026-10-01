@@ -5,6 +5,8 @@
 
 #include <imgui.h>
 
+#include <string>
+
 namespace opense4::client {
 
 Fonts loadFonts(const std::filesystem::path& assetsDir) {

@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <format>
+#include <string_view>
 
 namespace opense4::net {
 

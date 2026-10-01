@@ -10,6 +10,8 @@
 
 #include <doctest/doctest.h>
 
+#include <array>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <set>
