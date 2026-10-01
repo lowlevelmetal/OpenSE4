@@ -2144,8 +2144,9 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     opens a full Combat Piece Report window.
     Our client follows this, with Q34–Q36 and Q39 brought in line on 2026-10-01 (the
     waits of Fast Tactical Combat, the piece report's lines and tabs, the pickers as
-    windows of their own, the replay's log kept as a marked extension). It still differs
-    where Q37 (Drop Troops in the engine) and Q40 (the pointers) say.
+    windows of their own, the replay's log kept as a marked extension) and Q37 (Drop
+    Troops without a treaty check or a target). It still differs where Q40 (the pointers)
+    says.
 22. **Combat Simulator details.** How many sides, how items are removed, what Fleets for
     Plr does. **Answer:** always 10 sides, "Race 1" to "Race 10"; a left-click on a combat
     vehicle removes it; Fleets For Plr opens Fleet Transfer for the chosen side. Each click
