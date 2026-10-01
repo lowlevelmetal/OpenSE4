@@ -1652,27 +1652,9 @@ where our client differs. Only Q18 keeps an open part.
     Colonizable does not exclude colonized planets, and All lists no asteroid fields.
     The full tab table, the statistics, columns, sorting and Send Colony Ship are in
     §1.8.1 (confirmed: binary).
-    Our client differs:
-    - All lists asteroid fields; Colonizable excludes colonized planets; Coloniz\Empty
-      requires that no other empire has a colony in the system; Special means "has any
-      stellar ability"; Ship Enroute also counts fleet orders and Colonize orders of any
-      vehicle (original: only the own orders of ships with a Colonize ability). It
-      ignores cloaking when deciding colony status.
-    - No Sys To Avoid and the tab reset on every opening (original: kept per empire and
-      saved).
-    - Columns: ours are picture, Name, System, Type, Atmosphere, Cond., Min., Org., Rad.,
-      Status; the original's are picture, Name with type and size on a grey second line,
-      Atmosphere, three Values, and Ship Enroute with the colony ship's name.
-    - Sorting: ours is one key with an up/down toggle (original: the five-key history
-      with fixed directions). Statistics: ours differ from the ten lines of §1.8.1.
-    - Send Colony Ship: ours acts on the selected row, is lit when that planet is
-      colonizable and not targeted, picks an idle ship outside fleets by arrival time and
-      gives only a Colonize order. The original opens a planet picker, is lit whenever an
-      available colony ship exists, picks by shortest route (in turn-based games only
-      ships with movement left), gives Load Population, Move To and Colonize, and in
-      turn-based games then closes and shows the ship.
-    - Ours has an extra Goto button and a left-click only selects the row; in the
-      original a left-click goes to the planet.
+    Our client follows this (its own choices where the rules are silent are Q24–Q29). It
+    still differs only where our engine has nothing to test: it has no planetary cloak,
+    so no planet is left out for one and every colony is seen.
 20. **Construction Queues toggles.** What do Ships and Ship SY each include?
     **Answer:** the split is by whether a vehicle's space yard works right now, not by
     hull. Ship SY holds every ship and base queue with a working yard; Ships holds vehicle
@@ -1680,22 +1662,9 @@ where our client differs. Only Q18 keeps an open part.
     the next update, so it is normally empty. Planets and Planet SY split colonies the
     same way: a cloaked colony's yard does not count. All four are on by default. Rules,
     columns, statistics and the three action buttons are in §1.8.2 (confirmed: binary).
-    Our client differs:
-    - Ships means mobile ships with a yard and Ship SY means bases with one (original:
-      both under Ship SY); its Planets/Planet SY test ignores cloaking.
-    - The tab and the toggles reset on every opening (original: kept per empire).
-    - Columns: ours are picture, Queue, System, Building, Time and two tab columns; the
-      original has the three columns of §1.8.2, with the time in years and Never / On
-      Hold. Sorting and statistics differ as for Planets.
-    - Selection: ours also tags with Ctrl and has a Select All/None button (original:
-      Shift+click only).
-    - Multi-Add: ours is dim with nothing tagged and adds one item through a popup; the
-      original is always lit, shows a message when nothing is tagged, and uses the real
-      Set Construction Queue window (Ships and Units only), appending any number of
-      items.
-    - Scrap Facilities: ours acts on the tagged planets; the original always asks for one
-      planet through a picker. Upgrade Facilities: ours limits itself to the tagged
-      colonies; the original always upgrades every colony.
+    Our client follows this (its own choices are Q24–Q29). It still differs in: no
+    colony cloaking exists in our engine, so a colony's yard always works; status icons
+    on a row's second line are drawn for colonies only (ships and bases have none yet).
 21. **Tactical Combat details.** The Options list; which Orders act at once and which
     need a target click; the pointers; the right-click report. **Answer:** §1.10.1–
     §1.10.3 and §3.3 (confirmed: binary). The Options window has nine switches under
@@ -1765,3 +1734,29 @@ where our client differs. Only Q18 keeps an open part.
       opens from buttons in the Strategic Combat and Combat Replay windows (original:
       round by round, "Victorious!" at the end, opens only at the moments above; neither
       of those windows has a Ground Combat button).
+
+The Planets and Construction Queues windows follow §1.8, and these choices of ours fill
+what the executable's rules leave open (inferred; each needs a look at the running game):
+
+24. **Sort history.** We read the "five-key history" as: the last column header clicked is
+    the first key, the ones clicked before it break ties, up to five, each in its fixed
+    direction. Is that the original's order, and does a second click on the same header
+    change anything?
+25. **Available colony ships.** We count a ship as having orders when its fleet has orders,
+    and as out of supplies at 0 supply. Send Colony Ship on a planet that is already
+    colonized (possible from the Colonizable tab) refuses with a message. What does the
+    original do in each case?
+26. **Planets statistics.** We leave our own colonies out of "owned by enemies" and "owned
+    by allies". Does the original count them in one of the groups?
+27. **Construction Queues rows.** We take the time at the right as the whole queue's time,
+    show it as "N.N Years", make rows 40 px tall and mark a tagged row with the green lamp
+    at its top left. The Ships toggle lists ships and bases that still have a yard part or
+    a queue while their yard does not work (cloaked, mothballed or lost). The statistics'
+    "resources generated" is the empire's total income per turn. Which of these match?
+28. **First-item confirmation.** With "confirm deleting the first item" on we ask whenever
+    the first item is removed, with or without progress, and before Clear Queue. Does the
+    original ask in both cases, and only for the first item?
+29. **Similar system-wide abilities.** We note it after a facility is queued whose
+    abilities include one with "System" in its identifier that a facility of one of our
+    colonies in the same system already has. Which abilities count, does the original
+    also look at queued facilities, and is it a note or a question?
