@@ -77,8 +77,9 @@ empires are skipped.
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
       Intelligence and construction);
    2. the statistics row (`score::recordStatistics`), and for a human player the lines of
-      its statistics, history and log text files, handed out in `TurnResult::records`
-      (the classic client appends them under `history/<game>/` in its user data folder);
+      its statistics, history and log text files in the original's layouts, handed out
+      in `TurnResult::records` (the classic client writes them under `history/<game>/` in
+      its user data folder: statistics and history appended, the log copy rewritten);
    3. intelligence (`intel::intelStep`) and
    4. research (`research::researchStep`), each spending the pool the previous turn filled;
    5. income (`economy::collectIncome`): production, tariffs (the master receives its

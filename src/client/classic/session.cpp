@@ -18,11 +18,13 @@ namespace opense4::client::classic {
 
 namespace {
 
-// Human players' statistics, history and log text files (spec 05 §5, §8 step
-// 2): the lines the engine made, appended to per-player files in a folder of
+// Human players' statistics, history and log text files (spec 05 §3.4, §5,
+// §8 step 2): the lines the engine made, in per-player files in a folder of
 // the game under the user data directory, named after its seed
-// (history/<seed>/player<N>_stats.txt, _events.txt, _log.txt; inferred, the
-// original keeps them in its installation, spec 05 open question 40).
+// (history/<seed>/player<N>_stats.txt, _events.txt, _log.txt; an OpenSE4
+// choice, the original keeps them in its installation, spec 05 open question
+// 40). Statistics and history are appended, the history file opened only
+// when there is a line; the log copy is rewritten whenever the engine made it.
 void writePlayerRecords(const game::GameState& s, const std::vector<game::score::PlayerRecords>& records) {
     if (records.empty()) return;
     std::error_code ec;
@@ -47,7 +49,8 @@ void writePlayerRecords(const game::GameState& s, const std::vector<game::score:
         const bool fresh = rec.turn == 0;
         append(dir / (base + "_stats.txt"), rec.statistics, fresh);
         append(dir / (base + "_events.txt"), rec.history, fresh);
-        append(dir / (base + "_log.txt"), rec.log, fresh);
+        if (!rec.log.empty()) append(dir / (base + "_log.txt"), rec.log, true);
+        else if (fresh) std::filesystem::remove(dir / (base + "_log.txt"), ec);
     }
 }
 
