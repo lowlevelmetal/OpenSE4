@@ -55,11 +55,14 @@ empires are skipped.
 3. **Date.** `GameState::turn` stays the number the orders were given for until the end
    of the turn, so log entries and records carry it. The steps that depend on the date
    get `turn + 1`.
-4. **Start of turn**, for each empire: `ai::updateAiState`, `ai::politicalStep` (it counts
-   the turn processed before, whose battles `GameState::combats` still holds), then the
-   ministers that act while orders are given (every minister for a computer player, the
-   active ones for a human): the Politics minister alone first
-   (`ai::planPoliticsOrders`), whose messages take effect at once, then the others
+4. **Start of turn**, for each empire: `ai::updateAiState` (on dates that are multiples
+   of 10 it first empties the Politics minister's demand lists), `ai::politicalStep` (it
+   counts the turn processed before, whose battles `GameState::combats` still holds, and
+   the messages delivered since the empire's previous step, `ai::simultaneousWindow`),
+   then the ministers that act while orders are given (every minister for a computer
+   player, the active ones for a human): the Politics minister alone first
+   (`ai::planPoliticsOrders`), whose messages take effect at once and carry the advanced
+   date (`DiplomaticMessage::dated`, which the answer window reads), then the others
    (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Afterwards
    `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
