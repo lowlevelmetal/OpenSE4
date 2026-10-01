@@ -59,9 +59,9 @@ human or the computer plays it, and for computer players their **mood** toward y
 Brotherly to Murderous.
 
 You start with no treaty, and ships of empires without a treaty of **Non-Aggression** or better
-fight on sight. Press **Next**.
+fight on sight. The tabs on the right show other columns: **Trade** and **Tariff**. Press **Next**.
 """
-highlight = ["empires:list"]
+highlight = ["empires:list", "empires:treaty", "empires:trade", "empires:tariff"]
 manual = "diplomacy#treaties"
 
 [[step]]
@@ -83,7 +83,7 @@ edit the text if you like, and press **Send Message**.
 You can send each empire one message per turn. In a turn-based game a message takes effect the
 moment it is sent; an answer comes in the other empire's turn.
 """
-highlight = ["window:communicate"]
+highlight = ["communicate:message-type", "communicate:treaty", "communicate:send"]
 done = { command = "SendMessage" }
 manual = "diplomacy#messages"
 
@@ -99,14 +99,34 @@ manual = "diplomacy#how-computer-players-feel-about-you"
 [[step]]
 title = "Read the answer"
 text = """
-Open the **Log** (`F10`) and look under **Politics**. A message from another empire can be
-answered with **Send Reply**.
-
-A computer player accepts a treaty only when its anger toward you is low enough. If it refused,
-try again later, or soften it with a gift.
+Open the **Log** (`F10`).
 """
 highlight = ["command:log"]
 done = { window = "log" }
+manual = "turns#the-log"
+
+[[step]]
+title = "Politics"
+text = """
+Messages from other empires are listed under **Politics**: click that category. (It is dim when
+nobody wrote to you this turn.) Select a message to read it; **Send Reply** answers it.
+
+Press **Next** when you have read the answer.
+"""
+highlight = ["log:politics", "log:send-reply"]
+manual = "diplomacy#messages"
+
+[[step]]
+title = "A treaty"
+text = """
+If they accepted, you now hold a treaty of **Non-Aggression**, and your ships no longer fight.
+
+A computer player accepts a treaty only when its anger toward you is low enough. If it refused,
+propose again in a later turn, or soften it with a **Gift** first. End turns until a treaty is
+signed; after three turns the lesson goes on anyway.
+"""
+highlight = ["command:empires", "button:end-turn"]
+done = { any = [{ treaty = "non-aggression" }, { treaties = 1 }, { turns_passed = 3 }] }
 manual = "diplomacy#how-computer-players-feel-about-you"
 
 [[step]]
@@ -125,7 +145,7 @@ text = """
 Open the Empires window again and press **Intelligence**. Intelligence projects let you spy on
 other empires and sabotage them, and protect you from their agents.
 """
-highlight = ["command:empires", "window:empires"]
+highlight = ["command:empires", "empires:intelligence"]
 done = { window = "intelligence" }
 manual = "intelligence#the-intelligence-window"
 

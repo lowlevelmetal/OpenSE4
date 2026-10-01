@@ -55,9 +55,10 @@ title = "Choose a hull"
 text = """
 Pick a hull with **Size**. The hull sets the class of the vehicle and how many kT of components
 fit in it. A larger hull holds more, but costs more and needs more crew. For a first warship,
-take one of the smaller ship hulls. Press **Next**.
+choose one of the smaller ship hulls in the **Size** list.
 """
 highlight = ["create-design:hull"]
+done = { design_hull_chosen = true }
 manual = "ship-design#hulls-and-components"
 
 [[step]]
@@ -72,9 +73,11 @@ Right-click any component for its report. A warship needs:
 - **armor**, which is destroyed before anything else when the ship is hit;
 - shields and supply storage, if there is room.
 
-Press **Next** when the design is full.
+Add at least five components; the lesson goes on when you have. Keep filling the hull until it
+is full.
 """
 highlight = ["create-design:components", "create-design:on-design"]
+done = { design_components = 5 }
 manual = "ship-design#design-rules"
 
 [[step]]
