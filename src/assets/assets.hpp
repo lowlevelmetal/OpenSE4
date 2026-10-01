@@ -52,9 +52,20 @@ public:
     // First existing file among several candidates.
     std::optional<std::filesystem::path> findAny(std::initializer_list<std::string_view> candidates) const;
 
+    // The mod folder Path.txt names (`Using Mod Directory`; "None" or no
+    // file: none), as a lowercase path relative to the root, and a lookup
+    // that tries the mod's copy first and then the base tree, the way the
+    // classic game finds its fonts and pointers (docs/spec/06 §5.1, §5.4, §5.8).
+    const std::string& modDirectory() const { return mod_; }
+    std::optional<std::filesystem::path> findModFirst(std::string_view relative) const;
+
 private:
     std::filesystem::path root_;
     std::unordered_map<std::string, std::filesystem::path> index_;  // lowercase relative path -> real path
+    std::string mod_;
 };
+
+// The mod folder named by the text of a Path.txt (empty for "None" or none).
+std::string modDirectoryFromPathTxt(std::string_view text);
 
 } // namespace opense4::assets

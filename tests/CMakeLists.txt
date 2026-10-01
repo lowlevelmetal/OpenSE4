@@ -44,6 +44,7 @@ add_executable(opense4_tests
     test_turn_based.cpp
     test_turn_order.cpp
     test_unit_groups.cpp
+    test_wincursor.cpp
     test_winfont.cpp
     test_xmath.cpp)
 # Code outside the libraries, tested directly: the server setup-file parser and
