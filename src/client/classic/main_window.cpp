@@ -854,18 +854,24 @@ void MainWindow::update(UiContext& ui, bool blocked) {
     ui.tagFrame("panel:system", geo.systemPanel);
     ui.tagFrame("panel:report", geo.reportPanel);
     ui.tagFrame("panel:galaxy", geo.galaxyPanel);
-    if (chooser_) drawChooser(ui);
-    if (!blocked && !chooser_) {
+    // The picker takes the keys while it is open (Esc closes it and nothing else).
+    const bool choosing = chooser_.has_value();
+    if (choosing) drawChooser(ui);
+    if (!blocked && !choosing) {
         mouse(ui);
         hotkeys(ui);
+    } else {
+        galaxyHover_.reset();
     }
 }
 
 void MainWindow::drawChooser(UiContext& ui) {
-    Dialog d(ui.painter(), chooser_->title.c_str(), DialogSize::Picker, 0.0f);
+    const std::string title = chooser_->title + "##main-chooser";
+    Dialog d(ui.painter(), title.c_str(), DialogSize::Report, 0.0f);
     bool close = false;
     std::function<void()> chosen;
     if (d.open()) {
+        d.beginContent();
         if (!chooser_->note.empty()) ImGui::TextColored(kLabelBlue, "%s", chooser_->note.c_str());
         ImGui::BeginChild("##choices", ImVec2(0, ImGui::GetContentRegionAvail().y - ui.px(34)));
         for (size_t i = 0; i < chooser_->items.size(); ++i) {
