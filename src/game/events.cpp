@@ -877,12 +877,27 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
         case Effect::ShipMoved: {
             // To a random system of the quadrant, at a random sector, orders
-            // cleared; Amount is not used (confirmed: binary).
+            // cleared; Amount is not used (confirmed: binary, spec 05 §4).
+            // The draws: the system, 1 to the number of systems in system
+            // order, then one sector number 0-168 split as x = s mod 13,
+            // y = s div 13. The ship moves first and then leaves its fleet,
+            // so the fleet's location goes with it and the whole fleet is
+            // disbanded: the other members leave it and lose their orders.
             if (!v || s.galaxy.systems.empty()) return out;
-            const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
-            const Sector sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))};
-            detachFromFleet(s, *v);
+            const SystemId dest{static_cast<uint32_t>(rng.range(1, static_cast<int64_t>(s.galaxy.systems.size())) - 1)};
+            const int64_t cell = rng.range(0, kSystemSize * kSystemSize - 1);
+            const Sector sector{static_cast<int>(cell % kSystemSize), static_cast<int>(cell / kSystemSize)};
             v->location = {dest, sector};
+            if (const FleetId fleet = v->fleet; fleet.valid()) {
+                for (Vehicle& m : s.vehicles)
+                    if (m.fleet == fleet) {
+                        m.fleet = FleetId{};
+                        if (m.id == v->id) continue;
+                        m.orders.clear();
+                        m.repeatOrders = false;
+                    }
+                std::erase_if(s.fleets, [&](const Fleet& f) { return f.id == fleet; });
+            }
             v->orders.clear();
             v->repeatOrders = false;
             explore(s, v->owner, dest);

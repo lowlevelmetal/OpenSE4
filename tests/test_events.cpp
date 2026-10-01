@@ -556,6 +556,34 @@ TEST_CASE("events: ship effects") {
         destinations[s.vehicle(id)->location.system.index()] = 1;
     }
     CHECK(std::count(destinations.begin(), destinations.end(), uint8_t{1}) > 3);
+    // Every sector is possible: one sector number 0-168 per move (spec 05 §4).
+    std::vector<uint8_t> sectors(kSystemSize * kSystemSize, 0);
+    for (uint64_t seed = 1; seed <= 2000; ++seed) {
+        hit(s, Effect::ShipMoved, target(), 2, seed);
+        const Sector at = s.vehicle(id)->location.sector;
+        sectors[static_cast<size_t>(at.y * kSystemSize + at.x)] = 1;
+    }
+    CHECK(std::count(sectors.begin(), sectors.end(), uint8_t{1}) > 150);
+    // The ship moves first and then leaves its fleet: the fleet is disbanded,
+    // and the members left behind lose their orders.
+    {
+        const VehicleId mate = addTestVehicle(s, r, tank, s.vehicle(id)->location).id;
+        Fleet f;
+        f.owner = kA;
+        f.members = {id, mate};
+        f.leader = id;
+        f.orders = {Order{OrderKind::Sentry}};
+        const FleetId fleet = s.addFleet(f).id;
+        s.vehicle(id)->fleet = s.vehicle(mate)->fleet = fleet;
+        s.vehicle(mate)->orders = {Order{OrderKind::Sentry}};
+        hit(s, Effect::ShipMoved, target(), 2, 5);
+        CHECK(s.fleet(fleet) == nullptr);
+        CHECK_FALSE(s.vehicle(id)->fleet.valid());
+        CHECK_FALSE(s.vehicle(mate)->fleet.valid());
+        CHECK(s.vehicle(mate)->orders.empty());
+        s.vehicle(mate)->count = 0;
+        s.removeDeadVehicles();
+    }
 
     TurnContext ctx = context(r, s);
     Rng rng(3);
