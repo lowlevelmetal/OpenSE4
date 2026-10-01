@@ -226,7 +226,7 @@ struct SystemType {
     std::string backgroundBitmap;
     bool empiresCanStartIn = false;
     bool maskBackgroundObjects = false;
-    std::string nonTiledCenterPicture;
+    bool nonTiledCenterPicture = false;  // the Stellar Manipulation preview shows the plain star field (docs/spec/06 §5.3)
     std::vector<Ability> abilities;
     std::string warpPointStellarAbilityType;
     std::vector<SystemObjectTemplate> objects;
