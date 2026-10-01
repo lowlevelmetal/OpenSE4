@@ -179,6 +179,61 @@ struct Knowledge {
     std::vector<std::string> notes;          // per SystemId, player notes
 };
 
+// The Empire Options window's switches and what some windows remember
+// (spec 06 §1.9, §1.8, §1.10.3, §1.10.4, §4.1; confirmed: binary). They belong
+// to the empire and are saved with the game, so each hotseat player keeps
+// their own; a new empire starts with these defaults. The engine reads only
+// autoClaimColonized; the rest is for the client. Players change them with
+// cmd::SetInterfaceOptions.
+struct InterfaceOptions {
+    // General.
+    bool showLogAtTurnStart = true;
+    bool confirmEndTurn = true;
+    bool confirmScrap = true;
+    bool confirmStellarManipulation = true;
+    bool confirmDeleteResearch = true;
+    bool confirmDeleteIntel = true;
+    bool confirmDeleteFirstQueueItem = true;
+    bool noteSimilarAbilities = true;
+    // Next / Previous (the main window's selection cycles).
+    bool skipUnderConstruction = false;
+    bool skipDamaged = false;
+    bool stopOncePerLocation = false;
+    bool skipInFleets = false;
+    // System Display.
+    bool warpPointNames = true;
+    bool planetNames = false;
+    bool colonizableMarkers = true;
+    bool systemGrid = false;
+    bool coordinateLocation = true;
+    uint16_t facilityMarkers = 0;        // bit i: facility marker group i (12 groups)
+    // Galaxy Display.
+    bool galaxyGridLines = true;
+    bool galaxyWarpLines = true;
+    // Latest Items.
+    bool latestConstructionOnly = false;
+    bool latestComponentsOnly = false;
+    // Politics: a system we colonize joins Empire::claimedSystems.
+    bool autoClaimColonized = true;
+    // Remembered by the windows.
+    uint8_t logFilter = 0;               // 0 All, else LogCategory + 1
+    int32_t logPosition = 0;             // the selected row of the filtered list
+    int32_t logScroll = 0;               // the list's scroll position, in rows
+    uint8_t planetsTab = 0;              // the Planets window's tab (0 All)
+    bool planetsNoSysToAvoid = false;
+    uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
+    uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
+    bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // Combat Replay Options.
+    bool replayAnimate = true;
+    bool replayFast = false;
+    bool replayViewRect = true;
+    bool replayGrid = false;
+
+    bool operator==(const InterfaceOptions&) const = default;
+};
+inline constexpr int kFacilityMarkerGroups = 12;
+
 struct Empire {
     EmpireId id;
     std::string name;          // e.g. "Terran"
@@ -268,6 +323,8 @@ struct Empire {
     // (cmd::SetColonyType); until then it has the type the computer would pick.
     bool chooseColonyType = true;
     std::vector<ObjectId> colonyTypeChoices;
+    // Empire Options and window memories (spec 06 §1.9).
+    InterfaceOptions interfaceOptions;
 
     int techLevel(ruleset::TechAreaId a) const { return a.index() < techLevels.size() ? techLevels[a.index()] : 0; }
     const Relation& relation(EmpireId e) const { return relations[e.index()]; }

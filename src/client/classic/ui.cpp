@@ -403,12 +403,45 @@ bool Dialog::close() {
                 }
         }
     ++nextSlot_;
-    const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-    if (clicked || escape) {
+    // Esc or Enter close a window whose bottom button is Close (spec 06 §3.4),
+    // when no popup of it and no text field has the keys.
+    const bool key = (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false) ||
+                      ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) &&
+                     ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput && !ImGui::IsAnyItemActive() &&
+                     !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    if (clicked || key) {
         keep_ = false;
         audio().play("close");
     }
-    return clicked || escape;
+    return clicked || key;
+}
+
+// ---- Keys in dialogs -------------------------------------------------------------------------------
+
+namespace {
+bool pressed(ImGuiKey k) { return ImGui::IsKeyPressed(k, false); }
+bool enterPressed() { return pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter); }
+} // namespace
+
+std::optional<bool> yesNoKey() {
+    if (ImGui::IsWindowAppearing() || ImGui::GetIO().WantTextInput) return std::nullopt;
+    if (pressed(ImGuiKey_Y)) return true;
+    if (pressed(ImGuiKey_N) || pressed(ImGuiKey_Escape) || enterPressed()) return false;
+    return std::nullopt;
+}
+
+bool okKey() { return !ImGui::IsWindowAppearing() && !ImGui::GetIO().WantTextInput && (pressed(ImGuiKey_Escape) || enterPressed()); }
+
+std::optional<bool> tacticalStrategicKey() {
+    if (ImGui::IsWindowAppearing()) return std::nullopt;
+    if (pressed(ImGuiKey_T)) return true;
+    if (pressed(ImGuiKey_S)) return false;
+    return std::nullopt;
+}
+
+bool UiContext::setOptions(const game::InterfaceOptions& o) {
+    if (o == options()) return true;
+    return session.issue(game::cmd::SetInterfaceOptions{o}).ok;
 }
 
 void applyClassicStyle() {

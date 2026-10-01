@@ -743,7 +743,8 @@ private:
         }
         ImGui::SetNextWindowSize(ui.size({420, 170}), ImGuiCond_Always);
         ImGui::SetNextWindowPos(ui.at({(kFrameW - 420) * 0.5f, (kFrameH - 170) * 0.5f}), ImGuiCond_Always);
-        if (!ImGui::BeginPopupModal("Are you sure?", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings))
+        if (!ImGui::BeginPopupModal("Are you sure?", nullptr,
+                                    ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags))
             return;
         wrappedText(draft_.type == MessageType::Surrender
                         ? std::format("Surrender our whole empire to the {}? This cannot be undone.", them(ui).name)
@@ -751,12 +752,14 @@ private:
         const float y = ImGui::GetWindowHeight() - ui.px(26) - ImGui::GetStyle().WindowPadding.y;
         if (ImGui::GetCursorPosY() < y) ImGui::SetCursorPosY(y);
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Yes", ImVec2(w, ui.px(26)))) {
+        // Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+        const std::optional<bool> key = yesNoKey();
+        if (ImGui::Button("Yes", ImVec2(w, ui.px(26))) || key == true) {
             ImGui::CloseCurrentPopup();
             send(ui);
         }
         ImGui::SameLine();
-        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("No", ImVec2(w, ui.px(26))) || key == false) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 

@@ -94,6 +94,13 @@ const std::vector<game::EntryQuestion>& ClassicSession::questions() const {
     return myTurn() ? state_.playerTurn.questions : none;
 }
 
+void ClassicSession::record(game::Command c) {
+    // The Empire Options are replaced as a whole: only the last change counts.
+    if (std::holds_alternative<game::cmd::SetInterfaceOptions>(c))
+        std::erase_if(orders_, [](const game::Command& o) { return std::holds_alternative<game::cmd::SetInterfaceOptions>(o); });
+    orders_.push_back(std::move(c));
+}
+
 game::CommandResult ClassicSession::issue(game::Command c) {
     if (waiting_ && kind_ == SessionKind::Pbem)
         return game::CommandResult::fail(ordersFile_.empty() ? "It is not your turn." : "This turn's orders are saved; the turn is over here.");
@@ -114,7 +121,7 @@ game::CommandResult ClassicSession::issue(game::Command c) {
         if (!r.ok) return r;
         if (const auto* o = std::get_if<game::cmd::SetOrders>(&c); o && !o->planet.valid()) drop(o->vehicle, o->fleet);
         if (transport_) transport_->playCommand(c);
-        orders_.push_back(std::move(c));
+        record(std::move(c));
         ++revision_;
         return r;
     }
@@ -128,7 +135,7 @@ game::CommandResult ClassicSession::issue(game::Command c) {
     }
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
     if (r.ok) {
-        orders_.push_back(std::move(c));
+        record(std::move(c));
         ++revision_;
     }
     return r;
@@ -247,12 +254,12 @@ void ClassicSession::runCall() {
             // Attack Sector questions stay in the game (GameState::playerTurn.questions).
             // PBEM: the host replays every command given, refused ones too (a
             // refused answer still settles its question), so all are kept.
-            if (kind_ == SessionKind::Pbem) orders_.push_back(*callCommand_);
+            if (kind_ == SessionKind::Pbem) record(*callCommand_);
             if (!res.rejected.empty()) {
                 issued_ = game::CommandResult::fail(res.rejected.front().second);
                 if (answered) notices_.push_back(res.rejected.front().second);
             } else {
-                if (kind_ != SessionKind::Pbem) orders_.push_back(std::move(*callCommand_));
+                if (kind_ != SessionKind::Pbem) record(std::move(*callCommand_));
                 issued_ = {};
             }
             break;

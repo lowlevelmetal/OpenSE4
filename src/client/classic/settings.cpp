@@ -9,6 +9,7 @@
 #include <toml++/toml.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <array>
 #include <format>
 #include <fstream>
@@ -21,26 +22,21 @@ namespace {
 
 using S = ClassicSettings;
 
-constexpr std::array<BoolOption, 19> kBoolOptions{{
-    {"General", "show_log_at_turn_start", "Open the log when a turn starts", &S::showLogAtTurnStart},
-    {"General", "confirm_end_turn", "Ask before ending the turn", &S::confirmEndTurn},
-    {"General", "confirm_scrap", "Ask before scrapping", &S::confirmScrap},
-    {"General", "confirm_stellar_manipulation", "Ask before stellar manipulation", &S::confirmStellarManipulation},
-    {"General", "confirm_delete_projects", "Ask before removing research or intelligence projects", &S::confirmDeleteProjects},
-    {"General", "pick_colony_type_on_colonize", "Choose a colony type when a colony is founded", &S::pickColonyTypeOnColonize},
-    {"Next \\ Previous", "cycle_skips_under_construction", "Skip ships that are still being built", &S::cycleSkipsUnderConstruction},
-    {"Next \\ Previous", "cycle_skips_damaged", "Skip damaged ships", &S::cycleSkipsDamaged},
-    {"Next \\ Previous", "cycle_once_per_location", "Stop only once per location", &S::cycleOncePerLocation},
-    {"System Display", "show_warp_point_names", "Show where known warp points lead", &S::showWarpPointNames},
-    {"System Display", "show_planet_names", "Show planet names", &S::showPlanetNames},
-    {"System Display", "show_facility_markers", "Show facility markers on colonies", &S::showFacilityMarkers},
-    {"System Display", "show_movement_lines", "Show movement lines", &S::showMovementLines},
-    {"System Display", "show_waypoint_markers", "Show waypoint markers", &S::showWaypointMarkers},
-    {"System Display", "show_colonization_markers", "Show colonization markers on planets", &S::showColonizationMarkers},
-    {"System Display", "animate_ship_movement", "Animate ship movement", &S::animateShipMovement},
-    {"Sound", "sound_on", "Play sound effects", &S::soundOn},
-    {"Sound", "music_on", "Play music", &S::musicOn},
-    {"Sound", "remastered_sounds", "Use the remastered sound set when the game has it", &S::remasteredSounds},
+constexpr std::array<BoolOption, 14> kBoolOptions{{
+    {"animate_system_movement", &S::animateSystemMovement},
+    {"animate_combat_movement", &S::animateCombatMovement},
+    {"sound_on", &S::soundOn},
+    {"classic_sound_effects", &S::classicSoundEffects},
+    {"music_on", &S::musicOn},
+    {"fast_tactical_combat", &S::fastTacticalCombat},
+    {"show_movement_lines", &S::showMovementLines},
+    {"show_group_identifiers", &S::showGroupIdentifiers},
+    {"show_viewing_rectangle", &S::showViewingRectangle},
+    {"center_on_current_ship", &S::centerOnCurrentShip},
+    {"show_to_hit_chances", &S::showToHitChances},
+    {"tactical_grid", &S::tacticalGrid},
+    {"tactical_ranges", &S::tacticalRanges},
+    {"tactical_names", &S::tacticalNames},
 }};
 
 std::filesystem::path settingsFile() { return userDataDir() / "classic_settings.toml"; }
@@ -60,15 +56,11 @@ std::string settingsToToml(const ClassicSettings& s) {
     toml::table replay;
     replay.insert("speed", double(s.replaySpeed));
     toml::table tactical;
-    tactical.insert("animate", s.tacticalAnimate);
     tactical.insert("speed", double(s.tacticalSpeed));
-    tactical.insert("grid", s.tacticalGrid);
-    tactical.insert("ranges", s.tacticalRanges);
-    tactical.insert("names", s.tacticalNames);
     tactical.insert("auto_end", s.tacticalAutoEnd);
     toml::table sound;
     sound.insert("effects_volume", double(s.soundVolume));
-    sound.insert("music_volume", double(s.musicVolume));
+    sound.insert("music_percent", s.musicVolume);
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("replay", std::move(replay));
@@ -92,14 +84,16 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
         for (const BoolOption& o : kBoolOptions)
             if (auto v = (*options)[o.key].value<bool>()) s.*o.member = *v;
     if (auto speed = root["replay"]["speed"].value<double>()) s.replaySpeed = std::clamp(float(*speed), 0.25f, 8.0f);
-    if (auto v = root["tactical"]["animate"].value<bool>()) s.tacticalAnimate = *v;
     if (auto v = root["tactical"]["speed"].value<double>()) s.tacticalSpeed = std::clamp(float(*v), 0.25f, 8.0f);
-    if (auto v = root["tactical"]["grid"].value<bool>()) s.tacticalGrid = *v;
-    if (auto v = root["tactical"]["ranges"].value<bool>()) s.tacticalRanges = *v;
-    if (auto v = root["tactical"]["names"].value<bool>()) s.tacticalNames = *v;
     if (auto v = root["tactical"]["auto_end"].value<bool>()) s.tacticalAutoEnd = *v;
     if (auto v = root["sound"]["effects_volume"].value<double>()) s.soundVolume = std::clamp(float(*v), 0.0f, 1.0f);
-    if (auto v = root["sound"]["music_volume"].value<double>()) s.musicVolume = std::clamp(float(*v), 0.0f, 1.0f);
+    if (auto v = root["sound"]["music_percent"].value<int64_t>()) {
+        // The nearest of the five steps.
+        int best = kMusicVolumes.back();
+        for (int step : kMusicVolumes)
+            if (std::abs(int(*v) - step) < std::abs(int(*v) - best)) best = step;
+        s.musicVolume = best;
+    }
     return s;
 }
 

@@ -117,6 +117,13 @@ void colonize(TurnContext& ctx, VehicleId id, ObjectId planet) {
             locationOf(s.galaxy, planet));
     addHistory(s, owner, owner, std::format("Colonized {}", s.galaxy.object(planet).name), locationOf(s.galaxy, planet));
     ctx.mood(owner, "Any Planet Colonized", sys, planet);
+    // The Empire Options' Politics switch (spec 06 §1.9, on for a new empire):
+    // the system joins the empire's claims. Computer players work out their
+    // claims each turn instead (inferred: the switch is a human player's).
+    if (Empire& e = s.empire(owner); e.kind == PlayerKind::Human && e.interfaceOptions.autoClaimColonized) {
+        auto at = std::lower_bound(e.claimedSystems.begin(), e.claimedSystems.end(), sys);
+        if (at == e.claimedSystems.end() || *at != sys) e.claimedSystems.insert(at, sys);
+    }
     s.vehicle(id)->count = 0;  // the colony ship is consumed
     grantRuins(ctx, owner, planet);
 }

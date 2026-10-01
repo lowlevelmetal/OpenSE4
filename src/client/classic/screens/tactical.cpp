@@ -217,7 +217,7 @@ private:
             playback_ = CombatPlayback(rec);
             playback_.setSpeed(settings().tacticalSpeed);
             playback_.seekEvent(std::min(cursor, playback_.eventCount()));
-            if (settings().tacticalAnimate && !playback_.atEnd()) playback_.play();
+            if (settings().animateCombatMovement && !playback_.atEnd()) playback_.play();
             else playback_.seekEvent(playback_.eventCount());
             record_ = &rec;
             events_ = rec.events.size();
@@ -1081,7 +1081,7 @@ public:
         ClassicSettings& prefs = settings();
         bool changed = false;
         heading(ui, "Display");
-        changed |= lampToggle(ui, "Animate moves and shots", &prefs.tacticalAnimate);
+        changed |= lampToggle(ui, "Animate moves and shots", &prefs.animateCombatMovement);
         changed |= lampToggle(ui, "Show the square grid", &prefs.tacticalGrid);
         changed |= lampToggle(ui, "Show the selected piece's reach", &prefs.tacticalRanges);
         changed |= lampToggle(ui, "Show piece names", &prefs.tacticalNames);

@@ -182,7 +182,6 @@ Vec2 galaxyPos(const game::Galaxy& g, const game::StarSystem& s) {
 
 void MainWindow::reset(UiContext& ui) {
     clearSelection();
-    showMovementLines_ = settings().showMovementLines;
     const game::GameState& s = ui.state();
     // Every starting planet is a capital: the one in the home system first.
     const game::EmpireId me = ui.session.player();
@@ -267,7 +266,9 @@ const game::Colony* MainWindow::selectedColony(const UiContext& ui) const {
 }
 
 void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
-    const ClassicSettings& prefs = settings();
+    // The Next/Previous switches of the Empire Options (spec 06 §1.9, §2.3). "Skip
+    // ships under construction" has nothing to skip: our ships appear finished.
+    const game::InterfaceOptions& prefs = ui.options();
     const game::Vehicle* current = selectedVehicle(ui);
     std::vector<game::VehicleId> list;
     for (const game::Vehicle& v : ui.state().vehicles) {
@@ -277,9 +278,10 @@ void MainWindow::cycleVehicle(UiContext& ui, int dir, bool idleOnly) {
         if (idleOnly && ui.session.turnBased() && v.movement <= 0) continue;
         if (idleOnly && !ui.session.turnBased() && !(v.orders.empty() && (!v.fleet.valid() || ui.state().fleet(v.fleet)->orders.empty())))
             continue;
-        if (prefs.cycleSkipsDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
+        if (prefs.skipDamaged && game::vehicleDamageTaken(ui.state(), v) > 0) continue;
+        if (prefs.skipInFleets && v.fleet.valid() && !(current && v.id == current->id)) continue;
         // "Stop once per location": skip other ships in the sector we are leaving.
-        if (prefs.cycleOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
+        if (prefs.stopOncePerLocation && current && v.id != current->id && v.location == current->location) continue;
         list.push_back(v.id);
     }
     if (list.empty()) return;
@@ -814,7 +816,7 @@ void MainWindow::overlayText(UiContext& ui) {
         for (game::ObjectId id : sys.objects) ++counts[s.galaxy.object(id).sector];
         for (const auto& [sector, n] : counts)
             if (n > 1) text(sectorCenter(sector) + Vec2{10, 8}, 11, IM_COL32_WHITE, std::to_string(n));
-        for (game::ObjectId id : settings().showWarpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
+        for (game::ObjectId id : ui.options().warpPointNames ? s.galaxy.warpPoints(sys.id) : std::vector<game::ObjectId>{}) {
             // A warp point is named after its destination once we have explored it
             // (docs/spec/01 §5.4, sight::warpPointName).
             const game::SpaceObject& wp = s.galaxy.object(id);
@@ -949,7 +951,11 @@ void MainWindow::hotkeys(UiContext& ui) {
     if (pressed(Action::PreviousFleet)) cycleFleet(ui, -1);
     if (pressed(Action::NextColony)) cycleColony(ui, 1);
     if (pressed(Action::PreviousColony)) cycleColony(ui, -1);
-    if (pressed(Action::MovementLines)) showMovementLines_ = !showMovementLines_;
+    // Ctrl+L flips the Options window's "Display Ship Movement Lines" (spec 06 §1.9).
+    if (pressed(Action::MovementLines)) {
+        settings().showMovementLines = !settings().showMovementLines;
+        saveSettings();
+    }
 
     // Waypoints: Alt+0..9 sets at the selected sector; Ctrl+0..9 moves there.
     const bool ctrl = io.KeyCtrl, alt = io.KeyAlt;
@@ -1090,7 +1096,7 @@ void MainWindow::trackMovement(UiContext& ui) {
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : ui.state().vehicles)
         if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
-    glides_.track(ui.time, shown_, settings().animateShipMovement, visible);
+    glides_.track(ui.time, shown_, settings().animateSystemMovement, visible);
 }
 
 void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
@@ -1199,7 +1205,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     }
 
     // Movement line for the selected own vehicle.
-    if (const game::Vehicle* v = selectedVehicle(ui); v && showMovementLines_ && v->owner == ui.session.player()) {
+    if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player()) {
         const game::Fleet* f = s.fleet(v->fleet);
         const auto& orders = f ? f->orders : v->orders;
         game::Location from = v->location;
@@ -1228,9 +1234,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     if (sector_) brackets(*sector_, kSelectYellow);
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
-    if (settings().showWaypointMarkers)
-        for (const auto& w : ui.me().waypoints)
-            if (w.set && w.location.system == shown_) r.ring(sectorCenter(w.location.sector), 5.0f, 1.5f, Color::hex(0x40d0ff));
+    // Waypoints are always marked (spec 06 §2.4).
+    for (const auto& w : ui.me().waypoints)
+        if (w.set && w.location.system == shown_) r.ring(sectorCenter(w.location.sector), 5.0f, 1.5f, Color::hex(0x40d0ff));
 }
 
 void MainWindow::drawGalaxy(gfx::Renderer2D& r, UiContext& ui) {

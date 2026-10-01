@@ -92,7 +92,8 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
 // copies of them, the player driving the first side. False when the player has none.
 bool startDemoSimulation(UiContext& ui, bool tactical);
 
-// settings_screen.cpp
+// settings_screen.cpp: the per-computer Options window and OpenSE4's Settings.
+std::unique_ptr<Screen> makeOptions(const ScreenArgs& args);
 std::unique_ptr<Screen> makeSettings(const ScreenArgs& args);
 // The Sound page (classic sound and music preferences), shared with the front end.
 void soundSettingsPage(float px);

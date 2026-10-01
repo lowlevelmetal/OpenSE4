@@ -94,8 +94,8 @@ enum class ScreenId {
     CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
     // Files.
     SaveGame, LoadGame,
-    // Graphics, controls and sound.
-    Settings,
+    // Game Menu → Options (per computer), and OpenSE4's graphics, controls and sound.
+    Options, Settings,
     Count
 };
 
@@ -176,6 +176,11 @@ public:
     const game::Rules& rules() const { return session.rules(); }
     const game::GameState& state() const { return session.state(); }
     const game::Empire& me() const { return session.me(); }
+    // The empire's Empire Options and window memories (spec 06 §1.9), and a
+    // change to them (cmd::SetInterfaceOptions; nothing is issued when they
+    // are unchanged). False when the change was refused (not our turn).
+    const game::InterfaceOptions& options() const { return me().interfaceOptions; }
+    bool setOptions(const game::InterfaceOptions& o);
 
     void open(ScreenId id, ScreenArgs args = {}) {
         if (opener) opener(id, std::move(args));
@@ -209,6 +214,21 @@ std::string formatNumber(int64_t v);             // 12345 (the classic screens u
 std::string formatDate(uint32_t turn);           // 2400.3
 ImU32 empireColor(const game::GameState& s, game::EmpireId e);
 
+// ---- Keys in dialogs (spec 06 §3.4, confirmed: binary) ---------------------------------------
+// Call inside the prompt's window. Keys pressed on the frame the window
+// appears are ignored: they belong to whatever opened it.
+
+// A Yes/No message box: Y means Yes; N, Esc and Enter mean No. True for Yes,
+// false for No, nothing without a key.
+std::optional<bool> yesNoKey();
+// A message box with OK (or a notice with Begin): Esc or Enter.
+bool okKey();
+// A prompt that offers Tactical and Strategic: T or S. True for Tactical.
+std::optional<bool> tacticalStrategicKey();
+// Window flags for prompts: no keyboard navigation, so Enter never presses
+// the focused button (the keys above decide).
+inline constexpr ImGuiWindowFlags kPromptFlags = ImGuiWindowFlags_NoNavInputs;
+
 // ---- Classic dialog layout -----------------------------------------------------------------
 
 enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
@@ -237,7 +257,8 @@ public:
     // an on/off setting (a check box that shows a lamp when on).
     bool check(const char* label, bool on, bool enabled = true);
     void spacer();
-    // The bottom Close button; also true on Escape.
+    // The bottom Close button; also true on Esc or Enter (spec 06 §3.4), unless
+    // a text field takes the keys.
     bool close();
     bool keepOpen() const { return keep_; }
     void requestClose() { keep_ = false; }

@@ -465,12 +465,18 @@ bool ConfirmPopup::draw(UiContext& ui) {
         ImGui::OpenPopup(id);
         pending_ = false;
     }
-    if (!beginModal(ui, id, {420, 170})) return false;
+    ImGui::SetNextWindowPos(ui.at({kFrameW * 0.5f, kFrameH * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ui.size({420, 170}), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal(id, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags))
+        return false;
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextUnformatted(question_.c_str());
     ImGui::PopTextWrapPos();
-    const int b = popupButtons(ui, {{"Yes", true}, {"No", true}});
-    if (b >= 0 || escapePressed()) ImGui::CloseCurrentPopup();
+    // Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
+    const std::optional<bool> key = yesNoKey();
+    int b = popupButtons(ui, {{"Yes", true}, {"No", true}});
+    if (key) b = *key ? 0 : 1;
+    if (b >= 0) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
     return b == 0;
 }

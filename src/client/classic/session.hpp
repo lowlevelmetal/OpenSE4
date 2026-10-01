@@ -200,6 +200,8 @@ public:
     void simulateTurns(int n);
 
 private:
+    // Adds a command to this turn's orders.
+    void record(game::Command c);
     void beginTurn();
     // Turn-based games: plays up to a human player's turn and hands the
     // session to that player.

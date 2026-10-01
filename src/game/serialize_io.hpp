@@ -356,6 +356,18 @@ void io(Ar& ar, Knowledge& k) {
 }
 
 template <class Ar>
+void io(Ar& ar, InterfaceOptions& o) {
+    fields(ar, o.showLogAtTurnStart, o.confirmEndTurn, o.confirmScrap, o.confirmStellarManipulation, o.confirmDeleteResearch,
+           o.confirmDeleteIntel, o.confirmDeleteFirstQueueItem, o.noteSimilarAbilities);
+    fields(ar, o.skipUnderConstruction, o.skipDamaged, o.stopOncePerLocation, o.skipInFleets);
+    fields(ar, o.warpPointNames, o.planetNames, o.colonizableMarkers, o.systemGrid, o.coordinateLocation, o.facilityMarkers);
+    fields(ar, o.galaxyGridLines, o.galaxyWarpLines, o.latestConstructionOnly, o.latestComponentsOnly, o.autoClaimColonized);
+    fields(ar, o.logFilter, o.logPosition, o.logScroll, o.planetsTab, o.planetsNoSysToAvoid, o.queuesTab, o.queuesShown,
+           o.simulatorNoObsolete);
+    fields(ar, o.replayAnimate, o.replayFast, o.replayViewRect, o.replayGrid);
+}
+
+template <class Ar>
 void io(Ar& ar, Empire& e) {
     fields(ar, e.id, e.name, e.empireType, e.leaderTitle, e.leaderName, e.race, e.color, e.kind, e.alive, e.passwordHash,
            e.racialPointsSpent);
@@ -368,7 +380,7 @@ void io(Ar& ar, Empire& e) {
     fields(ar, e.log, e.historyEvents, e.history, e.experience);
     fields(ar, e.aiState, e.aiTurnsInState, e.aiMinimalChanges, e.aiMemory, e.aiDifficulty, e.ministerAll, e.ministers, e.ministerStyle,
            e.useRaceMinisterStyle, e.ministersForNewVehicles, e.clearOrdersOnEncounter, e.avoidTaggedMinefields, e.avoidRestrictedSystems);
-    fields(ar, e.chooseColonyType, e.colonyTypeChoices);
+    fields(ar, e.chooseColonyType, e.colonyTypeChoices, e.interfaceOptions);
     fields(ar, e.politicsMark);
 }
 
@@ -539,6 +551,7 @@ template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.ev
 template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message); }
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
+template <class Ar> void io(Ar& ar, cmd::SetInterfaceOptions& c) { fields(ar, c.options); }
 template <class Ar> void io(Ar& ar, cmd::SetWaypoint& c) { fields(ar, c.slot, c.waypoint); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemFlags& c) { fields(ar, c.system, c.avoid, c.claim); }
 template <class Ar> void io(Ar& ar, cmd::SetSystemNote& c) { fields(ar, c.system, c.note); }

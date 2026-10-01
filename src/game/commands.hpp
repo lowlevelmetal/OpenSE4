@@ -142,6 +142,10 @@ struct SetEncounterOptions {
     std::optional<bool> avoidRestrictedSystems;            // Empire::avoidRestrictedSystems
 };
 
+// ---- Empire Options and window memories (spec 06 §1.9) ---------------------------------------------
+// Replaces Empire::interfaceOptions.
+struct SetInterfaceOptions { InterfaceOptions options; };
+
 // ---- Reports (spec 05 §8 "Design knowledge") ------------------------------------------------------
 // A human player opened the report of a foreign vehicle: when its scanners
 // reach it, the designs the report shows are learned (sight::learnFromReport).
@@ -160,7 +164,7 @@ using Command = std::variant<
     cmd::SetWaypoint, cmd::SetSystemFlags, cmd::SetSystemNote, cmd::TagMinefield, cmd::SetStrategy,
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
-    cmd::QueueReplaceFacility, cmd::DecideWar>;
+    cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

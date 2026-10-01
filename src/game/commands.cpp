@@ -888,6 +888,17 @@ struct Applier {
         return {};
     }
 
+    // ---- Empire Options and window memories (spec 06 §1.9) -----------------------------------------
+    R operator()(const cmd::SetInterfaceOptions& c) {
+        const InterfaceOptions& o = c.options;
+        if (o.logFilter > uint8_t(LogCategory::Misc) + 1) return R::fail("Unknown log filter");
+        if (o.planetsTab > 9 || o.queuesTab > 4 || o.queuesShown > 0x0f) return R::fail("Unknown window choice");
+        if (o.facilityMarkers >= (1u << kFacilityMarkerGroups)) return R::fail("Unknown facility markers");
+        if (o.logPosition < 0 || o.logScroll < 0) return R::fail("Invalid log position");
+        emp().interfaceOptions = o;
+        return {};
+    }
+
     // ---- Turn-based games ----------------------------------------------------------------------
 
     // The Attack Sector answer (spec 03 §6.2). Entering is carried out by the
@@ -985,6 +996,7 @@ OPENSE4_CMD_NAME(EditDesign)
 OPENSE4_CMD_NAME(OpenVehicleReport)
 OPENSE4_CMD_NAME(QueueReplaceFacility)
 OPENSE4_CMD_NAME(DecideWar)
+OPENSE4_CMD_NAME(SetInterfaceOptions)
 #undef OPENSE4_CMD_NAME
 
 } // namespace
