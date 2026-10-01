@@ -1243,18 +1243,26 @@ void planRepair(Planner& p) {
         v = p.st.vehicle(id);
         std::vector<Order> orders;
         if (vehicleMaxMovement(p.r, p.st, *v) > 0) {
+            // Yards by system number, then in the game's object order (colonies
+            // and ships mixed, spec 03 §19 Q62); the first found wins a tie.
+            std::vector<std::pair<Location, int>> yards;  // speed -1 for a colony
+            for (const ObjectRef& ref : objectOrder(p.st)) {
+                if (ref.object.valid()) {
+                    if (const Colony* c = p.st.colony(ref.object); c && c->owner == p.id && colonyHasSpaceYard(p.r, *c))
+                        yards.push_back({locationOf(p.st.galaxy, ref.object), -1});
+                    continue;
+                }
+                const Vehicle& o = *p.st.vehicle(ref.vehicle);
+                if (o.id != id && o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
+                    yards.push_back({o.location, vehicleMaxMovement(p.r, p.st, o)});
+            }
+            std::stable_sort(yards.begin(), yards.end(), [](const auto& a, const auto& b) { return a.first.system < b.first.system; });
             std::vector<Location> goals;
-            std::vector<int> yardShipSpeed;  // -1 for a colony
-            for (const auto& c : p.st.colonies)
-                if (c && c->owner == p.id && colonyHasSpaceYard(p.r, *c)) {
-                    goals.push_back(locationOf(p.st.galaxy, c->planet));
-                    yardShipSpeed.push_back(-1);
-                }
-            for (const Vehicle& o : p.st.vehicles)
-                if (o.id != id && o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o)) {
-                    goals.push_back(o.location);
-                    yardShipSpeed.push_back(vehicleMaxMovement(p.r, p.st, o));
-                }
+            std::vector<int> yardShipSpeed;
+            for (const auto& [at, speed] : yards) {
+                goals.push_back(at);
+                yardShipSpeed.push_back(speed);
+            }
             if (const auto near = nearestByTravel(p, v->location, goals)) {
                 const Location at = goals[near->goal];
                 const int speed = yardShipSpeed[near->goal];

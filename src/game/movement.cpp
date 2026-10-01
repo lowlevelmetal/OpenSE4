@@ -3,7 +3,8 @@
 // Simultaneous games: a month of 30 days. Every ship, base and unit group has
 // a day counter that gains its current movement points / 30 each day (the
 // original's double, DayCounter); at 1 or more it acts and loses 1. Within a
-// day objects act in object order (Vehicle::slot; planets first). The group
+// day objects act in object order (the slots of the game's one object list,
+// planets and vehicles mixed: objectOrder, spec 03 §19 Q62). The group
 // that acts is rebuilt at every order execution: a fleet's members at its
 // location, and ad-hoc companions with an identical head order (spec 03 §8).
 // An action runs the order list with exactly 1 movement point; orders that
@@ -160,14 +161,16 @@ public:
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
             newDay();
-            objectOrder_ = vehiclesInObjectOrder(s_);
-            const std::vector<VehicleId> order = objectOrder_;
-            // Colonized planets with orders act on day 1, where their slots are:
-            // before every vehicle (inferred, Vehicle::slot).
-            if (day == 1)
-                for (const auto& c : s_.colonies)
-                    if (c && !c->orders.empty() && inSystem(s_.galaxy, c->planet)) action(ActorRef{{}, c->planet});
-            for (VehicleId id : order) {
+            const std::vector<ObjectRef> order = refreshObjectOrder();
+            for (const ObjectRef& ref : order) {
+                if (ref.object.valid()) {
+                    // Colonized planets with orders act on day 1 only, where
+                    // their slots put them among the vehicles (spec 03 §6.3
+                    // steps 3 and 5, §19 Q62, confirmed: binary).
+                    if (day == 1 && plannedPlanet(ref.object)) action(ActorRef{{}, ref.object});
+                    continue;
+                }
+                const VehicleId id = ref.vehicle;
                 const Vehicle* v = s_.vehicle(id);
                 if (!v || !alive(*v) || acted_.contains(id)) continue;
                 if (dayOneOnly(*v)) {
@@ -203,13 +206,19 @@ public:
         loadPlayerTurn();
         const bool all = m.vehicles.empty() && m.fleets.empty() && m.planets.empty();
         auto has = [](const auto& list, auto id) { return std::find(list.begin(), list.end(), id) != list.end(); };
-        for (const auto& c : s_.colonies)
-            if (c && c->owner == m.empire && !c->orders.empty() && inSystem(s_.galaxy, c->planet) && (all || has(m.planets, c->planet)))
-                liveActor(ActorRef{{}, c->planet});
         std::set<FleetId> fleetsDone;
-        objectOrder_ = vehiclesInObjectOrder(s_);
-        const std::vector<VehicleId> order = objectOrder_;
-        for (VehicleId id : order) {
+        // Every vehicle, fleet and planet with orders, in object order (spec 05
+        // §8 "Turn-based game" step 3; planets and vehicles share the object
+        // list, spec 03 §19 Q62).
+        const std::vector<ObjectRef> order = refreshObjectOrder();
+        for (const ObjectRef& ref : order) {
+            if (ref.object.valid()) {
+                const Colony* c = s_.colony(ref.object);
+                if (c && c->owner == m.empire && plannedPlanet(ref.object) && (all || has(m.planets, ref.object)))
+                    liveActor(ActorRef{{}, ref.object});
+                continue;
+            }
+            const VehicleId id = ref.vehicle;
             const Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v) || v->owner != m.empire) continue;
             if (followsFleetOrders(s_, *v)) {
@@ -228,6 +237,22 @@ public:
     std::vector<EntryQuestion> questions() const { return questions_; }
 
 private:
+    // The game's object list as it stands; objectOrder_ keeps its vehicles
+    // for the ad-hoc groups (spec 03 §8).
+    std::vector<ObjectRef> refreshObjectOrder() {
+        std::vector<ObjectRef> order = objectOrder(s_);
+        objectOrder_.clear();
+        for (const ObjectRef& ref : order)
+            if (ref.vehicle.valid()) objectOrder_.push_back(ref.vehicle);
+        return order;
+    }
+
+    // A colonized planet still on the map with orders of its own (Launch and Recover Units).
+    bool plannedPlanet(ObjectId planet) const {
+        const Colony* c = s_.colony(planet);
+        return c && !c->orders.empty() && inSystem(s_.galaxy, planet);
+    }
+
     // ---- Days and actions --------------------------------------------------------------------------
 
     // Before anyone acts: a maximum lowered between actions (combat damage) caps

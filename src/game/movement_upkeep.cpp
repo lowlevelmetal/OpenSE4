@@ -320,11 +320,14 @@ void trainEmpire(TurnContext& ctx, EmpireId e) {
                 if (f.owner == e)
                     if (const Vehicle* lead = fleetLeader(s, f); lead && lead->location == where) train(f.experience, f.experienceTenths, fleet, true);
     };
-    // Sector sources: planets come before every vehicle in object order (Vehicle::slot).
-    for (const auto& c : s.colonies)
-        if (c && c->owner == e && inSystem(s.galaxy, c->planet)) trainSector(locationOf(s.galaxy, c->planet), colonyAbilities(r, s, *c));
-    for (VehicleId id : vehiclesInObjectOrder(s)) {
-        Vehicle* v = s.vehicle(id);
+    // Sector sources, in object order: colonized planets and vehicles share
+    // the object list (spec 03 §19 Q44, Q62).
+    for (const ObjectRef& ref : objectOrder(s)) {
+        if (ref.object.valid()) {
+            if (const Colony* c = s.colony(ref.object); c && c->owner == e) trainSector(locationOf(s.galaxy, ref.object), colonyAbilities(r, s, *c));
+            continue;
+        }
+        Vehicle* v = s.vehicle(ref.vehicle);
         if (!v || !alive(*v) || v->owner != e) continue;
         trainSector(v->location, vehicleAbilities(r, s, *v));
         collectSolar(r, s, *v);

@@ -248,6 +248,12 @@ std::string validateState(const GameState& s, const Rules* rules) {
                 return std::format("unit group {} does not match its stacks", v.id.value);
         }
     }
+    {
+        // One object list: no two objects hold the same slot (spec 03 §19 Q62).
+        const std::vector<ObjectRef> order = objectOrder(s);
+        for (size_t i = 1; i < order.size(); ++i)
+            if (order[i - 1].slot == order[i].slot) return std::format("two objects hold slot {}", order[i].slot);
+    }
     for (size_t i = 0; i < s.fleets.size(); ++i) {
         const Fleet& f = s.fleets[i];
         if (i > 0 && !(s.fleets[i - 1].id < f.id)) return "fleets are not sorted by id";

@@ -37,9 +37,6 @@ inline bool heldInPlace(const GameState& s, const Vehicle& v) { return s.turn < 
 int turnMovement(const Rules& r, const GameState& s, const Vehicle& v);
 bool isMobileType(ruleset::VehicleType t);  // ships, fighters, drones
 
-// The vehicles in object order: by their slots in the game's object list
-// (Vehicle::slot, spec 03 §6.3).
-std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
 // A computer player (or a neutral empire): its ad-hoc groups gather every own
 // vehicle with an identical head order (spec 03 §8).
 bool computerPlayer(const GameState& s, EmpireId e);
@@ -153,7 +150,5 @@ std::optional<Location> stellarTarget(const GameState& s, const Order& o, Locati
 // on success, else the reason it failed.
 // `consumed` is false for a harmless no-op (closing an already closed link).
 std::string stellarManipulation(TurnContext& ctx, std::span<const VehicleId> members, const Order& o, bool& consumed);
-// Keeps per-object vectors (colonies, known warp links) in step after objects are appended.
-void objectsAppended(GameState& s);
 
 } // namespace opense4::game::movement::detail

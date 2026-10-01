@@ -46,17 +46,6 @@ int turnMovement(const Rules& r, const GameState& s, const Vehicle& v) { return 
 bool isShipOrBase(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Base; }
 bool isMobileType(VehicleType t) { return t == VehicleType::Ship || t == VehicleType::Fighter || t == VehicleType::Drone; }
 
-std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
-    std::vector<std::pair<uint32_t, VehicleId>> slots;
-    slots.reserve(s.vehicles.size());
-    for (const Vehicle& v : s.vehicles) slots.emplace_back(v.slot, v.id);
-    std::sort(slots.begin(), slots.end());
-    std::vector<VehicleId> out;
-    out.reserve(slots.size());
-    for (const auto& [slot, id] : slots) out.push_back(id);
-    return out;
-}
-
 bool computerPlayer(const GameState& s, EmpireId e) {
     return e.valid() && e.index() < s.empires.size() && s.empire(e).kind != PlayerKind::Human;
 }

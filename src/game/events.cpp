@@ -147,20 +147,8 @@ void explore(GameState& s, EmpireId e, SystemId sys) {
     explored[sys.index()] = 1;
 }
 
-// Keeps per-object arrays in step after the galaxy gained objects.
-void objectsAdded(GameState& s) {
-    s.colonies.resize(s.galaxy.objects.size());
-    for (Empire& e : s.empires) e.knowledge.knownWarpLink.resize(s.galaxy.objects.size(), 0);
-}
-
-ObjectId addObject(GameState& s, SystemId sys, SpaceObject obj) {
-    obj.id = ObjectId{s.galaxy.objects.size()};
-    obj.system = sys;
-    s.galaxy.system(sys).objects.push_back(obj.id);
-    s.galaxy.objects.push_back(std::move(obj));
-    objectsAdded(s);
-    return s.galaxy.objects.back().id;
-}
+// A new object takes the lowest free slot of the object list (spec 03 §19 Q62).
+ObjectId addObject(GameState& s, SystemId sys, SpaceObject obj) { return s.addObject(std::move(obj), sys); }
 
 // A random sector-object appearance of a physical type (optionally of a size).
 std::optional<uint32_t> pickSectorType(const Rules& r, std::string_view physical, std::string_view size, Rng& rng) {

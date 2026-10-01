@@ -234,6 +234,7 @@ public:
     ObjectId object(SystemId sys, ObjectKind kind, Sector at, std::string name = {}) {
         SpaceObject o;
         o.id = ObjectId{s.galaxy.objects.size()};
+        o.slot = s.freeSlot();  // the lowest free slot of the object list, as for a new object (spec 03 §19 Q62)
         o.kind = kind;
         o.system = sys;
         o.sector = at;

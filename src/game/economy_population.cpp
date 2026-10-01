@@ -27,8 +27,8 @@ namespace {
 // The empire's colonies in object order (stable), as planet ids: steps may remove colonies.
 std::vector<ObjectId> coloniesOf(const GameState& s, EmpireId e) {
     std::vector<ObjectId> out;
-    for (const auto& c : s.colonies)
-        if (c && c->owner == e) out.push_back(c->planet);
+    for (const ObjectRef& ref : objectOrder(s))
+        if (const Colony* c = ref.object.valid() ? s.colony(ref.object) : nullptr; c && c->owner == e) out.push_back(ref.object);
     return out;
 }
 

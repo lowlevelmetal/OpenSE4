@@ -1,5 +1,7 @@
 #include "game/state.hpp"
 
+#include <tuple>
+
 namespace opense4::game {
 
 std::string_view displayName(OrderKind k) {
@@ -113,19 +115,39 @@ std::vector<DesignId> seenDesignIds(const Knowledge& k) {
     return out;
 }
 
-Vehicle& GameState::addVehicle(Vehicle v) {
-    v.id = VehicleId{nextVehicleId++};
-    // The first object slot a removed vehicle freed, else a new one at the end (spec 03 §6.3).
+uint32_t GameState::freeSlot() const {
     std::vector<uint32_t> used;
-    used.reserve(vehicles.size());
-    for (const Vehicle& other : vehicles) used.push_back(other.slot);
+    used.reserve(vehicles.size() + galaxy.objects.size());
+    for (const Vehicle& v : vehicles) used.push_back(v.slot);
+    for (const StarSystem& sys : galaxy.systems)
+        for (ObjectId o : sys.objects) used.push_back(galaxy.object(o).slot);
     std::sort(used.begin(), used.end());
     uint32_t slot = 0;
     for (uint32_t u : used) {
         if (u > slot) break;
         if (u == slot) ++slot;
     }
-    v.slot = slot;
+    return slot;
+}
+
+ObjectId GameState::addObject(SpaceObject obj, SystemId system) {
+    obj.id = ObjectId{galaxy.objects.size()};
+    obj.system = system;
+    obj.slot = freeSlot();
+    // The system lists its objects in object order (spec 04 §19.2 Q57).
+    std::vector<ObjectId>& list = galaxy.system(system).objects;
+    const auto at = std::find_if(list.begin(), list.end(), [&](ObjectId o) { return galaxy.object(o).slot > obj.slot; });
+    list.insert(at, obj.id);
+    galaxy.objects.push_back(std::move(obj));
+    colonies.resize(galaxy.objects.size());
+    for (Empire& e : empires) e.knowledge.knownWarpLink.resize(galaxy.objects.size(), options.omnipresent ? 1 : 0);
+    return galaxy.objects.back().id;
+}
+
+Vehicle& GameState::addVehicle(Vehicle v) {
+    v.id = VehicleId{nextVehicleId++};
+    // The lowest slot of the object list that no object of any kind holds (spec 03 §6.3 step 5).
+    v.slot = freeSlot();
     // "Automatically use Individual Ministers for newly built vehicles": every
     // new vehicle and launched unit group starts under minister control (spec 02 §10).
     if (v.owner.valid() && v.owner.index() < empires.size() && empires[v.owner.index()].ministersForNewVehicles) v.minister = true;
@@ -146,6 +168,30 @@ void GameState::removeDeadVehicles() {
         if (f.leader.valid() && !vehicle(f.leader)) f.leader = f.members.empty() ? VehicleId{} : f.members.front();
     }
     std::erase_if(fleets, [](const Fleet& f) { return f.members.empty(); });
+}
+
+std::vector<ObjectRef> objectOrder(const GameState& s) {
+    std::vector<ObjectRef> out;
+    out.reserve(s.vehicles.size() + s.galaxy.objects.size());
+    for (const StarSystem& sys : s.galaxy.systems)
+        for (ObjectId o : sys.objects) out.push_back(ObjectRef{o, {}, s.galaxy.object(o).slot});
+    for (const Vehicle& v : s.vehicles) out.push_back(ObjectRef{{}, v.id, v.slot});
+    // Slots are unique; the rest only keeps the order fixed should two ever meet.
+    std::sort(out.begin(), out.end(), [](const ObjectRef& a, const ObjectRef& b) {
+        return std::tuple(a.slot, a.vehicle.valid(), a.object.value, a.vehicle.value) < std::tuple(b.slot, b.vehicle.valid(), b.object.value, b.vehicle.value);
+    });
+    return out;
+}
+
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s) {
+    std::vector<std::pair<uint32_t, VehicleId>> slots;
+    slots.reserve(s.vehicles.size());
+    for (const Vehicle& v : s.vehicles) slots.emplace_back(v.slot, v.id);
+    std::sort(slots.begin(), slots.end());
+    std::vector<VehicleId> out;
+    out.reserve(slots.size());
+    for (const auto& [slot, id] : slots) out.push_back(id);
+    return out;
 }
 
 std::vector<const Vehicle*> GameState::vehiclesAt(Location where) const {

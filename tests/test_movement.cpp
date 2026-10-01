@@ -2782,7 +2782,7 @@ TEST_CASE("movement: damage outside combat cuts supply and cargo back at once") 
     }
 }
 
-TEST_CASE("movement: objects act in object order; a new vehicle takes the first slot a removed one freed") {
+TEST_CASE("movement: objects act in object order; a new object takes the first slot any removed object freed") {
     World w;
     const SystemId a = w.system("A");
     const DesignId d = w.ship(kA, "Hull", 2);
@@ -2798,17 +2798,53 @@ TEST_CASE("movement: objects act in object order; a new vehicle takes the first 
     CHECK(w.v(fourth).slot == freed);  // before `third` in object order, though created after it
     CHECK(fourth > third);
 
-    // Planets with orders act on day 1 before every vehicle: the colony's launch
-    // comes first, so a base acting on day 1 recovers the group at once.
+    // Planets with orders act on day 1 where their slots put them among the
+    // vehicles (spec 03 §6.3 step 5, §19 Q62): a colony whose slot comes first
+    // launches before a base acting on day 1, which recovers the group at once.
     const ObjectId home = w.planet(a, {5, 5});
     const DesignId fighter = w.design(kA, "Fighter", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun", "Mv Fighter Tank"});
     w.colony(home, kA, 100).cargo.units.push_back({fighter, 3});
     w.s.colony(home)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
-    const VehicleId dock = w.spawn(w.design(kA, "Dock", "Test Station", {"Test Bridge", "Mv Fighter Bay"}), at(a, 5, 5));
+    const DesignId dockDesign = w.design(kA, "Dock", "Test Station", {"Test Bridge", "Mv Fighter Bay"});
+    const VehicleId dock = w.spawn(dockDesign, at(a, 5, 5));
+    REQUIRE(w.s.galaxy.object(home).slot < w.v(dock).slot);
     w.order(dock, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1));
     w.move();
     CHECK(w.v(dock).cargo.unitCount(fighter) == 3);
     CHECK(w.s.colony(home)->cargo.unitCount(fighter) == 0);
+
+    // A base whose slot comes before the planet's acts first: it finds nothing
+    // to recover, and the colony's launch follows.
+    const VehicleId early = w.spawn(dockDesign, at(a, 6, 6));
+    const ObjectId later = w.planet(a, {6, 6});
+    REQUIRE(w.v(early).slot < w.s.galaxy.object(later).slot);
+    w.colony(later, kA, 100).cargo.units.push_back({fighter, 2});
+    w.s.colony(later)->orders = {mk(OrderKind::LaunchUnits, {}, {}, {}, fighter, -1)};
+    w.order(early, mk(OrderKind::RecoverUnits, {}, {}, {}, fighter, -1));
+    w.move();
+    CHECK(w.v(early).cargo.unitCount(fighter) == 0);
+    CHECK(w.s.colony(later)->cargo.unitCount(fighter) == 0);  // launched into space
+
+    // The order holds stars, planets, storms, warp points and vehicles alike: a
+    // ship takes the slot a storm left, and a new storm the slot a ship left.
+    const ObjectId storm = w.object(a, ObjectKind::Storm, {9, 9});
+    const uint32_t stormSlot = w.s.galaxy.object(storm).slot;
+    std::erase(w.s.galaxy.system(a).objects, storm);  // taken off the map: its slot is free
+    const VehicleId heir = w.spawn(d, at(a, 0, 0));
+    CHECK(w.v(heir).slot == stormSlot);
+    const uint32_t shipSlot = w.v(third).slot;
+    w.v(third).count = 0;
+    w.s.removeDeadVehicles();
+    SpaceObject made;
+    made.kind = ObjectKind::Storm;
+    made.sector = Sector{8, 8};
+    const ObjectId newStorm = w.s.addObject(made, a);
+    CHECK(w.s.galaxy.object(newStorm).slot == shipSlot);
+    const std::vector<ObjectRef> order = objectOrder(w.s);
+    for (size_t i = 1; i < order.size(); ++i) CHECK(order[i - 1].slot < order[i].slot);
+    // The system lists its objects in object order.
+    const auto& list = w.s.galaxy.system(a).objects;
+    for (size_t i = 1; i < list.size(); ++i) CHECK(w.s.galaxy.object(list[i - 1]).slot < w.s.galaxy.object(list[i]).slot);
 }
 
 TEST_CASE("movement: the Attack Sector question: seen enemies on in-system steps, not for cloaked or drone groups, not on warp jumps") {

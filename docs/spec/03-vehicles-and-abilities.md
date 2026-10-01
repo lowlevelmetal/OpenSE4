@@ -1928,3 +1928,12 @@ gave the engine's choice, marked (inferred); all of them are answered now.
     an arrival with no MP left (the Attack is then removed doing nothing), and Repeat. The single
     order is an OpenSE4 choice. One thing differs: an Attack with no sector recorded should
     attack where the group stands, not follow its target.
+
+The questions below came up while the engine was brought in line with the answers to 60–71.
+Each gives the engine's choice, marked (inferred) in the code.
+
+72. **Objects replaced in place (§6.3 step 5, spec 01 §9):** Create Planet turns an asteroid
+    field into a planet, and Destroy Planet and the shockwave turn a planet or asteroid field
+    into an asteroid field. The engine changes the object where it stands, so it keeps its slot
+    in the object list. Does the original remove the old object and make a new one, which
+    would take the lowest free slot (perhaps another one) and leave the old slot free?

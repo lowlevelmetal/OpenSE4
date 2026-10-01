@@ -440,12 +440,12 @@ enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };
 
 struct Vehicle {
     VehicleId id;
-    // Its slot in the game's object list: the order objects act in during the
-    // simultaneous movement phase (spec 03 §6.3). A new vehicle takes the
-    // first slot a removed vehicle freed, else a new one at the end
-    // (GameState::addVehicle); planets come before every vehicle (inferred:
-    // the galaxy is made before any vehicle, and slots freed by removed
-    // stellar objects are not reused by vehicles).
+    // Its slot in the game's one object list, shared with the stellar objects
+    // (SpaceObject::slot): the order objects act in during the simultaneous
+    // movement phase and every other "object order" (spec 03 §6.3 step 5,
+    // §19 Q62, confirmed: binary). A new vehicle takes the lowest slot no
+    // object of any kind holds, else a new one at the end
+    // (GameState::addVehicle).
     uint32_t slot = 0;
     EmpireId owner;
     DesignId design;                // a unit group that mixes designs: its first design
@@ -802,13 +802,39 @@ struct GameState {
     int year() const { return 2400 + static_cast<int>(turn / 10); }
 
     // Adds with a fresh id (keeps `vehicles`/`fleets` sorted). References are
-    // invalidated by the next add.
+    // invalidated by the next add. A new vehicle takes freeSlot().
     Vehicle& addVehicle(Vehicle v);
     Fleet& addFleet(Fleet f);
+    // The game's one object list (spec 03 §6.3 step 5, §19 Q62; spec 02 §13
+    // Q52, confirmed: binary): stars, planets, asteroid fields, storms, warp
+    // points, ships, bases and unit groups each hold a slot. A removed object
+    // (a vehicle taken out of `vehicles`, a stellar object taken off its
+    // system's list) leaves its slot empty; freeSlot() is the lowest slot no
+    // object holds, so a new object of any kind takes the slot any kind left.
+    uint32_t freeSlot() const;
+    // A stellar object made during play (stellar manipulation, events): a fresh
+    // id, freeSlot(), its place in the system's list (kept in object order),
+    // and the per-object lists (colonies, known warp links) grown to match.
+    ObjectId addObject(SpaceObject obj, SystemId system);
     // Drops vehicles with count <= 0, cleans fleet membership and empty fleets.
     void removeDeadVehicles();
     std::vector<const Vehicle*> vehiclesAt(Location where) const;
 };
+
+// One entry of the game's object list: a stellar object (`object`) or a
+// vehicle (`vehicle`); exactly one is valid.
+struct ObjectRef {
+    ObjectId object;
+    VehicleId vehicle;
+    uint32_t slot = 0;
+    bool operator==(const ObjectRef&) const = default;
+};
+// Every object in the game's object order, by slot: the stellar objects on
+// their systems' lists and every vehicle (dead ones not yet removed
+// included). Whatever the rules do "in object order" follows this list.
+std::vector<ObjectRef> objectOrder(const GameState& s);
+// The vehicles alone, in object order.
+std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
 
 // Appends to an empire's log for the current turn.
 void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},

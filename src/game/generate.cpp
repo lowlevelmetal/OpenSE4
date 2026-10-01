@@ -789,8 +789,11 @@ private:
         return false;
     }
 
+    // The generated galaxy fills the object list's first slots in creation
+    // order (spec 03 §19 Q62).
     ObjectId addObject(StarSystem& sys, SpaceObject obj) {
         obj.id = ObjectId{out_.galaxy.objects.size()};
+        obj.slot = static_cast<uint32_t>(obj.id.value);
         obj.system = sys.id;
         sys.objects.push_back(obj.id);
         out_.galaxy.objects.push_back(std::move(obj));
@@ -951,6 +954,7 @@ ObjectId createPlanet(Galaxy& g, const ruleset::Ruleset& rs, SystemId sysId, Sec
     StarSystem& sys = g.system(sysId);
     SpaceObject p;
     p.id = ObjectId{g.objects.size()};
+    p.slot = static_cast<uint32_t>(p.id.value);  // made with the galaxy, before any vehicle (spec 03 §19 Q62)
     p.kind = ObjectKind::Planet;
     p.system = sysId;
     p.sector = where;
