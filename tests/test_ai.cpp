@@ -3059,7 +3059,7 @@ TEST_CASE("ai: the current player at a battle counts it as Attacking, whatever t
     const EmpireId me{0u}, enemy{1u};
     meet(s, me, enemy);
     s.empire(me).relation(enemy).treaty = s.empire(enemy).relation(me).treaty = Treaty::War;
-    auto angerAfter = [&](EmpireId current) {
+    auto angerAfter = [&](EmpireId current, bool extras = false) {
         GameState g = s;
         g.turn = 3;
         g.empire(me).relation(enemy).anger = 50;
@@ -3076,6 +3076,20 @@ TEST_CASE("ai: the current player at a battle counts it as Attacking, whatever t
         gone.kind = CombatEvent::Kind::Destroyed;
         gone.piece = 1;
         rec.events = {gone};
+        if (extras) {
+            // A star (a neutral obstacle belongs to no empire) and an enemy ship we took:
+            // still a victory (spec 04 §15 "The verdict").
+            CombatPiece star, prize;
+            star.kind = CombatPiece::Kind::Obstacle;
+            prize.owner = enemy;
+            rec.pieces.push_back(star);
+            rec.pieces.push_back(prize);
+            CombatEvent taken;
+            taken.kind = CombatEvent::Kind::Captured;
+            taken.piece = 3;
+            taken.amount = static_cast<int32_t>(me.value);
+            rec.events.push_back(taken);
+        }
         g.combats = {rec};
         TurnContext ctx{r, g, {}, {}, {}};
         ai::politicalStep(ctx, me, 2u);
@@ -3083,6 +3097,7 @@ TEST_CASE("ai: the current player at a battle counts it as Attacking, whatever t
     };
     CHECK(angerAfter(me) == 80);                 // Attacking Won, in our own territory
     CHECK(angerAfter(EmpireId{2u}) == 57);       // the highest player number was current: Defending
+    CHECK(angerAfter(me, true) == 80);           // the same verdict with an obstacle and a capture
 }
 
 TEST_CASE("ai: the strength rating counts Boarding Attack, carried fighters and half shields with their fraction") {

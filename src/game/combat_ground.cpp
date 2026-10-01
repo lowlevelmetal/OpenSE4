@@ -18,12 +18,14 @@
 #include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/turn.hpp"
+#include "game/turn_internal.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
 #include <climits>
 #include <format>
 #include <map>
+#include <memory>
 #include <optional>
 
 namespace opense4::game::combat {
@@ -145,6 +147,24 @@ std::vector<Stack> living(const std::vector<Stack>& side) {
 
 } // namespace
 
+void logGroundCombat(TurnContext& ctx, ObjectId planet, EmpireId attacker, EmpireId defender, const GroundOutcome& o) {
+    const GameState& s = ctx.state;
+    const SpaceObject& obj = s.galaxy.object(planet);
+    const std::string system = obj.system.valid() ? s.galaxy.system(obj.system).name : std::string("?");
+    const Location where = locationOf(s.galaxy, planet);
+    const char* outcome = o.captured ? "The planet was taken." : o.attackersGone ? "The invaders were defeated." : "It is still a stalemate.";
+    auto name = [&](EmpireId e) { return e.valid() && e.index() < s.empires.size() ? s.empire(e).name : std::string("unknown"); };
+    const std::string losses = std::format("{} rounds: the invaders lost {} of {} troops, the defenders {} units and {} militia.", o.rounds,
+                                           o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost);
+    const std::string title = std::format("Ground combat at {}", system);
+    if (attacker.valid() && attacker.index() < s.empires.size() && s.empire(attacker).alive)
+        ctx.log(attacker, LogCategory::Combat, title, std::format("Our troops fought the {} on {}. {} {}", name(defender), obj.name, losses, outcome),
+                where);
+    if (defender.valid() && defender.index() < s.empires.size() && s.empire(defender).alive)
+        ctx.log(defender, LogCategory::Combat, title,
+                std::format("Troops of the {} fought our defenders on {}. {} {}", name(attacker), obj.name, losses, outcome), where);
+}
+
 int groundModifier(const Rules& r, const Empire& e) {
     const ruleset::Culture* c = r.culture(e.race);
     return (c ? c->groundCombat : 0) + e.race.characteristic(Characteristic::PhysicalStrength) - 100;
@@ -204,6 +224,46 @@ GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs
     def.push_back(militia);
     def.insert(def.end(), defRest.begin(), defRest.end());
 
+    // The window's record: both sides as the fight begins (stacks with units, in
+    // their lists' order), then the counts after every round (spec 06 §1.10.6).
+    GroundCombat* rec = f.record;
+    std::vector<int> attPos(f.invaders->size(), -1), defPos(f.cargo->units.size(), -1);
+    if (rec) {
+        rec->attacker = f.attacker;
+        rec->defender = f.defender;
+        rec->attackers.clear();
+        rec->defenders.clear();
+        rec->perRound.clear();
+        for (size_t k = 0; k < f.invaders->size(); ++k)
+            if ((*f.invaders)[k].count > 0) {
+                attPos[k] = static_cast<int>(rec->attackers.size());
+                rec->attackers.push_back((*f.invaders)[k]);
+            }
+        for (size_t k = 0; k < f.cargo->units.size(); ++k)
+            if (f.cargo->units[k].count > 0) {
+                defPos[k] = static_cast<int>(rec->defenders.size());
+                rec->defenders.push_back(f.cargo->units[k]);
+            }
+        rec->militia = militia.start;
+    }
+    auto counts = [&] {
+        GroundRound round;
+        for (const UnitStack& u : rec->attackers) round.attackers.push_back(u.count);
+        for (const UnitStack& u : rec->defenders) round.defenders.push_back(u.count);
+        auto note = [&](const Stack& st) {
+            if (!st.list) {
+                round.militia = st.count;
+            } else if (st.list == f.invaders) {
+                if (attPos[st.index] >= 0) round.attackers[static_cast<size_t>(attPos[st.index])] = st.count;
+            } else if (st.list == &f.cargo->units) {
+                if (defPos[st.index] >= 0) round.defenders[static_cast<size_t>(defPos[st.index])] = st.count;
+            }
+        };
+        for (const Stack& st : att) note(st);
+        for (const Stack& st : def) note(st);
+        return round;
+    };
+
     const int attRacial = groundModifier(r, s.empire(f.attacker));
     const int defRacial = f.defender.valid() ? groundModifier(r, s.empire(f.defender)) : 0;
     const int percent = cs.groundDamagePercent;
@@ -232,6 +292,7 @@ GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs
         // What is left is carried to the next round, divided back by the percentage.
         carryAtt = percent != 0 ? (xmath::Ext(attLeft) / xmath::percent(percent)).trunc() : 0;
         carryDef = percent != 0 ? (xmath::Ext(defLeft) / xmath::percent(percent)).trunc() : 0;
+        if (rec) rec->perRound.push_back(counts());
     }
 
     // Losses back into the lists and the design statistics; militia losses cost no population.
@@ -256,6 +317,16 @@ GroundOutcome fightGround(const Rules& r, GameState& s, const CombatSettings& cs
 
     out.attackersGone = holders(att) == 0;
     out.captured = !out.attackersGone && holders(def) == 0;
+    if (rec) {
+        const GroundRound last = rec->perRound.empty() ? counts() : rec->perRound.back();
+        rec->attackersLeft = rec->attackers;
+        rec->defendersLeft = rec->defenders;
+        for (size_t k = 0; k < rec->attackersLeft.size(); ++k) rec->attackersLeft[k].count = last.attackers[k];
+        for (size_t k = 0; k < rec->defendersLeft.size(); ++k) rec->defendersLeft[k].count = last.defenders[k];
+        rec->militiaLeft = last.militia;
+        rec->rounds = out.rounds;
+        rec->captured = out.captured;
+    }
     return out;
 }
 
@@ -307,20 +378,14 @@ void capturePlanet(TurnContext& ctx, Colony& c, EmpireId captor) {
 
 namespace {
 
-void logGround(TurnContext& ctx, const Colony& c, EmpireId attacker, EmpireId defender, const detail::GroundOutcome& o) {
-    const GameState& s = ctx.state;
-    const std::string name = s.galaxy.object(c.planet).name;
-    const Location where = locationOf(s.galaxy, c.planet);
-    const std::string report = std::format("{} rounds. Invaders lost {} of {} troops; defenders lost {} units and {} militia.", o.rounds,
-                                           o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost);
-    if (o.captured) {
-        ctx.log(attacker, LogCategory::Combat, std::format("Ground combat on {}", name), report, where);
-        return;
-    }
-    ctx.log(attacker, LogCategory::Combat, std::format("Ground combat on {}", name),
-            std::format("{} {}", report, o.attackersGone ? "Our invasion failed." : "The fight goes on."), where);
-    ctx.log(defender, LogCategory::Combat, std::format("Ground combat on {}", name),
-            std::format("{} {}", report, o.attackersGone ? "The invaders were destroyed." : "The fight goes on."), where);
+// Whether the colony owner's end-of-turn fight stops the call to be shown
+// (spec 06 §1.10.6, spec 05 §8 step 17, confirmed: binary): only in a
+// turn-based game whose call takes answers (one machine), and only when one
+// of the two empires is human-controlled.
+bool groundShown(const TurnContext& ctx, EmpireId attacker, EmpireId defender) {
+    if (!ctx.battles || !ctx.battles->answers || !turnBased(ctx.state)) return false;
+    auto human = [&](EmpireId e) { return e.valid() && e.index() < ctx.state.empires.size() && ctx.state.empire(e).kind == PlayerKind::Human; };
+    return human(attacker) || human(defender);
 }
 
 } // namespace
@@ -344,7 +409,8 @@ void runGroundCombat(TurnContext& ctx, EmpireId owner) {
         const Location where = locationOf(s.galaxy, c->planet);
         // The colony's owner is the landed empire, or at Non-Aggression or better
         // with it: no fight; the troops join the cargo and serve the owner, and
-        // the invasion ends (confirmed: binary).
+        // the invasion ends (confirmed: binary). The treaty counts only here
+        // (spec 04 §13 "Treaties").
         if (attacker == owner || !hostile(s, owner, attacker)) {
             detail::endInvasion(*c, true);
             if (attacker != owner)
@@ -357,6 +423,16 @@ void runGroundCombat(TurnContext& ctx, EmpireId owner) {
         if (!s.empire(owner).alive) continue;
         if (!cs) cs = loadSettings(r);
         if (!rng) rng = s.rng.fork();
+        // A fight a window shows stops the call (turn.hpp): the engine fights it
+        // and hands the record over; the call made again with the answer fights
+        // it again the same way and goes on.
+        TurnContext::Battles* ask = groundShown(ctx, attacker, owner) ? ctx.battles : nullptr;
+        std::shared_ptr<GameState> before;
+        if (ask && ask->next >= ask->answers->size()) before = std::make_shared<GameState>(s);
+        GroundCombat record;
+        record.planet = c->planet;
+        for (const PopulationGroup& g : c->population) record.population += g.millions;
+        record.facilities = c->facilities;
         detail::GroundFight fight;
         fight.attacker = attacker;
         fight.defender = owner;
@@ -365,10 +441,26 @@ void runGroundCombat(TurnContext& ctx, EmpireId owner) {
         fight.population = &c->population;
         fight.militia = &c->militia;
         fight.groundDefensePercent = sumValue1(colonyAbilities(r, s, *c), AbilityKind::PlanetChangeGroundDefense);
+        fight.record = &record;
         const detail::GroundOutcome o = detail::fightGround(r, s, *cs, fight, *rng);
+        if (ask) {
+            if (ask->next >= ask->answers->size()) {
+                BattleQuestion q;
+                q.kind = BattleQuestion::Kind::Ground;
+                q.where = where;
+                q.participants = {owner, attacker};
+                for (EmpireId e : q.participants)
+                    if (s.empire(e).kind == PlayerKind::Human) q.humans.push_back(e);
+                q.state = std::move(before);
+                q.index = ask->next;
+                q.ground = std::move(record);
+                throw game::detail::BattleQuestionRaised{std::move(q)};
+            }
+            ++ask->next;   // shown: the answer says nothing more
+        }
         std::erase_if(c->cargo.units, [](const UnitStack& u) { return u.count <= 0; });
         std::erase_if(c->landedTroops, [](const UnitStack& u) { return u.count <= 0; });
-        logGround(ctx, *c, attacker, owner, o);
+        detail::logGroundCombat(ctx, c->planet, attacker, owner, o);
         if (o.captured) detail::capturePlanet(ctx, *c, attacker);
         else if (o.attackersGone) detail::endInvasion(*c, false);
     }

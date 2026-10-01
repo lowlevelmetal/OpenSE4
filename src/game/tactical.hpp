@@ -67,7 +67,8 @@ struct TacticalOrder {
                          // session: units of one kind launched from the piece in one session share a group
                          // (drones: one each) (spec 04 §10.4)
         LaunchFighters,  // "Launch Fighters in Groups": `count` fighters of `design` in groups of `group` (5-50)
-        DropTroops,      // `piece` lands its troops on the adjacent planet `target` (spec 04 §11)
+        DropTroops,      // `piece` lands its troops on the adjacent colony of another empire that comes last in
+                         // piece order, whatever the treaty (spec 04 §11; `target` is ignored)
         Ram,             // `piece` rams the adjacent `target` (spec 04 §10.3)
         Capture,         // `piece` boards the adjacent ship `target` (spec 04 §12)
         SetLeader,       // `piece` leads combat group `group` (0-9) in `formation` (Formations.txt index)
@@ -149,6 +150,18 @@ struct TacticalPiece {
     std::array<int, 3> launchLeft{};  // fighters, satellites, drones it may still launch this turn
     int64_t boardingAttack = 0;
     bool troops = false;          // carries troops (they land for its owner)
+    // For the Combat Piece Report (spec 06 §1.10.1):
+    int64_t fullHitPoints = 0;    // full hit points as the overkill limit counts them (spec 04 §16): a ship's
+                                  // full design structure, a unit group's living units at full health, a
+                                  // seeker's resistance, a planet's hit points at the battle's start
+    int64_t supplyCapacity = 0;   // ships, bases, fighter and drone groups
+    bool unlimitedSupply = false; // never runs out ("Endless")
+    int droneTarget = -1;         // a drone group's drone target (spec 04 §10.7; -1: none)
+    int formation = -1;           // Formations.txt index of the group it leads; kept once it stops leading (-1: never led one)
+    int64_t population = 0;       // planets: millions now
+    int plague = 0;               // planets: the plague level the battle has given it
+    int seekComponent = -1;       // seekers: the Components.txt index of the weapon that launched it
+    std::vector<uint8_t> intact;  // ships and bases: per design entry, 1 while that component is intact
 };
 
 // A battle that can be stepped (see the file comment). It works on its own
@@ -175,6 +188,11 @@ public:
         // The simulator: the strategy each side's planets use, an index into
         // that side's strategies (other planets use their empire's first one).
         std::vector<std::pair<EmpireId, uint32_t>> planetStrategies;
+        // A battle without player sides that a window shows while it is fought
+        // (the Strategic Combat window, spec 06 §1.10.5): it stops after its
+        // set-up, before combat turn 1, and step() plays it one empire phase at
+        // a time. Otherwise such a battle is fought to its end at once.
+        bool stepped = false;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);
@@ -228,6 +246,12 @@ public:
     // Tests: the orders the strategies give for player sides (Auto, Resolve
     // Combat) are appended here as explicit orders.
     void recordStrategies(std::vector<TacticalOrder>* out);
+
+    // A stepped battle (Setup::stepped): plays the next empire phase, with the
+    // end-of-turn upkeep and the end check that follow it (spec 04 §4). False,
+    // doing nothing, once the last phase was played. The same battle stepped
+    // or fought at once comes out the same.
+    bool step();
 
     // ---- The end ---------------------------------------------------------------------------------
     // Applies the results to the battle's own state (as resolveSpaceCombat

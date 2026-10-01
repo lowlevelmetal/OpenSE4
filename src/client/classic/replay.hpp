@@ -23,13 +23,54 @@
 // Pieces of kind Seeker, and pieces launched by a Launch event, start off the
 // map. Planets and obstacles cover 4x4 squares from their top-left square.
 // Events are played in round order (stable for equal rounds).
+//
+// Timed playback (spec 06 §1.10.3, confirmed: binary): every event is an
+// animation of frames, and every frame is drawn. Without Fast Tactical Combat
+// each frame is followed by the original's wait: a one-square slide 1 ms per
+// frame (a jump and 0.1 s with "animate ship movement" off), a turn to a new
+// facing 0.01 s per frame, a beam 0.00001 s per stamp drawn and 0.00005 s per
+// stamp erased, a torpedo 1 ms per frame of its flight, a hit's 8-frame
+// animation 0.1 s per frame and after it is wiped (0.9 s), then 0.3 s after
+// the hit. With Fast Tactical Combat nothing waits and there is no speed
+// factor. A frame is shown for at least one display refresh, whatever its
+// wait, so that it is seen (an OpenSE4 choice, inferred: the original draws
+// it and moves on at once). How many frames our own drawings take (a slide,
+// a turn, a torpedo's flight) is ours too (inferred).
 
 #include "game/state.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace opense4::client::classic {
+
+// How a window animates a battle (spec 06 §1.10.3).
+struct CombatPace {
+    bool fast = false;             // Fast Tactical Combat: no waits
+    bool animateMoves = true;      // "animate ship movement in combat": slides, else jumps
+    std::vector<uint8_t> beams;    // per Components.txt index: 1 when the weapon is drawn as a beam
+};
+
+// One frame of an event's animation and the wait after it.
+struct AnimationFrame {
+    enum class Part : uint8_t {
+        Turn,       // the piece turns 45 degrees toward its move (0.01 s)
+        Slide,      // the piece slides toward the next square (1 ms)
+        Jump,       // the piece stands on the next square (0.1 s; movement not animated)
+        Beam,       // a beam drawn from shooter to target (0.00001 s per stamp)
+        BeamErase,  // the beam erased (0.00005 s per stamp)
+        Torpedo,    // a torpedo in flight, `step` of `steps` of the way (1 ms)
+        Explosion,  // frame `step` of a hit's or a loss's 8-frame animation (0.1 s)
+        Wipe,       // the animation wiped (0.1 s)
+        AfterHit,   // the pause after a hit (0.3 s)
+        Flash,      // a launch, a landing or a capture marked (no wait)
+    };
+    Part part = Part::Slide;
+    int step = 0, steps = 1;       // this frame's place in its part
+    float wait = 0.0f;             // seconds after it (0 with Fast Tactical Combat)
+};
 
 class CombatPlayback {
 public:
@@ -77,15 +118,23 @@ public:
     void play();                   // from the start again when at the end
     void pause() { playing_ = false; }
     void togglePlay() { playing_ ? pause() : play(); }
-    float speed() const { return speed_; }
-    void setSpeed(float s);        // clamped to 0.25..8
-    // Advances playback by wall-clock seconds (times speed); stops at the end.
+    const CombatPace& pace() const { return pace_; }
+    // A new pace applies at once, to the frames of the event being animated too.
+    void setPace(CombatPace pace);
+    // Called once per display refresh, before drawing, with the seconds since
+    // the last one: moves on by at most one animation frame, once the frame
+    // shown has been on screen for its wait (see the file comment). An event
+    // is applied when its last frame is done; events without frames at once.
+    // Stops at the end.
     void advance(float seconds);
-    // While playing: the event being animated (event(cursor())) and how far along it is.
+    // While playing: the event being animated (event(cursor())) and its frame.
     const game::CombatEvent* animating() const { return playing_ && !atEnd() ? &event(cursor_) : nullptr; }
-    float fraction() const { return playing_ ? elapsed_ / eventDuration(cursor_) : 0.0f; }
-    // Seconds an event takes at speed 1 (moves are quick, shots and explosions slower).
-    float eventDuration(size_t i) const;
+    const AnimationFrame* frame() const { return animating() && frame_ < frames_.size() ? &frames_[frame_] : nullptr; }
+    // The frames of event i if it were played now, from the pieces' state after
+    // the applied events (the turn before a move depends on the heading then).
+    std::vector<AnimationFrame> framesOf(size_t i) const;
+    // Their waits added up: how long event i takes at least.
+    float eventWait(size_t i) const;
 
     // ---- State after the applied events ----------------------------------------------
     const std::vector<Piece>& pieces() const { return pieces_; }
@@ -101,6 +150,8 @@ public:
 private:
     void reset();
     void apply(const game::CombatEvent& e);
+    // Makes event(cursor_) the one being animated; applies events without frames on the way.
+    void startEvent();
 
     const game::CombatRecord* record_ = nullptr;
     std::vector<size_t> order_;       // record event indices in playback order
@@ -111,8 +162,11 @@ private:
     Bounds bounds_;
     size_t cursor_ = 0;
     bool playing_ = false;
-    float speed_ = 1.0f;
-    float elapsed_ = 0.0f;            // seconds into event(cursor_)
+    CombatPace pace_;
+    std::vector<AnimationFrame> frames_;   // of event(cursor_) while playing
+    size_t frame_ = 0;
+    float spent_ = 0.0f;              // seconds the current frame has been on screen
+    bool hold_ = false;               // the current frame has not been drawn yet
 };
 
 } // namespace opense4::client::classic

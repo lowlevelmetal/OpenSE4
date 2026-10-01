@@ -173,7 +173,7 @@ reports render inside the right-hand panel (§2.5).
 | Combat Piece Report | Movement, shields, damage, supply, max targets, combat group, formation. A full report window with picture and the object's tabs; unit groups and seekers have none (§1.10.1) (confirmed: binary). | Right-click a piece. |
 | Strategic Combat | Watch-only: system, coordinates, combat turn; forces list (flag, then per vehicle size current and lost counts); small map of coloured squares; Begin, Close. Opens before the first combat turn; the battle is then fought live, the map moving step by step and the list updated after each combat turn, with no delay (§1.10.5) (confirmed: binary). | Prompt; simulator. |
 | Ground Combat | Planet details, facilities, defender and attacker lists; Begin, Close. Fought round by round, the counts updated after each round, about 0.9 s per round (§1.10.6) (confirmed: binary). | After troops land; a ground stalemate at the colony owner's end of turn. |
-| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). | Log → Combat Replay. |
+| Combat Replay | Same layout as tactical, playback only; Options, Next. Space = Next, Esc closes. Title strip: "Combat Replay", the location, the combat turn and the empires' flags; no log, event list or summary of any kind (confirmed: binary). OpenSE4 keeps its own list of the turn's events in words and the battle's summary beside the map, an extension (Q39). | Log → Combat Replay. |
 
 ### 1.7 Multiplayer, tutorial and end of game
 
@@ -2148,24 +2148,20 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     Launch Units. The battle starts with a Begin button and ends with a message, after
     which the window closes. The install's `.cur` files are the pointers. Right-click
     opens a full Combat Piece Report window.
-    Our client follows this. It still differs where Q34–Q37 and Q39 say: Fast Tactical
-    Combat speeds the animation up instead of removing the waits (Q34); the piece report
-    has no tabs and some lines differ (Q35); the orders' pickers replace the menu instead
-    of opening as windows of their own (Q36); Drop Troops is refused by the engine for an
-    empire it is not hostile to and takes the first adjacent colony instead of the last
-    (Q37); the replay keeps a log and a summary beside the map (Q39). It shows the
-    install's pointers (Q40).
+    Our client follows this, with Q34–Q36 and Q39 brought in line on 2026-10-01 (the
+    waits of Fast Tactical Combat, the piece report's lines and tabs, the pickers as
+    windows of their own, the replay's log kept as a marked extension) and Q37 (Drop
+    Troops without a treaty check or a target). It shows the install's pointers (Q40).
 22. **Combat Simulator details.** How many sides, how items are removed, what Fleets for
     Plr does. **Answer:** always 10 sides, "Race 1" to "Race 10"; a left-click on a combat
     vehicle removes it; Fleets For Plr opens Fleet Transfer for the chosen side. Each click
     on an item adds one vehicle. Begin with Tactical fights in the Tactical Combat window
     and reopens the simulator with the same setup afterwards; Strategic opens the
     Strategic Combat window over it. Details in §1.10.4 (confirmed: binary).
-    Our client follows this. It still differs where Q38 says: Fleets For Plr and Change
-    Cargo open our own pickers for the simulated ships, not the Fleet Transfer and Cargo
-    Transfer windows (those work on the real game); Designs stays open under a tactical
-    simulation; sides show flags instead of numbered colour boxes; ships are numbered per
-    side and design instead of per side.
+    Our client follows this, with Q38 brought in line on 2026-10-01: Fleets For Plr and
+    Change Cargo open the Fleet Transfer and Cargo Transfer windows over a sandbox of the
+    setup, Designs closes during a tactical simulation, sides show numbered colour boxes,
+    and one counter per side numbers the ships. Its own choices there are Q77–Q82.
 23. **Strategic Combat and Ground Combat details.** **Answer:** in a turn-based game on
     one machine, every battle with a piece of a human-controlled empire asks Tactical or
     Strategic when it starts, during computer turns too (with a notice first); on
@@ -2177,13 +2173,9 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     (tactical, or a computer side in a strategic battle) and for a continuing ground
     stalemate; it fights round by round. Details in §1.10.5 and §1.10.6 (confirmed:
     binary).
-    Our client follows this. It still differs where Q30–Q33 say: it holds each combat
-    turn 0.45 s and moves the map once per combat turn, not after every step (Q30); a
-    few title-strip and forces-list details (Q31); with No Tactical Combat on, and in
-    the other cases where the window opens without the question, it shows battles after
-    the engine call that fought them instead of when they start (Q32); Ground Combat
-    shows the counts at the start and the end only, at 0.45 s per round, and does not
-    open for a ground stalemate at the end of the colony owner's turn (Q33).
+    Our client follows this, with the answers of Q30–Q33 since 2026-10-01. It still
+    differs in games played on different machines, whose host never stops: their
+    battles are shown afterwards (Q74).
 
 The Planets and Construction Queues windows follow §1.8. Questions 24–29 were our own
 choices where those rules left something open; all six are now settled from the
@@ -2331,10 +2323,11 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     screen only as long as the next one takes to compute and draw. How long that was on
     a period machine is a matter of the machine's speed, which the executable cannot
     tell; on a current machine the whole battle passes in a moment.
-    The client differs: it holds every combat turn 0.45 s and moves the map once per
-    combat turn. To match, it must draw every step as it is taken (the battle record has
-    to keep each step, Q32) and hold nothing. A minimum hold kept so that a player can
-    follow the battle would be OpenSE4's own choice and must be marked so (inferred).
+    Our client follows this since 2026-10-01: the window fights the battle itself (a
+    stepped combat::TacticalBattle), holds nothing, and lets each displayed frame show
+    one empire's phase, the map after its steps and the forces list and "Combat Turn N"
+    after each combat turn. That a frame shows a phase, not each step, is our own choice
+    (inferred, Q73).
 31. **Strategic Combat details.** Where in the title strip do the system name and the
     coordinates go (ours: x 270 and 450, as in Ground Combat)? Are the 5 planets of the
     forces list counted per empire (ours) or for the whole battle? Under which hull does a
@@ -2348,9 +2341,9 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     made once, when the window opens, so a hull an empire did not have in the battle at
     set-up never gets a row, even when units of that hull are launched or a ship of that
     hull is captured.
-    The client differs: Coordinates at x 450 and a mixed group counted under its first
-    design's hull; and no hull row may be added during the battle (the earlier text of
-    §1.10.5 allowed it).
+    Our client follows this since 2026-10-01 (`CombatForces`). A battle a network or
+    PBEM host fought, shown afterwards from its record, counts a mixed group under its
+    first design's hull, the only one the record keeps (inferred, Q75).
 32. **Battles without tactical combat.** With No Tactical Combat on, ours shows every
     battle with a human player's piece after the engine call that fought it, not as the
     battle starts (the engine does not stop for them). Is the window shown before or after
@@ -2365,24 +2358,18 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     opens in its Begin and Close form instead of its question form, still after the
     notice when a computer player's turn is being played. The same holds for the
     Strategic Combat window on different machines and in simultaneous games.
-    The engine differs: it does not stop for a battle it does not ask about; it fights
-    it within the call, and the client shows the record after the whole call (an order,
-    or End Turn with the computer turns) has finished, after later moves and battles,
-    with the results already in the log. To match, the engine must stop where it now
-    raises its battle question (the battle set up, before combat turn 1) whenever the
-    battle is to be shown in the Strategic Combat window (the cases of §1.10.5), hand it
-    to the client, and resume only when the window has closed: then finish the battle
-    (reports, log, happiness events, cloaking again, removal of destroyed objects) and
-    carry on with the interrupted move. Since nothing in the window can change the
-    battle, the engine may also fight it at the stop and hand over the fought record,
-    as long as nothing later in the call (the main window, the log, other battles)
-    becomes visible before Close. The record must keep, for the window: the pieces as
-    set up (owner, kind, design or object, size, square); in order, every step of every
-    move (seekers' included), every launch, every piece destroyed or removed and every
-    change of owner, each with its combat turn and phase; and each ground combat at the
-    point of the phase where its troops landed, so the playback stops there and opens
-    Ground Combat (Q33). The forces counts of §1.10.5 follow from these; the end of each
-    combat turn must be marked, since the list is recounted only then.
+    Our engine and client follow this since 2026-10-01 (game/turn.hpp, "Battles shown as
+    they happen"): on one machine every battle that the original shows stops the engine
+    call once it is set up, before combat turn 1, in a turn-based game (the question, or
+    with No Tactical Combat the Begin and Close form) and in a simultaneous game whose
+    Settings show battles. The client fights it in its window while showing it (the
+    record keeps each step, launch, loss and change of owner with its combat turn, and
+    each ground combat with the place of its landing in the events); after Close the
+    call is made again, replays to the same point and fights the battle the same way,
+    so the reports, log entries, happiness events and the rest of the call come only
+    then, and the results are the same whether a window shows the battle or not. Games
+    on different machines differ: their host fights every battle without stopping, and
+    the client shows the battles afterwards (Q74).
 33. **Ground Combat rounds.** Our record keeps a ground fight's start and end only, so the
     window counts the rounds and shows the new numbers at the end. Do the original's unit
     counts change after every round? Ours does not yet open Ground Combat for a stalemate
@@ -2399,16 +2386,14 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     two empires, then the window, while that empire's end-of-turn processing waits. It
     opens only in turn-based games when one of the two empires is human (in the
     simulator always); the log entries are written after the fight either way.
-    The engine and the client differ: the engine's ground record keeps the start and the
-    end only, the client counts rounds at 0.45 s and shows the final numbers at the end,
-    and the engine runs the end-of-turn fights silently, so the client never opens Ground
-    Combat for them. To match, each ground fight's record must keep, for every round,
-    the count of every troop and militia stack on both sides after that round, with the
-    round limit and the outcome; the client must show them round by round at 0.9 s per
-    round (the explosion); and the engine must stop at the colony owner's ground-combat
-    step when the window is to be shown (or fight it and yield at once), so that the
-    notice and the window come before the rest of that empire's end-of-turn processing
-    and before the next player's turn.
+    Our engine and client follow this since 2026-10-01: each ground fight's record keeps
+    the counts of every stack on both sides and the militia after every round
+    (`GroundCombat::perRound`); the window shows them round by round, 0.9 s a round with
+    the explosion and a boom; and at the colony owner's ground-combat step of a
+    turn-based game on one machine, a fight with a human side stops the call (the engine
+    fights it and hands the record over), shown after the notice, before the rest of
+    that empire's end-of-turn processing and the next player's turn. Both empires' log
+    entries are written either way (spec 04 §13).
 34. **Fast Tactical Combat.** Ours plays the animation three times faster instead of
     dropping the pauses between steps; the same for Fast Tactical Combat in Combat Replay
     Options.
@@ -2423,6 +2408,11 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     off it must use the waits of §1.10.3, and with it on hold nothing. Since a frame
     drawn without any hold can hardly be seen on a current display, showing each frame
     for one display refresh would be OpenSE4's own choice (inferred).
+    Since 2026-10-01 our client does this, in the Tactical Combat window and, with its
+    own switches, in Combat Replay (client/classic/replay.hpp): every frame of every
+    animation is drawn, followed without the switch by the wait of §1.10.3 and with it by
+    none; no speed factor is left. Each frame stays on screen for at least one display
+    refresh, and how many frames our own drawings take is ours (Q77) (inferred).
 35. **Combat Piece Report.** Ours shows Damage as structure taken / maximum for a ship and
     as a percentage otherwise, Supply as "-" for a planet, a fleet's own group as "Fleet -
     Leader" or "Fleet - Wingman", Formation only for fleet members, and no tabs; a neutral
@@ -2441,6 +2431,10 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     The client differs in each point of the question: percentages, "-" for a planet's
     supply, the "Fleet" wording, Formation on members, no tabs and no unit grid, and a
     one-line note for an obstacle.
+    Since 2026-10-01 our client follows the table of §1.10.1 line by line and draws the
+    report as §1.10.1 lays it out, with the tabs along the bottom, the unit grid of a
+    unit group and the launching weapon's picture for a seeker; a neutral obstacle opens
+    its object report. Its own choices are in Q78.
 36. **Tactical Combat Orders.** Ours stacks the 11 buttons with no gap and no title, and
     the pickers (group size, group number 1–9, formation, the Resolve Combat question)
     replace the menu in the same window. Are they separate windows in the original, and
@@ -2455,6 +2449,12 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     clears the piece's group marks.
     The client differs only in showing the pickers inside the menu's window; to match,
     the menu must close and each picker open as its own modal window.
+    Since 2026-10-01 our client does so: a click closes the menu and then runs the
+    order; "Select Fighters Per group" (one column, Amount), "Select Combat Group" (1 to
+    9), "Select Formation" (closed without a choice, the piece's group marks are cleared)
+    and the "Resolve Combat" confirmation are modal windows of their own over the
+    tactical window. Refused group orders say nothing. Without any formation in the data
+    set, a new leader takes none and no formation picker opens (inferred).
 37. **Drop Troops.** Ours picks the first adjacent colony of another empire that the
     battle accepts. The engine still refuses an empire it is not hostile to (spec 04 §11),
     while §1.10.2 says hostility is not checked: one of the two needs to change.
@@ -2470,13 +2470,10 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     only at the colony owner's end-of-turn step does a treaty at Non-Aggression or better
     hand surviving invaders over to the colony. After every landing the planet's piece
     is reset: weapons ready, shields full, targets cleared.
-    The engine differs: it refuses a colony it is not hostile to; it takes the planet
-    the order names (the client names the first adjacent colony) instead of the last
-    adjacent one in piece order; a computer carrier lands only on its chosen target; and
-    the planet's piece is not reset after a landing that fails to take it. To match, the
-    hostility test must go, the order needs no target (the colony follows from the rule
-    above), a Drop Troops piece tries the landing after every move, and every landing
-    resets the planet's piece.
+    Our engine follows this since 2026-10-01 (`Battle::landingColony`, `dropTroops`):
+    no treaty is checked, the order names no planet, a Drop Troops piece tries the
+    landing after every move it plans, and every landing resets the planet's piece. The
+    engine's own choices are spec 04 §19.4 Q87–Q89.
 38. **Combat Simulator.** A race's flag is that of the empire its first item belongs to,
     or the player's while it has none. Every object of the home system is offered,
     asteroid fields and storms included. Fleets For Plr is our list of the race's ships
@@ -2503,6 +2500,16 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     - **Designs** closes during a tactical simulation and reopens with the simulator.
     The client differs: flags instead of the numbered boxes; its own pickers instead of
     Fleet Transfer and Cargo Transfer; a counter per side and design; Designs stays open.
+    Since 2026-10-01 our client follows each point. The numbered boxes stand for the
+    sides in the Owner for item and Computer Control lists, in the Tactical and
+    Strategic Combat windows of a simulation and in the reports opened from them; the
+    Combat Vehicles list keeps the flag of the empire a side copies until the Flag
+    column is observed. Each ship item takes its side's next numbers when it is added
+    (game::combat::simulatorNumberShips). Fleets For Plr and Change Cargo open the real
+    Fleet Transfer and Cargo Transfer windows over a sandbox of the setup, and the setup
+    takes back the fleets or the cargo when the window closes; the real game never
+    changes (Q79–Q81). Designs closes when a tactical simulation begins and opens again
+    with the simulator when the battle is over.
 39. **Combat Replay.** Ours keeps, beside the map and its overview, the turn's events in
     words and the battle's summary (OpenSE4's own help); it has no Close button (Esc and
     Stop Replay close it). Does the original replay keep a log of any kind?
@@ -2513,6 +2520,10 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     event list or summary. Having no Close button matches.
     The client differs: the events in words and the summary are OpenSE4's own help; to
     match they must go, or stay as a marked OpenSE4 extension (inferred).
+    They stay, as an OpenSE4 extension (inferred): the list of the combat turn's events
+    in words and the battle's summary beside the map help a player follow the battle,
+    and nothing in the rules depends on them. Everything else of the window follows the
+    answer.
 40. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
     install's `.cur` files exists yet. **Answer:** the game loads all twelve `.cur` files
     at start-up and uses no other pointer. `Normal` is the pointer of every window,
@@ -2933,3 +2944,60 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
     starting designs, renamed when another design has their name, with the obsolete flag
     they had and the first combat strategy; designs whose hull, components or mounts the
     data set lacks are left out with a warning. Does the original keep the strategy?
+
+Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
+each marked "(inferred)" in the client:
+
+73. **What a displayed frame shows of a strategic battle.** The original redraws the small
+    map after every step and repaints when it handles its messages, after each empire's
+    phase and each combat turn, with no hold anywhere (Q30). Our Strategic Combat window
+    fights one empire's phase per displayed frame and draws the map after it, so the
+    steps of a phase appear together; nothing is held. Is that what a current machine
+    shows of the original (it repaints only at those points), or are the steps of a
+    phase visible one by one there?
+74. **Battles of games on different machines.** The original shows the Strategic Combat
+    window, before the battle, to the human whose turn it is (§1.10.5). Our network and
+    PBEM hosts fight every battle without stopping, so our client shows a network game's
+    battles the player was in, and a PBEM player's battles started by its own orders,
+    afterwards, played back from the record one combat turn per frame, with the results
+    already in the game. To match, the host (or the PBEM player's own turn) would have to
+    stop as a local game does.
+75. **A mixed group in a battle shown afterwards.** The battle record keeps a unit group's
+    first design only, so a battle shown afterwards (Q74) counts a group that mixes
+    designs under that design's hull, where the live window counts each stack under its
+    own (§1.10.5).
+76. **A notice before a shown simultaneous battle.** On one machine the notice comes first
+    when the empire whose turn it is is computer-controlled (§1.10.5). A simultaneous
+    turn has no such empire; ours shows no notice there. Does the original?
+
+Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
+choices of ours (inferred), each to check in the running game (Q73–Q76 are those of
+the live battle flow):
+
+77. **Animation frames.** How many frames does the original's slide over one square
+    take, and how many its turn to a new facing (one per 45 degrees?), its torpedo's
+    flight (one per square?) and a beam (one stamp per square?)? Ours: 6 for a slide, one
+    per 45 degrees, one per square, and one stretched stamp drawn then erased; a
+    seeker's step is drawn as a torpedo's flight. A loss plays the 8-frame explosion
+    with the hit's waits; a miss adds nothing to its shot; a launch, a landing or a
+    capture flashes for 4 frames without a wait. Every frame stays at least one display
+    refresh.
+78. **Combat Piece Report details.** Ours writes "K" thousands truncated (150999 →
+    "150K"); a drone whose drone target has died shows None until it picks another; the
+    Facil and Ability tabs show the colony or ship as the battle began; the report has a
+    Close button in its title strip, as our tab strip leaves no room under the page.
+79. **Fleets For Plr.** Ours hides Fleet Transfer's Existing Fleets button (the real
+    game's fleet list) while it works on the simulator's sandbox. Is it there in the
+    original, and what does it list?
+80. **Change Cargo.** Ours lists every vehicle and colony of the setup in one Cargo
+    Transfer window by giving them all to the chosen side in the sandbox; the deferred
+    Load and Drop Cargo orders are hidden; population moved onto a ship is not kept; and
+    the setup then accepts any unit design a sample colony stores, foreign ones
+    included. How does the original list the holders of different sides, and where do
+    units for a ship come from without a sample colony that stores them?
+81. **Ship numbers of items without one.** An item put in the setup without a number
+    (a sample setup made by the program) takes the next numbers of its side, in item
+    order, after the side's counter and every number already given.
+82. **Side colours.** Ours uses the plain colours of those names (red 255,0,0; blue
+    0,0,255; green 0,128,0; yellow 255,255,0; purple 128,0,128; white; aqua 0,255,255;
+    lime 0,255,0; maroon 128,0,0; olive 128,128,0). Are these the original's values?

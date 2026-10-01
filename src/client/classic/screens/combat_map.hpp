@@ -12,6 +12,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -55,8 +56,8 @@ public:
     // window's map and the Tactical Combat overview. Returns the piece under
     // `mouse` when `hover` is set. `minSize` is the smallest square in pixels.
     std::optional<uint32_t> squares(ImDrawList* dl, const CombatView& v, float minSize, bool hover = false, ImVec2 mouse = {}) const;
-    // The event being animated, `t` of the way through.
-    void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, float t) const;
+    // The event being animated, at its current frame (CombatPlayback::frame()).
+    void event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, const AnimationFrame& f) const;
     // Weapon and explosion sounds for the events played between two cursors.
     void sounds(size_t from, size_t to) const;
 
@@ -68,5 +69,34 @@ private:
 };
 
 ImU32 withAlpha(ImU32 c, float a);
+
+// ---- Combat simulator sides (spec 04 §17, spec 06 §1.10.4, confirmed: binary) ----------------------
+// A simulation shows each side not by a flag but by a box in the side's fixed
+// colour holding its number: 1 red, 2 blue, 3 green, 4 yellow, 5 purple, 6
+// white, 7 aqua, 8 lime, 9 maroon, 10 olive; the number in white on the dark
+// colours (1, 2, 3, 5, 9, 10), in black on the others. Wherever a real battle
+// shows a flag, the battle windows of a simulation and the reports opened
+// from them show the box.
+
+// The simulation being fought: its sandbox (TacticalBattle::state()) and the
+// virtual empire of each side, in side order (Simulation::sides). Set when
+// the simulator starts a battle; replaced by the next one.
+void setSimulationSides(const game::GameState* sandbox, std::vector<game::EmpireId> sides);
+// The side number (1 to 10) of an empire in the simulation fought on `state`;
+// 0 when `state` is not that sandbox or the empire is no side of it.
+int simulationSide(const game::GameState& state, game::EmpireId e);
+// A side's colour (1-based; 0 and out of range: grey) and its number's.
+ImU32 sideBoxColor(int side);
+ImU32 sideNumberColor(int side);
+// The box over a rectangle of the draw list, and as an item at the cursor.
+void drawSideBox(UiContext& ui, ImDrawList* dl, ImVec2 min, ImVec2 max, int side);
+void sideBox(UiContext& ui, int side, Vec2 size);
+// An owner's mark as an item at the cursor: the side's box in a simulation,
+// else the empire's flag (`small`: the small flag). False when there is none.
+bool ownerMark(UiContext& ui, const game::GameState& s, game::EmpireId e, Vec2 size, bool small = true);
+
+// The pace of the combat windows' animations (spec 06 §1.10.3): Fast Tactical
+// Combat and "animate ship movement", and which weapons are drawn as beams.
+CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves);
 
 } // namespace opense4::client::classic

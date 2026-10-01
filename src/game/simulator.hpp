@@ -60,6 +60,10 @@ struct SimulatorItem {
     std::vector<UnitStack> cargo;
     bool replaceCargo = false;
     int fleet = -1;                // index into SimulatorSetup::fleets (same side), -1: none
+    // Ships and bases: the serial number of its first ship, given when the
+    // item was added (simulatorAddShips); 0: none given, the next free ones
+    // of its side are used (inferred).
+    int serial = 0;
 };
 
 struct SimulatorSide {
@@ -80,6 +84,10 @@ struct SimulatorSetup {
     std::vector<SimulatorFleet> fleets;
     std::vector<SimulatorItem> items;
     uint64_t seed = 0;             // 0: the game's random numbers
+    // Per side: the ships ever given to it, whatever their designs (spec 04
+    // §17, confirmed: binary). Starts at 0 with the setup, never lowered by
+    // removals; the setup keeps it across a tactical simulation.
+    std::vector<int> shipCounters;
 };
 
 inline constexpr int kSimulatorMaxSides = 10;        // virtual empires (confirmed: binary)
@@ -98,11 +106,16 @@ std::vector<DesignId> simulatorCargoDesigns(const Rules& r, const GameState& s, 
 std::vector<ObjectId> simulatorPlanets(const GameState& s, EmpireId viewer);
 // Whether a Planet item is a colony (it joins its side) rather than a neutral object.
 bool simulatorColony(const GameState& s, const SimulatorItem& item);
+// Gives a ship or base item of `count` ships the side's next serial numbers:
+// each ship takes the side's counter + 1 and the counter goes up (spec 04
+// §17, confirmed: binary). Unit and planet items get none.
+void simulatorNumberShips(const Rules& r, const GameState& s, SimulatorSetup& setup, SimulatorItem& item);
 // The name of what each item puts on the field, as buildSimulation names it:
-// a ship or base is "<design> <serial>", the serial counting that design's
-// ships on the item's side from 0001 (spec 06 §7 Q18: the simulator counts per
-// side; inferred: per side and design); a unit item, its design's name; a
-// Planet item, the object's name.
+// a ship or base is "<design> NNNN", its serial (SimulatorItem::serial, so
+// the first two ships given to a side are "A 0001" and "B 0002" whatever
+// their designs); a unit item, its design's name; a Planet item, the
+// object's name. An item with no serial takes the next numbers after its
+// side's counter, in item order (inferred).
 std::vector<std::string> simulatorItemNames(const Rules& r, const GameState& s, const SimulatorSetup& setup);
 // Cargo space an item has, and what its cargo takes up.
 int64_t simulatorCargoCapacity(const Rules& r, const GameState& s, const SimulatorItem& item);
@@ -115,6 +128,13 @@ struct Simulation {
     GameState state;                 // the sandbox
     Location where;                  // the battle sector
     std::vector<EmpireId> sides;     // the virtual empire of each side
+    // Per setup item: the sandbox vehicles it put on the field (a unit item
+    // joins its side's group of that kind, which then stands for several
+    // items), and a Planet item's object in the sandbox.
+    std::vector<std::vector<VehicleId>> itemVehicles;
+    std::vector<ObjectId> itemObjects;
+    // Each sandbox design copied from a real one (the design of a side's copy -> the real design).
+    std::vector<std::pair<DesignId, DesignId>> designCopies;
     std::vector<EmpireId> players;   // the sides the player controls
     int interference = 0;            // the home sector's, applied to the battle
     int disruption = 0;
@@ -123,7 +143,9 @@ struct Simulation {
 // The sandbox for a valid setup (see simulatorProblem). `real` is not changed.
 Simulation buildSimulation(const Rules& r, const GameState& real, const SimulatorSetup& setup);
 // The battle, ready to fight: tactical for the player's sides (none: strategic,
-// already fought to the end; call finish() for the results).
-TacticalBattle startSimulation(const Rules& r, Simulation sim);
+// already fought to the end, or with `stepped` set up and stopped before combat
+// turn 1 for the Strategic Combat window to fight phase by phase,
+// TacticalBattle::Setup::stepped; call finish() for the results).
+TacticalBattle startSimulation(const Rules& r, Simulation sim, bool stepped = false);
 
 } // namespace opense4::game::combat

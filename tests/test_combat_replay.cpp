@@ -165,9 +165,15 @@ TEST_CASE("replay: stepping by round forward and back") {
     CHECK_FALSE(pc[3].onMap);
 }
 
-TEST_CASE("replay: timed playback") {
+TEST_CASE("replay: timed playback draws every frame and waits as the original does") {
+    using opense4::client::classic::AnimationFrame;
+    using opense4::client::classic::CombatPace;
+    using Part = AnimationFrame::Part;
     const CombatRecord r = battle();
     CombatPlayback p(r);
+    CombatPace pace;
+    pace.beams = {0};   // component 0 is a torpedo
+    p.setPace(pace);
     CHECK_FALSE(p.playing());
     p.advance(100.0f);  // paused: nothing happens
     CHECK(p.atStart());
@@ -176,26 +182,72 @@ TEST_CASE("replay: timed playback") {
     CHECK(p.playing());
     REQUIRE(p.animating() != nullptr);
     CHECK(p.animating()->kind == K::Move);
-    p.advance(p.eventDuration(0) * 0.5f);
-    CHECK(p.cursor() == 0);
-    CHECK(p.fraction() == doctest::Approx(0.5f));
+    REQUIRE(p.frame() != nullptr);
+    CHECK(p.frame()->part == Part::Slide);
+    CHECK(p.frame()->step == 0);
+    // The first frame is drawn before anything moves on, and then one frame a
+    // refresh at most, however long the refresh took.
+    p.advance(100.0f);
+    CHECK(p.frame()->step == 0);
+    p.advance(100.0f);
+    CHECK(p.frame()->step == 1);
+    // A slide frame waits 1 ms: a shorter refresh keeps it on screen.
+    p.advance(0.0005f);
+    CHECK(p.frame()->step == 1);
+    p.advance(0.0006f);
+    CHECK(p.frame()->step == 2);
+    const int slide = p.frame()->steps;
+    for (int k = 3; k <= slide; ++k) p.advance(0.01f);
+    CHECK(p.cursor() == 1);   // the last frame done: the move is applied
+    CHECK(p.pieces()[0].x == 4);
 
-    // Exactly the first round's events.
-    float round1 = 0;
-    for (size_t i = 0; i < 4; ++i) round1 += p.eventDuration(i);
-    p.advance(round1 - p.eventDuration(0) * 0.5f + 0.001f);
-    CHECK(p.cursor() == 4);
-    CHECK(p.round() == 1);
-    // A new round starts with a short pause.
-    CHECK(p.eventDuration(4) > p.eventDuration(3) - 0.2f);
+    // The waits of spec 06 §1.10.3: a hit 8 frames and the wipe at 0.1 s, then 0.3 s.
+    CHECK(p.eventWait(3) == doctest::Approx(1.2f));
+    std::vector<AnimationFrame> hit = p.framesOf(3);
+    REQUIRE(hit.size() == 10);
+    CHECK(hit[0].part == Part::Explosion);
+    CHECK(hit[7].step == 7);
+    CHECK(hit[8].part == Part::Wipe);
+    CHECK(hit[9].part == Part::AfterHit);
+    CHECK(hit[9].wait == doctest::Approx(0.3f));
+    // A torpedo flies one frame a square (1 ms each); a beam is drawn and erased.
+    p.advance(1.0f);   // the second ship's move, frame by frame
+    while (p.cursor() < 2) p.advance(1.0f);
+    std::vector<AnimationFrame> torpedo = p.framesOf(2);
+    REQUIRE_FALSE(torpedo.empty());
+    CHECK(torpedo.front().part == Part::Torpedo);
+    CHECK(int(torpedo.size()) == 4);   // ships at x 4 and 8
+    CHECK(torpedo.front().wait == doctest::Approx(0.001f));
+    pace.beams = {1};
+    p.setPace(pace);
+    std::vector<AnimationFrame> beam = p.framesOf(2);
+    REQUIRE(beam.size() == 2);
+    CHECK(beam[0].part == Part::Beam);
+    CHECK(beam[1].part == Part::BeamErase);
+    // Misses and lost units have no frames of their own.
+    CHECK(p.event(7).kind == K::Miss);
+    CHECK(p.framesOf(7).empty());
 
-    // Double speed halves the time.
-    p.setSpeed(2.0f);
-    const float next = p.eventDuration(4);
-    p.advance(next * 0.5f + 0.001f);
-    CHECK(p.cursor() == 5);
+    // Movement not animated: the piece jumps, then 0.1 s.
+    {
+        CombatPlayback q(r);
+        CombatPace still;
+        still.animateMoves = false;
+        q.setPace(still);
+        const std::vector<AnimationFrame> jump = q.framesOf(0);
+        REQUIRE(jump.size() == 1);
+        CHECK(jump[0].part == Part::Jump);
+        CHECK(q.eventWait(0) == doctest::Approx(0.1f));
+    }
+    // Fast Tactical Combat: no wait at all, every frame still there.
+    pace.fast = true;
+    pace.animateMoves = true;
+    p.setPace(pace);
+    CHECK(p.eventWait(3) == 0.0f);
+    CHECK(p.framesOf(3).size() == 10);
 
-    p.advance(1000.0f);
+    // To the end: one frame a refresh with no waits.
+    for (int k = 0; k < 1000 && p.playing(); ++k) p.advance(0.0f);
     CHECK(p.atEnd());
     CHECK_FALSE(p.playing());
     CHECK(p.animating() == nullptr);
@@ -206,9 +258,22 @@ TEST_CASE("replay: timed playback") {
     CHECK(p.playing());
     p.pause();
     CHECK_FALSE(p.playing());
+}
 
-    p.setSpeed(100.0f);
-    CHECK(p.speed() == doctest::Approx(8.0f));
+TEST_CASE("replay: a piece turns to its new facing 45 degrees a frame before it moves") {
+    using opense4::client::classic::AnimationFrame;
+    CombatRecord r;
+    r.participants = {EmpireId{0u}, EmpireId{1u}};
+    r.pieces = {piece(CombatPiece::Kind::Vehicle, 0, 2, 5), piece(CombatPiece::Kind::Vehicle, 1, 10, 5)};
+    r.events = {ev(K::Move, 1, 0, 0, 2, 4)};   // facing east, it goes north
+    CombatPlayback p(r);
+    const std::vector<AnimationFrame> f = p.framesOf(0);
+    REQUIRE(f.size() >= 2);
+    CHECK(f[0].part == AnimationFrame::Part::Turn);
+    CHECK(f[1].part == AnimationFrame::Part::Turn);
+    CHECK(f[0].steps == 2);
+    CHECK(f[0].wait == doctest::Approx(0.01f));
+    CHECK(f[2].part == AnimationFrame::Part::Slide);
 }
 
 TEST_CASE("replay: shots, hits and odd records") {

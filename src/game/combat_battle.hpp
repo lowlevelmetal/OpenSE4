@@ -43,6 +43,7 @@ struct Weapon {
     uint8_t targets = 0;
     int reloadRate = 1;
     int reach = 0;           // longest range with damage (seekers: travel)
+    int range = 0;           // the largest range from 1 to 20 with damage, as the strategies see it (spec 04 §16)
     int perUnit = 1;         // fighter groups: identical entries on one unit, fired together
     int stack = -1;          // planets: the platform stack in the planet's cargo; unit groups: the design (Piece::stacks)
     // Fighter groups: every design with this weapon, as (stack, identical entries
@@ -144,15 +145,20 @@ struct Arm {
 };
 
 // The targets a computer piece gives its weapons at one choice (spec 04 §16):
-// the main target (the first sorted candidate) and each weapon's.
+// the sorted candidates, the main target (the first of them) and each weapon's.
 struct Targeting {
     int main = -1;
+    std::vector<int> candidates;
     std::vector<Arm> arms;
 };
 
-// The overkill totals of one choice, per candidate: the damage given to it,
-// and the part of that from seeking weapons (spec 04 §16 "Overkill limit").
-using OverkillTotals = std::map<int, std::pair<int64_t, int64_t>>;
+// The overkill totals every piece carries (spec 04 §16 "Overkill limit"): the
+// damage of every weapon given it as a target, and the part of that from
+// seeking weapons.
+struct OverkillTotal {
+    int64_t all = 0;
+    int64_t seeking = 0;
+};
 
 struct MovePlan {
     MoveStrategy mode = MoveStrategy::DontGetHurt;
@@ -195,8 +201,9 @@ public:
     // The sides a player drives; the others follow their strategies. `release`:
     // who gets hand control back when Auto is released (default: the same sides).
     void setPlayers(std::vector<EmpireId> players, std::optional<std::vector<EmpireId>> release = std::nullopt);
-    // Plays computer phases until a player's phase needs orders or the battle ends.
-    void advance();
+    // Plays computer phases until a player's phase needs orders or the battle
+    // ends; with `onePhase`, stops after the first phase it plays.
+    void advance(bool onePhase = false);
     std::string check(const TacticalOrder& o) const;
     // Validates and carries out one order of the player whose phase it is
     // (then the computer phases that follow). Returns why it was refused.
@@ -251,6 +258,8 @@ public:
 
     // ---- For the tests: the computer's choices as things stand, and pieces set by hand.
     Targeting targetsFor(int i, bool firing) { return chooseTargets(i, firing); }
+    void droneTargetFor(int i) { chooseDroneTarget(i); }
+    OverkillTotal totalFor(int t) { return totalOf(t); }
     MovePlan planFor(int i);
     std::vector<int64_t> attackMapFor(int i) { return attackMap(i, chooseTargets(i, false)); }
     uint32_t strategyIndexOf(int i) const { return strategyIndex(i); }
@@ -320,10 +329,18 @@ private:
     bool ready(int i, const Arm& a) const;
     bool reaches(int i, const Weapon& w, int t) const;
     // Targets for all weapons at once: when planning (no distance check) or
-    // firing. `carried`: totals kept from one choice to the next (drones
-    // choosing new targets); `only`: candidate categories.
-    Targeting chooseTargets(int i, bool firing, OverkillTotals* carried = nullptr, uint8_t only = 0);
-    void updateDroneTarget(int i);
+    // firing. `droneChoice`: the choice of a drone target, the only one that
+    // is not ordinary (no first total is cleared, spec 04 §16).
+    Targeting chooseTargets(int i, bool firing, bool droneChoice = false);
+    // A drone group's drone target (spec 04 §10.7): chosen at setup, at its
+    // launch, in its planning when the target left the battle, and when the
+    // target changes owner.
+    void chooseDroneTarget(int i);
+    bool droneMayTake(int i, int t) const;
+    int64_t droneWarheadDamage(int i) const;
+    int pursuedPiece(int i) const;      // the piece its first order pursues (-1: none)
+    void ownerChanged(int t);           // drones aimed at t choose again
+    OverkillTotal& totalOf(int t);
 
     // ---- The phases (spec 04 §4).
     void phase(EmpireId e);          // a computer phase: drones, seekers, then the other pieces
@@ -394,7 +411,12 @@ private:
     void logMove(int i, const std::vector<std::pair<int, int>>& path);
     void board(int i, int t);
     void ram(int i, int t);
-    void dropTroops(int i, int t);
+    // Drop Troops (spec 04 §11): the colony a landing takes, why it is refused
+    // (empty: it is not), and the landing with its ground combat.
+    int landingColony(int i) const;
+    std::string landingProblem(int i) const;
+    void dropTroops(int i);
+    EmpireId colonyHolder(const Piece& planet) const;   // the colony's owner during the battle
     int boardTarget(int i) const;
     int ramTarget(int i) const;
     int troopTarget(int i) const;
@@ -451,7 +473,7 @@ private:
     std::map<std::pair<uint32_t, bool>, Rng> planRng_;
     std::vector<int64_t> danger_;                                     // the moving side's danger map (spec 04 §16.1)
     EmpireId dangerFor_;
-    OverkillTotals droneTotals_;                                      // carried from drone to drone in a phase (spec 04 §16)
+    std::vector<OverkillTotal> overkill_;                             // per piece, kept between choices (spec 04 §16)
     // Launch Units window sessions: (piece, session, launch kind) -> the group made (spec 04 §10.4).
     std::map<std::tuple<int, int, int>, int> launchGroups_;
     int round_ = 1;

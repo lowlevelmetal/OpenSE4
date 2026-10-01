@@ -29,52 +29,81 @@ struct ForceRow {
 
 struct ForceSide {
     game::EmpireId empire;
-    std::vector<ForceRow> rows;   // hulls in the order they appeared, then up to kForcePlanets planets
+    std::vector<ForceRow> rows;   // hulls in VehicleSize order, then up to kForcePlanets planets
 };
 
 inline constexpr size_t kForcePlanets = 5;
 
-// Per empire of the battle: one row per hull with the ships and bases it has
-// now (one each), and the living units of its unit groups under each unit
-// design's hull; seekers and obstacles are not counted, nor units still in
-// cargo. Lost is the highest count seen so far minus the current one, and a
-// hull row stays once it has appeared, even at 0. Then up to kForcePlanets of
-// the empire's colonized planets by name: 1 / 0 while it stands, 0 / 1 once
-// lost (destroyed, taken or emptied). A unit group that mixes designs counts
-// all its units under its first design's hull (inferred).
+// The rows are made once, from the battle as it was set up: for each empire,
+// in player-number order, that has any row, one row per hull (VehicleSize
+// order) of the ships, bases and unit groups it had in the battle then, and
+// its colonized planets, at most kForcePlanets of them, the first in piece
+// order. Counting is redone after each combat turn: a ship or base counts 1
+// under its design's hull, a unit group counts each stack's living units under
+// the hull of that stack's design, seekers are not counted. Lost is the
+// highest count seen minus the current one. A hull that first appears later
+// (units launched from cargo, a captured ship of a new hull) gets no row,
+// though launches raise the highest count of a row that exists. A planet row
+// is 1 / 0 while a piece of that empire with the planet's name exists, and
+// 0 / 1 otherwise (spec 06 §1.10.5, §7 Q31, confirmed: binary).
 class CombatForces {
 public:
-    // Recounts from the pieces' state after the events played so far.
-    void update(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
-                const std::vector<CombatPlayback::Piece>& pieces);
+    // From a live battle's pieces (combat::TacticalBattle::pieces()), whose unit groups list their stacks.
+    void setup(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces);
+    void count(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces);
+    // From a record played back (a battle the engine fought already): a unit
+    // group counts all its units under its first design's hull, the only one
+    // the record keeps (inferred, a battle shown afterwards).
+    void setup(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+               const std::vector<CombatPlayback::Piece>& atStart);
+    void count(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+               const std::vector<CombatPlayback::Piece>& pieces);
     const std::vector<ForceSide>& sides() const { return sides_; }
+    bool ready() const { return ready_; }
     void reset();
 
 private:
+    struct Hull {
+        uint32_t hull = 0;
+        int highest = 0;
+    };
+    struct Side {
+        game::EmpireId empire;
+        std::vector<Hull> hulls;
+        std::vector<std::string> planets;
+    };
+    void build(const std::map<std::pair<uint32_t, uint32_t>, int>& atStart, const std::map<uint32_t, std::vector<std::string>>& planets);
+    void apply(const game::Rules& r, const std::map<std::pair<uint32_t, uint32_t>, int>& now,
+               const std::map<uint32_t, std::vector<std::string>>& standing);
+    std::vector<Side> rows_;
     std::vector<ForceSide> sides_;
-    std::map<std::pair<uint32_t, std::string>, int> highest_;   // (empire, hull) -> highest count seen
-    std::vector<std::pair<uint32_t, std::string>> order_;        // hull rows in the order they appeared
+    bool ready_ = false;
 };
 
 // ---- Tactical Combat ---------------------------------------------------------------------------
 
-// The Combat Piece Report's Detail lines (spec 06 §1.10.1): Movement
-// (Population for a planet), Shields now/max, Damage (taken against the
-// maximum), Supply, Max Targets, Combat Group ("Group N - Leader", "Group N -
-// Wingman" or None; a drone shows Target instead), Formation (not for drones),
-// and Conditions with the plague level for a planet with plague.
+// The Combat Piece Report's Detail lines (spec 06 §1.10.1, confirmed: binary):
+// Movement "left/max" (Population for a planet), Shields now/max, Damage
+// taken/full for every kind of piece (full as the overkill limit counts it),
+// Supply (now/capacity with "K" thousands above 100000, "Endless", "Never"
+// for planets and satellite groups, "None" for seekers), Max Targets, Combat
+// Group ("Group N - Leader", "Group N - Wingman" or None, fleet groups
+// numbered like the others; a drone group shows Target, its drone target,
+// instead), Formation (not for drone groups: the formation of the group it
+// leads, kept after it stops leading), and Conditions "Plague N" for a planet
+// with plague.
 std::vector<std::pair<std::string, std::string>> pieceReportLines(const game::Rules& r, const game::GameState& s,
                                                                   const std::vector<game::combat::TacticalPiece>& pieces, int piece);
 
-// Drop Troops (spec 06 §1.10.2): the adjacent colony of another empire that
-// the piece's troops land on, at once, without a target click. The first such
-// planet the battle accepts; `problem` says why none does (no adjacent
-// colony, or another empire's troops already fight there).
-struct DropTarget {
-    int planet = -1;
-    std::string problem;
-};
-DropTarget dropTroopsTarget(const game::combat::TacticalBattle& b, int piece);
+// Drop Troops (spec 06 §1.10.2, spec 04 §11, confirmed: binary): no target
+// click. The troops land on the colony of another empire adjacent to the
+// ship that comes last in piece order, whatever the treaty; the engine picks
+// it by that rule and refuses with the reason (no colony adjacent, another
+// empire's troops already there, no troops aboard). dropTroopsColony() names
+// that colony (-1: none); the order carries it in `target` for the record,
+// and the engine does not rely on it.
+int dropTroopsColony(const game::combat::TacticalBattle& b, int piece);
+game::combat::TacticalOrder dropTroopsOrder(const game::combat::TacticalBattle& b, int piece);
 
 // ---- Combat Simulator (spec 06 §1.10.4) ---------------------------------------------------------
 
@@ -97,5 +126,29 @@ std::vector<SimulatorRow> simulatorRows(const game::Rules& r, const game::GameSt
 bool simulatorAdd(const game::Rules& r, const game::GameState& s, game::combat::SimulatorSetup& setup, game::combat::SimulatorItem item);
 // Removes a row's items (a fleet left without members is simply not formed).
 void simulatorRemove(game::combat::SimulatorSetup& setup, const SimulatorRow& row);
+
+// Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
+// real Fleet Transfer and Cargo Transfer windows; ours work on a sandbox built
+// from the setup (game::combat::buildSimulation), never on the real game. For
+// Fleets For Plr the window plays the chosen side: its ships and its fleets,
+// with formation and strategy from its copied list. For Change Cargo every
+// vehicle and colony of the simulator is made the chosen side's in the
+// sandbox, so that the one window lists them all (inferred: units in cargo
+// have no owner). The sandbox state is simultaneous, so commands take effect
+// at once. `anchor*`: what the window opens on.
+struct SimulatorSandbox {
+    game::combat::Simulation sim;
+    int sideIndex = 0;
+    game::EmpireId side;
+    bool cargo = false;
+    game::VehicleId anchorVehicle;
+    game::ObjectId anchorPlanet;
+};
+SimulatorSandbox simulatorSandbox(const game::Rules& r, const game::GameState& real, const game::combat::SimulatorSetup& setup, int side, bool cargo);
+// What the window changed in `sandbox` comes back into the setup: the side's
+// fleets (members, name, formation, strategy; unit groups are in none), or
+// every ship's and colony's units (in real designs; population moved onto a
+// ship is not kept, inferred).
+void simulatorTakeBack(const game::Rules& r, const SimulatorSandbox& made, const game::GameState& sandbox, game::combat::SimulatorSetup& setup);
 
 } // namespace opense4::client::classic

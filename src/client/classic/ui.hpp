@@ -346,7 +346,8 @@ private:
 // "Location", "Turn" and "Empires" (label blue) with their values (white) at
 // the layout's places, the empires' large flags 28 px apart from the
 // layout's x (6 of them on a frame narrower than 1024, else 10), the flag of
-// the empire whose phase it is (`phase`, or -1) framed in yellow.
+// the empire whose phase it is (`phase`, or -1) framed in yellow. An empty
+// style leaves its place empty (a simulation's side draws its box there).
 void combatTitleStrip(UiContext& ui, const Dialog& d, std::string_view location, std::string_view turn, const std::vector<std::string>& flagStyles,
                       int phase);
 

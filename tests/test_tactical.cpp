@@ -105,6 +105,57 @@ void playByHand(TacticalBattle& b, EmpireId me) {
 
 // ---- One set of rules, two kinds of control ------------------------------------------------------
 
+TEST_CASE("tactical: a battle shown phase by phase in the Strategic Combat window is the strategic battle") {
+    // Spec 06 §1.10.5, §7 Q30: the window fights the battle step by step as
+    // it shows it; the result must not depend on that.
+    int ground = 0;
+    for (int variant = 0; variant < 20; ++variant)
+        for (uint64_t seed = 1; seed <= 2; ++seed) {
+            CAPTURE(variant);
+            CAPTURE(seed);
+            auto [start, where] = battleScenario(variant, seed);
+            TacticalBattle::Setup setup{where, std::nullopt, {}};
+            setup.stepped = true;
+            TacticalBattle b(combatRules(), start, setup);
+            REQUIRE(b.started());
+            CHECK(b.record().events.empty());   // set up, before combat turn 1
+            CHECK_FALSE(b.finished());
+            int phases = 0, lastRound = b.round();
+            while (b.step()) {
+                ++phases;
+                CHECK(b.round() >= lastRound);   // never backwards
+                lastRound = b.round();
+                REQUIRE(phases < 2000);
+            }
+            CHECK_FALSE(b.step());   // done: nothing more
+            ground += static_cast<int>(b.record().grounds.size());
+            b.finish();
+            CHECK(stateChecksum(b.state()) == stateChecksum(strategic(start, where)));
+        }
+    CHECK(ground > 0);   // invasions were among them
+}
+
+TEST_CASE("tactical: a cloaked colony decloaks for a battle shown step by step and cloaks again when it finishes") {
+    // Spec 01 §6.9, spec 04 §2: whether the battle is stepped, shown or fought at once.
+    Arena ar = makeArena(13);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.cloaked = true;
+    const Location there = locationOf(s.galaxy, hw.planet);
+    spawn(s, frigate(s, ar.a, "Raider", 2, {"Test Laser", "CT Big Armor"}), there);
+    spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), there);
+    TacticalBattle::Setup setup{there, std::nullopt, {}};
+    setup.stepped = true;
+    TacticalBattle b(combatRules(), s, setup);
+    REQUIRE(b.started());
+    CHECK_FALSE(b.state().colony(hw.planet)->cloaked);   // decloaked for the battle
+    while (b.step()) CHECK_FALSE(b.state().colony(hw.planet)->cloaked);
+    b.finish();
+    REQUIRE(b.state().colony(hw.planet));
+    CHECK(b.state().colony(hw.planet)->cloaked);
+    CHECK(stateChecksum(b.state()) == stateChecksum(strategic(s, there)));
+}
+
 TEST_CASE("tactical: a battle stepped with the strategies' orders is the strategic battle") {
     // For each battle: (1) strategic resolution; (2) the player sides played by
     // the strategies (AutoPhase), which records their orders; (3) those orders
@@ -584,7 +635,7 @@ TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding need
     const EmpireId a = k.ar.a;
     const int boarder = pieceIndex(b, k.boarder), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
     CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "It has no boarding parties.");
-    CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "It carries no troops.");
+    CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "No colony of another empire is adjacent.");
     // Close on the shielded ship: boarding waits for its shields, ramming only for adjacency.
     for (int round = 0; round < 10 && b.distance(boarder, shielded) > 1 && b.phaseEmpire() == a; ++round) {
         if (b.distance(boarder, shielded) > 1) {
@@ -657,7 +708,7 @@ TEST_CASE("tactical: troops land on an adjacent enemy planet and fight at once")
     for (int round = 0; round < 12 && b.awaitingOrders() && !landed; ++round) {
         REQUIRE(b.phaseEmpire() == ar.a);
         if (b.distance(i, planet) > 1) {
-            CHECK(b.check(order(OK::DropTroops, ar.a, i, planet)) == "The planet must be adjacent.");
+            CHECK(b.check(order(OK::DropTroops, ar.a, i, planet)) == "No colony of another empire is adjacent.");
             TacticalOrder mv = order(OK::Move, ar.a, i);
             mv.x = b.pieces()[static_cast<size_t>(planet)].x + 1;
             mv.y = b.pieces()[static_cast<size_t>(planet)].y + 1;
@@ -842,14 +893,21 @@ TEST_CASE("turn-based tactical: a battle fought in the client applies exactly li
         CHECK(std::any_of(s.empire(e).log.begin(), s.empire(e).log.end(), [](const LogEntry& l) { return l.title.starts_with("Battle at"); }));
 }
 
-TEST_CASE("turn-based tactical: No Tactical Combat and simultaneous games never ask") {
+TEST_CASE("turn-based tactical: with No Tactical Combat a battle stops to be shown, and its answer fights it as if nothing stopped") {
     {
         TurnBasedDuel d, silent;
         d.ar.s.options.noTacticalCombat = true;
         silent.ar.s.options.noTacticalCombat = true;
         const std::vector<BattleAnswer> none;
+        const uint64_t before = stateChecksum(d.ar.s);
         const TurnResult res = d.attack(&none);
-        CHECK_FALSE(res.battle.has_value());
+        REQUIRE(res.battle.has_value());
+        CHECK(res.battle->kind == BattleQuestion::Kind::Show);
+        CHECK(stateChecksum(d.ar.s) != before);   // the Attack Sector question was answered; the move waits
+        CHECK(d.ar.s.combats.empty());
+        // A tactical side named in the answer is ignored: the strategies fight it.
+        const std::vector<BattleAnswer> shown{BattleAnswer{{d.ar.a}, {}}};
+        CHECK_FALSE(applyLive(combatRules(), d.ar.s, d.ar.a, cmd::EnterSector{d.warship, {}, d.to, true}, &shown).battle.has_value());
         silent.attack(nullptr);
         REQUIRE(d.ar.s.combats.size() == 1);
         CHECK(stateChecksum(d.ar.s) == stateChecksum(silent.ar.s));
@@ -860,6 +918,67 @@ TEST_CASE("turn-based tactical: No Tactical Combat and simultaneous games never 
     CHECK(tacticalOffered(s));
     s.options.noTacticalCombat = true;
     CHECK_FALSE(tacticalOffered(s));
+}
+
+TEST_CASE("turn-based: the colony owner's end-of-turn ground combat stops to be shown, and goes on the same") {
+    // Spec 06 §1.10.6, spec 05 §8 step 17: a fight with a human side is shown
+    // after a notice, and that empire's end-of-turn processing waits for it.
+    auto make = [](bool humanDefender) {
+        Arena ar = makeArena(23, 3);
+        GameState& s = ar.s;
+        s.options.simultaneous = false;
+        for (Empire& e : s.empires) e.kind = PlayerKind::Computer;
+        s.empire(ar.a).kind = PlayerKind::Human;
+        Colony& hw = homeworld(s, humanDefender ? ar.a : ar.b);
+        const EmpireId invader = humanDefender ? ar.b : ar.c;
+        hw.population = {{hw.owner, 100}};
+        hw.cargo.units = {{design(s, hw.owner, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"}), 40}};
+        hw.landedTroops = {{design(s, invader, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"}), 40}};
+        hw.invader = invader;
+        hw.militia = -1;
+        resumeTurnBased(combatRules(), s);
+        REQUIRE(activePlayer(s) == ar.a);
+        return ar;
+    };
+    for (const bool humanDefender : {true, false}) {
+        CAPTURE(humanDefender);
+        Arena shown = make(humanDefender), silent = make(humanDefender);
+        if (!humanDefender) {
+            // Two computer empires: never shown.
+            const std::vector<BattleAnswer> none;
+            CHECK_FALSE(endPlayerTurn(combatRules(), shown.s, shown.a, {}, &none).battle.has_value());
+            endPlayerTurn(combatRules(), silent.s, silent.a);
+            CHECK(stateChecksum(shown.s) == stateChecksum(silent.s));
+            continue;
+        }
+        std::vector<BattleAnswer> answers;
+        size_t grounds = 0;
+        for (;;) {
+            const uint64_t before = stateChecksum(shown.s);
+            const TurnResult res = endPlayerTurn(combatRules(), shown.s, shown.a, {}, &answers);
+            if (!res.battle) break;
+            CHECK(stateChecksum(shown.s) == before);
+            if (res.battle->kind == BattleQuestion::Kind::Ground) {
+                ++grounds;
+                REQUIRE(res.battle->ground.has_value());
+                const GroundCombat& g = *res.battle->ground;
+                CHECK(g.attacker == shown.b);
+                CHECK(g.defender == shown.a);
+                CHECK(g.rounds >= 1);
+                CHECK(g.perRound.size() == static_cast<size_t>(g.rounds));
+                CHECK(res.battle->humans == std::vector<EmpireId>{shown.a});
+                REQUIRE(res.battle->state);
+            }
+            answers.push_back(BattleAnswer{});
+            REQUIRE(answers.size() < 20);
+        }
+        CHECK(grounds == 1);
+        endPlayerTurn(combatRules(), silent.s, silent.a);
+        CHECK(stateChecksum(shown.s) == stateChecksum(silent.s));
+        // The log entries are there either way.
+        const auto& log = shown.s.empire(shown.a).log;
+        CHECK(std::any_of(log.begin(), log.end(), [](const LogEntry& l) { return l.title.starts_with("Ground combat at "); }));
+    }
 }
 
 TEST_CASE("turn-based tactical: a battle between computer players asks nobody") {
@@ -1122,15 +1241,67 @@ TEST_CASE("client session: simultaneous games show their battles when the Settin
         o.location = to;
         REQUIRE(session.issue(cmd::SetOrders{warship, {}, {o}}).ok);
         CHECK(session.takeStrategicBattles().empty());   // orders only: nothing is fought yet
+        const uint32_t turn = session.state().turn;
         session.endTurn();
+        // With the flag on, the turn stops at the battle, set up and not yet fought.
+        CHECK(session.battleQuestion().has_value() == show);
+        if (show) {
+            CHECK(session.battleQuestion()->kind == BattleQuestion::Kind::Show);
+            CHECK(session.state().turn == turn);
+            CHECK(session.issue(cmd::SetOrders{warship, {}, {}}).error == "A battle waits to be fought first.");
+            while (session.battleQuestion()) session.answerBattle(BattleAnswer{});
+        }
+        CHECK(session.state().turn == turn + 1);
         REQUIRE_FALSE(session.state().combats.empty());
-        const std::vector<size_t> shown = session.takeStrategicBattles();
-        CHECK(shown.empty() != show);
-        for (size_t i : shown) CHECK(i < session.state().combats.size());
+        CHECK(session.takeStrategicBattles().empty());   // shown as they happened, or not at all
     }
 }
 
-TEST_CASE("client session: a strategic answer, and a game without tactical combat, fight at once") {
+TEST_CASE("simultaneous turn: stopping at the battles shown gives the same turn as not stopping") {
+    auto make = [] {
+        Arena ar = makeArena(31);
+        GameState& s = ar.s;
+        s.options.simultaneous = true;
+        s.empire(ar.a).kind = PlayerKind::Human;
+        s.empire(ar.b).kind = PlayerKind::Computer;
+        const Location to = ar.loc, from{to.system, Sector{to.sector.x - 1, to.sector.y}};
+        const VehicleId warship = spawn(s, frigate(s, ar.a, "Warship", 3, {"Test Laser", "CT Big Armor"}), from);
+        spawn(s, frigate(s, ar.b, "Picket", 1, {"Test Laser"}), to);
+        for (Empire& e : s.empires) std::fill(e.knowledge.explored.begin(), e.knowledge.explored.end(), 1);
+        Order o;
+        o.kind = OrderKind::MoveTo;
+        o.location = to;
+        return std::pair{std::move(ar), EmpireOrders{EmpireId{0u}, 0, {cmd::SetOrders{warship, {}, {o}}}}};
+    };
+    ruleset::Ruleset rs = buildCombatRuleset();
+    rs.settings.set("Simultaneous Games Show Strategic Combat", "TRUE");
+    const Rules rules{std::move(rs)};
+    auto [shown, orders] = make();
+    orders.turn = shown.s.turn;
+    std::vector<BattleAnswer> answers;
+    TurnOptions options;
+    options.battles = &answers;
+    const std::vector<EmpireOrders> list{orders};
+    size_t stops = 0;
+    for (;;) {
+        const uint64_t before = stateChecksum(shown.s);
+        const TurnResult res = processTurn(rules, shown.s, list, options);
+        if (!res.battle) break;
+        CHECK(stateChecksum(shown.s) == before);   // the turn waits, unchanged
+        CHECK(res.battle->kind == BattleQuestion::Kind::Show);
+        CHECK(res.battle->index == stops);
+        ++stops;
+        answers.push_back(BattleAnswer{});
+        REQUIRE(stops < 20);
+    }
+    CHECK(stops >= 1);
+    auto [silent, silentOrders] = make();
+    silentOrders.turn = silent.s.turn;
+    processTurn(rules, silent.s, std::vector<EmpireOrders>{silentOrders});
+    CHECK(stateChecksum(shown.s) == stateChecksum(silent.s));
+}
+
+TEST_CASE("client session: a strategic answer, and a game without tactical combat, fight the battle shown") {
     for (const bool offered : {true, false}) {
         CAPTURE(offered);
         Arena ar = makeArena(29);
@@ -1150,11 +1321,10 @@ TEST_CASE("client session: a strategic answer, and a game without tactical comba
         o.location = to;
         session.issue(cmd::SetOrders{warship, {}, {o}});
         session.answer(true);
-        CHECK(session.battleQuestion().has_value() == offered);
-        if (offered) session.answerBattle(BattleAnswer{});
+        REQUIRE(session.battleQuestion().has_value());   // shown in either form (spec 06 §1.10.5)
+        session.answerBattle(BattleAnswer{});
         CHECK_FALSE(session.battleQuestion().has_value());
         CHECK(session.state().combats.size() == 1);
-        CHECK(session.takeStrategicBattles() == std::vector<size_t>{0});   // watched in the Strategic Combat window
-        CHECK(session.takeStrategicBattles().empty());
+        CHECK(session.takeStrategicBattles().empty());   // a local game shows its battles as they happen
     }
 }

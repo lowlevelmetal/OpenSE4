@@ -150,10 +150,12 @@ questions are what the observation sessions still have to settle.
    them raised new, smaller questions where the spec is silent; each names the engine's
    choice, marked "(inferred)" in the code:
    - spec 03 §19 Q72–Q76 (fleet orders and slots);
-   - spec 04 §19.3 Q78–Q86 (combat planning details);
+   - spec 04 §19.4 Q87–Q89 (Drop Troops details);
    - spec 05 Q50–Q51;
    - spec 06 §7 Q24–Q55 (window and main-window details), and the one part of Q18 (where
-     the hull code appears in ship names) that needs observation.
+     the hull code appears in ship names) that needs observation; Q56, Q60–Q64 and
+     Q70–Q72 (list windows, fonts, pointers, the 800×600 layout, the Log); Q73–Q82 (the
+     battle flow and the combat windows).
 
    Settle them from the executable where it can, and implement from the spec text, not
    from any listing.

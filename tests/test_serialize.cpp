@@ -120,6 +120,8 @@ TEST_CASE("serialize: every struct field is serialized") {
     CHECK_ALL_FIELDS(CombatEvent);
     CHECK_ALL_FIELDS(CombatPiece);
     CHECK_ALL_FIELDS(CombatRecord);
+    CHECK_ALL_FIELDS(GroundCombat);
+    CHECK_ALL_FIELDS(GroundRound);
     CHECK_ALL_FIELDS(PendingEvent);
     CHECK_ALL_FIELDS(MoodEvent);
     CHECK_ALL_FIELDS(VictoryConditions);
@@ -233,6 +235,24 @@ GameState busyGame() {
     battle.pieces.push_back({CombatPiece::Kind::Planet, EmpireId{1u}, {}, ObjectId{3u}, {}, "Planet", 5, -5});
     battle.events.push_back({CombatEvent::Kind::Fire, 2, 0, 1, 1, -1, 25, 7});
     battle.summary = {"A skirmish.", "Nobody won."};
+    {
+        GroundCombat g;
+        g.round = 2;
+        g.planetPiece = 1;
+        g.event = 0;
+        g.planet = ObjectId{3u};
+        g.attacker = EmpireId{0u};
+        g.defender = EmpireId{1u};
+        g.attackers = {{DesignId{0u}, 4}};
+        g.defenders = {{DesignId{0u}, 2}};
+        g.militia = 3;
+        g.rounds = 2;
+        g.perRound = {GroundRound{{3}, {1}, 2}, GroundRound{{3}, {0}, 0}};
+        g.attackersLeft = {{DesignId{0u}, 3}};
+        g.defendersLeft = {{DesignId{0u}, 0}};
+        g.captured = true;
+        battle.grounds.push_back(g);
+    }
     s.combats.push_back(battle);
     s.pendingEvents.push_back({3, EmpireId{1u}, ObjectId{2u}, {}, SystemId{1u}, s.turn + 5});
     addLog(s, EmpireId{0u}, LogCategory::Combat, "Battle", "Details", Location{SystemId{2u}, Sector{1, 2}}, "Battle1");

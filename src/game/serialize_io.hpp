@@ -456,9 +456,14 @@ void io(Ar& ar, CombatPiece& p) {
 }
 
 template <class Ar>
+void io(Ar& ar, GroundRound& g) {
+    fields(ar, g.attackers, g.defenders, g.militia);
+}
+
+template <class Ar>
 void io(Ar& ar, GroundCombat& g) {
-    fields(ar, g.round, g.planetPiece, g.troopShip, g.planet, g.attacker, g.defender, g.population, g.facilities, g.attackers,
-           g.defenders, g.attackersLeft, g.defendersLeft, g.militia, g.militiaLeft, g.rounds, g.captured);
+    fields(ar, g.round, g.planetPiece, g.troopShip, g.event, g.planet, g.attacker, g.defender, g.population, g.facilities, g.attackers,
+           g.defenders, g.attackersLeft, g.defendersLeft, g.militia, g.militiaLeft, g.rounds, g.captured, g.perRound);
 }
 
 template <class Ar>

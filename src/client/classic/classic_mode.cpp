@@ -738,25 +738,32 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
 }
 
 void ClassicMode::drawBattleQuestion(UiContext& ui) {
-    // One question per battle, answered at the machine, for every human empire
-    // in it, hostile or not (spec 04 §3 step 1, spec 06 §1.10.5). When the
-    // player whose turn it is is a computer empire, a notice naming the system
-    // and the empires comes first.
+    // A battle (or ground fight) that stops the engine to be shown (spec 04
+    // §3 step 1, spec 06 §1.10.5, §1.10.6). One question per battle, answered
+    // at the machine, for every human empire in it, hostile or not; with "No
+    // Tactical Combat" on, or in a simultaneous game, the Strategic Combat
+    // window with Begin and Close instead. When the player whose turn it is is
+    // a computer empire, a notice naming the system and the empires comes
+    // first. The colony owner's end-of-turn ground combat always has its
+    // notice, then the Ground Combat window.
     const game::BattleQuestion& q = *session_->battleQuestion();
     const game::GameState& s = ui.state();
+    const bool ground = q.kind == game::BattleQuestion::Kind::Ground;
     const size_t key = q.index * 100003u + size_t(q.where.system.value) * 1009u + size_t(q.where.sector.x * 13 + q.where.sector.y);
     if (battleChoiceKey_ != key) {
         battleChoiceKey_ = key;
         const game::EmpireId turn = game::activePlayer(s);
-        battleNotice_ = !s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() && s.empire(turn).kind != game::PlayerKind::Human;
+        battleNotice_ = ground || (!s.options.simultaneous && turn.valid() && turn.index() < s.empires.size() &&
+                                   s.empire(turn).kind != game::PlayerKind::Human);
     }
     if (!battleNotice_) {
-        // The question itself is the Strategic Combat window with Strategic and Tactical.
-        const bool open = std::any_of(screens_.begin(), screens_.end(), [](const auto& sc) { return sc.first == ScreenId::StrategicCombat; });
+        // The question itself: the Strategic Combat window, or Ground Combat for a ground fight.
+        const ScreenId id = ground ? ScreenId::GroundCombat : ScreenId::StrategicCombat;
+        const bool open = std::any_of(screens_.begin(), screens_.end(), [&](const auto& sc) { return sc.first == id; });
         if (!open) {
             ScreenArgs args;
-            args.index = kStrategicQuestion;
-            openScreen(ScreenId::StrategicCombat, std::move(args));
+            args.index = ground ? kGroundQuestion : kStrategicQuestion;
+            openScreen(id, std::move(args));
         }
         return;
     }
@@ -772,7 +779,7 @@ void ClassicMode::drawBattleQuestion(UiContext& ui) {
         ImGui::PopFont();
         return;
     }
-    ImGui::TextUnformatted(std::format("Combat in the {} system", system).c_str());
+    ImGui::TextUnformatted(std::format("{} in the {} system", ground ? "Ground combat" : "Combat", system).c_str());
     for (game::EmpireId e : q.participants) {
         if (!e.valid() || e.index() >= s.empires.size()) continue;
         if (Sprite flag = art_->flag(s.empire(e).race.style, false)) {

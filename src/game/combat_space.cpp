@@ -57,7 +57,6 @@ constexpr int64_t kRegenerationCap = 10000;      // organic armor pool, and the 
 constexpr int kShipKillTenths = 10;              // +1.0 for a ship, base or planet
 constexpr int kUnitKillTenths = 1;               // +0.1 for a whole unit group or a seeker
 constexpr int64_t kPlanetSizeRank = 1'000'000;   // planets rank as the largest targets
-constexpr uint8_t kDroneTargets = kTargetShips | kTargetPlanets | kTargetSatellites;
 constexpr int64_t kDangerOwnSquare = 30;         // a hostile piece's own square (spec 04 §16.1)
 
 // Facings (spec 03 §10): 0 up, 1 right, 2 down, 3 left, then the diagonals.
@@ -144,6 +143,7 @@ Weapon Battle::makeWeapon(const DesignEntry& de, size_t entry) const {
     w.targets = parseWeaponTargets(w.comp->weapon.targets);
     w.reloadRate = std::max(1, w.comp->weapon.reloadRate);
     w.reach = weaponReach(r_, de);
+    w.range = weaponMaxRange(r_, de);
     return w;
 }
 
@@ -379,28 +379,6 @@ bool Battle::setup() {
                 defenders_.push_back(e);
                 break;
             }
-    // A drone group's target is the object its first order names, when that
-    // order is an Attack pursuit and the object is a piece here, of whatever
-    // kind (ship, base, planet or unit group); otherwise it is chosen in the
-    // battle (spec 03 §19 Q68, spec 04 §10.7, confirmed: binary). A drone
-    // group's own list holds its orders (a fleet's members hold the fleet's,
-    // spec 03 §19 Q65).
-    for (Piece& p : pieces_) {
-        if (p.vtype != VehicleType::Drone || p.kind != Kind::UnitGroup || p.unit.orders.empty()) continue;
-        const Order& o = p.unit.orders.front();
-        if (o.kind != OrderKind::Attack) continue;
-        for (size_t j = 0; j < pieces_.size(); ++j) {
-            const Piece& q = pieces_[j];
-            const bool named = (o.vehicle.valid() && q.source == o.vehicle) ||
-                               (o.object.valid() && q.kind == Kind::Planet && q.object == o.object);
-            if (!named) continue;
-            p.droneTarget = static_cast<int>(j);
-            p.droneTargetOwner = q.owner;
-            p.droneOrderTarget = true;
-            break;
-        }
-    }
-
     // Starting values: shields full (none without supplies), reloads ready, full movement (confirmed: binary).
     for (size_t i = 0; i < pieces_.size(); ++i) {
         Piece& p = pieces_[i];
@@ -417,6 +395,12 @@ bool Battle::setup() {
     for (Piece& p : built) addPiece(std::move(p));
     std::fill(occ_.begin(), occ_.end(), -1);
     for (size_t i = 0; i < pieces_.size(); ++i) occupy(static_cast<int>(i));
+    // Every drone group in space gets its drone target, in piece order: the
+    // piece its first order pursues, else one chosen as spec 04 §10.7 says
+    // (spec 03 §19 Q68, confirmed: binary).
+    overkill_.assign(pieces_.size(), OverkillTotal{});
+    for (size_t i = 0; i < pieces_.size(); ++i)
+        if (pieces_[i].kind == Kind::UnitGroup && pieces_[i].vtype == VehicleType::Drone) chooseDroneTarget(static_cast<int>(i));
 
     // The phase order is drawn once: defenders first, then attackers, each in a random order (confirmed: binary).
     std::vector<EmpireId> att;
@@ -1373,38 +1357,57 @@ bool Battle::reaches(int i, const Weapon& w, int t) const {
     return weaponDamage(r_, w.de, dist(i, t)) > 0;
 }
 
+// The overkill totals of a piece (spec 04 §16), kept from one choice to the next.
+OverkillTotal& Battle::totalOf(int t) {
+    if (overkill_.size() < pieces_.size()) overkill_.resize(pieces_.size());
+    return overkill_[static_cast<size_t>(t)];
+}
+
 // How the computer gives out targets (spec 04 §16, §19.2 Q60, confirmed:
 // binary). The candidates are sorted by the strategy; the main target is the
 // first. Only the first B candidates take weapons, B the target budget. They
 // are walked in as many rounds as there are of them (at least two); in each
 // round every candidate in turn takes each weapon, in design order, that is
 // intact and ready, has no target yet, has the candidate's category in its
-// target set and a damage type that can affect it (and, when firing, reaches
-// it), until its overkill total reaches the limit. A push, pull or teleport
-// weapon closes its candidate for the rest of the round (history 1.73). Every
-// weapon takes part, point-defense and warheads included. A fighter group
-// gives all its weapons one target: the first candidate its first ready
-// weapon can hit and affect (else the next ready weapon's). Warheads are
-// checked against the first total, as direct fire is (inferred, spec 04
-// §19.3 Q79).
-Targeting Battle::chooseTargets(int i, bool firing, OverkillTotals* carried, uint8_t only) {
+// target set and a damage type that can affect it (and, when firing, whose
+// range reaches it), until its overkill total reaches the limit. A push,
+// pull or teleport weapon closes its candidate for the rest of the round
+// (history 1.73). Every weapon takes part, point-defense and warheads
+// included; only seeking weapons are checked against, and add to, the
+// seeking total (spec 04 §19.3 Q79). A fighter group gives all its weapons
+// one target: the first candidate its first ready weapon can hit and affect
+// (else the next ready weapon's).
+//
+// The firing choice measures a weapon's range as the strategies do: the
+// largest range from 1 to 20 at which it does damage with its mount, so it
+// never reaches past 20 squares (spec 04 §16 step 1, §19.3 Q84, confirmed:
+// binary). Every piece carries its two totals between choices: the seeking
+// totals of all pieces go back to 0 at the start of every choice, and a
+// piece's first total when an ordinary choice takes it as a candidate; the
+// choice of a drone target is the only one that is not ordinary (spec 04 §16
+// "Overkill limit", §19.3 Q80, confirmed: binary).
+Targeting Battle::chooseTargets(int i, bool firing, bool droneChoice) {
     Targeting out;
     out.arms = arms(i);
+    if (overkill_.size() < pieces_.size()) overkill_.resize(pieces_.size());
+    for (OverkillTotal& t : overkill_) t.seeking = 0;
     int range = -1;
     if (firing) {
-        // Only candidates within the piece's longest ready range count: each
-        // weapon's whole reach, a mounted one's beyond 20 too (inferred, spec 04 §19.3 Q84).
+        // Only candidates within the largest such range among the piece's ready weapons count.
         range = 0;
         for (const Arm& a : out.arms)
-            if (ready(i, a)) range = std::max(range, weaponOf(i, a).reach);
+            if (ready(i, a)) range = std::max(range, weaponOf(i, a).range);
     }
-    const std::vector<int> candidates = sortedTargets(i, strategyOf(i), range, only);
+    out.candidates = sortedTargets(i, strategyOf(i), range);
+    const std::vector<int>& candidates = out.candidates;
     if (candidates.empty()) return out;
+    if (!droneChoice)
+        for (int c : candidates) overkill_[static_cast<size_t>(c)].all = 0;
     out.main = candidates.front();
     auto fits = [&](const Arm& a, int c) {
         const Weapon& w = weaponOf(i, a);
         if (!(w.targets & maskOf(c)) || !canAffect(w.type, c, i)) return false;
-        return !firing || reaches(i, w, c);
+        return !firing || dist(i, c) <= w.range;
     };
     const Piece& p = pieces_[i];
     if (p.kind == Kind::UnitGroup && p.vtype == VehicleType::Fighter) {
@@ -1422,8 +1425,6 @@ Targeting Battle::chooseTargets(int i, bool firing, OverkillTotals* carried, uin
         return out;
     }
     const size_t budget = std::min(candidates.size(), static_cast<size_t>(std::max(1, p.budget)));
-    OverkillTotals local;
-    OverkillTotals& totals = carried ? *carried : local;
     const size_t rounds = std::max<size_t>(2, budget);
     for (size_t round = 0; round < rounds; ++round) {
         for (size_t k = 0; k < budget; ++k) {
@@ -1432,12 +1433,12 @@ Targeting Battle::chooseTargets(int i, bool firing, OverkillTotals* carried, uin
                 if (a.target >= 0 || !ready(i, a) || !fits(a, c)) continue;
                 const Weapon& w = weaponOf(i, a);
                 const bool seeking = w.kind() == WeaponKind::Seeking;
-                auto& [all, seekers] = totals[c];
-                if (overkill(c, seeking ? seekers : all)) continue;
+                OverkillTotal& total = overkill_[static_cast<size_t>(c)];
+                if (overkill(c, seeking ? total.seeking : total.all)) continue;
                 a.target = c;
                 const int64_t damage = int64_t{weaponDamage(r_, w.de, dist(i, c))} * firedTogether(i, w);
-                all += damage;
-                if (seeking) seekers += damage;
+                total.all += damage;
+                if (seeking) total.seeking += damage;
                 if (w.type == DamageType::PushesTarget || w.type == DamageType::PullsTarget || w.type == DamageType::RandomTargetMovement)
                     break;   // the candidate is closed for the rest of this round
             }
@@ -1446,30 +1447,96 @@ Targeting Battle::chooseTargets(int i, bool firing, OverkillTotals* carried, uin
     return out;
 }
 
-// A drone keeps its target while that is a hostile piece still owned as when
-// it was picked: the target its Attack pursuit named (any kind), or one it
-// picked among ships, planets and satellites. Otherwise it picks a new one as
-// the computer gives out targets, with the overkill totals carried over from
-// the drones that chose before it in this phase (spec 04 §10.7, §16; spec 03
-// §19 Q68). Its target is that of its first weapon given one, else the main
-// target (inferred, spec 04 §19.3 Q80).
-void Battle::updateDroneTarget(int i) {
-    Piece& p = pieces_[i];
-    const int t = p.droneTarget;
-    if (t >= 0 && combatant(t) && pieces_[t].kind != Kind::Seeker && hostileTo(i, t) && pieces_[t].owner == p.droneTargetOwner &&
-        (p.droneOrderTarget || (maskOf(t) & kDroneTargets)))
+// The piece a drone group's first order pursues (the pursuit form of Attack,
+// spec 03 §6.4), when that object is a piece of this battle, of whatever kind
+// (spec 03 §19 Q68). A drone group's own list holds its orders (a fleet's
+// members hold the fleet's, spec 03 §19 Q65).
+int Battle::pursuedPiece(int i) const {
+    const Piece& p = pieces_[i];
+    if (p.unit.orders.empty() || p.unit.orders.front().kind != OrderKind::Attack) return -1;
+    const Order& o = p.unit.orders.front();
+    for (size_t j = 0; j < pieces_.size(); ++j) {
+        const Piece& q = pieces_[j];
+        if (static_cast<int>(j) == i || !combatant(static_cast<int>(j))) continue;
+        if ((o.vehicle.valid() && q.source == o.vehicle) || (o.object.valid() && q.kind == Kind::Planet && q.object == o.object))
+            return static_cast<int>(j);
+    }
+    return -1;
+}
+
+// Which pieces a drone may take as its drone target (spec 04 §10.7, confirmed:
+// binary): never a seeker, fighter group, drone group or neutral obstacle; a
+// drone whose only weapons are point-defense and warheads takes only planets
+// when its design type is Anti-Planet Drone, and only ships, bases and
+// satellite groups when it is Anti-Ship Drone.
+bool Battle::droneMayTake(int i, int t) const {
+    const Piece& b = pieces_[t];
+    if (b.kind == Kind::Seeker || b.kind == Kind::Obstacle) return false;
+    if (b.kind == Kind::UnitGroup && (b.vtype == VehicleType::Fighter || b.vtype == VehicleType::Drone)) return false;
+    const Piece& p = pieces_[i];
+    const bool guns = std::any_of(p.weapons.begin(), p.weapons.end(), [](const Weapon& w) { return w.kind() != WeaponKind::PointDefense; });
+    if (guns || !p.unit.design.valid()) return true;
+    const std::string& type = s_.design(p.unit.design).designType;
+    if (datafile::keysEqual(type, "Anti-Planet Drone")) return b.kind == Kind::Planet;
+    if (datafile::keysEqual(type, "Anti-Ship Drone")) return b.kind == Kind::Vehicle || (b.kind == Kind::UnitGroup && b.vtype == VehicleType::Satellite);
+    return true;
+}
+
+// The warhead damage a drone group adds to its drone target's first total
+// (spec 04 §10.7, confirmed: binary): for each stack, once whatever its size,
+// the largest damage (ranges 1 to 20, with mounts) of each warhead of its
+// design whose damage type harms hulls.
+int64_t Battle::droneWarheadDamage(int i) const {
+    int64_t total = 0;
+    for (const UnitStack& st : pieces_[i].stacks) {
+        if (st.count <= 0 || !st.design.valid()) continue;
+        for (const DesignEntry& e : s_.design(st.design).entries) {
+            const ruleset::Component& c = r_.component(e.component);
+            if (c.weapon.kind == WeaponKind::Warhead && warheadExplodes(parseDamageType(c.weapon.damageType))) total += weaponLargestDamage(r_, e);
+        }
+    }
+    return total;
+}
+
+// A drone group's drone target (spec 04 §10.7, §19.3 Q80, confirmed: binary):
+// the piece its first order pursues, when that is a piece of this battle;
+// otherwise its weapons are given targets as in any choice, except that no
+// first total is cleared, and the target is the first sorted candidate whose
+// first total is still below its limit and which a drone may take, else the
+// first sorted candidate. That target's first total then grows by the
+// group's warhead damage, so drones choosing one after another spread over
+// the targets.
+void Battle::chooseDroneTarget(int i) {
+    if (const int t = pursuedPiece(i); t >= 0) {
+        Piece& p = pieces_[i];
+        p.droneTarget = t;
+        p.droneTargetOwner = pieces_[t].owner;
+        p.droneOrderTarget = true;
         return;
-    const Targeting T = chooseTargets(i, false, &droneTotals_, kDroneTargets);
-    int pick = T.main;
-    for (const Arm& a : T.arms)
-        if (a.target >= 0) {
-            pick = a.target;
+    }
+    const Targeting T = chooseTargets(i, false, true);
+    int pick = -1;
+    for (int c : T.candidates)
+        if (!overkill(c, totalOf(c).all) && droneMayTake(i, c)) {
+            pick = c;
             break;
         }
+    if (pick < 0 && !T.candidates.empty()) pick = T.candidates.front();
     Piece& q = pieces_[i];
     q.droneTarget = pick;
     q.droneOrderTarget = false;
     q.droneTargetOwner = pick >= 0 ? pieces_[pick].owner : EmpireId{};
+    if (pick >= 0) totalOf(pick).all += droneWarheadDamage(i);
+}
+
+// A piece changed owner (a capture, a conversion, a planet taken by troops):
+// every drone group aimed at it chooses its target again, in piece order
+// (spec 04 §10.7, §12, confirmed: binary).
+void Battle::ownerChanged(int t) {
+    for (size_t k = 0; k < pieces_.size(); ++k) {
+        const Piece& d = pieces_[k];
+        if (d.alive && d.kind == Kind::UnitGroup && d.vtype == VehicleType::Drone && d.droneTarget == t) chooseDroneTarget(static_cast<int>(k));
+    }
 }
 
 // ---- Actions --------------------------------------------------------------------------------------------
@@ -1497,12 +1564,8 @@ std::string Battle::label(int i) const {
 
 void Battle::beginPhase(EmpireId e) {
     // The danger map is built once, as the side's movement begins (its drones
-    // move first), and is not updated as pieces move (spec 04 §16.1). The
-    // overkill totals that drones choosing new targets carry over from one to
-    // the next start afresh with the side's phase (spec 04 §16; the span is
-    // inferred, §19.3 Q80).
+    // move first), and is not updated as pieces move (spec 04 §16.1).
     buildDanger(e);
-    droneTotals_.clear();
 }
 
 void Battle::phase(EmpireId e) {
@@ -1582,9 +1645,12 @@ void Battle::act(int i) {
         fire(i);
         return;
     }
-    // Drones pick their own targets, then move by their strategies like any
-    // piece: Ram makes them ram their drone target (spec 04 §10.7, §16.1).
-    if (pieces_[i].kind == Kind::UnitGroup && pieces_[i].vtype == VehicleType::Drone) updateDroneTarget(i);
+    // Drones keep their drone target while it is in the battle and choose
+    // again in their own planning when it has left (spec 04 §10.7); then they
+    // move by their strategies like any piece: Ram makes them ram it (§16.1).
+    if (pieces_[i].kind == Kind::UnitGroup && pieces_[i].vtype == VehicleType::Drone &&
+        (pieces_[i].droneTarget < 0 || !combatant(pieces_[i].droneTarget)))
+        chooseDroneTarget(i);
     move(i);
 }
 
@@ -1651,10 +1717,15 @@ void Battle::move(int i) {
             if (pieces_[m].alive && leaderOf(static_cast<int>(m)) == i && hasPlace(static_cast<int>(m)) && pieces_[m].mp > 0 && !acted_[m] &&
                 !leavesFormation(static_cast<int>(m)))
                 followLeader(static_cast<int>(m), true);
+    // A piece whose strategy in effect is Drop Troops tries a landing after
+    // every move it plans, whether it went for a colony or waited: on whichever
+    // colony of another empire is then adjacent, hostile or not (spec 04 §11,
+    // §16.1, confirmed: binary). A surrounded piece plans no move, so it does
+    // not land (inferred).
+    if (!stuck && mv.mode == MoveStrategy::DropTroops && pieces_[i].alive) dropTroops(i);
     const int t = mv.target;
     if (!stuck && t >= 0 && combatant(t) && dist(i, t) <= 1) {
         switch (mv.mode) {
-            case MoveStrategy::DropTroops: dropTroops(i, t); break;
             case MoveStrategy::BoardEnemyShips: board(i, t); break;
             case MoveStrategy::Ram:
                 if (pieces_[i].mp > 0) ram(i, t);
@@ -2262,6 +2333,7 @@ void Battle::capture(int t, int capturer, bool boarding) {
     refreshStats(t);
     event(Ev::Captured, t, capturer, static_cast<int>(newOwner.value));
     note(std::format("{} {} by {}", pieces_[t].name, boarding ? "captured" : "converted", s_.empire(newOwner).name));
+    ownerChanged(t);
 }
 
 void Battle::convertPlanet(int t, int converter) {
@@ -2276,6 +2348,7 @@ void Battle::convertPlanet(int t, int converter) {
     refreshStats(t);
     event(Ev::Captured, t, converter, static_cast<int>(newOwner.value));
     note(std::format("{} converted by {}", p.name, s_.empire(newOwner).name));
+    ownerChanged(t);
 }
 
 void Battle::pdReact(int mover) {
@@ -2470,6 +2543,8 @@ int Battle::spawnUnit(int carrier, DesignId design, int count) {
     occupy(idx);
     refreshPiece(idx);   // launched units get their full movement at once (history 1.55, 1.71)
     event(Ev::Launch, idx, carrier, count);
+    // A drone group chooses its drone target as it is launched (spec 04 §10.7).
+    if (pieces_[idx].vtype == VehicleType::Drone) chooseDroneTarget(idx);
     return idx;
 }
 
@@ -3209,13 +3284,49 @@ void Battle::ram(int i, int t) {
     if (targetDestroyed && combatant(i)) gainExperience(i, kShipKillTenths);   // a surviving rammer's crew: +1.0 more
 }
 
-void Battle::dropTroops(int i, int t) {
-    // A ship drops every troop unit aboard, of whatever design, for its owner,
-    // onto an adjacent hostile colony not contested by another empire's troops;
-    // the ground combat is fought at once (confirmed: binary).
+// The colony's owner during the battle: whoever owned it at the start, or the
+// empire whose troops took it since. A planet piece converted by Crew
+// Conversion fights for the converter while the colony keeps its owner (§12).
+EmpireId Battle::colonyHolder(const Piece& planet) const { return planet.capturedBy.valid() ? planet.capturedBy : planet.startOwner; }
+
+// The colony a landing takes (spec 04 §11, confirmed: binary): among the
+// colonized planet pieces of other empires adjacent to the ship, the one that
+// comes last in piece order, whatever the treaty; only that one is looked at.
+// "Other" is judged by the colony's owner, so a planet piece converted to the
+// ship's empire is still a landing site for it (inferred, §19.4 Q87).
+int Battle::landingColony(int i) const {
+    const Piece& ship = pieces_[i];
+    int last = -1;
+    for (size_t k = 0; k < pieces_.size(); ++k) {
+        const Piece& q = pieces_[k];
+        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && colonyHolder(q) != ship.owner && dist(i, static_cast<int>(k)) <= 1)
+            last = static_cast<int>(k);
+    }
+    return last;
+}
+
+// Why a landing is refused (spec 04 §11, spec 06 §1.10.2): no colony of
+// another empire adjacent, a third empire's troops already landed there, or
+// no troops aboard (the order of the checks is inferred).
+std::string Battle::landingProblem(int i) const {
+    const int t = landingColony(i);
+    if (t < 0) return "No colony of another empire is adjacent.";
+    if (contestedBy(pieces_[t], pieces_[i].owner)) return "Another empire's troops are already there.";
+    if (!hasTroops(i)) return "It carries no troops.";
+    return {};
+}
+
+void Battle::dropTroops(int i) {
+    // A ship or base drops every troop unit aboard, of whatever design, for its
+    // owner, onto the colony the landing takes; it needs no movement and planet
+    // shields do not stop it. The treaty is not checked, and the ground combat
+    // is fought at once and to its end whatever the treaty (spec 04 §11, §13,
+    // confirmed: binary).
+    if (!landingProblem(i).empty()) return;
+    const int t = landingColony(i);
     Piece& planet = pieces_[t];
-    if (planet.kind != Kind::Planet || !planet.alive || dist(i, t) > 1 || !hostileTo(i, t) || contestedBy(planet, pieces_[i].owner)) return;
     const EmpireId attacker = pieces_[i].owner;
+    const EmpireId holder = colonyHolder(planet);
     const bool invaded = std::any_of(planet.landed.begin(), planet.landed.end(), [](const UnitStack& u) { return u.count > 0; });
     int landed = 0;
     std::vector<UnitStack> dropped;
@@ -3226,7 +3337,7 @@ void Battle::dropTroops(int i, int t) {
         st.count = 0;
     }
     if (landed <= 0) return;
-    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::DropTroops, attacker, i, t});
+    if (logging(i)) logOrder(TacticalOrder{TacticalOrder::Kind::DropTroops, attacker, i});
     std::erase_if(pieces_[i].unit.cargo.units, [](const UnitStack& u) { return u.count <= 0; });
     Piece& pl = pieces_[t];
     std::erase_if(pl.landed, [](const UnitStack& u) { return u.count <= 0; });
@@ -3234,73 +3345,71 @@ void Battle::dropTroops(int i, int t) {
     pl.invader = attacker;
     if (!invaded || pl.militia < 0) pl.militia = militiaCount(cs_, pl.population);
     troopsLanded_[attacker.value] += landed;
+    const uint32_t landing = static_cast<uint32_t>(rec_.events.size());
     event(Ev::Launch, i, t, landed);
     note(std::format("{} landed {} troops on {}", label(i), landed, pl.name));
 
-    detail::GroundFight fight;
-    fight.attacker = attacker;
-    fight.defender = pl.owner;
-    fight.invaders = &pl.landed;
-    fight.cargo = &pl.unit.cargo;
-    fight.population = &pl.population;
-    fight.militia = &pl.militia;
-    for (uint32_t f : pl.facilities) fight.groundDefensePercent += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetChangeGroundDefense);
-    for (const auto& a : s_.galaxy.object(pl.object).abilities)
-        if (parseAbilityKind(a.type) == AbilityKind::PlanetChangeGroundDefense) fight.groundDefensePercent += a.number1();
-    // The record for the Ground Combat window: both sides as the fight begins.
+    // The fight, recorded round by round for the Ground Combat window (spec 06 §1.10.6).
     GroundCombat gc;
     gc.round = static_cast<uint8_t>(std::clamp(round_, 0, 255));
     gc.planetPiece = static_cast<uint32_t>(t);
     gc.troopShip = static_cast<uint32_t>(i);
+    gc.event = landing;
     gc.planet = pl.object;
-    gc.attacker = attacker;
-    gc.defender = pl.owner;
     for (const PopulationGroup& g : pl.population) gc.population += g.millions;
     gc.facilities = pl.facilities;
-    gc.militia = std::max(0, pl.militia);
-    std::vector<size_t> attIndex, defIndex;
-    for (size_t k = 0; k < pl.landed.size(); ++k)
-        if (pl.landed[k].count > 0) {
-            attIndex.push_back(k);
-            gc.attackers.push_back(pl.landed[k]);
-        }
-    for (size_t k = 0; k < pl.unit.cargo.units.size(); ++k)
-        if (pl.unit.cargo.units[k].count > 0) {
-            defIndex.push_back(k);
-            gc.defenders.push_back(pl.unit.cargo.units[k]);
-        }
+    detail::GroundFight fight;
+    fight.attacker = attacker;
+    fight.defender = holder;
+    fight.invaders = &pl.landed;
+    fight.cargo = &pl.unit.cargo;
+    fight.population = &pl.population;
+    fight.militia = &pl.militia;
+    fight.record = &gc;
+    for (uint32_t f : pl.facilities) fight.groundDefensePercent += sumValue1(r_.facilityAbilities(f), AbilityKind::PlanetChangeGroundDefense);
+    for (const auto& a : s_.galaxy.object(pl.object).abilities)
+        if (parseAbilityKind(a.type) == AbilityKind::PlanetChangeGroundDefense) fight.groundDefensePercent += a.number1();
     const detail::GroundOutcome o = detail::fightGround(r_, s_, cs_, fight, rng_);
-    Piece& after = pieces_[t];
-    for (size_t k : attIndex) gc.attackersLeft.push_back(after.landed[k]);
-    for (size_t k : defIndex) gc.defendersLeft.push_back(after.unit.cargo.units[k]);
-    gc.militiaLeft = std::max(0, after.militia);
-    gc.rounds = o.rounds;
-    gc.captured = o.captured;
     rec_.grounds.push_back(std::move(gc));
+    Piece& after = pieces_[t];
     groundReports_.push_back(std::format("Ground combat on {}: {} rounds; invaders lost {} of {} troops, defenders {} units and {} militia{}.",
                                          after.name, o.rounds, o.attackersLost, o.attackersAtStart, o.defendersLost, o.militiaLost,
                                          o.captured ? "; the planet fell" : o.attackersGone ? "; the invasion failed" : ""));
+    // Both empires' combat log entries, shown in a window or not; none in the simulator (spec 04 §13 "Log").
+    if (!simulated()) detail::logGroundCombat(ctx_, after.object, attacker, holder, o);
     if (o.attackersGone) {
         after.landed.clear();
         after.invader = {};
     }
-    if (!o.captured) {
-        afterDamage(t);
-        return;
+    if (o.captured) {
+        // The surviving invaders join its cargo; the colony is the invader's from now on.
+        after.capturedBy = attacker;
+        after.militia = -1;
+        detail::joinUnits(after.unit.cargo.units, after.landed);
+        after.landed.clear();
+        after.invader = {};
     }
-    // The planet's piece changes sides at once; the surviving invaders join its cargo.
-    after.owner = attacker;
-    after.unit.owner = attacker;
-    after.capturedBy = attacker;
-    after.militia = -1;
-    detail::joinUnits(after.unit.cargo.units, after.landed);
-    after.landed.clear();
-    after.invader = {};
-    if (after.isLeader) dissolve(t);
-    planetShields(pieces_[t], false);
+    // Whether or not the planet fell, its piece is reset: it belongs to the
+    // colony's owner after the fight, its targets engaged this combat turn are
+    // cleared, every weapon is ready again, its shields go back to their
+    // maximum, and its offense, defense and target budget are worked out again
+    // (spec 04 §11, confirmed: binary).
+    const EmpireId owner = o.captured ? attacker : holder;
+    const bool changed = after.owner != owner;
+    if (changed && after.isLeader) dissolve(t);
+    Piece& p = pieces_[t];
+    p.owner = owner;
+    p.unit.owner = owner;
+    p.engaged.clear();
+    for (Weapon& w : p.weapons) std::fill(w.reload.begin(), w.reload.end(), 0);
+    for (Weapon& w : p.warheads) std::fill(w.reload.begin(), w.reload.end(), 0);
+    planetShields(p, true);
     refreshStats(t);
-    event(Ev::Captured, t, i, static_cast<int>(attacker.value));
-    note(std::format("{} fell to {} troops", pieces_[t].name, s_.empire(attacker).name));
+    if (o.captured) {
+        event(Ev::Captured, t, i, static_cast<int>(attacker.value));
+        note(std::format("{} fell to {} troops", pieces_[t].name, s_.empire(attacker).name));
+    }
+    if (changed) ownerChanged(t);
 }
 
 // ---- The turn sequence (spec 04 §4) ------------------------------------------------------------------
@@ -3330,7 +3439,7 @@ void Battle::setPlayers(std::vector<EmpireId> players, std::optional<std::vector
     strategic_ = players_.empty();
 }
 
-void Battle::advance() {
+void Battle::advance(bool onePhase) {
     // The counter starts at 1 and the battle ends when it reaches the setting:
     // one turn fewer than `Number Of Space Combat Turns` (confirmed: binary). It
     // also ends as soon as no two empires that still have pieces are hostile.
@@ -3376,6 +3485,7 @@ void Battle::advance() {
         }
         phase(e);
         endPhase();
+        if (onePhase) return;
         if (stage_ != Stage::Between || !autoAll_ || !isPlayer(e)) continue;
         // With Auto on, play pauses after the phase of the last player's empire in each combat turn.
         bool later = false;
@@ -3409,15 +3519,18 @@ void Battle::finish() {
             }
     // Every participant gets a battle report (spec 04 §15, §19.2 Q73); a battle
     // the check started with nobody hostile having pieces there ends at once.
-    // A participant that fought nobody is judged by the same rule (inferred,
-    // spec 04 §19.3 Q86).
+    // The verdict sets the empire's survivors against those of every other
+    // empire in the battle, whatever the treaties: a victory when it has some
+    // and nobody else has any, a defeat when it has none and another has some,
+    // otherwise a stalemate (spec 04 §15 "The verdict", §19.3 Q86, confirmed:
+    // binary).
     std::map<uint32_t, Result> results;
     for (EmpireId e : empires_) {
         const bool mine = hasPieces(e);
-        bool enemy = false;
+        bool others = false;
         for (EmpireId o : empires_)
-            if (o != e && detail::enemies(s_, e, o) && hasPieces(o)) enemy = true;
-        results[e.value] = mine && !enemy ? Result::Win : (!mine && enemy ? Result::Loss : Result::Stalemate);
+            if (o != e && hasPieces(o)) others = true;
+        results[e.value] = mine && !others ? Result::Win : (!mine && others ? Result::Loss : Result::Stalemate);
     }
     for (EmpireId e : empires_) {
         const Result res = results[e.value];
@@ -3742,8 +3855,9 @@ bool humanPresent(const GameState& s, Location where) {
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 // `check`: who runs the battle check after the mines (spec 04 §2).
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
-    // A turn-based game with tactical combat asks the human sides (turn.hpp):
-    // keep the game as the battle begins, in case the answer is missing.
+    // On one machine a battle with a human side stops the call once it is set
+    // up, to be shown (turn.hpp, "Battles shown as they happen"): keep the
+    // game as the battle begins, in case the answer is missing.
     TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
     std::shared_ptr<GameState> before;
     if (ask && ask->next >= ask->answers->size() && humanPresent(ctx.state, where)) before = std::make_shared<GameState>(ctx.state);
@@ -3760,8 +3874,13 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
         for (EmpireId e : battle.empires())
             if (ctx.state.empire(e).alive && ctx.state.empire(e).kind == PlayerKind::Human) humans.push_back(e);
         if (!humans.empty()) {
+            // A turn-based game asks Tactical or Strategic, unless the "No
+            // Tactical Combat" option is on; then, as in a simultaneous game, the
+            // Strategic Combat window shows it (spec 06 §1.10.5, confirmed: binary).
+            const bool choose = tacticalOffered(ctx.state);
             if (ask->next >= ask->answers->size()) {
                 BattleQuestion q;
+                q.kind = choose ? BattleQuestion::Kind::Choose : BattleQuestion::Kind::Show;
                 q.where = where;
                 if (entering) q.entering = std::vector<VehicleId>(entering->begin(), entering->end());
                 q.check = check;
@@ -3774,7 +3893,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
             const BattleAnswer& answer = (*ask->answers)[ask->next++];
             std::vector<EmpireId> players;
             for (EmpireId e : answer.tactical)
-                if (std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
+                if (choose && std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
             battle.setPlayers(std::move(players));
             battle.play(answer.orders);
             battle.finish();

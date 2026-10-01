@@ -206,7 +206,7 @@ std::string vehicleSummary(const UiContext& ui, const game::Vehicle& v) {
     return out;
 }
 
-ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
+ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet, bool cargo) {
     // The image tabs of TabBtns.bmp: 72×30 cells; columns Detail, Comps, Cargo, Ability, Facil, Descr, Race, Tech;
     // rows normal, hover, selected, (unused), disabled.
     struct TabCell {
@@ -221,6 +221,7 @@ ReportTab reportTabs(UiContext& ui, ReportTab current, bool planet) {
     ReportTab chosen = current;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     for (size_t i = 0; i < tabs.size(); ++i) {
+        if (tabs[i].tab == ReportTab::Cargo && !cargo) continue;
         if (i > 0) ImGui::SameLine(0, 0);
         ImGui::PushID(int(i));
         const bool clicked = ImGui::InvisibleButton("tab", ui.size({72, 30}));
@@ -513,8 +514,8 @@ void systemReport(UiContext& ui, game::SystemId sysId) {
     for (const auto& a : sys.abilities) ImGui::BulletText("%s", a.description.empty() ? a.type.c_str() : a.description.c_str());
 }
 
-void objectReport(UiContext& ui, game::ObjectId id) {
-    const game::GameState& s = ui.state();
+void objectReport(UiContext& ui, game::ObjectId id, const game::GameState* state) {
+    const game::GameState& s = state ? *state : ui.state();
     const game::SpaceObject& o = s.galaxy.object(id);
     title(ui, objectName(s, id, ui.session.player()));
     image(ui, ui.art.planetPortrait(ui.rules().data().sectorObjectTypes[o.sectorType].picture), {96, 96});

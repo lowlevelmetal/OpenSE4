@@ -108,20 +108,27 @@ enum class Outcome : uint8_t { Won, Lost, Stalemate };
 
 bool involves(const CombatRecord& rec, EmpireId e) { return std::find(rec.participants.begin(), rec.participants.end(), e) != rec.participants.end(); }
 
+// The battle's verdict for `e`, the one its report gives (spec 04 §15 "The
+// verdict", confirmed: binary): its survivors (pieces it took during the
+// battle counted, seekers left out) against those of every other empire,
+// whatever the treaty; neutral obstacles belong to no empire.
 Outcome outcomeFor(const CombatRecord& rec, EmpireId e) {
     std::vector<uint8_t> gone(rec.pieces.size(), 0);
-    for (const CombatEvent& ev : rec.events)
-        if ((ev.kind == CombatEvent::Kind::Destroyed || ev.kind == CombatEvent::Kind::Captured) && ev.piece < gone.size()) gone[ev.piece] = 1;
+    std::vector<EmpireId> owner(rec.pieces.size());
+    for (size_t i = 0; i < rec.pieces.size(); ++i) owner[i] = rec.pieces[i].owner;
+    for (const CombatEvent& ev : rec.events) {
+        if (ev.piece >= gone.size()) continue;
+        if (ev.kind == CombatEvent::Kind::Destroyed) gone[ev.piece] = 1;
+        else if (ev.kind == CombatEvent::Kind::Captured) owner[ev.piece] = EmpireId{static_cast<uint32_t>(ev.amount)};
+    }
     int ours = 0, ourSurvivors = 0, otherSurvivors = 0;
     for (size_t i = 0; i < rec.pieces.size(); ++i) {
         const CombatPiece& p = rec.pieces[i];
-        if (p.kind == CombatPiece::Kind::Seeker) continue;
-        if (p.owner == e) {
-            ++ours;
-            ourSurvivors += !gone[i];
-        } else if (!gone[i]) {
-            ++otherSurvivors;
-        }
+        if (p.kind == CombatPiece::Kind::Seeker || p.kind == CombatPiece::Kind::Obstacle) continue;
+        if (p.owner == e) ++ours;
+        if (gone[i] || !owner[i].valid()) continue;
+        if (owner[i] == e) ++ourSurvivors;
+        else ++otherSurvivors;
     }
     if (ours > 0 && ourSurvivors > 0 && otherSurvivors == 0) return Outcome::Won;
     if (ours > 0 && ourSurvivors == 0 && otherSurvivors > 0) return Outcome::Lost;

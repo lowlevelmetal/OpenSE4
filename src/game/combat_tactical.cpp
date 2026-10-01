@@ -177,15 +177,12 @@ std::string Battle::check(const TacticalOrder& o) const {
         case OK::Launch:
         case OK::LaunchFighters: return checkLaunch(o);
         case OK::DropTroops: {
+            // The order names no planet: the landing takes the adjacent colony of
+            // another empire that comes last in piece order, whatever the treaty
+            // (spec 04 §11, spec 06 §1.10.2, confirmed: binary); `target` is ignored.
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
-            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships drop troops.";
-            if (!hasTroops(o.piece)) return "It carries no troops.";
-            if (o.target < 0 || static_cast<size_t>(o.target) >= pieces_.size() || !combatant(o.target) ||
-                pieces_[static_cast<size_t>(o.target)].kind != Kind::Planet || !hostileTo(o.piece, o.target))
-                return "Troops land only on enemy planets.";
-            if (dist(o.piece, o.target) > 1) return "The planet must be adjacent.";
-            if (contestedBy(pieces_[static_cast<size_t>(o.target)], o.empire)) return "Another empire's troops are fighting there already.";
-            return {};
+            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships and bases drop troops.";
+            return landingProblem(o.piece);
         }
         case OK::Ram: {
             if (std::string e = checkPiece(o, true); !e.empty()) return e;
@@ -349,7 +346,7 @@ void Battle::execute(const TacticalOrder& o) {
         }
         case OK::Launch:
         case OK::LaunchFighters: launchOrder(o); return;
-        case OK::DropTroops: dropTroops(o.piece, o.target); return;
+        case OK::DropTroops: dropTroops(o.piece); return;
         case OK::Ram: ram(o.piece, o.target); return;
         case OK::Capture: board(o.piece, o.target); return;
         case OK::SetLeader: setGroup(o.piece, o.group, true, o.formation); return;
@@ -468,9 +465,17 @@ TacticalBattle::TacticalBattle(const Rules& r, GameState state, Setup setup)
     started_ = battle_->setup();
     if (started_) {
         battle_->setPlayers(setup_.players, setup_.release);
-        battle_->advance();
+        // A stepped battle waits before combat turn 1 (Setup::stepped).
+        if (!setup_.stepped || !setup_.players.empty()) battle_->advance();
     }
     refresh();
+}
+
+bool TacticalBattle::step() {
+    if (!started_ || applied_ || battle_->stage() != detail::Battle::Stage::Between) return false;
+    battle_->advance(true);
+    refresh();
+    return battle_->stage() != detail::Battle::Stage::Finished;
 }
 
 TacticalBattle::~TacticalBattle() = default;
@@ -562,6 +567,10 @@ void TacticalBattle::finish() {
 }
 
 void TacticalBattle::refresh() {
+    // A former leader still shows the formation it led (spec 06 §1.10.1).
+    std::vector<int> led;
+    led.reserve(views_.size());
+    for (const TacticalPiece& v : views_) led.push_back(v.formation);
     views_.clear();
     if (!started_) return;
     const std::vector<detail::Piece>& pieces = battle_->pieces();
@@ -594,10 +603,13 @@ void TacticalBattle::refresh() {
         v.seekTarget = p.seekTarget;
         v.launcher = p.launcher;
         v.carrier = p.carrier;
+        v.formation = p.isLeader && p.formation >= 0 ? p.formation : k < led.size() ? led[k] : -1;
         if (p.kind == CombatPiece::Kind::Seeker) {
             v.count = p.members;
             v.hitPoints = battle_->hitPoints(i);
+            v.fullHitPoints = p.hp;
             v.movement = v.movementMax = p.speed;
+            if (p.seekWeapon.comp) v.seekComponent = static_cast<int>(p.seekWeapon.de.component);
             views_.push_back(std::move(v));
             continue;
         }
@@ -641,6 +653,30 @@ void TacticalBattle::refresh() {
             v.boardingAttack = detail::componentSum(rules_, *state_, p.unit, AbilityKind::BoardingAttack);
             v.troops = battle_->hasTroops(i);
         }
+        switch (p.kind) {
+            case CombatPiece::Kind::Vehicle: {
+                const Design& d = state_->design(p.unit.design);
+                v.fullHitPoints = detail::designStructure(rules_, d);
+                v.intact.resize(d.entries.size(), 0);
+                for (size_t e = 0; e < d.entries.size(); ++e) v.intact[e] = entryIntact(rules_, *state_, p.unit, e) ? 1 : 0;
+                break;
+            }
+            case CombatPiece::Kind::UnitGroup: v.fullHitPoints = v.hitPoints + p.pool; break;
+            case CombatPiece::Kind::Planet: {
+                v.fullHitPoints = p.hpStart;
+                for (const PopulationGroup& g : p.population) v.population += g.millions;
+                v.plague = p.plague;
+                break;
+            }
+            default: break;
+        }
+        if (p.kind == CombatPiece::Kind::Vehicle || (p.kind == CombatPiece::Kind::UnitGroup && p.vtype != ruleset::VehicleType::Satellite)) {
+            v.supplyCapacity = vehicleSupplyCapacity(rules_, *state_, p.unit);
+            v.unlimitedSupply = detail::unlimitedSupply(rules_, *state_, p.unit);
+        }
+        if (p.kind == CombatPiece::Kind::UnitGroup && p.vtype == ruleset::VehicleType::Drone && p.droneTarget >= 0 &&
+            static_cast<size_t>(p.droneTarget) < pieces.size())
+            v.droneTarget = p.droneTarget;
         views_.push_back(std::move(v));
     }
 }

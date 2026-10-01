@@ -85,13 +85,17 @@ std::unique_ptr<Screen> makeTacticalLaunch(const ScreenArgs& args);
 std::unique_ptr<Screen> makeCombatPieceReport(const ScreenArgs& args);
 
 // strategic_combat.cpp: the Strategic Combat window and the Ground Combat
-// window. Strategic Combat shows GameState::combats[index]; with index -1 the
-// session's fight without player sides (a simulation, or a game battle
-// answered Strategic); with kStrategicQuestion the session's battle question,
-// with Strategic and Tactical buttons. Ground Combat shows ground combat `sub`
-// of that battle (index -1 and the session's tactical fight: its record; no
-// battle given: the last one with a ground combat).
+// window. Strategic Combat shows GameState::combats[index] (a battle the host
+// of a network or PBEM game fought, played back); with index -1 the session's
+// fight without player sides (a simulation, or a game battle the strategies
+// fight while it is shown); with kStrategicQuestion the session's battle
+// question: Strategic and Tactical buttons when it asks, else Begin and
+// Close. Ground Combat shows ground combat `sub` of that battle (index -1 and
+// the session's tactical fight: its record; no battle given: the last one
+// with a ground combat), or with kGroundQuestion the colony owner's
+// end-of-turn fight the session's question holds.
 inline constexpr int kStrategicQuestion = -2;
+inline constexpr int kGroundQuestion = -3;
 std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args);
 
@@ -101,6 +105,22 @@ std::unique_ptr<Screen> makeCombatSimulator(const ScreenArgs& args);
 // A sample simulated battle for automation: the player's warships against
 // copies of them, the player driving the first side. False when the player has none.
 bool startDemoSimulation(UiContext& ui, bool tactical);
+// Fleets For Plr and Change Cargo (spec 06 §1.10.4, confirmed: binary) open the
+// Fleet Transfer and Cargo Transfer windows with ScreenArgs::text
+// kSimulatorWindow: those windows then work on a sandbox built from the
+// simulator's setup, never on the real game, and the simulator takes back
+// what was changed there when they close. drawInSimulatorSandbox() runs a
+// window's drawing with a UiContext over that sandbox (false, drawing
+// nothing, when there is none); simulatorSandboxClosed() tells the simulator
+// the window has gone.
+inline constexpr const char* kSimulatorWindow = "simulator";
+bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>& draw);
+void simulatorSandboxClosed();
+// A tactical simulation is being fought: Designs closes, and the Tactical
+// Combat window opens it again with the simulator afterwards (spec 06 §1.10.4).
+bool tacticalSimulationRunning(const UiContext& ui);
+// Set when Designs closed for one, so that it opens again afterwards.
+bool& designsClosedForSimulation();
 
 // settings_screen.cpp: the per-computer Options window and OpenSE4's Settings.
 std::unique_ptr<Screen> makeOptions(const ScreenArgs& args);

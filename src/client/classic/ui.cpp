@@ -266,7 +266,7 @@ void combatTitleStrip(UiContext& ui, const Dialog& d, std::string_view location,
     const size_t room = frameW() < 1024.0f ? 6 : 10;
     for (size_t i = 0; i < flagStyles.size() && i < room; ++i) {
         const Vec2 at{t.flags + 28.0f * float(i), 7};
-        if (const Sprite flag = ui.art.flag(flagStyles[i], true))
+        if (const Sprite flag = flagStyles[i].empty() ? Sprite{} : ui.art.flag(flagStyles[i], true))
             dl->AddImage(ImTextureRef(static_cast<ImTextureID>(flag.tex.value)), d.at(at), d.at(at + Vec2{26, 18}), {flag.uv.min.x, flag.uv.min.y},
                          {flag.uv.max.x, flag.uv.max.y});
         if (int(i) == phase) dl->AddRect(d.at(at - Vec2{1, 0}), d.at(at + Vec2{27, 19}), IM_COL32(255, 255, 0, 255));

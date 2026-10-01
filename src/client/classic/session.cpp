@@ -147,6 +147,7 @@ game::CommandResult ClassicSession::issueCommand(game::Command c) {
         // While a battle waits for its answer the order is under way; a refusal shows up as a notice.
         return issued_;
     }
+    if (call_ != Call::None) return game::CommandResult::fail("A battle waits to be fought first.");
     game::CommandResult r = game::apply(*rules_, state_, player_, c);
     if (r.ok) {
         record(std::move(c));
@@ -183,7 +184,7 @@ std::vector<size_t> ClassicSession::takeStrategicBattles() {
 }
 
 void ClassicSession::queueTurnBattles() {
-    if (turnBased() || !rules_->settingFlag("Simultaneous Games Show Strategic Combat", false)) return;
+    if (turnBased() || !game::simultaneousBattlesShown(*rules_)) return;
     for (size_t i = 0; i < state_.combats.size(); ++i) {
         const auto& who = state_.combats[i].participants;
         if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.emplace_back(player_, i);
@@ -199,10 +200,9 @@ void ClassicSession::takeResult(const game::TurnResult& result) {
 void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
 
 // Network and PBEM games (the host's own player included, whose session is a
-// network client too) never ask: their battles are strategic (docs/MULTIPLAYER.md).
-bool ClassicSession::offersTactical() const {
-    return kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem && game::tacticalOffered(state_);
-}
+// network client too) never stop: their host fights every battle at once
+// (docs/MULTIPLAYER.md).
+bool ClassicSession::showsBattles() const { return kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat; }
 
 void ClassicSession::beginCall(Call call, std::optional<game::Command> command) {
     call_ = call;
@@ -211,26 +211,30 @@ void ClassicSession::beginCall(Call call, std::optional<game::Command> command) 
     callTurn_ = state_.turn;
     answers_.clear();
     fought_.clear();
-    answeredStrategic_.clear();
-    answeredTactical_.clear();
     battle_.reset();
     runCall();
 }
 
 void ClassicSession::runCall() {
-    const std::vector<game::BattleAnswer>* answers = offersTactical() ? &answers_ : nullptr;
+    const std::vector<game::BattleAnswer>* answers = showsBattles() ? &answers_ : nullptr;
     game::TurnResult res;
     switch (call_) {
         case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;
         case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, {}, answers); break;
         case Call::Resume: res = game::resumeTurnBased(*rules_, state_, {}, answers); break;
+        case Call::Process: {
+            game::TurnOptions options;
+            options.battles = answers;
+            res = game::processTurn(*rules_, state_, callOrders_, options);
+            break;
+        }
         case Call::None: return;
     }
     ++revision_;
     if (res.battle) {
-        // The call stopped before a battle with human sides; the game is as it was.
+        // The call stopped at a battle (or ground fight) to show; the game is as it was.
         battle_ = std::move(res.battle);
-        log::info("A battle at system {} ({}, {}) asks {} human side(s) for Tactical or Strategic", battle_->where.system.value,
+        log::info("A battle at system {} ({}, {}) stops the turn to be shown ({} human side(s))", battle_->where.system.value,
                   battle_->where.sector.x, battle_->where.sector.y, battle_->humans.size());
         return;
     }
@@ -248,28 +252,14 @@ void ClassicSession::runCall() {
     fought_.clear();
     const bool answered = !answers_.empty();
     answers_.clear();
-    // Battles to watch (spec 06 §1.6): those the player's order started, and
-    // those the player answered Strategic; never one fought in the window.
-    auto listed = [](const std::vector<game::Location>& list, game::Location at) { return std::find(list.begin(), list.end(), at) != list.end(); };
-    // Turn-based on one machine without tactical combat, every battle with a
-    // piece of a human player is shown (spec 06 §1.10.5); here after the call,
-    // not as it starts (the engine does not stop for them).
-    const bool everyHumanBattle = (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) && turnBased() && state_.options.noTacticalCombat;
-    for (size_t i = std::min(callBattles_, state_.combats.size()); i < state_.combats.size(); ++i) {
-        const game::CombatRecord& rec = state_.combats[i];
-        const bool human = std::any_of(rec.participants.begin(), rec.participants.end(), [&](game::EmpireId e) {
-            return e.valid() && e.index() < state_.empires.size() && state_.empire(e).kind == game::PlayerKind::Human;
-        });
-        if (everyHumanBattle && human) {
-            strategic_.emplace_back(player_, i);
-            continue;
+    // A PBEM game never stops: the battles the player's order started are
+    // shown afterwards (spec 06 §1.10.5, "different machines"). Local and
+    // hotseat games showed theirs as they happened.
+    if (kind_ == SessionKind::Pbem && call == Call::Issue)
+        for (size_t i = std::min(callBattles_, state_.combats.size()); i < state_.combats.size(); ++i) {
+            const auto& who = state_.combats[i].participants;
+            if (std::find(who.begin(), who.end(), player_) != who.end()) strategic_.emplace_back(player_, i);
         }
-        if (std::find(rec.participants.begin(), rec.participants.end(), player_) == rec.participants.end()) continue;
-        if (listed(answeredTactical_, rec.location)) continue;
-        if (call == Call::Issue || listed(answeredStrategic_, rec.location)) strategic_.emplace_back(player_, i);
-    }
-    answeredStrategic_.clear();
-    answeredTactical_.clear();
     auto nextHuman = [&] {
         // The session belongs to the human whose turn it is (hotseat: the next one).
         if (const game::EmpireId e = game::activePlayer(state_); e.valid() && state_.empire(e).kind == game::PlayerKind::Human) player_ = e;
@@ -302,19 +292,28 @@ void ClassicSession::runCall() {
             takeResult(res);
             if (state_.turn != callTurn_) autosave();
             break;
+        case Call::Process:
+            // A simultaneous turn: the new turn begins for the first human.
+            writePlayerRecords(res.records);
+            strategic_.clear();
+            takeResult(res);
+            if (kind_ == SessionKind::Hotseat)
+                for (const game::Empire& e : state_.empires)
+                    if (e.alive && e.kind == game::PlayerKind::Human) {
+                        setPlayer(e.id);
+                        break;
+                    }
+            callOrders_.clear();
+            autosave();
+            beginTurn();
+            break;
         case Call::None: break;
     }
     callCommand_.reset();
 }
 
-void ClassicSession::answerBattle(game::BattleAnswer answer, bool watched) {
+void ClassicSession::answerBattle(game::BattleAnswer answer) {
     if (!battle_ || call_ == Call::None) return;
-    // What the local player chose, to show a strategic battle when the call is
-    // done; a battle already watched in a window is not shown again.
-    if (std::find(battle_->humans.begin(), battle_->humans.end(), player_) != battle_->humans.end()) {
-        const bool tactical = std::find(answer.tactical.begin(), answer.tactical.end(), player_) != answer.tactical.end();
-        (tactical || watched ? answeredTactical_ : answeredStrategic_).push_back(battle_->where);
-    }
     answers_.push_back(std::move(answer));
     battle_.reset();
     runCall();
@@ -329,12 +328,12 @@ void ClassicSession::endTactical() {
     // Phases left are played by the strategies, as a script that runs out does.
     fight->battle->finish();
     fought_.push_back(fight->battle->record());
-    // Fought by hand, or by the strategies while the Strategic Combat window watched it.
-    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()}, true);
+    // Fought by hand, or by the strategies while the Strategic Combat window showed it.
+    answerBattle(game::BattleAnswer{fight->players, fight->battle->script()});
 }
 
 void ClassicSession::endTurn() {
-    if (waiting_) return;
+    if (waiting_ || call_ != Call::None) return;
     if (kind_ == SessionKind::Pbem) {
         // The host processes the turn: write the orders file for it and wait.
         if (!pbem_ || (turnBased() && !myTurn())) return;
@@ -359,8 +358,7 @@ void ClassicSession::endTurn() {
     }
     if (turnBased()) {
         // The player's end-of-turn processing; the computer players' turns;
-        // then the next human's turn starts (after any battles that ask).
-        if (call_ != Call::None) return;
+        // then the next human's turn starts (after any battles shown).
         beginCall(Call::EndTurn);
         return;
     }
@@ -380,29 +378,16 @@ void ClassicSession::endTurn() {
             }
     }
     // Every human's orders are already applied to this state; an empty list
-    // marks them as submitted so the computer does not play for them.
-    std::vector<game::EmpireOrders> submitted;
+    // marks them as submitted so the computer does not play for them. The
+    // turn stops at each battle the Settings show (game::TurnOptions::battles).
+    callOrders_.clear();
     for (const game::Empire& e : state_.empires)
-        if (e.alive && e.kind == game::PlayerKind::Human) submitted.push_back({e.id, state_.turn, {}});
-    // Kept for the movement log replay (docs/spec/06 §7 Q51).
+        if (e.alive && e.kind == game::PlayerKind::Human) callOrders_.push_back({e.id, state_.turn, {}});
+    // Kept for the movement log replay (docs/spec/06 §7 Q51): played again
+    // without stops, the turn comes out as it does with the battles shown.
     turnStart_ = std::make_shared<const game::GameState>(state_);
-    turnStartOrders_ = submitted;
-    const game::TurnResult result = game::processTurn(*rules_, state_, submitted);
-    writePlayerRecords(result.records);
-    strategic_.clear();
-    notices_.clear();
-    for (const auto& [empire, text] : result.rejected)
-        if (empire == player_) notices_.push_back(text);
-    if (kind_ == SessionKind::Hotseat) {
-        for (const game::Empire& e : state_.empires)
-            if (e.alive && e.kind == game::PlayerKind::Human) {
-                setPlayer(e.id);
-                break;
-            }
-    }
-    autosave();
-    queueTurnBattles();
-    beginTurn();
+    turnStartOrders_ = callOrders_;
+    beginCall(Call::Process);
 }
 
 std::optional<std::filesystem::path> ClassicSession::autosave() {
@@ -485,6 +470,7 @@ void ClassicSession::replaceState(game::GameState s) {
     call_ = Call::None;
     battle_.reset();
     answers_.clear();
+    callOrders_.clear();
     tactical_.reset();
     if (turnBased() && kind_ != SessionKind::NetworkClient && kind_ != SessionKind::Pbem) resumeTurnBased();
     beginTurn();

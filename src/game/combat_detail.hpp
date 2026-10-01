@@ -210,6 +210,11 @@ struct GroundFight {
     const std::vector<PopulationGroup>* population = nullptr;
     int* militia = nullptr;                               // the colony's militia pool (-1: raise it now)
     int64_t groundDefensePercent = 0;                     // Planet - Change Ground Defense
+    // The Ground Combat window's record (spec 06 §1.10.6), when wanted: the
+    // sides, both sides' stacks as the fight begins, the counts after every
+    // round, the militia raised and left, the rounds and how it ended. The
+    // caller fills in where and when.
+    GroundCombat* record = nullptr;
 };
 struct GroundOutcome {
     int rounds = 0;
@@ -229,6 +234,11 @@ void joinUnits(std::vector<UnitStack>& into, std::span<const UnitStack> units);
 void endInvasion(Colony& c, bool joinCargo);
 // Culture Ground Combat + (Physical Strength − 100).
 int groundModifier(const Rules& r, const Empire& e);
+// The combat log entries after a ground combat (spec 04 §13 "Log", confirmed:
+// binary), shown in a window or not, outside the combat simulator: the
+// invader and the colony's owner each get one, titled with the system, naming
+// the planet and the other empire, and ending with the outcome.
+void logGroundCombat(TurnContext& ctx, ObjectId planet, EmpireId attacker, EmpireId defender, const GroundOutcome& o);
 
 // ---- Mines (spec 04 §10.6) -------------------------------------------------------------------------
 

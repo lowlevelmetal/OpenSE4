@@ -182,8 +182,13 @@ float CombatMapPainter::pieceExtent(uint32_t i) const { return i < playback_.pie
 ImVec2 CombatMapPainter::piecePos(const CombatView& v, uint32_t i) const {
     const CombatPlayback::Piece& p = playback_.pieces()[i];
     float x = float(p.x), y = float(p.y);
-    if (const game::CombatEvent* e = playback_.animating(); e && e->piece == i && (e->kind == Kind::Move || e->kind == Kind::Seeker) && p.onMap) {
-        const float t = smooth(playback_.fraction());
+    const game::CombatEvent* e = playback_.animating();
+    const AnimationFrame* f = playback_.frame();
+    if (e && f && e->piece == i && (e->kind == Kind::Move || e->kind == Kind::Seeker) && p.onMap) {
+        // A slide is (step + 1) of its frames along; a jump stands on the new square; a turn on the old one.
+        float t = 0.0f;
+        if (f->part == AnimationFrame::Part::Slide) t = float(f->step + 1) / float(std::max(1, f->steps));
+        else if (f->part == AnimationFrame::Part::Jump) t = 1.0f;
         x += (float(e->x) - x) * t;
         y += (float(e->y) - y) * t;
     }
@@ -193,9 +198,17 @@ ImVec2 CombatMapPainter::piecePos(const CombatView& v, uint32_t i) const {
 
 float CombatMapPainter::pieceHeading(uint32_t i) const {
     const CombatPlayback::Piece& p = playback_.pieces()[i];
-    if (const game::CombatEvent* e = playback_.animating(); e && e->piece == i && e->kind == Kind::Move && (e->x != p.x || e->y != p.y))
-        return std::atan2(float(e->x - p.x), float(-(e->y - p.y)));
-    return p.heading;
+    const game::CombatEvent* e = playback_.animating();
+    const AnimationFrame* f = playback_.frame();
+    if (!e || !f || e->piece != i || e->kind != Kind::Move || (e->x == p.x && e->y == p.y)) return p.heading;
+    const float to = std::atan2(float(e->x - p.x), float(-(e->y - p.y)));
+    if (f->part != AnimationFrame::Part::Turn) return to;
+    // Turning: 45 degrees a frame toward the new facing, the shorter way round.
+    constexpr float kPi = std::numbers::pi_v<float>;
+    float d = std::fmod(to - p.heading, 2.0f * kPi);
+    if (d > kPi) d -= 2.0f * kPi;
+    if (d < -kPi) d += 2.0f * kPi;
+    return p.heading + d * float(f->step + 1) / float(std::max(1, f->steps));
 }
 
 std::optional<uint32_t> CombatMapPainter::pieces(ImDrawList* dl, const CombatView& v, bool hover, ImVec2 mouse) const {
@@ -255,7 +268,8 @@ std::optional<uint32_t> CombatMapPainter::pieces(ImDrawList* dl, const CombatVie
             if (!hovered || pieceExtent(*hovered) > pieceExtent(i)) hovered = i;
         }
     }
-    if (anim) event(dl, v, *anim, playback_.fraction());
+    if (anim)
+        if (const AnimationFrame* f = playback_.frame()) event(dl, v, *anim, *f);
     return hovered;
 }
 
@@ -282,7 +296,10 @@ std::optional<uint32_t> CombatMapPainter::squares(ImDrawList* dl, const CombatVi
     return hovered;
 }
 
-void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, float t) const {
+void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::CombatEvent& e, const AnimationFrame& f) const {
+    using Part = AnimationFrame::Part;
+    // How far along its part the frame is (0..1), and the animation frame of a hit.
+    const float t = float(f.step + 1) / float(std::max(1, f.steps));
     const auto& pieces = playback_.pieces();
     if (!playback_.validPiece(e.piece)) return;
     const ImVec2 from = piecePos(v, e.piece);
@@ -306,6 +323,7 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             const ruleset::Weapon* w = e.component < comps.size() ? &comps[e.component].weapon : nullptr;
             const std::string type = w ? w->displayType : std::string();
             const int index = w ? toInt(w->display) : 0;
+            if (f.part == Part::BeamErase) break;
             if (type == "Beam") {
                 // Beams and torpedoes are 1-based: cell = Weapon Display - 1, 0 = no picture (§5.2).
                 // Drawn opaque with black keyed, never faded (§5.1).
@@ -315,7 +333,7 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             } else {
                 const Sprite shot = type == "Seeker" ? raceCell(ui_.art, styleOf(pieces[e.piece].owner), "Main.bmp", 40 + 20 * std::clamp(index, 0, 2), 0, 20, 20)
                                                      : index > 0 ? ui_.art.cell("Pictures/Combat/Torps.bmp", index - 1, 20, 20) : Sprite{};
-                const float k = smooth(t);
+                const float k = f.part == Part::Torpedo ? t : smooth(t);
                 const ImVec2 p{from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k};
                 const float sz = v.cell * 0.6f;
                 if (shot) drawSpriteRotated(dl, shot, p, sz, sz, std::atan2(to.x - from.x, -(to.y - from.y)));
@@ -324,10 +342,10 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             break;
         }
         case Kind::Hit: {
-            if (!hasTarget) break;
+            if (!hasTarget || f.part != Part::Explosion) break;   // wiped, then the pause after the hit
             if (!playback_.followsFire(playback_.cursor())) dl->AddLine(from, to, shooter, ui_.px(1.5f));
             const int row = e.amount <= 5 ? 1 : e.amount <= 20 ? 2 : e.amount <= 60 ? 3 : 4;
-            const int frame = std::min(7, int(t * 8.0f));
+            const int frame = std::clamp(f.step, 0, 7);
             const float sz = v.cell * 1.2f;
             if (Sprite boom = ui_.art.cell("Pictures/Combat/Explosions.bmp", row * 8 + frame, 36, 36))
                 drawSprite(dl, boom, {to.x - sz * 0.5f, to.y - sz * 0.5f}, {to.x + sz * 0.5f, to.y + sz * 0.5f});
@@ -341,7 +359,8 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             label({to.x + v.cell * 0.4f, to.y - v.cell * (0.6f + 0.3f * t)}, IM_COL32(190, 195, 210, 230), "miss");
             break;
         case Kind::Destroyed: {
-            const int frame = std::min(7, int(t * 8.0f));
+            if (f.part != Part::Explosion) break;
+            const int frame = std::clamp(f.step, 0, 7);
             Sprite boom = raceCell(ui_.art, styleOf(pieces[e.piece].owner), "BigExplosion.bmp", frame * 72, 0, 72, 72);
             if (!boom) boom = ui_.art.cell("Pictures/Combat/BigExplosions.bmp", frame, 72, 72);
             const float sz = v.cell * 2.2f;
@@ -362,6 +381,87 @@ void CombatMapPainter::event(ImDrawList* dl, const CombatView& v, const game::Co
             break;
         }
     }
+}
+
+// ---- Combat simulator sides -------------------------------------------------------------------------------
+
+namespace {
+
+struct SimulationSides {
+    const game::GameState* sandbox = nullptr;
+    std::vector<game::EmpireId> sides;
+};
+
+SimulationSides& simulationSides() {
+    static SimulationSides s;
+    return s;
+}
+
+} // namespace
+
+void setSimulationSides(const game::GameState* sandbox, std::vector<game::EmpireId> sides) {
+    simulationSides() = SimulationSides{sandbox, std::move(sides)};
+}
+
+int simulationSide(const game::GameState& state, game::EmpireId e) {
+    const SimulationSides& sim = simulationSides();
+    if (sim.sandbox != &state || !e.valid()) return 0;
+    for (size_t k = 0; k < sim.sides.size(); ++k)
+        if (sim.sides[k] == e) return int(k) + 1;
+    return 0;
+}
+
+ImU32 sideBoxColor(int side) {
+    // The standard colours of those names (inferred: the values of the named colours).
+    static constexpr std::array<ImU32, 10> kColors{
+        IM_COL32(255, 0, 0, 255),   IM_COL32(0, 0, 255, 255),     IM_COL32(0, 128, 0, 255),   IM_COL32(255, 255, 0, 255),
+        IM_COL32(128, 0, 128, 255), IM_COL32(255, 255, 255, 255), IM_COL32(0, 255, 255, 255), IM_COL32(0, 255, 0, 255),
+        IM_COL32(128, 0, 0, 255),   IM_COL32(128, 128, 0, 255)};
+    return side >= 1 && side <= int(kColors.size()) ? kColors[size_t(side - 1)] : IM_COL32(128, 128, 128, 255);
+}
+
+ImU32 sideNumberColor(int side) {
+    const bool dark = side == 1 || side == 2 || side == 3 || side == 5 || side == 9 || side == 10;
+    return dark ? IM_COL32_WHITE : IM_COL32_BLACK;
+}
+
+void drawSideBox(UiContext& ui, ImDrawList* dl, ImVec2 min, ImVec2 max, int side) {
+    dl->AddRectFilled(min, max, sideBoxColor(side));
+    dl->AddRect(min, max, IM_COL32(0, 0, 0, 255));
+    const std::string number = std::to_string(side);
+    ImFont* font = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
+    const float size = std::min(max.y - min.y - 2.0f, std::max(ui.px(11), 8.0f));
+    const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, number.c_str());
+    dl->AddText(font, size, {(min.x + max.x - ts.x) * 0.5f, (min.y + max.y - ts.y) * 0.5f}, sideNumberColor(side), number.c_str());
+}
+
+void sideBox(UiContext& ui, int side, Vec2 size) {
+    const ImVec2 a = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ui.size(size));
+    drawSideBox(ui, ImGui::GetWindowDrawList(), a, {a.x + ui.px(size.x), a.y + ui.px(size.y)}, side);
+}
+
+bool ownerMark(UiContext& ui, const game::GameState& s, game::EmpireId e, Vec2 size, bool small) {
+    if (const int side = simulationSide(s, e); side > 0) {
+        sideBox(ui, side, size);
+        return true;
+    }
+    if (!e.valid() || e.index() >= s.empires.size()) return false;
+    if (Sprite flag = ui.art.flag(s.empire(e).race.style, !small)) {
+        image(ui, flag, size);
+        return true;
+    }
+    return false;
+}
+
+CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves) {
+    CombatPace pace;
+    pace.fast = fast;
+    pace.animateMoves = animateMoves;
+    const auto& comps = r.data().components;
+    pace.beams.resize(comps.size(), 0);
+    for (size_t k = 0; k < comps.size(); ++k) pace.beams[k] = comps[k].weapon.displayType == "Beam" ? 1 : 0;
+    return pace;
 }
 
 void CombatMapPainter::sounds(size_t from, size_t to) const {

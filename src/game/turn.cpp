@@ -126,10 +126,40 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     if (living(s, e)) std::erase_if(s.empire(e).log, [&](const LogEntry& l) { return l.turn < s.turn; });
 }
 
+namespace {
+
+TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options,
+                            TurnContext::Battles* battles);
+
+} // namespace
+
+bool simultaneousBattlesShown(const Rules& r) { return r.settingFlag("Simultaneous Games Show Strategic Combat", false); }
+
 TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options) {
     if (s.gameOver) return {};
     if (!s.options.simultaneous) return detail::playTurnBasedTurn(r, s, orders, options);
+    // On one machine, with the Settings flag on, each battle with a human side
+    // stops the turn to be shown (turn.hpp): the turn is played again with the
+    // answers so far, up to the next battle (spec 04 §2, spec 06 §1.10.5).
+    if (!options.battles || !simultaneousBattlesShown(r)) return simultaneousTurn(r, s, orders, options, nullptr);
+    GameState before = s;
+    TurnContext::Battles battles{options.battles, 0};
+    try {
+        return simultaneousTurn(r, s, orders, options, &battles);
+    } catch (detail::BattleQuestionRaised& raised) {
+        s = std::move(before);
+        TurnResult out;
+        out.battle = std::move(raised.question);
+        return out;
+    }
+}
+
+namespace {
+
+TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const EmpireOrders> orders, const TurnOptions& options,
+                            TurnContext::Battles* battles) {
     TurnContext ctx{r, s, {}, {}, {}};
+    ctx.battles = battles;
     ctx.movementDay = options.movementDay;
     // Mood events raised after an empire's happiness update last turn (spec 02 §4).
     ctx.moodEvents = std::move(s.pendingMood);
@@ -259,5 +289,7 @@ TurnResult processTurn(const Rules& r, GameState& s, std::span<const EmpireOrder
 
     return TurnResult{std::move(ctx.rejected), {}, {}, std::move(ctx.records)};
 }
+
+} // namespace
 
 } // namespace opense4::game

@@ -1983,9 +1983,9 @@ answered from the executable. The engine was brought in line with the answers th
 ### 19.3 Questions from implementing §19.2
 
 Each was an engine choice marked "(inferred)" in the code, where the answers of §19.2
-left a detail open. On 2026-10-01 all of them were answered from the executable. Where
-the engine differs, the answer says so; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those
-rows.
+left a detail open. On 2026-10-01 all of them were answered from the executable, and the
+engine was brought in line with the answers the same day (the questions it raised are
+§19.4).
 
 78. **A surrounded piece's targets.** A piece found surrounded makes no plan, and its
     fire-first test measures from square (0, 0) (§16.1). Are its weapons given their
@@ -2028,13 +2028,9 @@ rows.
     in between keep adding to it. A drone target is chosen at set-up for every drone
     group in space, at each launch, when the drone's target has left the battle (in the
     drone's own planning) and when the target changes owner.
-    The engine differs: it uses the first weapon's target (else the main target), so
-    it neither skips candidates already at their limit nor applies the Anti-Planet and
-    Anti-Ship rule; it does not add the drone's warhead damage to its target; and it
-    clears the totals at each phase of the drones' side instead of as above. Its
-    candidates (ships, bases, planets and satellite groups) are the original's. It must
-    take the drone target as above, keep each piece's two totals between choices and
-    clear them only as above.
+    The engine follows this since 2026-10-01 (`Battle::chooseDroneTarget`,
+    `chooseTargets`): every piece keeps its two totals between choices, cleared only as
+    above, and a drone target's first total grows by the group's warhead damage.
 81. **Ram's approach square.** "The first found on ties" (§16.1): in what order are the
     boxes scanned, and is the rammer's own square free? The engine scans each box column
     by column from the left, each column from the top, like the other scans, and treats
@@ -2072,10 +2068,9 @@ rows.
     to that range, as the engine does. The firing choice takes candidates within the
     largest such range among the piece's ready weapons, and gives each weapon only
     candidates within its own such range, so it never reaches past 20 (confirmed:
-    binary; §16 step 1). The engine differs in the firing choice: it must use the same
-    capped range there instead of each weapon's whole reach. (Fire by hand is not
-    limited this way: a weapon fires whenever it does damage at the distance, spec 03
-    §19 Q42.)
+    binary; §16 step 1). The engine follows this since 2026-10-01: the firing choice
+    uses the same capped range. (Fire by hand is not limited this way: a weapon fires
+    whenever it does damage at the distance, spec 03 §19 Q42.)
 85. **The strategy for planets.** §3 step 8 has a planet use "the strategy its empire
     chose for planets". Where is that choice made, and what is it by default? The engine
     has no such setting: a planet uses its empire's first strategy, and in the combat
@@ -2095,5 +2090,24 @@ rows.
     stalemate (also when nobody survives). So in a minefield-only battle the moving
     empire gets a victory when it is alone in the sector, and a stalemate when an empire
     it is not hostile to also had pieces there (confirmed: binary; §15 "The verdict").
-    The engine differs: it counts only hostile empires' survivors; it must count every
-    other empire's.
+    The engine follows this since 2026-10-01 (`Battle::finish`).
+
+### 19.4 Questions from implementing §19.3
+
+On 2026-10-01 the engine was brought in line with the answers of §19.3 (Q80, Q84, Q86)
+and with the Drop Troops rules of §11, §13 and §16.1 (spec 06 §7 Q37). These details
+were left open; each is an engine choice marked "(inferred)" in the code.
+
+87. **Landing on a converted planet.** A planet piece converted by Crew Conversion fights
+    for the converter while the colony keeps its owner (§12). Is "a colonized planet piece
+    of another empire" (§11) judged by the piece's owner or by the colony's? The engine
+    judges by the colony's owner (the empire that held it at the battle's start, or that
+    took it with troops since), so the converter's ships may still land there, and that
+    owner is the defender of the ground combat.
+88. **The order of a landing's refusals.** Spec 06 §1.10.2 lists three reasons for a
+    refused landing (no colony adjacent, another empire's troops already there, no troops
+    aboard). In what order are they tested, so which message does a ship that fails
+    several get? The engine tests them in that order.
+89. **A surrounded carrier.** A piece found surrounded makes no plan (§16.1). Does a
+    computer carrier with Drop Troops in effect still try its landing then? The engine
+    does not: the landing follows a planned move only.
