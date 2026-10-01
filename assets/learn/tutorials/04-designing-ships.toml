@@ -1,0 +1,153 @@
+# OpenSE4's own lesson (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Designing ships"
+summary = "Look at your designs, create a new warship in the designer and order it built."
+minutes = 15
+
+[setup]
+seed = 404
+computer_players = 2
+quadrant_size = "small"
+events = "none"
+
+[[step]]
+title = "Your own ships"
+text = """
+Every ship you build follows a **design**: a hull filled with components. You start with a few
+ready-made designs, and you make new ones as your technology grows. In this lesson you design a
+small warship.
+"""
+highlight = ["lesson:panel"]
+manual = "ship-design"
+
+[[step]]
+title = "The Designs window"
+text = """
+Open the **Designs** window with its command button or `F3`.
+"""
+highlight = ["command:designs"]
+done = { window = "designs" }
+manual = "ship-design#the-designs-window"
+
+[[step]]
+title = "Your designs"
+text = """
+The list shows your ship designs: a scout, a colony ship, an escort and a defense base. Click one
+to see its numbers on the right: cost, size, structure, movement, shields, weapons, cargo and
+supply, and its components.
+
+The tabs on the right switch to unit designs and to the enemy designs you have seen. Press
+**Next**.
+"""
+highlight = ["designs:list"]
+manual = "ship-design#the-designs-window"
+
+[[step]]
+title = "A new design"
+text = """
+Press **Create** to open the designer with an empty design.
+"""
+highlight = ["designs:create"]
+done = { window = "create-design" }
+manual = "ship-design#the-create-design-window"
+
+[[step]]
+title = "Choose a hull"
+text = """
+Pick a hull with **Size**. The hull sets the class of the vehicle and how many kT of components
+fit in it. A larger hull holds more, but costs more and needs more crew. For a first warship,
+take one of the smaller ship hulls. Press **Next**.
+"""
+highlight = ["create-design:hull"]
+manual = "ship-design#hulls-and-components"
+
+[[step]]
+title = "Add components"
+text = """
+Click components in the **Available** list to add them; click one on the design to remove it.
+Right-click any component for its report. A warship needs:
+
+- vehicle control: a **bridge**, **life support** and **crew quarters** (the warnings box tells you how many of each the hull needs);
+- **engines**, to move;
+- **weapons**;
+- **armor**, which is destroyed before anything else when the ship is hit;
+- shields and supply storage, if there is room.
+
+Press **Next** when the design is full.
+"""
+highlight = ["create-design:components", "create-design:on-design"]
+manual = "ship-design#design-rules"
+
+[[step]]
+title = "Check the rules"
+text = """
+The warnings box lists every rule the design breaks: too many kT, a missing bridge, too few
+crew quarters, too many engines and so on. Fix each one. When the box says the design meets
+every rule, it can be created. Press **Next**.
+"""
+highlight = ["create-design:warnings"]
+manual = "ship-design#design-rules"
+
+[[step]]
+title = "Name it"
+text = """
+Give the design a name, or press **Suggest** for the next name from your race's list. Names must
+be unique in the whole game. Press **Next**.
+"""
+highlight = ["create-design:name"]
+manual = "ship-design#the-create-design-window"
+
+[[step]]
+title = "Create it"
+text = """
+Press **Create Design**.
+"""
+highlight = ["create-design:save"]
+done = { command = "CreateDesign" }
+manual = "ship-design#the-create-design-window"
+
+[[step]]
+title = "Managing designs"
+text = """
+Your new design is in the list now. A few things to know:
+
+- a design that has never been built can be changed with **Edit**;
+- **Copy** starts a new design from an old one;
+- **Upgrade** makes a new design with the newest version of every component, after you have
+  researched better ones.
+
+Close the Designs window, then press **Next**.
+"""
+highlight = ["designs:list"]
+manual = "ship-design#prototypes-editing-and-upgrading"
+
+[[step]]
+title = "Build it"
+text = """
+Ships are built at a colony with a **space yard**: your homeworld has one. Select your homeworld
+(the colony arrows at the top right select your colonies) and press the **Build Queue** order or
+`Q`.
+"""
+highlight = ["cycle:colony", "order:build-queue"]
+done = { window = "set-queue" }
+manual = "construction#who-can-build"
+
+[[step]]
+title = "Queue your warship"
+text = """
+On the **Ships** tab, click your new design to add it to the queue. The list shows how many
+turns it takes to build.
+"""
+highlight = ["set-queue:available"]
+done = { command = "QueueAdd" }
+manual = "construction#the-set-construction-queue-window"
+
+[[step]]
+title = "Well done"
+text = """
+Your warship is on its way. Before you build a whole fleet of a design, test it: the next lessons
+show you how to move ships in fleets and how to try a design out in the Combat Simulator.
+
+The **Weapons Report** in the Help window (`F1`) compares every weapon you know.
+"""
+highlight = ["command:help"]
+manual = "ship-design#combat-numbers-worth-knowing"

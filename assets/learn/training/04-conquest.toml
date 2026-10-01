@@ -1,0 +1,91 @@
+# OpenSE4's own training game (docs/LEARNING.md). Written from docs/spec and the client.
+title = "Conquest"
+summary = "One rival, six star systems and a rich treasury: build a war fleet, destroy the enemy's ships and take its planets."
+minutes = 90
+
+[setup]
+seed = 94
+systems = 6
+computer_players = 1
+tech_level = "medium"
+starting_resources = 100000
+events = "none"
+
+[[objective]]
+text = "Destroy 5 enemy ships or bases"
+when = { enemy_ships_destroyed = 5 }
+by_turn = 100
+
+[[objective]]
+text = "Hold 6 colonies, conquered ones included"
+when = { colonies = 6 }
+by_turn = 120
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "War"
+text = """
+This small quadrant has room for one empire. You start with medium technology and a full
+treasury; so does your rival.
+
+Your orders:
+
+- destroy **5 enemy ships or bases** by **2410.0**;
+- hold **6 colonies** by **2412.0**. Planets you take from the enemy count.
+"""
+
+[[page]]
+turn = 0
+series = "briefing"
+title = "The plan"
+text = """
+1. Find the enemy: send your scouts exploring (`E`).
+2. Design a warship with your best weapons and armor, and test it in the
+   [Combat Simulator](window:combat-simulator) against the enemy designs you have seen.
+3. Build a fleet of them, and keep it supplied.
+4. Bring the fleet to an enemy system. The **Attack** order (`A`) goes after a target.
+5. To take a planet, carry **troops** in a ship's cargo and drop them on the planet during a
+   battle, once its defenses are down.
+
+The manual explains [combat](combat#when-battles-happen) and
+[invasions](ground-combat-and-capture#invading-a-planet).
+"""
+
+[[page]]
+turn = 50
+series = "reports"
+title = "Five years in"
+text = """
+Halfway. A war is won by the economy behind it: keep colonizing, and keep your queues building
+while your fleets fight.
+"""
+
+[[hint]]
+title = "Contact"
+when = { empires_met = 1 }
+text = """
+You have found your rival. Look at the designs of its ships on the **Enemy Ship Dsgn** tab of the
+[Designs](window:designs) window once you have met them in battle.
+"""
+
+[[hint]]
+title = "Your first kill"
+when = { enemy_ships_destroyed = 1 }
+text = """
+First blood. Ships that destroy enemies gain experience, which helps them hit. Send damaged ships
+back for repair with the **Repair** order (`R`).
+"""
+
+[[hint]]
+title = "Invasion"
+when = { enemy_ships_destroyed = 3 }
+text = """
+The enemy fleet is thinning. Time to take planets: build troops on the **Units** tab of a
+construction queue, load them into a ship with cargo space, and drop them during a battle at
+the enemy colony. Bring more troops than you think you need.
+"""
+
+[fail]
+when = { not = { colonies = 1 } }
+text = "Your last colony fell."

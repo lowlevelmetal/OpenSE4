@@ -1,5 +1,5 @@
 ---
-windows: help
+windows: main, help
 ---
 # The main window
 
