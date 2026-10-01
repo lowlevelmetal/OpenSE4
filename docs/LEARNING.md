@@ -416,8 +416,8 @@ The others: `SetVehicleStrategy`, `Rename`, `Scrap`, `Mothball`, `SetMinister`,
 `Retrofit`, `SetDesignObsolete`, `DeleteDesign`, `SetSystemFlags`, `SetSystemNote`,
 `TagMinefield`, `SetStrategy`, `SetRepairPriorities`, `SetDesignTypes`,
 `SetColonyTypes`, `SetEmpireOptions`, `SetMinisters`, `SetEncounterOptions`,
-`EnterSector`, `OpenVehicleReport`, `QueueReplaceFacility`, `DecideWar`. Ending the turn
-is no command: wait for it with `turns_passed`.
+`EnterSector`, `OpenVehicleReport`, `QueueReplaceFacility`, `DecideWar`, `JettisonCargo`,
+`CloakColony`. Ending the turn is no command: wait for it with `turns_passed`.
 
 ### Window ids
 
