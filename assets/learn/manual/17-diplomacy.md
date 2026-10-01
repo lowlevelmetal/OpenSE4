@@ -181,4 +181,4 @@ starts a counter-proposal from their offer, with the two sides of the package sw
 - Sign Non-Aggression with neighbours you are not ready to fight. It costs nothing and stops surprise battles.
 - Trade treaties with distant empires pay for themselves.
 - A Partnership shares sight and maps both ways. Sign one only with an empire you trust.
-- Before you declare war, check the [Treaty Grid](window:treaty-grid): your target's allies will not be pleased.
+- Before you declare war, check the [Treaty Grid](window:treaty-grid) to see who your target is allied with, and whom you may end up fighting.
