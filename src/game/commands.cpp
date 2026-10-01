@@ -141,7 +141,7 @@ struct Applier {
     // the fleet. Any other change (Clear Orders, an order taken back or put in
     // front) makes every copy the new list (inferred, spec 03 §19 Q76). Repeat
     // is set on every copy. An addressed member away from the fleet's
-    // location gets the change too (inferred).
+    // location gets the change too (inferred, Q76).
     R setFleetOrders(const Fleet& f, const Vehicle* addressed, const std::vector<Order>& given, bool repeat) {
         std::vector<VehicleId> holders = fleetGroup(s, f);
         if (addressed && std::find(holders.begin(), holders.end(), addressed->id) == holders.end()) holders.push_back(addressed->id);

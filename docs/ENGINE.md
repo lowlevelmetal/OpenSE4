@@ -28,6 +28,21 @@ player / AI / network ─> game::Command ────┘         │
 `GameState` is plain data. Every field is serialized (`serialize.hpp`), and
 `stateChecksum` hashes the serialized bytes for desync detection.
 
+- **One object list.** Stars, planets, asteroid fields, storms, warp points, ships, bases
+  and unit groups each hold a slot of one object list (`SpaceObject::slot`,
+  `Vehicle::slot`). A removed object leaves its slot free, and a new object of any kind
+  takes the lowest free slot (`GameState::freeSlot`, `addObject`, `addVehicle`); a system
+  lists its objects in slot order. `objectOrder` returns every object by slot, and
+  whatever the rules do "in object order" follows it: the acting order of the movement
+  phase, colonized planets included, where built units go, training sources and so on
+  (spec 03 §6.3 step 5, §19 Q62).
+- **Fleets** have no order list of their own (spec 03 §8, §9). Their orders are copies in
+  the lists of the members at the fleet's location (`fleetOrders`, `fleetGroup`): orders
+  given to the fleet or to any member are appended to every copy, and joining or leaving
+  clears a vehicle's list. The location is the fleet's own record (`Fleet::location`): it
+  follows whichever member moved last (`fleetMemberMoved`), and a fleet left with no member
+  there is disbanded (`GameState::tidyFleets`, `leaveFleet`, `disbandFleet`).
+
 ## Changing state
 
 - **Players change state only through commands** (`commands.hpp`). There is one command
@@ -63,8 +78,10 @@ empires are skipped.
    (`ai::planOrdersAfterPolitics`), which see the treaties it changed. Afterwards
    `ai::recordAiDecisions` notes what was decided.
 5. **Movement and space combat** (`movement::runMovementAndCombat`). Over 30 days each
-   vehicle, fleet and planet with orders carries out one order whenever its day counter
-   reaches 1. After each day every sector where an object carried out an order (any order,
+   vehicle, fleet and planet with orders acts, in object order, whenever its day counter
+   reaches 1: the acting vehicle gets exactly 1 movement point and its list runs, orders
+   that complete chaining into the next; a fleet acts through its first member with orders,
+   and the members at its location carry that order out together. After each day every sector where an object carried out an order (any order,
    a waiting Sentry included) runs a battle check, and `combat::resolveSpaceCombat` fights
    where an empire with an uncloaked vehicle there sees a hostile object; a sector gets a
    second battle in a turn only when newcomers arrive or a survivor was damaged (spec 03
@@ -134,9 +151,10 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    action until each has spent its movement points, waits or fails. Only three things run
    a battle check (spec 04 §2, `combat::BattleCheck`): a movement step (a warp jump
    included), after the mines there have struck, which fights at once, fails the order
-   and clears the group's whole list; the Attack order where its target is, which is then
-   used up; and a drone group's pursuit (a Seek) at its target, which attacks every time
-   the list runs and stays. The check is one-directional: the group's owner must see a
+   and clears the group's whole list; the Attack order, in the sector its target was in
+   when it was given (or where the group stands), which decloaks nobody but the Ship
+   Cloaking minister's vehicles and is then used up; and a drone group's pursuit (a Seek)
+   at its target, which attacks every time the list runs and stays. The check is one-directional: the group's owner must see a
    hostile object there, or, for a wholly cloaked group, another empire must see it. A
    human is first asked whether to enter a sector with visible enemies, and answers with
    `cmd::EnterSector`. Colony ships that reach their planet with movement left found the

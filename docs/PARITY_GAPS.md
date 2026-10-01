@@ -27,9 +27,9 @@ facilities, events, combat, stellar manipulation), and setup's racial point cost
 2026-09-30 the engine's remaining guesses (spec 02 §13 items 33 and 37–50) and the other
 open items of spec 02 were settled from the executable, and the rows found then were
 implemented the same day (the opening pools of spec 02 §9 followed with the turn order).
-Built units go to the holders in the game's object order (spec 02 §6.5): with the
-engine's object slots every planet comes before every vehicle, so after the builder they
-try the planets, then the ships and bases by slot (spec 02 §13 Q52). A queued facility
+Built units go to the holders in the game's object order (spec 02 §6.5), planets and ships
+mixed: since 2026-10-01 stellar objects and vehicles share one list of object slots, where
+a new object of any kind takes the lowest slot any kind left (spec 02 §13 Q52). A queued facility
 switches to a newer level in place, keeping what was paid (`cmd::QueueReplaceFacility`,
 spec 02 §6.6), from the Upgrade Facilities button and the computer's upgrades. The
 engine's own choices where the spec is silent are spec 02 §13 items 51–56. No row
@@ -44,14 +44,51 @@ are expanded when given (`orders.hpp`), and units in space are held in groups th
 line with the rules of spec 03 §19 as settled from the executable: the stored-double day counter,
 chained actions in object-slot order, ad-hoc groups, the Ship Orders options, launches and
 recovery, hazard damage, repeat battles, Sweep Mines, repair and training sources, ruins, the
-destructive-centre cost map, design editing and the smaller rules. The engine's own choices
-where the spec is silent are spec 03 §19 Q60–Q71. Long-range scanning follows §3.3: a
-design is learned only when a human opens the report of a vehicle the scanners reach
+destructive-centre cost map, design editing and the smaller rules. Long-range scanning follows
+§3.3: a design is learned only when a human opens the report of a vehicle the scanners reach
 (`cmd::OpenVehicleReport`), a ranged scanner works from any own object within its reach,
 and `Long Range Scanner - System` works from any own object in the system (colonies
 without population too) and covers ships and bases, not unit groups (`sight.cpp`
-`scannerReaches`). A turn-based Attack goes to the sector its target was in when the order
-was given and attacks there (§8, Q71). No row remains.
+`scannerReaches`).
+
+On 2026-10-01 the answers to §19 Q61–Q71 found six rows (the combat rules of Q60 and Q68
+belong with spec 04), and they were closed the same day:
+
+- **One object list** (Q62, spec 02 §13 Q52; `GameState::freeSlot`, `addObject`,
+  `objectOrder`). The engine numbered vehicles apart and put every planet before every
+  vehicle. Now stars, planets, storms, warp points, ships, bases and unit groups share one
+  list of slots, a new object of any kind takes the lowest slot any kind left, and colonized
+  planets act on day 1 in their slot's place; movement, built units, training, remote mining,
+  the colony steps and the computer's repair yards follow that order.
+- **Fleet orders** (§8, §9, Q65; `fleetOrders`, `cmd::SetOrders`). The engine kept a fleet
+  list apart from the members' lists. Now a fleet's orders are copies in the lists of its
+  members at its location: orders given to it or to any member are appended to each copy,
+  joining and leaving clear the vehicle's list, and the members at the location carry out
+  the head order of the member that acts, each list moving on. The client and the computer
+  players read and give fleet orders the same way.
+- **Fleet location and speed** (§6.3 step 2, §9, Q61; `Fleet::location`,
+  `GameState::tidyFleets`). The fleet followed its leader, and a member elsewhere used its
+  own movement. Now the location is the fleet's own record, following whichever member
+  moved last; every member gains day credit at the lowest movement among the members at the
+  location, 0 when none is there; a fleet with nobody there is disbanded at once.
+- **A stopped vehicle's later actions** (§6.3 step 4, Q63). The action ran with 0 movement
+  points and set every member to 1. Now it gives the acting vehicle exactly 1 when its
+  maximum is at least 1, and the other members keep theirs.
+- **Turn-based Attack and pursuits** (§6.4, §8, Q69, Q71). The Attack decloaked every member,
+  one with no sector recorded followed its target, and a pursuit without a drone spent 1
+  movement point and supply at its target. Now the turn-based Attack goes to the sector its
+  target was in when it was given (or stays where the group stands when none was recorded)
+  and decloaks nobody but the Ship Cloaking minister's vehicles, which cloak again
+  afterwards; a pursuit group without a drone pursuing there waits at the target and spends
+  nothing.
+- **Colonies "seen"** (§6.2, §6.4, §8, Q70; `sight::canSeeColony`). A planet nothing
+  obscures counted as a seen colony without sensors. Now the detection rule of spec 01 §6.3
+  applies, which needs sensors in the system.
+
+The engine's own choices where the spec is silent are spec 03 §19 Q72–Q76: objects changed
+in place by stellar manipulation, a fleet member away from the fleet's location that acts,
+mothballed members, fleet members in a computer player's ad-hoc group, and changes to a
+fleet's orders other than adding. No row remains.
 
 ## Combat (spec 04)
 
@@ -91,8 +128,9 @@ on 2026-09-30, found the differences below.
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
-Every rule of this section follows the spec (2026-09-30). Where the spec leaves a detail
-open, the engine's choices are spec 05 open questions 38–46: third empires for "Any"
+Every rule of this section follows the spec (2026-09-30); the `Ship - Moved` event draws
+one sector number and disbands the moved ship's fleet since 2026-10-01 (spec 05 §4). Where
+the spec leaves a detail open, the engine's choices are spec 05 open questions 38–46: third empires for "Any"
 political operations, who hears of an operation that tells nobody, the place and layout
 of the players' statistics, history and log files, rebel empire details, home planet
 locations, when opening a report dates a design, how a turn-based political step knows
@@ -110,9 +148,11 @@ turn-based. Maps are saved and loaded in our own format ([MAPS.md](MAPS.md),
 Map writes (`GameState::startingPoints`). The autosave choices are applied after each
 processed game turn in local and hotseat games of either turn style, into files named
 after the last digit of the turn count, and can be changed during the game (Empire
-Options). Spec 01 §14 Q41–Q43 are the engine's remaining guesses here (Q43: how a comet or
-warp point entry of a system template claims a sector for the planets' names). This row
-is where the engine differs:
+Options). Spec 01 §14 Q41–Q43 were answered from the executable; the engine follows them,
+and since 2026-10-01 a comet or warp point entry of a system template is placed like any
+other entry (its position and a record drawn, its sector marked and recorded for `Same As`)
+and keeps an empty name for the letters of later planets there (Q43). This row is where
+the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|

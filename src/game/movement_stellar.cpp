@@ -377,7 +377,7 @@ protected:
         // least Val 2 kT of components whose Custom Group is Val 1. The count goes
         // by design: every such component, damaged or not, with its mounted size;
         // mothballed ships and unit groups do not count (spec 01 §9, §14 Q33,
-        // confirmed: binary). Bases count like ships (inferred, spec 01 §14 Q42).
+        // confirmed: binary). Bases count like ships (spec 01 §14 Q42, confirmed: binary).
         for (const ParsedAbility& a : abilities_)
             if (a.kind == AbilityKind::ConstructedPlanetRequirements) plan_.needs.emplace_back(static_cast<int>(a.value1), a.value2);
         for (const auto& [group, tons] : plan_.needs) {

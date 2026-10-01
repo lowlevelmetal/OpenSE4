@@ -1118,7 +1118,7 @@ private:
     // attack costs 1 movement point and one move's supply per member and runs
     // a battle check at once, and the order is used up; without movement left
     // it is removed doing nothing. "Used up" is done, so with Repeat on it goes
-    // to the end of the list (inferred, spec 04 §19.2 Q77). Nobody decloaks:
+    // to the end of the list (spec 04 §19.2 Q77, confirmed: binary). Nobody decloaks:
     // only the vehicles under the Ship Cloaking minister lower their cloaks for
     // it and raise them again afterwards if they can (recloak).
     Exec placeAttack(Group& g, Order& o) {

@@ -1563,11 +1563,9 @@ must change.
     planet comes before every vehicle, because the galaxy is made first; but a planet
     created during play (by a stellar manipulation or an event) can come after ships, and
     a new ship can reuse a slot freed by a removed stellar object. §6.5's "object order"
-    is that slot order. The engine differs for objects created or removed during play: it
-    places every planet before every vehicle (`Vehicle::slot` covers vehicles only), so
-    unit placement tries the planets in the sector before the ships whatever their slots.
-    It must keep one slot order shared by all objects, where a new planet or vehicle
-    takes the first slot freed by any kind. This also answers spec 03 §19 Q62.
+    is that slot order. The engine does the same: it keeps one slot order shared by all
+    objects, where a new planet or vehicle takes the first slot freed by any kind. This
+    also answers spec 03 §19 Q62.
 53. **Removing items a queue cannot build.** **Answer:** each empire fixes the processing
     order of §6.3 from every queue's top item first; then, for each queue in that order,
     the removal pass runs before the empty test, the on-hold test and the rate, so also
