@@ -3737,6 +3737,171 @@ TEST_CASE("ai: a space yard ship counts itself as a yard, and one in a fleet is 
     CHECK(ordersOf(p, tenderId).front().location.system == homeAt.system);
 }
 
+// ---- Spec 05 open question 37: Stellar Manipulation (confirmed: binary) ----------------------------
+
+TEST_CASE("ai: an Open Warp Point ship gets the resupply orders while a frontier point is free or when no edge sector is empty") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    for (const auto& c : std::vector<ruleset::Component>(rs.components))
+        if (c.name == "Test Cargo Bay") {
+            ruleset::Component opener = c;
+            opener.name = "Test Warp Opener";
+            opener.abilities.clear();
+            ruleset::Ability a;
+            a.type = std::string(identifier(AbilityKind::OpenWarpPointDistance));
+            a.value1 = "100000";
+            opener.abilities.push_back(a);
+            rs.components.push_back(opener);
+        }
+    const Rules r{std::move(rs), {}};
+    GameState s = computerGame(4, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    const SystemId next = s.galaxy.neighbors(homeAt.system).front();
+    const DesignId opener = addTestDesign(s, r, me, "Opener", "Test Cruiser",
+                                          {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Warp Opener"});
+    s.design(opener).designType = "Open Warp Point";
+    const VehicleId id = addTestVehicle(s, r, opener, Location{next, Sector{kSystemCenter, kSystemCenter}}).id;
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        const bool freePoint = !p.sit.freeFrontier.empty();
+        ai::detail::planStellarManipulation(p);
+        return std::pair{freePoint, ordersOf(p, id)};
+    };
+    // A free frontier point: the resupply orders (home, the depot).
+    {
+        const auto [freePoint, orders] = plan(s);
+        REQUIRE(freePoint);
+        REQUIRE(orders.size() == 1);
+        CHECK(orders.front().kind == OrderKind::MoveTo);
+        CHECK(orders.front().location == homeAt);
+    }
+    // Every system explored but the last; ships of ours head for every
+    // frontier point, so none is free. Every edge sector of every explored
+    // system holds a vehicle: no draw succeeds, and the ship gets the
+    // resupply orders again.
+    const SystemId last{s.galaxy.systems.size() - 1};
+    for (Empire& e : s.empires) {
+        e.knowledge.explored.assign(s.galaxy.systems.size(), 1);
+        e.knowledge.explored[last.index()] = 0;
+        e.knowledge.knownWarpLink.assign(s.galaxy.objects.size(), 1);
+    }
+    const DesignId marker = addWarship(s, r, me, "Marker");
+    for (size_t i = 0; i + 1 < s.galaxy.systems.size(); ++i)
+        for (ObjectId wp : s.galaxy.warpPoints(SystemId{i}))
+            if (s.galaxy.object(wp).destination.valid() && s.galaxy.object(s.galaxy.object(wp).destination).system == last)
+                addTestVehicle(s, r, marker, homeAt).orders = {ai::detail::moveOrder(locationOf(s.galaxy, wp))};
+    {
+        GameState g = s;
+        for (size_t i = 0; i + 1 < g.galaxy.systems.size(); ++i)
+            for (int k = 0; k < kSystemSize; ++k)
+                for (Sector at : {Sector{k, 0}, Sector{k, kSystemSize - 1}, Sector{0, k}, Sector{kSystemSize - 1, k}})
+                    addTestVehicle(g, r, marker, Location{SystemId{i}, at});
+        const auto [freePoint, orders] = plan(g);
+        REQUIRE_FALSE(freePoint);
+        REQUIRE(orders.size() == 1);
+        CHECK(orders.front().kind == OrderKind::MoveTo);
+        CHECK(orders.front().location.system == homeAt.system);
+    }
+    // With room on the edges: a move to an empty edge sector, then the order.
+    const auto [freePoint, orders] = plan(s);
+    REQUIRE_FALSE(freePoint);
+    REQUIRE_FALSE(orders.empty());
+    const Order& open = orders.back();
+    CHECK(open.kind == OrderKind::StellarManipulation);
+    CHECK(open.amount == static_cast<int>(StellarAction::OpenWarpPoint));
+    const Location at = orders.size() == 2 ? orders.front().location : s.vehicle(id)->location;
+    CHECK((at.sector.x == 0 || at.sector.y == 0 || at.sector.x == kSystemSize - 1 || at.sector.y == kSystemSize - 1));
+}
+
+TEST_CASE("ai: a Destroy Black Hole ship seeks sector 36 of the system and is planned again every turn") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    std::optional<SystemId> hole;
+    for (const StarSystem& sys : s.galaxy.systems)
+        if (sys.id != homeAt.system && !hole) hole = sys.id;
+    REQUIRE(hole);
+    s.galaxy.system(*hole).physicalType = "Black Hole";
+    const DesignId fixer = addTestDesign(s, r, me, "Fixer", "Test Cruiser", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    s.design(fixer).designType = "Destroy Black Hole";
+    const VehicleId id = addTestVehicle(s, r, fixer, homeAt).id;
+    auto plan = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        return ordersOf(p, id);
+    };
+    const auto seek = plan(s);
+    REQUIRE(seek.size() == 1);
+    CHECK(seek.front().kind == OrderKind::MoveTo);
+    CHECK(seek.front().location == Location{*hole, Sector{10, 2}});
+    // Still on its way next turn, now inside the system: the order at once.
+    s.vehicle(id)->orders = seek;
+    s.vehicle(id)->location = Location{*hole, Sector{1, 1}};
+    const auto act = plan(s);
+    REQUIRE(act.size() == 1);
+    CHECK(act.front().kind == OrderKind::StellarManipulation);
+    CHECK(act.front().amount == static_cast<int>(StellarAction::DestroyBlackHole));
+}
+
+TEST_CASE("ai: Close Warp Point needs a seen hostile empire where we have no presence; satellites are presence, mines are not") {
+    const Rules& r = engineRules();
+    GameState s = computerGame(4, 2, 0, 12);
+    const EmpireId me{0u}, them{1u};
+    const Location homeAt = locationOf(s.galaxy, homeworld(s, me).planet);
+    std::optional<ObjectId> gate;
+    SystemId far;
+    for (ObjectId wp : s.galaxy.warpPoints(homeAt.system)) {
+        const ObjectId dest = s.galaxy.object(wp).destination;
+        if (!dest.valid() || gate) continue;
+        const SystemId sys = s.galaxy.object(dest).system;
+        bool colonized = false;
+        for (ObjectId o : s.galaxy.system(sys).objects) colonized = colonized || s.colony(o) != nullptr;
+        if (!colonized && freePlanetIn(s, sys)) {
+            gate = wp;
+            far = sys;
+        }
+    }
+    REQUIRE(gate);
+    exploreEverything(s);
+    addColony(s, *freePlanetIn(s, far), them, {{them, 100}});
+    const DesignId closer = addTestDesign(s, r, me, "Closer", "Test Cruiser", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine"});
+    s.design(closer).designType = "Close Warp Point";
+    const VehicleId id = addTestVehicle(s, r, closer, homeAt).id;
+    auto closes = [&](const GameState& g) {
+        ai::detail::Planner p(r, g, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        const auto orders = ordersOf(p, id);
+        return !orders.empty() && orders.back().kind == OrderKind::StellarManipulation;
+    };
+    // The hostile colony we see in the explored far system is enough (only
+    // the warp points into it qualify, so the pick is ours to check).
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planStellarManipulation(p);
+        const auto orders = ordersOf(p, id);
+        REQUIRE_FALSE(orders.empty());
+        CHECK(orders.back().kind == OrderKind::StellarManipulation);
+        CHECK(s.galaxy.object(s.galaxy.object(orders.back().object).destination).system != homeAt.system);
+    }
+    // A mine field of ours there is no presence.
+    GameState mined = s;
+    const DesignId mine = addTestDesign(mined, r, me, "Mine", "Test Mine Hull", {});
+    addTestVehicle(mined, r, mine, Location{far, Sector{1, 1}});
+    CHECK(closes(mined));
+    // Every system next to home but this one blocked by our presence, and a
+    // satellite group of ours in this one: no candidate left.
+    GameState watched = s;
+    const DesignId eye = addTestDesign(watched, r, me, "Eye", "Test Satellite Hull", {"Test Satellite Gun"});
+    for (ObjectId wp : watched.galaxy.warpPoints(homeAt.system))
+        if (const ObjectId dest = watched.galaxy.object(wp).destination; dest.valid())
+            addTestVehicle(watched, r, eye, Location{watched.galaxy.object(dest).system, Sector{2, 2}});
+    for (auto& c : watched.colonies)
+        if (c && c->owner == me && c->planet != homeworld(watched, me).planet) c.reset();
+    CHECK_FALSE(closes(watched));
+}
+
 TEST_CASE("installed data set: AI files load and computer players play (opt-in)") {
     const Rules* r = installedRules();
     if (!r) return;

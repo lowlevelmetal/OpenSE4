@@ -719,14 +719,32 @@ int64_t sizeRecordNumber(const Rules& r, const SpaceObject& obj) {
     return 0;
 }
 
-bool isEdge(Sector s) { return s.x == 0 || s.y == 0 || s.x == kSystemSize - 1 || s.y == kSystemSize - 1; }
-
-// Any space object in the sector.
+// Any object in the sector: a space object, a vehicle or a unit group.
 bool objectAt(const GameState& s, Location where) {
     for (ObjectId o : s.galaxy.system(where.system).objects)
         if (s.galaxy.object(o).sector == where.sector) return true;
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.location == where) return true;
     return false;
 }
+
+// One draw of an edge sector (spec 05 §7.5 Open Warp Point): a side, 1 in 4
+// each, then a position 0-12 along it, so each corner is twice as likely as
+// any other edge sector. Which number is which side is our own choice.
+Sector drawEdgeSector(Rng& rng) {
+    const int side = static_cast<int>(rng.below(4));
+    const int pos = static_cast<int>(rng.below(static_cast<uint64_t>(kSystemSize)));
+    switch (side) {
+        case 0: return Sector{pos, 0};
+        case 1: return Sector{kSystemSize - 1, pos};
+        case 2: return Sector{pos, kSystemSize - 1};
+        default: return Sector{0, pos};
+    }
+}
+
+// The sector Destroy Black Hole and Destroy Nebulae ships seek in their
+// target system: sector 36, x 10, y 2 (confirmed: binary).
+constexpr Sector kStellarSeekSector{10, 2};
 
 } // namespace
 
@@ -763,10 +781,25 @@ void planStellarManipulation(Planner& p) {
             for (const Order& o : v.orders)
                 if (o.kind == OrderKind::StellarManipulation && o.object.valid()) headedFor.insert(o.object);
 
+    // A Destroy Black Hole or Destroy Nebulae ship's one-turn Seek toward its
+    // system (spec 05 §7.5): the engine gives a Move To to the sought sector
+    // and treats a ship that still has it as idle, so the minister plans it
+    // again every turn as the original does (OpenSE4's stand-in for the Seek).
+    auto seeking = [&](const Vehicle& v) {
+        if (p.busy.contains(v.id) || v.status == VehicleStatus::Mothballed || v.orders.size() != 1) return false;
+        const Order& o = v.orders.front();
+        if (o.kind != OrderKind::MoveTo || o.location.sector != kStellarSeekSector || !o.location.system.valid() ||
+            o.location.system.index() >= p.st.galaxy.systems.size())
+            return false;
+        const std::string_view kind = p.st.galaxy.system(o.location.system).physicalType;
+        return keysEqual(kind, "Black Hole") || keysEqual(kind, "Nebulae");
+    };
     for (VehicleId id : p.ownVehicles(Minister::StellarManipulation)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || p.info(v->design).role != Role::Stellar) continue;
+        if (!v || v->fleet.valid() || p.info(v->design).role != Role::Stellar) continue;
         const std::string type = p.info(v->design).aiType;
+        const bool reseek = (type == "Destroy Black Hole" || type == "Destroy Nebulae") && seeking(*v);
+        if (!p.idle(*v) && !reseek) continue;
         const Location here = v->location;
         auto goAndDo = [&](Location where, const Order& act) {
             std::vector<Order> orders;
@@ -787,8 +820,12 @@ void planStellarManipulation(Planner& p) {
             return best;
         };
         if (type == "Open Warp Point") {
-            // Only when no free exploration frontier point is left.
-            if (!p.sit.freeFrontier.empty()) continue;
+            // While a free exploration frontier point is left the ship's range
+            // counts as 0: nothing is chosen and it gets the resupply orders.
+            if (!p.sit.freeFrontier.empty()) {
+                p.setOrders(id, resupplyOrders(p, here));
+                continue;
+            }
             const int64_t range = bestValue1(vehicleAbilities(p.r, p.st, *v), AbilityKind::OpenWarpPointDistance);
             std::optional<std::pair<SystemId, SystemId>> pick;  // source, target
             std::tuple<int, int> pickKey{};
@@ -818,35 +855,43 @@ void planStellarManipulation(Planner& p) {
                 p.setOrders(id, resupplyOrders(p, here));
                 continue;
             }
-            // A random empty edge sector of the source (up to 100 tries; the last draw otherwise, inferred).
-            std::vector<Sector> edges;
-            for (int y = 0; y < kSystemSize; ++y)
-                for (int x = 0; x < kSystemSize; ++x)
-                    if (isEdge(Sector{x, y})) edges.push_back(Sector{x, y});
-            Sector sector;
-            for (int tries = 0; tries < 100; ++tries) {
-                sector = edges[static_cast<size_t>(p.rng.below(edges.size()))];
-                if (!objectAt(p.st, {pick->first, sector})) break;
+            // A random empty edge sector of the source: a sector holding any
+            // object is drawn again, and only the first 99 draws can succeed
+            // (the 100th is discarded even when empty). None: the resupply orders.
+            std::optional<Sector> sector;
+            for (int draw = 1; draw <= 100 && !sector; ++draw) {
+                const Sector at = drawEdgeSector(p.rng);
+                if (draw < 100 && !objectAt(p.st, {pick->first, at})) sector = at;
             }
-            goAndDo({pick->first, sector}, stellarOrder(StellarAction::OpenWarpPoint, {}, {pick->second, Sector{kSystemCenter, kSystemCenter}}));
+            if (!sector) {
+                p.setOrders(id, resupplyOrders(p, here));
+                continue;
+            }
+            goAndDo({pick->first, *sector}, stellarOrder(StellarAction::OpenWarpPoint, {}, {pick->second, Sector{kSystemCenter, kSystemCenter}}));
         } else if (type == "Close Warp Point") {
-            // A random warp point from a system with one of our colonies into a
-            // system where we have no ship, base or colony but see a hostile empire
-            // (one of its vehicles we see, or its colony in an explored system; inferred).
+            // A random warp point from an explored system with one of our
+            // colonies into a system where we have no presence (a ship, base,
+            // colony, or fighter, satellite or drone group; mine fields do not
+            // count) but see a hostile empire: any object it owns there (ship,
+            // base, unit group or colony) that passes the detection test of
+            // Sentry (spec 03 §8). Otherwise no order.
             std::vector<ObjectId> points;
             for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
-                if (!ourColony[i]) continue;
+                if (!ourColony[i] || !p.explored(SystemId{i})) continue;
                 for (ObjectId wp : p.st.galaxy.warpPoints(SystemId{i})) {
                     const SpaceObject& obj = p.st.galaxy.object(wp);
                     if (!obj.destination.valid()) continue;
                     const SystemId far = p.st.galaxy.object(obj.destination).system;
                     if (ourColony[far.index()]) continue;
                     bool ours = false, seen = false;
-                    for (const Vehicle& o : p.st.vehicles)
-                        if (o.count > 0 && o.location.system == far && o.owner == p.id && !isUnitType(vehicleType(p.r, p.st, o))) ours = true;
-                    for (VehicleId vid : e.knowledge.visibleVehicles)
-                        if (const Vehicle* o = p.st.vehicle(vid); o && o->location.system == far && hostileTo(e, o->owner)) seen = true;
-                    if (p.explored(far) && hostileColony[far.index()]) seen = true;
+                    for (const Vehicle& o : p.st.vehicles) {
+                        if (o.count <= 0 || o.location.system != far) continue;
+                        if (o.owner == p.id) ours = ours || vehicleType(p.r, p.st, o) != ruleset::VehicleType::Mine;
+                        else if (hostileTo(e, o.owner) && sight::canSeeVehicle(p.r, p.st, p.id, o)) seen = true;
+                    }
+                    for (ObjectId o : p.st.galaxy.system(far).objects)
+                        if (const Colony* c = p.st.colony(o); c && c->owner != p.id && hostileTo(e, c->owner) && sight::canSeePlanet(p.r, p.st, p.id, o))
+                            seen = true;
                     if (!ours && seen) points.push_back(wp);
                 }
             }
@@ -909,9 +954,10 @@ void planStellarManipulation(Planner& p) {
             const auto storm = nearestObject(ObjectKind::Storm, [&](ObjectId o) { return !armedHostileSeenAt(p, locationOf(p.st.galaxy, o)); });
             if (storm) goAndDo(locationOf(p.st.galaxy, *storm), stellarOrder(StellarAction::DestroyStorm, *storm, locationOf(p.st.galaxy, *storm)));
         } else if (type == "Destroy Black Hole" || type == "Destroy Nebulae") {
-            // The explored system of that kind nearest by jumps: the order at once
-            // when the ship is inside, otherwise a move to a fixed sector of it
-            // (the top-left corner, inferred).
+            // The explored system of that kind nearest by jumps: the order at
+            // once when the ship is inside, otherwise a Seek toward sector 36
+            // (x 10, y 2) of it that lasts one turn. With no such system the
+            // order points nowhere: the same as no order.
             const bool hole = type == "Destroy Black Hole";
             std::optional<SystemId> best;
             for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
@@ -919,11 +965,14 @@ void planStellarManipulation(Planner& p) {
                 if (!p.explored(sys) || !keysEqual(p.st.galaxy.system(sys).physicalType, hole ? "Black Hole" : "Nebulae")) continue;
                 if (!best || nearer(sys, *best)) best = sys;
             }
-            if (!best) continue;
+            if (!best) {
+                if (reseek) p.setOrders(id, {});
+                continue;
+            }
             if (here.system == *best)
                 p.setOrders(id, {stellarOrder(hole ? StellarAction::DestroyBlackHole : StellarAction::DestroyNebulae, {}, here)});
             else
-                p.setOrders(id, {moveOrder({*best, Sector{0, 0}})});
+                p.setOrders(id, {moveOrder({*best, kStellarSeekSector})});
         }
         // Create Storm is never used.
     }
