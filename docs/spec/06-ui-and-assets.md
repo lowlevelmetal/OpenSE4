@@ -19,7 +19,9 @@ Conventions that hold across the whole UI:
 - **Fixed-pixel layouts at two resolutions.** The game ships screen art for 800x600 and
   1024x768 only [M]. Windows are fixed-size bitmapped frames, not resizable. The game
   uses the 800x600 layout when the desktop is at most 800 px wide and the 1024x768
-  layout otherwise, centred on the screen; there is no option (confirmed: binary).
+  layout otherwise; there is no option. The 1024x768 frame is centred on a wider desktop,
+  the 800x600 frame sits at the top-left corner, and dialogs are the same size in both
+  and centred on the desktop (§2.1.1) (confirmed: binary).
 - **Left-click acts, right-click reports.** In nearly every list, a left-click performs
   the primary action (select, add to a queue, remove from a queue, jump to the object in
   the main window), and a right-click opens a read-only report popup about the item
@@ -27,8 +29,9 @@ Conventions that hold across the whole UI:
 - **Shift+click multi-selects** in the ship list and in the construction-queue list [T].
 - **Column headers sort** the big list windows (Colonies, Planets, Ships) [T]. A click
   makes that column the first sort key; the keys clicked before stay as tie-breakers, up
-  to five, newest first. Each column has a fixed direction, and clicking again does not
-  reverse it. The sort keys are stored with the empire (confirmed: binary; §1.8).
+  to five, newest first; an earlier copy of the same column is not removed, so it can
+  push out the oldest key. Each column has a fixed direction, and clicking again does not
+  reverse it. The sort keys are stored with the empire (confirmed: binary; §1.8, §7 Q24).
 - **No pop-up tooltips.** Hovering a command or order button writes the button's name
   and key at the top of the system panel (§2.3). No other control has a hint
   (confirmed: binary).
@@ -48,7 +51,10 @@ Dialog size classes seen in the manual's 800x600 captures [S]: full screen (800x
 large dialog (780x475, used by most management windows); tall dialog (780x668:
 Colonies, Construction Queues); object report (310x420, with tab buttons along the
 bottom); item report (about 298 wide, height fits content); picker (340x370 or
-420x520); File Menu (a narrow 173x320 column of buttons); prompts (about 309x140).
+420x520); File Menu (a narrow 173x320 column of buttons); prompts (about 309x140). The
+780x668 windows cannot come from an 800x600 screen: at 1024x768 the four list windows are
+as tall as the desktop less 100 px, and at 800x600 they are 780x475 like the other large
+dialogs (§2.1.1) (confirmed: binary).
 
 The large dialog has one layout everywhere: a title strip across the top, the content
 area on the left (about 570 px wide), and on the right a column of up to 13 stacked
@@ -175,7 +181,7 @@ reports render inside the right-hand panel (§2.5).
 |---|---|
 | TCP/IP Host | Player list, own IP addresses, a status line naming the current step of the host cycle (spec 05), hideable chat; Begin Game, Process Turn, Add/Remove Empire, Play Turn, Chat, Minimize Game, Quit Game [T]. |
 | TCP/IP Player | Source and host IP, player name, status line, chat; Connect to Host, Create Empire, Play Turn, Chat, Minimize, Quit [T]. |
-| Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. |
+| Movement log replay | Not a window: in simultaneous games the main window replays the host's 30-day movement (full, stepped by day, per ship, rewind) [T]. Exact behaviour: §7 Q51 (confirmed: binary). |
 | Tutorial / Scenario text window | Titled text with a 128x128 picture and previous/next through a series; re-opened with Ctrl+H or the "T" button in the status bar [T][M]. |
 | Finale | Full picture for victory, defeat, or "human players all dead", chosen from lists in Settings.txt [M]. |
 
@@ -256,12 +262,14 @@ picture and Ship Enroute by planet size, smallest first. Default: by name.
 #### 1.8.2 Construction Queues
 
 **Which objects have a queue.** Every colony. A ship or base only while it has a working
-space yard (the `Space Yard` ability, not cloaked) and is not mothballed; when it loses
-the working yard, its queue is cleared at its next update.
+space yard (the `Space Yard` ability, not cloaked) and is not mothballed. The yard is
+rechecked at once on cloak, decloak, mothball and unmothball (and at the vehicle's
+updates); when it no longer works, the queue is emptied (items, On Hold, Repeat and
+progress).
 
 | Toggle | Includes |
 |---|---|
-| Ships | queues of ships and bases whose yard is not working right now. Such queues are cleared at the vehicle's next update, so this group is normally empty |
+| Ships | queues of ships and bases whose yard is not working right now. Such queues are emptied as soon as the yard stops working, so in practice this group is always empty |
 | Ship SY | queues of ships and bases with a working yard: in practice every vehicle queue, mobile or base |
 | Planets | colonies without a working space yard (no Space Yard facility, or the colony is cloaked) |
 | Planet SY | colonies with a working space yard |
@@ -277,23 +285,36 @@ Facilities; 13 Upgrade Facilities; 14 Close.
 Shift+left-click tags or untags a queue for Multi-Add (tagged rows show a marker).
 Right-click opens the object's report. Hovering highlights the system on the mini-map.
 
-**Columns.** Name (170 px): picture, name, and the status icons on a second line. Tab
-column (150 px), whose header and content follow the tab: Rate (three rates), "Usage Per
-Turn" (three usages), Planet Value (three percentages), "Number of Facilities" (used /
-slots, colonies only), "Cargo Space"; under the value, in yellow (#FFFF00), the queue's
-build-mode note when one applies. Construction Queue (the rest): the first three items,
-one per 12 px line, with the count when above 1; at the right the time left in years
-(turns × 0.1), shown as "Never" at 9999 turns or more and "On Hold" for a held queue,
-both in yellow; "(Repeat)" under the time when repeat is on. Rows are separated by a
-line in #647EC7.
+**Columns.** Rows are 36 px. Name (170 px): the 36x36 picture at the top left, the name
+in white Futurist Medium at (40,0) (with a leading space), and the status icons in one
+line from x 40 at y 15, 20 px apart, left to right, without wrapping (the ship set for
+ships and bases, the planet set for colonies, §4.4). A tagged row carries the 13x13 green
+right-pointing arrow of `General.bmp` (the cell at (203,15)), black transparent, at the
+row's top left over the picture, the marker the main ship list uses for tagged ships.
+Tab column (150 px), whose header and content follow the tab: Rate (three rates), "Usage
+Per Turn" (three usages), Planet Value (three percentages), "Number of Facilities" (used
+/ slots, colonies only), "Cargo Space"; under the value, in yellow (#FFFF00) Futurist
+small at (column x + 10, 15), the queue's build-mode note when one applies. Construction
+Queue (the rest): the first three items in white Futurist small, one per 12 px line at y
+−1, 11 and 23, as "<name> x <count>" when the count is above 1 (any kind of item); an
+empty queue shows nothing. At the right, right-aligned 2 px from the row's edge at y 0,
+the time to finish the **first** item in brackets, "(0.3 years)" (§7 Q48 for the
+arithmetic), in white; "(Never)" when the queue's three rates sum to 0 and "(On Hold)"
+for a held queue that holds items, both in yellow; "(Repeat)" in white Futurist small at
+y 12 under it when repeat is on. A 1 px line in #647EC7 on each row's bottom pixel row
+(y 35) separates the rows.
 
 **Sort directions.** Name A to Z; tab column highest first (the sum of the three values,
 or the facility count, or the cargo; vehicles count 0 for facilities and cargo); queue
 column by the first item's name, A to Z. Default: by name.
 
-**Statistics** (box at about (17,38)): resources generated per turn and queue usage per
-turn (three amounts each); total, planetary and ship space yards; queues on hold; and a
-one-line hint at (18,218) that clicking a row changes its queue.
+**Statistics** (box at about (17,38)): "Resources Generated Per Turn" (the colonies'
+production only, the same numbers as the Colonies window's "Total Resources Produced":
+no trade, tariffs or remote mining) and "Construction Queue Usage Per Turn" (the queues
+not on hold), three amounts each; "Total Space Yards", "Total Planetary Space Yards" and
+"Total Ship Space Yards" (queues whose yard works) and "Number Of Queues On Hold", all
+counted over every queue whatever the toggles; and the hint "(click item to change its
+queue)" in label blue Futurist small at (18,218).
 
 **Multi-Add** is always enabled. With nothing tagged it shows a message asking the player
 to Shift+click queues first. Otherwise it opens the real Set Construction Queue window on
@@ -344,14 +365,14 @@ in brackets.
 
 | Heading | Rows |
 |---|---|
-| General Options | show the log at the start of the turn [on]; confirm ending the turn [on]; confirm scrapping [on]; confirm stellar manipulation [on]; confirm deleting a research project [on]; confirm deleting an intelligence project [on]; confirm deleting the first item of a construction queue [on]; show the colony-type picker when colonizing [on]; note when similar system-wide abilities exist [on] |
+| General Options | show the log at the start of the turn [on]; confirm ending the turn [on]; confirm scrapping [on]; confirm stellar manipulation [on]; confirm deleting a research project [on]; confirm deleting an intelligence project [on]; confirm deleting the first item of a construction queue [on]; show the colony-type picker when colonizing [on]; note when similar system-wide abilities exist [on] (never read: the note always appears, §7 Q29) |
 | Next/Previous | skip ships under construction [off]; skip damaged ships [off]; stop once per location [off]; skip ships in fleets [off] |
 | Ship Movement | avoid minefields [on]; avoid restricted systems [on] |
 | Ship Orders | clear orders on entering a system with an enemy [on]; clear orders on entering a system with any other empire [off] |
 | System Display | warp point names [on]; planet names [off]; colonizable planets [on]; system grid [off]; coordinate location [on]; then one row per group of facility letter markers, all [off]: R/S/Y (resupply depot, spaceport, planetary space yard), Ca/Cc/Cv (atmosphere, conditions and value changers), St/Ft, Rc/Rr, Sst/Sft, Spv/Spc, Sph/Spa, Scm/Sdm, Srm/Ssm, Spp/Src, Sbe/Sbi, Slr |
 | Galaxy Display | Show Grid Lines [on]; Show Warp Lines [on] |
 | Latest Items | only latest items for construction [off]; only latest components for designs [off] |
-| Politics | automatically claim every system we colonize [on] |
+| Politics | automatically claim every system we colonize [on] (stored and shown but never read: founding a colony claims nothing, §7 Q47) |
 
 ### 1.10 Combat windows in detail
 
@@ -559,6 +580,59 @@ drawn 1:1, black transparent, with their top-left corners at the positions given
 What fills the 67 px strip at 1024x768 is answered in spec 07 §UI (the selectors and the
 filler).
 
+#### 2.1.1 Choosing the layout, and everything that differs at 800x600
+
+All of this subsection is (confirmed: binary).
+
+**Choice.** The game picks the layout once, at program start, from the desktop width
+alone: 800 px or less gives the 800x600 layout, anything wider the 1024x768 layout. The
+height plays no part, there is no option, registry value or Settings.txt key for it, and
+it never changes while the program runs. The main window always covers the whole desktop
+and is black outside the frame. At 800x600 the frame sits at the desktop's top-left
+corner (0,0), without centring. At 1024x768 the frame is shifted by ((W − 1024) div 2,
+(H − 768) div 2), W×H being the desktop, but only when W is above 1024: a desktop 801 to
+1024 px wide gets no shift, and one less than 768 px tall gets a negative vertical shift.
+The game makes no minimum-size check (only a refusal to run below 16-bit colour).
+
+**What changes between the layouts.** Positions are frame pixels unless a row says
+otherwise; anything not listed (report panel, ship list, report tabs, command buttons,
+dialog contents) is the same in both layouts.
+
+| Item | 800x600 | 1024x768 |
+|---|---|---|
+| Frame strips and intro picture | `Pictures/Game/Screens/800X600/` | `Pictures/Game/Screens/1024X768/` |
+| System backgrounds (§2.4, §5.3) | `Pictures/Systems/800X600/`, 490x490 | `Pictures/Systems/1024X768/`, 660x660 |
+| `RightFiller` | the file is 1x1 and is not drawn (the game skips it when it is not wider than 1 px) | 62x365 at (958,107) |
+| Regions and frame pieces | §2.1 tables | §2.1 tables |
+| Sector grid | 36 px cells after an 8 px margin | 50 px cells after a 1 px margin |
+| Black transparent in the system panel | also for unmasked system types while the system grid is shown | only for masked system types |
+| Order strip (§2.3) | at (230,36), 202x68: 5 columns, 4 pages; pager arrows at (231,44) and (417,44) | at (230,36), 712x68: 20 columns, 1 page; arrows dim at (231,44) and (927,44) |
+| Selectors | (448,34) | (965,34) |
+| Status bar text (§2.2) | "Game Date" at x 390; resource icons at x 570, 640, 710 | "Game Date" at x 410; icons at x 650, 720, 790 |
+| Galaxy panel map area | 272x190 at the panel's (7,0): grid cells of 4x4 px | 342x235 at the panel's (0,20): grid cells of 5x5 px |
+| Hover hint (§2.3) | x 100–400, y 123–153 | x 184–484, y 123–153 |
+| Coordinate line (§2.4) | (18,577) | (18,745) |
+| Planets, Colonies, Ships\Units, Construction Queues | 780x475 like every large dialog; list at (12,252), 563x210 (5 full rows of 36 px) | as tall as the desktop less 100 px (668 on a 768 px desktop), centred; the list grows to the window's client height less 265 |
+| Tactical Combat and Combat Replay title strip | title at x 17; "Location" 180, its value 240; "Turn" 370, its value 410; "Empires" 430, flags from 485 | title 17; "Location" 200, value 260; "Turn" 410, value 450; "Empires" 500, flags from 555 |
+
+Within the tactical window two more things follow the desktop width rather than the layout:
+the empire flags strip is 168 px wide (room for 6 flags, 28 px apart) on a desktop
+narrower than 1024 px and 280 px (10 flags) otherwise, and the target-piece panel exists
+only on a desktop at least 1024 px wide. The flags strip is drawn at y 7; the flag of the
+empire whose phase it is gets a yellow (255,255,0) box 28x19.
+
+**Windows and dialogs.** Every dialog, report window, picker and prompt has the same size
+in both layouts and is centred on the desktop (at 800x600 on an 800x600 desktop that is
+the frame). The only exceptions are the four list windows in the table. The main window,
+the Tactical Combat and Combat Replay windows are maximized and borderless, so they cover
+the whole desktop in both layouts: the tactical W×H of §1.10.1 is the desktop size, not
+800x600 or 1024x768. The setup screens (Game Setup, Empire Setup, the Quick Start empire
+picker) also cover the whole desktop and lay their contents out in an 800x600 area centred
+on it, in both layouts.
+
+Our client differs: it has only the 1024x768 layout, scaled to any window size, so it
+needs a second set of geometry for 800x600 if one is added.
+
 ### 2.2 Status bar
 
 Left to right: large empire flag, empire name, emperor title and name, "Game Date" (the
@@ -566,6 +640,22 @@ game starts at 2400.0 and each turn adds 0.1), then stored minerals, organics an
 radioactives, each followed by its resource icon (blue crystal, green organic, red
 radiation symbol). At the far right a minimize button, and during the tutorial a "T"
 button that re-opens the tutorial text [T][S].
+
+Positions (confirmed: binary), relative to the status bar's top-left corner ((11,5) in
+the frame); all text is Futurist Medium (§5.4) with its top at y 4:
+
+- the large flag at (4,3); the empire name at x 36 and the emperor's title and name at
+  x 220, both white;
+- "Game Date" in label blue at x 390 (800x600) or 410 (1024x768), the date in white right
+  after it;
+- the three stockpiles, each a number in its resource colour right-aligned to end 2 px
+  left of its 16 px resource icon; the icons at x 570, 640 and 710 (800x600) or 650, 720
+  and 790 (1024x768);
+- on a simultaneous host's between-turns screen only "Host" at x 36 and the "Game Date"
+  pair at x 400, in both layouts;
+- the 20x20 buttons from `Close.bmp`: the minimize button 2 px from the bar's right end
+  and 2 px below its top, and while a tutorial or scenario runs the "T" button just left
+  of it.
 
 ### 2.3 Command panel
 
@@ -631,10 +721,12 @@ cells sit inside it after a margin:
 - **Grid lines** only with the empire option "system grid" (§1.9): 14 vertical and 14
   horizontal 1 px lines on the cell boundaries, in RGB(21,32,59).
 - **Black as transparent.** When the system type has `Mask Background Objs` TRUE, every
-  sprite (planets, stars, storms, warp points, comets, ships) is drawn with black
-  transparent. When it is FALSE, each sprite is copied as an opaque 36x36 square, black
-  included, except at 800x600 with the system grid on, where black is always
-  transparent so the lines show through.
+  stellar object's sprite (planets, asteroid fields, stars, storms, warp points, comets)
+  is drawn with black transparent. When it is FALSE, each is copied as an opaque 36x36
+  square, black included, except at 800x600 with the system grid on, where black is
+  always transparent so the lines show through. Vehicle sprites (ships, bases, unit
+  groups, fleet icons) are always drawn with black transparent, whatever the flag
+  (confirmed: binary; corrected, an earlier version applied the flag to ships too).
 - **Headings** (confirmed: binary). The minis of hulls with `Requirement Uses Engines :=
   True`, and fighter and drone groups, are turned to the object's heading; bases and other
   engineless hulls, satellites and mines are always drawn upright. A heading is one of 8
@@ -648,15 +740,17 @@ cells sit inside it after a margin:
 Contents [T][S]:
 
 - Planets, asteroid fields, the star(s), storms and warp points as 36x36 sprites. A warp
-  point that the empire has travelled through shows the destination system's name under
-  it.
+  point whose destination system the empire has explored shows that system's name in its
+  cell (with the Empire Option "warp point names"; details below) (confirmed: binary).
 - A colonised planet has small population bars at its top right, coloured by owner.
 - Ships: a single-owner stack shows one ship sprite with a count in the bottom-right
   corner; a location with several empires, or ships orbiting a planet, shows small empire
   flags instead. The counts are drawn in the owner's empire colour (§5.3), next to each
-  flag when there are several (confirmed: binary).
-- A cloaked ship gets a ring around its 36x36 cell in its empire's colour (dark cyan,
-  RGB(0,128,128), if it has none) (confirmed: binary).
+  flag when there are several (confirmed: binary). Exact rules: **Sector contents**
+  below.
+- A cloaked ship shown as the sector's sprite gets a 1 px dotted circle inscribed in its
+  36x36 sprite square, in its empire's colour (dark cyan, RGB(0,128,128), if it has
+  none); there is no circle when flags are shown (confirmed: binary).
 - Colonisation hint: a small green star on a planet means colonisable and breathable; red
   means colonisable but would be domed; no star means not colonisable by this empire.
 - The selected location is framed by four small yellow corner arrows.
@@ -666,6 +760,79 @@ Contents [T][S]:
 - Optional movement lines (Ctrl+L): a line from a moving ship to its destination with a
   small circle per movement point and the number of turns until each point is reached.
 - Nebula and black-hole systems use a full background picture instead of a star field.
+
+**Sector contents** (confirmed: binary). "Sprite square" is the 36x36 square centred in
+the cell, top-left (X, Y): the cell's corner at 800x600, the corner plus 7 at 1024x768.
+For each sector the game sorts what the viewer can see into two groups:
+
+- **The stellar object**: a planet, asteroid field, star, storm, warp point or comet. With
+  several, the first in the system's object list is shown, unless a later planet has a
+  larger planet-size `Stellar Size` (stars and other non-planets count as size 0).
+- **Vehicles**: ships, bases and unit groups, counted per owner, each object counting 1
+  (a group of 20 fighters counts once). Objects without an owner are not counted.
+
+Then, in this order:
+
+- A stellar object is drawn first, by the `Mask Background Objs` rule above. When the
+  sector holds more than one stellar object, their number is drawn in white Tiny (§5.4),
+  with no background, left edge at X and bottom at Y+36.
+- **One owner, no stellar object**: one vehicle sprite, the largest vehicle by hull size
+  (a ship replaces any unit group chosen before it); when that vehicle is one of the
+  viewer's ships in a fleet, the fleet's icon is drawn instead. When the owner has more
+  than one object there, the count goes right-aligned to X+36 with its bottom at Y+36. A
+  lone unit group shows its own unit count there instead, in white with no background.
+  A cloaked vehicle shown this way gets the dotted circle.
+- **One owner, with a stellar object**: no vehicle sprite. The owner's small flag (14x10,
+  copied opaque) at (X, Y) and the count at (X+14, Y), even when it is 1.
+- **Two or more owners** (with or without a stellar object): no vehicle sprite. Each
+  owner's small flag at (X, Y + k × step) with its count at (X+14, Y + k × step), in
+  player-number order (k = 0, 1, ...). The step is 10 px, or cell height div owners when
+  owners × 10 exceeds the cell height (36 or 50): at 800x600, 4 owners give 9 and 5 give
+  7; at 1024x768, 6 owners give 8.
+- **Counts** are in Tiny (Windows' Small Fonts, 6 pt), in the owner's empire colour, on
+  an opaque black box the size of the text.
+
+**Text in the system panel** (confirmed: binary). Panel coordinates; fonts from §5.4; all
+text has a transparent background.
+
+- **System name**: SE4 Text button, white, at (5,10), so (13,123) in the frame. During
+  the movement-log replay a bracketed addition follows the name (§7 Q51).
+- **Warp point names** (Empire Option "warp point names", on by default): for each warp
+  point whose destination system the empire has explored, the destination's name in
+  Futurist small, white, centred on the cell, its bottom on the cell's bottom edge. A
+  second name in the same sector goes one text line lower (below the cell), and so on.
+- **Planet names** (Empire Option "planet names", off by default): each planet the empire
+  can see (not asteroid fields), named the same way: Futurist small, white, centred,
+  bottom on the cell's bottom edge. Planet names and warp point names are stacked
+  separately, so the two can overlap. The planet in sector (0,0) never gets its name: the
+  game's loop starts at the second sector.
+- **Waypoints** 1–10 of the viewer in this system: a cyan (0,255,255) 1 px rectangle on the
+  cell's edges and the number in Futurist small cyan at the cell's bottom-right inner
+  corner (right edge 1 px in from the cell's right edge, bottom on the cell's bottom). The
+  "M" marker of §2.4 is drawn the same way.
+- **Coordinate location** (Empire Option, on by default): while the pointer is over a
+  sector of the panel, a line in Futurist small, white, at (10, panel height − 20): the
+  word "Coordinates" and the sector as "(x, y)" (column and row, both 0–12), and, when a
+  sector of the system shown is selected, "Range:" and the distance in sectors from the
+  selected sector to the one under the pointer (the larger of the column and row
+  differences). The line is empty while the pointer is over the panel's margin outside
+  the sectors. Nothing is ever drawn next to the system name.
+- **Facility markers** (the System Display rows of Empire Options, all off by default):
+  on each colonized planet (never an asteroid field) that the viewer can see and that is
+  the viewer's own or belongs to an empire with a Military Alliance or Partnership with
+  the viewer. Letters and their tests are in §7 Q44. They are drawn in Tiny (Small Fonts),
+  in the colony owner's empire colour, packed with no spaces, right to left: the first
+  letter group (R) ends at the right edge of the planet's 36x36 sprite square with its
+  bottom on the square's bottom, and each further group is placed immediately to the
+  left of the one before, in the order of the table in Q44 (so a colony with a value
+  changer, a space yard, a spaceport and a resupply depot reads "CvYSR"). A group that
+  would start at or left of the square's left edge starts a new line one text height
+  higher, again ending at the right edge.
+- **Notices**: "Unexplored" (§2.4, background); on a simultaneous host's between-turns
+  screen, a line telling the host to press End Turn; and "Player N taking turn..." while
+  the panel is blanked for another player's move. All in SE4 Text button, white, asked
+  for at 24 px (drawn at the face's only size, 17 px (inferred)), centred, top at one
+  third of the panel height.
 
 Clicks (left and right behave the same): one object → its report in the right panel;
 several objects → a list; empty space → a report about the whole system. Only visible
@@ -760,7 +927,9 @@ All of this subsection is (confirmed: binary).
   on the tagged group. All are dim when nothing is selected; when the panel shows a list
   of several objects, a system report, a star, a storm or a warp point; and when the
   object belongs to another empire.
-- A hotkey runs its order only when that order's button is lit.
+- A hotkey runs its order only when that order's button is lit. The exception is the
+  four movement-log keys (Ctrl+P, Ctrl+O, Ctrl+I, Ctrl+U), which start the replay
+  without checking their buttons (§7 Q51).
 
 **Own ship, not mothballed.**
 
@@ -840,8 +1009,8 @@ Hotkeys are listed in the Help window's Hotkeys tab and in the Readme [T][M]. Th
 executable binds every key below; the five Ctrl keys marked (confirmed: binary) were
 missing from the manual's lists. A main-window key works only while no window is open
 and the turn is not being ended or the movement log replayed, and an order key only
-when its button is lit (§2.8). The main window has no Esc or Enter binding (confirmed:
-binary).
+when its button is lit (§2.8; the movement-log keys are the exception). The main window
+has no Esc or Enter binding (confirmed: binary).
 
 ### 3.1 Main window: orders
 
@@ -985,33 +1154,50 @@ Exact rules (confirmed: binary):
   behind it.
 - **Which entries.** Only the current turn's entries; entries made during the player's own
   turn are stamped with the current turn when the Log opens. There is no view of earlier
-  turns. Entries are listed in the order they were made, without sorting.
+  turns. Entries are listed in the order they were made, without sorting. Diplomatic
+  messages and refused orders are ordinary entries in that order (§7 Q42).
 - **Filters.** All is always enabled; a category button is disabled when the turn has no
   entry of that category. Each filter click is stored with the empire (so saved with the
   game) and restored on every later opening; if that category has no entries now, the
-  window opens on All.
+  window opens on All and stores All. A filter click shows the filtered list scrolled to
+  the top with its first row selected (none when it is empty).
 - **Selection.** When the Log closes, and when Goto is pressed, the window stores the
-  selected entry's position in the list and the scroll position with the empire. The
-  next opening restores both if the position exists in the filtered list, otherwise
-  selects the first row. Since a position is stored, a later turn re-selects whatever
-  entry now sits there.
+  selected entry's index in the empire's whole log (not its row in the filtered list)
+  and the scroll position with the empire. The next opening restores both if the entry
+  at that index is in the filtered list, otherwise selects the first row. Since an index
+  is stored, a later turn re-selects whatever entry now has it.
 - **Send Reply** is enabled only for diplomatic messages. It opens Communicate addressed
   to the sender, or shows a "Cannot Reply" notice when a message already went to that
   empire this turn.
 - **Combat Replay** is enabled only for combat entries, and only when Settings.txt
   `Create Combat Replay` is TRUE. When the replay closes, a new background track starts.
 - **Constr. Queues** is always enabled and opens Construction Queues over the Log.
-- **Goto** is enabled when the entry has a target. A location target closes the Log and
-  shows that system in the main window with the sector selected. A window target opens
-  Construction Queues, Research, Intelligence, Empire Options, Designs or Empires over
-  the Log, which stays open.
+- **Goto** is enabled when the entry has a target, which is fixed per kind of entry when
+  it is made (§7 Q41). A location target closes the Log and shows that system in the
+  main window with the sector selected; if the entry names no system, nothing happens
+  and the Log stays open. A window target opens Research, Intelligence or Empires over
+  the Log, which stays open. (The handler also knows Construction Queues, Empire Options
+  and Designs, but no entry is ever made with those targets.)
 - **Details.** A normal entry shows its picture, its title, "Date:" and its text. A
   combat entry shows its picture and "Combat in <system>" in the button font; "Date:"
   at +4 with its value at +40, "Coord:" at +132 with its value at +180 (labels in label
   blue, values white); then the headings **Combat Forces** (x +4) and **Damage** (x 200)
-  over a list of 20 px rows: per empire in the battle a row with its flag and name, then
-  one row per ship, unit group and planet with its damage as a percentage, or "Dead"
-  (destroyed), or "Taken" (captured). (The manual describes Start and Lost counts here;
+  over a list of 20 px rows: per empire in the battle a row with its flag (x 4) and name
+  (x 34), then one row per piece of that empire present when the battle began, in setup
+  order (no neutral obstacles, seekers or units launched during the battle). A ship or
+  base row reads "<name> (<hull Code>)", other rows the name alone; the text starts 12 px
+  in and is cut, without an ellipsis, before the Damage column at x 200. The Damage value
+  is fixed when the battle ends: "N%" with N = 100 − round(remaining ÷ full × 100)
+  (halves to even), 100 when full is 0 and 0 when remaining exceeds full; for a ship or
+  base, full is the design's whole structure and remaining the structure of its intact
+  components less its damage pool (so damage from before the battle counts); for a unit
+  group, full is all its units at full health, including those killed in this battle,
+  and remaining the living units' hit points less the group's pool; for a planet, full is
+  its hit points (spec 04 §11) at the start and remaining its hit points at the end (lost
+  facilities do not count). A piece whose name is not among its empire's survivors shows
+  "Taken" when the name is among another empire's survivors (a captured ship, a conquered
+  planet), otherwise "Dead" (so a colony whose population died is "Dead"); the match is
+  by name. All of this text is white. (The manual describes Start and Lost counts here;
   the executable draws damage instead. Current and lost counts are what the Strategic
   Combat window shows, §1.10.5.) Political messages have their
   own layout unless `Use Old Log Political Message Display` is on.
@@ -1028,7 +1214,15 @@ Where entries come from:
   `ColonyRockOxygen`), combat results, gifts, new tech, unit/ship caps, failed orders,
   ruins, plague, unrest, planet changes, warp points and stellar objects created or
   destroyed, and eliminated players [M] (mapping inferred).
-- **Political messages** from other empires (§4.2).
+- **Political messages** from other empires (§4.2): each delivered message, acceptances
+  of trades, gifts and tributes included, becomes an ordinary entry when it arrives,
+  titled "Message", category Politics, Goto Empires, its text naming the sender and
+  quoting the message (confirmed: binary).
+- **Refused and failed orders**: each one is an ordinary entry made when the order fails,
+  with its own title (unable to move, unable to drop cargo, cannot mothball or unmothball,
+  retrofit problem, launch and recover warnings, colonization failed and so on), category
+  Misc (scrap and retrofit results: Construction), Goto the object's location (confirmed:
+  binary).
 
 Related Settings.txt switches [M]: `Use Old Log Political Message Display`,
 `Create Log Text File for Game`, `Create Log Text Files for Players`,
@@ -1064,8 +1258,8 @@ carry a package [T]. Types:
 - **Comparisons window**: graphs from a per-player `_stats.txt` [T].
 - **Confirmation prompts**, switchable in Empire Options (end turn, scrapping, stellar
   manipulation, deleting research/intel projects, removing the first item of a
-  construction queue) (confirmed: binary); always-on prompts for surrender, quitting as
-  TCP/IP host or player [S][M]. In every Yes/No prompt, Esc and Enter mean No (§3.4).
+  construction queue) (confirmed: binary; which actions ask: §7 Q28, Q46); always-on
+  prompts for surrender, quitting as TCP/IP host or player [S][M]. In every Yes/No prompt, Esc and Enter mean No (§3.4).
 - **TCP/IP chat** with a sound on receipt [M].
 
 ### 4.4 Status icons
@@ -1084,27 +1278,30 @@ viewer's own colonies.
 
 | Order | Cell | Shown when |
 |---|---|---|
-| 1 | 5, else 4 | out of supplies (supplies 0); else low supplies (below `Supply Amount for Low Supply Warning`, 1000 in stock data). Not for mothballed ships |
+| 1 | 5, else 4 | out of supplies (supplies 0); else low supplies (strictly below `Supply Amount for Low Supply Warning`, 1000 in stock data). Not for mothballed ships; no exception for ships that use no supply or have unlimited supply. A fighter group is low below a tenth of the setting and only while it holds at least one fighter (§7 Q54) |
 | 2 | 33 | has damaged components |
 | 3 | 16 | damaged, and a repair source of the same owner is in the sector |
 | 4 | 3 | the first order is Sentry |
 | 5 | 9 | cloaked |
-| 6 | 0, else 11 | has a space yard; otherwise 11 if it has `Component Repair` |
+| 6 | 0, else 11 | has a working space yard as of its last update and is not cloaked (a mothballed, uncloaked yard ship still shows 0); otherwise 11 if it has `Component Repair` |
 | 7 | 2 | repeat orders on |
 | 8 | 10 | under minister control |
 | 9 | 6 | mothballed |
-| 10 | 12 | building, with a non-empty queue |
+| 10 | 12 | building: not mothballed, a working space yard as of its last update, and at least one item in its queue, held or not |
 | 11 | 25, 18, 20, 19, 26, 37, 22 | cargo, in this order: troops, fighters, mines, satellites, weapon platforms, drones, population |
-| 12 | 36 | remote mining: the design has `Remote Resource Generation`, the sector holds an uncolonized planet or asteroid field, and this is the first such miner in the sector |
+| 12 | 36 | remote mining: the design has `Remote Resource Generation`, the sector holds an uncolonized planet or asteroid field (visible or not), and this is the first object with that ability in the system's object list in that sector, whatever its owner (the list keeps the order in which objects entered the system (inferred)); only that object shows it |
 
-**Planets:** cell 9 cloaked; 0 space yard; 10 minister control; 12 building, with a
-non-empty queue; 15 `Ancient Ruins` or `Ancient Ruins Unique` (shown on any planet); 17
-domed (the population cannot breathe the atmosphere); 11 can repair, only when there is
+**Planets:** cell 9 cloaked; 0 space yard; 10 minister control; 12 building, with at
+least one item in the queue, held or not (every colony has a queue); 15 `Ancient Ruins`
+or `Ancient Ruins Unique` (shown on any planet); 17 domed (the population cannot breathe
+the atmosphere); 11 can repair, only when there is
 no space yard; then the seven cargo cells in the ship order; 30 not connected (the empire
 has a spaceport-type facility somewhere and none serves this colony, so its resources are
 not delivered). The planet report also draws the domed icon at (230,196).
 
-**Fleets:** cell 10 (minister), then 9 (cloaked).
+**Fleets:** cell 10 when the fleet's own minister flag is set, then 9 when any member
+belonging to the fleet's owner is cloaked (confirmed: binary). Unit groups' list rows use
+the ship routine.
 
 Drones in cargo use cell 37 (the manual's drone image is that cell, not 34). Cells 1, 7,
 8, 13, 14, 21, 23, 24, 27, 28, 29, 31, 32, 34 and 35 are never drawn.
@@ -1256,16 +1453,130 @@ black-hole swirls, and the ringworld and sphereworld (cells 300, 301).
     chosen through Settings.txt `Finale ... Picture N`.
   - Logos: `Se4logo.bmp`, `Mmlogo.bmp`, `SFI.bmp`; `Backgrd.bmp` 20x20 tile.
   - Cursors, 32x32 `.cur`: `Normal` (hotspot 2,2), `Select`, `Target`, `Hourglass`,
-    and `ArrowN/NE/E/SE/S/SW/W/NW` (hotspot 15,15), the tactical-map move pointers. Where
-    each is used: §1.10.1 (confirmed: binary).
+    and `ArrowN/NE/E/SE/S/SW/W/NW` (hotspot 15,15), the tactical-map move pointers. How
+    they are loaded and where each is used: §5.8 (confirmed: binary).
 
 ### 5.4 Fonts
 
-`Fonts/` holds six Windows 3.x bitmap font files (`.fon`, NE resource containers with
-fixed pixel sizes) [M]: Futurist Medium (13 px), Futurist small (10 px), SE4 Block 1
-Large / Medium / Small (12 / 10 / 8 px), SE4 Text button (17 px). FreeType reads `.fon`
-files directly, so the client can load them from the install through its normal font
-path; bundle our own open fonts as the default.
+`Fonts/` holds six Windows 3.x raster font files (`.fon`: an NE container with one font
+resource each, one fixed pixel size, proportional, ANSI character set, characters 32–255,
+regular weight, made for 120 DPI) [M]:
+
+| File | Face name in the file | Cell height | Ascent | Internal leading | Character height | Registered by the game |
+|---|---|---|---|---|---|---|
+| `FutMed.fon` | Futurist Medium | 16 | 13 | 3 | 13 | yes |
+| `FutSml.fon` | Futurist small | 12 | 10 | 2 | 10 | yes |
+| `SE4TXBTN.FON` | SE4 Text button | 17 | 12 | 0 | 17 | yes |
+| `SE4BLK1L.FON` | SE4 Block 1 Large | 15 | 13 | 3 | 12 | yes, but never selected |
+| `SE4BLK1M.FON` | SE4 Block 1 Medium | 12 | 10 | 2 | 10 | no |
+| `SE4BLK1S.FON` | SE4 Block 1 Small | 9 | 7 | 1 | 8 | no |
+
+The three SE4 Block faces have capitals only.
+
+**Loading** (confirmed: binary). At program start, before any window opens, the game
+registers four of the files with the system for the session (the system's
+add-font-resource call: nothing is copied into the system font folder and nothing is
+written to the registry), in this order: `FutSml.fon`, `FutMed.fon`, `se4blk1l.fon`,
+`se4txbtn.fon`, each looked up in the active mod's `Fonts/` first and then in the base
+`Fonts/`. It removes them again when the program exits. The two other SE4 Block files are
+never registered. All drawing then asks the system for a face by name and size.
+
+**The five font settings** (confirmed: binary). The drawing code sets fonts in only these
+ways; all are regular weight, not italic, not underlined:
+
+| Setting | Face asked for | Size asked for | Drawn at | Default colour |
+|---|---|---|---|---|
+| Body | Futurist Medium | 10 pt (13 px at 96 DPI) | the file's 16 px cell | white |
+| Small | Futurist small | 8 pt (11 px) | the file's 12 px cell | white |
+| Button | SE4 Text Button | 12 pt (16 px) | the file's 17 px cell | white |
+| Button column | SE4 Text Button | 12 pt | 17 px | the button's state colour (below) |
+| Tiny | Small Fonts | 6 pt (8 px) | the system's own size | white |
+
+- Each file holds a single size and every request is close to it, so the text always
+  appears at the file's own pixel size, unscaled, at 96 or 120 DPI alike (Windows scales
+  raster faces only by whole multiples (inferred)). The face names match the files'
+  names ignoring case ("SE4 Text Button" finds "SE4 Text button").
+- **Small Fonts** is Windows' own small raster face, not part of the install. It is used
+  only for the smallest numbers and letters on the maps (table below). An implementer
+  needs a substitute: a small raster face about 8 px tall with digits and the facility
+  marker letters (inferred).
+- "SE4 Block 1 Medium" appears only as the design-time font of the report windows, and
+  "MS Sans Serif" only in a few leftover standard controls (the data-error list window and
+  an unused system finder); every visible text has its font set by code, so neither face
+  is seen in normal play.
+
+**Colour and smoothing** (confirmed: binary). Text is drawn in one solid colour with a
+transparent background (the one exception: the ship counts on system-panel sectors sit on
+an opaque black box the size of the text, §2.4), without outline or shadow (the one
+shadow: on the intro screen the
+version line and the loading line are drawn first in black 1 px right and 1 px down, then
+in white). There is no anti-aliasing: raster fonts are never smoothed, so every glyph pixel
+is either the text colour or left as it was. Text colours used:
+
+| Colour | RGB | Used for |
+|---|---|---|
+| white | (255,255,255) | default: names, values, list rows, titles |
+| label blue | (125,159,255), #7D9FFF | field labels, captions over lists and boxes, sortable column headings, the "(click ...)" hints |
+| grey | (160,160,160), #A0A0A0 | second lines of list rows (Planets, Colonies), descriptions in reports |
+| silver | (192,192,192), #C0C0C0 | the block headings of Empire Status (Button face) |
+| yellow | (255,255,0) | states and warnings: "(Obsolete)", queue modes, "Never", "On Hold", "Victorious!" |
+| resource colours | (70,101,204), (0,128,0), (255,0,0) | minerals, organics, radioactives amounts |
+| cyan | (0,255,255) | waypoint numbers, the "M" marker, hovered system names and Show Names |
+| blue / red | (0,0,255) / (255,0,0) | shield and damage numbers of the tactical target panel |
+| owner colour | §5.3 | ship counts on system-panel sectors; facility letter markers |
+
+**Button column labels** (the 180-wide buttons of every large dialog and the tactical
+buttons) are centred, with their top at (button height − text height) / 2 + 2, in the
+state colour, which the button's outline also takes: normal (97,123,194) #617BC2; under the
+pointer (108,138,220) #6C8ADC; while the mouse button is held on it (125,159,255) #7D9FFF;
+disabled (45,45,45) #2D2D2D. Under the pointer and while held, the `RowGrid.bmp` texture
+is drawn behind the label.
+
+**Where each setting is used** (confirmed: binary; positions are in the window or panel):
+
+| Text | Setting | Colour, position |
+|---|---|---|
+| Large dialog titles | Button | white, at (17,11) |
+| Titles of small windows (text prompts, pickers, check lists, the orders list, Create Fleet, population, the design-name picker, TCP/IP windows) | Button | white, at (10,10) |
+| Message boxes | Button title, Body text | title white centred at y 10 |
+| Captions over lists and boxes ("Options In Use", "Log Messages", "Research Areas" and so on) | Body | label blue |
+| Empire Status block headings | Button | silver |
+| "(click ...)" hints under lists | Small | label blue, usually right-aligned to the list's edge |
+| List rows, statistics values, box contents | Body | white or the column's colour |
+| Second lines of list rows | Small | grey in Planets and Colonies; white in the ship list ("<design> Class" at (46,16) of the row, under the name at (40,0)) |
+| Column headings of sortable lists | Body | label blue; under the pointer (140,166,255) and while held (196,209,255), both over the `RowGrid.bmp` texture; grey (128,128,128) for a column that cannot be clicked; resource-value columns always in their resource colour |
+| Main-window status bar | Body | §2.2 |
+| Hover hint of command and order buttons | Button (name), Small (key) | white, §2.3 |
+| System panel: system name and notices | Button | §2.4 |
+| System panel: warp point and planet names, waypoint numbers, "M", coordinate line | Small | §2.4 |
+| System panel: ship counts, unit-group counts, seeker counts, facility letters, movement-line numbers | Tiny | §2.4, §7 Q44, Q49 |
+| Quadrant maps that label every system in white | Small when a grid cell is less than 12 px tall, else Body | white |
+| Galaxy maps: hovered name, Show Names | Body | cyan |
+| Galaxy Map window: Show Distances numbers | Tiny | white, just right of the system's cell, bottom 2 px above its top |
+| Report panel and report windows: object name | Button | white, centred over the area right of the picture, top at y 4 |
+| Report labels and values | Body | labels label blue at x 130, values white at x 140 one line (15 px) lower |
+| Report descriptions and fine print | Small | grey |
+| Log details: entry title, "Combat in ..." | Button | white |
+| Tactical Combat and Combat Replay: window title | Button | white, at y 11 (x by layout, §2.1.1) |
+| Tactical: "Location", "Turn", "Empires" and their values | Body | labels label blue, values white, at y 9 |
+| Tactical piece list: name; "Size", "Move" or "Dist" with values | Body; Small | white; labels label blue |
+| Strategic and Ground Combat: labels and values; planet name | Body; Button | label blue and white |
+| Intro: version and loading lines | Body | white with the black shadow |
+
+Our client differs:
+
+- It loads `FutMed.fon`, `FutSml.fon` and `SE4TXBTN.FON` from the install with its own
+  reader and draws them at their native sizes for most text (matches). It has no Tiny
+  face: ship counts, facility letters and the map numbers are drawn in Futurist Medium
+  shrunk to 10–11 px, which blurs the bitmap glyphs; it should use one small raster face
+  at its native size.
+- Its button captions use #617BC2 normally and its own #A8BCFF under the pointer, with a
+  dark blue fill while held; the original uses #6C8ADC under the pointer and #7D9FFF while
+  held, with the `RowGrid.bmp` texture behind the label in both.
+- Its warp point and planet names are Futurist Medium at 11 px in light blue and light
+  grey, starting at the cell's bottom edge; the original uses Futurist small, white,
+  ending at the cell's bottom edge (§2.4).
+- It keeps our own open fonts (Noto Sans) for OpenSE4's own windows; that is fine.
 
 ### 5.5 Sounds and music
 
@@ -1344,13 +1655,44 @@ hold race overrides (spec 05) [M]. `SaveGame/`, `Maps/`, `History/`, `Backup/` a
 `temp/` are empty in a fresh install. `Extras/` holds third-party mods as archives plus
 a description file. `Manual/` is the HTML manual.
 
+### 5.8 Pointers
+
+All of this subsection is (confirmed: binary).
+
+**Files.** Twelve `.cur` files in `Pictures/Game/`, each one 32x32 image with 1 bit per
+pixel: every pixel is black, white or transparent (none inverts the screen). Hot spots,
+from the files: `Normal.cur` (2,2); `Hourglass.cur`, `Select.cur`, `Target.cur` and the
+eight `Arrow<dir>.cur` (15,15). The game uses no other pointer, built-in or from the
+system, except over the few leftover standard controls of §5.4.
+
+**Loading.** At program start, right after the fonts, the game loads all twelve with the
+system's load-cursor-from-file call (the active mod's `Pictures/Game/` first, then the
+base folder) and registers them as its own pointer shapes. The file names it asks for
+are lower case (`normal.cur`, `arrowne.cur`); the files on disk are mixed case.
+
+**Where each is shown.**
+
+| Pointer | When |
+|---|---|
+| `Normal` | Every game window sets it as its own pointer when it is created: the main window, all dialogs, report windows, pickers, prompts, the setup screens and the intro (not the 1.95 launcher, which keeps the system's arrow). So it shows everywhere, over the system panel, the galaxy panel and the Galaxy Map window too. The main window has no other pointer: picking a destination for Move To, a waypoint or a target keeps `Normal`. |
+| `Hourglass` | For the whole program, over every window, while it saves or loads a game, map, empire, player (`.plr`) or turn file, while a simultaneous host processes the turn, while a combat replay file is read, and while the Tech Tree window or the Weapons Report exports its text files. Afterwards the program-wide pointer is set back to `Normal`. |
+| `Target`, `Select`, `Arrow<dir>` | Only in the Tactical Combat window, over the map (§1.10.1). The arrow follows the signs of the column and row offsets from the selected piece to the square under the pointer: right and above NE, right E, right and below SE, below S, left and below SW, left W, left and above NW, above N; the piece's own square gives `Normal`. Before Begin is pressed, outside the map and while the window is busy the pointer is `Normal`. |
+| (Combat Replay) | `Normal` over the whole window; the replay has no move or target pointers. |
+
+Our client differs: it has no loader for the `.cur` files. It shows the system's arrow
+where the original shows `Normal`, and draws its own move arrows and crosshairs on the
+combat map (Q40). It should decode the twelve files (the 1-bit image and mask of a `.cur`
+are a small icon format) with their hot spots, show `Normal` over all its classic
+windows, `Hourglass` during loading, saving and turn processing, and the tactical
+pointers by the rules above, and nothing else in the main window.
+
 ---
 
 ## 6. File formats of the player-data folders
 
 | Folder / file | Kind | Structure |
 |---|---|---|
-| `Dsgnname/*.TXT` | text, CRLF, Windows-1252 (some accented names) | One candidate design name per line, no header, alphabetical; 15 lists of 40–436 names with DOS 8.3 upper-case file names. The empire's "Design Name File" picks one; the designer offers names from it [M][T]. The player's name picker lists every line in file order; clicking one picks it, or the player types a name. Computer players and ministers take the next name no existing design uses; when the file runs out they reuse it with Roman numerals II to XV added; with no file, names are "Design <n>" (confirmed: binary). **Ship names** are the design name, a space and a four-digit serial with leading zeros, such as "Hood 0007"; the serial is one more than the highest serial among existing objects of that design (read from the last four characters of their names), so a number freed at the top is reused. The Combat Simulator numbers its ships with a counter per side instead (confirmed: binary). Manual captures show a bracketed hull `Code` after the serial [S]; the executable does not put it into the name (§7 Q18). |
+| `Dsgnname/*.TXT` | text, CRLF, Windows-1252 (some accented names) | One candidate design name per line, no header, alphabetical; 15 lists of 40–436 names with DOS 8.3 upper-case file names. The empire's "Design Name File" picks one; the designer offers names from it [M][T]. The player's name picker lists every line in file order; clicking one picks it, or the player types a name. Computer players and ministers take the next name no existing design uses; when the file runs out they reuse it with Roman numerals II to XV added; with no file, names are "Design <n>" (confirmed: binary). **Ship names** are the design name, a space and a four-digit serial with leading zeros, such as "Hood 0007"; the serial is one more than the highest serial among existing objects of that design (read from the last four characters of their names), so a number freed at the top is reused. The Combat Simulator numbers its ships with a counter per side instead (confirmed: binary). Manual captures show a bracketed hull `Code` after the serial [S]; the 1.95 executable never puts VehicleSize.txt `Code` into a name. It shows it in one place only: the Log's combat details, where a ship or base row reads "<ship name> (<Code>)" (§4.1, §7 Q18) (confirmed: binary). |
 | `Scenarios/<N>_Settings.txt` | text | Standard record format, one record: Name, Description, Starting Game [M]. |
 | `Scenarios/<N>_Text.txt` | text | Records with `ID`, `Series`, `Segment` (order inside the series; previous/next browse a series), `Turn` (0 = first turn), `For Players` (player numbers), `Text Title`, `Text Number of Paragraphs`, `Text Paragraph <n>`, `Image` (a BMP in Scenarios/) [M]. |
 | `Path.txt` | text | One record: `Using Mod Directory` [M]. |
@@ -1373,8 +1715,10 @@ All of this subsection is (confirmed: binary).
   `temp` in the install. With a mod active it uses the mod's folder of the same name
   when that exists.
 - **Save Game** writes `<name>.gam` into the save folder: the Game Setup save-directory
-  path when set and present, otherwise `SaveGame`. Every save also becomes the "last
-  saved game" that Resume Game loads.
+  path when set and present, otherwise `SaveGame`. Every successful save of a game file
+  records its full path as the "last saved game" that Resume Game loads: Save Game, every
+  autosave, the per-player turn-based saves, the multiplayer and host saves, and even the
+  `temp/<game>_CurrTurn.gam` written when a movement-log replay starts (§7 Q53).
 - **Save Map** writes `Maps/<name>.map`; **Save Empire** writes `Empires/<name>.emp`.
   Scenarios are listed from `Scenarios/*_Settings.txt`.
 - **Autosave** writes `AutoSav<d>.gam` into the save folder, where d is the last digit
@@ -1413,25 +1757,34 @@ All of this subsection is (confirmed: binary).
   - events: the date in the same form (width 8), the other empire (width 5), two flags (width 5, always
     0), a space, then the text (treaty made or broken, war, surrender, empire destroyed,
     contact made or lost).
-  - log copy: a header row (date, header, text), a line of 78 dashes, then per entry the
-    date padded to 9, the title padded to 40, and the body with line breaks turned into
-    spaces.
+  - log copy: a header row with "Date" at column 1, "Header" at column 10 and "Text" at
+    column 51 ("Date", 5 spaces, "Header", 35 spaces, "Text"); a line of 78 dashes; then
+    per entry the date with one decimal (2400.1) padded with spaces to 9 characters, the
+    title padded to 40, one space, and the text with each CR LF pair turned into one
+    space (a title longer than 40 is followed by that single space only). CR LF line
+    ends. The file is rewritten each turn only when the setting is on and the log is not
+    empty; otherwise the old file is left as it is.
 
 ---
 
 ## 7. Open questions to verify in the running game
 
-Questions 2 and 4–23 were settled from the executable (code and form resources). Each
-answer gives the result, points to the main section that now holds the details, and says
-where our client differs. Only Q18 keeps an open part. Questions 24–48 are OpenSE4's
-own choices (inferred) where those rules leave something open, in the windows brought in
-line with Q8, Q11, Q16 and Q19–Q23; questions 49–55 are those of the main window, maps,
-art, sound and files brought in line with Q2, Q4–Q7, Q9, Q10, Q12–Q15, Q17 and Q18.
+Questions 1, 2 and 4–23 were settled from the executable (code and form resources).
+Each answer gives the result, points to the main section that now holds the details, and
+says where our client differs ("Our client differs: ..."), so the client can be changed
+from the text alone. Questions 24–55 began as OpenSE4's own choices (inferred) where those
+rules left something open; Q24–Q29 and Q40–Q55, and the last part of Q18, are now settled
+from the executable too, each with an **Answer** marked (confirmed: binary) and the
+differences of our client. Questions 30–39 (the combat windows) remain open. Fonts and
+pointers are in §5.4 and §5.8, the 800x600 layout in §2.1.1.
 
 1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
    Exact panel rectangles; what fills the 67 px right strip and
    RightFiller (more order buttons?); whether the layout follows the desktop resolution
-   or an option.
+   or an option. **Answer:** the desktop width alone picks it (800 px or less: 800x600),
+   with no option; every difference between the two layouts, including the 800x600
+   positions, is in §2.1.1 (confirmed: binary). Our client differs: it has only the
+   1024x768 layout.
 2. **System grid pitch.** How does the 13x13 grid map onto the 490 and 660 px
    backgrounds, and are 36 px sprites scaled at 1024? **Answer:** neither background is
    divided by 13. The panel is 484x484 (800x600) or 652x652 (1024x768) at (8,113); its
@@ -1615,10 +1968,17 @@ art, sound and files brought in line with Q2, Q4–Q7, Q9, Q10, Q12–Q15, Q17 a
     characters of their names, so a number freed at the top is reused. The Combat
     Simulator counts per side instead. Design names come from the name file as described
     in §6 (confirmed: binary). The executable loads the hull `Code` but never puts it into
-    a ship's name. **Open: needs observation.** Where, if anywhere, the bracketed code of
-    the manual's captures appears in 1.95 (perhaps appended in a list row, perhaps only in
-    an older version) needs a look at a ship list in the running game.
-    Our client follows the serial rule (`game::nextVehicleName`).
+    a ship's name. **Answer (the remaining part):** VehicleSize.txt `Code` appears in
+    exactly one place: the Log's combat details, where each ship or base row reads
+    "<ship name> (<Code>)" (§4.1). It is not in ship names, not in ship-list rows (whose
+    second line is "<design name> Class"), not in the ship report (Class is the design
+    name, Size the hull name with its tonnage), and not in design names. The "Code" label
+    in the Help window belongs to the Weapon Mount report and shows the mount's code
+    (confirmed: binary). Captures in the manual that show the code elsewhere come from an
+    older version (inferred); nothing remains open.
+    Our client follows the serial rule (`game::nextVehicleName`). It differs: its Log
+    combat rows lack the "(<Code>)" suffix (Q43), and its ship-size report puts the hull
+    code in brackets after the hull name, where the original shows no code.
 19. **Planets filters.** What does Coloniz\Empty add to Colonizable, which treaties make
     a colony an ally one, and what makes a planet Special? **Answer:** Coloniz\Empty means
     the planet itself is not colonized (not a test on the system). Ally means
@@ -1680,35 +2040,134 @@ art, sound and files brought in line with Q2, Q4–Q7, Q9, Q10, Q12–Q15, Q17 a
     Ground Combat shows the counts at the start and the end only, and does not open for a
     ground stalemate at the end of the colony owner's turn (Q33).
 
-The Planets and Construction Queues windows follow §1.8, and these choices of ours fill
-what the executable's rules leave open (inferred; each needs a look at the running game):
+The Planets and Construction Queues windows follow §1.8. Questions 24–29 were our own
+choices where those rules left something open; all six are now settled from the
+executable:
 
 24. **Sort history.** We read the "five-key history" as: the last column header clicked is
     the first key, the ones clicked before it break ties, up to five, each in its fixed
     direction. Is that the original's order, and does a second click on the same header
-    change anything?
+    change anything? **Answer:** each list window keeps five slots of column numbers,
+    stored with the empire and saved with the game (Planets and Construction Queues have
+    their own), written as soon as a header is clicked. A click shifts every slot down by
+    one, drops the fifth and puts the clicked column first; an earlier copy of the same
+    column is not removed. So clicking the header that is already first changes nothing
+    on screen but pushes the oldest tie-breaker out. Empty slots are skipped. Both
+    windows start with Name as the only key. Each key has its fixed direction and a
+    second click never reverses it. The sort is not stable: rows equal on every key come
+    out in no fixed order. In Construction Queues the middle column's key means whatever
+    the tab shown at sorting time measures (confirmed: binary).
+    Our client differs: it removes the earlier copy of the clicked column (so a repeated
+    click drops nothing); its history lives in the window, not with the empire, so it is
+    lost on closing and not saved; its sort is stable (harmless).
 25. **Available colony ships.** We count a ship as having orders when its fleet has orders,
     and as out of supplies at 0 supply. Send Colony Ship on a planet that is already
     colonized (possible from the Colonizable tab) refuses with a message. What does the
-    original do in each case?
+    original do in each case? **Answer:**
+    - Colony ships are our ships (not units) with a Colonize Planet ability (rock, ice or
+      gas). One is available when its own order list is empty, it is not mothballed and
+      its supply is above 0; a fleet member's own list holds its fleet's orders (spec 03
+      Q65), so fleet orders count. Out of supplies means exactly 0 and never applies to a
+      mothballed ship. A ship with orders but no Colonize order is neither available nor
+      en route.
+    - Send Colony Ship opens "Select Planet to Colonize" over the current tab's list and
+      does not check whether the planet is colonized. Among the available ships that can
+      colonize its type (turn-based: with movement left) it takes the one with the
+      shortest route, the first in list order on a tie. If none qualifies, or the picker
+      is cancelled, nothing happens and nothing is shown.
+    - The orders go into that one ship's own list: Load Cargo (population; only when the
+      ship has cargo space and carries no population), Move To the planet, Colonize. On
+      an already colonized planet the orders are given anyway, and Colonize fails when
+      the ship arrives.
+
+    (confirmed: binary)
+    Our client differs: it refuses an already colonized planet with a message and says
+    when no colony ship can go, where the original stays silent; it gives the orders
+    through the engine's order command, which reaches every member of the ship's fleet,
+    where the original writes only to the chosen ship; it searches vehicles in game order,
+    so ties can resolve differently (minor). The availability test matches.
 26. **Planets statistics.** We leave our own colonies out of "owned by enemies" and "owned
-    by allies". Does the original count them in one of the groups?
+    by allies". Does the original count them in one of the groups? **Answer:** our own
+    colonies count only in "Number of Colonizable Planets"; they are left out of the
+    enemy, ally and non-aligned lines and of "not Colonized" and "Breathable", so the
+    sub-lines do not add up to the colonizable total. Non-Aligned is always 0
+    (confirmed: binary). Our client matches.
 27. **Construction Queues rows.** We take the time at the right as the whole queue's time,
     show it as "N.N Years", make rows 40 px tall and mark a tagged row with the green lamp
     at its top left. The Ships toggle lists ships and bases that still have a yard part or
     a queue while their yard does not work (cloaked, mothballed or lost). The statistics'
     "resources generated" is the empire's total income per turn. Which of these match?
+    **Answer:** rows are 36 px; the time at the right is the first item's (with its whole
+    count, less what is paid), in brackets with "years" in lower case, "(0.3 years)";
+    a tagged row carries the green right-pointing arrow of `General.bmp` (cell (203,15))
+    at its top left; status icons go in one line from x 40 at y 15, 20 px apart, for
+    ships and bases too. Mothballed vehicles are never listed, and cloaking empties a
+    vehicle's queue at once, so the Ships group is in practice always empty. "Resources
+    Generated Per Turn" is the colonies' production only. Every detail is in §1.8.2
+    (confirmed: binary).
+    Our client differs: 40 px rows; the whole queue's time as "N.N Years" without
+    brackets; the green lamp (cell (191,0)) as the tag marker; the name at x 38; status
+    icons only for colonies, at most 6, 16 px apart; vehicle items as "Name x2" but no
+    count for facilities and upgrades; mothballed vehicles and any vehicle with a yard
+    part or leftover items are listed; "Resources Per Turn" is the total income with
+    trade, tariffs and remote mining; the statistics labels and the hint are worded
+    differently. In the engine, cloaking a ship with a working yard should empty its
+    queue.
 28. **First-item confirmation.** With "confirm deleting the first item" on we ask whenever
     the first item is removed, with or without progress, and before Clear Queue. Does the
-    original ask in both cases, and only for the first item?
+    original ask in both cases, and only for the first item? **Answer:** the switch
+    controls three Yes/No prompts in Set Construction Queue (none in the Multi-Add
+    temporary queue; with the switch off nothing asks):
+    1. A left-click on a queued entry deletes the whole entry with its count at once
+       (right-click opens its report). Only the first entry asks ("Remove First Queue
+       Item": delete the item being built?), whatever its progress; other entries never
+       ask. Removing the first entry, or emptying the queue, discards the progress.
+    2. Clear Queue asks ("Remove All Queue Items") when the queue holds anything.
+       Clearing also turns off On Hold and Repeat Build and discards the progress.
+    3. Reorder Queue: after the reorder list is confirmed, if another entry would come
+       first, it asks ("Move First Queue Item": lose the progress?). Yes discards the
+       progress and applies the new order; No drops the whole reorder.
+
+    (confirmed: binary)
+    Our client differs: it removes through select-then-Remove (or Delete) rather than a
+    left-click on the entry; its Top, Up, Down and Bottom buttons act directly and never
+    ask, even when the first entry changes (the original uses a reorder list with OK and
+    Cancel); its Clear does not turn off On Hold and Repeat. The first-item and Clear
+    prompts otherwise match.
 29. **Similar system-wide abilities.** We note it after a facility is queued whose
     abilities include one with "System" in its identifier that a facility of one of our
     colonies in the same system already has. Which abilities count, does the original
-    also look at queued facilities, and is it a note or a question?
+    also look at queued facilities, and is it a note or a question? **Answer:**
+    - It is checked only when a facility is added by a left-click in the available list
+      of Set Construction Queue on a real queue; Fill Queue, Multi-Add, upgrades and
+      Upgrade Facilities never check. The Empire Options switch is never read, so the
+      note always appears.
+    - The abilities that count are these 18: `Resource Gen Modifier System - Minerals`,
+      `- Organics`, `- Radioactives`; `System Point Generation Modifier - Research`,
+      `- Intelligence`; `Combat Modifier - System`, `Damage Modifier - System`, `Change
+      Bad Event Chance - System`, `Change Bad Intelligence Chance - System`, `Change
+      Population Happiness - System`, `Modify Reproduction - System`, `Change Population -
+      System`, `Plague Prevention - System`, `Ship Training - System`, `Fleet Training -
+      System`, `Long Range Scanner - System`, `Reduced Maintenance Cost - System`,
+      `Shield Modifier - System`. `Planet Value Change - System`, `Planet Conditions
+      Change - System` and the `System - ...` movement and destruction abilities do not
+      count.
+    - The new facility's abilities are compared with every object of ours in the queue
+      owner's system: our colonies' facilities and our ships' and bases' components.
+      Queued facilities do not count.
+    - On a match an OK-only box titled "Note" says that a facility with similar
+      system-wide abilities already exists in this system; the facility is added anyway.
+
+    (confirmed: binary)
+    Our client differs: it obeys the switch; it counts every ability with "System" in its
+    identifier, which wrongly includes the planet value and conditions changes; it looks
+    only at our colonies' facilities, not at our ships' and bases' components; it shows
+    the note in the status line after queueing instead of a modal "Note" box.
 
 The combat windows (Tactical Combat and its Orders, Launch Units, Combat Options and
 Combat Piece Report windows, Combat Replay, Combat Simulator, Strategic Combat and Ground
-Combat) were brought in line with Q21–Q23; these choices of ours are (inferred) and open:
+Combat) were brought in line with Q21–Q23; these choices of ours (Q30–Q39) are (inferred)
+and open, and Q40 is settled:
 
 30. **Strategic Combat pace.** The original fights each combat turn with no coded delay.
     Our window plays the engine's finished battle back and holds each combat turn for
@@ -1751,24 +2210,91 @@ Combat) were brought in line with Q21–Q23; these choices of ours are (inferred
     words and the battle's summary (OpenSE4's own help); it has no Close button (Esc and
     Stop Replay close it). Does the original replay keep a log of any kind?
 40. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
-    install's `.cur` files exists yet.
+    install's `.cur` files exists yet. **Answer:** the game loads all twelve `.cur` files
+    at start-up and uses no other pointer. `Normal` is the pointer of every window,
+    `Hourglass` covers the whole program during loading, saving and turn processing, and
+    the tactical map alone uses `Target`, `Select` and the eight arrows; the main window
+    never changes the pointer (§5.8, §1.10.1) (confirmed: binary). Our client differs:
+    no `.cur` loader; the system arrow instead of `Normal`; its own drawn arrows and
+    crosshairs on the combat map instead of the files; no hourglass (§5.8 says what to
+    change).
 
 The Options windows, the Log, the system window's display options and Abandon Planet
-follow §1.9, §4.1 and §2.8; these choices of ours fill what the rules leave open
-(inferred; each needs a look at the running game):
+follow §1.9, §4.1 and §2.8. Questions 41–48 were our own choices where those rules left
+something open; all are now settled from the executable:
 
 41. **Log Goto to a window.** Goto on an entry without a location opens a window chosen by
     the entry's category: Construction → Construction Queues, Research → Research,
     Intelligence → Intelligence, Politics → Empires; Events, Combat and Misc open none.
     Which entries name which window, and which ones open Empire Options or Designs?
+    **Answer:** the target is fixed per kind of entry when the entry is made; it does not
+    follow the category. No entry is ever made with the Construction Queues, Empire
+    Options or Designs targets, so Goto opens only these:
+    - **Location** (closes the Log, shows the system with the sector selected; nothing
+      happens when the entry names no system): almost every entry. Construction: items
+      built, facilities upgraded, a queue stopped for lack of resources, no storage for a
+      new unit, scrapping, retrofit results, self-destruction, units destroyed by our own
+      fire. Events: random events, completed stellar manipulations, ships damaged or
+      destroyed by natural events, minefields, plague cured, atmosphere converted, first
+      contact. Combat: battle reports and ground combat. Politics: planets or vehicles
+      received or transferred, star charts received, new system maps, colonies growing
+      happier or unhappy. Misc: every refused or failed order, ships lost for lack of
+      supply or maintenance, damage while moving, colonization results and failures,
+      ruins found, planet abandoned, resources converted, rioting. Intelligence: the
+      outcome of our own project when its target is a ship, planet or system (an enemy
+      project's effect on us is an Events entry with the same rule).
+    - **Research window**: every Research entry (new tech level, item developed or
+      discovered, new area, all projects completed), and technology received or
+      transferred by diplomacy (Politics).
+    - **Intelligence window**: counter-intelligence defeated an attack; all intelligence
+      projects completed.
+    - **Empires window**: every diplomatic message; surrender, subjugation, treaty lost,
+      resources received or transferred, treaty enacted, communication channels received
+      or opened (Politics); lost contact (Events).
+    - **No Goto**: our project failed or was defeated; a project outcome without a
+      location; maximum ships reached; an empire destroyed; a password reset.
+
+    (confirmed: binary)
+    Our client differs: it picks the window by category. It needs a target per kind of
+    entry as above: Construction entries never open Construction Queues; technology
+    trades open Research; planet, vehicle, star-chart and mood entries go to their
+    location; lost contact opens Empires; failed intelligence projects have no Goto;
+    Empire Options and Designs are never targets; a location entry without a system
+    leaves the Log open.
 42. **Log order and selection.** Messages from other empires come first, then the log
     entries in the order they were made, then the orders the turn refused; a filter click
     selects the first row. Is that the original's order, and what does a filter click
-    select?
+    select? **Answer:** the Log is one list in the order its entries were made. Each
+    delivered diplomatic message (acceptances of trades, gifts and tributes included) is
+    an ordinary entry made when it arrives: title "Message", category Politics, Goto
+    Empires, its text naming the sender and quoting the message; messages are not
+    grouped first. Each refused or failed order is an ordinary entry made when the order
+    fails, with its own title, category Misc (scrap and retrofit results Construction)
+    and Goto its location. A filter click shows the filtered list scrolled to the top
+    with its first row selected (none if empty) and stores the filter with the empire.
+    When the stored category has no entries, the window opens on All and stores All. The
+    stored selection is the entry's index in the whole log, not its row in the filtered
+    list (§4.1) (confirmed: binary).
+    Our client differs: it lists messages first, as rows titled "<empire>: <message
+    type>" built from the message list, then the log entries; refused orders are client
+    notices titled "Order not carried out", added at the end without a Goto; when it falls
+    back to All on opening it does not store All; it stores the row position in the
+    filtered list. The filter click matches.
 43. **Log damage of planets.** Our battle records keep no planet hit points, so a planet
     that stands shows "0%" when untouched and "Hit" otherwise; ships and bases show their
     damage now, unit groups the share of their units lost. What does the original show
-    for a planet?
+    for a planet? **Answer:** a planet shows the share of its hit points (spec 04 §11) lost
+    between the start and the end of the battle, as a percentage like every other row;
+    lost facilities do not count. Every value is fixed when the battle ends, from the
+    piece's state then: ships and bases against the design's whole structure (so damage
+    from before the battle counts), unit groups against all their units at full health.
+    Rows list only the pieces present at the start; ships and bases add "(<hull Code>)"
+    to the name; "Dead" and "Taken" are found by name among the survivors; all of it is
+    white. Formula and details in §4.1 (confirmed: binary).
+    Our client differs: planets show "0%" or "Hit"; ships show their damage at viewing
+    time, truncated; unit groups show the share of units lost; no "(Code)" suffix; Dead is
+    red and Taken yellow; names start at 16 px instead of 12; it may list pieces that were
+    not there at the start.
 44. **Facility markers.** We read the letters as: R Supply Generation, S Spaceport, Y Space
     Yard; Ca, Cc, Cv the planet atmosphere, conditions and value changers; St, Ft ship and
     fleet training; Rc Component Repair; Rr Resource Reclamation; Sst, Sft the system-wide
@@ -1779,44 +2305,274 @@ follow §1.9, §4.1 and §2.8; these choices of ours fill what the rules leave o
     maintenance; Sbe, Sbi the system bad event and bad intelligence chances; Slr the
     system long range scanner. We draw them in yellow above our own colonies. Which
     abilities, where, and for which colonies does the original draw them?
+    **Answer:** each Empire Options row gates its letters. Every test reads the abilities
+    of the colony's built facilities, except Y:
+
+    | Row | Letters and what they test |
+    |---|---|
+    | R/S/Y | R `Supply Generation`; S `Spaceport`; Y a working space yard (a `Space Yard` facility on a colony that is not cloaked) |
+    | Ca/Cc/Cv | Ca `Planet - Change Atmosphere`; Cc `Planet - Change Conditions`; Cv any of the three `Planet - Change ... Value` abilities |
+    | St/Ft | St `Ship Training`; Ft `Fleet Training` |
+    | Rc/Rr | Rc `Resource Conversion`; Rr `Resource Reclamation` |
+    | Sst/Sft | Sst `Ship Training - System`; Sft `Fleet Training - System` |
+    | Spv/Spc | Spv `Planet Value Change - System`; Spc `Planet Conditions Change - System` |
+    | Sph/Spa | Sph `Change Population Happiness - System`; Spa `Change Population - System` |
+    | Scm/Sdm | Scm `Combat Modifier - System`; Sdm `Damage Modifier - System` |
+    | Srm/Ssm | Srm `Reduced Maintenance Cost - System`; Ssm `Shield Modifier - System` |
+    | Spp/Src | Spp `Plague Prevention - System`; Src `Modify Reproduction - System` |
+    | Sbe/Sbi | Sbe `Change Bad Event Chance - System`; Sbi `Change Bad Intelligence Chance - System` |
+    | Slr | `Long Range Scanner - System` |
+
+    They are drawn on visible colonies of the viewer and of empires with a Military
+    Alliance or Partnership with the viewer, in the colony owner's colour, in Small Fonts,
+    packed right to left from the bottom-right corner of the planet's sprite square, as
+    described in §2.4 (confirmed: binary).
+    Our client differs:
+    - Rc tests `Component Repair`; it should test `Resource Conversion`.
+    - Srm and Src are swapped: Srm is `Reduced Maintenance Cost - System`, Src is
+      `Modify Reproduction - System`.
+    - It marks only our own colonies; it should also mark visible colonies of Military
+      Alliance and Partnership partners, each in its owner's colour.
+    - It draws them in yellow, centred 25 px above the sector centre, left to right with
+      spaces; it should use the packed right-to-left layout of §2.4 in a small raster face.
+    - Y should require a working (uncloaked) yard; this changes nothing while our engine
+      has no colony cloaking.
 45. **Planet names and coordinate location.** We draw a planet's name under it, like a
     warp point's destination, and the coordinates of the sector under the pointer after
-    the system name. Where does the original show them?
+    the system name. Where does the original show them? **Answer:** a planet's name, like
+    a warp point's destination name, is drawn inside the planet's cell: Futurist small,
+    white, centred, with the bottom of the text on the cell's bottom edge; only planets the
+    viewer can see, never asteroid fields. The coordinate location is a line at the
+    bottom-left of the system panel, at (10, panel height − 20), in Futurist small white:
+    "Coordinates (x, y)" for the sector under the pointer (column and row 0–12), followed
+    by "Range: N" when a sector of the shown system is selected, N being the larger of
+    the column and row differences between the two sectors. Details in §2.4 (confirmed:
+    binary).
+    Our client differs:
+    - Planet and warp point names are Futurist Medium at 11 px in light grey or light blue,
+      with the text's top on the cell's bottom edge (below the cell); they should be
+      Futurist small white, ending on the cell's bottom edge (inside the cell).
+    - The coordinates are drawn after the system name as "(x,y)"; they belong at the
+      panel's bottom-left as "Coordinates (x, y)", with "Range: N" when a sector is
+      selected.
 46. **Confirmations.** "Confirm stellar manipulation" asks before every action. "Confirm
     scrapping" asks before scrapping vehicles or facilities and before self-destruction.
-    Do the original's ask in the same cases?
+    Do the original's ask in the same cases? **Answer:**
+    - "Confirm scrapping" asks only in the Scrap window (order G), before four of its
+      actions: Scrap (scrap the selected vehicles for their raw materials), Analyze
+      (deconstruct them and study their components), Self-Destruct and Fire On (have our
+      other ships destroy them). Each is a Yes/No box titled "Confirm Action"; with the
+      option off they act at once. Retrofit (which opens its picker), Mothball and
+      Unmothball never ask, nor do the Scrap Facilities check lists (Ctrl+K,
+      Construction Queues → Scrap Facilities, Colonies → Scrap Facil Types). Abandon
+      Planet's two questions are always asked, whatever the option.
+    - "Confirm stellar manipulation": each of the 13 Stellar Manipulation buttons asks a
+      "Confirm Action" Yes/No naming the effect (create a planet in this sector, destroy
+      the star in this sector, close the warp point in this sector, collapse the black
+      hole in this system, and so on). Construct first asks for the size and then asks
+      whether to construct that size. With the option off the order is given at once.
+
+    (confirmed: binary)
+    Our client differs: it also asks before Scrap Facilities, which the original does not;
+    Analyze and Fire On are disabled buttons in ours, so their questions do not exist
+    yet; Construct asks before the size is picked instead of after.
 47. **Claims and abandoned planets.** "Claim every system we colonize" applies to human
     empires when the colony is founded (computer players work out their claims each
     turn). Facilities left on an abandoned planet go, all of them, to the next colony
-    founded there by any empire. Do these match?
+    founded there by any empire. Do these match? **Answer:**
+    - The "automatically claim any system colonized" option is stored, saved and shown,
+      but nothing reads it: founding a colony never claims a system. Systems become
+      claimed only as the home system at empire creation, by a click in the Borders
+      window (which toggles the claim), through a trade or gift package (the giver loses
+      it), and by the Politics minister's territory pass each turn (spec 05) for every
+      empire whose Politics minister is on: every computer player, and a human who turns
+      that minister on.
+    - Abandon Planet empties the population and resets the colony's anger to 25. If the
+      player chose to scrap the facilities, they are scrapped with the usual refund
+      (spec 02). Only when no facility remains is the colony removed and the planet left
+      uncolonized. If facilities remain, the planet stays the same empire's colony, with
+      no population and its facilities; nobody can colonize it (Colonize refuses because
+      a colony is already there). In a turn-based game this happens at once.
+
+    (confirmed: binary)
+    Our client and engine differ: the engine claims the system when a human with the
+    option on founds a colony (the option should do nothing); the territory pass runs for
+    every computer empire whatever its ministers and never for humans (it should run for
+    exactly the empires whose Politics minister is on); Abandon Planet always removes the
+    colony and keeps the facilities for the next colonizer (when facilities remain, the
+    colony should stay with its owner, empty, and nothing should be handed on).
 48. **Smaller choices.** The planet report's Time Remaining uses the Construction
     Queues' years ("0.3 Years", "On Hold", "Never"). "Skip ships under construction"
     skips nothing: our ships appear finished, with no Under Construction status. Save
     Empire writes our empire file, which holds no designs, so it does not ask whether to
-    include them. Which of these differ from the original?
+    include them. Which of these differ from the original? **Answer:**
+    - **Time Remaining** (planet report; the same text in the ship report, the Colonies
+      list and the Construction Queues rows) is the time to finish the first item with
+      its whole count: for each resource whose construction rate is above 0, the turns
+      ⌈(cost × count − progress) / rate⌉, and the largest of these. It is shown as turns ×
+      0.1 with one decimal and " years" in lower case ("0.3 years"); 0 turns shows as one
+      turn, "0.1 years". It shows "Never" when all three rates are 0 (9999 turns or more),
+      "On Hold" for a held queue, and nothing for an empty queue. Under Construction shows
+      "None", or the first item's name with " x N" when its count is above 1; upgrades are
+      named "Upg. <facility>".
+    - **Skip ships under construction** skips ships whose status is Under Construction,
+      which a ship has only from its creation until its components are first updated; a
+      space yard runs that update at once (and every supply update does too), so in a
+      normal game the option skips nothing.
+    - **Save Empire** first asks whether to save the designs with the empire (Yes/No; Esc
+      and Enter mean No), then opens the empire file picker. The file holds a copy of the
+      empire with the game state cleared (research, intelligence, diplomacy, queues, log,
+      fleets, systems to avoid, waypoints, tagged minefields, computer control) and all the
+      player's designs on Yes, none on No.
+
+    (confirmed: binary)
+    Our client differs: it writes "N.N Years" with a capital Y and would show "0.0" for 0
+    turns (the original: "0.1 years"); it has no " x N" suffix and writes "Upgrade "
+    instead of "Upg. "; Save Empire does not ask about designs and saves none (to match,
+    our empire file needs designs). "Skip ships under construction" skipping nothing
+    already matches.
+
+Questions 49–55 were our own choices for the main window, maps, art, sound and files;
+all are now settled from the executable:
+
 49. **Ships beside a planet.** Where exactly do the small flags and their counts go in a
     sector that holds a planet, or several empires, and does a sector with a star,
     storm or warp point count like a planet? Our client draws the flags left to right
     along the bottom of the 36x36 sprite area, each count after its flag, and treats any
-    stellar object like a planet (inferred).
+    stellar object like a planet (inferred). **Answer:** any stellar object (planet,
+    asteroid field, star, storm, warp point, comet) counts. With one owner and a stellar
+    object, the owner's small flag goes at the sprite square's top-left corner with the
+    count right of it (even a count of 1); with several owners the flags are stacked
+    down the left edge, 10 px apart (less when they would not fit), each with its count
+    right of it, in player-number order; counts are per object (a unit group counts 1),
+    in Small Fonts in the owner's colour on a black box. Without a stellar object, one
+    owner shows the largest vehicle's sprite (a fleet icon for the viewer's own fleet
+    ship) with the count at the bottom right; a lone unit group shows its unit count.
+    With more than one stellar object their number is drawn at the bottom left. Vehicle
+    sprites are always keyed black. The full rules are under **Sector contents** in §2.4
+    (confirmed: binary).
+    Our client differs:
+    - It counts units (`max(1, count)`) where the original counts objects; its counts
+      have no black box and use a scaled Futurist Medium.
+    - Its flags run left to right near the bottom of the square; the original stacks them
+      down the left edge from the top.
+    - It prefers a star to a planet as the shown object; the original takes the first in
+      the system's list unless a later planet is larger.
+    - It draws no count of stellar objects and no fleet icon for a lone own fleet ship.
+    - It keys ship minis by `Mask Background Objs`; the original always keys them.
+    - It draws a solid ring of radius 20 for any cloaked vehicle, also when flags are
+      shown; the original draws a 1 px dotted circle inscribed in the square, only for
+      the vehicle whose sprite is shown.
 50. **Status icon conditions.** What makes an object "building", which fleet shows the
     cloaked icon, and in what order "the first miner" is found? Our client: a ship whose
     yard works (not cloaked) with items queued, or a colony with items queued, held or
     not; a fleet with any member cloaked; the first in the game's vehicle order
-    (inferred).
+    (inferred). **Answer:** a ship is "building" when it is not mothballed, its space yard
+    worked at its last update (`Space Yard` ability, not cloaked) and its queue holds at
+    least one item, held or not; its space-yard icon also needs it uncloaked (a cloaked
+    yard ship shows the repair icon instead if it can repair; a mothballed, uncloaked yard
+    ship still shows the yard icon). A colony is "building" when its queue holds at least
+    one item, held or not. A fleet shows the minister icon when its own minister flag is
+    set and the cloaked icon when any member belonging to the fleet's owner is cloaked.
+    The remote-mining icon goes to the first object with `Remote Resource Generation` in
+    the system's object list in that sector, whatever its owner, when the sector holds an
+    uncolonized planet or asteroid field, visible or not. Supply icons: out at 0, low
+    strictly below the setting, skipped only for mothballed ships. All in §4.4
+    (confirmed: binary).
+    Our client differs: its "building" does not exclude mothballed ships; it shows the
+    yard icon on cloaked ships and hides it on mothballed ones; its "first miner" counts
+    only miners of the same owner, in vehicle order; its supply icons skip vehicles that
+    use no supply or have unlimited supply. Colony "building" and the fleet icons match.
 51. **Movement log replay.** What does one Ctrl+I step show, and how does Ctrl+U differ
     from Ctrl+P? Our engine keeps no day-by-day log, so our client moves each vehicle it
     saw in a straight line from where it was before the turn to where it is, in ten
-    steps, and plays Ctrl+U like Ctrl+P (inferred).
+    steps, and plays Ctrl+U like Ctrl+P (inferred). **Answer:**
+    - The replay reloads the start of the turn: it first parks the current state in
+      `temp/<game>_CurrTurn.gam` (on the first start only), loads
+      `temp/<game>_LastTurn.gam` and reads `<game>_Log.trn`, which must be of the current
+      turn. If a file is missing or the log is of another turn, a "Replay Unavailable"
+      message appears (what normally happens in a turn-based game). While it runs the
+      command buttons and selectors are disabled and the system name reads "<Name>  (Day
+      N)".
+    - Each day applies that day's log entries: moves within a system, warp jumps to
+      another system, colonies founded, objects removed and colonies removed; then the
+      system and galaxy panels are redrawn. There is no pause between days. With "animate
+      ship movement in the system window" on, visible moves inside the shown system are
+      animated: the sprite first turns in 5° steps of 10 ms each, then slides 1 px per
+      step, waiting at least 1 ms per step; warp jumps are never animated. After day 30
+      the current turn is reloaded and the panels unlocked.
+    - Ctrl+P (Play Movement Log) ends any replay in progress and plays days 1–30 in one go.
+    - Ctrl+I (one step): the first press loads the start of the turn and shows Day 0
+      without applying anything; each later press applies one more day; the step past day
+      30 restores the current turn.
+    - Ctrl+O (rewind) ends any replay in progress, reloads the start of the turn at Day 0
+      and waits for steps.
+    - Ctrl+U ("Play Movement Log For All Ships") collects the viewer's own objects that
+      moved or jumped, in order of first appearance in the log. For each in turn it
+      reloads the start of the turn, shows that object's system and sector and plays all
+      30 days (every entry applied), switching the panel before each day to the system the
+      object is in, so the view follows it. At the end the current turn and the shown
+      system are restored.
+    - The four keys start the replay without checking whether their buttons are lit
+      (§2.8, §3).
+
+    (confirmed: binary)
+    Our client differs: our engine keeps no day-by-day log, so it plays 10 straight-line
+    steps of 0.3 s from what the client saw, without reloading the previous state; Play
+    continues from the current point and a step after the end wraps to day 1; Ctrl+U
+    plays like Ctrl+P, without following each ship; there is no 5° turn and 1 px slide,
+    and no colony or removal events; it labels "Movement log: day N of 10" at the bottom
+    instead of "(Day N)" after the system name; the panels are not locked.
 52. **Tagged groups.** What do Scrap and Move To Waypoint show for a tagged group? Our
     client asks to confirm the scrapping of every tagged object, and lists the set
-    waypoints (inferred).
+    waypoints (inferred). **Answer:**
+    - Scrap opens the ordinary Scrap window for the sector (where the first tagged object
+      is). It lists all the player's vehicles there; the tags pre-select nothing, and only
+      the window's own "confirm scrapping" prompt applies.
+    - Move To Waypoint (button or Ctrl+W) opens the same Select Waypoint picker as for one
+      ship; Ctrl+0..9 skip it. The order is appended to every tagged object's own orders.
+    - Resupply, Repair and Explore find the destination once, from the first tagged
+      object's sector, and give the same move to every tagged object. Clear Orders clears
+      every tagged object's orders. Cloak and Decloak act at once on each (sound
+      `cloakon`). Minister flips each object's own flag, so a mixed group stays mixed.
+      Move To, Warp, Attack and Set Patrol ask for the target ("Please select target for
+      '<order>'") and apply it to every tagged object.
+    - The tags clear after an order that acts at once (the sector is re-selected), and
+      after the target is picked for a targeted order.
+
+    (confirmed: binary)
+    Our client differs: Scrap with tags asks to scrap the N tagged objects and scraps
+    them all, instead of opening the Scrap window; Minister sets every tagged object to
+    the opposite of the first object's flag instead of flipping each. Its own waypoint
+    chooser for Move To Waypoint has the same effect.
 53. **Resume Game and the music after loading.** Does an autosave become the "last saved
     game", and does Load Game from the Game Menu change the music? Our client: only Save
-    Game sets it, and an in-game load keeps the music (inferred).
+    Game sets it, and an in-game load keeps the music (inferred). **Answer:** every
+    successful save records its full path as the last saved game: Save Game, every
+    autosave `AutoSav<d>.gam`, the per-player turn-based saves, multiplayer and host saves,
+    and even the `temp/<game>_CurrTurn.gam` written when a movement-log replay starts
+    (§6.1). Resume Game loads that path when the file exists and starts a background
+    track; otherwise it does nothing. Load Game from the Game Menu does not change the
+    music (confirmed: binary).
+    Our client differs: only Save Game sets the last saved game; autosaves and turn
+    saves should too (copying the replay temp-file quirk is not needed, since our replay
+    writes no such file). The music after an in-game load matches.
 54. **Low supply of fighter groups.** Do the Sentry button and the low-supply icon of a
     fighter group use a tenth of `Supply Amount for Low Supply Warning`, as Sentry's own
     end does? Our client lights the button by a tenth and draws the icon by the full
-    level (inferred).
+    level (inferred). **Answer:** a fighter group is low on supplies when it holds at least
+    one fighter and its supply is below `Supply Amount for Low Supply Warning` div 10, and
+    out of supplies at 0. The Sentry button, Sentry's own end and the list's low-supply
+    and out-of-supply icons all use these tests (confirmed: binary).
+    Our client differs: the button and the end of Sentry match, but its icon uses the
+    full level; it should use the tenth and need at least one fighter.
 55. **The log copy's header.** What words head `plr_<N>_log.txt`? Our engine writes
     "Date", "Title" and "Text" in the columns of §6.1, then the rule (inferred).
+    **Answer:** "Date" at column 1, "Header" at column 10 and "Text" at column 51, then 78
+    dashes; each entry is the date padded to 9, the title padded to 40, one space, and
+    the text with each CR LF pair turned into one space; CR LF line ends; the file is
+    rewritten only when the setting is on and the log is not empty (§6.1) (confirmed:
+    binary).
+    Our client differs (the engine's log writer): "Title" instead of "Header" and "Text"
+    at column 50; no separating space before the text, so it starts at column 50 instead
+    of 51; every CR and every LF becomes a space instead of one space per CR LF pair.
