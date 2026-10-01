@@ -591,6 +591,22 @@ up the trade chain [M].
 - **Event-only handlers** (confirmed: binary):
   - `Ship - Moved`: the ship is moved to a random system of the quadrant (its own
     included), at a random sector, and its orders are cleared. Amount is not used.
+    - **The draws** (confirmed: binary): first the system, a roll of 1 to the number of
+      systems, in the game's system order; then the sector, one single roll s from 0 to 168
+      inclusive. Both use the game's ordinary between-two-bounds draw (the R[a,b] of spec 01),
+      which takes exactly one number from the shared random sequence. The sector is s mod 13
+      for x and s div 13 for y, the game's sector numbering y × 13 + x (spec 01 §4.1), so
+      every one of the 169 sectors is equally likely, whatever it holds. The engine differs:
+      it draws x and then y as two separate rolls of 0 to 12, which gives the same spread but
+      uses two numbers from the sequence instead of one; it should draw one sector number
+      from 0 to 168 and split it as above.
+    - **The fleet** (confirmed: binary): the ship is moved first and only then taken out of
+      its fleet. A fleet's location follows any member that moves (spec 03 §9), so the
+      location goes with the ship, and once the ship has left, no member is at the fleet's
+      location any more. The fleet is therefore disbanded: every other member leaves it,
+      normally losing its orders, and the fleet itself is deleted. The engine differs: it
+      only takes the moved ship out of the fleet, so the remaining members stay a fleet and
+      keep their orders.
   - `Planet - Destroyed`, `Star - Destroyed`, `Warp Point - Closed`: the same result as the
     stellar manipulation of that name (spec 01 §9).
   - `Planet - Population Riot`: sets the planet rioting unless the race has `Population
