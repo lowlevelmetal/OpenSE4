@@ -836,12 +836,19 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
         }
         case Effect::ShipMoved: {
             // To a random system of the quadrant, at a random sector, orders
-            // cleared; Amount is not used (confirmed: binary).
+            // cleared; Amount is not used (confirmed: binary). The system is
+            // R[1, systems] in system order, then one sector number R[0, 168]:
+            // x = s mod 13, y = s div 13 (spec 05 §4).
             if (!v || s.galaxy.systems.empty()) return out;
-            const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
-            const Sector sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))};
-            detachFromFleet(s, *v);
+            const SystemId dest{static_cast<uint32_t>(rng.range(1, static_cast<int64_t>(s.galaxy.systems.size())) - 1)};
+            const int number = static_cast<int>(rng.range(0, kSystemSize * kSystemSize - 1));
+            const Sector sector{number % kSystemSize, number / kSystemSize};
+            // The ship moves first and only then leaves its fleet: the fleet's
+            // location goes with it, so the rest of the fleet is disbanded and
+            // loses its orders (spec 05 §4, spec 03 §9, confirmed: binary).
             v->location = {dest, sector};
+            fleetMemberMoved(s, *v);
+            detachFromFleet(s, *v);
             v->orders.clear();
             v->repeatOrders = false;
             explore(s, v->owner, dest);
