@@ -900,7 +900,7 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
         fuel(l.w, gunboat);
         const VehicleId picket = picketAt(l, 5, 5);
-        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.w.order(gunboat, mk(OrderKind::Attack, at(l.a, 5, 5), {}, picket));
         l.w.order(gunboat, moveTo(l.a, 0, 0));
         l.run();
         CHECK(l.spy.asked == std::vector<Location>{at(l.a, 4, 5), at(l.a, 5, 5)});
@@ -924,6 +924,45 @@ TEST_CASE("movement: turn-based games check for battle only on a step, an Attack
         CHECK(l.w.v(gunboat).location == at(l.a, 5, 5));
         CHECK(l.w.v(gunboat).orders.empty());
         CHECK(l.w.v(gunboat).movement == 0);
+    }
+    SUBCASE("an Attack with no sector recorded attacks where the group stands") {
+        // Spec 03 §8, §19 Q71: the stored Attack names no place; it does not follow its target.
+        Live l;
+        const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser"}), at(l.a, 3, 5));
+        fuel(l.w, gunboat);
+        const VehicleId picket = picketAt(l, 5, 5);
+        l.w.order(gunboat, mk(OrderKind::Attack, {}, {}, picket));
+        l.run();
+        CHECK(l.spy.asked == std::vector<Location>{at(l.a, 3, 5)});
+        CHECK(l.w.v(gunboat).location == at(l.a, 3, 5));
+        CHECK(l.w.v(gunboat).orders.empty());
+        CHECK(l.w.v(gunboat).movement == 2);  // the attack's 1 movement point
+    }
+    SUBCASE("the Attack decloaks nobody; the Ship Cloaking minister's vehicles cloak again afterwards") {
+        // Spec 03 §6.4, §8, §19 Q69 (confirmed: binary).
+        for (const bool minister : {false, true}) {
+            CAPTURE(minister);
+            Live l;
+            const VehicleId gunboat = l.w.spawn(l.w.ship(kA, "Gunboat", 3, {"Test Laser", "Mv Cloak"}), at(l.a, 5, 5));
+            fuel(l.w, gunboat);
+            l.w.v(gunboat).status = VehicleStatus::Cloaked;
+            if (minister) {
+                l.w.s.empire(kA).ministers |= ministerBit(Minister::ShipCloaking);
+                l.w.v(gunboat).minister = true;
+            }
+            const VehicleId picket = picketAt(l, 5, 5);
+            l.w.order(gunboat, mk(OrderKind::Attack, at(l.a, 5, 5), {}, picket));
+            std::optional<VehicleStatus> during;
+            l.spy.fight = [&](const GameState& s, Location) {
+                during = s.vehicle(gunboat)->status;
+                return false;
+            };
+            l.run();
+            REQUIRE(during);
+            CHECK(*during == (minister ? VehicleStatus::Normal : VehicleStatus::Cloaked));
+            CHECK(l.w.v(gunboat).status == VehicleStatus::Cloaked);  // raised again, or never lowered
+            CHECK(l.w.v(gunboat).orders.empty());
+        }
     }
     SUBCASE("a Seek at its target attacks every time its list runs and stays") {
         Live l;
@@ -1229,6 +1268,13 @@ TEST_CASE("movement: attack pursues a moving target and stays until it is gone")
     l.move();
     CHECK(l.v(sneaky).location == at(la, 3, 3));
     CHECK(l.v(sneaky).status == VehicleStatus::Cloaked);
+    CHECK(l.v(sneaky).orders.size() == 1);
+    // A group with no drone does not attack at its target: it waits there and
+    // spends neither movement nor supply (spec 03 §8, §19 Q69).
+    const int64_t supply = l.v(sneaky).supply;
+    l.move();
+    CHECK(l.v(sneaky).supply == supply);
+    CHECK(l.v(sneaky).location == at(la, 3, 3));
     CHECK(l.v(sneaky).orders.size() == 1);
 }
 

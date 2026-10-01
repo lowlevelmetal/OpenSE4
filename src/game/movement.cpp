@@ -1055,23 +1055,20 @@ private:
     }
 
     // Attack (§8, confirmed: binary): a pursuit that moves toward the target's
-    // current sector, warping as needed, and attacks once there (1 movement
-    // point and one move's supply; cloaked drones decloak first); the battle
-    // comes from the day's combat check and the order stays. It is done when
-    // the target is gone, the attacker's owner's, or a planet without colony.
-    // In a turn-based game a group that is not all drones goes to the sector
-    // the target was in when the order was given (Order::location: Move To
-    // that sector plus an Attack there, §8) and attacks there, whatever became
-    // of the target, decloaking (§6.4): 1 movement point, one move's supply
-    // and a battle check, and the order is used up; without movement left it
-    // is removed doing nothing. "Used up" is done, so with Repeat on it goes
-    // to the end of the list (inferred, spec 04 §19.2 Q77). A drone group's
+    // current sector, warping as needed. Once there, a group holding a drone
+    // whose own first order pursues an object in that sector attacks: its
+    // cloaked drones decloak, then 1 movement point and one move's supply; the
+    // battle comes from the day's combat check (a turn-based game's check at
+    // once) and the order stays. A group with no such drone just waits there,
+    // spending neither (§19 Q69). The pursuit is done when the target is gone,
+    // the attacker's owner's, or a planet without colony. A drone group's
     // pursuit (a Seek) at its target attacks and runs a battle check every
-    // time its list runs, and stays (spec 04 §2, confirmed: binary).
+    // time its list runs, and stays (spec 04 §2, confirmed: binary). In a
+    // turn-based game a group that is not all drones carries out the Move To
+    // plus Attack the order stands for (placeAttack).
     Exec attack(Group& g, Order& o) {
-        const bool pursuit = !live_ || onlyDrones(g);
-        const bool fixedPlace = !pursuit && validLocation(s_, o.location);
-        if (!fixedPlace && pursuitOver(s_, g.owner, o)) {
+        if (live_ && !onlyDrones(g)) return placeAttack(g, o);
+        if (pursuitOver(s_, g.owner, o)) {
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
             return Exec::Done;
         }
@@ -1079,21 +1076,17 @@ private:
         // the expansion, orders.hpp).
         if (o.object.valid() && o.object.index() < s_.galaxy.objects.size() && s_.galaxy.object(o.object).kind == ObjectKind::WarpPoint)
             return warp(g, o);
-        const Location goal = fixedPlace ? o.location : o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
+        const Location goal = o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
         const Travel t = travel(g, goal);
         if (t == Travel::Reached) return Exec::Moved;  // the attack needs the next action's movement
         if (t != Travel::Arrived) return afterTravel(g, o, t);
-        if (remaining(g) <= 0 || immobile(g)) {
-            if (pursuit) return Exec::Wait;
-            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
-            return Exec::Done;
-        }
+        if (!droneSeeksHere(g, goal)) return Exec::Wait;
+        if (remaining(g) <= 0 || immobile(g)) return Exec::Wait;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            const bool drone = vehicleType(r_, s_, *v) == VehicleType::Drone;
-            if ((drone || !pursuit) && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
-            if (drone && pursuit) {
+            if (vehicleType(r_, s_, *v) == VehicleType::Drone) {
+                if (v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
                 // Its target in the battle (spec 04 §10.7).
                 v->targetVehicle = o.vehicle;
                 v->targetObject = o.object;
@@ -1101,8 +1094,76 @@ private:
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
-        if (live_) checkHere_ = true;  // turn-based: the attack runs a battle check (runLive)
-        return pursuit ? Exec::ActedStay : Exec::Acted;
+        if (live_) checkHere_ = true;  // turn-based: the Seek runs a battle check (runLive)
+        return Exec::ActedStay;
+    }
+
+    // A member of the group is a drone whose own first order is an Attack
+    // pursuing an object now in `here` (spec 03 §8, §19 Q69).
+    bool droneSeeksHere(const Group& g, Location here) const {
+        return any(g, [&](const Vehicle& v) {
+            if (vehicleType(r_, s_, v) != VehicleType::Drone || v.orders.empty() || v.orders.front().kind != OrderKind::Attack) return false;
+            const Order& seek = v.orders.front();
+            if (pursuitOver(s_, v.owner, seek)) return false;
+            if (seek.vehicle.valid()) return s_.vehicle(seek.vehicle)->location == here;
+            return locationOf(s_.galaxy, seek.object) == here;
+        });
+    }
+
+    // The turn-based Attack of a group that is not all drones (§8, §19 Q69,
+    // Q71, confirmed: binary): the Move To the sector the target was in when
+    // the order was given (Order::location; done at once when the group is
+    // already there), then an attack wherever the group stands, whatever became
+    // of the target; with no sector recorded it attacks where it stands. The
+    // attack costs 1 movement point and one move's supply per member and runs
+    // a battle check at once, and the order is used up; without movement left
+    // it is removed doing nothing. "Used up" is done, so with Repeat on it goes
+    // to the end of the list (inferred, spec 04 §19.2 Q77). Nobody decloaks:
+    // only the vehicles under the Ship Cloaking minister lower their cloaks for
+    // it and raise them again afterwards if they can (recloak).
+    Exec placeAttack(Group& g, Order& o) {
+        if (validLocation(s_, o.location)) {
+            const Travel t = travel(g, o.location);
+            if (t == Travel::Reached) return Exec::Moved;  // the attack needs the next action's movement
+            if (t != Travel::Arrived) return afterTravel(g, o, t);
+        }
+        if (remaining(g) <= 0 || immobile(g)) {
+            ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
+            return Exec::Done;
+        }
+        for (VehicleId id : g.members) {
+            Vehicle* v = s_.vehicle(id);
+            if (!v || !alive(*v)) continue;
+            if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v)) {
+                v->status = VehicleStatus::Normal;
+                recloak_.push_back(id);
+            }
+            v->movement = std::max(0, v->movement - 1);
+            spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
+        }
+        checkHere_ = true;  // the attack runs a battle check (runLive)
+        return Exec::Acted;
+    }
+
+    // The Ship Cloaking minister handles the vehicle: every vehicle of a
+    // computer player, and a human's under minister control while that
+    // minister is on (spec 03 §6.4, §19 Q69; spec 05 §7.1).
+    bool underCloakingMinister(const Vehicle& v) const {
+        if (!v.owner.valid() || v.owner.index() >= s_.empires.size()) return false;
+        const Empire& e = s_.empire(v.owner);
+        if (e.kind != PlayerKind::Human || e.ministerAll) return true;
+        return (e.ministers & ministerBit(Minister::ShipCloaking)) != 0 && v.minister;
+    }
+
+    // After the Attack's battle check, the vehicles the Ship Cloaking minister
+    // decloaked for it cloak again when they still can (§8 Cloak: a working
+    // cloak and supply above 0).
+    void recloak() {
+        for (VehicleId id : recloak_)
+            if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->status == VehicleStatus::Normal && canCloak(r_, s_, *v) &&
+                                             (v->supply > 0 || vehicleHasUnlimitedSupply(r_, s_, *v)))
+                v->status = VehicleStatus::Cloaked;
+        recloak_.clear();
     }
 
     // Explore, Resupply and Repair are expanded when they are given (orders.hpp);
@@ -1518,6 +1579,7 @@ private:
             bool fought = false;
             if (entered_.size() > steps) fought = entryCombat(g);
             else if (checkHere_) orderCombat(g);
+            recloak();
             entered_.clear();
             touched_.clear();
             if (fought || g.stopped) return;
@@ -1639,6 +1701,7 @@ private:
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
+    std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
     UnitBudget budget_;
 };
 

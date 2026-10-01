@@ -204,10 +204,13 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 // (spec 04 §2, combat::BattleCheck, confirmed: binary): a group's movement
 // step (a warp jump included), once the mines there have struck: a battle is
 // fought at once, the order fails and every member's list is cleared; the
-// Attack order where its target is (1 movement point, decloaking): the order
-// is used up, the rest of the list goes on, and without movement left it is
-// removed doing nothing; and a drone group's pursuit (a Seek) at its target,
-// which attacks every time the list runs and stays. Other participants lose
+// Attack order, in the sector its target was in when it was given (or where
+// the group stands when none was recorded), for 1 movement point and with
+// nobody decloaking but the vehicles under the Ship Cloaking minister, which
+// cloak again afterwards: the order is used up, the rest of the list goes on,
+// and without movement left it is removed doing nothing; and a drone group's
+// pursuit (a Seek) at its target, which attacks every time the list runs and
+// stays (a group with no drone pursuing there waits). Other participants lose
 // only a Sentry at the head of their lists. No other order, Sentry included,
 // starts a battle, nor do groups that merely sit. Returns the questions of
 // the groups that stopped before a sector with enemies.
