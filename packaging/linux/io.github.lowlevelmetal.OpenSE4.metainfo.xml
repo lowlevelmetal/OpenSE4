@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.3.0" date="2026-10-01" type="development">
+      <description>
+        <p>Every remaining rule and interface question settled from the original and implemented, and new tutorials, training games and an in-game manual.</p>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-09-30" type="development">
       <description>
         <p>A Windows installer, and the game's entry and icon on Linux desktops.</p>
