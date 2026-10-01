@@ -2881,7 +2881,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     these: its column widths; its dates, written as 2400.1 rather than as a whole number of
     tenths, and in the statistics always the unadvanced turn; its log copy (its own line
     layout, on when the key is missing, appended, last turn's entries only, no header); and
-    the missing contact-lost lines. It must follow §3.4 and §5. OpenSE4 choice: the folder and file names in the
+    the missing contact-lost lines. It must follow §3.4 and §5. Spec 06 §6.1 lists the
+    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`). OpenSE4 choice: the folder and file names in the
     user data directory (`history/<game seed>/player<N>_…`), which have no counterpart since
     the original keeps the files in the installation and copies them with each save. That
     OpenSE4's network and e-mail hosts write no files is also an OpenSE4 choice; the
