@@ -117,7 +117,10 @@ empires are skipped.
       `applySystemAbilities`, `movement::trainEmpire`);
    16. each ship, base, fighter group and drone group records its current sector as the
       one it comes from (`Vehicle::cameFrom`);
-   17. ground combat (`combat::runGroundCombat`);
+   17. ground combat (`combat::runGroundCombat`): the fights on the empire's invaded
+       colonies, or the hand-over of a friendly empire's troops; in a turn-based game on
+       one machine a fight with a human side stops the call to be shown (see "Battles
+       shown as they happen" below);
    18. the log keeps only this turn's entries; the long record of the History window is
       `Empire::historyEvents`, which is never pruned (`addHistory`).
 
@@ -225,19 +228,42 @@ for bit, and the strategic battle unless a player side has a fleet: a player's s
 not automated, so a hit on its group's leader never dissolves the group as it does for
 an automated side (spec 03 §19 Q60).
 
-In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
-play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
-script). A battle with a human side and no answer stops the call: the state is left as
-it was, and `TurnResult::battle` returns the question with a copy of the game as the
-battle begins. The client fights it in its window (or answers Strategic) and makes the
-same call again with the answer; the call replays deterministically to the battle and
-fights it with the script, so the game gets exactly the battle the player saw.
+`Setup::stepped` sets up a battle without player sides and stops before combat turn 1;
+`step()` then plays one empire phase at a time (with the end-of-turn upkeep and the end
+check that follow it). The Strategic Combat window fights a battle this way while it
+shows it; a battle stepped or fought at once comes out the same.
+
+### Battles shown as they happen
+
+On one machine the original stops whatever started a battle once the battle is set up,
+before combat turn 1, shows it, and goes on only when its window is closed (spec 06
+§1.10.5, §1.10.6). The engine does the same with answers given in advance
+(`turn.hpp`, "Battles shown as they happen"): the calls that play the game
+(`resumeTurnBased`, `applyLive`, `endPlayerTurn`, and `processTurn` with
+`TurnOptions::battles`) take one `BattleAnswer` per stop, in the order the stops come
+up. A stop whose answer is missing stops the call: the state is left as it was, and
+`TurnResult::battle` returns the `BattleQuestion` with a copy of the game:
+
+- **Choose** (turn-based, a battle with a human side): Tactical or Strategic; the answer
+  names the tactical sides and their script;
+- **Show** (turn-based with "No Tactical Combat", or a simultaneous game whose Settings
+  show battles): the Strategic Combat window with Begin and Close; the strategies fight it;
+- **Ground** (turn-based, the colony owner's end-of-turn ground combat with a human
+  side): the engine fights it and hands over its record (`BattleQuestion::ground`).
+
+The client shows it (it fights the battle in its window, by hand or by the strategies,
+or plays the ground record round by round) and makes the same call again with the answer
+added; the call replays deterministically to the stop and goes on, so the game gets
+exactly the battle the player saw, and the reports, log entries and everything after the
+battle come only after the window has closed. Nothing a window shows can change the game,
+so the results are the same whether a battle is shown or not. Network and PBEM hosts and
+automated runs pass no answers and never stop.
 
 A battle's record (`CombatRecord`) holds its pieces, the events the replays play back
 (moves, shots, hits, losses of units, launches, captures) and the ground combats fought
-when troops landed (`GroundCombat`, for the Ground Combat window). The client shows a
-battle fought by the strategies in the watch-only Strategic Combat window, played back
-from that record.
+when troops landed (`GroundCombat`, for the Ground Combat window: both sides at the start,
+the counts of every stack and the militia after every round, and the landing's place
+among the events).
 
 Units in space are held in one group per (owner, unit kind, sector) that mixes designs
 (spec 03 §12): a `Vehicle` whose `mixed` list names each design and its count (empty when
@@ -310,7 +336,7 @@ scaled to the window, drawn with the art from the player's install.
 
 | Part | Role |
 |---|---|
-| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers; it lists the battles to watch in the Strategic Combat window |
+| `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat games it holds the battle (or ground fight) that stops the engine call to be shown, and the battle being fought in a window, and makes the engine call again with the answers; it lists the battles of network and PBEM games, shown afterwards |
 | `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, and each empire's colour from its race's swatch |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, the classic dialog layout, and the keys of dialogs and prompts (spec 06 §3.4: `yesNoKey`, `okKey`, `YesNoPrompt`). `UiContext::options()` and `setOptions()` read and change the empire's Empire Options and window memories (`game::InterfaceOptions`, saved with the game, changed with `cmd::SetInterfaceOptions`) |
 | `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
@@ -320,7 +346,7 @@ scaled to the window, drawn with the art from the player's install.
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
 | `ship_glides.*` | Ships gliding to their new square, the headings of minis, and the movement log replay |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question) and Ground Combat; `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |

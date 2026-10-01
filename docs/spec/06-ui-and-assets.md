@@ -2172,13 +2172,9 @@ Q38 keeps a small open part. Fonts and pointers are in §5.4 and §5.8, the 800x
     (tactical, or a computer side in a strategic battle) and for a continuing ground
     stalemate; it fights round by round. Details in §1.10.5 and §1.10.6 (confirmed:
     binary).
-    Our client follows this. It still differs where Q30–Q33 say: it holds each combat
-    turn 0.45 s and moves the map once per combat turn, not after every step (Q30); a
-    few title-strip and forces-list details (Q31); with No Tactical Combat on, and in
-    the other cases where the window opens without the question, it shows battles after
-    the engine call that fought them instead of when they start (Q32); Ground Combat
-    shows the counts at the start and the end only, at 0.45 s per round, and does not
-    open for a ground stalemate at the end of the colony owner's turn (Q33).
+    Our client follows this, with the answers of Q30–Q33 since 2026-10-01. It still
+    differs in games played on different machines, whose host never stops: their
+    battles are shown afterwards (Q57).
 
 The Planets and Construction Queues windows follow §1.8. Questions 24–29 were our own
 choices where those rules left something open; all six are now settled from the
@@ -2320,10 +2316,11 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     screen only as long as the next one takes to compute and draw. How long that was on
     a period machine is a matter of the machine's speed, which the executable cannot
     tell; on a current machine the whole battle passes in a moment.
-    The client differs: it holds every combat turn 0.45 s and moves the map once per
-    combat turn. To match, it must draw every step as it is taken (the battle record has
-    to keep each step, Q32) and hold nothing. A minimum hold kept so that a player can
-    follow the battle would be OpenSE4's own choice and must be marked so (inferred).
+    Our client follows this since 2026-10-01: the window fights the battle itself (a
+    stepped combat::TacticalBattle), holds nothing, and lets each displayed frame show
+    one empire's phase, the map after its steps and the forces list and "Combat Turn N"
+    after each combat turn. That a frame shows a phase, not each step, is our own choice
+    (inferred, Q56).
 31. **Strategic Combat details.** Where in the title strip do the system name and the
     coordinates go (ours: x 270 and 450, as in Ground Combat)? Are the 5 planets of the
     forces list counted per empire (ours) or for the whole battle? Under which hull does a
@@ -2337,9 +2334,9 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     made once, when the window opens, so a hull an empire did not have in the battle at
     set-up never gets a row, even when units of that hull are launched or a ship of that
     hull is captured.
-    The client differs: Coordinates at x 450 and a mixed group counted under its first
-    design's hull; and no hull row may be added during the battle (the earlier text of
-    §1.10.5 allowed it).
+    Our client follows this since 2026-10-01 (`CombatForces`). A battle a network or
+    PBEM host fought, shown afterwards from its record, counts a mixed group under its
+    first design's hull, the only one the record keeps (inferred, Q58).
 32. **Battles without tactical combat.** With No Tactical Combat on, ours shows every
     battle with a human player's piece after the engine call that fought it, not as the
     battle starts (the engine does not stop for them). Is the window shown before or after
@@ -2354,24 +2351,18 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     opens in its Begin and Close form instead of its question form, still after the
     notice when a computer player's turn is being played. The same holds for the
     Strategic Combat window on different machines and in simultaneous games.
-    The engine differs: it does not stop for a battle it does not ask about; it fights
-    it within the call, and the client shows the record after the whole call (an order,
-    or End Turn with the computer turns) has finished, after later moves and battles,
-    with the results already in the log. To match, the engine must stop where it now
-    raises its battle question (the battle set up, before combat turn 1) whenever the
-    battle is to be shown in the Strategic Combat window (the cases of §1.10.5), hand it
-    to the client, and resume only when the window has closed: then finish the battle
-    (reports, log, happiness events, cloaking again, removal of destroyed objects) and
-    carry on with the interrupted move. Since nothing in the window can change the
-    battle, the engine may also fight it at the stop and hand over the fought record,
-    as long as nothing later in the call (the main window, the log, other battles)
-    becomes visible before Close. The record must keep, for the window: the pieces as
-    set up (owner, kind, design or object, size, square); in order, every step of every
-    move (seekers' included), every launch, every piece destroyed or removed and every
-    change of owner, each with its combat turn and phase; and each ground combat at the
-    point of the phase where its troops landed, so the playback stops there and opens
-    Ground Combat (Q33). The forces counts of §1.10.5 follow from these; the end of each
-    combat turn must be marked, since the list is recounted only then.
+    Our engine and client follow this since 2026-10-01 (game/turn.hpp, "Battles shown as
+    they happen"): on one machine every battle that the original shows stops the engine
+    call once it is set up, before combat turn 1, in a turn-based game (the question, or
+    with No Tactical Combat the Begin and Close form) and in a simultaneous game whose
+    Settings show battles. The client fights it in its window while showing it (the
+    record keeps each step, launch, loss and change of owner with its combat turn, and
+    each ground combat with the place of its landing in the events); after Close the
+    call is made again, replays to the same point and fights the battle the same way,
+    so the reports, log entries, happiness events and the rest of the call come only
+    then, and the results are the same whether a window shows the battle or not. Games
+    on different machines differ: their host fights every battle without stopping, and
+    the client shows the battles afterwards (Q57).
 33. **Ground Combat rounds.** Our record keeps a ground fight's start and end only, so the
     window counts the rounds and shows the new numbers at the end. Do the original's unit
     counts change after every round? Ours does not yet open Ground Combat for a stalemate
@@ -2388,16 +2379,14 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     two empires, then the window, while that empire's end-of-turn processing waits. It
     opens only in turn-based games when one of the two empires is human (in the
     simulator always); the log entries are written after the fight either way.
-    The engine and the client differ: the engine's ground record keeps the start and the
-    end only, the client counts rounds at 0.45 s and shows the final numbers at the end,
-    and the engine runs the end-of-turn fights silently, so the client never opens Ground
-    Combat for them. To match, each ground fight's record must keep, for every round,
-    the count of every troop and militia stack on both sides after that round, with the
-    round limit and the outcome; the client must show them round by round at 0.9 s per
-    round (the explosion); and the engine must stop at the colony owner's ground-combat
-    step when the window is to be shown (or fight it and yield at once), so that the
-    notice and the window come before the rest of that empire's end-of-turn processing
-    and before the next player's turn.
+    Our engine and client follow this since 2026-10-01: each ground fight's record keeps
+    the counts of every stack on both sides and the militia after every round
+    (`GroundCombat::perRound`); the window shows them round by round, 0.9 s a round with
+    the explosion and a boom; and at the colony owner's ground-combat step of a
+    turn-based game on one machine, a fight with a human side stops the call (the engine
+    fights it and hands the record over), shown after the notice, before the rest of
+    that empire's end-of-turn processing and the next player's turn. Both empires' log
+    entries are written either way (spec 04 §13).
 34. **Fast Tactical Combat.** Ours plays the animation three times faster instead of
     dropping the pauses between steps; the same for Fast Tactical Combat in Combat Replay
     Options.
@@ -2459,13 +2448,10 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     only at the colony owner's end-of-turn step does a treaty at Non-Aggression or better
     hand surviving invaders over to the colony. After every landing the planet's piece
     is reset: weapons ready, shields full, targets cleared.
-    The engine differs: it refuses a colony it is not hostile to; it takes the planet
-    the order names (the client names the first adjacent colony) instead of the last
-    adjacent one in piece order; a computer carrier lands only on its chosen target; and
-    the planet's piece is not reset after a landing that fails to take it. To match, the
-    hostility test must go, the order needs no target (the colony follows from the rule
-    above), a Drop Troops piece tries the landing after every move, and every landing
-    resets the planet's piece.
+    Our engine follows this since 2026-10-01 (`Battle::landingColony`, `dropTroops`):
+    no treaty is checked, the order names no planet, a Drop Troops piece tries the
+    landing after every move it plans, and every landing resets the planet's piece. The
+    engine's own choices are spec 04 §19.4 Q87–Q89.
 38. **Combat Simulator.** A race's flag is that of the empire its first item belongs to,
     or the player's while it has none. Every object of the home system is offered,
     asteroid fields and storms included. Fleets For Plr is our list of the race's ships
@@ -2869,3 +2855,28 @@ all are now settled from the executable:
     Our client differs (the engine's log writer): "Title" instead of "Header" and "Text"
     at column 50; no separating space before the text, so it starts at column 50 instead
     of 51; every CR and every LF becomes a space instead of one space per CR LF pair.
+
+Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
+each marked "(inferred)" in the client:
+
+56. **What a displayed frame shows of a strategic battle.** The original redraws the small
+    map after every step and repaints when it handles its messages, after each empire's
+    phase and each combat turn, with no hold anywhere (Q30). Our Strategic Combat window
+    fights one empire's phase per displayed frame and draws the map after it, so the
+    steps of a phase appear together; nothing is held. Is that what a current machine
+    shows of the original (it repaints only at those points), or are the steps of a
+    phase visible one by one there?
+57. **Battles of games on different machines.** The original shows the Strategic Combat
+    window, before the battle, to the human whose turn it is (§1.10.5). Our network and
+    PBEM hosts fight every battle without stopping, so our client shows a network game's
+    battles the player was in, and a PBEM player's battles started by its own orders,
+    afterwards, played back from the record one combat turn per frame, with the results
+    already in the game. To match, the host (or the PBEM player's own turn) would have to
+    stop as a local game does.
+58. **A mixed group in a battle shown afterwards.** The battle record keeps a unit group's
+    first design only, so a battle shown afterwards (Q57) counts a group that mixes
+    designs under that design's hull, where the live window counts each stack under its
+    own (§1.10.5).
+59. **A notice before a shown simultaneous battle.** On one machine the notice comes first
+    when the empire whose turn it is is computer-controlled (§1.10.5). A simultaneous
+    turn has no such empire; ours shows no notice there. Does the original?

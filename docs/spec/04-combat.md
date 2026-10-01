@@ -1982,9 +1982,9 @@ answered from the executable. The engine was brought in line with the answers th
 ### 19.3 Questions from implementing §19.2
 
 Each was an engine choice marked "(inferred)" in the code, where the answers of §19.2
-left a detail open. On 2026-10-01 all of them were answered from the executable. Where
-the engine differs, the answer says so; [PARITY_GAPS.md](../PARITY_GAPS.md) lists those
-rows.
+left a detail open. On 2026-10-01 all of them were answered from the executable, and the
+engine was brought in line with the answers the same day (the questions it raised are
+§19.4).
 
 78. **A surrounded piece's targets.** A piece found surrounded makes no plan, and its
     fire-first test measures from square (0, 0) (§16.1). Are its weapons given their
@@ -2090,3 +2090,23 @@ rows.
     empire gets a victory when it is alone in the sector, and a stalemate when an empire
     it is not hostile to also had pieces there (confirmed: binary; §15 "The verdict").
     The engine follows this since 2026-10-01 (`Battle::finish`).
+
+### 19.4 Questions from implementing §19.3
+
+On 2026-10-01 the engine was brought in line with the answers of §19.3 (Q80, Q84, Q86)
+and with the Drop Troops rules of §11, §13 and §16.1 (spec 06 §7 Q37). These details
+were left open; each is an engine choice marked "(inferred)" in the code.
+
+87. **Landing on a converted planet.** A planet piece converted by Crew Conversion fights
+    for the converter while the colony keeps its owner (§12). Is "a colonized planet piece
+    of another empire" (§11) judged by the piece's owner or by the colony's? The engine
+    judges by the colony's owner (the empire that held it at the battle's start, or that
+    took it with troops since), so the converter's ships may still land there, and that
+    owner is the defender of the ground combat.
+88. **The order of a landing's refusals.** Spec 06 §1.10.2 lists three reasons for a
+    refused landing (no colony adjacent, another empire's troops already there, no troops
+    aboard). In what order are they tested, so which message does a ship that fails
+    several get? The engine tests them in that order.
+89. **A surrounded carrier.** A piece found surrounded makes no plan (§16.1). Does a
+    computer carrier with Drop Troops in effect still try its landing then? The engine
+    does not: the landing follows a planned move only.

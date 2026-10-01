@@ -121,8 +121,8 @@ manual = "combat-windows#strategic-combat"
 [[step]]
 title = "Watching"
 text = """
-Press **Begin** in the Strategic Combat window. The battle then plays one combat turn at a time,
-and the forces list on the left shows what each side has and has lost. **Close** lights up when
+Press **Begin** in the Strategic Combat window. The battle is then fought while you watch, and
+the forces list on the left shows what each side has and has lost. **Close** lights up when
 the battle is over: press it then.
 """
 highlight = ["window:strategic-combat"]

@@ -9,16 +9,18 @@ how to test your designs in the Combat Simulator. The rules behind all of them a
 
 ## How battles reach you
 
-In a turn-based game on this computer (alone or hotseat), every battle with a human side asks how
-to fight it. The question is the **Strategic Combat** window itself, with two buttons:
-`Tactical` (`T`) fights it in the Tactical Combat window, `Strategic` (`S`) lets the strategies
-fight it right there while you watch. One answer covers every human side in that battle. When the
-battle breaks out during a computer player's turn, a notice naming the system comes first; `Begin`
-goes on.
+In a turn-based game on this computer (alone or hotseat), every battle with a human side stops
+the game as it breaks out, before the first combat turn, and asks how to fight it. The question
+is the **Strategic Combat** window itself, with two buttons: `Tactical` (`T`) fights it in the
+Tactical Combat window, `Strategic` (`S`) lets the strategies fight it right there while you
+watch. One answer covers every human side in that battle. When the battle breaks out during a
+computer player's turn, a notice naming the system comes first; `Begin` goes on. Nothing else
+happens until the battle is over and its window closed: the battle reports, the Log entries and
+the rest of the turn come after.
 
-- In a game set up with **Strategic combat only**, every battle with a human side is shown in the Strategic Combat window afterwards, one after another.
-- In network and play-by-e-mail games, you see the battles your own orders started.
-- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`.
+- In a game set up with **Strategic combat only**, the Strategic Combat window opens the same way, with `Begin` and `Close` instead of the question.
+- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`; when the game's settings ask for it, each battle with a human side is shown in the Strategic Combat window as it breaks out.
+- In network and play-by-e-mail games the host fights every battle at once; you watch the battles you were in (by e-mail, those your own orders started) afterwards.
 
 ## Tactical combat
 
@@ -83,8 +85,8 @@ When the battle is over, **Combat Complete** appears; after `OK` the window clos
 ## Strategic combat
 
 The **Strategic Combat** window shows a battle fought by the strategies. Press `Begin`: the battle
-is then played one combat turn at a time. The title strip shows the system, the coordinates and
-the combat turn.
+is then fought before your eyes, as fast as it can be shown: the small map moves after each side's
+moves, and the forces list and the combat turn in the title strip change after each combat turn.
 
 - The **Combat Forces** list shows, for each empire, its pieces by hull with how many are left (**Current**) and how many were lost (**Lost**, in red), and its planets.
 - The small map shows every piece as a coloured square. Point at one to see its name and owner.
