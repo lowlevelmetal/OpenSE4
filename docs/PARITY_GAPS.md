@@ -166,7 +166,9 @@ were closed the same day:
 - **Range of the firing choice** (Q84): each weapon's range as the strategies see it, so
   never past 20 squares.
 - **Battle verdict** (Q86; `Battle::finish`): every other empire's survivors count, whatever
-  the treaty.
+  the treaty. The computer's anger judges battles by the same verdict (spec 05 §7.3), so its
+  reading of the record no longer counts neutral obstacles as another side's survivors, and
+  counts a piece taken in the battle for its captor (`ai_anger.cpp`).
 - **Battles shown as they happen** (spec 06 §1.10.5, Q30-Q32; `turn.hpp`). On one machine a
   battle with a human side stops the engine call once it is set up, before combat turn 1
   (turn-based: Tactical or Strategic, or with No Tactical Combat the Strategic Combat
