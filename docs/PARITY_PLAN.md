@@ -134,7 +134,9 @@ questions are what the observation sessions still have to settle.
       game client plays a PBEM turn and writes the `.plr` (Multiplayer, Play by E-mail).
 - [x] Turn-based games over the network and by e-mail.
 - [x] Fog of war in network games: each player receives only their empire's view.
-- [ ] Scenarios and the tutorial script format.
+- [x] Tutorials, training games and the manual: OpenSE4's own, in our own words
+      ([LEARNING.md](LEARNING.md)). The original's tutorial cannot be played: its starting
+      game is a binary `.gam`.
 
 ### M9: Our own content (not planned)
 - [ ] A complete data set in the classic format, with our own art, fonts and sounds, so
@@ -143,17 +145,19 @@ questions are what the observation sessions still have to settle.
 
 ## Next steps
 
-1. **The engine's own choices.** Where the original leaves a detail open, the engine
-   makes a choice, marked "(inferred)" in the code and listed at the end of each spec:
-   - spec 01 §14 Q41–Q43;
-   - spec 02 §13 Q51–Q56;
-   - spec 03 §19 Q60–Q71;
-   - spec 04 §19.2 Q57–Q77;
-   - spec 05 Q37–Q46.
+1. **The engine's own choices.** On 2026-10-01 every open question of specs 01–06 was
+   settled from the executable and the engine and client follow the answers. Implementing
+   them raised new, smaller questions where the spec is silent; each names the engine's
+   choice, marked "(inferred)" in the code:
+   - spec 03 §19 Q72–Q76 (fleet orders and slots);
+   - spec 04 §19.3 Q78–Q86 (combat planning details);
+   - spec 05 Q50–Q51;
+   - spec 06 §7 Q24–Q55 (window and main-window details), and the one part of Q18 (where
+     the hull code appears in ship names) that needs observation.
 
-   Settle each from the executable where it can be, and implement from the spec text,
-   not from any listing.
-2. **Interface details** of spec 06 §7: settle them from the executable or by
-   observation, and compare screenshots with the original.
-3. **Tutorials, training and the manual** ([LEARNING.md](LEARNING.md)), and the original's `.fon` fonts and cursors.
+   Settle them from the executable where it can, and implement from the spec text, not
+   from any listing.
+2. **Side-by-side checks** with the original through `tools/observe`: screenshots of each
+   window, and an all-computer game to compare the computer players' pace.
+3. The original's `.fon` fonts and `.cur` pointers, and the 800×600 layout.
 4. Encrypted connections, and per-player views for PBEM.
