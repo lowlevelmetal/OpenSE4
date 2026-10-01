@@ -83,13 +83,17 @@ std::unique_ptr<Screen> makeTacticalLaunch(const ScreenArgs& args);
 std::unique_ptr<Screen> makeCombatPieceReport(const ScreenArgs& args);
 
 // strategic_combat.cpp: the Strategic Combat window and the Ground Combat
-// window. Strategic Combat shows GameState::combats[index]; with index -1 the
-// session's fight without player sides (a simulation, or a game battle
-// answered Strategic); with kStrategicQuestion the session's battle question,
-// with Strategic and Tactical buttons. Ground Combat shows ground combat `sub`
-// of that battle (index -1 and the session's tactical fight: its record; no
-// battle given: the last one with a ground combat).
+// window. Strategic Combat shows GameState::combats[index] (a battle the host
+// of a network or PBEM game fought, played back); with index -1 the session's
+// fight without player sides (a simulation, or a game battle the strategies
+// fight while it is shown); with kStrategicQuestion the session's battle
+// question: Strategic and Tactical buttons when it asks, else Begin and
+// Close. Ground Combat shows ground combat `sub` of that battle (index -1 and
+// the session's tactical fight: its record; no battle given: the last one
+// with a ground combat), or with kGroundQuestion the colony owner's
+// end-of-turn fight the session's question holds.
 inline constexpr int kStrategicQuestion = -2;
+inline constexpr int kGroundQuestion = -3;
 std::unique_ptr<Screen> makeStrategicCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeGroundCombat(const ScreenArgs& args);
 

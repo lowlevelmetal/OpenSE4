@@ -28,63 +28,123 @@ std::string objectName(const game::GameState& s, game::ObjectId o) {
 // ---- Strategic Combat: the forces list -----------------------------------------------------------------
 
 void CombatForces::reset() {
+    rows_.clear();
     sides_.clear();
-    highest_.clear();
-    order_.clear();
+    ready_ = false;
 }
 
-void CombatForces::update(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
-                          const std::vector<CombatPlayback::Piece>& pieces) {
-    std::map<std::pair<uint32_t, std::string>, int> now;
+namespace {
+
+std::optional<uint32_t> hullIndex(const game::Rules& r, const game::GameState& s, game::DesignId d) {
+    if (!d.valid() || d.index() >= s.designs.size()) return std::nullopt;
+    const uint32_t hull = s.design(d).hull;
+    if (hull >= r.data().vehicleSizes.size()) return std::nullopt;
+    return hull;
+}
+
+using HullCounts = std::map<std::pair<uint32_t, uint32_t>, int>;   // (empire, hull) -> units
+using PlanetNames = std::map<uint32_t, std::vector<std::string>>;   // empire -> its colonized planets' names, piece order
+
+void countPieces(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces, HullCounts& hulls,
+                 PlanetNames& planets) {
+    for (const game::combat::TacticalPiece& p : pieces) {
+        if (!p.alive || !p.owner.valid()) continue;
+        if (p.kind == PieceKind::Vehicle) {
+            if (const auto h = hullIndex(r, s, p.design)) hulls[{p.owner.value, *h}] += 1;
+        } else if (p.kind == PieceKind::UnitGroup) {
+            for (const game::UnitStack& st : p.units)
+                if (const auto h = hullIndex(r, s, st.design); h && st.count > 0) hulls[{p.owner.value, *h}] += st.count;
+        } else if (p.kind == PieceKind::Planet) {
+            planets[p.owner.value].push_back(p.name.empty() ? objectName(s, p.planet) : p.name);
+        }
+    }
+}
+
+void countRecord(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record, const std::vector<CombatPlayback::Piece>& pieces,
+                 HullCounts& hulls, PlanetNames& planets) {
     for (size_t i = 0; i < record.pieces.size() && i < pieces.size(); ++i) {
         const game::CombatPiece& rp = record.pieces[i];
         const CombatPlayback::Piece& p = pieces[i];
-        if (rp.kind == PieceKind::Seeker || rp.kind == PieceKind::Obstacle || rp.kind == PieceKind::Planet) continue;
-        const bool alive = p.onMap && !p.destroyed && !p.neutral && p.owner.valid();
-        const ruleset::VehicleSize* hull = hullOf(r, s, rp.design);
-        const std::string name = hull ? hull->name : std::string("Unknown");
-        // A launched group appears on its first event; units still in cargo do not count.
-        const bool shown = p.onMap || p.destroyed || p.captured;
-        if (!shown) continue;
-        const std::pair<uint32_t, std::string> key{p.owner.valid() ? p.owner.value : rp.owner.value, name};
-        const std::pair<uint32_t, std::string> startKey{rp.owner.value, name};
-        if (std::find(order_.begin(), order_.end(), startKey) == order_.end()) order_.push_back(startKey);
-        if (!alive) continue;
-        if (std::find(order_.begin(), order_.end(), key) == order_.end()) order_.push_back(key);
-        now[key] += rp.kind == PieceKind::UnitGroup ? std::max(0, p.units) : 1;
+        if (!p.onMap || p.destroyed || p.neutral || !p.owner.valid()) continue;
+        if (rp.kind == PieceKind::Vehicle) {
+            if (const auto h = hullIndex(r, s, rp.design)) hulls[{p.owner.value, *h}] += 1;
+        } else if (rp.kind == PieceKind::UnitGroup) {
+            if (const auto h = hullIndex(r, s, rp.design)) hulls[{p.owner.value, *h}] += std::max(0, p.units);
+        } else if (rp.kind == PieceKind::Planet) {
+            planets[p.owner.value].push_back(rp.name.empty() ? objectName(s, rp.planet) : rp.name);
+        }
     }
-    for (const auto& key : order_) {
-        int& high = highest_[key];
-        high = std::max(high, now[key]);
+}
+
+} // namespace
+
+void CombatForces::build(const HullCounts& atStart, const PlanetNames& planets) {
+    rows_.clear();
+    std::map<uint32_t, Side> byEmpire;
+    for (const auto& [key, n] : atStart) {
+        Side& side = byEmpire[key.first];
+        side.empire = game::EmpireId{key.first};
+        side.hulls.push_back(Hull{key.second, n});
     }
+    for (const auto& [e, names] : planets) {
+        Side& side = byEmpire[e];
+        side.empire = game::EmpireId{e};
+        for (size_t k = 0; k < names.size() && k < kForcePlanets; ++k) side.planets.push_back(names[k]);
+    }
+    for (auto& [e, side] : byEmpire) rows_.push_back(std::move(side));   // player-number order; hulls in VehicleSize order
+    ready_ = true;
+}
+
+void CombatForces::apply(const game::Rules& r, const HullCounts& now, const PlanetNames& standing) {
     sides_.clear();
-    for (game::EmpireId e : record.participants) {
-        ForceSide side;
-        side.empire = e;
-        for (const auto& key : order_) {
-            if (key.first != e.value) continue;
-            ForceRow row;
-            row.name = key.second;
-            row.current = now[key];
-            row.lost = highest_[key] - row.current;
-            side.rows.push_back(std::move(row));
+    for (Side& side : rows_) {
+        ForceSide out;
+        out.empire = side.empire;
+        for (Hull& h : side.hulls) {
+            const auto it = now.find({side.empire.value, h.hull});
+            const int current = it == now.end() ? 0 : it->second;
+            h.highest = std::max(h.highest, current);
+            out.rows.push_back(ForceRow{r.hull(h.hull).name, false, current, h.highest - current});
         }
-        size_t planets = 0;
-        for (size_t i = 0; i < record.pieces.size() && i < pieces.size() && planets < kForcePlanets; ++i) {
-            const game::CombatPiece& rp = record.pieces[i];
-            if (rp.kind != PieceKind::Planet || rp.owner != e) continue;
-            const CombatPlayback::Piece& p = pieces[i];
-            const bool stands = !p.destroyed && !p.neutral && p.owner == e;
-            ForceRow row;
-            row.name = rp.name.empty() ? objectName(s, rp.planet) : rp.name;
-            row.planet = true;
-            row.current = stands ? 1 : 0;
-            row.lost = stands ? 0 : 1;
-            side.rows.push_back(std::move(row));
-            ++planets;
+        const auto names = standing.find(side.empire.value);
+        for (const std::string& name : side.planets) {
+            const bool stands = names != standing.end() && std::find(names->second.begin(), names->second.end(), name) != names->second.end();
+            out.rows.push_back(ForceRow{name, true, stands ? 1 : 0, stands ? 0 : 1});
         }
-        sides_.push_back(std::move(side));
+        sides_.push_back(std::move(out));
     }
+}
+
+void CombatForces::setup(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces) {
+    HullCounts hulls;
+    PlanetNames planets;
+    countPieces(r, s, pieces, hulls, planets);
+    build(hulls, planets);
+    apply(r, hulls, planets);
+}
+
+void CombatForces::count(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces) {
+    HullCounts hulls;
+    PlanetNames planets;
+    countPieces(r, s, pieces, hulls, planets);
+    apply(r, hulls, planets);
+}
+
+void CombatForces::setup(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+                         const std::vector<CombatPlayback::Piece>& atStart) {
+    HullCounts hulls;
+    PlanetNames planets;
+    countRecord(r, s, record, atStart, hulls, planets);
+    build(hulls, planets);
+    apply(r, hulls, planets);
+}
+
+void CombatForces::count(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+                         const std::vector<CombatPlayback::Piece>& pieces) {
+    HullCounts hulls;
+    PlanetNames planets;
+    countRecord(r, s, record, pieces, hulls, planets);
+    apply(r, hulls, planets);
 }
 
 // ---- Tactical Combat ---------------------------------------------------------------------------

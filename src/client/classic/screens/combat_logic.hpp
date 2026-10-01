@@ -29,31 +29,55 @@ struct ForceRow {
 
 struct ForceSide {
     game::EmpireId empire;
-    std::vector<ForceRow> rows;   // hulls in the order they appeared, then up to kForcePlanets planets
+    std::vector<ForceRow> rows;   // hulls in VehicleSize order, then up to kForcePlanets planets
 };
 
 inline constexpr size_t kForcePlanets = 5;
 
-// Per empire of the battle: one row per hull with the ships and bases it has
-// now (one each), and the living units of its unit groups under each unit
-// design's hull; seekers and obstacles are not counted, nor units still in
-// cargo. Lost is the highest count seen so far minus the current one, and a
-// hull row stays once it has appeared, even at 0. Then up to kForcePlanets of
-// the empire's colonized planets by name: 1 / 0 while it stands, 0 / 1 once
-// lost (destroyed, taken or emptied). A unit group that mixes designs counts
-// all its units under its first design's hull (inferred).
+// The rows are made once, from the battle as it was set up: for each empire,
+// in player-number order, that has any row, one row per hull (VehicleSize
+// order) of the ships, bases and unit groups it had in the battle then, and
+// its colonized planets, at most kForcePlanets of them, the first in piece
+// order. Counting is redone after each combat turn: a ship or base counts 1
+// under its design's hull, a unit group counts each stack's living units under
+// the hull of that stack's design, seekers are not counted. Lost is the
+// highest count seen minus the current one. A hull that first appears later
+// (units launched from cargo, a captured ship of a new hull) gets no row,
+// though launches raise the highest count of a row that exists. A planet row
+// is 1 / 0 while a piece of that empire with the planet's name exists, and
+// 0 / 1 otherwise (spec 06 §1.10.5, §7 Q31, confirmed: binary).
 class CombatForces {
 public:
-    // Recounts from the pieces' state after the events played so far.
-    void update(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
-                const std::vector<CombatPlayback::Piece>& pieces);
+    // From a live battle's pieces (combat::TacticalBattle::pieces()), whose unit groups list their stacks.
+    void setup(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces);
+    void count(const game::Rules& r, const game::GameState& s, const std::vector<game::combat::TacticalPiece>& pieces);
+    // From a record played back (a battle the engine fought already): a unit
+    // group counts all its units under its first design's hull, the only one
+    // the record keeps (inferred, a battle shown afterwards).
+    void setup(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+               const std::vector<CombatPlayback::Piece>& atStart);
+    void count(const game::Rules& r, const game::GameState& s, const game::CombatRecord& record,
+               const std::vector<CombatPlayback::Piece>& pieces);
     const std::vector<ForceSide>& sides() const { return sides_; }
+    bool ready() const { return ready_; }
     void reset();
 
 private:
+    struct Hull {
+        uint32_t hull = 0;
+        int highest = 0;
+    };
+    struct Side {
+        game::EmpireId empire;
+        std::vector<Hull> hulls;
+        std::vector<std::string> planets;
+    };
+    void build(const std::map<std::pair<uint32_t, uint32_t>, int>& atStart, const std::map<uint32_t, std::vector<std::string>>& planets);
+    void apply(const game::Rules& r, const std::map<std::pair<uint32_t, uint32_t>, int>& now,
+               const std::map<uint32_t, std::vector<std::string>>& standing);
+    std::vector<Side> rows_;
     std::vector<ForceSide> sides_;
-    std::map<std::pair<uint32_t, std::string>, int> highest_;   // (empire, hull) -> highest count seen
-    std::vector<std::pair<uint32_t, std::string>> order_;        // hull rows in the order they appeared
+    bool ready_ = false;
 };
 
 // ---- Tactical Combat ---------------------------------------------------------------------------

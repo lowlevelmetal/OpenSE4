@@ -201,8 +201,9 @@ public:
     // The sides a player drives; the others follow their strategies. `release`:
     // who gets hand control back when Auto is released (default: the same sides).
     void setPlayers(std::vector<EmpireId> players, std::optional<std::vector<EmpireId>> release = std::nullopt);
-    // Plays computer phases until a player's phase needs orders or the battle ends.
-    void advance();
+    // Plays computer phases until a player's phase needs orders or the battle
+    // ends; with `onePhase`, stops after the first phase it plays.
+    void advance(bool onePhase = false);
     std::string check(const TacticalOrder& o) const;
     // Validates and carries out one order of the player whose phase it is
     // (then the computer phases that follow). Returns why it was refused.

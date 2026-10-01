@@ -394,12 +394,12 @@ TurnResult refused(EmpireId e, std::string why) {
     return out;
 }
 
-// Runs a turn-based call with the answers of its battles (turn.hpp). A
-// battle whose answer is missing stops the call: the state goes back to
-// what it was before, and the result asks the question.
+// Runs a turn-based call with the answers of its stops (turn.hpp). A stop
+// whose answer is missing stops the call: the state goes back to what it was
+// before, and the result holds the question.
 template <class Body>
 TurnResult withBattles(GameState& s, const std::vector<BattleAnswer>* answers, Body&& body) {
-    if (!answers || !tacticalOffered(s)) return body(nullptr);
+    if (!answers) return body(nullptr);
     GameState before = s;
     TurnContext::Battles battles{answers, 0};
     try {

@@ -176,6 +176,11 @@ public:
         // The simulator: the strategy each side's planets use, an index into
         // that side's strategies (other planets use their empire's first one).
         std::vector<std::pair<EmpireId, uint32_t>> planetStrategies;
+        // A battle without player sides that a window shows while it is fought
+        // (the Strategic Combat window, spec 06 §1.10.5): it stops after its
+        // set-up, before combat turn 1, and step() plays it one empire phase at
+        // a time. Otherwise such a battle is fought to its end at once.
+        bool stepped = false;
     };
 
     TacticalBattle(const Rules& r, GameState state, Setup setup);
@@ -229,6 +234,12 @@ public:
     // Tests: the orders the strategies give for player sides (Auto, Resolve
     // Combat) are appended here as explicit orders.
     void recordStrategies(std::vector<TacticalOrder>* out);
+
+    // A stepped battle (Setup::stepped): plays the next empire phase, with the
+    // end-of-turn upkeep and the end check that follow it (spec 04 §4). False,
+    // doing nothing, once the last phase was played. The same battle stepped
+    // or fought at once comes out the same.
+    bool step();
 
     // ---- The end ---------------------------------------------------------------------------------
     // Applies the results to the battle's own state (as resolveSpaceCombat

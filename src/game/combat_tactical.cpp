@@ -465,9 +465,17 @@ TacticalBattle::TacticalBattle(const Rules& r, GameState state, Setup setup)
     started_ = battle_->setup();
     if (started_) {
         battle_->setPlayers(setup_.players, setup_.release);
-        battle_->advance();
+        // A stepped battle waits before combat turn 1 (Setup::stepped).
+        if (!setup_.stepped || !setup_.players.empty()) battle_->advance();
     }
     refresh();
+}
+
+bool TacticalBattle::step() {
+    if (!started_ || applied_ || battle_->stage() != detail::Battle::Stage::Between) return false;
+    battle_->advance(true);
+    refresh();
+    return battle_->stage() != detail::Battle::Stage::Finished;
 }
 
 TacticalBattle::~TacticalBattle() = default;

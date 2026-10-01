@@ -18,15 +18,24 @@
 // it to the host (TurnTransport::playCommand), whose new state replaces the
 // copy when it arrives.
 //
-// Tactical combat in turn-based games (spec 04 §2, §3; game/turn.hpp): a
-// battle with human sides stops the engine call before the battle and the
-// session holds the question (battleQuestion()). The player answers
-// Strategic, or fights it in the Tactical Combat window (startTactical()
-// with a combat::TacticalBattle on the question's copy of the game); the
-// session then makes the same call again with the answers so far, which
-// fights the battle the same way on the real game and carries on. Local and
-// hotseat games only: network and PBEM games never ask, and their battles
-// are strategic.
+// Battles shown as they happen (spec 04 §2, §3; spec 06 §1.10.5, §1.10.6;
+// game/turn.hpp): in local and hotseat games a battle with human sides stops
+// the engine call once it is set up, before combat turn 1, and the session
+// holds the question (battleQuestion()): in a turn-based game Tactical or
+// Strategic (with "No Tactical Combat" on, or in a simultaneous game whose
+// Settings show battles, the Strategic Combat window with Begin and Close).
+// The battle is fought in its window, by hand in the Tactical Combat window
+// or by the strategies, phase by phase, in the Strategic Combat window
+// (startTactical() with a combat::TacticalBattle on the question's copy of
+// the game); when the window closes the session makes the same call again
+// with the answers so far, which fights the battle the same way on the real
+// game and carries on, so the reports, log entries and everything after the
+// battle come only then. A turn-based game also stops at the colony owner's
+// end-of-turn ground combat when one of the two empires is human: the
+// question holds the fight, shown in the Ground Combat window after a notice.
+// Network and PBEM games never stop (their host fights every battle at once);
+// their battles are shown afterwards (takeStrategicBattles()), and so is
+// nothing for an automated run (simulateTurns).
 //
 // Play by e-mail (SessionKind::Pbem, pbem_play.hpp): the game file the host
 // sent, played by one empire. Orders are given as in a local game (turn-based:
@@ -117,31 +126,28 @@ public:
     const std::vector<game::EntryQuestion>& questions() const;
     void answer(bool enter);
     // Battles for the local player to watch in the Strategic Combat window
-    // (spec 06 §1.10.5, spec 04 §2), as indices into GameState::combats, oldest
-    // first, then forgotten: turn-based games, those the player's orders
-    // started and those in which the player answered Strategic without
-    // watching them (never one fought or watched in a window), and on one
-    // machine without tactical combat every battle with a human player's
-    // piece; simultaneous games, when the
-    // Settings flag `Simultaneous Games Show Strategic Combat` is on, every
-    // battle of the processed turn the player fought in. Hotseat: battles
-    // listed for another player than the one now playing are dropped.
+    // after the engine fought them (spec 06 §1.10.5, spec 04 §2), as indices
+    // into GameState::combats, oldest first, then forgotten. Only games played
+    // on several machines, whose host never stops: a network game's battles
+    // the player fought in (simultaneous games only when the Settings flag
+    // `Simultaneous Games Show Strategic Combat` is on), and in a PBEM game
+    // the battles the player's orders started. Local and hotseat games show
+    // every battle as it happens instead (battleQuestion()).
     std::vector<size_t> takeStrategicBattles();
 
-    // Tactical combat (see the file comment). The battle that waits for its
-    // answer, if any: while it waits the game is as before the call.
+    // Battles shown as they happen (see the file comment). The battle (or
+    // ground fight) that waits to be shown, if any: while it waits the game is
+    // as before the call.
     const std::optional<game::BattleQuestion>& battleQuestion() const { return battle_; }
-    // Answers it and carries on (the next battle of the same call may ask next).
-    // `watched`: the player saw it fought in a window, so it is not listed
-    // again in takeStrategicBattles().
-    void answerBattle(game::BattleAnswer answer, bool watched = false);
+    // Answers it and carries on (the next stop of the same call may come next).
+    void answerBattle(game::BattleAnswer answer);
     // The tactical battle in the Tactical Combat window, if any.
     TacticalFight* tactical() { return tactical_.get(); }
     void startTactical(TacticalFight fight);
     // Closes it: a game battle is finished (the strategies play what is left)
     // and its orders answer the battle question; a simulation is dropped. A
-    // game battle without player sides is one answered Strategic and watched
-    // in the Strategic Combat window (spec 06 §1.10.5).
+    // game battle without player sides is one fought by the strategies in the
+    // Strategic Combat window (spec 06 §1.10.5).
     void endTactical();
 
     // Ends the local player's turn. Local: every computer empire plays and the
@@ -216,16 +222,16 @@ private:
     // session to that player.
     void resumeTurnBased();
     void takeResult(const game::TurnResult& result);
-    // Simultaneous games: the processed turn's battles of the player, when the Settings flag asks for them.
+    // Network simultaneous games: the processed turn's battles of the player, when the Settings flag asks for them.
     void queueTurnBattles();
-    // Turn-based games: the engine call in progress, made again with the
-    // battle answers until no battle asks; then its results are taken.
-    enum class Call { None, Issue, EndTurn, Resume };
+    // The engine call in progress (a turn-based game's order, End Turn or
+    // resume; a simultaneous game's turn), made again with the answers until
+    // nothing stops it; then its results are taken.
+    enum class Call { None, Issue, EndTurn, Resume, Process };
     void beginCall(Call call, std::optional<game::Command> command = std::nullopt);
     void runCall();
-    // Whether this session's battles may ask (turn-based, local or hotseat,
-    // "No Tactical Combat" off).
-    bool offersTactical() const;
+    // Whether this session's engine calls stop for battles to show (local and hotseat games).
+    bool showsBattles() const;
 
     std::shared_ptr<const game::Rules> rules_;
     game::GameState state_;
@@ -242,9 +248,9 @@ private:
     std::vector<std::string> notices_;
     std::string autosaveNote_;
     std::vector<std::pair<game::EmpireId, size_t>> strategic_;   // battles to watch, and for whom (takeStrategicBattles)
-    std::vector<game::Location> answeredStrategic_, answeredTactical_;   // this call's answers of the local player
     Call call_ = Call::None;
     std::optional<game::Command> callCommand_;
+    std::vector<game::EmpireOrders> callOrders_;   // Process: the humans' (already applied) orders
     size_t callBattles_ = 0;                  // GameState::combats before the call
     uint32_t callTurn_ = 0;                   // GameState::turn before the call (a turn-based game turn ended: autosave)
     std::vector<game::BattleAnswer> answers_;

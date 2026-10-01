@@ -3435,7 +3435,7 @@ void Battle::setPlayers(std::vector<EmpireId> players, std::optional<std::vector
     strategic_ = players_.empty();
 }
 
-void Battle::advance() {
+void Battle::advance(bool onePhase) {
     // The counter starts at 1 and the battle ends when it reaches the setting:
     // one turn fewer than `Number Of Space Combat Turns` (confirmed: binary). It
     // also ends as soon as no two empires that still have pieces are hostile.
@@ -3481,6 +3481,7 @@ void Battle::advance() {
         }
         phase(e);
         endPhase();
+        if (onePhase) return;
         if (stage_ != Stage::Between || !autoAll_ || !isPlayer(e)) continue;
         // With Auto on, play pauses after the phase of the last player's empire in each combat turn.
         bool later = false;
@@ -3817,8 +3818,9 @@ bool humanPresent(const GameState& s, Location where) {
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 // `check`: who runs the battle check after the mines (spec 04 §2).
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
-    // A turn-based game with tactical combat asks the human sides (turn.hpp):
-    // keep the game as the battle begins, in case the answer is missing.
+    // On one machine a battle with a human side stops the call once it is set
+    // up, to be shown (turn.hpp, "Battles shown as they happen"): keep the
+    // game as the battle begins, in case the answer is missing.
     TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
     std::shared_ptr<GameState> before;
     if (ask && ask->next >= ask->answers->size() && humanPresent(ctx.state, where)) before = std::make_shared<GameState>(ctx.state);
@@ -3835,8 +3837,13 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
         for (EmpireId e : battle.empires())
             if (ctx.state.empire(e).alive && ctx.state.empire(e).kind == PlayerKind::Human) humans.push_back(e);
         if (!humans.empty()) {
+            // A turn-based game asks Tactical or Strategic, unless the "No
+            // Tactical Combat" option is on; then, as in a simultaneous game, the
+            // Strategic Combat window shows it (spec 06 §1.10.5, confirmed: binary).
+            const bool choose = tacticalOffered(ctx.state);
             if (ask->next >= ask->answers->size()) {
                 BattleQuestion q;
+                q.kind = choose ? BattleQuestion::Kind::Choose : BattleQuestion::Kind::Show;
                 q.where = where;
                 if (entering) q.entering = std::vector<VehicleId>(entering->begin(), entering->end());
                 q.check = check;
@@ -3849,7 +3856,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
             const BattleAnswer& answer = (*ask->answers)[ask->next++];
             std::vector<EmpireId> players;
             for (EmpireId e : answer.tactical)
-                if (std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
+                if (choose && std::find(humans.begin(), humans.end(), e) != humans.end()) players.push_back(e);
             battle.setPlayers(std::move(players));
             battle.play(answer.orders);
             battle.finish();
