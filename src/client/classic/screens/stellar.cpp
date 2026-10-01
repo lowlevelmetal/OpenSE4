@@ -167,7 +167,9 @@ private:
             return;
         }
         if (status_.issue(ui, withImmediate(ui.state(), orderOwner(ui.state(), v.id), stellarOrder(v, a, check.target)),
-                          std::format("{}: ordered. It happens when the turn is processed.", stellarInfo(a).name))) {
+                          std::format("{}: ordered. {}", stellarInfo(a).name,
+                                      ui.session.turnBased() ? "It happens when the ship carries out the order."
+                                                             : "It happens when the turn is processed."))) {
             shown_ = a;
             filmStart_ = ui.time;
             lastFilm_.reset();

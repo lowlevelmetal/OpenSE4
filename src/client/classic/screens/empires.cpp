@@ -243,8 +243,9 @@ private:
         if (known.empty()) {
             header(ui, 0);
             ImGui::Dummy(ui.size({0, 10}));
-            wrappedText("We have not made contact with any other empire yet. Our ships meet other empires when both are in the same "
-                        "system and not cloaked.",
+            wrappedText("We have not made contact with any other empire yet. We meet another empire when we detect each other in "
+                        "a system and warp points lead from our colonies to one of theirs. Contact is lost when no such path "
+                        "remains.",
                         kTextDim);
             return;
         }

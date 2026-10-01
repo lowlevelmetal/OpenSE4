@@ -222,9 +222,10 @@ QuadrantMapResult quadrantMap(UiContext& ui, const char* id, Vec2 frameSize, con
         }
 
     // The hovered system's name in cyan, at the first corner that fits (§2.6).
-    if (out.hovered && !opt.names) {
+    // An unexplored system is never named (spec 01 §6.1).
+    if (out.hovered && !opt.names && me.hasExplored(*out.hovered)) {
         const game::StarSystem& sys = g.system(*out.hovered);
-        const std::string name = me.hasExplored(sys.id) ? sys.name : sys.name + " (unexplored)";
+        const std::string& name = sys.name;
         const ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, name.c_str());
         const ImVec2 cell = cellOf(sys.id);
         const map_style::Point at = map_style::nameCorner(cell.x - o.x, cell.y - o.y, cw, ch, ts.x + ui.px(2), ts.y, size.x, size.y);
