@@ -216,7 +216,7 @@ protected:
                 return true;
         for (ObjectId o : cs_.galaxy.system(here_.system).objects) {
             if (cs_.galaxy.object(o).sector != here_.sector) continue;
-            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeePlanet(r_, cs_, owner_, o)) return true;
+            if (const Colony* c = cs_.colony(o); c && hostileTo(c->owner) && sight::canSeeColony(r_, cs_, owner_, o)) return true;
         }
         return false;
     }

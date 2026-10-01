@@ -762,7 +762,7 @@ private:
             const SpaceObject& obj = s_.galaxy.object(o);
             if (obj.sector != l.sector) continue;
             if (rawSum(obj.abilities, AbilityKind::SectorDamage) > 0) return true;
-            if (const Colony* c = s_.colony(o); c && hostile(s_, g.owner, c->owner) && sight::canSeePlanet(r_, s_, g.owner, o)) return true;
+            if (const Colony* c = s_.colony(o); c && hostile(s_, g.owner, c->owner) && sight::canSeeColony(r_, s_, g.owner, o)) return true;
         }
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.location == l && hostile(s_, g.owner, v.owner) && sight::canSeeVehicle(r_, s_, g.owner, v)) return true;
@@ -868,7 +868,7 @@ private:
             return option == EncounterClear::Any || hostile(s_, e, other);
         };
         for (ObjectId o : s_.galaxy.system(sys).objects)
-            if (const Colony* c = s_.colony(o); c && applies(c->owner) && sight::canSeePlanet(r_, s_, e, o)) return true;
+            if (const Colony* c = s_.colony(o); c && applies(c->owner) && sight::canSeeColony(r_, s_, e, o)) return true;
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.location.system == sys && applies(v.owner) && sight::canSeeVehicle(r_, s_, e, v)) return true;
         return false;
@@ -1011,7 +1011,7 @@ private:
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.location.system == sys && hostile(s_, e, v.owner) && sight::canSeeVehicle(r_, s_, e, v)) return true;
         for (ObjectId o : s_.galaxy.system(sys).objects)
-            if (const Colony* c = s_.colony(o); c && hostile(s_, e, c->owner) && sight::canSeePlanet(r_, s_, e, o)) return true;
+            if (const Colony* c = s_.colony(o); c && hostile(s_, e, c->owner) && sight::canSeeColony(r_, s_, e, o)) return true;
         return false;
     }
 
@@ -1665,7 +1665,7 @@ private:
         for (const Vehicle& v : s_.vehicles)
             if (alive(v) && v.location == l && hostile(s_, e, v.owner) && sight::canSeeVehicle(r_, s_, e, v)) return true;
         for (ObjectId o : planetsAt(s_, l))
-            if (const Colony* c = s_.colony(o); c && hostile(s_, e, c->owner) && sight::canSeePlanet(r_, s_, e, o)) return true;
+            if (const Colony* c = s_.colony(o); c && hostile(s_, e, c->owner) && sight::canSeeColony(r_, s_, e, o)) return true;
         return false;
     }
 

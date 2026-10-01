@@ -37,6 +37,15 @@ bool canSeeVehicle(const Rules& r, const GameState& s, EmpireId viewer, const Ve
 // planets and asteroid fields hidden by a storm or nebula, which need current
 // sensors that pierce it. Stars, storms and warp points are never hidden.
 bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
+// A colony as the movement rules see it (bad squares, the Attack Sector
+// question, the Ship Orders options, Sentry, stellar manipulation; spec 03
+// §6.2, §6.4, §8, §19 Q70, confirmed: binary): the detection rule of spec 01
+// §6.3 applied to its planet, the same test as for a ship. Its owner always
+// sees it; another empire only when it has explored the system and its
+// sensor level there (its own sources, its partners', omnipresence) reaches
+// the planet's obscuration in some sight type. Without sensors in the system
+// no colony is seen, even one the map remembers (canSeePlanet).
+bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet);
 // True when the viewer has a sensor source in the system (its own or a
 // partner's whose sensors it gets), or the game is omnipresent.
 bool hasPresence(const Rules& r, const GameState& s, EmpireId viewer, SystemId sys);
