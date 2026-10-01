@@ -457,7 +457,8 @@ private:
         ImGui::EndChild();
     }
 
-    // "Defender" / "Attacker" at (40,y) over its units at (40,y+15), 504x72; "Victorious!" beside the winner.
+    // "Defender" / "Attacker" at (40,y) over its units at (40,y+15), 504x72 (ours 66 high, to stay inside
+    // our content panel); "Victorious!" beside the winner.
     void sideRow(UiContext& ui, const game::GameState& s, const char* label, float y, game::EmpireId who, const std::vector<game::UnitStack>& units,
                  const std::vector<game::UnitStack>& start, int militia, bool won) {
         const Vec2 o = largeOrigin();
@@ -470,7 +471,7 @@ private:
             ImGui::TextColored(ImVec4(1, 1, 0, 1), "Victorious!");
         }
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{40, y + 15}));
-        ImGui::BeginChild(label, ui.size({504, 72}), ImGuiChildFlags_Borders);
+        ImGui::BeginChild(label, ui.size({504, 66}), ImGuiChildFlags_Borders);
         const std::string style = who.valid() && who.index() < s.empires.size() ? s.empire(who).race.style : std::string{};
         int col = 0;
         for (size_t k = 0; k < start.size(); ++k) {
