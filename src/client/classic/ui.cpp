@@ -287,8 +287,14 @@ std::unordered_map<ImGuiID, int>& slotCounts() {
 
 } // namespace
 
-Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn)
-    : ui_(ui), rect_(dialogRect(size)), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
+Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn) : Dialog(ui, title, dialogRect(size), buttonColumn) {}
+
+Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
+    : Dialog(ui, title, Rect{Vec2{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f}, Vec2{(kFrameW + size.x) * 0.5f, (kFrameH + size.y) * 0.5f}},
+             buttonColumn) {}
+
+Dialog::Dialog(UiContext& ui, const char* title, const Rect& rect, float buttonColumn)
+    : ui_(ui), rect_(rect), buttonColumn_(buttonColumn > 0 && buttonColumn == 190.0f ? 180.0f : buttonColumn) {
     ImGui::SetNextWindowPos(ui.at(rect_.min), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ui.size(rect_.size()), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));

@@ -68,14 +68,18 @@ std::unique_ptr<Screen> makeHelp(const ScreenArgs& args);
 // galaxy_map.cpp
 std::unique_ptr<Screen> makeGalaxyMap(const ScreenArgs& args);
 
-// combat_replay.cpp
+// combat_replay.cpp: the Combat Replay window (GameState::combats[index]) and its options.
 std::unique_ptr<Screen> makeCombatReplay(const ScreenArgs& args);
+std::unique_ptr<Screen> makeCombatReplayOptions(const ScreenArgs& args);
 
-// tactical.cpp: the Tactical Combat window and its Orders and Options windows,
-// for the battle in ClassicSession::tactical().
+// tactical.cpp: the Tactical Combat window and its Orders, Launch Units,
+// Combat Options and Combat Piece Report (piece `index`) windows, for the
+// battle in ClassicSession::tactical().
 std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
+std::unique_ptr<Screen> makeTacticalLaunch(const ScreenArgs& args);
+std::unique_ptr<Screen> makeCombatPieceReport(const ScreenArgs& args);
 
 // strategic_combat.cpp: the Strategic Combat window and the Ground Combat
 // window. Strategic Combat shows GameState::combats[index]; with index -1 the

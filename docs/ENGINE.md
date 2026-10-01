@@ -283,7 +283,7 @@ scaled to the window, drawn with the art from the player's install.
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
 | `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, Drop Troops target, simulator rows); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question) and Ground Combat; `simulator.cpp` the Combat Simulator |
 | `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
 
 ## Tests

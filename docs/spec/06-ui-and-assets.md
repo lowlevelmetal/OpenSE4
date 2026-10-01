@@ -1765,3 +1765,51 @@ where our client differs. Only Q18 keeps an open part.
       opens from buttons in the Strategic Combat and Combat Replay windows (original:
       round by round, "Victorious!" at the end, opens only at the moments above; neither
       of those windows has a Ground Combat button).
+
+The combat windows (Tactical Combat and its Orders, Launch Units, Combat Options and
+Combat Piece Report windows, Combat Replay, Combat Simulator, Strategic Combat and Ground
+Combat) were brought in line with Q21–Q23; these choices of ours are (inferred) and open:
+
+24. **Strategic Combat pace.** The original fights each combat turn with no coded delay.
+    Our window plays the engine's finished battle back and holds each combat turn for
+    0.45 s; how long does a turn stay on screen in the original on a period machine?
+25. **Strategic Combat details.** Where in the title strip do the system name and the
+    coordinates go (ours: x 270 and 450, as in Ground Combat)? Are the 5 planets of the
+    forces list counted per empire (ours) or for the whole battle? Under which hull does a
+    unit group that mixes designs count its units (ours: its first design's)?
+26. **Battles without tactical combat.** With No Tactical Combat on, ours shows every
+    battle with a human player's piece after the engine call that fought it, not as the
+    battle starts (the engine does not stop for them). Is the window shown before or after
+    the battle's results in the original?
+27. **Ground Combat rounds.** Our record keeps a ground fight's start and end only, so the
+    window counts the rounds and shows the new numbers at the end. Do the original's unit
+    counts change after every round? Ours does not yet open Ground Combat for a stalemate
+    at the end of the colony owner's turn (that needs the engine to stop there).
+28. **Fast Tactical Combat.** Ours plays the animation three times faster instead of
+    dropping the pauses between steps; the same for Fast Tactical Combat in Combat Replay
+    Options.
+29. **Combat Piece Report.** Ours shows Damage as structure taken / maximum for a ship and
+    as a percentage otherwise, Supply as "-" for a planet, a fleet's own group as "Fleet -
+    Leader" or "Fleet - Wingman", Formation only for fleet members, and no tabs; a neutral
+    obstacle gets a one-line note instead of its ordinary report. What do the original's
+    tabs and these lines show?
+30. **Tactical Combat Orders.** Ours stacks the 11 buttons with no gap and no title, and
+    the pickers (group size, group number 1–9, formation, the Resolve Combat question)
+    replace the menu in the same window. Are they separate windows in the original, and
+    can a group number be 0 there?
+31. **Drop Troops.** Ours picks the first adjacent colony of another empire that the
+    battle accepts. The engine still refuses an empire it is not hostile to (spec 04 §11),
+    while §1.10.2 says hostility is not checked: one of the two needs to change.
+32. **Combat Simulator.** A race's flag is that of the empire its first item belongs to,
+    or the player's while it has none. Every object of the home system is offered,
+    asteroid fields and storms included. Fleets For Plr is our list of the race's ships
+    with one fleet per race (formation and strategy), and Change Cargo our holder picker,
+    not the original's Fleet Transfer and Cargo Transfer windows. Ships are numbered per
+    race and design ("Name 0001"). While a tactical simulation is fought, Designs stays
+    open underneath. Which of these match the original?
+33. **Combat Replay.** Ours keeps, beside the map and its overview, the turn's events in
+    words and the battle's summary (OpenSE4's own help); it has no Close button (Esc and
+    Stop Replay close it). Does the original replay keep a log of any kind?
+34. **Pointers.** Ours draws its own move arrows and crosshairs: no loader for the
+    install's `.cur` files exists yet.
+

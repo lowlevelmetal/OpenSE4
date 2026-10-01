@@ -91,7 +91,8 @@ enum class ScreenId {
     // Diplomacy and comparisons (§1.5).
     Communicate, Intelligence, TreatyGrid, Scores, Comparisons, History, RaceReport, VictoryConditions,
     // Combat (§1.6).
-    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, CombatSimulator, StrategicCombat, GroundCombat,
+    CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, TacticalLaunch, CombatPieceReport, CombatReplayOptions, CombatSimulator,
+    StrategicCombat, GroundCombat,
     // Files.
     SaveGame, LoadGame,
     // Game Menu → Options (per computer), and OpenSE4's graphics, controls and sound.
@@ -240,6 +241,8 @@ enum class DialogSize { Large, Tall, Report, Picker, Prompt, Full };
 class Dialog {
 public:
     Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn = 190.0f);
+    // A window of its own size (frame pixels), centred.
+    Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn = 190.0f);
     ~Dialog();
     Dialog(const Dialog&) = delete;
     Dialog& operator=(const Dialog&) = delete;
@@ -266,6 +269,7 @@ public:
     void requestClose() { keep_ = false; }
 
 private:
+    Dialog(UiContext& ui, const char* title, const Rect& rect, float buttonColumn);
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     UiContext& ui_;

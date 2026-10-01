@@ -140,14 +140,14 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
                 return nullptr;
             }
             if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions ||
-                *id == ScreenId::StrategicCombat) {
+                *id == ScreenId::TacticalLaunch || *id == ScreenId::CombatPieceReport || *id == ScreenId::StrategicCombat) {
                 // A sample battle to show: the player's warships against copies of them
                 // (fought by the strategies for Strategic Combat).
                 if (!startDemoSimulation(*mode->ui_, *id != ScreenId::StrategicCombat)) {
                     error = "No armed ship design to fight a sample battle with.";
                     return nullptr;
                 }
-                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id);
+                if (*id != ScreenId::TacticalCombat && *id != ScreenId::StrategicCombat) mode->ui_->open(*id, ScreenArgs{.index = 0});
             } else {
                 ScreenArgs args;
                 if (*id == ScreenId::CombatSimulator) args.text = "demo";

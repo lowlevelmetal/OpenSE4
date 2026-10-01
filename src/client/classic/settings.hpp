@@ -39,11 +39,6 @@ struct ClassicSettings {
 
     // OpenSE4's own.
     float soundVolume = 0.8f;            // effects volume (the original has none)
-    float replaySpeed = 1.0f;            // Combat Replay playback speed (1 = normal)
-    float tacticalSpeed = 2.0f;          // tactical animation speed (1 = the replay's normal pace)
-    bool tacticalRanges = true;          // the selected piece's weapon ranges and movement
-    bool tacticalNames = false;          // names under the pieces
-    bool tacticalAutoEnd = true;         // end the phase when nothing is left to fight
 };
 
 // The Options window's music steps (spec 06 §1.9).
