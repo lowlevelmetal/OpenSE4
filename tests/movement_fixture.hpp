@@ -257,6 +257,14 @@ public:
         return id;
     }
 
+    // The object of that kind on the system's list in that sector (a
+    // replaced object is a new one, spec 03 §19 Q72); invalid when none.
+    ObjectId objectAt(SystemId sys, Sector at, ObjectKind kind) const {
+        for (ObjectId o : s.galaxy.system(sys).objects)
+            if (s.galaxy.object(o).sector == at && s.galaxy.object(o).kind == kind) return o;
+        return {};
+    }
+
     std::pair<ObjectId, ObjectId> link(SystemId a, Sector sa, SystemId b, Sector sb) {
         const ObjectId wa = object(a, ObjectKind::WarpPoint, sa);
         const ObjectId wb = object(b, ObjectKind::WarpPoint, sb);

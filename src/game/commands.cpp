@@ -40,6 +40,19 @@ bool ownDesign(const GameState& s, EmpireId e, DesignId d) { return d.valid() &&
 
 bool knownSystem(const GameState& s, SystemId sys) { return sys.valid() && sys.index() < s.galaxy.systems.size(); }
 
+// The requests that name a third empire (spec 05 §3.4, open question 51).
+bool needsThirdEmpire(MessageType t) {
+    switch (t) {
+        case MessageType::RequestStopHostilities:
+        case MessageType::RequestBreakTreaty:
+        case MessageType::RequestDeclareWar:
+        case MessageType::RequestMakePeace:
+        case MessageType::RequestSupport:
+        case MessageType::RequestAttackEmpire: return true;
+        default: return false;
+    }
+}
+
 std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
     if (o.kind >= OrderKind::Count) return "Unknown order";
     switch (o.kind) {
@@ -133,18 +146,20 @@ struct Applier {
     }
 
     // Orders for a fleet, given to the fleet or to any of its members (spec 03
-    // §8, §9, §19 Q65, confirmed: binary): the fleet has no list of its own;
-    // every member at its location holds a copy, and every change applies to
-    // each copy. `base` is the list the player changed (the addressed
-    // member's, else the fleet's as fleetOrders shows it): orders added after
-    // it are appended to every copy, expanded once from where the base leaves
-    // the fleet. Any other change (Clear Orders, an order taken back or put in
-    // front) makes every copy the new list (inferred, spec 03 §19 Q76). Repeat
-    // is set on every copy. An addressed member away from the fleet's
-    // location gets the change too (inferred, Q76).
+    // §8, §9, §19 Q65, Q76, confirmed: binary): the fleet has no list of its
+    // own; every member at its location holds a copy, and each change is
+    // applied list by list to those members only. A member away from the
+    // fleet's location that is addressed passes the change on to them and
+    // keeps its own list as it is. `base` is the list the player changed (the
+    // addressed member's, else the fleet's as fleetOrders shows it): orders
+    // added after it are appended to each list,
+    // expanded once from where the base leaves the fleet; Clear Orders empties
+    // each list and switches its Repeat off; Repeat Orders sets each list's
+    // flag. The original has no other change to a list; taking an order back
+    // or putting one in front makes every list the new one (an OpenSE4 choice,
+    // Q76).
     R setFleetOrders(const Fleet& f, const Vehicle* addressed, const std::vector<Order>& given, bool repeat) {
-        std::vector<VehicleId> holders = fleetGroup(s, f);
-        if (addressed && std::find(holders.begin(), holders.end(), addressed->id) == holders.end()) holders.push_back(addressed->id);
+        const std::vector<VehicleId> holders = fleetGroup(s, f);
         if (holders.empty()) return R::fail("The fleet has no member at its location");
         const std::vector<Order> base = addressed ? addressed->orders : fleetOrders(s, f);
         const std::vector<Order> full = expandGivenOrders(r, s, orderContextOf(s, f), base, given);
@@ -292,6 +307,8 @@ struct Applier {
             Vehicle* v = ownVehicle(s, e, c.vehicle);
             if (!v) return R::fail("Not your vehicle");
             if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be scrapped");
+            // The Scrap window lists no fleet member (spec 03 §15, §19 Q74, confirmed: binary).
+            if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be scrapped");
             if (!yardAt(v->location)) return R::fail("Scrapping needs a space yard in the sector");
             const auto type = vehicleType(r, s, *v);
             if (type == ruleset::VehicleType::Drone || type == ruleset::VehicleType::Mine) return R::fail("Drones and minefields cannot be scrapped");
@@ -325,6 +342,9 @@ struct Applier {
         Vehicle* v = ownVehicle(s, e, c.vehicle);
         if (!v) return R::fail("Not your vehicle");
         if (isUnitType(vehicleType(r, s, *v))) return R::fail("Units cannot be mothballed");
+        // The Scrap window lists no fleet member, so neither Mothball nor
+        // Unmothball reaches one (spec 03 §9, §15, §19 Q74, confirmed: binary).
+        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be mothballed or unmothballed");
         if (c.mothball) {
             if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be mothballed");
             if (v->status != VehicleStatus::Normal) return R::fail("Already mothballed");
@@ -455,6 +475,7 @@ struct Applier {
         if (!v) return R::fail("Not your vehicle");
         if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
         if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be retrofitted");
+        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be retrofitted");  // spec 03 §15, §19 Q74
         const Design& oldD = s.design(v->design);
         const Design& newD = s.design(c.design);
         // Pair each target component with the first unpaired current entry of the
@@ -745,6 +766,17 @@ struct Applier {
         if (!m.to.valid() || m.to.index() >= s.empires.size() || m.to == e) return R::fail("Invalid recipient");
         if (!emp().relation(m.to).contact) return R::fail("No contact with that empire");
         if (emp().relation(m.to).messageSentThisTurn) return R::fail("Only one message per empire per turn");
+        // A request about a third empire names one the sender picks from the
+        // empires it has met that are still in the game, other than itself and
+        // the recipient (spec 05 open question 51, confirmed: binary). A
+        // computer player's own messages do not go through that picker and are
+        // not checked (inferred).
+        if (needsThirdEmpire(m.type) && emp().kind == PlayerKind::Human) {
+            const EmpireId third = m.thirdEmpire;
+            if (!third.valid() || third.index() >= s.empires.size() || third == e || third == m.to || !s.empire(third).alive ||
+                !emp().relation(third).contact)
+                return R::fail("Choose an empire we have met, other than the recipient");
+        }
         // The game option limits the message types a player picks; the
         // answer to a request for a gift or tribute (the computer player's,
         // spec 05 §7.4, which never reads the option) is always allowed.
@@ -832,8 +864,9 @@ struct Applier {
             case MessageType::RequestAttackEmpire: addUnique(me.aiMemory.attackSystems, d.system); break;
             case MessageType::RequestAttackPlanet: addUnique(me.aiMemory.attackSystems, d.system.valid() ? d.system : planetSystem); break;
             // A promise about the empire the demand names, not the requester
-            // (spec 05 open question 47). None named: nothing (inferred, spec
-            // 05 open question 51).
+            // (spec 05 open question 47). None named: nothing, which has the
+            // effect of the original's record of an empire it never uses (spec
+            // 05 open question 51; a player cannot send such a request).
             case MessageType::RequestStopHostilities:
                 if (named) ++named->promises;
                 break;

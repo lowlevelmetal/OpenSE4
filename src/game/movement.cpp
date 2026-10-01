@@ -142,12 +142,17 @@ struct ActorRef {
 // The group that carries out one order execution (spec 03 §8).
 struct Group {
     std::vector<VehicleId> members;   // group order: a fleet's group in member order, then ad-hoc companions
+    // The lists carrying the order out changes (spec 03 §8, §19 Q73, Q75,
+    // confirmed: binary): the acting vehicle's, or its fleet's members' at
+    // the fleet's location (an away actor's own list is not one of them), and
+    // in a turn-based game the vehicles the player moves together. Ad-hoc
+    // companions keep their lists.
+    std::vector<VehicleId> holders;
     ObjectId planet;                  // a planet's own orders
     EmpireId owner;
     VehicleId actor;                  // the vehicle whose order the group carries out
     VehicleId lead;                   // the acting vehicle when it is a member, else the first member: the group's place and name
     FleetId fleet;                    // the actor's fleet: its members at the fleet's location are the group
-    std::vector<FleetId> fleets;      // fleets whose groups take part
     bool stopped = false;             // gone, or stopped by a hazard
     bool encountered = false;         // the last warp transit cleared the lists (§6.4)
 };
@@ -322,16 +327,17 @@ private:
 
     // ---- Groups ------------------------------------------------------------------------------------
 
-    // The group of one execution (spec 03 §8, §19 Q61, Q65, confirmed:
-    // binary): a fleet member's order is carried out by the fleet's members at
-    // its location (a member elsewhere is not one of them, even when it is the
-    // one acting); any other vehicle acts alone. A computer player's group
-    // also takes every own vehicle in the sector whose head order is identical
-    // (ships, bases, unit groups, fleet members with their fleets, cloaked
-    // ones); a human player's ships never group, only a drone group outside
+    // The group of one execution (spec 03 §8, §19 Q61, Q65, Q74, Q75,
+    // confirmed: binary): a fleet member's order is carried out by the fleet's
+    // members at its location, mothballed ones included (a member elsewhere is
+    // not one of them, even when it is the one acting); any other vehicle acts
+    // alone. A computer player's group also takes every own vehicle in the
+    // sector whose head order is identical (ships, bases, unit groups, fleet
+    // members, cloaked and mothballed ones), each alone, never its whole
+    // fleet; a human player's ships never group, only a drone group outside
     // fleets gathers the other drone groups there with the same head order.
     // In a turn-based game the vehicles the player moves together form the
-    // group.
+    // group. Only the holders' lists change (Group::holders).
     Group build(ActorRef ref) const {
         Group g;
         if (ref.planet.valid()) {
@@ -349,19 +355,14 @@ private:
         g.owner = v->owner;
         g.actor = v->id;
         auto has = [&](VehicleId id) { return std::find(g.members.begin(), g.members.end(), id) != g.members.end(); };
-        auto addFleet = [&](const Fleet& f) {
-            if (std::find(g.fleets.begin(), g.fleets.end(), f.id) != g.fleets.end()) return;
-            g.fleets.push_back(f.id);
-            for (VehicleId id : fleetGroup(s_, f))
-                if (!has(id)) g.members.push_back(id);
-        };
         const Fleet* own = v->fleet.valid() ? s_.fleet(v->fleet) : nullptr;
         if (own) {
             g.fleet = own->id;
-            addFleet(*own);
+            g.members = fleetGroup(s_, *own);
         } else {
             g.members.push_back(v->id);
         }
+        g.holders = g.members;
         if (g.members.empty()) {
             g.stopped = true;  // no member of the fleet can act at its location
             return g;
@@ -372,23 +373,20 @@ private:
         const Location here = s_.vehicle(g.lead)->location;
         auto joins = [&](const Vehicle& w) { return alive(w) && w.owner == v->owner && w.location == here && !has(w.id); };
         if (live_ && !live_->vehicles.empty() && !computerPlayer(s_, v->owner)) {
-            // Turn-based: the vehicles the player moves together.
+            // Turn-based: the vehicles the player moves together; each of
+            // their lists changes (spec 03 §19 Q75).
             if (own) return g;
             for (VehicleId id : live_->vehicles)
-                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->fleet.valid() && !w->orders.empty() && w->orders.front() == head)
+                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->fleet.valid() && !w->orders.empty() && w->orders.front() == head) {
                     g.members.push_back(id);
+                    g.holders.push_back(id);
+                }
             return g;
         }
         if (computerPlayer(s_, v->owner)) {
-            for (VehicleId id : objectOrder_) {
-                const Vehicle* w = s_.vehicle(id);
-                if (!w || !joins(*w) || w->orders.empty() || !(w->orders.front() == head)) continue;
-                if (const Fleet* f = w->fleet.valid() ? s_.fleet(w->fleet) : nullptr) {
-                    if (inFleetGroup(s_, *w)) addFleet(*f);  // a fleet member brings its fleet (inferred, spec 03 §19 Q75)
-                } else {
-                    g.members.push_back(id);
-                }
-            }
+            // Each vehicle joins alone, a fleet member too (spec 03 §19 Q75).
+            for (VehicleId id : objectOrder_)
+                if (const Vehicle* w = s_.vehicle(id); w && joins(*w) && !w->orders.empty() && w->orders.front() == head) g.members.push_back(id);
         } else if (!own && vehicleType(r_, s_, *v) == VehicleType::Drone) {
             for (VehicleId id : objectOrder_) {
                 const Vehicle* w = s_.vehicle(id);
@@ -406,10 +404,12 @@ private:
             if (!c || c->owner != g.owner) g.stopped = true;
             return;
         }
-        std::erase_if(g.members, [&](VehicleId id) {
+        auto gone = [&](VehicleId id) {
             const Vehicle* v = s_.vehicle(id);
             return !v || !alive(*v) || v->owner != g.owner;
-        });
+        };
+        std::erase_if(g.members, gone);
+        std::erase_if(g.holders, gone);
         if (g.members.empty()) {
             g.stopped = true;
             return;
@@ -489,23 +489,17 @@ private:
         if (!v || !alive(*v)) v = s_.vehicle(g.lead);
         return v ? &v->orders : nullptr;
     }
-    // The vehicles whose lists a change applies to: every member's (a fleet's
-    // copies included, spec 03 §8, §19 Q65), and the acting vehicle's when it
-    // is a fleet member away from the fleet's location (inferred, spec 03 §19 Q73).
-    std::vector<VehicleId> listHolders(const Group& g) const {
-        std::vector<VehicleId> out = g.members;
-        if (g.actor.valid() && std::find(out.begin(), out.end(), g.actor) == out.end())
-            if (const Vehicle* v = s_.vehicle(g.actor); v && alive(*v)) out.push_back(g.actor);
-        return out;
-    }
-    // Every list a change to the head applies to, with its Repeat flag.
+    // Every list a change to the head applies to, with its Repeat flag: the
+    // group's holders (spec 03 §8, §19 Q65, Q73, Q75). A fleet member away
+    // from the fleet's location that acts keeps its own list, so a chained
+    // run carries its unchanged head order out again (Q73).
     template <class Fn>
     void forEachList(const Group& g, Fn&& fn) {
         if (g.planet.valid()) {
             if (Colony* c = s_.colony(g.planet)) fn(c->orders, false);
             return;
         }
-        for (VehicleId id : listHolders(g))
+        for (VehicleId id : g.holders)
             if (Vehicle* v = s_.vehicle(id)) fn(v->orders, v->repeatOrders);
     }
     // Replaces every list of the group and switches Repeat off.
@@ -515,7 +509,7 @@ private:
             if (Colony* c = s_.colony(g.planet)) c->orders = list;
             return;
         }
-        for (VehicleId id : listHolders(g))
+        for (VehicleId id : g.holders)
             if (Vehicle* v = s_.vehicle(id)) {
                 v->orders = list;
                 v->repeatOrders = false;
@@ -708,7 +702,9 @@ private:
         // Turn-based: a maximum that dropped (engines lost in a battle) caps the movement left at once (§6.1).
         if (live_)
             for (VehicleId id : g.members) capLive(id);
-        if (immobile(g)) return held(g) ? Travel::Wait : Travel::Immobile;
+        // A fleet with a member of maximum movement 0 (a mothballed ship, a
+        // base) is frozen: its movement orders wait (spec 03 §9, §19 Q74).
+        if (immobile(g)) return held(g) || g.fleet.valid() ? Travel::Wait : Travel::Immobile;
         if (yardBusy(g)) return Travel::Busy;
         if (remaining(g) <= 0) return Travel::Wait;
         return std::nullopt;
@@ -908,7 +904,7 @@ private:
             if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
-        entered_.push_back(Entry{g.members, g.owner, next, name(g), pursuing_});
+        entered_.push_back(Entry{g.members, g.holders, g.owner, next, name(g), pursuing_});
         // A drone out of supply is destroyed after each step or warp (§12, confirmed: binary).
         for (VehicleId id : g.members)
             if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->supply <= 0 && vehicleType(r_, s_, *v) == VehicleType::Drone)
@@ -1402,6 +1398,7 @@ private:
     // One step into a sector: the group's members as they entered.
     struct Entry {
         std::vector<VehicleId> members;
+        std::vector<VehicleId> holders;   // the lists a failure clears (Group::holders)
         EmpireId owner;
         Location where;
         std::string name;
@@ -1533,7 +1530,7 @@ private:
             if (!struck) continue;
             ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
                      e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where);
-            if (!e.pursuit) clearListsOf(e.members);
+            if (!e.pursuit) clearListsOf(e.holders);
         }
     }
 

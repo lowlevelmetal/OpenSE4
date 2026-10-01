@@ -800,3 +800,36 @@ TEST_CASE("diplomacy: research, intelligence, messages and events through the tu
     CHECK(a.first == b.first);
     CHECK(a.second == b.second);
 }
+
+TEST_CASE("diplomacy: a player's request about a third empire must name a living empire it has met, not itself or the recipient (spec 05 Q51)") {
+    GameState s = newPoliticsGame(5, 4);
+    const EmpireId kD{3u};
+    setContact(s, kA, kB);
+    setContact(s, kA, kC);
+    auto request = [&](MessageType type, EmpireId third) {
+        DiplomaticMessage m;
+        m.to = kB;
+        m.type = type;
+        m.thirdEmpire = third;
+        return apply(politicsRules(), s, kA, cmd::SendMessage{m});
+    };
+    for (MessageType type : {MessageType::RequestStopHostilities, MessageType::RequestBreakTreaty, MessageType::RequestDeclareWar,
+                             MessageType::RequestMakePeace, MessageType::RequestSupport, MessageType::RequestAttackEmpire}) {
+        CHECK_FALSE(request(type, EmpireId{}).ok);    // none named
+        CHECK_FALSE(request(type, kA).ok);            // the sender
+        CHECK_FALSE(request(type, kB).ok);            // the recipient
+        CHECK_FALSE(request(type, kD).ok);            // not met
+        CHECK_FALSE(request(type, EmpireId{9u}).ok);  // no such empire
+    }
+    s.empire(kC).alive = false;
+    CHECK_FALSE(request(MessageType::RequestBreakTreaty, kC).ok);  // no longer in the game
+    s.empire(kC).alive = true;
+    CHECK(request(MessageType::RequestBreakTreaty, kC).ok);
+    // Other messages do not name one.
+    nextTurn(s);
+    CHECK(request(MessageType::General, EmpireId{}).ok);
+    // A computer player's own messages do not go through the picker.
+    nextTurn(s);
+    s.empire(kA).kind = PlayerKind::Computer;
+    CHECK(request(MessageType::RequestAttackEmpire, kD).ok);
+}

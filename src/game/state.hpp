@@ -946,9 +946,12 @@ std::vector<VehicleId> vehiclesInObjectOrder(const GameState& s);
 const Vehicle* fleetLeader(const GameState& s, const Fleet& f);
 // The members at the fleet's location, alive, in member order.
 std::vector<VehicleId> fleetMembersAt(const GameState& s, const Fleet& f);
-// The members that carry out the fleet's orders as one group: those at its
-// location that are not mothballed, in member order. A mothballed member only
-// holds the fleet's speed at 0 (inferred, spec 03 §19 Q74).
+// The members that carry out the fleet's orders as one group: every member at
+// its location, mothballed ones included, in member order. Nothing in fleet
+// handling tests a member's status: a mothballed member gets copies of the
+// fleet's orders, is in the group and can act for it, and its maximum
+// movement of 0 holds the fleet's speed at 0 (spec 03 §9, §19 Q74, confirmed:
+// binary).
 std::vector<VehicleId> fleetGroup(const GameState& s, const Fleet& f);
 // The vehicle is one of its fleet's group (fleetGroup).
 bool inFleetGroup(const GameState& s, const Vehicle& v);
