@@ -23,11 +23,13 @@ OpenXcom plays UFO: Enemy Unknown or OpenTTD plays Transport Tycoon Deluxe.
   - research, intelligence, diplomacy and events;
   - computer players.
 
-  The game has the classic windows, runs hotseat, network (with UPnP) and PBEM
-  multiplayer, and includes a dedicated server. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md)
-  tracks what remains for full parity:
-  - sound;
-  - open rule questions to settle against the original.
+  The game has the classic windows, sound and music, runs hotseat, network (with
+  UPnP) and PBEM multiplayer, and includes a dedicated server. Every rule has been
+  checked against the original. [docs/PARITY_PLAN.md](docs/PARITY_PLAN.md) tracks what
+  remains:
+  - small details the original leaves open, where the engine makes its own choice;
+  - interface details still to compare with the original;
+  - scenarios and the tutorial.
 
 `opense4` finds your install on its own, or takes its location with `--classic-dir`.
 Without an install it explains where it looked and exits: there is no game to play

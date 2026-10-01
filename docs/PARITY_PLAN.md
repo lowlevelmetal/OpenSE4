@@ -9,8 +9,8 @@ distributed, without the original.
 **How parity is established:**
 
 1. **Specs** in `docs/spec/`, written in our own words from the manual, the data-file
-   documentation and the version history. There are about 130 open questions in total,
-   in each spec's last section.
+   documentation and the version history. Each spec's last section lists its open
+   questions; most are now answered (see "Next steps" for what is left).
 2. **Observation sessions.** Answer open questions by playing the original through
    `tools/observe`, and record the answers in `docs/spec/07-observations.md`.
 3. **Tests.** Rules are unit-tested against our own fixtures, and every milestone gets
@@ -19,9 +19,9 @@ distributed, without the original.
    the screens show: production numbers, research costs, growth, and combat statistics
    over many runs.
 5. **The executable** (since 2026-09-29, see [CLEANROOM.md](CLEANROOM.md)). Every rule in
-   specs 01–05 has been checked against it and marked "(confirmed: binary)". Most open
-   questions are now answered. The engine's remaining differences are listed in
-   [PARITY_GAPS.md](PARITY_GAPS.md).
+   specs 01–05 has been checked against it and marked "(confirmed: binary)", and the
+   engine follows the corrected specs. [PARITY_GAPS.md](PARITY_GAPS.md) lists the two
+   deliberate differences that remain.
 
 ## Milestones
 
@@ -136,21 +136,24 @@ questions are what the observation sessions still have to settle.
 - [x] Fog of war in network games: each player receives only their empire's view.
 - [ ] Scenarios and the tutorial script format.
 
-### M9: Our own content
-- [ ] A complete original data set in the classic format, with original art, fonts and
-      sounds, so the game runs without the original and can be distributed.
+### M9: Our own content (not planned)
+- [ ] A complete data set in the classic format, with our own art, fonts and sounds, so
+      the game would run without the original. Not planned: OpenSE4 is an engine for
+      the player's own copy of Space Empires IV Deluxe.
 
 ## Next steps
 
-1. Close the gaps in [PARITY_GAPS.md](PARITY_GAPS.md), high-impact items first:
-   - combat movement and whole-component damage;
-   - mood scale, queue payment and the computer-player bonus;
-   - the turn order, tech cost, intelligence, events and score;
-   - the warp network and homeworld placement;
-   - the AI's anger, states and politics.
+1. **The engine's own choices.** Where the original leaves a detail open, the engine
+   makes a choice, marked "(inferred)" in the code and listed at the end of each spec:
+   - spec 01 §14 Q41–Q43;
+   - spec 02 §13 Q51–Q56;
+   - spec 03 §19 Q60–Q71;
+   - spec 04 §19.2 Q57–Q77;
+   - spec 05 Q37–Q46.
 
-   Implement from the corrected specs, not from any listing.
-2. Observation sessions for what the executable could not settle, such as the
-   simultaneous-movement day schedule (spec 03 Q8), the tactical-combat details of spec
-   04 Q49-Q56, the combat windows of spec 06 Q21-Q23, and the questions still marked open.
-3. Encrypted connections, and per-player views for PBEM.
+   Settle each from the executable where it can be, and implement from the spec text,
+   not from any listing.
+2. **Interface details** of spec 06 §7: settle them from the executable or by
+   observation, and compare screenshots with the original.
+3. **Tutorials, training and the manual** ([LEARNING.md](LEARNING.md)), and the original's `.fon` fonts and cursors.
+4. Encrypted connections, and per-player views for PBEM.
