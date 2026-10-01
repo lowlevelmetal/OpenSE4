@@ -119,7 +119,8 @@ questions are what the observation sessions still have to settle.
       Combat with its Orders and Options, the Combat Simulator, the watch-only Strategic
       Combat and the Ground Combat windows.
 - [x] Sounds (UI, weapons, explosions; remastered set) and the three music playlists.
-- [ ] `.fon` fonts, cursors.
+- [x] The original's `.fon` fonts and `.cur` pointers, read from the install, and the
+      800×600 layout (spec 06 §5.4, §5.8, §2.1.1).
 - [ ] Screenshot comparisons against the original through the harness.
 
 ### M8: Persistence and multiplayer (done)
@@ -145,21 +146,20 @@ questions are what the observation sessions still have to settle.
 
 ## Next steps
 
-1. **The engine's own choices.** On 2026-10-01 every open question of specs 01–06 was
-   settled from the executable and the engine and client follow the answers. Implementing
-   them raised new, smaller questions where the spec is silent; each names the engine's
-   choice, marked "(inferred)" in the code:
-   - spec 03 §19 Q72–Q76 (fleet orders and slots);
+1. **The engine's own choices.** Every open question of specs 01–06 has been settled from
+   the executable (2026-10-01, in two passes), and the engine and client follow the
+   answers. Implementing the second pass raised a last round of small questions where the
+   spec is silent; each names the engine's choice, marked "(inferred)" in the code:
+   - spec 01 §14 Q44 (colony cloaking in simultaneous and PBEM games);
+   - spec 03 §19 Q77 (clearing lists for Use Component and Use Facility);
    - spec 04 §19.4 Q87–Q89 (Drop Troops details);
-   - spec 05 Q50–Q51;
-   - spec 06 §7 Q24–Q55 (window and main-window details), and the one part of Q18 (where
-     the hull code appears in ship names) that needs observation; Q56, Q60–Q64 and
-     Q70–Q72 (list windows, fonts, pointers, the 800×600 layout, the Log); Q73–Q82 (the
-     battle flow and the combat windows).
+   - spec 05 Q52 (computer players' third-empire requests);
+   - spec 06 §7 Q56, Q60–Q64, Q70–Q72 (list windows, fonts, pointers, the 800×600 layout,
+     the Log) and Q73–Q82 (the battle flow and the combat windows), and the small open
+     part of Q38 (the simulator's flag column).
 
    Settle them from the executable where it can, and implement from the spec text, not
    from any listing.
 2. **Side-by-side checks** with the original through `tools/observe`: screenshots of each
    window, and an all-computer game to compare the computer players' pace.
-3. The original's `.fon` fonts and `.cur` pointers, and the 800×600 layout.
-4. Encrypted connections, and per-player views for PBEM.
+3. Encrypted connections, and per-player views for PBEM.
