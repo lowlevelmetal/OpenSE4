@@ -312,19 +312,27 @@ void updateColonyAnger(TurnContext& ctx, Colony& c, int64_t empireWide, std::spa
 
 // ---- Cargo over capacity ------------------------------------------------------------------------
 
-void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c) {
+void trimCargoToCapacity(const Rules& r, const GameState& s, Colony& c, int64_t deadSpace, bool keepEmptyStacks) {
     const int64_t capacity = colonyCargoCapacity(r, s, c);
-    while (cargoSpaceUsed(r, s, c.cargo) > capacity) {
-        // Population first, 1M at a time, from the first group (inferred, spec 02 §13 Q54).
+    auto over = [&] { return cargoSpaceUsed(r, s, c.cargo) + deadSpace > capacity; };
+    if (!over()) return;
+    // With no population left, every troop unit goes first (confirmed: binary).
+    if (c.totalPopulation() <= 0)
+        for (UnitStack& u : c.cargo.units)
+            if (combat::isTroopDesign(r, s, u.design)) u.count = 0;
+    while (over()) {
+        // Then population, 1M at a time, from the first group (confirmed: binary).
         if (auto g = std::find_if(c.cargo.population.begin(), c.cargo.population.end(), [](const PopulationGroup& p) { return p.millions > 0; });
             g != c.cargo.population.end()) {
             if (--g->millions <= 0) c.cargo.population.erase(g);
             continue;
         }
+        // Then units one at a time from the first stack.
         auto u = std::find_if(c.cargo.units.begin(), c.cargo.units.end(), [](const UnitStack& x) { return x.count > 0; });
         if (u == c.cargo.units.end()) break;
-        if (--u->count <= 0) c.cargo.units.erase(u);
+        --u->count;
     }
+    if (!keepEmptyStacks) std::erase_if(c.cargo.units, [](const UnitStack& x) { return x.count <= 0; });
 }
 
 // ---- Colonies ending ------------------------------------------------------------------------------

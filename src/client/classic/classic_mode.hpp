@@ -6,6 +6,8 @@
 
 #include "client/audio.hpp"
 #include "client/classic/frontend.hpp"
+#include "client/classic/learn_content.hpp"
+#include "client/classic/lesson_runner.hpp"
 #include "client/classic/main_window.hpp"
 #include "client/mode.hpp"
 
@@ -36,6 +38,12 @@ struct ClassicOptions {
     std::string pbemOrdersDir;
     bool pbemEndTurn = false;  // automation: end the turn at once, writing the .plr
     bool pbemExit = false;     // and quit then (no screenshot asked for)
+    // Learning to play (docs/LEARNING.md): start a tutorial or training game
+    // at once, or open the manual (at a page: "slug" or "slug#anchor").
+    std::string tutorial;
+    std::string training;
+    std::optional<std::string> manual;
+    std::string learnDir;      // read the learning content from this folder only (testing)
 };
 
 // What to tell the player when no installed copy of the game is found:
@@ -55,7 +63,15 @@ private:
     explicit ClassicMode(const Platform& platform) : platform_(platform) {}
 
     void startGame(std::unique_ptr<classic::ClassicSession> session);
+    // Starts a lesson's game from its [setup] through the quick start; on
+    // failure returns why.
+    std::optional<std::string> startLesson(learn::LessonKind kind, const std::string& slug);
+    // Back to the front end's Learn window (after a lesson).
+    void quitToLearn(learn::LessonKind kind);
     void openScreen(classic::ScreenId id, classic::ScreenArgs args);
+    // The lesson panel and its requests, Ctrl+H and Shift+F1.
+    void updateLesson(classic::UiContext& ui);
+    void contextHelp();
     void endTurn();
     void updateAudio();
     bool updateFrame(const FrameState& fs);
@@ -65,6 +81,7 @@ private:
     ClassicOptions options_;
     std::shared_ptr<const game::Rules> rules_;
     std::unique_ptr<classic::Art> art_;
+    std::unique_ptr<classic::LearnContent> learn_;
     classic::FrameMapping mapping_;
     Playlists playlists_;
 
@@ -73,6 +90,7 @@ private:
     std::optional<classic::FrontId> nextFront_;
     std::string frontError_;
     bool quit_ = false;
+    std::optional<std::pair<learn::LessonKind, std::string>> pendingLesson_;   // chosen in the front end
 
     // During a game.
     std::unique_ptr<classic::ClassicSession> session_;
@@ -82,6 +100,9 @@ private:
     std::vector<std::pair<classic::ScreenId, classic::ScreenArgs>> pendingOpen_;
     bool openLogOnTurn_ = false;
     bool confirmEndTurn_ = false;
+    // The tutorial or training game being played, if any.
+    std::unique_ptr<classic::LessonRunner> lesson_;
+    std::string lessonError_;   // a lesson that could not start
 
     // Network games: status strip and chat.
     void drawNetwork(classic::UiContext& ui);

@@ -1,0 +1,38 @@
+# A lesson written for the tests (and for --learn-dir).
+title = "First steps"
+summary = "The main window and the first turn."
+minutes = 5
+
+[setup]
+seed = 12345
+computer_players = 1
+systems = 12
+
+[[step]]
+title = "Welcome"
+text = "A lesson for the tests. Press **Next** to go on."
+highlight = ["lesson:next"]
+
+[[step]]
+title = "Research"
+text = "Open the [research window](window:research) with its button."
+highlight = ["command:research"]
+done = { window = "research" }
+manual = "basics#the-main-window"
+
+[[step]]
+title = "Pick a project"
+text = """
+Click an area in the list to start a project.
+
+- The list is on the left
+- The projects are below it
+"""
+highlight = ["research:areas", "research:queue"]
+done = { command = "SetResearch" }
+
+[[step]]
+title = "End the turn"
+text = "Close the window and press End Turn."
+highlight = ["button:end-turn"]
+done = { turns_passed = 1 }

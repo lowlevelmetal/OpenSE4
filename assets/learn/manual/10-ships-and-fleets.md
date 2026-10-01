@@ -91,7 +91,7 @@ combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do 
 
 **Waypoints** are ten named places, numbered 0 to 9, that you can send ships to quickly.
 
-- `Alt+0` to `Alt+9` sets that waypoint at the selected sector.
+- `Alt+0` to `Alt+9` sets that waypoint at the sector of what you have selected: a ship, a planet, a warp point. An empty sector cannot be selected, so select something in it first.
 - `Ctrl+0` to `Ctrl+9` orders the selected ship to go there. The **Move To Waypoint** button opens a list instead.
 - A construction queue's **Move To** sends every new ship to a waypoint.
 

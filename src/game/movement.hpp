@@ -203,7 +203,9 @@ void startTurn(TurnContext& ctx, EmpireId empire);
 // with movement left founds its colony. Only three things run a battle check
 // (spec 04 §2, combat::BattleCheck, confirmed: binary): a group's movement
 // step (a warp jump included), once the mines there have struck: a battle is
-// fought at once, the order fails and every member's list is cleared; the
+// fought at once, the order fails and every member's list is cleared (a
+// pursuit's step only stops for this run and keeps its list, spec 04 §19.2
+// Q76); the
 // Attack order, in the sector its target was in when it was given (or where
 // the group stands when none was recorded), for 1 movement point and with
 // nobody decloaking but the vehicles under the Ship Cloaking minister, which

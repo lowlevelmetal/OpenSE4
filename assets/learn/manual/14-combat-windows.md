@@ -9,7 +9,7 @@ how to test your designs in the Combat Simulator. The rules behind all of them a
 
 ## Tactical combat
 
-When you choose **Tactical**, the [Tactical Combat](window:tactical-combat) window fills the
+When you choose **Tactical**, the **Tactical Combat** window fills the
 screen. You cannot close it or save until the battle is over.
 
 **The status bar** at the top shows the battle's sector, the combat turn, whose phase it is and
@@ -42,7 +42,7 @@ The buttons:
 | `Auto` | Let every side follow its strategies from the next phase on. Press again to take control back. |
 | `End Turn` | End your phase (`E`). It reads `End Battle` once no enemy is left. |
 
-The [Tactical Combat Orders](window:tactical-orders) window holds:
+The **Tactical Combat Orders** window holds:
 
 - **Launch Units**: launch fighters, satellites or drones from the selected piece, 1, 5, 10 or all of a kind at a time, within its launch rate for the turn.
 - **Launch Fighters in Groups**: launch fighters in groups of the size you pick.
@@ -60,7 +60,7 @@ When the battle ends, the result panel sums it up. `Replay` plays it back; `Done
 
 ## Strategic combat
 
-The [Strategic Combat](window:strategic-combat) window shows a battle your ships fought by their
+The **Strategic Combat** window shows a battle your ships fought by their
 strategies. The battle has already been decided when the window opens: it plays it back.
 
 - The small map shows every piece as a coloured square. Hover over one to see its owner.
@@ -75,7 +75,7 @@ Log instead.
 ## Replays
 
 `Combat Replay` in the [Log](window:log) plays back any battle of the last turn in the
-[Combat Replay](window:combat-replay) window.
+**Combat Replay** window.
 
 | Control | What it does |
 |---|---|

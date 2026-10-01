@@ -205,6 +205,7 @@ private:
             }
         }
         ImGui::EndChild();
+        ui.tagItem("designs:list");
         if (!note_.empty()) {
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
             ImGui::TextColored(noteIsError_ ? kWarnText : ImVec4(1.0f, 0.86f, 0.45f, 1.0f), "%s", note_.c_str());
@@ -343,7 +344,9 @@ private:
             ui.open(ScreenId::CreateDesign, a);
             note_.clear();
         };
-        if (d.button("Create")) {
+        const bool create = d.button("Create");
+        ui.tagItem("designs:create");
+        if (create) {
             ScreenArgs a;
             a.text = unitTab(tab_) ? "new-unit" : "new";
             ui.open(ScreenId::CreateDesign, a);
@@ -370,6 +373,7 @@ private:
         if (lampButton(ui, d, "Hide Obsolete", hideObsolete_)) hideObsolete_ = !hideObsolete_;
         if (lampButton(ui, d, "Stats\\Strategy", statsView_)) statsView_ = !statsView_;
         if (d.button("Simulator")) ui.open(ScreenId::CombatSimulator);
+        ui.tagItem("designs:simulator");
     }
 
     bool initialized_ = false;
@@ -549,6 +553,7 @@ private:
             }
             ImGui::EndCombo();
         }
+        ui.tagItem("create-design:hull");
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(kBlueText, "Type");
         ImGui::SameLine(ui.px(kLabel));
@@ -568,6 +573,7 @@ private:
         const float suggestW = ui.px(72);
         ImGui::SetNextItemWidth(comboW - suggestW - ImGui::GetStyle().ItemSpacing.x);
         if (ImGui::InputText("##name", name_.data(), name_.size())) error_.clear();
+        ui.tagItem("create-design:name");
         ImGui::SameLine();
         if (ImGui::Button("Suggest", ImVec2(suggestW, 0))) {
             setName(suggestName(ui));
@@ -663,6 +669,7 @@ private:
             error_.clear();
         }
         ImGui::EndChild();
+        ui.tagItem("create-design:on-design");
         ImGui::EndGroup();
 
         // Components that can go on this hull (click adds, with the chosen mount where it applies).
@@ -708,6 +715,7 @@ private:
         }
         if (comps.empty()) ImGui::TextColored(kDimText, "Nothing of this type fits this hull.");
         ImGui::EndChild();
+        ui.tagItem("create-design:components");
         ImGui::EndGroup();
 
         if (hovered) hover_ = hovered;
@@ -741,6 +749,7 @@ private:
             }
         }
         ImGui::EndChild();
+        ui.tagItem("create-design:warnings");
     }
 
     void buttons(UiContext& ui, Dialog& d) {
@@ -783,6 +792,7 @@ private:
         }
         d.spacer();
         if (d.button(editing_.valid() ? "Save Design" : "Create Design")) create(ui);
+        ui.tagItem("create-design:save");
     }
 
     void cancel(UiContext& ui, Dialog& d) {

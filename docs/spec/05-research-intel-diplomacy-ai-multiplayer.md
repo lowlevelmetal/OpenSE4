@@ -1081,9 +1081,11 @@ Human players claim systems by hand; their home system starts claimed.
 6. **Mega Evil Empire.** Add `Mega Evil Empire` if X is the MEE as this empire sees it
    (§7.6).
 7. **Team Mode.** −20 toward an empire on our side, +20 toward one on the other side.
-8. **Promise.** If we accepted X's "stop hostile actions" demand, −20, once. Accepting
-   records the promise only half the time, and such records are forgotten every 10
-   turns.
+8. **Promise.** −20 for a promise about X, once. Accepting a "stop hostile actions
+   against an empire" demand records a promise about the empire the demand names,
+   whoever sent it (only half the time, §7.4). Each accepted demand adds a promise, and
+   each turn uses up one promise about X, so two promises about X give −20 on two turns.
+   All promises are forgotten every 10 turns (confirmed: binary).
 9. **Attack locations.** Count N:
    - +1 for each colony of X, in a system we have explored, on a planet we could colonize.
      That means we have the colonization technology for its planet type, and the
@@ -1221,11 +1223,12 @@ windows never overlap, so no message is answered twice.
 
 **Wants war with X**
 - Never when already at war with X or X is a team mate. Always when X is a team enemy.
-- Always when an accepted demand queued a war on X.
+- Otherwise, when the war list (§7.4 "Demand lists") holds X: one entry for X is used up,
+  and the answer is yes (confirmed: binary).
 - Otherwise a 50 % roll must pass (no roll in Team Mode), then war when anger ≥ T.
 
 **Wants to break** the treaty with X: only when the treaty is Non-Aggression or better. It
-follows the same pattern as war, with the Break Treaty threshold and its own queue.
+follows the same pattern as war, with the Break Treaty threshold and the break list.
 
 **Initiative**, the first that applies:
 
@@ -1245,7 +1248,10 @@ follows the same pattern as war, with the Break Treaty threshold and its own que
   exists.
 - Needs anger ≤ T. When anger > 70, there is a further 50 % chance to drop the proposal.
 - A team mate, or an accepted "make peace" request, forces a proposal. If no threshold was
-  computed in that case, T = 50.
+  computed in that case, T = 50. The request counts when X is neither a team mate nor a
+  team enemy, the AI is not a subject and the peace list (§7.4 "Demand lists") holds X:
+  one entry for X is then used up, even when no treaty qualifies and nothing is sent
+  (confirmed: binary).
 - **Which treaty**:
   - Walk the `Propose Treaty Type N` entries in file order.
   - An entry qualifies if its treaty is at most `Highest Allowed Treaty`, better than the
@@ -1336,12 +1342,28 @@ Team mates are always accepted, and team enemies always refused.
   empty, as in the stock files (confirmed: binary):
   - remove ships or colonies, or leave a planet: the system is marked to avoid. Colonies
     are never abandoned;
-  - break with, declare war on, support against or make peace with a third empire: queued
-    for the matching decision above;
+  - declare war on, support against, break with or make peace with a third empire: one
+    entry naming that empire is added to the matching demand list (below);
   - attack an empire in a system, or attack a planet: that system becomes an attack target;
   - stop espionage or sabotage: intelligence projects against the requester are cancelled;
+  - stop hostile actions against an empire: a promise about the empire the demand names,
+    not the requester (§7.3 term 8);
   - stop attacks in a system: nothing happens.
-- These queues are cleared every 10 turns.
+- **Demand lists** (confirmed: binary). Each computer empire keeps a war list (fed by
+  "declare war on" and "support against"), a break list ("break with"), a peace list
+  ("make peace with") and the promises of §7.3 term 8. Each is a list of empire numbers
+  that keeps duplicates: every carried-out demand adds one entry, for the empire the
+  demand names, so two accepted demands about the same empire give two entries. Each
+  check that finds an entry for X uses up one entry: "wants war with X" and "wants to
+  break with X" above, the treaty proposal to X, and for a promise the anger update toward
+  X (§7.3). A check that stops earlier (already at war, a treaty below Non-Aggression for
+  a break, a team mate or team enemy, the AI a subject for a proposal) leaves the entries
+  alone.
+- These lists, and the systems marked to avoid or to attack, are emptied in the
+  start-of-turn step of every turn whose date (the one the ministers see, §7.5 "The
+  date") is a multiple of 10, before the Politics minister acts. An entry therefore lasts
+  until the next such date: from 1 turn (added on a date ending in 9) to 10 turns (added
+  on a date that is a multiple of 10) (confirmed: binary).
 - **Which messages get an answer** (confirmed: binary). Each turn the AI answers at most the
   newest political message from X in its answer window (above):
   - a treaty proposal or counter-proposal: Accept, Counter or Refuse Treaty; a trade:
@@ -2367,6 +2389,24 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 - Players reconnect by player name, and the host then resends the current turn.
 - There is a broadcast chat.
 - Resuming means loading the game as host.
+- **Computer players' messages are delivered twice** (confirmed: binary). In a
+  simultaneous game every message a computer player sends during the host's start-of-turn
+  step (§8 step 4) takes effect at once and is also kept in that empire's outbox. Step 2
+  of the next turn processing delivers every empire's outbox, then empties it. The outbox
+  is saved only in a player's orders file, never in the game file. An e-mail or
+  shared-folder host quits after it processes a turn and loads the game file again for
+  the next one, and a Hotseat game reloads the game file after each processing, so their
+  outboxes are always empty and each message arrives once. A TCP/IP host keeps the game
+  in memory from turn to turn, so at its next step 2 it delivers each computer player's
+  messages of the turn before a second time. Each lands in the recipient's log again,
+  dated the date before it advances (the same date as the first delivery), and its effect
+  is applied again: a treaty accepted, a treaty broken or a declaration of war sets the
+  treaties again, and a surrender hands over whatever the surrendered empire still owns.
+  A repeated acceptance of a trade, gift or tribute moves items only when the newest
+  political message from the other empire in the accepting empire's log, among those
+  dated the turn before or later, is an offer of that kind; it is then that newer offer
+  that is carried out. The offer accepted the first time is too old to be found. OpenSE4
+  does not reproduce this double delivery (question 48).
 - The stock ports are UDP 6716 for control and TCP 6720 for files.
 
 ### 9.5 Mapping to OpenSE4
@@ -2877,7 +2917,8 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     these: its column widths; its dates, written as 2400.1 rather than as a whole number of
     tenths, and in the statistics always the unadvanced turn; its log copy (its own line
     layout, on when the key is missing, appended, last turn's entries only, no header); and
-    the missing contact-lost lines. It must follow §3.4 and §5. OpenSE4 choice: the folder and file names in the
+    the missing contact-lost lines. It must follow §3.4 and §5. Spec 06 §6.1 lists the
+    original's file names (`History/plr_<N>_stats.txt`, `_events.txt`, `_log.txt`). OpenSE4 choice: the folder and file names in the
     user data directory (`history/<game seed>/player<N>_…`), which have no counterpart since
     the original keeps the files in the installation and copies them with each save. That
     OpenSE4's network and e-mail hosts write no files is also an OpenSE4 choice; the
@@ -2950,3 +2991,52 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     their current sector. Satellites, mines, planets and other objects do nothing, and
     troops are never in space. The step is part of every empire's end-of-turn processing,
     so it runs in both turn styles (confirmed: binary, §8 step 16). The engine matches.
+47. **Promises to stop hostile actions** (§7.3 term 8, §7.4): **Answer:** an accepted
+    "stop hostile actions against an empire" demand records a promise about the empire the
+    demand names, not about the requester. Each promise gives −20 toward that empire once,
+    one promise per turn, and all are forgotten every 10 turns (confirmed: binary). The
+    computer player never sends this demand itself (§7.4 "Demands the AI starts"), so it
+    comes from human players, whose message names the empire. The engine differs: it sets
+    a single promise flag on the requester, so the −20 goes to the requester even when the
+    demand names another empire, and a second promise before the first is used adds
+    nothing. It must record the promise about the named empire and count promises instead
+    of setting a flag.
+48. **Computer players' messages in a TCP/IP game** (§9.4): **Answer:** in a simultaneous
+    game a computer player's messages take effect when sent and are also kept in its
+    outbox, which step 2 of the next turn processing delivers. Only a TCP/IP host keeps
+    the outbox from one turn to the next (an e-mail or shared-folder host quits after the
+    turn and Hotseat reloads the game file), so a TCP/IP host delivers every computer
+    player's messages a second time, with the effects listed in §9.4 (confirmed: binary).
+    The engine differs for TCP/IP games only: it marks each message delivered and never
+    delivers one twice, in any mode, which matches the original's e-mail, shared-folder
+    and Hotseat hosts. Reproducing the TCP/IP double delivery would mean delivering the
+    computer players' messages of the turn before again at step 2 of a network host's turn
+    processing. OpenSE4 choice: OpenSE4 does not reproduce it, because it is a fault of the
+    original's TCP/IP host. OpenSE4 delivers each message once in every mode, as the
+    original's e-mail, shared-folder and Hotseat hosts do; the engine choice stands.
+49. **The other demand lists** (§7.4 "Demand lists", "Wants war with X", "Propose
+    Treaty"): **Answer** (confirmed: binary):
+    - Added: when a carried-out demand (the 50 % chance of §7.4) is "declare war on" or
+      "support against", one entry for the empire it names goes to the war list; "break
+      with" adds one to the break list; "make peace with" one to the peace list.
+      Duplicates are kept.
+    - Used up, one entry at a time: a war entry by a check of "wants war with X" that gets
+      past "already at war" and the team tests, which then answers yes; a break entry the
+      same way by "wants to break", which first needs a treaty of Non-Aggression or better;
+      a peace entry by the treaty-proposal check when X is neither a team mate nor a team
+      enemy and the AI is not a subject, which then forces a proposal (nothing is sent when
+      no treaty qualifies, but the entry is gone). Since every check rolls again and the
+      50 % branch checks war and break before the initiative checks them again (§7.4 "Each
+      turn"), a single war entry can be used up by the first check, after which the second
+      check rolls normally; a second entry for the same empire makes the second check
+      answer yes too.
+    - Expire: every list is emptied in the start-of-turn step of each turn whose date (the
+      ministers' date) is a multiple of 10, before the Politics minister acts, so an entry
+      lasts from 1 to 10 turns.
+
+    The engine differs: it keeps one flag per empire for each list (`Relation::queuedWar`,
+    `queuedBreak`, `queuedPeace`), never uses a flag up (it stays set until the 10-turn
+    clear, so a queued peace forces a proposal on every turn until then), and decides
+    "wants war" and "wants to break" once per turn. It must keep counts (or lists) per
+    empire, add one per carried-out demand, use one up at each check described above, and
+    clear them all on the dates that are multiples of 10.

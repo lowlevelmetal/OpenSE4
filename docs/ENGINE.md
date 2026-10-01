@@ -151,10 +151,13 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    action until each has spent its movement points, waits or fails. Only three things run
    a battle check (spec 04 §2, `combat::BattleCheck`): a movement step (a warp jump
    included), after the mines there have struck, which fights at once, fails the order
-   and clears the group's whole list; the Attack order, in the sector its target was in
-   when it was given (or where the group stands), which decloaks nobody but the Ship
-   Cloaking minister's vehicles and is then used up; and a drone group's pursuit (a Seek)
-   at its target, which attacks every time the list runs and stays. The check is one-directional: the group's owner must see a
+   and clears the group's whole list (a pursuit's step only stops it for this run and
+   keeps its orders, as mines, storms and turbulence do, spec 04 §19.2 Q76); the Attack
+   order, in the sector its target was in when it was given (or where the group stands),
+   which decloaks nobody but the Ship Cloaking minister's vehicles and is then used up;
+   and a drone group's pursuit (a Seek) at its target, which attacks every time the list
+   runs and stays (a pursuit without a drone pursuing there waits and spends nothing).
+   The check is one-directional: the group's owner must see a
    hostile object there, or, for a wholly cloaked group, another empire must see it. A
    human is first asked whether to enter a sector with visible enemies, and answers with
    `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
@@ -209,8 +212,10 @@ own copy of the game, forking the random numbers and striking with mines exactly
 
 The accepted orders are the battle's `script()`: the same start and script give the same
 battle. Tests check that a player side whose phases the strategies play (AutoPhase), the
-strategies' orders given by hand, and the replayed script all give the strategic battle,
-bit for bit.
+strategies' orders given by hand, and the replayed script all give the same battle, bit
+for bit, and the strategic battle unless a player side has a fleet: a player's side is
+not automated, so a hit on its group's leader never dissolves the group as it does for
+an automated side (spec 03 §19 Q60).
 
 In a turn-based game (`turn.hpp`, "Tactical combat in turn-based games") the calls that
 play the game take the battles' answers (`BattleAnswer`: the tactical sides and their
@@ -235,9 +240,10 @@ keep `design` (the first stack's) and `count` (the total) in step, and
 whose weapons refer to its design stacks.
 
 The combat simulator (`simulator.hpp`) builds a sandbox copy of the game: one virtual
-empire per side (a copy of the player's, at war with the others), the chosen designs,
-seen enemy designs and sample planets in an empty new system, cargo, fleets, strategies,
-and the sides the computer controls. `startSimulation` returns the `TacticalBattle`;
+empire per side (a copy of the empire that owns the side's first item, its strategy list
+included, at war with the others), the chosen designs, seen enemy designs and sample
+planets in an empty new system, cargo, fleets with their strategies, and the sides the
+computer controls. `startSimulation` returns the `TacticalBattle`;
 the real game is never changed.
 
 ## Determinism
@@ -303,11 +309,41 @@ scaled to the window, drawn with the art from the player's install.
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
 | `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
+| `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
+| `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
+| `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |
+
+### Learning to play
+
+Tutorials, training games and the manual ([LEARNING.md](LEARNING.md)) are our own
+content, built into the executable from `assets/learn`. `src/learn` is a headless
+library for them:
+
+- `markdown.*`: the manual's Markdown subset as blocks (headings with anchors, inline
+  spans, lists, tables, tip boxes) and its links;
+- `lesson.*`: the TOML files of tutorials and training games, with errors that name the
+  file and line;
+- `condition.*`: the conditions (`all`, `any`, `not` and a fixed set of keys), evaluated
+  over the game state, the player's empire and client facts (open windows, the kind of
+  selection, the commands given);
+- `progress.*`: where the player is in a lesson and the rules that move it on;
+- `library.*`: the content from its sources (built in, a folder, or both), search, and
+  the check of every link, window id and UI tag;
+- `ids.*`: the vocabularies lessons use (window ids, Help tabs, order kinds, command
+  names, UI tags).
+
+The client tags windows and widgets with their rectangles each frame
+(`UiContext::tags`), so a lesson step can outline them. Lessons only read the game: the
+player's commands still go through `ClassicSession::issue()`, which reports each one to
+the lesson.
 
 ## Tests
 
 The engine tests use `tests/engine_fixture.cpp`, a complete invented rules set. Every
 subsystem has its own test file. `test_integration.cpp` runs whole games.
+
+`test_learn.cpp` covers the learning system's parser, loaders, conditions and progress,
+and checks every built-in lesson and manual page.
 
 Tests against your installed data are opt-in:
 

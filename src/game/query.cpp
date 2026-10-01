@@ -17,6 +17,10 @@ std::vector<ObjectId> planetsAt(const GameState& s, Location where) {
     return out;
 }
 
+uint64_t objectOrderKey(const GameState& s, ObjectId planet) { return s.galaxy.object(planet).slot; }
+
+uint64_t objectOrderKey(const Vehicle& v) { return v.slot; }
+
 const Colony* ownColonyAt(const GameState& s, EmpireId empire, Location where) {
     for (ObjectId o : planetsAt(s, where))
         if (const Colony* c = s.colony(o); c && c->owner == empire) return c;

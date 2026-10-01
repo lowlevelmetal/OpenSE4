@@ -908,7 +908,7 @@ private:
             if (resupplyDepotAt(r_, s_, v->owner, next)) refillSupply(r_, s_, *v);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
-        entered_.push_back(Entry{g.members, g.owner, next, name(g)});
+        entered_.push_back(Entry{g.members, g.owner, next, name(g), pursuing_});
         // A drone out of supply is destroyed after each step or warp (§12, confirmed: binary).
         for (VehicleId id : g.members)
             if (Vehicle* v = s_.vehicle(id); v && alive(*v) && v->supply <= 0 && vehicleType(r_, s_, *v) == VehicleType::Drone)
@@ -1060,8 +1060,11 @@ private:
     // cloaked drones decloak, then 1 movement point and one move's supply; the
     // battle comes from the day's combat check (a turn-based game's check at
     // once) and the order stays. A group with no such drone just waits there,
-    // spending neither (§19 Q69). The pursuit is done when the target is gone,
-    // the attacker's owner's, or a planet without colony. A drone group's
+    // spending neither (§19 Q69). A step of the pursuit stopped by storm
+    // damage, turbulence, mines or a battle only ends this run of the list;
+    // the order and the list are kept (spec 03 §6.4, spec 04 §19.2 Q76). The
+    // pursuit is done when the target is gone, the attacker's owner's, or a
+    // planet without colony. A drone group's
     // pursuit (a Seek) at its target attacks and runs a battle check every
     // time its list runs, and stays (spec 04 §2, confirmed: binary). In a
     // turn-based game a group that is not all drones carries out the Move To
@@ -1077,20 +1080,24 @@ private:
         if (o.object.valid() && o.object.index() < s_.galaxy.objects.size() && s_.galaxy.object(o.object).kind == ObjectKind::WarpPoint)
             return warp(g, o);
         const Location goal = o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
+        pursuing_ = true;
         const Travel t = travel(g, goal);
+        pursuing_ = false;
         if (t == Travel::Reached) return Exec::Moved;  // the attack needs the next action's movement
+        // A pursuit that meets storm damage or warp turbulence only stops moving
+        // for this run of its list; its order and list are kept (spec 03 §6.4,
+        // spec 04 §19.2 Q76, confirmed: binary).
+        if (t == Travel::Stopped) return Exec::Wait;
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         if (!droneSeeksHere(g, goal)) return Exec::Wait;
         if (remaining(g) <= 0 || immobile(g)) return Exec::Wait;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
-            if (vehicleType(r_, s_, *v) == VehicleType::Drone) {
-                if (v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
-                // Its target in the battle (spec 04 §10.7).
-                v->targetVehicle = o.vehicle;
-                v->targetObject = o.object;
-            }
+            // Only drones decloak (§6.4, §19 Q69). A drone's target in a
+            // battle is read from its first order when the battle starts
+            // (spec 03 §19 Q68, spec 04 §10.7).
+            if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
@@ -1398,6 +1405,7 @@ private:
         EmpireId owner;
         Location where;
         std::string name;
+        bool pursuit = false;   // a step of an Attack pursuit (spec 04 §19.2 Q76)
     };
 
     // The latest battle at a location this turn: its survivors by owner and
@@ -1510,7 +1518,9 @@ private:
             std::vector<Order>& list = v->orders;  // a fleet member's copy too (spec 03 §8)
             if (!list.empty() && list.front().kind == OrderKind::Sentry) list.erase(list.begin());
         }
-        // Minefields: a group that stepped in today, was hurt and fought no battle (inferred detection).
+        // Minefields: a group that stepped in today, was hurt and fought no
+        // battle (inferred detection). A pursuit only stops moving and keeps its
+        // orders (spec 03 §6.4, spec 04 §19.2 Q76).
         for (const Entry& e : entered_) {
             if (e.where != where) continue;
             bool struck = false;
@@ -1521,8 +1531,9 @@ private:
                 if (!v || v->count < mark->second.first || v->damage != mark->second.second) struck = true;
             }
             if (!struck) continue;
-            ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name), "Its orders were cancelled.", where);
-            clearListsOf(e.members);
+            ctx_.log(e.owner, LogCategory::Combat, std::format("{} stopped by a minefield", e.name),
+                     e.pursuit ? "It keeps its orders." : "Its orders were cancelled.", where);
+            if (!e.pursuit) clearListsOf(e.members);
         }
     }
 
@@ -1627,20 +1638,23 @@ private:
 
     // A movement step (a warp jump included) runs a battle check once the
     // mines have struck. A battle is fought at once; the group's order fails
-    // and every member's list is cleared, an Attack or Seek at the head
-    // included (spec 03 §6.4, spec 04 §2, confirmed: binary; for a Seek, spec
-    // 04 §19.2 Q76). True when the group's run ends here.
+    // and every member's list is cleared, an Attack at the head included
+    // (spec 03 §6.4, spec 04 §2, confirmed: binary). A pursuit (a Seek) only
+    // stops moving for this run of its list, after a battle or mines alike;
+    // its order and list are kept (spec 04 §19.2 Q76, confirmed: binary). True
+    // when the group's run ends here.
     bool entryCombat(Group& g) {
         prune(g);
         if (g.stopped) return true;
         const Location here = where(g);
+        const bool pursuit = !entered_.empty() && entered_.back().pursuit;
         const combat::BattleCheck check{g.members};
         if (!combatHere(here, check)) return false;
         const size_t records = s_.combats.size();
         fight(here, entering(here), check);
         prune(g);
-        if (!battleSince(here, records)) return g.stopped;  // only mines struck
-        if (!g.stopped)
+        if (!battleSince(here, records)) return g.stopped || pursuit;  // only mines struck
+        if (!g.stopped && !pursuit)
             if (const std::vector<Order>* list = orders(g); list && !list->empty()) {
                 fail(g, list->front(), "Combat on entering the sector.");
                 setLists(g, {});
@@ -1702,6 +1716,7 @@ private:
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
     std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
+    bool pursuing_ = false;                             // the steps being made are an Attack pursuit's
     UnitBudget budget_;
 };
 

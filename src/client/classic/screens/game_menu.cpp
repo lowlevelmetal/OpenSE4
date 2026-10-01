@@ -86,9 +86,9 @@ bool confirmPopup(UiContext& ui, const char* id, const std::string& question) {
 class GameMenuScreen final : public Screen {
 public:
     bool draw(UiContext& ui) override {
-        // The original's 173×320 menu (here one row taller for Settings): a
-        // column of 150×26 buttons, one every 30 px, in the pipe frame.
-        const Vec2 size{173, 350};
+        // The original's 173×320 menu (here two rows taller for Settings and
+        // Learn): a column of 150×26 buttons, one every 30 px, in the pipe frame.
+        const Vec2 size{173, 380};
         const Vec2 min{(kFrameW - size.x) * 0.5f, (kFrameH - size.y) * 0.5f};
         ImGui::SetNextWindowPos(ui.at(min), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
@@ -100,6 +100,7 @@ public:
         ImGui::PopStyleVar(2);
         if (open) {
             if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
+            ui.tagWindow(ui.at(min), ui.at(min + size));
             drawWindowFrame(ui.painter(), ImGui::GetWindowDrawList(), Rect{min, min + size}, nullptr, 0);
             int row = 0;
             auto button = [&](const char* label, bool enabled = true) {
@@ -139,6 +140,11 @@ public:
             }
             if (button("Settings")) {
                 ui.open(ScreenId::Settings);
+                keep = false;
+            }
+            // Tutorials, training games and the manual (docs/LEARNING.md).
+            if (button("Learn", ui.learn != nullptr)) {
+                ui.open(ScreenId::Learn);
                 keep = false;
             }
             if (button("Delete Game")) {

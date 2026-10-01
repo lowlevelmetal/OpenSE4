@@ -319,6 +319,7 @@ private:
                 ImGui::TextColored(kTextDim, "No queues of the included kinds.");
             }
             ImGui::EndTable();
+            ui.tagItem("queues:list");
         }
         ImGui::PopStyleVar();
     }
@@ -596,10 +597,12 @@ public:
         ImGui::BeginChild("##available", ImVec2(half, listsH));
         available(ui);
         ImGui::EndChild();
+        ui.tagItem("set-queue:available");
         ImGui::SameLine();
         ImGui::BeginChild("##queue", ImVec2(0, listsH));
         queueList(ui, *q);
         ImGui::EndChild();
+        ui.tagItem("set-queue:queue");
         ImGui::BeginChild("##detail", ImVec2(0, detailH), ImGuiChildFlags_Borders);
         detail(ui, *q);
         ImGui::EndChild();

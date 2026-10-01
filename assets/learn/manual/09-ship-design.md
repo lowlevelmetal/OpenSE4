@@ -28,7 +28,7 @@ use the **Unit Designs** tab (see [Units](units)).
 Each hull has a **tonnage**, in kT. Each component takes some of that space. A design is legal
 only while its components fit in the hull. Components come in groups: weapons, armor, shields,
 engines, sensors, vehicle control, supply, cargo, launch bays, colony modules, construction and
-more. The Help window's [Components](help:components) and [Ship Sizes](help:shipsizes) tabs
+more. The Help window's [Components](help:components) and [Ship Sizes](help:ship-sizes) tabs
 describe each one you know.
 
 ## Design rules

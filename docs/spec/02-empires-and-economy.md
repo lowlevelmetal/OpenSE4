@@ -1592,13 +1592,10 @@ must change.
     intelligence operations, mines, storms and ground combat never trim. It removes every
     troop unit first when the colony has no population left, then cargo population 1M at
     a time from the first race in the list, then units one at a time from the first stack.
-    Units killed earlier in the battle still take space until the battle ends. The engine
-    differs: it marks the planet as damaged for the planet-only damage types too, and
-    trims once after the battle, when the killed units are already gone. It must trim
-    after each qualifying hit, against the capacity and cargo at that moment with the
-    battle's dead still counted, never for the planet-only types, and drop the troop units
-    first when the population reaches 0. The order inside the trim and the plague trim
-    already match.
+    Units killed earlier in the battle still take space until the battle ends. The engine follows this since 2026-09-30: it trims after each qualifying hit, against
+    the capacity and cargo at that moment with the battle's dead still counted, never for
+    the planet-only types, and drops every troop unit first when no population is left
+    (in the plague trim too).
 55. **Experience from kills.** **Answer:** settled in §9 (confirmed: binary). The empire
     that owns the piece whose shot destroyed a ship, base or unit group gains its tonnage
     div 10; for a group that is every unit it held when the killing hit landed, the

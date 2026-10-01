@@ -102,8 +102,14 @@ public:
         Dialog d(ui, "Empires", DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         d.beginContent();
-        if (borders_) bordersView(ui);
-        else portraits(ui);
+        if (borders_) {
+            bordersView(ui);
+        } else {
+            ImGui::BeginGroup();
+            portraits(ui);
+            ImGui::EndGroup();
+            ui.tagItem("empires:list");
+        }
 
         d.beginButtons();
         if (d.tab("Treaty", !borders_ && tab_ == Tab::Treaty)) select(Tab::Treaty);
