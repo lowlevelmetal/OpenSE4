@@ -182,6 +182,9 @@ text = """
 When you have done everything you want this turn, press **End Turn** (the arrow at the end of
 the command buttons, or `F12`).
 
+The game asks *End the turn now?*: answer **Yes** (or press `Y`). `Enter` and `Esc` mean No, so a
+stray key never ends your turn; Empire Options can switch the question off.
+
 Your empire then produces and builds, the computer players take their turns, and a new turn
 begins: watch the game date.
 """

@@ -151,7 +151,7 @@ manual = "logistics#supply"
 [[step]]
 title = "End the turn"
 text = """
-End the turn. Your fleet carries on with its orders at the start of your next turn, before you
+End the turn (**End Turn**, then **Yes**). Your fleet carries on with its orders at the start of your next turn, before you
 get control.
 """
 highlight = ["button:end-turn"]

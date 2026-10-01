@@ -59,7 +59,7 @@ text = """
 Your projects appear here, four to a page, each with a progress bar and an estimate of when it
 finishes.
 
-- Click a project to cancel it (its progress is lost).
+- Click a project to cancel it. The game asks first, because its progress is lost.
 - **Reorder Projects** changes the order, and **Repeat Projects** keeps researching an area level
   after level.
 - **Divide Pts Evenly** is on at the start: every project gets an equal share. Switch it off and
@@ -160,7 +160,7 @@ manual = "economy#the-empire-status-window"
 [[step]]
 title = "End the turn"
 text = """
-Close the window and end the turn. At the end of the turn your colonies produce, your queues
+Close the window and end the turn (**End Turn**, then **Yes**). At the end of the turn your colonies produce, your queues
 build and your research projects are paid.
 """
 highlight = ["button:end-turn"]
