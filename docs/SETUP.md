@@ -102,8 +102,10 @@ apply it to a **copy** of the game directory and pass that copy with
 
 ## Where OpenSE4 keeps its own files
 
-Saves (`saves/`, including the autosaves `Autosave 0` to `Autosave 9`, named after the
-last digit of the turn count), maps (`maps/`,
+Saves (`saves/`, including the autosaves `AutoSav0` to `AutoSav9`, named after the
+last digit of the turn count, and the players' history files copied beside each save),
+the players' statistics, history and log files of the game being played (`History/`),
+maps (`maps/`,
 see [MAPS.md](MAPS.md)), empire files (`empires/`), settings and logs go in your user
 data directory. OpenSE4 never writes to the game directory.
 

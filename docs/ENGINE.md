@@ -279,12 +279,15 @@ scaled to the window, drawn with the art from the player's install.
 | Part | Role |
 |---|---|
 | `session.*` | Rules, state and local player. Its `issue()` records commands (in a turn-based game it carries them out at once through `game::applyLive`, or sends them to the host of a network game, and keeps the battle to show), and it runs the End Turn flow for local, hotseat and network games. In local and hotseat turn-based games it holds the battle that waits for Tactical or Strategic, and the tactical battle being fought, and makes the engine call again with the answers; it lists the battles to watch in the Strategic Combat window |
-| `art.*` | Pictures from the install, cached as textures |
+| `art.*` | Pictures from the install, cached as textures: minis turned to their heading, the combat maps' tiled background, and each empire's colour from its race's swatch |
 | `ui.*` | The frame mapping, `UiContext`, the modal window stack, and the classic dialog layout |
-| `main_window.*` | Status bar, command buttons, order strip, system, report and galaxy panels, and hotkeys |
+| `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay, and hotkeys |
+| `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
+| `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
+| `ship_glides.*` | Ships gliding to their new square, the headings of minis, and the movement log replay |
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `tactical.cpp` holds Tactical Combat with its Orders and Options windows; `strategic_combat.cpp` the watch-only Strategic Combat and the Ground Combat windows; `simulator.cpp` the Combat Simulator |
-| `frontend.*` | Intro, quick start, game setup, load, and the multiplayer lobby |
+| `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |
 | `screens/learn_screens.*`, `screens/markdown_view.*` | The Learn window and the manual viewer, in the front end and in a game, and the Markdown they draw |

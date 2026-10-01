@@ -1243,8 +1243,8 @@ void MainWindow::overlayText(UiContext& ui) {
     // The hover hint (§2.3): the button's name and its key, centred at the top of the system panel.
     if (!hintName_.empty()) {
         const float cx = panel.min.x + panel.size().x * 0.5f;
-        centred(ui.fonts.bold, kTitleSize, cx, panel.min.y + 10, IM_COL32_WHITE, hintName_);
-        if (!hintKey_.empty()) centred(ui.fonts.small, kSmallSize, cx, panel.min.y + 28, IM_COL32_WHITE, hintKey_);
+        centred(ui.fonts.bold, kTitleSize, cx, panel.min.y + 10, IM_COL32_WHITE, hintName_);  // y 123..153 at 1024x768
+        if (!hintKey_.empty()) centred(ui.fonts.small, kSmallSize, cx, panel.min.y + 28, IM_COL32_WHITE, hintKey_);  // 18 px below the name
     }
 
     if (pick_ != Pick::None) text(panel.min + Vec2{6, 632}, 14, IM_COL32(255, 220, 90, 255), pickPrompt_ + "   (Esc to cancel)");

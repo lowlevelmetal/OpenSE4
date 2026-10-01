@@ -27,11 +27,16 @@ The title screen offers:
 |---|---|
 | `Quick Start` | Pick an empire and start at once with the standard settings. |
 | `New Game` | Set up every detail of a new game and the empires in it. |
+| `Resume Game` | Continue the game you saved last. |
 | `Load Game` | Continue a saved game. |
-| `Multiplayer` | Host or join a network game, or play your turn of a game by e-mail (see [Multiplayer](multiplayer)). |
 | `Tutorial` | Guided lessons, practice games and this manual. |
-| `Settings` | Graphics, controls and sound (see [Settings](settings)). |
+| `Scenario` | The practice games. |
+| `Credits` | Who made OpenSE4, and what it is built with. |
 | `Quit Game` | Leave OpenSE4. |
+
+At the top right, `Multiplayer` hosts or joins a network game, or plays your turn of a game by
+e-mail (see [Multiplayer](multiplayer)), `Settings` sets graphics, controls and sound (see
+[Settings](settings)), and `Manual` opens this manual.
 
 ## Quick Start
 
@@ -108,7 +113,7 @@ There is no saving in the middle of a battle.
 
 **Autosave** is off unless you choose it. Choose it on the Mechanics page of Game Setup, or later
 in the game in [Empire Options](window:empire-options). The game then saves every 1, 2, 3, 5 or 10
-turns, into the files `Autosave 0` to `Autosave 9`, named after the last digit of the turn. So
+turns, into the files `AutoSav0` to `AutoSav9`, named after the last digit of the turn. So
 you always have up to ten recent turns to go back to.
 
 Saved games, maps, empires and settings live in your OpenSE4 user folder, never in the game

@@ -168,7 +168,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->startGame(std::move(*session));
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
-        if (!options.openWindow.empty()) {
+        if (options.openWindow == "none") {
+            mode->openLogOnTurn_ = false;  // automation: just the main window
+        } else if (!options.openWindow.empty()) {
             mode->openLogOnTurn_ = false;  // the requested window stays in front
             // "window:text" passes the text as the window's argument (e.g. help:hotkeys).
             const size_t colon = options.openWindow.find(':');

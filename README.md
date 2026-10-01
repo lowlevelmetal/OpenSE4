@@ -107,19 +107,26 @@ and other freedesktop.org desktops):
   `/usr/local`, with `sudo`) installs the programs, the desktop entry, the icons and
   the AppStream metadata.
 
-The intro offers Quick Start, New Game (the full game and empire setup), Load Game and
-Multiplayer. Tutorial, Scenario and Manual open OpenSE4's own guided lessons, training
-games and manual ([docs/LEARNING.md](docs/LEARNING.md)); during a game the Game Menu's
-Learn button opens them and Shift+F1 shows the manual page for the window in front. In
-the game, the classic hotkeys work: F1–F12 open the windows and End Turn, and letter
-keys give orders. See [docs/SETUP.md](docs/SETUP.md) and
-[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
+The intro has the original's buttons: Quick Start, New Game (the full game and empire
+setup), Resume Game (the last game you saved), Load Game, Tutorial, Scenario, Credits and
+Quit Game. Tutorial and Scenario open OpenSE4's own guided lessons and training games
+([docs/LEARNING.md](docs/LEARNING.md)); Multiplayer, Settings and the Manual sit at the top
+right. During a game the Game Menu's Learn button opens them and Shift+F1 shows the
+manual page for the window in front. In the game, the classic hotkeys work: F1–F12 open
+the windows and End Turn, and letter and Ctrl keys give orders while their button is lit.
+Pointing at a button names it and its key at the top of the system view; Help → Hotkeys
+lists every key as bound, and Settings → Controls changes them. Autosaves are named
+AutoSav0 to AutoSav9, and each player's statistics, history and log files go to
+`History/` in the user data folder and travel with saved games. See
+[docs/SETUP.md](docs/SETUP.md) and [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
 
 Headless screenshots, used for testing, work with SDL's offscreen driver:
 
 ```sh
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=30 --open=colonies --screenshot=shot.png
 SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-style=simultaneous --turns=20 --screenshot=sim.png
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turns=10 --open=none --screenshot=main.png  # no Log on top
+SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --open=help:hotkeys --screenshot=keys.png
 ```
 
 ## Modding

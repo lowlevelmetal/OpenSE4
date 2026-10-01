@@ -60,7 +60,7 @@ Game:
   --turn-style=simultaneous|turn-based
                                   Turn style of a quick game (default: turn-based)
   --open=WINDOW[:ARG]             With a quick start, open a window at once (e.g. --open=designs,
-                                  --open=help:hotkeys for a Help tab)
+                                  --open=help:hotkeys for a Help tab; none: no window, not even the Log)
                                   or start on a front-end screen: intro, quickstart, setup[:PAGE],
                                   empiresetup[:PAGE], multiplayer, pbem[:GAME.gam] (e.g. --open=setup:players).
                                   tactical: a sample tactical battle (your warships against copies);
