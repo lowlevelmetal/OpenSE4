@@ -1,11 +1,11 @@
-// Log (F10): this turn's news, messages from other empires and refused
-// orders, with category filters, a details pane with the event picture, a
-// mini-map, Send Reply, Combat Replay, Constr. Queues and Goto (docs/spec/06
-// §4.1-§4.3, confirmed: binary).
+// Log (F10): this turn's entries in the order they were made (diplomatic
+// messages are entries too), with category filters, a details pane with the
+// event picture, a mini-map, Send Reply, Combat Replay, Constr. Queues and
+// Goto (docs/spec/06 §4.1-§4.3, §7 Q41-Q43, confirmed: binary).
 //
-// The filter, the selected position and the scroll position belong to the
-// empire (game::InterfaceOptions, saved with the game) and come back on every
-// opening.
+// The filter, the selected entry (its index in the empire's whole log) and
+// the scroll position belong to the empire (game::InterfaceOptions, saved
+// with the game) and come back on every opening.
 
 #include "client/classic/screens/empire_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -37,13 +37,12 @@ const char* filterLabel(int category) {
 }
 
 struct Row {
-    enum class Kind : uint8_t { Entry, Message, Notice };
-    Kind kind = Kind::Entry;
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
     std::string title;
+    int32_t index = 0;   // the entry's index in the empire's whole log (notices: after the log)
     const game::LogEntry* entry = nullptr;
-    const game::DiplomaticMessage* message = nullptr;
+    const game::DiplomaticMessage* message = nullptr;   // a message's entry: the message
     const std::string* notice = nullptr;
 };
 
@@ -54,20 +53,34 @@ public:
         const std::vector<Row> all = rows(ui);
         std::vector<int> counts(kLogCategories, 0);
         for (const Row& r : all) ++counts[size_t(r.category)];
+        std::vector<const Row*> shown;
+        auto filterRows = [&] {
+            shown.clear();
+            for (const Row& r : all)
+                if (filter_ == 0 || int(r.category) == filter_ - 1) shown.push_back(&r);
+        };
         if (!opened_) {
-            // The stored filter, else All when its category is empty now; the
-            // stored row, else the first (spec 06 §4.1).
+            // The stored filter, else All, which is then stored, when its
+            // category is empty now; the stored entry when the filtered list
+            // shows it, else the first row (spec 06 §4.1, §7 Q42).
             opened_ = true;
             const game::InterfaceOptions& o = ui.options();
             filter_ = logOpeningFilter(o.logFilter, counts);
-            selected_ = o.logPosition;
-            scrollRows_ = o.logScroll;
+            if (filter_ != o.logFilter) {
+                game::InterfaceOptions changed = o;
+                changed.logFilter = filter_;
+                ui.setOptions(changed);
+            }
+            filterRows();
+            std::vector<int32_t> indices;
+            for (const Row* r : shown) indices.push_back(r->index);
+            selected_ = logOpeningRow(ui.options().logPosition, indices);
+            scrollRows_ = ui.options().logScroll;
             restoreScroll_ = true;
+        } else {
+            filterRows();
         }
-        std::vector<const Row*> shown;
-        for (const Row& r : all)
-            if (filter_ == 0 || int(r.category) == filter_ - 1) shown.push_back(&r);
-        selected_ = logOpeningRow(selected_, shown.size());
+        if (selected_ >= int(shown.size())) selected_ = shown.empty() ? -1 : 0;
         const Row* sel = selected_ >= 0 ? shown[size_t(selected_)] : nullptr;
 
         Dialog d(ui, "Log", DialogSize::Large);
@@ -108,6 +121,7 @@ public:
         }
         ui.tag("log:categories", categoriesMin, ImGui::GetItemRectMax());
         d.spacer();
+        // Only a diplomatic message can be answered (spec 06 §4.1).
         const game::DiplomaticMessage* msg = sel ? sel->message : nullptr;
         const bool reply = d.button("Send Reply", msg != nullptr);
         ui.tagItem("log:send-reply");
@@ -131,15 +145,19 @@ public:
             ui.open(ScreenId::CombatReplay, a);
         }
         if (d.button("Constr. Queues")) ui.open(ScreenId::Queues);
-        const std::optional<LogWindow> window = sel && !where ? logWindowTarget(sel->category) : std::nullopt;
+        // Goto follows the target the entry was made with (spec 06 §7 Q41).
+        const game::LogGoto target = sel && sel->entry ? sel->entry->target : game::LogGoto::None;
         bool close = false;
-        if (d.button("Goto", where.has_value() || window.has_value())) {
+        if (d.button("Goto", target != game::LogGoto::None)) {
             remember(ui);
-            if (where) {
-                // A location closes the Log and shows the sector in the main window.
-                ui.requests.focus = *where;
-                close = true;
-            } else {
+            if (target == game::LogGoto::Location) {
+                // A location closes the Log and shows the sector in the main window;
+                // an entry that names no system does nothing, and the Log stays open.
+                if (const auto at = goTo(ui, sel)) {
+                    ui.requests.focus = *at;
+                    close = true;
+                }
+            } else if (const auto window = logWindowTarget(target)) {
                 ui.open(windowScreen(*window));   // over the Log, which stays open
             }
         }
@@ -149,41 +167,38 @@ public:
     }
 
 private:
-    // This turn's entries in the order they were made (spec 06 §4.1): the
-    // messages other empires sent (politics comes first in a turn), the log,
-    // then the orders the turn refused.
+    // This turn's entries in the order they were made (spec 06 §4.1, §7 Q42):
+    // one list, the delivered diplomatic messages among them (each an entry
+    // titled "Message"). Commands the host refused are OpenSE4's own case (a
+    // network or play-by-e-mail turn): they follow at the end as Misc rows
+    // without a Goto (inferred).
     std::vector<Row> rows(const UiContext& ui) const {
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         std::vector<Row> out;
         auto thisTurn = [&](uint32_t turn) { return turn + 1 >= s.turn; };
-        for (const game::DiplomaticMessage& m : s.messages) {
-            if (m.to != me.id || !m.delivered || m.from.index() >= s.empires.size() || !thisTurn(m.sentTurn)) continue;
-            Row r;
-            r.kind = Row::Kind::Message;
-            r.turn = m.sentTurn;
-            r.category = LogCategory::Politics;
-            r.title = std::format("{}: {}", s.empire(m.from).name, game::displayName(m.type));
-            r.message = &m;
-            out.push_back(std::move(r));
-        }
-        for (const game::LogEntry& l : me.log) {
+        for (size_t i = 0; i < me.log.size(); ++i) {
+            const game::LogEntry& l = me.log[i];
             if (!thisTurn(l.turn)) continue;
             Row r;
             r.turn = l.turn;
             r.category = l.category;
             r.title = l.title.empty() ? std::string(game::displayName(l.category)) : l.title;
+            r.index = int32_t(i);
             r.entry = &l;
+            if (l.message.valid())
+                for (const game::DiplomaticMessage& m : s.messages)
+                    if (m.id == l.message && m.to == me.id && m.from.index() < s.empires.size()) r.message = &m;
             out.push_back(std::move(r));
         }
         const auto& notices = ui.session.notices();
-        for (const std::string& n : notices) {
+        for (size_t k = 0; k < notices.size(); ++k) {
             Row r;
-            r.kind = Row::Kind::Notice;
             r.turn = s.turn == 0 ? 0 : s.turn - 1;
             r.category = LogCategory::Misc;
             r.title = "Order not carried out";
-            r.notice = &n;
+            r.index = int32_t(me.log.size() + k);
+            r.notice = &notices[k];
             out.push_back(std::move(r));
         }
         return out;
@@ -226,23 +241,28 @@ private:
         ImGui::PopStyleVar(2);
     }
 
+    // A filter click shows that list from the top with its first row
+    // selected, and is stored with the empire (spec 06 §4.1).
     void setFilter(UiContext& ui, uint8_t f) {
-        if (f == filter_) return;
         filter_ = f;
         selected_ = 0;
         restoreScroll_ = true;
         scrollRows_ = 0;
-        // Every filter click is stored with the empire (spec 06 §4.1).
         game::InterfaceOptions o = ui.options();
         o.logFilter = f;
         ui.setOptions(o);
     }
 
-    // On Close and Goto the position and the scroll position are stored with the empire.
-    void remember(UiContext& ui) const {
+    // On Close and Goto the selected entry (its index in the whole log, -1
+    // for none) and the scroll position are stored with the empire.
+    void remember(UiContext& ui) {
+        const std::vector<Row> all = rows(ui);
+        std::vector<const Row*> shown;
+        for (const Row& r : all)
+            if (filter_ == 0 || int(r.category) == filter_ - 1) shown.push_back(&r);
         game::InterfaceOptions o = ui.options();
         o.logFilter = filter_;
-        o.logPosition = std::max(0, selected_);
+        o.logPosition = selected_ >= 0 && size_t(selected_) < shown.size() ? shown[size_t(selected_)]->index : -1;
         o.logScroll = std::max(0, scrollRows_);
         ui.setOptions(o);
     }
@@ -259,11 +279,19 @@ private:
         return ScreenId::Queues;
     }
 
+    // Where the entry happened (the mini-map's highlight).
     static std::optional<game::Location> location(const Row* r) {
-        if (!r) return std::nullopt;
-        if (r->entry) return r->entry->location;
+        if (!r || !r->entry) return std::nullopt;
+        if (r->entry->location) return r->entry->location;
         if (r->message && r->message->system.valid()) return game::Location{r->message->system, {}};
         return std::nullopt;
+    }
+
+    // A location Goto can show: the entry's, when it names a system of the galaxy.
+    static std::optional<game::Location> goTo(const UiContext& ui, const Row* r) {
+        const std::optional<game::Location> at = r && r->entry ? r->entry->location : std::nullopt;
+        if (!at || !at->system.valid() || at->system.index() >= ui.state().galaxy.systems.size()) return std::nullopt;
+        return at;
     }
 
     // The battle a combat entry reports (battles of the last processed turn).
@@ -288,8 +316,8 @@ private:
         const game::GameState& s = ui.state();
         if (!r) return;
         Sprite picture;
-        if (r->entry) picture = ui.art.eventPicture(r->entry->picture);
-        else if (r->message) picture = ui.art.racePortrait(s.empire(r->message->from).race.style);
+        if (r->message) picture = ui.art.racePortrait(s.empire(r->message->from).race.style);
+        else if (r->entry) picture = ui.art.eventPicture(r->entry->picture);
         else if (r->notice) picture = ui.art.eventPicture("OrdersNotCompleted");
         const int combat = combatIndex(ui, r);
         framedImage(ui, picture, {128, 128});
@@ -304,17 +332,20 @@ private:
         ImGui::PopFont();
         ImGui::PopTextWrapPos();
         labelValue(ui, "Date:", formatDate(r->turn), 40);
-        if (r->entry) {
-            if (!r->entry->text.empty()) wrappedText(r->entry->text);
-        } else if (r->message) {
+        if (r->message) {
             messageDetails(ui, *r->message);
+        } else if (r->entry) {
+            if (!r->entry->text.empty()) wrappedText(r->entry->text);
         } else if (r->notice) {
             wrappedText(*r->notice);
         }
     }
 
-    // A combat entry (spec 06 §4.1): "Combat in <system>", the date and the
-    // sector, then each empire and the damage of its ships, unit groups and planets.
+    // A combat entry (spec 06 §4.1, §7 Q43): "Combat in <system>", the date
+    // and the sector, then each empire (flag at x 4, name at x 34) and one
+    // 20 px row per piece it had at the start: the name 12 px in, cut before
+    // the Damage column at x 200 without an ellipsis, and the damage fixed
+    // when the battle ended, "Dead" or "Taken". All of it white.
     void combatDetails(UiContext& ui, const Row& r, const game::CombatRecord& c) {
         const game::GameState& s = ui.state();
         const bool known = c.location.system.index() < s.galaxy.systems.size();
@@ -337,18 +368,23 @@ private:
         at(200);
         ImGui::TextColored(kLabelBlue, "Damage");
         ImGui::BeginChild("##forces", ImVec2(0, 0));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float rowH = ui.px(20);
+        const float textDy = (rowH - ImGui::GetTextLineHeight()) * 0.5f;
         for (const CombatDamageRow& row : combatDamageRows(ui.rules(), s, c)) {
-            const float y = ImGui::GetCursorPosY();
+            const ImVec2 a = ImGui::GetCursorScreenPos();
             if (row.header) {
-                empireLabel(ui, row.empire);
+                if (row.empire.valid() && row.empire.index() < s.empires.size())
+                    if (const Sprite flag = ui.art.flag(s.empire(row.empire).race.style, true))
+                        drawSprite(dl, flag, {a.x + ui.px(4), a.y + ui.px(1)}, {a.x + ui.px(30), a.y + ui.px(19)});
+                dl->AddText({a.x + ui.px(34), a.y + textDy}, IM_COL32_WHITE, row.name.c_str());
             } else {
-                ImGui::SetCursorPosX(ui.px(16));
-                ImGui::TextUnformatted(row.name.c_str());
-                ImGui::SameLine(ui.px(200));
-                ImGui::TextColored(row.damage == "Dead" ? kTextBad : row.damage == "Taken" ? kTextWarn : ImVec4(1, 1, 1, 1), "%s",
-                                   row.damage.c_str());
+                dl->PushClipRect({a.x + ui.px(12), a.y}, {a.x + ui.px(200), a.y + rowH}, true);
+                dl->AddText({a.x + ui.px(12), a.y + textDy}, IM_COL32_WHITE, row.name.c_str());
+                dl->PopClipRect();
+                dl->AddText({a.x + ui.px(200), a.y + textDy}, IM_COL32_WHITE, row.damage.c_str());
             }
-            ImGui::SetCursorPosY(y + ui.px(20));
+            ImGui::Dummy(ImVec2(ui.px(260), rowH));
         }
         ImGui::EndChild();
     }
@@ -378,7 +414,7 @@ private:
 
     bool opened_ = false;
     uint8_t filter_ = 0;          // 0 All, else the category + 1
-    int selected_ = 0;            // row of the filtered list
+    int selected_ = 0;            // row of the filtered list (-1: none)
     int scrollRows_ = 0;
     bool restoreScroll_ = false;
 };

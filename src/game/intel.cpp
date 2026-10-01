@@ -33,26 +33,35 @@ int64_t defenseStrength(const Rules& r, const IntelProjectOrder& o) {
     return std::max<int64_t>(0, xmath::pctTrunc(amount * std::max<int64_t>(0, o.progress), defenseModifier(r)));
 }
 
-// Logs a project's source message to `to` and its target message to `victim`.
+// Goto of a project's outcome (spec 06 §7 Q41, confirmed: binary): its
+// location when it has one (a ship, planet or system), else none.
+LogGoto outcomeGoto(const std::optional<Location>& where) { return where ? LogGoto::Location : LogGoto::None; }
+
+// Logs a project's source message to `to` and its target message to
+// `victim`. `defended`: a defense project stopped the victim's operation, so
+// the defender's entry opens Intelligence and the defeated side's has no Goto.
 void projectMessages(TurnContext& ctx, const ruleset::IntelProject& p, EmpireId to, EmpireId victim, const effects::Tokens& tokens,
                      std::string_view fallbackSource, std::string_view fallbackTarget, std::string_view suspicion,
-                     std::optional<Location> where, Rng& rng) {
+                     std::optional<Location> where, Rng& rng, bool defended = false) {
     if (validEmpire(ctx.state, to)) {
         std::string text = p.sourceMessages.empty() ? std::string(fallbackSource)
                                                     : effects::substitute(p.sourceMessages[rng.below(p.sourceMessages.size())], tokens);
-        ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, p.sourcePicture);
+        logGoto(ctx.log(to, LogCategory::Intelligence, p.name, withPrefix(text), where, p.sourcePicture),
+                defended ? LogGoto::Intelligence : outcomeGoto(where));
     }
     if (validEmpire(ctx.state, victim)) {
         const ruleset::Message* m = effects::pickMessage(p.targetMessages, rng);
         std::string title = m && !m->title.empty() ? effects::substitute(m->title, tokens) : std::string("Intelligence Report");
         std::string text = m ? effects::substitute(m->text, tokens) : std::string(fallbackTarget);
         if (!suspicion.empty()) text += suspicion;
-        ctx.log(victim, LogCategory::Intelligence, std::move(title), withPrefix(text), where, p.targetPicture);
+        logGoto(ctx.log(victim, LogCategory::Intelligence, std::move(title), withPrefix(text), where, p.targetPicture),
+                defended ? LogGoto::None : outcomeGoto(where));
     }
 }
 
 void failed(TurnContext& ctx, EmpireId source, const ruleset::IntelProject& p, std::string_view why, std::optional<Location> where = {}) {
-    ctx.log(source, LogCategory::Intelligence, p.name, withPrefix(std::format("The operation failed: {}.", why)), where);
+    // Our project failed: no Goto (spec 06 §7 Q41).
+    logGoto(ctx.log(source, LogCategory::Intelligence, p.name, withPrefix(std::format("The operation failed: {}.", why)), where), LogGoto::None);
 }
 
 // A finished defense project (spec 05 §2.4, confirmed: binary): the other
@@ -78,10 +87,11 @@ void runDefense(TurnContext& ctx, EmpireId owner, const IntelProjectOrder& order
         effects::setEmpireTokens(tokens, s, owner, x);
         projectMessages(ctx, p, owner, x, tokens, std::format("Our agents shut down the {} operation of the {}.", deleted, tokens.targetEmpireName),
                         std::format("Our {} operation against the {} was uncovered and shut down.", deleted, tokens.sourceEmpireName), {},
-                        std::nullopt, rng);
+                        std::nullopt, rng, true);
         return;
     }
-    ctx.log(owner, LogCategory::Intelligence, p.name, withPrefix("Our counter-intelligence found no hostile operation to stop."));
+    logGoto(ctx.log(owner, LogCategory::Intelligence, p.name, withPrefix("Our counter-intelligence found no hostile operation to stop.")),
+            LogGoto::None);
 }
 
 // Runs one finished attack of `source`.
@@ -105,7 +115,7 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
         projectMessages(ctx, d, target, source, tokens,
                         std::format("Our counter-intelligence stopped an operation of the {}.", tokens.targetEmpireName),
                         std::format("Our {} operation against the {} was defeated by counter-intelligence.", p.name, tokens.sourceEmpireName),
-                        {}, std::nullopt, rng);
+                        {}, std::nullopt, rng, true);
         return;
     }
 
@@ -134,7 +144,7 @@ void runAttack(TurnContext& ctx, EmpireId source, const IntelProjectOrder& order
     if (!out.report.empty()) {
         std::string text;
         for (const auto& line : out.report) text += (text.empty() ? "" : "\n") + line;
-        ctx.log(source, LogCategory::Intelligence, std::format("{} Report", p.name), text, where, p.sourcePicture);
+        logGoto(ctx.log(source, LogCategory::Intelligence, std::format("{} Report", p.name), text, where, p.sourcePicture), outcomeGoto(where));
     }
 }
 

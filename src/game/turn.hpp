@@ -105,9 +105,9 @@ struct TurnContext {
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
     }
-    void log(EmpireId e, LogCategory c, std::string title, std::string text = {}, std::optional<Location> where = std::nullopt,
-             std::string picture = {}) {
-        addLog(state, e, c, std::move(title), std::move(text), where, std::move(picture));
+    LogEntry* log(EmpireId e, LogCategory c, std::string title, std::string text = {}, std::optional<Location> where = std::nullopt,
+                  std::string picture = {}) {
+        return addLog(state, e, c, std::move(title), std::move(text), where, std::move(picture));
     }
 };
 

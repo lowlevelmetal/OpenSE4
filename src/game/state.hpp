@@ -133,6 +133,13 @@ struct PoliticsMark {
     uint32_t nextMessage = 0;
 };
 
+// Where the Log's Goto takes an entry (spec 06 §4.1, §7 Q41, confirmed:
+// binary): fixed per kind of entry when it is made. Location closes the Log
+// and shows the entry's system with the sector selected (nothing happens when
+// the entry names none); the windows open over the Log. Nothing makes an
+// entry with the last three, which the original's handler also knows.
+enum class LogGoto : uint8_t { None, Location, Research, Intelligence, Empires, ConstructionQueues, EmpireOptions, Designs };
+
 struct LogEntry {
     uint32_t turn = 0;
     LogCategory category = LogCategory::Misc;
@@ -140,6 +147,11 @@ struct LogEntry {
     std::string text;
     std::optional<Location> location;
     std::string picture;  // Events/ picture name, if any
+    // Goto's target; addLog gives Research entries the Research window and
+    // every other entry its location, and callers change it (logGoto).
+    LogGoto target = LogGoto::Location;
+    // A delivered diplomatic message's entry: the message (Send Reply, the details).
+    MessageId message;
 };
 
 // One dated line of an empire's long record, the History window (spec 05
@@ -659,7 +671,29 @@ struct CombatPiece {
     std::string name;
     int16_t startX = 0, startY = 0;
     int32_t count = 1;                 // units in a group at the start (seekers: members)
+    // Fixed when the battle ends, for the Log's combat details (spec 06 §4.1,
+    // §7 Q43, confirmed: binary): the Damage percentage (logDamagePercent) of
+    // a piece present when the battle began, -1 for one without a row (a unit
+    // group launched during the battle, a seeker, a neutral obstacle); and the
+    // empire owning it then if it survived (invalid: destroyed, or a planet
+    // whose colony died), from which the Log reads "Dead" and "Taken".
+    int16_t damage = -1;
+    EmpireId survivor;
 };
+
+// The Log's Damage of a piece (spec 06 §4.1, confirmed: binary): 100 less
+// remaining / full in percent rounded half to even; 100 when full is 0 and 0
+// when remaining exceeds full.
+constexpr int logDamagePercent(int64_t full, int64_t remaining) {
+    if (full <= 0) return 100;
+    if (remaining > full) return 0;
+    if (remaining < 0) remaining = 0;
+    const int64_t scaled = remaining * 100;
+    int64_t kept = scaled / full;
+    const int64_t twice = (scaled % full) * 2;
+    if (twice > full || (twice == full && kept % 2 == 1)) ++kept;
+    return static_cast<int>(100 - kept);
+}
 
 // A ground combat fought during a space battle, when troops landed (spec 04
 // §11, §13): what the Ground Combat window shows (spec 06 §1.6).
@@ -969,9 +1003,16 @@ void leaveFleet(GameState& s, Vehicle& v);
 // Every member leaves the fleet and loses its orders; the fleet is deleted.
 void disbandFleet(GameState& s, FleetId id);
 
-// Appends to an empire's log for the current turn.
-void addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
-            std::optional<Location> where = std::nullopt, std::string picture = {});
+// Appends to an empire's log for the current turn and returns the entry (null
+// for an invalid empire; valid until the log changes again). Goto's target is
+// the Research window for Research entries, else the entry's location.
+LogEntry* addLog(GameState& s, EmpireId empire, LogCategory category, std::string title, std::string text = {},
+                 std::optional<Location> where = std::nullopt, std::string picture = {});
+// Sets the Goto target of an entry addLog just made (null: nothing).
+inline LogEntry* logGoto(LogEntry* entry, LogGoto target) {
+    if (entry) entry->target = target;
+    return entry;
+}
 
 // Appends a line dated the current turn to an empire's history record.
 // `about` is the empire the event concerns (invalid: the General list).

@@ -39,7 +39,9 @@ void grantRuins(TurnContext& ctx, EmpireId owner, ObjectId planet) {
         std::erase_if(obj.abilities, [&](const ruleset::Ability& a) { return parseAbilityKind(a.type) == k; });
     };
     auto announce = [&]() {
-        ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet));
+        // Goto shows the planet, like the original's ruins entry (spec 06 §7 Q41).
+        logGoto(ctx.log(owner, LogCategory::Research, std::format("Ancient ruins found on {}", obj.name), {}, locationOf(s.galaxy, planet)),
+                LogGoto::Location);
         addHistory(s, owner, owner, std::format("Found ancient ruins on {}", obj.name), locationOf(s.galaxy, planet));
     };
     const int64_t advances = rawBest(obj.abilities, AbilityKind::AncientRuins);
