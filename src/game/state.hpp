@@ -409,6 +409,11 @@ enum class OrderKind : uint8_t {
     Unmothball,
     Retrofit,       // design = the design to retrofit to
     FireOn,         // "Fire On And Destroy"
+    // The computer player's ministers' movement orders (spec 05 §7.5 "How
+    // long the ministers' movement orders last", AI_Fleets; confirmed:
+    // binary). Players never give them; a human's ministers do.
+    Seek,           // toward `location`, or after `vehicle` / the planet `object`; lasts one movement phase
+    JoinFleet,      // amount = the fleet's id: follows the fleet wherever it goes and joins it where it stands
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -1076,6 +1081,10 @@ void fleetMemberMoved(GameState& s, const Vehicle& v);
 // longer chosen, and a fleet left with no member at its location is
 // disbanded.
 void leaveFleet(GameState& s, Vehicle& v);
+// The vehicle joins the fleet (by Fleet Transfer or the Join Fleet order) and
+// its list is cleared: it gets only the orders given after it joined (spec 03
+// §9, §19 Q65). The caller has checked the sector and the kind of vehicle.
+void joinFleet(Fleet& f, Vehicle& v);
 // Every member leaves the fleet and loses its orders; the fleet is deleted.
 void disbandFleet(GameState& s, FleetId id);
 

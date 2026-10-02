@@ -34,6 +34,9 @@ std::string_view displayName(OrderKind k) {
         case OrderKind::Unmothball: return "Unmothball";
         case OrderKind::Retrofit: return "Retrofit";
         case OrderKind::FireOn: return "Fire On And Destroy";
+        // The ministers' own orders (spec 05 §7.5).
+        case OrderKind::Seek: return "Seek";
+        case OrderKind::JoinFleet: return "Join Fleet";
         case OrderKind::Count: break;
     }
     return "?";
@@ -289,6 +292,13 @@ void leaveFleet(GameState& s, Vehicle& v) {
         if (f->leader == v.id) f->leader = {};  // the first member leads again (spec 03 §9)
     }
     s.tidyFleets();
+}
+
+void joinFleet(Fleet& f, Vehicle& v) {
+    f.members.push_back(v.id);
+    v.fleet = f.id;
+    v.orders.clear();
+    v.repeatOrders = false;
 }
 
 void disbandFleet(GameState& s, FleetId id) {

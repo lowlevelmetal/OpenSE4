@@ -240,9 +240,12 @@ public:
                 action(ActorRef{id, {}});
             }
             resolveCombat();
+            recloak();
             endPursuits();
             if (ctx_.movementDay) ctx_.movementDay(day, s_);
         }
+        // The ministers' Seek orders last the movement phase (spec 05 §7.5).
+        endSeeks([](const Vehicle&) { return true; });
     }
 
     // ---- Turn-based games (spec 03 §6.3 "Turn-based", spec 04 §2) ---------------------------------
@@ -289,6 +292,9 @@ public:
             }
             liveActor(ActorRef{id, {}});
         }
+        // A Seek moves its group as far as it can in a turn-based game and is
+        // then done (spec 05 §7.5): what is left of one after the run goes.
+        endSeeks([&](const Vehicle& v) { return v.owner == m.empire; });
         savePlayerTurn();
     }
 
@@ -1037,6 +1043,8 @@ private:
             case OrderKind::Unmothball:
             case OrderKind::Retrofit:
             case OrderKind::FireOn: return scrapWindowAction(g, o);
+            case OrderKind::Seek: return seek(g, o);
+            case OrderKind::JoinFleet: return joinFleetOrder(g, o);
             case OrderKind::UseFacility:
             case OrderKind::ConvertResources: return fail(g, o, "Only colonies carry out that order.");
             case OrderKind::Count: break;
@@ -1118,7 +1126,12 @@ private:
     // turn-based game a group that is not all drones carries out the Move To
     // plus Attack the order stands for (placeAttack).
     Exec attack(Group& g, Order& o) {
-        if (live_ && !onlyDrones(g)) return placeAttack(g, o);
+        // The stored Attack, naming no target and no place, which the
+        // computer's ministers give a ship already on its target's sector:
+        // carried out at once where the group stands, and done, in either
+        // kind of game (spec 03 §8, spec 05 §7.5, confirmed: binary).
+        const bool stored = !o.vehicle.valid() && !o.object.valid() && !validLocation(s_, o.location);
+        if ((live_ && !onlyDrones(g)) || stored) return placeAttack(g, o);
         if (pursuitOver(s_, g.owner, o)) {
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: target gone", name(g)), {}, where(g));
             return Exec::Done;
@@ -1168,6 +1181,91 @@ private:
             if (seek.vehicle.valid()) return s_.vehicle(seek.vehicle)->location == here;
             return locationOf(s_.galaxy, seek.object) == here;
         });
+    }
+
+    // The ministers' Seek (spec 05 §7.5 "How long the ministers' movement
+    // orders last", confirmed: binary): toward a sector, or after a ship or
+    // planet whose current sector is the goal. Its steps are a pursuit's: a
+    // hazard or a battle on one only stops it for this run of the list (spec
+    // 03 §6.4, spec 04 §19.2 Q76). In a simultaneous game it stays for the
+    // whole movement phase, also once there, where it waits (so an order
+    // behind it waits for the next phase), and run() removes it after the
+    // phase. In a turn-based game it moves the group as far as it can and is
+    // then done: on arrival the next order runs, and runLive() removes what
+    // is left of it when the run ends. A pursued object that is gone, or no
+    // longer anybody else's, ends it. Nothing attacks: a group with no drone
+    // just waits at its target (spec 03 §8 Attack), and the day's battle
+    // check covers the sector where it waits.
+    Exec seek(Group& g, Order& o) {
+        Location goal = o.location;
+        if (o.vehicle.valid() || o.object.valid()) {
+            if (pursuitOver(s_, g.owner, o)) return Exec::Done;
+            goal = o.vehicle.valid() ? s_.vehicle(o.vehicle)->location : locationOf(s_.galaxy, o.object);
+        }
+        pursuing_ = true;
+        const Travel t = travel(g, goal);
+        pursuing_ = false;
+        switch (t) {
+            case Travel::Arrived: return live_ ? Exec::Done : Exec::Wait;
+            case Travel::Reached: return live_ ? Exec::MovedDone : Exec::Moved;
+            case Travel::Stopped: return Exec::Wait;
+            default: return afterTravel(g, o, t);
+        }
+    }
+
+    // The Fleets minister's recruits (spec 05 §7.5 AI_Fleets, confirmed:
+    // binary): on each action the group steps toward the fleet's position at
+    // that moment, wherever the fleet has gone, and the vehicle joins as soon
+    // as it stands where the fleet stands, its list cleared as by Fleet
+    // Transfer. It waits when it cannot step now (no movement left, a hazard,
+    // a busy yard, a blocked way), and fails, clearing the list, only when no
+    // route is left or the fleet is gone. In a computer player's ad-hoc group
+    // only the acting vehicle's list holds the order; companions join when
+    // their own order runs.
+    Exec joinFleetOrder(Group& g, Order& o) {
+        auto fleet = [&]() -> Fleet* {
+            Fleet* f = o.amount >= 0 ? s_.fleet(FleetId{o.amount}) : nullptr;
+            return f && f->owner == g.owner && !f->members.empty() ? f : nullptr;
+        };
+        // The holders standing where the fleet stands join; their lists are cleared.
+        auto joinHere = [&]() {
+            Fleet* f = fleet();
+            bool joined = false;
+            routes_.erase(routeKey(g));
+            for (VehicleId id : std::vector<VehicleId>(g.holders))
+                if (Vehicle* v = s_.vehicle(id); f && v && alive(*v) && !v->fleet.valid() && v->location == f->location &&
+                                                 fleetJoinProblem(r_, s_, *v).empty()) {
+                    joinFleet(*f, *v);
+                    joined = true;
+                }
+            return joined ? Exec::Cleared : fail(g, o, "It cannot join that fleet.");
+        };
+        const Fleet* f = fleet();
+        if (!f || g.planet.valid() || g.fleet.valid()) return fail(g, o, "The fleet is gone.");
+        if (where(g) == f->location) return joinHere();
+        const Travel t = travel(g, f->location);
+        switch (t) {
+            case Travel::Reached:
+            case Travel::Moved: {
+                const Fleet* now = fleet();
+                return now && now->location == where(g) ? joinHere() : Exec::Moved;
+            }
+            case Travel::Arrived: return joinHere();
+            case Travel::Wait:
+            case Travel::Stopped:
+            case Travel::Busy:
+            case Travel::Blocked:
+            case Travel::Immobile:
+            case Travel::Asked: return Exec::Wait;
+            default: return afterTravel(g, o, t);
+        }
+    }
+
+    // Removes the ministers' Seek orders from the lists of the vehicles `which` takes.
+    template <class Which>
+    void endSeeks(Which&& which) {
+        for (Vehicle& v : s_.vehicles)
+            if (which(v)) std::erase_if(v.orders, [](const Order& o) { return o.kind == OrderKind::Seek; });
     }
 
     // The turn-based Attack of a group that is not all drones (§8, §19 Q69,
@@ -1503,9 +1601,15 @@ private:
     }
 
     // After each day, pursuits whose target is gone are removed (spec 03 §6.3 step 7).
+    // The ministers' Seek after an object is such a pursuit; the stored
+    // Attack, which names no target, is none.
     void endPursuits() {
         auto finished = [&](EmpireId owner, const std::vector<Order>& list) {
-            return !list.empty() && list.front().kind == OrderKind::Attack && pursuitOver(s_, owner, list.front());
+            if (list.empty()) return false;
+            const Order& o = list.front();
+            if (o.kind != OrderKind::Attack && o.kind != OrderKind::Seek) return false;
+            if (!o.vehicle.valid() && !o.object.valid()) return false;
+            return pursuitOver(s_, owner, o);
         };
         for (Vehicle& v : s_.vehicles)
             if (alive(v) && finished(v.owner, v.orders)) v.orders.erase(v.orders.begin());

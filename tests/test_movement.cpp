@@ -1240,6 +1240,146 @@ TEST_CASE("movement: sentry orders end when an enemy is present or supplies run 
     (void)ab;
 }
 
+TEST_CASE("movement: the ministers' Seek lasts one movement phase") {
+    // Spec 05 §7.5 "How long the ministers' movement orders last" (confirmed: binary).
+    SUBCASE("simultaneous: kept for the whole phase, also once there; an order behind it waits for the next phase") {
+        World w;
+        const SystemId a = w.system("A");
+        const VehicleId ship = w.spawn(w.ship(kA, "Runner", 4), at(a, 0, 0));  // acts on days 8, 16 and 23
+        fuel(w, ship);
+        w.order(ship, mk(OrderKind::Seek, at(a, 2, 0)));
+        w.order(ship, moveTo(a, 5, 0));
+        w.move();
+        CHECK(w.v(ship).location == at(a, 2, 0));
+        REQUIRE(w.v(ship).orders.size() == 1);
+        CHECK(w.v(ship).orders.front() == moveTo(a, 5, 0));
+        w.move();
+        CHECK(w.v(ship).location == at(a, 5, 0));
+        CHECK(w.v(ship).orders.empty());
+        // A Seek it cannot finish in one phase is gone after it all the same.
+        w.order(ship, mk(OrderKind::Seek, at(a, 12, 0)));
+        w.move();
+        CHECK(w.v(ship).location == at(a, 8, 0));
+        CHECK(w.v(ship).orders.empty());
+    }
+    SUBCASE("simultaneous: after a ship, toward its current sector; a target that is gone ends it") {
+        World w;
+        const SystemId a = w.system("A");
+        const VehicleId prey = w.spawn(w.ship(kB, "Prey", 2), at(a, 6, 0));      // steps on day 16, before the hunter
+        const VehicleId hunter = w.spawn(w.ship(kA, "Hunter", 4), at(a, 0, 5));  // on days 8, 16 and 23
+        fuel(w, prey);
+        fuel(w, hunter);
+        w.order(prey, moveTo(a, 12, 0));
+        w.order(hunter, mk(OrderKind::Seek, {}, {}, prey));
+        w.move();
+        CHECK(w.v(prey).location == at(a, 7, 0));
+        CHECK(w.v(hunter).location == at(a, 3, 2));
+        CHECK(w.v(hunter).orders.empty());
+        w.order(hunter, mk(OrderKind::Seek, {}, {}, prey));
+        w.v(prey).count = 0;
+        w.s.removeDeadVehicles();
+        w.order(hunter, moveTo(a, 3, 3));
+        w.move();
+        CHECK(w.v(hunter).location == at(a, 3, 3));  // the Seek ended at once and the Move To ran
+        CHECK(w.v(hunter).orders.empty());
+    }
+    SUBCASE("simultaneous: a Seek waiting at its goal is checked for battle on every action, the stored Attack once") {
+        for (const bool stored : {false, true}) {
+            CAPTURE(stored);
+            World w;
+            const SystemId a = w.system("A");
+            const VehicleId gunboat = w.spawn(w.ship(kA, "Gunboat", 4, {"Test Laser"}), at(a, 5, 5));  // days 8, 16 and 23
+            fuel(w, gunboat);
+            w.spawn(w.ship(kB, "Picket", 1), at(a, 5, 5));
+            w.order(gunboat, stored ? mk(OrderKind::Attack) : mk(OrderKind::Seek, at(a, 5, 5)));
+            CombatSpy spy;
+            w.move(spy.hooks());
+            CHECK(spy.asked == std::vector<Location>(stored ? 1 : 3, at(a, 5, 5)));
+            CHECK(w.v(gunboat).location == at(a, 5, 5));
+            CHECK(w.v(gunboat).orders.empty());
+        }
+    }
+    SUBCASE("turn-based: it moves the group as far as it can and is then done") {
+        World w;
+        w.s.options.simultaneous = false;
+        const SystemId a = w.system("A");
+        const VehicleId ship = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 0));
+        fuel(w, ship);
+        auto run = [&]() {
+            TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+            movement::startTurn(ctx, kA);
+            movement::runLive(ctx, movement::LiveMove{kA});
+        };
+        // On arrival the next order runs with the movement left.
+        w.order(ship, mk(OrderKind::Seek, at(a, 2, 0)));
+        w.order(ship, moveTo(a, 6, 0));
+        run();
+        CHECK(w.v(ship).location == at(a, 3, 0));
+        REQUIRE(w.v(ship).orders.size() == 1);
+        CHECK(w.v(ship).orders.front().kind == OrderKind::MoveTo);
+        // Out of movement on the way: what is left of it goes when the run ends.
+        w.v(ship).orders = {mk(OrderKind::Seek, at(a, 9, 0)), moveTo(a, 0, 0)};
+        run();
+        CHECK(w.v(ship).location == at(a, 6, 0));
+        REQUIRE(w.v(ship).orders.size() == 1);
+        CHECK(w.v(ship).orders.front() == moveTo(a, 0, 0));
+    }
+    SUBCASE("the commands take the ministers' orders and the stored Attack") {
+        World w;
+        const SystemId a = w.system("A");
+        const VehicleId ship = w.spawn(w.ship(kA, "Runner", 3), at(a, 0, 0));
+        const VehicleId other = w.spawn(w.ship(kB, "Other", 3), at(a, 1, 1));
+        REQUIRE(apply(w.rules(), w.s, kB, cmd::CreateFleet{"Theirs", {other}}).ok);
+        const FleetId theirs = w.s.fleets.back().id;
+        auto give = [&](Order o) { return apply(w.rules(), w.s, kA, cmd::SetOrders{ship, {}, {o}, false}); };
+        CHECK(give(mk(OrderKind::Seek, at(a, 3, 3))).ok);
+        CHECK(give(mk(OrderKind::Seek, {}, {}, other)).ok);
+        CHECK_FALSE(give(mk(OrderKind::Seek)).ok);
+        CHECK(give(mk(OrderKind::Attack)).ok);
+        CHECK_FALSE(give(mk(OrderKind::Attack, at(a, 3, 3))).ok);
+        CHECK_FALSE(give(mk(OrderKind::JoinFleet, {}, {}, {}, {}, static_cast<int>(theirs.value))).ok);
+        CHECK_FALSE(give(mk(OrderKind::JoinFleet, {}, {}, {}, {}, -1)).ok);
+        CHECK(displayName(OrderKind::Seek) == "Seek");
+    }
+}
+
+TEST_CASE("movement: a Join Fleet order chases the fleet and joins where it stands") {
+    // Spec 05 §7.5 AI_Fleets (confirmed: binary).
+    World w;
+    const SystemId a = w.system("A");
+    const VehicleId leader = w.spawn(w.ship(kA, "Leader", 2), at(a, 6, 0));  // steps on day 16, before the recruit
+    const VehicleId recruit = w.spawn(w.ship(kA, "Recruit", 4), at(a, 0, 0));
+    fuel(w, leader);
+    fuel(w, recruit);
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::CreateFleet{"Main", {leader}}).ok);
+    const FleetId fleet = w.s.fleets.back().id;
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::SetOrders{{}, fleet, {moveTo(a, 12, 0)}, false}).ok);
+    REQUIRE(apply(w.rules(), w.s, kA, cmd::SetOrders{recruit, {}, {mk(OrderKind::JoinFleet, {}, {}, {}, {}, static_cast<int>(fleet.value))}, false}).ok);
+    w.move();
+    CHECK(w.v(recruit).location == at(a, 3, 0));
+    CHECK(w.v(recruit).orders.size() == 1);  // it lasts until done
+    w.move();
+    CHECK(w.v(recruit).location == at(a, 6, 0));
+    CHECK_FALSE(w.v(recruit).fleet.valid());
+    w.move();
+    // Day 16: the fleet steps to (9, 0) first; the recruit follows it there on day 23 and joins.
+    CHECK(w.v(leader).location == at(a, 9, 0));
+    CHECK(w.v(recruit).location == at(a, 9, 0));
+    CHECK(w.v(recruit).fleet == fleet);
+    CHECK(w.v(recruit).orders.empty());  // joining clears the list; it gets only later fleet orders
+    CHECK(w.s.fleet(fleet)->members.size() == 2);
+
+    // A fleet that is gone makes the order fail.
+    const VehicleId late = w.spawn(w.ship(kA, "Late", 4), at(a, 0, 9));
+    fuel(w, late);
+    w.order(late, mk(OrderKind::JoinFleet, {}, {}, {}, {}, static_cast<int>(fleet.value)));
+    disbandFleet(w.s, fleet);
+    w.move();
+    CHECK(w.v(late).orders.empty());
+    CHECK(w.v(late).location == at(a, 0, 9));
+    CHECK(w.logged(kA, "The fleet is gone."));
+}
+
 TEST_CASE("movement: attack pursues a moving target and stays until it is gone") {
     World w;
     const SystemId a = w.system("A");
