@@ -1040,8 +1040,12 @@ High always notice.
   players' pace far less than expected (question 53).
 - **Defend list** (confirmed: binary): the enemy-in-territory entries are kept one per
   (system, sector, owner). An entry's threat is the sum of rating + 1 over the owner's
-  noticed objects in that sector; a noticed populated colony adds the ratings (without the
-  + 1) of every object in its sector that is not ours. The entries are ordered by:
+  noticed vehicles in that sector; a noticed populated colony adds the ratings (without the
+  + 1) of every object in its sector that is not ours, its own planet included at rating 0,
+  so a colony with nothing else in its sector adds 0 (confirmed: binary; observed
+  2026-10-02: 94 % of the colony entries of two games had the value 0). The engine differs:
+  `assess` (`ai.cpp`) adds 1 for the colony itself (without it, 17 of our 24 games played
+  out identically, scratch run). The entries are ordered by:
   1. fewest jumps from home;
   2. our colonies' maximum population in that sector (spec 02 §2, domed capacity and the
      storage trait included), highest first;
@@ -1639,6 +1643,20 @@ binary).
   - With M = `Maximum Maintenance Percent of Revenue`, the empire is over the soft cap
     when, for any one of minerals, organics or radioactives, that resource's maintenance
     > its revenue × M / 100. It is over the hard cap when the same holds with M + 20.
+  - The maintenance in that test (confirmed: binary) is the sum, over the empire's ships
+    and bases, of each one's maintenance by spec 02 §7, leaving out every vehicle whose hull
+    has `Requirement Pct Colony Mods` above 0 (in the stock data the Colony Ship hull):
+    colony ships never count toward either cap. It is worked out from the vehicles of the
+    moment when the start-of-turn ministers and again when the economy-step ministers run.
+    The vehicles' maintenance actually paid (spec 02 §7) includes the colony ships. Observed
+    under a debugger (2026-10-02): at turn 30 an empire with three attack ships and a colony
+    ship compared the maintenance of the three attack ships alone; in two 100-turn games the
+    empires were over the soft cap in 9 and 11 % of turns 26–100, all after turn 50. The
+    engine differs: `Planner::overCap` (`ai.cpp`) compares the maintenance last paid
+    (`Empire::economy.maintenance`), colony ships included; our computers are over the soft
+    cap in 20 % of turns 26–100 (11 % with colony ships left out, scratch run), where they
+    build no warships and scrap a ship a turn (spec 07 "Battles, bases and the first turns
+    under a debugger").
 - **What spends the stockpile** (confirmed: binary): the computer player spends its
   resources only through construction queues and retrofits. It never uses Emergency
   Build or Repeat Build (only the Construction Queue window sets them) and never converts
@@ -1714,14 +1732,15 @@ binary).
          debugger"): all 119 Defense Base placements of three 100-turn games followed this
          rule, every one made in Infrastructure, and 9 of them reached a queue with a yard
          (an empire whose list held only its homeworld, or whose K-th queue happened to be a
-         yard colony). As the commands refuse a base at a colony without a yard, the engine
-         counts such a base as queued and spends its share of the budget without queueing
-         it, which is what the original's construction step leaves (`ai_economy.cpp`
-         `placeDefenseBase`). Since 2026-10-02 `workingYard` passes over a cloaked yard
-         ship, and `queueList` follows the system's list: every vehicle carries a stamp of
-         when it was placed in or entered its system (`Vehicle::arrival`, saved with the
-         game), and the planets come first (question 60; a planet made during play too,
-         inferred, question 64).
+         yard colony); in two more games 55 placements did, 16 of them to a queue with a
+         yard (spec 07 "Battles, bases and the first turns under a debugger"). As the
+         commands refuse a base at a colony without a yard, the engine counts such a base as
+         queued and spends its share of the budget without queueing it, which is what the
+         original's construction step leaves (`ai_economy.cpp` `placeDefenseBase`). Since
+         2026-10-02 `workingYard` passes over a cloaked yard ship, and `queueList` follows
+         the system's list: every vehicle carries a stamp of when it was placed in or
+         entered its system (`Vehicle::arrival`, saved with the game), and the planets come
+         first (question 60; a planet made during play too, inferred, question 64).
        - Mines, satellites, weapon platforms and fighters go to the first queue in this
          order: the smallest backlog in turns; then the most free cargo space; then the
          fewest units of that kind already in its cargo; then the larger planet; then the
@@ -1938,10 +1957,25 @@ binary).
       a design older than 20 turns.
     - Such a ship goes to a yard and retrofits to the newest valid design with the same
       hull and design type, up to 3 ships.
-  - *Scrap*: while over the soft cap, one non-colony ship per turn, the one of the oldest
-    design, where it can be scrapped. Every 10 turns, useless facilities are scrapped
-    (extraction on a 0-value planet with finite resources, atmosphere changers no longer
-    needed).
+  - *Scrap*: while over the soft cap, one ship per turn (confirmed: binary). The
+    candidates are the empire's vehicles that are not of a colony-ship design type
+    (Colony (Rock), (Ice) or (Gas)): every one that can move (maximum movement above 0, not
+    mothballed), wherever it is, and every one that cannot move (bases) only where the
+    empire has a space yard in its sector. The candidate whose design is oldest (creation
+    date; the first in the empire's vehicle list on a tie) is ordered, when it can move and
+    stands elsewhere, to Move To the nearest sector where it can be scrapped, and then to
+    Scrap; it leaves the empire's vehicle list for that turn. Every 10 turns, useless
+    facilities are scrapped (extraction on a 0-value planet with finite resources,
+    atmosphere changers no longer needed). Observed under a debugger (2026-10-02): every
+    ship that vanished outside a battle (16 in a 100-turn game: attack ships, mine sweepers,
+    a carrier, layers) did so on a turn its empire was over the soft cap, and no base was
+    scrapped: an old attack ship far from a yard is chosen before a base at a yard. The
+    engine differs: `planScrap` (`ai_military.cpp`) takes only ships already at a yard and
+    scraps the oldest of them at once, so bases, which always sit at yards, go first; our
+    computers scrapped 0.7 bases per empire in 100 turns (of the 1.0 they built). A scratch
+    run with the original's candidates kept 0.42 bases per empire at turn 100 instead of
+    0.24 (the original: 0.4–0.6 in five games, then 1.2, and 0.0 in a game with no turn in
+    Infrastructure).
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -2158,7 +2192,15 @@ binary).
   - n is also 0 until `Fleets Dont Use For Num Turns` turns after the game start.
   - *Forming*: with fewer fleets than wanted, at most one new fleet is formed per turn.
     It forms around the newest idle, fit ship not in a fleet, with `Fleets Default
-    Formation` and `Fleets Default Strategy`.
+    Formation` and `Fleets Default Strategy`. Only a ship that can move and that an attack
+    fleet or a defence fleet could take may lead it, and never a troop transport or a
+    boarding ship: an attack ship, a carrier or drone carrier with its units aboard, a
+    kamikaze ship, or a defence ship (confirmed: binary). The engine differs: `planFleets`
+    (`ai_military.cpp`) forms a fleet around any fit ship, troop transports and empty
+    carriers included; 7 % of our fleets were troop transports alone and 6 % carriers alone
+    (fleet-turns of turns 51–100), against none and 1 % in one game of the original, and
+    such fleets go to fight and draw (spec 07 "Battles, bases and the first turns under a
+    debugger").
   - *Disbanding*: fleets beyond n are disbanded, and so is a fleet whose leader is gone
     or unfit.
   - *Roles*: fleet i of n (counting from 1) is an attack fleet when i is odd and (i + 1) /
@@ -3895,6 +3937,20 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     the turn of each empire's first and second attack ship and first colony ship, the build
     queue of the homeworld in turns 1–10, and the explorers' targets in turns 1–25, read under
     a debugger beside ours.
+
+    **Answer** (in part; observed under a debugger, 2026-10-02; spec 07 "Battles, bases and
+    the first turns under a debugger"). The first attack ship comes at turn 2 in both. In
+    four games of the original (20 empires) the second comes at turn 9 (median) against our
+    turn 5 and the first colony ship at turn 7 against our 9; at turn 5 the original's
+    empires have 1.1 attack ships against our 2.0, and from turn 10 both have about 2. The
+    homeworld queues read every turn in two games show one sequence in every empire: turn 1
+    queues two attack ships and a weapon platform; on turn 2 the first attack ship is
+    finished, a new Attack Ship design makes the turn-1 design obsolete and the second
+    queued attack ship leaves the queue; the ministers of turn 2 then queue weapon
+    platforms, satellites and a colony ship, and an attack ship of the new design only on
+    turn 4 (one empire of ten on turn 3), behind them. Ours queue the new attack ship at
+    once and finish it by turn 5, before the colony ship. Why the original queues no attack
+    ship on turns 2 and 3 is question 70.
 66. **Battles away from colonies** (spec 07 "Resources, ships and colony losses under a
     debugger", question 62). Per empire and 25 turns of turns 51–100, our computer players
     fight 9.9–10.5 battles away from any colony that one side wins and 7–9 that end drawn,
@@ -3906,6 +3962,41 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     losses, read under a debugger from the battle setup and the verdict, beside the same
     records of ours; and in particular whether the drawn battles of ours are ships passing
     each other on their way.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Battles, bases and the first
+    turns under a debugger", two more games of the original with every battle recorded at
+    its setup and its verdict). The original fights drawn battles of the same kind as ours,
+    by the same rules, but how many depends on the game: drawn battles away from colonies
+    per empire and 25 turns were 0.0 and 21.5 in the two new games (0.8 and 1.2 in games 4
+    and 5), against 1.0–21.8 in our 24 games (median 6). In the second new game five attack
+    ships, three of them damaged, sat in one sector with a satellite group and an unarmed
+    ship of another empire: 30 combat turns without a hit, fought again on most days of the
+    turn because a survivor was below full structure (spec 03 §6.3 step 6), 106 battles in
+    one sector over turns 51–100 and up to 29 in one turn. Ours draw the same way: 27 % of
+    our battles of turns 51–100 end without a shot, mostly armed ships against troop
+    transports or carriers that keep away from them (38 % of those), or against satellite
+    groups (15 %; the one traced had only missiles, whose `Weapon Target` leaves satellites
+    out), or a ship that is slower or damaged (one movement point) chasing a faster one;
+    the drawn ones come back the next day while a survivor is damaged (24 % of our battles
+    are a second or later battle in the same sector and turn, the new games 13 % and 61 %).
+    So the draws are not a rule difference. What does differ:
+    - Decided battles away from colonies: ours win 4.9 and lose 5.1 per empire and 25 turns
+      (wins 3.0–10.3 per game), the original wins 2.1–3.4 and loses as many in four games;
+      ours lose 6.1 attack ships per empire and 25 turns in battle against 4.2 and 4.9.
+    - Fleets: a new fleet's leader must be a ship an attack or defence fleet could take,
+      never a troop transport or boarding ship (§7.5 `AI_Fleets`, confirmed: binary). Ours
+      form fleets of troop transports alone (7 % of fleet-turns) and of carriers alone (6
+      %); the original none and 1 % (one game). In a scratch run with the original's rule,
+      our battles fell from 11.3 to 9.7 per empire and 25 turns (standard error 0.9), those
+      between armed and unarmed ships from 3.0 to 1.9, and attack ships lost in turns 26–100
+      from 17.9 to 16.5.
+    - The step toward a square in combat (spec 04 §5, confirmed: binary): ours stop behind a
+      large piece where the original slides along it; with the original's rule our drawn
+      share fell from 42 to 39 %.
+    - Scrapping: ours scrap 1.1 attack ships per empire and 25 turns of turns 51–100, as the
+      soft cap and the scrap candidates differ (§7.5, the budget and *Scrap*).
+    Who engages whom in the decided battles, and whether ships without orders start
+    battles, is question 68.
 67. **Battles at an enemy colony** (spec 07 "Resources, ships and colony losses under a
     debugger", question 63). The original's computer players win most battles they fight at
     an enemy colony (2.1–3.2 won, 0.8–0.9 lost, 0.2–0.6 drawn per empire and 25 turns in
@@ -3915,3 +4006,48 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     weapons and orders, the colony's population, shields and stored units (weapon
     platforms and satellites take hits before the people, spec 04 §11), the number of
     combat turns fought, and the damage the colony took.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Battles, bases and the first
+    turns under a debugger"). The battles go the same way once fought; the original fights
+    more of those it wins. Per empire and 25 turns of turns 51–100, counting each battle
+    once, battles in which armed ships attacked an enemy colony and the colony was gone at
+    the end: 2.2 and 1.9 in the two new games, 0.9 in ours; colonies lost (all four
+    original games): 1.8–3.6 against our 1.1. The colonies taken had about the same hit
+    points (spec 04 §11; median 420 and 425 against our 520) and fell to two armed ships
+    (median, both) in 11–12 combat turns (ours 10). Attacks that fail are made on strong
+    colonies on both sides: in the second new game 43 such battles, the colonies' median
+    15,490 hit points with two unit groups; ours 224 in 24 games (median 2,675), 56 of them
+    on one colony and 24 % without a shot. The colony threat of the defend list (§7.2)
+    differs (the original adds nothing for the colony itself, ours 1) but changes little:
+    without the + 1, 17 of our 24 games played out identically (scratch run). Which colonies
+    the ministers send ships against is question 69.
+68. **Decided battles away from colonies** (question 66; spec 07 "Battles, bases and the
+    first turns under a debugger"). Our computer players win 4.9 battles away from colonies
+    per empire and 25 turns of turns 51–100 and lose 5.1 (wins 3.0–10.3 per game), the
+    original wins 2.1–3.4 and loses as many in four games, and ours lose more attack ships
+    in battle (6.1 against 4.2–4.9). In the original's daily battle check the sector of
+    every ship that acts by the movement schedule and has an order list seems to be marked,
+    whether or not it has an order (inferred: read in the executable, not traced); ours mark
+    a sector only when an order is carried out (spec 04 §2). To verify: a breakpoint on the
+    marking, to see which ships mark a sector and whether a ship without orders beside a
+    hostile one starts a battle; per decided battle in the original, the first orders of the
+    ships on each side (Seek, Attack, Warp, none) and which minister gave them, beside ours.
+69. **Which enemy colonies the computer players attack** (question 67). The original ends
+    1.9–2.2 battles per empire and 25 turns with an enemy colony gone, ours 0.9, for
+    battles that go the same way once fought. To verify: per turn in the original, the
+    defenders' and fleets' targets that are enemy colonies (the defend-list entry each
+    defender takes, §7.5 *Defence*; the fleets' targets in Defend (Short Term), Attack and
+    the other states) and the colonies' strength, beside ours; and whether a fleet or a
+    defender is ever sent against a colony whose planet out-rates it.
+70. **The second attack ship** (question 65). In the original, after the turn-2 redesign
+    makes the first Attack Ship design obsolete, the ministers of turns 2 and 3 queue units
+    and a colony ship but no attack ship, and the new design's first attack ship is queued
+    on turn 4 (one empire of ten on turn 3); ours queue it on turn 2. To verify: the vehicle
+    table's counts for the Attack Ship row on turns 2–4 (ships, queued items, the obsolete
+    item removed), the backlog test of the homeworld's queue on those turns, and when the
+    queued obsolete item leaves the queue relative to the Ship Construction minister.
+71. **The soft cap in turns 26–50.** With colony ships left out of the maintenance (§7.5),
+    our computer players are over the soft cap in 4 % of turns 26–50 and 14 % of turns
+    51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
+    (two games). To verify: the maintenance and revenue compared at the test in turns 26–50
+    in the original and in ours, and which vehicles make the difference.

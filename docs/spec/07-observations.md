@@ -1045,6 +1045,122 @@ the colony count the rest; the extra ships of the original are fewer losses, not
 construction; and its hostile colonies go in battles it wins at the colony, at a rate that
 with five games is close to ours.
 
+### Battles, bases and the first turns under a debugger (2026-10-02)
+
+**How.** Two more games of the original (games 6 and 7) under the debugger of "Pace
+observed under a debugger", with the same set-up, on maps of 30 and 25 systems. New
+read-only breakpoints recorded every battle at its setup and at its verdict: each piece's
+owner, kind (ship or base, planet, fighter, satellite or drone group, neutral obstacle),
+hit points at the start and at the end, shields and the sector it came from, for ships the
+design type, the number and first kind of their orders, the fleet and the number of
+weapons, for planets the population, and the number of combat turns fought. They also
+recorded every Defense Base placement with the empire's queue list and which entries have a
+working yard, each empire's soft-cap test with the revenue and maintenance it compared, and
+every design's owner, type, creation date and obsolete flag. Ours: the 24 games of
+"Resources, ships and colony losses under a debugger" (0d71f41), with the same battle
+records plus the shots, hits and moves of each battle, and scratch builds that change one
+rule at a time (24 games each unless marked). A side is "armed" when one of its ships has a
+weapon, "unarmed" when it has ships but none armed, "units" when it has only unit groups,
+"colony" when it has a populated planet; a battle is drawn when more than one side has
+pieces left at its end.
+
+**Battles** per empire and 25 turns of turns 51–100, each battle counted once (drawn share
+in brackets):
+
+| Sides | Original, game 6 | Original, game 7 | Ours |
+|---|---|---|---|
+| Armed against a colony | 3.2 (16 %) | 6.3 (39 %) | 1.8 (32 %) |
+| Armed against armed | 1.9 (0 %) | 1.3 (15 %) | 3.2 (7 %) |
+| Armed against unarmed | 0.6 (0 %) | 3.7 (86 %) | 3.0 (57 %) |
+| Armed against units | 0.3 (0 %) | 7.8 (94 %) | 1.0 (62 %) |
+| Unarmed against unarmed, or a colony against unarmed | 0.1 | 0 | 1.5 (82 %) |
+| All | 6.1 | 19.1 | 11.3 |
+| Second or later battle in the same sector and turn | 13 % (up to 2) | 61 % (up to 29) | 24 % (up to 10) |
+
+Counted the way of "Resources, ships and colony losses under a debugger" (each empire's
+battle events, which matched the battle records one for one in both new games), the four
+original games with full records had 0.8, 1.2, 0.0 and 21.5 drawn battles away from
+colonies per empire and 25 turns, against 1.0–21.8 in our games (median 6.2), and won 3.4,
+3.3, 2.3 and 2.1 away from colonies, against 4.9 in ours (3.0–10.3 per game). Attack ships
+lost in battle per empire and 25 turns: 4.2 and 4.9 in the new games, 6.1 in ours.
+
+- Most of game 7's drawn battles were one standoff: five attack ships of one empire, three
+  of them damaged, in a sector with another empire's satellite group and an unarmed ship.
+  Each battle ran 30 combat turns without a hit, and because a survivor was below full
+  structure it was fought again on most days (spec 03 §6.3 step 6): 106 battles in that
+  sector in turns 51–100. Some of those ships had no orders.
+- 27 % of our battles of turns 51–100 end without a shot, nearly all drawn: armed ships
+  against unarmed ships (38 % of them), a colony against unarmed ships (15 %), armed ships
+  against satellite groups (15 %), unarmed against unarmed (14 %). Traced in a scratch
+  build: an attack ship with only missiles beside a satellite group (the missiles'
+  `Weapon Target` leaves satellites out, so the ship has nothing to aim at and keeps away,
+  while the satellites never come in range); a damaged attack ship with one movement point
+  after a troop transport with three; an attack ship stopped behind a large piece by the
+  step rule of spec 04 §5.
+- The unarmed sides of our drawn battles against armed ships: troop transports in 49 % of
+  them and carriers in 28 %, nearly three in four in fleets. Fleet-turns of turns 51–100 by
+  members: ours 7 % troop transports alone, 6 % carriers alone; the original (game 6) 89 %
+  attack ships alone, 1 % carriers alone, no troop fleet: a troop transport or boarding ship
+  never leads a new fleet (spec 05 §7.5, confirmed: binary).
+- Of our drawn battles, 55 % were in a sector that also had a battle the turn before; in
+  game 6 two of six, in game 7 63 %.
+
+**Battles at an enemy colony** (two sides, armed attackers), per empire and 25 turns of
+turns 51–100: the colony gone at the end 2.2 and 1.9 in the new games, 0.9 in ours. The
+colonies taken had a median 425 and 420 hit points (spec 04 §11; ours 520), and fell to a
+median two armed ships in 11–12 combat turns (ours 10). The attacks that failed: game 6, 10
+battles on colonies of median 666 hit points; game 7, 43 battles on colonies of median
+15,490 with two unit groups; ours 224 battles on 62 colonies (one colony 56 times, 24 %
+without a shot), median 2,675 hit points, the attackers in fleets with Seek orders in nine
+cases of ten. Colonies lost per empire and 25 turns, all four games with full records:
+1.8, 3.6, 2.2 and 2.0, against our 1.1. Without the + 1 our defend list adds for each
+enemy colony (spec 05 §7.2), 17 of our 24 games played out identically.
+
+**Losses outside battle and the soft cap.** Every ship of game 6 that vanished outside a
+battle (16) did so on a turn its empire was over the soft cap, and no base was scrapped.
+Turns over the soft cap: game 6 0 % of turns 26–50 and 14 % of turns 51–100, game 7 0 and
+16 %; ours 14 and 23 %, and 4 and 14 % with colony ships left out of the maintenance as the
+original does (spec 05 §7.5). Our attack ships lost per empire and 25 turns of turns 51–100:
+6.1 in battle, 1.1 scrapped, 0.4 otherwise.
+
+**Bases.** All 55 Defense Base placements of the new games went to the K-th queue (spec 05
+§7.5), 16 of them to a queue with a yard (54 and 16 in game 6, which spent 18 % of turns
+51–100 in Infrastructure; game 7 spent none and placed one). Per placement the list held a
+median 11 queues, 23 % of them with a yard; ours 13 and 28 %, and 21 % of our placements
+reached a yard (153 of 742). Per empire in 100 turns, game 6 / ours: Defense Bases built
+0.6 / 0.58, lost 0 / 0.44; Base Space Yards built 0.8 / 0.40, lost 0.2 / 0.30; bases at
+turn 100 1.2 / 0.24. Ours lose them to scrapping: the original scraps the oldest design
+among all its ships that can move and the bases at a yard, ours only among the ships at a
+yard, which bases always are (spec 05 §7.5 *Scrap*). Scratch runs, bases per empire at turn
+100: the soft cap without colony ships 0.29; the original's scrap candidates 0.42; both
+0.41; both with the fleet leader rule 0.50.
+
+**Fleet leaders, scratch run** (spec 05 §7.5, the original's leader rule): battles 11.3 →
+9.7 per empire and 25 turns (standard error 0.9 over 24 games), armed against unarmed 3.0
+→ 1.9, unarmed against unarmed 0.8 → 0.6, a colony against unarmed 0.7 → 0.5; attack ships
+lost in turns 26–100 17.9 → 16.5; time in Defend (Short Term) 72 → 70 % of turns 51–100.
+With all three rules (leaders, soft cap, scrap candidates) battles were 10.9.
+
+**The combat step, scratch run** (spec 04 §5, the original's tries around a blocked
+square, 12 games): battles with an armed piece stopped in at least five combat turns 11 →
+3 %, drawn battles 42 → 39 %, battles 10.1 → 10.1 per empire and 25 turns.
+
+**The first turns.** Four original games (20 empires): first attack ship at turn 2, second
+at turn 9 (median), first colony ship at turn 7, second at turn 11; attack ships alive at
+turns 5 / 10 / 20: 1.05 / 1.8 / 2.05. Ours: 2, 5, 9 and 11; 2.0 / 1.9 / 2.0. The homeworld
+queues of the new games, every empire alike: after turn 1, two attack ships and a weapon
+platform; on turn 2 the first attack ship is finished, a new Attack Ship design is made
+and the turn-1 design becomes obsolete, the second attack ship leaves the queue, and the
+ministers queue weapon platforms, satellites and a colony ship; an attack ship of the new
+design is queued on turn 4 (one empire of ten on turn 3), behind them. Ours queue it on
+turn 2 (spec 05 questions 65, 70).
+
+**What this settles** (spec 05 questions 65–67, 68–71 new): drawn battles and their daily
+repeats happen in the original by the same rules and vary from game to game; the
+differences found are the fleet leader rule, the soft cap without colony ships, the scrap
+candidates and the combat step, and what is left is how often our computers fight decided
+battles away from colonies and how rarely they attack weak enemy colonies.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
