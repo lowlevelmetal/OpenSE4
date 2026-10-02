@@ -138,6 +138,12 @@ struct TurnContext {
     // The units reserve shared by all empires (ai::unitReserveLeft): 0 after
     // the start-of-turn steps, then what the last units step left.
     int64_t unitReserve = 0;
+    // The one set of AI lists of the game, as far as an economy step reads it
+    // (spec 05 §7.2 "Whose lists the economy step reads", confirmed: binary):
+    // the colonization targets, in order, that the last start-of-turn step
+    // whose ministers ran left in place. The next economy step whose ministers
+    // run plans with them instead of building its own, and removes them.
+    std::optional<std::vector<ObjectId>> aiColonyTargets;
 
     // Simultaneous games: called after each of the 30 movement days with the
     // state as that day left it (TurnOptions::movementDay; the client's

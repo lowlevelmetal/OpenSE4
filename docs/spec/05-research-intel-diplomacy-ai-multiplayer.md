@@ -959,13 +959,13 @@ system would. The Politics minister runs after the state update and after the li
 below are built (§7.1), so each turn's lists and transitions use the territory claimed
 during the previous turn: a new colony's system and its neighbours count only from the
 second start-of-turn update after the colony is founded. A human empire keeps the claims its
-player makes unless its Politics minister acts. OpenSE4 claims after the empire's
-start-of-turn ministers (`ai::claimTerritory`) rather than first thing in the Politics
-minister's run: the state update and those ministers then use the claims of the previous
-turn, as the lists they read do, and the anger step already uses the new claim (§7.3)
-(inferred: that the ministers after Politics read the territory only through the lists,
-question 60). The Politics minister's own decisions therefore see the previous claims, as
-in the value of a system offered in a trade (§7.4).
+player makes unless its Politics minister acts. OpenSE4 follows this since 2026-10-02: the
+claims are rewritten (`ai::claimTerritory`) after the state update and the political step,
+first thing before the Politics minister decides, so a trade it accepts then moves a claim
+until the receiver's next rewrite; the ministers after Politics read the territory only
+through the lists (question 60), and the engine hands them the claims the state update used
+(`planOrdersAfterPolitics`). It used to claim after the empire's start-of-turn ministers,
+which wiped a system received in the empire's own Politics run at once.
 
 **Jumps** (confirmed: binary): every AI jump count uses every warp link of the map, known
 or not, and an unreachable system counts as 999 jumps. That covers the territory's "one
@@ -1057,8 +1057,14 @@ empire in player order whose start-of-turn ministers ran; every later empire bui
 own. Of these lists the economy step reads only the colonization targets: the colony-ship
 type that `Colonizer` entries build (§7.5) and the neutral empire's colony-ship test. Under
 a debugger, in a game of five computer players the economy step of player 1 found the set
-of player 5 on every turn, and players 2–5 built their own. The engine differs: every
-empire's economy step plans with its own situation (`planEconomyStep`).
+of player 5 on every turn, and players 2–5 built their own. OpenSE4 follows this since
+2026-10-02 (`TurnContext::aiColonyTargets`): the colonization targets of the lists built by
+an empire's start-of-turn ministers stay in place, and the next economy step whose ministers
+run plans with them and removes them. Whether the reading empire can settle each target is
+its own test, and the neutral empire's colony-ship test, which no rule of this spec
+describes, is not modelled (question 64). The set lives within one processing of the turn:
+a human's turn-based ministers, whose start and end of turn can come in different calls,
+build their own at the end.
 
 **Tests used by the transitions**
 
@@ -1704,10 +1710,11 @@ binary).
          yard colony). As the commands refuse a base at a colony without a yard, the engine
          counts such a base as queued and spends its share of the budget without queueing
          it, which is what the original's construction step leaves (`ai_economy.cpp`
-         `placeDefenseBase`). The
-         engine differs: `workingYard` counts a cloaked yard ship's yard as working, and
-         `queueList` orders a system's queues by the object slot order, which can put two
-         ships in another order than the system list (question 60).
+         `placeDefenseBase`). Since 2026-10-02 `workingYard` passes over a cloaked yard
+         ship, and `queueList` follows the system's list: every vehicle carries a stamp of
+         when it was placed in or entered its system (`Vehicle::arrival`, saved with the
+         game), and the planets come first (question 60; a planet made during play too,
+         inferred, question 64).
        - Mines, satellites, weapon platforms and fighters go to the first queue in this
          order: the smallest backlog in turns; then the most free cargo space; then the
          fewest units of that kind already in its cargo; then the larger planet; then the
@@ -1716,7 +1723,8 @@ binary).
          cargo space for the batch, nothing is placed. The "units of that kind" are in
          fact every unit stack in the colony's cargo, whatever its kind: the key is the
          total number of units it holds (confirmed: binary, question 60). The engine
-         differs: it counts only the units of the item's vehicle type.
+         follows this since 2026-10-02; it used to count only the units of the item's
+         vehicle type.
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
          queue.
@@ -3728,13 +3736,14 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       them, so the engine's choice holds.
     - A system's queues follow the system's own object list: the order in which objects
       were placed in or entered the system, planets before the ships that came later. The
-      engine's object slot order agrees for planets and can differ only between two ships.
+      engine's object slot order agrees for planets and can differ only between two ships;
+      since 2026-10-02 the ships follow their arrival stamps.
     - A colony's yard works while the colony is not cloaked; a ship's while the ship is not
-      cloaked and its Space Yard part works. The engine differs for a cloaked yard ship.
+      cloaked and its Space Yard part works. The engine follows this since 2026-10-02.
     - A queued item counts its count, and every design on a base hull counts, Base Space
       Yards included. The engine matches.
     - The unit queue choice counts every unit in the colony's cargo, whatever its kind. The
-      engine differs.
+      engine follows this since 2026-10-02.
 61. **Resources produced by the computer players** (spec 07 "Pace observed under a
     debugger"). With the same population (2,887M and 3,198M at turns 75 and 100 against our
     2,789M and 3,106M), the same colony types and about as many facilities, the original's
@@ -3767,9 +3776,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     debugger session; which minister sends the ships that do it (the Attack minister in
     Attack, the Defense minister and the defence fleets in Defend (Short Term), the attack
     fleets in other states); and whether our ships reach those colonies and fight them.
-64. **Details the one-turn orders and the exploration rules leave open** (§7.5 "How long
-    the ministers' movement orders last", "Exploration", §7.2 "Whose lists the economy step
-    reads"). OpenSE4's choices since 2026-10-02 (inferred):
+64. **Details the one-turn orders, the exploration rules and the lists leave open** (§7.5
+    "How long the ministers' movement orders last", "Exploration", "Placement", §7.2 "Whose
+    lists the economy step reads"). OpenSE4's choices since 2026-10-02 (inferred):
     - a turn-based Seek that arrives is done and the next order (an explorer's Warp) runs
       with the movement left; what is left of one when its group's run ends, because the
       movement is spent or a hazard or a battle stopped it, is removed then;
@@ -3780,6 +3789,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - an explorer that stands on the point it takes gets no order and leaves the point in
       the list for the next explorer ("the point then leaves the list" read as part of the
       orders); an explorer that no route takes to any point gets nothing;
+    - a planet made during play (Create Planet) still comes before every ship on its
+      system's list for the queue list (the original puts it after the ships already there);
+    - the economy step that borrows another empire's colonization targets asks its own
+      colonization test of each (the targets' order and danger are the other empire's), and
+      the neutral empire's colony-ship test that §7.2 names is not modelled;
     - the leftover fleets that explore (§7.5 `AI_Fleets`) get a Seek toward the first free
       frontier point and the Warp through it, which lasts until done. In scratch runs the
       explorers' rule for them (the Warp only when the fleet's movement reaches the
@@ -3793,5 +3807,7 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     To verify in the executable: when a turn-based Seek leaves the list, and whether the
     order behind it runs in the same turn; which empty list stops the Exploration minister
     (no free point, or no frontier point at all); whether an explorer on its point takes
-    the point out of the list; how a fleet explores; and which movement points a
-    turn-based explorer compares with its distance.
+    the point out of the list; how a fleet explores; which movement points a turn-based
+    explorer compares with its distance; whose settle test the borrowed colonization targets
+    get, and what the neutral empire's colony-ship test is; and where a planet made during
+    play goes on its system's list.

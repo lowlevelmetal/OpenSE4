@@ -662,11 +662,11 @@ void updateAiState(TurnContext& ctx, EmpireId id) {
 
 // Spec 05 §7.2 "Territory" (confirmed: binary): the Politics minister of
 // every empire whose Politics minister is on (every computer player, and a
-// human who turns that minister on; spec 06 §7 Q47) rewrites the claims. The
-// lists and transitions of the state update, built before it, use the claims
-// of the previous turn. The pipeline claims after the empire's start-of-turn
-// ministers, which then plan with the same claims (inferred: that they read
-// the territory only through those lists, spec 05 Q60).
+// human who turns that minister on; spec 06 §7 Q47) rewrites the claims,
+// first thing in its run. The lists and transitions of the state update,
+// built before it, use the claims of the previous turn, and so do the
+// ministers after it, which read the territory only through those lists
+// (question 60; the pipeline hands them the earlier claims).
 void claimTerritory(TurnContext& ctx, EmpireId id) {
     GameState& s = ctx.state;
     if (!id.valid() || id.index() >= s.empires.size() || !politicsOn(s.empire(id))) return;

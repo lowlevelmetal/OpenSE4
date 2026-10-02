@@ -437,7 +437,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
 
 // ---- Planner core -----------------------------------------------------------------------------
 
-Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uint64_t salt)
+Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uint64_t salt, const std::vector<SystemId>* territory)
     : r(rules),
       st(s),
       id(e),
@@ -459,6 +459,7 @@ Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uin
         }
 
     scores = politicalScores(r, st);
+    if (territory) st.empire(id).claimedSystems = *territory;
     sit = assess(r, st, id, prof);
     for (const auto& c : st.colonies)
         if (c && c->owner == id && (c->homeworld || !homeLocation.system.valid())) {
@@ -915,19 +916,39 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
     return p.report().commands;
 }
 
-std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e) {
+std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
+                                             std::vector<ObjectId>* colonyTargets) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
-    detail::Planner p(r, s, e, mode, kSaltOrders);
+    detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    if (colonyTargets) {
+        colonyTargets->clear();
+        for (const detail::ColonyTarget& t : p.sit.colonyTargets) colonyTargets->push_back(t.planet);
+    }
     p.runOrders(false, true);
     return p.report().commands;
 }
 
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve) {
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
+                                     const std::vector<ObjectId>* colonyTargets) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
     p.unitReserve = unitReserve;
+    // The lists another step left (spec 05 §7.2 "Whose lists the economy step
+    // reads"): of them the economy step reads only the colonization targets.
+    if (colonyTargets) {
+        p.sit.colonyTargets.clear();
+        for (ObjectId planet : *colonyTargets) {
+            if (!planet.valid() || planet.index() >= p.st.galaxy.objects.size()) continue;
+            detail::ColonyTarget t;
+            t.planet = planet;
+            t.system = p.st.galaxy.object(planet).system;
+            t.settleable = detail::canSettle(r, p.st, p.emp(), p.st.galaxy.object(planet));
+            t.colonized = p.st.colony(planet) != nullptr;
+            p.sit.colonyTargets.push_back(t);
+        }
+    }
     p.runEconomy();
     return p.report().commands;
 }

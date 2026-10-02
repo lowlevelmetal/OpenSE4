@@ -8,8 +8,10 @@
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <map>
 #include <tuple>
+#include <vector>
 
 namespace opense4::game::ai::detail {
 

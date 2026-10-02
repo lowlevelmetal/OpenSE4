@@ -545,7 +545,7 @@ private:
             Resources rate;
             int64_t backlog = 0;
             int64_t freeCargo = 0;  // the mines, satellites, weapon platforms and fighters only
-            int64_t heldOfKind = 0;
+            int64_t heldOfKind = 0;  // every unit in the colony's cargo
             int size = 0;
             int64_t production = 0;
         };
@@ -557,9 +557,9 @@ private:
             if (held) {
                 const Colony& c = *p_.st.colony(target.planet);
                 o.freeCargo = colonyCargoCapacity(p_.r, p_.st, c) - cargoSpaceUsed(p_.r, p_.st, c.cargo);
-                // Units "of that kind": the same vehicle type (inferred, spec 05 Q60).
-                for (const UnitStack& u : c.cargo.units)
-                    if (u.count > 0 && p_.info(u.design).stats.vehicleType == di.stats.vehicleType) o.heldOfKind += u.count;
+                // Units "of that kind" are in fact every unit in the colony's
+                // cargo, whatever its kind (confirmed: binary, spec 05 Q60).
+                for (const UnitStack& u : c.cargo.units) o.heldOfKind += std::max(0, u.count);
                 o.size = planetRank(p_.r, p_.st.galaxy.object(c.planet));
                 o.production = production(c);
             }
@@ -637,24 +637,26 @@ private:
         return true;
     }
 
-    // The empire's queue list (spec 05 §7.5 "Placement"): every queue it
-    // owns, system by system in system order and in the game's object order
-    // within a system, colonies and ships mixed (objectOrderKey, spec 03 §19
-    // Q62; inferred, spec 05 Q60). Every colony has a queue, a ship one only
-    // when it carries a Space Yard component (spec 02 §6.1).
+    // The empire's queue list (spec 05 §7.5 "Placement", confirmed: binary,
+    // question 60): every queue it owns, system by system in system order
+    // and, within a system, in the order of the system's own object list: the
+    // planets (in the game's object order) before the ships, which follow the
+    // order they were placed in or entered the system (Vehicle::arrival; a
+    // planet made during play also comes first, inferred, question 64). Every
+    // colony has a queue, a ship one only when it carries a Space Yard
+    // component (spec 02 §6.1).
     std::vector<cmd::QueueTarget> queueList() const {
-        std::vector<std::tuple<uint32_t, uint64_t, cmd::QueueTarget>> keyed;
+        std::vector<std::tuple<uint32_t, int, uint64_t, cmd::QueueTarget>> keyed;
         for (const auto& c : p_.st.colonies)
             if (c && c->owner == p_.id)
-                keyed.emplace_back(p_.st.galaxy.object(c->planet).system.value, objectOrderKey(p_.st, c->planet), cmd::QueueTarget{c->planet, {}});
+                keyed.emplace_back(p_.st.galaxy.object(c->planet).system.value, 0, objectOrderKey(p_.st, c->planet), cmd::QueueTarget{c->planet, {}});
         for (const Vehicle& v : p_.st.vehicles)
-            if (v.owner == p_.id && v.count > 0 && carriesYard(v))
-                keyed.emplace_back(v.location.system.value, objectOrderKey(v), cmd::QueueTarget{{}, v.id});
+            if (v.owner == p_.id && v.count > 0 && carriesYard(v)) keyed.emplace_back(v.location.system.value, 1, v.arrival, cmd::QueueTarget{{}, v.id});
         std::stable_sort(keyed.begin(), keyed.end(), [](const auto& a, const auto& b) {
-            return std::tuple(std::get<0>(a), std::get<1>(a)) < std::tuple(std::get<0>(b), std::get<1>(b));
+            return std::tuple(std::get<0>(a), std::get<1>(a), std::get<2>(a)) < std::tuple(std::get<0>(b), std::get<1>(b), std::get<2>(b));
         });
         std::vector<cmd::QueueTarget> out;
-        for (const auto& k : keyed) out.push_back(std::get<2>(k));
+        for (const auto& k : keyed) out.push_back(std::get<3>(k));
         return out;
     }
 
@@ -664,13 +666,13 @@ private:
         return false;
     }
 
-    // A working space yard: an uncloaked colony's yard facility, or a yard
-    // component of a ship that is neither destroyed nor mothballed, cloaked or
-    // not (inferred, spec 05 Q60).
+    // A working space yard (spec 05 §7.5 "Placement", confirmed: binary,
+    // question 60): an uncloaked colony's yard facility, or the yard component
+    // of an uncloaked ship that is neither destroyed nor mothballed.
     bool workingYard(const cmd::QueueTarget& t) const {
         if (t.vehicle.valid()) {
             const Vehicle* v = p_.st.vehicle(t.vehicle);
-            return v && vehicleHasSpaceYard(p_.r, p_.st, *v);
+            return v && v->status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p_.r, p_.st, *v);
         }
         const Colony* c = p_.st.colony(t.planet);
         return c && colonyHasWorkingYard(p_.r, *c);

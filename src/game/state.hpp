@@ -627,6 +627,13 @@ struct Vehicle {
     // the start of a movement log replay. Whether the mini is drawn turned is
     // the client's (engineless hulls, satellites and mines never are).
     uint8_t heading = 0;
+    // Its place on its system's own object list (spec 05 §7.5 "Placement",
+    // confirmed: binary): that list holds the objects in the order they were
+    // placed in or entered the system, so the planets come before the ships
+    // that arrived or were built later. A stamp from GameState::arrivals,
+    // taken when the vehicle is placed (addVehicle) or enters another system
+    // (a warp, an event); a smaller one came first.
+    uint64_t arrival = 0;
 };
 
 // A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:
@@ -972,6 +979,7 @@ struct GameState {
     std::vector<CombatRecord> combats;
     uint32_t nextVehicleId = 0;
     uint32_t nextFleetId = 0;
+    uint64_t arrivals = 0;          // the last Vehicle::arrival stamp given
     uint32_t nextMessageId = 0;
     uint32_t peacefulTurns = 0;
     bool gameOver = false;
@@ -1015,6 +1023,8 @@ struct GameState {
     // invalidated by the next add. A new vehicle takes freeSlot(); a new fleet
     // without a location is placed at its first member's.
     Vehicle& addVehicle(Vehicle v);
+    // The vehicle enters another system (Vehicle::arrival).
+    void arrived(Vehicle& v) { v.arrival = ++arrivals; }
     Fleet& addFleet(Fleet f);
     // The game's one object list (spec 03 §6.3 step 5, §19 Q62; spec 02 §13
     // Q52, confirmed: binary): stars, planets, asteroid fields, storms, warp

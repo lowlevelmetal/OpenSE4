@@ -161,6 +161,7 @@ Vehicle& GameState::addVehicle(Vehicle v) {
     v.id = VehicleId{nextVehicleId++};
     // The lowest slot of the object list that no object of any kind holds (spec 03 §6.3 step 5).
     v.slot = freeSlot();
+    arrived(v);  // placed in its system
     // "Automatically use Individual Ministers for newly built vehicles": every
     // new vehicle and launched unit group starts under minister control (spec 02 §10).
     if (v.owner.valid() && v.owner.index() < empires.size() && empires[v.owner.index()].ministersForNewVehicles) v.minister = true;

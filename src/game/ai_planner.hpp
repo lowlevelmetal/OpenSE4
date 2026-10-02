@@ -157,7 +157,8 @@ SystemId homeSystem(const GameState& s, EmpireId e);
 
 class Planner {
 public:
-    Planner(const Rules& rules, const GameState& s, EmpireId e, Mode mode, uint64_t salt);
+    // `territory`: the claims the lists use instead of the empire's present ones.
+    Planner(const Rules& rules, const GameState& s, EmpireId e, Mode mode, uint64_t salt, const std::vector<SystemId>* territory = nullptr);
     // Group 1 (ai.hpp); `politics` and `others` pick its parts: the Politics
     // minister, then the ministers after it.
     void runOrders(bool politics = true, bool others = true);

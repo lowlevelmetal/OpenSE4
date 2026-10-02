@@ -924,6 +924,7 @@ private:
             if (!via.valid() && v->location.system == next.system)
                 v->heading = static_cast<uint8_t>(headingFor(v->location.sector, next.sector));
             if (ctx_.movementStep && !live_) ctx_.movementStep(MovementStep{day_, id, v->location, next});
+            if (next.system != v->location.system) s_.arrived(*v);  // last on the new system's list
             v->location = next;
             fleetMemberMoved(s_, *v);  // the fleet's location goes with it (spec 03 §9)
             v->movement = std::max(0, v->movement - 1);

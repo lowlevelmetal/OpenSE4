@@ -425,7 +425,7 @@ template <class Ar>
 void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
            v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.builtTurn,
-           v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading);
+           v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading, v.arrival);
 }
 
 template <class Ar>
@@ -523,7 +523,7 @@ template <class Ar>
 void io(Ar& ar, GameState& s) {
     fields(ar, s.turn, s.seed, s.options, s.galaxy, s.colonies, s.empires, s.designs, s.vehicles, s.fleets, s.messages, s.pendingEvents,
            s.pendingMood, s.combats, s.nextVehicleId, s.nextFleetId, s.nextMessageId, s.peacefulTurns, s.gameOver, s.winner, s.rng,
-           s.playerTurn, s.startingPoints, s.leftFacilities);
+           s.playerTurn, s.startingPoints, s.leftFacilities, s.arrivals);
 }
 
 // ---- Commands (commands.hpp) -------------------------------------------------------------------------

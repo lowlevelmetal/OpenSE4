@@ -74,9 +74,14 @@ void empireEndOfTurn(TurnContext& ctx, EmpireId e, bool ministers) {
     // (inferred).
     // The units reserve the vehicle list applies is what the nearest empire
     // before it left; in a turn-based game its own start-of-turn step has
-    // just reset it to 0 (spec 05 §7.5 "Units file").
+    // just reset it to 0 (spec 05 §7.5 "Units file"). The colonization
+    // targets are those the last start-of-turn step left, if any are left
+    // (the first economy step of a simultaneous turn: the last empire's), and
+    // the step removes them (spec 05 §7.2 "Whose lists the economy step reads").
     if (ministers) {
-        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0));
+        const std::optional<std::vector<ObjectId>> lists = std::move(ctx.aiColonyTargets);
+        ctx.aiColonyTargets.reset();
+        applyCommands(ctx, e, ai::planEconomyStep(r, s, e, s.options.simultaneous ? ctx.unitReserve : 0, lists ? &*lists : nullptr));
         if (living(s, e) && ai::ministerOn(s.empire(e), Minister::ShipConstruction)) ctx.unitReserve = ai::unitReserveLeft(r, s.empire(e));
     }
     // 2. The statistics row of the Scores and Comparisons windows (spec 05 §5;
@@ -223,25 +228,29 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     // empire's previous step, those of step 2 included), then the ministers
     // that act while orders are given. The Politics minister acts first and its messages take
     // effect as they are sent, so the other ministers already see the
-    // treaties it changed (spec 05 §8 step 4, confirmed: binary).
+    // treaties it changed (spec 05 §8 step 4, confirmed: binary). It rewrites
+    // the claims first thing (a trade it accepts then moves a claim until the
+    // receiver's next rewrite); the state update and the ministers after it
+    // use the claims of the previous turn (spec 05 §7.2).
     for (size_t i = 0; i < s.empires.size(); ++i) {
         const EmpireId id{i};
         if (!s.empire(id).alive) continue;
         ai::updateAiState(ctx, id);
+        const std::vector<SystemId> territory = s.empire(id).claimedSystems;
         if (controlOf(i) != Control::Absent) {
             ai::politicalStep(ctx, id, ai::simultaneousWindow(s, id));
             ai::recordPoliticalStep(s, id);
+            ai::claimTerritory(ctx, id);
         }
         // Messages sent now carry the advanced date (spec 05 §7.4 "Answer window").
         if (ministersPlan(s, id, controlOf(i))) {
             applyCommands(ctx, id, ai::planPoliticsOrders(r, s, id));
             diplomacy::deliverMessages(ctx, date);
-            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id));
+            std::vector<ObjectId> targets;
+            applyCommands(ctx, id, ai::planOrdersAfterPolitics(r, s, id, &territory, &targets));
+            ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place
             diplomacy::deliverMessages(ctx, date);
         }
-        // The Politics minister's claims: the state update and this turn's
-        // ministers used those of the previous turn (spec 05 §7.2).
-        if (controlOf(i) != Control::Absent) ai::claimTerritory(ctx, id);
     }
     ai::recordAiDecisions(ctx);
 

@@ -1343,6 +1343,28 @@ TEST_CASE("movement: the ministers' Seek lasts one movement phase") {
     }
 }
 
+TEST_CASE("movement: a vehicle entering another system goes last on that system's list") {
+    // Spec 05 §7.5 "Placement" (confirmed: binary): the system's own object
+    // list holds its objects in the order they were placed in or entered it.
+    World w;
+    const SystemId a = w.system("A");
+    const SystemId b = w.system("B", 10, 0);
+    w.link(a, Sector{2, 0}, b, Sector{0, 0});
+    w.exploreAll(kA);
+    const VehicleId first = w.spawn(w.ship(kA, "First", 4), at(a, 0, 0));
+    const VehicleId second = w.spawn(w.ship(kA, "Second", 4), at(b, 5, 5));
+    fuel(w, first);
+    CHECK(w.v(first).arrival < w.v(second).arrival);  // placed first
+    w.order(first, moveTo(a, 1, 0));
+    w.move();
+    CHECK(w.v(first).arrival < w.v(second).arrival);  // a step within the system changes nothing
+    w.order(first, moveTo(b, 1, 0));
+    w.move();
+    REQUIRE(w.v(first).location.system == b);
+    CHECK(w.v(first).arrival > w.v(second).arrival);
+    CHECK(w.v(first).slot < w.v(second).slot);  // the object slots stay as they were
+}
+
 TEST_CASE("movement: a Join Fleet order chases the fleet and joins where it stands") {
     // Spec 05 §7.5 AI_Fleets (confirmed: binary).
     World w;
