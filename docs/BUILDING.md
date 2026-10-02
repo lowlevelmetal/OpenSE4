@@ -17,7 +17,7 @@ What gets built:
 ## Requirements
 
 - A C++23 compiler: GCC 14+, Clang 18+, Visual Studio 2022 17.10+ or 2026, or on macOS
-  Apple Clang 21 (Xcode 26.x).
+  Apple Clang 21 (Xcode 26.6).
 - CMake 3.25+ and Ninja. Visual Studio's own generator also works on Windows.
 - SDL3 3.2+. A system copy is used if found; otherwise CMake fetches and builds it.
 - `glslc` to compile the shaders at build time. It comes with the Vulkan SDK or the
@@ -101,10 +101,10 @@ cmake --build --preset debug
 ./build/debug/opense4 --renderer=opengl
 ```
 
-CI does the same for every push on Apple silicon (the `macos-latest` runner: macOS 26
-with Apple Clang 21): the `debug` preset with warnings as errors, the unit tests with
-the determinism goldens among them, and `--help` of the programs. It never opens the
-game's window, so the game on macOS is checked by hand only.
+CI does the same for every push on Apple silicon (the `macos-latest` runner: macOS 26,
+Xcode 26.6, Apple Clang 21): the `debug` preset with warnings as errors, the unit tests
+with the determinism goldens among them, and `--help` of the programs. It never opens
+the game's window: the game itself is not tested on macOS.
 
 Use the OpenGL renderer: macOS provides OpenGL up to 4.1, more than the 3.3 core
 profile the game needs. Vulkan would run through MoltenVK (`brew install molten-vk`),
