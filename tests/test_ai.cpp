@@ -4638,6 +4638,19 @@ TEST_CASE("ai: a Politics minister's request about a third empire is not checked
 
 // ---- The computer players' pace (spec 05 questions 53-56, confirmed: binary) ----------------------
 
+namespace {
+
+// The queue items of a design anywhere in the empire's queues.
+int queuedOf(const GameState& s, EmpireId e, DesignId d) {
+    int n = 0;
+    for (const auto& c : s.colonies)
+        if (c && c->owner == e)
+            for (const QueueItem& q : c->queue.items) n += q.kind == QueueItem::Kind::Vehicle && q.design == d;
+    return n;
+}
+
+} // namespace
+
 TEST_CASE("ai: the exploration frontier holds the warp points into unexplored systems, whatever we know of the links") {
     const Rules& r = engineRules();
     GameState s = computerGame(13, 2, 0, 12);
@@ -4761,4 +4774,141 @@ TEST_CASE("ai: the territory is what the Politics minister claimed the turn befo
     CHECK(std::binary_search(s.empire(me).claimedSystems.begin(), s.empire(me).claimedSystems.end(), *y));
     processTurn(r, s, none);
     CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
+}
+
+TEST_CASE("ai: mines, satellites, platforms and fighters take the first queue by backlog, free cargo, units held, size, production, rate") {
+    TempTree t("unitqueue");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Satellite\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    const DesignId mine = addTestDesign(s, rules, me, "Spike", "Test Mine Hull", {"Test Warhead"});
+    s.design(mine).designType = "Mine";
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.queue.items.clear();
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    addColony(s, *second, me, {{me, 500}});
+    auto freeCargo = [&](const GameState& g, ObjectId planet) {
+        const Colony& c = *g.colony(planet);
+        return colonyCargoCapacity(rules, g, c) - cargoSpaceUsed(rules, g, c.cargo);
+    };
+    // Room for a whole batch (as many as the queue finishes in one turn).
+    ruleset::Ability hold;
+    hold.type = std::string(identifier(AbilityKind::CargoStorage));
+    hold.value1 = "100000";
+    s.galaxy.object(*second).abilities.push_back(hold);
+    REQUIRE(freeCargo(s, *second) >= 100'000);
+    // The homeworld's hold is full of mines (another kind): with both queues
+    // empty, the colony with more free cargo space takes the satellites,
+    // whatever the rates.
+    const int64_t mineTons = designTonnage(rules, s.design(mine));
+    REQUIRE(mineTons > 0);
+    homeworld(s, me).cargo.units = {{mine, static_cast<int>(colonyCargoCapacity(rules, s, homeworld(s, me)) / mineTons)}};
+    REQUIRE(freeCargo(s, homePlanet) < designTonnage(rules, s.design(sat)));
+    {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        REQUIRE(p.state == ai::AiState::Exploration);
+        ai::detail::planShips(p);
+        CHECK(p.st.colony(homePlanet)->queue.items.empty());
+        REQUIRE(p.st.colony(*second)->queue.items.size() == 1);
+        CHECK(p.st.colony(*second)->queue.items.front().design == sat);
+    }
+    // A smaller backlog comes first: the full homeworld is chosen, and as it
+    // has no room for the batch nothing is placed anywhere.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Vehicle;
+    busy.design = sat;
+    busy.count = 1000;
+    s.colony(*second)->queue.items = {busy};
+    {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        ai::detail::planShips(p);
+        CHECK(p.st.colony(homePlanet)->queue.items.empty());
+        CHECK(p.st.colony(*second)->queue.items.size() == 1);
+    }
+}
+
+TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the queues with a working yard") {
+    TempTree t("defensebase");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 2\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId base =
+        addTestDesign(s, rules, me, "Bastion", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    s.design(base).designType = "Defense Base";
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    homeworld(s, me).queue.items.clear();
+    const Location homeAt = locationOf(s.galaxy, homePlanet);
+    auto plan = [&](const Rules& rr, const GameState& g) {
+        ai::detail::Planner p(rr, g, me, ai::detail::Mode::Computer, 3);
+        REQUIRE(p.state == ai::AiState::Exploration);
+        ai::detail::planShips(p);
+        return p.st;
+    };
+    // Only the homeworld: K is 1 and the first queue is the homeworld's.
+    CHECK(queuedOf(plan(rules, s), me, base) == 2);
+
+    // A colony without a yard ahead of the homeworld in the list (a lower
+    // system, or earlier in the home system): K is still 1, so the bases go
+    // there, and with no yard they are lost; nothing is queued anywhere.
+    std::optional<ObjectId> before;
+    for (size_t i = 0; i <= homeAt.system.index() && !before; ++i)
+        for (ObjectId o : s.galaxy.system(SystemId{i}).objects) {
+            if (o == homePlanet) break;
+            if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) {
+                before = o;
+                break;
+            }
+        }
+    REQUIRE(before);
+    addColony(s, *before, me, {{me, 500}});
+    CHECK(queuedOf(plan(rules, s), me, base) == 0);
+
+    // That colony gets a yard: K is 2, and the second queue of the list (the
+    // homeworld) takes the base, although the homeworld already has a base and
+    // the other yard none.
+    s.colony(*before)->facilities.push_back(facilityIndex(rules, "Test Space Yard"));
+    addTestVehicle(s, rules, base, homeAt);
+    {
+        const GameState g = plan(rules, s);
+        CHECK(g.colony(homePlanet)->queue.items.size() == 1);
+        CHECK(g.colony(*before)->queue.items.empty());
+    }
+    // The backlog test is made on that queue alone: a busy homeworld takes
+    // nothing, and the free yard is not tried.
+    QueueItem busy;
+    busy.kind = QueueItem::Kind::Vehicle;
+    busy.design = addWarship(s, rules, me, "Picket");
+    busy.count = 1000;
+    homeworld(s, me).queue.items = {busy};
+    {
+        const GameState g = plan(rules, s);
+        CHECK(g.colony(*before)->queue.items.empty());
+        CHECK(g.colony(homePlanet)->queue.items.size() == 1);
+    }
+    // Every yard colony counts three bases or more (those in its sector plus
+    // every base queued): each base goes to a queue of the list drawn at random.
+    homeworld(s, me).queue.items.clear();
+    for (int i = 0; i < 3; ++i) addTestVehicle(s, rules, base, locationOf(s.galaxy, *before));
+    addTestVehicle(s, rules, base, homeAt);
+    addTestVehicle(s, rules, base, homeAt);
+    TempTree more("defensebase2");
+    more.write("Ai/Default_AI_Construction_Vehicles.txt",
+               "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 9\n");
+    const Rules moreRules{buildEngineRuleset(), more.root};
+    const GameState g = plan(moreRules, s);
+    CHECK(queuedOf(g, me, base) == 3);
 }
