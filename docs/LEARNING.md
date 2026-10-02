@@ -358,7 +358,8 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 `explore`, `colonize`, `sentry`, `load-cargo`, `drop-cargo`, `launch-units`,
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
 `stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`,
-`convert-resources`.
+`convert-resources`, and the Scrap window's orders of a simultaneous game: `scrap`,
+`analyze`, `mothball`, `unmothball`, `retrofit`, `fire-on`.
 
 **Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
 
@@ -417,7 +418,8 @@ The others: `SetVehicleStrategy`, `Rename`, `Scrap`, `Mothball`, `SetMinister`,
 `TagMinefield`, `SetStrategy`, `SetRepairPriorities`, `SetDesignTypes`,
 `SetColonyTypes`, `SetEmpireOptions`, `SetMinisters`, `SetEncounterOptions`,
 `EnterSector`, `OpenVehicleReport`, `QueueReplaceFacility`, `DecideWar`, `JettisonCargo`,
-`CloakColony`. Ending the turn is no command: wait for it with `turns_passed`.
+`CloakColony`, `Analyze`, `SelfDestruct`, `FireOn`. Ending the turn is no command: wait for it
+with `turns_passed`.
 
 ### Window ids
 

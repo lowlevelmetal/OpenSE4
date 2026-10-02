@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <optional>
 
 namespace opense4::client {
 

@@ -24,6 +24,7 @@ player / AI / network ─> game::Command ────┘         │
 | `orders.hpp` | Orders as they are given: Explore, Resupply, Repair and the composite orders expanded into simple ones (spec 03 §8) |
 | `map_file.hpp` | Map files in our own text format ([MAPS.md](MAPS.md)): Save Map, and loaded maps with starting points |
 | `query.hpp` | Read-only questions: what is where, space yards, capacities, hostility |
+| `scrap.hpp` | The Scrap window's actions (spec 03 §15): each action's test and effect, Analyze's requirement pairs and research potential word, Fire On's armed test, the retrofit checks |
 
 `GameState` is plain data. Every field is serialized (`serialize.hpp`), and
 `stateChecksum` hashes the serialized bytes for desync detection.
@@ -58,8 +59,15 @@ player / AI / network ─> game::Command ────┘         │
   messages, waypoints and so on. A few act at once in both turn styles, as the original's
   windows do: cargo transfer, Jettison Cargo (`cmd::JettisonCargo`) and a colony's Cloak and
   Decloak (`cmd::CloakColony`).
+  - The Scrap window's seven actions on a vehicle (`cmd::Scrap`, `cmd::Analyze`,
+    `cmd::Mothball`, `cmd::Retrofit`, `cmd::SelfDestruct`, `cmd::FireOn`; `scrap.hpp`) are
+    carried out at once in a turn-based game and become the vehicle's only order in a
+    simultaneous one, which movement carries out at its first action, testing again.
   - `game::apply` validates a command against the state and applies it, or rejects it
     with a reason.
+  - A few changes are not player commands but the machine's or the host's: the Player
+    Computer Control window (`ai::setComputerControl`: the computer-controlled mark with every
+    minister and flag) and the network host's toggle (`ai::setComputerMark`: the mark alone).
   - One empire's commands for one turn form an `EmpireOrders`, the equivalent of the
     classic `.plr` file.
 - **Subsystems change state only during turn processing**, through a `TurnContext`. The
@@ -72,10 +80,11 @@ player / AI / network ─> game::Command ────┘         │
 (confirmed: binary). Empires are always taken in empire-number order, and destroyed
 empires are skipped.
 
-1. **Orders.** Each human's `EmpireOrders` are applied, in player order. A human who sent
-   nothing is played by the computer for this turn: all of its ministers are switched on
-   and restored at the end of the turn. A player who ticked "AI should not make changes"
-   only gets the bookkeeping.
+1. **Orders.** Each human's `EmpireOrders` are applied, in player order, and the colonies
+   they name are recalculated (`coloniesNamed`, `diplomacy::recalculateColony`); then sight
+   is recalculated everywhere. A human who sent nothing is played by the computer for this
+   turn: all of its ministers are switched on and restored at the end of the turn. A player
+   who ticked "AI should not make changes" only gets the bookkeeping.
 2. **Messages:** `diplomacy::deliverMessages` processes the players' messages.
 3. **Date.** `GameState::turn` stays the number the orders were given for until the end
    of the turn, so log entries and records carry it. The steps that depend on the date
@@ -310,7 +319,9 @@ the real game is never changed.
 - The host is authoritative. Clients apply their own commands locally so their windows
   update at once, and send them at End Turn.
 - The host processes the turn when every human's orders have arrived, or on timeout,
-  with the AI playing for anyone missing. It then sends everyone the new state.
+  with the AI playing for anyone missing. It then sends everyone their view of the new
+  state (`redactForEmpire(rules, state, empire)`), which leaves out what the player may
+  not know, a colony hidden by its cloak included.
 - In a turn-based game the host carries out each command of the player whose turn it is
   as it arrives and sends that player its new view. Everyone gets their view when the
   turn passes on.
@@ -364,13 +375,14 @@ which the original draws in the system's Small Fonts.
 | `settings.*` | This computer's preferences: the Options window (Game Menu → Options: animation, sound, music steps, Fast Tactical Combat, movement lines), the Combat Options display switches, OpenSE4's effects volume and the last saved game (Resume Game), in `classic_settings.toml` |
 | `facility_markers.*` | The facility letter markers the Empire Options can show on colonies in the system window |
 | `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay's controls, and hotkeys |
-| `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
+| `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps, with each system's presence for the viewer (`map_style::presence`) |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
 | `ship_glides.*` | Ships gliding to their new square and the headings of minis |
 | `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
-| `sector_view.*` | What a sector of the system panel shows: the stellar object, one vehicle or the owners' flags, and the counts (headless) |
+| `sector_view.*` | What a sector of the system panel shows: which stellar objects the viewer sees (`shownStellarObjects`), the stellar object, one vehicle or the owners' flags, and the counts (headless) |
+| `finale.*`, `data_export.*` | The ending window's choice of kind and pictures (Victory, Human Dead, Lose; once per occurrence), and the Weapons Report's export tables (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |
-| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
+| `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...); `finale_screen.cpp` the ending window, `help.cpp` also the Weapons Report's Export button. `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |
 | `frontend.*` | Intro, credits, quick start, game setup, load, and the multiplayer lobby |
 | `screen_id.*` | The `ScreenId` of every window and the window ids lessons and manual links use |
 | `learn_content.*`, `lesson_runner.*` | The learning content (built in, or from disk), its progress in the client settings, and the lesson being played: its panel, outlines and result |

@@ -10,6 +10,10 @@
 
 #include <algorithm>
 #include <format>
+#include <span>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace opense4::game {
 

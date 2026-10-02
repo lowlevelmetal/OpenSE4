@@ -161,7 +161,7 @@ private:
         labelValue(ui, "Can Be Fired On", n == 0 ? "-" : state.canBeFiredOn ? "Yes" : "No", col);
         labelValue(ui, "Space Yard In Sector", game::scrapYardAt(r, s, ui.session.player(), *where_) ? "Yes" : "No", col);
         ImGui::Dummy(ImVec2(0, ui.px(16)));
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(330));
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
         ImGui::TextColored(kDim, "%s",
                            s.options.simultaneous
                                ? "Scrapping, analyzing, retrofitting and mothballing need a space yard in the sector. Each action becomes "

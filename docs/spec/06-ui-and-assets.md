@@ -3866,3 +3866,21 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     so a single player who loses everything sees Human Dead. Which components does the
     original's export list (all, or the empire's), and does a lone human's destruction
     show Lose or Human Dead?
+84. **Player Computer Control and Reset Passwords: OpenSE4's choices (§1.2.1, §1.9).**
+    Marked (inferred) in the code:
+    - Our engine keeps neutrality and the computer-controlled mark in one field
+      (`Empire::kind`), so the Players window lists neutral empires but cannot switch them.
+      Can the original's window hand a neutral empire to a human, and how does that empire
+      then play?
+    - A local game keeps no master password; a network or e-mail game file opened here keeps
+      its host's, and a network player's copy holds none (the host keeps it). The in-game
+      host's Players window works on its own player's copy; it hands empires over with the
+      toggle of spec 05 §9.4. Which empires' rows does the original's Game Master view list
+      as switchable on a TCP/IP host?
+    - On a player's copy the orders carry the player's own minister switches and the flags
+      of its vehicles, fleets and colonies (the spec's "probably" for fleets and colonies).
+    - A headless server has no window: a player who gave its master password may ask it for
+      Reset Passwords, and the passwords come back to that player only. The original's
+      headless processing has no Reset Passwords at all.
+    - An empire that was a computer player from the start cannot be handed to a human with
+      the TCP/IP host's toggle (its slot has no player).

@@ -13,6 +13,9 @@
 #include <chrono>
 #include <ctime>
 #include <format>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 

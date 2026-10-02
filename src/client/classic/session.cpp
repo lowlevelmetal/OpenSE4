@@ -16,6 +16,9 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 

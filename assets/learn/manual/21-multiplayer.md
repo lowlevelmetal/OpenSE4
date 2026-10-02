@@ -54,6 +54,8 @@ host sends you the current turn, and orders you already sent still count.
 - If your orders do not arrive in time, the computer plays your empire for that turn (see [Computer players and ministers](computer-players-and-ministers#missed-turns-in-multiplayer-games)).
 - Every battle in a network game is fought strategically.
 - The chat button at the bottom left opens the chat.
+- As the host, the `Empires` button beside it lists the players' empires. `AI On` hands an empire to the computer, which then plays it every turn without waiting for its orders; `AI Off` gives it back.
+- As the host of a simultaneous game, Game Menu, `Options`, `Reset Passwords` gives the empires you pick a new six-digit password. Only you see it, so pass it on to the player; it takes effect when the next turn is processed.
 
 If players outside your home network cannot connect, your router may not support automatic port
 forwarding. Forward TCP port 6720 to the host computer by hand in the router's settings, and allow
@@ -86,7 +88,9 @@ Battles in play-by-e-mail games are always fought strategically.
 A separate program, `opense4-server`, hosts a network game without playing in it, and processes
 the turns of play-by-e-mail games. It runs without a window, saves after every turn, and forwards
 its port automatically. Players join it like any other host. Running it is explained in the
-multiplayer guide that comes with OpenSE4.
+multiplayer guide that comes with OpenSE4. A player who knows its master password can reset
+passwords from their own game (Game Menu, `Options`); the new passwords come back to that player
+only, in the chat log.
 
 ## Passwords and safety
 

@@ -41,7 +41,9 @@ everyone else. On top of that it can:
 - start the game when everyone is ready, or force the start;
 - see who has sent orders for the turn, and process the turn early;
 - set a turn time limit;
-- hand any human empire to the computer, or back to its player;
+- hand any human empire to the computer, or back to its player (the `Empires` button of the
+  in-game status strip, see [Computer control](#computer-control));
+- reset players' passwords in a simultaneous game ([Reset Passwords](#reset-passwords));
 - give orders for any empire (to play for an absent friend).
 
 ### Dedicated server
@@ -82,7 +84,7 @@ port forwarding.
 **Master password.** A player who connects with the master password becomes an
 administrator: from their client they can start the game (also forced), add and
 remove computer empires, kick players, set the turn time limit, hand empires to the
-computer and process the turn early. The master password is also stored (as a
+computer, reset passwords and process the turn early. The master password is also stored (as a
 verifier, see [Security](#security)) in the saved game, and continuing that game
 with `--load`, or processing it as a PBEM game, requires it again.
 
@@ -138,6 +140,36 @@ player out. Names are not case-sensitive.
 While a player is away, the host keeps waiting for their orders. It stops waiting
 when the turn time limit runs out, when the host processes the turn by hand, or when
 the empire is handed to the computer.
+
+### Computer control
+
+The host's toggle ("Toggle Empire AI On/Off", spec 05 §9.4) flips only the empire's
+computer-controlled mark (`HostSession::setAiControl`, `game::ai::setComputerMark`): its
+ministers and the minister marks of its ships and colonies stay as they were. A marked empire
+is played by the computer every turn, the host waits for no orders from it, and every player
+sees it as a computer player from the next turn. Handed back, the host waits for its player's
+orders again (or the host plays it). A kicked player's empire is played by the computer for
+each turn without changing the mark. Empires that were computer players from the start cannot
+be handed to a human.
+
+The Game Menu's `Players` window (spec 06 §1.2.1) is something else: on a player's machine it
+changes only that player's copy of the game. For the player's own empire it also gives the
+orders that switch all its ministers on (or off), which reach the host with the turn's orders;
+the host still counts the empire as a human that must send orders.
+
+### Reset Passwords
+
+The host of a simultaneous game can give players new passwords between turns (spec 06 §1.9):
+Game Menu, `Options`, `Reset Passwords`, then pick the empires. Each gets six digits (three
+random numbers from 11 to 99, drawn from a source apart from the game's random numbers), shown
+to the host only. The new passwords take effect when the next turn is processed, after the
+players' orders (which may carry a password change of their own) have been read. They are kept
+in memory only: a new `Reset Passwords` discards earlier ones not applied yet, and stopping the
+host loses them.
+
+- A dedicated server has no window: an administrator's client offers the same button, and the
+  passwords come back to that administrator only, in the chat log (and the server's log).
+- A PBEM host passes `--reset-passwords=N,M` to `pbem process`; the new passwords are printed.
 
 ### When orders are missing
 
@@ -307,6 +339,9 @@ the players send in. One round goes like this:
    ```sh
    opense4-server pbem process --game=campaign.gam --orders=inbox --password=boss
    ```
+
+   `--reset-passwords=2,5` gives empires 2 and 5 new passwords once their orders have been
+   read; they are printed for the host to pass on.
 
    For every `.plr` file the host checks the game, the turn, the empire and the
    password. It reports and skips files that fail a check: another game, out of date,
@@ -512,7 +547,8 @@ host.start();                                // or host.resume(state, saveInfo)
 host.addComputerEmpire(setup); host.kick(slot, "reason"); host.setLocalReady(true);
 host.startGame(/*force*/ false);
 host.submitOrders(orders);                   // any empire; normally the host's own
-host.processTurnNow(); host.setTurnTimeout(120); host.setAiControl(empire, true);
+host.processTurnNow(); host.setTurnTimeout(120); host.setAiControl(empire, true);   // the mark only
+host.resetPasswords({empire}); host.clearPasswordResets();     // simultaneous games, applied at the next turn
 host.playCommands(empire, {cmd});            // turn-based: the empire whose turn it is
 host.endPlayerTurn(empire); host.activeEmpire(); host.turnBased();
 host.save(path);
@@ -527,6 +563,7 @@ client.submitOrders(orders); client.chat("hi");
 client.play(cmd); client.endTurn();          // turn-based: in our turn (client.myTurn())
 client.questions(); client.pendingRequests(); client.activeEmpire();
 client.lobby(); client.turnStatus(); client.state(); client.empire(); client.ordersAccepted();
+client.requestAiControl(empire, true); client.requestPasswordReset({empire});   // administrators
 ```
 
 `net::describe(event)` gives a one-line log text. `net::pbem::*` reads and writes

@@ -314,7 +314,25 @@ choices, the Planets window, the map and the intelligence picker; a cloaked colo
 not work; battles decloak colonies and cloak them again; the computer players' colony orders
 decloak and cloak again. The engine's choices (how a simultaneous host receives a mid-turn
 Cloak, which loads recalculate, upgrades) are §14 Q44, settled from the executable later on
-2026-10-01; they leave four rows below.
+2026-10-01, and followed the same day: a Decloak in a simultaneous game makes only the acting
+empire's side of a first contact (`diplomacy::updateContacts` with `onlySide`); the host
+recalculates the colonies a player's orders name when it reads them, then sight everywhere;
+every reading of a game file recalculates every colony (Load Game, `--load`, a PBEM file opened
+by a player or the host, a local or hotseat simultaneous game passing to the next player or to
+processing; `diplomacy::recalculateColonies`); a completed upgrade does not; the automatic
+decloak is a full Decloak (`diplomacy::recalculateColony`).
+
+Also on 2026-10-01, what other players see of a colony (spec 01 §6.9 "What other players see")
+followed the spec. `sight::canSeePlanet` counts the viewer's EM Active sensor level as at least
+1, and the system panel shows, counts, names and lets the player click only the stellar objects
+that pass it (`sector_view.*` `shownStellarObjects`). Every window that asks whether a colony is
+seen uses the detection rule (`canSeeColony`): the population bars, the planet report, the
+Planets tabs, the colonize star, the galaxy presence marks (`map_style::presence`) and the
+intelligence picker; the Planets statistics count real owners. The network view
+(`redactForEmpire(rules, state, empire)`) leaves out a colony hidden from the viewer by its
+cloak, and takes its planet out of the system's list, so a modified client cannot see it (an
+OpenSE4 choice; the original sends everyone the whole game). Left: location lines can name a
+hidden planet in local and e-mail games.
 
 These rows are where the engine differs:
 
@@ -322,13 +340,34 @@ These rows are where the engine differs:
 |---|---|---|---|
 | Starting assets (`setup.cpp`, "Starting designs and ships"; `client/classic/frontend.cpp` `quickStartSetup`) | Every empire gets four designs of its own (`autoDesign`), two scouts and a colonizer | Spec 01 §3.6 "Starting assets", §2.1: no empire gets ships or designs at creation; computer players design in their first turn; Quick Start gives the human one Design minister run | H |
 | When first contact is checked (`diplomacy.cpp` `updateContacts`; callers in `turn_based.cpp`, `turn.cpp`, `commands.cpp`) | Galaxy-wide, after every live move, each player's and game turn's end, movement, combat and events; never at setup | Spec 05 §3.1: one system at a time, only at game creation, warp arrival, any decloak, a logged event, a surrender, a package's planet or vehicle and a rebellion project | M |
-| A Decloak in a simultaneous player's orders (`commands.cpp` `cmd::CloakColony`) | The host runs the full first-contact check, so both empires meet and log it | Spec 01 §14 Q44: only the acting empire's side reaches the host (treaty None, its own entry); the other side waits for the host's next first-contact check in that system | L |
-| Colonies after a PBEM file is read (`client/classic/pbem_play.cpp` `loadPbemGame`, `net/pbem.cpp` `processGameFile`) | Loaded without recalculating colonies | Spec 01 §6.9, §14 Q44: every reading of a game file recalculates every colony | L |
-| A completed facility upgrade (`economy_queue.cpp` `completeItem`, Upgrade branch) | Recalculates the colony's cloak and sensor levels | Spec 01 §14 Q44, spec 02 §6.6: it does not; the new level counts from the next recalculation | L |
-| The automatic decloak (`sight.cpp` `recalculateColony`) | Clears the mark silently | Spec 01 §6.9: it is the Decloak step, recalculating the system's sight and running the first-contact check | L |
 | Generation edge cases (`generate.cpp` `drawNames`, the connectivity pass of `buildLinks`, the "warp points anywhere" draw of `placeWarpPoints`, `placeHomeworlds`) | Systems beyond the name list get generated names; the connectivity pass marks only a system it cannot link, searches any distance and always ends; "warp points anywhere" stops after 1,000 draws; a map point on a sector another empire took is skipped | Spec 01 §3.4, §3.5, §3.6: such systems get no name; the pass marks the system with everything linked to it, looks only 68 squares far and can loop forever; the draws never stop; nothing checks a taken point. The engine's choices are deliberate: keep them | L |
 
 ## Client windows (spec 06)
+
+On 2026-10-01 the Scrap window, Player Computer Control, Reset Passwords and the Settings.txt
+keys the client ignored followed the specs:
+
+- **Scrap window** (spec 03 §15; `src/game/scrap.*`): Analyze (one level per distinct
+  requirement above the owner's level, `research::analyzeLevel`) and Fire On (another armed
+  vehicle needed, Number Lost, one Construction entry); all seven actions carried out at once
+  in a turn-based game and as the vehicle's only order in a simultaneous one, tested again at
+  its first action; designs keep Number Scrapped. The window shows the last selected vehicle's
+  research potential word and lights each button only when every selected vehicle qualifies.
+  Our choices are spec 03 §19 Q78 (the computer players' Scrap and Retrofit go the same way).
+- **Player Computer Control** (spec 06 §1.2.1; `ai::setComputerControl`): the check list
+  behind a master password, the mark with all ministers and flags; local and hotseat games end
+  when no human is left; a player's copy of a game on different machines changes only there and
+  sends the player's own minister switches. The TCP/IP host's toggle flips only the mark
+  (`ai::setComputerMark`). Our choices are spec 06 §7 Q84.
+- **Reset Passwords** (spec 06 §1.9): six digits from a source apart from the game's, shown to
+  the host only and written in after the next turn's orders are read, never saved; on the
+  in-game host's Options window, by an admin of a headless server and by the e-mail host
+  (`pbem process --reset-passwords`).
+- **Settings.txt keys** (spec 06 §1.9, Q83): `Allow CD Music` (the Options music rows and the
+  Combat Options lamp), `Allow Export of Weapon And Component Data` (a Weapons Report Export
+  button writing four tables of our own layout), `System Ship Movement Delay Milliseconds` (a
+  wait after each animated step) and the Finale picture lists (the ending window: Victory,
+  Lose, Human Dead).
 
 The client's own differences are written in spec 06 beside each answer ("Our client
 differs"). Those settled on 2026-10-01 in the last round, still to implement:

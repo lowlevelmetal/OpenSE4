@@ -58,20 +58,34 @@ are repaired first. Click groups on the left to add them to the order on the rig
 
 ## Scrapping and mothballing
 
-The [Scrap](window:scrap) window (`G`) acts on your ships in the sector. Click ships in the list
-to select or unselect them; right-click one for its report. The statistics show the scrap value,
-the research potential, the cost to unmothball, and whether the ships can self-destruct. Most
-actions need a **space yard** in the sector.
+The [Scrap](window:scrap) window (`G`) acts on your ships and unit groups in the sector that are
+in no fleet and not cloaked. Click them in the list to select or unselect them; right-click one
+for its report. The statistics show the scrap value, the research potential, the cost to
+unmothball, and whether the selection can self-destruct or be fired on. A button lights only when
+**every** selected vehicle can do it. Scrap, Analyze, Retrofit and Mothball need a working
+**space yard** in the sector: one of your colonies or ships with a yard, not cloaked.
 
 | Action | What it does |
 |---|---|
-| `Scrap` | Destroys the ships and refunds part of their cost: 30 % with the stock settings, more with a recycling facility in the sector. Cargo aboard is lost. It asks first. |
-| `Retrofit` | Changes the ships to another design on the same hull: pick it from a list that shows the cost of each. |
-| `Mothball` | Stores a ship with an empty hold: no upkeep, no abilities, no movement. Cloaked ships cannot be mothballed. |
-| `Unmothball` | Brings a mothballed ship back into service, for a fifth of its cost (stock settings). It has no supplies until it reaches a depot, unless it is a base. |
-| `Self-Destruct` | Destroys the ship when the turn is processed, if it has a self-destruct device (no space yard needed). It asks first. |
+| `Scrap` | Destroys the vehicles and refunds part of their cost: 30 % with the stock settings, more with a recycling facility in the sector. Cargo aboard is lost. Drone groups and minefields cannot be scrapped. It asks first. |
+| `Analyze` | Takes a ship or base apart to learn from it. Nothing is refunded. For every different technology level its intact components and its hull need that your empire has not reached, you gain one level in that field, never past the highest level it needs. It asks first. |
+| `Retrofit` | Changes the ships, all of one design, to another design on the same hull: pick it from a list that shows the cost of each. |
+| `Mothball` | Stores a ship with an empty hold: no upkeep, no abilities, no movement. |
+| `Unmothball` | Brings a mothballed ship back into service, for a fifth of its cost (stock settings); no space yard is needed. It has no supplies until it reaches a depot, unless it is a base. |
+| `Self-Destruct` | Destroys the vehicle, if it has a self-destruct device; satellites, mines and drones always can, fighters never (no space yard needed). It asks first. |
+| `Fire On` | Your own armed ships in the sector shoot the vehicle down: it is simply removed, with no battle. Another armed ship of yours must be there, so the last armed ship in a sector cannot be fired on. It asks first. |
 
-`Analyze` and `Fire On` are shown but not available yet in OpenSE4.
+The **research potential** says how much the last selected vehicle could teach: None, Minor,
+Moderate, Sizable or Major. Your own designs teach nothing; a captured ship can teach a lot.
+
+When the actions happen depends on the turn style:
+
+- In a **turn-based** game each selected vehicle's action happens at once, one after another, and
+  its other orders stay. Each is checked again just before it happens, so when you fire on several
+  armed ships at once, the last of them finds nobody left to fire and stays.
+- In a **simultaneous** game nothing happens yet. Each vehicle's orders are replaced by the action
+  (its order list shows it), and it is carried out when the vehicle first acts in the turn. If it
+  can no longer be done then, the order fails and the vehicle's orders are cleared.
 
 The same window scraps **facilities**: open it on a colony with the Scrap Facilities order, or use
 its `Facilities` tab when one of your colonies is in the sector. Click facilities to select them,
