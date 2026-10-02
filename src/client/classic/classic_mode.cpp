@@ -162,6 +162,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
         // --select: once the game joined or started there has such a vehicle.
         mode->pendingSelect_ = options.select;
+        mode->keepLogClosed_ = !options.select.empty();
     } else if (options.skipIntro) {
         std::string race = options.race;
         if (race.empty())
@@ -575,7 +576,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             confirmEndTurn_ = false;
         }
     }
-    if (openLogOnTurn_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
+    if (openLogOnTurn_ && !keepLogClosed_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
         openLogOnTurn_ = false;
         if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});

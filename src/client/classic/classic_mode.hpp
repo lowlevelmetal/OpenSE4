@@ -107,6 +107,7 @@ private:
     std::optional<classic::FrontId> nextFront_;
     std::string frontError_;
     std::string pendingSelect_;   // --select after a front-end screen: tried every frame until it succeeds
+    bool keepLogClosed_ = false;  // ... and the Log does not open by itself (screenshots of the main window)
     bool quit_ = false;
     std::optional<std::pair<learn::LessonKind, std::string>> pendingLesson_;   // chosen in the front end
 
