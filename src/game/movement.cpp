@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <climits>
 #include <format>
+#include <optional>
 #include <set>
 
 namespace opense4::game::movement {
@@ -549,13 +550,16 @@ private:
             if (g.stopped) break;
             for (VehicleId id : g.members) join(id, id == g.actor);
             std::vector<Order>* list = orders(g);
-            if (!list || list->empty()) {
+            const bool carried = (!list || list->empty()) && carried_.has_value();
+            if (!carried && (!list || list->empty())) {
                 last = g;
                 break;
             }
-            Order o = list->front();
+            Order o = carried ? *carried_ : list->front();
             const Order head = o;
+            if (carried) carried_.reset();
             const Exec e = execute(g, o);
+            if (carried && e == Exec::Moved && !carried_) carried_ = o;  // still on its way
             prune(g);
             last = g;
             result = e;
@@ -658,18 +662,24 @@ private:
         return Exec::Done;
     }
 
-    // The owner's Ship Orders option cleared the group's lists after a warp
-    // transit (spec 03 §6.4, confirmed: binary). The jump itself does not
-    // fail: in a turn-based game a Move To in progress goes on stepping to
-    // its end while movement lasts; otherwise the action ends there.
+    // The owner's Ship Orders option cleared the lists after a warp transit
+    // (spec 03 §6.4, §19 Q77, confirmed: binary): the list of every member of
+    // the acting group, a computer player's ad-hoc companions and the
+    // turn-based selection included, is emptied with Repeat off. The jump
+    // itself does not fail: in a turn-based game a Move To in progress goes on
+    // stepping toward its destination in this run while movement lasts
+    // (carried_), but nothing is left of it for a later turn; otherwise the
+    // action ends there.
     Exec encounter(Group& g, const Order& o, bool arrived) {
         ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
                  "Another empire is in the system; the orders were cleared (empire options).", where(g));
+        routes_.erase(routeKey(g));
+        clearListsOf(g.members);
+        clearListsOf(g.holders);
         if (live_ && (o.kind == OrderKind::MoveTo || o.kind == OrderKind::MoveToWaypoint) && !arrived) {
-            setLists(g, {o});
+            carried_ = o;
             return Exec::Moved;
         }
-        setLists(g, {});
         return Exec::Cleared;
     }
 
@@ -1081,13 +1091,7 @@ private:
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         const Travel j = jump(g, o.object);
         if (j == Travel::Moved) return Exec::MovedDone;
-        if (j == Travel::Encounter) {
-            // A Warp order just ends with the cleared lists (§6.4).
-            setLists(g, {});
-            ctx_.log(g.owner, LogCategory::Misc, std::format("{}: orders cleared", name(g)),
-                     "Another empire is in the system; the orders were cleared (empire options).", where(g));
-            return Exec::Cleared;
-        }
+        if (j == Travel::Encounter) return encounter(g, o, true);  // a Warp order just ends with the cleared lists (§6.4)
         return afterTravel(g, o, j);
     }
 
@@ -1667,6 +1671,11 @@ private:
 
     void liveActor(ActorRef ref) {
         int completed = 0;  // orders that left the head of the list, chained ones included
+        carried_.reset();
+        struct EndRun {
+            std::optional<Order>& carried;
+            ~EndRun() { carried.reset(); }  // a carried Move To lasts for this run only
+        } endRun{carried_};
         for (int n = 0; n < kLiveActionLimit; ++n) {
             const size_t steps = entered_.size();
             checkHere_ = false;
@@ -1801,6 +1810,9 @@ private:
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
+    // Turn-based: a Move To whose lists the Ship Orders options emptied after
+    // a warp transit; it goes on stepping in this run only (spec 03 §6.4, §19 Q77).
+    std::optional<Order> carried_;
     std::vector<VehicleId> recloak_;                    // turn-based: decloaked by the Ship Cloaking minister for an Attack
     bool pursuing_ = false;                             // the steps being made are an Attack pursuit's
     UnitBudget budget_;

@@ -128,11 +128,12 @@ Orders options clear when a computer group has companions).
 
 The executable settled Q77 later on 2026-10-01: the turn-based clearing switches Repeat off as
 the engine does, and a minefield clears only the lists a failure clears, as the engine does.
-These rows remain:
+The Ship Orders options after a warp now empty every member's list, companions included, and a
+turn-based Move To they interrupt goes on only within the current run (`encounter()`). This
+row remains:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Ship Orders options after a warp (`movement.cpp` `encounter()`) | Clears only the holders' lists (`setLists(g, {})`), and in a turn-based game writes the Move To back (`setLists(g, {o})`), so it resumes on a later turn | Spec 03 §6.4, §19 Q77: every member of the acting group, a computer player's companions included, has its list emptied with Repeat off; a turn-based Move To keeps stepping only within the current run | M |
 | Low supply of drone groups at a Sentry's end (`movement.cpp` `sentry()`; client `order_rules.cpp` `lowOnSupply()`) | The tenth of `Supply Amount for Low Supply Warning` applies to fighter groups only | Spec 06 §4.4, §7 Q61: drone groups use the same tenth, and need at least one unit | L |
 
 ## Combat (spec 04)

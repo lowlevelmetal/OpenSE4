@@ -2322,9 +2322,8 @@ marked (inferred) in the code.
       the lists are already empty, so when movement runs out first nothing is left of the
       order for a later turn. In a simultaneous game the action ends there.
 
-    The engine differs for the Ship Orders options: `encounter()` (`movement.cpp`) clears
-    only the holders' lists (`setLists(g, {})`), and in a turn-based game it writes the Move
-    To back into them (`setLists(g, {o})`), so the order resumes on a later turn. It must
-    empty the list of every member of the group (`g.members`, companions included) with
-    Repeat off, and in a turn-based game let the Move To finish its steps in the current run
-    without writing it back.
+    Since 2026-10-01 the engine follows this for the Ship Orders options too: `encounter()`
+    (`movement.cpp`), used by the Warp order as well, empties the list of every member of the
+    group (companions included) with Repeat off, and in a turn-based game the Move To goes on
+    stepping in the current run only (`Mover::carried_`), so nothing of it is left for a later
+    turn.

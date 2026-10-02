@@ -3965,6 +3965,60 @@ TEST_CASE("movement: the Ship Orders options clear orders after a warp into anot
     CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Any);
 }
 
+TEST_CASE("movement: the Ship Orders options empty every member's list; a turn-based Move To is not kept (spec 03 §19 Q77)") {
+    const Rules& r = mvtest::rules();
+    struct Setup {
+        World w;
+        SystemId a, b;
+        ObjectId ab;
+        Setup() {
+            a = w.system("A");
+            b = w.system("B", 10, 0);
+            ab = w.link(a, {12, 6}, b, {0, 6}).first;
+            w.exploreAll(kA);
+            w.colony(w.planet(b, {8, 8}), kB, 1000);
+            w.setTreaty(kA, kB, Treaty::War);
+        }
+    };
+    SUBCASE("a computer player's ad-hoc companion loses its list too") {
+        Setup t;
+        t.w.s.empire(kA).kind = PlayerKind::Computer;
+        REQUIRE(t.w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Enemy);
+        std::vector<VehicleId> ships;
+        for (int i = 0; i < 2; ++i) {
+            ships.push_back(t.w.spawn(t.w.ship(kA, std::format("Scout {}", i), 4), at(t.a, 11, 6)));
+            fuel(t.w, ships.back());
+            t.w.order(ships.back(), mk(OrderKind::Warp, {}, t.ab), true);
+            t.w.order(ships.back(), moveTo(t.b, 3, 6), true);
+        }
+        t.w.move();
+        for (VehicleId id : ships) {
+            CAPTURE(id.value);
+            CHECK(t.w.v(id).location == at(t.b, 0, 6));
+            CHECK(t.w.v(id).orders.empty());
+            CHECK_FALSE(t.w.v(id).repeatOrders);
+        }
+    }
+    SUBCASE("turn-based: the Move To goes on in this run with the lists already empty") {
+        Setup t;
+        t.w.s.options.simultaneous = false;
+        // Speed 4: a step to the warp point, the jump, then two more steps.
+        const VehicleId ship = t.w.spawn(t.w.ship(kA, "Scout", 4), at(t.a, 11, 6));
+        fuel(t.w, ship);
+        t.w.give(ship, {moveTo(t.b, 4, 6)});
+        TurnContext ctx{r, t.w.s, {}, {}, {}};
+        movement::startTurn(ctx, kA);
+        movement::runLive(ctx, movement::LiveMove{kA});
+        CHECK(t.w.v(ship).location == at(t.b, 2, 6));
+        CHECK(t.w.v(ship).orders.empty());
+        CHECK(t.w.logged(kA, "orders cleared"));
+        // Nothing is left of the order for a later turn.
+        movement::startTurn(ctx, kA);
+        movement::runLive(ctx, movement::LiveMove{kA});
+        CHECK(t.w.v(ship).location == at(t.b, 2, 6));
+    }
+}
+
 // ---- First contact at set moments (spec 05 §3.1) --------------------------------------------------
 
 namespace {

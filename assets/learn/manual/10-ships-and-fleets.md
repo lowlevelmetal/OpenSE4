@@ -71,7 +71,7 @@ of a turn are lost; the ship gets its full speed again next turn.
 - Routes between systems go through the warp points you know, and only through systems you have explored.
 - Ships step around storms that damage ships and around sectors with visible enemies, when they can.
 - Flying into a damaging storm has an even chance of hurting every ship that enters. If it does, the ships stop for the turn and their orders are cleared. The same goes for a turbulent warp point, and for a minefield.
-- With the Empire Options switches on, your ships clear their orders when they warp into a system with an enemy (on for a new empire) or with any other empire. This stops ships from flying blindly into danger.
+- With the Empire Options switches on, your ships clear their orders when they warp into a system with an enemy (on for a new empire) or with any other empire. This stops ships from flying blindly into danger. Every ship that made the jump together loses its orders. In a turn-based game a ship that was on a Move To still uses up the rest of its movement for this turn heading on toward its destination, but the order is gone afterwards.
 
 `Ctrl+L` (or *Display Ship Movement Lines* in the [Options](settings#the-options-window) window)
 shows the route of your selected ship as a dashed line in the system panel.
