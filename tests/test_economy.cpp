@@ -1154,6 +1154,25 @@ QueueItem upgradeTo(const Rules& r, std::string_view target) {
 
 } // namespace
 
+TEST_CASE("economy: a completed upgrade does not recalculate the colony's cloak and sensor levels") {
+    // Spec 01 §6.9, §14 Q44 (confirmed: binary): only the next recalculation
+    // counts the upgraded facilities.
+    auto r = upgradeRules();
+    GameState s = newGame(*r);
+    dropVehicles(s, kMe);
+    Colony& home = plainHome(*r, s, {"Test Mine"});
+    s.empire(kMe).techLevels[techArea(*r, "Test Economics").index()] = 3;
+    home.cloakLevels.fill(7);   // marks: a recalculation would set them from the facilities
+    home.sensorLevels.fill(7);
+    REQUIRE(apply(*r, s, kMe, cmd::QueueAdd{cmd::QueueTarget{home.planet, {}}, upgradeTo(*r, "Test Mine III")}).ok);
+    s.empire(kMe).stockpile = {40000, 40000, 40000};
+    economyTurn(*r, s);
+    REQUIRE(home.queue.items.empty());
+    CHECK(home.facilities == std::vector<uint32_t>{facilityIndex(*r, "Test Mine III")});
+    CHECK(home.cloakLevels == std::array<int, kSightTypes>{7, 7, 7, 7, 7});
+    CHECK(home.sensorLevels == std::array<int, kSightTypes>{7, 7, 7, 7, 7});
+}
+
 TEST_CASE("economy: an upgrade stores its target and count when queued") {
     auto r = upgradeRules();
     GameState s = newGame(*r);

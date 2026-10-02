@@ -33,8 +33,13 @@ void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullo
 // First contact between every pair of living empires that have not met,
 // that each detect the other in one system and that a warp path links (spec
 // 05 §3.1, confirmed: binary), after sight::updateKnowledge. An empire
-// without colonies makes no contact.
-void updateContacts(TurnContext& ctx);
+// without colonies makes no contact. A pair where only one side has met the
+// other (`onlySide` below) completes the missing side.
+// `onlySide` valid: only that empire's side of each new contact is made (its
+// contact mark and its "First Contact" entry); the other empire's side waits
+// for the next full check. A player's Decloak in a simultaneous game reaches
+// the host that way (spec 01 §14 Q44, confirmed: binary).
+void updateContacts(TurnContext& ctx, EmpireId onlySide = {});
 // The contact check (spec 05 §3.1, §8 step 7, confirmed: binary), once per
 // game turn in both turn styles, after the design cleanup and before the
 // victory check: each living empire A checks every empire B it has contact
@@ -67,7 +72,8 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
 // Happiness.txt trigger for a new treaty, from `forEmpire`'s side.
 std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
-// Establishes contact both ways; logs first contact.
+// Establishes contact both ways; logs first contact on each side that had
+// not met the other yet.
 void makeContact(TurnContext& ctx, EmpireId a, EmpireId b);
 // The log text of a first contact with `other` (the history file finds the
 // empire by it).
@@ -85,6 +91,21 @@ EmpireId masterOf(const GameState& s, EmpireId e);
 // Whether `viewer` may see the treaty between `a` and `b` in the treaty grid:
 // its own treaties, and those of empires it is allied with (spec 05 §3.2).
 bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b);
+
+// ---- Colony cloaking (spec 01 §6.9, §14 Q44, confirmed: binary) ----------------------------------
+
+// The rest of a Decloak's step once a colony's cloaked mark is cleared:
+// sight is recalculated and the first-contact check runs (updateContacts,
+// with `onlySide` as there).
+void afterDecloak(TurnContext& ctx, EmpireId onlySide = {});
+// Refreshes a colony's cloak and sensor levels (sight::recalculateColony).
+// A cloaked colony that can no longer cloak is decloaked by the Decloak
+// order's own step (afterDecloak). True when it was decloaked.
+bool recalculateColony(TurnContext& ctx, Colony& c, EmpireId onlySide = {});
+// Every colony, as every reading of a game file does: Load Game, a network
+// host started from a save, a play-by-e-mail game file opened by a player or
+// by the host, a hotseat game passing to the next player.
+void recalculateColonies(const Rules& r, GameState& s);
 
 // ---- Ownership transfers (packages, surrender, defection, rebellion) ---------------------------
 

@@ -83,11 +83,16 @@ bool isSensorSource(ruleset::VehicleType t);
 // traits play no part): per sight type the largest `Cloak Level`, at least 1,
 // and the largest `Sensor Level`, EM Active at least 1. A cloaked colony that
 // can no longer cloak is decloaked, without a message. Called only at the
-// moments spec 01 §6.9 names: a facility completed there, Scrap Facilities, a
-// battle that destroyed facilities, the founding of the colony, and (every
-// colony, recalculateColonies) the loading of a saved game.
-void recalculateColony(const Rules& r, Colony& c);
-void recalculateColonies(const Rules& r, GameState& s);
+// moments spec 01 §6.9 names: a facility completed there (not an upgrade),
+// Scrap Facilities, a battle that destroyed facilities, the founding of the
+// colony, the host's reading of a player's turn file that carries the colony,
+// and (every colony, recalculateColonies) every reading of a game file.
+// Returns true when it decloaked the colony: the caller then carries out the
+// rest of the Decloak order's step, sight and the first-contact check (spec
+// 01 §14 Q44, confirmed: binary; diplomacy::recalculateColony does both).
+bool recalculateColony(const Rules& r, Colony& c);
+// Every colony; true when any was decloaked.
+bool recalculateColonies(const Rules& r, GameState& s);
 // The colony can cloak: its stored cloak level is 2 or more in some sight
 // type. Cloaking needs no supply and costs nothing.
 bool colonyCanCloak(const Colony& c);

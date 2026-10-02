@@ -2,10 +2,10 @@
 
 #include "game/ai.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy_internal.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
-#include "game/sight.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -379,7 +379,10 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
                 ctx.mood(e, "Facility Constructed", q.location.system, c->planet);
             }
             gainExperience(s.empire(e), count);  // each finished facility item adds its count (confirmed: binary)
-            sight::recalculateColony(r, *c);      // a completed facility refreshes the colony's cloak and sensor levels (spec 01 §6.9)
+            // A completed facility refreshes the colony's cloak and sensor
+            // levels; a colony that can no longer cloak is decloaked as by
+            // Decloak (spec 01 §6.9, §14 Q44).
+            diplomacy::recalculateColony(ctx, *c);
             return Outcome::Done;
         }
         case QueueItem::Kind::Upgrade: {
@@ -408,8 +411,10 @@ Outcome completeItem(TurnContext& ctx, EmpireId e, const QueueRef& q, const Queu
             }
             ctx.log(e, LogCategory::Construction, std::format("{} upgraded", where),
                     std::format("{} facilit{} now {}.", changed, changed == 1 ? "y is" : "ies are", target.name), q.location);
-            // Upgraded facilities are completed facilities too (inferred, spec 01 §6.9).
-            sight::recalculateColony(r, *c);
+            // The colony's cloak and sensor levels are not recalculated: an
+            // upgraded cloaking or sensor facility counts at its new level
+            // from the colony's next recalculation (spec 01 §6.9, §14 Q44,
+            // confirmed: binary).
             return Outcome::Done;
         }
     }

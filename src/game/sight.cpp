@@ -322,7 +322,7 @@ bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), planetObscuration(r, s, planet));
 }
 
-void recalculateColony(const Rules& r, Colony& c) {
+bool recalculateColony(const Rules& r, Colony& c) {
     SightVector cloak, sensors = baseline();
     cloak.fill(1);
     for (uint32_t f : c.facilities) {
@@ -332,12 +332,16 @@ void recalculateColony(const Rules& r, Colony& c) {
     }
     c.cloakLevels = cloak;
     c.sensorLevels = sensors;
-    if (c.cloaked && !colonyCanCloak(c)) c.cloaked = false;
+    if (!c.cloaked || colonyCanCloak(c)) return false;
+    c.cloaked = false;
+    return true;
 }
 
-void recalculateColonies(const Rules& r, GameState& s) {
+bool recalculateColonies(const Rules& r, GameState& s) {
+    bool decloaked = false;
     for (auto& c : s.colonies)
-        if (c) recalculateColony(r, *c);
+        if (c && recalculateColony(r, *c)) decloaked = true;
+    return decloaked;
 }
 
 bool colonyCanCloak(const Colony& c) {

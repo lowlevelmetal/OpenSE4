@@ -3,9 +3,9 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "core/log.hpp"
+#include "game/diplomacy.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
-#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 
@@ -373,10 +373,14 @@ void ClassicSession::endTurn() {
             if (e.alive && e.kind == game::PlayerKind::Human && !ended_[e.id.index()]) {
                 setPlayer(e.id);
                 orders_.clear();
+                reloadColonies();
                 ++revision_;
                 return;
             }
     }
+    // The original reloads the game file between hotseat players and before
+    // processing the turn (spec 01 §6.9, §14 Q44).
+    reloadColonies();
     // Every human's orders are already applied to this state; an empty list
     // marks them as submitted so the computer does not play for them. The
     // turn stops at each battle the Settings show (game::TurnOptions::battles).
@@ -458,6 +462,8 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
     return true;
 }
 
+void ClassicSession::reloadColonies() { game::diplomacy::recalculateColonies(*rules_, state_); }
+
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;
     ++revision_;
@@ -506,9 +512,10 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     auto loaded = game::loadGame(file);
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
-    // Loading a game recalculates every colony's cloak and sensor levels
-    // (spec 01 §6.9, confirmed: binary).
-    game::sight::recalculateColonies(*rules, s);
+    // Reading a game file recalculates every colony's cloak and sensor levels,
+    // a colony that can no longer cloak decloaking as by Decloak (spec 01
+    // §6.9, §14 Q44, confirmed: binary).
+    game::diplomacy::recalculateColonies(*rules, s);
     game::EmpireId player;
     int humans = 0;
     for (const game::Empire& e : s.empires)

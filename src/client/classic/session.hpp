@@ -233,6 +233,10 @@ private:
     // session to that player.
     void resumeTurnBased();
     void takeResult(const game::TurnResult& result);
+    // Local and hotseat simultaneous games stand for the original's reading of
+    // the game file between players and before processing: every colony is
+    // recalculated (spec 01 §6.9, §14 Q44).
+    void reloadColonies();
     // Network simultaneous games: the processed turn's battles of the player, when the Settings flag asks for them.
     void queueTurnBattles();
     // The engine call in progress (a turn-based game's order, End Turn or

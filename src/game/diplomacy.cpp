@@ -378,15 +378,25 @@ bool inContact(const GameState& s, EmpireId a, EmpireId b) {
     return validEmpire(s, a) && validEmpire(s, b) && a != b && s.empire(a).relation(b).contact;
 }
 
+namespace {
+
+// One side of a first contact: `a` has met `b` (its mark, its log entry and
+// its history line).
+void meetOneSide(TurnContext& ctx, EmpireId a, EmpireId b) {
+    GameState& s = ctx.state;
+    if (inContact(s, a, b)) return;
+    s.empire(a).relation(b).contact = true;
+    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b));
+    addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
+}
+
+} // namespace
+
 void makeContact(TurnContext& ctx, EmpireId a, EmpireId b) {
     GameState& s = ctx.state;
-    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || inContact(s, a, b)) return;
-    s.empire(a).relation(b).contact = true;
-    s.empire(b).relation(a).contact = true;
-    ctx.log(a, LogCategory::Politics, "First Contact", firstContactText(s, b));
-    ctx.log(b, LogCategory::Politics, "First Contact", firstContactText(s, a));
-    addHistory(s, a, b, std::format("First contact with the {}", nameOf(s, b)));
-    addHistory(s, b, a, std::format("First contact with the {}", nameOf(s, a)));
+    if (!validEmpire(s, a) || !validEmpire(s, b) || a == b) return;
+    meetOneSide(ctx, a, b);
+    meetOneSide(ctx, b, a);
 }
 
 std::string firstContactText(const GameState& s, EmpireId other) { return std::format("We have made contact with the {}.", nameOf(s, other)); }
@@ -690,7 +700,7 @@ void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date) {
     });
 }
 
-void updateContacts(TurnContext& ctx) {
+void updateContacts(TurnContext& ctx, EmpireId onlySide) {
     GameState& s = ctx.state;
     const size_t n = s.empires.size();
     // What each empire detects this turn, as (system, owner) pairs: foreign
@@ -732,11 +742,35 @@ void updateContacts(TurnContext& ctx) {
         if (!reach[from]) reach[from] = warpReach(s, EmpireId{from});
         return colonyIn(s, *reach[from], EmpireId{to});
     };
+    // A pair where one side has met the other already (a one-sided contact,
+    // below) is completed by the next full check.
     for (size_t a = 0; a < n; ++a)
-        for (size_t b = a + 1; b < n; ++b)
-            if (s.empires[a].alive && s.empires[b].alive && !s.empires[a].relations[b].contact && mutual(a, b) && linked(a, b) &&
-                linked(b, a))
-                makeContact(ctx, EmpireId{a}, EmpireId{b});
+        for (size_t b = a + 1; b < n; ++b) {
+            if (!s.empires[a].alive || !s.empires[b].alive) continue;
+            if (onlySide.valid() && onlySide.index() != a && onlySide.index() != b) continue;
+            if (s.empires[a].relations[b].contact && s.empires[b].relations[a].contact) continue;
+            if (!mutual(a, b) || !linked(a, b) || !linked(b, a)) continue;
+            if (onlySide.valid()) meetOneSide(ctx, onlySide, EmpireId{onlySide.index() == a ? b : a});
+            else makeContact(ctx, EmpireId{a}, EmpireId{b});
+        }
+}
+
+void afterDecloak(TurnContext& ctx, EmpireId onlySide) {
+    sight::updateKnowledge(ctx.rules, ctx.state);
+    updateContacts(ctx, onlySide);
+}
+
+bool recalculateColony(TurnContext& ctx, Colony& c, EmpireId onlySide) {
+    if (!sight::recalculateColony(ctx.rules, c)) return false;
+    // The automatic decloak is the Decloak order's own step (spec 01 §6.9, §14 Q44, confirmed: binary).
+    afterDecloak(ctx, onlySide);
+    return true;
+}
+
+void recalculateColonies(const Rules& r, GameState& s) {
+    if (!sight::recalculateColonies(r, s)) return;
+    TurnContext ctx{r, s, {}, {}, {}};
+    afterDecloak(ctx);
 }
 
 void checkContacts(TurnContext& ctx) {

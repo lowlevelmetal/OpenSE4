@@ -1,6 +1,7 @@
 #include "client/classic/pbem_play.hpp"
 
 #include "client/classic/session.hpp"
+#include "game/diplomacy.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/pbem.hpp"
@@ -41,6 +42,9 @@ std::expected<PbemGame, std::string> loadPbemGame(const game::Rules& rules, cons
     }
     if (std::string problem = game::validateState(g.state, &rules); !problem.empty())
         return std::unexpected("The game does not fit this data set: " + problem);
+    // Opening the game file recalculates every colony, as the host does when
+    // it reads the same file to process the turn (spec 01 §6.9, §14 Q44).
+    game::diplomacy::recalculateColonies(rules, g.state);
     if (g.state.gameOver) return std::unexpected(std::string("The game is over."));
     // A turn-based game file between player turns: the computer players play
     // on to the next human, exactly as the host will before it reads the orders.

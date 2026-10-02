@@ -1081,16 +1081,25 @@ nothing is filtered per player, and the hiding above happens only in the windows
 its cloak and sensor levels (`Colony::cloaked`, `cloakLevels`, `sensorLevels`), recalculated
 only at the moments above (`sight::recalculateColony`); the immediate command
 `cmd::CloakColony` cloaks and decloaks; sight, contact, the battle checks, yards, construction,
-the orders that need sight, the computer players and the client follow the effects above. Its
-own choices, marked (inferred) in the code (§14 Q44):
+the orders that need sight, the computer players and the client follow the effects above.
+Since the answer to §14 Q44 (also 2026-10-01):
 - A simultaneous game's host carries out a colony Cloak or Decloak given during the turn when
   it applies that player's orders at the start of turn processing, in player and command
-  order, like every other command; a Decloak's contact check runs then.
-- The "game is loaded" recalculation happens when a saved game is loaded (Load Game, a
-  network host started from a save). A play-by-e-mail game file, which the players and the
-  host pass between them, is not recalculated when it is opened, so that both sides keep the
-  same state.
-- An upgrade that converts facilities counts as completing them: it recalculates too.
+  order, so the colony ends as the player left it. A Decloak in a simultaneous game makes only
+  the acting empire's side of a first contact (`diplomacy::updateContacts` with its
+  `onlySide`), on the player's copy and on the host alike; the next full check completes the
+  other side. In a turn-based game both sides meet at once.
+- After applying a player's orders the host recalculates each own colony those commands name
+  (`coloniesNamed`; which commands count is our choice (inferred)), then recalculates sight
+  in every system without a contact check.
+- Every reading of a game file recalculates every colony (`diplomacy::recalculateColonies`):
+  Load Game, a network host started from a save, a play-by-e-mail game file opened by a player
+  (`loadPbemGame`) or by the host (`processGameFile`), and a local or hotseat simultaneous game
+  passing to the next player or to processing (`ClassicSession::endTurn`). A turn-based hotseat
+  game keeps one state from player to player and is not recalculated between them (inferred).
+- A completed upgrade does not recalculate the colony.
+- An automatic decloak is a full Decloak: sight and the first-contact check
+  (`diplomacy::recalculateColony`).
 
 **The client and engine differ from "What other players see"** (2026-10-01):
 - **System panel** (`MainWindow::objectsAt` and `prepareSectors` in
@@ -1636,3 +1645,7 @@ highlighted, and an X marks each empire that has met one.
     4. `sight::recalculateColony` clears the cloaked mark silently. Its automatic decloak
        must recalculate the system's sight and run the first-contact check, as a Decloak
        does.
+
+    The engine follows all four since 2026-10-01 (§6.9 "The engine follows this
+    subsection"), and the host also recalculates the colonies a player's orders name when it
+    reads them (spec 05 §9.2).

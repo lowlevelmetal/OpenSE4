@@ -1,5 +1,6 @@
 #include "net/pbem.hpp"
 
+#include "game/diplomacy.hpp"
 #include "game/serialize_io.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
@@ -251,6 +252,9 @@ std::expected<ProcessReport, std::string> processGameFile(const game::Rules& rul
     }
     if (std::string problem = game::validateState(state, &rules); !problem.empty())
         return std::unexpected("The game does not fit this data set: " + problem);
+    // Reading the game file to process the turn recalculates every colony, as
+    // the players' copies do when they open it (spec 01 §6.9, §14 Q44).
+    game::diplomacy::recalculateColonies(rules, state);
     if (state.gameOver) return std::unexpected(std::string("The game is over."));
 
     auto rep = processTurn(rules, state, info, ordersDir);

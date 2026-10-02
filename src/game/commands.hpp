@@ -11,6 +11,7 @@
 
 #include "game/state.hpp"
 
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -80,8 +81,10 @@ struct AbandonPlanet { ObjectId planet; };
 // some sight type from the colony's facilities; Decloak a cloaked colony.
 // Sight is recalculated, and a Decloak runs the first-contact check at once.
 // A simultaneous game's host carries it out when it applies the player's
-// orders at the start of turn processing, in player and command order
-// (inferred, spec 01 §6.9 open point).
+// orders at the start of turn processing, in player and command order, so
+// the colony ends in the state the player left it in; there a Decloak's
+// contact check makes only the player's side of a first contact (spec 01
+// §6.9, §14 Q44, spec 05 §9.2, confirmed: binary).
 struct CloakColony { ObjectId planet; bool cloak = true; };
 struct TransferCargo {       // immediate transfer between own holders in the same sector
     VehicleId fromVehicle;
@@ -224,6 +227,12 @@ struct CommandResult {
 CommandResult apply(const Rules& r, GameState& s, EmpireId empire, const Command& c);
 // Short label for logs and debugging ("QueueAdd", ...).
 std::string_view commandName(const Command& c);
+// The planets whose colonies the commands name (a colony's orders, queue,
+// cargo, name, type, minister flag, facilities or cloak), in first-named
+// order without repeats: the colonies a player's orders carry to the host
+// (spec 05 §9.2: the objects that got a command or a queue change; which
+// commands count is inferred).
+std::vector<ObjectId> coloniesNamed(std::span<const Command> commands);
 
 // Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
 // per resource; a fighter or satellite group returns that per unit.

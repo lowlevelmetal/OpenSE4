@@ -15,6 +15,7 @@
 #include <cctype>
 #include <format>
 #include <map>
+#include <type_traits>
 
 namespace opense4::game {
 
@@ -378,7 +379,10 @@ struct Applier {
         // round(cost × % / 100) of each resource (spec 02 §6.6, confirmed: binary).
         emp().stockpile += Resources::from(r.facility(f).cost).percentRounded(pct);
         col->facilities.erase(col->facilities.begin() + c.facilitySlot);
-        sight::recalculateColony(r, *col);  // Scrap Facilities refreshes the cloak and sensor levels (spec 01 §6.9)
+        // Scrap Facilities refreshes the cloak and sensor levels; a colony
+        // that can no longer cloak is decloaked as by Decloak (spec 01 §6.9, §14 Q44).
+        TurnContext refresh{r, s, {}, {}, {}};
+        diplomacy::recalculateColony(refresh, *col, decloakSide());
         // Scrapping the space yard removes vehicles from the queue.
         if (hasAbility(r.facilityAbilities(f), AbilityKind::SpaceYard) && !colonyHasSpaceYard(r, *col))
             std::erase_if(col->queue.items, [&](const QueueItem& q) {
@@ -704,11 +708,20 @@ struct Applier {
         }
         if (!col->cloaked) return R::fail("The colony is not cloaked");
         col->cloaked = false;
-        sight::updateKnowledge(r, s);
+        // Decloak recalculates sight and runs the first-contact check at once.
         TurnContext contact{r, s, {}, {}, {}};
-        diplomacy::updateContacts(contact);  // Decloak runs the first-contact check at once
+        diplomacy::afterDecloak(contact, decloakSide());
         return {};
     }
+
+    // Whose side of a first contact a decloak in this command makes: in a
+    // simultaneous game the check runs on the player's machine, and the host
+    // takes over only the player's side when it reads the orders; the other
+    // empire meets the player at the host's next first-contact check (spec 01
+    // §6.9, §14 Q44, spec 05 §9.2, confirmed: binary). Our command is carried
+    // out on both machines, so it makes only that side on both. In a
+    // turn-based game both sides meet at once.
+    EmpireId decloakSide() const { return s.options.simultaneous ? e : EmpireId{}; }
 
     R operator()(const cmd::JettisonCargo& c) {
         Cargo* hold = nullptr;
@@ -1245,6 +1258,31 @@ CommandResult apply(const Rules& r, GameState& s, EmpireId empire, const Command
 
 std::string_view commandName(const Command& c) {
     return std::visit([](const auto& x) { return NameOf<std::decay_t<decltype(x)>>::value; }, c);
+}
+
+std::vector<ObjectId> coloniesNamed(std::span<const Command> commands) {
+    std::vector<ObjectId> out;
+    auto add = [&](ObjectId planet) {
+        if (planet.valid() && std::find(out.begin(), out.end(), planet) == out.end()) out.push_back(planet);
+    };
+    for (const Command& c : commands)
+        std::visit(
+            [&](const auto& x) {
+                using T = std::decay_t<decltype(x)>;
+                if constexpr (std::is_same_v<T, cmd::SetOrders> || std::is_same_v<T, cmd::Rename> || std::is_same_v<T, cmd::SetMinister> ||
+                              std::is_same_v<T, cmd::SetColonyType> || std::is_same_v<T, cmd::AbandonPlanet> ||
+                              std::is_same_v<T, cmd::JettisonCargo> || std::is_same_v<T, cmd::CloakColony>)
+                    add(x.planet);
+                else if constexpr (std::is_same_v<T, cmd::Scrap>)
+                    add(x.facilityPlanet);
+                else if constexpr (std::is_same_v<T, cmd::TransferCargo>) {
+                    add(x.fromPlanet);
+                    add(x.toPlanet);
+                } else if constexpr (requires { x.target.planet; })
+                    add(x.target.planet);
+            },
+            c);
+    return out;
 }
 
 Resources scrapRefund(const Rules& r, const GameState& s, const Vehicle& v) {
