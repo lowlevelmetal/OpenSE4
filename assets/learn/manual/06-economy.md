@@ -97,7 +97,7 @@ treasury drops to 0 and **ships are lost**: one ship for any shortfall up to 19,
 for each further 20,000 (stock settings). Ships out of supplies are abandoned first; if there are
 none, any ship or unit group may be.
 
-> Maintenance grows with your fleet. Before you build a large fleet, check Net Per Turn in Empire Status and make sure the economy can carry it. Mothball ships you do not need (see [Supply, cargo and repair](logistics#scrapping-and-mothballing)).
+> Maintenance grows with your fleet. Before you build a large fleet, check Net Resources Per Turn in Empire Status and make sure the economy can carry it. Mothball ships you do not need (see [Supply, cargo and repair](logistics#scrapping-and-mothballing)).
 
 ## Construction spending
 
@@ -108,21 +108,15 @@ turn.
 
 ## The Empire Status window
 
-[Empire Status](window:empire-status) (`F11`) shows your budget per turn, with one column each for
-minerals, organics and radioactives:
+[Empire Status](window:empire-status) (`F11`) shows your budget per turn in four blocks, with one
+column each for minerals, organics and radioactives:
 
-| Line | Meaning |
+| Block | Lines |
 |---|---|
-| Income: Colonies, Trade, Tariffs, Remote Mining, Other | Where this turn's income comes from. |
-| Total Income | All income together. |
-| Expenses: Tariffs, Maintenance, Construction Queues | Where it goes. |
-| Total Expenses | All expenses together. |
-| Net Per Turn | Income minus expenses: green when you gain, red when you lose. |
-| Not delivered (no spaceport) | Output lost in systems without a spaceport. |
-| Lost to full storage | Income lost because storage is full. |
-| Stored, Storage Capacity | Your treasury and its limit. |
-
-Below the table are your research and intelligence points per turn.
+| Resource Production Per Turn | From Our Colonies (with any income your empire generates by itself), From Trade, From Tariffs, From Remote Mining, and the Total. |
+| Resource Expenses Per Turn | Tariffs, Maintenance Cost, Construction Queue Usage, and the Total. |
+| Net Resources Per Turn | Production minus expenses: what your treasury gains or loses each turn. |
+| Resources in Treasury | Current Total, and the Maximum Resource Storage your treasury can hold. |
 
 The buttons open your empire's settings windows:
 
@@ -134,15 +128,16 @@ The buttons open your empire's settings windows:
 | `Waypoints` | Your ten waypoints ([Ships and fleets](ships-and-fleets#waypoints)). |
 | `Strategies` | Combat strategies ([Combat](combat#strategies)). |
 | `Repair Priorities` | The order in which components are repaired ([Supply, cargo and repair](logistics#repair)). |
+| `Change Email` | Dim in OpenSE4: the game keeps no e-mail address for your empire yet. |
 | `Change Password` | Set or remove your empire's password. |
 
-The switch about missed turns matters only in simultaneous multiplayer games: with it on, when
-the computer plays a turn for you because your orders did not arrive, it changes nothing.
+Your research and intelligence points per turn are in the [Colonies](window:colonies) window's
+summary, and the switch about missed simultaneous turns is in the Ministers window.
 
 ## Economy advice
 
 - Expand early. More colonies mean more output, more research and more places to build.
 - A spaceport in every system you settle; a resupply depot where your fleets gather.
 - Keep each colony happy: a Jubilant colony produces half as much again as an Angry one.
-- Watch Net Per Turn. A large negative number means trouble within a few turns.
+- Watch Net Resources Per Turn. A large negative number means trouble within a few turns.
 - In a game with finite resources, planets run dry. Keep expanding to new ones.

@@ -153,9 +153,9 @@ manual = "planets-and-colonies#the-colonies-window"
 [[step]]
 title = "Your budget"
 text = """
-Open **Empire Status** with the crown button or `F11`. It shows your income and expenses for each
-resource, and **Net Per Turn**: what your treasury gains or loses each turn. Ships cost upkeep,
-so watch this number as your fleet grows.
+Open **Empire Status** with the crown button or `F11`. It shows your production and expenses for
+each resource, and **Net Resources Per Turn**: what your treasury gains or loses each turn. Ships
+cost upkeep, so watch this number as your fleet grows.
 """
 highlight = ["command:empire-status"]
 done = { window = "empire-status" }

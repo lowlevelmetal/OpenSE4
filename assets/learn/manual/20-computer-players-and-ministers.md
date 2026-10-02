@@ -83,6 +83,7 @@ Open [Ministers](window:ministers) from [Empire Status](window:empire-status) (`
 - `Indiv. On` and `Indiv. Off` put every ship, fleet and colony you own under minister control, or take them all back.
 - `Complete AI On` hands your whole empire to the computer: every minister, every ship and colony, and every new one. `Complete AI Off` takes it all back.
 - A switch puts newly built ships and launched units under minister control automatically.
+- Another switch is for missed turns in simultaneous multiplayer games (see below).
 - The **minister style** chooses the personality your ministers follow: your race's own, or one of the styles in the game data. You can change it at any time.
 
 > Ministers are good at chores. Let them handle repair, resupply and the facilities of small colonies, and keep the big decisions, research and diplomacy, for yourself.
@@ -90,8 +91,9 @@ Open [Ministers](window:ministers) from [Empire Status](window:empire-status) (`
 ## Missed turns in multiplayer games
 
 In a multiplayer game, when your orders for a turn do not arrive in time, the computer plays that
-turn for you with all ministers on. If you would rather it changed nothing, switch on the option about missed turns in
-[Empire Status](window:empire-status): the computer then only keeps the books for you.
+turn for you with all ministers on. If you would rather it changed nothing, switch on the option
+about missed turns in the [Ministers](window:ministers) window: the computer then only keeps the
+books for you.
 
 ## Handing an empire to the computer
 
