@@ -310,7 +310,7 @@ private:
             for (const game::StarSystem& sys : s.galaxy.systems)
                 if (ui.me().hasExplored(sys.id)) systems.push_back(sys.id);
             std::sort(systems.begin(), systems.end(),
-                      [&](game::SystemId a, game::SystemId b) { return s.galaxy.system(a).name < s.galaxy.system(b).name; });
+                      [&](game::SystemId a, game::SystemId b) { return std::pair(s.galaxy.system(a).name, a) < std::pair(s.galaxy.system(b).name, b); });
             for (game::SystemId sys : systems)
                 if (ImGui::Selectable(s.galaxy.system(sys).name.c_str(), sys == draft_.system)) draft_.system = sys;
             ImGui::EndCombo();

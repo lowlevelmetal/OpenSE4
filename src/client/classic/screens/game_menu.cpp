@@ -8,6 +8,7 @@
 #include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "game/map_file.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -37,7 +38,11 @@ std::vector<SaveFile> listSaves() {
         if (ext != ".gam") continue;
         out.push_back({entry.path(), entry.path().stem().string(), entry.last_write_time(ec)});
     }
-    std::sort(out.begin(), out.end(), [](const SaveFile& a, const SaveFile& b) { return a.modified > b.modified; });
+    // Newest first; saves of the same moment by name (a total order: the
+    // directory's own order differs between platforms).
+    std::sort(out.begin(), out.end(), [](const SaveFile& a, const SaveFile& b) {
+        return a.modified != b.modified ? a.modified > b.modified : a.path.filename() < b.path.filename();
+    });
     return out;
 }
 
@@ -198,7 +203,7 @@ private:
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         const bool enter = inputString("##mapname", mapName_, 60, ImGuiInputTextFlags_EnterReturnsTrue);
-        const std::filesystem::path file = dir / (game::mapFileStem(mapName_) + std::string(game::kMapExtension));
+        const std::filesystem::path file = setup::mapFilePath(dir, mapName_);
         std::error_code ec;
         if (std::filesystem::exists(file, ec)) wrappedDim(std::format("{} exists and will be replaced.", file.filename().string()).c_str());
         if (!mapNote_.empty()) {
@@ -335,11 +340,13 @@ public:
         d.beginButtons();
         const std::string clean = cleanName(name_);
         if (d.button("Save", !clean.empty()) || (enter && !clean.empty())) {
-            const std::filesystem::path file = savesDir() / (clean + ".gam");
+            // A save whose name differs only in case is the same game, as on Windows.
+            const std::filesystem::path file = ruleset::childIgnoringCase(savesDir(), clean + ".gam");
             if (std::filesystem::exists(file)) ImGui::OpenPopup("Overwrite");
             else save(ui, file, clean);
         }
-        if (confirmPopup(ui, "Overwrite", std::format("A saved game named \"{}\" exists. Replace it?", clean))) save(ui, savesDir() / (clean + ".gam"), clean);
+        if (confirmPopup(ui, "Overwrite", std::format("A saved game named \"{}\" exists. Replace it?", clean)))
+            save(ui, ruleset::childIgnoringCase(savesDir(), clean + ".gam"), clean);
         d.close();
         return d.keepOpen();
     }

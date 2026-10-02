@@ -4,6 +4,7 @@
 #include "game/ai.hpp"
 #include "game/ai_data.hpp"
 #include "game/economy.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -196,12 +197,17 @@ std::vector<MapFileInfo> listMapFiles(const game::Rules& r, const std::filesyste
         out.push_back({f.path(), loaded->map.name, static_cast<int>(loaded->map.galaxy.systems.size()),
                        static_cast<int>(loaded->map.startingPoints.size())});
     }
-    std::sort(out.begin(), out.end(), [](const MapFileInfo& a, const MapFileInfo& b) { return lowerAscii(a.name) < lowerAscii(b.name); });
+    // Total orders throughout: the directory lists files in an order that differs
+    // between platforms, and std::sort leaves ties in a library's own order.
+    std::sort(out.begin(), out.end(), [](const MapFileInfo& a, const MapFileInfo& b) {
+        return std::pair(lowerAscii(a.name), a.path.filename()) < std::pair(lowerAscii(b.name), b.path.filename());
+    });
     return out;
 }
 
 std::filesystem::path mapFilePath(const std::filesystem::path& dir, std::string_view name) {
-    return dir / (game::mapFileStem(name) + std::string(game::kMapExtension));
+    // A file whose name differs only in case is the same file, as on Windows.
+    return ruleset::childIgnoringCase(dir, game::mapFileStem(name) + std::string(game::kMapExtension));
 }
 
 // ---- Players -----------------------------------------------------------------------------
@@ -472,7 +478,7 @@ std::vector<std::string> designNameFiles(const game::Rules& r) {
         for (const auto& f : std::filesystem::directory_iterator(dir.path(), ec))
             if (f.is_regular_file(ec) && lowerAscii(f.path().extension().string()) == ".txt") out.push_back(f.path().filename().string());
     }
-    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return lowerAscii(a) < lowerAscii(b); });
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return std::pair(lowerAscii(a), a) < std::pair(lowerAscii(b), b); });
     return out;
 }
 
@@ -692,7 +698,8 @@ std::expected<std::filesystem::path, std::string> saveEmpireFile(const game::Rul
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     if (ec) return std::unexpected(std::format("Cannot create {}: {}", dir.string(), ec.message()));
-    const std::filesystem::path file = dir / (fileStem(e.name) + ".toml");
+    // A file whose name differs only in case is replaced, as on Windows.
+    const std::filesystem::path file = ruleset::childIgnoringCase(dir, fileStem(e.name) + ".toml");
     std::ofstream out(file, std::ios::binary | std::ios::trunc);
     out << empireToToml(r, e);
     if (!out) return std::unexpected(std::format("Cannot write {}", file.string()));
@@ -717,7 +724,9 @@ std::vector<EmpireFileInfo> listEmpireFiles(const game::Rules& r, const std::fil
         const game::Race race = raceOf(r, loaded->empire);
         out.push_back({f.path(), loaded->empire.name, race.name, race.style});
     }
-    std::sort(out.begin(), out.end(), [](const EmpireFileInfo& a, const EmpireFileInfo& b) { return lowerAscii(a.name) < lowerAscii(b.name); });
+    std::sort(out.begin(), out.end(), [](const EmpireFileInfo& a, const EmpireFileInfo& b) {
+        return std::pair(lowerAscii(a.name), a.path.filename()) < std::pair(lowerAscii(b.name), b.path.filename());
+    });
     return out;
 }
 

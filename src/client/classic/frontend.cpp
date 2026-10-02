@@ -353,9 +353,16 @@ private:
         scanned_ = true;
         std::error_code ec;
         std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> files;
-        for (const auto& e : std::filesystem::directory_iterator(savesDir(), ec))
-            if (e.is_regular_file(ec) && e.path().extension() == ".gam") files.emplace_back(e.last_write_time(ec), e.path());
-        std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        for (const auto& e : std::filesystem::directory_iterator(savesDir(), ec)) {
+            std::string ext = e.path().extension().string();
+            for (char& c : ext)
+                if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+            if (e.is_regular_file(ec) && ext == ".gam") files.emplace_back(e.last_write_time(ec), e.path());
+        }
+        // Newest first, then by name: a total order (the directory's differs between platforms).
+        std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+            return a.first != b.first ? a.first > b.first : a.second.filename() < b.second.filename();
+        });
         for (const auto& [time, path] : files) saves_.emplace_back(path.stem().string(), path);
     }
     bool scanned_ = false;

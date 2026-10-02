@@ -1,5 +1,7 @@
 #include "client/input.hpp"
 
+#include <SDL3/SDL_keycode.h>
+
 #include <cctype>
 #include <format>
 
@@ -244,6 +246,10 @@ std::optional<KeyChord> capturePressedChord() {
         if (ImGui::IsKeyPressed(k2, false)) return KeyChord{k2, io.KeyCtrl, io.KeyShift, io.KeyAlt};
     }
     return std::nullopt;
+}
+
+uint16_t altGrAsAlt(uint16_t sdlKeymod) {
+    return (sdlKeymod & SDL_KMOD_MODE) != 0 ? static_cast<uint16_t>(sdlKeymod | SDL_KMOD_RALT) : sdlKeymod;
 }
 
 } // namespace opense4::client
