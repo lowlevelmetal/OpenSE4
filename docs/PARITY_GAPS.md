@@ -481,16 +481,50 @@ original games against twelve of ours, Small quadrant, five empires, simultaneou
 turns. With the starting assets following the spec, the early game agrees (colonies 1.5
 against 1.7 at turn 10 and 5.3 against 5.3 at turn 25; homeworlds at 2000M through turn 6;
 first ships after turn 2 or 3; the homeworld's Happy bonus lost in the statistics of turn 4
-for most empires). Measured again after the rules below (spec 07 "Pace after the frontier
-fix"), two differences remain, and colonies fall behind by turn 100:
+for most empires).
+
+**Observed under a debugger** (2026-10-02, spec 07 "Pace observed under a debugger"): three
+original games in which all five empires are computer players, each empire's AI state and
+lists read every turn, against 24 of ours with the same set-up and records. Research agrees
+in this set-up (11.0k / 13.8k per empire at turns 50 / 100 against our 10.3k / 14.1k;
+research per colony 1,041 / 1,038 against 1,074 / 954), as do colonies (15.5 against 15.7 at
+turn 100, the same mix of types), population and tech levels: the research lead measured
+in session 3 came from its set-up and spread (spec 05 question 59). What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Research after turn 25 (likely, 1–2 standard errors). Spec 05 questions 53–56 are settled and implemented: the Research, Facility Construction and Ship Construction ministers, colony types, colonization, the frontier and the territory follow the binary, and the captures show the same population and resource output on both sides but about 40 % more research per colony in the original from turn 25 (question 56). The cause is open: spec 05 question 59, which lists what our computers build | Mean research points per empire 10.0k at turn 50, 12.4k at 75, 13.6k at 100; 33.8 tech levels and 16.5 colonies at 100; research per colony about 1,000 at turn 50 and 880 at 100 | 13.9k, 17.9k, 23.5k; 39.4 tech levels and 19.6 colonies at 100; score 125k against our 99k; research per colony about 1,300–1,400, with a few empires far ahead (22–25k at turn 50) | M |
-| Bases (more than two standard errors). The stock vehicle table builds bases only in Infrastructure, where ours spend 8 % of their turns (Defend (Short Term) 52 %, 78 % from turn 51), and the original's Defense Base placement, now ours, loses most bases in a colony queue without a yard. The frontier fix was expected to bring more Infrastructure time and did not (spec 05 question 53): our territory borders truly unexplored systems in about 70 % of the calm turns, as our computers explore slowly | 0.0–0.1 bases per empire from turn 50 | 0.6–0.9 | M |
+| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). The enemy-in-territory list stays filled longer: our lists hold about 1.7 times as many hostile colonies and ships, and hostile colonies at war in a territory go about half as fast. The rules below that the engine does not follow yet (one-turn movement orders, Join Fleet pursuit, the attack candidates' test) close about half of the Defend gap in scratch runs; the rest is spec 05 questions 61–63 | Defend (Short Term) 53 % of all turns, 76 % of turns 51–100 (56–99 % per game); Infrastructure 7 % and 5 %; 63 of 120 empires ever in Infrastructure; 13 % of listed war colonies gone within 10 turns | 46 % and 63 % (49–73 % per game); Infrastructure 12 % and 16 % (2–30 %); 10 of 15; 33 % | M |
+| Bases. The placement rule is the original's (all 119 placements observed went to the K-th queue, 9 reached a yard) and every placement is made in Infrastructure, so the bases follow the Infrastructure time of the row above | 0.1–0.2 bases per empire from turn 50 | 0.5–0.6 | M |
+| Ships and resources from turn 75 (spec 05 questions 61, 62): the same population, colony types and facilities, but the original's colonies are happier (3.2–3.3 Jubilant per empire against 0.8–1.5) and it has more attack ships, mostly in fleets | Ships 10.8 / 13.1 per empire at turns 75 / 100 (attack ships 6.9 / 8.1, 44–51 % of them in fleets from turn 41); resources produced 25.9k / 30.4k | 14.4 / 19.7 (9.1 / 13.2, 74–78 %); 32.9k / 36.3k | M |
 
-Ships, systems and units agree within the noise. A game where the first empire gives no
-orders, closer to the original's games, changes neither row.
+Rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary), not yet
+implemented:
+
+- **One-turn movement orders.** Every movement the ministers order (defence, attack, fleet
+  goals, exploration, patrol, repair, Space Yard Ships) is a Seek that lasts one movement
+  phase in a simultaneous game (and is done once moved in a turn-based one), so warships
+  are idle again at each start of turn. The engine gives Move To and Attack orders that
+  last until done (`ai_military.cpp`, `ai_explore.cpp`, `ai_economy.cpp`), keeping ships
+  busy and away from the fleets.
+- **Join Fleet pursuit.** A recruit gets a Join Fleet order that follows the fleet wherever
+  it goes, joins when it reaches it and counts toward the fleet's size at once; the engine's
+  `planFleets` sends it to where the leader stood.
+- **Attack candidates** are kept only when we could settle a planet of their kind or their
+  owner is below None (at War, Non-Intercourse or not met), and only a kept one adds its
+  owner's rating a second time to the system's strength; `assess` (`ai.cpp`) keeps every
+  noticed planet.
+- **Exploration** (`planExploration`, `ai_explore.cpp`): explorers are Attack Ships and
+  Attack Bases, and carriers or drone carriers more than half full, in normal status, with
+  fewer than 4 destroyed parts, supply above 0, outside fleets and with no orders or a Seek
+  first; the 3×, 5× and 8× tests count the empire's Attack Ships; each takes the point with
+  the smallest travel distance, and gets the Warp only when its movement points reach it.
+- **The economy step's lists**: the first empire in player order whose economy-step
+  ministers run reads the colonization targets of the last empire's start-of-turn step;
+  `planEconomyStep` uses its own.
+- **Queue list details** (question 60): a cloaked ship's yard does not count as working
+  (`workingYard`); a system's queues follow the system's own object list, which can order
+  two ships differently from the slot order (`queueList`); the unit queue choice compares
+  the total number of units in each colony's cargo, whatever their kind.
 
 On 2026-10-01 spec 05 questions 53–56 were settled from the executable and the captures.
 The rows found then were implemented that day (`ai.cpp`, `ai_anger.cpp`, `ai_economy.cpp`):
@@ -510,10 +544,11 @@ rate, and nothing is placed without room for the batch; no item tries a second q
 facility upgrades come first on every fifth turn; the research and intelligence lists and the
 finite-resource block follow §7.5; the best facility for an ability is the highest Value 1
 for amount-type abilities, else the highest tech-requirement sum, the later on a tie.
-OpenSE4 choices (spec 05 question 60): the ministers after Politics read the territory only
-through the lists; a system's queues follow the game's object order; a ship's yard works
-while its component is intact and not mothballed; a queued base item counts its count; units
-"of that kind" share the vehicle type. The golden games of `tests/test_determinism.cpp` moved
+OpenSE4 choices (spec 05 question 60, answered from the executable on 2026-10-02): the
+ministers after Politics read the territory only through the lists, and a queued base item
+counts its count, as in the original; a system's queues follow the game's object order, a
+ship's yard works while its component is intact and not mothballed, and units "of that kind"
+share the vehicle type, which differ (the queue list details above). The golden games of `tests/test_determinism.cpp` moved
 to seed 39, whose games still cover battles, events, intelligence and politics.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question

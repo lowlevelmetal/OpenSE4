@@ -698,6 +698,155 @@ corner of our screens is the owner's `show_fps` setting.
 Since 2026-10-01 our client follows these observations (spec 06 §1.11); what they leave open
 is asked in spec 06 §7 Q89–Q98.
 
+## Session 4: the computer players under a debugger (2026-10-02)
+
+### Pace observed under a debugger
+
+**How.** The copy of session 3 (version 1.95 under Wine 11.18, nested 1024×768 display) ran
+under a debugger whose breakpoints only read memory ("Harness notes" below). For each
+computer empire the log recorded, at every start-of-turn state update, the AI state before
+and after, the turns spent in it, the enemy-in-territory list (system, sector, owner and kind
+of each entry), the claimed, explored and colonized systems, the frontier points, the
+number of attack candidates, the treaty and the anger toward each other empire; at every
+economy step, the research queue and the stock; at every Defense Base placement, the
+empire's queue list, which queues have a yard and the queue chosen. Once a turn it listed
+every ship (design type, fleet, orders) and every empire's statistics row, and every fifth
+turn every colony (type, population, facilities, queue, mood). The logs are in
+`reference/re/notes/aiwatch/` (not tracked).
+
+The set-up matches our scratch harness: the Small quadrant of the first quadrant type,
+default settings, simultaneous turns, the stock Terran empire file (its race's minister
+style) and four random computer empires (the copy's `Settings.txt` rolls exactly four for
+Medium), every score visible. The Terran empire was marked computer-controlled before the
+first turn, so all five empires are computer players throughout. Three games of 100 turns,
+on maps of 21, 26 and 31 systems.
+
+Ours: 24 games (seeds 1–24) of the engine at 6ef2c3e through a scratch program (not
+tracked) that writes the same records: a Small quadrant, simultaneous turns, the Terran
+preset and four random races with random computer personalities, five computer players,
+100 `processTurn` calls. Our maps have 20–37 systems; "small maps" are our 8 games of 20–26
+systems.
+
+**AI states.** Share of the empire-turns in Defend (Short Term) and in Infrastructure:
+
+| Games | Systems | Defend 26–50 | Defend 51–100 | Defend, all | Infra. 26–50 | Infra. 51–100 | Infra., all | Empires ever in Infrastructure |
+|---|---|---|---|---|---|---|---|---|
+| Original, game 1 | 21 | 46 % | 66 % | 49 % | 18 % | 16 % | 13 % | 5 of 5 |
+| Original, game 2 | 26 | 30 % | 49 % | 33 % | 19 % | 30 % | 21 % | 3 of 5 |
+| Original, game 3 | 31 | 58 % | 73 % | 58 % | 4 % | 2 % | 2 % | 2 of 5 |
+| Original, all three | | 45 % | 63 % | 46 % | 14 % | 16 % | 12 % | 10 of 15 |
+| Ours, 24 games | 20–37 | 46 % | 76 % | 53 % | 11 % | 5 % | 7 % | 63 of 120 |
+| Ours, small maps | 20–26 | 60 % | 78 % | 59 % | 10 % | 5 % | 7 % | 23 of 40 |
+
+Exploration takes 80 % of the original's turns 1–25 (ours 72 %) and 37 % of all its turns
+(ours 34 %); Prepare for Attack, Attack and Secure Holdings share the rest. Our games range
+from 56 % to 99 % in Defend (Short Term) over turns 51–100 (median about 75 %) and from 0 % to 18 %
+in Infrastructure: the original's second game lies outside that range, its first at the
+low end and its third in the middle. So the original also spends most of its later turns
+in Defend (Short Term), but about 13 points fewer than ours on average, with three times
+our share of Infrastructure in turns 51–100; with three games the spread between games is
+as large as the difference.
+
+**Statistics.** Means per empire, original (15 empires) / ours (120):
+
+| Turn | Colonies | Research | Research per colony | Resources produced | Tech levels | Ships | Bases | Score |
+|---|---|---|---|---|---|---|---|---|
+| 25 | 5.3 / 5.1 | 6,557 / 5,470 | 1,337 / 1,120 | 13.9k / 12.3k | 19.1 / 18.9 | 3.4 / 3.5 | 0.0 / 0.2 | 32.1k / 30.4k |
+| 50 | 11.3 / 10.4 | 11,045 / 10,263 | 1,041 / 1,074 | 23.6k / 20.7k | 23.9 / 23.1 | 8.3 / 7.6 | 0.5 / 0.2 | 66.9k / 59.1k |
+| 75 | 14.7 / 13.8 | 13,823 / 12,825 | 1,007 / 1,029 | 32.9k / 25.9k | 29.1 / 28.6 | 14.4 / 10.8 | 0.6 / 0.1 | 110.4k / 87.8k |
+| 100 | 15.5 / 15.7 | 13,833 / 14,118 | 1,038 / 954 | 36.3k / 30.4k | 34.6 / 34.0 | 19.7 / 13.1 | 0.6 / 0.1 | 141.5k / 109.6k |
+
+- **Research agrees** in this set-up. Research per colony at turn 50 / 100 was 1,233 / 1,230,
+  968 / 849 and 924 / 1,035 in the three games; ours range from 568 to 1,483 at turn 50 and
+  from 473 to 1,505 at turn 100. It falls as small domed colonies are added, so it follows the
+  map and the colony count: the original's 21-system game sits among our 20–23-system games,
+  its 26-system game among our 28-system ones. One original empire had 24,900 research
+  points at turn 50 with 17 colonies, like the fast empires of session 3; 3 of our 120 had
+  over 20,000 (at most 27,000). So the 40 % lead seen in session 3 (spec 05 questions 56 and
+  59) is not a difference of the rules: those three games had another set-up (a human empire
+  playing on every minister) and a spread of ±2,200 at turn 50.
+- **Still different**: bases (0.5–0.6 against 0.1–0.2), ships from turn 75 (14.4 / 19.7
+  against 10.8 / 13.1, the attack ships alone 9.1 / 13.2 against 6.9 / 8.1) and the resources
+  produced (27 % and 19 % more at turns 75 and 100, with the same population: 2,887M /
+  3,198M against 2,789M / 3,106M).
+- **Colonies alike**: at turn 100 the original's empires hold 15.5 colonies, of which Mining
+  4.4, Research Compound 3.9, Military Installation 1.5, Intelligence Compound 1.4, Refining
+  1.1 and Construction Yard 1.1 (ours 15.7: 4.0, 4.0, 1.7, 1.4, 1.2, 1.4), and 22.7 Research
+  Centers (ours 24.2), 12.1 of them on Research Compounds (ours 14.0) and 5 on the homeworld.
+- **Moods differ**: per empire at turns 75 / 100, Jubilant colonies 3.2 / 3.3 (ours 0.8 /
+  1.5), Happy 4.9 / 4.9 (5.3 / 5.1), Indifferent 6.1 / 5.8 (7.0 / 8.2), Unhappy or worse
+  0.6 / 1.6 (0.7 / 1.0). Weighted by colony count, the mood modifiers of spec 02 come to
+  107 % / 106 % of normal output against our 104 % / 104 %: a few per cent, not 20–27 % (spec
+  05 question 61).
+
+**What keeps them in Defend (Short Term)** (turns 51–100; original / ours):
+- The enemy-in-territory list is not empty in 63 % / 76 % of the state updates. It holds, per
+  update, 1.01 / 1.77 colonies of empires at war with the evaluating empire, 0.32 / 0.56
+  colonies of empires without a treaty, 0.92 / 1.56 ships of empires at war and 0.14 / 0.40
+  ships of empires without a treaty. Of the turns in Defend (Short Term), 46 % / 61 % have a
+  colony of an enemy at war in the list, and 42 % / 25 % have only ships.
+- Spells: 35 % / 63 % of all the turns in Defend (Short Term) lie in spells of 20 turns or
+  more, 43 % / 25 % in spells of 5–19 turns. A spell ends toward Exploration 75 % / 67 % of
+  the time and toward Infrastructure 25 % / 32 %.
+- Hostile colonies removed: of the colonies of an enemy at war listed in a territory (counted
+  every fifth turn), 33 % (37 of 113; 21–46 % per game) were gone ten turns later, against
+  13 % of ours (190 of 1,456; median 13 % per game, 3–46 %).
+- Treaties: over turns 51–100 neighbouring empires (one's territory holds a colony system of
+  the other) were at war in 13 %, 44 % and 59 % of the pair-turns in the three games, ours in
+  44 %; at turn 100, of the pairs that have met, 43 % / 49 % are at war and 38 % / 37 % have a
+  trade treaty or better. No consistent difference.
+
+**Fleets, explorers and ships.**
+- Attack ships in fleets: 81 %, 74 %, 78 % and 77 % of the original's in turns 21–40, 41–60,
+  61–80 and 81–100, against 68 %, 51 %, 45 % and 44 % of ours. At turn 90 the empire with the
+  most ships in each game kept five or six fleets, two to four of them with four to nine
+  attack ships each (one with 46 ships: fleets of 7, 7, 6, 6, 2 and 1 attack ships); empires
+  with few ships had fleets of one to three. In a trace of one of our games (turns 20–70)
+  every fleet held one ship: the size cap of spec 05 §7.5, trunc(vehicles × 80 / 100 / fleets
+  wanted), was 1 with 4–7 vehicles and 3 fleets wanted.
+- Attack ships outside fleets at the end of the turn, turns 51–100: idle 0.9–1.4 / 1.3–1.8,
+  with orders 0.6–1.3 / 1.7–2.9 per empire. Our ships keep their Move To orders for several
+  turns; the original's Seek orders last one movement phase (spec 05 §7.5).
+- Explored systems, turns 51–100: 7.9–11.0 / 9.8–14.6 (ours 11.4–16.7 on the small maps);
+  claimed systems 6.0–6.5 / 6.9–8.2. In the calm updates of an empire with contact, the
+  territory borders an unexplored system in 40 % / 60 % of them (41 % on our small maps).
+- Ships by design type per empire at turn 50 / 100: attack ships 4.6 / 13.2 (ours 5.1 / 8.1),
+  carriers – / 1.3 (– / 1.8), colony ships 1.7 / 2.1 (1.5 / 1.8), population and troop
+  transports 1.1 / 1.1 (0.7 / 0.7), Defense Bases 0.3 / 0.4 (0.1 / 0.0), Base Space Yards
+  0.3 / 0.2 (0.1 / 0.1).
+
+**Defense Bases.** All 119 Defense Base placements of the three games were made in
+Infrastructure, by 9 of the 15 empires (one made 58), and every one went to the K-th queue of
+the empire's queue list (spec 05 §7.5 "Placement"); 9 of them reached a queue with a yard. So
+the original's bases come from its time in Infrastructure, under the rule ours already
+follow.
+
+**Lists and claims.**
+- Claimed systems: in 1,463 of the 1,485 start-of-turn updates of the three games the claims
+  were exactly those of spec 05 §7.2 "Territory", from the colonies and the warp links of the
+  turn before (computer players closed warp points in two games). Each of the other 22 held
+  one system more, for that turn only, as a traded system would; none lacked one.
+- The economy step of player 1 found the lists of player 5's start-of-turn step on every turn;
+  players 2–5 built their own (spec 05 §7.2 "Whose lists the economy step reads").
+
+**Scratch experiments** (the engine at 6ef2c3e with the changes named, following spec 05
+§7.2 and §7.5; not kept; the 24 games above; turns 51–100 unless marked "all"):
+
+| Change | Defend, all | Defend | Infrastructure, all | Infrastructure | Attack ships in fleets, 81–100 | War colonies gone in 10 turns |
+|---|---|---|---|---|---|---|
+| none | 53 % | 76 % | 7 % | 5 % | 44 % | 13 % |
+| attack candidates only when settleable or the owner is below None | 52 % | 74 % | 9 % | 6 % | 44 % | 14 % |
+| one-turn Seek orders | 50 % | 73 % | 8 % | 6 % | 46 % | 15 % |
+| Join Fleet pursuit | 52 % | 75 % | 8 % | 6 % | 46 % | 14 % |
+| one-turn orders and pursuit | 48 % | 70 % | 8 % | 5 % | 47 % | 16 % |
+| all three changes | 48 % | 70 % | 11 % | 8 % | 44 % | 16 % |
+
+The exploration rules (12 games with Quick Start's races) moved Defend (Short Term) from
+77 % to 76 % and Infrastructure from 4 % to 7 % of turns 51–100, within the noise. Together
+the changes close about half of the gap in Defend (Short Term) and a quarter of the gap in
+Infrastructure; the rest goes with the original's larger fleets, its extra ships and
+resources and the faster removal of hostile colonies (spec 05 questions 61–63).
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -723,3 +872,19 @@ Session 3 (2026-10-01), without Steam and without touching the owner's desktop:
 - The per-player statistics file is written only for human-controlled empires but holds a
   row for every living empire each turn; a simultaneous game needs a Multiplayer Game
   Filename on the Mechanics page before Begin Game.
+
+Session 4 (2026-10-02), a debugger on the running game, under the same rules as session 3:
+- Start the game under Wine's debugger from the first instruction (`winedbg --gdb
+  --no-start` on the copy's `Se4.exe`) and attach gdb to its port. Attaching to a game that
+  is already running works, but under the WoW64 build of Wine 11.18 the game crashes when
+  the debugger resumes or detaches. Tell gdb to pass every signal without stopping, and
+  resume the first stop with `signal 0`.
+- Breakpoints only read: each one runs a gdb Python command that reads memory, writes a
+  line to a log under `reference/re/notes/` and continues. Nothing is written to the game's
+  memory and the executable is unchanged.
+- A game in which every empire is a computer player: a new game with Different Machines
+  and simultaneous turns (one human empire is required at Begin Game), a master password,
+  then loaded with that password as Game Master, the human empire marked computer-
+  controlled in the Players window, and saved. Each turn the host loads the game, End Turn
+  is pressed, the host processes the turn and exits; a script relaunches it for the next
+  turn (about 20 s a turn under the debugger).
