@@ -118,15 +118,20 @@ public:
         ui.tagTab("trade", !borders_ && tab_ == Tab::Trade);
         if (d.tab("Tariff", !borders_ && tab_ == Tab::Tariff)) select(Tab::Tariff);
         ui.tagTab("tariff", !borders_ && tab_ == Tab::Tariff);
+        // The original's order (observed, spec 07 session 3): the tabs, a gap,
+        // History, Treaty Grid, Intelligence (dim before any contact), Borders,
+        // Scores, Victory Conditions, Comparisons, a gap, Our Race in the 13th slot.
         d.spacer();
         if (d.button("History")) ui.open(ScreenId::History);
         if (d.button("Treaty Grid")) ui.open(ScreenId::TreatyGrid);
-        if (d.button("Intelligence")) ui.open(ScreenId::Intelligence);
+        if (d.button("Intelligence", !knownEmpires(ui).empty())) ui.open(ScreenId::Intelligence);
         ui.tagItem("empires:intelligence");
-        if (d.check("Borders", borders_)) borders_ = !borders_;
-        if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
+        // A plain button: it shows the borders map, and again the portraits (ours: a view of this window, Q96).
+        if (d.button("Borders")) borders_ = !borders_;
         if (d.button("Scores")) ui.open(ScreenId::Scores);
+        if (d.button("Victory Conditions")) ui.open(ScreenId::VictoryConditions);
         if (d.button("Comparisons")) ui.open(ScreenId::Comparisons);
+        d.spacer();
         if (d.button("Our Race")) {
             ScreenArgs a;
             a.empire = ui.session.player();
@@ -150,11 +155,8 @@ private:
         const game::Empire& me = ui.me();
         switch (tab_) {
             case Tab::Treaty:
-                heading(ui, "Treaties");
-                if (known > 0) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(kTextDim, "(right-click a portrait for its race report)");
-                }
+                // No heading here (observed, spec 07 session 3).
+                (void)known;
                 break;
             case Tab::Trade:
                 heading(ui, "Trade income");
@@ -240,13 +242,9 @@ private:
             if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ui.open(ScreenId::RaceReport, args);
         }
         ImGui::SetCursorScreenPos({a.x, a.y + h + ui.px(4)});
+        // Before any contact the strip stays empty, with no explanation (observed).
         if (known.empty()) {
-            header(ui, 0);
-            ImGui::Dummy(ui.size({0, 10}));
-            wrappedText("We have not made contact with any other empire yet. We meet another empire when we detect each other in "
-                        "a system and warp points lead from our colonies to one of theirs. Contact is lost when no such path "
-                        "remains.",
-                        kTextDim);
+            ImGui::Dummy(ImVec2(w, 0));
             return;
         }
         header(ui, known.size());
