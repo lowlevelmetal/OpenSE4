@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -328,7 +329,7 @@ private:
     // click or right-click opens the component's report.
     void components(UiContext& ui, const game::Design& d) {
         const game::Rules& r = ui.rules();
-        constexpr float kCell = 36.0f;
+        constexpr float kGridCell = 36.0f;
         constexpr int kColumns = 8;
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -336,14 +337,14 @@ private:
             const game::DesignEntry& e = d.entries[i];
             const ruleset::Component& c = r.component(e.component);
             const int col = static_cast<int>(i) % kColumns, row = static_cast<int>(i) / kColumns;
-            const ImVec2 a(origin.x + ui.px(kCell * float(col)), origin.y + ui.px(kCell * float(row)));
+            const ImVec2 a(origin.x + ui.px(kGridCell * float(col)), origin.y + ui.px(kGridCell * float(row)));
             ImGui::SetCursorScreenPos(a);
             ImGui::PushID(static_cast<int>(i));
-            const bool clicked = ImGui::InvisibleButton("##comp", ui.size({kCell, kCell}));
+            const bool clicked = ImGui::InvisibleButton("##comp", ui.size({kGridCell, kGridCell}));
             const bool hovered = ImGui::IsItemHovered();
             const bool right = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
             ImGui::PopID();
-            dl->AddRect(a, {a.x + ui.px(kCell), a.y + ui.px(kCell)}, imColor(hovered ? palette::kButtonHot : palette::kFrame));
+            dl->AddRect(a, {a.x + ui.px(kGridCell), a.y + ui.px(kGridCell)}, imColor(hovered ? palette::kButtonHot : palette::kFrame));
             if (const Sprite pic = ui.art.component(c.picture)) drawSprite(dl, pic, {a.x + ui.px(2), a.y + ui.px(2)}, {a.x + ui.px(34), a.y + ui.px(34)});
             if (const std::string_view code = mountCode(r, e.mount); !code.empty()) {
                 ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
@@ -355,7 +356,7 @@ private:
         }
         const int rows = (static_cast<int>(d.entries.size()) + kColumns - 1) / kColumns;
         ImGui::SetCursorScreenPos(origin);
-        ImGui::Dummy(ui.size({kCell * kColumns, kCell * float(std::max(rows, 1))}));
+        ImGui::Dummy(ui.size({kGridCell * kColumns, kGridCell * float(std::max(rows, 1))}));
         if (d.entries.empty()) {
             ImGui::SetCursorScreenPos(origin);
             ImGui::TextColored(kDimText, "No components");
