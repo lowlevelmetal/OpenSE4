@@ -4640,6 +4640,25 @@ TEST_CASE("ai: a Politics minister's request about a third empire is not checked
 
 namespace {
 
+// A facility of one ability for tests that add their own, requiring Test Economics at `level`.
+ruleset::Facility abilityFacility(const ruleset::Ruleset& rs, std::string name, AbilityKind kind, int64_t value, int level, int family = 0,
+                                  int numeral = 1) {
+    ruleset::Facility f;
+    f.name = std::move(name);
+    f.group = "Tests";
+    f.cost = {300, 0, 0};
+    ruleset::Ability a;
+    a.type = std::string(identifier(kind));
+    a.value1 = std::to_string(value);
+    f.abilities.push_back(a);
+    const auto econ = rs.findTechArea("Test Economics");
+    REQUIRE(econ);
+    f.requirements.push_back({*econ, level});
+    f.family = family;
+    f.romanNumeral = numeral;
+    return f;
+}
+
 // The queue items of a design anywhere in the empire's queues.
 int queuedOf(const GameState& s, EmpireId e, DesignId d) {
     int n = 0;
@@ -4911,4 +4930,110 @@ TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the
     const Rules moreRules{buildEngineRuleset(), more.root};
     const GameState g = plan(moreRules, s);
     CHECK(queuedOf(g, me, base) == 3);
+}
+
+TEST_CASE("ai: on every fifth turn the facility upgrades come first, and an upgraded planet gets no new facility") {
+    TempTree t("upgradefirst");
+    t.write("Ai/Default_AI_Construction_Facilities.txt",
+            "AI State := Exploration\nConstruction Queue Type := Homeworld\nNum Queue Entries := 1\n"
+            "Facility 1 Ability := Resource Generation - Organics\nFacility 1 Amount := 10\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.facilities = {facilityIndex(rules, "Test Mine")};
+    home.queue.items.clear();
+    REQUIRE(facilitySlots(rules, s, home) > 1);
+    auto queued = [&](uint32_t turn) {
+        s.turn = turn;
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 5);
+        ai::detail::planFacilities(p, false);
+        return p.st.colony(homePlanet)->queue.items;
+    };
+    const std::vector<QueueItem> ordinary = queued(5);  // date 6
+    REQUIRE(ordinary.size() == 1);
+    CHECK(ordinary.front().kind == QueueItem::Kind::Facility);
+    CHECK(rules.facility(ordinary.front().facility).name == "Test Farm");
+    const std::vector<QueueItem> fifth = queued(4);  // date 5
+    REQUIRE(fifth.size() == 1);
+    CHECK(fifth.front().kind == QueueItem::Kind::Upgrade);
+    CHECK(rules.facility(fifth.front().facility).name == "Test Mine II");
+}
+
+TEST_CASE("ai: the facility minister's research, intelligence and finite-resource blocks follow the fixed lists") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.facilities.push_back(abilityFacility(rs, "Test Point Generator", AbilityKind::GeneratePointsResearch, 100, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Counter Intel", AbilityKind::ChangeBadIntelChanceSystem, 10, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Mineral Booster", AbilityKind::ResourceGenModSystemMinerals, 10, 1));
+    TempTree t("facilityblocks");
+    t.write("Ai/Default_AI_Settings.txt", "Maximum Research Point Generation := 10\n");
+    t.write("Ai/Default_AI_Construction_Facilities.txt",
+            "AI State := Exploration\nConstruction Queue Type := Homeworld\nNum Queue Entries := 3\n"
+            "Facility 1 Ability := Change Bad Intelligence Chance - System\nFacility 1 Amount := 1\n"
+            "Facility 2 Ability := Point Generation - Research\nFacility 2 Amount := 10\n"
+            "Facility 3 Ability := Generate Points Research\nFacility 3 Amount := 10\n"
+            "AI State := Exploration\nConstruction Queue Type := Mining Colony\nNum Queue Entries := 2\n"
+            "Facility 1 Ability := Resource Generation - Minerals\nFacility 1 Amount := 1\n"
+            "Facility 2 Ability := Resource Gen Modifier System - Minerals\nFacility 2 Amount := 1\n");
+    const Rules rules{std::move(rs), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.turn = 5;  // date 6: no upgrades
+    s.options.allowIntel = false;
+    s.empire(me).economy = {};
+    s.empire(me).economy.research = 100;  // above the cap of 10
+    Colony& home = homeworld(s, me);
+    const ObjectId homePlanet = home.planet;
+    home.facilities.clear();
+    home.queue.items.clear();
+    auto firstQueued = [&](const GameState& g, ObjectId planet) -> std::string {
+        ai::detail::Planner p(rules, g, me, ai::detail::Mode::Computer, 2);
+        ai::detail::planFacilities(p, false);
+        const auto& items = p.st.colony(planet)->queue.items;
+        return items.empty() ? std::string{} : rules.facility(items.front().facility).name;
+    };
+    // Change Bad Intelligence Chance - System is on the intelligence list, so
+    // it is blocked while intelligence projects are off; Point Generation -
+    // Research is blocked by the cap, Generate Points Research is not.
+    CHECK(firstQueued(s, homePlanet) == "Test Point Generator");
+    s.options.allowIntel = true;
+    CHECK(firstQueued(s, homePlanet) == "Test Counter Intel");
+
+    // With finite resources, a planet without minerals gets no Resource
+    // Generation for them; the system modifier is not blocked.
+    s.options.finiteResources = true;
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    Colony& c = addColony(s, *second, me, {{me, 500}});
+    c.colonyType = "Mining Colony";
+    s.galaxy.object(*second).value[0] = 0;
+    CHECK(firstQueued(s, *second) == "Test Mineral Booster");
+    s.galaxy.object(*second).value[0] = 100;
+    CHECK(firstQueued(s, *second) == "Test Mine II");
+}
+
+TEST_CASE("ai: the best facility for an ability: the highest Value 1 for amount-type abilities, else the highest tech sum, ties to the later") {
+    ruleset::Ruleset rs = buildEngineRuleset();
+    rs.facilities.push_back(abilityFacility(rs, "Test Old Big Lab", AbilityKind::PointGenResearch, 900, 3, 40, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test New Small Lab", AbilityKind::PointGenResearch, 100, 1, 40, 7));
+    rs.facilities.push_back(abilityFacility(rs, "Test Twin Lab", AbilityKind::PointGenResearch, 50, 3, 41, 1));
+    rs.facilities.push_back(abilityFacility(rs, "Test Small Store", AbilityKind::SupplyStorage, 100, 3));
+    rs.facilities.push_back(abilityFacility(rs, "Test Big Store", AbilityKind::SupplyStorage, 500, 1));
+    const Rules rules{std::move(rs), {}};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    Empire& e = s.empire(EmpireId{0u});
+    researchEverything(rules, e);
+    auto best = [&](std::string_view ability) -> std::string {
+        const auto f = ai::detail::bestFacilityFor(rules, e, ability);
+        return f ? rules.facility(*f).name : std::string{};
+    };
+    // Not by Roman numeral: the highest tech-requirement sum, the later one on a tie.
+    CHECK(best("Point Generation - Research") == "Test Twin Lab");
+    // Supply Storage is ranked by its Value 1.
+    CHECK(best("Supply Storage") == "Test Big Store");
 }

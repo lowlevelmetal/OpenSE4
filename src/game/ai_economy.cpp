@@ -112,29 +112,27 @@ namespace {
 
 // ---- Facilities -----------------------------------------------------------------------------
 
+// The research and intelligence abilities whose facilities the caps block
+// (spec 05 §7.5 `AI_Construction_Facilities`, confirmed: binary). The
+// `Generate Points` abilities are on neither list.
 bool researchAbility(AbilityKind k) {
-    return k == AbilityKind::PointGenResearch || k == AbilityKind::PlanetPointGenModResearch || k == AbilityKind::SystemPointGenModResearch ||
-           k == AbilityKind::GeneratePointsResearch;
+    return k == AbilityKind::PointGenResearch || k == AbilityKind::PlanetPointGenModResearch || k == AbilityKind::SystemPointGenModResearch;
 }
 bool intelAbility(AbilityKind k) {
     return k == AbilityKind::PointGenIntelligence || k == AbilityKind::PlanetPointGenModIntelligence ||
-           k == AbilityKind::SystemPointGenModIntelligence || k == AbilityKind::GeneratePointsIntelligence;
+           k == AbilityKind::SystemPointGenModIntelligence || k == AbilityKind::ChangeBadIntelChanceSystem;
 }
-// Resource generation or a planet-value modifier: which resource (0..2), or -1.
-int resourceOf(AbilityKind k) {
+// With finite resources, the resource (0..2) of a `Resource Generation` or
+// `Resource Gen Modifier Planet` ability, or -1 for any other ability: the
+// system modifiers and the planet-value abilities are not blocked.
+int extractedResource(AbilityKind k) {
     switch (k) {
         case AbilityKind::ResourceGenMinerals:
-        case AbilityKind::ResourceGenModPlanetMinerals:
-        case AbilityKind::ResourceGenModSystemMinerals:
-        case AbilityKind::PlanetChangeMineralsValue: return 0;
+        case AbilityKind::ResourceGenModPlanetMinerals: return 0;
         case AbilityKind::ResourceGenOrganics:
-        case AbilityKind::ResourceGenModPlanetOrganics:
-        case AbilityKind::ResourceGenModSystemOrganics:
-        case AbilityKind::PlanetChangeOrganicsValue: return 1;
+        case AbilityKind::ResourceGenModPlanetOrganics: return 1;
         case AbilityKind::ResourceGenRadioactives:
-        case AbilityKind::ResourceGenModPlanetRadioactives:
-        case AbilityKind::ResourceGenModSystemRadioactives:
-        case AbilityKind::PlanetChangeRadioactivesValue: return 2;
+        case AbilityKind::ResourceGenModPlanetRadioactives: return 2;
         default: return -1;
     }
 }
@@ -220,7 +218,7 @@ bool blocked(const Planner& p, const Colony& c, const FacilityEntry& entry) {
     // One per system: the empire's colonies there count with what they have built or queued.
     if (onePerSystem(kind) && systemHas(p, sys, entry.ability)) return true;
     if (p.st.options.finiteResources)
-        if (const int res = resourceOf(kind); res >= 0 && p.st.galaxy.object(c.planet).value[static_cast<size_t>(res)] == 0) return true;
+        if (const int res = extractedResource(kind); res >= 0 && p.st.galaxy.object(c.planet).value[static_cast<size_t>(res)] == 0) return true;
     return false;
 }
 
@@ -751,6 +749,10 @@ void planFacilities(Planner& p, bool firstPass) {
     std::vector<ObjectId> planets;
     for (const auto& c : p.st.colonies)
         if (c && p.controlsColony(*c, Minister::FacilityConstruction)) planets.push_back(c->planet);
+    // The upgrades of every fifth turn come first (confirmed: binary): a
+    // planet that receives one no longer has an empty queue and gets no new
+    // facility in this pass.
+    if (!firstPass && p.date % 5 == 0) planUpgrades(p, planets);
     for (ObjectId planet : planets) {
         const Colony* c = p.st.colony(planet);
         if (!c || !c->queue.items.empty() || static_cast<int>(c->facilities.size()) >= facilitySlots(p.r, p.st, *c)) continue;
@@ -772,7 +774,6 @@ void planFacilities(Planner& p, bool firstPass) {
             if (p.emit(cmd::QueueAdd{{planet, {}}, item, -1})) break;
         }
     }
-    if (!firstPass && p.date % 5 == 0) planUpgrades(p, planets);
 }
 
 void planShips(Planner& p) { ShipBuilder(p).run(); }

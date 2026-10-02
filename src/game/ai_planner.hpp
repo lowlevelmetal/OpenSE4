@@ -273,7 +273,14 @@ bool canSettle(const Rules& r, const GameState& s, const Empire& e, const SpaceO
 bool hasColonyModule(const Rules& r, const Empire& e, std::string_view surface);
 // Builds the design of a template the empire would make now (spec 05 §7.5), or nullopt.
 std::optional<Design> buildDesign(const Rules& r, const GameState& s, const Empire& e, const DesignTemplate& t);
-// Resolves an ability identifier from the AI tables to the newest researched facility.
+// Abilities whose parts the Design minister ranks by their Amount 1 (spec
+// 05 §7.5 `AI_DesignCreation`): shields, cargo, supply, movement, bays,
+// mines, sweeping and troops (ai_design.cpp).
+bool amountAbility(AbilityKind k);
+// The researched facility that provides an ability of the AI tables best
+// (spec 05 §7.5 `AI_Construction_Facilities`, confirmed: binary): the highest
+// Value 1 for an amount-type ability, otherwise the highest sum of its tech
+// requirement levels; a tie goes to the later facility in the file.
 std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::string_view ability);
 bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability);
 // A line drawn from a pool of the empire's AI_Speech with the [%...] tokens

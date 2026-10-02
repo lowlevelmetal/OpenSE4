@@ -811,10 +811,22 @@ bool facilityHas(const Rules& r, uint32_t facility, std::string_view ability) {
 }
 
 std::optional<uint32_t> bestFacilityFor(const Rules& r, const Empire& e, std::string_view ability) {
+    const AbilityKind kind = parseAbilityKind(ability).value_or(AbilityKind::Unknown);
+    const bool byAmount = amountAbility(kind);
     std::optional<uint32_t> best;
+    int64_t bestScore = 0;
     for (uint32_t i = 0; i < r.data().facilities.size(); ++i) {
         if (!r.facilityAvailable(e, i) || !facilityHas(r, i, ability)) continue;
-        if (!best || r.facility(i).romanNumeral >= r.facility(*best).romanNumeral) best = i;
+        int64_t score = 0;
+        if (byAmount) {
+            score = sumValue1(r.facilityAbilities(i), kind);
+        } else {
+            for (const auto& q : r.facility(i).requirements) score += q.level;
+        }
+        if (!best || score >= bestScore) {  // a tie goes to the later facility
+            best = i;
+            bestScore = score;
+        }
     }
     return best;
 }
