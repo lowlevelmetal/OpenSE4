@@ -353,6 +353,7 @@ struct Applier {
     }
 
     R operator()(const cmd::Scrap& c) {
+        if (c.vehicle.valid() && c.moveFirst.system.valid()) return scrapAfterMove(c.vehicle, c.moveFirst);
         if (c.vehicle.valid()) return scrapWindow(c.vehicle, ScrapAction::Scrap);
         Colony* col = ownColony(s, e, c.facilityPlanet);
         if (!col) return R::fail("Not your planet");
@@ -403,6 +404,26 @@ struct Applier {
             s.removeDeadVehicles();
             sight::updateKnowledge(r, s);  // the system's sight is recalculated
         }
+        return {};
+    }
+
+    // The Scrap minister's Move To and Scrap (spec 05 §7.5 *Scrap*): the
+    // vehicle passes the Scrap test as it would at `to`, which holds an own
+    // space yard, and can move. Its list becomes the two orders in either turn
+    // style; movement makes the test again when it reaches the Scrap.
+    R scrapAfterMove(VehicleId id, Location to) {
+        Vehicle* v = ownVehicle(s, e, id);
+        if (!v || v->count <= 0) return R::fail("Not your vehicle");
+        if (!knownSystem(s, to.system) || !to.sector.valid()) return R::fail("Invalid destination");
+        if (!scrapYardAt(r, s, e, to)) return R::fail("Scrapping needs a space yard in the sector");
+        Vehicle there = *v;
+        there.location = to;
+        if (auto why = scrapActionProblem(r, s, e, there, ScrapAction::Scrap); !why.empty()) return R::fail(why);
+        if (v->status == VehicleStatus::Mothballed || vehicleMaxMovement(r, s, *v) <= 0) return R::fail("It cannot move");
+        const Order goThere{OrderKind::MoveTo, to};
+        const Order scrapThere{scrapOrderKind(ScrapAction::Scrap), to};
+        v->orders = {goThere, scrapThere};
+        v->repeatOrders = false;
         return {};
     }
 

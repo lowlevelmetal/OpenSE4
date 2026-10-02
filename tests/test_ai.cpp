@@ -20,6 +20,7 @@
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
 
@@ -5606,4 +5607,67 @@ TEST_CASE("ai: the maintenance caps count the empire's ships and bases of the mo
     // A second warship counts at once, though no maintenance was paid for it yet.
     addTestVehicle(s, r, warship, home);
     CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+}
+
+TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, sent to the nearest yard first; a base only at a yard") {
+    // Spec 05 §7.5 *Scrap* (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;   // not a tenth turn: no facility is looked at
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x < 6 ? 11 : 1, home.sector.y}};
+    REQUIRE(scrapYardAt(r, s, me, home));
+    REQUIRE_FALSE(scrapYardAt(r, s, me, away));
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId oldShip = typedDesign(s, r, me, "Old Hammer", "Test Frigate", crew, "Attack Ship", 2);
+    const DesignId newShip = typedDesign(s, r, me, "New Hammer", "Test Frigate", crew, "Attack Ship", 9);
+    const DesignId fortress = typedDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                          "Defense Base", 5);
+    const DesignId settler = typedDesign(s, r, me, "Settler", "Test Colony Hull",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Rock Pod"},
+                                         "Colony (Rock)", 1);
+    addTestVehicle(s, r, settler, away);   // the oldest design, but colony ships are never scrapped
+    const VehicleId fort = addTestVehicle(s, r, fortress, home).id;
+    addTestVehicle(s, r, newShip, home);
+    const VehicleId veteran = addTestVehicle(s, r, oldShip, away).id;
+    auto plan = [&](bool over) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = over ? Resources{1'000'000, 1'000'000, 1'000'000} : Resources{};
+        REQUIRE(p.overCap(0) == over);
+        ai::detail::planScrap(p);
+        return p.report().commands;
+    };
+    CHECK(countOf<cmd::Scrap>(plan(false)) == 0);
+    // The oldest design among the ships that can move, wherever it stands:
+    // a Move To the nearest sector with our yard, then Scrap.
+    std::vector<Command> cmds = plan(true);
+    REQUIRE(countOf<cmd::Scrap>(cmds) == 1);
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    CHECK(firstOf<cmd::Scrap>(cmds)->moveFirst == home);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
+    }
+    // A base at a yard whose design is older goes first, where it stands.
+    s.design(fortress).createdTurn = 1;
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == fort);
+    CHECK_FALSE(firstOf<cmd::Scrap>(cmds)->moveFirst.system.valid());
+    // A base away from a yard is no candidate.
+    s.vehicle(fort)->location = away;
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    // A candidate in a fleet leaves it first, as the Scrap order needs (inferred, Q72).
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {veteran}}).ok);
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::LeaveFleet>(cmds));
+    CHECK(firstOf<cmd::LeaveFleet>(cmds)->vehicle == veteran);
+    CHECK(countOf<cmd::Scrap>(cmds) == 1);
+    CHECK(applyAll(r, s, me, cmds).empty());
 }

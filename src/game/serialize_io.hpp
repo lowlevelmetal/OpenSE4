@@ -536,7 +536,7 @@ template <class Ar> void io(Ar& ar, cmd::DisbandFleet& c) { fields(ar, c.fleet);
 template <class Ar> void io(Ar& ar, cmd::SetFleetOptions& c) { fields(ar, c.fleet, c.formation, c.strategy); }
 template <class Ar> void io(Ar& ar, cmd::SetVehicleStrategy& c) { fields(ar, c.design, c.strategy); }
 template <class Ar> void io(Ar& ar, cmd::Rename& c) { fields(ar, c.vehicle, c.fleet, c.design, c.planet, c.name); }
-template <class Ar> void io(Ar& ar, cmd::Scrap& c) { fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot); }
+template <class Ar> void io(Ar& ar, cmd::Scrap& c) { fields(ar, c.vehicle, c.facilityPlanet, c.facilitySlot, c.moveFirst); }
 template <class Ar> void io(Ar& ar, cmd::Mothball& c) { fields(ar, c.vehicle, c.mothball); }
 template <class Ar> void io(Ar& ar, cmd::SetMinister& c) { fields(ar, c.vehicle, c.planet, c.empireWide, c.on); }
 template <class Ar> void io(Ar& ar, cmd::QueueTarget& c) { fields(ar, c.planet, c.vehicle); }

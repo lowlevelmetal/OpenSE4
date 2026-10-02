@@ -1970,13 +1970,14 @@ binary).
     atmosphere changers no longer needed). Observed under a debugger (2026-10-02): every
     ship that vanished outside a battle (16 in a 100-turn game: attack ships, mine sweepers,
     a carrier, layers) did so on a turn its empire was over the soft cap, and no base was
-    scrapped: an old attack ship far from a yard is chosen before a base at a yard. The
-    engine differs: `planScrap` (`ai_military.cpp`) takes only ships already at a yard and
-    scraps the oldest of them at once, so bases, which always sit at yards, go first; our
-    computers scrapped 0.7 bases per empire in 100 turns (of the 1.0 they built). A scratch
-    run with the original's candidates kept 0.42 bases per empire at turn 100 instead of
-    0.24 (the original: 0.4–0.6 in five games, then 1.2, and 0.0 in a game with no turn in
-    Infrastructure).
+    scrapped: an old attack ship far from a yard is chosen before a base at a yard.
+    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): a candidate at
+    a yard is scrapped where it stands (`cmd::Scrap`), and one elsewhere gets the Move To
+    and the Scrap in one command (`cmd::Scrap` with `moveFirst`, which only the ministers
+    give); the nearest yard is found as the Repair minister finds it. Its own choices are
+    question 72. The engine used to take only ships already at a yard, so bases, which
+    always sit at yards, went first: its computers scrapped 0.7 bases per empire in 100
+    turns of the 1.0 they built (spec 07 "Pace after the scrap, cap and fleet rules").
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -4052,3 +4053,21 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
     (two games). To verify: the maintenance and revenue compared at the test in turns 26–50
     in the original and in ours, and which vehicles make the difference.
+72. **Details the scrap rule leaves open** (§7.5 *Scrap*).
+    OpenSE4's choices since 2026-10-02 (inferred):
+    - unit groups (fighters, satellites, mines and the like in space) are never scrap
+      candidates, as before; "the empire's vehicles" is read as its ships and bases;
+    - a candidate in a fleet leaves it first (`cmd::LeaveFleet`), since the Scrap order is
+      refused to a fleet member (spec 03 §15); a cloaked candidate, which it refuses too, is
+      not scrapped, and no other candidate is tried that turn;
+    - "the nearest sector where it can be scrapped" is found as the Repair minister finds a
+      yard: our uncloaked colonies with a Space Yard facility and uncloaked ships with a
+      working yard, by travel, the earlier in the visiting order on a tie; a candidate that
+      no route takes to a yard is not scrapped, and no other candidate is tried that turn;
+    - the Move To and Scrap are given together, so the vehicle is scrapped when it reaches
+      the yard in the same movement, and its orders are not touched by the ministers after
+      the Scrap minister that turn.
+
+    To verify in the executable: whether unit groups are in the candidates' list, what
+    happens to a candidate in a fleet or cloaked, how the scrap place is chosen and what a
+    candidate with no reachable yard gets.
