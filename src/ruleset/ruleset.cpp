@@ -130,10 +130,10 @@ std::optional<std::filesystem::path> steamFolderFromRegistry() {
 #endif
 
 std::filesystem::path childIgnoringCase(const std::filesystem::path& dir, std::string_view name) {
+    // From the directory listing on every platform, so that the result is the
+    // spelling on disk everywhere (Windows' exists() would accept any case).
     namespace fs = std::filesystem;
     std::error_code ec;
-    fs::path exact = dir / name;
-    if (fs::exists(exact, ec)) return exact;
     auto lowered = [](std::string s) {
         for (char& c : s)
             if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
@@ -141,9 +141,12 @@ std::filesystem::path childIgnoringCase(const std::filesystem::path& dir, std::s
     };
     const std::string want = lowered(std::string(name));
     std::vector<fs::path> found;
-    for (const auto& e : fs::directory_iterator(dir, ec))
-        if (lowered(e.path().filename().string()) == want) found.push_back(e.path());
-    if (found.empty()) return exact;
+    for (const auto& e : fs::directory_iterator(dir, ec)) {
+        const std::string entry = e.path().filename().string();
+        if (entry == name) return e.path();
+        if (lowered(entry) == want) found.push_back(e.path());
+    }
+    if (found.empty()) return dir / name;
     return *std::min_element(found.begin(), found.end());  // the directory's order is unspecified
 }
 
