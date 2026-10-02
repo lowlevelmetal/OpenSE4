@@ -18,6 +18,7 @@
 #include "game/combat_battle.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/query.hpp"
 #include "game/sight.hpp"
@@ -372,6 +373,22 @@ bool Battle::setup() {
     // Colonies decloak when the battle begins (spec 01 §6.9, spec 04 §2).
     for (ObjectId o : forces.colonies) s_.colony(o)->cloaked = false;
     for (ObjectId o : forces.obstacles) addObstaclePiece(o);
+    // Every piece is decloaked for the battle, and any decloak runs the
+    // first-contact check in the system (spec 05 §3.1, confirmed: binary). The
+    // vehicles keep their cloaked status in the state during the battle (the
+    // end of the battle decides it, spec 04 §2), so they are lowered only for
+    // the check. The simulator's battles make no contact.
+    if (!simulated() && std::any_of(pieces_.begin(), pieces_.end(), [](const Piece& p) { return p.wasCloaked; })) {
+        std::vector<Vehicle*> lowered;
+        for (const Piece& p : pieces_)
+            if (Vehicle* v = p.kind != Kind::Planet && p.wasCloaked ? s_.vehicle(p.source) : nullptr;
+                v && v->status == VehicleStatus::Cloaked) {
+                v->status = VehicleStatus::Normal;
+                lowered.push_back(v);
+            }
+        diplomacy::firstContactIn(ctx_, where_.system);
+        for (Vehicle* v : lowered) v->status = VehicleStatus::Cloaked;
+    }
 
     // Defenders had a piece in the sector already; every planet has (confirmed: binary).
     for (EmpireId e : empires_)

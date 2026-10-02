@@ -555,6 +555,8 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 // cargo (spec 05 §8 "Design knowledge", confirmed: binary).
                 for (const UnitStack& u : c->cargo.units) learnForeign(s, receiver, u.design);
                 transferColony(s, item.planet, receiver);
+                // The system is now explored for the receiver: the first-contact check runs there (spec 05 §3.1).
+                firstContactIn(ctx, s.galaxy.object(item.planet).system);
                 break;
             }
             case PackageItem::Kind::Vehicle: {
@@ -568,6 +570,7 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
                 for (const UnitStack& st : groupStacks(*v)) learnForeign(s, receiver, st.design);
                 for (const UnitStack& u : v->cargo.units) learnForeign(s, receiver, u.design);
                 transferVehicle(s, item.vehicle, receiver);
+                firstContactIn(ctx, s.vehicle(item.vehicle)->location.system);  // as for a planet (spec 05 §3.1)
                 break;
             }
             case PackageItem::Kind::StarChart: {
@@ -663,6 +666,8 @@ void surrender(TurnContext& ctx, EmpireId from, EmpireId to) {
         logGoto(ctx.log(e.id, LogCategory::Politics, "Surrender", text), LogGoto::Empires);
         addHistory(s, e.id, e.id == from ? to : from, std::format("The {} surrendered to the {}", nameOf(s, from), nameOf(s, to)));
     }
+    // A surrender runs the first-contact check in every system (spec 05 §3.1, confirmed: binary).
+    firstContactEverywhere(ctx);
 }
 
 // ---- Turn phases ------------------------------------------------------------------------------------
@@ -690,53 +695,56 @@ void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date) {
     });
 }
 
-void updateContacts(TurnContext& ctx) {
+namespace {
+
+// Whether `viewer` detects some object of `owner` in `sys` now: a vehicle
+// there, or a colony there, that passes the detection rule of spec 01 §6.3
+// by the current positions and sensors (a cloaked colony's cloak levels
+// included, spec 01 §6.9).
+bool detectsIn(const Rules& r, const GameState& s, EmpireId viewer, EmpireId owner, SystemId sys) {
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.owner == owner && v.location.system == sys && sight::canSeeVehicle(r, s, viewer, v)) return true;
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (const Colony* c = s.colony(o); c && c->owner == owner && sight::canSeeColony(r, s, viewer, o)) return true;
+    return false;
+}
+
+} // namespace
+
+void firstContactIn(TurnContext& ctx, SystemId sys) {
     GameState& s = ctx.state;
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size()) return;
     const size_t n = s.empires.size();
-    // What each empire detects this turn, as (system, owner) pairs: foreign
-    // vehicles it sees, and colonies that pass the detection rule (spec 01
-    // §6.3), a cloaked colony's cloak levels included (spec 01 §6.9).
-    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> detects(n);
-    for (const Empire& e : s.empires) {
-        if (!e.alive) continue;
-        auto& list = detects[e.id.index()];
-        for (VehicleId id : e.knowledge.visibleVehicles)
-            if (const Vehicle* v = s.vehicle(id); v && living(s, v->owner) && v->owner != e.id)
-                list.emplace_back(v->location.system.value, v->owner.value);
-    }
-    for (const auto& c : s.colonies) {
-        if (!c || !living(s, c->owner)) continue;
-        const SystemId sys = s.galaxy.object(c->planet).system;
-        for (const Empire& e : s.empires)
-            if (e.alive && e.id != c->owner && sys.index() < e.knowledge.present.size() && e.knowledge.present[sys.index()] &&
-                sight::canSeeColony(ctx.rules, s, e.id, c->planet))
-                detects[e.id.index()].emplace_back(sys.value, c->owner.value);
-    }
-    for (auto& list : detects) {
-        std::sort(list.begin(), list.end());
-        list.erase(std::unique(list.begin(), list.end()), list.end());
-    }
-    // Contact needs mutual detection in one system (spec 05 §3.1, confirmed: binary).
-    auto mutual = [&](size_t a, size_t b) {
-        for (const auto& [sys, owner] : detects[a])
-            if (owner == b && std::binary_search(detects[b].begin(), detects[b].end(), std::pair{sys, static_cast<uint32_t>(a)})) return true;
-        return false;
-    };
-    // ... and a warp path from each side's colonies to a colony of the other
-    // (spec 05 §3.1, confirmed: binary), the test the contact check repeats
-    // every turn. Every warp link works both ways (spec 01 §3.5), so the two
-    // directions agree; checking both keeps a new contact from being lost at
-    // the next check.
+    // The living empires with an object in the system: only they can detect
+    // each other there.
+    std::vector<uint8_t> here(n, 0);
+    for (const Vehicle& v : s.vehicles)
+        if (v.count > 0 && v.location.system == sys && living(s, v.owner)) here[v.owner.index()] = 1;
+    for (ObjectId o : s.galaxy.system(sys).objects)
+        if (const Colony* c = s.colony(o); c && living(s, c->owner)) here[c->owner.index()] = 1;
+    // Contact needs mutual detection in the system and a warp path from each
+    // side's colonies to a colony of the other (spec 05 §3.1, confirmed:
+    // binary), the test the contact check repeats every turn. Every warp link
+    // works both ways (spec 01 §3.5), so the two directions agree; checking
+    // both keeps a new contact from being lost at the next check.
     std::vector<std::optional<std::vector<uint8_t>>> reach(n);
     auto linked = [&](size_t from, size_t to) {
         if (!reach[from]) reach[from] = warpReach(s, EmpireId{from});
         return colonyIn(s, *reach[from], EmpireId{to});
     };
-    for (size_t a = 0; a < n; ++a)
-        for (size_t b = a + 1; b < n; ++b)
-            if (s.empires[a].alive && s.empires[b].alive && !s.empires[a].relations[b].contact && mutual(a, b) && linked(a, b) &&
-                linked(b, a))
-                makeContact(ctx, EmpireId{a}, EmpireId{b});
+    for (size_t a = 0; a < n; ++a) {
+        if (!here[a]) continue;
+        for (size_t b = a + 1; b < n; ++b) {
+            if (!here[b] || !s.empires[a].alive || !s.empires[b].alive || s.empires[a].relations[b].contact) continue;
+            const EmpireId ea{a}, eb{b};
+            if (!detectsIn(ctx.rules, s, ea, eb, sys) || !detectsIn(ctx.rules, s, eb, ea, sys)) continue;
+            if (linked(a, b) && linked(b, a)) makeContact(ctx, ea, eb);
+        }
+    }
+}
+
+void firstContactEverywhere(TurnContext& ctx) {
+    for (size_t i = 0; i < ctx.state.galaxy.systems.size(); ++i) firstContactIn(ctx, SystemId{i});
 }
 
 void checkContacts(TurnContext& ctx) {

@@ -706,7 +706,8 @@ struct Applier {
         col->cloaked = false;
         sight::updateKnowledge(r, s);
         TurnContext contact{r, s, {}, {}, {}};
-        diplomacy::updateContacts(contact);  // Decloak runs the first-contact check at once
+        // Decloak runs the first-contact check at once, in the colony's system (spec 05 §3.1).
+        diplomacy::firstContactIn(contact, s.galaxy.object(c.planet).system);
         return {};
     }
 

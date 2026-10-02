@@ -437,3 +437,44 @@ TEST_CASE("maps: the example in docs/MAPS.md loads") {
     CHECK(m->map.startingPoints[0].player == 0);
     CHECK(m->map.startingPoints[1].player == kCommonStart);
 }
+
+TEST_CASE("maps: the first-contact check runs in every system when the game is created (spec 05 §3.1)") {
+    const Rules& r = test::engineRules();
+    QuadrantOptions qo;
+    qo.systemCount = 12;
+    Rng rng(23);
+    auto gen = generateQuadrant(r.data(), qo, rng);
+    REQUIRE(gen.has_value());
+    auto start = [&](bool together) {
+        QuadrantMap m;
+        m.name = "Contact map";
+        m.galaxy = gen->galaxy;
+        const Sector a = emptySectors(m.galaxy, SystemId{3u}).front();
+        const Sector b = emptySectors(m.galaxy, together ? SystemId{3u} : SystemId{7u}).back();
+        m.startingPoints = {{SystemId{3u}, a, 0}, {together ? SystemId{3u} : SystemId{7u}, b, 1}};
+        GameSetup setup;
+        setup.seed = 4;
+        for (int i = 0; i < 2; ++i) {
+            EmpireSetup e;
+            e.name = std::format("Neighbour {}", i + 1);
+            setup.empires.push_back(e);
+        }
+        setup.map = m;
+        auto s = createGame(r, setup);
+        REQUIRE_MESSAGE(s.has_value(), (s ? std::string{} : s.error()));
+        return std::move(*s);
+    };
+    // Two homeworlds in one system detect each other there when the game is
+    // created: they start in contact, and each has logged it.
+    const GameState together = start(true);
+    CHECK(together.empires[0].relations[1].contact);
+    CHECK(together.empires[1].relations[0].contact);
+    auto logged = [](const Empire& e) {
+        return std::any_of(e.log.begin(), e.log.end(), [](const LogEntry& l) { return l.title == "First Contact"; });
+    };
+    CHECK(logged(together.empires[0]));
+    CHECK(logged(together.empires[1]));
+    // Apart, nobody meets at creation.
+    const GameState apart = start(false);
+    CHECK_FALSE(apart.empires[0].relations[1].contact);
+}

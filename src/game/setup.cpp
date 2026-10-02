@@ -2,11 +2,13 @@
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/generate.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
 #include "game/sight.hpp"
+#include "game/turn.hpp"
 #include "core/hash.hpp"
 
 #include <algorithm>
@@ -491,6 +493,12 @@ std::expected<GameState, std::string> createGame(const Rules& r, const GameSetup
         }
 
     sight::updateKnowledge(r, s);
+    // The first-contact check runs once in every system when the game is
+    // created, after the empires are placed (spec 05 §3.1, confirmed: binary).
+    {
+        TurnContext contact{r, s, {}, {}, {}};
+        diplomacy::firstContactEverywhere(contact);
+    }
     // Starting Resources plus one turn of production for the stockpile and
     // research, intelligence at 0 (spec 02 §9, spec 05 §1.1, confirmed: binary).
     research::openingPools(r, s);

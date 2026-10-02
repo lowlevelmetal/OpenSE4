@@ -96,8 +96,9 @@ void addQuestions(LiveContext& lc, const std::vector<EntryQuestion>& qs) {
     }
 }
 
-// The groups move, fight and colonize now; then sight and first contact
-// follow the new positions.
+// The groups move, fight and colonize now; then sight follows the new
+// positions. First contact is checked only at the moments spec 05 §3.1
+// names (a warp arrival, a decloak, ...), never after a move as such.
 void carryOut(LiveContext& lc, const movement::LiveMove& move) {
     TurnContext& ctx = lc.ctx;
     GameState& s = ctx.state;
@@ -105,7 +106,6 @@ void carryOut(LiveContext& lc, const movement::LiveMove& move) {
     s.removeDeadVehicles();
     pruneQuestions(s);
     sight::updateKnowledge(ctx.rules, s);
-    diplomacy::updateContacts(ctx);
 }
 
 // What a command sets in motion: the groups whose orders it set, and
@@ -296,7 +296,6 @@ void endGameTurn(TurnContext& ctx) {
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
     sight::updateKnowledge(r, s);
-    diplomacy::updateContacts(ctx);
     ai::rememberAiEvents(ctx);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });
     ++s.turn;
@@ -325,7 +324,6 @@ void finishPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     empireEndOfTurn(ctx, e, ministersPlan(s, e, control));
     s.removeDeadVehicles();
     sight::updateKnowledge(ctx.rules, s);
-    diplomacy::updateContacts(ctx);
     passTurn(ctx, e);
 }
 

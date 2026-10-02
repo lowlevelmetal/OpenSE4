@@ -102,9 +102,14 @@ empires are skipped.
    acting day with movement left, so a colony can appear in any phase.
    `TurnOptions::movementDay` lets a caller watch the state after each day without
    changing it (the client's movement log replay plays a turn again from its start
-   with it, docs/spec/06 §7 Q51). Sight and first
-   contact are then updated: two empires meet when each detects the other in one system
-   and a warp path links their colonies (`diplomacy::updateContacts`).
+   with it, docs/spec/06 §7 Q51). Sight is then updated.
+   **First contact** is checked in one system at a time, only at the moments spec 05
+   §3.1 names (`diplomacy::firstContactIn`): a group's arrival through a warp point, any
+   decloak (orders, ministers, battles, supply), a logged event, a package's planet or
+   vehicle and a rebellion project; in every system when the game is created and after a
+   surrender (`firstContactEverywhere`). Two empires meet when each detects the other in
+   that system now and a warp path links their colonies; moves within a system never
+   make contact.
 6. **End-of-turn processing**, one empire at a time (`empireEndOfTurn`), each followed by
    that empire's destruction check (`score::checkDestruction`):
    1. the ministers' end-of-turn actions (`ai::planEconomyStep`: Design, Research,
@@ -145,7 +150,7 @@ empires are skipped.
 9. **Event step:** hazards (`movement::runStellarHazards`), the timed events that are due
    (`events::fireDueEvents`), then one roll for a new event for the whole galaxy
    (`events::rollNewEvent`).
-10. **End.** Per-turn flags are cleared, sight and contact follow the events, the AI
+10. **End.** Per-turn flags are cleared, sight follows the events, the AI
     remembers the turn's battles and spies (`ai::rememberAiEvents`), the turn number
     advances and `economy::updateReports` projects next turn's income.
 
@@ -186,7 +191,7 @@ order, and `GameState::playerTurn` records whose turn it is (`turn_based.cpp`, A
    human is first asked whether to enter a sector with visible enemies, and answers with
    `cmd::EnterSector`. Colony ships that reach their planet with movement left found the
    colony at once. Messages take effect when
-   sent (`diplomacy::deliverMessages`), and sight and contact follow every move.
+   sent (`diplomacy::deliverMessages`), and sight follows every move (first contact only at the moments of step 5).
 3. **End of the player's turn** (`endPlayerTurn`): `empireEndOfTurn`, then the next living
    empire's turn starts. Computer players take their turns the same way, one after
    another (`resumeTurnBased`).

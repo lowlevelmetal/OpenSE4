@@ -15,6 +15,13 @@ points leads from the systems of your colonies to a colony of theirs. Both empir
 **First Contact** entry in the log, and their treaty becomes **None**: met, but with no treaty.
 An empire without colonies makes no contact.
 
+The game looks for new contacts only at certain moments, in the system concerned: when ships
+arrive there through a warp point, when a ship, unit group or colony there lowers its cloak
+(by an order, at the start of a battle, or when its cloak fails), when an event happens there,
+and when a planet or ship there changes hands in a trade or surrender. Ships that only move
+around inside a system, even next to a stranger's colony, make no contact until one of those
+moments comes.
+
 Contact can also be **lost**. Once a turn, each empire follows the warp points outward from its
 colonies. When no colony of an empire it has met can be reached that way any more (for example
 because a warp point was closed, or because one side lost its last colony), contact with that

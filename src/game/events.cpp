@@ -11,6 +11,7 @@
 #include "game/research.hpp"
 #include "game/score.hpp"
 #include "game/setup.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 
 #include <algorithm>
@@ -1052,6 +1053,10 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             const bool intel = living(s, t.source);
             if (!intel || rng.range(1, 4) == 1) {
                 if (!breakAway(ctx, t.object).valid()) return out;
+                // An intelligence project's rebellion runs the first-contact
+                // check in the planet's system; as an event, the event's own
+                // check covers it (spec 05 §3.1, confirmed: binary).
+                if (intel) diplomacy::firstContactIn(ctx, s.galaxy.object(t.object).system);
             } else if (rng.range(1, 4) == 1) {
                 diplomacy::transferColony(s, t.object, t.source);
                 ctx.mood(owner, "Any Planet Lost");
@@ -1474,6 +1479,13 @@ void sendMessages(TurnContext& ctx, const ruleset::EventType& ev, std::span<cons
     for (EmpireId e : recipients(ctx.state, ev, t, where)) {
         ctx.log(e, LogCategory::Events, title, text, where, ev.picture);
         addHistory(ctx.state, e, {}, line, where);
+    }
+    // Once the event is logged, sight is updated and the first-contact check
+    // runs in its system (spec 05 §3.1, confirmed: binary). A timed event's
+    // start message counts as such a log too (inferred, spec 05 question 53).
+    if (where) {
+        sight::updateKnowledge(ctx.rules, ctx.state);
+        diplomacy::firstContactIn(ctx, where->system);
     }
 }
 

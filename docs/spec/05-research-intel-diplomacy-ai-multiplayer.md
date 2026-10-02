@@ -388,12 +388,16 @@ ability never changes anything in the stock game.
   one, known or not, in its own direction). Their treaty goes from "no contact" to None and
   each logs "First Contact". So an empire without colonies makes no contact.
 
-  The engine differs: `diplomacy::updateContacts` (`diplomacy.cpp`) scans the whole galaxy
-  and is called after every live move and at the end of a player's turn and of the game
-  turn (`turn_based.cpp`: `carryOut`, `finishPlayerTurn`, `endGameTurn`), after movement,
-  combat and events (`turn.cpp`), and for a colony's Decloak (`cmd::CloakColony`), but
-  never at setup. It must take a system and run only at the moments above, in that
-  system; the galaxy-wide calls must go. The pair rule stays as it is.
+  Since 2026-10-01 the engine follows this (`diplomacy::firstContactIn`, and
+  `firstContactEverywhere` at game creation and after a surrender): a warp arrival
+  (`movement.cpp`, after the passage), every decloak (the Decloak order, the Ship Cloaking
+  minister's and a computer colony's decloak before an order, a drone's at its pursuit's
+  target, a sweeper group's in a tagged minefield, a cloak lost after an action or at the
+  supply step, the start of a battle that decloaks a piece, a colony's Decloak), a logged
+  event, a package's planet or vehicle and a rebellion project. Detection is worked out
+  from the current positions and sensors. A timed event's start message counts as the
+  event being logged (inferred, question 53). The colony's automatic decloak at a
+  recalculation is spec 01 §14 Q44.
 - **What contact enables** [M]: messages, treaties, trades and intel.
 - **Losing contact** (confirmed: binary): once per game turn, after the design cleanup and
   before the victory check, in both turn styles (§8), each living empire A checks every
@@ -3267,3 +3271,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       including those its Politics minister sends (`Planner::runOrders` → `planPolitics`).
       The check must apply only to messages the player writes.
     The recipient's side matches (`CarryOutDemand`, `speechLine`).
+53. **The first-contact check of a timed event** (§3.1): the check runs in an event's
+    system "once the event is logged". A timed event logs twice: its start message when it
+    begins and its message when it strikes. OpenSE4 runs the check after each, whenever
+    the event has a location, whoever its messages reach (inferred). To verify: does the
+    start message of a timed event run the check too, and does an event whose messages
+    reach nobody (`Message To` None) run it?

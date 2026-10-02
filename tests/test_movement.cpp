@@ -6,6 +6,7 @@
 #include "game/ai.hpp"
 #include "game/combat_detail.hpp"
 #include "game/commands.hpp"
+#include "game/diplomacy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/serialize.hpp"
@@ -15,6 +16,7 @@
 
 #include <format>
 #include <map>
+#include <tuple>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -3961,4 +3963,83 @@ TEST_CASE("movement: the Ship Orders options clear orders after a warp into anot
     CHECK_FALSE(apply(r, w.s, kA, cmd::SetEncounterOptions{static_cast<EncounterClear>(3)}).ok);
     CHECK(apply(r, w.s, kA, cmd::SetEncounterOptions{EncounterClear::Any}).ok);
     CHECK(w.s.empire(kA).clearOrdersOnEncounter == EncounterClear::Any);
+}
+
+// ---- First contact at set moments (spec 05 §3.1) --------------------------------------------------
+
+namespace {
+
+// Two empires with a colony each in systems linked by a warp point, both
+// explored by both, not yet in contact.
+struct ContactWorld {
+    World w;
+    SystemId a, b;
+    ObjectId wa, wb;
+    ContactWorld() {
+        a = w.system("A");
+        b = w.system("B", 5, 0);
+        std::tie(wa, wb) = w.link(a, {6, 0}, b, {6, 12});
+        w.colony(w.planet(a, {6, 6}), kA, 1000);
+        w.colony(w.planet(b, {6, 6}), kB, 1000);
+        w.exploreAll(kA);
+        w.exploreAll(kB);
+    }
+    bool met() const { return w.s.empire(kA).relation(kB).contact && w.s.empire(kB).relation(kA).contact; }
+};
+
+} // namespace
+
+TEST_CASE("first contact: a warp arrival runs the check in the system reached; steps within a system never do") {
+    ContactWorld c;
+    // B's scout already sits in A's system and moves about there: both
+    // detect each other, but no moment of spec 05 §3.1 comes.
+    const VehicleId scout = c.w.spawn(c.w.ship(kB, "Scout", 6), at(c.a, 0, 0));
+    fuel(c.w, scout);
+    c.w.order(scout, moveTo(c.a, 4, 4));
+    c.w.move();
+    REQUIRE(c.w.v(scout).location == at(c.a, 4, 4));
+    CHECK_FALSE(c.met());
+    // A's ship jumps into B's system: the arrival runs the check there.
+    const VehicleId traveller = c.w.spawn(c.w.ship(kA, "Traveller", 6), at(c.a, 6, 0));
+    fuel(c.w, traveller);
+    c.w.order(traveller, mk(OrderKind::Warp, {}, c.wa));
+    c.w.move();
+    REQUIRE(c.w.v(traveller).location.system == c.b);
+    CHECK(c.met());
+    CHECK(c.w.logged(kA, "First Contact"));
+    CHECK(c.w.logged(kB, "First Contact"));
+}
+
+TEST_CASE("first contact: a Move To through a warp point checks the arrival system") {
+    ContactWorld c;
+    const VehicleId traveller = c.w.spawn(c.w.ship(kA, "Traveller", 6), at(c.a, 6, 2));
+    fuel(c.w, traveller);
+    c.w.order(traveller, moveTo(c.b, 6, 10));
+    c.w.move();
+    REQUIRE(c.w.v(traveller).location.system == c.b);
+    CHECK(c.met());
+}
+
+TEST_CASE("first contact: a ship's Decloak order and a cloak lost at the supply step run the check") {
+    for (const bool supply : {false, true}) {
+        CAPTURE(supply);
+        ContactWorld c;
+        // B's cloaked ship in A's system: A cannot see it, so no contact.
+        const VehicleId ghost = c.w.spawn(c.w.ship(kB, "Ghost", 2, {"Mv Cloak"}), at(c.a, 2, 2));
+        c.w.v(ghost).status = VehicleStatus::Cloaked;
+        {
+            TurnContext ctx{c.w.rules(), c.w.s, {}, {}, {}};
+            diplomacy::firstContactIn(ctx, c.a);
+        }
+        REQUIRE_FALSE(c.met());
+        if (supply) {
+            c.w.v(ghost).supply = 0;  // the cloak drops at the end-of-turn supply step
+            c.w.upkeep();
+        } else {
+            c.w.order(ghost, mk(OrderKind::Decloak));
+            c.w.move();
+        }
+        REQUIRE(c.w.v(ghost).status == VehicleStatus::Normal);
+        CHECK(c.met());
+    }
 }

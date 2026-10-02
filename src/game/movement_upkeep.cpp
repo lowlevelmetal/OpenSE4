@@ -7,6 +7,7 @@
 #include "game/ai.hpp"
 #include "game/combat.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
@@ -260,6 +261,8 @@ void supplyEmpire(TurnContext& ctx, EmpireId e) {
     auto decloak = [&](Vehicle& v) {
         v.status = VehicleStatus::Normal;
         ctx.log(e, LogCategory::Misc, std::format("{} decloaked", v.name), "Its cloak could no longer be kept up.", v.location);
+        // Any decloak runs the first-contact check in its system (spec 05 §3.1).
+        diplomacy::firstContactIn(ctx, v.location.system);
     };
     // Units pay every turn, without racial scaling.
     for (VehicleId id : vehiclesInObjectOrder(s)) {

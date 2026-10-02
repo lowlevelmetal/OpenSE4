@@ -241,7 +241,7 @@ Every rule of this section follows the spec. On 2026-09-30 the engine's own choi
   other: checked once per game turn in both turn styles, after the design cleanup and before
   the victory check, it returns that side to "no contact", drops its intelligence projects
   against the other and logs "Contact Lost", which the human player's history file records;
-  first contact needs the same path (`diplomacy::checkContacts`, `updateContacts`,
+  first contact needs the same path (`diplomacy::checkContacts`, `firstContactIn`,
   `warpReach`; Q13, §3.1).
 - An "Any" political operation draws its third empire among the living empires the source
   has met, other than the source and the target, and fails without one (`effects::pickTarget`, Q38).
@@ -316,12 +316,19 @@ decloak and cloak again. The engine's choices (how a simultaneous host receives 
 Cloak, which loads recalculate, upgrades) are §14 Q44, settled from the executable later on
 2026-10-01; they leave four rows below.
 
+First contact follows spec 05 §3.1 since the third pass of 2026-10-01: the check runs in one
+system at a time and only at the moments the spec names (a warp arrival, every decloak, a
+logged event, a package's planet or vehicle, a rebellion project; every system at game
+creation and after a surrender), by the current positions and sensors
+(`diplomacy::firstContactIn`, `firstContactEverywhere`); the galaxy-wide passes after moves,
+turns and events are gone. Whether a timed event's start message also counts is spec 05
+question 53.
+
 These rows are where the engine differs:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Starting assets (`setup.cpp`, "Starting designs and ships"; `client/classic/frontend.cpp` `quickStartSetup`) | Every empire gets four designs of its own (`autoDesign`), two scouts and a colonizer | Spec 01 §3.6 "Starting assets", §2.1: no empire gets ships or designs at creation; computer players design in their first turn; Quick Start gives the human one Design minister run | H |
-| When first contact is checked (`diplomacy.cpp` `updateContacts`; callers in `turn_based.cpp`, `turn.cpp`, `commands.cpp`) | Galaxy-wide, after every live move, each player's and game turn's end, movement, combat and events; never at setup | Spec 05 §3.1: one system at a time, only at game creation, warp arrival, any decloak, a logged event, a surrender, a package's planet or vehicle and a rebellion project | M |
 | A Decloak in a simultaneous player's orders (`commands.cpp` `cmd::CloakColony`) | The host runs the full first-contact check, so both empires meet and log it | Spec 01 §14 Q44: only the acting empire's side reaches the host (treaty None, its own entry); the other side waits for the host's next first-contact check in that system | L |
 | Colonies after a PBEM file is read (`client/classic/pbem_play.cpp` `loadPbemGame`, `net/pbem.cpp` `processGameFile`) | Loaded without recalculating colonies | Spec 01 §6.9, §14 Q44: every reading of a game file recalculates every colony | L |
 | A completed facility upgrade (`economy_queue.cpp` `completeItem`, Upgrade branch) | Recalculates the colony's cloak and sensor levels | Spec 01 §14 Q44, spec 02 §6.6: it does not; the new level counts from the next recalculation | L |

@@ -1172,3 +1172,56 @@ TEST_CASE("installed data set: every intelligence project and event type is impl
     }
     CHECK(s.turn == 26);
 }
+
+TEST_CASE("events: a logged event runs the first-contact check in its system (spec 05 §3.1)") {
+    for (const int turns : {0, 2}) {
+        CAPTURE(turns);
+        auto r = rulesWith({event(Effect::PlanetPopulationChange, -1, "Low", "Owner", turns)});
+        GameState s = newPoliticsGame();
+        const ObjectId homeB = homeworld(s, kB).planet;
+        // A's ship sits at B's home: they would detect each other there, but
+        // no check has run.
+        VehicleId shipOfA;
+        for (const Vehicle& v : s.vehicles)
+            if (v.owner == kA) shipOfA = v.id;
+        s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeB);
+        REQUIRE_FALSE(diplomacy::inContact(s, kA, kB));
+        TurnContext ctx = context(*r, s);
+        Rng rng(1);
+        // An event at B's home, logged at once (or its start message, for a
+        // timed event), brings the contact.
+        REQUIRE(events::trigger(ctx, 0, onObject(kB, homeB), rng));
+        CHECK(diplomacy::inContact(s, kA, kB));
+        CHECK_FALSE(diplomacy::inContact(s, kA, kC));
+    }
+}
+
+TEST_CASE("events: a rebellion project runs the first-contact check in the planet's system") {
+    GameState s = newPoliticsGame(5, 3, 12);
+    // B's second colony, where A's ship sits, rebels through A's project.
+    const ObjectId rebel = secondColony(s, kB, 500);
+    VehicleId shipOfA;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA) shipOfA = v.id;
+    s.vehicle(shipOfA)->location = locationOf(s.galaxy, rebel);
+    const size_t before = s.empires.size();
+    // The project's first roll of 1–4 must be 1: try seeds until it is.
+    for (uint64_t seed = 1; seed < 64 && s.empires.size() == before; ++seed) {
+        GameState trial = s;
+        effects::Target t = onObject(kB, rebel);
+        t.source = kA;
+        Rng rng(seed);
+        TurnContext ctx = context(politicsRules(), trial);
+        const effects::Outcome out = effects::apply(ctx, Effect::PlanetPopulationRebel, t, 1, rng);
+        if (!out.applied || trial.empires.size() == before || trial.colony(rebel)->owner == kA) continue;
+        s = std::move(trial);
+    }
+    REQUIRE(s.empires.size() == before + 1);
+    const EmpireId fresh{before};
+    REQUIRE(s.colony(rebel)->owner == fresh);
+    // The new empire meets A, whose ship detects it in that system, and B,
+    // whose home colony shares the system.
+    CHECK(diplomacy::inContact(s, fresh, kA));
+    CHECK(diplomacy::inContact(s, fresh, kB));
+    CHECK_FALSE(diplomacy::inContact(s, fresh, kC));
+}

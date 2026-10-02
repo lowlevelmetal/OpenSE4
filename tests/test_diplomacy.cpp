@@ -10,6 +10,7 @@
 #include "game/score.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
 
@@ -628,30 +629,28 @@ TEST_CASE("diplomacy: surrender and independence") {
     CHECK(hasLog(s, kC, "Independence Granted"));
 }
 
-TEST_CASE("diplomacy: first contact needs mutual detection in one system and a warp path") {
+TEST_CASE("diplomacy: first contact runs in one system, needs mutual detection there and a warp path") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     TurnContext ctx = context(s);
     const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
+    const SystemId homeC = s.galaxy.object(homeworld(s, kC).planet).system;
     VehicleId shipOfA;
     for (const Vehicle& v : s.vehicles)
         if (v.owner == kA) shipOfA = v.id;
     REQUIRE(diplomacy::warpLinked(s, kA, kB));
     REQUIRE(diplomacy::warpLinked(s, kB, kA));
+    REQUIRE_FALSE(diplomacy::inContact(s, kA, kB));
 
-    // A has presence at B's home and sees B's colony, but B does not see A: no contact.
-    s.empire(kA).knowledge.present[homeB.index()] = 1;
-    diplomacy::updateContacts(ctx);
-    CHECK_FALSE(diplomacy::inContact(s, kA, kB));
-
-    // B sees A's ship, but in another system: still none.
-    s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kC).planet);
-    s.empire(kB).knowledge.visibleVehicles = {shipOfA};
-    diplomacy::updateContacts(ctx);
+    // A's ship sits at B's home: they detect each other there, but the check
+    // runs only in the system it is given (spec 05 §3.1).
+    s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kB).planet);
+    REQUIRE(sight::canSeeVehicle(r, s, kB, *s.vehicle(shipOfA)));
+    REQUIRE(sight::canSeeColony(r, s, kA, homeworld(s, kB).planet));
+    diplomacy::firstContactIn(ctx, homeC);
     CHECK_FALSE(diplomacy::inContact(s, kA, kB));
 
     // Both detect each other in B's home system, but no warp path links them: none.
-    s.vehicle(shipOfA)->location = locationOf(s.galaxy, homeworld(s, kB).planet);
     std::vector<ObjectId> links;
     for (SpaceObject& o : s.galaxy.objects)
         if (o.kind == ObjectKind::WarpPoint) {
@@ -659,21 +658,27 @@ TEST_CASE("diplomacy: first contact needs mutual detection in one system and a w
             o.destination = ObjectId{};
         }
     CHECK_FALSE(diplomacy::warpLinked(s, kA, kB));
-    diplomacy::updateContacts(ctx);
+    diplomacy::firstContactIn(ctx, homeB);
     CHECK_FALSE(diplomacy::inContact(s, kA, kB));
 
-    // With the warp links back: contact, both ways.
+    // With the warp links back: contact, both ways, in that system only.
     {
         size_t i = 0;
         for (SpaceObject& o : s.galaxy.objects)
             if (o.kind == ObjectKind::WarpPoint) o.destination = links[i++];
     }
-    diplomacy::updateContacts(ctx);
+    diplomacy::firstContactIn(ctx, homeB);
     CHECK(diplomacy::inContact(s, kA, kB));
     CHECK(diplomacy::inContact(s, kB, kA));
     CHECK_FALSE(diplomacy::inContact(s, kA, kC));
     CHECK(hasLog(s, kA, "First Contact"));
     CHECK(hasLog(s, kB, "First Contact"));
+
+    // C's home holds nothing of A's: the check there finds no pair; the
+    // galaxy-wide form (game creation, surrender) checks every system.
+    diplomacy::firstContactEverywhere(ctx);
+    CHECK_FALSE(diplomacy::inContact(s, kA, kC));
+    CHECK_FALSE(diplomacy::inContact(s, kB, kC));
 
     // Nobody sees anybody any more: the contact check keeps contact while the path exists.
     diplomacy::setTreaty(ctx, kA, kB, Treaty::NonAggression);
@@ -913,4 +918,33 @@ TEST_CASE("diplomacy: a player's request about a third empire must name a living
     nextTurn(s);
     s.empire(kA).kind = PlayerKind::Computer;
     CHECK(request(MessageType::RequestAttackEmpire, kD).ok);
+}
+
+TEST_CASE("diplomacy: a vehicle handed over in a package and a surrender run the first-contact check") {
+    for (const bool surrender : {false, true}) {
+        CAPTURE(surrender);
+        GameState s = newPoliticsGame();
+        setContact(s, kA, kB);
+        TurnContext ctx = context(s);
+        // A's scout waits at C's home; nobody has met C.
+        VehicleId scout;
+        for (const Vehicle& v : s.vehicles)
+            if (v.owner == kA) scout = v.id;
+        s.vehicle(scout)->location = locationOf(s.galaxy, homeworld(s, kC).planet);
+        REQUIRE_FALSE(diplomacy::inContact(s, kB, kC));
+        if (surrender) {
+            send(s, kA, kB, MessageType::Surrender);
+            diplomacy::deliverMessages(ctx);
+        } else {
+            PackageItem ship;
+            ship.kind = PackageItem::Kind::Vehicle;
+            ship.vehicle = scout;
+            diplomacy::executePackage(ctx, kA, kB, std::vector<PackageItem>{ship});
+        }
+        REQUIRE(s.vehicle(scout)->owner == kB);
+        // B's ship now sits at C's home: they meet there.
+        CHECK(diplomacy::inContact(s, kB, kC));
+        CHECK(hasLog(s, kC, "First Contact"));
+        CHECK_FALSE(diplomacy::inContact(s, kA, kC));
+    }
 }

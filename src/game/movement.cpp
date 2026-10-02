@@ -22,6 +22,7 @@
 #include "game/combat.hpp"
 #include "game/combat_detail.hpp"
 #include "game/design.hpp"
+#include "game/diplomacy.hpp"
 #include "game/economy.hpp"
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
@@ -589,16 +590,24 @@ private:
     // After every daily action: the depot check (§7), and a cloak drops at 0
     // supply or when it can no longer work (§8).
     void afterAction() {
+        std::vector<SystemId> decloakedIn;
         for (VehicleId id : participants_) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             if (resupplyDepotAt(r_, s_, v->owner, v->location)) refillSupply(r_, s_, *v);
             if (v->status == VehicleStatus::Cloaked &&
-                ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v)))
+                ((v->supply <= 0 && !vehicleHasUnlimitedSupply(r_, s_, *v)) || !canCloak(r_, s_, *v))) {
                 v->status = VehicleStatus::Normal;
+                decloakedIn.push_back(v->location.system);
+            }
         }
         participants_.clear();
+        for (SystemId sys : decloakedIn) decloaked(sys);
     }
+
+    // Any decloak of a ship, unit group or colony, whatever its cause, runs
+    // the first-contact check in its system (spec 05 §3.1, confirmed: binary).
+    void decloaked(SystemId sys) { diplomacy::firstContactIn(ctx_, sys); }
 
     // The order stays where it is, as the execution left it (a Colonize whose
     // colonists came aboard): in each list whose head it still is.
@@ -917,7 +926,7 @@ private:
         prune(g);
         if (g.members.empty()) return;
         // A sweeper group entering a tagged minefield where mines act decloaks first (§12).
-        decloakSweepers(r_, s_, next, g.members);
+        if (decloakSweepers(r_, s_, next, g.members)) decloaked(next.system);
         if (via.valid()) {
             for (size_t i = 0; i < g.members.size(); ++i) sight::learnWarpLink(s_, g.owner, via);
             // Turbulence: a 50 % chance per transit that every member takes the
@@ -941,6 +950,10 @@ private:
             if (g.members.empty()) return;
         }
         arrive(g);
+        // A group arriving through a warp point, some member still there after
+        // the passage, runs the first-contact check in the system it reached
+        // (spec 05 §3.1, confirmed: binary); in-system steps never do.
+        if (via.valid()) diplomacy::firstContactIn(ctx_, next.system);
     }
 
     void arrive(Group& g) {
@@ -977,7 +990,10 @@ private:
             // not it was cloaked before (spec 01 §6.9, confirmed: binary).
             Colony* c = s_.colony(g.planet);
             const bool minister = c && colonyUnderCloakingMinister(*c);
-            if (minister) c->cloaked = false;
+            if (minister && c->cloaked) {
+                c->cloaked = false;
+                decloaked(where(g).system);
+            }
             const Exec e = colonyOrder(g, o);
             if (Colony* after = s_.colony(g.planet); minister && after && sight::colonyCanCloak(*after)) after->cloaked = true;
             return e;
@@ -1112,16 +1128,21 @@ private:
         if (t != Travel::Arrived) return afterTravel(g, o, t);
         if (!droneSeeksHere(g, goal)) return Exec::Wait;
         if (remaining(g) <= 0 || immobile(g)) return Exec::Wait;
+        bool lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             // Only drones decloak (§6.4, §19 Q69). A drone's target in a
             // battle is read from its first order when the battle starts
             // (spec 03 §19 Q68, spec 04 §10.7).
-            if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
+            if (vehicleType(r_, s_, *v) == VehicleType::Drone && v->status == VehicleStatus::Cloaked) {
+                v->status = VehicleStatus::Normal;
+                lowered = true;
+            }
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
+        if (lowered) decloaked(goal.system);
         if (live_) checkHere_ = true;  // turn-based: the Seek runs a battle check (runLive)
         return Exec::ActedStay;
     }
@@ -1159,16 +1180,19 @@ private:
             ctx_.log(g.owner, LogCategory::Combat, std::format("{}: no movement left to attack", name(g)), "The Attack order was removed.", where(g));
             return Exec::Done;
         }
+        bool lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v)) continue;
             if (v->status == VehicleStatus::Cloaked && underCloakingMinister(*v)) {
                 v->status = VehicleStatus::Normal;
                 recloak_.push_back(id);
+                lowered = true;
             }
             v->movement = std::max(0, v->movement - 1);
             spendSupply(r_, s_, *v, moveSupplyCost(r_, s_, *v));
         }
+        if (lowered) decloaked(where(g).system);
         checkHere_ = true;  // the attack runs a battle check (runLive)
         return Exec::Acted;
     }
@@ -1292,11 +1316,14 @@ private:
     // Cloaking needs a working part of level 2 or more and supply above 0; it
     // costs nothing now (the parts' supply is charged every end of turn) (§8).
     Exec cloak(Group& g, Order& o) {
-        bool changed = false;
+        bool changed = false, lowered = false;
         for (VehicleId id : g.members) {
             Vehicle* v = s_.vehicle(id);
             if (o.kind == OrderKind::Decloak) {
-                if (v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
+                if (v->status == VehicleStatus::Cloaked) {
+                    v->status = VehicleStatus::Normal;
+                    lowered = true;
+                }
                 changed = true;
                 continue;
             }
@@ -1306,6 +1333,7 @@ private:
             v->queue.items.clear();  // cloaked ships cannot build (spec 01 §6.4)
             changed = true;
         }
+        if (lowered) decloaked(where(g).system);
         return changed ? Exec::Acted : fail(g, o, "No working cloaking device, or no supplies.");
     }
 
@@ -1316,7 +1344,7 @@ private:
     // and one move's supply. Always done.
     Exec sweep(Group& g) {
         const Location here = where(g);
-        decloakSweepers(r_, s_, here, g.members);
+        if (decloakSweepers(r_, s_, here, g.members)) decloaked(here.system);
         combat::detail::resolveMines(ctx_, here, g.members, s_.rng);
         prune(g);
         for (VehicleId id : g.members)

@@ -234,14 +234,14 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
 
     // ---- 5. Movement and space combat: 30 movement phases, each followed by
     // combat where it applies. Colonize orders found their colonies during the
-    // phases, like any order (spec 05 §8 step 5). Sight and first contact
-    // then follow the new positions.
+    // phases, like any order (spec 05 §8 step 5). Sight then follows the
+    // new positions; first contact was checked at the moments spec 05 §3.1
+    // names (warp arrivals, decloaks), never in a pass of its own.
     s.combats.clear();  // from here on: this turn's battles
     movement::startTurn(ctx);
     movement::runMovementAndCombat(ctx);
     s.removeDeadVehicles();
     sight::updateKnowledge(r, s);
-    diplomacy::updateContacts(ctx);
 
     // ---- 6. End-of-turn processing, one empire at a time in empire order,
     // each followed by its destruction check. An empire founded during it
@@ -273,13 +273,12 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
     }
     s.removeDeadVehicles();
 
-    // ---- 10. Per-turn flags are cleared; sight and contact follow the
-    // events; the AI remembers the turn's battles and spies; stand-ins get
+    // ---- 10. Per-turn flags are cleared; sight follows the events (each
+    // logged event ran its own first-contact check); the AI remembers the turn's battles and spies; stand-ins get
     // their own ministers back; mood events still waiting carry over.
     for (Empire& e : s.empires)
         for (Relation& rel : e.relations) rel.messageSentThisTurn = false;
     sight::updateKnowledge(r, s);
-    diplomacy::updateContacts(ctx);
     ai::rememberAiEvents(ctx);
     for (const auto& [id, saved] : standIns) ai::restoreMinisters(s.empire(id), saved);
     std::erase_if(ctx.moodEvents, [&](const MoodEvent& m) { return !living(s, m.empire); });

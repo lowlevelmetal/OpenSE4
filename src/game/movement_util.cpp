@@ -175,19 +175,24 @@ bool minefieldActs(const Rules& r, const GameState& s, Location where, std::span
     return false;
 }
 
-void decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group) {
-    if (group.empty()) return;
+bool decloakSweepers(const Rules& r, GameState& s, Location where, std::span<const VehicleId> group) {
+    if (group.empty()) return false;
     const Vehicle* first = s.vehicle(group.front());
-    if (!first) return;
+    if (!first) return false;
     const auto& tagged = s.empire(first->owner).taggedMinefields;
-    if (std::find(tagged.begin(), tagged.end(), where) == tagged.end()) return;
+    if (std::find(tagged.begin(), tagged.end(), where) == tagged.end()) return false;
     const bool sweeper = std::any_of(group.begin(), group.end(), [&](VehicleId id) {
         const Vehicle* v = s.vehicle(id);
         return v && alive(*v) && vehicleAbilityTotal(r, s, *v, AbilityKind::MineSweeping) > 0;
     });
-    if (!sweeper || !minefieldActs(r, s, where, group)) return;
+    if (!sweeper || !minefieldActs(r, s, where, group)) return false;
+    bool any = false;
     for (VehicleId id : group)
-        if (Vehicle* v = s.vehicle(id); v && v->status == VehicleStatus::Cloaked) v->status = VehicleStatus::Normal;
+        if (Vehicle* v = s.vehicle(id); v && v->status == VehicleStatus::Cloaked) {
+            v->status = VehicleStatus::Normal;
+            any = true;
+        }
+    return any;
 }
 
 // ---- Cargo -------------------------------------------------------------------------------------

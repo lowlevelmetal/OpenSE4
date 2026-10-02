@@ -293,7 +293,7 @@ TEST_CASE("colony cloaking: first contact needs the cloak-aware test; Decloak ru
     REQUIRE(cw.cloak().ok);
     TurnContext ctx{r, cw.w.s, {}, {}, {}};
     sight::updateKnowledge(r, cw.w.s);
-    diplomacy::updateContacts(ctx);
+    diplomacy::firstContactIn(ctx, cw.a);
     // B sees A's colony, A does not see B's: no mutual detection.
     CHECK_FALSE(cw.w.s.empire(kA).relation(kB).contact);
     REQUIRE(cw.cloak(false).ok);

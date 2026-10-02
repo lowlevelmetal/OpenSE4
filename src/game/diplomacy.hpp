@@ -30,11 +30,20 @@ inline constexpr uint32_t kMessageLifetime = 10;
 // `date` (DiplomaticMessage::dated; by default GameState::turn): a
 // simultaneous turn passes the advanced date for step 4.
 void deliverMessages(TurnContext& ctx, std::optional<uint32_t> date = std::nullopt);
-// First contact between every pair of living empires that have not met,
-// that each detect the other in one system and that a warp path links (spec
-// 05 §3.1, confirmed: binary), after sight::updateKnowledge. An empire
-// without colonies makes no contact.
-void updateContacts(TurnContext& ctx);
+// The first-contact check in one system (spec 05 §3.1, confirmed: binary):
+// every pair of living empires that have not met, that each detect an object
+// of the other in `sys` now (a vehicle or a colony there passing the detection
+// rule of spec 01 §6.3 by the current positions and sensors) and that a warp
+// path links both ways, make contact (makeContact), in empire order. An
+// empire without colonies makes no contact. It runs only at the moments the
+// spec names, in the system concerned: a group's arrival through a warp
+// point, any decloak of a ship, unit group or colony, an event once it is
+// logged, a planet or vehicle handed over in a package, and a rebellion
+// project; never on moves within a system or in a per-turn pass.
+void firstContactIn(TurnContext& ctx, SystemId sys);
+// The same check in every system, in system order: when the game is created,
+// after the empires are placed, and after a surrender.
+void firstContactEverywhere(TurnContext& ctx);
 // The contact check (spec 05 §3.1, §8 step 7, confirmed: binary), once per
 // game turn in both turn styles, after the design cleanup and before the
 // victory check: each living empire A checks every empire B it has contact

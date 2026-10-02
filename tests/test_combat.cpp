@@ -2121,3 +2121,25 @@ TEST_CASE("installed data set: a battle between starting warships (opt-in)") {
     CHECK(std::any_of(rec.pieces.begin(), rec.pieces.end(), [](const CombatPiece& p) { return p.kind == CombatPiece::Kind::Planet; }));
 }
 
+
+TEST_CASE("combat: a battle that decloaks a piece runs the first-contact check; one that decloaks nothing does not") {
+    for (const bool cloaked : {false, true}) {
+        CAPTURE(cloaked);
+        Arena ar = makeArena();
+        GameState& s = ar.s;
+        for (Empire& e : s.empires)
+            for (Relation& rel : e.relations) rel.contact = false;  // nobody has met yet
+        // A's uncloaked spotter sees B's ship, so the battle starts either way;
+        // its cloaked companion is what the battle decloaks.
+        spawn(s, frigate(s, ar.a, "Spotter", 1, {"CT Big Gun"}), ar.loc);
+        const VehicleId lurker = spawn(s, frigate(s, ar.a, "Lurker", 1, {"CT Big Gun", "CT Cloak"}), ar.loc);
+        if (cloaked) s.vehicle(lurker)->status = VehicleStatus::Cloaked;
+        spawn(s, frigate(s, ar.b, "Target", 1, {}), ar.loc);
+        TurnContext ctx = context(s);
+        combat::resolveSpaceCombat(ctx, ar.loc);
+        REQUIRE_FALSE(s.combats.empty());
+        // Any decloak, the start of a battle included, runs the check (spec 05 §3.1).
+        CHECK(s.empire(ar.a).relation(ar.b).contact == cloaked);
+        CHECK(s.empire(ar.b).relation(ar.a).contact == cloaked);
+    }
+}
