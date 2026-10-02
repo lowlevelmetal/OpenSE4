@@ -279,6 +279,10 @@ std::optional<std::string> speechLine(Planner& p, std::string_view pool, EmpireI
 // What an item of a trade, gift or tribute is worth to the receiving side
 // (spec 05 §7.4 item values).
 int64_t tradeItemValue(const Planner& p, const PackageItem& item, EmpireId giver, EmpireId receiver);
+// A battle `e` lost while defending (spec 05 §7.3 term 1, "Combat Defending
+// Lost", confirmed: binary): it took part, the verdict is a loss for it, and it
+// was not the battle's current player (ai_anger.cpp).
+bool lostWhileDefending(const CombatRecord& rec, EmpireId e);
 // The mine and satellite layers (spec 05 §7.5 "Layers", confirmed: binary):
 // the warp points of our colony systems whose far system holds any object of
 // another empire, each with the sum of those empires' weights (mines 1, 4

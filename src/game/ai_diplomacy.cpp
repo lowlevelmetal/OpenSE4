@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <format>
 #include <map>
+#include <optional>
 
 namespace opense4::game::ai::detail {
 
@@ -304,51 +305,97 @@ private:
         return isFriend(x) ? rule.sendToFriend : rule.sendToEnemy;
     }
 
+    // A request of steps 1-5: its type, the third empire and the system it names.
+    struct Request {
+        MessageType type = MessageType::General;
+        EmpireId third;
+        SystemId system;
+    };
+
+    // Steps 1-5 of the demands the AI starts (spec 05 §7.4, question 52,
+    // confirmed: binary): the first that applies, before any flag is tested.
+    // A step's roll is made only when the earlier steps found nothing, and a
+    // step whose roll succeeds but that finds no candidate gives nothing, so
+    // the next step is tried.
+    std::optional<Request> chooseRequest(EmpireId x) {
+        const GameState& s = p_.st;
+        const Relation& r = rel(x);
+        // 1. Stop what they did to us.
+        if (r.attackedUs) return Request{MessageType::DemandStopAttacks, {}, r.attackedIn};
+        if (r.spiedOnUs) return Request{MessageType::DemandStopEspionage, {}, {}};
+        // 2. Remove ships (20 %), then, as a separate 20 % roll, remove
+        // colonies, from a system where we have a colony; each candidate system
+        // needs a 1-in-3 roll. Candidates are tried in system order (inferred,
+        // question 54); ships are those we see.
+        std::vector<uint8_t> ownColony(s.galaxy.systems.size(), 0), theirShips(s.galaxy.systems.size(), 0),
+            theirColonies(s.galaxy.systems.size(), 0);
+        for (const auto& c : s.colonies) {
+            if (!c) continue;
+            const size_t sys = s.galaxy.object(c->planet).system.index();
+            if (c->owner == p_.id) ownColony[sys] = 1;
+            else if (c->owner == x) theirColonies[sys] = 1;
+        }
+        for (VehicleId vid : p_.emp().knowledge.visibleVehicles)
+            if (const Vehicle* v = s.vehicle(vid); v && v->owner == x && v->location.system.index() < theirShips.size())
+                theirShips[v->location.system.index()] = 1;
+        auto pickSystem = [&](const std::vector<uint8_t>& theirs) -> SystemId {
+            for (size_t i = 0; i < theirs.size(); ++i)
+                if (ownColony[i] && theirs[i] && p_.rng.below(3) == 0) return SystemId{i};
+            return {};
+        };
+        if (p_.rng.percent(20))
+            if (const SystemId sys = pickSystem(theirShips); sys.valid()) return Request{MessageType::DemandRemoveShips, {}, sys};
+        if (p_.rng.percent(20))
+            if (const SystemId sys = pickSystem(theirColonies); sys.valid()) return Request{MessageType::DemandRemoveColonies, {}, sys};
+        const Empire& them = s.empire(x);
+        // 3. At Trade Alliance or better: break with Z, the lowest-numbered
+        // empire other than us and X that X holds at Trade Alliance or better
+        // and we hold at War or Non-Intercourse; join our war instead when we
+        // are Military Alliance or better with X and at War with Z.
+        if (r.treaty >= Treaty::TradeAlliance && p_.rng.percent(20))
+            for (const Empire& z : s.empires) {
+                if (z.id == x || z.id == p_.id || z.id.index() >= them.relations.size()) continue;
+                const Treaty ours = rel(z.id).treaty;
+                if (them.relation(z.id).treaty < Treaty::TradeAlliance || (ours != Treaty::War && ours != Treaty::NonIntercourse)) continue;
+                const bool joinWar = r.treaty >= Treaty::MilitaryAlliance && ours == Treaty::War;
+                return Request{joinWar ? MessageType::RequestDeclareWar : MessageType::RequestBreakTreaty, z.id, {}};
+            }
+        // 4. At Military Alliance or better: make peace with the lowest-numbered
+        // empire other than us and X that X is at War with and that we hold at
+        // Military Alliance or better.
+        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20))
+            for (const Empire& z : s.empires)
+                if (z.id != x && z.id != p_.id && z.id.index() < them.relations.size() && rel(z.id).treaty >= Treaty::MilitaryAlliance &&
+                    them.relation(z.id).treaty == Treaty::War)
+                    return Request{MessageType::RequestMakePeace, z.id, {}};
+        // 5. At Military Alliance or better: attack an empire in a system, from
+        // our newest battle, of this turn or the turn before, lost while
+        // defending: its system, and the highest-numbered empire other than us
+        // that had pieces when it began, whatever its treaty, contact or
+        // survival; nothing when that empire is X.
+        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20))
+            for (auto it = s.combats.rbegin(); it != s.combats.rend(); ++it) {
+                const CombatRecord& rec = *it;
+                if (rec.turn > s.turn || rec.turn + 1 < s.turn || !lostWhileDefending(rec, p_.id)) continue;
+                EmpireId highest;
+                for (EmpireId e : rec.participants)
+                    if (e != p_.id && (!highest.valid() || e > highest)) highest = e;
+                if (highest.valid() && highest != x) return Request{MessageType::RequestAttackEmpire, highest, rec.location.system};
+                break;
+            }
+        return std::nullopt;
+    }
+
     bool demand(EmpireId x) {
         const Relation& r = rel(x);
         auto sendDemand = [&](MessageType t, EmpireId third = {}, SystemId sys = {}) {
             return send(x, t, std::format("Send {}", angerKeyName(t)), Treaty::None, third, sys, {}, {}, 1);
         };
-        // 1. Stop what they did to us.
-        if (r.attackedUs && mayDemand(MessageType::DemandStopAttacks, x)) return sendDemand(MessageType::DemandStopAttacks, {}, r.attackedIn);
-        if (r.spiedOnUs && mayDemand(MessageType::DemandStopEspionage, x)) return sendDemand(MessageType::DemandStopEspionage);
-        // 2. Their ships or colonies where we have a colony.
-        if (p_.rng.percent(20)) {
-            std::vector<uint8_t> ownColony(p_.st.galaxy.systems.size(), 0);
-            for (const auto& c : p_.st.colonies)
-                if (c && c->owner == p_.id) ownColony[p_.st.galaxy.object(c->planet).system.index()] = 1;
-            SystemId colonies, ships;
-            for (const auto& c : p_.st.colonies)
-                if (c && c->owner == x && !colonies.valid() && ownColony[p_.st.galaxy.object(c->planet).system.index()])
-                    colonies = p_.st.galaxy.object(c->planet).system;
-            for (VehicleId vid : p_.emp().knowledge.visibleVehicles)
-                if (const Vehicle* v = p_.st.vehicle(vid); v && v->owner == x && !ships.valid() && ownColony[v->location.system.index()])
-                    ships = v->location.system;
-            if (colonies.valid() && mayDemand(MessageType::DemandRemoveColonies, x)) return sendDemand(MessageType::DemandRemoveColonies, {}, colonies);
-            if (ships.valid() && mayDemand(MessageType::DemandRemoveShips, x)) return sendDemand(MessageType::DemandRemoveShips, {}, ships);
-        }
-        // 3. Break with an empire we are hostile to (or join our war).
-        if (r.treaty >= Treaty::TradeAlliance && p_.rng.percent(20)) {
-            for (const Empire& y : p_.st.empires) {
-                if (y.id == x || y.id == p_.id || !y.alive || !rel(y.id).contact || !hostileTo(p_.emp(), y.id)) continue;
-                if (r.treaty >= Treaty::MilitaryAlliance && p_.atWarWith(y.id)) {
-                    if (mayDemand(MessageType::RequestDeclareWar, x)) return sendDemand(MessageType::RequestDeclareWar, y.id);
-                } else if (mayDemand(MessageType::RequestBreakTreaty, x)) {
-                    return sendDemand(MessageType::RequestBreakTreaty, y.id);
-                }
-                break;
-            }
-        }
-        // 4. Make peace with one of our allies.
-        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20) && mayDemand(MessageType::RequestMakePeace, x))
-            for (const Empire& y : p_.st.empires)
-                if (y.id != x && y.id != p_.id && y.alive && rel(y.id).treaty >= Treaty::MilitaryAlliance &&
-                    p_.st.empire(x).relation(y.id).treaty == Treaty::War)
-                    return sendDemand(MessageType::RequestMakePeace, y.id);
-        // 5. Attack an empire in a system.
-        if (r.treaty >= Treaty::MilitaryAlliance && p_.rng.percent(20) && mayDemand(MessageType::RequestAttackEmpire, x))
-            for (const Candidate& c : p_.sit.candidates)
-                if (c.owner != x && hostileTo(p_.emp(), c.owner)) return sendDemand(MessageType::RequestAttackEmpire, c.owner, c.system);
+        // Steps 1-5: the request is chosen first, and only then is its `Will
+        // Send To Friend/Enemy` flag tested; a forbidden request ends steps 1-5
+        // for this turn (spec 05 §7.4, question 52, confirmed: binary).
+        if (const std::optional<Request> req = chooseRequest(x); req && mayDemand(req->type, x))
+            return sendDemand(req->type, req->third, req->system);
         // 6. Surrender, after more than one combat report in the last two turns. No flag needed.
         if (r.treaty == Treaty::War && p_.rng.percent(33) && r.combatsThisTurn + r.combatsLastTurn > 1)
             return sendDemand(MessageType::DemandSurrender);
@@ -405,7 +452,7 @@ private:
         chat.type = MessageType::General;
         chat.inReplyTo = msg.id;
         chat.text = std::move(*text);
-        return p_.emit(cmd::SendMessage{std::move(chat)});
+        return p_.emit(cmd::SendMessage{std::move(chat), true});
     }
 
     // An acknowledgement (an answer to one of ours, a declaration, a surrender,
@@ -699,7 +746,7 @@ private:
         auto text = speechLine(p_, pool, to, third, treaty, system);
         if (!text) return false;  // a message whose pool is empty is not sent at all
         m.text = std::move(*text);
-        return p_.emit(cmd::SendMessage{std::move(m)});
+        return p_.emit(cmd::SendMessage{std::move(m), true});
     }
     bool sendNamed(EmpireId to, MessageType type, Treaty treaty = Treaty::None, EmpireId third = {}, SystemId system = {},
                    std::vector<PackageItem> offer = {}, std::vector<PackageItem> request = {}, const DiplomaticMessage* base = nullptr) {

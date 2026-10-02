@@ -479,6 +479,10 @@ void rememberEvents(GameState& s, Empire& e, const std::vector<SystemId>& territ
 
 } // namespace
 
+bool detail::lostWhileDefending(const CombatRecord& rec, EmpireId e) {
+    return involves(rec, e) && rec.currentPlayer != e && outcomeFor(rec, e) == Outcome::Lost;
+}
+
 // ---- Public ----------------------------------------------------------------------------------------
 
 std::vector<int64_t> politicalScores(const Rules& r, const GameState& s) {

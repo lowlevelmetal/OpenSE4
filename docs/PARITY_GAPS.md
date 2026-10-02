@@ -278,13 +278,16 @@ player's request about a third empire must name a living empire it has met, othe
 and the recipient (`cmd::SendMessage`). The engine's choice is question 52: a computer
 player's own requests are not checked.
 
-Question 52 and spec 06 §7 Q70 were settled from the executable later on 2026-10-01. These
-rows remain:
+Question 52 and spec 06 §7 Q70 were settled from the executable later on 2026-10-01, and the
+engine followed the same day: the requests the computer starts are chosen first and only then is
+their flag tested, a refusal ending steps 1-5 (`ai_diplomacy.cpp` `chooseRequest()`); step 2
+rolls for ships, then for colonies, with the 1-in-3 roll per candidate; step 3 names the
+lowest-numbered empire by both treaties; step 5 names the system and the highest-numbered other
+side of the newest battle lost while defending. A Politics minister's messages are not checked
+(`cmd::SendMessage::minister`). The engine's choice is question 54 (step 2's candidate order).
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Requests the computer starts (`ai_diplomacy.cpp` `demand()`) | Step 3 names the first empire in contact the AI is hostile to (None included), ignoring the recipient's treaty with it; step 5 names one of the attack candidates; each step tests its flag and falls through on a refusal; step 2 makes one roll, colonies first | Spec 05 §7.4, question 52: step 3 names the lowest-numbered empire the AI holds at War or Non-Intercourse and the recipient at Trade Alliance or better; step 5 comes from the AI's newest battle lost while defending; the first applicable request is chosen, then its flag tested, a refusal ending steps 1–5; ships and colonies are two rolls, ships first, 1 in 3 per candidate | M |
-| Third-empire check of messages (`commands.cpp` `SendMessage`) | Refuses unchecked requests from every human-played empire, its Politics minister's included | Question 52: only messages the player writes go through the picker; a minister's are not checked | L |
 | Log of a completed package (`diplomacy.cpp` `acceptPackage`, `executePackage`, `setTreaty`, `makeContact`) | One "… Completed" entry per party; "Items Unavailable" entries; treaty items log "New Treaty" (accepted proposals too) and channel items "First Contact"; channels need the giver's contact and a living empire; technology refused without `allowTechTrades`; a System item only drops the giver's claim; star charts need the giver's exploration and copy its warp links | Spec 06 §7 Q70, spec 05 §3.4: one entry per item, receiver then giver, with the titles and targets listed; invalid items skipped silently; "Treaty Enacted" plus a history contact line; channels set both sides to None without checks; no option tested; the receiver claims the system; no exploration test, no warp links; an accepted proposal logs only its message | M |
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)

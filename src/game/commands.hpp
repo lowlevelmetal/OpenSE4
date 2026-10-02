@@ -120,7 +120,14 @@ struct SetResearch { std::vector<ResearchProject> queue; bool evenly = true; boo
 struct SetIntel { std::vector<IntelProjectOrder> queue; bool evenly = true; bool repeat = false; };
 
 // ---- Diplomacy -----------------------------------------------------------------------------
-struct SendMessage { DiplomaticMessage message; };   // id/from/turn are assigned
+// id/from/turn are assigned. `minister`: a message the computer player or the
+// empire's Politics minister writes, which does not go through the player's
+// picker, so a request about a third empire is not checked (spec 05 question
+// 52, confirmed: binary).
+struct SendMessage {
+    DiplomaticMessage message;
+    bool minister = false;
+};
 struct AnswerMessage { MessageId message; bool accept = false; std::string text; };
 // Declaring war on an empire sets the declaring empire's anger toward it to
 // 100 (spec 05 §7.3, §7.4). A computer player (or a Politics minister) whose

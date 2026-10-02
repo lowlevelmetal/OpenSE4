@@ -179,8 +179,10 @@ The buttons on the right open more windows:
 ## The Communicate window
 
 In [Communicate](window:communicate) you choose the **Message Type**, the **Tone** and, when the
-type needs it, a treaty, a third empire, a system or a planet. The text starts with a suitable
-default; change it as you like.
+type needs it, a treaty, a third empire, a system or a planet. The third empire comes from the
+empires you have met that are still in the game. The text starts with a suitable default; change
+it as you like. (Your Politics minister, when it is on, writes its own requests and needs no such
+choice.)
 
 For trades, gifts and tributes, `Edit Package` opens the package editor. Choose **We give** or
 **We ask for**, pick a tab (systems, planets, resources, technology, ships, units, star charts,

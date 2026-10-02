@@ -3254,26 +3254,27 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       records only the system and never uses the empire. A human recipient reads the
       empire's name in the text, whatever that empire's state.
 
-    The engine differs (`ai_diplomacy.cpp`, `demand()`; `commands.cpp`, `SendMessage`):
-    - Step 3 takes the first living empire in contact that the AI is hostile to (None
-      included) and ignores X's treaty with it. It must take the lowest-numbered Z with
-      the AI at War or Non-Intercourse and X at Trade Alliance or better with Z.
-    - Step 5 picks from the attack candidates (`p_.sit.candidates`). It must use the
-      battle-report rule above; each battle report in an empire's log must then keep the
-      verdict, whether the empire was the current player, the participants at set-up and
-      the system.
-    - Each step tests its flag (`mayDemand`) and a refusal falls through to the next
-      step. It must choose first, test only the chosen request's flag, and on a refusal
-      go straight to steps 6 and 7.
-    - Step 2 makes one roll and tries colonies first. It must roll for ships, then
-      separately for colonies, with the 1-in-3 roll per candidate.
-    - `SendMessage` refuses third-empire requests from every human-played empire,
-      including those its Politics minister sends (`Planner::runOrders` → `planPolitics`).
-      The check must apply only to messages the player writes.
-    The recipient's side matches (`CarryOutDemand`, `speechLine`).
+    Since 2026-10-01 the engine follows this (`ai_diplomacy.cpp`, `chooseRequest()` and
+    `demand()`; `commands.cpp`, `SendMessage`): steps 1-5 choose the request first and
+    test only its flag, a refusal going straight to steps 6 and 7; step 2 rolls for ships,
+    then separately for colonies, with the 1-in-3 roll per candidate system; step 3 takes
+    the lowest-numbered Z by both treaties; step 5 reads the newest battle of this game
+    turn or the one before that the AI lost while defending, from the battle records the
+    game keeps for two turns (`GameState::combats`, which hold the verdict, the current
+    player, the participants at set-up and the system). The Politics minister's and the
+    computer player's messages carry `cmd::SendMessage::minister` and are not checked;
+    only the messages the player writes go through the picker's test. The order in which
+    step 2 tries its candidate systems is question 54. The recipient's side matches
+    (`CarryOutDemand`, `speechLine`).
 53. **The first-contact check of a timed event** (§3.1): the check runs in an event's
     system "once the event is logged". A timed event logs twice: its start message when it
     begins and its message when it strikes. OpenSE4 runs the check after each, whenever
     the event has a location, whoever its messages reach (inferred). To verify: does the
     start message of a timed event run the check too, and does an event whose messages
     reach nobody (`Message To` None) run it?
+54. **The order of step 2's candidates** (§7.4 "Demands the AI starts"): each system where
+    the AI has a colony and sees a ship (or holds a colony) of X is a candidate that needs
+    a 1-in-3 roll. OpenSE4 tries the candidate systems in system order and takes the first
+    whose roll succeeds; a ship counts when the AI sees it (inferred). To verify: in what
+    order does the original try the candidates, which ships of X count (seen ones, every
+    one, unit groups too), and does it stop at the first successful roll?

@@ -557,7 +557,7 @@ template <class Ar> void io(Ar& ar, cmd::SetDesignObsolete& c) { fields(ar, c.de
 template <class Ar> void io(Ar& ar, cmd::DeleteDesign& c) { fields(ar, c.design); }
 template <class Ar> void io(Ar& ar, cmd::SetResearch& c) { fields(ar, c.queue, c.evenly, c.repeat); }
 template <class Ar> void io(Ar& ar, cmd::SetIntel& c) { fields(ar, c.queue, c.evenly, c.repeat); }
-template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message); }
+template <class Ar> void io(Ar& ar, cmd::SendMessage& c) { fields(ar, c.message, c.minister); }
 template <class Ar> void io(Ar& ar, cmd::AnswerMessage& c) { fields(ar, c.message, c.accept, c.text); }
 template <class Ar> void io(Ar& ar, cmd::DecideWar& c) { fields(ar, c.target); }
 template <class Ar> void io(Ar& ar, cmd::SetInterfaceOptions& c) { fields(ar, c.options); }
