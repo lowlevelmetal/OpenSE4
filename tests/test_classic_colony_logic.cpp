@@ -6,6 +6,7 @@
 #include "client/classic/screens/colony_logic.hpp"
 #include "game/commands.hpp"
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <doctest/doctest.h>
 
@@ -73,7 +74,14 @@ TEST_CASE("classic ui: colonization technology and game options") {
     CHECK(colonizeProblem(r, s, kMe, rock, tech).empty());
     CHECK_FALSE(colonizeProblem(r, s, kMe, ice, tech).empty());
     CHECK_FALSE(colonizeProblem(r, s, kMe, homeworld(s, kMe).planet, tech).empty());
-    CHECK_FALSE(colonizeProblem(r, s, kMe, homeworld(s, kOther).planet, tech).empty());
+    // A foreign colony counts only while we see it (spec 01 §6.9): without a
+    // sensor source in its system its planet looks free.
+    const ObjectId theirs = homeworld(s, kOther).planet;
+    REQUIRE_FALSE(sight::canSeeColony(r, s, kMe, theirs));
+    CHECK(colonizeProblem(r, s, kMe, theirs, tech).empty() == colonizableType(s, kMe, theirs, tech));
+    s.options.omnipresent = true;
+    CHECK_FALSE(colonizeProblem(r, s, kMe, theirs, tech).empty());
+    s.options.omnipresent = false;
 
     // Only breathable atmospheres.
     s.options.onlyBreathable = true;
@@ -98,6 +106,7 @@ TEST_CASE("classic ui: planet survey and the Planets tabs (spec 06 §1.8.1)") {
     const Rules& r = engineRules();
     GameState s = newEngineGame(5, 2, 12);
     exploreAll(s);
+    s.options.omnipresent = true;  // sensors everywhere: every colony is seen (spec 01 §6.5)
     const ObjectId myHome = homeworld(s, kMe).planet;
     const ObjectId theirHome = homeworld(s, kOther).planet;
 
@@ -107,8 +116,10 @@ TEST_CASE("classic ui: planet survey and the Planets tabs (spec 06 §1.8.1)") {
         return *it;
     };
     std::vector<PlanetInfo> all = surveyPlanets(r, s, kMe);
+    // Every planet and asteroid field we see: storms and nebulae can hide some (spec 01 §6.9).
     size_t planets = 0;
-    for (const SpaceObject& o : s.galaxy.objects) planets += o.kind == ObjectKind::Planet || o.kind == ObjectKind::Asteroids;
+    for (const SpaceObject& o : s.galaxy.objects)
+        planets += (o.kind == ObjectKind::Planet || o.kind == ObjectKind::Asteroids) && sight::canSeePlanet(r, s, kMe, o.id);
     CHECK(all.size() == planets);
     for (const PlanetInfo& p : all) {
         const bool asteroids = s.galaxy.object(p.id).kind == ObjectKind::Asteroids;
@@ -227,7 +238,7 @@ TEST_CASE("classic ui: Send Colony Ship takes the available colony ship with the
         CHECK(matches(PlanetFilter::ShipEnroute, p) == (p.id == rock));
         if (p.id == rock) CHECK(p.enrouteShip == s.vehicle(nearId)->name);
     }
-    const PlanetStatistics st = planetStatistics(s, kMe, surveyPlanets(r, s, kMe), colonyShips(r, s, kMe));
+    const PlanetStatistics st = planetStatistics(r, s, kMe, colonyShips(r, s, kMe));
     CHECK(st.colonyShips == int(ships.size()) + 1);
     CHECK(st.available == st.colonyShips - 1);
 }
@@ -238,16 +249,25 @@ TEST_CASE("classic ui: the Planets statistics and the sort history") {
     exploreAll(s);
     s.empire(kMe).relation(kOther).contact = true;
     s.empire(kMe).relation(kOther).treaty = Treaty::War;
-    const std::vector<PlanetInfo> all = surveyPlanets(r, s, kMe);
-    const PlanetStatistics st = planetStatistics(s, kMe, all, {});
+    // Every planet of the explored systems with its real owner, no sight test
+    // (spec 06 §1.8.1): planets the list leaves out (storms, nebulae) and
+    // colonies it shows as uncolonized count too.
+    const PlanetStatistics st = planetStatistics(r, s, kMe, {});
     CHECK(st.systems == int(s.galaxy.systems.size()));
+    const ColonizeTech tech = colonizeTech(r, s.empire(kMe));
     int planets = 0, colonizable = 0, enemy = 0, free = 0;
-    for (const PlanetInfo& p : all) {
-        planets += !p.asteroids;
-        colonizable += p.colonizable;
-        enemy += p.colonizable && p.colonized && p.enemy;
-        free += p.colonizable && !p.colonized;
-    }
+    for (const StarSystem& sys : s.galaxy.systems)
+        for (ObjectId id : sys.objects) {
+            if (s.galaxy.object(id).kind != ObjectKind::Planet) continue;
+            ++planets;
+            if (!colonizableType(s, kMe, id, tech)) continue;
+            ++colonizable;
+            const Colony* c = s.colony(id);
+            enemy += c && c->owner == kOther;
+            free += !c;
+        }
+    REQUIRE(enemy > 0);
+    REQUIRE_FALSE(sight::canSeeColony(r, s, kMe, homeworld(s, kOther).planet));  // seen or not, it counts
     CHECK(st.planets == planets);
     CHECK(st.colonizable == colonizable);
     CHECK(st.enemy == enemy);

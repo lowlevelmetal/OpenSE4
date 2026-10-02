@@ -48,14 +48,22 @@ ColonizeTech colonizeTech(const game::Rules& r, const game::Empire& e) {
     return t;
 }
 
+const game::Colony* seenColony(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet) {
+    const game::Colony* c = s.colony(planet);
+    if (!c || c->owner == e) return c;
+    return game::sight::canSeeColony(r, s, e, planet) ? c : nullptr;
+}
+
 bool breathableBy(const game::GameState& s, game::EmpireId e, const game::SpaceObject& planet) {
     return e.valid() && keysEqual(s.empire(e).race.atmosphere, planet.atmosphere);
 }
 
-std::string colonizeProblem(const game::Rules&, const game::GameState& s, game::EmpireId e, game::ObjectId planet, const ColonizeTech& tech) {
+std::string colonizeProblem(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet, const ColonizeTech& tech) {
     const game::SpaceObject& o = s.galaxy.object(planet);
     if (o.kind != game::ObjectKind::Planet) return "Only planets can be colonized";
-    if (const game::Colony* c = s.colony(planet)) return c->owner == e ? "Already our colony" : "Already colonized";
+    // A colony counts only when the empire sees it; an unseen one looks
+    // uncolonized (spec 01 §6.9 "What other players see").
+    if (const game::Colony* c = seenColony(r, s, e, planet)) return c->owner == e ? "Already our colony" : "Already colonized";
     if (!tech.allows(o.surface)) return std::format("No colony module for {} planets yet", o.surface);
     const game::Race& race = s.empire(e).race;
     if (s.options.onlyBreathable && !breathableBy(s, e, o))
@@ -178,14 +186,16 @@ std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameStat
         for (game::ObjectId id : sys.objects) {
             const game::SpaceObject& o = s.galaxy.object(id);
             if (o.kind != game::ObjectKind::Planet && o.kind != game::ObjectKind::Asteroids) continue;
-            // A cloaked colony the empire cannot see leaves its planet out; when
-            // it is seen it is listed as a colony (spec 06 §1.8.1, spec 01 §6.9).
-            if (!game::sight::colonyShown(r, s, e, id)) continue;
+            // A planet the empire does not see (a colony's cloak, a storm or a
+            // nebula) is in no tab; a colony counts only while the empire sees
+            // it by the detection rule, otherwise its planet is listed as
+            // uncolonized (spec 06 §1.8.1, spec 01 §6.9).
+            if (!game::sight::canSeePlanet(r, s, e, id)) continue;
             PlanetInfo p;
             p.id = id;
             p.system = sys.id;
             p.asteroids = o.kind == game::ObjectKind::Asteroids;
-            if (const game::Colony* c = s.colony(id)) {
+            if (const game::Colony* c = seenColony(r, s, e, id)) {
                 p.colonized = true;
                 p.owner = c->owner;
                 p.own = c->owner == e;
@@ -232,19 +242,35 @@ bool matches(PlanetFilter f, const PlanetInfo& p) {
     return false;
 }
 
-PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, const std::vector<PlanetInfo>& planets,
-                                  const std::vector<ColonyShip>& ships) {
+PlanetStatistics planetStatistics(const game::Rules& r, const game::GameState& s, game::EmpireId e, const std::vector<ColonyShip>& ships) {
     PlanetStatistics st;
-    for (const game::StarSystem& sys : s.galaxy.systems) st.systems += s.empire(e).hasExplored(sys.id) ? 1 : 0;
-    for (const PlanetInfo& p : planets) {
-        if (p.asteroids) continue;
-        ++st.planets;
-        if (!p.colonizable) continue;
-        ++st.colonizable;
-        st.enemy += p.colonized && p.enemy;
-        st.ally += p.colonized && p.ally;
-        st.free += !p.colonized;
-        st.freeBreathable += !p.colonized && p.breathable;
+    const game::Empire& me = s.empire(e);
+    const ColonizeTech tech = colonizeTech(r, me);
+    // Every planet of the explored systems with its real owner, no sight
+    // test: hidden planets and unseen colonies count too (spec 06 §1.8.1,
+    // confirmed: binary).
+    for (const game::StarSystem& sys : s.galaxy.systems) {
+        if (!me.hasExplored(sys.id)) continue;
+        ++st.systems;
+        for (game::ObjectId id : sys.objects) {
+            const game::SpaceObject& o = s.galaxy.object(id);
+            if (o.kind != game::ObjectKind::Planet) continue;
+            ++st.planets;
+            if (!colonizableType(s, e, id, tech)) continue;
+            ++st.colonizable;
+            const game::Colony* c = s.colony(id);
+            if (!c) {
+                ++st.free;
+                st.freeBreathable += breathableBy(s, e, o);
+                continue;
+            }
+            if (c->owner == e || !c->owner.valid() || c->owner.index() >= s.empires.size()) continue;
+            // The treaty groups of the tabs (Non-Aggression or better, met: ally).
+            const game::Relation& rel = me.relation(c->owner);
+            const bool ally = rel.contact && static_cast<uint8_t>(rel.treaty) >= static_cast<uint8_t>(game::Treaty::NonAggression);
+            st.ally += ally;
+            st.enemy += !ally;
+        }
     }
     st.colonyShips = int(ships.size());
     for (const ColonyShip& c : ships) st.available += c.available;

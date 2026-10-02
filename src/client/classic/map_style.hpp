@@ -5,11 +5,13 @@
 // galaxy grid and the symbol of each system under each overlay. Headless,
 // tested in tests/test_client_logic.cpp.
 
+#include "game/rules.hpp"
 #include "game/state.hpp"
 
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace opense4::client::classic::map_style {
 
@@ -73,5 +75,13 @@ struct Point {
     float x = 0, y = 0;
 };
 Point nameCorner(float x, float y, float cellW, float cellH, float textW, float textH, float boxW, float boxH);
+
+// The empires present in each system for the viewer's presence marks (spec
+// 01 §6.7, §6.9 "What other players see"): its own objects, the foreign
+// vehicles it sees this turn, and the foreign colonies of explored systems it
+// sees by the detection rule (sight::canSeeColony), so a hidden colony, or
+// one in a system without a sensor source of ours, adds no colour. Per
+// system, in the order found.
+std::vector<std::vector<game::EmpireId>> presence(const game::Rules& r, const game::GameState& s, game::EmpireId viewer);
 
 } // namespace opense4::client::classic::map_style
