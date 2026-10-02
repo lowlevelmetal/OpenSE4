@@ -60,6 +60,7 @@ std::string settingsToToml(const ClassicSettings& s) {
     for (const std::string& d : s.learnDone) done.push_back(d);
     toml::table learn;
     learn.insert("done", std::move(done));
+    learn.insert("free_play", s.learnFreePlay);
     toml::table root;
     root.insert("options", std::move(options));
     root.insert("sound", std::move(sound));
@@ -94,6 +95,7 @@ ClassicSettings settingsFromToml(std::string_view text, std::string* error) {
     if (const toml::array* done = root["learn"]["done"].as_array())
         for (const toml::node& d : *done)
             if (auto v = d.value<std::string>()) s.learnDone.push_back(*v);
+    if (auto v = root["learn"]["free_play"].value<bool>()) s.learnFreePlay = *v;
     return s;
 }
 

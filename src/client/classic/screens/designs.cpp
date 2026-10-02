@@ -602,6 +602,7 @@ private:
             setName(suggestName(ui));
             error_.clear();
         }
+        ui.tagItem("create-design:suggest");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next name from the empire's list of design names");
         if (!origin_.empty()) ImGui::TextColored(kDimText, "%s", origin_.c_str());
         ImGui::EndGroup();

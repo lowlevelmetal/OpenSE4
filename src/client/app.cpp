@@ -11,6 +11,7 @@
 #include <imgui_impl_sdl3.h>
 #include <SDL3/SDL.h>
 
+#include <cfloat>
 #include <format>
 
 namespace opense4::client {
@@ -94,6 +95,8 @@ int App::run(const AppOptions& options) {
     co.training = options.training;
     co.manual = options.manual;
     co.learnDir = options.learnDir;
+    co.lessonCheck = options.lessonCheck;
+    co.lessonCheckQuits = options.screenshotPath.empty();
     mode_ = ClassicMode::create(platform, co, error);
     if (!mode_) {
         fatal(error);
@@ -107,9 +110,10 @@ int App::run(const AppOptions& options) {
     lastTicks_ = SDL_GetTicksNS();
     while (frame()) {
     }
+    const int code = mode_->exitCode();
     mode_.reset();
     shutdown();
-    return 0;
+    return code;
 }
 
 bool App::createWindowAndDevice() {
@@ -232,7 +236,12 @@ bool App::frame() {
     audio().update();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        ImGui_ImplSDL3_ProcessEvent(&event);
+        // The mode may hold input back (a tutorial's input lock) before ImGui sees it.
+        switch (mode_->filterEvent(event)) {
+            case EventVerdict::Pass: ImGui_ImplSDL3_ProcessEvent(&event); break;
+            case EventVerdict::Drop: break;
+            case EventVerdict::PointerAway: ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX); break;
+        }
         if (event.type == SDL_EVENT_QUIT) running = false;
         if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_)) running = false;
         if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();

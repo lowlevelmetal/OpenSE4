@@ -79,6 +79,9 @@ std::unique_ptr<Screen> makeCombatReplayOptions(const ScreenArgs& args);
 // Combat Options and Combat Piece Report (piece `index`) windows, for the
 // battle in ClassicSession::tactical().
 std::unique_ptr<Screen> makeTacticalCombat(const ScreenArgs& args);
+// Every order the player's side gave in tactical battles so far, oldest first,
+// as learn::battleOrderId kinds (for the lessons' battle_order).
+std::vector<std::string>& tacticalOrderLog();
 std::unique_ptr<Screen> makeTacticalOrders(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalOptions(const ScreenArgs& args);
 std::unique_ptr<Screen> makeTacticalLaunch(const ScreenArgs& args);

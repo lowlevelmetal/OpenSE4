@@ -27,6 +27,7 @@ add_executable(opense4
     client/classic/facility_markers.cpp
     client/classic/layout.cpp
     client/classic/learn_content.cpp
+    client/classic/lesson_lock.cpp
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
     client/classic/map_style.cpp

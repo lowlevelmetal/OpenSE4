@@ -14,12 +14,20 @@
 #include "core/log.hpp"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <iterator>
+#include <string>
+#include <string_view>
+#include <vector>
+
+// The SDL3 backend's key mapping (imgui_impl_sdl3.cpp), for the tutorial lock's key filter.
+ImGuiKey ImGui_ImplSDL3_KeyEventToImGuiKey(SDL_Keycode keycode, SDL_Scancode scancode);
 
 namespace opense4::client {
 
@@ -149,6 +157,7 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             error = *problem;
             return nullptr;
         }
+        if (options.lessonCheck) mode->prepareLessonCheck();
     } else if (options.manual) {
         // --manual[=slug]: the manual on its own.
         const learn::Link at = learn::parseLink(*options.manual);
@@ -187,6 +196,119 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = makeFrontScreen(FrontId::Intro);
     }
     return mode;
+}
+
+EventVerdict ClassicMode::filterEvent(const SDL_Event& e) {
+    if (!session_ || !lock_.active()) return EventVerdict::Pass;
+    auto verdict = [](InputVerdict v) {
+        switch (v) {
+            case InputVerdict::Pass: return EventVerdict::Pass;
+            case InputVerdict::Drop: return EventVerdict::Drop;
+            case InputVerdict::PointerAway: return EventVerdict::PointerAway;
+        }
+        return EventVerdict::Pass;
+    };
+    switch (e.type) {
+        case SDL_EVENT_MOUSE_MOTION: return verdict(lock_.mouseMove({e.motion.x, e.motion.y}));
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            return verdict(lock_.mouseButton({e.button.x, e.button.y}, int(e.button.button), e.type == SDL_EVENT_MOUSE_BUTTON_DOWN));
+        case SDL_EVENT_MOUSE_WHEEL: return verdict(lock_.wheel({e.wheel.mouse_x, e.wheel.mouse_y}));
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP: {
+            const KeyChord chord{ImGui_ImplSDL3_KeyEventToImGuiKey(e.key.key, e.key.scancode), (e.key.mod & SDL_KMOD_CTRL) != 0,
+                                 (e.key.mod & SDL_KMOD_SHIFT) != 0, (e.key.mod & SDL_KMOD_ALT) != 0};
+            return verdict(lock_.key(chord, e.type == SDL_EVENT_KEY_DOWN));
+        }
+        case SDL_EVENT_TEXT_INPUT:
+        case SDL_EVENT_TEXT_EDITING: return verdict(lock_.text());
+        default: return EventVerdict::Pass;
+    }
+}
+
+void ClassicMode::updateLock(UiContext& ui) {
+    const learn::Step* step = lesson_ && lesson_->locking() ? lesson_->activeStep() : nullptr;
+    if (!step) {
+        lock_.set({});
+        return;
+    }
+    std::vector<TaggedArea> tags;
+    tags.reserve(ui.tags.size());
+    for (const UiTag& t : ui.tags) tags.push_back({t.name, {t.min, t.max}});
+    std::vector<std::string> open;
+    for (const auto& [id, screen] : screens_) open.emplace_back(windowId(id));
+    // The game's prompts, and every ImGui popup (the prompts windows raise, combo lists).
+    std::vector<LockArea> prompts;
+    for (const auto& [a, b] : ui.promptAreas) prompts.push_back({a, b});
+    for (const ImGuiPopupData& p : ImGui::GetCurrentContext()->OpenPopupStack)
+        if (p.Window && (p.Window->Active || p.Window->WasActive))
+            prompts.push_back({p.Window->Pos, ImVec2(p.Window->Pos.x + p.Window->Size.x, p.Window->Pos.y + p.Window->Size.y)});
+    lock_.set(makeLockState(*step, tags, open, prompts, ImGui::GetIO().WantTextInput, appSettings().controls.bindings));
+}
+
+void ClassicMode::prepareLessonCheck() {
+    // The windows the step works in, as the steps before it would have left them.
+    const learn::Step* step = lesson_ ? lesson_->activeStep() : nullptr;
+    if (!step) return;
+    std::vector<std::string> tags = step->highlight;
+    tags.insert(tags.end(), step->allow.begin(), step->allow.end());
+    bool battle = false;
+    for (const std::string& tag : tags) {
+        const auto window = tagWindowId(tag);
+        if (!window) continue;
+        const auto id = screenFromWindowId(*window);
+        if (!id) continue;
+        if (*id == ScreenId::TacticalCombat || *id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions || *id == ScreenId::StrategicCombat) {
+            // A sample battle: the player's warships against copies of them.
+            if (!battle) battle = startDemoSimulation(*ui_, *id != ScreenId::StrategicCombat);
+            if (*id == ScreenId::TacticalOrders || *id == ScreenId::TacticalOptions) ui_->open(*id, ScreenArgs{.index = 0});
+            continue;
+        }
+        if (std::none_of(screens_.begin(), screens_.end(), [&](const auto& s) { return s.first == *id; })) openScreen(*id, {});
+    }
+    openLogOnTurn_ = false;
+    lessonCheckFrame_ = 0;
+}
+
+void ClassicMode::lessonCheckReport(UiContext& ui) {
+    // A few frames in, so that the windows have drawn: every tag the step
+    // highlights or allows must be on screen. A few depend on the moment
+    // (a piece selected in battle, an empire to talk to) and only warn, as
+    // does an outline whose middle the lesson panel covers.
+    if (lessonCheckFrame_ < 0 || ++lessonCheckFrame_ != 6 || !lesson_) return;
+    const learn::Step* step = lesson_->activeStep();
+    if (!step) return;
+    static constexpr std::string_view kSituational[] = {"tactical-combat:weapons", "communicate:message-type", "communicate:treaty",
+                                                        "communicate:send"};
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    auto onScreen = [&](const UiTag& t) {
+        return t.max.x > t.min.x && t.max.y > t.min.y && t.max.x > 0 && t.max.y > 0 && t.min.x < display.x && t.min.y < display.y;
+    };
+    const auto panel = std::find_if(ui.tags.begin(), ui.tags.end(), [](const UiTag& t) { return t.name == "lesson:panel"; });
+    auto covered = [&](const UiTag& t) {
+        if (panel == ui.tags.end() || t.name.starts_with("lesson:")) return false;
+        const ImVec2 mid((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f);
+        return mid.x >= panel->min.x && mid.x < panel->max.x && mid.y >= panel->min.y && mid.y < panel->max.y;
+    };
+    std::vector<std::string> tags = step->highlight;
+    tags.insert(tags.end(), step->allow.begin(), step->allow.end());
+    std::string missing, situational, under;
+    for (const std::string& tag : tags) {
+        const auto seen = std::find_if(ui.tags.begin(), ui.tags.end(), [&](const UiTag& t) { return t.name == tag && onScreen(t); });
+        if (seen != ui.tags.end()) {
+            if (covered(*seen) && under.find(" " + tag) == std::string::npos) under += " " + tag;
+            continue;
+        }
+        const bool moment = std::find(std::begin(kSituational), std::end(kSituational), tag) != std::end(kSituational);
+        (moment ? situational : missing) += " " + tag;
+    }
+    const size_t areas = lock_.state().areas.size();
+    std::printf("lesson-check %s:%zu areas=%zu %s%s%s%s%s%s\n", lesson_->lesson().slug.c_str(), lesson_->progress().active() + 1, areas,
+                missing.empty() ? "ok" : "missing:", missing.c_str(), situational.empty() ? "" : " situational:", situational.c_str(),
+                under.empty() ? "" : " under-panel:", under.c_str());
+    std::fflush(stdout);
+    if (!missing.empty() || !lock_.active()) exitCode_ = 1;
+    if (options_.lessonCheckQuits) ui.requests.quitGame = true;
 }
 
 std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& name) {
@@ -234,6 +356,7 @@ void ClassicMode::applyLayout() {
 void ClassicMode::startGame(std::unique_ptr<ClassicSession> session) {
     screens_.clear();
     lesson_.reset();
+    lock_.set({});
     session_ = std::move(session);
     ui_ = std::make_unique<UiContext>(*session_, *art_, fonts_);
     ui_->app = platform_.app;
@@ -291,6 +414,7 @@ std::optional<std::string> ClassicMode::startLesson(learn::LessonKind kind, cons
 void ClassicMode::quitToLearn(learn::LessonKind kind) {
     screens_.clear();
     lesson_.reset();
+    lock_.set({});
     ui_.reset();
     session_.reset();
     front_ = makeLearnFrontScreen(kind == learn::LessonKind::Tutorial ? "tutorials" : "training");
@@ -317,7 +441,8 @@ void ClassicMode::updateLesson(UiContext& ui) {
     for (const auto& [id, screen] : screens_) facts.openWindows.emplace_back(windowId(id));
     facts.selected = main_.selectionKinds(ui);
     facts.selections = main_.selections();
-    lesson_->frame(ui, facts);
+    facts.battleOrders = tacticalOrderLog();
+    lesson_->frame(ui, facts, lock_.state());
 }
 
 void ClassicMode::openScreen(ScreenId id, ScreenArgs args) {
@@ -435,6 +560,10 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     ui.dt = fs.dt;
     ui.tags.clear();
     ui.facts = {};
+    ui.promptAreas.clear();
+    ui.lessonLocked = lock_.active();
+    // A click the tutorial's lock refused: the lesson says why.
+    if (const auto refused = lock_.takeRefused(); refused && lesson_) lesson_->refused(*refused, fs.time);
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
 
@@ -450,6 +579,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         strategicQueue_.clear();
     }
     if (handoff_) {
+        lock_.set({});
         drawHandoff(ui);
         return !ui.requests.quitGame;
     }
@@ -513,6 +643,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::SetNextWindowSize(ui.size({300, 110}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("End Turn", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+        ui.promptWindow();   // never covered by a tutorial's input lock
         if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
         ImGui::TextUnformatted("End the turn now?");
         const std::optional<bool> key = yesNoKey();
@@ -551,6 +682,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ui.requests.quitToIntro = false;
         screens_.clear();
         lesson_.reset();
+        lock_.set({});
         ui_.reset();
         session_.reset();
         front_ = makeFrontScreen(FrontId::Intro);
@@ -585,11 +717,14 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
         ImGui::SetNextWindowSize(ui.size({400, 0}));
         ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
         ImGui::Begin("Lesson", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags);
+        ui.promptWindow();   // never covered by a tutorial's input lock
         ImGui::TextWrapped("%s", lessonError_.c_str());
         if (ImGui::Button("OK", ui.size({120, 26})) || okKey()) lessonError_.clear();   // a message box: Esc or Enter is OK
         ImGui::End();
         ImGui::PopFont();
     }
+    updateLock(ui);
+    if (options_.lessonCheck) lessonCheckReport(ui);
     return !ui.requests.quitGame;
 }
 
@@ -690,6 +825,7 @@ void ClassicMode::drawEntryQuestion(UiContext& ui) {
     ImGui::SetNextWindowSize(ui.size({400, 150}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Attack Sector", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | kPromptFlags);
+    ui.promptWindow();   // never covered by a tutorial's input lock
     if (ImGui::IsWindowAppearing()) ImGui::SetWindowFocus();
     ImGui::TextWrapped("%s", std::format("Enemy forces are in {}. Should {} enter the sector and attack?", where, who.empty() ? "the ship" : who).c_str());
     ImGui::TextDisabled("Declining stops the move and cancels its orders.");
@@ -728,6 +864,7 @@ void ClassicMode::drawColonyTypeChoice(UiContext& ui, game::ObjectId planet) {
     ImGui::SetNextWindowSize(ui.size({300, h}));
     ImGui::PushFont(fonts_.regular, ui.fontPx(kTextSize));
     ImGui::Begin("Colony Type", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+    ui.promptWindow();   // never covered by a tutorial's input lock
     ImGui::TextWrapped("%s", std::format("A new colony on {}. What kind of colony should it be?", s.galaxy.object(planet).name).c_str());
     ImGui::Spacing();
     for (const std::string& t : types)

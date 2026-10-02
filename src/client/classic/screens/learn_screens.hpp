@@ -19,6 +19,9 @@ namespace opense4::client::classic {
 struct LearnHost {
     const LearnContent* content = nullptr;
     bool inGame = false;
+    // A tutorial step locks the game: `window:` links stay shut (the lesson
+    // decides which windows open).
+    bool locked = false;
     // Starts a lesson or training game.
     std::function<void(learn::LessonKind, const std::string&)> start;
     // Shows the manual at "slug" or "slug#anchor".

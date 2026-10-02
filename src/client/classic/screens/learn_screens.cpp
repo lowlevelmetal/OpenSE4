@@ -274,8 +274,10 @@ bool ManualView::draw(const Painter& p, Dialog& d, LearnHost& host) {
             toTop_ = false;
         }
         options_.canFollow = [&host](const learn::Link& l) {
+            if (l.kind == learn::Link::Kind::Window && host.locked) return false;
             return host.inGame || (l.kind != learn::Link::Kind::Window && l.kind != learn::Link::Kind::Help);
         };
+        options_.cannotFollow = host.locked ? "Not while a lesson step locks the game (Free Play in the lesson panel unlocks it)" : "Only during a game";
         if (auto clicked = drawMarkdown(p, page->doc.blocks, options_)) follow(*clicked, host);
         if (!options_.scrollTo.empty()) {
             // No such section on the page: its top.
@@ -333,6 +335,7 @@ LearnHost gameHost(UiContext& ui) {
     LearnHost h;
     h.content = ui.learn;
     h.inGame = true;
+    h.locked = ui.lessonLocked;
     h.openManual = [&ui](const std::string& target) {
         ScreenArgs a;
         a.text = target;

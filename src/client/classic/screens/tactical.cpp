@@ -31,6 +31,7 @@
 #include "game/design.hpp"
 #include "game/query.hpp"
 #include "game/tactical.hpp"
+#include "learn/ids.hpp"
 
 #include <algorithm>
 #include <array>
@@ -111,6 +112,15 @@ TacticalUi& stateFor(const TacticalFight* fight) {
 
 void submit(TacticalFight&, TacticalOrder o) { state().queue.push_back(std::move(o)); }
 
+} // namespace
+
+std::vector<std::string>& tacticalOrderLog() {
+    static std::vector<std::string> log;
+    return log;
+}
+
+namespace {
+
 // Carries out the orders given this frame, in order.
 void flush(TacticalFight& f) {
     TacticalUi& u = state();
@@ -118,6 +128,8 @@ void flush(TacticalFight& f) {
     u.queue.clear();
     for (const TacticalOrder& o : queue) {
         std::string why = f.battle->submit(o);
+        // Every order the battle took, for the lessons (battle_order).
+        if (why.empty()) tacticalOrderLog().emplace_back(learn::battleOrderId(o.kind));
         // The group orders refuse silently (spec 06 §1.10.2).
         const bool group = o.kind == OK::SetLeader || o.kind == OK::SetMember || o.kind == OK::ClearGroup || o.kind == OK::ClearAllGroups;
         u.message = group ? std::string{} : std::move(why);
@@ -217,6 +229,7 @@ public:
         if (!f || !f->battle) return false;
         TacticalUi& u = stateFor(f);
         TacticalBattle& b = *f->battle;
+        ui.facts.battleBegun = u.begun;   // for the lessons (battle_begun)
         if (u.stop) {
             // Stop Combat (simulator only): the battle ends and the window closes.
             u.stop = false;
