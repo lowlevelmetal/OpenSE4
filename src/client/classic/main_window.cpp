@@ -1271,6 +1271,26 @@ void MainWindow::reportPanel(UiContext& ui) {
     } else if (shown_.valid()) {
         systemReport(ui, shown_);
     }
+    if (several && tagged_.empty()) {
+        // Back to the list of everything in the sector: the up-arrow button of
+        // DetailUp.bmp (33x21, four state rows) at the report's top right (spec 06
+        // §2.5, §5.3), drawn in the report's body, which takes the pointer there;
+        // its place and state order are ours (inferred, spec 06 §7 Q98).
+        const Vec2 at = geo.reportPanel.min + Vec2{geo.reportPanel.size().x - 35, 2};
+        const ImVec2 keep = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ui.at(at));
+        if (ImGui::InvisibleButton("##toList", ui.size({33, 21}))) {
+            object_.reset();
+            vehicle_.reset();
+            fleet_.reset();
+            listMode_ = true;
+            ++selections_;
+        }
+        const int state = ImGui::IsItemActive() ? 2 : ImGui::IsItemHovered() ? 1 : 0;
+        drawAt(ui, ImGui::GetWindowDrawList(), ui.art.region("Pictures/Game/Buttons/DetailUp.bmp", 0, state * 21, 33, 21, false), at, {33, 21});
+        ImGui::SetCursorScreenPos(keep);
+        ImGui::Dummy(ImVec2(0, 0));
+    }
     ImGui::PopClipRect();
     ImGui::EndChild();
     if (tabsFor) {
@@ -1279,19 +1299,6 @@ void MainWindow::reportPanel(UiContext& ui) {
                                              : (tab_ == ReportTab::Facilities ? ReportTab::Components : tab_);
         tab_ = reportTabs(ui, current, planetTabs);
         ui.tagFrame("panel:report-tabs", Rect{{geo.reportPanel.min.x - 4, geo.reportPanel.min.y + tabsY}, {geo.reportPanel.min.x + 284, geo.reportPanel.min.y + tabsY + 30}});
-    }
-    if (several && tagged_.empty()) {
-        // Back to the list of everything in the sector.
-        ImGui::SetCursorPos(ImVec2(ui.px(250), ui.px(tabsY - 18)));
-        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
-        if (ImGui::SmallButton("List")) {
-            object_.reset();
-            vehicle_.reset();
-            fleet_.reset();
-            listMode_ = true;
-            ++selections_;
-        }
-        ImGui::PopFont();
     }
     ImGui::End();
     ImGui::PopStyleVar(2);

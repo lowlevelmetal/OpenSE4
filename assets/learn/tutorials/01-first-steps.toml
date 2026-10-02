@@ -69,7 +69,7 @@ Your homeworld carries your empire's small flag. Click it again.
 
 This lesson's game gave you two attack ships and a colony ship (more about them later), and they
 are in the same sector, so the report panel first lists everything there. Click your homeworld
-in that list. (The **List** button at the top right of a report brings the list back.)
+in that list. (The up-arrow button at the top right of a report brings the list back.)
 """
 highlight = ["panel:system", "panel:report"]
 done = { selected = "colony" }
