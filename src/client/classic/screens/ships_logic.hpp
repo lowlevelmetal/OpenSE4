@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace opense4::client::classic::shipui {
@@ -134,17 +135,23 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
 // its ability list; satellite groups, minefields and drone groups always;
 // fighter groups never (spec 03 §12, §15).
 bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
-bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v);
-// Another own vehicle in the sector, outside `selection`, has an intact weapon.
-bool canBeFiredOn(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::vector<game::VehicleId>& selection);
-// Components on the vehicles that the owner of the window cannot build yet.
-struct ResearchPotential {
-    int unknown = 0;
-    int total = 0;
+// What the Scrap window shows and lights for the selected vehicles, given in
+// the window's list order (spec 03 §15, spec 06 §1.3, confirmed: binary).
+struct ScrapWindowState {
+    // The Research Potential word of the last selected vehicle (None, Minor,
+    // Moderate, Sizable, Major); "None" when any selected vehicle cannot be
+    // analyzed or nothing is selected.
+    std::string_view researchPotential = "None";
+    // Can Self-Destruct and Can Be Fired On: every selected vehicle can.
+    bool canSelfDestruct = false;
+    bool canBeFiredOn = false;
+    // The buttons, each lit only when every selected vehicle passes the
+    // action's test (game::scrapActionProblem); Retrofit when they all have
+    // the same design, a yard and no cloak (the design picked is tested later).
+    bool scrap = false, analyze = false, mothball = false, unmothball = false, retrofit = false, selfDestruct = false, fireOn = false;
 };
-ResearchPotential researchPotential(const game::Rules& r, const game::GameState& s, const game::Empire& e,
-                                    const std::vector<const game::Vehicle*>& vehicles);
-const char* researchPotentialLabel(ResearchPotential p);
+ScrapWindowState scrapWindowState(const game::Rules& r, const game::GameState& s, game::EmpireId e,
+                                  const std::vector<const game::Vehicle*>& selection);
 
 // Per-turn maintenance of one vehicle (docs/spec/02 §7): the engine reports
 // only the empire total, so the Ships window estimates rows with the same rule.

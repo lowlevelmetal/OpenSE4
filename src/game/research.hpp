@@ -74,10 +74,19 @@ void openingPools(const Rules& r, GameState& s);
 // ---- Levels ---------------------------------------------------------------------------------------
 
 // Raises an area to `newLevel` (research, gifts, trades, theft, ruins,
-// surrender) when canGainLevel allows it, and logs "New Tech Level" and
-// "<item> Discovered" for everything that became available. Technology never
-// passes to a master (spec 05 §1.5). `source` is a short word for the log.
+// surrender) when canGainLevel allows it, and writes the Research entries of
+// a level gained (spec 05 §1.4, spec 03 §15): "New Tech Level", then
+// "<item> Discovered" for each component, facility and vehicle size that
+// became available and "<project> Developed" for each intelligence project,
+// then "New Tech Area Discovered" for each area whose requirements are now
+// met. Technology never passes to a master (spec 05 §1.5). `source` is a
+// short word for the log.
 void grantLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area, int newLevel, std::string_view source);
+// Analyze (spec 03 §15, spec 05 §1.5, confirmed: binary): exactly one more
+// level in `area` when canGainLevel allows it (allowed in this game, racial
+// and unique checks); no research points, no maximum level and no area
+// requirements are checked. The entries are grantLevel's. True when gained.
+bool analyzeLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area);
 // Ancient ruins (spec 05 §1.2): `count` advances; for each, up to kRuinsDraws
 // uniform draws among all tech areas until one is researchable, which gains
 // one level.

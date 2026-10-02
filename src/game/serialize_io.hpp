@@ -412,7 +412,7 @@ template <class Ar>
 void io(Ar& ar, Design& d) {
     fields(ar, d.id, d.owner, d.name, d.designType, d.hull, d.entries, d.strategy, d.obsolete, d.createdTurn, d.retrofitted, d.built, d.lost,
            d.enemyTonnageDestroyed);
-    fields(ar, d.templateName, d.everBuilt);
+    fields(ar, d.templateName, d.everBuilt, d.scrapped);
 }
 
 template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o.object, o.vehicle, o.design, o.amount, o.from, o.to); }
@@ -584,6 +584,9 @@ template <class Ar> void io(Ar& ar, cmd::EnterSector& c) { fields(ar, c.vehicle,
 template <class Ar> void io(Ar& ar, cmd::OpenVehicleReport& c) { fields(ar, c.vehicle); }
 template <class Ar> void io(Ar& ar, cmd::JettisonCargo& c) { fields(ar, c.vehicle, c.planet, c.population, c.units); }
 template <class Ar> void io(Ar& ar, cmd::CloakColony& c) { fields(ar, c.planet, c.cloak); }
+template <class Ar> void io(Ar& ar, cmd::Analyze& c) { fields(ar, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::SelfDestruct& c) { fields(ar, c.vehicle); }
+template <class Ar> void io(Ar& ar, cmd::FireOn& c) { fields(ar, c.vehicle); }
 
 template <class Ar> void io(Ar& ar, EmpireOrders& o) { fields(ar, o.empire, o.turn, o.commands); }
 

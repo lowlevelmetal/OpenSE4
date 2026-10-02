@@ -46,8 +46,18 @@ struct Rename {              // vehicle, fleet, design or planet
     ObjectId planet;
     std::string name;
 };
+// The Scrap window's actions on one vehicle (spec 03 §15, scrap.hpp), given
+// to each selected vehicle in turn: carried out at once in a turn-based game,
+// and in a simultaneous game left as the vehicle's only order (its list
+// cleared, Repeat off), carried out at its first action. The test of
+// scrapActionProblem must pass when the command is given. Computer players'
+// Scrap and Retrofit go the same way (inferred). Scrap with `facilityPlanet`
+// instead is Scrap Facilities, at once in both turn styles (spec 02 §6.6).
 struct Scrap { VehicleId vehicle; ObjectId facilityPlanet; int32_t facilitySlot = -1; };
-struct Mothball { VehicleId vehicle; bool mothball = true; };
+struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or Unmothball
+struct Analyze { VehicleId vehicle; };
+struct SelfDestruct { VehicleId vehicle; };
+struct FireOn { VehicleId vehicle; };
 struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; };
 // Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
 // A move of the vehicle (or fleet) stopped before a sector with enemies;
@@ -70,7 +80,7 @@ struct QueueFlags { QueueTarget target; bool onHold = false; bool repeat = false
 // Upgrade Facilities button moves queued facility items to the newest level
 // (spec 02 §6.6), and so do the computer player's upgrades (spec 05 §7.5).
 struct QueueReplaceFacility { QueueTarget target; uint32_t index = 0; uint32_t facility = 0; };
-struct Retrofit { VehicleId vehicle; DesignId design; };  // at an own space yard in the vehicle's sector (spec 03 §14)
+struct Retrofit { VehicleId vehicle; DesignId design; };  // a Scrap window action (above), at an own space yard (spec 03 §14)
 
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };
@@ -208,7 +218,7 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {

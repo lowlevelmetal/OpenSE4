@@ -4,6 +4,7 @@
 #include "game/economy.hpp"
 #include "game/movement.hpp"
 #include "game/query.hpp"
+#include "game/scrap.hpp"
 
 #include <algorithm>
 #include <array>
@@ -266,40 +267,30 @@ game::Resources facilityScrapValue(const game::Rules& r, const game::GameState& 
 
 bool canSelfDestruct(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) { return game::movement::canSelfDestruct(r, s, v); }
 
-bool vehicleArmed(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {
-    if (v.status == game::VehicleStatus::Mothballed) return false;
-    const game::Design& d = s.design(v.design);
-    for (size_t i = 0; i < d.entries.size(); ++i)
-        if (r.component(d.entries[i].component).isWeapon() && game::entryIntact(r, s, v, i)) return true;
-    return false;
-}
-
-bool canBeFiredOn(const game::Rules& r, const game::GameState& s, const game::Vehicle& v, const std::vector<game::VehicleId>& selection) {
-    for (const game::Vehicle& other : s.vehicles) {
-        if (other.id == v.id || other.owner != v.owner || other.location != v.location) continue;
-        if (std::find(selection.begin(), selection.end(), other.id) != selection.end()) continue;
-        if (vehicleArmed(r, s, other)) return true;
-    }
-    return false;
-}
-
-ResearchPotential researchPotential(const game::Rules& r, const game::GameState& s, const game::Empire& e,
-                                    const std::vector<const game::Vehicle*>& vehicles) {
-    ResearchPotential p;
-    for (const game::Vehicle* v : vehicles) {
-        if (!v) continue;
-        for (const game::DesignEntry& en : s.design(v->design).entries) {
-            ++p.total;
-            if (!r.componentAvailable(e, en.component)) ++p.unknown;
-        }
-    }
-    return p;
-}
-
-const char* researchPotentialLabel(ResearchPotential p) {
-    if (p.unknown == 0 || p.total == 0) return "None";
-    const int pct = p.unknown * 100 / p.total;
-    return pct >= 50 ? "High" : pct >= 20 ? "Moderate" : "Low";
+ScrapWindowState scrapWindowState(const game::Rules& r, const game::GameState& s, game::EmpireId e,
+                                  const std::vector<const game::Vehicle*>& selection) {
+    ScrapWindowState out;
+    std::vector<const game::Vehicle*> sel;
+    for (const game::Vehicle* v : selection)
+        if (v) sel.push_back(v);
+    if (sel.empty()) return out;
+    using game::ScrapAction;
+    auto every = [&](ScrapAction a) {
+        return std::all_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) { return game::scrapActionProblem(r, s, e, *v, a).empty(); });
+    };
+    out.scrap = every(ScrapAction::Scrap);
+    out.analyze = every(ScrapAction::Analyze);
+    out.mothball = every(ScrapAction::Mothball);
+    out.unmothball = every(ScrapAction::Unmothball);
+    out.selfDestruct = out.canSelfDestruct = every(ScrapAction::SelfDestruct);
+    // Each sees the others: armed companions may be selected too (spec 03 §15).
+    out.fireOn = out.canBeFiredOn = every(ScrapAction::FireOn);
+    out.retrofit = std::all_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) {
+        return game::scrapListed(*v, e) && v->design == sel.front()->design && game::scrapYardAt(r, s, e, v->location);
+    });
+    // The last selected vehicle's word; "None" when any cannot be analyzed.
+    if (out.analyze) out.researchPotential = game::researchPotentialWord(game::analyzePairs(r, s, e, *sel.back()).size());
+    return out;
 }
 
 game::Resources vehicleMaintenance(const game::Rules& r, const game::GameState& s, const game::Vehicle& v) {

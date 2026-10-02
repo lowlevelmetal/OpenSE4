@@ -229,6 +229,7 @@ TEST_CASE("engine: commands - designs, queues, fleets, orders") {
 TEST_CASE("engine: scrap refunds and retrofit keeps damage") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
+    s.options.simultaneous = false;  // the Scrap window's actions are carried out at once (spec 03 §15)
     const EmpireId me{0u};
     const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId a = addTestDesign(s, r, me, "A", "Test Frigate",

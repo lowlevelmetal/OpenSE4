@@ -206,28 +206,68 @@ std::vector<std::string> availableItems(const Rules& r, const Empire& e) {
     return out;
 }
 
+namespace {
+
+// The areas whose own requirements the empire meets (allowed in this game,
+// racial and unique checks included).
+std::vector<uint8_t> openAreas(const Rules& r, const GameState& s, const Empire& e) {
+    std::vector<uint8_t> out;
+    out.reserve(r.data().techAreas.size());
+    for (uint32_t i = 0; i < r.data().techAreas.size(); ++i) out.push_back(r.techVisible(s, e, TechAreaId{i}));
+    return out;
+}
+
+// Sets the level and writes the entries of a level gained (grantLevel).
+void setLevel(TurnContext& ctx, EmpireId e, TechAreaId area, int newLevel, std::string_view source) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    Empire& emp = s.empire(e);
+    if (emp.techLevels.size() < r.data().techAreas.size()) emp.techLevels.resize(r.data().techAreas.size(), 0);
+    const std::vector<uint8_t> before = availability(r, emp);
+    const std::vector<uint8_t> areasBefore = openAreas(r, s, emp);
+    emp.techLevels[area.index()] = newLevel;
+    const std::vector<uint8_t> after = availability(r, emp);
+    const std::vector<uint8_t> areasAfter = openAreas(r, s, emp);
+
+    const std::string& name = r.tech(area).name;
+    ctx.log(e, LogCategory::Research, "New Tech Level", std::format("{} is now at level {} ({}).", name, newLevel, source));
+    const size_t projects = after.size() - r.data().intelProjects.size();
+    for (size_t i = 0; i < after.size(); ++i)
+        if (after[i] && !before[i]) {
+            const std::string item = itemName(r, i);
+            if (i < projects)
+                ctx.log(e, LogCategory::Research, std::format("{} Discovered", item),
+                        std::format("{} is now available thanks to {} level {}.", item, name, newLevel));
+            else
+                ctx.log(e, LogCategory::Research, std::format("{} Developed", item),
+                        std::format("Our agents can now carry out {}, thanks to {} level {}.", item, name, newLevel));
+        }
+    for (size_t i = 0; i < areasAfter.size(); ++i)
+        if (areasAfter[i] && !areasBefore[i])
+            ctx.log(e, LogCategory::Research, "New Tech Area Discovered",
+                    std::format("{} can now be researched, thanks to {} level {}.", r.data().techAreas[i].name, name, newLevel));
+    // Subjugation passes no technology to the master (spec 05 §1.5, confirmed: binary).
+}
+
+} // namespace
+
 void grantLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area, int newLevel, std::string_view source) {
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!e.valid() || e.index() >= s.empires.size() || !validArea(r, area)) return;
-    Empire& emp = s.empire(e);
+    const Empire& emp = s.empire(e);
     newLevel = std::min(newLevel, r.tech(area).maxLevel);
     if (newLevel <= emp.techLevel(area) || !canGainLevel(r, s, emp, area)) return;
-    if (emp.techLevels.size() < r.data().techAreas.size()) emp.techLevels.resize(r.data().techAreas.size(), 0);
+    setLevel(ctx, e, area, newLevel, source);
+}
 
-    const std::vector<uint8_t> before = availability(r, emp);
-    emp.techLevels[area.index()] = newLevel;
-    const std::vector<uint8_t> after = availability(r, emp);
-
-    const std::string& name = r.tech(area).name;
-    ctx.log(e, LogCategory::Research, "New Tech Level", std::format("{} is now at level {} ({}).", name, newLevel, source));
-    for (size_t i = 0; i < after.size(); ++i)
-        if (after[i] && !before[i]) {
-            const std::string item = itemName(r, i);
-            ctx.log(e, LogCategory::Research, std::format("{} Discovered", item),
-                    std::format("{} is now available thanks to {} level {}.", item, name, newLevel));
-        }
-    // Subjugation passes no technology to the master (spec 05 §1.5, confirmed: binary).
+bool analyzeLevel(TurnContext& ctx, EmpireId e, ruleset::TechAreaId area) {
+    const Rules& r = ctx.rules;
+    GameState& s = ctx.state;
+    if (!e.valid() || e.index() >= s.empires.size() || !validArea(r, area)) return false;
+    if (!canGainLevel(r, s, s.empire(e), area)) return false;
+    setLevel(ctx, e, area, s.empire(e).techLevel(area) + 1, "analysis");
+    return true;
 }
 
 void grantRandomAdvances(TurnContext& ctx, EmpireId e, int count, Rng& rng, std::string_view source) {

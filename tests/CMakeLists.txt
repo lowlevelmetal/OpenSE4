@@ -40,6 +40,7 @@ add_executable(opense4_tests
     test_score.cpp
     test_serialize.cpp
     test_setup_model.cpp
+    test_scrap_window.cpp
     test_ships_ui.cpp
     test_sight.cpp
     test_stellar.cpp

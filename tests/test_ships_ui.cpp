@@ -107,14 +107,47 @@ TEST_CASE("ship windows: scrap window values") {
     CHECK(shipui::scrapValue(r, s, *s.vehicle(a)) == rounded(30));
     CHECK(shipui::unmothballCost(r, s, *s.vehicle(a)) == rounded(20));
     CHECK_FALSE(shipui::canSelfDestruct(r, s, *s.vehicle(a)));
-    CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a}));
+    auto state = [&](std::initializer_list<VehicleId> ids) {
+        std::vector<const Vehicle*> sel;
+        for (VehicleId id : ids) sel.push_back(s.vehicle(id));
+        return shipui::scrapWindowState(r, s, me, sel);
+    };
+    // Nothing selected: everything dim, the potential "None".
+    CHECK(state({}).researchPotential == "None");
+    CHECK_FALSE(state({}).scrap);
+    shipui::ScrapWindowState one = state({a});
+    CHECK(one.scrap);
+    CHECK(one.analyze);
+    CHECK(one.mothball);
+    CHECK_FALSE(one.unmothball);
+    CHECK(one.retrofit);
+    CHECK_FALSE(one.selfDestruct);
+    CHECK_FALSE(one.canBeFiredOn);  // no other armed vehicle here
+    CHECK(one.researchPotential == "None");
 
+    // A gunship: the plain ship can be fired on now, the gunship not (nobody else is armed).
     const VehicleId b = addTestVehicle(s, r, armed, where).id;
     CHECK(shipui::canSelfDestruct(r, s, *s.vehicle(b)));
-    CHECK(shipui::vehicleArmed(r, s, *s.vehicle(b)));
-    CHECK(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a}));
-    CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(a), {a, b}));  // the gunship is selected too
-    CHECK_FALSE(shipui::canBeFiredOn(r, s, *s.vehicle(b), {b}));     // nobody else is armed
+    CHECK(state({a}).canBeFiredOn);
+    CHECK(state({a}).fireOn);
+    CHECK_FALSE(state({b}).canBeFiredOn);
+    // Every selected vehicle must qualify: lit only when all do.
+    CHECK_FALSE(state({a, b}).fireOn);
+    CHECK_FALSE(state({a, b}).selfDestruct);
+    CHECK(state({b}).selfDestruct);
+    CHECK_FALSE(state({a, b}).retrofit);  // different designs
+    // Two gunships selected see each other (the last one carried out will fail).
+    const VehicleId c = addTestVehicle(s, r, armed, where).id;
+    CHECK(state({b, c}).fireOn);
+    // The research potential is the last selected vehicle's; a unit group cannot be analyzed.
+    const DesignId advanced = frigate(s, r, me, "Advanced", {"Test Laser II"});
+    s.empire(me).techLevels[techArea(r, "Test Beams").index()] = 1;
+    const VehicleId x = addTestVehicle(s, r, advanced, where).id;
+    CHECK(state({a, x}).researchPotential == "Minor");
+    CHECK(state({x, a}).researchPotential == "None");  // the plain ship is the last one here
+    const VehicleId sats = addTestVehicle(s, r, addTestDesign(s, r, me, "Sat", "Test Satellite Hull", {"Test Satellite Gun"}), where).id;
+    CHECK(state({sats, x}).researchPotential == "None");
+    CHECK_FALSE(state({sats, x}).analyze);
 
     // A recycler in the sector raises the refund.
     home.facilities.push_back(facilityIndex(r, "Test Recycler"));
@@ -131,16 +164,12 @@ TEST_CASE("ship windows: scrap window values") {
     va.status = VehicleStatus::Mothballed;
     CHECK(shipui::vehicleMaintenance(r, s, va).isZero());
 
-    // Research potential counts components the empire cannot build.
-    const shipui::ResearchPotential p = shipui::researchPotential(r, s, s.empire(me), {s.vehicle(b)});
-    CHECK(p.total == static_cast<int>(s.design(armed).entries.size()));
-    CHECK(std::string(shipui::researchPotentialLabel({0, 5})) == "None");
-    CHECK(std::string(shipui::researchPotentialLabel({5, 5})) == "High");
 }
 
 TEST_CASE("ship windows: a dry run reports the cost without changing the game") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
+    s.options.simultaneous = false;  // carried out at once (spec 03 §15)
     const EmpireId me{0u};
     const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId a = frigate(s, r, me, "A", {"Test Laser"});
@@ -223,6 +252,7 @@ TEST_CASE("ship windows: stellar manipulation checks") {
 TEST_CASE("ship windows: retrofit follows the original's checks and costs") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
+    s.options.simultaneous = false;  // carried out at once (spec 03 §15)
     const EmpireId me{0u};
     Colony& home = homeworld(s, me);
     const Location where = locationOf(s.galaxy, home.planet);
@@ -270,6 +300,7 @@ TEST_CASE("ship windows: retrofit follows the original's checks and costs") {
 TEST_CASE("ship windows: scrap and mothball rules") {
     const Rules& r = engineRules();
     GameState s = newEngineGame();
+    s.options.simultaneous = false;  // carried out at once (spec 03 §15)
     const EmpireId me{0u};
     const Location where = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId mineD = addTestDesign(s, r, me, "Mine", "Test Mine Hull", {"Test Warhead"});

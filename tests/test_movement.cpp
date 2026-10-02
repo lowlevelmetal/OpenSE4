@@ -2034,7 +2034,9 @@ TEST_CASE("movement: mothballed fleet members are full members: copies of the or
     w.colony(home, kA, 1000, {"Test Space Yard"});
     const VehicleId active = w.spawn(w.ship(kA, "Active", 3, {"Test Quantum Reactor", "Test Cargo Bay"}), at(a, 0, 6));
     const VehicleId laidUp = w.spawn(w.ship(kA, "Laid Up", 3), at(a, 0, 6));
+    w.s.options.simultaneous = false;  // carried out at once (spec 03 §15)
     REQUIRE(apply(r, w.s, kA, cmd::Mothball{laidUp, true}).ok);
+    w.s.options.simultaneous = true;
     // A mothballed ship can join a fleet: Fleet Transfer tests no status.
     REQUIRE(apply(r, w.s, kA, cmd::CreateFleet{"Odd", {active, laidUp}}).ok);
     const FleetId fid = w.s.fleets.back().id;
@@ -2065,9 +2067,12 @@ TEST_CASE("movement: mothballed fleet members are full members: copies of the or
     const CommandResult retrofit = apply(r, w.s, kA, cmd::Retrofit{active, refit});
     CHECK_FALSE(retrofit.ok);
     CHECK(retrofit.error.find("fleet") != std::string::npos);
-    // Out of the fleet, the same commands work again.
+    // Out of the fleet, the same commands work again (here, a simultaneous
+    // game: the action becomes the vehicle's only order).
     REQUIRE(apply(r, w.s, kA, cmd::LeaveFleet{laidUp}).ok);
+    w.s.empire(kA).stockpile = {100000, 100000, 100000};
     CHECK(apply(r, w.s, kA, cmd::Mothball{laidUp, false}).ok);
+    CHECK(w.v(laidUp).orders == std::vector<Order>{Order{OrderKind::Unmothball, at(a, 0, 6)}});
 }
 
 TEST_CASE("movement: a computer player's ad-hoc companion joins alone and keeps its list (spec 03 Q75)") {

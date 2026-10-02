@@ -8,6 +8,7 @@
 #include "game/orders.hpp"
 #include "game/query.hpp"
 #include "game/rules.hpp"
+#include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/xmath.hpp"
 
@@ -131,17 +132,6 @@ struct Applier {
 
     Empire& emp() { return s.empire(e); }
 
-    // An own working space yard in the sector: a planet facility while the
-    // colony is not cloaked, or a ship's Space Yard component while that ship
-    // is not cloaked (spec 03 §14, §15, spec 01 §6.9).
-    bool yardAt(Location where) const {
-        for (ObjectId o : planetsAt(s, where))
-            if (const Colony* c = s.colony(o); c && c->owner == e && colonyHasWorkingYard(r, *c)) return true;
-        for (const Vehicle& v : s.vehicles)
-            if (v.count > 0 && v.owner == e && v.location == where && v.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(r, s, v))
-                return true;
-        return false;
-    }
 
     // Ships always; bases when the setting allows; fighter groups yes; drones,
     // satellites and mines never (spec 03 §9, confirmed: binary).
@@ -233,6 +223,15 @@ struct Applier {
         }
         for (const Order& o : c.orders)
             if (o.kind == OrderKind::UseFacility || o.kind == OrderKind::ConvertResources) return R::fail("Only colonies carry out that order");
+        // The Scrap window's orders come only from its commands (spec 03 §15);
+        // a list may keep those it holds already.
+        const std::vector<Order>* held = nullptr;
+        if (const Fleet* f = c.fleet.valid() ? ownFleet(s, e, c.fleet) : nullptr) held = &fleetOrders(s, *f);
+        else if (const Vehicle* v = c.fleet.valid() ? nullptr : ownVehicle(s, e, c.vehicle)) held = &v->orders;
+        for (const Order& o : c.orders)
+            if (scrapWindowOrder(o.kind) &&
+                (!held || std::count(c.orders.begin(), c.orders.end(), o) > std::count(held->begin(), held->end(), o)))
+                return R::fail("That order is given only in the Scrap window");
         // Explore, Resupply, Repair and the composite orders are expanded into
         // simple orders as they are given (spec 03 §8, orders.hpp).
         if (c.fleet.valid()) {
@@ -354,22 +353,7 @@ struct Applier {
     }
 
     R operator()(const cmd::Scrap& c) {
-        if (c.vehicle.valid()) {
-            Vehicle* v = ownVehicle(s, e, c.vehicle);
-            if (!v) return R::fail("Not your vehicle");
-            if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be scrapped");
-            // The Scrap window lists no fleet member (spec 03 §15, §19 Q74, confirmed: binary).
-            if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be scrapped");
-            if (!yardAt(v->location)) return R::fail("Scrapping needs a space yard in the sector");
-            const auto type = vehicleType(r, s, *v);
-            if (type == ruleset::VehicleType::Drone || type == ruleset::VehicleType::Mine) return R::fail("Drones and minefields cannot be scrapped");
-            // Damage does not lower the value and cargo is lost (spec 03 §15).
-            emp().stockpile += scrapRefund(r, s, *v);
-            addLog(s, e, LogCategory::Construction, std::format("{} scrapped", v->name), {}, v->location);
-            v->count = 0;
-            s.removeDeadVehicles();
-            return {};
-        }
+        if (c.vehicle.valid()) return scrapWindow(c.vehicle, ScrapAction::Scrap);
         Colony* col = ownColony(s, e, c.facilityPlanet);
         if (!col) return R::fail("Not your planet");
         if (c.facilitySlot < 0 || static_cast<size_t>(c.facilitySlot) >= col->facilities.size()) return R::fail("No such facility");
@@ -391,37 +375,33 @@ struct Applier {
         return {};
     }
 
-    // Spec 03 §15: mothballing needs a yard, status Normal and no cargo; it
-    // leaves no abilities, movement or supply. Unmothballing needs no yard.
-    R operator()(const cmd::Mothball& c) {
-        Vehicle* v = ownVehicle(s, e, c.vehicle);
-        if (!v) return R::fail("Not your vehicle");
-        if (isUnitType(vehicleType(r, s, *v))) return R::fail("Units cannot be mothballed");
-        // The Scrap window lists no fleet member, so neither Mothball nor
-        // Unmothball reaches one (spec 03 §9, §15, §19 Q74, confirmed: binary).
-        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be mothballed or unmothballed");
-        if (c.mothball) {
-            if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be mothballed");
-            if (v->status != VehicleStatus::Normal) return R::fail("Already mothballed");
-            if (!yardAt(v->location)) return R::fail("Needs a space yard in the sector");
-            if (!v->cargo.empty()) return R::fail("Unload the cargo first");
-            v->status = VehicleStatus::Mothballed;
-            v->orders.clear();
+    // Mothball and Unmothball (spec 03 §15): Scrap window actions.
+    R operator()(const cmd::Mothball& c) { return scrapWindow(c.vehicle, c.mothball ? ScrapAction::Mothball : ScrapAction::Unmothball); }
+    R operator()(const cmd::Analyze& c) { return scrapWindow(c.vehicle, ScrapAction::Analyze); }
+    R operator()(const cmd::SelfDestruct& c) { return scrapWindow(c.vehicle, ScrapAction::SelfDestruct); }
+    R operator()(const cmd::FireOn& c) { return scrapWindow(c.vehicle, ScrapAction::FireOn); }
+
+    // A Scrap window action on one vehicle (spec 03 §15, confirmed: binary):
+    // tested now; in a turn-based game carried out at once, the order list
+    // untouched; in a simultaneous game the list is cleared, Repeat goes off
+    // and the action becomes its only order, carried out (and tested again)
+    // at the vehicle's first action during movement.
+    R scrapWindow(VehicleId id, ScrapAction a, DesignId design = {}) {
+        Vehicle* v = ownVehicle(s, e, id);
+        if (!v || v->count <= 0) return R::fail("Not your vehicle");
+        if (auto why = scrapActionProblem(r, s, e, *v, a, design); !why.empty()) return R::fail(why);
+        if (s.options.simultaneous) {
+            Order o{scrapOrderKind(a), v->location};
+            o.design = design;
+            v->orders = {o};
             v->repeatOrders = false;
-            v->queue.items.clear();
-            v->supply = 0;
-            v->movement = 0;
-        } else {
-            if (v->status != VehicleStatus::Mothballed) return R::fail("Not mothballed");
-            // Every resource must be in stock.
-            const Resources cost = unmothballCharge(r, s, *v);
-            if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources to unmothball");
-            emp().stockpile -= cost;
-            v->status = VehicleStatus::Normal;
-            // Unlimited supply comes back full; others only at a depot, else 0.
-            if (vehicleHasUnlimitedSupply(r, s, *v)) v->supply = kUnlimitedSupply;
-            else if (movement::resupplyDepotAt(r, s, e, v->location)) v->supply = vehicleSupplyCapacity(r, s, *v);
-            else v->supply = 0;
+            return {};
+        }
+        TurnContext ctx{r, s, {}, {}, {}};
+        carryOutScrapAction(ctx, *v, a, design);
+        if (v->count <= 0) {
+            s.removeDeadVehicles();
+            sight::updateKnowledge(r, s);  // the system's sight is recalculated
         }
         return {};
     }
@@ -523,90 +503,9 @@ struct Applier {
         });
     }
 
-    // Retrofit (spec 03 §14, confirmed: binary): the checks in order, the
-    // first failure cancels it.
-    R operator()(const cmd::Retrofit& c) {
-        Vehicle* v = ownVehicle(s, e, c.vehicle);
-        if (!v) return R::fail("Not your vehicle");
-        if (!ownDesign(s, e, c.design)) return R::fail("Not your design");
-        if (v->status == VehicleStatus::Cloaked) return R::fail("A cloaked vehicle cannot be retrofitted");
-        if (v->fleet.valid()) return R::fail("A vehicle in a fleet cannot be retrofitted");  // spec 03 §15, §19 Q74
-        const Design& oldD = s.design(v->design);
-        const Design& newD = s.design(c.design);
-        // Pair each target component with the first unpaired current entry of the
-        // same component and mount; unpaired target parts cost Comps %, unpaired
-        // current parts Comp Removal %, each truncated. The hull costs nothing.
-        std::vector<bool> paired(oldD.entries.size(), false);
-        std::vector<int> pairOf(newD.entries.size(), -1);
-        Resources cost;
-        bool added = false;
-        const int64_t addPct = r.setting("Retrofit Cost Percent For Comps", 120);
-        const int64_t removePct = r.setting("Retrofit Cost Percent For Comp Removal", 30);
-        for (size_t i = 0; i < newD.entries.size(); ++i) {
-            for (size_t j = 0; j < oldD.entries.size(); ++j)
-                if (!paired[j] && oldD.entries[j] == newD.entries[i]) {
-                    paired[j] = true;
-                    pairOf[i] = static_cast<int>(j);
-                    break;
-                }
-            if (pairOf[i] >= 0) continue;
-            added = true;
-            const Resources each = mounted(r, newD.entries[i]).cost;
-            for (Resource res : kResources) cost[res] += xmath::pctTrunc(each[res], addPct);
-        }
-        for (size_t j = 0; j < oldD.entries.size(); ++j) {
-            if (paired[j]) continue;
-            const Resources each = mounted(r, oldD.entries[j]).cost;
-            for (Resource res : kResources) cost[res] += xmath::pctTrunc(each[res], removePct);
-        }
-        // 1. Identical designs.
-        if (cost.total() == 0) return R::fail("The designs are the same");
-        // 2. An own space yard in the sector (a ship's only while it is not cloaked).
-        if (!yardAt(v->location)) return R::fail("Retrofit needs a space yard in the sector");
-        // 3. The hull.
-        if (oldD.hull != newD.hull) return R::fail("A retrofit must keep the hull");
-        // 4. Cargo.
-        if (!v->cargo.empty()) return R::fail("Unload the cargo before a retrofit");
-        // 5. Resources in stock.
-        if (!emp().stockpile.covers(cost)) return R::fail("Not enough resources for the retrofit");
-        // 6. Space yards and colony modules cannot be added.
-        auto has = [&](const Design& d, AbilityKind k) {
-            return std::any_of(d.entries.begin(), d.entries.end(), [&](const DesignEntry& en) { return hasAbility(r.componentAbilities(en.component), k); });
-        };
-        auto colonizes = [&](const Design& d) {
-            return has(d, AbilityKind::ColonizeRock) || has(d, AbilityKind::ColonizeIce) || has(d, AbilityKind::ColonizeGas);
-        };
-        if (r.settingFlag("No Retrofit Adding Of Spaceyards", true) && !has(oldD, AbilityKind::SpaceYard) && has(newD, AbilityKind::SpaceYard))
-            return R::fail("Space yards cannot be added by retrofit");
-        if (r.settingFlag("No Retrofit Adding Of Colony Module", true) && !colonizes(oldD) && colonizes(newD))
-            return R::fail("Colony modules cannot be added by retrofit");
-        // 7. Only an increase in total cost is limited, compared in floating point.
-        const int64_t oldTotal = computeDesignStats(r, nullptr, oldD).cost.total();
-        const int64_t newTotal = computeDesignStats(r, nullptr, newD).cost.total();
-        const int64_t maxPct = r.setting("Retrofit Max Percent Difference in Cost", 50);
-        if (xmath::Ext(newTotal) > xmath::Ext(oldTotal) * xmath::percent(100 + maxPct)) return R::fail("The new design costs too much more");
-
-        // The cost is taken only when a component is added.
-        if (added) emp().stockpile -= cost;
-        // Paired parts keep their state; added parts start destroyed and must be repaired.
-        std::vector<int> damage;
-        for (size_t i = 0; i < newD.entries.size(); ++i)
-            damage.push_back(pairOf[i] >= 0 && static_cast<size_t>(pairOf[i]) < v->damage.size() ? v->damage[static_cast<size_t>(pairOf[i])]
-                             : pairOf[i] >= 0                                                        ? 0
-                                                                                                     : entryStructure(r, newD, i));
-        const std::string name = newD.name;
-        // A design a ship is retrofitted to is no longer a prototype (spec 03 §4.1).
-        s.design(c.design).retrofitted = true;
-        s.design(c.design).everBuilt = true;  // what design theft reads (spec 05 §2.3)
-        v->design = c.design;
-        v->damage = std::move(damage);
-        // Movement and supply recomputed and clamped to the new maxima.
-        v->movement = std::min(v->movement, vehicleMaxMovement(r, s, *v));
-        if (vehicleHasUnlimitedSupply(r, s, *v)) v->supply = kUnlimitedSupply;
-        else v->supply = std::clamp<int64_t>(v->supply, 0, vehicleSupplyCapacity(r, s, *v));
-        addLog(s, e, LogCategory::Construction, std::format("{} retrofitted to {}", v->name, name), {}, v->location);
-        return {};
-    }
+    // Retrofit (spec 03 §14, §15, confirmed: binary): a Scrap window action;
+    // retrofitProblem makes the checks in order, the first failure cancels it.
+    R operator()(const cmd::Retrofit& c) { return scrapWindow(c.vehicle, ScrapAction::Retrofit, c.design); }
 
     R operator()(const cmd::SetColonyType& c) {
         Colony* col = ownColony(s, e, c.planet);
@@ -1246,6 +1145,9 @@ OPENSE4_CMD_NAME(CarryOutDemand)
 OPENSE4_CMD_NAME(UseDemandEntry)
 OPENSE4_CMD_NAME(JettisonCargo)
 OPENSE4_CMD_NAME(CloakColony)
+OPENSE4_CMD_NAME(Analyze)
+OPENSE4_CMD_NAME(SelfDestruct)
+OPENSE4_CMD_NAME(FireOn)
 #undef OPENSE4_CMD_NAME
 
 } // namespace

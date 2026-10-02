@@ -27,6 +27,13 @@ std::string_view displayName(OrderKind k) {
         case OrderKind::SelfDestruct: return "Self-Destruct";
         case OrderKind::UseFacility: return "Use Facility";
         case OrderKind::ConvertResources: return "Convert Resources";
+        // The Scrap window's orders, as the order list shows them (spec 03 §15).
+        case OrderKind::Scrap: return "Scrap / Analyze / Mothball";
+        case OrderKind::Analyze: return "Deconstruct & Analyze";
+        case OrderKind::Mothball: return "Mothball";
+        case OrderKind::Unmothball: return "Unmothball";
+        case OrderKind::Retrofit: return "Retrofit";
+        case OrderKind::FireOn: return "Fire On And Destroy";
         case OrderKind::Count: break;
     }
     return "?";
