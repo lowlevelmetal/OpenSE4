@@ -505,10 +505,10 @@ follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 75 % of turns 1–25; 15 % of listed war colonies gone within 10 turns (before those rules) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
-| Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap and the scrap candidates are the original's too (below). Two thirds of the bases ours still scrap are of designs made on the first turn, mostly tied on the creation date with a ship design of that turn, the base first in the vehicle list (spec 07 "Pace after the scrap, cap and fleet rules") | 0.43 / 0.36 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.36 at turn 100 over 120 seeds, 0.14 before); built 0.73, lost 0.37 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
-| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 21.2k / 26.3k / 29.5k at turns 50 / 75 / 100; colonies 10.4 / 13.4 / 15.0 (seeds 1–24; 10.7 / 13.9 / 15.4 over 120 seeds) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
-| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original). Fewer are scrapped since the soft cap leaves colony ships out | Ships 11.6 / 13.5 per empire at turns 75 / 100 (attack ships 7.5 / 8.3; 120 seeds: 12.6 / 14.7); over turns 26–100 22.8 attack ships built and 16.8 lost per empire; 4.0 % lost per attack ship and turn in turns 51–100 | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
+| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 74 % of turns 1–25; 15 % of listed war colonies gone within 10 turns (before those rules) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
+| Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap, the scrap candidates and their ties are the original's too (below). With the construction budget's queue commitments fewer turns are over the soft cap, so fewer bases are scrapped, but fewer are placed early | 0.30 / 0.37 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.29 / 0.33 / 0.34 over 120 seeds); built 0.51, lost 0.15 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
+| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 22.5k / 28.9k / 32.5k at turns 50 / 75 / 100; colonies 10.7 / 14.3 / 16.4 (seeds 1–24; 11.0 / 14.6 / 16.4 over 120 seeds, a colony more at turn 100 since the construction budget takes off the queues' commitments) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
+| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original). Fewer are scrapped since the soft cap leaves colony ships out; fewer are built in the first 50 turns since the budget takes off the queues' commitments | Ships 3.2 / 7.3 / 12.1 / 13.9 per empire at turns 25 / 50 / 75 / 100 (attack ships 7.1 / 8.2 at 75 / 100; 120 seeds: 3.3 / 7.6 / 12.3 / 15.0); over turns 26–100 23.1 attack ships built and 17.2 lost per empire; 4.3 % lost per attack ship and turn in turns 51–100 (3.9 % over 120 seeds) | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
 | Battles at enemy colonies (spec 05 questions 63, 67, 69): hostile colonies go by bombardment in both, and a battle against a weak colony goes the same way in both; the original fights more of them, while both make failed attacks on strong colonies | Per empire and 25 turns of turns 51–100: battles ending with the enemy colony gone 1.0; colonies lost 1.1 | 1.9–2.2 (two games); 1.8–3.6 (four games) | M |
 
 The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
@@ -571,8 +571,9 @@ counts its count, as in the original; a system's queues follow the game's object
 ship's yard works while its component is intact and not mothballed, and units "of that kind"
 share the vehicle type, which differ (the queue list details above, implemented on
 2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, to
-seed 19 on 2026-10-02, and to seed 42 later that day (the varied battles to seed 19, whose
-invasion still lands), whose games still cover battles, events, intelligence and politics.
+seed 19 on 2026-10-02, to seed 42 later that day (the varied battles to seed 19, whose
+invasion still lands), and to seed 35 with the budget rule, whose games still cover
+battles, events, intelligence and politics.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
 "Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented
@@ -615,6 +616,29 @@ a local or hotseat simultaneous game drops them where it stands for the original
 of the game file before processing (`ClassicSession::reloadGame`); the network host keeps
 the game in memory between turns, as the original's TCP/IP host does (spec 05 §9.4), so its
 games count them, as a turn-based game on one machine does.
+
+Found later on 2026-10-02 (spec 05 §7.5 *Scrap* "Ties" and *Net income*, question 71
+answered; confirmed: binary) and implemented the same day; spec 07 "Pace after the
+tie-break and budget rules" measures them (120 seeds, paired):
+
+- **Scrap ties** (`scrapOldest`, `ai_military.cpp`). Creation dates are whole turns and
+  are compared strictly, so the first candidate met wins, and the candidates are met in
+  slot order (`objectOrderKey`), not in vehicle-id order. 116 of 120 games played out
+  differently, none of the measures moved.
+- **The construction budget's queue commitments** (`Planner::netIncome`,
+  `queueCommitments`, `ai.cpp`). Net income is the revenue less the maintenance of the
+  vehicles of the moment and less what each colony queue will spend this turn on its first
+  item (its cost less what was paid, at most the queue's rate; yard ships' queues not
+  counted); the facility upgrades spend the figure of the start-of-turn step
+  (`TurnContext::aiStartNet`). The engine's own choices are spec 05 question 73. Turns over
+  the soft cap fell from 3.5 to 1.2 % of turns 26–50 (the original none) and from 16 to
+  11 % of turns 51–100 (the original 14 and 16 % in two games, at our upper quartile per
+  game); colonies at turn 100 rose from 15.4 to 16.4 and resources from 30.8k to 33.2k
+  (the original 17.0 and 36.9k).
+
+Two details of the cap test are not followed and change little: the revenue comes from
+the last income report rather than the production of the moment (within 3 % at the median
+in turns 11–50), and the threshold is not taken in single precision (spec 05 §7.5).
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state
