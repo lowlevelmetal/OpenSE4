@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.6.0" date="2026-10-02" type="development">
+      <description>
+        <p>Computer players brought closer to the original's: fleets, scrapping, budget and base building follow rules measured on the original game.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-01" type="development">
       <description>
         <p>Same results and pictures on every platform, tutorials that guide each action, Analyze and Fire On, computer control, games that start without ships as the original does, and windows laid out as the original's.</p>
