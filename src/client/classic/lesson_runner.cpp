@@ -256,7 +256,7 @@ void LessonRunner::tutorialBody(UiContext& ui) {
     if (progress_.result() == learn::LessonProgress::Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
     else if (st.done && progress_.completed(step)) ImGui::TextColored(kGood, "Done.");
     else if (st.done && stuck(ui)) dimWrapped("If this cannot be done any more, Skip moves on.");
-    else if (st.done) dimWrapped("Next lights up once you have done this.");
+    else if (st.done) dimWrapped("The lesson moves on by itself once you have done this.");
 }
 
 void LessonRunner::trainingBody(UiContext& ui) {
