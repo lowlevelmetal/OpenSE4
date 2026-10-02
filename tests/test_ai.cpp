@@ -28,8 +28,10 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 
 using namespace opense4;

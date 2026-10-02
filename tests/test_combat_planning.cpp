@@ -21,6 +21,8 @@
 #include <format>
 #include <optional>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
