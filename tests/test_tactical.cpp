@@ -392,12 +392,14 @@ TEST_CASE("tactical: movement spends movement points square by square") {
     TacticalOrder mv = order(OK::Move, k.ar.a, gunner);
     mv.x = 0;
     mv.y = 0;
+    // The preview draws no random number; the move itself may slide past a
+    // piece in its way to either side (spec 04 §5), so it ends as far along.
     const std::vector<combat::Square> preview = b.pathTo(gunner, 0, 0);
     CHECK(static_cast<int>(preview.size()) == std::min(start.movement, std::max(start.x, start.y)));
     CHECK(b.submit(mv).empty());
     const combat::TacticalPiece& moved = b.pieces()[static_cast<size_t>(gunner)];
-    CHECK(moved.x == preview.back().x);
-    CHECK(moved.y == preview.back().y);
+    CHECK(std::max(std::abs(moved.x - start.x), std::abs(moved.y - start.y)) == start.movement);
+    CHECK(moved.x + moved.y == preview.back().x + preview.back().y);
     CHECK(moved.movement == 0);
     CHECK(b.check(mv) == "No movement left this turn.");
     // A path must go square by square.
@@ -636,6 +638,7 @@ TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding need
     const int boarder = pieceIndex(b, k.boarder), target = pieceIndex(b, k.target), shielded = pieceIndex(b, k.shielded);
     CHECK(b.check(order(OK::Capture, a, pieceIndex(b, k.gunner), target)) == "It has no boarding parties.");
     CHECK(b.check(order(OK::DropTroops, a, boarder, target)) == "No colony of another empire is adjacent.");
+    CHECK(b.check(order(OK::Ram, a, boarder, pieceIndex(b, k.gunner))) == "Only an enemy ship, unit group or planet can be rammed.");
     // Close on the shielded ship: boarding waits for its shields, ramming only for adjacency.
     for (int round = 0; round < 10 && b.distance(boarder, shielded) > 1 && b.phaseEmpire() == a; ++round) {
         if (b.distance(boarder, shielded) > 1) {
@@ -653,7 +656,6 @@ TEST_CASE("tactical: ramming and boarding need an adjacent target; boarding need
     REQUIRE(b.pieces()[static_cast<size_t>(shielded)].shields > 0);
     CHECK(b.check(order(OK::Capture, a, boarder, shielded)) == "Its shields must be down first.");
     if (b.pieces()[static_cast<size_t>(boarder)].movement > 0) CHECK(b.check(order(OK::Ram, a, boarder, shielded)).empty());
-    CHECK(b.check(order(OK::Ram, a, boarder, pieceIndex(b, k.gunner))) == "Only an enemy ship, unit group or planet can be rammed.");
 }
 
 TEST_CASE("tactical: a boarding party takes an unshielded ship") {

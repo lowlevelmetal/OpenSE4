@@ -149,9 +149,9 @@ std::string Battle::check(const TacticalOrder& o) const {
                 }
                 return {};
             }
+            // A blocked way is no refusal: the move makes its tries (spec 04 §5).
             if (!onMap(o.x, o.y)) return "That is off the map.";
             if (p.x == o.x && p.y == o.y) return "It is already there.";
-            if (pathToSquare(o.piece, o.x, o.y).empty()) return "The way is blocked.";
             return {};
         }
         case OK::Fire: {
@@ -311,12 +311,13 @@ void Battle::execute(const TacticalOrder& o) {
             finishPlayerPhase();
             return;
         case OK::Move: {
-            std::vector<std::pair<int, int>> path;
-            if (!o.path.empty())
+            if (!o.path.empty()) {
+                std::vector<std::pair<int, int>> path;
                 for (const Square& sq : o.path) path.emplace_back(sq.x, sq.y);
-            else
-                path = pathToSquare(o.piece, o.x, o.y);
-            walk(o.piece, path);
+                walk(o.piece, path);
+            } else {
+                walkToward(o.piece, o.x, o.y);
+            }
             // The group follows its leader, each member to its place, with its own movement (spec 04 §5).
             if (!o.alone && pieces_[static_cast<size_t>(o.piece)].isLeader)
                 for (size_t m = 0; m < pieces_.size(); ++m)

@@ -169,7 +169,7 @@ struct MovePlan {
     int target = -1;                 // what it drops troops on, boards or rams after the move
     int aim = -1;                    // the fire-first test's target (spec 04 §16.1)
     std::pair<int, int> dest{0, 0};  // the square chosen; (0, 0) when no plan is made
-    std::vector<std::pair<int, int>> path;
+    bool walks = false;              // it steps toward dest: it has movement left and stands elsewhere
 };
 
 // Where the battle is fought when it is not in the real game (the combat
@@ -249,6 +249,9 @@ public:
     bool hasTroops(int i) const;
     bool hasUnitsAboard(int i) const;     // units of any kind in its cargo (a planet piece: its colony's)
     int leaderOf(int i) const;             // the piece i follows (-1: none)
+    // The squares a move toward (tx, ty) would step through if each blocked
+    // step's tries found the first free side square: a preview that draws no
+    // random number (the move itself does, spec 04 §5).
     std::vector<std::pair<int, int>> pathToSquare(int i, int tx, int ty) const;
     // Why weapon `wi` of piece i cannot fire at t now (empty: it can). Instance -1: any ready one.
     std::string fireProblem(int i, size_t wi, int instance, int t) const;
@@ -414,11 +417,12 @@ private:
     std::pair<int, int> dontGetHurtSquare(int i) const;
     std::pair<int, int> pointBlankSquare(int i, int t) const;
     std::pair<int, int> approachSquare(int i, int t) const;   // Ram: the free square nearest to it near the target
-    void walk(int i, const std::vector<std::pair<int, int>>& path);
+    void walk(int i, const std::vector<std::pair<int, int>>& path);   // a player's squares, until one is taken
+    void walkToward(int i, int tx, int ty);                            // the step rule of spec 04 §5
     void moveTo(int i, int x, int y);
     void step(int i, int x, int y);
     void followLeader(int i, bool logMoves = false);
-    void logMove(int i, const std::vector<std::pair<int, int>>& path);
+    void logMove(int i, int tx, int ty);
     void board(int i, int t);
     void ram(int i, int t);
     // Drop Troops (spec 04 §11): the colony a landing takes, why it is refused

@@ -159,12 +159,12 @@ TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
         {1, 0xa656e98df595b8faull},
         {2, 0x50b98b55b3a91aeaull},
         {5, 0xb83514c23218909full},
-        {10, 0x085119e54acb61a0ull},
-        {20, 0xefbb8b0f8c23e85dull},
-        {40, 0x3ccbbd0c28af3cf2ull},
-        {60, 0x45096c5cc4dcb6bcull},
-        {80, 0xc54abded378514a7ull},
-        {100, 0x1fdb00368c642474ull},
+        {10, 0xfd1cfe0d7c8c12d4ull},
+        {20, 0xee5473ae102c0b26ull},
+        {40, 0x09a7aec6cbda402cull},
+        {60, 0xbf4121e4858184a8ull},
+        {80, 0xb7a93881d06a35b8ull},
+        {100, 0x189944ffbff155e3ull},
     }};
     checkCoverage(playGolden("simultaneous", 42, true, kGolden));
 }
@@ -175,12 +175,12 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
         {1, 0x14fd040f4c901f3bull},
         {2, 0x42f6980d32113968ull},
         {5, 0xe0c09f6c5fad1bf3ull},
-        {10, 0x276694480f3a3fd7ull},
-        {20, 0xd3b7e6e97393ad3dull},
-        {40, 0x74d8ca5b9ba67532ull},
-        {60, 0x21261044b14baa31ull},
-        {80, 0xc7b0da75fe54df97ull},
-        {100, 0x7b86a13c69c382c8ull},
+        {10, 0x203c17dc4cc4dd77ull},
+        {20, 0xab36aa6d9af7f30eull},
+        {40, 0xf266ac0a8ecfdbc0ull},
+        {60, 0x477d848daa1aea1eull},
+        {80, 0x395860c42fea3b31ull},
+        {100, 0xf9cc75905fa273bdull},
     }};
     checkCoverage(playGolden("turn-based", 42, false, kGolden));
 }
@@ -193,21 +193,21 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
 // ground combat on the invaded planet.
 TEST_CASE("determinism: varied battles give the golden checksums") {
     static constexpr std::array<uint64_t, 10> kGolden{{
-        0x3509ffdff2c0245eull,
-        0x23d5cd44c72aea26ull,
-        0xa9fc24a75ad872e7ull,
-        0x5a718d556562f031ull,
-        0xd222c839747c983bull,
-        0xb8842ce585aa2346ull,
-        0x8366c78e77e68c25ull,
-        0x6a8a2bfab94f5f34ull,
-        0xe49a59e5754688e1ull,
-        0x7c7cace143884ac1ull,
+        0xbc54433f76667c1cull,
+        0x297d3f53790f4218ull,
+        0x3736dbacb7d24721ull,
+        0xcd83434ad5f9fd46ull,
+        0x377404dbba795631ull,
+        0x414839a8502730faull,
+        0xa8a244c1df9337b0ull,
+        0x242b82757dac7a3cull,
+        0x480a223cab6805e0ull,
+        0xf8cf40110b44442bull,
     }};
     std::string printed;
     int fought = 0, landed = 0;
     for (size_t variant = 0; variant < kGolden.size(); ++variant) {
-        auto [s, where] = ctest::battleScenario(static_cast<int>(variant), 5);
+        auto [s, where] = ctest::battleScenario(static_cast<int>(variant), 19);
         TurnContext ctx = ctest::context(s);
         combat::resolveSpaceCombat(ctx, where);
         fought += static_cast<int>(s.combats.size());

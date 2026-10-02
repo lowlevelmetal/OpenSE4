@@ -32,9 +32,11 @@
 #include <format>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace opense4::game::combat {
 
@@ -63,7 +65,6 @@ constexpr int64_t kDangerOwnSquare = 30;         // a hostile piece's own square
 
 // Facings (spec 03 §10): 0 up, 1 right, 2 down, 3 left, then the diagonals.
 constexpr std::array<std::pair<int, int>, 8> kFacing{{{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {-1, -1}, {1, 1}, {-1, 1}}};
-constexpr std::array<std::pair<int, int>, 8> kDirs{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}, {1, -1}, {-1, 1}}};
 constexpr std::array<std::pair<int, int>, 4> kStraight{{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}};
 
 int gap(int a0, int aSize, int b0, int bSize) { return std::max({0, a0 - (b0 + bSize - 1), b0 - (a0 + aSize - 1)}); }
@@ -1765,8 +1766,10 @@ void Battle::move(int i) {
     }
     if (!pieces_[i].alive) return;
     const bool leads = pieces_[i].isLeader;
-    logMove(i, mv.path);
-    walk(i, mv.path);
+    if (mv.walks) {
+        logMove(i, mv.dest.first, mv.dest.second);
+        walkToward(i, mv.dest.first, mv.dest.second);
+    }
     if (!pieces_[i].alive) return;
     // The members follow, each toward its place around the leader's new square (spec 04 §5).
     if (leads && pieces_[i].isLeader)
@@ -3127,35 +3130,72 @@ MovePlan Battle::plan(int i, const Targeting& T) {
     // Don't Get Hurt: the fallback of Drop Troops, Maximum Weapons Range, Board and Ram.
     if (dest.first < 0) dest = dontGetHurtSquare(i);
     mv.dest = dest;
-    if (pieces_[i].mp > 0 && dest != std::pair{pieces_[i].x, pieces_[i].y}) mv.path = pathToSquare(i, dest.first, dest.second);
+    mv.walks = pieces_[i].mp > 0 && dest != std::pair{pieces_[i].x, pieces_[i].y};
     return mv;
 }
 
-// Steps toward a square: when the next square is taken, the piece tries the
-// other squares around it that bring it closer, then stops (spec 04 §5).
+namespace {
+
+// The step toward a square (spec 04 §5, confirmed: binary): one square toward
+// it on each axis where the two differ, and the two squares a blocked step
+// tries instead: a diagonal's straight steps along x and along y; a straight
+// step's diagonals on either side of it. Which of the two a draw of 0 takes
+// is an OpenSE4 choice (inferred, spec 04 §19.5 Q90): the first listed.
+struct StepChoice {
+    std::pair<int, int> direct;
+    std::array<std::pair<int, int>, 2> sides;
+};
+StepChoice stepToward(int x, int y, int tx, int ty) {
+    const int dx = (tx > x) - (tx < x), dy = (ty > y) - (ty < y);
+    StepChoice c{{x + dx, y + dy}, {}};
+    if (dx != 0 && dy != 0) c.sides = {std::pair{x + dx, y}, std::pair{x, y + dy}};
+    else if (dx != 0) c.sides = {std::pair{x + dx, y - 1}, std::pair{x + dx, y + 1}};
+    else c.sides = {std::pair{x - 1, y + dy}, std::pair{x + 1, y + dy}};
+    return c;
+}
+
+} // namespace
+
+// The tactical window's preview of a move: the steps toward the square as
+// they go when every blocked step's tries find the first free side square,
+// without drawing a random number (the move itself draws them, walkToward).
 std::vector<std::pair<int, int>> Battle::pathToSquare(int i, int tx, int ty) const {
     std::vector<std::pair<int, int>> path;
     int x = pieces_[i].x, y = pieces_[i].y;
-    for (int left = pieces_[i].mp; left > 0; --left) {
-        const int cur = std::max(std::abs(x - tx), std::abs(y - ty));
-        if (cur == 0) break;
-        int bx = x, by = y, best = cur;
-        for (const auto& [dx, dy] : kDirs) {
-            const int nx = x + dx, ny = y + dy;
-            if (!isFree(nx, ny, i)) continue;
-            const int d = std::max(std::abs(nx - tx), std::abs(ny - ty));
-            if (d < best) {
-                best = d;
-                bx = nx;
-                by = ny;
-            }
+    for (int left = pieces_[i].mp; left > 0 && (x != tx || y != ty); --left) {
+        const StepChoice c = stepToward(x, y, tx, ty);
+        std::pair<int, int> next = c.direct;
+        if (!isFree(next.first, next.second, i)) {
+            if (isFree(c.sides[0].first, c.sides[0].second, i)) next = c.sides[0];
+            else if (isFree(c.sides[1].first, c.sides[1].second, i)) next = c.sides[1];
+            else break;
         }
-        if (bx == x && by == y) break;
-        x = bx;
-        y = by;
-        path.emplace_back(x, y);
+        x = next.first;
+        y = next.second;
+        path.push_back(next);
     }
     return path;
+}
+
+// Spec 04 §5 (confirmed: binary): each step goes one square toward (tx, ty)
+// on each axis where they differ. When that square is taken, up to four tries
+// follow, each drawing 0 or 1 from the battle's random numbers to choose one
+// of the two side squares; the first free one tried is taken. When all four
+// hit taken squares (a try may repeat an earlier one), the move ends there
+// with the points left. So a piece slides along an obstacle, one axis at a
+// time, even when the step brings it no nearer.
+void Battle::walkToward(int i, int tx, int ty) {
+    while (pieces_[i].alive && pieces_[i].mp > 0 && (pieces_[i].x != tx || pieces_[i].y != ty)) {
+        const StepChoice c = stepToward(pieces_[i].x, pieces_[i].y, tx, ty);
+        std::optional<std::pair<int, int>> next;
+        if (isFree(c.direct.first, c.direct.second, i)) next = c.direct;
+        for (int tries = 0; tries < 4 && !next; ++tries) {
+            const std::pair<int, int> side = c.sides[static_cast<size_t>(rng_.below(2))];
+            if (isFree(side.first, side.second, i)) next = side;
+        }
+        if (!next) return;
+        step(i, next->first, next->second);
+    }
 }
 
 void Battle::followLeader(int i, bool logMoves) {
@@ -3163,16 +3203,20 @@ void Battle::followLeader(int i, bool logMoves) {
     // leader's facing, with its own movement points (spec 04 §5).
     if (leaderOf(i) < 0 || !hasPlace(i)) return;
     const auto [tx, ty] = placeOf(i);
-    const std::vector<std::pair<int, int>> path = pathToSquare(i, tx, ty);
-    if (logMoves) logMove(i, path);
-    walk(i, path);
+    if (pieces_[i].mp <= 0 || (pieces_[i].x == tx && pieces_[i].y == ty)) return;
+    if (logMoves) logMove(i, tx, ty);
+    walkToward(i, tx, ty);
 }
 
-void Battle::logMove(int i, const std::vector<std::pair<int, int>>& path) {
-    if (!logging(i) || path.empty()) return;
+// A strategy's move as the order a player would give: toward the square, the
+// piece alone. Given again it draws the same random numbers at the same
+// point, so the battle goes on the same.
+void Battle::logMove(int i, int tx, int ty) {
+    if (!logging(i)) return;
     TacticalOrder o{TacticalOrder::Kind::Move, pieces_[i].owner, i};
     o.alone = true;
-    for (const auto& [x, y] : path) o.path.push_back(Square{static_cast<int16_t>(x), static_cast<int16_t>(y)});
+    o.x = tx;
+    o.y = ty;
     logOrder(std::move(o));
 }
 

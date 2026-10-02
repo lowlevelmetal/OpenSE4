@@ -305,13 +305,20 @@ moment, including during other empires' phases (§10.2).
   it. The first free square tried is taken. When all four tries hit taken squares (a try
   may repeat an earlier one), the move ends there with the points left unused. So a piece
   whose diagonal is blocked by a large piece slides along it, one axis at a time, even
-  when that step brings it no nearer. The engine differs: `Battle::pathToSquare`
-  (`combat_space.cpp`) takes, among the 8 neighbours, only one strictly nearer the
-  destination and draws no random number, so a piece behind a large obstacle stops where
-  the original slides past it. In 12 of our games an armed piece of turns 51–100 stopped
-  this way in at least 5 combat turns of 11 % of battles (3 % with the original's rule in
-  a scratch run), but the share of drawn battles moved only from 42 to 39 % (spec 07
-  "Battles, bases and the first turns under a debugger").
+  when that step brings it no nearer. OpenSE4 follows this since 2026-10-02
+  (`Battle::walkToward`, `combat_space.cpp`). Each try draws 0 or 1 from the battle's own
+  random sequence at the moment of the step, for a computer's move and a player's alike;
+  which side square each value takes is question 90. A strategy's move is recorded as the
+  order a player would give (toward its square, the piece alone), so the same move given
+  by hand or replayed draws the same numbers and the battle goes on the same. A player's
+  move toward a square is therefore never refused for a blocked way: it makes its tries.
+  The Tactical Combat window's preview of a move draws nothing and shows the first free
+  side square (`Battle::pathToSquare`). The engine used to take, among the 8 neighbours,
+  only one strictly nearer the destination, with no random number, so a piece behind a
+  large obstacle stopped where the original slides past it: in 12 of our games an armed
+  piece of turns 51–100 stopped this way in at least 5 combat turns of 11 % of battles (3 %
+  with the original's rule in a scratch run), and the drawn battles were 42 % (39 %;
+  spec 07 "Battles, bases and the first turns under a debugger").
 - **Occupancy.** A square holds one piece; big pieces fill their 4×4 footprint. Seekers
   may share squares.
 - **Launched units** (fighters, drones) get their full movement in the turn they launch
@@ -2216,3 +2223,13 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
     either, but a piece with Drop Troops in effect always leaves its formation first, so
     that case cannot arise. The engine matches; its "(inferred)" mark becomes "(confirmed:
     binary)".
+
+### 19.5 Questions from implementing the step rule (2026-10-02)
+
+90. **Which side square a try takes.** A blocked step tries the two squares beside it,
+    choosing at random (1 in 2) each time (§5). The engine draws a number below 2 from the
+    battle's sequence and takes, for 0, a diagonal's straight step along x or, for a
+    straight step, the side square with the lower coordinate on the other axis; for 1, the
+    other square (inferred). To verify in the executable: which random call the tries make
+    (and so how many numbers each takes from the sequence), and which square each result
+    names.
