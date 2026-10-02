@@ -263,12 +263,16 @@ private:
         }
     }
 
-    // A hint right-aligned under a list.
+    // A hint right-aligned under a list, in the small font (ours, so that it
+    // leaves room for the heading on its left; inferred).
     static void hint(UiContext& ui, Vec2 at, float width, const char* text) {
+        ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+        ImGui::PushFont(small, ui.fontPx(kSmallSize));
         const float w = ImGui::CalcTextSize(text).x;
-        const ImVec2 right = ui.at(at + Vec2{width, 0});
+        const ImVec2 right = ui.at(at + Vec2{width, 2});
         ImGui::SetCursorScreenPos(ImVec2(right.x - w, right.y));
         dimText(text);
+        ImGui::PopFont();
     }
 
     // "Items" at (322,75), 250x230: designs and home-system objects.
@@ -323,15 +327,18 @@ private:
         ImGui::TextColored(kLabelBlue, "Owner for item");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 325}));
         ImGui::BeginChild("##owners", ui.size({250, 120}), ImGuiChildFlags_Borders);
+        const ImVec2 top = ImGui::GetCursorScreenPos();
         for (int k = 0; k < int(setup_.sides.size()); ++k) {
             ImGui::PushID(k);
             bool on = current_ == k;
-            const ImVec2 p = ImGui::GetCursorScreenPos();
+            const ImVec2 p{top.x, top.y + ui.px(20) * float(k)};
+            ImGui::SetCursorScreenPos(p);
             if (lampToggle(ui, setup_.sides[size_t(k)].name.c_str(), &on) && on) current_ = k;
             drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(80), p.y + ui.px(1)}, {p.x + ui.px(106), p.y + ui.px(19)}, k + 1);
-            ImGui::SetCursorScreenPos({p.x, p.y + ui.px(20)});
             ImGui::PopID();
         }
+        ImGui::SetCursorScreenPos({top.x, top.y + ui.px(20) * float(setup_.sides.size())});
+        ImGui::Dummy(ImVec2(1, 1));
         ImGui::EndChild();
         ui.tagItem("combat-simulator:owners");
     }
@@ -364,16 +371,18 @@ private:
         ImGui::TextColored(kLabelBlue, "Pic");
         ImGui::SameLine(ui.px(60));
         ImGui::TextColored(kLabelBlue, "Name");
+        const ImVec2 top = ImGui::GetCursorScreenPos();
         for (size_t k = 0; k < setup_.sides.size(); ++k) {
             ImGui::PushID(int(k));
             bool on = setup_.sides[k].computer;
-            const ImVec2 p = ImGui::GetCursorScreenPos();
+            const ImVec2 p{top.x, top.y + ui.px(20) * float(k)};
             drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(2), p.y + ui.px(1)}, {p.x + ui.px(28), p.y + ui.px(19)}, int(k) + 1);
             ImGui::SetCursorScreenPos({p.x + ui.px(36), p.y});
             if (lampToggle(ui, setup_.sides[k].name.c_str(), &on)) setup_.sides[k].computer = on;
-            ImGui::SetCursorScreenPos({p.x, p.y + ui.px(20)});
             ImGui::PopID();
         }
+        ImGui::SetCursorScreenPos({top.x, top.y + ui.px(20) * float(setup_.sides.size())});
+        ImGui::Dummy(ImVec2(1, 1));
         if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
