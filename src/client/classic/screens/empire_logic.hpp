@@ -68,6 +68,15 @@ std::string_view packageKindName(game::PackageItem::Kind k);
 // engine returns nothing) visible areas below their maximum level.
 std::vector<ruleset::TechAreaId> researchableAreas(const game::Rules& r, const game::GameState& s, const game::Empire& e);
 
+// The Research window's list (observed, spec 07 session 3): the areas the
+// empire may research and, in their places, the areas it has completed, which
+// stay listed (dimmed, with "Complete" as the cost). In data order.
+struct ResearchListArea {
+    ruleset::TechAreaId area;
+    bool complete = false;
+};
+std::vector<ResearchListArea> researchListAreas(const game::Rules& r, const game::GameState& s, const game::Empire& e);
+
 struct TechUnlock {
     enum class Kind : uint8_t { Component, Facility, Hull, IntelProject, TechArea };
     Kind kind = Kind::Component;

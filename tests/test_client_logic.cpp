@@ -152,6 +152,25 @@ TEST_CASE("client logic: researchable areas without the research module") {
     CHECK_FALSE(contains("Test Rock Colonies"));  // complete for a rock race
 }
 
+TEST_CASE("client logic: the Research list keeps completed areas") {
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(5, 2, 12);
+    const Empire& e = s.empire(EmpireId{0u});
+    const auto list = researchListAreas(r, s, e);
+    const auto open = researchableAreas(r, s, e);
+    const auto find = [&](std::string_view name) {
+        return std::find_if(list.begin(), list.end(), [&](const ResearchListArea& x) { return x.area == techArea(r, name); });
+    };
+    // Every researchable area, not complete, and the completed ones besides, in data order.
+    for (ruleset::TechAreaId a : open)
+        CHECK(std::any_of(list.begin(), list.end(), [&](const ResearchListArea& x) { return x.area == a && !x.complete; }));
+    REQUIRE(find("Test Rock Colonies") != list.end());
+    CHECK(find("Test Rock Colonies")->complete);
+    CHECK(find("Test Psionics") == list.end());  // racial, never researched
+    CHECK(find("Test Missiles") == list.end());  // not yet open
+    for (size_t i = 1; i < list.size(); ++i) CHECK(list[i - 1].area.index() < list[i].area.index());
+}
+
 TEST_CASE("client logic: what a tech level unlocks") {
     const Rules& r = engineRules();
     const auto physics = techArea(r, "Test Physics");

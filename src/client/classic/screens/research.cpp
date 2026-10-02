@@ -1,6 +1,8 @@
 // Research (F8) and Tech Tree windows (docs/spec/06 §1.2, docs/spec/05 §1).
 
+#include "client/classic/screens/empire_logic.hpp"
 #include "client/classic/screens/empire_widgets.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/pointers.hpp"
 #include "client/classic/screens/screens.hpp"
 
@@ -9,6 +11,10 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -79,9 +85,7 @@ public:
         image(ui, ui.art.icon16(Icon::Research), {12, 12});
         ImGui::SameLine(0, ui.px(2));
         ImGui::TextColored(kTextBlue, "Cost");
-        ImGui::BeginChild("##areas", ImVec2(0, ui.px(245)), ImGuiChildFlags_Borders);
         areaList(ui);
-        ImGui::EndChild();
         ui.tagItem("research:areas");
         if (hovered_) {
             ImGui::SetNextWindowSize(ui.size({380, 0}));
@@ -99,6 +103,12 @@ public:
         ImGui::EndGroup();
         ui.tagItem("research:queue");
 
+        // The original's column: the three pages, a gap, the two check boxes,
+        // then Reorder Projects in the 13th slot just above Close (observed,
+        // spec 07 session 3). The original shows Tech Tree only when the game
+        // lets players see the complete tech tree, a setting OpenSE4's games do
+        // not have yet: ours always shows it, in the 12th slot (inferred, spec 06
+        // §7 Q92).
         d.beginButtons();
         projectPageButtons(d, page_);
         d.spacer();
@@ -106,7 +116,7 @@ public:
         ui.tagItem("research:repeat");
         if (d.check("Divide Pts Evenly", e.researchEvenly)) set(ui, e.research, !e.researchEvenly, e.repeatResearch);
         ui.tagItem("research:divide-evenly");
-        d.spacer();
+        for (int gap = 0; gap < 5; ++gap) d.spacer();
         if (d.button("Tech Tree")) ui.open(ScreenId::TechTree);
         ui.tagItem("research:tech-tree");
         if (d.button("Reorder Projects", e.research.size() > 1)) {
@@ -181,12 +191,16 @@ private:
         const game::Rules& r = ui.rules();
         const game::GameState& s = ui.state();
         const game::Empire& e = ui.me();
-        const auto areas = researchableAreas(r, s, e);
-        if (areas.empty()) {
-            ImGui::TextColored(kTextDim, "Every technology area is fully researched.");
-            return;
-        }
-        if (!ImGui::BeginTable("##areaTable", 3, ImGuiTableFlags_ScrollY, ImVec2(0, 0))) return;
+        // Researchable areas and, in their places, the completed ones: dimmed,
+        // with "Complete" as the cost, and a click does nothing (observed, spec 07
+        // session 3).
+        const std::vector<ResearchListArea> areas = researchListAreas(r, s, e);
+        std::vector<TechAreaId> ids;
+        for (const ResearchListArea& a : areas) ids.push_back(a.area);
+        auto complete = [&](TechAreaId a) {
+            return std::any_of(areas.begin(), areas.end(), [&](const ResearchListArea& x) { return x.area == a && x.complete; });
+        };
+        if (!beginListTable(ui, "##areaTable", 3, ImGuiTableFlags_BordersOuter, ImVec2(0, ui.px(245)), kListLineStep)) return;
         ImGui::TableSetupColumn("Area", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Level", ImGuiTableColumnFlags_WidthFixed, ui.px(70));
         ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, ui.px(96));
@@ -194,30 +208,37 @@ private:
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text.c_str()).x);
             ImGui::TextColored(color, "%s", text.c_str());
         };
-        for (const auto& [group, list] : byGroup(r, areas)) {
+        for (const auto& [group, list] : byGroup(r, ids)) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             heading(ui, group.empty() ? "Other" : group.c_str());
             for (TechAreaId a : list) {
                 const ruleset::TechArea& t = r.tech(a);
                 const int level = e.techLevel(a);
+                const bool done = complete(a);
                 const bool inQueue = queued(e, a);
-                const ImVec4 color = inQueue ? kTextDim : ImVec4(1, 1, 1, 1);
+                const ImVec4 color = done ? imColorV(palette::kDim) : inQueue ? kTextDim : ImVec4(1, 1, 1, 1);
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(int(a.index()));
                 ImGui::PushStyleColor(ImGuiCol_Text, color);
-                if (ImGui::Selectable(t.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) add(ui, a);
+                if (ImGui::Selectable(t.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns) && !done) add(ui, a);
                 ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = a;
                 ImGui::TableSetColumnIndex(1);
                 right(std::to_string(level), color);
                 ImGui::TableSetColumnIndex(2);
-                right(inQueue ? std::string("Queued") : std::to_string(game::research::levelCost(r, s, a, level + 1)), color);
+                right(done ? std::string("Complete") : inQueue ? std::string("Queued") : std::to_string(game::research::levelCost(r, s, a, level + 1)),
+                      color);
                 ImGui::PopID();
             }
         }
-        ImGui::EndTable();
+        if (areas.empty()) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextColored(kTextDim, "No technology area is known.");
+        }
+        endListTable(ui);
     }
 
     // Small blue hint text, right-aligned on the current line.
@@ -236,13 +257,18 @@ private:
         const game::Empire& e = ui.me();
         const float gap = ImGui::GetStyle().ItemSpacing.x;
         const float boxW = (ImGui::GetContentRegionAvail().x - 3 * gap) / kProjectsPerPage;
-        const float boxH = ImGui::GetContentRegionAvail().y;
+        // Under each project box a small box (observed, spec 07 session 3); ours
+        // holds the project's progress (inferred, spec 06 §7 Q92).
+        const float smallH = ui.px(22), smallGap = ui.px(3);
+        const float boxH = ImGui::GetContentRegionAvail().y - smallH - smallGap;
         std::optional<size_t> remove;
         for (int slot = 0; slot < kProjectsPerPage; ++slot) {
             const size_t i = size_t(page_ * kProjectsPerPage + slot);
             if (slot > 0) ImGui::SameLine(0, gap);
             ImGui::PushID(slot);
+            ImGui::BeginGroup();
             ImGui::BeginChild("##slot", ImVec2(boxW, boxH), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+            std::optional<std::pair<float, std::string>> progress;
             auto centred = [](const std::string& text, ImVec4 color) {
                 ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(text.c_str()).x) * 0.5f));
                 ImGui::TextColored(color, "%s", text.c_str());
@@ -260,14 +286,21 @@ private:
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
                 centred(etaText(game::research::etaTurns(r, s, e, i)), kTextDim);
                 const float frac = cost > 0 ? float(double(p.progress) / double(cost)) : 0.0f;
-                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(24));
-                progressBar(ui, frac, std::format("{} / {}", p.progress, cost));
+                progress.emplace(frac, std::format("{} / {}", p.progress, cost));
                 // Clicking a project cancels it, as in the original.
                 ImGui::SetCursorPos(ImVec2(0, 0));
-                if (ImGui::InvisibleButton("##cancel", ImVec2(boxW, boxH - ui.px(26)))) remove = i;
+                if (ImGui::InvisibleButton("##cancel", ImVec2(boxW, boxH))) remove = i;
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal)) hovered_ = p.area;
             }
             ImGui::EndChild();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y + smallGap);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(2), ui.px(2)));
+            ImGui::BeginChild("##progress", ImVec2(boxW, smallH), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+                              ImGuiWindowFlags_NoScrollbar);
+            ImGui::PopStyleVar();
+            if (progress) progressBar(ui, progress->first, progress->second, 0.0f, 16.0f);
+            ImGui::EndChild();
+            ImGui::EndGroup();
             ImGui::PopID();
         }
         if (remove) {
