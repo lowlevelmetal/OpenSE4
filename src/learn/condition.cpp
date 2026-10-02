@@ -8,6 +8,7 @@
 #include "learn/ids.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <format>
 
 namespace opense4::learn {
@@ -26,6 +27,8 @@ constexpr FactInfo kFacts[] = {
     {Fact::DesignHullChosen, "design_hull_chosen", F, false, "the player picked a hull in the open Create Design window's Size list"},
     {Fact::SimulatorOwners, "simulator_owners", N, false, "the open Combat Simulator has items for N races"},
     {Fact::SimulatorItems, "simulator_items", N, false, "the open Combat Simulator has N items in the battle"},
+    {Fact::BattleBegun, "battle_begun", F, false, "the open Tactical Combat window's battle has begun (Begin was pressed)"},
+    {Fact::BattleOrder, "battle_order", T, true, "the player gave an order of that kind in a tactical battle"},
     {Fact::Turn, "turn", N, false, "the game has reached turn N (the first turn is 0)"},
     {Fact::TurnsPassed, "turns_passed", N, true, "N turns have ended"},
     {Fact::Colonies, "colonies", N, false, "the empire has N colonies"},
@@ -113,7 +116,8 @@ void Tracker::observe(const game::GameState& state, game::EmpireId empire) {
     }
 }
 
-Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker, uint64_t selections) {
+Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker, uint64_t selections,
+             size_t battleOrders) {
     Mark m;
     m.turn = state.turn;
     m.commands = tracker.commands().size();
@@ -121,6 +125,7 @@ Mark markNow(const game::Rules& rules, const game::GameState& state, game::Empir
     m.enemyShipsDestroyed = tracker.enemyShipsDestroyed();
     m.planetsCaptured = tracker.planetsCaptured();
     m.selections = selections;
+    m.battleOrders = battleOrders;
     return m;
 }
 
@@ -205,6 +210,11 @@ bool holds(const Condition& c, const EvalContext& ctx) {
         // game starts with, or one made for an earlier step, does not count.
         case Fact::Selected: return contains(ctx.client.selected, c.text) && ctx.client.selections > ctx.mark.selections;
         case Fact::Tab: return contains(ctx.client.tabs, c.text);
+        case Fact::BattleBegun: return ctx.client.battleBegun == (c.number != 0);
+        case Fact::BattleOrder: {
+            const auto& log = ctx.client.battleOrders;
+            return std::find(log.begin() + std::ptrdiff_t(std::min(ctx.mark.battleOrders, log.size())), log.end(), c.text) != log.end();
+        }
         case Fact::DesignHullChosen: return ctx.client.designComponents.has_value() && ctx.client.designHullChosen == (c.number != 0);
         case Fact::Option: {
             if (!validEmpire(ctx.state, ctx.empire)) return false;

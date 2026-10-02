@@ -73,6 +73,9 @@ Learning to play (see docs/LEARNING.md):
   --training=SLUG                 Start a training game at once
   --manual[=SLUG[#SECTION]]       Open the manual (at a page)
   --learn-dir=DIR                 Read tutorials, training games and the manual from DIR only
+  --lesson-check                  With --tutorial=SLUG:N: open the windows step N works in, report
+                                  whether everything it highlights or allows is on screen, and
+                                  exit with 1 if not (tools/check_lessons.py runs every step)
 
 Play by e-mail (see docs/MULTIPLAYER.md):
   --pbem=GAME.gam                 Open the game file the host sent and play your turn; End Turn
@@ -192,6 +195,8 @@ int main(int argc, char** argv) {
         } else if (key == "--learn-dir") {
             options.learnDir = std::string(value);
             ok = !value.empty();
+        } else if (key == "--lesson-check") {
+            options.lessonCheck = true;
         } else if (key == "--quadrant") {
             options.quadrantType = std::string(value);
         } else if (key == "--turn-style") {

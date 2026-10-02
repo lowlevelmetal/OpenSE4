@@ -13,7 +13,7 @@ events = "none"
 title = "Ships on the move"
 text = """
 Ships do their work far from home. This lesson shows you how to group them into a **fleet**, how
-to move them, and how to keep them supplied. You will use your two scouts.
+to move them, and how to keep them supplied. You will use your two scouts. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "ships-and-fleets"
@@ -34,6 +34,7 @@ Open **Fleet Transfer** with its order button or `F`. It lists the ships in this
 not in a fleet, and the fleets already there.
 """
 highlight = ["order:fleet-transfer"]
+allow = ["cycle:ship"]
 done = { window = "fleet-transfer" }
 manual = "ships-and-fleets#fleets"
 
@@ -60,11 +61,12 @@ manual = "ships-and-fleets#fleets"
 [[step]]
 title = "Your fleet"
 text = """
-Close Fleet Transfer. Select a scout again: the report panel now shows the **fleet** above the
-ship, with its speed, supplies, formation, strategy and members. Orders you give now go to the
-whole fleet.
+Close Fleet Transfer (**Close** or `Esc`). Then select a scout again with the ship arrows: the
+report panel now shows the **fleet** above the ship, with its speed, supplies, formation,
+strategy and members. Orders you give now go to the whole fleet.
 """
-highlight = ["panel:report", "cycle:ship"]
+highlight = ["fleet-transfer:close", "cycle:ship"]
+allow = ["panel:report"]
 done = { all = [{ not = { window = "fleet-transfer" } }, { selected = "fleet" }] }
 manual = "ships-and-fleets#fleets"
 
@@ -77,6 +79,7 @@ a system in the galaxy panel first to pick a sector in another system you have e
 (Shortcut: with a ship selected, right-clicking a sector also gives a Move To order.)
 """
 highlight = ["order:move-to", "panel:system"]
+allow = ["panel:galaxy"]
 done = { order = "move-to" }
 manual = "ships-and-fleets#moving-around"
 
@@ -88,6 +91,7 @@ the rest of the move continues next turn. Press `Ctrl+L` to see its route as a d
 again to hide it. Press **Next**.
 """
 highlight = ["panel:system"]
+keys = ["Ctrl+L"]
 manual = "ships-and-fleets#moving-around"
 
 [[step]]
@@ -96,20 +100,21 @@ text = """
 **Waypoints** are ten places you can send ships to quickly. Click a sector in the system view
 (for example the one with a warp point), then press `Alt+1`: that sector becomes waypoint 1, and
 a cyan frame with the number marks it.
-
-Then select your fleet again (a scout, with the ship arrows).
 """
 highlight = ["panel:system"]
+keys = ["Alt+1"]
 done = { command = "SetWaypoint" }
 manual = "ships-and-fleets#waypoints"
 
 [[step]]
 title = "Go to the waypoint"
 text = """
-With a scout of the fleet selected, press `Ctrl+1`, or the **Move To Waypoint** order button and
-pick waypoint 1 from the list.
+Select your fleet again: a scout, with the ship arrows. Then press `Ctrl+1`, or the **Move To
+Waypoint** order button and pick waypoint 1 from the list.
 """
 highlight = ["order:move-to-waypoint", "cycle:ship"]
+allow = ["panel:report"]
+keys = ["Ctrl+1"]
 done = { order = "move-to-waypoint" }
 manual = "ships-and-fleets#waypoints"
 
@@ -129,9 +134,10 @@ text = """
 Here you can move orders up and down, delete one, or clear them all; the **Repeat Orders** box
 makes the fleet repeat its list forever. An order that fails clears the whole list.
 
-Close the window when you are done.
+Close the window (**Close** or `Esc`) when you are done.
 """
 highlight = ["window:view-orders"]
+keys = ["Escape"]
 done = { not = { window = "view-orders" } }
 manual = "ships-and-fleets#orders"
 
@@ -145,6 +151,7 @@ the one on your homeworld.
 Give the fleet the **Resupply** order (or `S`): it adds a move to the nearest depot.
 """
 highlight = ["order:resupply"]
+allow = ["cycle:ship"]
 done = { order = "resupply" }
 manual = "logistics#supply"
 
@@ -163,7 +170,7 @@ title = "Well done"
 text = """
 You can now form fleets and move them, use waypoints, and read and edit order lists. Two orders
 to remember for guards: **Sentry** (`Y`) waits until an enemy appears in the system, and **Set
-Patrol** (`P`) moves between several sectors forever.
+Patrol** (`P`) moves between several sectors forever. Press **Finish** to end the lesson.
 """
 highlight = ["order:sentry", "order:patrol"]
 manual = "ships-and-fleets#orders"

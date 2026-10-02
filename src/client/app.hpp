@@ -54,6 +54,7 @@ struct AppOptions {
     std::string training;
     std::optional<std::string> manual;
     std::string learnDir;
+    bool lessonCheck = false;        // --lesson-check: report whether a tutorial step's areas are on screen
 
     // Automation: render a few frames, save a PNG and exit.
     std::string screenshotPath;

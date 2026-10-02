@@ -21,6 +21,11 @@ and moves on by itself once you have done it. Steps without a task wait for **Ne
 - **Read More** opens the manual page about the step.
 - **Hide** puts the panel away; `Ctrl+H` or the **T** button at the top right brings it back.
 - You can drag the panel by its title.
+- While a step waits for you, the rest of the screen is dimmed and does not respond to clicks or
+  keys, so nothing can go astray. **Free Play** in the panel lifts that; switch it off to be
+  guided again.
+
+Press **Next** to begin.
 """
 highlight = ["lesson:panel", "lesson:next"]
 manual = "getting-started#your-first-turns"
@@ -34,6 +39,8 @@ The **status bar** across the top shows your empire's flag and name, your leader
 - The game starts in the year 2400.0, and every turn adds 0.1: ten turns make a year.
 - The three numbers on the right are your stored **minerals**, **organics** and
   **radioactives**, the materials everything is built from.
+
+Press **Next**.
 """
 highlight = ["status:empire", "status:date", "status:resources"]
 manual = "main-window#the-layout"
@@ -77,6 +84,7 @@ Try the tabs at the bottom of the report: **Facil** lists the planet's facilitie
 it stores and **Ability** its special abilities. Press **Next** when you have looked.
 """
 highlight = ["panel:report", "panel:report-tabs"]
+allow = ["panel:report-tabs"]
 manual = "main-window#the-report-panel"
 
 [[step]]
@@ -89,6 +97,7 @@ people can breathe the air, red that they would live under domes. The next lesso
 settling them.
 """
 highlight = ["panel:system"]
+allow = ["panel:report"]
 done = { all = [{ selected = "planet" }, { not = { selected = "colony" } }] }
 manual = "planets-and-colonies#colonizing"
 
@@ -115,6 +124,7 @@ system; the rest of the quadrant is waiting to be explored.
 Close the window with its **Close** button or `Esc`.
 """
 highlight = ["window:galaxy-map"]
+keys = ["Escape"]
 done = { not = { window = "galaxy-map" } }
 manual = "galaxy#the-galaxy-panel-and-the-galaxy-map"
 
@@ -146,9 +156,10 @@ text = """
 The tabs on the right choose a topic. Click a few of them, and click an item in the list to read
 about it. The **Weapons Report** compares every weapon you know.
 
-Close the Help window when you are done.
+Close the Help window (**Close** or `Esc`) when you are done.
 """
-highlight = ["help:tabs"]
+highlight = ["help:tabs", "help:close"]
+allow = ["window:help"]
 done = { not = { window = "help" } }
 manual = "main-window#the-help-window"
 
@@ -199,6 +210,8 @@ A new turn has begun. The **Log** (`F10`) holds the news of each turn: what was 
 discovered and what happened to your ships. Read it at the start of every turn.
 
 That is the main window. The next lesson sends your scouts out and founds your first colony.
+Press **Finish** to end this one.
 """
 highlight = ["command:log"]
+allow = ["command:log"]
 manual = "turns#the-log"

@@ -3,6 +3,7 @@
 #include "client/audio.hpp"
 #include "client/classic/learn_content.hpp"
 #include "client/classic/screens/markdown_view.hpp"
+#include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "core/hash.hpp"
 
@@ -12,6 +13,9 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -40,17 +44,86 @@ void dimWrapped(const char* text) {
     ImGui::PopTextWrapPos();
 }
 
+// How long a step's targets may be missing from the screen, and how long a
+// step may last, before Next offers to skip it (seconds of play).
+constexpr double kTargetsGoneSkip = 3.0;
+constexpr double kStepSkip = 120.0;
+// How long the hint after a refused click shows.
+constexpr double kRefusedHint = 2.5;
+
+// Dims everything but `areas` (the spotlight of the input lock): the screen
+// is cut into a grid at the areas' edges, and every cell outside them is
+// filled, row by row.
+void spotlight(ImDrawList* dl, const std::vector<LockArea>& areas, ImVec2 size, ImU32 color) {
+    std::vector<float> xs{0.0f, size.x}, ys{0.0f, size.y};
+    for (const LockArea& a : areas) {
+        xs.push_back(std::clamp(a.min.x, 0.0f, size.x));
+        xs.push_back(std::clamp(a.max.x, 0.0f, size.x));
+        ys.push_back(std::clamp(a.min.y, 0.0f, size.y));
+        ys.push_back(std::clamp(a.max.y, 0.0f, size.y));
+    }
+    std::sort(xs.begin(), xs.end());
+    xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
+    std::sort(ys.begin(), ys.end());
+    ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
+    auto open = [&](float x, float y) { return std::any_of(areas.begin(), areas.end(), [&](const LockArea& a) { return a.contains({x, y}); }); };
+    for (size_t j = 0; j + 1 < ys.size(); ++j) {
+        const float cy = (ys[j] + ys[j + 1]) * 0.5f;
+        size_t i = 0;
+        while (i + 1 < xs.size()) {
+            if (open((xs[i] + xs[i + 1]) * 0.5f, cy)) {
+                ++i;
+                continue;
+            }
+            size_t k = i + 1;   // a run of dim cells
+            while (k + 1 < xs.size() && !open((xs[k] + xs[k + 1]) * 0.5f, cy)) ++k;
+            dl->AddRectFilled(ImVec2(xs[i], ys[j]), ImVec2(xs[k], ys[j + 1]), color);
+            i = k;
+        }
+    }
+}
+
 } // namespace
 
 LessonRunner::LessonRunner(learn::Lesson lesson, const ClassicSession& session)
     : progress_(std::move(lesson), session.rules(), session.state(), session.player()) {}
 
-void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts) {
+void LessonRunner::frame(UiContext& ui, const learn::ClientFacts& facts, const LockState& lock) {
     windowsOpen_ = !facts.openWindows.empty();
     evaluate(ui, facts);
+    // When the active step began, and whether its targets are on screen.
+    if (activeSeen_ != progress_.active()) {
+        activeSeen_ = progress_.active();
+        activeSince_ = targetsSeen_ = ui.time;
+    }
+    if (const learn::Step* st = activeStep())
+        for (const std::string& tag : st->highlight)
+            if (!tag.starts_with("lesson:") && findTag(ui, tag)) targetsSeen_ = ui.time;
     drawPanel(ui);
-    drawOutlines(ui);
+    drawOutlines(ui, lock);
     drawResult(ui);
+}
+
+bool LessonRunner::locking() const {
+    return lesson().kind == learn::LessonKind::Tutorial && !settings().learnFreePlay &&
+           progress_.result() == learn::LessonProgress::Result::None && activeStep() != nullptr;
+}
+
+const learn::Step* LessonRunner::activeStep() const {
+    const auto& steps = lesson().steps;
+    return progress_.active() < steps.size() ? &steps[progress_.active()] : nullptr;
+}
+
+void LessonRunner::refused(ImVec2 where, double time) {
+    refusedAt_ = where;
+    refusedTime_ = time;
+}
+
+bool LessonRunner::stuck(const UiContext& ui) const {
+    const learn::Step* st = activeStep();
+    if (!st || !st->done || progress_.completed(progress_.active())) return false;
+    const bool targets = std::any_of(st->highlight.begin(), st->highlight.end(), [](const std::string& t) { return !t.starts_with("lesson:"); });
+    return (targets && ui.time - targetsSeen_ > kTargetsGoneSkip) || ui.time - activeSince_ > kStepSkip;
 }
 
 void LessonRunner::jumpTo(const UiContext& ui, size_t step) {
@@ -77,6 +150,7 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     h.add(facts.selections);
     for (const std::string& t : facts.tabs) h.add(std::string_view(t));
     h.add(facts.designComponents.value_or(-1)).add(facts.designHullChosen).add(facts.simulatorOwners).add(facts.simulatorItems);
+    h.add(facts.battleBegun).add(facts.battleOrders.size());
     if (h.value() == seen_ || progress_.result() != learn::LessonProgress::Result::None) return;
     seen_ = h.value();
     const learn::LessonProgress::Changes ch = progress_.update(ui.rules(), ui.state(), session.player(), facts);
@@ -85,16 +159,17 @@ void LessonRunner::evaluate(UiContext& ui, const learn::ClientFacts& facts) {
     if (ch.finished) finished();
 }
 
-void LessonRunner::drawOutlines(UiContext& ui) const {
-    const learn::Lesson& l = lesson();
-    const size_t step = progress_.step();
-    if (l.kind != learn::LessonKind::Tutorial || progress_.result() != learn::LessonProgress::Result::None || step >= l.steps.size()) return;
-    const learn::Step& st = l.steps[step];
-    if (st.highlight.empty() || progress_.completed(step)) return;
-    // The outlines go in a see-through window over the classic windows and
-    // under the panel (the panel's own buttons are outlined over it).
+void LessonRunner::drawOutlines(UiContext& ui, const LockState& lock) const {
+    const learn::Step* st = lesson().kind == learn::LessonKind::Tutorial ? activeStep() : nullptr;
+    if (!st || progress_.result() != learn::LessonProgress::Result::None) return;
+    const bool outline = !st->highlight.empty() && !progress_.completed(progress_.active());
+    if (!outline && !lock.active) return;
+    // The spotlight and the outlines go in a see-through window over the
+    // classic windows and under the panel (the panel's own buttons are
+    // outlined over it).
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    ImGui::SetNextWindowSize(display);
     ImGui::Begin("##lessonoutlines", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
@@ -102,14 +177,40 @@ void LessonRunner::drawOutlines(UiContext& ui) const {
     ImDrawList* under = ImGui::GetWindowDrawList();
     ImGui::End();
     if (ImGuiWindow* panel = ImGui::FindWindowByName("##lessonpanel"); panel && panelOpen_) ImGui::BringWindowToDisplayFront(panel);
-    const float pulse = 0.6f + 0.4f * std::sin(float(ui.time) * 5.0f);
-    const ImU32 color = imColor(0xffd040, pulse);
-    const float thick = std::max(2.0f, ui.px(2.5f));
-    const float pad = ui.px(3);
-    for (const std::string& tag : st.highlight) {
-        ImDrawList* dl = tag.starts_with("lesson:") ? ImGui::GetForegroundDrawList() : under;
-        for (const UiTag& t : ui.tags)
-            if (t.name == tag) dl->AddRect(ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad), color, 0.0f, thick);
+    // Everything the step does not let the player use is dimmed.
+    if (lock.active) {
+        std::vector<LockArea> open = lock.areas;
+        open.insert(open.end(), lock.lookAreas.begin(), lock.lookAreas.end());
+        spotlight(under, open, display, IM_COL32(0, 0, 0, 140));
+    }
+    // A refused click makes the outlines flash white for a moment.
+    const double sinceRefused = ui.time - refusedTime_;
+    if (outline) {
+        const bool flash = sinceRefused >= 0 && sinceRefused < 1.0 && std::fmod(sinceRefused, 0.25) < 0.125;
+        const float pulse = 0.6f + 0.4f * std::sin(float(ui.time) * 5.0f);
+        const ImU32 color = flash ? IM_COL32_WHITE : imColor(0xffd040, pulse);
+        const float thick = std::max(2.0f, ui.px(flash ? 4.0f : 2.5f));
+        const float pad = ui.px(3);
+        for (const std::string& tag : st->highlight) {
+            ImDrawList* dl = tag.starts_with("lesson:") ? ImGui::GetForegroundDrawList() : under;
+            for (const UiTag& t : ui.tags)
+                if (t.name == tag) dl->AddRect(ImVec2(t.min.x - pad, t.min.y - pad), ImVec2(t.max.x + pad, t.max.y + pad), color, 0.0f, thick);
+        }
+    }
+    // And a word where the player clicked (outlined or not).
+    if (refusedAt_ && sinceRefused >= 0 && sinceRefused < kRefusedHint) {
+        const char* kHint = st->done ? "The lesson is waiting for the outlined part.\nFree Play in the lesson panel unlocks the game."
+                                     : "This step explains: press Next in the lesson panel.\nFree Play in the lesson panel unlocks the game.";
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        const ImVec2 textSize = ImGui::CalcTextSize(kHint);
+        const ImVec2 pad2(ui.px(6), ui.px(4));
+        ImVec2 at(refusedAt_->x + ui.px(14), refusedAt_->y + ui.px(10));
+        at.x = std::min(at.x, display.x - textSize.x - 2 * pad2.x);
+        at.y = std::min(at.y, display.y - textSize.y - 2 * pad2.y);
+        const float alpha = float(std::min(1.0, (kRefusedHint - sinceRefused) * 2.0));
+        fg->AddRectFilled(at, ImVec2(at.x + textSize.x + 2 * pad2.x, at.y + textSize.y + 2 * pad2.y), imColor(0x101c40, 0.95f * alpha));
+        fg->AddRect(at, ImVec2(at.x + textSize.x + 2 * pad2.x, at.y + textSize.y + 2 * pad2.y), imColor(0xffd040, alpha));
+        fg->AddText(ImVec2(at.x + pad2.x, at.y + pad2.y), imColor(0xffffff, alpha), kHint);
     }
 }
 
@@ -139,13 +240,22 @@ void LessonRunner::tutorialBody(UiContext& ui) {
     if (step >= n) return;
     const learn::Step& st = l.steps[step];
     ImGui::TextColored(kLabelBlue, "Step %zu of %zu", step + 1, n);
+    if (step < progress_.active()) {
+        ImGui::SameLine();
+        ImGui::TextColored(kGold, "(reading back: Next returns to step %zu)", progress_.active() + 1);
+    }
     heading(ui, st.title.c_str());
     ImGui::Spacing();
+    // While the game is locked to the step, a link cannot open a window around it.
     MarkdownOptions options;
+    const bool locked = locking();
+    options.canFollow = [locked](const learn::Link& link) { return !locked || link.kind != learn::Link::Kind::Window; };
+    options.cannotFollow = "Use the outlined button: the lesson locks the game (Free Play unlocks it)";
     if (auto clicked = drawMarkdown(ui.painter(), st.text, options)) followLink(ui, *clicked);
     ImGui::Spacing();
     if (progress_.result() == learn::LessonProgress::Result::Done) ImGui::TextColored(kGood, "Lesson complete.");
     else if (st.done && progress_.completed(step)) ImGui::TextColored(kGood, "Done.");
+    else if (st.done && stuck(ui)) dimWrapped("If this cannot be done any more, Skip moves on.");
     else if (st.done) dimWrapped("Next lights up once you have done this.");
 }
 
@@ -191,14 +301,57 @@ void LessonRunner::drawPanel(UiContext& ui) {
     if (!panelOpen_) return;
     const Painter p = ui.painter();
     if (!moved_) {
+        // Its places, best first: over the galaxy panel while only the main
+        // window shows, at the bottom left of the system view while a window
+        // is open, at the system view's top left, then the corners of the
+        // screen. The first one that hides the least of what the active step
+        // outlines and allows wins: each tag counts by the share of it that
+        // is hidden, so a small button weighs as much as a large map.
         const ImVec2 size = ui.size(kPanelSize);
         const float gap = ui.px(4);
-        ImVec2 at = ui.at({ui.map.left + 6, frameH() - kPanelSize.y - 6});
-        if (const UiTag* galaxy = findTag(ui, "panel:galaxy"); galaxy && !windowsOpen_)
-            at = ImVec2(galaxy->max.x - size.x, galaxy->max.y - size.y);
-        else if (const UiTag* system = findTag(ui, "panel:system"))
-            at = ImVec2(system->min.x + gap, system->max.y - size.y - gap);
-        ImGui::SetNextWindowPos(at, ImGuiCond_Always);
+        std::vector<ImVec2> spots;
+        const UiTag* galaxy = findTag(ui, "panel:galaxy");
+        const UiTag* system = findTag(ui, "panel:system");
+        if (galaxy && !windowsOpen_) spots.emplace_back(galaxy->max.x - size.x, galaxy->max.y - size.y);
+        if (system) {
+            spots.emplace_back(system->min.x + gap, system->max.y - size.y - gap);
+            spots.emplace_back(system->min.x + gap, system->min.y + ui.px(26));
+        }
+        if (galaxy && windowsOpen_) spots.emplace_back(galaxy->max.x - size.x, galaxy->max.y - size.y);
+        if (spots.empty()) spots.push_back(ui.at({ui.map.left + 6, frameH() - kPanelSize.y - 6}));
+        const ImVec2 display = ImGui::GetIO().DisplaySize;
+        spots.emplace_back(gap, display.y - size.y - gap);
+        spots.emplace_back(display.x - size.x - gap, display.y - size.y - gap);
+        spots.emplace_back(display.x - size.x - gap, ui.px(40));
+        spots.emplace_back(gap, ui.px(40));
+        auto hidden = [&](ImVec2 at) {
+            float share = 0;
+            auto add = [&](const std::vector<std::string>& tags, float weight) {
+                for (const std::string& tag : tags) {
+                    if (tag.starts_with("lesson:")) continue;
+                    for (const UiTag& t : ui.tags) {
+                        if (t.name != tag) continue;
+                        const float w = std::min(t.max.x, at.x + size.x) - std::max(t.min.x, at.x);
+                        const float h = std::min(t.max.y, at.y + size.y) - std::max(t.min.y, at.y);
+                        const float all = (t.max.x - t.min.x) * (t.max.y - t.min.y);
+                        if (w > 0 && h > 0 && all > 0) share += weight * w * h / all;
+                    }
+                }
+            };
+            if (const learn::Step* st = activeStep()) {
+                add(st->highlight, 1.0f);
+                add(st->allow, 0.5f);
+            }
+            return share;
+        };
+        ImVec2 best = spots.front();
+        float bestHidden = hidden(best);
+        for (const ImVec2& at : spots)
+            if (const float h = hidden(at); h < bestHidden) {
+                best = at;
+                bestHidden = h;
+            }
+        ImGui::SetNextWindowPos(best, ImGuiCond_Always);
     }
     ImGui::SetNextWindowSize(ui.size(kPanelSize), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -247,11 +400,16 @@ void LessonRunner::drawPanel(UiContext& ui) {
             const learn::Step* st = step < l.steps.size() ? &l.steps[step] : nullptr;
             if (button("Back", 0, third, y0, progress_.canGoBack())) progress_.goBack();
             const bool last = step + 1 >= l.steps.size();
-            if (button(last ? "Finish##next" : "Next##next", third + 4, third, y0, progress_.canGoNext())) {
-                progress_.goNext(ui.rules(), ui.state(), ui.session.player());
+            // On an active step that looks impossible now, Next offers to skip it.
+            const bool skip = step == progress_.active() && !progress_.canGoNext() && stuck(ui);
+            const char* next = skip ? "Skip##next" : last ? "Finish##next" : "Next##next";
+            if (button(next, third + 4, third, y0, progress_.canGoNext() || skip)) {
+                if (skip) progress_.skip(ui.rules(), ui.state(), ui.session.player());
+                else progress_.goNext(ui.rules(), ui.state(), ui.session.player());
                 seen_ = 0;
                 if (progress_.result() != learn::LessonProgress::Result::None) finished();
             }
+            if (skip && ImGui::IsItemHovered()) ImGui::SetTooltip("Moves on without this step, for when it cannot be done any more");
             ui.tagItem("lesson:next");
             if (button("Read More", 2 * (third + 4), third, y0, st && !st->manual.empty())) {
                 ScreenArgs a;
@@ -270,14 +428,31 @@ void LessonRunner::drawPanel(UiContext& ui) {
             ui.tagItem("lesson:next");
             if (button("Close Page", 2 * (third + 4), third, y0, progress_.page().has_value())) progress_.showPage(std::nullopt);
         }
-        const float half = (inner - 4) / 2;
-        if (button("Hide", 0, half, y0 + 31, true)) panelOpen_ = false;
+        // Hide, Free Play (tutorials only: training games are never locked), Leave.
+        const bool tutorial = l.kind == learn::LessonKind::Tutorial;
+        const float hideW = tutorial ? 78.0f : (inner - 4) / 2;
+        const float freeW = tutorial ? inner - 2 * 78.0f - 8 : 0.0f;
+        if (button("Hide", 0, hideW, y0 + 31, true)) panelOpen_ = false;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ctrl+H or the T button shows the panel again");
-        const char* leave = over ? "Learn" : l.kind == learn::LessonKind::Tutorial ? "Leave Lesson" : "Leave Game";
-        if (button(leave, half + 4, half, y0 + 31, true)) {
+        if (tutorial) {
+            ImGui::SetCursorPos(ui.size({15 + hideW + 4, y0 + 31}));
+            if (classicButton(p, "Free Play", {freeW, 26}, 2, settings().learnFreePlay, true)) {
+                audio().play("button");
+                settings().learnFreePlay = !settings().learnFreePlay;
+                saveSettings();
+            }
+            ui.tagItem("lesson:free-play");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Off: the lesson lets you use only what each step is about.\nOn: the whole game works while the lesson guides you.");
+        }
+        const char* leave = over ? "Learn" : tutorial ? "Leave" : "Leave Game";
+        const float leaveX = tutorial ? hideW + freeW + 8 : hideW + 4;
+        if (button(leave, leaveX, tutorial ? 78.0f : hideW, y0 + 31, true)) {
             if (over) request_ = Request::Leave;
             else leave_.open("Leave the lesson? Its game ends; anything not saved is lost.", "Leave Lesson");
         }
+        if (!over && ImGui::IsItemHovered()) ImGui::SetTooltip("Leave the lesson");
+        ui.tagItem("lesson:leave");
     }
     ImGui::End();
 

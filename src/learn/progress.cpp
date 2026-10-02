@@ -36,8 +36,9 @@ LessonProgress::LessonProgress(Lesson lesson, const game::Rules& rules, const ga
 
 void LessonProgress::enter(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
     step_ = step;
+    frontier_ = std::max(frontier_, step);
     // A step counts commands, turns and research from the first time it is shown.
-    if (!stepMarks_[step]) stepMarks_[step] = markNow(rules, state, empire, tracker_, selections_);
+    if (!stepMarks_[step]) stepMarks_[step] = markNow(rules, state, empire, tracker_, selections_, battleOrders_);
 }
 
 void LessonProgress::finish(Result r, std::string why) {
@@ -47,15 +48,28 @@ void LessonProgress::finish(Result r, std::string why) {
 
 bool LessonProgress::canGoNext() const {
     if (step_ >= lesson_.steps.size() || result_ != Result::None) return false;
+    if (step_ < frontier_) return true;   // back to where the lesson is
     return !lesson_.steps[step_].done || completed_[step_];
 }
 
 bool LessonProgress::goNext(const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
     if (!canGoNext()) return false;
+    if (step_ < frontier_) {
+        ++step_;
+        return true;
+    }
     completed_[step_] = 1;
     if (step_ + 1 < lesson_.steps.size()) enter(step_ + 1, rules, state, empire);
     else finish(Result::Done, {});
     return true;
+}
+
+void LessonProgress::skip(const game::Rules& rules, const game::GameState& state, game::EmpireId empire) {
+    if (lesson_.kind != LessonKind::Tutorial || result_ != Result::None || frontier_ >= lesson_.steps.size()) return;
+    step_ = frontier_;
+    completed_[step_] = 1;
+    if (step_ + 1 < lesson_.steps.size()) enter(step_ + 1, rules, state, empire);
+    else finish(Result::Done, {});
 }
 
 void LessonProgress::goBack() {
@@ -67,6 +81,7 @@ void LessonProgress::jumpTo(size_t step, const game::Rules& rules, const game::G
     step = std::min(step, lesson_.steps.size() - 1);
     for (size_t i = 0; i < step; ++i) completed_[i] = 1;
     enter(step, rules, state, empire);
+    frontier_ = step;
 }
 
 std::vector<size_t> LessonProgress::series() const {
@@ -82,19 +97,22 @@ LessonProgress::Changes LessonProgress::update(const game::Rules& rules, const g
     Changes ch;
     tracker_.observe(state, empire);
     selections_ = client.selections;
+    battleOrders_ = client.battleOrders.size();
     if (result_ != Result::None) return ch;
 
     if (lesson_.kind == LessonKind::Tutorial) {
-        if (step_ >= lesson_.steps.size()) return ch;
-        const Step& st = lesson_.steps[step_];
-        if (completed_[step_] || !st.done) return ch;
-        if (!holds(*st.done, EvalContext{rules, state, empire, client, tracker_, *stepMarks_[step_]})) return ch;
-        // Done: on to the next step (or the end) at once.
-        completed_[step_] = 1;
+        // The active step's condition, even while an earlier step is shown.
+        if (frontier_ >= lesson_.steps.size()) return ch;
+        const Step& st = lesson_.steps[frontier_];
+        if (completed_[frontier_] || !st.done) return ch;
+        if (!holds(*st.done, EvalContext{rules, state, empire, client, tracker_, *stepMarks_[frontier_]})) return ch;
+        // Done: on to the next step (or the end) at once, shown.
+        completed_[frontier_] = 1;
         ch.stepChanged = true;
-        if (step_ + 1 < lesson_.steps.size()) {
-            enter(step_ + 1, rules, state, empire);
+        if (frontier_ + 1 < lesson_.steps.size()) {
+            enter(frontier_ + 1, rules, state, empire);
         } else {
+            step_ = frontier_;
             finish(Result::Done, {});
             ch.finished = true;
         }

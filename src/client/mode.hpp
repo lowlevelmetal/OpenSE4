@@ -9,11 +9,13 @@
 #include "gfx/device.hpp"
 #include "gfx/renderer2d.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 struct SDL_Window;
+union SDL_Event;
 
 namespace opense4::client {
 
@@ -56,9 +58,24 @@ struct FrameState {
     float dt = 0.0f;
 };
 
+// What the shell does with an input event (Mode::filterEvent).
+enum class EventVerdict : uint8_t {
+    Pass,         // to Dear ImGui as it is
+    Drop,         // nowhere
+    PointerAway,  // tell Dear ImGui the pointer is nowhere (nothing hovered)
+};
+
 class Mode {
 public:
     virtual ~Mode() = default;
+    // Called for every input event before Dear ImGui sees it (the tutorial
+    // input lock, docs/LEARNING.md).
+    virtual EventVerdict filterEvent(const SDL_Event& event) {
+        (void)event;
+        return EventVerdict::Pass;
+    }
+    // The program's exit code once update() asked to quit (0: success).
+    virtual int exitCode() const { return 0; }
     // Called between ImGui::NewFrame() and ImGui::Render(): input, UI, labels.
     // Returns false when the app should quit.
     virtual bool update(const FrameState& fs) = 0;

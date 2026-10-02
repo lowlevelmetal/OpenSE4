@@ -43,14 +43,22 @@ public:
     Changes update(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const ClientFacts& client);
 
     // ---- Tutorials ----
+    // The step shown, and the active step: the furthest one reached, whose
+    // condition is checked and whose inputs the lock allows. Back shows an
+    // earlier step for reading; the active one stays where it is.
     size_t step() const { return step_; }
+    size_t active() const { return frontier_; }
     bool completed(size_t step) const { return step < completed_.size() && completed_[step] != 0; }
-    // Next is open when the step has no condition or its condition held.
+    // Next is open on an earlier step (back to the active one), and on the
+    // active step when it has no condition or its condition held.
     bool canGoNext() const;
     // Moves on; on the last step this finishes the lesson. Returns false if Next is not open.
     bool goNext(const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
     bool canGoBack() const { return step_ > 0; }
     void goBack();
+    // Gives up on the active step (its condition cannot be met any more) and
+    // moves on as if it were done.
+    void skip(const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
     // Shows a step as if the ones before it were done (checking content).
     void jumpTo(size_t step, const game::Rules& rules, const game::GameState& state, game::EmpireId empire);
 
@@ -81,6 +89,7 @@ private:
     Mark gameMark_;
 
     size_t step_ = 0;
+    size_t frontier_ = 0;
     std::vector<std::optional<Mark>> stepMarks_;
     std::vector<uint8_t> completed_;
 
@@ -92,6 +101,7 @@ private:
     std::optional<size_t> page_;
     std::optional<uint32_t> lastTurn_;
     uint64_t selections_ = 0;   // ClientFacts::selections at the last update (a new step's mark)
+    size_t battleOrders_ = 0;   // and the size of ClientFacts::battleOrders
 
     Result result_ = Result::None;
     std::string why_;

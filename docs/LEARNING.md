@@ -7,7 +7,7 @@ alone; during a game the Game Menu's **Learn** button opens it:
 
 | Part | What it is |
 |---|---|
-| **Tutorials** | Guided lessons. A lesson starts a prepared game and walks the player through it one step at a time. Each step explains something, outlines the button or window it is about, and waits until the player has done it (or pressed Next). |
+| **Tutorials** | Guided lessons. A lesson starts a prepared game and walks the player through it one step at a time. Each step explains something, outlines the button or window it is about, and waits until the player has done it (or pressed Next). While a step waits, only what it is about responds (see "The input lock"). |
 | **Training** | Practice games with objectives ("found five colonies by turn 40"), briefing pages, hints and a result. They follow the original's scenario model: titled pages tied to turns, browsed with previous and next, and re-opened with Ctrl+H or the **T** button in the status bar (spec 06 §1.7). |
 | **Manual** | Our own manual, in chapters, with a contents tree, search and links. Its links can open the game's windows. Shift+F1 opens the page for the window in front. If the player's install has the original's HTML manual, a button opens that in the browser. |
 
@@ -95,6 +95,8 @@ computer_players = 0
 title = "Your home system"
 text = """Markdown, as in the manual."""
 highlight = ["panel:system"]     # UI tags to outline (see "UI tags")
+allow = ["panel:report"]         # more UI tags the player may use (see "The input lock")
+keys = ["Ctrl+L"]                # more keys the player may press
 done = { selected = "planet" }   # omitted: the player presses Next
 manual = "colonies#your-homeworld"   # Read more
 
@@ -156,6 +158,7 @@ until the player selects it again.
 | `systems_explored = N`, `empires_met = N`, `treaties = N` | as named |
 | `enemy_ships_destroyed = N` | since: N enemy ships or bases destroyed in the empire's battles |
 | `planets_captured = N` | since: the empire took N colonies from empires it is hostile to |
+| `battle_begun = true`, `battle_order = "<kind>"` | the open Tactical Combat window's battle has begun; since: the player gave a tactical order of that kind (`move`, `fire`, `end-turn`, ...) |
 | `score`, `population`, `minerals`, `organics`, `radioactives` `= N` | as named |
 
 The reference section at the end lists the exact keys, values and command names.
@@ -175,7 +178,10 @@ done. Tags are:
 - `<window id>:<widget>` for a few widgets inside windows that lessons need,
   `<window id>:<tab>` for the tabs and filters of some windows (the same names `tab`
   conditions use), and `lesson:<button>` for the lesson panel's own (all listed in
-  the reference). Debug builds log a tag the client registers that the list lacks.
+  the reference). Debug builds log a tag the client registers that the list lacks;
+- `<window id>:close` for the Close button of every window that has one.
+
+The same tags say what the player may use while the input lock is on (next sections).
 
 ## The lesson panel
 
@@ -183,13 +189,24 @@ A movable panel shows the lesson's title, the step (N of M) or the objectives wi
 marks, and the text. Until the player moves it, it sits over the galaxy panel while
 only the main window shows, and at the bottom left of the system view while a window is
 open, where it hides the least of the classic windows (their buttons are on the right).
-Once dragged, it stays where it was put.
+When that spot would hide what the active step outlines or allows, it takes the system
+view's top left or a corner of the screen instead: the spot that hides the smallest share
+of the step's tags wins (each tag counts by the share of it hidden, so a small button
+weighs as much as a large map). Once dragged, it stays where it was put.
 
 - Tutorials: Back and Next. A step with a `done` condition moves on by itself the
   moment its condition holds (at once if it already holds when it is shown); Next stays
-  dim until then. A step without one waits for Next. Back shows earlier steps, which
-  stay done. **Read more** opens the step's `manual` page; **Leave Lesson** ends the
-  lesson's game (after asking).
+  dim until then. A step without one waits for Next. Back shows earlier steps again for
+  reading, which stay done; the step the lesson is at (the *active step*) keeps its
+  outlines, its lock and its condition meanwhile, and Next goes back to it (a note in
+  the panel says so). When the active step's condition is met while an earlier step is
+  shown, the panel moves on to the next step. **Read more** opens the step's `manual`
+  page; **Leave** ends the lesson's game (after asking).
+- **Skip**: when the active step's outlined targets have been off the screen for three
+  seconds, or the step has waited two minutes, Next turns into Skip, which gives the step
+  up and goes on. A lesson can never get stuck on a step whose condition can no longer
+  be met (a scout destroyed, a battle ended early).
+- **Free Play** switches the input lock off (and on again); see the next section.
 - Training games: the objectives with lamps (green when met, red when a deadline
   passed), the hint that came up last (with OK), and the briefing page with Previous
   and Next through its series. Pages come up at the start of their turn.
@@ -207,6 +224,78 @@ The panel only reads the game. Lessons change the game only through the player's
 commands (every command `ClassicSession::issue()` accepts is reported to the lesson), so
 the engine stays as it is (CLAUDE.md, determinism). `learn::LessonProgress` holds the
 rules that move a lesson on; the client's `LessonRunner` draws it.
+
+## The input lock
+
+While a tutorial step is active, the player can use only what it is about. Everything
+else is dimmed (a spotlight over the classic windows, under the panel) and does not
+respond: clicks, drags, the mouse wheel and hovering do nothing there, and keys do
+nothing unless the step allows them. The lock is for tutorials only; training games
+are free play.
+
+What a step allows:
+
+- **An action step** (one with `done`): its `highlight` tags and its `allow` tags. A
+  click, drag or wheel turn over their rectangles passes.
+- **An explanation step** (no `done`): its `highlight` tags can be pointed at (tooltips
+  show) and scrolled, but not clicked, so "hover over the buttons" never opens a
+  window by mistake. Only its `allow` tags can be clicked (the report's tabs, a design
+  list to browse, a name box to type in).
+- Always: the lesson panel (Back, Next or Skip, Read More, Hide, Free Play, Leave) and
+  the status bar's **T** button.
+- **Windows the step works in that are closed**: the tags that open them, two levels
+  deep (a step about the designer's components allows Create in Designs, and the
+  Designs button when Designs is closed too). A step never waits behind a closed window.
+- **Windows the step says nothing about** are the player's: a window an allowed click
+  opened (a component report, the waypoint list, the Log a turn opened), with Esc and
+  Enter when it is in front. A window *is* about the step when one of the step's tags
+  names it (`research:areas` and `window:research` name the Research window): then only
+  the tagged parts of it respond.
+- **The game's own questions** always work: the End Turn question, battle notices and
+  the Tactical or Strategic question, Colony Type, Attack Sector, Combat Complete,
+  Yes/No boxes and error boxes (every ImGui popup and every window that calls
+  `UiContext::promptWindow()`), with their answer keys (Y, N, T, S, Enter, Esc).
+- **Text fields**: while one has the keyboard, every key passes.
+
+Keys: a step's `keys` list (`"F12"`, `"Ctrl+L"`, `"Alt+1"`, `"Escape"`; modifiers
+`Ctrl+`, `Shift+` and `Alt+` before a letter, digit, `F1`-`F12` or a named key: `Enter`,
+`Escape`, `Space`, `Tab`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`,
+`PageDown`, the arrows `LeftArrow` to `DownArrow`, `Comma`, `Period`, `Minus`, `Equal`,
+`Slash`). Besides those, an allowed tag brings the key that does what a click on it
+does, as the player has bound it: a command button its F-key, `button:end-turn` F12,
+an order button its letter, `cycle:ship` Space and the ship keys, and a `<window>:close`
+tag Esc and Enter. Ctrl+H (the panel) always passes. Keys of tags inside windows (the
+Tactical Combat window's E) are not known to the lock: list them in `keys`.
+
+How it works: at the end of each frame the client builds the lock
+(`client/classic/lesson_lock.hpp`, `makeLockState`) from that frame's tagged rectangles,
+the open windows, the prompts and whether a text field has the keyboard. In the next
+frame every SDL event passes through it (`Mode::filterEvent`) before Dear ImGui and the
+main window see it: a press outside the allowed areas is dropped with its release, a
+press inside lets its drag go anywhere (so the panel and sliders can be dragged), and
+pointer motion over a locked area tells ImGui the pointer is nowhere, so nothing there
+lights up. Nothing is disabled in the widgets themselves. A refused click flashes the
+outlines white and shows a short note by the pointer ("the lesson is waiting for the
+outlined part", or "press Next" on an explanation step).
+
+**Free Play**, a check box in the lesson panel, switches the lock off for every
+tutorial (outlines and conditions stay); it is a client setting (`classic_settings.toml`,
+`[learn] free_play`), off by default. The manual's window links are dimmed while the
+lock is on.
+
+Writing steps for the lock:
+
+- An action step's `highlight` and `allow` must include what its `done` needs: a tag
+  that opens the window it waits for, the order button of the order, the widget that
+  gives the command, a way to close a window (`window:<id>`, `<id>:close` or the
+  `Escape` key), End Turn for anything that comes with turns, an `Alt+digit` key for
+  `SetWaypoint`. The content test checks this (`learn::reachProblems`).
+- Say exactly what to click, and only what is allowed: "another way" hints belong in a
+  later step or are written as something for later.
+- An explanation step says to press **Next** (the last step: **Finish**); an action
+  step does not, since it moves on by itself.
+- A step that the player cannot do in one go (end turns until...) allows what the
+  player needs meanwhile (the ship arrows, the order button).
 
 ## The Learn window and the manual
 
@@ -234,7 +323,15 @@ opense4 --manual[=<slug>[#<anchor>]]   # open the manual
 opense4 --learn-dir=<dir>        # read the content from this folder only
 ```
 
-They combine with `--screenshot` for headless checks. With `--tutorial` and
+They combine with `--screenshot` for headless checks. `--lesson-check` (with
+`--tutorial=<slug>:<N>`) opens the windows step N works in (a sample battle for the
+battle windows), and a few frames later prints
+`lesson-check <slug>:<N> areas=<k> ok` or `missing: <tags>` for highlighted or allowed
+tags that are not on the screen, and exits with 1 when some are (or the lock is off).
+A few tags that depend on the moment (a selected piece's weapons, Communicate's lists)
+only warn (`situational:`), as do outlines the panel covers (`under-panel:`).
+`tools/check_lessons.py` runs this for every step of every tutorial, headless
+(`--screenshots <dir>` saves one picture per step; keep them out of the repository). With `--tutorial` and
 `--training`, `--turns=N` lets the computer play every empire for N turns first (the
 lesson's counters still start at its first turn), and `--open` shows a window over the
 lesson as with a quick start, `--open=tactical` (and the other battle windows) a sample
@@ -253,9 +350,16 @@ page from `assets/learn` and checks:
   Help tab;
 - every window id and UI tag exists.
 
+A second content test checks every tutorial step against the input lock: a step
+without `done` says Next (or Finish), one with `done` does not, outlines something, and
+its `done` can be reached with only its highlighted and allowed tags and keys
+(`learn::reachProblems`).
+
 Unit tests cover the Markdown parser, the loaders (with their errors), each condition
-against the engine fixture, and a tutorial and a training game played through
-`learn::LessonProgress`. `tests/test_learn_client.cpp` checks that the client's window
+against the engine fixture, a tutorial (with Back, the active step and Skip) and a
+training game played through `learn::LessonProgress`, the step access rules, and the
+input lock (`tests/test_lesson_lock.cpp`: hit-testing, drags, keys, prompts, open and
+closed windows). `tests/test_learn_client.cpp` checks that the client's window
 ids are the ones lessons use.
 
 ## Reference
@@ -273,7 +377,7 @@ command names come from `src/game/commands.hpp`.
 | `summary` | top | one or two sentences for the Learn window |
 | `minutes` | top | about how long it takes |
 | `[setup]` | top | how the game is created (below) |
-| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `done` (a condition), `manual` (`"slug"` or `"slug#anchor"`) |
+| `[[step]]` | tutorials | `title` and `text` (required), `highlight` (a UI tag or a list of them), `allow` (the same), `keys` (a key chord or a list of them), `done` (a condition), `manual` (`"slug"` or `"slug#anchor"`) |
 | `[[objective]]` | training | `text` and `when` (required), `by_turn` |
 | `[[page]]` | training | `title` and `text` (required), `turn` (default 0), `series` (default none) |
 | `[[hint]]` | training | `text` and `when` (required), `title` (default "Hint") |
@@ -322,6 +426,8 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | `design_hull_chosen` | true or false | the Create Design window is open and the player picked a hull in its Size list (`false`: has not yet) |
 | `simulator_owners` | N | the Combat Simulator is open and N races ("Owner For Item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
 | `simulator_items` | N | the Combat Simulator is open and the battle has N items |
+| `battle_begun` | true or false | the Tactical Combat window is open and its battle has begun (Begin was pressed) |
+| `battle_order` | a battle order kind (below) | since: the player gave an order of that kind in a tactical battle that the battle accepted |
 | `option` | an option (below) | that setting of the empire is on; write `not = { option = "..." }` for off |
 | `treaty` | a treaty kind (below) | the empire holds that treaty with another empire it has met that is still alive (`war`: is at war with one; `subjugation` and `protectorate` hold for either side) |
 | `turn` | N | the game has reached turn N (the first turn is 0) |
@@ -359,6 +465,10 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
 `stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`,
 `convert-resources`.
+
+**Battle order kinds** (`battle_order`): `move`, `fire`, `toggle-weapon`, `launch`,
+`launch-fighters`, `drop-troops`, `ram`, `capture`, `set-leader`, `set-member`,
+`clear-group`, `clear-all-groups`, `auto`, `auto-phase`, `end-turn`, `resolve-combat`.
 
 **Window tabs** (`tab`, and each is a UI tag too), `<window>:<tab>`:
 
@@ -451,6 +561,7 @@ the Weapons Report.
 | Tag | What it outlines |
 |---|---|
 | `window:<id>` | the window, while it is open |
+| `<id>:close` | the window's Close button (every window drawn with one) |
 | `command:<id>` | a command button: `game-menu`, `designs`, `planets`, `colonies`, `ships`, `queues`, `research`, `empires`, `log`, `empire-status`, `help` |
 | `button:end-turn` | the End Turn button |
 | `order:<id>` | a button of the order strip (below) |
@@ -464,7 +575,7 @@ the Weapons Report.
 | `set-queue:available`, `set-queue:queue` | Set Construction Queue: what can be built (a click adds it), the queue |
 | `queues:list` | Construction Queues: the list of queues |
 | `designs:list`, `designs:create`, `designs:simulator` | Designs: the list, Create, Simulator |
-| `create-design:hull`, `create-design:name` | Create Design: the size and the name |
+| `create-design:hull`, `create-design:name`, `create-design:suggest` | Create Design: the size, the name box and Suggest |
 | `create-design:on-design`, `create-design:components` | the components on the design, those that can be added |
 | `create-design:warnings`, `create-design:save` | the problems box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
@@ -483,6 +594,7 @@ the Weapons Report.
 | `<window>:<tab>` | a tab or filter button of the windows above (window tabs) |
 | `help:tabs` | the Help window's tabs |
 | `lesson:panel`, `lesson:next`, `lesson:read-more` | the lesson panel, its Next and Read More |
+| `lesson:free-play`, `lesson:leave` | its Free Play and Leave buttons |
 
 Order strip ids (`order:<id>`): `move-to`, `warp`, `move-to-waypoint`, `colonize`,
 `attack`, `fleet-transfer`, `resupply`, `repair`, `clear-orders`, `build-queue`,

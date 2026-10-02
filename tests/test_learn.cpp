@@ -8,6 +8,7 @@
 #include "game/ai.hpp"
 #include "game/research.hpp"
 #include "game/score.hpp"
+#include "learn/access.hpp"
 #include "learn/condition.hpp"
 #include "learn/ids.hpp"
 #include "learn/library.hpp"
@@ -330,6 +331,60 @@ when = { all = [{ tab = "log:nothing" }, { option = "loud" }, { treaty = "friend
     CHECK_MESSAGE(problems.empty(), problemsText(problems));
 }
 
+TEST_CASE("learn: a step's allow list and keys") {
+    std::vector<Diagnostic> problems;
+    const char* text = R"(title = "Lock"
+[[step]]
+title = "One"
+text = "t"
+highlight = ["command:research"]
+allow = ["button:end-turn", "window:research", "research:close"]
+keys = ["F12", "Ctrl+L", "Alt+1", "Shift+Ctrl+Escape"]
+done = { window = "research" }
+
+[[step]]
+title = "Two"
+text = "t"
+allow = ["panel:nowhere", "nowhere:close", 3]
+keys = ["Hyper+Q", "F13", "Ctrl+", "q"]
+)";
+    CHECK_FALSE(parseLesson(text, "lock.toml", LessonKind::Tutorial, problems).has_value());
+    CHECK(hasProblem(problems, 13, "unknown UI tag 'panel:nowhere'"));
+    CHECK(hasProblem(problems, 13, "unknown UI tag 'nowhere:close'"));
+    CHECK(hasProblem(problems, 13, "'allow' takes strings"));
+    CHECK(hasProblem(problems, 14, "unknown key 'Hyper+Q'"));
+    CHECK(hasProblem(problems, 14, "unknown key 'F13'"));
+    CHECK(hasProblem(problems, 14, "unknown key 'Ctrl+'"));
+    CHECK(hasProblem(problems, 14, "unknown key 'q'"));
+
+    problems.clear();
+    const std::string good(text, std::string_view(text).find("\n[[step]]\ntitle = \"Two\""));
+    const auto l = parseLesson(good, "lock.toml", LessonKind::Tutorial, problems);
+    REQUIRE_MESSAGE(l.has_value(), problemsText(problems));
+    CHECK(l->steps[0].allow == std::vector<std::string>{"button:end-turn", "window:research", "research:close"});
+    CHECK(l->steps[0].keys == std::vector<std::string>{"F12", "Ctrl+L", "Alt+1", "Shift+Ctrl+Escape"});
+}
+
+TEST_CASE("learn: key chords and Close tags") {
+    for (const char* k : {"F1", "F12", "A", "Z", "0", "9", "Escape", "Enter", "PageDown", "LeftArrow", "Ctrl+L", "Alt+1", "Ctrl+Shift+F5",
+                          "Shift+Alt+Comma"})
+        CHECK_MESSAGE(isKeyChord(k), k);
+    for (const char* k : {"", "F0", "F13", "a", "Esc", "Ctrl+", "Ctrl", "Meta+A", "AB", "Ctrl+ L"}) CHECK_FALSE_MESSAGE(isKeyChord(k), k);
+    CHECK(isUiTag("research:close"));
+    CHECK(isUiTag("create-design:close"));
+    CHECK_FALSE(isUiTag("nowhere:close"));
+    CHECK_FALSE(isUiTag("panel:close"));
+    CHECK(isUiTag("create-design:suggest"));
+    CHECK(isUiTag("lesson:free-play"));
+    CHECK(isUiTag("lesson:leave"));
+    // The tactical orders, by the id a lesson names them with.
+    CHECK(isBattleOrderKind("move"));
+    CHECK(isBattleOrderKind("fire"));
+    CHECK(isBattleOrderKind("end-turn"));
+    CHECK_FALSE(isBattleOrderKind("dance"));
+    CHECK(battleOrderId(game::combat::TacticalOrder::Kind::Move) == "move");
+}
+
 TEST_CASE("learn: slugs drop the order number and the extension") {
     CHECK(slugOf("03-first-colony.toml") == "first-colony");
     CHECK(slugOf("manual/10-ship-design.md") == "ship-design");
@@ -499,6 +554,81 @@ TEST_CASE("learn conditions: commands and orders count from the mark") {
     ev.mark = markNow(ev.rules, ev.state, ev.me, ev.tracker);
     CHECK_FALSE(ev("{ command = \"SetResearch\" }"));
     CHECK_FALSE(ev("{ order = \"colonize\" }"));
+}
+
+TEST_CASE("learn conditions: a tactical battle begun and its orders") {
+    Eval ev;
+    CHECK_FALSE(ev("{ battle_begun = true }"));
+    CHECK(ev("{ battle_begun = false }"));
+    ev.client.battleBegun = true;
+    CHECK(ev("{ battle_begun = true }"));
+    CHECK_FALSE(ev("{ battle_order = \"move\" }"));
+    ev.client.battleOrders = {"move", "fire"};
+    CHECK(ev("{ battle_order = \"move\" }"));
+    CHECK(ev("{ battle_order = \"fire\" }"));
+    CHECK_FALSE(ev("{ battle_order = \"end-turn\" }"));
+    // A new step counts the orders given after it began.
+    ev.mark = markNow(ev.rules, ev.state, ev.me, ev.tracker, 0, ev.client.battleOrders.size());
+    CHECK_FALSE(ev("{ battle_order = \"move\" }"));
+    ev.client.battleOrders.push_back("move");
+    CHECK(ev("{ battle_order = \"move\" }"));
+    CHECK_FALSE(ev("{ battle_order = \"fire\" }"));
+}
+
+TEST_CASE("learn access: a done condition needs the tags that bring it about") {
+    auto access = [](std::vector<std::string> tags, std::vector<std::string> keys = {}) {
+        StepAccess a;
+        a.tags = std::move(tags);
+        a.keys = std::move(keys);
+        return a;
+    };
+    auto ok = [](std::string_view table, const StepAccess& a) {
+        return reachProblems(condition(table), a).empty();
+    };
+    // Windows: a tag that opens them; closing: the window, its Close button or Esc.
+    CHECK(ok("{ window = \"research\" }", access({"command:research"})));
+    CHECK_FALSE(ok("{ window = \"research\" }", access({"command:designs"})));
+    CHECK(ok("{ window = \"create-design\" }", access({"designs:create"})));
+    CHECK(ok("{ window = \"galaxy-map\" }", access({"panel:galaxy"})));
+    CHECK(ok("{ not = { window = \"designs\" } }", access({"designs:close"})));
+    CHECK(ok("{ not = { window = \"designs\" } }", access({}, {"Escape"})));
+    CHECK_FALSE(ok("{ not = { window = \"designs\" } }", access({"command:designs"})));
+    // Orders, commands and selections.
+    CHECK(ok("{ order = \"explore\" }", access({"order:explore"})));
+    CHECK_FALSE(ok("{ order = \"explore\" }", access({"order:move-to"})));
+    CHECK(ok("{ order = \"move-to\" }", access({"panel:system"})));
+    CHECK(ok("{ order = \"move-to-waypoint\" }", access({}, {"Ctrl+1"})));
+    CHECK(ok("{ command = \"SetWaypoint\" }", access({}, {"Alt+1"})));
+    CHECK_FALSE(ok("{ command = \"SetWaypoint\" }", access({"panel:system"})));
+    CHECK(ok("{ command = \"QueueAdd\" }", access({"set-queue:available"})));
+    CHECK_FALSE(ok("{ command = \"QueueAdd\" }", access({"set-queue:queue"})));
+    CHECK(ok("{ selected = \"ship\" }", access({"cycle:ship"})));
+    CHECK_FALSE(ok("{ selected = \"ship\" }", access({"command:ships"})));
+    // What comes with the turns needs End Turn, as a button or a key.
+    CHECK(ok("{ turns_passed = 1 }", access({"button:end-turn"})));
+    CHECK(ok("{ turns_passed = 1 }", access({}, {"F12"})));
+    CHECK_FALSE(ok("{ turns_passed = 1 }", access({"command:research"})));
+    // Battles.
+    CHECK(ok("{ battle_begun = true }", access({"tactical-combat:end-turn"})));
+    CHECK(ok("{ not = { window = \"tactical-combat\" } }", access({"tactical-combat:end-turn"})));   // the battle played out
+    CHECK(ok("{ battle_order = \"move\" }", access({"tactical-combat:map"})));
+    CHECK_FALSE(ok("{ battle_order = \"move\" }", access({"tactical-combat:end-turn"})));
+    // All needs every part, any one of them.
+    CHECK_FALSE(ok("{ all = [{ window = \"research\" }, { turns_passed = 1 }] }", access({"command:research"})));
+    CHECK(ok("{ any = [{ window = \"research\" }, { turns_passed = 1 }] }", access({"command:research"})));
+    CHECK_FALSE(ok("{ any = [{ window = \"designs\" }, { turns_passed = 1 }] }", access({"command:research"})));
+    // The step's highlight and allow lists both count.
+    learn::Step st;
+    st.highlight = {"command:research"};
+    st.allow = {"button:end-turn"};
+    st.keys = {"Ctrl+L"};
+    const StepAccess a = stepAccess(st);
+    CHECK(a.has("command:research"));
+    CHECK(a.has("button:end-turn"));
+    CHECK(a.hasKey("Ctrl+L"));
+    CHECK(windowsOpenedBy("command:research") == std::vector<std::string_view>{"research"});
+    const auto openers = openersOf("create-design");
+    CHECK(std::find(openers.begin(), openers.end(), "designs:create") != openers.end());
 }
 
 TEST_CASE("learn conditions: time") {
@@ -726,6 +856,32 @@ TEST_CASE("learn: every built-in lesson, training game and manual page is valid"
                         lib.training.size()));
 }
 
+TEST_CASE("learn: every built-in tutorial step can be done with what the lock allows") {
+    // The input lock (docs/LEARNING.md) lets the player use only a step's
+    // highlighted and allowed tags and its keys. A step that waits for an
+    // action must name what the action needs; a step that does not wait says
+    // to press Next, and one that waits does not.
+    const DirectorySource source(std::filesystem::path(OPENSE4_ASSETS_DIR) / "learn");
+    const Library lib = loadLibrary(source);
+    for (const Lesson& lesson : lib.tutorials) {
+        for (size_t i = 0; i < lesson.steps.size(); ++i) {
+            const Step& st = lesson.steps[i];
+            const std::string where = std::format("{} step {} \"{}\"", lesson.slug, i + 1, st.title);
+            const std::string text = plainText(st.text);
+            const bool last = i + 1 == lesson.steps.size();   // its button is Finish
+            const bool saysNext = text.find(last ? "Finish" : "Next") != std::string::npos;
+            if (!st.done) {
+                CHECK_MESSAGE(saysNext, where, ": a step without `done` must tell the player to press ", last ? "Finish" : "Next");
+                continue;
+            }
+            CHECK_MESSAGE(text.find("Press Next") == std::string::npos, where, ": a step with `done` moves on by itself");
+            CHECK_MESSAGE(text.find("press Next") == std::string::npos, where, ": a step with `done` moves on by itself");
+            CHECK_MESSAGE(!st.highlight.empty(), where, ": a step that waits for an action outlines where to do it");
+            for (const std::string& p : reachProblems(*st.done, stepAccess(st))) CHECK_MESSAGE(false, where, ": ", p);
+        }
+    }
+}
+
 // ---- Progress through a lesson ---------------------------------------------------------------------
 
 namespace {
@@ -786,6 +942,41 @@ TEST_CASE("learn progress: tutorial steps wait for Next or their condition") {
     CHECK(ch.finished);
     CHECK(p.result() == LessonProgress::Result::Done);
     CHECK_FALSE(p.canGoNext());
+}
+
+TEST_CASE("learn progress: Back reads earlier steps; the active step keeps its condition, and Skip gives it up") {
+    const game::Rules& r = engineRules();
+    game::GameState s = newEngineGame(7, 2, 12, true);
+    const game::EmpireId me{0u};
+    LessonProgress p(fixtureLesson(LessonKind::Tutorial, "tutorials/01-first-steps.toml"), r, s, me);
+    ClientFacts client;
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.active() == 1);
+    // Reading step 1 again: Next goes back to step 2, the active step does not move.
+    p.goBack();
+    CHECK(p.step() == 0);
+    CHECK(p.active() == 1);
+    CHECK(p.canGoNext());
+    // The active step's condition counts while an earlier one is shown, and its successor is shown.
+    client.openWindows = {"research"};
+    CHECK(p.update(r, s, me, client).stepChanged);
+    CHECK(p.step() == 2);
+    CHECK(p.active() == 2);
+    // Back and Next never pass the active step.
+    p.goBack();
+    p.goBack();
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.goNext(r, s, me));
+    CHECK(p.step() == 2);
+    CHECK_FALSE(p.goNext(r, s, me));
+    // Skip gives up the active step, even while an earlier one is shown.
+    p.goBack();
+    p.skip(r, s, me);
+    CHECK(p.step() == 3);
+    CHECK(p.active() == 3);
+    CHECK(p.completed(2));
+    p.skip(r, s, me);
+    CHECK(p.result() == LessonProgress::Result::Done);
 }
 
 TEST_CASE("learn progress: jumping to a step marks the ones before done") {

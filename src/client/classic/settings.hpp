@@ -46,6 +46,9 @@ struct ClassicSettings {
     // Learning to play (docs/LEARNING.md): the tutorials and training games
     // finished on this machine, as "tutorial:<slug>" and "training:<slug>".
     std::vector<std::string> learnDone;
+    // Free Play (the lesson panel's switch): tutorials do not lock the input
+    // to the step's action. Off by default.
+    bool learnFreePlay = false;
 };
 
 // The Options window's music steps (spec 06 §1.9).

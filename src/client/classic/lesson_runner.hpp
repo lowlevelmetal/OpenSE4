@@ -8,9 +8,13 @@
 // the player changes still goes through ClassicSession::issue(), which
 // reports each command here.
 
+#include "client/classic/lesson_lock.hpp"
 #include "client/classic/ui.hpp"
 #include "learn/progress.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 
 namespace opense4::client::classic {
@@ -25,8 +29,16 @@ public:
     // A command the player issued successfully (ClassicSession::onIssued).
     void issued(const game::Command& c) { progress_.issued(c); }
     // Each frame, after the windows drew (so this frame's UI tags are known):
-    // checks the conditions, draws the panel, the outlines and the result.
-    void frame(UiContext& ui, const learn::ClientFacts& facts);
+    // checks the conditions, draws the panel, the outlines (and, with the
+    // input lock on, the spotlight around `lock`'s areas) and the result.
+    void frame(UiContext& ui, const learn::ClientFacts& facts, const LockState& lock);
+
+    // The tutorial input lock (lesson_lock.hpp): whether the active step locks
+    // the input (a tutorial, Free Play off, not over), and that step.
+    bool locking() const;
+    const learn::Step* activeStep() const;
+    // A press the lock refused: a hint there, and the outlines flash.
+    void refused(ImVec2 where, double time);
 
     // Tutorials: shows step `step` (0-based) as if the ones before were done
     // (--tutorial=<slug>:<step>, for checking content).
@@ -48,7 +60,9 @@ private:
     void evaluate(UiContext& ui, const learn::ClientFacts& facts);
     void finished();
 
-    void drawOutlines(UiContext& ui) const;
+    void drawOutlines(UiContext& ui, const LockState& lock) const;
+    // The active step's condition looks out of reach: Next offers Skip.
+    bool stuck(const UiContext& ui) const;
     void drawPanel(UiContext& ui);
     void tutorialBody(UiContext& ui);
     void trainingBody(UiContext& ui);
@@ -61,6 +75,13 @@ private:
     bool panelOpen_ = true;
     bool moved_ = false;        // the player moved the panel: it keeps its place
     bool windowsOpen_ = false;  // a classic window is open (the panel's default place)
+    // The active step: since when, and when its targets were last on screen.
+    std::optional<size_t> activeSeen_;
+    double activeSince_ = 0;
+    double targetsSeen_ = 0;
+    // The last press the lock refused.
+    std::optional<ImVec2> refusedAt_;
+    double refusedTime_ = -10;
     YesNoPrompt leave_;
     Request request_ = Request::None;
 };

@@ -23,7 +23,7 @@ enum class Fact : uint8_t {
     // Client facts.
     Window, Selected, Command, Order, Tab,
     // Windows' work in progress.
-    DesignComponents, DesignHullChosen, SimulatorOwners, SimulatorItems,
+    DesignComponents, DesignHullChosen, SimulatorOwners, SimulatorItems, BattleBegun, BattleOrder,
     // Time.
     Turn, TurnsPassed,
     // The player's empire.
@@ -82,6 +82,11 @@ struct ClientFacts {
     // items in the battle, and the items.
     int64_t simulatorOwners = 0;
     int64_t simulatorItems = 0;
+    // The Tactical Combat window, while it is open: whether its battle has
+    // begun. And every order the player gave in tactical battles so far, oldest
+    // first, as battle order kinds (learn/ids.hpp battleOrderKinds).
+    bool battleBegun = false;
+    std::vector<std::string> battleOrders;
 };
 
 // The player's commands and the enemy losses seen during a lesson: what the
@@ -117,10 +122,12 @@ struct Mark {
     int64_t enemyShipsDestroyed = 0;
     int64_t planetsCaptured = 0;
     uint64_t selections = 0;
+    size_t battleOrders = 0;
 };
-// `selections`: ClientFacts::selections now.
+// `selections` and `battleOrders`: ClientFacts::selections and the size of
+// ClientFacts::battleOrders now.
 Mark markNow(const game::Rules& rules, const game::GameState& state, game::EmpireId empire, const Tracker& tracker,
-             uint64_t selections = 0);
+             uint64_t selections = 0, size_t battleOrders = 0);
 
 struct EvalContext {
     const game::Rules& rules;

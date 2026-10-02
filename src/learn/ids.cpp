@@ -4,7 +4,13 @@
 
 #include <algorithm>
 #include <array>
+#include <initializer_list>
+#include <iterator>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace opense4::learn {
 
@@ -116,7 +122,7 @@ constexpr std::string_view kOtherTags[] = {
     "set-queue:available", "set-queue:queue",
     "queues:list",
     "designs:list", "designs:create", "designs:simulator",
-    "create-design:hull", "create-design:name", "create-design:on-design", "create-design:components",
+    "create-design:hull", "create-design:name", "create-design:suggest", "create-design:on-design", "create-design:components",
     "create-design:warnings", "create-design:save",
     "fleet-transfer:ships", "fleet-transfer:fleets", "fleet-transfer:create-fleet",
     "combat-simulator:vehicles", "combat-simulator:items", "combat-simulator:owners", "combat-simulator:strategies",
@@ -130,7 +136,7 @@ constexpr std::string_view kOtherTags[] = {
     "empires:list", "empires:intelligence",
     "communicate:message-type", "communicate:treaty", "communicate:send",
     // The lesson panel itself.
-    "lesson:panel", "lesson:next", "lesson:read-more",
+    "lesson:panel", "lesson:next", "lesson:read-more", "lesson:free-play", "lesson:leave",
     "help:tabs",
 };
 
@@ -298,6 +304,23 @@ bool isOptionName(std::string_view id) {
     return std::any_of(std::begin(kOptions), std::end(kOptions), [&](const OptionInfo& o) { return o.id == id; });
 }
 
+namespace {
+// In the order of game::combat::TacticalOrder::Kind.
+constexpr std::string_view kBattleOrders[] = {"move", "fire", "toggle-weapon", "launch", "launch-fighters", "drop-troops",
+                                              "ram", "capture", "set-leader", "set-member", "clear-group", "clear-all-groups",
+                                              "auto", "auto-phase", "end-turn", "resolve-combat"};
+static_assert(std::size(kBattleOrders) == static_cast<size_t>(game::combat::TacticalOrder::Kind::ResolveCombat) + 1);
+} // namespace
+
+std::span<const std::string_view> battleOrderKinds() { return kBattleOrders; }
+
+bool isBattleOrderKind(std::string_view kind) { return std::find(std::begin(kBattleOrders), std::end(kBattleOrders), kind) != std::end(kBattleOrders); }
+
+std::string_view battleOrderId(game::combat::TacticalOrder::Kind kind) {
+    const auto i = static_cast<size_t>(kind);
+    return i < std::size(kBattleOrders) ? kBattleOrders[i] : std::string_view{};
+}
+
 std::vector<std::string_view> treatyKinds() {
     std::vector<std::string_view> out;
     for (const auto& [treaty, id] : kTreaties) out.push_back(id);
@@ -312,8 +335,27 @@ std::optional<game::Treaty> treatyFromId(std::string_view id) {
 
 bool isUiTag(std::string_view tag) {
     if (tag.starts_with("window:")) return findWindow(tag.substr(7)) != nullptr;
+    if (tag.ends_with(":close")) return findWindow(tag.substr(0, tag.size() - 6)) != nullptr;
     const auto tags = fixedUiTags();
     return std::find(tags.begin(), tags.end(), tag) != tags.end();
+}
+
+bool isKeyChord(std::string_view chord) {
+    // Modifiers first, in any order (as the client's parseChord reads them).
+    auto eat = [&](std::string_view mod) {
+        if (!chord.starts_with(mod) || chord.size() <= mod.size()) return false;
+        chord.remove_prefix(mod.size());
+        return true;
+    };
+    while (eat("Ctrl+") || eat("Shift+") || eat("Alt+")) {
+    }
+    static constexpr std::string_view kNames[] = {
+        "Enter", "Escape", "Space", "Tab", "Backspace", "Delete", "Insert", "Home", "End", "PageUp", "PageDown",
+        "LeftArrow", "RightArrow", "UpArrow", "DownArrow", "Comma", "Period", "Minus", "Equal", "Slash",
+        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+    };
+    if (chord.size() == 1 && ((chord[0] >= 'A' && chord[0] <= 'Z') || (chord[0] >= '0' && chord[0] <= '9'))) return true;
+    return std::find(std::begin(kNames), std::end(kNames), chord) != std::end(kNames);
 }
 
 } // namespace opense4::learn

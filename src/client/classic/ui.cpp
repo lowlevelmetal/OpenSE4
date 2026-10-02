@@ -363,6 +363,11 @@ void UiContext::tag(std::string_view name, ImVec2 min, ImVec2 max) {
     tags.push_back({std::string(name), min, max});
 }
 
+void UiContext::promptWindow() {
+    const ImVec2 pos = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+    promptAreas.emplace_back(pos, ImVec2(pos.x + size.x, pos.y + size.y));
+}
+
 void UiContext::tagTab(std::string_view tab, bool shown) {
     if (!drawing) return;
     std::string name = std::string(windowId(*drawing)) + ":" + std::string(tab);
@@ -378,6 +383,7 @@ void UiContext::tagWindow(ImVec2 min, ImVec2 max) {
 
 Dialog::Dialog(UiContext& ui, const char* title, DialogSize size, float buttonColumn)
     : Dialog(ui.painter(), title, dialogRect(size), buttonColumn) {
+    game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
 }
 
@@ -385,6 +391,7 @@ Dialog::Dialog(UiContext& ui, const char* title, Vec2 size, float buttonColumn)
     : Dialog(ui.painter(), title,
              Rect{Vec2{(frameW() - size.x) * 0.5f, (frameH() - size.y) * 0.5f}, Vec2{(frameW() + size.x) * 0.5f, (frameH() + size.y) * 0.5f}},
              buttonColumn) {
+    game_ = &ui;
     if (visible_) ui.tagWindow(ui.at(rect_.min), ui.at(rect_.max));
 }
 
@@ -490,6 +497,7 @@ bool Dialog::close(bool enabled, const char* label) {
     slotCounts()[ImGui::GetID("##slots")] = nextSlot_ + 1;
     ImGui::SetCursorPos(ImVec2(0, ui_.px(closeY)));
     const bool clicked = classicButton(ui_, label, {buttonColumn_, buttonH_}, 0, false, enabled);
+    if (game_ && game_->drawing) game_->tagItem(std::string(windowId(*game_->drawing)) + ":close");
     const float below = closeY + kSlotPitch;
     if (buttonColumn_ >= 150 && room + kButtonH - below > 40)
         if (Sprite filler = ui_.art.image("Pictures/Game/Screens/1024X768/RightFiller.bmp", false)) {

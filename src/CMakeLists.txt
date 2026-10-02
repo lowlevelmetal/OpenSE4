@@ -95,6 +95,7 @@ target_link_libraries(opense4_game PUBLIC opense4_ruleset PRIVATE tomlplusplus o
 # Headless: the content model, its loaders and the condition evaluator. The
 # client draws it; the tests check the built-in content with it.
 add_library(opense4_learn STATIC
+    learn/access.cpp
     learn/condition.cpp
     learn/ids.cpp
     learn/lesson.cpp

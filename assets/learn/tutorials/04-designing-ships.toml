@@ -14,7 +14,7 @@ title = "Your own ships"
 text = """
 Every ship you build follows a **design**: a hull filled with components. You start with a few
 ready-made designs, and you make new ones as your technology grows. In this lesson you design a
-small warship.
+small warship. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "ship-design"
@@ -39,6 +39,7 @@ The tabs on the right switch to unit designs and to the enemy designs you have s
 **Next**.
 """
 highlight = ["designs:list"]
+allow = ["designs:list", "designs:ship-designs", "designs:unit-designs", "designs:enemy-ship-designs", "designs:enemy-unit-designs"]
 manual = "ship-design#the-designs-window"
 
 [[step]]
@@ -88,23 +89,27 @@ crew quarters, too many engines and so on. Fix each one. When the box says the d
 every rule, it can be created. Press **Next**.
 """
 highlight = ["create-design:warnings"]
+allow = ["create-design:components", "create-design:on-design"]
 manual = "ship-design#design-rules"
 
 [[step]]
 title = "Name it"
 text = """
-Give the design a name, or press **Suggest** for the next name from your race's list. Names must
-be unique in the whole game. Press **Next**.
+Click the name box and type a name for the design, or press **Suggest** for the next name from
+your race's list. Names must be unique in the whole game. Press **Next**.
 """
-highlight = ["create-design:name"]
+highlight = ["create-design:name", "create-design:suggest"]
+allow = ["create-design:name", "create-design:suggest"]
 manual = "ship-design#the-create-design-window"
 
 [[step]]
 title = "Create it"
 text = """
-Press **Create Design**.
+Press **Create Design**. If it is dim, the warnings box still names a rule the design breaks:
+fix that first.
 """
 highlight = ["create-design:save"]
+allow = ["create-design:components", "create-design:on-design", "create-design:name", "create-design:suggest"]
 done = { command = "CreateDesign" }
 manual = "ship-design#the-create-design-window"
 
@@ -118,9 +123,11 @@ Your new design is in the list now. A few things to know:
 - **Upgrade** makes a new design with the newest version of every component, after you have
   researched better ones.
 
-Close the Designs window, then press **Next**.
+Close the Designs window (**Close** or `Esc`).
 """
-highlight = ["designs:list"]
+highlight = ["designs:close"]
+allow = ["designs:list"]
+done = { not = { window = "designs" } }
 manual = "ship-design#prototypes-editing-and-upgrading"
 
 [[step]]
@@ -141,6 +148,7 @@ On the **Ships** tab, click your new design to add it to the queue. The list sho
 turns it takes to build.
 """
 highlight = ["set-queue:available"]
+allow = ["set-queue:ships"]
 done = { command = "QueueAdd" }
 manual = "construction#the-set-construction-queue-window"
 
@@ -150,7 +158,9 @@ text = """
 Your warship is on its way. Before you build a whole fleet of a design, test it: the next lessons
 show you how to move ships in fleets and how to try a design out in the Combat Simulator.
 
-The **Weapons Report** in the Help window (`F1`) compares every weapon you know.
+The **Weapons Report** in the Help window (`F1`) compares every weapon you know. Press
+**Finish** to end the lesson.
 """
 highlight = ["command:help"]
+allow = ["command:help"]
 manual = "ship-design#combat-numbers-worth-knowing"

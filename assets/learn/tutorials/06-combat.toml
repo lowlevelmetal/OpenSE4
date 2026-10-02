@@ -17,6 +17,7 @@ Non-Aggression or better. In a turn-based game you choose to fight each battle y
 (**Tactical**) or to let your ships follow their strategies (**Strategic**).
 
 In this lesson you fight a test battle in the **Combat Simulator**, where nothing is really lost.
+Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "combat#when-battles-happen"
@@ -66,20 +67,22 @@ This is the **Tactical Combat** window. Your ships start on one edge of the map,
 middle. The status bar at the top shows the combat turn and whose phase it is; the panels show
 your selected ship, its shields, damage, movement and weapons.
 
-Press **Begin** at the bottom right to start the battle. Then press **Next** here.
+Press **Begin** at the bottom right to start the battle.
 """
-highlight = ["tactical-combat:end-turn", "tactical-combat:map"]
+highlight = ["tactical-combat:end-turn"]
+done = { battle_begun = true }
 manual = "combat-windows#tactical-combat"
 
 [[step]]
 title = "Move"
 text = """
-Click one of your ships to select it, then click an empty square to move it there. A ship moves
-half its normal speed each combat turn.
+Click one of your ships on the map to select it, then click an empty square to move it there. A
+ship moves half its normal speed each combat turn.
 
-The chance to hit falls by 10 points for every square of distance, so get close. Press **Next**.
+The chance to hit falls by 10 points for every square of distance, so get close.
 """
 highlight = ["tactical-combat:map", "tactical-combat:piece"]
+done = { battle_order = "move" }
 manual = "combat#movement-in-combat"
 
 [[step]]
@@ -89,9 +92,13 @@ Point at the enemy: the pointer shows whether your ship can fire at it. Hover ov
 the ship's weapon list to see its chance to hit and its damage. Click the enemy to fire every
 ticked weapon.
 
-Shields absorb damage first, then armor is destroyed, then everything else. Press **Next**.
+If it is still out of range, move closer, or press **End Turn** (`E`) to end your phase and fire
+in the next one. Shields absorb damage first, then armor is destroyed, then everything else.
 """
-highlight = ["tactical-combat:weapons", "tactical-combat:target"]
+highlight = ["tactical-combat:map", "tactical-combat:weapons", "tactical-combat:target"]
+allow = ["tactical-combat:piece", "tactical-combat:end-turn"]
+keys = ["E"]
+done = { battle_order = "fire" }
 manual = "combat#hitting-the-target"
 
 [[step]]
@@ -105,6 +112,8 @@ until the battle ends: **Combat Complete** appears, and after **OK** the window 
 and the simulator comes back.
 """
 highlight = ["tactical-combat:end-turn", "tactical-combat:auto"]
+allow = ["tactical-combat:map", "tactical-combat:piece", "tactical-combat:weapons", "tactical-combat:target"]
+keys = ["E"]
 done = { not = { window = "tactical-combat" } }
 manual = "combat-windows#tactical-combat"
 
@@ -133,8 +142,8 @@ manual = "combat-windows#strategic-combat"
 title = "Strategies"
 text = """
 How a ship fights on its own depends on its **strategy**: where it moves, what it shoots first,
-and when it leaves its formation. Press **Strategies** in the simulator (it also opens from
-**Empire Status**, `F11`).
+and when it leaves its formation. Press **Strategies** in the simulator. (In a game it also opens
+from **Empire Status**, `F11`.)
 """
 highlight = ["combat-simulator:strategies"]
 done = { window = "strategies" }
@@ -147,7 +156,8 @@ Each design has a default strategy, and a fleet's own strategy overrides it. Loo
 pages of the window to see what a strategy can say.
 
 Remember: use the simulator to test a new design against the enemy designs you have seen before
-you build a fleet of it.
+you build a fleet of it. Press **Finish** to end the lesson.
 """
 highlight = ["window:strategies"]
+allow = ["window:strategies"]
 manual = "combat#strategies"

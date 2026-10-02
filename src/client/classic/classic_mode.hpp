@@ -45,6 +45,12 @@ struct ClassicOptions {
     std::string training;
     std::optional<std::string> manual;
     std::string learnDir;      // read the learning content from this folder only (testing)
+    // Checking content (--lesson-check, with --tutorial=<slug>:<step>): open
+    // the windows the step works in, then report whether every tag the step
+    // highlights or allows is on screen, and exit with 1 when one is missing
+    // (at once, or after the screenshot when one is asked for).
+    bool lessonCheck = false;
+    bool lessonCheckQuits = true;
 };
 
 // What to tell the player when no installed copy of the game is found:
@@ -59,6 +65,9 @@ public:
     bool update(const FrameState& fs) override;
     void render(gfx::Renderer2D& renderer, const FrameState& fs) override;
     Color clearColor() const override { return Color::hex(0x000000); }
+    // The tutorial input lock (lesson_lock.hpp).
+    EventVerdict filterEvent(const SDL_Event& event) override;
+    int exitCode() const override { return exitCode_; }
 
 private:
     explicit ClassicMode(const Platform& platform) : platform_(platform) {}
@@ -116,6 +125,14 @@ private:
     // The tutorial or training game being played, if any.
     std::unique_ptr<classic::LessonRunner> lesson_;
     std::string lessonError_;   // a lesson that could not start
+    // The tutorial input lock, made at the end of each frame for the next.
+    classic::InputLock lock_;
+    void updateLock(classic::UiContext& ui);
+    // --lesson-check: the windows the step works in, and its report.
+    void prepareLessonCheck();
+    void lessonCheckReport(classic::UiContext& ui);
+    int lessonCheckFrame_ = -1;
+    int exitCode_ = 0;
 
     // Network games: status strip and chat.
     void drawNetwork(classic::UiContext& ui);

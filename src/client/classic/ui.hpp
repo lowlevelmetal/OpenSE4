@@ -22,6 +22,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -229,9 +232,17 @@ public:
     // (facts.tabs). learn/ids.hpp windowTabs lists them.
     void tagTab(std::string_view tab, bool shown);
 
-    // The learning content and whether a lesson is running (its T button).
+    // The game's own prompts this frame (End Turn's question, Colony Type,
+    // Attack Sector, error boxes): a tutorial's input lock never covers them.
+    std::vector<std::pair<ImVec2, ImVec2>> promptAreas;
+    // The ImGui window being drawn is such a prompt.
+    void promptWindow();
+
+    // The learning content and whether a lesson is running (its T button),
+    // and whether a tutorial step locks the input (window links then stay shut).
     const LearnContent* learn = nullptr;
     bool lessonRunning = false;
+    bool lessonLocked = false;
     // What windows tell lessons this frame (cleared at its start): their
     // tabs, the designer's and the simulator's work in progress. The mode
     // adds the open windows and the selection.
@@ -331,6 +342,7 @@ private:
     void endChild();
     bool slot(const char* label, int style, bool on, bool enabled);
     Painter ui_;
+    UiContext* game_ = nullptr;   // in a game: the bottom button registers `<window>:close`
     Rect rect_;
     bool visible_ = false;
     bool keep_ = true;
