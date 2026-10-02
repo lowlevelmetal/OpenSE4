@@ -966,14 +966,86 @@ turn. A ship differs: it needs supply and pays upkeep (spec 03 §8).
     as attack candidates, in their colonization lists, and as enemies in their territory.
   - Their Destroy Planet minister skips every planet whose colony is marked cloaked, even
     one it can see (spec 05 §7.5).
-- **Lists and map.** The Planets window leaves out a cloaked colony's planet that the viewer
-  cannot see. When the viewer can see it, the planet is listed as a colony (spec 06 §1.8.1).
-  On the map the planet is always drawn, but its colony mark appears only when the colony is
-  seen.
+- **Lists and map.** See **What other players see** below. The planet of a hidden colony is
+  not drawn on the map at all and is in no tab of the Planets window. (An earlier version of
+  this section said the planet was always drawn; that was wrong.)
 - **Status icons** (own colonies only, spec 06 §4.4). The cloaked cell (9) is drawn first.
   The space-yard cell (0) needs a working yard. A cloaked colony with a yard therefore shows
   the can-repair cell (11) instead, when it has `Component Repair`. The building cell (12)
   is unaffected.
+
+**What other players see** (confirmed: binary).
+
+The original keeps no memory of planets or colonies: there is no "last seen" owner or
+population. Every window applies the sight rules when it is drawn, to the live state. Two tests
+are used.
+
+- **Seeing the planet.** The planet's owner always passes. Anyone else passes when, in some
+  sight type, the planet's obscuration (§6.2: the colony's cloak levels while it is cloaked,
+  raised by storms and nebulae) is no more than the viewer's sensor level in that system, with
+  EM Active counted as at least 1. There is no explored test and no presence is needed: this
+  is the test of the Omnipresent view (§6.5), used here whatever the game's option. A planet
+  outside storms and nebulae without a cloaked colony therefore always passes. The same test
+  decides which stellar objects (planets, asteroid fields, stars, storms, warp points, comets)
+  a sector shows; vehicles use the detection rule.
+- **Seeing the colony.** The detection rule of §6.3 applied to the planet: the system is
+  explored, and the viewer's real sensor levels there (its own sensor sources and its
+  partners', §6.1) reach the obscuration in some type, with no floor. Without a sensor source
+  in the system no foreign colony is seen, cloaked or not.
+
+A colony is **hidden** from a viewer when its planet fails the first test. That needs a cloak
+level of 2 or more in EM Active above the viewer's EM Active sensor level, and in every other
+type above the viewer's sensor in that type. Stock data has no facility with `Cloak Level`, so
+hidden colonies occur only with modified data.
+
+For a viewer from whom the colony is **hidden**:
+- **System panel.** The planet is not drawn at all: no sprite, no population bars, no colonize
+  star, no planet name, and it is not counted in the sector's number of stellar objects. The
+  sector shows whatever else the viewer sees there, by the usual rules (spec 06 §2.4).
+- **Clicking the sector.** Only visible objects are listed. With none, the system report opens
+  (the system's picture, name, description and abilities; it lists no planets). The planet
+  cannot be selected, so its report cannot be opened and none of its orders light.
+- **Planets window.** The planet is in no tab, so Send Colony Ship cannot pick it. The
+  statistics block still counts it (spec 06 §1.8.1): its counts use every planet of the
+  explored systems with its real owner, so they can exceed what the tabs list.
+- **Galaxy map.** A system's presence markers (§6.7) come from the objects the viewer sees by
+  the detection rule, so a hidden colony adds no colour.
+- **Intelligence.** The player's target picker leaves it out. A project aimed at "Any" can
+  still hit it (above).
+- **Colonize.** A ship ordered to colonize the planet fails with the "no planet here to
+  colonize" notice (spec 03 §8). That check comes first, so the colony-type picker never
+  appears.
+- **Scores and Comparisons** use real totals: the colony counts in its owner's systems, planets
+  and population. Who may see which empire's scores is spec 05 §5.
+- **Log.** Entries are never filtered by sight. An entry written when something happens to the
+  colony (an intelligence project aimed at "Any", a battle, which decloaks it) names its planet
+  as usual.
+
+For a viewer who **sees the planet but not the colony**: any foreign colony in a system where
+the viewer has no sensor source, and a cloaked colony whose EM Active cloak level is 1 while
+the viewer has no EM Active sensor there.
+- **Map.** The planet is drawn without its population bars. It gets the colonize star (green or
+  red) when the viewer could colonize its type, as if it were empty.
+- **Planet report.** As for an uncolonized planet: picture, name, type, atmosphere, conditions,
+  value, description and the planet's own abilities. No owner flag, no siege or blockade note,
+  no Population line.
+- **Planets window.** Listed as an uncolonized planet: in All; in Colonizable, Coloniz\Empty and
+  Coloniz\Breathe when the type (and atmosphere) fits; never in All Colonies, Enemy Colonies or
+  Ally Colonies. Send Colony Ship can pick it; the colony ship then finds the colony on arrival
+  (its own sensors now see it) and fails with the "already a colony on this planet" notice.
+- **Galaxy map and intelligence.** It adds no presence colour, and the intelligence picker does
+  not offer it.
+
+For a viewer who **sees the colony**, everything is as usual: the population bars on the map; in
+the planet report the owner's flag (and the invader's flag under it during a siege), the siege
+and blockade notes and a Population line. A foreign colony's report shows nothing more: no
+owner name and no colony type (those are shown for own colonies only).
+
+**What a network or e-mail game sends** (confirmed: binary). There is one game file for all
+players, holding every empire's record, every design and every object, hidden ones included;
+nothing is filtered per player, and the hiding above happens only in the windows (spec 05
+§9.2). OpenSE4's own network redaction only needs to give the same visible result (spec 05
+§9.5).
 
 **The engine follows this subsection since 2026-10-01.** The colony keeps its cloaked mark and
 its cloak and sensor levels (`Colony::cloaked`, `cloakLevels`, `sensorLevels`), recalculated
@@ -989,6 +1061,39 @@ own choices, marked (inferred) in the code (§14 Q44):
   host pass between them, is not recalculated when it is opened, so that both sides keep the
   same state.
 - An upgrade that converts facilities counts as completing them: it recalculates too.
+
+**The client and engine differ from "What other players see"** (2026-10-01):
+- **System panel** (`MainWindow::objectsAt` and `prepareSectors` in
+  `src/client/classic/main_window.cpp`). Every stellar object of an explored system is drawn,
+  counted, named and clickable with no sight test, so a hidden colony's planet (and a planet
+  hidden by a storm or nebula, §6.4) is drawn and selectable. Drawing, the stellar count, the
+  planet names, the sector click and the sector list must use the "seeing the planet" test.
+  `sight::canSeePlanet` (`src/game/sight.cpp`) is that test except in one narrow case: a
+  cloaked colony with EM Active cloak level 1 and higher levels in other types, watched by a
+  viewer with no sensors there; ours hides that planet, the original shows it.
+- **Seen colony.** `sight::colonyShown` (`src/game/sight.cpp`) is true for every uncloaked
+  colony, with no sensor source needed. The original uses the detection rule (our
+  `canSeeColony`) wherever it asks whether a colony is seen: the map's population bars
+  (`main_window.cpp`), the Planets window's colony status and tabs (`surveyPlanets` in
+  `src/client/classic/screens/colony_logic.cpp`) and the intelligence target picker
+  (`knownPlanets` in `src/client/classic/screens/intelligence.cpp`). Ours also draws the
+  colonize star from the real colony (`colonizeProblem`), so it never marks an unseen colony's
+  planet as colonizable; the original does.
+- **Planet report** (`planetReport` in `src/client/classic/reports.cpp`). For any foreign
+  colony ours shows the owner's flag and Owner, Colony Type and Population lines. The original
+  shows the flag and Population only when the colony is seen, and never Owner or Colony Type
+  for a foreign colony.
+- **Planets statistics** (`planetStatistics` in `colony_logic.cpp`) count only the listed
+  planets; the original counts every non-asteroid planet of the explored systems with its real
+  owner.
+- **Galaxy-map presence** (`systemPresence` in `src/client/classic/quadrant_map.cpp`) marks every
+  colony of an explored system; the original marks only objects the viewer sees by the
+  detection rule.
+- **Network.** `src/game/redact.cpp` keeps the foreign colonies of explored systems (owner,
+  population, cloak mark and levels) and drops the vehicles the viewer cannot see; the e-mail
+  game file (`src/net/pbem.cpp`) is the full state, as in the original. With the points above
+  fixed in the client there is no visible difference; leaving hidden colonies out of the
+  redacted view would be optional hardening, not parity.
 
 ---
 

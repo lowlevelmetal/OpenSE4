@@ -164,8 +164,8 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
   Level Req N` block (AND). An item with zero requirements is available from the start
   [D].
 - **When to recompute**: after every tech change, re-evaluate what is available and log
-  the new items. Tech changes come from research, gifts, trades, theft, ruins, surrender and
-  the Medium/High start.
+  the new items. Tech changes come from research, gifts, trades, theft, ruins, surrender,
+  Analyze and the Medium/High start.
 - **Other sources**:
   - A Technology item in a gift, tribute or trade package gives the giver's level. It
     helps only when the receiver's level is lower. Setup options "Allow Gifts/Tributes" and
@@ -174,6 +174,19 @@ Every cost is capped at 2,000,000,000. Levels 1 and 2 cost the same under Low an
     treaty description; the master only sees the subject's designs (§3.2) (confirmed:
     binary).
   - `Research - Steal` intel (§2.3).
+  - **Analyze** (the Scrap window, spec 03 §15) (confirmed: binary). Analyzing an own ship or
+    base at an own space yard destroys it and raises the owner's levels from the tech
+    requirements of its intact components and its hull. Each distinct (area, level)
+    requirement above the owner's current level in that area gives exactly one level in that
+    area, so an area rises by the number of distinct higher levels its parts require and never
+    above the highest of them. No research points are involved: nothing goes to the pool or to
+    the queue, and the level is gained even when the area is not yet researchable (only the
+    "allowed in this game" and racial or unique checks of §1.2 apply). The log entries are those
+    of a level completed by research (§1.4) without "All Projects Completed". Any own ship or
+    base may be analyzed, but one the empire built needs no technology it lacks, so Analyze pays
+    only for a captured ship or one received from another empire. The Scrap window's
+    "Research Potential" word (None, Minor, Moderate, Sizable, Major for 0, 1, 2, 3, 4+
+    requirements) previews it. The engine has no Analyze yet (spec 03 §15).
 
 ## 2. Intelligence
 
@@ -706,15 +719,26 @@ window, where the ranking shows the result.
 
 ### 7.1 Control, selection, difficulty
 
-- **Who plays AI**: an empire is AI-controlled if it is "Computer Controlled" at setup or
-  toggled in the Player Computer Control window [M]. A computer player is simply an empire
-  with all 25 ministers switched on (confirmed: binary).
+- **Who plays AI** (confirmed: binary): an empire is AI-controlled when it carries the
+  computer-controlled mark. The mark is set by "Computer Controlled" at setup, for random
+  computer and neutral players and for rebels, and during play by the Player Computer Control
+  window (spec 06 §1.2.1) or the TCP/IP host's toggle (§9.4). The window also switches all 25
+  ministers and every individual minister flag on (to computer) or off (to human); the TCP/IP
+  host's toggle changes only the mark. A computer player is an empire with the mark and all 25
+  ministers on; its ministers act on every object, whatever the individual flags.
 - **Missing orders** (confirmed: binary): in a game played on different machines (not
   Hotseat), a player whose orders are missing when the host processes the turn is played by
   the computer for that turn (§9.2). The host switches all of that empire's ministers on
   and restores the player's own minister settings after the turn. If that player ticked
   the minister option that forbids AI changes in a simultaneous game, the stand-in does
   its bookkeeping (state, scores) but changes nothing.
+- **The stand-in is keyed on the file, not the mark** (confirmed: binary). Every empire
+  without a valid orders file, computer players included, gets all ministers on and the
+  "standing in" state for that turn, unless the game is hotseat. Quirk: an empire that is now
+  computer-controlled but still has "AI should not make changes during a simultaneous game" on,
+  left over from when a human played it, does only bookkeeping every turn on the host of a game
+  on different machines; in hotseat it plays normally. The engine differs: `liveControl` in
+  `src/game/turn_based.cpp` plays such an empire normally.
 - **Ministers** hand single areas to the AI [M]. There are 25, in this order (confirmed:
   binary):
   - Global (1–11): Design, Ship Construction, Expenses, Production Output, Research,
@@ -2299,7 +2323,14 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
 
 - **Files**:
   - `.emp`: a player's empire, sent before the start.
-  - `.gam`: the full state, produced by the host.
+  - `.gam`: the full state, produced by the host. (confirmed: binary) There is one game file
+    for all players. It holds every empire's full record, every design and every object,
+    including those a player cannot see (cloaked ships and colonies, mines, other empires'
+    fleets); nothing is filtered per player. A player's copy hides them only in its windows
+    (spec 01 §6.9 "What other players see"), so a player reading the file with another tool
+    sees everything. The e-mail host writes this one file; a TCP/IP host sends every player the
+    same game file, the same combat-replay and movement-replay files, and that player's own
+    history and statistics files.
   - `.plr`: one player's turn changes, deleted after processing.
   - `.trn`: the movement replay.
   - `.cmb`: the combat replays.
@@ -2327,9 +2358,17 @@ above is listed in docs/PARITY_GAPS.md. Network and play-by-e-mail hosts run the
        the game. A file for another date, another turn or another game is reported, and
        the host may go on with that player played by the computer. The files are deleted
        after processing.
+     - (confirmed: binary) A missing orders file is reported ("Player File Error") only for an
+       empire that is human-controlled and not destroyed, and never in hotseat or when
+       processing without dialogs. An orders file restores the player's own part of the
+       empire: its minister settings, its password and e-mail, its options, its vehicles,
+       fleets, designs and so on. It never restores the empire's name, its computer-controlled
+       mark or its difficulty.
   5. The host sends out the new files.
-- **Password reset**: the host may reset a player's password, and the new password is
-  delivered by message.
+- **Password reset**: the host may reset players' passwords between turns (Reset Passwords,
+  spec 06 §1.9). The new password is shown to the host in a message and takes effect at the
+  next processing, after the orders files are read; nothing tells the player (confirmed:
+  binary).
 - **Player turn**: the player may change queues, research, intel, messages, designs and
   strategies, and give orders to ships and **planets**. Planet orders exist only in this
   mode.
@@ -2393,8 +2432,28 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
 - Process a turn with order files missing; the AI plays those empires.
 - Add its own empires, one at a time.
-- Remove an empire before the start, or switch it between AI and human control after the
-  start.
+- One button whose meaning follows the host state (confirmed: binary):
+  - while waiting for connections or for empire files, it removes the selected connected
+    player;
+  - when ready for the first turn, it removes the selected empire, and later empires are
+    renumbered;
+  - while waiting for orders files and when ready for the next turn, it is "Toggle Empire AI
+    On/Off": it asks "Change Empire Control", naming the empire and whether it goes to AI or
+    human control, and flips only the empire's computer-controlled mark (unlike the Players
+    window, ministers and individual flags are untouched). The player column then shows
+    "[Computer]", or "[Host]" for an empire handed back (no player is connected to it and the
+    host plays it).
+
+  The host waits for orders files only from connected players. An empire handed to the
+  computer is played each turn by the stand-in rule (§7.1: all ministers on for the turn,
+  restored afterwards). Open: needs observation (or a resource lookup): the button's caption
+  in the earlier states.
+  The engine differs: `HostSession::setAiControl` (`src/net/host.cpp`) sets a per-slot
+  stand-in flag, not the empire's kind, and no window calls it
+  (`ClientSession::requestAiControl` in `src/net/client.cpp` has no caller). The original flips
+  the lasting mark, so other players see it, Team Mode sides follow it and the text files stop
+  for that empire. Turn-based TCP/IP is an OpenSE4 extension, so its behaviour there is our
+  choice.
 - Play any empire's turn.
 
 **Other behavior**:
@@ -2445,6 +2504,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     carries that player's commands in the order given, with checksums of the game before
     and after. The host replays them with `applyLive`, runs `endPlayerTurn` and sends the
     new `.gam` on to the next player. A missing `.plr` means the computer plays that turn.
+- **What a client receives.** The original sends every player the whole game (§9.2) and hides
+  things only on display. OpenSE4's TCP/IP host sends each player a redacted view instead (an
+  OpenSE4 choice; its e-mail game file is the full state, like the original's). Either way the
+  client must apply spec 01 §6.9 "What other players see" to what it holds, so that the visible
+  behaviour matches the original.
 - **The player's side of an e-mail game** (both turn styles). The game client opens the
   `.gam`, the player picks their empire and gives its password, which is checked against
   the empire's verifier as the host will check the `.plr`. The turn is played as in a
