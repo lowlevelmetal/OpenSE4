@@ -3989,18 +3989,20 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       ours lose 6.1 attack ships per empire and 25 turns in battle against 4.2 and 4.9.
     - Fleets: a new fleet's leader must be a ship an attack or defence fleet could take,
       never a troop transport or boarding ship (§7.5 `AI_Fleets`, confirmed: binary). Ours
-      form fleets of troop transports alone (7 % of fleet-turns) and of carriers alone (6
+      formed fleets of troop transports alone (7 % of fleet-turns) and of carriers alone (6
       %); the original none and 1 % (one game). In a scratch run with the original's rule,
       our battles fell from 11.3 to 9.7 per empire and 25 turns (standard error 0.9), those
       between armed and unarmed ships from 3.0 to 1.9, and attack ships lost in turns 26–100
       from 17.9 to 16.5.
-    - The step toward a square in combat (spec 04 §5, confirmed: binary): ours stop behind a
-      large piece where the original slides along it; with the original's rule our drawn
+    - The step toward a square in combat (spec 04 §5, confirmed: binary): ours stopped behind
+      a large piece where the original slides along it; with the original's rule our drawn
       share fell from 42 to 39 %.
-    - Scrapping: ours scrap 1.1 attack ships per empire and 25 turns of turns 51–100, as the
-      soft cap and the scrap candidates differ (§7.5, the budget and *Scrap*).
+    - Scrapping: ours scrapped 1.1 attack ships per empire and 25 turns of turns 51–100, as
+      the soft cap and the scrap candidates differed (§7.5, the budget and *Scrap*).
+
     Who engages whom in the decided battles, and whether ships without orders start
-    battles, is question 68.
+    battles, is question 68. OpenSE4 follows the three rules above and the soft cap's since
+    2026-10-02 (spec 07 "Pace after the scrap, cap and fleet rules").
 67. **Battles at an enemy colony** (spec 07 "Resources, ships and colony losses under a
     debugger", question 63). The original's computer players win most battles they fight at
     an enemy colony (2.1–3.2 won, 0.8–0.9 lost, 0.2–0.6 drawn per empire and 25 turns in
@@ -4054,8 +4056,11 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 71. **The soft cap in turns 26–50.** With colony ships left out of the maintenance (§7.5),
     our computer players are over the soft cap in 4 % of turns 26–50 and 14 % of turns
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
-    (two games). To verify: the maintenance and revenue compared at the test in turns 26–50
-    in the original and in ours, and which vehicles make the difference.
+    (two games). Since 2026-10-02 the engine follows the rule, with the original's scrap
+    candidates, which keep more bases: over 120 games, 3.5 % of turns 26–50 and 16 % of turns
+    51–100 (spec 07 "Pace after the scrap, cap and fleet rules"). To verify: the maintenance
+    and revenue compared at the test in turns 26–50 in the original and in ours, and which
+    vehicles make the difference.
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap

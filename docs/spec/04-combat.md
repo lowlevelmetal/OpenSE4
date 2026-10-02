@@ -317,8 +317,10 @@ moment, including during other empires' phases (§10.2).
   only one strictly nearer the destination, with no random number, so a piece behind a
   large obstacle stopped where the original slides past it: in 12 of our games an armed
   piece of turns 51–100 stopped this way in at least 5 combat turns of 11 % of battles (3 %
-  with the original's rule in a scratch run), and the drawn battles were 42 % (39 %;
-  spec 07 "Battles, bases and the first turns under a debugger").
+  with the original's rule in a scratch run), and 42 % of the battles were drawn (39 % in
+  that run; spec 07 "Battles, bases and the first turns under a debugger"). Over 120 games
+  the rule took the drawn battles of turns 51–100 from 44 to 37 % (spec 07 "Pace after the
+  scrap, cap and fleet rules").
 - **Occupancy.** A square holds one piece; big pieces fill their 4×4 footprint. Seekers
   may share squares.
 - **Launched units** (fighters, drones) get their full movement in the turn they launch

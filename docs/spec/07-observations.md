@@ -1161,6 +1161,80 @@ differences found are the fleet leader rule, the soft cap without colony ships, 
 candidates and the combat step, and what is left is how often our computers fight decided
 battles away from colonies and how rarely they attack weak enemy colonies.
 
+### Pace after the scrap, cap and fleet rules (OpenSE4, 2026-10-02)
+
+Measured again once the engine followed the rules "Battles, bases and the first turns under a
+debugger" found: the soft and hard caps without colony ships, the scrap candidates and the
+Move To a yard before scrapping, the fleet leaders, the defend list's colony threat (spec 05
+§7.2, §7.5, question 72), the step toward a square in combat (spec 04 §5, question 90), and
+the happiness events that no game file keeps (spec 02 §4). The set-up and records are those
+of "Pace observed under a debugger" (seeds 1–24, a Small quadrant, five computer players,
+simultaneous turns, 100 `processTurn` calls), with two more records: each empire's soft-cap
+test at the start of every turn, made by the engine's own planner, and every battle's pieces
+with their owner, kind, design type and fate. The runs after the change drop the waiting
+happiness events after each turn, as the original's hosted games and our local simultaneous
+games do; on the engine before the change that changes nothing measurable (120 seeds: +0.4
+points over the soft cap, standard error 0.5; −0.2 battles, 0.5). Original / before
+(856e694) / after; battles count each battle once, per empire and 25 turns of turns 51–100:
+
+| | Original | Before | After |
+|---|---|---|---|
+| Bases per empire at turns 50 / 75 / 100 | 0.5 / 0.6 / 0.6 (three games); at turn 100 0.4–0.6 in five games, 1.2 and 0.0 in two more | 0.22 / 0.09 / 0.23 | 0.43 / 0.36 / 0.35 |
+| Bases built / lost per empire in 100 turns | 1.4 / 0.2 (game 6) | 0.98 / 0.74 | 0.73 / 0.37 |
+| Turns over the soft cap, 26–50 / 51–100 / 26–100 | 0 / 14–16 / 9–11 % (two games) | 14 / 23 / 20 % | 4 / 18 / 13 % |
+| Battles | 6.1 and 19.1 (games 6, 7) | 11.4 (42 % drawn) | 9.6 (33 % drawn) |
+| Decided battles away from colonies | 2.1–3.4 (four games) | 4.9 | 4.8 |
+| Attack ships lost in battle (away from colonies) | 4.2 and 4.9 | 6.1 (5.1) | 5.6 (4.7) |
+| Battles at an enemy colony ending with the colony gone; colonies lost | 2.2 and 1.9; 1.8–3.6 (four games) | 0.9; 1.1 | 1.0; 1.1 |
+| Attack ships built / lost per empire, turns 26–100; lost per ship and turn, 51–100 | 21.4 / 12.5; 1.9 % | 24.1 / 17.9; 4.2 % | 22.8 / 16.8; 4.0 % |
+| Attack ships lost outside battles | — | 1.6 | 1.4 |
+| Fleet-turns of turns 51–100: troop transports alone / carriers alone | none / 1 % (game 6) | 7 / 6 % | 0 / 6 % |
+| Defend (Short Term), all turns / turns 51–100 | 48 / 70 % (five games) | 51 / 72 % | 50 / 71 % |
+| Infrastructure, all turns / turns 51–100 | 9 / 11 % | 8 / 8 % | 8 / 7 % |
+| Exploration, turns 1–25 | 85 % | 75 % | 75 % |
+
+Means per empire at turns 25 / 50 / 75 / 100 (the original's five games):
+
+| | Original | Before | After |
+|---|---|---|---|
+| Colonies | 5.7 / 12.2 / 16.6 / 17.0 | 5.3 / 10.4 / 13.9 / 15.6 | 5.2 / 10.4 / 13.4 / 15.0 |
+| Resources produced | 14.0k / 25.6k / 34.5k / 36.9k | 12.6k / 21.4k / 26.4k / 29.6k | 12.5k / 21.2k / 26.3k / 29.5k |
+| Ships | 3.5 / 8.6 / 14.1 / 17.4 | 3.4 / 7.3 / 11.8 / 14.0 | 3.5 / 7.7 / 11.6 / 13.5 |
+
+On 120 seeds (1–120, the same set-up) the colonies at turn 100 go from 15.7 to 15.4, the
+resources stay at 30.8k and the ships go from 14.2 to 14.7, within the spread between seeds.
+
+**Rule by rule** (120 seeds, every run dropping the waiting events, each step adding one
+rule to the one before; paired by seed, standard errors of the change in brackets):
+
+| | Turns 26–100 over the soft cap | Bases per empire at turn 100 | Battles | Drawn battles | Defend (Short Term), turns 51–100 |
+|---|---|---|---|---|---|
+| Before | 20.6 % | 0.14 | 12.1 | 47 % | 72 % |
+| Soft cap without colony ships | 9.4 % (−11.2, 0.6) | 0.23 (+0.09, 0.03) | 11.8 | 46 % | 70 % (−2.5, 0.9) |
+| Scrap candidates | 11.6 % (+2.2, 0.4) | 0.37 (+0.14, 0.03) | 11.7 | 47 % | 70 % |
+| Fleet leaders | 11.7 % | 0.36 | 11.1 (−0.7, 0.6) | 45 % | 69 % |
+| Defend list colony threat | 11.6 % | 0.37 | 11.1 | 44 % | 68 % |
+| Combat step | 12.1 % | 0.36 | 10.2 (−0.9, 0.6) | 37 % | 70 % |
+| All, against before | −8.6 (0.7) | +0.21 (0.04) | −2.0 (0.7) | | −1.8 (1.0) |
+
+- **The soft cap** alone brings the turns over it close to the original's; the bases the
+  scrap candidates keep add their maintenance back (+2 points). What is left is turns 26–50:
+  3.5 % against none (spec 05 question 71).
+- **The bases** stay: 0.36 per empire at turn 100 against 0.14 before and the original's
+  0.4–0.6. Of the 0.33 per empire lost in 100 turns, 0.31 are scrapped. In a trace of the
+  24 games, two thirds of the bases scrapped were of designs made on the first turn, most
+  of them tied on the creation date with a ship design of that turn, and the tie goes to
+  the first in the vehicle list, often the base; the others were the oldest design left.
+- **The fleet leaders** take every troop-transport fleet away; fleets of carriers alone stay
+  at 5 %, as a carrier with fighters aboard may lead.
+- **The defend list's colony threat** changed nothing in 95 of the 120 games.
+- **The combat step** takes a seventh off the drawn battles (47 to 37 % of all battles with
+  every rule; per game −6.4 points, 2.2).
+- **What remains**: decided battles away from colonies (4.8 against 2.1–3.4) and attack
+  ships lost in battle (5.6–6.0 against 4.2–4.9), spec 05 question 68; enemy colonies taken
+  (1.0 against 1.9–2.2), question 69; the colonies, ships and resources from turn 50,
+  questions 61, 62 and 65.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
