@@ -8,6 +8,7 @@
 #include <format>
 #include <limits>
 #include <map>
+#include <utility>
 
 namespace opense4::game {
 
@@ -671,7 +672,10 @@ std::optional<Design> autoDesign(const Rules& r, const Empire& owner, std::strin
     std::vector<uint32_t> hulls;
     for (uint32_t i = 0; i < r.data().vehicleSizes.size(); ++i)
         if (r.hull(i).type == type && r.hullAvailable(owner, i)) hulls.push_back(i);
-    std::sort(hulls.begin(), hulls.end(), [&](uint32_t a, uint32_t b) { return r.hull(a).tonnage < r.hull(b).tonnage; });
+    // Equal tonnage keeps the data order (a total order: std::sort leaves ties
+    // in an order that differs between standard libraries).
+    std::sort(hulls.begin(), hulls.end(),
+              [&](uint32_t a, uint32_t b) { return std::pair(r.hull(a).tonnage, a) < std::pair(r.hull(b).tonnage, b); });
     const bool wantLarge = role == "warship" || role == "transport" || role == "base";
     if (wantLarge) std::reverse(hulls.begin(), hulls.end());
 

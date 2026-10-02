@@ -174,7 +174,14 @@ std::vector<ObjectId> extraStartingPlanets(const Rules& r, GameState& s, const E
         for (Sector sct : emptySectors(s.galaxy, target))
             if (sct.x >= 1 && sct.x <= 11 && sct.y >= 1 && sct.y <= 11) inner.push_back(sct);
         // The original redraws without limit; with the inner area full we take any inner sector (OpenSE4 choice).
-        const Sector where = inner.empty() ? Sector{s.rng.rangeInt(1, 11), s.rng.rangeInt(1, 11)} : inner[s.rng.below(inner.size())];
+        Sector where;
+        if (inner.empty()) {  // x drawn first, then y
+            const int x = s.rng.rangeInt(1, 11);
+            const int y = s.rng.rangeInt(1, 11);
+            where = Sector{x, y};
+        } else {
+            where = inner[s.rng.below(inner.size())];
+        }
         out.push_back(createStartingPlanet(s.galaxy, rs, target, where, e.race.nativeSurface, e.race.atmosphere,
                                            s.options.allPlanetsSameSize ? homeSize : 0, s.options.finiteResources, s.rng));
         objectsGrown(s);

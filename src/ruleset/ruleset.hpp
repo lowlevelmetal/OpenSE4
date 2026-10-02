@@ -402,7 +402,16 @@ struct LoadResult {
 LoadResult loadRuleset(const std::filesystem::path& dataDir);
 
 // Finds the data directory of an installed classic game, if any: checks
-// `hint` first, then common Steam library locations.
+// `hint` first, then common Steam library locations (on Windows also the
+// Steam folder the registry names). The folders and files are found in any
+// case, as Windows finds them.
 std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem::path& hint = {});
+
+// `dir / name`, with `name` matched in any ASCII case as Windows' file system
+// does: the classic installs mix "Data", "DATA" and "data", and Linux file
+// systems tell them apart. The result has the spelling on disk, on every
+// platform; an exact match wins, and among several spellings the first by
+// name. Without a match, `dir / name` itself (so messages name it).
+std::filesystem::path childIgnoringCase(const std::filesystem::path& dir, std::string_view name);
 
 } // namespace opense4::ruleset

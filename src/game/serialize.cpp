@@ -4,7 +4,6 @@
 #include "game/serialize_io.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -81,8 +80,10 @@ std::expected<T, std::string> decodeSealed(std::span<const uint8_t> bytes, std::
     return value;
 }
 
+// ASCII only, whatever the C locale (the same bytes on every platform).
 std::string lower(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char& c : s)
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
     return s;
 }
 

@@ -656,7 +656,13 @@ private:
 
     Sector randomSector(const StarSystem& sys) {
         std::vector<Sector> free = emptySectors(out_.galaxy, sys.id);
-        if (free.empty()) return Sector{draw(rng_, kSystemSize), draw(rng_, kSystemSize)};
+        if (free.empty()) {
+            // One draw per statement: x first, then y (two draws in one
+            // expression are a portability trap, docs/ENGINE.md).
+            const int x = draw(rng_, kSystemSize);
+            const int y = draw(rng_, kSystemSize);
+            return Sector{x, y};
+        }
         return free[static_cast<size_t>(draw(rng_, static_cast<int>(free.size())))];
     }
 
@@ -1179,8 +1185,14 @@ std::expected<std::vector<ObjectId>, std::string> placeHomeworlds(Galaxy& galaxy
             std::vector<Sector> free;
             for (int n = 0; n < kSystemSize * kSystemSize; ++n)
                 if (!planets[static_cast<size_t>(n)]) free.push_back(Sector{n % kSystemSize, n / kSystemSize});
-            const Sector where = free.empty() ? Sector{draw(rng, kSystemSize), draw(rng, kSystemSize)}  // (OpenSE4 choice) never happens
-                                              : free[static_cast<size_t>(draw(rng, static_cast<int>(free.size())))];
+            Sector where;
+            if (free.empty()) {  // (OpenSE4 choice) never happens; x drawn first, then y
+                const int x = draw(rng, kSystemSize);
+                const int y = draw(rng, kSystemSize);
+                where = Sector{x, y};
+            } else {
+                where = free[static_cast<size_t>(draw(rng, static_cast<int>(free.size())))];
+            }
             home = createPlanet(galaxy, rs, *target, where, e.surface, e.atmosphere, options.allPlanetsSameSize ? homeSize : 0,
                                 options.finiteResources, rng);
         }

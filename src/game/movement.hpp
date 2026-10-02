@@ -14,6 +14,7 @@
 //   step 7  design cleanup (10th turn)  purgeObsoleteDesigns
 //   step 9  event step, first           runStellarHazards
 
+#include "core/rng.hpp"
 #include "game/combat.hpp"
 #include "game/rules.hpp"
 #include "game/state.hpp"
@@ -80,6 +81,44 @@ struct NearestPath {
 };
 std::optional<NearestPath> findPathToNearest(const Rules& r, const GameState& s, EmpireId e, Location from,
                                              std::span<const Location> goals, RouteOptions options = {});
+
+// The square an in-system step of `mover`'s group from `here` toward `target`
+// goes to (spec 03 §6.2, confirmed: binary): around a destructive centre the
+// centre's cost map chooses; otherwise the greedy step, diagonal first, a bad
+// square (a tagged minefield, a damaging sector, a seen hostile object)
+// replaced by a random neighbour drawn from `rng`. Nullopt after the 10th bad
+// square: the group stays and its order fails. Movement passes the game's
+// generator; a movement line passes one of its own (planRoute).
+std::optional<Sector> inSystemStep(const Rules& r, const GameState& s, EmpireId mover, Location here, Sector target, Rng& rng);
+
+// ---- Movement lines (spec 06 §2.4 "Movement lines", confirmed: binary) ----------------------
+
+// The route a movement line shows for one of the viewer's vehicles or fleets,
+// worked out with the movement rules but never changing the game.
+struct PlannedRoute {
+    // The start square (a fleet's location), then one point per square
+    // entered; a warp jump gives one point, the exit warp point's square in
+    // the next system. Consecutive repeats are dropped; every point after the
+    // start is one movement point.
+    std::vector<Location> points;
+    int movementLeft = 0;      // A: the movement left now (a fleet: the lowest among its members at its location, 0 with none)
+    int movementPerTurn = 0;   // B: the full movement per turn (0 when mothballed or held); a fleet's lowest, as A
+    // The turn number shown at point `i` (s = i steps from the start): 0
+    // when s <= A, else (s - A - 1) div B + 1, or 0 when B is 0. So 0 means
+    // reached with the movement left now, 1 during the next turn, and so on.
+    int turnOf(size_t i) const;
+};
+
+// The route follows the order list in the order it will be carried out (with
+// Repeat on, once round the list from the order now due). Only Move To and
+// Move To Waypoint (the waypoint's location now; an unset one adds nothing)
+// add squares: in-system steps by inSystemStep, other systems by the route
+// search (findPathToNearest), as the moving group would take them. A blocked
+// step or an unreachable destination ends that order's part, and the next
+// order goes on from there; a group with fighters stops at the warp point.
+// Every random replacement square comes from `displayRng`, never the game's.
+PlannedRoute planRoute(const Rules& r, const GameState& s, const Vehicle& v, Rng& displayRng);
+PlannedRoute planRoute(const Rules& r, const GameState& s, const Fleet& f, Rng& displayRng);
 
 // Estimated turns to reach `to` at the vehicle's current speed (its fleet's,
 // if it is in one) and the moves that speed makes in a turn (movesPerTurn);

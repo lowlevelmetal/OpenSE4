@@ -11,6 +11,7 @@
 #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_WINDOWS_UTF8  // file names are UTF-8 (path::string() with MinGW, or the UTF-8 code page), as on Linux
 #define STBI_ONLY_BMP
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
@@ -154,6 +155,10 @@ std::optional<std::filesystem::path> InstallFiles::findModFirst(std::string_view
     if (!mod_.empty())
         if (auto p = find(mod_ + "/" + std::string(relative))) return p;
     return find(relative);
+}
+
+void InstallFiles::noteMissing(std::string_view relative) const {
+    if (missing_.insert(lowerSlashed(relative)).second) log::info("Not in the installed game: {}", relative);
 }
 
 std::optional<std::filesystem::path> InstallFiles::findAny(std::initializer_list<std::string_view> candidates) const {

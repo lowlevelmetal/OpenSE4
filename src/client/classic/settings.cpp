@@ -130,13 +130,19 @@ ClassicSettings& settings() {
 
 bool saveSettings() {
     const std::filesystem::path file = settingsFile();
-    std::ofstream out(file, std::ios::trunc);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);  // LF line ends on every platform
     if (out) out << settingsToToml(settings());
     if (!out) {
         log::warn("Could not write {}", file.string());
         return false;
     }
     return true;
+}
+
+void newGameStarted(bool simultaneous) {
+    if (!simultaneous || settings().showMovementLines) return;
+    settings().showMovementLines = true;
+    saveSettings();
 }
 
 void rememberSavedGame(const std::string& file) {

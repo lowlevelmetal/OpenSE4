@@ -115,8 +115,10 @@ private:
     std::string error_;
 };
 
+// bool, enums and the fixed-width integers (core/hash.hpp): the Windows builds
+// reject a `long` or `wchar_t` field, whose size differs between platforms.
 template <class T>
-concept Scalar = std::is_integral_v<T> || std::is_enum_v<T>;
+concept Scalar = FixedWidthScalar<T>;
 
 // ---- Generic building blocks -------------------------------------------------------------
 

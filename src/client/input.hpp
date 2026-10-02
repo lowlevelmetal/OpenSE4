@@ -58,6 +58,14 @@ std::string chordName(const KeyChord& c);
 // Parses what chordName writes; nullopt on nonsense.
 std::optional<KeyChord> parseChord(std::string_view text);
 
+// AltGr counts as Alt on every platform (applied to each SDL key event's
+// modifiers before ImGui sees it). SDL reports AltGr as the right Alt on
+// Windows, where it drops the left Ctrl that Windows adds, but on Linux as the
+// mode key without Alt: a key typed with AltGr was a plain key there and fired
+// the letter shortcuts, and on Windows it did not. Text input is unchanged
+// (ImGui takes characters typed with Alt).
+uint16_t altGrAsAlt(uint16_t sdlKeymod);
+
 class Bindings {
 public:
     Bindings();  // the classic defaults

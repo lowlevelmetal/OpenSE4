@@ -7,6 +7,7 @@
 #include "client/classic/reports.hpp"
 #include "client/classic/screens/screens.hpp"
 #include "client/classic/settings.hpp"
+#include "client/ui/theme.hpp"
 #include "game/setup.hpp"
 #include "game/tactical.hpp"
 #include "learn/markdown.hpp"
@@ -18,6 +19,8 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -80,14 +83,23 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
     // classic pointers replace ImGui's (no text beam, no resize arrows).
     pointers().load(mode->art_->files());
     if (pointers().loaded()) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-    // The layout the original would pick: from the desktop width alone (§2.1.1).
+    // The layout the original would pick: from the desktop width alone (§2.1.1),
+    // in logical units, as the original (which knows nothing of display
+    // scaling) sees it on a scaled Windows desktop. SDL gives Wayland's desktop
+    // in logical points already, Windows' and X11's in pixels with a content
+    // scale; dividing by that scale gives the same width everywhere.
     int desktopWidth = 1024;
-    if (platform.window)
-        if (const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(SDL_GetDisplayForWindow(platform.window))) desktopWidth = desktop->w;
+    if (platform.window) {
+        const SDL_DisplayID display = SDL_GetDisplayForWindow(platform.window);
+        if (const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display)) {
+            const float scale = SDL_GetDisplayContentScale(display);
+            desktopWidth = scale > 0.0f ? static_cast<int>(std::lround(static_cast<float>(desktop->w) / scale)) : desktop->w;
+        }
+    }
     mode->desktopLayout_ = layoutForDesktop(desktopWidth);
     mode->applyLayout();
     mode->playlists_ = readPlaylists(mode->rules_->data().settings);
-    applyClassicStyle();
+    mode->restyle();
     mode->learn_ = loadLearnContent(platform.assetsDir, options.learnDir, mode->art_->files());
 
     if (!options.pbemFile.empty()) {
@@ -169,6 +181,9 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = makeLearnFrontScreen("manual:" + *options.manual);
     } else if (auto front = frontScreenByName(options.openWindow)) {
         mode->front_ = std::move(front);  // automation: --open=<front-end screen>
+        // --select: once the game joined or started there has such a vehicle.
+        mode->pendingSelect_ = options.select;
+        mode->keepLogClosed_ = !options.select.empty();
     } else if (options.skipIntro) {
         std::string race = options.race;
         if (race.empty())
@@ -186,9 +201,14 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             error = session.error();
             return nullptr;
         }
+        newGameStarted(setup.options.simultaneous);  // a quick start's
         mode->startGame(std::move(*session));
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
+        if (auto problem = mode->selectForAutomation(options.select)) {
+            error = *problem;
+            return nullptr;
+        }
         if (auto problem = mode->openAutomationWindow(options.openWindow)) {
             error = *problem;
             return nullptr;
@@ -310,6 +330,38 @@ void ClassicMode::lessonCheckReport(UiContext& ui) {
     std::fflush(stdout);
     if (!missing.empty() || !lock_.active()) exitCode_ = 1;
     if (options_.lessonCheckQuits) ui.requests.quitGame = true;
+}
+
+std::optional<std::string> ClassicMode::selectForAutomation(const std::string& what) {
+    if (what.empty()) return std::nullopt;
+    const game::GameState& s = session_->state();
+    const game::EmpireId me = session_->player();
+    auto moves = [](const std::vector<game::Order>& list) {
+        return std::any_of(list.begin(), list.end(), [](const game::Order& o) {
+            return o.kind == game::OrderKind::MoveTo || o.kind == game::OrderKind::MoveToWaypoint;
+        });
+    };
+    std::optional<game::VehicleId> pick;
+    if (what == "moving") {
+        for (const game::Vehicle& v : s.vehicles)
+            if (v.owner == me && !v.fleet.valid() && moves(v.orders)) {
+                pick = v.id;
+                break;
+            }
+    } else if (what == "fleet") {
+        for (const game::Fleet& f : s.fleets)
+            if (f.owner == me && !game::fleetOrders(s, f).empty() && !game::fleetMembersAt(s, f).empty()) {
+                pick = game::fleetMembersAt(s, f).front();
+                break;
+            }
+    } else {
+        uint32_t id = 0;
+        const auto [end, ec] = std::from_chars(what.data(), what.data() + what.size(), id);
+        if (ec == std::errc{} && end == what.data() + what.size() && s.vehicle(game::VehicleId{id})) pick = game::VehicleId{id};
+    }
+    if (!pick) return std::format("Nothing to select for --select={}", what);
+    ui_->requests.selectVehicle = *pick;
+    return std::nullopt;
 }
 
 std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& name) {
@@ -517,6 +569,24 @@ bool ClassicMode::update(const FrameState& fs) {
     return keepRunning;
 }
 
+void ClassicMode::restyle() {
+    // The classic frame is scaled to the window and every size is in its
+    // pixels (UiContext::k, fontPx), so the desktop's scale must not scale the
+    // style again: from the theme at scale 1, then the classic look. Without
+    // this a Windows desktop at 125 % or 150 % (display scale over pixel
+    // density) made every classic text and style size that much larger than
+    // on a Linux desktop, and a move to a display with another scale left the
+    // plain theme in place of the classic look.
+    applyTheme(1.0f);
+    applyClassicStyle();
+}
+
+void ClassicMode::background() {
+    // Minimized: the game's network traffic goes on (new states, the host's
+    // own clients); nothing is drawn.
+    if (session_) session_->poll();
+}
+
 bool ClassicMode::updateFrame(const FrameState& fs) {
     art_->setFilter(appSettings().graphics.sharpPixels ? gfx::Filter::Nearest : gfx::Filter::Linear);
 
@@ -567,6 +637,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
     if (const auto refused = lock_.takeRefused(); refused && lesson_) lesson_->refused(*refused, fs.time);
     ui.lessonRunning = lesson_ != nullptr;
     session_->poll();
+    if (!pendingSelect_.empty() && !selectForAutomation(pendingSelect_)) pendingSelect_.clear();
 
     // Hotseat: when the turn passes to another human, hide the map until that
     // player starts their turn (with their password, if they set one).
@@ -660,7 +731,7 @@ bool ClassicMode::updateFrame(const FrameState& fs) {
             confirmEndTurn_ = false;
         }
     }
-    if (openLogOnTurn_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
+    if (openLogOnTurn_ && !keepLogClosed_ && !battleAsking && !session_->tactical() && strategicQueue_.empty() && !isOpen(ScreenId::StrategicCombat)) {
         openLogOnTurn_ = false;
         if (ui.options().showLogAtTurnStart && !ui.me().log.empty() && ui.me().log.back().turn + 1 >= ui.state().turn)
             openScreen(ScreenId::Log, {});

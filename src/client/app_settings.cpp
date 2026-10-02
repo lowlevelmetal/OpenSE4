@@ -8,6 +8,7 @@
 #include <toml++/toml.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -81,9 +82,11 @@ const char* displayName(LayoutChoice l) {
     return "?";
 }
 
-std::filesystem::path appSettingsFile() {
+std::filesystem::path userDataDirectory() {
     std::filesystem::path dir;
-    if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
+    if (const char* own = std::getenv("OPENSE4_USER_DIR"); own && *own) {
+        dir = own;  // UTF-8 (the Windows programs use the UTF-8 code page)
+    } else if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
         dir = pref;
         SDL_free(pref);
     } else {
@@ -91,8 +94,10 @@ std::filesystem::path appSettingsFile() {
     }
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
-    return dir / "settings.toml";
+    return dir;
 }
+
+std::filesystem::path appSettingsFile() { return userDataDirectory() / "settings.toml"; }
 
 std::string appSettingsToToml(const AppSettings& s) {
     const GraphicsSettings& g = s.graphics;
@@ -191,7 +196,7 @@ AppSettings& appSettings() {
 
 bool saveAppSettings() {
     const std::filesystem::path file = appSettingsFile();
-    std::ofstream out(file);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);  // LF line ends on every platform
     if (!out) {
         log::warn("Could not write {}", file.string());
         return false;

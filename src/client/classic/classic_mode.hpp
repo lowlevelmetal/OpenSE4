@@ -29,6 +29,7 @@ struct ClassicOptions {
     bool skipIntro = false;  // start a quick game at once (automation, screenshots)
     std::string race;        // quick start race preset (folder name); empty = first
     int autoTurns = 0;       // let the computer play every empire for N turns first
+    std::string select;      // then select a vehicle: "moving", "fleet" or a vehicle id (automation)
     std::string openWindow;  // open this window at start (automation, screenshots)
     bool turnBased = true;   // quick game in the turn-based style (the default, spec 01 §14 Q39)
     // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
@@ -63,6 +64,8 @@ public:
     ~ClassicMode() override;
 
     bool update(const FrameState& fs) override;
+    void background() override;
+    void restyle() override;
     void render(gfx::Renderer2D& renderer, const FrameState& fs) override;
     Color clearColor() const override { return Color::hex(0x000000); }
     // The tutorial input lock (lesson_lock.hpp).
@@ -82,6 +85,8 @@ private:
     // Automation (--open): a window, or a sample battle for the battle
     // windows, over the game just started; "none" keeps the Log closed.
     std::optional<std::string> openAutomationWindow(const std::string& name);
+    // --select: a vehicle for the main window to select (automation).
+    std::optional<std::string> selectForAutomation(const std::string& what);
     // The lesson panel and its requests, Ctrl+H and Shift+F1.
     void updateLesson(classic::UiContext& ui);
     void contextHelp();
@@ -111,6 +116,8 @@ private:
     std::unique_ptr<classic::FrontScreen> front_;
     std::optional<classic::FrontId> nextFront_;
     std::string frontError_;
+    std::string pendingSelect_;   // --select after a front-end screen: tried every frame until it succeeds
+    bool keepLogClosed_ = false;  // ... and the Log does not open by itself (screenshots of the main window)
     bool quit_ = false;
     std::optional<std::pair<learn::LessonKind, std::string>> pendingLesson_;   // chosen in the front end
 

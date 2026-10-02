@@ -950,7 +950,12 @@ std::vector<std::string> ministerStyles(const Rules& r) {
             tables = tables || (f.is_regular_file(ec) && lowerAscii(f.path().filename().string()).find("_ai_") != std::string::npos);
         if (tables) out.push_back(dir.path().filename().string());
     }
-    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) { return lowerAscii(a) < lowerAscii(b); });
+    // By name in any case, then as written (folders that differ only in case
+    // exist on Linux; the directory order is unspecified).
+    std::sort(out.begin(), out.end(), [](const std::string& a, const std::string& b) {
+        const std::string la = lowerAscii(a), lb = lowerAscii(b);
+        return la != lb ? la < lb : a < b;
+    });
     return out;
 }
 

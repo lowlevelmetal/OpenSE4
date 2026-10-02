@@ -74,6 +74,11 @@ bool musicLampLit(const ClassicSettings& s, bool allowed);
 ClassicSettings& settings();
 // Writes the settings file; returns false (and logs) on failure.
 bool saveSettings();
+// A new game was started from the game setup (or Quick Start, or hosted on
+// the network): a simultaneous one switches Display Ship Movement Lines on and
+// stores it at once, so it stays on until the player turns it off (spec 06
+// §1.9, confirmed: binary). Loading or joining a game changes nothing.
+void newGameStarted(bool simultaneous);
 // Records a game file just saved as the one Resume Game loads (spec 06 §6.1,
 // §7 Q53: every successful save of a game, autosaves included) and writes
 // the settings file.

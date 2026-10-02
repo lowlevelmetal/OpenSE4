@@ -93,6 +93,8 @@ Automation:
   --screenshot=FILE.png           Render a few frames, save a screenshot and exit
   --frames=N                      Frame to capture (default 10)
   --turns=N                       Let the AI play N turns for every empire (yours too) first
+  --select=moving|fleet|ID        Then select one of your vehicles in the main window: the first with a
+                                  move order, your first fleet with orders, or the vehicle with that id
 
   --verbose                       Debug logging
   --help                          Show this help
@@ -210,6 +212,9 @@ int main(int argc, char** argv) {
             ok = parseInt(value, options.screenshotFrames);
         } else if (key == "--turns") {
             ok = parseInt(value, options.autoTurns);
+        } else if (key == "--select") {
+            options.select = std::string(value);
+            ok = !value.empty();
         } else if (key == "--verbose") {
             log::setMinLevel(log::Level::Debug);
         } else {
@@ -222,5 +227,8 @@ int main(int argc, char** argv) {
     }
 
     if (options.seed == 0) options.seed = static_cast<uint64_t>(std::time(nullptr));
+    // The log also goes to opense4.log in the user data folder: on Windows the
+    // game has no console, so that file is where a player finds it.
+    log::setFile(client::userDataDirectory() / "opense4.log");
     return client::App().run(options);
 }

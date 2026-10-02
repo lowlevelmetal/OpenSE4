@@ -18,6 +18,7 @@ add_executable(opense4_tests
     test_combat_windows.cpp
     test_tactical.cpp
     test_design_tools.cpp
+    test_determinism.cpp
     test_diplomacy.cpp
     test_discovery.cpp
     test_economy.cpp
@@ -35,6 +36,7 @@ add_executable(opense4_tests
     test_main_window.cpp
     test_maps.cpp
     test_movement.cpp
+    test_movement_line.cpp
     test_net.cpp
     test_pbem_client.cpp
     test_redact.cpp
@@ -67,7 +69,9 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/net_transport.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/order_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pointer_rules.cpp
@@ -90,5 +94,7 @@ target_compile_definitions(opense4_tests PRIVATE
     OPENSE4_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
 opense4_copy_runtime_dlls(opense4_tests)
+
+opense4_windows_manifest(opense4_tests)
 
 add_test(NAME opense4_tests COMMAND opense4_tests)

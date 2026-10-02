@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 
 namespace opense4 {
 
@@ -50,11 +52,6 @@ public:
 
     // True with probability percent/100.
     bool percent(int pct) { return static_cast<int>(below(100)) < pct; }
-
-    // Uniform float in [0, 1). Only for presentation / generation that is
-    // serialized afterwards (e.g. galaxy layout), never for turn resolution.
-    float unit() { return static_cast<float>(next() >> 40) * (1.0f / 16777216.0f); }
-    float rangeF(float lo, float hi) { return lo + (hi - lo) * unit(); }
 
     template <class T>
     T& pick(std::span<T> items) { return items[below(items.size())]; }

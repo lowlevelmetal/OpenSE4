@@ -1,8 +1,11 @@
 // Graphics/controls settings and key bindings (client/app_settings.hpp, client/input.hpp).
 
 #include "client/app_settings.hpp"
+#include "client/input.hpp"
 
 #include <doctest/doctest.h>
+
+#include <SDL3/SDL_keycode.h>
 
 using namespace opense4::client;
 
@@ -64,4 +67,13 @@ TEST_CASE("settings: the file round trip keeps every value") {
     const AppSettings bad = appSettingsFromToml("this is [not toml", &error);
     CHECK_FALSE(error.empty());
     CHECK(bad.graphics.vsync);
+}
+
+TEST_CASE("input: AltGr counts as Alt, as SDL reports it on Windows") {
+
+    CHECK(altGrAsAlt(SDL_KMOD_MODE) == (SDL_KMOD_MODE | SDL_KMOD_RALT));
+    CHECK(altGrAsAlt(SDL_KMOD_MODE | SDL_KMOD_LSHIFT) == (SDL_KMOD_MODE | SDL_KMOD_RALT | SDL_KMOD_LSHIFT));
+    CHECK(altGrAsAlt(SDL_KMOD_LCTRL) == SDL_KMOD_LCTRL);
+    CHECK(altGrAsAlt(SDL_KMOD_RALT) == SDL_KMOD_RALT);
+    CHECK(altGrAsAlt(SDL_KMOD_NONE) == SDL_KMOD_NONE);
 }

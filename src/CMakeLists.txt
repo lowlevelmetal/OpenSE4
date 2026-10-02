@@ -43,6 +43,9 @@ add_library(opense4_ruleset STATIC
     ruleset/races.cpp
     ruleset/ruleset.cpp)
 target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVATE opense4_warnings)
+if(WIN32)
+    target_link_libraries(opense4_ruleset PRIVATE advapi32)  # the Steam folder from the registry
+endif()
 
 # --- game: the classic rules engine ------------------------------------------------
 add_library(opense4_game STATIC
@@ -72,6 +75,7 @@ add_library(opense4_game STATIC
     game/map_file.cpp
     game/movement.cpp
     game/movement_path.cpp
+    game/movement_route.cpp
     game/movement_stellar.cpp
     game/movement_upkeep.cpp
     game/movement_util.cpp
@@ -135,6 +139,7 @@ add_executable(opense4-server
     server/setup_file.cpp)
 target_link_libraries(opense4-server PRIVATE opense4_net opense4_game tomlplusplus opense4_warnings)
 set_target_properties(opense4-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+opense4_windows_manifest(opense4-server)
 
 # --- assets: runtime access to the player's installed classic art ------------------
 add_library(opense4_assets STATIC

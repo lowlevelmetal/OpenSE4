@@ -64,7 +64,7 @@ std::vector<game::SystemId> exploredSystems(const UiContext& ui) {
     std::vector<game::SystemId> out;
     for (const game::StarSystem& sys : g.systems)
         if (ui.me().hasExplored(sys.id)) out.push_back(sys.id);
-    std::sort(out.begin(), out.end(), [&](game::SystemId a, game::SystemId b) { return g.system(a).name < g.system(b).name; });
+    std::sort(out.begin(), out.end(), [&](game::SystemId a, game::SystemId b) { return std::pair(g.system(a).name, a) < std::pair(g.system(b).name, b); });
     return out;
 }
 

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -59,10 +60,19 @@ public:
     const std::string& modDirectory() const { return mod_; }
     std::optional<std::filesystem::path> findModFirst(std::string_view relative) const;
 
+    // A file the game wanted is not in the install (the caller gives up on
+    // it, or falls back to a stand-in): logged once per name and session.
+    // Lookups ignore case, so a name logged here is really absent, on every
+    // platform alike; probes that try several names report only their final
+    // miss. Main thread only.
+    void noteMissing(std::string_view relative) const;
+    const std::set<std::string>& missing() const { return missing_; }
+
 private:
     std::filesystem::path root_;
     std::unordered_map<std::string, std::filesystem::path> index_;  // lowercase relative path -> real path
     std::string mod_;
+    mutable std::set<std::string> missing_;  // lowercase relative paths noted missing
 };
 
 // The mod folder named by the text of a Path.txt (empty for "None" or none).

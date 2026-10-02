@@ -33,6 +33,7 @@ add_executable(opense4
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
     client/classic/map_style.cpp
+    client/classic/movement_line.cpp
     client/classic/movement_replay.cpp
     client/classic/net_transport.cpp
     client/classic/order_rules.cpp
@@ -110,6 +111,7 @@ if(OPENSE4_DEV_PATHS)
 endif()
 set_target_properties(opense4 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 opense4_copy_runtime_dlls(opense4)
+opense4_windows_manifest(opense4)
 if(WIN32)
     # A windowed application: no console window next to the game. main.cpp attaches
     # to the parent console when started from one, so --help still prints.

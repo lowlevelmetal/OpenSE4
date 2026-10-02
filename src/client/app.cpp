@@ -11,6 +11,7 @@
 #include <imgui_impl_sdl3.h>
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cfloat>
 #include <format>
 
@@ -83,6 +84,7 @@ int App::run(const AppOptions& options) {
     co.skipIntro = options.quickStart || !options.screenshotPath.empty();
     co.race = options.race;
     co.autoTurns = options.autoTurns;
+    co.select = options.select;
     co.openWindow = options.openWindow;
     co.turnBased = options.turnBased;
     co.pbemFile = options.pbemFile;
@@ -229,6 +231,7 @@ void App::updateUiScale() {
     const float display = SDL_GetWindowDisplayScale(window_);
     uiScale_ = (density > 0.0f && display > 0.0f) ? std::clamp(display / density, 0.5f, 4.0f) : 1.0f;
     applyTheme(uiScale_);
+    if (mode_) mode_->restyle();
 }
 
 bool App::frame() {
@@ -236,6 +239,7 @@ bool App::frame() {
     audio().update();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) event.key.mod = altGrAsAlt(event.key.mod);
         // The mode may hold input back (a tutorial's input lock) before ImGui sees it.
         switch (mode_->filterEvent(event)) {
             case EventVerdict::Pass: ImGui_ImplSDL3_ProcessEvent(&event); break;
@@ -247,17 +251,29 @@ bool App::frame() {
         if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) updateUiScale();
     }
     if (SDL_GetWindowFlags(window_) & SDL_WINDOW_MINIMIZED) {
+        // Windows reports minimizing (Wayland mostly does not): keep the game's
+        // network traffic going, or the host would drop us.
+        mode_->background();
         SDL_Delay(50);
         lastTicks_ = SDL_GetTicksNS();
         return running;
     }
 
+    // A screenshot run (automation) must give the same picture on every
+    // machine: a fixed frame time instead of the wall clock, and no pointer
+    // over the window (the desktop's pointer would hover over whatever is
+    // under it).
+    const bool automation = !options_.screenshotPath.empty();
     const uint64_t now = SDL_GetTicksNS();
-    const float dt = std::min(static_cast<float>(now - lastTicks_) * 1e-9f, 0.1f);
+    const float dt = automation ? 1.0f / 60.0f : std::min(static_cast<float>(now - lastTicks_) * 1e-9f, 0.1f);
     lastTicks_ = now;
     time_ += dt;
 
     ImGui_ImplSDL3_NewFrame();
+    if (automation) {
+        ImGui::GetIO().DeltaTime = dt;
+        ImGui::GetIO().AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+    }
     ImGui::NewFrame();
     const AppSettings& prefs = appSettings();
     ImGui::GetIO().MouseDoubleClickTime = prefs.controls.doubleClickSeconds;

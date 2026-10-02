@@ -208,6 +208,10 @@ float CombatMapPainter::pieceHeading(uint32_t i) const {
     float d = std::fmod(to - p.heading, 2.0f * pi);
     if (d > pi) d -= 2.0f * pi;
     if (d < -pi) d += 2.0f * pi;
+    // A U-turn lies on the boundary itself, where the last bit of atan2 (which
+    // differs between the C libraries of Linux and Windows) would pick the
+    // direction: it always turns clockwise.
+    if (std::fabs(std::fabs(d) - pi) < 1e-3f) d = pi;
     return p.heading + d * float(f->step + 1) / float(std::max(1, f->steps));
 }
 

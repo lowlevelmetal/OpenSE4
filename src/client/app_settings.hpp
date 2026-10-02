@@ -52,6 +52,12 @@ struct AppSettings {
 AppSettings& appSettings();
 bool saveAppSettings();
 std::filesystem::path appSettingsFile();
+// The folder for everything this computer keeps (settings, saves, history):
+// SDL's preference folder (~/.local/share/OpenSE4 on Linux, %APPDATA%\OpenSE4
+// on Windows), or the folder named by the environment variable
+// OPENSE4_USER_DIR (the tests use a scratch folder; also a portable install).
+// Created if missing.
+std::filesystem::path userDataDirectory();
 
 // TOML round trip (exposed for tests).
 std::string appSettingsToToml(const AppSettings& s);

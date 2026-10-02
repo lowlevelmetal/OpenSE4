@@ -1408,6 +1408,34 @@ void MainWindow::overlayText(UiContext& ui) {
     for (const game::Location& m : ui.me().taggedMinefields)
         if (m.system == shown_) corner(m.sector, "M");
 
+    // The movement line (§2.4 "Movement lines"), last, over everything else in
+    // the panel: a 1 px blue line through the sector centres, an 8 px ring on
+    // each square entered, and white Tiny numbers, the turn each is reached.
+    if (explored && settings().showMovementLines && !replay_.active())
+        if (const auto subject = movementLineSubject(ui.rules(), s, ui.session.player(), tagged_.empty() ? vehicle_ : std::nullopt,
+                                                     tagged_.empty() ? fleet_ : std::nullopt)) {
+            if (!line_ || line_->subject != *subject || line_->revision != ui.session.revision() || line_->turn != s.turn)
+                line_ = MovementLineCache{*subject, ui.session.revision(), s.turn, movementLineRoute(ui.rules(), s, *subject)};
+            auto centre = [](game::Sector sec) {
+                const Vec2 c = sectorCenter(sec);
+                return PixelPoint{int(std::lround(c.x)), int(std::lround(c.y))};
+            };
+            const ImU32 blue = imColor(kMovementLineRgb), white = imColor(kMovementNumberRgb);
+            auto pixel = [&](PixelPoint p) { dl->AddRectFilled(ui.at({float(p.x), float(p.y)}), ui.at({float(p.x + 1), float(p.y + 1)}), blue); };
+            for (const LineMark& m : movementLineMarks(line_->route, shown_, centre)) {
+                if (m.kind == LineMark::Kind::Ring) {
+                    for (const PixelPoint o : ringOffsets()) pixel({m.at.x + o.x, m.at.y + o.y});
+                } else if (m.kind == LineMark::Kind::Segment) {
+                    for (const PixelPoint p : linePixels(m.at, m.to)) pixel(p);
+                } else {
+                    // Centred: top-left at C - (w div 2, h div 2), w and h the text's size.
+                    const std::string n = std::to_string(m.number);
+                    const int w = int(std::lround(widthOf(tiny, tinySize, n))), h = int(kTinyCell);
+                    put(tiny, tinySize, {float(m.at.x - w / 2), float(m.at.y - h / 2)}, white, n);
+                }
+            }
+        }
+
     // The hover hint (§2.3): the button's name and its key, centred in the hint area.
     if (!hintName_.empty()) {
         const Rect& hint = geo.layout->hint;
@@ -1547,6 +1575,7 @@ void MainWindow::hotkeys(UiContext& ui) {
     if (pressed(Action::MovementLines)) {
         settings().showMovementLines = !settings().showMovementLines;
         saveSettings();
+        note(ui, settings().showMovementLines ? "Movement lines on" : "Movement lines off");  // OpenSE4's own, as for Ctrl+S
     }
     if (pressed(Action::ToggleSound)) {
         // The Sound On switch; music is not touched (§3.2).
@@ -1959,22 +1988,6 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             largestFirst(list);
             const Vec2 at = gridPoint(ShipGlides::position(*glides_.find(list.front()->id, now), now));
             if (!spriteAt(miniOf(*list.front(), headingOf(*list.front())), at - Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f})) placeholder(at, list.front()->owner);
-        }
-    }
-
-    // Movement line for the selected own vehicle.
-    if (const game::Vehicle* v = selectedVehicle(ui); v && settings().showMovementLines && v->owner == ui.session.player() && !replay_.active()) {
-        const game::Fleet* f = s.fleet(v->fleet);
-        const auto& orders = f ? game::fleetOrders(s, *f) : v->orders;
-        game::Location from = v->location;
-        for (const game::Order& o : orders) {
-            game::Location to = o.location;
-            if (o.kind == game::OrderKind::Warp || o.kind == game::OrderKind::Colonize)
-                if (o.object.valid()) to = game::locationOf(s.galaxy, o.object);
-            if (!to.system.valid()) continue;
-            if (from.system == shown_ && to.system == shown_)
-                r.dashedLine(sectorCenter(from.sector), sectorCenter(to.sector), 1.5f, 6.0f, 4.0f, Color::hex(0x60ff80, 0.85f));
-            from = to;
         }
     }
 

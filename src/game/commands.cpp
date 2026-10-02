@@ -13,7 +13,6 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <format>
 #include <map>
 #include <type_traits>
@@ -1007,8 +1006,12 @@ struct Applier {
         if (c.style) {
             // A folder name under Ai/ (the lookup never leaves that folder).
             if (c.style->size() > 64) return R::fail("Minister style name too long");
+            // ASCII letters and digits only, whatever the C locale.
+            auto allowed = [](char ch) {
+                return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == ' ' || ch == '_' || ch == '-';
+            };
             for (char ch : *c.style)
-                if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != ' ' && ch != '_' && ch != '-') return R::fail("Invalid minister style");
+                if (!allowed(ch)) return R::fail("Invalid minister style");
         }
         Empire& me = emp();
         // Complete AI does all of the bulk buttons at once, then the single fields apply.

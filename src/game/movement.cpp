@@ -134,6 +134,49 @@ bool validLocation(const GameState& s, Location l) {
     return l.system.valid() && l.system.index() < s.galaxy.systems.size() && l.sector.valid();
 }
 
+// A square an in-system step avoids (spec 03 §6.2, confirmed: binary): a
+// tagged minefield (the owner's option on; no Mine Sweeper exemption inside
+// a system), a sector whose objects have `Sector - Damage` (not the
+// system's own value), or one holding an object of an empire the mover is
+// hostile to that the mover sees: a ship, base, unit group (a mine only if
+// seen) or colony (only if seen).
+bool badStepSquare(const Rules& r, const GameState& s, EmpireId mover, Location l) {
+    const Empire& e = s.empire(mover);
+    if (e.avoidTaggedMinefields && std::find(e.taggedMinefields.begin(), e.taggedMinefields.end(), l) != e.taggedMinefields.end())
+        return true;
+    for (ObjectId o : s.galaxy.system(l.system).objects) {
+        const SpaceObject& obj = s.galaxy.object(o);
+        if (obj.sector != l.sector) continue;
+        if (rawSum(obj.abilities, AbilityKind::SectorDamage) > 0) return true;
+        if (const Colony* c = s.colony(o); c && hostile(s, mover, c->owner) && sight::canSeeColony(r, s, mover, o)) return true;
+    }
+    for (const Vehicle& v : s.vehicles)
+        if (alive(v) && v.location == l && hostile(s, mover, v.owner) && sight::canSeeVehicle(r, s, mover, v)) return true;
+    return false;
+}
+
+// In-system steps are greedy: one square toward `target`, diagonal first.
+// Unless it is the target it is tested; a bad square is replaced by a
+// random one drawn from the current square (after a diagonal first step,
+// one of the two straight steps; after a straight one, the forward square
+// or either square beside it), coordinates clamped to the grid, and every
+// replacement is tested, the target too. After the 10th bad test the group
+// stays and the order fails (spec 03 §6.2, confirmed: binary).
+std::optional<Sector> greedyStep(const Rules& r, const GameState& s, EmpireId mover, Location here, Sector target, Rng& rng) {
+    const int x = here.sector.x, y = here.sector.y;
+    const int dx = (target.x > x) - (target.x < x), dy = (target.y > y) - (target.y < y);
+    auto clamp = [](int c) { return std::clamp(c, 0, kSystemSize - 1); };
+    Sector pick{x + dx, y + dy};
+    if (pick == target) return pick;
+    for (int bad = 0;;) {
+        if (!badStepSquare(r, s, mover, {here.system, pick})) return pick;
+        if (++bad >= 10) return std::nullopt;
+        if (dx != 0 && dy != 0) pick = rng.below(2) == 0 ? Sector{x + dx, y} : Sector{x, y + dy};
+        else if (dx != 0) pick = Sector{x + dx, clamp(y + static_cast<int>(rng.below(3)) - 1)};
+        else pick = Sector{clamp(x + static_cast<int>(rng.below(3)) - 1), y + dy};
+    }
+}
+
 // What starts an action: a vehicle (alone, with its fleet or with ad-hoc
 // companions) or a planet's own orders.
 struct ActorRef {
@@ -750,58 +793,6 @@ private:
     // Asked: turn-based games, the player is asked before the group enters (spec 03 §6.2).
     enum class Step { Moved, Stale, Blocked, Asked, NoWarp };
 
-    // A square an in-system step avoids (spec 03 §6.2, confirmed: binary): a
-    // tagged minefield (the owner's option on; no Mine Sweeper exemption inside
-    // a system), a sector whose objects have `Sector - Damage` (not the
-    // system's own value), or one holding an object of an empire the mover is
-    // hostile to that the mover sees: a ship, base, unit group (a mine only if
-    // seen) or colony (only if seen).
-    bool badSquare(const Group& g, Location l) const {
-        const Empire& e = s_.empire(g.owner);
-        if (e.avoidTaggedMinefields && std::find(e.taggedMinefields.begin(), e.taggedMinefields.end(), l) != e.taggedMinefields.end())
-            return true;
-        for (ObjectId o : s_.galaxy.system(l.system).objects) {
-            const SpaceObject& obj = s_.galaxy.object(o);
-            if (obj.sector != l.sector) continue;
-            if (rawSum(obj.abilities, AbilityKind::SectorDamage) > 0) return true;
-            if (const Colony* c = s_.colony(o); c && hostile(s_, g.owner, c->owner) && sight::canSeeColony(r_, s_, g.owner, o)) return true;
-        }
-        for (const Vehicle& v : s_.vehicles)
-            if (alive(v) && v.location == l && hostile(s_, g.owner, v.owner) && sight::canSeeVehicle(r_, s_, g.owner, v)) return true;
-        return false;
-    }
-
-    // In-system steps are greedy: one square toward `target`, diagonal first.
-    // Unless it is the target it is tested; a bad square is replaced by a
-    // random one drawn from the current square (after a diagonal first step,
-    // one of the two straight steps; after a straight one, the forward square
-    // or either square beside it), coordinates clamped to the grid, and every
-    // replacement is tested, the target too. After the 10th bad test the group
-    // stays and the order fails (spec 03 §6.2, confirmed: binary).
-    std::optional<Sector> greedyStep(const Group& g, Location here, Sector target) {
-        const int x = here.sector.x, y = here.sector.y;
-        const int dx = (target.x > x) - (target.x < x), dy = (target.y > y) - (target.y < y);
-        auto clamp = [](int c) { return std::clamp(c, 0, kSystemSize - 1); };
-        Sector pick{x + dx, y + dy};
-        if (pick == target) return pick;
-        for (int bad = 0;;) {
-            if (!badSquare(g, {here.system, pick})) return pick;
-            if (++bad >= 10) return std::nullopt;
-            if (dx != 0 && dy != 0) pick = s_.rng.below(2) == 0 ? Sector{x + dx, y} : Sector{x, y + dy};
-            else if (dx != 0) pick = Sector{x + dx, clamp(y + static_cast<int>(s_.rng.below(3)) - 1)};
-            else pick = Sector{clamp(x + static_cast<int>(s_.rng.below(3)) - 1), y + dy};
-        }
-    }
-
-    // The square an in-system step goes to: around a destructive centre the
-    // cost map chooses, falling back to the greedy step when no square around
-    // the group was reached (spec 03 §6.2, confirmed: binary).
-    std::optional<Sector> inSystemStep(const Group& g, Location here, Sector target) {
-        if (destructiveCentre(s_, here.system) > 0)
-            if (const auto s = centreStep(centreCostMap(target, centreZone(s_, here.system)), here.sector); s && *s != here.sector) return s;
-        return greedyStep(g, here, target);
-    }
-
     Step step(Group& g, Route& rt) {
         const Location here = where(g);
         const Location next = rt.steps[rt.pos];
@@ -830,7 +821,7 @@ private:
         // the last square of this system on it (a warp point or the goal).
         size_t last = rt.pos;
         while (last + 1 < rt.steps.size() && rt.steps[last + 1].system == here.system) ++last;
-        const auto chosen = inSystemStep(g, here, rt.steps[last].sector);
+        const auto chosen = inSystemStep(r_, s_, g.owner, here, rt.steps[last].sector, s_.rng);
         if (!chosen) return Step::Blocked;
         const Location to{here.system, *chosen};
         if (asks(g, to)) return Step::Asked;
@@ -1811,6 +1802,15 @@ Sector stepToward(Sector at, Sector target, int64_t steps) {
 }
 
 } // namespace
+
+std::optional<Sector> inSystemStep(const Rules& r, const GameState& s, EmpireId mover, Location here, Sector target, Rng& rng) {
+    // Around a destructive centre the cost map chooses, falling back to the
+    // greedy step when no square around the group was reached (spec 03 §6.2,
+    // confirmed: binary).
+    if (destructiveCentre(s, here.system) > 0)
+        if (const auto c = centreStep(centreCostMap(target, centreZone(s, here.system)), here.sector); c && *c != here.sector) return c;
+    return greedyStep(r, s, mover, here, target, rng);
+}
 
 std::vector<int> actionDays(int speed, DayCounterMode mode) {
     return mode == DayCounterMode::Exact ? daysActed<DayCounterMode::Exact>(speed) : daysActed<DayCounterMode::Double>(speed);

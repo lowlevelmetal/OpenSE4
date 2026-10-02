@@ -654,13 +654,25 @@ private:
         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &count, formats.data());
         if (formats.empty()) throw VulkanError("Surface reports no formats");
         // UNORM (not sRGB) to match OpenGL's default framebuffer, so both backends look the same.
-        surfaceFormat_ = formats.front();
-        for (const auto& f : formats)
-            if ((f.format == VK_FORMAT_B8G8R8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_UNORM) &&
-                f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                surfaceFormat_ = f;
-                break;
-            }
+        auto srgbEncoded = [](VkFormat f) {
+            return f == VK_FORMAT_B8G8R8A8_SRGB || f == VK_FORMAT_R8G8B8A8_SRGB || f == VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+        };
+        auto pick = [&](auto&& accept) {
+            for (const auto& f : formats)
+                if (f.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR && accept(f.format)) {
+                    surfaceFormat_ = f;
+                    return true;
+                }
+            return false;
+        };
+        if (!pick([](VkFormat f) { return f == VK_FORMAT_B8G8R8A8_UNORM || f == VK_FORMAT_R8G8B8A8_UNORM; }) &&
+            !pick([&](VkFormat f) { return !srgbEncoded(f); })) {
+            surfaceFormat_ = formats.front();
+            // Our colours are already gamma-encoded: an sRGB format encodes them
+            // again, and the picture would look paler than with OpenGL.
+            log::warn("Vulkan: no UNORM surface format (using format {}); colours may differ from OpenGL (--renderer=opengl)",
+                      static_cast<int>(surfaceFormat_.format));
+        }
         const VkFormat fmt = surfaceFormat_.format;
         captureFormatOk_ = fmt == VK_FORMAT_B8G8R8A8_UNORM || fmt == VK_FORMAT_R8G8B8A8_UNORM ||
                            fmt == VK_FORMAT_B8G8R8A8_SRGB || fmt == VK_FORMAT_R8G8B8A8_SRGB;

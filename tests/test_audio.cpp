@@ -1,11 +1,18 @@
 // Sound and music lookup (client/audio.hpp; no audio device needed).
 
+#include "assets/assets.hpp"
 #include "client/audio.hpp"
 #include "ruleset/ruleset.hpp"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <format>
+#include <set>
+#include <string>
+#include <vector>
 
 using namespace opense4;
 
@@ -80,4 +87,37 @@ TEST_CASE("audio: stellar manipulation reports have their sounds") {
     CHECK(client::stellarSound("Storm destroyed in Sol") == "deststrm");
     CHECK(client::stellarSound("Black hole created in Sol") == "destsun");
     CHECK(client::stellarSound("Research Center I completed").empty());
+}
+
+TEST_CASE("installed data set: every sound and music track the game names is in the install (opt-in)") {
+    // The lookups ignore case (as Windows does), so this checks that the names
+    // the client plays and the ones the data files give exist in the player's
+    // copy, in either sound set, on every platform alike.
+    const char* env = std::getenv("OPENSE4_CLASSIC_DATA");
+    if (!env) return;
+    const auto dir = ruleset::findInstalledDataDir(std::string_view(env) == "auto" ? std::filesystem::path{} : std::filesystem::path(env));
+    REQUIRE(dir);
+    const auto loaded = ruleset::loadRuleset(*dir);
+    REQUIRE(loaded.ruleset);
+    const assets::InstallFiles files(dir->parent_path());
+    // The client's own sounds, and those of the stellar manipulation reports (stellarSound).
+    std::set<std::string> sounds{"button", "ordbtn", "close", "cloakon", "cloakoff", "endturn", "boom1", "boom2", "boom3", "cmdbtn",
+                                 "crteplnt", "destplnt", "crtesun", "destsun", "openwp", "closewp", "crtestrm", "deststrm"};
+    for (const auto& c : loaded.ruleset->components)
+        if (!c.weapon.sound.empty()) sounds.insert(c.weapon.sound);
+    std::vector<std::string> missing;
+    for (const std::string& s : sounds)
+        for (const bool remastered : {false, true}) {
+            const auto candidates = client::soundCandidates(s, remastered);
+            if (std::none_of(candidates.begin(), candidates.end(), [&](const std::string& c) { return files.find(c).has_value(); }))
+                missing.push_back(std::format("{} ({})", s, remastered ? "remastered" : "classic"));
+        }
+    const client::Playlists lists = client::readPlaylists(loaded.ruleset->settings);
+    for (const auto* list : {&lists.intro, &lists.background, &lists.combat})
+        for (const std::string& track : *list)
+            if (!files.find("Music/" + track)) missing.push_back("Music/" + track);
+    std::string all;
+    for (const std::string& m : missing) all += m + "\n";
+    INFO(all);
+    CHECK(missing.empty());
 }

@@ -2,10 +2,26 @@
 
 #include "ruleset/ability_names.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <regex>
 #include <sstream>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <vector>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace opense4::ruleset {
 
@@ -98,13 +114,51 @@ bool Settings::boolean(std::string_view key, bool fallback) const {
     return it == values_.end() ? fallback : datafile::parseBoolean(it->second).value_or(fallback);
 }
 
+#if defined(_WIN32)
+// Where Steam is installed, as it records it (any drive, any folder).
+std::optional<std::filesystem::path> steamFolderFromRegistry() {
+    for (const auto& [root, key, value] : {std::tuple{HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath"},
+                                           std::tuple{HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Valve\\Steam", L"InstallPath"},
+                                           std::tuple{HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath"}}) {
+        wchar_t buffer[1024];
+        DWORD size = sizeof buffer;
+        if (RegGetValueW(root, key, value, RRF_RT_REG_SZ, nullptr, buffer, &size) == ERROR_SUCCESS && buffer[0] != 0)
+            return std::filesystem::path(buffer);
+    }
+    return std::nullopt;
+}
+#endif
+
+std::filesystem::path childIgnoringCase(const std::filesystem::path& dir, std::string_view name) {
+    // From the directory listing on every platform, so that the result is the
+    // spelling on disk everywhere (Windows' exists() would accept any case).
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto lowered = [](std::string s) {
+        for (char& c : s)
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        return s;
+    };
+    const std::string want = lowered(std::string(name));
+    std::vector<fs::path> found;
+    for (const auto& e : fs::directory_iterator(dir, ec)) {
+        const std::string entry = e.path().filename().string();
+        if (entry == name) return e.path();
+        if (lowered(entry) == want) found.push_back(e.path());
+    }
+    if (found.empty()) return dir / name;
+    return *std::min_element(found.begin(), found.end());  // the directory's order is unspecified
+}
+
 std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem::path& hint) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    auto isDataDir = [&](const fs::path& p) { return fs::exists(p / "Components.txt", ec) && fs::exists(p / "TechArea.txt", ec); };
+    auto isDataDir = [&](const fs::path& p) {
+        return fs::exists(childIgnoringCase(p, "Components.txt"), ec) && fs::exists(childIgnoringCase(p, "TechArea.txt"), ec);
+    };
     // Accept the Data dir itself, the game dir, or the Steam app dir.
     auto resolve = [&](const fs::path& p) -> std::optional<fs::path> {
-        for (const fs::path& candidate : {p, p / "Data", p / "se4" / "Data"})
+        for (const fs::path& candidate : {p, childIgnoringCase(p, "Data"), childIgnoringCase(childIgnoringCase(p, "se4"), "Data")})
             if (isDataDir(candidate)) return fs::weakly_canonical(candidate, ec);
         return std::nullopt;
     };
@@ -117,6 +171,9 @@ std::optional<std::filesystem::path> findInstalledDataDir(const std::filesystem:
         steamRoots.push_back(fs::path(home) / ".var/app/com.valvesoftware.Steam/.local/share/Steam");
         steamRoots.push_back(fs::path(home) / "Library/Application Support/Steam");  // macOS
     }
+#if defined(_WIN32)
+    if (auto steam = steamFolderFromRegistry()) steamRoots.push_back(*steam);
+#endif
     if (const char* programFiles = std::getenv("ProgramFiles(x86)")) steamRoots.push_back(fs::path(programFiles) / "Steam");
     steamRoots.push_back("C:/Program Files (x86)/Steam");
     steamRoots.push_back("C:/Program Files/Steam");
