@@ -243,6 +243,7 @@ public:
     int maxMovement(int i) const { return computeMp(i); }
     std::array<int, 3> launchLeft(int i) const;
     bool hasTroops(int i) const;
+    bool hasUnitsAboard(int i) const;     // units of any kind in its cargo (a planet piece: its colony's)
     int leaderOf(int i) const;             // the piece i follows (-1: none)
     std::vector<std::pair<int, int>> pathToSquare(int i, int tx, int ty) const;
     // Why weapon `wi` of piece i cannot fire at t now (empty: it can). Instance -1: any ready one.

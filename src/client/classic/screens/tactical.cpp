@@ -69,7 +69,7 @@ enum class Aim { None, Ram, Capture };
 
 // The pickers the Orders window's items open, each a modal window of its own
 // once the menu has closed (spec 06 §1.10.2).
-enum class Picker { None, GroupSize, LeaderNumber, MemberNumber, Formation, Resolve };
+enum class Picker { None, GroupSize, LeaderNumber, MemberNumber, Formation, Resolve, DropTroops };
 
 // What the windows share for the battle in progress.
 struct TacticalUi {
@@ -83,6 +83,7 @@ struct TacticalUi {
     int ordersGroup = 1;         // the group number picked for Set Group Leader
     int launchWindow = 0;        // the Launch Units window's session (spec 04 §10.4)
     std::string message;         // the last refusal or hint
+    std::string refusal;         // the "Drop Troops" message box's text (Picker::DropTroops)
     float cx = 36, cy = 31;      // squares at the map's centre
     float cellFrame = 30;        // zoom: frame pixels per square
     bool placed = false;         // the view has been centred on the player's pieces
@@ -118,9 +119,10 @@ void flush(TacticalFight& f) {
     u.queue.clear();
     for (const TacticalOrder& o : queue) {
         std::string why = f.battle->submit(o);
-        // The group orders refuse silently (spec 06 §1.10.2).
+        // The group orders refuse silently (spec 06 §1.10.2), and so does a
+        // landing from a piece with units but no troops (spec 04 §19.4 Q88).
         const bool group = o.kind == OK::SetLeader || o.kind == OK::SetMember || o.kind == OK::ClearGroup || o.kind == OK::ClearAllGroups;
-        u.message = group ? std::string{} : std::move(why);
+        u.message = group || why == game::combat::kSilentRefusal ? std::string{} : std::move(why);
     }
     if (u.finishNow && f.battle->finished() && !f.battle->applied()) f.battle->finish();
     u.finishNow = false;
@@ -183,8 +185,10 @@ std::string unitsText(const game::GameState& s, const TacticalPiece& p) {
 }
 
 // Drop Troops (the Orders item and T): at once, no target click, on the
-// adjacent colony of another empire that comes last in piece order, whatever
-// the treaty; a refusal is explained (spec 06 §1.10.2, spec 04 §11).
+// adjacent colony of another side that comes last in piece order, whatever
+// the treaty. Any own piece may give it (a planet lands its colony's troops).
+// A refusal is explained in a message box titled "Drop Troops", except the
+// one the original makes silently (spec 06 §1.10.2, spec 04 §11, §19.4 Q88).
 void dropTroops(TacticalFight& f) {
     TacticalUi& u = state();
     const TacticalBattle& b = *f.battle;
@@ -194,7 +198,10 @@ void dropTroops(TacticalFight& f) {
     }
     const TacticalOrder o = dropTroopsOrder(b, u.selected);
     if (std::string why = b.check(o); !why.empty()) {
-        u.message = std::move(why);
+        if (why != game::combat::kSilentRefusal) {
+            u.refusal = std::move(why);
+            u.picker = Picker::DropTroops;
+        }
         return;
     }
     submit(f, o);
@@ -928,7 +935,7 @@ private:
         TacticalBattle& b = *f.battle;
         const game::EmpireId side = b.phaseEmpire();
         const TacticalPiece* p = ownSelected(b, u);
-        if (u.picker != Picker::Resolve && !p) {
+        if (u.picker != Picker::Resolve && u.picker != Picker::DropTroops && !p) {
             u.picker = Picker::None;
             return;
         }
@@ -961,17 +968,26 @@ private:
                 for (const ruleset::Formation& fm : formations) rows.push_back(fm.name);
                 break;
             case Picker::Resolve: title = "Resolve Combat"; break;
+            case Picker::DropTroops: title = "Drop Troops"; break;
             case Picker::None: return;
         }
         const std::string id = title + "##tacticalpicker";
         if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
-        const Vec2 size = u.picker == Picker::Resolve ? Vec2{320, 120} : Vec2{240, 60 + 22 * float(std::min<size_t>(rows.size(), 10)) + 40};
+        const bool box = u.picker == Picker::Resolve || u.picker == Picker::DropTroops;
+        const Vec2 size = box ? Vec2{320, 120} : Vec2{240, 60 + 22 * float(std::min<size_t>(rows.size(), 10)) + 40};
         ImGui::SetNextWindowPos(ui.at({frameW() * 0.5f, frameH() * 0.5f}), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowSize(ui.size(size), ImGuiCond_Always);
         int picked = -1;
         bool cancelled = false, yes = false;
         if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | kPromptFlags)) {
-            if (u.picker == Picker::Resolve) {
+            if (u.picker == Picker::DropTroops) {
+                // A message box with OK; Enter and Esc close it too (spec 06 §3.4).
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted(u.refusal.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ui.px(36));
+                cancelled = ImGui::Button("OK", ui.size({140, 26})) || okKey();
+            } else if (u.picker == Picker::Resolve) {
                 // A Yes/No message box: Y means Yes; N, Esc and Enter mean No (spec 06 §3.4).
                 ImGui::PushTextWrapPos(0.0f);
                 ImGui::TextUnformatted("Should the rest of the battle be fought automatically?");
@@ -1026,6 +1042,7 @@ private:
             case Picker::Resolve:
                 if (yes) submit(f, TacticalOrder{OK::ResolveCombat, side});
                 break;
+            case Picker::DropTroops: u.refusal.clear(); break;
             case Picker::None: break;
         }
     }

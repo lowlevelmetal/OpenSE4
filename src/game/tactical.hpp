@@ -43,6 +43,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,11 @@ struct Square {
     int16_t x = 0, y = 0;
     bool operator==(const Square&) const = default;
 };
+
+// The reason check() and submit() give for an order refused without any
+// message (a Drop Troops from a piece that carries units but no troops,
+// spec 04 §19.4 Q88): the client shows nothing for it.
+inline constexpr std::string_view kSilentRefusal = "(refused without a message)";
 
 struct TacticalOrder {
     enum class Kind : uint8_t {
@@ -235,7 +241,8 @@ public:
     std::string fireProblem(int piece, int weapon, int target) const;
 
     // ---- Orders --------------------------------------------------------------------------------
-    // Why the order would be refused (empty: it would be accepted).
+    // Why the order would be refused (empty: it would be accepted). An order
+    // the original refuses without any message gives kSilentRefusal.
     std::string check(const TacticalOrder& o) const;
     // Validates and carries out the order, then plays the computer phases that
     // follow until a player's phase needs orders or the battle ends. Returns

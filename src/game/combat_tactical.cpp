@@ -178,10 +178,11 @@ std::string Battle::check(const TacticalOrder& o) const {
         case OK::LaunchFighters: return checkLaunch(o);
         case OK::DropTroops: {
             // The order names no planet: the landing takes the adjacent colony of
-            // another empire that comes last in piece order, whatever the treaty
-            // (spec 04 §11, spec 06 §1.10.2, confirmed: binary); `target` is ignored.
+            // another side that comes last in piece order, whatever the treaty
+            // (spec 04 §11, spec 06 §1.10.2, confirmed: binary); `target` is
+            // ignored. The piece's kind is not checked: a planet piece drops
+            // its colony's troops, a unit group fails a test (§19.4 Q88).
             if (std::string e = checkPiece(o, false); !e.empty()) return e;
-            if (pieces_[static_cast<size_t>(o.piece)].kind != Kind::Vehicle) return "Only ships and bases drop troops.";
             return landingProblem(o.piece);
         }
         case OK::Ram: {

@@ -2161,11 +2161,10 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
       invader's if the planet fell, so a landing on a converted planet also ends the
       conversion.
 
-    The engine differs: `Battle::landingColony` (`combat_space.cpp`) judges "another
-    empire" by the colony's owner (`colonyHolder`). It must judge by the planet piece's
-    current owner, and still require a colony. The defender and the reset after the fight
-    already match, and so does the client's own pick (`dropTroopsColony`,
-    `combat_logic.cpp`), which reads the piece's owner.
+    Since 2026-10-01 the engine follows this: `Battle::landingColony` (`combat_space.cpp`)
+    judges "another side" by the planet piece's current owner and still requires a colony.
+    The defender and the reset after the fight matched already, and so does the client's own
+    pick (`dropTroopsColony`, `combat_logic.cpp`), which reads the piece's owner.
 88. **The order of a landing's refusals.** Spec 06 §1.10.2 lists three reasons for a
     refused landing (no colony adjacent, another empire's troops already there, no troops
     aboard). In what order are they tested, so which message does a ship that fails
@@ -2186,13 +2185,12 @@ settled from the executable the same day; Q87 and Q88 need changes to the engine
       give it and lands the troops held in its colony's cargo. A unit group has no cargo,
       so it is refused by whichever test it reaches first, at the latest the third.
 
-    The engine differs in two points (`combat_space.cpp`, `combat_tactical.cpp`):
-    - `Battle::landingProblem` gives "no troops" also when other units are aboard. It must
-      refuse such a ship with an empty reason (refused, no message).
-    - The DropTroops case of `TacticalBattle::check` refuses every piece that is not a
-      ship or base. It must let a planet piece drop the troops of its colony's cargo
-      (`hasTroops` and `dropTroops` would read the colony's cargo for a planet piece), and
-      give a unit group the refusals above.
+    Since 2026-10-01 the engine follows this (`combat_space.cpp`, `combat_tactical.cpp`):
+    `Battle::landingProblem` tests the three refusals in this order and refuses a piece with
+    units but no troops with `combat::kSilentRefusal`, for which the client shows nothing;
+    the DropTroops check no longer tests the piece's kind, so a planet piece drops the
+    troops of its colony's cargo (`hasTroops`, `dropTroops`) and a unit group meets the
+    tests. The client shows the other refusals in a message box titled "Drop Troops".
 89. **A surrounded carrier.** A piece found surrounded makes no plan (§16.1). Does a
     computer carrier with Drop Troops in effect still try its landing then? The engine
     does not: the landing follows a planned move only.

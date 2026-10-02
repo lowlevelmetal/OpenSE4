@@ -1048,6 +1048,109 @@ TEST_CASE("drop troops: refused where a third empire's troops are landed; every 
         for (int c : w.reload) CHECK(c == 0);
 }
 
+TEST_CASE("drop troops: the refusals in their order, a silent one for units without troops (spec 04 §19.4 Q88)") {
+    Arena ar = makeArena(7, 3);
+    GameState& s = ar.s;
+    Colony& hw = homeworld(s, ar.b);
+    hw.cargo = {};
+    ar.loc = locationOf(s.galaxy, hw.planet);
+    const DesignId other = design(s, ar.c, "Other", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const DesignId wasp = design(s, ar.a, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+    const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), ar.loc);
+    const VehicleId swarm = spawn(s, wasp, ar.loc, 3);
+    Bench k(std::move(ar));
+    Battle& b = k.start({k.ar.a});
+    const int t = k.at(transport), home = k.planet(hw.planet), g = k.at(swarm);
+    k.arrange({{home, 30, 30}, {t, 40, 40}, {g, 42, 42}});
+    untilPlayer(b, k.ar.a);
+    const TacticalOrder drop{OK::DropTroops, k.ar.a, t};
+    // 1. No colony of another side adjacent comes first, even with nothing aboard.
+    CHECK(b.check(drop) == "No colony of another empire is adjacent.");
+    k.arrange({{home, 30, 30}, {t, 34, 31}, {g, 34, 33}});
+    // 2. A third empire's troops on that colony come before an empty hold.
+    b.piece(home).landed = {{other, 2}};
+    b.piece(home).invader = k.ar.c;
+    CHECK(b.check(drop) == "Another empire's troops are already there.");
+    b.piece(home).landed.clear();
+    b.piece(home).invader = {};
+    // 3. No units of any kind aboard.
+    CHECK(b.check(drop) == "It carries no troops.");
+    // Units, but no troops: refused without a message.
+    b.piece(t).unit.cargo.units.push_back({wasp, 2});
+    CHECK(b.check(drop) == combat::kSilentRefusal);
+    CHECK(b.submit(drop) == combat::kSilentRefusal);
+    CHECK(b.record().grounds.empty());
+    // The kind is not checked: a unit group has no cargo and fails the third test.
+    CHECK(b.check(TacticalOrder{OK::DropTroops, k.ar.a, g}) == "It carries no troops.");
+    b.piece(t).unit.cargo.units.push_back({trooper, 2});
+    CHECK(b.check(drop).empty());
+}
+
+TEST_CASE("drop troops: a colony's planet piece lands its colony's troops; a converted planet is judged by its side (Q87, Q88)") {
+    SUBCASE("a planet piece drops the troops of its colony's cargo") {
+        Arena ar = makeArena(7, 3);
+        GameState& s = ar.s;
+        Colony& hw = homeworld(s, ar.b);
+        hw.cargo = {};
+        hw.population = {{ar.b, 10}};   // below 20M: no militia
+        ar.loc = locationOf(s.galaxy, hw.planet);
+        // C's colony shares the sector and holds troops.
+        const ObjectId base = colonyBeside(s, hw.planet, ar.c, 10);
+        const DesignId trooper = design(s, ar.c, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+        s.colony(base)->cargo.units = {{trooper, 4}};
+        const VehicleId skiff = spawn(s, design(s, ar.c, "Skiff", "Test Frigate", {"Test Bridge"}), ar.loc);   // C's ship starts the battle
+        Bench k(std::move(ar));
+        Battle& b = k.start({k.ar.c});
+        const int home = k.planet(hw.planet), mine = k.planet(base);
+        k.arrange({{home, 30, 30}, {mine, 34, 30}, {k.at(skiff), 50, 50}});
+        untilPlayer(b, k.ar.c);
+        const TacticalOrder drop{OK::DropTroops, k.ar.c, mine};
+        CHECK(b.check(drop).empty());
+        REQUIRE(b.submit(drop).empty());
+        REQUIRE(b.record().grounds.size() == 1);
+        CHECK(static_cast<int>(b.record().grounds.front().planetPiece) == home);
+        CHECK(b.record().grounds.front().attacker == k.ar.c);
+        CHECK(b.pieces()[static_cast<size_t>(mine)].unit.cargo.units.empty());
+    }
+    SUBCASE("a planet piece converted to the lander's side is no landing site; its colony's owner may land") {
+        Arena ar = makeArena(7, 3);
+        GameState& s = ar.s;
+        Colony& hw = homeworld(s, ar.b);
+        hw.cargo = {};
+        ar.loc = locationOf(s.galaxy, hw.planet);
+        const DesignId trooper = design(s, ar.a, "Trooper", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+        const DesignId guard = design(s, ar.b, "Guard", "Test Troop Hull", {"Test Troop Rifle", "Test Troop Armor"});
+        const VehicleId transport = spawn(s, frigate(s, ar.a, "Transport", 1, {"Test Cargo Bay"}), ar.loc);
+        const VehicleId ferry = spawn(s, frigate(s, ar.b, "Ferry", 1, {"Test Cargo Bay"}), ar.loc);
+        s.vehicle(transport)->cargo.units = {{trooper, 2}};
+        s.vehicle(ferry)->cargo.units = {{guard, 2}};
+        Bench k(std::move(ar));
+        Battle& b = k.start({k.ar.a, k.ar.b});
+        const int home = k.planet(hw.planet), t = k.at(transport), f = k.at(ferry);
+        k.arrange({{home, 30, 30}, {t, 34, 31}, {f, 34, 33}});
+        // Crew Conversion turned B's planet piece to A's side; the colony is still B's.
+        b.piece(home).owner = k.ar.a;
+        b.piece(home).unit.owner = k.ar.a;
+        // Each side's phase in turn: A's ship may not land there, B's may.
+        b.advance();
+        bool checkedA = false, checkedB = false;
+        for (int phase = 0; phase < 6 && !(checkedA && checkedB) && b.stage() == Battle::Stage::Orders; ++phase) {
+            const EmpireId side = b.phaseEmpire();
+            if (side == k.ar.a) {
+                CHECK(b.check(TacticalOrder{OK::DropTroops, k.ar.a, t}) == "No colony of another empire is adjacent.");
+                checkedA = true;
+            } else if (side == k.ar.b) {
+                CHECK(b.check(TacticalOrder{OK::DropTroops, k.ar.b, f}).empty());
+                checkedB = true;
+            }
+            REQUIRE(b.submit(TacticalOrder{OK::EndPhase, side}).empty());
+        }
+        CHECK(checkedA);
+        CHECK(checkedB);
+    }
+}
+
 TEST_CASE("drop troops: a computer carrier that waits lands after its move on whichever foreign colony is adjacent") {
     Arena ar = makeArena(7, 3);
     GameState& s = ar.s;

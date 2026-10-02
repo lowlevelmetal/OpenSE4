@@ -1225,11 +1225,20 @@ int Battle::hitChance(int i, const Weapon& w, int t) const {
 }
 
 bool Battle::hasTroops(int i) const {
-    // Units in cargo have no owner of their own: a ship's troops land for the ship's owner (spec 04 §13).
-    if (pieces_[i].kind != Kind::Vehicle) return false;
-    for (const UnitStack& u : pieces_[i].unit.cargo.units)
+    // Units in cargo have no owner of their own: a ship's troops land for the
+    // ship's owner (spec 04 §13); a planet piece's are its colony's cargo
+    // (spec 04 §19.4 Q88). A unit group has no cargo.
+    const Piece& p = pieces_[i];
+    if (p.kind != Kind::Vehicle && p.kind != Kind::Planet) return false;
+    for (const UnitStack& u : p.unit.cargo.units)
         if (u.count > 0 && isTroopDesign(r_, s_, u.design)) return true;
     return false;
+}
+
+bool Battle::hasUnitsAboard(int i) const {
+    const Piece& p = pieces_[i];
+    if (p.kind != Kind::Vehicle && p.kind != Kind::Planet) return false;
+    return std::any_of(p.unit.cargo.units.begin(), p.unit.cargo.units.end(), [](const UnitStack& u) { return u.count > 0; });
 }
 
 bool Battle::contestedBy(const Piece& planet, EmpireId e) const {
@@ -3321,36 +3330,44 @@ void Battle::ram(int i, int t) {
 EmpireId Battle::colonyHolder(const Piece& planet) const { return planet.capturedBy.valid() ? planet.capturedBy : planet.startOwner; }
 
 // The colony a landing takes (spec 04 §11, confirmed: binary): among the
-// colonized planet pieces of other empires adjacent to the ship, the one that
+// colonized planet pieces of other sides adjacent to the piece, the one that
 // comes last in piece order, whatever the treaty; only that one is looked at.
-// "Other" is judged by the colony's owner, so a planet piece converted to the
-// ship's empire is still a landing site for it (inferred, §19.4 Q87).
+// "Other" is judged by the side the planet piece fights for now, not by the
+// colony's owner: a planet piece converted by Crew Conversion is no landing
+// site for the converter, and is one for every other empire, its colony's
+// owner included (spec 04 §19.4 Q87, confirmed: binary).
 int Battle::landingColony(int i) const {
-    const Piece& ship = pieces_[i];
+    const Piece& lander = pieces_[i];
     int last = -1;
     for (size_t k = 0; k < pieces_.size(); ++k) {
         const Piece& q = pieces_[k];
-        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && colonyHolder(q) != ship.owner && dist(i, static_cast<int>(k)) <= 1)
+        if (q.alive && q.kind == Kind::Planet && colonyHolder(q).valid() && q.owner != lander.owner && dist(i, static_cast<int>(k)) <= 1)
             last = static_cast<int>(k);
     }
     return last;
 }
 
-// Why a landing is refused (spec 04 §11, spec 06 §1.10.2): no colony of
-// another empire adjacent, a third empire's troops already landed there, or
-// no troops aboard (the order of the checks is inferred).
+// Why a landing is refused (spec 04 §11, §19.4 Q88, spec 06 §1.10.2,
+// confirmed: binary), tested in this order: no colonized planet piece of
+// another side adjacent; another empire's troops already landed on the
+// colony the landing takes; no units of any kind aboard. A piece carrying
+// units but no troops passes these and is refused without a message
+// (kSilentRefusal). The piece's kind is not checked: a planet piece drops
+// its colony's troops, and a unit group, having no cargo, fails a test.
 std::string Battle::landingProblem(int i) const {
     const int t = landingColony(i);
     if (t < 0) return "No colony of another empire is adjacent.";
     if (contestedBy(pieces_[t], pieces_[i].owner)) return "Another empire's troops are already there.";
-    if (!hasTroops(i)) return "It carries no troops.";
+    if (!hasUnitsAboard(i)) return "It carries no troops.";
+    if (!hasTroops(i)) return std::string(kSilentRefusal);
     return {};
 }
 
 void Battle::dropTroops(int i) {
-    // A ship or base drops every troop unit aboard, of whatever design, for its
-    // owner, onto the colony the landing takes; it needs no movement and planet
-    // shields do not stop it. The treaty is not checked, and the ground combat
+    // A ship or base (or a colony's planet piece, from the colony's cargo)
+    // drops every troop unit aboard, of whatever design, for its owner, onto
+    // the colony the landing takes; it needs no movement and planet shields
+    // do not stop it. The treaty is not checked, and the ground combat
     // is fought at once and to its end whatever the treaty (spec 04 §11, §13,
     // confirmed: binary).
     if (!landingProblem(i).empty()) return;

@@ -20,6 +20,10 @@ in the cargo of your ships (see [Units](units)).
 
 Every landing also gives the planet a fresh start in the battle: its shields are full again and all its weapons are ready, whether or not it falls.
 
+What counts as "another empire" is the side the planet fights for at that moment. A planet whose crew was turned to your side by crew conversion is no landing site for you, while its old owner may land on it. A colony of yours can also land the troops stored in its cargo on another side's colony beside it: select the planet and press `T`.
+
+When a landing is refused, a message box says why: no colony of another side is next to the ship, troops of a third empire already fight on that colony, or the ship carries no units at all. A ship that carries other units (fighters, mines, satellites) but no troops is simply not landed, without a message.
+
 In a strategic battle, ships with the **Drop Troops** strategy do this by themselves. They head
 only for enemy colonies: they wait while the planet still has weapons and your side has armed
 ships to deal with them, then go in and land. After every move they land on whatever colony of
