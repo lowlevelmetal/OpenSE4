@@ -8,6 +8,7 @@
 #include "game/state.hpp"
 
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace opense4::game {
@@ -27,6 +28,10 @@ std::vector<ObjectId> planetsAt(const GameState& s, Location where);
 // (spec 04 §19.2 Q57).
 uint64_t objectOrderKey(const GameState& s, ObjectId planet);
 uint64_t objectOrderKey(const Vehicle& v);
+// Why a vehicle cannot join a fleet, or empty: ships and fighter groups
+// always can, bases when `Bases Can Join Fleets` is set, other unit groups
+// never (spec 03 §9, confirmed: binary).
+std::string fleetJoinProblem(const Rules& r, const GameState& s, const Vehicle& v);
 // The colony owned by `empire` in a sector, if any.
 const Colony* ownColonyAt(const GameState& s, EmpireId empire, Location where);
 

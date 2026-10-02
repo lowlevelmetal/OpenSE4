@@ -278,15 +278,26 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         sit.enemyInTerritory.push_back({sys, c->owner, {}, c->planet});
     }
 
-    // Attack candidates: other empires' planets in systems we have explored,
-    // valued by the foreign ratings in the planet's sector plus its defence.
+    // Attack candidates (spec 05 §7.2, confirmed: binary): other empires'
+    // planets in systems we have explored, each one noticed, kept only when we
+    // could settle a planet of its kind (canSettle: the colony module for its
+    // surface and the game's breathable and home-type options) or its owner
+    // is below None with us (at War or Non-Intercourse, or not met). Each is
+    // valued by the foreign ratings in the planet's sector plus its defence,
+    // and only a kept one adds its rating + 1 (a planet's: 1) a second time
+    // to its owner's strength in that system, so to the hostile strength
+    // there when we have met that hostile owner.
     for (const auto& c : s.colonies) {
         if (!c || c->owner == id || !c->owner.valid() || c->owner.index() >= nEmp) continue;
         const SystemId sys = s.galaxy.object(c->planet).system;
         if (!e.hasExplored(sys) || !considered(sys)) continue;
         if (hostileTo(e, c->owner) && !notices(s, id, planetKey(c->planet))) continue;
+        const Relation& rel = e.relation(c->owner);
+        const bool belowNone = !rel.contact || rel.treaty == Treaty::War || rel.treaty == Treaty::NonIntercourse;
+        if (!belowNone && !canSettle(r, s, e, s.galaxy.object(c->planet))) continue;
         const int64_t value = foreignRatingsAt(r, s, id, locationOf(s.galaxy, c->planet)) + planetDefence(r, s, *c);
-        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), e.relation(c->owner).anger, value});
+        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), rel.anger, value});
+        if (rel.contact && treatyIsHostile(rel.treaty) && s.empire(c->owner).alive) sit.hostile[sys.index()] += kStrengthScale;
     }
     std::sort(sit.candidates.begin(), sit.candidates.end(), [](const Candidate& a, const Candidate& b) {
         return std::tuple(a.jumps, -a.anger, -a.value, a.planet) < std::tuple(b.jumps, -b.anger, -b.value, b.planet);
@@ -301,7 +312,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
     auto note = [&](const std::vector<Order>& orders) {
         for (const Order& o : orders) {
             if ((o.kind == OrderKind::Warp || o.kind == OrderKind::Explore) && o.object.valid()) headed.insert(o.object);
-            if (o.kind == OrderKind::MoveTo) headedTo.insert(o.location);
+            if (o.kind == OrderKind::MoveTo || (o.kind == OrderKind::Seek && !o.vehicle.valid() && !o.object.valid())) headedTo.insert(o.location);
         }
     };
     for (const Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
@@ -426,7 +437,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
 
 // ---- Planner core -----------------------------------------------------------------------------
 
-Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uint64_t salt)
+Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uint64_t salt, const std::vector<SystemId>* territory)
     : r(rules),
       st(s),
       id(e),
@@ -448,6 +459,7 @@ Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uin
         }
 
     scores = politicalScores(r, st);
+    if (territory) st.empire(id).claimedSystems = *territory;
     sit = assess(r, st, id, prof);
     for (const auto& c : st.colonies)
         if (c && c->owner == id && (c->homeworld || !homeLocation.system.valid())) {
@@ -685,6 +697,38 @@ Order simpleOrder(OrderKind k) {
     return o;
 }
 
+Order seekOrder(Location where) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.location = where;
+    return o;
+}
+
+Order seekAfter(const Vehicle& target) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.vehicle = target.id;
+    o.location = target.location;  // where it was when the order was given
+    return o;
+}
+
+Order seekPlanet(const GameState& s, ObjectId planet) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.object = planet;
+    o.location = locationOf(s.galaxy, planet);
+    return o;
+}
+
+Order attackHere() { return simpleOrder(OrderKind::Attack); }
+
+Order joinFleetOrder(FleetId fleet) {
+    Order o;
+    o.kind = OrderKind::JoinFleet;
+    o.amount = static_cast<int>(fleet.value);
+    return o;
+}
+
 std::string_view surfaceKey(std::string_view surface) {
     if (keysEqual(surface, "Ice")) return "Ice";
     if (keysEqual(surface, "Rock")) return "Rock";
@@ -872,19 +916,39 @@ std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, Empi
     return p.report().commands;
 }
 
-std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e) {
+std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory,
+                                             std::vector<ObjectId>* colonyTargets) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
-    detail::Planner p(r, s, e, mode, kSaltOrders);
+    detail::Planner p(r, s, e, mode, kSaltOrders, territory);
+    if (colonyTargets) {
+        colonyTargets->clear();
+        for (const detail::ColonyTarget& t : p.sit.colonyTargets) colonyTargets->push_back(t.planet);
+    }
     p.runOrders(false, true);
     return p.report().commands;
 }
 
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve) {
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve,
+                                     const std::vector<ObjectId>* colonyTargets) {
     if (!planFor(s, e)) return {};
     const detail::Mode mode = s.empire(e).kind == PlayerKind::Human ? detail::Mode::Minister : detail::Mode::Computer;
     detail::Planner p(r, s, e, mode, kSaltEconomy);
     p.unitReserve = unitReserve;
+    // The lists another step left (spec 05 §7.2 "Whose lists the economy step
+    // reads"): of them the economy step reads only the colonization targets.
+    if (colonyTargets) {
+        p.sit.colonyTargets.clear();
+        for (ObjectId planet : *colonyTargets) {
+            if (!planet.valid() || planet.index() >= p.st.galaxy.objects.size()) continue;
+            detail::ColonyTarget t;
+            t.planet = planet;
+            t.system = p.st.galaxy.object(planet).system;
+            t.settleable = detail::canSettle(r, p.st, p.emp(), p.st.galaxy.object(planet));
+            t.colonized = p.st.colony(planet) != nullptr;
+            p.sit.colonyTargets.push_back(t);
+        }
+    }
     p.runEconomy();
     return p.report().commands;
 }

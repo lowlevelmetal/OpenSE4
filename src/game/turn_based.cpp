@@ -250,19 +250,22 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
         score::checkDestruction(ctx, e);
         if (!living(s, e)) return false;
     }
-    // 2. The start-of-turn step.
+    // 2. The start-of-turn step. The Politics minister rewrites the claims
+    // first thing; the state update and the ministers after it use those of
+    // the previous turn (spec 05 §7.2).
     ai::updateAiState(ctx, e);
+    const std::vector<SystemId> territory = s.empire(e).claimedSystems;
     if (control != Control::Absent) {
         ai::politicalStep(ctx, e, politicalWindow(s, e));
         markPoliticalStep(s, e);
+        ai::claimTerritory(ctx, e);
     }
     if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
-        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e));
+        std::vector<ObjectId> targets;
+        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets));
+        ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place for its economy step
     }
-    // The Politics minister's claims: the state update and this turn's
-    // ministers used those of the previous turn (spec 05 §7.2).
-    if (control != Control::Absent) ai::claimTerritory(ctx, e);
     ai::recordAiDecisions(ctx, e);
     // 3. Movement is refilled, and every group carries out its orders.
     movement::startTurn(ctx, e);

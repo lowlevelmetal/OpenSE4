@@ -59,6 +59,13 @@ std::vector<std::string> applyAll(const Rules& r, GameState& s, EmpireId e, cons
     return failed;
 }
 
+// A colony of `owner` in that sector.
+bool enemyColonyAt(const GameState& s, Location where, EmpireId owner) {
+    for (ObjectId o : planetsAt(s, where))
+        if (const Colony* c = s.colony(o); c && c->owner == owner) return true;
+    return false;
+}
+
 std::string joined(const std::vector<std::string>& v) {
     std::string out;
     for (const auto& s : v) out += s + "; ";
@@ -625,28 +632,138 @@ TEST_CASE("ai: an all-computer game runs 60 turns deterministically") {
 
 // ---- Exploration and colonization -----------------------------------------------------------------
 
-TEST_CASE("ai: idle attack ships explore the frontier") {
+TEST_CASE("ai: attack ships explore the frontier with a Seek, and warp only when they reach the point this turn") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, true);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Every system explored but those beyond home's neighbours' links, every link known.
+    exploreEverything(s);
+    for (SystemId nb : s.galaxy.neighbors(home.system))
+        for (SystemId far : s.galaxy.neighbors(nb))
+            if (far != home.system) s.empire(me).knowledge.explored[far.index()] = 0;
+    for (SystemId nb : s.galaxy.neighbors(home.system)) s.empire(me).knowledge.explored[nb.index()] = 1;
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    const VehicleId a = addTestVehicle(s, r, warship, home).id;
+    const VehicleId b = addTestVehicle(s, r, warship, home).id;
+    for (VehicleId id : {a, b}) s.vehicle(id)->supply = 1000;
+    auto plan = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planExploration(p);
+        return std::pair{p.st.vehicle(a)->orders, p.st.vehicle(b)->orders};
+    };
+    size_t points = 0;
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        points = p.sit.freeFrontier.size();
+    }
+    REQUIRE(points >= 2);
+    // No movement left from the last move: a Seek alone toward a frontier point.
+    auto [oa, ob] = plan();
+    REQUIRE(oa.size() == 1);
+    REQUIRE(ob.size() == 1);
+    CHECK(oa.front().kind == OrderKind::Seek);
+    auto pointAt = [&](Location where) -> std::optional<ObjectId> {
+        for (ObjectId wp : s.galaxy.warpPoints(where.system))
+            if (s.galaxy.object(wp).sector == where.sector && !s.empire(me).hasExplored(s.galaxy.object(s.galaxy.object(wp).destination).system))
+                return wp;
+        return std::nullopt;
+    };
+    REQUIRE(pointAt(oa.front().location));
+    REQUIRE(pointAt(ob.front().location));
+    CHECK(s.empire(me).hasExplored(oa.front().location.system));
+    // With fewer Attack Ships than 5 × the free points, no two take the same one.
+    CHECK(oa.front().location != ob.front().location);
+    // Movement points that reach the point now: the Warp through it follows the Seek.
+    s.vehicle(a)->movement = 999;
+    std::tie(oa, ob) = plan();
+    REQUIRE(oa.size() == 2);
+    CHECK(oa.back().kind == OrderKind::Warp);
+    CHECK(oa.back().object == *pointAt(oa.front().location));
+    CHECK(ob.size() == 1);
+    // On the point itself: no order this turn.
+    s.vehicle(a)->location = oa.front().location;
+    CHECK(plan().first.empty());
+}
+
+TEST_CASE("ai: the explorers: attack ships and well-loaded carriers, fit, supplied, outside fleets, idle or seeking") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary).
     const Rules& r = engineRules();
     GameState s = newEngineGame(7, 2, 12, true);
     const EmpireId me{0u};
     const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId warship = addWarship(s, r, me, "Picket");
-    const VehicleId explorer = addTestVehicle(s, r, warship, home).id;
-    const auto cmds = ai::planTurn(r, s, me);
-    bool explored = false;
-    std::vector<ObjectId> targets;
-    for (const Command& c : cmds) {
-        const auto* o = as<cmd::SetOrders>(c);
-        if (!o || o->orders.empty() || o->orders.back().kind != OrderKind::Warp) continue;
-        const SpaceObject& wp = s.galaxy.object(o->orders.back().object);
-        CHECK(s.empire(me).hasExplored(wp.system));
-        targets.push_back(o->orders.back().object);
-        explored = explored || o->vehicle == explorer;
+    auto ship = [&]() {
+        const VehicleId id = addTestVehicle(s, r, warship, home).id;
+        s.vehicle(id)->supply = 1000;
+        return id;
+    };
+    auto explores = [&](VehicleId id) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planExploration(p);
+        const std::vector<Order>& o = p.st.vehicle(id)->orders;
+        return !o.empty() && o.front().kind == OrderKind::Seek;
+    };
+    const VehicleId plain = ship();
+    CHECK(explores(plain));
+    s.vehicle(plain)->supply = 0;
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->supply = 1000;
+    s.vehicle(plain)->status = VehicleStatus::Cloaked;  // not in normal status
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->status = VehicleStatus::Normal;
+    s.vehicle(plain)->orders = {ai::detail::moveOrder(home)};
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->orders = {ai::detail::seekOrder(home)};  // a Seek first: planned again
+    CHECK(explores(plain));
+    s.vehicle(plain)->orders.clear();
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {plain}}).ok);
+    CHECK_FALSE(explores(plain));
+    // A design typed otherwise does not explore.
+    const VehicleId other = ship();
+    s.design(warship).designType = "Defense Ship";
+    CHECK_FALSE(explores(other));
+}
+
+TEST_CASE("ai: many attack ships send more than one explorer to a point") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary): with A the empire's
+    // Attack Ships, a list of L points gets each point once more while A > 5 ×
+    // its length, and once more again while A > 8 × it.
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId me{0u};
+    exploreEverything(s);
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId beyond = s.galaxy.neighbors(home).front();
+    s.empire(me).knowledge.explored[beyond.index()] = 0;
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    size_t points = 0;
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        points = p.sit.freeFrontier.size();
     }
-    CHECK(explored);
-    // With fewer explorers than free points, no two take the same one.
-    std::sort(targets.begin(), targets.end());
-    CHECK(std::adjacent_find(targets.begin(), targets.end()) == targets.end());
+    REQUIRE(points >= 1);
+    std::vector<VehicleId> ships;
+    const Location at = locationOf(s.galaxy, homeworld(s, me).planet);
+    for (size_t i = 0; i < 9 * points; ++i) {
+        ships.push_back(addTestVehicle(s, r, warship, at).id);
+        s.vehicle(ships.back())->supply = 1000;
+    }
+    // A = 9 L: each point is entered once more (9 L > 5 L, then 5 × 2 L... ) while
+    // the length allows; count the expected list length the same way.
+    const int64_t a = static_cast<int64_t>(ships.size());
+    int64_t length = static_cast<int64_t>(points);
+    for (size_t i = 0; i < points; ++i) {
+        if (a > 5 * length) ++length;
+        if (a > 8 * length) ++length;
+    }
+    REQUIRE(length > static_cast<int64_t>(points));
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planExploration(p);
+    int64_t sent = 0;
+    for (VehicleId id : ships) sent += !p.st.vehicle(id)->orders.empty();
+    CHECK(sent == length);
 }
 
 TEST_CASE("ai: a colony ship moves to the best target and colonizes it") {
@@ -827,6 +944,72 @@ TEST_CASE("ai: Colonizer entries build the colony-ship type of the first uncover
     REQUIRE_FALSE(built.empty());
     // In queue order, each colony ship covers the next target.
     for (size_t i = 0; i < built.size() && i < wanted.size(); ++i) CHECK(built[i] == wanted[i]);
+}
+
+TEST_CASE("ai: in a simultaneous turn the first economy step plans with the last empire's colonization targets") {
+    // Spec 05 §7.2 "Whose lists the economy step reads" (confirmed: binary):
+    // one set of lists for the game; each start-of-turn step builds its own
+    // and leaves it; an economy step builds one only when none is left, and
+    // removes it. Of the lists it reads only the colonization targets.
+    TempTree t("borrowed");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration, Infrastructure, Defend (Short Term), Not Connected\nNum Queue Entries := 1\n"
+            "Entry 1 Type := Colonizer\nEntry 1 Must Have At Least := 1\n");
+    t.write("Ai/Default_AI_Construction_Facilities.txt", "\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(3, 2, 0, 12, r);
+    const EmpireId first{0u}, last{1u};
+    // Each empire knows its home system only, whose free planets are Rock for
+    // the first and Ice for the last; both can settle both.
+    const std::array<std::string_view, 2> surface{"Rock", "Ice"};
+    for (const EmpireId e : {first, last}) {
+        Empire& emp = s.empire(e);
+        researchEverything(r, emp);
+        const SystemId home = ai::detail::homeSystem(s, e);
+        emp.knowledge.explored.assign(s.galaxy.systems.size(), 0);
+        emp.knowledge.explored[home.index()] = 1;
+        for (ObjectId o : s.galaxy.system(home).objects)
+            if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) s.galaxy.object(o).surface = std::string(surface[e.index()]);
+        for (std::string_view kind : {"Rock", "Ice"}) {
+            const DesignId d = addTestDesign(s, r, e, std::format("{} Settler {}", kind, e.value), "Test Frigate",
+                                             {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Supply Pod",
+                                              std::format("Test {} Pod", kind)});
+            s.design(d).designType = std::format("Colony ({})", kind);
+            emp.designs.push_back(d);
+        }
+    }
+    auto queued = [&](const GameState& g, EmpireId e) {
+        std::vector<std::string> out;
+        for (const auto& c : g.colonies)
+            if (c && c->owner == e)
+                for (const QueueItem& q : c->queue.items)
+                    if (q.kind == QueueItem::Kind::Vehicle) out.push_back(g.design(q.design).designType);
+        return out;
+    };
+    // Planned alone, each empire's economy step builds for its own targets.
+    {
+        GameState g = s;
+        REQUIRE(applyAll(r, g, first, ai::planEconomyStep(r, g, first)).empty());
+        CHECK(queued(g, first) == std::vector<std::string>{"Colony (Rock)"});
+        // With the last empire's targets, the first one builds for those.
+        GameState h = s;
+        std::vector<ObjectId> targets;
+        for (ObjectId o : s.galaxy.system(ai::detail::homeSystem(s, last)).objects)
+            if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) targets.push_back(o);
+        REQUIRE(applyAll(r, h, first, ai::planEconomyStep(r, h, first, 0, &targets)).empty());
+        CHECK(queued(h, first) == std::vector<std::string>{"Colony (Ice)"});
+    }
+    // Through the turn: the first empire borrows the last empire's set, the
+    // last builds its own (what was queued may be built at once).
+    processTurn(r, s, {});
+    auto colonyShips = [&](EmpireId e) {
+        std::vector<std::string> out = queued(s, e);
+        for (const Vehicle& v : s.vehicles)
+            if (v.owner == e) out.push_back(s.design(v.design).designType);
+        return out;
+    };
+    CHECK(colonyShips(first) == std::vector<std::string>{"Colony (Ice)"});
+    CHECK(colonyShips(last) == std::vector<std::string>{"Colony (Ice)"});
 }
 
 TEST_CASE("ai: facilities go only to colonies with an empty queue and a free slot") {
@@ -2101,6 +2284,7 @@ TEST_CASE("ai: ministers act only on what they were given") {
     // A ship under the Exploration minister explores.
     const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, home.planet)).id;
     s.vehicle(scout)->minister = true;
+    s.vehicle(scout)->supply = 1000;  // an explorer needs supply
     cmds = ai::ministerCommands(r, s, me);
     bool ordered = false;
     for (const Command& c : cmds)
@@ -2146,16 +2330,12 @@ TEST_CASE("ai: fleets follow the division table and attack the state's goal") {
     // fleet 1 attacks. One fleet is formed per turn, around the newest idle fit ship.
     auto cmds = ai::planTurn(r, s, me);
     CHECK(countOf<cmd::CreateFleet>(cmds) == 1);
+    // The goal is a Seek, lasting one movement phase, to an enemy planet of the target system.
     bool attack = false;
     for (const Command& c : cmds)
         if (const auto* o = as<cmd::SetOrders>(c); o && o->fleet.valid())
             for (const Order& ord : o->orders)
-                if (ord.kind == OrderKind::Attack && ord.object.valid()) {
-                    const Colony* target = s.colony(ord.object);
-                    REQUIRE(target);
-                    CHECK(target->owner == enemy);
-                    attack = true;
-                }
+                if (ord.kind == OrderKind::Seek && enemyColonyAt(s, ord.location, enemy)) attack = true;
     CHECK(attack);
     CHECK(applyAll(r, s, me, cmds).empty());
     // The fleet recruits up to trunc(vehicles x 60 % / 2).
@@ -2211,11 +2391,47 @@ TEST_CASE("ai: fleet roles: odd fleets attack while under the defence share") {
         if (const auto* o = as<cmd::SetOrders>(c); o && o->fleet.valid())
             for (size_t i = 0; i < fleets.size(); ++i)
                 if (o->fleet == fleets[i])
-                    for (const Order& ord : o->orders) attacking[i] = attacking[i] || (ord.kind == OrderKind::Attack && ord.object.valid());
+                    for (const Order& ord : o->orders)
+                        attacking[i] = attacking[i] || (ord.kind == OrderKind::Seek && enemyColonyAt(s, ord.location, enemy));
     CHECK(attacking[0]);
     CHECK_FALSE(attacking[1]);
     CHECK(attacking[2]);
     CHECK_FALSE(attacking[3]);
+}
+
+TEST_CASE("ai: recruits away from the fleet get a Join Fleet order and count toward its size at once") {
+    // Spec 05 §7.5 AI_Fleets (confirmed: binary).
+    TempTree t("recruits");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 50\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : 0, home.sector.y}};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    for (int i = 0; i < 7; ++i) addTestVehicle(s, r, warship, away);
+    // 8 vehicles, one fleet with 50 %: four members, so three recruits.
+    auto joins = [&](const std::vector<Command>& cmds) {
+        int n = 0;
+        for (const Command& c : cmds)
+            if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle.valid() && o->orders.size() == 1 &&
+                                                       o->orders.front().kind == OrderKind::JoinFleet)
+                n += o->orders.front().amount == static_cast<int>(fleet.value);
+        return n;
+    };
+    const auto cmds = ai::planTurn(r, s, me);
+    CHECK(joins(cmds) == 3);
+    REQUIRE(applyAll(r, s, me, cmds).empty());
+    CHECK(s.fleet(fleet)->members.size() == 1);  // they join when they reach it
+    // Next turn they still chase it and count: nobody else is recruited.
+    CHECK(joins(ai::planTurn(r, s, me)) == 0);
 }
 
 TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
@@ -2333,17 +2549,87 @@ TEST_CASE("ai: defenders answer a threat at home") {
     s.empire(me).aiTurnsInState = 12;
     CHECK(ai::nextState(r, s, me) == ai::AiState::DefendShortTerm);  // Defend (Long Term) is never entered
 
-    const auto cmds = ai::planTurn(r, s, me);
-    bool engaged = false;
-    for (const Command& c : cmds)
-        if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle == mine)
-            engaged = !o->orders.empty() && o->orders.front().kind == OrderKind::Attack && o->orders.front().vehicle == intruder;
-    CHECK(engaged);
+    // Spec 05 §7.5: the stored Attack when the defender is in the threat's
+    // sector; elsewhere a Seek after the intruder (simultaneous) or to its
+    // sector (turn-based), which lasts one movement phase.
+    auto orderOf = [&]() -> std::optional<Order> {
+        for (const Command& c : ai::planTurn(r, s, me))
+            if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle == mine && o->orders.size() == 1) return o->orders.front();
+        return std::nullopt;
+    };
+    const auto here = orderOf();
+    REQUIRE(here);
+    CHECK(here->kind == OrderKind::Attack);
+    CHECK_FALSE(here->vehicle.valid());
+    CHECK_FALSE(here->object.valid());
+    CHECK_FALSE(here->location.system.valid());
+    s.vehicle(mine)->location = {home.system, Sector{home.sector.x == 0 ? 1 : 0, home.sector.y}};
+    const auto pursue = orderOf();
+    REQUIRE(pursue);
+    CHECK(pursue->kind == OrderKind::Seek);
+    CHECK(pursue->vehicle == intruder);
+    s.options.simultaneous = false;
+    const auto toward = orderOf();
+    REQUIRE(toward);
+    CHECK(toward->kind == OrderKind::Seek);
+    CHECK_FALSE(toward->vehicle.valid());
+    CHECK(toward->location == home);
+    s.options.simultaneous = true;
     // Gone: back to Exploration while unexplored space borders our territory.
     s.vehicles.erase(std::remove_if(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.id == intruder; }),
                      s.vehicles.end());
     sight::updateKnowledge(r, s);
     CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+}
+
+TEST_CASE("ai: the Attack minister's ships attack where they stand, otherwise seek the target's sector") {
+    // Spec 05 §7.5 "Attack and defence", "How long the ministers' movement orders last" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    s.empire(me).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(me).treaty = Treaty::War;
+    const Location target = locationOf(s.galaxy, homeworld(s, enemy).planet);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Attack);
+    s.empire(me).aiMemory.targets = {target.system};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    const VehicleId there = addTestVehicle(s, r, warship, target).id;
+    const VehicleId far = addTestVehicle(s, r, warship, locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    // Each candidate is passed over with a 25 % chance; plan until both ships get orders.
+    std::optional<Order> atTarget, fromHome;
+    for (uint64_t salt = 1; salt < 40 && (!atTarget || !fromHome); ++salt) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, salt);
+        ai::detail::planAttack(p);
+        if (p.st.vehicle(there)->orders.size() == 1) atTarget = p.st.vehicle(there)->orders.front();
+        if (p.st.vehicle(far)->orders.size() == 1) fromHome = p.st.vehicle(far)->orders.front();
+    }
+    REQUIRE(atTarget);
+    REQUIRE(fromHome);
+    CHECK(*atTarget == ai::detail::attackHere());
+    CHECK(fromHome->kind == OrderKind::Seek);
+    CHECK(fromHome->location == target);
+}
+
+TEST_CASE("ai: the ministers' movement orders are gone at each start of turn") {
+    // Spec 05 §7.5 (confirmed: binary): every Seek lasts one movement phase, so
+    // the computer players' warships are free again at every start of turn.
+    const Rules& r = engineRules();
+    GameState s = computerGame(21, 3, 0, 14);
+    const DesignId warship = addWarship(s, r, EmpireId{0u}, "Hammer");
+    for (int i = 0; i < 4; ++i) addTestVehicle(s, r, warship, locationOf(s.galaxy, homeworld(s, EmpireId{0u}).planet));
+    int seeks = 0;
+    for (int turn = 0; turn < 12; ++turn) {
+        for (const Empire& e : s.empires)
+            for (const Command& c : ai::planTurn(r, s, e.id))
+                if (const auto* o = as<cmd::SetOrders>(c))
+                    for (const Order& ord : o->orders) seeks += ord.kind == OrderKind::Seek;
+        processTurn(r, s, {});
+        for (const Vehicle& v : s.vehicles)
+            for (const Order& o : v.orders) CHECK(o.kind != OrderKind::Seek);
+    }
+    CHECK(seeks > 0);
 }
 
 TEST_CASE("ai: the budget's revenue is production times the bonus plus income from others; tariffs paid stay in") {
@@ -2514,7 +2800,7 @@ TEST_CASE("ai: a missed human turn is played with every minister on, the politic
     CHECK(ai::ministerOn(s.empire(me), Minister::Politics));
     ai::politicalStep(ctx);
     CHECK(s.empire(me).relation(other).anger == 50 + ai::builtinProfile().anger.regularDecrease);
-    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet));
+    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).supply = 1000;
     CHECK_FALSE(ai::planOrders(r, s, me).empty());  // every minister acts on everything
 
     ai::restoreMinisters(s.empire(me), saved);
@@ -3249,6 +3535,49 @@ TEST_CASE("ai: an attack candidate's value is the foreign ratings in its sector 
     CHECK(found);
 }
 
+TEST_CASE("ai: attack candidates are planets we could settle or whose owner is below None, and count twice in its strength") {
+    // Spec 05 §7.2 "Attack candidates" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, them{1u};
+    meet(s, me, them);
+    const ObjectId planet = homeworld(s, them).planet;
+    const SystemId sys = s.galaxy.object(planet).system;
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.location.system == sys; });
+    int theirColonies = 0;
+    for (const auto& c : s.colonies) theirColonies += c && c->owner == them && s.galaxy.object(c->planet).system == sys;
+    auto candidate = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 3);
+        bool found = false;
+        for (const ai::detail::Candidate& c : p.sit.candidates) found = found || c.planet == planet;
+        return std::pair{found, p.sit.hostile[sys.index()]};
+    };
+    // A planet we cannot settle (only breathable planets, and it is not breathable for us).
+    s.options.onlyBreathable = true;
+    s.galaxy.object(planet).atmosphere = s.empire(me).race.atmosphere == "Methane" ? "Oxygen" : "Methane";
+    REQUIRE_FALSE(ai::detail::canSettle(r, s, s.empire(me), s.galaxy.object(planet)));
+    for (const Treaty t : {Treaty::None, Treaty::NonAggression, Treaty::TradeAlliance}) {
+        s.empire(me).relation(them).treaty = t;
+        CHECK_FALSE(candidate().first);
+    }
+    // Below None: kept, and each kept planet adds 1 more to the hostile strength there.
+    for (const Treaty t : {Treaty::NonIntercourse, Treaty::War}) {
+        s.empire(me).relation(them).treaty = t;
+        const auto [found, hostile] = candidate();
+        CHECK(found);
+        CHECK(hostile == 2 * ai::detail::kStrengthScale * theirColonies);
+    }
+    // Not met: kept too (the owner is hostile, though not counted in the hostile strength).
+    s.empire(me).relation(them).contact = false;
+    CHECK(candidate().first);
+    // A planet we could settle is kept at any treaty.
+    s.empire(me).relation(them).contact = true;
+    s.empire(me).relation(them).treaty = Treaty::NonAggression;
+    s.options.onlyBreathable = false;
+    if (ai::detail::canSettle(r, s, s.empire(me), s.galaxy.object(planet))) CHECK(candidate().first);
+}
+
 TEST_CASE("ai: defend entries are ordered by jumps, our population at stake, planet sectors, then the threat") {
     using ai::detail::DefendEntry;
     auto entry = [](int id, int jumps, int64_t pop, bool planet, int64_t threat) {
@@ -3289,23 +3618,25 @@ TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts pe
     m.staging = home;
     s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
     const Rules& r = engineRules();
-    // Our strength near the target (our home colony, 1) is not above 3 × theirs (1).
+    // Our strength near the target (our home colony, 1) is not above 3 × theirs
+    // (2: their homeworld, and once more as an attack candidate, spec 05 §7.2).
     s.empire(me).aiTurnsInState = 4;
     CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
     s.empire(me).aiTurnsInState = 5;
     CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
-    // Two points at home, and a second target near home: home counts once per target (4 > 3).
+    // Five points at home (two satellite groups of one, 2 each), and a second
+    // target near home: home counts once per target (10 > 6).
     const DesignId sat = addTestDesign(s, r, me, "Buoy", "Test Satellite Hull", {"Test Satellite Gun"});
-    addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
+    for (int i = 0; i < 2; ++i) addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
     std::optional<SystemId> second;
     for (size_t i = 0; i < fromHome.size() && !second; ++i)
         if (SystemId{i} != home && SystemId{i} != enemyHome && fromHome[i] <= 4) second = SystemId{i};
     REQUIRE(second);
     const std::vector<int> fromSecond = ai::detail::jumpsOver(s, *second);
     REQUIRE(fromSecond[home.index()] <= 4);
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 2 is not above 3
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 5 is not above 6
     m.targets = {enemyHome, *second};
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 2 + 2 > 3, and the staging system is stronger
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 5 + 5 > 6, and the staging system is stronger
 }
 
 TEST_CASE("ai: design names count the Design minister's designs and skip names any empire uses") {
@@ -3590,7 +3921,7 @@ TEST_CASE("ai: a ship that needs repair loses its orders and fleet every turn an
     ai::detail::planRepairAndResupply(p, true);
     CHECK_FALSE(p.st.vehicle(hurt)->fleet.valid());
     REQUIRE(ordersOf(p, hurt).size() == 1);
-    CHECK(ordersOf(p, hurt).front().kind == OrderKind::MoveTo);
+    CHECK(ordersOf(p, hurt).front().kind == OrderKind::Seek);  // one movement phase (spec 05 §7.5)
     CHECK(ordersOf(p, hurt).front().location == yard);
     CHECK(p.st.vehicle(mate)->fleet.valid());  // an undamaged ship stays
 
@@ -4181,10 +4512,10 @@ TEST_CASE("ai: a Destroy Black Hole ship seeks sector 36 of the system and is pl
     };
     const auto seek = plan(s);
     REQUIRE(seek.size() == 1);
-    CHECK(seek.front().kind == OrderKind::MoveTo);
+    CHECK(seek.front().kind == OrderKind::Seek);
     CHECK(seek.front().location == Location{*hole, Sector{10, 2}});
-    // Still on its way next turn, now inside the system: the order at once.
-    s.vehicle(id)->orders = seek;
+    // The Seek lasts one movement phase, so the ship is planned again next
+    // turn; now inside the system, it gets the order at once.
     s.vehicle(id)->location = Location{*hole, Sector{1, 1}};
     const auto act = plan(s);
     REQUIRE(act.size() == 1);
@@ -4717,6 +5048,8 @@ TEST_CASE("ai: the exploration frontier holds the warp points into unexplored sy
 
     // An explorer heads for one of those points only.
     const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    s.vehicle(scout)->supply = 1000;
+    s.vehicle(scout)->movement = 999;  // it reaches the point this turn: the Warp follows the Seek
     ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
     ai::detail::planExploration(p);
     const std::vector<Order> orders = ordersOf(p, scout);
@@ -4795,6 +5128,55 @@ TEST_CASE("ai: the territory is what the Politics minister claimed the turn befo
     CHECK(s.empire(me).aiState == static_cast<int>(ai::AiState::DefendShortTerm));
 }
 
+TEST_CASE("ai: a system received in a trade during our own Politics run stays claimed until our next rewrite") {
+    // Spec 05 §7.2 "Territory" (confirmed: binary): the Politics minister
+    // rewrites the claims first thing in its run, and a System item of an
+    // accepted trade moves the claim at once, until the receiver's next rewrite.
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, false);
+    const EmpireId human{0u}, cpu{1u};
+    meet(s, human, cpu);
+    exploreEverything(s);
+    researchEverything(r, s.empire(cpu));
+    // A system with planets the computer could settle, that it would not claim itself.
+    const std::vector<SystemId> own = ai::detail::computeTerritory(s, cpu);
+    std::optional<SystemId> x;
+    for (const StarSystem& sys : s.galaxy.systems) {
+        if (x || std::binary_search(own.begin(), own.end(), sys.id) || sys.id == ai::detail::homeSystem(s, human)) continue;
+        for (ObjectId o : sys.objects)
+            if (!x && ai::detail::canSettle(r, s, s.empire(cpu), s.galaxy.object(o)) && !s.colony(o)) x = sys.id;
+    }
+    REQUIRE(x);
+    s.empire(human).claimedSystems.push_back(*x);
+    std::sort(s.empire(human).claimedSystems.begin(), s.empire(human).claimedSystems.end());
+    // The human offers its claim to the system for 1,000 minerals.
+    const MessageId id = deliver(s, human, cpu, MessageType::ProposeTrade);
+    PackageItem claim, pay;
+    claim.kind = PackageItem::Kind::System;
+    claim.system = *x;
+    pay.resources = {1000, 0, 0};
+    s.messages.back().offer = {claim};
+    s.messages.back().request = {pay};
+    s.empire(human).stockpile = Resources{50000, 50000, 50000};
+    TurnOptions options;
+    options.aiForMissing = false;  // the human's claims stay as they are
+    bool accepted = false;
+    for (uint32_t turn = 60; turn < 80 && !accepted; ++turn) {
+        GameState g = s;
+        g.turn = turn;
+        g = datedNow(g, id);
+        processTurn(r, g, {}, options);
+        const auto& claims = g.empire(cpu).claimedSystems;
+        if (!std::binary_search(claims.begin(), claims.end(), *x)) continue;
+        accepted = true;
+        CHECK_FALSE(std::binary_search(g.empire(human).claimedSystems.begin(), g.empire(human).claimedSystems.end(), *x));
+        // The next start-of-turn step's rewrite drops it again.
+        processTurn(r, g, {}, options);
+        CHECK_FALSE(std::binary_search(g.empire(cpu).claimedSystems.begin(), g.empire(cpu).claimedSystems.end(), *x));
+    }
+    CHECK(accepted);
+}
+
 TEST_CASE("ai: mines, satellites, platforms and fighters take the first queue by backlog, free cargo, units held, size, production, rate") {
     TempTree t("unitqueue");
     t.write("Ai/Default_AI_Construction_Vehicles.txt",
@@ -4853,6 +5235,53 @@ TEST_CASE("ai: mines, satellites, platforms and fighters take the first queue by
         CHECK(p.st.colony(homePlanet)->queue.items.empty());
         CHECK(p.st.colony(*second)->queue.items.size() == 1);
     }
+}
+
+TEST_CASE("ai: the units held that order the unit queues are every unit in the colony's cargo, whatever its kind") {
+    // Spec 05 §7.5 "Placement", question 60 (confirmed: binary).
+    TempTree t("unitqueue2");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Satellite\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId sat = addTestDesign(s, rules, me, "Sentinel", "Test Satellite Hull", {"Test Satellite Gun"});
+    s.design(sat).designType = "Satellite";
+    const DesignId mine = addTestDesign(s, rules, me, "Spike", "Test Mine Hull", {"Test Warhead"});
+    s.design(mine).designType = "Mine";
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    homeworld(s, me).queue.items.clear();
+    const auto second = freePlanetIn(s, s.galaxy.object(homePlanet).system);
+    REQUIRE(second);
+    s.galaxy.object(*second).size = "Tiny";  // the homeworld is the larger planet and produces more
+    addColony(s, *second, me, {{me, 500}});
+    auto hold = [&](ObjectId planet, int64_t amount) {
+        ruleset::Ability a;
+        a.type = std::string(identifier(AbilityKind::CargoStorage));
+        a.value1 = std::to_string(amount);
+        s.galaxy.object(planet).abilities.push_back(a);
+    };
+    auto freeCargo = [&](ObjectId planet) {
+        const Colony& c = *s.colony(planet);
+        return colonyCargoCapacity(rules, s, c) - cargoSpaceUsed(rules, s, c.cargo);
+    };
+    // Ten mines in the homeworld's hold, and as much free space in both holds.
+    homeworld(s, me).cargo.units = {{mine, 10}};
+    hold(homePlanet, 100'000);
+    hold(*second, 100'000);
+    const int64_t gap = freeCargo(homePlanet) - freeCargo(*second);
+    hold(gap > 0 ? *second : homePlanet, gap > 0 ? gap : -gap);
+    REQUIRE(freeCargo(homePlanet) == freeCargo(*second));
+    // Same backlog and free space: the colony holding fewer units takes the
+    // satellites, though the homeworld holds no satellite and is larger.
+    ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+    ai::detail::planShips(p);
+    CHECK(p.st.colony(homePlanet)->queue.items.empty());
+    REQUIRE(p.st.colony(*second)->queue.items.size() == 1);
+    CHECK(p.st.colony(*second)->queue.items.front().design == sat);
 }
 
 TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the queues with a working yard") {
@@ -4930,6 +5359,81 @@ TEST_CASE("ai: a Defense Base goes to the K-th queue of the empire's list, K the
     const Rules moreRules{buildEngineRuleset(), more.root};
     const GameState g = plan(moreRules, s);
     CHECK(queuedOf(g, me, base) == 3);
+}
+
+TEST_CASE("ai: within a system the queue list follows the order the ships entered it, not the object slots") {
+    // Spec 05 §7.5 "Placement", question 60 (confirmed: binary).
+    TempTree t("defensebase4");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId base =
+        addTestDesign(s, rules, me, "Bastion", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    s.design(base).designType = "Defense Base";
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    homeworld(s, me).queue.items.clear();
+    const SystemId homeSys = s.galaxy.object(homePlanet).system;
+    REQUIRE(homeSys.index() + 1 < s.galaxy.systems.size());
+    const Location there{SystemId{homeSys.index() + 1}, Sector{kSystemCenter, kSystemCenter}};
+    const DesignId dock = addTestDesign(s, rules, me, "Dock", "Test Cruiser", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module"});
+    // Two yard ships after the homeworld: K is 3, and the base goes to the
+    // later of the two on the system's list.
+    const VehicleId a = addTestVehicle(s, rules, dock, there).id;
+    const VehicleId b = addTestVehicle(s, rules, dock, there).id;
+    REQUIRE(s.vehicle(a)->slot < s.vehicle(b)->slot);
+    REQUIRE(s.vehicle(a)->arrival < s.vehicle(b)->arrival);
+    auto queuedAt = [&](VehicleId yard) {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        ai::detail::planShips(p);
+        return p.st.vehicle(yard)->queue.items.size();
+    };
+    CHECK(queuedAt(b) == 1);
+    CHECK(queuedAt(a) == 0);
+    // The first one left and came back: it is now the later of the two,
+    // although its object slot is still the lower one.
+    s.arrived(*s.vehicle(a));
+    CHECK(queuedAt(b) == 0);
+    CHECK(queuedAt(a) == 1);
+}
+
+TEST_CASE("ai: a cloaked yard ship's yard does not count toward K") {
+    // Spec 05 §7.5 "Placement", question 60 (confirmed: binary): a ship's yard
+    // works only while the ship is not cloaked.
+    TempTree t("defensebase3");
+    t.write("Ai/Default_AI_Construction_Vehicles.txt",
+            "AI State := Exploration\nNum Queue Entries := 1\nEntry 1 Type := Defense Base\nEntry 1 Must Have At Least := 1\n");
+    const Rules rules{buildEngineRuleset(), t.root};
+    GameState s = computerGame(8, 2, 0, 10, rules);
+    const EmpireId me{0u};
+    researchEverything(rules, s.empire(me));
+    s.empire(me).economy = {};
+    s.empire(me).economy.colonies = Resources{100'000, 100'000, 100'000};
+    const DesignId base =
+        addTestDesign(s, rules, me, "Bastion", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"});
+    s.design(base).designType = "Defense Base";
+    const ObjectId homePlanet = homeworld(s, me).planet;
+    homeworld(s, me).queue.items.clear();
+    // A yard ship in a system after the home system: the second queue of the list.
+    const SystemId homeSys = s.galaxy.object(homePlanet).system;
+    REQUIRE(homeSys.index() + 1 < s.galaxy.systems.size());
+    const DesignId dock = addTestDesign(s, rules, me, "Dock", "Test Cruiser",
+                                        {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Yard Module", "Test Cloak"});
+    const VehicleId yard = addTestVehicle(s, rules, dock, {SystemId{homeSys.index() + 1}, Sector{kSystemCenter, kSystemCenter}}).id;
+    auto plan = [&]() {
+        ai::detail::Planner p(rules, s, me, ai::detail::Mode::Computer, 3);
+        ai::detail::planShips(p);
+        return p.st;
+    };
+    // Uncloaked: K is 2, so the base goes to the second queue, the yard ship's.
+    CHECK(plan().colony(homePlanet)->queue.items.empty());
+    // Cloaked: K is 1, and the homeworld takes it.
+    s.vehicle(yard)->status = VehicleStatus::Cloaked;
+    CHECK(plan().colony(homePlanet)->queue.items.size() == 1);
 }
 
 TEST_CASE("ai: on every fifth turn the facility upgrades come first, and an upgraded planet gets no new facility") {

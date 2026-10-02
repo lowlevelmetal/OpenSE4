@@ -69,8 +69,20 @@ std::string orderProblem(const GameState& s, EmpireId e, const Order& o) {
             if (!o.object.valid() || o.object.index() >= s.galaxy.objects.size()) return "Invalid planet";
             break;
         case OrderKind::Attack:
-            if (!o.vehicle.valid() && !o.object.valid()) return "No target";
+            // An Attack naming no target and no place is the stored form the
+            // computer's ministers give a ship already on its target's sector:
+            // it attacks where the group stands (spec 03 §8, spec 05 §7.5).
+            if (!o.vehicle.valid() && !o.object.valid() && o.location.system.valid()) return "No target";
             break;
+        case OrderKind::Seek:
+            if (o.vehicle.valid() || o.object.valid()) break;
+            if (!knownSystem(s, o.location.system) || !o.location.sector.valid()) return "Invalid destination";
+            break;
+        case OrderKind::JoinFleet: {
+            const Fleet* f = o.amount >= 0 ? s.fleet(FleetId{static_cast<uint32_t>(o.amount)}) : nullptr;
+            if (!f || f->owner != e) return "Not your fleet";
+            break;
+        }
         case OrderKind::MoveToWaypoint:
             if (o.amount < 0 || o.amount >= static_cast<int>(s.empire(e).waypoints.size())) return "Invalid waypoint";
             break;
@@ -134,15 +146,7 @@ struct Applier {
 
     // Ships always; bases when the setting allows; fighter groups yes; drones,
     // satellites and mines never (spec 03 §9, confirmed: binary).
-    std::string fleetJoinProblem(const Vehicle& v) const {
-        switch (vehicleType(r, s, v)) {
-            case ruleset::VehicleType::Ship:
-            case ruleset::VehicleType::Fighter: return {};
-            case ruleset::VehicleType::Base:
-                return r.settingFlag("Bases Can Join Fleets", false) ? std::string{} : std::string("Bases cannot join fleets");
-            default: return std::format("{} cannot join a fleet", v.name);
-        }
-    }
+    std::string fleetJoinProblem(const Vehicle& v) const { return game::fleetJoinProblem(r, s, v); }
 
     // Orders for a fleet, given to the fleet or to any of its members (spec 03
     // §8, §9, §19 Q65, Q76, confirmed: binary): the fleet has no list of its
@@ -284,12 +288,9 @@ struct Applier {
         if (v->fleet.valid()) return R::fail("Already in a fleet");
         if (f->location != v->location) return R::fail("Must be in the fleet's sector");
         if (auto why = fleetJoinProblem(*v); !why.empty()) return R::fail(why);
-        f->members.push_back(v->id);
-        v->fleet = f->id;
         // Joining clears the vehicle's list: it does not get the orders the
         // fleet already has, only those given after it joined (spec 03 §9, §19 Q65).
-        v->orders.clear();
-        v->repeatOrders = false;
+        joinFleet(*f, *v);
         return {};
     }
 

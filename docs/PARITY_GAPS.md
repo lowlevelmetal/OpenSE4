@@ -466,9 +466,9 @@ on 2026-10-01:
   star-destroyer flag on dates that are multiples of 20 (our own designs that fought count,
   `AiMemory::designsFought`) and draw a quiet colony system first in the fallback.
 
-OpenSE4 choices: a design name when every name is used (question 37), and the one-turn Seek
-of Destroy Black Hole and Destroy Nebulae ships, which the engine gives as a Move To to
-sector 36 that the minister plans again every turn. The record of our designs that fought
+OpenSE4 choices: a design name when every name is used (question 37); the one-turn Seek of
+Destroy Black Hole and Destroy Nebulae ships, which the engine gave as a Move To to sector 36
+that the minister planned again every turn, is a real Seek since 2026-10-02. The record of our designs that fought
 lists the first design of a group that mixes designs. The "(inferred)" markers of question
 37 in `ai*.cpp` are gone (the operating part, mothballed repairs, the yard ship's own yard,
 the unlimited-supply test, the warp-point draws and the top-left sector, Close Warp Point's
@@ -493,46 +493,53 @@ in session 3 came from its set-up and spread (spec 05 question 59). What differs
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). The enemy-in-territory list stays filled longer: our lists hold about 1.7 times as many hostile colonies and ships, and hostile colonies at war in a territory go about half as fast. The rules below that the engine does not follow yet (one-turn movement orders, Join Fleet pursuit, the attack candidates' test) close about half of the Defend gap in scratch runs; the rest is spec 05 questions 61–63 | Defend (Short Term) 53 % of all turns, 76 % of turns 51–100 (56–99 % per game); Infrastructure 7 % and 5 %; 63 of 120 empires ever in Infrastructure; 13 % of listed war colonies gone within 10 turns | 46 % and 63 % (49–73 % per game); Infrastructure 12 % and 16 % (2–30 %); 10 of 15; 33 % | M |
+| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With the rules of 2026-10-02 below, our fleets hold the original's share of the attack ships and our territories list a fifth fewer hostile ships, but the list stays filled as often: it holds about 1.8 times as many hostile colonies at war, which go about half as fast (spec 05 question 63; questions 61–62 for the ships and resources). On 120 seeds our shares did not move (50 % and 72 % before and after); the 24 seeds of the comparison sit 3–4 points higher | Defend (Short Term) 51 % of all turns, 72 % of turns 51–100 (seeds 1–24; 46–91 % per game); Infrastructure 8 % and 8 %; 63 of 120 empires ever in Infrastructure; 15 % of listed war colonies gone within 10 turns | 46 % and 63 % (49–73 % per game); Infrastructure 12 % and 16 % (2–30 %); 10 of 15; 33 % | M |
 | Bases. The placement rule is the original's (all 119 placements observed went to the K-th queue, 9 reached a yard) and every placement is made in Infrastructure, so the bases follow the Infrastructure time of the row above | 0.1–0.2 bases per empire from turn 50 | 0.5–0.6 | M |
-| Ships and resources from turn 75 (spec 05 questions 61, 62): the same population, colony types and facilities, but the original's colonies are happier (3.2–3.3 Jubilant per empire against 0.8–1.5) and it has more attack ships, mostly in fleets | Ships 10.8 / 13.1 per empire at turns 75 / 100 (attack ships 6.9 / 8.1, 44–51 % of them in fleets from turn 41); resources produced 25.9k / 30.4k | 14.4 / 19.7 (9.1 / 13.2, 74–78 %); 32.9k / 36.3k | M |
+| Ships and resources from turn 75 (spec 05 questions 61, 62): the same population, colony types and facilities, but the original's colonies are happier (3.2–3.3 Jubilant per empire against 0.8–1.5) and it has more attack ships | Ships 11.8 / 14.0 per empire at turns 75 / 100 (attack ships 7.6 / 8.5, 69–73 % of them in fleets from turn 41); resources produced 26.4k / 29.6k | 14.4 / 19.7 (9.1 / 13.2, 74–78 %); 32.9k / 36.3k | M |
 
-Rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary), not yet
-implemented:
+The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
+implemented that day; spec 07 "Pace after the movement rules" measures them:
 
 - **One-turn movement orders.** Every movement the ministers order (defence, attack, fleet
-  goals, exploration, patrol, repair, Space Yard Ships) is a Seek that lasts one movement
-  phase in a simultaneous game (and is done once moved in a turn-based one), so warships
-  are idle again at each start of turn. The engine gives Move To and Attack orders that
-  last until done (`ai_military.cpp`, `ai_explore.cpp`, `ai_economy.cpp`), keeping ships
-  busy and away from the fleets.
-- **Join Fleet pursuit.** A recruit gets a Join Fleet order that follows the fleet wherever
-  it goes, joins when it reaches it and counts toward the fleet's size at once; the engine's
-  `planFleets` sends it to where the leader stood.
+  goals, exploration, patrol, repair, Space Yard Ships, the Destroy Black Hole and Nebulae
+  ships) is a Seek (`OrderKind::Seek`, given only by ministers) toward a sector or after a
+  ship or planet: it lasts the movement phase in a simultaneous game, waiting at its goal,
+  and goes after day 30; in a turn-based game it is done once it arrives or the run ends. A
+  ship already on its target's sector gets the stored Attack (an Attack naming no target),
+  carried out at once and done. So the warships are idle again at each start of turn.
+- **Join Fleet pursuit** (`OrderKind::JoinFleet`): a recruit chases its fleet's position,
+  joins where the fleet stands and counts toward its size from the moment it is ordered.
 - **Attack candidates** are kept only when we could settle a planet of their kind or their
-  owner is below None (at War, Non-Intercourse or not met), and only a kept one adds its
-  owner's rating a second time to the system's strength; `assess` (`ai.cpp`) keeps every
-  noticed planet.
-- **Exploration** (`planExploration`, `ai_explore.cpp`): explorers are Attack Ships and
-  Attack Bases, and carriers or drone carriers more than half full, in normal status, with
-  fewer than 4 destroyed parts, supply above 0, outside fleets and with no orders or a Seek
-  first; the 3×, 5× and 8× tests count the empire's Attack Ships; each takes the point with
-  the smallest travel distance, and gets the Warp only when its movement points reach it.
-- **The economy step's lists**: the first empire in player order whose economy-step
-  ministers run reads the colonization targets of the last empire's start-of-turn step;
-  `planEconomyStep` uses its own.
-- **Queue list details** (question 60): a cloaked ship's yard does not count as working
-  (`workingYard`); a system's queues follow the system's own object list, which can order
-  two ships differently from the slot order (`queueList`); the unit queue choice compares
-  the total number of units in each colony's cargo, whatever their kind.
+  owner is below None, and a kept one counts its planet a second time in its owner's
+  strength there.
+- **Exploration** (`planExploration`): the explorers, their point list and the Seek-then-Warp
+  order of spec 05 §7.5. As the rule says, ships whose first order is a Seek explore too, so
+  the Exploration minister takes some of the ships the Defense and Attack ministers ordered
+  that turn.
+- **Territory claims** are rewritten first thing in the Politics minister's run, so a system
+  received in a trade it accepts stays claimed until the next rewrite; the ministers after
+  it plan with the claims the state update used.
+- **The economy step's lists** (`TurnContext::aiColonyTargets`): the first empire whose
+  economy-step ministers run plans with the colonization targets of the last empire's
+  start-of-turn step.
+- **Queue list details** (question 60): a cloaked yard ship's yard does not count toward K;
+  a system's queues follow the system's own object list (`Vehicle::arrival`, a new saved
+  field with `GameState::arrivals`: the save format changes with them); the unit queue choice
+  compares every unit in each colony's cargo.
+
+OpenSE4 choices where the text leaves room are spec 05 question 64: a turn-based Seek's
+end, the Exploration minister's stop when no point is free, an explorer on its point, the
+movement a turn-based explorer compares, the fleets' Seek and Warp when they explore, the
+borrowed targets' settle test, and where a planet made during play goes on its system's
+list.
 
 On 2026-10-01 spec 05 questions 53–56 were settled from the executable and the captures.
 The rows found then were implemented that day (`ai.cpp`, `ai_anger.cpp`, `ai_economy.cpp`):
 the exploration frontier holds only warp points into unexplored systems, whatever we know of
 the link, for the state machine, the explorers, the Not Connected test and the Open Warp
-Point gate; the territory is the set of claimed systems, which the Politics minister now
-rewrites after the empire's start-of-turn ministers (`ai::claimTerritory`), so the state
-update and those ministers use the claims of the previous turn, and its exclusions (another
+Point gate; the territory is the set of claimed systems, which the Politics minister
+rewrites (`ai::claimTerritory`; since 2026-10-02 first thing in its run), so the state
+update and the ministers use the claims of the previous turn, and its exclusions (another
 computer player's home system, avoided systems) apply only to neighbour systems; a human
 whose Politics minister is on claims by the same rule; colonization danger adds 1 per
 non-friendly empire beyond each warp point; a Defense Base goes to the K-th queue of the
@@ -548,8 +555,9 @@ OpenSE4 choices (spec 05 question 60, answered from the executable on 2026-10-02
 ministers after Politics read the territory only through the lists, and a queued base item
 counts its count, as in the original; a system's queues follow the game's object order, a
 ship's yard works while its component is intact and not mothballed, and units "of that kind"
-share the vehicle type, which differ (the queue list details above). The golden games of `tests/test_determinism.cpp` moved
-to seed 39, whose games still cover battles, events, intelligence and politics.
+share the vehicle type, which differ (the queue list details above, implemented on
+2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, and to
+seed 19 on 2026-10-02, whose games still cover battles, events, intelligence and politics.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state

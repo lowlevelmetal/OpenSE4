@@ -216,8 +216,13 @@ void advanceOrderContext(const GameState& s, OrderContext& ctx, const Order& o) 
             ctx.carriesPopulation = false;  // the ship is consumed
             break;
         case OrderKind::Attack:
+        case OrderKind::Seek:
             if (const Vehicle* t = s.vehicle(o.vehicle)) ctx.at = t->location;
             else if (validObject(s, o.object)) ctx.at = locationOf(s.galaxy, o.object);
+            else if (o.kind == OrderKind::Seek && validLocation(s, o.location)) ctx.at = o.location;
+            break;
+        case OrderKind::JoinFleet:
+            if (const Fleet* f = o.amount >= 0 ? s.fleet(FleetId{o.amount}) : nullptr) ctx.at = f->location;
             break;
         case OrderKind::LoadCargo:
         case OrderKind::DropCargo:

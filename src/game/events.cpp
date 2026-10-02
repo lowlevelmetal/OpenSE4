@@ -878,6 +878,7 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             // The ship moves first and only then leaves its fleet: the fleet's
             // location goes with it, so the rest of the fleet is disbanded and
             // loses its orders (spec 05 §4, spec 03 §9, confirmed: binary).
+            if (dest != v->location.system) s.arrived(*v);
             v->location = {dest, sector};
             fleetMemberMoved(s, *v);
             detachFromFleet(s, *v);

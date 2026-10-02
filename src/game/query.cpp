@@ -4,6 +4,8 @@
 #include "game/xmath.hpp"
 
 #include <algorithm>
+#include <format>
+#include <string>
 
 namespace opense4::game {
 
@@ -20,6 +22,15 @@ std::vector<ObjectId> planetsAt(const GameState& s, Location where) {
 uint64_t objectOrderKey(const GameState& s, ObjectId planet) { return s.galaxy.object(planet).slot; }
 
 uint64_t objectOrderKey(const Vehicle& v) { return v.slot; }
+
+std::string fleetJoinProblem(const Rules& r, const GameState& s, const Vehicle& v) {
+    switch (vehicleType(r, s, v)) {
+        case ruleset::VehicleType::Ship:
+        case ruleset::VehicleType::Fighter: return {};
+        case ruleset::VehicleType::Base: return r.settingFlag("Bases Can Join Fleets", false) ? std::string{} : std::string("Bases cannot join fleets");
+        default: return std::format("{} cannot join a fleet", v.name);
+    }
+}
 
 const Colony* ownColonyAt(const GameState& s, EmpireId empire, Location where) {
     for (ObjectId o : planetsAt(s, where))

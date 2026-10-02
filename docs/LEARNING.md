@@ -480,8 +480,9 @@ space), `fleet` (the selected ship is in one of the player's fleets; `ship` hold
 `explore`, `colonize`, `sentry`, `load-cargo`, `drop-cargo`, `launch-units`,
 `recover-units`, `cloak`, `decloak`, `sweep-mines`, `use-component`,
 `stellar-manipulation`, `move-to-waypoint`, `self-destruct`, `use-facility`,
-`convert-resources`, and the Scrap window's orders of a simultaneous game: `scrap`,
-`analyze`, `mothball`, `unmothball`, `retrofit`, `fire-on`.
+`convert-resources`, the Scrap window's orders of a simultaneous game: `scrap`,
+`analyze`, `mothball`, `unmothball`, `retrofit`, `fire-on`, and the ministers' own
+`seek` and `join-fleet`.
 
 **Battle order kinds** (`battle_order`): `move`, `fire`, `toggle-weapon`, `launch`,
 `launch-fighters`, `drop-troops`, `ram`, `capture`, `set-leader`, `set-member`,

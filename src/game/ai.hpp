@@ -14,11 +14,11 @@
 // ministers in two groups:
 //   1. at the start of the turn, for each empire in turn, before movement:
 //      the AI state update (updateAiState), the political step
-//      (politicalStep: anger), then Politics, Troops, Transports,
-//      Colonization, Space Yard Ships, Carriers, Mines/Satellites/Drones,
-//      Fleets, Defense, Attack, Exploration, Patrol, Resupply, Repair, Scrap,
-//      Retrofit and Stellar Manipulation -> planOrders(); then the Politics
-//      minister's territory claims (claimTerritory);
+//      (politicalStep: anger), the Politics minister's territory claims
+//      (claimTerritory), then Politics, Troops, Transports, Colonization,
+//      Space Yard Ships, Carriers, Mines/Satellites/Drones, Fleets, Defense,
+//      Attack, Exploration, Patrol, Resupply, Repair, Scrap, Retrofit and
+//      Stellar Manipulation -> planOrders();
 //   2. at the start of the empire's end-of-turn processing, before income:
 //      Design, Research, Intelligence, Facility Construction, Ship
 //      Construction and Facility Construction again (the first facility pass
@@ -76,13 +76,24 @@ std::vector<Command> planOrders(const Rules& r, const GameState& s, EmpireId e);
 // Group 1 in its two parts, as the turn runs it (spec 05 §8 step 4): the
 // Politics minister alone, whose messages take effect as they are sent, then
 // the other ministers, which already see the treaties it changed.
+// `territory`: the claims the state update used, before the Politics
+// minister rewrote them (claimTerritory); the ministers after Politics read
+// the territory only through the lists built then (spec 05 §7.2, question 60).
 std::vector<Command> planPoliticsOrders(const Rules& r, const GameState& s, EmpireId e);
-std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e);
+// `colonyTargets` receives the colonization targets of the lists, in order
+// (TurnContext::aiColonyTargets).
+std::vector<Command> planOrdersAfterPolitics(const Rules& r, const GameState& s, EmpireId e, const std::vector<SystemId>* territory = nullptr,
+                                             std::vector<ObjectId>* colonyTargets = nullptr);
 // Group 2 above: Design, Research, Intelligence and the construction ministers.
 // `unitReserve`: the percentage the vehicle list holds back for units, which
 // the turn passes on (the reserve quirk of spec 05 §7.5 "Units file"; see
 // unitReserveLeft).
-std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0);
+// `colonyTargets`: the colonization targets left by another step's lists
+// (TurnContext::aiColonyTargets), which the economy step then plans with
+// instead of its own; whether the empire can settle each is its own test
+// (inferred, spec 05 Q64).
+std::vector<Command> planEconomyStep(const Rules& r, const GameState& s, EmpireId e, int64_t unitReserve = 0,
+                                     const std::vector<ObjectId>* colonyTargets = nullptr);
 // The reserve quirk (spec 05 §7.5 "Units file", confirmed: binary): the
 // reserve is one value shared by all empires. Each empire's start-of-turn AI
 // step resets it to 0; the units step of every empire whose Ship
@@ -170,14 +181,14 @@ void recordPoliticalStep(GameState& s, EmpireId e);
 void politicalStep(TurnContext& ctx);
 void politicalStep(TurnContext& ctx, EmpireId e, std::optional<uint32_t> eventsTurn);
 void politicalStep(TurnContext& ctx, EmpireId e, const PoliticalWindow& window);
-// after the empire's start-of-turn ministers, the Politics minister's claims
-// (spec 05 §7.2 "Territory"): when its Politics minister is on, the empire
-// claims its colony systems and their neighbours (detail::computeTerritory).
-// The original claims first thing in the Politics minister's run, after the
-// state update built its lists, and the other ministers plan with those
-// lists; claiming after them keeps the state update and this turn's ministers
-// on the claims of the previous turn. The political step's anger terms
-// already use the empire's new claim (§7.3);
+// then, first thing in the Politics minister's run, its claims (spec 05 §7.2
+// "Territory", confirmed: binary): when its Politics minister is on, the
+// empire claims its colony systems and their neighbours
+// (detail::computeTerritory). The state update built its lists on the claims
+// of the previous turn, and the other ministers plan with those lists
+// (planOrdersAfterPolitics' `territory`). A System item of a trade accepted
+// later in the run moves a claim until the receiver's next rewrite. The
+// political step's anger terms use the empire's new claim (§7.3);
 void claimTerritory(TurnContext& ctx, EmpireId e);
 // and once per turn after combat and every empire's end-of-turn processing
 // (combat counts, traced spies, mine fields met).

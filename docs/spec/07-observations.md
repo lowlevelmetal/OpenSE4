@@ -847,6 +847,67 @@ the changes close about half of the gap in Defend (Short Term) and a quarter of 
 Infrastructure; the rest goes with the original's larger fleets, its extra ships and
 resources and the faster removal of hostile colonies (spec 05 questions 61–63).
 
+### Pace after the movement rules (OpenSE4, 2026-10-02)
+
+Measured again once the engine followed the rules this session settled (spec 05 §7.2, §7.5,
+question 60): one-turn Seek movement orders and the stored Attack, the Join Fleet pursuit,
+the attack candidates' test, the explorers and their point list, the claim rewrite first in
+the Politics minister's run, the economy step's borrowed colonization list, and the queue
+list's yard and order details (commits 59652e4 to 28fad22; the choices the text leaves open
+are spec 05 question 64). The set-up and records are those of "Pace observed under a
+debugger": seeds 1–24, a Small quadrant, five computer players, simultaneous turns, 100
+`processTurn` calls. Original / before (41f7d8b) / after:
+
+| | Original | Before | After |
+|---|---|---|---|
+| Defend (Short Term), turns 26–50 / 51–100 / all | 45 / 63 / 46 % | 46 / 76 / 53 % | 44 / 72 / 51 % |
+| Infrastructure, turns 26–50 / 51–100 / all | 14 / 16 / 12 % | 11 / 5 / 7 % | 10 / 8 / 8 % |
+| Exploration, turns 1–25 / all | 80 / 37 % | 72 / 34 % | 75 / 35 % |
+| Empires ever in Infrastructure | 10 of 15 | 63 of 120 | 63 of 120 |
+| Defend turns in spells of 20+ / 5–19 turns | 35 / 43 % | 63 / 25 % | 64 / 25 % |
+| Defend spells ending in Exploration / Infrastructure | 75 / 25 % | 67 / 32 % | 67 / 32 % |
+| Enemy-in-territory list not empty, turns 51–100 | 63 % | 76 % | 72 % |
+| Per update: colonies at war / no treaty, ships at war / no treaty | 1.01 / 0.32, 0.92 / 0.14 | 1.77 / 0.56, 1.56 / 0.40 | 1.84 / 0.28, 1.46 / 0.23 |
+| Defend turns with a colony at war listed / with ships only | 46 / 42 % | 61 / 25 % | 64 / 27 % |
+| Listed colonies at war gone 10 turns later, turns 51–100 | 33 % | 13 % (190 of 1,456) | 15 % (236 of 1,626) |
+| Attack ships in fleets, turns 21–40 / 41–60 / 61–80 / 81–100 | 81 / 74 / 78 / 77 % | 68 / 51 / 45 / 44 % | 79 / 73 / 70 / 69 % |
+
+Means per empire at turns 25 / 50 / 75 / 100:
+
+| | Original | Before | After |
+|---|---|---|---|
+| Colonies | 5.3 / 11.3 / 14.7 / 15.5 | 5.1 / 10.4 / 13.8 / 15.7 | 5.3 / 10.4 / 13.9 / 15.6 |
+| Research | 6.6k / 11.0k / 13.8k / 13.8k | 5.5k / 10.3k / 12.8k / 14.1k | 5.5k / 10.7k / 13.2k / 14.6k |
+| Resources produced | 13.9k / 23.6k / 32.9k / 36.3k | 12.3k / 20.7k / 25.9k / 30.4k | 12.6k / 21.4k / 26.4k / 29.6k |
+| Ships | 3.4 / 8.3 / 14.4 / 19.7 | 3.5 / 7.6 / 10.8 / 13.1 | 3.4 / 7.3 / 11.8 / 14.0 |
+| Bases | 0.0 / 0.5 / 0.6 / 0.6 | 0.2 / 0.2 / 0.1 / 0.1 | 0.2 / 0.2 / 0.1 / 0.2 |
+
+- **Fleets** now hold the original's share of the attack ships (69–79 % against 74–78 %),
+  and the hostile ships listed in our territories fell by about a fifth (on 120 seeds,
+  below): the warships are free again at each start of turn and the recruits reach their
+  fleets.
+- **Defend (Short Term) barely moved.** On these 24 seeds the share fell by 2 points over
+  all turns and 4 over turns 51–100, but the spread between seeds is as large. On 120 seeds
+  (1–120, the same set-up; before / after) the shares are 50 / 50 % of all turns and 72 /
+  72 % of turns 51–100, Infrastructure 8 / 7 % and 6 / 7 %, 332 / 307 of 600 empires ever in
+  Infrastructure, the list not empty 72 / 72 % of turns 51–100, with 1.95 / 1.59 hostile
+  ships and 2.14 / 2.21 hostile colonies per update, and 16 / 15 % of the listed colonies at
+  war gone ten turns later. So the 24 seeds of "Pace observed under a debugger" sit 3–4
+  points above our long-run Defend share; against the original's three games the gap is
+  about 4 points over all turns and 9 over turns 51–100.
+- **Rule by rule** (120 seeds, paired by seed; Defend over all turns / turns 51–100,
+  standard errors about 1 point): the one-turn orders with the Join Fleet pursuit −1.6 /
+  −2.0 points, Infrastructure +0.5; the attack candidates' test Infrastructure +0.6 more,
+  Defend unchanged; the exploration rules +1.5 / +1.1 back, Infrastructure −1.9, Exploration
+  +0.8; the remaining rules nothing measurable. The explorers' rule takes, besides idle ships,
+  those whose first order is a Seek, so the Exploration minister, which acts after Defense and
+  Attack, sends some of their ships exploring instead (spec 05 §7.5): a scratch run in which
+  it left the ships ordered that turn alone gave −2.2 / −1.8 points with Exploration +4.1.
+- **What remains** is the hostile colonies at war in our territories: 1.8 per update against
+  the original's 1.0, removed at 15 % within ten turns against 33 % (spec 05 question 63),
+  with fewer ships and resources from turn 75 (questions 61 and 62). The bases follow the
+  Infrastructure time, which did not grow.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.

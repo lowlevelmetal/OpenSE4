@@ -1,13 +1,17 @@
 // Computer player: the Colonization and Exploration ministers (spec 05 §7.5,
-// confirmed: binary unless marked). There is no scout design type: idle
-// attack ships explore.
+// confirmed: binary unless marked). There is no scout design type: attack
+// ships and loaded carriers explore.
 
 #include "game/ai_planner.hpp"
+#include "game/movement.hpp"
+#include "game/movement_internal.hpp"
 #include "game/query.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <map>
 #include <tuple>
+#include <vector>
 
 namespace opense4::game::ai::detail {
 
@@ -29,6 +33,10 @@ int damagedComponents(const Rules& r, const GameState& s, const Vehicle& v) {
 }
 
 } // namespace
+
+int movementNow(const Planner& p, const Vehicle& v) {
+    return p.st.options.simultaneous ? v.movement : movement::detail::turnMovement(p.r, p.st, v);
+}
 
 void planColonization(Planner& p) {
     if (!p.on(Minister::Colonization)) return;
@@ -79,57 +87,74 @@ void planColonization(Planner& p) {
     }
 }
 
+// Spec 05 §7.5 "Exploration" (confirmed: binary).
 void planExploration(Planner& p) {
     if (!p.on(Minister::Exploration) || p.neutral) return;
-    // Explorers: idle attack ships, and loaded carriers and drone carriers,
-    // outside fleets with fewer than 4 damaged components. A hand-made scout
-    // is an Attack Ship (spec 05 §7.5 design types).
+    // Nothing is done while no free frontier point is left (§7.2). (So the
+    // rule that fills an empty list with every frontier point when the Attack
+    // Ships outnumber them three times over never applies; spec 05 Q64.)
+    if (p.sit.freeFrontier.empty()) return;
+
+    // Explorers, in the game's object order: Attack Ships and Attack Bases (a
+    // base cannot move, so its orders do nothing), and Carriers and Drone
+    // Carriers whose cargo holds their kind of unit and is more than half
+    // full; each in normal status, with fewer than 4 destroyed parts and
+    // supply above 0, outside fleets, with no orders or a Seek first.
     std::vector<VehicleId> explorers;
-    for (VehicleId id : p.ownVehicles(Minister::Exploration)) {
+    for (VehicleId id : vehiclesInObjectOrder(p.st)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || !p.idle(*v) || v->status != VehicleStatus::Normal) continue;
+        if (!v || v->count <= 0 || !p.controlsVehicle(*v, Minister::Exploration) || v->fleet.valid()) continue;
+        if (v->status != VehicleStatus::Normal || v->supply <= 0) continue;
+        if (!v->orders.empty() && v->orders.front().kind != OrderKind::Seek) continue;
         const DesignInfo& di = p.info(v->design);
-        if (di.stats.movement <= 0) continue;
-        const bool loaded = !v->cargo.units.empty();
-        const bool fits = di.role == Role::Attack || ((di.role == Role::Carrier || di.role == Role::DroneCarrier) && loaded);
+        bool fits = di.aiType == "Attack Ship" || di.aiType == "Attack Base";
+        if (di.role == Role::Carrier || di.role == Role::DroneCarrier) {
+            const ruleset::VehicleType kind = di.role == Role::Carrier ? ruleset::VehicleType::Fighter : ruleset::VehicleType::Drone;
+            const bool carries = std::any_of(v->cargo.units.begin(), v->cargo.units.end(), [&](const UnitStack& u) {
+                return u.count > 0 && p.r.hull(p.st.design(u.design).hull).type == kind;
+            });
+            const int capacity = vehicleCargoCapacity(p.r, p.st, *v);
+            fits = carries && capacity > 0 && cargoSpaceUsed(p.r, p.st, v->cargo) * 2 > capacity;
+        }
         if (!fits || damagedComponents(p.r, p.st, *v) >= 4) continue;
         explorers.push_back(id);
     }
-    if (explorers.empty() || p.sit.frontier.empty()) return;
+    if (explorers.empty()) return;
 
-    // How many ships each frontier point takes: free points one; when the
-    // explorers outnumber the free points 3, 5 and 8 times over, one more each.
-    std::map<uint32_t, int> room;
-    for (ObjectId wp : p.sit.freeFrontier) room[wp.value] = 1;
-    const size_t free = p.sit.freeFrontier.size();
-    int extra = 0;
-    for (size_t times : {3u, 5u, 8u}) extra += explorers.size() > times * free;
-    for (ObjectId wp : p.sit.frontier) room[wp.value] += extra;
-
-    for (VehicleId id : explorers) {
-        const Vehicle* v = p.st.vehicle(id);
-        const Location at = v->location;
-        const std::vector<int> jumps = p.jumpsFrom(at.system);
-        std::optional<ObjectId> best;
-        std::tuple<int, int, uint32_t> bestKey{};
-        for (ObjectId wp : p.sit.frontier) {
-            if (room[wp.value] <= 0) continue;
-            const SpaceObject& obj = p.st.galaxy.object(wp);
-            const int j = jumps[obj.system.index()];
-            if (j == kUnreachable) continue;
-            const int within = obj.system == at.system ? chebyshev(obj.sector, at.sector) : 0;
-            const std::tuple<int, int, uint32_t> key{j, within, wp.value};
-            if (!best || key < bestKey) {
-                best = wp;
-                bestKey = key;
-            }
+    // The point list: the free frontier points in list order. With A the
+    // empire's Attack Ships (all of them), when A exceeds 5 × the list's
+    // length each point of the list as it was is entered once more while A
+    // still exceeds 5 × the current length, and once more again while A
+    // exceeds 8 × it.
+    int64_t attackShips = 0;
+    for (const Vehicle& v : p.st.vehicles) attackShips += v.owner == p.id && v.count > 0 && p.info(v.design).aiType == "Attack Ship";
+    std::vector<ObjectId> list = p.sit.freeFrontier;
+    if (attackShips > 5 * static_cast<int64_t>(list.size())) {
+        const std::vector<ObjectId> was = list;
+        for (ObjectId wp : was) {
+            if (attackShips > 5 * static_cast<int64_t>(list.size())) list.push_back(wp);
+            if (attackShips > 8 * static_cast<int64_t>(list.size())) list.push_back(wp);
         }
-        if (!best) continue;
-        --room[best->value];
-        const SpaceObject& obj = p.st.galaxy.object(*best);
-        std::vector<Order> orders;
-        if (obj.system != at.system) orders.push_back(moveOrder(locationOf(p.st.galaxy, *best)));
-        orders.push_back(warpThrough(p.st, *best));
+    }
+
+    // Each explorer takes the point with the smallest travel distance (the
+    // earlier one on a tie). On the point itself it gets no order this turn.
+    // Otherwise a Seek toward the point's sector, and the Warp through it when
+    // its movement points now (what its last movement left) reach the
+    // distance (movementNow); the point leaves the list. A Seek lasts one
+    // movement phase, so an explorer that cannot reach its point this turn is
+    // planned again.
+    for (VehicleId id : explorers) {
+        if (list.empty()) break;
+        const Vehicle* v = p.st.vehicle(id);
+        std::vector<Location> goals;
+        for (ObjectId wp : list) goals.push_back(locationOf(p.st.galaxy, wp));
+        const auto near = movement::findPathToNearest(p.r, p.st, p.id, v->location, goals);
+        if (!near || near->path.length == 0) continue;
+        const ObjectId wp = list[near->goal];
+        std::vector<Order> orders{seekOrder(goals[near->goal])};
+        if (movementNow(p, *v) >= near->path.length) orders.push_back(warpThrough(p.st, wp));
+        list.erase(list.begin() + static_cast<std::ptrdiff_t>(near->goal));
         p.setOrders(id, std::move(orders));
     }
 }
