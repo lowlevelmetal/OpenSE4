@@ -17,14 +17,15 @@ static_assert(std::endian::native == std::endian::little, "OpenSE4 assumes a lit
 static_assert(sizeof(size_t) == 8, "OpenSE4 assumes 64-bit sizes");
 
 // The scalar types whose size is the same everywhere: bool, the fixed-width
-// integers and enums. `long` is 32 bits on Windows and 64 on Linux, and
-// `wchar_t` 16 and 32: the Windows builds reject them here (on Linux `long`
-// is int64_t and cannot be told apart).
+// integers, size_t (64 bits, asserted above) and enums. `long` is 32 bits on
+// Windows and 64 on Linux and macOS, and `wchar_t` 16 and 32: the Windows and
+// macOS builds reject them here (on Linux `long` is int64_t and cannot be
+// told apart). On macOS size_t is `unsigned long`, not uint64_t.
 template <class T>
 concept FixedWidthScalar =
     std::is_same_v<T, bool> || std::is_same_v<T, char> || std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t> ||
     std::is_same_v<T, int16_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t> ||
-    std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_enum_v<T>;
+    std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t> || std::is_same_v<T, size_t> || std::is_enum_v<T>;
 
 // FNV-1a, used for state checksums (determinism tests, desync detection).
 class Hasher {

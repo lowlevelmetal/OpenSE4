@@ -115,8 +115,9 @@ private:
     std::string error_;
 };
 
-// bool, enums and the fixed-width integers (core/hash.hpp): the Windows builds
-// reject a `long` or `wchar_t` field, whose size differs between platforms.
+// bool, enums, size_t and the fixed-width integers (core/hash.hpp): the Windows
+// and macOS builds reject a `long` or `wchar_t` field, whose size differs
+// between platforms.
 template <class T>
 concept Scalar = FixedWidthScalar<T>;
 
