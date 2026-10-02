@@ -43,11 +43,13 @@ With no options, OpenSE4 looks in every Steam library it can find:
 | Platform | Steam roots searched |
 |---|---|
 | Linux | `~/.local/share/Steam`, `~/.steam/steam`, Flatpak Steam (`~/.var/app/com.valvesoftware.Steam/...`) |
-| Windows | `%ProgramFiles(x86)%\Steam`, `C:\Program Files\Steam` |
+| Windows | the Steam folder the registry names (any drive), `%ProgramFiles(x86)%\Steam`, `C:\Program Files\Steam` |
 | macOS | `~/Library/Application Support/Steam` |
 
 For each root it also reads `steamapps/libraryfolders.vdf`, so libraries on other
-drives are found. It then looks for `steamapps/common/Space Empires IV Deluxe`.
+drives are found. It then looks for `steamapps/common/Space Empires IV Deluxe`. Folder
+and file names are matched in any case on every platform, as Windows does, so a copy
+whose folders are spelled `DATA` or `data` works on Linux too.
 
 If your copy is anywhere else, pass it explicitly. Any of these works: the game
 directory, its `se4/` subdirectory, or the `Data/` directory itself.
@@ -116,6 +118,12 @@ data directory. OpenSE4 never writes to the game directory.
 | Windows | `%APPDATA%\OpenSE4\` |
 | macOS | `~/Library/Application Support/OpenSE4/` |
 
+The environment variable `OPENSE4_USER_DIR` names another folder for all of this (the
+tests use it, and it serves a portable install). Every run of the game writes its log to
+`opense4.log` there, replacing the last one: on Windows, where the game has no console,
+that file is where its messages are, including any file of your install it could not
+find ("Not in the installed game: ...").
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -124,3 +132,5 @@ data directory. OpenSE4 never writes to the game directory.
 | Black window or crash at startup | Try `--renderer=opengl`. With the Vulkan SDK installed, `--validation` shows driver errors. |
 | Text looks wrong in names | The data files are Latin-1 and are converted to UTF-8 on load. Report any file that still looks wrong. |
 | A mod fails to load | Run `opense4-datacheck` on its data directory. The errors show the file and line. |
+| No movement line after Move To | The line is the per-computer option "Display Ship Movement Lines" (Game Menu → Options, or Ctrl+L), off on a fresh install as in the original. Starting a new simultaneous game switches it on; joining one does not. It shows for the ship, base, unit group or fleet whose report is open. |
+| Something looks or behaves differently on another computer | Compare the per-computer settings first (`classic_settings.toml` and `settings.toml` in the folder above), then `opense4.log`. The game itself plays the same on every platform. |

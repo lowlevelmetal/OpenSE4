@@ -295,15 +295,84 @@ the real game is never changed.
 
 ## Determinism
 
-- **Turn resolution uses integer math only.** No floats, and no wall-clock time.
-- **Iteration order is fixed.** Containers are sorted by id, and results never depend
-  on hash-map order.
+- **Turn resolution uses integer math only.** No floats, and no wall-clock time. The
+  rules the original computes in floating point use `xmath::Ext`, an integer emulation of
+  the x87 extended format (`xmath.hpp`). Galaxy generation is integer-only too.
+- **Iteration order is fixed.** Containers are sorted by id, every sort whose result
+  matters has a total order (ties broken by id or data order; `std::sort` leaves ties in
+  an order that differs between standard libraries), and nothing depends on hash-map or
+  directory order.
 - **All randomness comes from `GameState::rng`**, or from streams forked from it. The
-  AI derives its own stream from the seed, the turn and the empire.
+  AI derives its own stream from the seed, the turn and the empire. Displays that need a
+  random choice use their own generator (`movement::planRoute`). One draw per statement:
+  two calls that draw or change state are never the arguments of one call or the
+  operands of one operator, whose order compilers choose differently.
 - **One seed plus one set of orders gives the same next state on every platform.**
-  Galaxy generation uses floating point, so multiplayer sends the generated state
-  rather than the seed. The integration test plays full all-AI games twice and
-  compares checksums every turn.
+  Network games still send the host's state rather than the seed. The integration test
+  plays full all-AI games twice and compares checksums every turn, and the golden test
+  below pins the results across compilers.
+
+## Same on every platform
+
+Players on Linux and Windows play one game together, so both builds must compute the
+same game and draw the same picture. The rules below keep it that way. Everything here
+was checked on 2026-10-01: the Linux build (GCC), the Windows build (MinGW-w64) under
+Wine, and a Clang 21 + libc++ build of the tests.
+
+- **Golden checksums.** `tests/test_determinism.cpp` plays a simultaneous and a
+  turn-based game of four computer players for 100 turns (battles, frequent events,
+  intelligence, diplomacy) and fights ten varied battles with a ground combat. It
+  compares the state checksums with constants, and on a mismatch names the first turn
+  and the part of the state that differs. CI runs it with GCC, Clang, MSVC and
+  MinGW-w64. After a deliberate rules change, print the new values with
+  `OPENSE4_PRINT_GOLDEN=1 opense4_tests -tc="determinism*" -s`. With the player's own
+  data, the same PBEM game played for 15 turns by the Linux and the Windows
+  `opense4-server` gave identical states.
+- **Engine code.** It follows the rules of the section above. Serialized and hashed
+  values are fixed-width (`FixedWidthScalar` in `core/hash.hpp`: the Windows builds
+  reject `long` and `wchar_t`), and little-endian 64-bit targets are asserted.
+  Character classes are ASCII-only, never the C library's locale-dependent `isalpha` and
+  the like.
+- **Files.** Data files parse the same everywhere: CR is dropped and Windows-1252 is
+  converted to UTF-8. Install files are found in any case, as on Windows
+  (`ruleset::childIgnoringCase`, the `InstallFiles` index). A file the game wants but
+  cannot find is logged once (`InstallFiles::noteMissing`); the stock install has none.
+  Our own files have the same bytes on every platform:
+  - saves, PBEM files and network messages use a little-endian archive;
+  - the settings are TOML written in binary, with floats formatted alike by every
+    compiler (`TOML_FLOAT_CHARCONV=0`);
+  - the history files end their lines in CR LF.
+
+  Paths are UTF-8 everywhere. The Windows programs carry a manifest with the UTF-8 code
+  page (`packaging/windows/opense4.manifest`), and stb and dr_mp3 open UTF-8 or wide
+  names. This was checked with an install under a folder with a non-ASCII name.
+- **Picture.** Vulkan and OpenGL share the shader, blending, samplers and UNORM
+  framebuffer; Vulkan never picks an sRGB-encoding swapchain when another format is
+  offered. `tools/render_scenes.sh` renders ten scenes: the main window at both layouts,
+  Planets, Research, Create Design, Tactical and Strategic Combat, the manual, a lesson
+  step and a small window. They are bit-identical between the Linux build and the
+  Windows build under Wine, with either renderer. Vulkan and OpenGL differ only by GPU
+  rounding, at most 1/255 in antialiased or filtered pixels, plus about a dozen glyph
+  edges of the manual's text (up to 21/255). Different GPUs round differently anyway.
+  Screenshot runs use a fixed frame time and no pointer, so their pictures repeat
+  exactly.
+- **Display scaling.** The classic frame scales itself to the window, and the desktop's
+  scale never scales its style or text again (`ClassicMode::restyle`). Without that, a
+  Windows desktop at 125 % or 150 % made all classic text that much larger than on Linux.
+  The automatic 800×600 / 1024×768 choice reads the desktop width in logical units, as
+  the original sees it on a scaled Windows desktop. Lines drawn in frame units scale
+  with the frame. A few ImGui lines in windows (map grids, rules) stay one framebuffer
+  pixel at any scale, the same on every platform.
+- **Input and timing.** AltGr counts as Alt everywhere (`altGrAsAlt`; Linux reported it
+  as a plain key). A minimized window keeps a network game going (`Mode::background`;
+  Windows reports minimizing, and the host dropped such a client after a minute).
+  Nothing that changes the game depends on frame time or the wall clock; the tactical
+  map scrolls by time, not per frame.
+- **Not the same.** These differences remain:
+  - the default window size (1600×900) is in pixels on Windows and in points on
+    Wayland and macOS; the frame fills the window either way;
+  - GPU rounding, as above;
+  - MSVC builds are checked in CI only (Clang was also checked locally, with libc++).
 
 ## Multiplayer
 

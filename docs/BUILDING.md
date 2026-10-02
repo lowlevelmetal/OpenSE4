@@ -82,6 +82,11 @@ next to the executable.
 You can also open the source folder directly in Visual Studio ("Open Folder"), which
 reads `CMakePresets.json`.
 
+Every Windows program carries an application manifest that sets the UTF-8 code page
+(`packaging/windows/opense4.manifest`, honoured from Windows 10 1903 on), so file names
+with letters outside ASCII work as on Linux. `.gitattributes` turns off line-end
+conversion, so a clone with `core.autocrlf` builds the same program as on Linux.
+
 ## macOS
 
 ```sh
@@ -235,7 +240,23 @@ OPENSE4_CLASSIC_DATA=auto ./build/debug/tests/opense4_tests  # + checks against 
 By default the tests use only the original fixtures in `tests/fixtures/` and
 `tests/engine_fixture.cpp`. Setting `OPENSE4_CLASSIC_DATA` to `auto`, or to a data
 directory, also runs checks against your installed game data. Those checks never
-copy anything into the repository.
+copy anything into the repository. Each test run uses a scratch user data folder
+(`OPENSE4_USER_DIR`), so tests never touch your own settings, saves or history.
+
+`test_determinism.cpp` compares fixed games and battles with golden checksums, so every
+compiler must compute exactly the same game (docs/ENGINE.md, "Same on every
+platform"). If a deliberate rules change moves them, print the new values with
+`OPENSE4_PRINT_GOLDEN=1 ./build/debug/tests/opense4_tests -tc="determinism*" -s` and
+paste them in. A failure on one compiler only means the engine depends on something
+that compiler does differently; the message names the first turn and part of the state
+that differ.
+
+The Windows tests also run under Wine:
+
+```sh
+cmake --preset dist-windows && cmake --build --preset dist-windows
+WINEDLLOVERRIDES="winemenubuilder.exe=d" wine build/dist-windows/tests/opense4_tests.exe
+```
 
 ## Continuous integration
 
@@ -245,7 +266,7 @@ installed copy stay off, and the installed programs are only started with `--hel
 
 | Job | What it checks |
 |---|---|
-| Linux / GCC debug, Clang debug | The `debug` preset on Ubuntu 26.04 with the distribution's SDL3, warnings as errors; the unit tests |
+| Linux / GCC debug, Clang debug | The `debug` preset on Ubuntu 26.04 with the distribution's SDL3, warnings as errors; the unit tests, the golden determinism checksums among them (every job checks them) |
 | Linux / GCC ASan+UBSan | The unit tests built with the `asan` preset, warnings as errors; they stop at the first memory error, leak or undefined behaviour |
 | Windows / MSVC release | The `release` preset with Visual Studio 2022 and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
@@ -279,3 +300,16 @@ SDL_VIDEO_DRIVER=offscreen ./build/debug/opense4 --quick-start=Terran --turn-sty
 ```
 
 Without an installed copy the client logs why and exits with status 1.
+
+Screenshot runs use a fixed frame time and keep the pointer off the window, so the same
+command gives the same picture on every machine. `--select=moving` (or `fleet`, or a
+vehicle id) selects one of your vehicles after `--turns`, for example to show its
+movement line. The Windows build renders headless under Wine too, with Vulkan:
+
+```sh
+SDL_VIDEO_DRIVER=offscreen WINEDLLOVERRIDES="winemenubuilder.exe=d" wine build/dist-windows/opense4.exe \
+    --classic-dir="Z:/path/to/Space Empires IV Deluxe/se4" --quick-start=Terran --seed=7 --screenshot=Z:/tmp/win.png
+```
+
+`tools/render_scenes.sh` renders a set of scenes with a build and renderer and compares
+two such sets pixel by pixel (docs/ENGINE.md, "Same on every platform").
