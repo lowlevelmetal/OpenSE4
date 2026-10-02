@@ -71,6 +71,11 @@
   </content_rating>
 
   <releases>
+    <release version="0.5.0" date="2026-10-01" type="development">
+      <description>
+        <p>Same results and pictures on every platform, tutorials that guide each action, Analyze and Fire On, computer control, games that start without ships as the original does, and windows laid out as the original's.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-01" type="development">
       <description>
         <p>Battles shown as they are fought, round-by-round ground combat, colony cloaking, the missing colony and cargo orders, the original's fonts and pointers, and the 800x600 layout.</p>
