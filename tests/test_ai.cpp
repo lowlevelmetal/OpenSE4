@@ -3358,6 +3358,49 @@ TEST_CASE("ai: an attack candidate's value is the foreign ratings in its sector 
     CHECK(found);
 }
 
+TEST_CASE("ai: attack candidates are planets we could settle or whose owner is below None, and count twice in its strength") {
+    // Spec 05 §7.2 "Attack candidates" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, them{1u};
+    meet(s, me, them);
+    const ObjectId planet = homeworld(s, them).planet;
+    const SystemId sys = s.galaxy.object(planet).system;
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.location.system == sys; });
+    int theirColonies = 0;
+    for (const auto& c : s.colonies) theirColonies += c && c->owner == them && s.galaxy.object(c->planet).system == sys;
+    auto candidate = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 3);
+        bool found = false;
+        for (const ai::detail::Candidate& c : p.sit.candidates) found = found || c.planet == planet;
+        return std::pair{found, p.sit.hostile[sys.index()]};
+    };
+    // A planet we cannot settle (only breathable planets, and it is not breathable for us).
+    s.options.onlyBreathable = true;
+    s.galaxy.object(planet).atmosphere = s.empire(me).race.atmosphere == "Methane" ? "Oxygen" : "Methane";
+    REQUIRE_FALSE(ai::detail::canSettle(r, s, s.empire(me), s.galaxy.object(planet)));
+    for (const Treaty t : {Treaty::None, Treaty::NonAggression, Treaty::TradeAlliance}) {
+        s.empire(me).relation(them).treaty = t;
+        CHECK_FALSE(candidate().first);
+    }
+    // Below None: kept, and each kept planet adds 1 more to the hostile strength there.
+    for (const Treaty t : {Treaty::NonIntercourse, Treaty::War}) {
+        s.empire(me).relation(them).treaty = t;
+        const auto [found, hostile] = candidate();
+        CHECK(found);
+        CHECK(hostile == 2 * ai::detail::kStrengthScale * theirColonies);
+    }
+    // Not met: kept too (the owner is hostile, though not counted in the hostile strength).
+    s.empire(me).relation(them).contact = false;
+    CHECK(candidate().first);
+    // A planet we could settle is kept at any treaty.
+    s.empire(me).relation(them).contact = true;
+    s.empire(me).relation(them).treaty = Treaty::NonAggression;
+    s.options.onlyBreathable = false;
+    if (ai::detail::canSettle(r, s, s.empire(me), s.galaxy.object(planet))) CHECK(candidate().first);
+}
+
 TEST_CASE("ai: defend entries are ordered by jumps, our population at stake, planet sectors, then the threat") {
     using ai::detail::DefendEntry;
     auto entry = [](int id, int jumps, int64_t pop, bool planet, int64_t threat) {
@@ -3398,23 +3441,25 @@ TEST_CASE("ai: the 4-jump test starts on the 6th turn in the state and counts pe
     m.staging = home;
     s.empire(me).aiState = static_cast<int>(ai::AiState::PrepareForAttack);
     const Rules& r = engineRules();
-    // Our strength near the target (our home colony, 1) is not above 3 × theirs (1).
+    // Our strength near the target (our home colony, 1) is not above 3 × theirs
+    // (2: their homeworld, and once more as an attack candidate, spec 05 §7.2).
     s.empire(me).aiTurnsInState = 4;
     CHECK(ai::nextState(r, s, me) == ai::AiState::PrepareForAttack);
     s.empire(me).aiTurnsInState = 5;
     CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);
-    // Two points at home, and a second target near home: home counts once per target (4 > 3).
+    // Five points at home (two satellite groups of one, 2 each), and a second
+    // target near home: home counts once per target (10 > 6).
     const DesignId sat = addTestDesign(s, r, me, "Buoy", "Test Satellite Hull", {"Test Satellite Gun"});
-    addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
+    for (int i = 0; i < 2; ++i) addTestVehicle(s, r, sat, {home, Sector{kSystemCenter, kSystemCenter}}).count = 1;
     std::optional<SystemId> second;
     for (size_t i = 0; i < fromHome.size() && !second; ++i)
         if (SystemId{i} != home && SystemId{i} != enemyHome && fromHome[i] <= 4) second = SystemId{i};
     REQUIRE(second);
     const std::vector<int> fromSecond = ai::detail::jumpsOver(s, *second);
     REQUIRE(fromSecond[home.index()] <= 4);
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 2 is not above 3
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Infrastructure);  // one target: 5 is not above 6
     m.targets = {enemyHome, *second};
-    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 2 + 2 > 3, and the staging system is stronger
+    CHECK(ai::nextState(r, s, me) == ai::AiState::Attack);  // 5 + 5 > 6, and the staging system is stronger
 }
 
 TEST_CASE("ai: design names count the Design minister's designs and skip names any empire uses") {

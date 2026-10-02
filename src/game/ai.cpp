@@ -278,15 +278,26 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
         sit.enemyInTerritory.push_back({sys, c->owner, {}, c->planet});
     }
 
-    // Attack candidates: other empires' planets in systems we have explored,
-    // valued by the foreign ratings in the planet's sector plus its defence.
+    // Attack candidates (spec 05 §7.2, confirmed: binary): other empires'
+    // planets in systems we have explored, each one noticed, kept only when we
+    // could settle a planet of its kind (canSettle: the colony module for its
+    // surface and the game's breathable and home-type options) or its owner
+    // is below None with us (at War or Non-Intercourse, or not met). Each is
+    // valued by the foreign ratings in the planet's sector plus its defence,
+    // and only a kept one adds its rating + 1 (a planet's: 1) a second time
+    // to its owner's strength in that system, so to the hostile strength
+    // there when we have met that hostile owner.
     for (const auto& c : s.colonies) {
         if (!c || c->owner == id || !c->owner.valid() || c->owner.index() >= nEmp) continue;
         const SystemId sys = s.galaxy.object(c->planet).system;
         if (!e.hasExplored(sys) || !considered(sys)) continue;
         if (hostileTo(e, c->owner) && !notices(s, id, planetKey(c->planet))) continue;
+        const Relation& rel = e.relation(c->owner);
+        const bool belowNone = !rel.contact || rel.treaty == Treaty::War || rel.treaty == Treaty::NonIntercourse;
+        if (!belowNone && !canSettle(r, s, e, s.galaxy.object(c->planet))) continue;
         const int64_t value = foreignRatingsAt(r, s, id, locationOf(s.galaxy, c->planet)) + planetDefence(r, s, *c);
-        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), e.relation(c->owner).anger, value});
+        sit.candidates.push_back({c->planet, sys, c->owner, jumps(sys), rel.anger, value});
+        if (rel.contact && treatyIsHostile(rel.treaty) && s.empire(c->owner).alive) sit.hostile[sys.index()] += kStrengthScale;
     }
     std::sort(sit.candidates.begin(), sit.candidates.end(), [](const Candidate& a, const Candidate& b) {
         return std::tuple(a.jumps, -a.anger, -a.value, a.planet) < std::tuple(b.jumps, -b.anger, -b.value, b.planet);

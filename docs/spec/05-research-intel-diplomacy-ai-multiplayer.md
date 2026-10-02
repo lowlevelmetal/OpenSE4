@@ -1018,10 +1018,10 @@ High always notice.
   planet's sector that is not ours, whoever owns it, plus the planet's defence: its
   colony's `Planet - Shield Generation` total / 5, plus its population in millions div 100,
   plus, for every unit stack in its cargo, count × that unit design's summed best weapon
-  damage. The engine differs: `assess` (`ai.cpp`) keeps every noticed planet of another
-  empire, so its computers find attack candidates, and leave Infrastructure for Prepare for
-  Attack, more often; with the original's test a scratch run moved Infrastructure from 5 %
-  to 6 % of the turns 51–100 (spec 07 "Pace observed under a debugger").
+  damage. OpenSE4 follows this since 2026-10-02 (`assess`, `ai.cpp`; the settle test is
+  `canSettle`, and the second count goes to the hostile strength of the system when we have
+  met the owner); it used to keep every noticed planet of another empire, so its computers
+  found attack candidates, and left Infrastructure for Prepare for Attack, more often.
 - **Exploration frontier** (confirmed: binary): the warp points of explored systems whose
   far system we have not explored. Whether we know where the link leads plays no part: a
   warp point into a system we have explored by another route is never on the frontier,
