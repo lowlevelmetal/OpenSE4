@@ -12,9 +12,12 @@
 // design in place (cmd::EditDesign); Copy and Upgrade save a new design
 // (spec 03 §4.1).
 
+#include "client/classic/screens/colony_widgets.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
+#include "client/classic/screens/list_widgets.hpp"
 #include "client/classic/screens/screens.hpp"
+#include "client/classic/widgets.hpp"
 
 #include "datafile/datafile.hpp"
 #include "game/design.hpp"
@@ -24,6 +27,9 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -54,14 +60,8 @@ void portrait(UiContext& ui, const Sprite& s) {
     image(ui, s, {128, 128});
 }
 
-std::string sizeText(const game::DesignStats& st) { return std::format("{} / {} kT", st.tonnageUsed, st.tonnageMax); }
-
 std::string shieldsText(const game::DesignStats& st) {
     return st.phasedShields > 0 ? std::format("{} + {} phased", st.shields, st.phasedShields) : std::to_string(st.shields);
-}
-
-std::string weaponsText(const game::DesignStats& st) {
-    return st.weapons > 0 ? std::format("{} (range {})", st.weapons, st.maxWeaponRange) : std::string("None");
 }
 
 // Vehicles of a design in service: in space (unit groups count each unit) and carried as cargo.
@@ -183,35 +183,82 @@ private:
         return d.keepOpen();
     }
 
+    // The rows under design-type headings (enemy designs, which show no design
+    // type, under their empire's name), each with a lamp (green for the
+    // selected design, blue for the others), the picture, the name and under it
+    // the hull, with "Prototype" for a design never built (observed, spec 07
+    // §UI and session 3; the rows' layout and the headings' order inferred,
+    // spec 06 §7 Q93). Under the list, the note on obsolete designs.
     void designList(UiContext& ui, const std::vector<game::DesignId>& list) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         const float w = ui.px(240);  // the original's list is about 240 wide, the detail takes the rest
+        constexpr float kRow = 36.0f;
         ImGui::BeginGroup();
         ImGui::TextColored(kBlueText, "%s", kDesignTabs[static_cast<size_t>(tab_)]);
         ImGui::SameLine();
         ImGui::TextColored(kDimText, "(%zu)", list.size());
-        const float noteH = note_.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing() * 2.0f;
-        ImGui::BeginChild("##list", ImVec2(w, -noteH), ImGuiChildFlags_Borders);
-        for (size_t i = 0; i < list.size(); ++i) {
-            const game::Design& d = s.design(list[i]);
-            const ruleset::VehicleSize& hull = r.hull(d.hull);
-            const std::string& style = d.owner.valid() ? s.empire(d.owner).race.style : std::string{};
-            const std::string sub = enemyTab(tab_) ? std::format("{} - {}", hull.name, d.owner.valid() ? s.empire(d.owner).name : "?")
-                                                   : std::format("{} - {}", hull.name, d.designType.empty() ? "No type" : d.designType);
-            RowStyle style2;
-            style2.icon = 32;
-            style2.sub = sub;
-            style2.right = d.obsolete ? "Obsolete" : "";
-            if (d.obsolete) style2.color = IM_COL32(140, 150, 165, 255);
-            const RowResult row = itemRow(ui, static_cast<int>(i), ui.art.shipMini(style, hull), d.name, list[i] == selected_, style2);
-            if (row.clicked) {
-                selected_ = list[i];
-                note_.clear();
+        const float noteH = (note_.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing() * 2.0f) + ui.px(28);
+        // The headings: the empire's design types in its own order, then any other.
+        std::vector<std::string> headings;
+        auto headingOf = [&](const game::Design& d) {
+            if (enemyTab(tab_)) return d.owner.valid() ? s.empire(d.owner).name : std::string("Unknown");
+            return d.designType.empty() ? std::string("No Type") : d.designType;
+        };
+        if (!enemyTab(tab_))
+            for (const std::string& t : ui.me().designTypes)
+                if (std::any_of(list.begin(), list.end(), [&](game::DesignId id) { return headingOf(s.design(id)) == t; })) headings.push_back(t);
+        for (game::DesignId id : list)
+            if (std::find(headings.begin(), headings.end(), headingOf(s.design(id))) == headings.end()) headings.push_back(headingOf(s.design(id)));
+        const Sprite green = ui.art.region("Pictures/Game/General.bmp", 190, 0, 13, 13);
+        const Sprite blue = ui.art.region("Pictures/Game/General.bmp", 177, 0, 13, 13);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui.px(2), ui.px(2)));
+        beginList(ui, "##list", ImVec2(w, -noteH), kRow, ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PopStyleVar();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        int id = 0;
+        for (const std::string& h : headings) {
+            heading(ui, h.c_str());
+            for (game::DesignId designId : list) {
+                const game::Design& d = s.design(designId);
+                if (headingOf(d) != h) continue;
+                const ruleset::VehicleSize& hull = r.hull(d.hull);
+                const std::string& style = d.owner.valid() ? s.empire(d.owner).race.style : std::string{};
+                ImGui::PushID(id++);
+                const ImVec2 a = ImGui::GetCursorScreenPos();
+                const float rowW = ImGui::GetContentRegionAvail().x;
+                if (ImGui::InvisibleButton("##row", ImVec2(rowW, ui.px(kRow)))) {
+                    selected_ = designId;
+                    note_.clear();
+                }
+                ImGui::PopID();
+                const bool selected = designId == selected_;
+                if (const Sprite& lampSprite = selected ? green : blue)
+                    drawSprite(dl, lampSprite, {a.x + ui.px(2), a.y + ui.px(11)}, {a.x + ui.px(15), a.y + ui.px(24)});
+                if (const Sprite pic = ui.art.shipMini(style, hull))
+                    drawSprite(dl, pic, {a.x + ui.px(19), a.y + ui.px(2)}, {a.x + ui.px(51), a.y + ui.px(34)});
+                const ImU32 nameColor = d.obsolete ? imColor(palette::kSecondary) : IM_COL32_WHITE;
+                dl->PushClipRect(a, {a.x + rowW, a.y + ui.px(kRow)}, true);
+                dl->AddText({a.x + ui.px(55), a.y + ui.px(2)}, nameColor, d.name.c_str());
+                ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+                dl->AddText({a.x + ui.px(55), a.y + ui.px(19)}, imColor(palette::kSecondary), hull.name.c_str());
+                if (!enemyTab(tab_) && game::designIsPrototype(d)) {
+                    const float pw = ImGui::CalcTextSize("Prototype").x;
+                    dl->AddText({a.x + rowW - pw - ui.px(2), a.y + ui.px(19)}, imColor(palette::kSecondary), "Prototype");
+                }
+                ImGui::PopFont();
+                dl->PopClipRect();
             }
         }
-        ImGui::EndChild();
+        if (list.empty()) ImGui::TextColored(kDimText, enemyTab(tab_) ? "None seen yet." : "None yet.");
+        endList(ui);
         ui.tagItem("designs:list");
+        // The note on obsolete designs (observed; our words and place, Q93).
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
+        ImGui::TextColored(kBlueText, "(obsolete designs are deleted automatically once no vehicle or queue uses them)");
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
         if (!note_.empty()) {
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
             ImGui::TextColored(noteIsError_ ? kWarnText : ImVec4(1.0f, 0.86f, 0.45f, 1.0f), "%s", note_.c_str());
@@ -232,8 +279,9 @@ private:
             image(ui, ui.art.flag(style), {26, 18});
             ImGui::SameLine();
         }
-        // The original's detail: portrait, then the name with label lines and their
-        // values indented below; then one column of statistics.
+        // The original's detail: the portrait, then the name with Size, Design
+        // Type and Date Created stacked beside it; then Cost, Movement, Shields,
+        // Cargo Space and Supply Capacity (spec 07 §UI).
         portrait(ui, ui.art.shipPortrait(style, hull));
         hullReportOnClick(ui, d.hull);
         ImGui::SameLine(0, ui.px(8));
@@ -249,7 +297,8 @@ private:
         if (own) {
             stacked("Design Type", d.designType.empty() ? std::string("-") : d.designType);
             stacked("Date Created", formatDate(d.createdTurn));
-            if (d.obsolete) stacked("Status", "Obsolete", ImVec4(1.0f, 0.7f, 0.4f, 1.0f));
+            // "(Obsolete)" in yellow, as in the Design Report (spec 06 §1.8.3, §5.4).
+            if (d.obsolete) ImGui::TextColored(ImVec4(1, 1, 0, 1), "(Obsolete)");
         } else if (d.owner.valid()) {
             stacked("Owner", s.empire(d.owner).name);
         }
@@ -259,18 +308,10 @@ private:
         ImGui::TextColored(kBlueText, "Cost");
         ImGui::SameLine(ui.px(kCol));
         resources(ui, st.cost, true);
-        field(ui, "Class", std::string(ruleset::displayName(hull.type)), kCol);
-        field(ui, "Space", sizeText(st), kCol);
-        field(ui, "Structure", std::to_string(st.structure), kCol);
         field(ui, "Movement", std::to_string(st.movement), kCol);
         field(ui, "Shields", shieldsText(st), kCol);
-        field(ui, "Weapons", weaponsText(st), kCol);
         field(ui, "Cargo Space", std::to_string(st.cargoCapacity), kCol);
         field(ui, "Supply Capacity", std::to_string(st.supplyCapacity), kCol);
-        if (own && !st.problems.empty()) {
-            ImGui::Spacing();
-            for (const std::string& p : st.problems) ImGui::TextColored(kWarnText, "! %s", p.c_str());
-        }
 
         ImGui::Spacing();
         if (statsView_) serviceRecord(ui, d, own);
@@ -282,24 +323,43 @@ private:
         if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Hull, hull});
     }
 
+    // The components as a grid of icons, 8 to a row, one cell per component
+    // (observed, spec 07 session 3; the cell size inferred, spec 06 §7 Q93). A
+    // click or right-click opens the component's report.
     void components(UiContext& ui, const game::Design& d) {
         const game::Rules& r = ui.rules();
-        heading(ui, std::format("Components ({})", d.entries.size()).c_str());
-        const auto groups = groupEntries(d.entries);
-        for (size_t i = 0; i < groups.size(); ++i) {
-            const EntryGroup& g = groups[i];
-            const ruleset::Component& c = r.component(g.entry.component);
-            const std::string mount = mountLabel(r, g.entry.mount);
-            const std::string text = std::format("{} x {}{}{}", g.count, mount, mount.empty() ? "" : " ", c.name);
-            const std::string right = std::format("{} kT", game::mounted(r, g.entry).tonnage * g.count);
-            RowStyle style;
-            style.icon = 24;
-            style.right = right;
-            style.badge = mountCode(r, g.entry.mount);
-            const RowResult row = itemRow(ui, static_cast<int>(i), ui.art.component(c.picture), text, false, style);
-            if (row.clicked || row.rightClicked) popup_.open({Kind::Component, g.entry.component, g.entry.mount});
+        constexpr float kCell = 36.0f;
+        constexpr int kColumns = 8;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        for (size_t i = 0; i < d.entries.size(); ++i) {
+            const game::DesignEntry& e = d.entries[i];
+            const ruleset::Component& c = r.component(e.component);
+            const int col = static_cast<int>(i) % kColumns, row = static_cast<int>(i) / kColumns;
+            const ImVec2 a(origin.x + ui.px(kCell * float(col)), origin.y + ui.px(kCell * float(row)));
+            ImGui::SetCursorScreenPos(a);
+            ImGui::PushID(static_cast<int>(i));
+            const bool clicked = ImGui::InvisibleButton("##comp", ui.size({kCell, kCell}));
+            const bool hovered = ImGui::IsItemHovered();
+            const bool right = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+            ImGui::PopID();
+            dl->AddRect(a, {a.x + ui.px(kCell), a.y + ui.px(kCell)}, imColor(hovered ? palette::kButtonHot : palette::kFrame));
+            if (const Sprite pic = ui.art.component(c.picture)) drawSprite(dl, pic, {a.x + ui.px(2), a.y + ui.px(2)}, {a.x + ui.px(34), a.y + ui.px(34)});
+            if (const std::string_view code = mountCode(r, e.mount); !code.empty()) {
+                ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+                dl->AddText({a.x + ui.px(3), a.y + ui.px(2)}, IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
+                ImGui::PopFont();
+            }
+            if (hovered) ImGui::SetTooltip("%s", (mountLabel(r, e.mount).empty() ? c.name : mountLabel(r, e.mount) + " " + c.name).c_str());
+            if (clicked || right) popup_.open({Kind::Component, e.component, e.mount});
         }
-        if (groups.empty()) ImGui::TextColored(kDimText, "No components");
+        const int rows = (static_cast<int>(d.entries.size()) + kColumns - 1) / kColumns;
+        ImGui::SetCursorScreenPos(origin);
+        ImGui::Dummy(ui.size({kCell * kColumns, kCell * float(std::max(rows, 1))}));
+        if (d.entries.empty()) {
+            ImGui::SetCursorScreenPos(origin);
+            ImGui::TextColored(kDimText, "No components");
+        }
     }
 
     void serviceRecord(UiContext& ui, const game::Design& d, bool own) {
@@ -354,14 +414,14 @@ private:
             ui.open(ScreenId::CreateDesign, a);
             note_.clear();
         };
+        // Create asks for the vehicle type first (observed, spec 07 session 3).
         const bool create = d.button("Create");
         ui.tagItem("designs:create");
         if (create) {
-            ScreenArgs a;
-            a.text = unitTab(tab_) ? "new-unit" : "new";
-            ui.open(ScreenId::CreateDesign, a);
+            ImGui::OpenPopup(kTypePicker);
             note_.clear();
         }
+        typePicker(ui);
         if (d.button("Copy", own != nullptr)) openDesigner("copy");
         const bool editable = own && game::designIsPrototype(*own) && !game::designInQueue(ui.state(), ui.me().id, own->id);
         if (d.button("Edit", editable)) openDesigner("edit");
@@ -380,10 +440,35 @@ private:
             note_ = res.ok ? std::string{} : res.error;
             noteIsError_ = !res.ok;
         }
-        if (lampButton(ui, d, "Hide Obsolete", hideObsolete_)) hideObsolete_ = !hideObsolete_;
-        if (lampButton(ui, d, "Stats\\Strategy", statsView_)) statsView_ = !statsView_;
+        // On/off settings: check boxes (observed, spec 07 session 3).
+        if (d.check("Hide Obsolete", hideObsolete_)) hideObsolete_ = !hideObsolete_;
+        if (d.check("Stats\\Strategy", statsView_)) statsView_ = !statsView_;
         if (d.button("Simulator")) ui.open(ScreenId::CombatSimulator);
         ui.tagItem("designs:simulator");
+    }
+
+    // "Select Vehicle Type" (our title): the vehicle types the empire has a hull
+    // of; picking one opens the designer for it (spec 06 §7 Q94).
+    static constexpr const char* kTypePicker = "Select Vehicle Type###vehicletype";
+    void typePicker(UiContext& ui) {
+        if (!beginModal(ui, kTypePicker, {340, 370})) return;
+        const std::vector<ruleset::VehicleType> types = designableTypes(ui.rules(), ui.me());
+        const float footer = ui.px(26) + ImGui::GetStyle().ItemSpacing.y * 2;
+        beginList(ui, "##types", ImVec2(0, -footer), kListLineStep);
+        std::optional<ruleset::VehicleType> picked;
+        for (ruleset::VehicleType t : types)
+            if (ImGui::Selectable(std::string(ruleset::displayName(t)).c_str(), false)) picked = t;
+        if (types.empty()) ImGui::TextColored(kDimText, "No hull is available yet.");
+        endList(ui);
+        const bool cancel = ImGui::Button("Cancel", ImVec2(-FLT_MIN, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (picked) {
+            ScreenArgs a;
+            a.text = "new";
+            a.sub = static_cast<int>(*picked);
+            ui.open(ScreenId::CreateDesign, a);
+        }
+        if (picked || cancel) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     bool initialized_ = false;
@@ -398,6 +483,35 @@ private:
 };
 
 // ---- Create Design -------------------------------------------------------------------------------
+//
+// The original's designer as observed (spec 07 session 3): titled after the
+// vehicle type chosen first ("Ship Design"), it starts with no size. Top row:
+// the picture; Size, Design Type and Design Name, each with a down-arrow button
+// that opens its list; the figures box (Space Used, Total Cost on three lines,
+// Movement, Shields, Cargo Space, Supply Capacity). Then "Components on Design"
+// as a strip of icons with arrows, and "Components Available" as a 3-column grid
+// of tiles (icon, name, kT) with the Warnings and Component Details boxes beside
+// it. Buttons: Comp Type, Weap Mount, the To Hit Modifiers, Condensed View and
+// Only Latest check boxes, Weapons Report, and Create Design and Cancel in the
+// 13th and 14th slots. Every place and size not given there is ours (inferred,
+// spec 06 §7 Q94).
+
+namespace cd {
+// Sums of ImGui positions (ImGui's own operators are not enabled here).
+inline ImVec2 operator+(ImVec2 a, ImVec2 b) { return {a.x + b.x, a.y + b.y}; }
+// Places in the content area (frame pixels from its top left).
+constexpr Vec2 kPicture{3, 3};
+constexpr float kPickerX = 140, kPickerBoxW = 190, kPickerArrow = 20;
+constexpr float kFiguresX = 358, kFiguresR = 553, kFiguresB = 131;
+constexpr float kStripY = 137;         // its label; the strip 16 px below, 38 tall
+constexpr float kCell = 36;            // a component cell in the strip
+constexpr float kGridY = 197;          // the lower labels; boxes 16 px below
+constexpr float kGridW = 366, kBottom = 427;
+constexpr float kSideX = 375, kWarningsB = 303;
+constexpr float kTileH = 36;
+} // namespace cd
+
+using cd::operator+;
 
 class CreateDesignScreen final : public Screen {
 public:
@@ -429,31 +543,27 @@ private:
         return first == std::string::npos ? std::string{} : n.substr(first);
     }
 
-    std::string suggestName(const UiContext& ui) {
-        std::string n = suggestDesignName(ui.state(), ui.me(), names_, nameCursor_);
-        if (!n.empty()) return n;
-        // No name list in the install: "<Hull> 1", "<Hull> 2", ...
-        for (int i = 1;; ++i) {
-            n = std::format("{} {}", ui.rules().hull(hull_).name, i);
-            if (!designNameTaken(ui.state(), ui.me(), n)) return n;
+    // The names the Design Name list offers: the race's list without the names
+    // in use, or with no list in the install "<Hull> 1", "<Hull> 2"... (ours).
+    std::vector<std::string> nameChoices(const UiContext& ui) const {
+        std::vector<std::string> out;
+        for (const std::string& n : names_)
+            if (!designNameTaken(ui.state(), ui.me(), n)) out.push_back(n);
+        if (!out.empty() || !names_.empty()) return out;
+        const std::string base = std::string(ruleset::displayName(type_));
+        for (int i = 1; out.size() < 10; ++i) {
+            const std::string n = std::format("{} {}", hull_ ? ui.rules().hull(*hull_).name : base, i);
+            if (!designNameTaken(ui.state(), ui.me(), n)) out.push_back(n);
         }
-    }
-
-    std::vector<uint32_t> availableHulls(const UiContext& ui) const {
-        std::vector<uint32_t> out;
-        const game::Rules& r = ui.rules();
-        for (size_t t = 0; t < static_cast<size_t>(ruleset::VehicleType::Count); ++t)
-            for (uint32_t i = 0; i < r.data().vehicleSizes.size(); ++i)
-                if (static_cast<size_t>(r.hull(i).type) == t && (r.hullAvailable(ui.me(), i) || i == hull_)) out.push_back(i);
         return out;
     }
 
     void pickDesignType(const UiContext& ui) {
-        // Prefer a design type named after the hull class (fighters, satellites, ...).
+        // Prefer a design type named after the vehicle type (fighters, satellites, ...).
         const auto& types = ui.me().designTypes;
         designType_ = types.empty() ? std::string{} : types.front();
-        const std::string_view cls = ruleset::displayName(ui.rules().hull(hull_).type);
-        if (ui.rules().hull(hull_).type == ruleset::VehicleType::Ship) return;
+        if (type_ == ruleset::VehicleType::Ship) return;
+        const std::string_view cls = ruleset::displayName(type_);
         for (const std::string& t : types)
             if (containsNoCase(t, cls)) {
                 designType_ = t;
@@ -469,327 +579,385 @@ private:
         const game::GameState& s = ui.state();
         const game::Empire& me = ui.me();
         names_ = loadNameList(ui);
-        if (!names_.empty()) nameCursor_ = (me.designs.size() * 37 + s.turn * 11) % names_.size();
 
         if (args_.design.valid() && args_.design.index() < s.designs.size()) {
             const game::Design& t = s.design(args_.design);
             hull_ = t.hull;
+            type_ = r.hull(t.hull).type;
             entries_ = t.entries;
             designType_ = t.designType;
             strategy_ = t.strategy;
             if (args_.text == "upgrade") {
                 upgradeEntries(r, me, entries_);
                 setName(nextVersionName(s, me, t.name));
-                origin_ = std::format("Upgrade of {}", t.name);
             } else if (args_.text == "edit") {
                 setName(t.name);
-                origin_ = std::format("Editing {}", t.name);
                 editing_ = t.id;
-            } else {
-                setName(suggestName(ui));
-                origin_ = std::format("Copy of {}", t.name);
             }
+            // Copy clones the design with an empty name (spec 03 §4.1).
             if (t.owner != me.id) {
                 pickDesignType(ui);
                 strategy_ = 0;
             }
         } else {
-            const bool unit = args_.text == "new-unit";
-            std::optional<uint32_t> pick;
-            if (args_.index >= 0 && static_cast<size_t>(args_.index) < r.data().vehicleSizes.size()) pick = static_cast<uint32_t>(args_.index);
-            for (uint32_t i = 0; i < r.data().vehicleSizes.size() && !pick; ++i)
-                if (r.hullAvailable(me, i) && isUnitHull(r.hull(i).type) == unit) pick = i;
-            for (uint32_t i = 0; i < r.data().vehicleSizes.size() && !pick; ++i)
-                if (r.hullAvailable(me, i)) pick = i;
-            hull_ = pick.value_or(0);
+            // The vehicle type picked in Designs; it starts with no size and no
+            // name (observed). A hull given by automation is taken as the size.
+            if (args_.sub >= 0 && args_.sub < static_cast<int>(ruleset::VehicleType::Count)) type_ = static_cast<ruleset::VehicleType>(args_.sub);
+            else if (args_.text == "new-unit") {
+                for (ruleset::VehicleType t : designableTypes(r, me))
+                    if (isUnitHull(t)) {
+                        type_ = t;
+                        break;
+                    }
+            }
+            if (args_.index >= 0 && static_cast<size_t>(args_.index) < r.data().vehicleSizes.size()) {
+                hull_ = static_cast<uint32_t>(args_.index);
+                type_ = r.hull(*hull_).type;
+            }
             pickDesignType(ui);
-            setName(suggestName(ui));
         }
-        mounts_ = hullMounts(r, me, hull_);
+        mounts_ = hull_ ? hullMounts(r, me, *hull_) : std::vector<uint32_t>{};
+        title_ = designWindowTitle(type_);
+    }
+
+    // A hull of the vehicle type for what does not need the size chosen (the
+    // components that suit the type).
+    uint32_t probeHull(const UiContext& ui) const {
+        if (hull_) return *hull_;
+        const auto hulls = hullsOfType(ui.rules(), ui.me(), type_);
+        if (!hulls.empty()) return hulls.front();
+        for (uint32_t i = 0; i < ui.rules().data().vehicleSizes.size(); ++i)
+            if (ui.rules().hull(i).type == type_) return i;
+        return 0;
     }
 
     void setHull(const UiContext& ui, uint32_t hull) {
-        if (hull == hull_) return;
-        const bool classChanged = ui.rules().hull(hull).type != ui.rules().hull(hull_).type;
+        hullChosen_ = true;
+        if (hull_ == hull) return;
         hull_ = hull;
-        mounts_ = hullMounts(ui.rules(), ui.me(), hull_);
+        mounts_ = hullMounts(ui.rules(), ui.me(), hull);
         if (mount_ >= 0 && std::find(mounts_.begin(), mounts_.end(), static_cast<uint32_t>(mount_)) == mounts_.end()) mount_ = -1;
-        if (classChanged) {
-            group_.clear();
-            if (!designTypeChosen_) pickDesignType(ui);
-        }
         error_.clear();
     }
 
-    std::vector<std::string> nameProblems(const UiContext& ui) const {
+    std::vector<std::string> problems(const UiContext& ui, const std::optional<game::DesignStats>& st) const {
         std::vector<std::string> out;
+        if (!hull_) out.emplace_back("Choose a size for the design");
         const std::string n = name();
         if (n.empty()) out.emplace_back("The design needs a name");
         else if (designNameTaken(ui.state(), ui.me(), n)) out.emplace_back("Another design already has this name");
+        if (st) out.insert(out.end(), st->problems.begin(), st->problems.end());
         return out;
     }
 
     bool drawDialog(UiContext& ui) {
-        Dialog d(ui, "Create Design", DialogSize::Tall);
+        Dialog d(ui, title_.c_str(), DialogSize::Large);
         if (!d.open()) return d.keepOpen();
         // For lessons: the design being built.
         ui.facts.designComponents = static_cast<int64_t>(entries_.size());
         ui.facts.designHullChosen = hullChosen_;
-        const game::DesignStats st = game::computeDesignStats(ui.rules(), &ui.me(), hull_, entries_);
+        std::optional<game::DesignStats> st;
+        if (hull_) st = game::computeDesignStats(ui.rules(), &ui.me(), *hull_, entries_);
+        hovered_.reset();
         d.beginContent();
-        const float warningsH = ui.px(96);
-        header(ui, st);
-        ImGui::Spacing();
-        lists(ui, st, ImGui::GetContentRegionAvail().y - warningsH - ImGui::GetStyle().ItemSpacing.y);
-        warnings(ui, st);
+        topRow(ui, st);
+        strip(ui);
+        grid(ui, st);
+        sideBoxes(ui, st);
+        if (hovered_) hover_ = hovered_;
         d.beginButtons();
-        buttons(ui, d);
-        cancel(ui, d);
+        buttons(ui, d, st);
+        if (d.close(true, "Cancel")) return false;
         return d.keepOpen();
     }
 
-    void header(UiContext& ui, const game::DesignStats& st) {
-        const game::Rules& r = ui.rules();
-        const ruleset::VehicleSize& hull = r.hull(hull_);
-        portrait(ui, ui.art.shipPortrait(ui.me().race.style, hull));
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click for the %s report", hull.name.c_str());
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Hull, hull_});
-        ImGui::SameLine(0, ui.px(12));
-
-        // Pickers.
-        ImGui::BeginGroup();
-        constexpr float kLabel = 48.0f;
-        const float comboW = ui.px(270);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(kBlueText, "Size");
-        ImGui::SameLine(ui.px(kLabel));
-        ImGui::SetNextItemWidth(comboW);
-        if (ImGui::BeginCombo("##hull", std::format("{} ({} kT)", hull.name, hull.tonnage).c_str(), ImGuiComboFlags_HeightLarge)) {
-            std::optional<ruleset::VehicleType> lastType;
-            for (uint32_t h : availableHulls(ui)) {
-                const ruleset::VehicleSize& vs = r.hull(h);
-                if (vs.type != lastType) ImGui::SeparatorText(std::string(ruleset::displayName(vs.type)).c_str());
-                lastType = vs.type;
-                if (ImGui::Selectable(std::format("{} ({} kT)##{}", vs.name, vs.tonnage, h).c_str(), h == hull_)) {
-                    setHull(ui, h);
-                    hullChosen_ = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ui.tagItem("create-design:hull");
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(kBlueText, "Type");
-        ImGui::SameLine(ui.px(kLabel));
-        ImGui::SetNextItemWidth(comboW);
-        if (ImGui::BeginCombo("##type", designType_.empty() ? "(none)" : designType_.c_str(), ImGuiComboFlags_HeightLarge)) {
-            const auto& types = ui.me().designTypes;
-            for (size_t i = 0; i < types.size(); ++i)
-                if (ImGui::Selectable(std::format("{}##{}", types[i], i).c_str(), types[i] == designType_)) {
-                    designType_ = types[i];
-                    designTypeChosen_ = true;
-                }
-            ImGui::EndCombo();
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(kBlueText, "Name");
-        ImGui::SameLine(ui.px(kLabel));
-        const float suggestW = ui.px(72);
-        ImGui::SetNextItemWidth(comboW - suggestW - ImGui::GetStyle().ItemSpacing.x);
-        if (ImGui::InputText("##name", name_.data(), name_.size())) error_.clear();
-        ui.tagItem("create-design:name");
-        ImGui::SameLine();
-        if (ImGui::Button("Suggest", ImVec2(suggestW, 0))) {
-            setName(suggestName(ui));
-            error_.clear();
-        }
-        ui.tagItem("create-design:suggest");
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next name from the empire's list of design names");
-        if (!origin_.empty()) ImGui::TextColored(kDimText, "%s", origin_.c_str());
-        ImGui::EndGroup();
-
-        // Running totals.
-        ImGui::SameLine(0, ui.px(18));
-        ImGui::BeginGroup();
-        constexpr float kCol = 84.0f;
-        const bool over = st.tonnageUsed > st.tonnageMax;
-        field(ui, "Space", std::format("{}  ({} free)", sizeText(st), std::max(0, st.tonnageMax - st.tonnageUsed)), kCol,
-              over ? kWarnText : ImVec4(1, 1, 1, 1));
-        {
-            const ImVec2 p = ImGui::GetCursorScreenPos();
-            const float w = ImGui::GetContentRegionAvail().x, h = ui.px(5);
-            const float frac = st.tonnageMax > 0 ? std::min(1.0f, float(st.tonnageUsed) / float(st.tonnageMax)) : 0.0f;
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), IM_COL32(20, 32, 70, 255));
-            dl->AddRectFilled(p, ImVec2(p.x + w * frac, p.y + h), over ? IM_COL32(220, 70, 60, 255) : IM_COL32(70, 130, 230, 255));
-            ImGui::Dummy(ImVec2(w, h));
-        }
-        ImGui::TextColored(kBlueText, "Cost");
-        ImGui::SameLine(ui.px(kCol));
-        resources(ui, st.cost, true);
-        field(ui, "Movement", std::to_string(st.movement), kCol);
-        field(ui, "Supply", formatNumber(st.supplyCapacity), kCol);
-        field(ui, "Cargo", std::format("{} kT", st.cargoCapacity), kCol);
-        field(ui, "Shields", shieldsText(st), kCol);
-        field(ui, "Structure", std::to_string(st.structure), kCol);
-        field(ui, "Weapons", weaponsText(st), kCol);
-        ImGui::EndGroup();
+    // A label in label blue at a place of the content area.
+    static void label(UiContext& ui, Vec2 at, const char* text) {
+        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ui.size(at + Vec2{0, kTextLead - 3}), imColor(palette::kLabel), text);
     }
 
-    void lists(UiContext& ui, const game::DesignStats& st, float height) {
-        const game::Rules& r = ui.rules();
-        std::optional<ItemRef> hovered;
-        bool overLists = false;
-        const float headerH = ImGui::GetTextLineHeightWithSpacing();
-        const float childH = std::max(ui.px(120), height - headerH);
+    // A value box with its down-arrow button; returns true when the button is pressed.
+    bool pickerBox(UiContext& ui, const char* id, float y, const std::string& value, bool enabled = true) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        const ImVec2 a = o + ui.size({cd::kPickerX, y}), b = o + ui.size({cd::kPickerX + cd::kPickerBoxW, y + 20});
+        dl->AddRect(a, b, imColor(palette::kFrame));
+        dl->PushClipRect(a, b, true);
+        dl->AddText({a.x + ui.px(4), a.y + ui.px(2)}, value.empty() ? imColor(palette::kSecondary) : IM_COL32_WHITE, value.empty() ? "None" : value.c_str());
+        dl->PopClipRect();
+        ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, y}));
+        return listArrow(ui, id, false, {cd::kPickerArrow, 20}, enabled);
+    }
 
-        // Components on the design (click removes).
-        ImGui::BeginGroup();
-        ImGui::TextColored(kBlueText, "On Design (%zu)", entries_.size());
-        ImGui::SameLine();
-        ImGui::TextColored(kDimText, "- click to remove");
-        ImGui::BeginChild("##on", ImVec2(ui.px(262), childH), ImGuiChildFlags_Borders);
-        overLists = overLists || ImGui::IsWindowHovered();
-        std::optional<size_t> remove;
-        if (condensed_) {
-            const auto groups = groupEntries(entries_);
-            for (size_t i = 0; i < groups.size(); ++i) {
-                const EntryGroup& g = groups[i];
-                const ruleset::Component& c = r.component(g.entry.component);
-                const std::string text = std::format("{} x {}", g.count, c.name);
-                const std::string right = std::format("{} kT", game::mounted(r, g.entry).tonnage * g.count);
-                RowStyle style;
-                style.icon = 20;
-                style.right = right;
-                style.badge = mountCode(r, g.entry.mount);
-                const RowResult row = itemRow(ui, static_cast<int>(i), ui.art.component(c.picture), text, false, style);
-                if (row.clicked) remove = g.last;
-                if (row.rightClicked) popup_.open({Kind::Component, g.entry.component, g.entry.mount});
-                if (row.hovered) hovered = ItemRef{Kind::Component, g.entry.component, g.entry.mount};
-            }
+    void topRow(UiContext& ui, const std::optional<game::DesignStats>& st) {
+        const game::Rules& r = ui.rules();
+        // The picture: the hull's portrait once a size is chosen.
+        ImGui::SetCursorPos(ui.size(cd::kPicture));
+        if (hull_) {
+            portrait(ui, ui.art.shipPortrait(ui.me().race.style, r.hull(*hull_)));
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Hull, *hull_});
         } else {
-            for (size_t i = 0; i < entries_.size(); ++i) {
-                const game::DesignEntry& e = entries_[i];
-                const ruleset::Component& c = r.component(e.component);
-                const std::string right = std::format("{} kT", game::mounted(r, e).tonnage);
-                const std::string mount = mountLabel(r, e.mount);
-                RowStyle style;
-                style.icon = 28;
-                style.right = right;
-                style.sub = mount;
-                style.badge = mountCode(r, e.mount);
-                const RowResult row = itemRow(ui, static_cast<int>(i), ui.art.component(c.picture), c.name, false, style);
-                if (row.clicked) remove = i;
-                if (row.rightClicked) popup_.open({Kind::Component, e.component, e.mount});
-                if (row.hovered) hovered = ItemRef{Kind::Component, e.component, e.mount};
+            portrait(ui, Sprite{});
+        }
+
+        // Size.
+        label(ui, {cd::kPickerX, 3}, "Size");
+        const std::string size = hull_ ? std::format("{} ({}kT)", r.hull(*hull_).name, r.hull(*hull_).tonnage) : std::string{};
+        if (pickerBox(ui, "##size", 19, size)) ImGui::OpenPopup("##sizes");
+        ui.tag("create-design:hull", ImGui::GetWindowPos() + ui.size({cd::kPickerX, 19}), ImGui::GetItemRectMax());
+        if (ImGui::BeginPopup("##sizes")) {
+            for (uint32_t h : hullsOfType(r, ui.me(), type_, hull_))
+                if (ImGui::Selectable(std::format("{} ({} kT)##{}", r.hull(h).name, r.hull(h).tonnage, h).c_str(), hull_ == h)) setHull(ui, h);
+            ImGui::EndPopup();
+        }
+
+        // Design Type.
+        label(ui, {cd::kPickerX, 45}, "Design Type");
+        if (pickerBox(ui, "##type", 61, designType_)) ImGui::OpenPopup("##types");
+        if (ImGui::BeginPopup("##types")) {
+            const auto& types = ui.me().designTypes;
+            for (size_t i = 0; i < types.size(); ++i)
+                if (ImGui::Selectable(std::format("{}##{}", types[i], i).c_str(), types[i] == designType_)) designType_ = types[i];
+            ImGui::EndPopup();
+        }
+
+        // Design Name: typed, or picked from the race's list with its button.
+        label(ui, {cd::kPickerX, 87}, "Design Name");
+        ImGui::SetCursorPos(ui.size({cd::kPickerX, 103}));
+        ImGui::SetNextItemWidth(ui.px(cd::kPickerBoxW));
+        if (ImGui::InputText("##name", name_.data(), name_.size())) error_.clear();
+        ui.tagItem("create-design:name");
+        ImGui::SetCursorPos(ui.size({cd::kPickerX + cd::kPickerBoxW + 2, 103}));
+        if (listArrow(ui, "##names", false, {cd::kPickerArrow, 20}, true)) ImGui::OpenPopup("##namelist");
+        ui.tagItem("create-design:suggest");
+        if (ImGui::BeginPopup("##namelist")) {
+            const std::vector<std::string> choices = nameChoices(ui);
+            for (size_t i = 0; i < choices.size(); ++i)
+                if (ImGui::Selectable(std::format("{}##{}", choices[i], i).c_str())) {
+                    setName(choices[i]);
+                    error_.clear();
+                }
+            if (choices.empty()) ImGui::TextColored(kDimText, "Every name of the list is in use.");
+            ImGui::EndPopup();
+        }
+
+        // The figures box.
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        dl->AddRect(o + ui.size({cd::kFiguresX, 3}), o + ui.size({cd::kFiguresR, cd::kFiguresB}), imColor(palette::kFrame));
+        int line = 0;
+        auto row = [&](const char* name, const std::string& value, ImU32 color = IM_COL32_WHITE) {
+            const float y = 5.0f + 14.0f * float(line++);
+            if (name) label(ui, {cd::kFiguresX + 4, y}, name);
+            if (value.empty()) return;
+            const float w = ImGui::CalcTextSize(value.c_str()).x;
+            dl->AddText(o + ImVec2(ui.px(cd::kFiguresR - 4) - w, ui.px(y + kTextLead - 3)), color, value.c_str());
+        };
+        const bool over = st && st->tonnageUsed > st->tonnageMax;
+        row("Space Used", st ? std::format("{}/{}kT", st->tonnageUsed, st->tonnageMax) : std::string("-"),
+            over ? ImGui::GetColorU32(kWarnText) : IM_COL32_WHITE);
+        row("Total Cost", {});
+        static constexpr std::array<Icon, 3> kIcons{Icon::Minerals, Icon::Organics, Icon::Radioactives};
+        static constexpr std::array<uint32_t, 3> kColors{palette::kMinerals, palette::kOrganics, palette::kRadioactives};
+        for (size_t k = 0; k < 3; ++k) {
+            const float y = 5.0f + 14.0f * float(line++);
+            const std::string v = st ? formatNumber(st->cost.v[k]) : std::string("-");
+            if (const Sprite icon = ui.art.icon16(kIcons[k]))
+                dl->AddImage(ImTextureRef(static_cast<ImTextureID>(icon.tex.value)), o + ui.size({cd::kFiguresR - 18, y}),
+                             o + ui.size({cd::kFiguresR - 4, y + 14}), {icon.uv.min.x, icon.uv.min.y}, {icon.uv.max.x, icon.uv.max.y});
+            const float w = ImGui::CalcTextSize(v.c_str()).x;
+            dl->AddText(o + ImVec2(ui.px(cd::kFiguresR - 20) - w, ui.px(y + kTextLead - 3)), imColor(kColors[k]), v.c_str());
+        }
+        row("Movement", st ? std::to_string(st->movement) : std::string("-"));
+        row("Shields", st ? shieldsText(*st) : std::string("-"));
+        row("Cargo Space", st ? std::format("{}kT", st->cargoCapacity) : std::string("-"));
+        row("Supply Capacity", st ? formatNumber(st->supplyCapacity) : std::string("-"));
+    }
+
+    // "Components on Design": a strip of 36 px cells between two arrows; a click
+    // removes the component, a right-click opens its report. Condensed View
+    // shows each component once with its count (inferred).
+    void strip(UiContext& ui) {
+        const game::Rules& r = ui.rules();
+        label(ui, {3, cd::kStripY}, std::format("Components on Design ({})", entries_.size()).c_str());
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = ImGui::GetWindowPos();
+        const float top = cd::kStripY + 16;
+        const ImVec2 boxA = o + ui.size({3, top}), boxB = o + ui.size({cd::kFiguresR, top + 38});
+        dl->AddRect(boxA, boxB, imColor(palette::kFrame));
+        struct Cell {
+            game::DesignEntry entry;
+            int count = 1;
+            size_t remove = 0;
+        };
+        std::vector<Cell> cells;
+        if (condensed_)
+            for (const EntryGroup& g : groupEntries(entries_)) cells.push_back({g.entry, g.count, g.last});
+        else
+            for (size_t i = 0; i < entries_.size(); ++i) cells.push_back({entries_[i], 1, i});
+        const int visible = static_cast<int>((cd::kFiguresR - 2 - 20 - 22) / cd::kCell);
+        stripFirst_ = std::clamp(stripFirst_, 0, std::max(0, static_cast<int>(cells.size()) - visible));
+        ImGui::SetCursorPos(ui.size({4, top + 1}));
+        if (listArrow(ui, "##stripLeft", true, {16, 36}, stripFirst_ > 0)) --stripFirst_;
+        ImGui::SetCursorPos(ui.size({cd::kFiguresR - 17, top + 1}));
+        if (listArrow(ui, "##stripRight", false, {16, 36}, stripFirst_ + visible < static_cast<int>(cells.size()))) ++stripFirst_;
+        std::optional<size_t> remove;
+        for (int i = 0; i < visible && stripFirst_ + i < static_cast<int>(cells.size()); ++i) {
+            const Cell& c = cells[static_cast<size_t>(stripFirst_ + i)];
+            const ruleset::Component& comp = r.component(c.entry.component);
+            const Vec2 at{22 + cd::kCell * float(i), top + 1};
+            ImGui::SetCursorPos(ui.size(at));
+            ImGui::PushID(stripFirst_ + i);
+            const bool clicked = ImGui::InvisibleButton("##cell", ui.size({cd::kCell, cd::kCell}));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+            const ImVec2 a = o + ui.size(at);
+            if (hovered) dl->AddRect(a, a + ui.size({cd::kCell, cd::kCell}), imColor(palette::kButtonHot));
+            if (const Sprite pic = ui.art.component(comp.picture)) drawSprite(dl, pic, a + ui.size({2, 2}), a + ui.size({34, 34}));
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+            if (const std::string_view code = mountCode(r, c.entry.mount); !code.empty())
+                dl->AddText(a + ui.size({3, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
+            if (c.count > 1) {
+                const std::string n = std::format("x{}", c.count);
+                dl->AddText(a + ImVec2(ui.px(34) - ImGui::CalcTextSize(n.c_str()).x, ui.px(24)), IM_COL32_WHITE, n.c_str());
             }
+            ImGui::PopFont();
+            if (hovered) hovered_ = ItemRef{Kind::Component, c.entry.component, c.entry.mount};
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, c.entry.component, c.entry.mount});
+            if (clicked) remove = c.remove;
         }
-        if (entries_.empty()) {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(kDimText, "Click components on the right to add them.");
-            ImGui::PopTextWrapPos();
+        if (cells.empty()) {
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+            dl->AddText(o + ui.size({24, top + 13}), imColor(palette::kSecondary), "(click a component below to add it to the design)");
+            ImGui::PopFont();
         }
-        if (remove) {
+        ui.tag("create-design:on-design", boxA, boxB);
+        if (remove && *remove < entries_.size()) {
             entries_.erase(entries_.begin() + static_cast<std::ptrdiff_t>(*remove));
             error_.clear();
         }
-        ImGui::EndChild();
-        ui.tagItem("create-design:on-design");
-        ImGui::EndGroup();
+    }
 
-        // Components that can go on this hull (click adds, with the chosen mount where it applies).
-        ImGui::SameLine();
-        ImGui::BeginGroup();
+    // "Components Available": tiles of icon, name and kT, three to a row, in a
+    // list with the arrow column; a click adds the component (with the chosen
+    // mount where it applies), a right-click opens its report.
+    void grid(UiContext& ui, const std::optional<game::DesignStats>& st) {
+        const game::Rules& r = ui.rules();
+        const uint32_t hull = probeHull(ui);
         std::string filter = group_.empty() ? std::string("All types") : group_;
         if (mount_ >= 0) filter += " - " + r.data().weaponMounts[static_cast<size_t>(mount_)].longName;
-        ImGui::TextColored(kBlueText, "Available");
-        ImGui::SameLine();
-        ImGui::TextColored(kDimText, "- %s", filter.c_str());
-        ImGui::BeginChild("##available", ImVec2(ui.px(300), childH), ImGuiChildFlags_Borders);
-        overLists = overLists || ImGui::IsWindowHovered();
-        const std::vector<uint32_t> comps = designerComponents(r, ui.me(), hull_, group_, onlyLatest_);
-        std::string lastGroup;
+        label(ui, {3, cd::kGridY}, "Components Available");
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::GetWindowDrawList()->AddText(ImGui::GetWindowPos() + ui.size({150, cd::kGridY + 2}), imColor(palette::kSecondary), filter.c_str());
+        ImGui::PopFont();
+        ImGui::SetCursorPos(ui.size({3, cd::kGridY + 16}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        beginList(ui, "##available", ui.size({cd::kGridW, cd::kBottom - cd::kGridY - 16}), cd::kTileH);
+        const std::vector<uint32_t> comps = designerComponents(r, ui.me(), hull, group_, onlyLatest_);
+        const float tileW = std::floor(ImGui::GetContentRegionAvail().x / 3.0f);
+        const float tileH = ui.px(cd::kTileH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
         for (size_t i = 0; i < comps.size(); ++i) {
             const uint32_t ci = comps[i];
             const ruleset::Component& c = r.component(ci);
-            if (group_.empty() && !condensed_ && (i == 0 || c.generalGroup != lastGroup)) listHeading(ui, c.generalGroup);
-            lastGroup = c.generalGroup;
-            const game::DesignEntry entry{ci, mountFor(r, hull_, ci, mount_)};
+            const game::DesignEntry entry{ci, hull_ ? mountFor(r, *hull_, ci, mount_) : -1};
             const game::MountedComponent m = game::mounted(r, entry);
             const int onDesign = static_cast<int>(std::count_if(entries_.begin(), entries_.end(), [&](const auto& e) { return e.component == ci; }));
-            const bool fits = st.tonnageUsed + m.tonnage <= st.tonnageMax && (c.maxPerVehicle == 0 || onDesign < c.maxPerVehicle);
-            const std::string size = std::format("{} kT", m.tonnage);
-            RowStyle style;
-            style.badge = mountCode(r, entry.mount);
-            if (!fits) style.color = IM_COL32(135, 140, 155, 255);
-            if (condensed_) {
-                style.icon = 20;
-                style.right = size;
-            } else {
-                style.icon = 36;
-                style.sub = size;
-                style.cost = &m.cost;
+            const bool fits = !st || (st->tonnageUsed + m.tonnage <= st->tonnageMax && (c.maxPerVehicle == 0 || onDesign < c.maxPerVehicle));
+            const ImVec2 a(origin.x + tileW * float(i % 3), origin.y + tileH * float(i / 3));
+            ImGui::SetCursorScreenPos(a);
+            ImGui::PushID(static_cast<int>(i));
+            const bool clicked = ImGui::InvisibleButton("##tile", ImVec2(tileW, tileH));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+            const ImVec2 b(a.x + tileW, a.y + tileH);
+            dl->AddRect(a, b, imColor(hovered ? palette::kButtonHot : palette::kFrame, hovered ? 1.0f : 0.6f));
+            if (const Sprite pic = ui.art.component(c.picture)) drawSprite(dl, pic, a + ui.size({2, 2}), a + ui.size({34, 34}), fits ? IM_COL32_WHITE : IM_COL32(120, 120, 120, 255));
+            ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+            dl->PushClipRect(a + ui.size({37, 0}), b, true);
+            dl->AddText(a + ui.size({37, 3}), fits ? IM_COL32_WHITE : imColor(palette::kDim), c.name.c_str());
+            // With To Hit Modifiers on, a weapon shows its to-hit modifier with the
+            // chosen mount in place of its size (inferred, Q94).
+            std::string second = std::format("{}kT", m.tonnage);
+            if (toHit_ && c.isWeapon()) {
+                const int mod = c.weapon.modifier + (entry.mount >= 0 ? r.data().weaponMounts[static_cast<size_t>(entry.mount)].toHitModifier : 0);
+                second = std::format("To Hit {:+}", mod);
             }
-            const RowResult row = itemRow(ui, static_cast<int>(i), ui.art.component(c.picture), c.name, false, style);
-            if (row.clicked) {
+            dl->AddText(a + ui.size({37, 19}), imColor(palette::kSecondary), second.c_str());
+            if (const std::string_view code = mountCode(r, entry.mount); !code.empty())
+                dl->AddText(a + ui.size({3, 1}), IM_COL32(255, 255, 0, 255), code.data(), code.data() + code.size());
+            dl->PopClipRect();
+            ImGui::PopFont();
+            if (hovered) hovered_ = ItemRef{Kind::Component, ci, entry.mount};
+            if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) popup_.open({Kind::Component, ci, entry.mount});
+            if (clicked) {
                 entries_.push_back(entry);
                 error_.clear();
             }
-            if (row.rightClicked) popup_.open({Kind::Component, ci, entry.mount});
-            if (row.hovered) hovered = ItemRef{Kind::Component, ci, entry.mount};
         }
-        if (comps.empty()) ImGui::TextColored(kDimText, "Nothing of this type fits this hull.");
-        ImGui::EndChild();
+        const float rows = std::ceil(float(comps.size()) / 3.0f);
+        ImGui::SetCursorScreenPos(origin);
+        ImGui::Dummy(ImVec2(tileW * 3.0f, std::max(1.0f, tileH * rows)));
+        if (comps.empty()) {
+            ImGui::SetCursorScreenPos(origin + ui.size({4, 4}));
+            ImGui::TextColored(kDimText, "Nothing of this type.");
+        }
+        endList(ui);
+        ImGui::PopStyleVar(2);
         ui.tagItem("create-design:components");
-        ImGui::EndGroup();
-
-        if (hovered) hover_ = hovered;
-        else if (!overLists) hover_.reset();
-
-        // Detail of the hovered component, or of the hull.
-        ImGui::SameLine();
-        ImGui::BeginGroup();
-        ImGui::TextColored(kBlueText, "%s", hover_ ? "Component" : "Hull");
-        ImGui::BeginChild("##hover", ImVec2(0, childH), ImGuiChildFlags_Borders);
-        itemDetail(ui, hover_.value_or(ItemRef{Kind::Hull, hull_}), DetailStyle::Compact);
-        ImGui::EndChild();
-        ImGui::EndGroup();
     }
 
-    void warnings(UiContext& ui, const game::DesignStats& st) {
-        ImGui::BeginChild("##warnings", ImVec2(0, 0), ImGuiChildFlags_Borders);
-        if (!error_.empty()) ImGui::TextColored(kWarnText, "Not created: %s", error_.c_str());
-        std::vector<std::string> problems = nameProblems(ui);
-        problems.insert(problems.end(), st.problems.begin(), st.problems.end());
-        if (problems.empty() && error_.empty()) {
-            ImGui::TextColored(kGoodText, "The design meets every rule and can be created.");
-        } else {
-            // Two columns keep a long list readable.
-            if (ImGui::BeginTable("##problems", 2, ImGuiTableFlags_SizingStretchSame)) {
-                for (const std::string& p : problems) {
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(kWarnText, "! %s", p.c_str());
-                }
-                ImGui::EndTable();
-            }
-        }
-        ImGui::EndChild();
+    // The Warnings box (every rule the design breaks, in yellow, spec 06 §5.4)
+    // and the Component Details box (the component under the pointer, else the hull).
+    void sideBoxes(UiContext& ui, const std::optional<game::DesignStats>& st) {
+        label(ui, {cd::kSideX, cd::kGridY}, "Warnings");
+        ImGui::SetCursorPos(ui.size({cd::kSideX, cd::kGridY + 16}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({3, 2}));
+        beginList(ui, "##warnings", ui.size({cd::kFiguresR - cd::kSideX, cd::kWarningsB - cd::kGridY - 16}), kListLineStep,
+                  ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(0.0f);
+        if (!error_.empty()) ImGui::TextColored(ImVec4(1, 1, 0, 1), "Not created: %s", error_.c_str());
+        const std::vector<std::string> list = problems(ui, st);
+        for (const std::string& p : list) ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", p.c_str());
+        if (list.empty() && error_.empty()) ImGui::TextColored(kGoodText, "None: the design can be created.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        endList(ui);
+        ImGui::PopStyleVar();
         ui.tagItem("create-design:warnings");
+
+        label(ui, {cd::kSideX, cd::kWarningsB + 6}, "Component Details");
+        ImGui::SetCursorPos(ui.size({cd::kSideX, cd::kWarningsB + 22}));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ui.size({3, 2}));
+        beginList(ui, "##details", ui.size({cd::kFiguresR - cd::kSideX, cd::kBottom - cd::kWarningsB - 22}), kListLineStep,
+                  ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::PushFont(ui.fonts.small, ui.fontPx(kSmallSize));
+        ImGui::PushTextWrapPos(0.0f);
+        if (hover_ && hover_->kind == Kind::Component) itemDetail(ui, *hover_, DetailStyle::Compact);
+        else if (hull_) itemDetail(ui, ItemRef{Kind::Hull, *hull_}, DetailStyle::Compact);
+        else ImGui::TextColored(kDimText, "Point at a component to see it here.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        endList(ui);
+        ImGui::PopStyleVar();
     }
 
-    void buttons(UiContext& ui, Dialog& d) {
+    void buttons(UiContext& ui, Dialog& d, const std::optional<game::DesignStats>& st) {
+        (void)st;
         const game::Rules& r = ui.rules();
-        if (lampButton(ui, d, "Comp Type", !group_.empty())) ImGui::OpenPopup("##groups");
+        const uint32_t hull = probeHull(ui);
+        if (d.button("Comp Type")) ImGui::OpenPopup("##groups");
         if (ImGui::BeginPopup("##groups")) {
             if (ImGui::Selectable("All Types", group_.empty())) group_.clear();
             ImGui::Separator();
-            for (const std::string& g : componentGroups(r, ui.me(), hull_))
+            for (const std::string& g : componentGroups(r, ui.me(), hull))
                 if (ImGui::Selectable(g.c_str(), datafile::keysEqual(g, group_))) group_ = g;
             ImGui::EndPopup();
         }
-        if (lampButton(ui, d, "Weap Mount", mount_ >= 0, !mounts_.empty())) ImGui::OpenPopup("##mounts");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", mounts_.empty() ? "No weapon mount fits this hull" : "Mount for weapons added next");
+        if (d.button("Weap Mount", !mounts_.empty())) ImGui::OpenPopup("##mounts");
         if (ImGui::BeginPopup("##mounts")) {
             if (ImGui::Selectable("No Mount", mount_ < 0)) mount_ = -1;
             for (uint32_t m : mounts_) {
@@ -802,8 +970,10 @@ private:
             }
             ImGui::EndPopup();
         }
-        if (lampButton(ui, d, "Condensed View", condensed_)) condensed_ = !condensed_;
-        if (lampButton(ui, d, "Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
+        // On/off settings: check boxes (observed, spec 07 session 3).
+        if (d.check("To Hit Modifiers", toHit_)) toHit_ = !toHit_;
+        if (d.check("Condensed View", condensed_)) condensed_ = !condensed_;
+        if (d.check("Only Latest", onlyLatest_)) onlyLatest_ = !onlyLatest_;
         d.spacer();
         if (d.button("Weapons Report")) {
             ScreenArgs a;
@@ -811,29 +981,20 @@ private:
             a.index = mount_;
             ui.open(ScreenId::Help, a);
         }
-        if (d.button("Clear Design", !entries_.empty())) {
-            entries_.clear();
-            error_.clear();
-        }
-        d.spacer();
+        for (int gap = 0; gap < 5; ++gap) d.spacer();
         if (d.button(editing_.valid() ? "Save Design" : "Create Design")) create(ui);
         ui.tagItem("create-design:save");
     }
 
-    void cancel(UiContext& ui, Dialog& d) {
-        const float h = ui.px(26);
-        const float y = ImGui::GetWindowHeight() - h - ImGui::GetStyle().WindowPadding.y;
-        if (ImGui::GetCursorPosY() < y) ImGui::SetCursorPosY(y);
-        const bool escape = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !ImGui::GetIO().WantTextInput &&
-                            ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-        if (ImGui::Button("Cancel", ImVec2(-FLT_MIN, h)) || escape) d.requestClose();
-    }
-
     void create(UiContext& ui) {
+        if (!hull_) {
+            error_ = "the design has no size";
+            return;
+        }
         game::Design d;
         d.name = name();
         d.designType = designType_;
-        d.hull = hull_;
+        d.hull = *hull_;
         d.entries = entries_;
         d.strategy = strategy_;
         const game::CommandResult res =
@@ -846,14 +1007,14 @@ private:
     bool initialized_ = false;
     bool done_ = false;
     game::DesignId editing_;  // Edit: the prototype changed in place
-    uint32_t hull_ = 0;
+    ruleset::VehicleType type_ = ruleset::VehicleType::Ship;
+    std::string title_ = "Ship Design";
+    std::optional<uint32_t> hull_;  // none until a size is chosen
     bool hullChosen_ = false;   // the player picked a hull in the Size list
     std::string designType_;
-    bool designTypeChosen_ = false;
     std::array<char, 64> name_{};
     std::vector<game::DesignEntry> entries_;
     uint32_t strategy_ = 0;
-    std::string origin_;
     std::string error_;
 
     std::string group_;  // Comp Type filter; empty = all
@@ -861,10 +1022,11 @@ private:
     std::vector<uint32_t> mounts_;
     bool condensed_ = false;
     bool onlyLatest_ = true;
-    std::optional<ItemRef> hover_;
+    bool toHit_ = false;
+    int stripFirst_ = 0;
+    std::optional<ItemRef> hover_, hovered_;
 
     std::vector<std::string> names_;
-    size_t nameCursor_ = 0;
     ItemReportPopup popup_;
 };
 

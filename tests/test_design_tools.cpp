@@ -152,6 +152,26 @@ TEST_CASE("design tools: designer component list follows hull, tech, group and O
     CHECK_FALSE(isUnitHull(r.hull(hullIndex(r, "Test Station")).type));
 }
 
+TEST_CASE("design tools: the vehicle types and hulls the designer offers") {
+    const Rules& r = engineRules();
+    const Empire ships = empireWith(r, {{"Test Construction", 1}});
+    CHECK(designableTypes(r, ships) == std::vector<ruleset::VehicleType>{ruleset::VehicleType::Ship, ruleset::VehicleType::Base});
+    const auto shipHulls = hullsOfType(r, ships, ruleset::VehicleType::Ship);
+    CHECK(contains(shipHulls, hullIndex(r, "Test Frigate")));
+    CHECK_FALSE(contains(shipHulls, hullIndex(r, "Test Cruiser")));  // needs Construction 2
+    CHECK_FALSE(contains(shipHulls, hullIndex(r, "Test Station")));  // a base
+    CHECK(std::is_sorted(shipHulls.begin(), shipHulls.end()));
+    // A hull being edited stays listed.
+    CHECK(contains(hullsOfType(r, ships, ruleset::VehicleType::Ship, hullIndex(r, "Test Cruiser")), hullIndex(r, "Test Cruiser")));
+    const Empire units = empireWith(r, {{"Test Construction", 1}, {"Test Units", 1}});
+    const auto types = designableTypes(r, units);
+    CHECK(std::find(types.begin(), types.end(), ruleset::VehicleType::Fighter) != types.end());
+    CHECK(std::find(types.begin(), types.end(), ruleset::VehicleType::Drone) != types.end());
+    CHECK(std::is_sorted(types.begin(), types.end()));
+    CHECK(designWindowTitle(ruleset::VehicleType::Ship) == "Ship Design");
+    CHECK(designWindowTitle(ruleset::VehicleType::WeaponPlatform) == "Weapon Platform Design");
+}
+
 TEST_CASE("design tools: weapon mounts") {
     const Rules& r = rulesWithMount();
     const Empire e = empireWith(r, {{"Test Construction", 2}, {"Test Beams", 3}, {"Test Physics", 2}, {"Test Missiles", 1}});

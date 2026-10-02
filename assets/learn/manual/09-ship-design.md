@@ -46,7 +46,7 @@ be created.
 - At most one **space yard** component.
 - Special-purpose hulls need a share of their tonnage in one kind of component: carriers in fighter bays, colony ships in colony modules, transports in cargo space.
 
-> If Create Design stays disabled, read the warnings box: it names every rule that fails.
+> If Create Design refuses the design, read the Warnings box: it names every rule that fails.
 
 ## Movement, supply and cost
 
@@ -96,36 +96,49 @@ tabs. You forget an enemy design you have not seen for 50 turns.
 ## The Designs window
 
 [Designs](window:designs) (`F3`) lists your designs on four tabs: **Ship Designs**, **Unit
-Designs**, **Enemy Ship Dsgn** and **Enemy Unit Dsgn**. Select a design to see its numbers:
-cost, size, structure, movement, shields, weapons, cargo and supply, and its components.
+Designs**, **Enemy Ship Dsgn** and **Enemy Unit Dsgn**. Your designs are grouped under their
+design types (enemy designs under their empire's name); each row has a lamp (green for the
+selected design), the design's picture, its name and hull, and **Prototype** while it has never
+been built. Select a design to see its size, design type and creation date beside its picture,
+then its cost, movement, shields, cargo space and supply capacity, and its components as a grid of
+icons (click one for its report). Obsolete designs that no vehicle or queue uses any more are
+deleted by themselves, as the note under the list says.
 
 | Button | What it does |
 |---|---|
-| `Create` | Open the designer with an empty design. |
+| `Create` | Ask which kind of vehicle to design (ship, base, satellite, ...), then open the designer for it. |
 | `Copy` | Open the designer with a copy of the selected design. |
 | `Edit` | Change a prototype that has never been built and is in no queue. |
 | `Upgrade` | Make a new design with the newest components. |
 | `Make Obsolete` | Mark the design obsolete, or current again. |
-| `Hide Obsolete` | Show or hide obsolete designs. |
-| `Stats\Strategy` | Show the design's service record (built, in service, lost, enemy tonnage destroyed) and its default strategy, which you can change there. |
+| `Hide Obsolete` | A check box: show or hide obsolete designs. |
+| `Stats\Strategy` | A check box: show the design's service record (built, in service, lost, enemy tonnage destroyed) and its default strategy, which you can change there. |
 | `Simulator` | Open the [Combat Simulator](window:combat-simulator) (see [Battle windows](combat-windows#the-combat-simulator)). |
 
 ## The Create Design window
 
-[Create Design](window:create-design) is the designer.
+[Create Design](window:create-design) is the designer. It is titled after the kind of vehicle
+you chose (**Ship Design**, **Base Design**, ...) and starts without a size or a name.
 
-1. Pick the hull with **Size**. Then pick a **Type**, and give the design a **Name**, or press `Suggest` for the next name from your race's list.
-2. **Click** components in the **Available** list to add them. **Click** a component on the design to remove it. **Right-click** either list for a component's full report. Hover over a component to see its details.
-3. Watch the totals at the top (space used, cost, movement, supply, cargo, shields, structure, weapons) and the **warnings** box below.
-4. Press `Create Design` when the warnings box says the design meets every rule.
+1. Press the arrow button beside **Size** and pick the hull. Pick a **Design Type** the same
+   way, and type a **Design Name**, or press the arrow button beside it to pick one from your
+   race's list.
+2. **Click** a component in **Components Available** (a grid, three to a row) to add it. The
+   design's components appear in the strip of **Components on Design**; **click** one there to
+   remove it, and use the strip's arrows when it is longer than the window. **Right-click** a
+   component for its full report. Point at a component to see it in **Component Details**.
+3. Watch the figures at the top right (space used, total cost, movement, shields, cargo space,
+   supply capacity) and the **Warnings** box, which lists every rule the design breaks, a
+   missing size or name too.
+4. Press `Create Design` when the Warnings box has nothing left; `Cancel` closes the designer.
 
 The buttons on the right help:
 
 | Button | What it does |
 |---|---|
 | `Comp Type` | Show only one group of components. |
-| `Weap Mount` | Choose the mount for the weapons you add next. |
-| `Condensed View` | Show identical components as one line with a count. |
-| `Only Latest` | Hide older versions of each component. |
+| `Weap Mount` | Choose the mount for the weapons you add next (once a size is chosen). |
+| `To Hit Modifiers` | A check box: the weapons' tiles show their to-hit modifier, with the chosen mount, instead of their size. |
+| `Condensed View` | A check box: show identical components on the design once, with a count. |
+| `Only Latest` | A check box: hide older versions of each component. |
 | `Weapons Report` | Compare weapons, with the chosen mount. |
-| `Clear Design` | Remove every component. |

@@ -8,6 +8,7 @@
 #include "game/rules.hpp"
 #include "game/state.hpp"
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -17,6 +18,16 @@ namespace opense4::client::classic {
 
 // Ships and bases are "ship designs"; everything else is a unit (docs/spec/03 §1).
 bool isUnitHull(ruleset::VehicleType t);
+
+// The vehicle types the empire can design, those it has at least one hull of,
+// in type order: Create in Designs asks for one of them first (observed, spec 07
+// session 3).
+std::vector<ruleset::VehicleType> designableTypes(const game::Rules& r, const game::Empire& e);
+// The empire's hulls of one vehicle type in data order (the Size picker); `keep`
+// is listed too when it is of that type (a design being edited).
+std::vector<uint32_t> hullsOfType(const game::Rules& r, const game::Empire& e, ruleset::VehicleType t, std::optional<uint32_t> keep = std::nullopt);
+// The designer's title for a vehicle type: "Ship Design", "Weapon Platform Design".
+std::string designWindowTitle(ruleset::VehicleType t);
 
 // Replaces every component with the newest available member of its family,
 // keeping the mount (docs/spec/03 §4.1 Upgrade). Returns true if anything changed.
