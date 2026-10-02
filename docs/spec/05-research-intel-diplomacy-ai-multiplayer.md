@@ -952,10 +952,14 @@ A neutral empire therefore claims only its colony systems, and it ignores every 
 except its home. The Politics minister runs after the state update and after the lists
 below are built (§7.1), so each turn's lists and transitions use the territory claimed
 during the previous turn: a new colony's system and its neighbours count only from the
-second start-of-turn update after the colony is founded. A human empire keeps the claims its player makes unless its Politics minister acts. The engine
-differs: it works the territory out afresh in its own start-of-turn assessment (`ai.cpp`
-`computeTerritory`), so it has no one-turn delay, and it also leaves out another computer
-player's home system and an avoided system when one of our colonies is there.
+second start-of-turn update after the colony is founded. A human empire keeps the claims its
+player makes unless its Politics minister acts. OpenSE4 claims after the empire's
+start-of-turn ministers (`ai::claimTerritory`) rather than first thing in the Politics
+minister's run: the state update and those ministers then use the claims of the previous
+turn, as the lists they read do, and the anger step already uses the new claim (§7.3)
+(inferred: that the ministers after Politics read the territory only through the lists,
+question 60). The Politics minister's own decisions therefore see the previous claims, as
+in the value of a system offered in a trade (§7.4).
 
 **Jumps** (confirmed: binary): every AI jump count uses every warp link of the map, known
 or not, and an unreachable system counts as 999 jumps. That covers the territory's "one
@@ -1005,13 +1009,10 @@ High always notice.
   warp point into a system we have explored by another route is never on the frontier,
   even when none of our ships has crossed it. A point is free when none of our ships is
   already headed for it. "Unexplored space borders our territory" means that some frontier
-  point lies in a territory system. The engine differs (`ai.cpp` `assess`): it also puts on
-  the frontier every warp point whose link we do not know, even when its far system is
-  explored. Its territory then keeps bordering "unexplored" space until explorers have
-  crossed every link of every territory system, which holds its computer players in
-  Exploration and sends them from Defend (Short Term) back to Exploration rather than to
-  Infrastructure (question 53). The same list feeds the explorers, the Not Connected test
-  and the Open Warp Point gate (§7.5), so they differ too.
+  point lies in a territory system. The same list feeds the explorers, the Not Connected
+  test and the Open Warp Point gate (§7.5). OpenSE4 follows this since 2026-10-01; it used
+  to count every warp point whose link was unknown as well, which changed the computer
+  players' pace far less than expected (question 53).
 - **Defend list** (confirmed: binary): the enemy-in-territory entries are kept one per
   (system, sector, owner). An entry's threat is the sum of rating + 1 over the owner's
   noticed objects in that sector; a noticed populated colony adds the ratings (without the
@@ -1655,20 +1656,23 @@ binary).
          when that queue happens to have a yard. With only the homeworld's yard, K is 1,
          and the base goes to the first queue of the list, a colony in the empire's
          lowest-numbered colony system, which is the homeworld only when no other colony
-         lies in a lower-numbered system. The engine
-         differs (`ai_economy.cpp` `ShipBuilder::place`): it places a Defense Base at the
-         yard planet with the fewest bases, then the highest planet value, among those
-         whose backlog is under 5 turns.
+         lies in a lower-numbered system. OpenSE4 orders a system's queues by the game's
+         object order, colonies and ships mixed (spec 03 §19 Q62); a ship's yard counts as
+         working when its yard component is neither destroyed nor mothballed, and a
+         queued base item counts as many bases as it builds (inferred, question 60). As the
+         commands refuse a base at a colony without a yard, the engine counts such a base
+         as queued and spends its share of the budget without queueing it, which is what
+         the original's construction step leaves (`ai_economy.cpp` `placeDefenseBase`).
        - Mines, satellites, weapon platforms and fighters go to the first queue in this
          order: the smallest backlog in turns; then the most free cargo space; then the
          fewest units of that kind already in its cargo; then the larger planet; then the
          higher resource production (minerals, organics and radioactives); then the
          highest rate. Any colony's queue can take them. When that first queue lacks the
-         cargo space for the batch, nothing is placed.
+         cargo space for the batch, nothing is placed. OpenSE4 counts as "of that kind"
+         the units of the same vehicle type (inferred, question 60).
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
-         queue. The engine sorts every item this way, the four unit types above included,
-         and it tries the next queue when the first refuses an item.
+         queue.
        - A queue's **backlog** is the sum, over its items, of each item's turns: the
          largest, over the resources the queue has a positive rate for, of (what the item
          still costs ÷ that rate) rounded up. The first item counts only what is still
@@ -1726,9 +1730,7 @@ binary).
   - The facility for an ability is the researched facility that provides it best: the
     highest `Value 1` for the amount-type abilities (those the Design minister scores by
     Amount 1, §7.5 `AI_DesignCreation`), otherwise the highest sum of its tech-requirement
-    levels; a tie goes to the later facility in the file. The engine takes the highest
-    Roman numeral instead (`ai.cpp` `bestFacilityFor`); with the stock facility families
-    both choose the newest version (inferred).
+    levels; a tie goes to the later facility in the file.
   - The facility queued is for the first entry of the matching row that a researched
     facility provides and that no rule below blocks:
     - `Amount` is 0, or the colony already has `Amount` facilities with that ability;
@@ -1741,9 +1743,8 @@ binary).
     - intelligence abilities (`Point Generation - Intelligence`, the planet and system
       intelligence modifiers and `Change Bad Intelligence Chance - System`): intelligence
       projects are off, or the empire's intelligence production has reached `Maximum
-      Intelligence Point Generation`. The engine's two lists also hold the `Generate
-      Points` abilities, and its intelligence list lacks `Change Bad Intelligence Chance -
-      System` (`ai_economy.cpp`);
+      Intelligence Point Generation`. The `Generate Points` abilities are on neither
+      list;
     - Change Atmosphere: the planet is unpopulated, or its atmosphere already suits its
       majority race;
     - a one-per-system ability that the empire's colonies in the system already have,
@@ -1759,8 +1760,8 @@ binary).
       Nebulae Creator, Black Hole Creator, Open Warp Point, Close Warp Point) (confirmed:
       binary);
     - with finite resources: `Resource Generation` or `Resource Gen Modifier Planet` for a
-      resource whose value on this planet is 0. The engine also blocks the system modifiers
-      and the planet-value abilities of that resource there.
+      resource whose value on this planet is 0. The system modifiers and the planet-value
+      abilities of that resource are not blocked.
   - *Nothing to build* (confirmed: binary, question 55): when no entry of the row passes,
     the colony gets nothing in that pass. It keeps its type, no other row or table is
     tried, and no other type is given, so such a colony stays as it is until a rule stops
@@ -1773,8 +1774,7 @@ binary).
     planet. A planet's queue need not be empty. Every queued facility of an older version
     switches to the newest one. This runs at the start of the pass, before any colony gets
     its facility (confirmed: binary), so a planet that receives an upgrade no longer has an
-    empty queue and gets no new facility that turn. The engine queues the upgrades after
-    the colonies' facilities (`ai_economy.cpp` `planFacilities`).
+    empty queue and gets no new facility that turn.
 - **Colony types** (confirmed: binary). The list is fixed: Homeworld (also "Imperial
   Center"), Mining Colony, Farming Colony, Refining Colony, Resupply Base, Research
   Compound, Intelligence Compound, Construction Yard, Military Installation.
@@ -1825,8 +1825,7 @@ binary).
        system leads to. So one such empire beyond two warp points adds 2, and two such
        empires beyond one warp point add 2. Non-friendly means below Non-Aggression, not
        yet met included; present means owning any object there, seen or not (confirmed:
-       binary). The engine differs: it adds 1 per warp point whatever the number of
-       empires beyond it (`ai.cpp` `assess`);
+       binary);
     2. warp jumps from home, fewest first;
     3. planets with ancient ruins first;
     4. breathable atmosphere first;
@@ -3398,6 +3397,19 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     enemy-in-territory list is built as ours is (question 54), so a difference there would
     have to come from the situations themselves, such as treaties between computer
     players (question 59).
+
+    **Measured after the fix** (spec 07 "Pace after the frontier fix"): with the original's
+    frontier and territory our computers' shares barely moved: Infrastructure 7 % → 8 % of
+    all empire-turns (9 % with the frontier, territory and danger rules alone), Defend
+    (Short Term) 53 % → 52 % (78 % of turns 51–100), and 27 of 60 empires still never reach
+    Infrastructure in 100 turns. In the turns with contact and an empty enemy-in-territory
+    list, our territory borders a truly unexplored system 64–75 % of the time; the old
+    rule's unknown links added only 2–3 points to that. The frontier stays because our
+    computers explore slowly: by turns 51–100 they have explored about 12 of 23–37 systems,
+    4–5 frontier points lie open of which nearly all are free, and most of their attack
+    ships (the only explorers besides loaded carriers) sit in fleets. Whether the original
+    explores faster is not known; its statistics files hold the systems with colonies, not
+    the systems explored, so this needs the observation of question 59.
 54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"): **Answer**
     (confirmed: binary), now in §7.2:
     - ships and unit groups other than mine fields: only those the evaluating empire
@@ -3409,10 +3421,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - the systems: the claimed territory (every colony system and every system one jump
       away over all links), with the exclusions and the one-turn delay of §7.2 "Territory".
 
-    The engine matches, except for the territory's delay and exclusions (§7.2). So the
-    list is not where the engine's extra Defend (Short Term) time comes from, and the
-    scratch test of spec 07 that counted a hostile colony only when seen departs from the
-    original.
+    The engine matches, since 2026-10-01 with the territory's delay and exclusions too
+    (§7.2). So the list is not where the engine's extra Defend (Short Term) time comes
+    from, and the scratch test of spec 07 that counted a hostile colony only when seen
+    departs from the original.
 55. **A colony type whose row builds nothing** (§7.5 `AI_Construction_Facilities`, colony
     types): **Answer** (confirmed: binary). The original also leaves such a colony empty:
     when no entry of its row passes, it gets nothing, keeps its type, and no other row,
@@ -3498,3 +3510,45 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     Colonies and Planets windows: type, size, atmosphere (domed or not), facilities, mood
     and research output, and its treaty with each other empire. A debugger session could
     also read each computer empire's AI state every turn (question 53).
+
+    **After the frontier fix** (2026-10-01, spec 07 "Pace after the frontier fix"; seeds
+    1–12, five computers, 60 empires): the gap remains (research 10.0k at turn 50 and 13.6k
+    at turn 100 against 13.9k and 23.5k; research per colony 997 and 877 against 1,423 and
+    1,310). The first candidate above did not materialise: Infrastructure stays at 8 % of
+    the empire-turns (question 53). What our computers have, at turn 50 / 100, per empire:
+    - colonies 10.8 / 16.5: the homeworld, 1.9 / 2.5 breathable and 7.9 / 13.1 domed. A
+      breathable colony has 13.5 facility slots on average, a domed one 2.9 / 2.7;
+    - Research Compounds 2.8 / 4.2, of which 0.5 / 0.6 breathable, with 8.2 / 12.3 Research
+      Centers between them (about three each) and 4.6k / 6.9k research (about 1,650 each).
+      Mining Colonies 2.6 / 4.0 (0.7 / 0.8 breathable), Military Installations 1.2 / 1.8,
+      Construction Yards 1.0 / 1.4, Intelligence Compounds 0.8 / 1.5, Farming 0.8 / 1.3,
+      Refining 0.7 / 1.3;
+    - the homeworld: 3.5k research from five Research Centers, its 15 slots full from turn
+      25 on, so all growth in research comes from the other colonies;
+    - moods: 2 % / 5 % of the colonies Jubilant, 39 % / 22 % Happy, 57 % / 68 % Indifferent,
+      the rest worse;
+    - treaties: of the 1.9 / 2.8 empires met, 0.7 / 0.8 at Non-Aggression or better and
+      0.9 / 1.6 at war;
+    - intelligence: none of the 60 empires produces any at turn 50, 2 at turn 100 (3 of the
+      original's 12 did from turns 60–94).
+
+    The original's fast empires needed two breathable Research Compounds with ten or more
+    free slots by turn 20–30 (question 56). Ours have half a breathable Research Compound by
+    turn 50, so the open questions are how many breathable planets the original's computers
+    settle early, and which type those colonies get.
+60. **Details the territory and queue rules leave open** (§7.2 "Territory", §7.5
+    "Placement"). OpenSE4's choices (inferred):
+    - the start-of-turn ministers after Politics read the territory only through the lists
+      of the state update, never the claimed systems themselves, so the engine claims after
+      them and they use the previous turn's claims;
+    - within a system the empire's queue list follows the game's object order, colonies
+      and ships mixed;
+    - for K and for the "yard colony" test, a colony's yard works while the colony is not
+      cloaked, and a ship's while its yard component is neither destroyed nor mothballed,
+      cloaked or not;
+    - a queued base item counts as many bases as its count builds;
+    - the "units of that kind" of the unit queue choice are the units of the same vehicle
+      type (mines, satellites, weapon platforms or fighters).
+
+    To verify in the executable: which of these the routines test, and whether any start-of-
+    turn minister other than Politics reads the claimed systems directly.

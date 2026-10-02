@@ -557,6 +557,7 @@ private:
             if (held) {
                 const Colony& c = *p_.st.colony(target.planet);
                 o.freeCargo = colonyCargoCapacity(p_.r, p_.st, c) - cargoSpaceUsed(p_.r, p_.st, c.cargo);
+                // Units "of that kind": the same vehicle type (inferred, spec 05 Q60).
                 for (const UnitStack& u : c.cargo.units)
                     if (u.count > 0 && p_.info(u.design).stats.vehicleType == di.stats.vehicleType) o.heldOfKind += u.count;
                 o.size = planetRank(p_.r, p_.st.galaxy.object(c.planet));
@@ -603,7 +604,7 @@ private:
     bool placeDefenseBase(DesignId design) {
         const std::vector<cmd::QueueTarget> list = queueList();
         if (list.empty()) return false;
-        int64_t queuedBases = lostBases_;
+        int64_t queuedBases = lostBases_;  // an item counts as many bases as it builds (inferred, spec 05 Q60)
         for (const cmd::QueueTarget& t : list)
             if (const ConstructionQueue* q = queueOf(t))
                 for (const QueueItem& item : q->items)
@@ -639,8 +640,8 @@ private:
     // The empire's queue list (spec 05 §7.5 "Placement"): every queue it
     // owns, system by system in system order and in the game's object order
     // within a system, colonies and ships mixed (objectOrderKey, spec 03 §19
-    // Q62). Every colony has a queue, a ship one only when it carries a Space
-    // Yard component (spec 02 §6.1).
+    // Q62; inferred, spec 05 Q60). Every colony has a queue, a ship one only
+    // when it carries a Space Yard component (spec 02 §6.1).
     std::vector<cmd::QueueTarget> queueList() const {
         std::vector<std::tuple<uint32_t, uint64_t, cmd::QueueTarget>> keyed;
         for (const auto& c : p_.st.colonies)
@@ -664,7 +665,8 @@ private:
     }
 
     // A working space yard: an uncloaked colony's yard facility, or a yard
-    // component of a ship that is neither destroyed nor mothballed.
+    // component of a ship that is neither destroyed nor mothballed, cloaked or
+    // not (inferred, spec 05 Q60).
     bool workingYard(const cmd::QueueTarget& t) const {
         if (t.vehicle.valid()) {
             const Vehicle* v = p_.st.vehicle(t.vehicle);
