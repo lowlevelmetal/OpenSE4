@@ -908,6 +908,143 @@ Means per empire at turns 25 / 50 / 75 / 100:
   with fewer ships and resources from turn 75 (questions 61 and 62). The bases follow the
   Infrastructure time, which did not grow.
 
+### Resources, ships and colony losses under a debugger (2026-10-02)
+
+**How.** Two more games of the original under the debugger of "Pace observed under a
+debugger", with the same set-up, on maps of 33 and 34 systems; each game's four computer
+races were read from the Players window (`reference/observe/2026-10-02/`). New read-only
+breakpoints recorded, besides the records of that section: each colony's production of each
+resource at the income step of every fifth turn (the facilities' generation, the planet's
+value, the value-adjusted amount, the step-4 percentage and the output, spec 02 §5.1); each
+colony's happiness update every turn, term by term, with the empire-wide part; each empire's
+list of happiness events at its update; every ship's identity, owner, design type, position
+and fleet, every colony and every planet's values, every turn. Ours: the 24 games of that
+section on the engine after the movement rules (0d71f41), with the same records and the same
+happiness breakdown, and for each of the five original games 24 games of ours with that
+game's line-up (the races fixed, everything else as before). "Original" below is all five
+games unless a game is named.
+
+**The five games together.** With the two new games the original's averages move toward
+ours; the first three games sat at the favourable end:
+
+| Turns 51–100 unless marked | Original, 3 games | Original, 5 games | Ours (0d71f41) |
+|---|---|---|---|
+| Defend (Short Term), all turns / turns 51–100 | 46 / 63 % | 48 / 70 % | 51 / 72 % |
+| Infrastructure, all turns / turns 51–100 | 12 / 16 % | 9 / 11 % | 8 / 8 % |
+| Exploration, turns 1–25 | 80 % | 85 % | 75 % |
+| Enemy-in-territory list not empty | 63 % | 70 % | 72 % |
+| Per update: colonies at war / no treaty | 1.01 / 0.32 | 1.55 / 0.78 | 1.84 / 0.28 |
+| Defend turns in spells of 20 turns or more | 35 % | 49 % | 64 % |
+| Listed colonies at war gone ten turns later | 33 % | 18 % (53 of 291) | 15 % |
+| Attack ships in fleets, turns 41–100 | 74–78 % | 75–78 % | 69–73 % |
+
+The game on 34 systems spent 94 % of turns 51–100 in Defend (Short Term), more than any of
+our 24 games (at most 91 %).
+
+**Statistics.** Means per empire, original (25 empires) / ours (120):
+
+| Turn | Colonies | Research | Resources produced | Ships | Tech levels |
+|---|---|---|---|---|---|
+| 25 | 5.7 / 5.3 | 6.9k / 5.5k | 14.0k / 12.6k | 3.5 / 3.4 | 19.0 / 18.9 |
+| 50 | 12.2 / 10.4 | 12.1k / 10.7k | 25.6k / 21.4k | 8.6 / 7.3 | 23.9 / 23.2 |
+| 75 | 16.6 / 13.9 | 15.5k / 13.2k | 34.5k / 26.4k | 14.1 / 11.8 | 29.9 / 29.0 |
+| 100 | 17.0 / 15.6 | 15.5k / 14.6k | 36.9k / 29.6k | 17.4 / 14.0 | 35.6 / 34.8 |
+
+Per game, against the spread of our 24 games: resources produced 25 % higher at turn 100
+(z 3.4) and 31 % at turn 75 (z 3.3); ships 24 % higher at turn 100 (z 1.5); colonies 19 %
+higher at turn 75 (z 1.6) and 9 % at turn 100 (z 0.7).
+
+**Production.**
+- Every output of every colony at the income step of every fifth turn of the two new games
+  (13,100 values) followed spec 02 §5.1, and the step-4 percentages gave each race exactly
+  the effects of our random race build; 45 values came out one below the exact product
+  (the x87 product), as ours do.
+- The five line-ups came in group order 1, 2, 4, 1 (spec 05 §7.1). The race draw matters:
+  three of the original's five games drew the group-4 race with +20 % minerals (the other
+  one has none) and two drew a group-1 race with +20 % on all three resources. With each
+  game's own line-up (the same four races, set in our scratch program), our engine produces
+  30.0k, 26.7k, 27.0k, 29.8k and 27.5k at turn 75 and 34.1k, 29.7k, 30.4k, 34.4k and 30.2k
+  at turn 100 (standard deviations 5.4k–9.1k); the original produced 38.1k, 31.7k, 28.9k,
+  33.2k and 40.4k, and 37.2k, 38.7k, 32.9k, 34.0k and 41.8k. So the matched gap is 22 % at
+  turn 75 (z 2.2) and 16 % at turn 100 (z 1.6).
+- Generation of the colonies' facilities (the sum of their `Resource Generation` values),
+  per empire, original / ours: 24.3k / 19.8k at turn 50, 33.1k / 25.3k at 75, 35.1k / 28.5k
+  at 100. Resources produced per unit of generation: 1.05 / 1.04 at turns 75 and 100 (per
+  game 0.95–1.34 in the original, 0.64–1.39 in ours). Colonized planets have the same
+  values (72–78 % on each resource at turn 50 in the new game against 74–76 % in ours; all
+  planets 0–150 %, asteroid fields 50–300 %), and the mood and population percentages
+  weighted by generation are the same (1.14 / 1.14 at turn 75, 1.12 / 1.14 at turn 100).
+- So the extra resources come from colonies: 16.6 against 13.9 at turn 75, 17.0 against
+  15.6 at turn 100, with more colonies per colonized system (4.3 against 3.5 at turn 75) and
+  slightly more of their facilities generating resources (2.50 of 4.90 per colony against
+  2.33 of 4.94 at turn 75; 2.66 of 5.08 against 2.37 of 4.93 at turn 100). Per colony the
+  generation is 7–12 % higher.
+- Colony ships built per empire in turns 1–25, 26–50, 51–75 and 76–100: 6.7, 6.8, 6.2 and
+  4.0, and 6.5, 9.4, 7.2 and 5.2 in the two new games, against our 5.5, 6.4, 4.8 and 4.2.
+  The original's computers spend more of turns 1–25 in Exploration (85 % against 75 %),
+  where the stock vehicle table asks for a colony ship per three colonies (one per eight in
+  Infrastructure, one per ten in Defend (Short Term)); ours spend 7 % of those turns in
+  Infrastructure (the original 2 %) and 15 % in Defend (Short Term) (12 %). In turns 1–25
+  ours have explored 5.7 systems on average (the original 4.8) and have more attack ships,
+  the explorers (1.63 against 1.17 in turns 1–10, 1.94 against 1.62 in turns 11–20), so in
+  calm turns their territory borders unexplored space less often (76 % against 90 % of the
+  calm turns with contact).
+
+**Happiness.**
+- Per colony and turn, in tenths (two new games / ours), turns 51–75: empire-wide part
+  −1.3 / −1.6, drift +8.8 / +8.8, sector and system events −0.4 / −0.6, ships present
+  −5.4 / −6.1, total +1.7 / +0.4; turns 76–100: +3.6 / +0.2, +3.2 / +8.1, −0.1 / −0.3,
+  −5.5 / −6.9, total +1.0 / +0.8. Moods at turns 76–100: Happy 25 / 36 %, Jubilant 4 / 10 %,
+  Unhappy or worse 13 / 6 %.
+- Jubilant colonies per empire at turn 75 in the five games: 8.6, 0.4, 0.6, 1.6 and 0.0;
+  ours 0.8 on average, at most 4.2 in a game. The first game, where most neighbours held
+  Non-Aggression or better, is the only happy one: a new trade treaty or better calms every
+  colony of both empires at once (spec 02 §4).
+- No update in the two new games met a `Ship Constructed` or `Facility Constructed` event:
+  the event list is not saved, and the host reloads the game every turn (spec 02 §4).
+  Battle, ship-loss, population-loss, colonization and treaty events arrived every turn
+  they happened.
+
+**Ships.** Attack ships built / lost per empire, turns 26–50, 51–75 and 76–100 (identities
+compared turn by turn):
+
+| | 26–50 | 51–75 | 76–100 | Turns 26–100 |
+|---|---|---|---|---|
+| Original, five games | 5.2 / 2.0 | 8.0 / 4.1 | 8.3 / 6.4 | 21.4 / 12.5 (per game 7.6–15.0 lost) |
+| Ours | 5.3 / 2.5 | 8.9 / 6.2 | 10.0 / 9.2 | 24.2 / 17.9 (16.7–18.9 with each original line-up) |
+
+Lost per attack ship and turn in turns 51–100: 1.9 % in the original (2.2 % in fleets, 1.0 %
+outside) against 4.2 % in ours (4.0 % and 4.9 %); before the movement rules ours lost 4.4 %.
+
+**Battles** per empire and 25 turns, turns 51–100 (60–100 for the first new game), from
+the happiness events of the original and our battle reports, by where they were fought and
+whether the empire won, lost or drew:
+
+| Where | Original, game 4 / game 5 | Ours, same line-ups |
+|---|---|---|
+| No colony in the sector | won 4.1 / 3.3, lost 4.1 / 3.3, drawn 1.0 / 1.2 | won 5.2 / 4.9, lost 5.3 / 5.0, drawn 9.2 / 7.0 |
+| An enemy colony | won 2.1 / 3.2, lost 0.9 / 0.8, drawn 0.6 / 0.2 | won 0.9 / 1.1, lost 0.4 / 0.7, drawn 1.4 / 1.1 |
+| Its own colony | won 0.9 / 0.8, lost 2.1 / 3.2, drawn 0.6 / 0.2 | won 0.3 / 0.6, lost 0.9 / 1.2, drawn 1.4 / 1.0 |
+| Colonies lost / population killed | 2.2 / 3.6, 128M / 208M | 1.0 / 1.4, 72M / 156M |
+
+A battle at an enemy colony is won only when the colony is gone at its end (spec 04 §15
+"The verdict"). Our battles away from colonies are seven times as often drawn, mostly with
+no losses on either side; the decisive ones cost about the same per battle.
+
+**Hostile colonies in our territories**, fate ten turns after being listed (turns 51–90),
+original / ours: colonies at war gone 18 / 13 % (the planet left, the colony depopulated
+in a battle), owner changed 1 / 1 %, still hostile 82 / 85 %; colonies of empires without
+a treaty gone 20 / 23 %, now at Non-Aggression or better 13 / 10 % (35 % in the first three
+games). No planet was destroyed. Of the colonies that disappeared in turns 51–100, 93 % in
+the first three games and 80 % in ours had 21–100M people at the last record; 2 % (ours 6 %)
+were held by another empire at the next record.
+
+**What this settles** (spec 05 questions 61–63, 65–67): no rule of production or happiness
+differs except the unsaved event list; the race draw explains part of the resource gap and
+the colony count the rest; the extra ships of the original are fewer losses, not more
+construction; and its hostile colonies go in battles it wins at the colony, at a rate that
+with five games is close to ours.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.
@@ -949,3 +1086,8 @@ Session 4 (2026-10-02), a debugger on the running game, under the same rules as 
   controlled in the Players window, and saved. Each turn the host loads the game, End Turn
   is pressed, the host processes the turn and exits; a script relaunches it for the next
   turn (about 20 s a turn under the debugger).
+- Per-colony production and happiness terms come from breakpoints inside the production
+  and happiness routines. The production ones are enabled only while the income step
+  gathers the empire's totals, and only on every fifth turn, which keeps a turn near 20 s;
+  the happiness routine keeps a running total per term, so each colony's terms are the
+  differences between consecutive readings.

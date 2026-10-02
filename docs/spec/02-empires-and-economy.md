@@ -652,6 +652,22 @@ logged since the last update (each event carries a count):
 System` Val1 in each system is subtracted from the anger of every colony of the owner
 there (then clamped to 0–100 and the capital limit). This is outside the clamp above.
 
+**Events waiting for the next update are not saved** (confirmed: binary). The empire's
+list of events since its last update is written to no saved game and read from none; a
+loaded game starts every list empty. An event logged after the empire's update in its
+end-of-turn processing (§12) waits for the next turn's update: the `Ship Constructed` and
+`Facility Constructed` events of its construction step (§6), and the events of anything
+later in the turn (spec 05 §8, ground combat included). It counts only when the game is not
+saved and loaded before that update. A game hosted turn by turn (every game on different
+machines and every play-by-email game, which the host saves after each turn and loads for
+the next) therefore never counts a construction event; a game played on one machine
+without reloading does. Observed under a debugger (2026-10-02): in two hosted 100-turn games
+of five computer players, no update met a construction event, while battle, ship-loss,
+population-loss, colonization and treaty events (all logged before the update of the same
+turn) arrived every turn they happened. The engine differs: it keeps such events in the
+saved state (`GameState::pendingMood`) and applies them at the next update whether or not
+the game was saved and loaded.
+
 **Conditions** do not affect anger.
 
 **Rules from the release notes** [H], consistent with the above
@@ -709,6 +725,13 @@ there (then clamped to 0–100 and the capital limit). This is outside the clamp
    Solar output is not capped and draws nothing.
 
 The **system modifier** works on the empire's total for a system, not per colony (§5.5).
+
+Observed under a debugger (2026-10-02, spec 07 "Resources, ships and colony losses under a
+debugger"): in two 100-turn games of five computer players, every output of every colony
+at the income step of every fifth turn (13,100 values) followed steps 1–4 and 6 with the
+racial effects of spec 05 §7.1's random race build; 45 of them came out one below the
+exact product, as the x87 product of step 4 gives (for example 2,500 × 138 % gave 3,449).
+The engine matches, including those cases.
 
 Check against the Quick Start homeworld (07-observations): organics 800 at 98 % value →
 784; Happy (+10) and a 2000M population (+30) → `trunc(784 × 140 %)` = 1097. Research

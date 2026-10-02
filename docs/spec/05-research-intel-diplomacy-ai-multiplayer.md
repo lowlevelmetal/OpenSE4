@@ -834,6 +834,13 @@ window, where the ranking shows the result.
   - The race is drawn uniformly from the unused races of that group. With no qualifying
     group, or no unused race in it, it is drawn uniformly from all unused races. Neutral
     players always draw uniformly from the unused neutral races.
+  - So with the stock settings (four groups at 30, 30, 30 and 10 %) and the Terran (group 3)
+    as the only other empire, four computer players always come from groups 1, 2, 4 and 1,
+    in that order: one of the two group-4 races in every game. Observed (2026-10-02, spec 07
+    "Resources, ships and colony losses under a debugger"): five games of the original drew
+    their four races in exactly that group order. The engine matches. The races' output
+    effects differ a lot (from +25 to −5 % on minerals), so the draw alone moves an empire's
+    resource output by up to a quarter from game to game.
 - **Random race build** (confirmed: binary):
   - A random computer player's race uses the `AI_General` "Race Opt" set of the game's
     racial-point level: Race Opt 1 for Low (2000 points), 2 for Medium (3000) and 3 for
@@ -3767,6 +3774,36 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     (trade treaty income, gifts and tributes, scrapping); which happiness inputs make the
     original's colonies Jubilant (our ships in the system or sector, treaties); and the
     output of a few computer colonies read under a debugger beside the same colonies in ours.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Resources, ships and colony
+    losses under a debugger", five original games against 24 of ours on 0d71f41). No rule of
+    production differs, and the first three games overstated the gap:
+    - Every output of every colony at the income step of every fifth turn of two games
+      (13,100 values) followed spec 02 §5.1, with the racial effects of our random race
+      build. Colonized planets have the same values, and the mood and population
+      percentages weighted by generation are the same (1.12–1.14 in both). Resources
+      produced per unit of the facilities' generation: 1.05 against our 1.04.
+    - "Resources produced" in the statistics is the delivered production of minerals,
+      organics and radioactives at the moment the record is made (spec 05 §5): no trade,
+      tariffs or bonus (confirmed: binary). The engine matches.
+    - The race draw follows §7.1 in both, but its luck matters: three of the five games drew
+      the group-4 race with +20 % minerals and two a group-1 race with +20 % on all three
+      resources. With each game's own line-up our engine produces 22 % less at turn 75 and
+      16 % less at turn 100 (z 2.2 and 1.6 over five games), against 31 % and 25 % with
+      random line-ups.
+    - The rest is the colonies: 16.6 against 13.9 per empire at turn 75 and 17.0 against
+      15.6 at turn 100, more of them per colonized system, and slightly more of their
+      facility slots in resource facilities (7–12 % more generation per colony). The
+      original builds more colony ships (two games: 6.6, 8.1, 6.7 and 4.6 per empire in turns
+      1–25, 26–50, 51–75 and 76–100 against our 5.5, 6.4, 4.8 and 4.2) and spends more of
+      turns 1–25 in Exploration, whose vehicle row asks for the most colony ships (question
+      65).
+    - Happiness: Jubilant colonies per empire at turn 75 were 8.6, 0.4, 0.6, 1.6 and 0.0 in
+      the five games against 0.8 (at most 4.2) in ours; the one happy game had most
+      neighbours at Non-Aggression or better, and new treaties calm every colony. The terms
+      of the update per colony have the same sizes in both (spec 07). One rule differs: the
+      event list is not saved, so a game hosted turn by turn never counts construction
+      events (spec 02 §4, confirmed: binary); the engine counts them.
 62. **The computer players' ships** (spec 07 "Pace observed under a debugger"). From turn
     75 the original's computer empires have more ships: 14.4 and 19.7 at turns 75 and 100
     against our 10.8 and 13.1, attack ships alone 9.1 and 13.2 against 6.9 and 8.1, although
@@ -3775,6 +3812,18 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     many ships each side builds and loses per turn (a debugger log of ships created and
     destroyed in the original, the same from our engine), and how the budget is split among
     the rows of the vehicle table in each state.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Resources, ships and colony
+    losses under a debugger"): losses, not construction or the budget. Over turns 26–100
+    each of the original's computer empires built 21.4 attack ships (15.6–27.6 per game) and
+    lost 12.5 (7.6–15.0); ours build 24.2 and lose 17.9 (16.7–18.9 with each original game's
+    line-up). Per attack ship and turn in turns 51–100, 1.9 % of the original's are lost
+    against 4.2 % of ours (4.4 % before the movement rules), in fleets 2.2 % against 4.0 %.
+    Our extra losses fall in battles away from colonies, which ours fight more often (9.9–10.5
+    decided and 7–9 drawn per empire and 25 turns, against the original's 6.6–8.2 and
+    1.0–1.2 in two games), while a decided battle costs about the same on both sides
+    (question 66). Nor do the resources (question 61) limit either side: from turn 50 on
+    both keep 43–67k of each resource in stock (the original 45–67k, ours 43–53k).
 63. **How fast hostile colonies in the territory go** (spec 07 "Pace observed under a
     debugger"). Of the colonies of an enemy at war listed in a territory, 33 % (21–46 % per
     game) are gone ten turns later in the original against 13 % in ours, and the original
@@ -3787,6 +3836,18 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     debugger session; which minister sends the ships that do it (the Attack minister in
     Attack, the Defense minister and the defence fleets in Defend (Short Term), the attack
     fleets in other states); and whether our ships reach those colonies and fight them.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Resources, ships and colony
+    losses under a debugger"). By bombardment in battle: no planet was destroyed, ownership
+    changed for 1–2 % of them (by capture or by settling an emptied planet), and with five
+    games treaties take 13 % of the no-treaty colonies out of the list within ten turns
+    against our 10 % (35 % in the first three games). The colonies go when a battle at the
+    colony kills their last people; most had 21–100M. With the two new games the rate is 18 %
+    of listed colonies at war within ten turns (53 of 291), against our 15 %, not 33 %. The
+    difference left is in the outcome of the battles fought at an enemy colony: per empire
+    and 25 turns the original won 2.1–3.2 of them, lost 0.8–0.9 and drew 0.2–0.6, against
+    our 0.9–1.1, 0.4–0.7 and 1.1–1.4 for about as many battles there, and it lost 2.2–3.6
+    colonies per empire and 25 turns against our 1.0–1.4 (question 67).
 64. **Details the one-turn orders, the exploration rules and the lists leave open** (§7.5
     "How long the ministers' movement orders last", "Exploration", "Placement", §7.2 "Whose
     lists the economy step reads"). OpenSE4's choices since 2026-10-02 (inferred):
@@ -3822,3 +3883,35 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     explorer compares with its distance; whose settle test the borrowed colonization targets
     get, and what the neutral empire's colony-ship test is; and where a planet made during
     play goes on its system's list.
+65. **The computer players' first 25 turns** (spec 07 "Resources, ships and colony losses
+    under a debugger", question 61). The original's computers spend 85 % of turns 1–25 in
+    Exploration, 12 % in Defend (Short Term) and 2 % in Infrastructure; ours 75, 15 and 7 %.
+    Exploration's vehicle row asks for the most colony ships, and the original builds more of
+    them and has 12.2 colonies at turn 50 against our 10.4. In turns 1–25 ours have explored
+    5.7 systems against 4.8, with more attack ships (1.63 against 1.17 in turns 1–10, 1.94
+    against 1.62 in turns 11–20), and their territory borders unexplored space in 76 % of the
+    calm turns with contact against 90 %. The rules for the first designs, the first builds
+    and the explorers are confirmed (spec 01 §3.6, §7.5), so the cause is open. To verify:
+    the turn of each empire's first and second attack ship and first colony ship, the build
+    queue of the homeworld in turns 1–10, and the explorers' targets in turns 1–25, read under
+    a debugger beside ours.
+66. **Battles away from colonies** (spec 07 "Resources, ships and colony losses under a
+    debugger", question 62). Per empire and 25 turns of turns 51–100, our computer players
+    fight 9.9–10.5 battles away from any colony that one side wins and 7–9 that end drawn,
+    most with no loss; in the original (two games) 6.6–8.2 and 1.0–1.2. Their attack ships
+    are lost at 4.2 % per ship and turn against 1.9 %. A battle starts in a simultaneous
+    game wherever an object carried out an order that day and sees a hostile object (spec 04
+    §2), the same in both. To verify: per battle in the original, the sector (warp point,
+    planet or empty), the participants and their ships by design type and order, and the
+    losses, read under a debugger from the battle setup and the verdict, beside the same
+    records of ours; and in particular whether the drawn battles of ours are ships passing
+    each other on their way.
+67. **Battles at an enemy colony** (spec 07 "Resources, ships and colony losses under a
+    debugger", question 63). The original's computer players win most battles they fight at
+    an enemy colony (2.1–3.2 won, 0.8–0.9 lost, 0.2–0.6 drawn per empire and 25 turns in
+    two games), and a win there means the colony is gone (spec 04 §15). Ours fight as many
+    there but draw most (0.9–1.1 won, 0.4–0.7 lost, 1.1–1.4 drawn), so the colony survives.
+    To verify, per such battle in the original and in ours: the attacking ships, their
+    weapons and orders, the colony's population, shields and stored units (weapon
+    platforms and satellites take hits before the people, spec 04 §11), the number of
+    combat turns fought, and the damage the colony took.

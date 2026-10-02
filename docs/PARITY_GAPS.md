@@ -483,19 +483,24 @@ against 1.7 at turn 10 and 5.3 against 5.3 at turn 25; homeworlds at 2000M throu
 first ships after turn 2 or 3; the homeworld's Happy bonus lost in the statistics of turn 4
 for most empires).
 
-**Observed under a debugger** (2026-10-02, spec 07 "Pace observed under a debugger"): three
-original games in which all five empires are computer players, each empire's AI state and
-lists read every turn, against 24 of ours with the same set-up and records. Research agrees
-in this set-up (11.0k / 13.8k per empire at turns 50 / 100 against our 10.3k / 14.1k;
-research per colony 1,041 / 1,038 against 1,074 / 954), as do colonies (15.5 against 15.7 at
-turn 100, the same mix of types), population and tech levels: the research lead measured
-in session 3 came from its set-up and spread (spec 05 question 59). What differs:
+**Observed under a debugger** (2026-10-02, spec 07 "Pace observed under a debugger" and
+"Resources, ships and colony losses under a debugger"): five original games in which all
+five empires are computer players, each empire's AI state, lists, colonies, production,
+happiness and ships read every turn, against 24 of ours with the same set-up and records.
+The first three games sat at the favourable end of the original's spread; the rows give all
+five. Research per colony agrees in this set-up (1,031 / 1,021 at turns 50 / 100 against our
+1,123 / 1,089), and so do the colony types, population per colony and tech levels (35.6
+against 34.8 at turn 100): the research lead measured in session 3 came from its set-up and
+spread (spec 05 question 59); what is left of it (12.1k / 15.5k against 10.7k / 14.6k)
+follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With the rules of 2026-10-02 below, our fleets hold the original's share of the attack ships and our territories list a fifth fewer hostile ships, but the list stays filled as often: it holds about 1.8 times as many hostile colonies at war, which go about half as fast (spec 05 question 63; questions 61–62 for the ships and resources). On 120 seeds our shares did not move (50 % and 72 % before and after); the 24 seeds of the comparison sit 3–4 points higher | Defend (Short Term) 51 % of all turns, 72 % of turns 51–100 (seeds 1–24; 46–91 % per game); Infrastructure 8 % and 8 %; 63 of 120 empires ever in Infrastructure; 15 % of listed war colonies gone within 10 turns | 46 % and 63 % (49–73 % per game); Infrastructure 12 % and 16 % (2–30 %); 10 of 15; 33 % | M |
-| Bases. The placement rule is the original's (all 119 placements observed went to the K-th queue, 9 reached a yard) and every placement is made in Infrastructure, so the bases follow the Infrastructure time of the row above | 0.1–0.2 bases per empire from turn 50 | 0.5–0.6 | M |
-| Ships and resources from turn 75 (spec 05 questions 61, 62): the same population, colony types and facilities, but the original's colonies are happier (3.2–3.3 Jubilant per empire against 0.8–1.5) and it has more attack ships | Ships 11.8 / 14.0 per empire at turns 75 / 100 (attack ships 7.6 / 8.5, 69–73 % of them in fleets from turn 41); resources produced 26.4k / 29.6k | 14.4 / 19.7 (9.1 / 13.2, 74–78 %); 32.9k / 36.3k | M |
+| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 51 % of all turns, 72 % of turns 51–100 (seeds 1–24, at most 91 % per game); Infrastructure 8 % and 8 %; Exploration 75 % of turns 1–25; 15 % of listed war colonies gone within 10 turns | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
+| Bases. The placement rule is the original's (all 119 placements observed went to the K-th queue, 9 reached a yard) and every placement is made in Infrastructure, so the bases follow the Infrastructure time of the row above | 0.1–0.2 bases per empire from turn 50 | 0.4–0.5 | M |
+| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 21.4k / 26.4k / 29.6k at turns 50 / 75 / 100; colonies 10.4 / 13.9 / 15.6 | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
+| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in battles away from colonies, which ours fight more often and draw far more often (question 66) | Ships 11.8 / 14.0 per empire at turns 75 / 100 (attack ships 7.6 / 8.5); over turns 26–100 24.2 attack ships built and 17.9 lost per empire; 4.2 % lost per attack ship and turn in turns 51–100 | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
+| Battles at enemy colonies (spec 05 question 63): hostile colonies go by bombardment in both; the original's attacks there end with the colony gone far more often (question 67) | Per empire and 25 turns of turns 51–100: battles at an enemy colony won 0.9–1.1, lost 0.4–0.7, drawn 1.1–1.4; colonies lost 1.0–1.4 | 2.1–3.2, 0.8–0.9, 0.2–0.6; 2.2–3.6 (two games) | M |
 
 The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
 implemented that day; spec 07 "Pace after the movement rules" measures them:
@@ -558,6 +563,13 @@ ship's yard works while its component is intact and not mothballed, and units "o
 share the vehicle type, which differ (the queue list details above, implemented on
 2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, and to
 seed 19 on 2026-10-02, whose games still cover battles, events, intelligence and politics.
+
+Found later on 2026-10-02 (spec 02 §4, confirmed: binary), not yet implemented: the
+original saves no happiness event that waits for the next update, and a loaded game starts
+with none. So a game hosted turn by turn (on different machines, or by email) never counts
+the `Ship Constructed` and `Facility Constructed` events of the construction step, nor any
+other event logged after the empire's update; the engine keeps them in the saved state
+(`GameState::pendingMood`) and always applies them.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state
