@@ -545,6 +545,14 @@ What our computer players do (seeds 1–12, five computers), for the analyst que
   the Homeworld rows (Q55) gives 14.6k research; never entering Defend (Short Term) gives 17.2
   colonies, 0.5 bases and 13.4k research; placing Defense Bases whatever the queue backlog
   changes nothing. None of these closes the gap alone.
+- **Settled from the executable** (spec 05 questions 53–56, 2026-10-01): the original's
+  enemy-in-territory list is the engine's, so the first two experiments above depart from
+  the original. What keeps our computer players out of Infrastructure is their exploration
+  frontier, which also counts unknown links into explored systems (spec 05 §7.2). Set
+  against the original's statistics files, ours have the same population and resource
+  output but about 40 % less research per colony from turn 25, while the original's fastest
+  empires add about two Research Centers a turn (spec 05 question 56). The cause of that
+  is spec 05 question 59.
 
 ### Side by side: our client against the original (Quick Start, first turn)
 
