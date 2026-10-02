@@ -128,7 +128,7 @@ void planExploration(Planner& p) {
         --room[best->value];
         const SpaceObject& obj = p.st.galaxy.object(*best);
         std::vector<Order> orders;
-        if (obj.system != at.system) orders.push_back(moveOrder(locationOf(p.st.galaxy, *best)));
+        if (obj.system != at.system) orders.push_back(seekOrder(locationOf(p.st.galaxy, *best)));
         orders.push_back(warpThrough(p.st, *best));
         p.setOrders(id, std::move(orders));
     }

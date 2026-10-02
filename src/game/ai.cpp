@@ -301,7 +301,7 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
     auto note = [&](const std::vector<Order>& orders) {
         for (const Order& o : orders) {
             if ((o.kind == OrderKind::Warp || o.kind == OrderKind::Explore) && o.object.valid()) headed.insert(o.object);
-            if (o.kind == OrderKind::MoveTo) headedTo.insert(o.location);
+            if (o.kind == OrderKind::MoveTo || (o.kind == OrderKind::Seek && !o.vehicle.valid() && !o.object.valid())) headedTo.insert(o.location);
         }
     };
     for (const Vehicle& v : s.vehicles)  // fleet members hold copies of their fleets' orders
@@ -682,6 +682,38 @@ Order moveOrder(Location where) {
 Order simpleOrder(OrderKind k) {
     Order o;
     o.kind = k;
+    return o;
+}
+
+Order seekOrder(Location where) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.location = where;
+    return o;
+}
+
+Order seekAfter(const Vehicle& target) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.vehicle = target.id;
+    o.location = target.location;  // where it was when the order was given
+    return o;
+}
+
+Order seekPlanet(const GameState& s, ObjectId planet) {
+    Order o;
+    o.kind = OrderKind::Seek;
+    o.object = planet;
+    o.location = locationOf(s.galaxy, planet);
+    return o;
+}
+
+Order attackHere() { return simpleOrder(OrderKind::Attack); }
+
+Order joinFleetOrder(FleetId fleet) {
+    Order o;
+    o.kind = OrderKind::JoinFleet;
+    o.amount = static_cast<int>(fleet.value);
     return o;
 }
 

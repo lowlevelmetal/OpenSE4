@@ -306,5 +306,16 @@ bool starDestroyerFlag(const Planner& p);
 // Order helpers.
 Order moveOrder(Location where);
 Order simpleOrder(OrderKind k);
+// The ministers' movement orders (spec 05 §7.5 "How long the ministers'
+// movement orders last", confirmed: binary): a Seek toward a sector, or after
+// a ship or planet, that lasts one movement phase (the defence, attack, fleet
+// goals, exploration, patrol, repair and Space Yard Ship orders); the stored
+// Attack, which a ship already on its target's sector carries out at once and
+// is done with; and the recruits' Join Fleet, which lasts until it joins.
+Order seekOrder(Location where);
+Order seekAfter(const Vehicle& target);
+Order seekPlanet(const GameState& s, ObjectId planet);
+Order attackHere();
+Order joinFleetOrder(FleetId fleet);
 
 } // namespace opense4::game::ai::detail

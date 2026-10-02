@@ -2158,9 +2158,10 @@ binary).
       and it joins as soon as it stands where the fleet stands; it waits when out of
       movement points and fails (clearing the list) only when no route is left or the
       fleet is gone. The ship counts toward the fleet's size from the moment it is ordered.
-      The engine differs: `planFleets` (`ai_military.cpp`) gives a Move To the spot where
-      the leader stood and lets the ship join only when a later turn finds it there, which
-      rarely happens once the fleet moves on.
+      OpenSE4 follows this since 2026-10-02: the order is `OrderKind::JoinFleet` (the fleet
+      in `amount`), and `planFleets` counts the ships that carry one for a fleet among its
+      members. A recruit also waits, rather than fails, when a hazard, a busy yard or a
+      blocked way stops its step (inferred from "fails only when").
     - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
       on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
       an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
@@ -2203,14 +2204,21 @@ binary).
   So at every start of turn the ministers find the computer player's warships idle (or
   with only a Warp left) and plan them again: they are free to be recruited by a fleet,
   to defend against this turn's threats, to explore or to patrol. Only the colonization,
-  transport, resupply, Join Fleet and stellar-manipulation orders last until done. The
-  engine differs: it gives Move To and Attack orders, which last until done, so a ship
-  sent to patrol, explore or defend stays busy over several turns and the Fleets minister,
-  which recruits only idle ships, rarely finds any (the one-turn Seek of Destroy Black Hole
-  and Destroy Nebulae ships is the only one it imitates). A scratch run in which our
-  computers' warships dropped such orders at the end of each turn, and recruits chased
-  their fleet, moved Defend (Short Term) from 76 % to 70 % of the turns 51–100 (spec 07
-  "Pace observed under a debugger").
+  transport, resupply, Join Fleet and stellar-manipulation orders last until done.
+  OpenSE4 follows this since 2026-10-02 with an order of its own, `OrderKind::Seek`,
+  which only the ministers give: toward a sector, or after a ship or planet whose current
+  sector is the goal. Its steps are a pursuit's (a hazard or a battle on one only stops it
+  for that run of the list, spec 03 §6.4), and at its goal it waits without attacking, as
+  a group with no drone does at the target of an Attack (spec 03 §8), so the day's battle
+  check covers the sector on each of its actions. The movement phase removes every Seek
+  after its last day. In a turn-based game a Seek that arrives is done and the next order
+  runs with the movement left, and what is left of one when its group's run ends (out of
+  movement, stopped by a hazard or a battle) is removed then (inferred: "done once moved",
+  question 64). The ministers' Attack is the stored Attack that names no target and no
+  place (spec 03 §8): carried out at once where the group stands, at 1 movement point,
+  and done, in either kind of game; the Ship Cloaking minister's ships lower their cloaks
+  for it and raise them again after the day's battles. Retrofit, the layers, sweepers,
+  carriers, troop transports and drones keep their own orders (§7.5 above).
 - **Attack and defence** (Attack and Defense ministers; confirmed: binary).
   - *Defence* (confirmed: binary): only in Defend (Short Term). Each defender in turn goes
     to the first entry, in the defend-list systems and the Defense minister's order
@@ -3755,3 +3763,12 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     debugger session; which minister sends the ships that do it (the Attack minister in
     Attack, the Defense minister and the defence fleets in Defend (Short Term), the attack
     fleets in other states); and whether our ships reach those colonies and fight them.
+64. **Details the one-turn orders and the exploration rules leave open** (§7.5 "How long
+    the ministers' movement orders last", "Exploration", §7.2 "Whose lists the economy step
+    reads"). OpenSE4's choices since 2026-10-02 (inferred):
+    - a turn-based Seek that arrives is done and the next order (an explorer's Warp) runs
+      with the movement left; what is left of one when its group's run ends, because the
+      movement is spent or a hazard or a battle stopped it, is removed then.
+
+    To verify in the executable: when a turn-based Seek leaves the list, and whether the
+    order behind it runs in the same turn.

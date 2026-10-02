@@ -100,12 +100,13 @@ bool attackMaterial(Planner& p, const Vehicle& v) {
     }
 }
 
-// The goal of the attack fleets in the current state (spec 05 §7.5).
+// The goal of the attack fleets in the current state (spec 05 §7.5): a Seek
+// that lasts one movement phase, so the fleet heads for it again every turn.
 std::vector<Order> stateGoal(Planner& p) {
     const AiMemory& m = p.emp().aiMemory;
     switch (p.state) {
         case AiState::PrepareForAttack:
-            if (m.staging.valid()) return {moveOrder(spotIn(p, m.staging))};
+            if (m.staging.valid()) return {seekOrder(spotIn(p, m.staging))};
             return {};
         case AiState::Attack: {
             SystemId best;
@@ -119,28 +120,25 @@ std::vector<Order> stateGoal(Planner& p) {
                 }
             }
             for (const Candidate& c : p.sit.candidates)
-                if (c.system == best && hostileTo(p.emp(), c.owner))
-                    return {moveOrder(locationOf(p.st.galaxy, c.planet)), attackPlanet(p.st, c.planet)};
+                if (c.system == best && hostileTo(p.emp(), c.owner)) return {seekOrder(locationOf(p.st.galaxy, c.planet))};
             return {};
         }
         case AiState::SecureHoldings:
-            if (m.secured.valid()) return {moveOrder(spotIn(p, m.secured))};
+            if (m.secured.valid()) return {seekOrder(spotIn(p, m.secured))};
             return {};
         default:
-            if (!p.sit.candidates.empty() && p.atWarWith(p.sit.candidates.front().owner)) {
-                const ObjectId planet = p.sit.candidates.front().planet;
-                return {moveOrder(locationOf(p.st.galaxy, planet)), attackPlanet(p.st, planet)};
-            }
+            if (!p.sit.candidates.empty() && p.atWarWith(p.sit.candidates.front().owner))
+                return {seekOrder(locationOf(p.st.galaxy, p.sit.candidates.front().planet))};
             return {};
     }
 }
 
-// Orders that engage an enemy-in-territory entry: in a simultaneous game a
-// ship is pursued, otherwise its spot is the goal (spec 05 §7.5).
+// Orders that engage an enemy-in-territory entry (spec 05 §7.5 AI_Fleets): in
+// a simultaneous game a Seek after the ship, otherwise a Seek toward its spot.
 std::vector<Order> engage(const Planner& p, const Threat& t) {
     if (t.vehicle.valid())
-        if (const Vehicle* v = p.st.vehicle(t.vehicle)) return {p.st.options.simultaneous ? attackVehicle(*v) : moveOrder(v->location)};
-    if (t.planet.valid()) return {moveOrder(locationOf(p.st.galaxy, t.planet)), attackPlanet(p.st, t.planet)};
+        if (const Vehicle* v = p.st.vehicle(t.vehicle)) return {p.st.options.simultaneous ? seekAfter(*v) : seekOrder(v->location)};
+    if (t.planet.valid()) return {seekOrder(locationOf(p.st.galaxy, t.planet))};
     return {};
 }
 
@@ -278,15 +276,20 @@ void planFleets(Planner& p) {
     std::vector<uint8_t> attack(keep.size(), 0);
     for (int i = 1; i <= n; ++i) attack[static_cast<size_t>(i - 1)] = (i % 2 == 1) && xmath::Ext((i + 1) / 2) < attackShare;
 
-    // Recruits: idle ships outside fleets within 3 jumps.
+    // Recruits: idle ships outside fleets within 3 jumps. They join at once
+    // at the fleet's spot; otherwise they get a Join Fleet order, which chases
+    // the fleet until it joins, and count toward its size from then on.
     for (size_t k = 0; k < keep.size(); ++k) {
         const Fleet* f = p.st.fleet(keep[k]);
         const Vehicle* leader = f ? fleetLeader(p.st, *f) : nullptr;
         if (!leader) continue;
         const bool defenceLed = p.info(leader->design).role == Role::Defense;
-        const Location at = leader->location;
+        const Location at = f->location;
         const std::vector<int> jumps = p.jumpsFrom(at.system);
         int64_t size = static_cast<int64_t>(f->members.size());
+        for (const Vehicle& v : p.st.vehicles)
+            size += v.owner == p.id && v.count > 0 && !v.fleet.valid() && !v.orders.empty() && v.orders.front().kind == OrderKind::JoinFleet &&
+                    v.orders.front().amount == static_cast<int>(keep[k].value);
         for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
             if (size >= members) break;
             const Vehicle* v = p.st.vehicle(id);
@@ -296,8 +299,8 @@ void planFleets(Planner& p) {
             if (j > 3) continue;
             if (v->location == at) {
                 if (p.emit(cmd::JoinFleet{keep[k], id})) ++size;
-            } else if (p.setOrders(id, {moveOrder(at)})) {
-                ++size;  // ordered to join (it joins when it arrives)
+            } else if (p.setOrders(id, {joinFleetOrder(keep[k])})) {
+                ++size;
             }
             f = p.st.fleet(keep[k]);
         }
@@ -360,14 +363,14 @@ void planFleets(Planner& p) {
                     fewest = ships;
                 }
             }
-            if (best && leader->location != locationOf(p.st.galaxy, *best)) p.setFleetOrders(keep[k], {moveOrder(locationOf(p.st.galaxy, *best))});
+            if (best && leader->location != locationOf(p.st.galaxy, *best)) p.setFleetOrders(keep[k], {seekOrder(locationOf(p.st.galaxy, *best))});
         } else if (!p.sit.freeFrontier.empty() && !p.neutral) {
             const ObjectId wp = p.sit.freeFrontier.front();
             Order warp;
             warp.kind = OrderKind::Warp;
             warp.object = wp;
             warp.location = locationOf(p.st.galaxy, wp);
-            p.setFleetOrders(keep[k], {moveOrder(warp.location), warp});
+            p.setFleetOrders(keep[k], {seekOrder(warp.location), warp});
         }
     }
 }
@@ -378,10 +381,11 @@ void planFleets(Planner& p) {
 // Each defender in turn goes to the first entry, in the defend-list systems
 // and the Defense minister's order (§7.2: the weaker threat first), whose
 // assigned strength is at most round(its threat × 1.3) at Low difficulty or
-// round(its threat × 1.5) at Medium and High. The order is Attack when the
-// defender is already in that sector, otherwise a move there, or in a
-// simultaneous game a pursuit of the entry's latest object. The entry's
-// assigned strength then grows by the defender's rating, without the + 1.
+// round(its threat × 1.5) at Medium and High. The order is the stored Attack
+// when the defender is already in that sector, otherwise a Seek there, or in
+// a simultaneous game a Seek after the entry's latest object; a Seek lasts
+// one movement phase. The entry's assigned strength then grows by the
+// defender's rating, without the + 1.
 void planDefense(Planner& p) {
     if (!p.on(Minister::Defense) || anyFleet(p) || p.state != AiState::DefendShortTerm || p.sit.defend.empty()) return;
     const xmath::Ext factor = p.difficulty == kDifficultyLow ? kOnePoint3 : kOnePoint5;
@@ -398,12 +402,12 @@ void planDefense(Planner& p) {
         for (size_t i = 0; i < entries.size(); ++i) {
             const int64_t limit = (factor * xmath::Ext(entries[i].threat) / xmath::Ext(kStrengthScale)).round() * kStrengthScale;
             if (assigned[i] > limit) continue;
-            // Attack there (a pursuit in a simultaneous game), else a move there.
+            // Attack there, else a Seek after the object (simultaneous) or to its sector.
             const Threat& latest = entries[i].latest;
             const Vehicle* target = latest.vehicle.valid() ? p.st.vehicle(latest.vehicle) : nullptr;
-            const Order order = v->location == entries[i].where || p.st.options.simultaneous
-                                    ? (target ? attackVehicle(*target) : attackPlanet(p.st, latest.planet))
-                                    : moveOrder(entries[i].where);
+            const Order order = v->location == entries[i].where ? attackHere()
+                                : p.st.options.simultaneous   ? (target ? seekAfter(*target) : seekPlanet(p.st, latest.planet))
+                                                              : seekOrder(entries[i].where);
             if (p.setOrders(id, {order})) assigned[i] += vehicleRating(p.r, p.st, *p.st.vehicle(id));
             break;
         }
@@ -440,8 +444,9 @@ void planAttack(Planner& p) {
         for (size_t i = 0; i < candidates.size() && !pick; ++i)
             if (p.rng.percent(75)) pick = i;
         if (!pick) continue;
+        // The stored Attack when the ship is already in that sector, else a Seek there.
         const Location at = locationOf(p.st.galaxy, candidates[*pick]->planet);
-        const Order order = v->location == at ? attackPlanet(p.st, candidates[*pick]->planet) : moveOrder(at);
+        const Order order = v->location == at ? attackHere() : seekOrder(at);
         if (p.setOrders(id, {order})) assigned[*pick] += p.strengthOf(*v);
     }
 }
@@ -474,7 +479,7 @@ void planPatrol(Planner& p) {
             p.busy.insert(id);  // already on station
             continue;
         }
-        if (p.setOrders(id, {moveOrder(at)})) {
+        if (p.setOrders(id, {seekOrder(at)})) {
             --ships[v->location];
             ++ships[at];
         }
@@ -688,7 +693,7 @@ void planSpaceYardShips(Planner& p) {
             continue;
         }
         const Location at = goals[near->goal];
-        p.setOrders(id, at == v->location ? std::vector<Order>{} : std::vector<Order>{moveOrder(at)});
+        p.setOrders(id, at == v->location ? std::vector<Order>{} : std::vector<Order>{seekOrder(at)});
     }
 }
 
@@ -782,25 +787,10 @@ void planStellarManipulation(Planner& p) {
             for (const Order& o : v.orders)
                 if (o.kind == OrderKind::StellarManipulation && o.object.valid()) headedFor.insert(o.object);
 
-    // A Destroy Black Hole or Destroy Nebulae ship's one-turn Seek toward its
-    // system (spec 05 §7.5): the engine gives a Move To to the sought sector
-    // and treats a ship that still has it as idle, so the minister plans it
-    // again every turn as the original does (OpenSE4's stand-in for the Seek).
-    auto seeking = [&](const Vehicle& v) {
-        if (p.busy.contains(v.id) || v.status == VehicleStatus::Mothballed || v.orders.size() != 1) return false;
-        const Order& o = v.orders.front();
-        if (o.kind != OrderKind::MoveTo || o.location.sector != kStellarSeekSector || !o.location.system.valid() ||
-            o.location.system.index() >= p.st.galaxy.systems.size())
-            return false;
-        const std::string_view kind = p.st.galaxy.system(o.location.system).physicalType;
-        return keysEqual(kind, "Black Hole") || keysEqual(kind, "Nebulae");
-    };
     for (VehicleId id : p.ownVehicles(Minister::StellarManipulation)) {
         const Vehicle* v = p.st.vehicle(id);
-        if (!v || v->fleet.valid() || p.info(v->design).role != Role::Stellar) continue;
+        if (!v || v->fleet.valid() || p.info(v->design).role != Role::Stellar || !p.idle(*v)) continue;
         const std::string type = p.info(v->design).aiType;
-        const bool reseek = (type == "Destroy Black Hole" || type == "Destroy Nebulae") && seeking(*v);
-        if (!p.idle(*v) && !reseek) continue;
         const Location here = v->location;
         auto goAndDo = [&](Location where, const Order& act) {
             std::vector<Order> orders;
@@ -962,8 +952,9 @@ void planStellarManipulation(Planner& p) {
         } else if (type == "Destroy Black Hole" || type == "Destroy Nebulae") {
             // The explored system of that kind nearest by jumps: the order at
             // once when the ship is inside, otherwise a Seek toward sector 36
-            // (x 10, y 2) of it that lasts one turn. With no such system the
-            // order points nowhere: the same as no order.
+            // (x 10, y 2) of it that lasts one movement phase, so the minister
+            // plans the ship again every turn. With no such system the order
+            // points nowhere: the same as no order.
             const bool hole = type == "Destroy Black Hole";
             std::optional<SystemId> best;
             for (size_t i = 0; i < p.st.galaxy.systems.size(); ++i) {
@@ -971,14 +962,11 @@ void planStellarManipulation(Planner& p) {
                 if (!p.explored(sys) || !keysEqual(p.st.galaxy.system(sys).physicalType, hole ? "Black Hole" : "Nebulae")) continue;
                 if (!best || nearer(sys, *best)) best = sys;
             }
-            if (!best) {
-                if (reseek) p.setOrders(id, {});
-                continue;
-            }
+            if (!best) continue;
             if (here.system == *best)
                 p.setOrders(id, {stellarOrder(hole ? StellarAction::DestroyBlackHole : StellarAction::DestroyNebulae, {}, here)});
             else
-                p.setOrders(id, {moveOrder({*best, kStellarSeekSector})});
+                p.setOrders(id, {seekOrder({*best, kStellarSeekSector})});
         }
         // Create Storm is never used.
     }
@@ -1399,7 +1387,7 @@ void planRepair(Planner& p) {
                 const Location at = goals[near->goal];
                 const int speed = yardShipSpeed[near->goal];
                 const bool wait = at == v->location || (speed >= 0 && near->path.length <= speed);
-                if (!wait) orders.push_back(moveOrder(at));
+                if (!wait) orders.push_back(seekOrder(at));
             }
         }
         p.setOrders(id, std::move(orders));

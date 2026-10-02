@@ -59,6 +59,13 @@ std::vector<std::string> applyAll(const Rules& r, GameState& s, EmpireId e, cons
     return failed;
 }
 
+// A colony of `owner` in that sector.
+bool enemyColonyAt(const GameState& s, Location where, EmpireId owner) {
+    for (ObjectId o : planetsAt(s, where))
+        if (const Colony* c = s.colony(o); c && c->owner == owner) return true;
+    return false;
+}
+
 std::string joined(const std::vector<std::string>& v) {
     std::string out;
     for (const auto& s : v) out += s + "; ";
@@ -2146,16 +2153,12 @@ TEST_CASE("ai: fleets follow the division table and attack the state's goal") {
     // fleet 1 attacks. One fleet is formed per turn, around the newest idle fit ship.
     auto cmds = ai::planTurn(r, s, me);
     CHECK(countOf<cmd::CreateFleet>(cmds) == 1);
+    // The goal is a Seek, lasting one movement phase, to an enemy planet of the target system.
     bool attack = false;
     for (const Command& c : cmds)
         if (const auto* o = as<cmd::SetOrders>(c); o && o->fleet.valid())
             for (const Order& ord : o->orders)
-                if (ord.kind == OrderKind::Attack && ord.object.valid()) {
-                    const Colony* target = s.colony(ord.object);
-                    REQUIRE(target);
-                    CHECK(target->owner == enemy);
-                    attack = true;
-                }
+                if (ord.kind == OrderKind::Seek && enemyColonyAt(s, ord.location, enemy)) attack = true;
     CHECK(attack);
     CHECK(applyAll(r, s, me, cmds).empty());
     // The fleet recruits up to trunc(vehicles x 60 % / 2).
@@ -2211,11 +2214,47 @@ TEST_CASE("ai: fleet roles: odd fleets attack while under the defence share") {
         if (const auto* o = as<cmd::SetOrders>(c); o && o->fleet.valid())
             for (size_t i = 0; i < fleets.size(); ++i)
                 if (o->fleet == fleets[i])
-                    for (const Order& ord : o->orders) attacking[i] = attacking[i] || (ord.kind == OrderKind::Attack && ord.object.valid());
+                    for (const Order& ord : o->orders)
+                        attacking[i] = attacking[i] || (ord.kind == OrderKind::Seek && enemyColonyAt(s, ord.location, enemy));
     CHECK(attacking[0]);
     CHECK_FALSE(attacking[1]);
     CHECK(attacking[2]);
     CHECK_FALSE(attacking[3]);
+}
+
+TEST_CASE("ai: recruits away from the fleet get a Join Fleet order and count toward its size at once") {
+    // Spec 05 §7.5 AI_Fleets (confirmed: binary).
+    TempTree t("recruits");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 50\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x == 0 ? 1 : 0, home.sector.y}};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    s.empire(me).designs.push_back(warship);
+    const VehicleId leader = addTestVehicle(s, r, warship, home).id;
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {leader}}).ok);
+    const FleetId fleet = s.fleets.back().id;
+    for (int i = 0; i < 7; ++i) addTestVehicle(s, r, warship, away);
+    // 8 vehicles, one fleet with 50 %: four members, so three recruits.
+    auto joins = [&](const std::vector<Command>& cmds) {
+        int n = 0;
+        for (const Command& c : cmds)
+            if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle.valid() && o->orders.size() == 1 &&
+                                                       o->orders.front().kind == OrderKind::JoinFleet)
+                n += o->orders.front().amount == static_cast<int>(fleet.value);
+        return n;
+    };
+    const auto cmds = ai::planTurn(r, s, me);
+    CHECK(joins(cmds) == 3);
+    REQUIRE(applyAll(r, s, me, cmds).empty());
+    CHECK(s.fleet(fleet)->members.size() == 1);  // they join when they reach it
+    // Next turn they still chase it and count: nobody else is recruited.
+    CHECK(joins(ai::planTurn(r, s, me)) == 0);
 }
 
 TEST_CASE("ai: a fleet whose leader is unfit is disbanded") {
@@ -2333,17 +2372,87 @@ TEST_CASE("ai: defenders answer a threat at home") {
     s.empire(me).aiTurnsInState = 12;
     CHECK(ai::nextState(r, s, me) == ai::AiState::DefendShortTerm);  // Defend (Long Term) is never entered
 
-    const auto cmds = ai::planTurn(r, s, me);
-    bool engaged = false;
-    for (const Command& c : cmds)
-        if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle == mine)
-            engaged = !o->orders.empty() && o->orders.front().kind == OrderKind::Attack && o->orders.front().vehicle == intruder;
-    CHECK(engaged);
+    // Spec 05 §7.5: the stored Attack when the defender is in the threat's
+    // sector; elsewhere a Seek after the intruder (simultaneous) or to its
+    // sector (turn-based), which lasts one movement phase.
+    auto orderOf = [&]() -> std::optional<Order> {
+        for (const Command& c : ai::planTurn(r, s, me))
+            if (const auto* o = as<cmd::SetOrders>(c); o && o->vehicle == mine && o->orders.size() == 1) return o->orders.front();
+        return std::nullopt;
+    };
+    const auto here = orderOf();
+    REQUIRE(here);
+    CHECK(here->kind == OrderKind::Attack);
+    CHECK_FALSE(here->vehicle.valid());
+    CHECK_FALSE(here->object.valid());
+    CHECK_FALSE(here->location.system.valid());
+    s.vehicle(mine)->location = {home.system, Sector{home.sector.x == 0 ? 1 : 0, home.sector.y}};
+    const auto pursue = orderOf();
+    REQUIRE(pursue);
+    CHECK(pursue->kind == OrderKind::Seek);
+    CHECK(pursue->vehicle == intruder);
+    s.options.simultaneous = false;
+    const auto toward = orderOf();
+    REQUIRE(toward);
+    CHECK(toward->kind == OrderKind::Seek);
+    CHECK_FALSE(toward->vehicle.valid());
+    CHECK(toward->location == home);
+    s.options.simultaneous = true;
     // Gone: back to Exploration while unexplored space borders our territory.
     s.vehicles.erase(std::remove_if(s.vehicles.begin(), s.vehicles.end(), [&](const Vehicle& v) { return v.id == intruder; }),
                      s.vehicles.end());
     sight::updateKnowledge(r, s);
     CHECK(ai::nextState(r, s, me) == ai::AiState::Exploration);
+}
+
+TEST_CASE("ai: the Attack minister's ships attack where they stand, otherwise seek the target's sector") {
+    // Spec 05 §7.5 "Attack and defence", "How long the ministers' movement orders last" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, enemy{1u};
+    meet(s, me, enemy);
+    s.empire(me).relation(enemy).treaty = Treaty::War;
+    s.empire(enemy).relation(me).treaty = Treaty::War;
+    const Location target = locationOf(s.galaxy, homeworld(s, enemy).planet);
+    s.empire(me).aiState = static_cast<int>(ai::AiState::Attack);
+    s.empire(me).aiMemory.targets = {target.system};
+    const DesignId warship = addWarship(s, r, me, "Hammer");
+    const VehicleId there = addTestVehicle(s, r, warship, target).id;
+    const VehicleId far = addTestVehicle(s, r, warship, locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    // Each candidate is passed over with a 25 % chance; plan until both ships get orders.
+    std::optional<Order> atTarget, fromHome;
+    for (uint64_t salt = 1; salt < 40 && (!atTarget || !fromHome); ++salt) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, salt);
+        ai::detail::planAttack(p);
+        if (p.st.vehicle(there)->orders.size() == 1) atTarget = p.st.vehicle(there)->orders.front();
+        if (p.st.vehicle(far)->orders.size() == 1) fromHome = p.st.vehicle(far)->orders.front();
+    }
+    REQUIRE(atTarget);
+    REQUIRE(fromHome);
+    CHECK(*atTarget == ai::detail::attackHere());
+    CHECK(fromHome->kind == OrderKind::Seek);
+    CHECK(fromHome->location == target);
+}
+
+TEST_CASE("ai: the ministers' movement orders are gone at each start of turn") {
+    // Spec 05 §7.5 (confirmed: binary): every Seek lasts one movement phase, so
+    // the computer players' warships are free again at every start of turn.
+    const Rules& r = engineRules();
+    GameState s = computerGame(21, 3, 0, 14);
+    const DesignId warship = addWarship(s, r, EmpireId{0u}, "Hammer");
+    for (int i = 0; i < 4; ++i) addTestVehicle(s, r, warship, locationOf(s.galaxy, homeworld(s, EmpireId{0u}).planet));
+    int seeks = 0;
+    for (int turn = 0; turn < 12; ++turn) {
+        for (const Empire& e : s.empires)
+            for (const Command& c : ai::planTurn(r, s, e.id))
+                if (const auto* o = as<cmd::SetOrders>(c))
+                    for (const Order& ord : o->orders) seeks += ord.kind == OrderKind::Seek;
+        processTurn(r, s, {});
+        for (const Vehicle& v : s.vehicles)
+            for (const Order& o : v.orders) CHECK(o.kind != OrderKind::Seek);
+    }
+    CHECK(seeks > 0);
 }
 
 TEST_CASE("ai: the budget's revenue is production times the bonus plus income from others; tariffs paid stay in") {
@@ -3590,7 +3699,7 @@ TEST_CASE("ai: a ship that needs repair loses its orders and fleet every turn an
     ai::detail::planRepairAndResupply(p, true);
     CHECK_FALSE(p.st.vehicle(hurt)->fleet.valid());
     REQUIRE(ordersOf(p, hurt).size() == 1);
-    CHECK(ordersOf(p, hurt).front().kind == OrderKind::MoveTo);
+    CHECK(ordersOf(p, hurt).front().kind == OrderKind::Seek);  // one movement phase (spec 05 §7.5)
     CHECK(ordersOf(p, hurt).front().location == yard);
     CHECK(p.st.vehicle(mate)->fleet.valid());  // an undamaged ship stays
 
@@ -4181,10 +4290,10 @@ TEST_CASE("ai: a Destroy Black Hole ship seeks sector 36 of the system and is pl
     };
     const auto seek = plan(s);
     REQUIRE(seek.size() == 1);
-    CHECK(seek.front().kind == OrderKind::MoveTo);
+    CHECK(seek.front().kind == OrderKind::Seek);
     CHECK(seek.front().location == Location{*hole, Sector{10, 2}});
-    // Still on its way next turn, now inside the system: the order at once.
-    s.vehicle(id)->orders = seek;
+    // The Seek lasts one movement phase, so the ship is planned again next
+    // turn; now inside the system, it gets the order at once.
     s.vehicle(id)->location = Location{*hole, Sector{1, 1}};
     const auto act = plan(s);
     REQUIRE(act.size() == 1);
