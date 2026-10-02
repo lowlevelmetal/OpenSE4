@@ -1637,18 +1637,39 @@ binary).
 - **Difficulty** changes nothing in research, intelligence or design (confirmed: binary).
 - **Budget and maintenance caps** (confirmed: binary), shared by the construction ministers:
   - *Net income*: one turn of production (times the computer-player income factor,
-    §7.1), plus income received from other empires (trade and tariffs), minus vehicle
-    maintenance and facility upkeep. The stockpile is not counted, and tariffs the empire
-    pays are not subtracted.
-  - *Revenue*: production × income factor + income from other empires.
+    §7.1), plus income received from other empires (trade and tariffs), minus the
+    maintenance of all the empire's vehicles (colony ships included), minus what its
+    colonies' construction queues will spend this turn (confirmed: binary): for each
+    colony queue holding items, its first item's cost less what has already been paid into
+    it (not below 0), at most the queue's construction rate, per resource. Queues of yard
+    ships are not counted. The stockpile is not counted, and tariffs the empire pays are
+    not subtracted. The start-of-turn step works it out once and keeps it for the facility
+    upgrades of the economy step; the Ship Construction minister works it out afresh, with
+    the vehicles and queues of that moment, and its units step uses the same reckoning.
+    (An earlier reading took the last term for facility upkeep.) The engine
+    differs: `Planner::netIncome` (`ai.cpp`) is revenue less the maintenance last paid, and
+    the vehicle list, the units step and the upgrades (`ai_economy.cpp`) spend it without
+    taking off what the queues already spend, so our computers queue more while their
+    queues are busy (question 71).
+  - *Revenue*: production × income factor + income from other empires, rounded, worked
+    out at the start-of-turn step only (confirmed: binary); the economy step's cap tests
+    reuse it. The production is the empire's delivered production of the moment (a
+    system without a spaceport delivers nothing, the home system its percentage, and the
+    empire minimum stands in when a total is 0). The engine takes it from the last income
+    report (`Planner::revenue`); the minerals revenue of the two agreed within 3 % at the
+    median in turns 11–50 (scratch comparison with two original games).
   - With M = `Maximum Maintenance Percent of Revenue`, the empire is over the soft cap
     when, for any one of minerals, organics or radioactives, that resource's maintenance
-    > its revenue × M / 100. It is over the hard cap when the same holds with M + 20.
+    > its revenue × M / 100. It is over the hard cap when the same holds with M + 20. The
+    product is taken in single precision (M / 100 as a 32-bit float, so with the stock 80
+    the threshold is a hair above 80 %) (confirmed: binary).
   - The maintenance in that test (confirmed: binary) is the sum, over the empire's ships
     and bases, of each one's maintenance by spec 02 §7, leaving out every vehicle whose hull
     has `Requirement Pct Colony Mods` above 0 (in the stock data the Colony Ship hull):
-    colony ships never count toward either cap. It is worked out from the vehicles of the
-    moment when the start-of-turn ministers and again when the economy-step ministers run.
+    colony ships never count toward either cap. Fighter, satellite, mine and drone groups
+    add nothing (they pay no maintenance, spec 02 §7). It is worked out from the vehicles of
+    the moment when the start-of-turn ministers and again when the economy-step ministers
+    run; Scrap and Retrofit test the cap in the first, Ship Construction in the second.
     The vehicles' maintenance actually paid (spec 02 §7) includes the colony ships. Observed
     under a debugger (2026-10-02): at turn 30 an empire with three attack ships and a colony
     ship compared the maintenance of the three attack ships alone; in two 100-turn games the
@@ -1963,15 +1984,16 @@ binary).
     candidates are the empire's vehicles that are not of a colony-ship design type
     (Colony (Rock), (Ice) or (Gas)): every one that can move (maximum movement above 0, not
     mothballed), wherever it is, and every one that cannot move (bases) only where the
-    empire has a space yard in its sector. The candidate whose design is oldest (creation
-    date; the first in the empire's vehicle list on a tie) is ordered, when it can move and
-    stands elsewhere, to Move To the nearest sector where it can be scrapped, and then to
-    Scrap; it leaves the empire's vehicle list for that turn. Every 10 turns, useless
-    facilities are scrapped (extraction on a 0-value planet with finite resources,
-    atmosphere changers no longer needed). Observed under a debugger (2026-10-02): every
-    ship that vanished outside a battle (16 in a 100-turn game: attack ships, mine sweepers,
-    a carrier, layers) did so on a turn its empire was over the soft cap, and no base was
-    scrapped: an old attack ship far from a yard is chosen before a base at a yard.
+    empire has a space yard in its sector. The candidate whose design has the earliest
+    creation date is ordered, when it can move and stands elsewhere, to Move To the nearest
+    sector where it can be scrapped, and then to Scrap; it leaves the empire's vehicle list
+    for that turn. When no place to scrap it is found, nothing is scrapped that turn.
+    Every 10 turns, useless facilities are scrapped (extraction on a 0-value planet with
+    finite resources, atmosphere changers no longer needed). Observed under a debugger
+    (2026-10-02): every ship that vanished outside a battle (16 in a 100-turn game: attack
+    ships, mine sweepers, a carrier, layers) did so on a turn its empire was over the soft
+    cap, and no base was scrapped: an old attack ship far from a yard is chosen before a
+    base at a yard.
     OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): a candidate at
     a yard is scrapped where it stands (`cmd::Scrap`), and one elsewhere gets the Move To
     and the Scrap in one command (`cmd::Scrap` with `moveFirst`, which only the ministers
@@ -1979,6 +2001,21 @@ binary).
     question 72. The engine used to take only ships already at a yard, so bases, which
     always sit at yards, went first: its computers scrapped 0.7 bases per empire in 100
     turns of the 1.0 they built (spec 07 "Pace after the scrap, cap and fleet rules").
+    - *Ties* (confirmed: binary). A design's creation date is the game date of the turn it
+      was made, a whole number, so all designs made in one turn tie; the dates are compared
+      strictly, so among equally old candidates the first one met wins. The candidates are
+      met in the order of the empire's vehicle list, which the start-of-turn step rebuilds
+      every turn by walking the game's one object list from its first slot (spec 03 §19
+      Q62): slot order, where a new vehicle takes the lowest slot a removed object left, so
+      it is creation order only until slots are reused. Nothing else breaks a tie: not the
+      design's place in the empire's design list, not its design type, not ships before
+      bases. So a base at a yard is a candidate even when a ship of an equally old design
+      stands elsewhere, and it is chosen when its slot comes first; a ship that can move and
+      has a strictly older design, wherever it is, always comes before it. The engine
+      differs: the rule as implemented breaks ties by the order of `GameState::vehicles`
+      (vehicle id, creation order), which `Planner::ownVehicles` follows, not by the slot
+      (`Vehicle::slot`, `objectOrderKey`); with reused slots the two orders disagree in
+      either direction.
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -4061,6 +4098,23 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     51–100 (spec 07 "Pace after the scrap, cap and fleet rules"). To verify: the maintenance
     and revenue compared at the test in turns 26–50 in the original and in ours, and which
     vehicles make the difference.
+
+    **Answer** (confirmed: binary, 2026-10-02; scratch runs of our engine). The test itself
+    compares the same things in both: per resource, the start-of-turn revenue (production ×
+    income factor, rounded, plus income from other empires) against the maintenance of the
+    empire's ships and bases of the moment, colony ships and unit groups left out, at 80 %
+    (§7.5, the budget and maintenance caps). What differs is how much the computers queue:
+    the original's construction budget subtracts what the colonies' queues will already
+    spend this turn on their first items, ours does not (§7.5 *Net income*), so ours keep
+    queuing ships while their yards are busy, and several finish in the same turn. In 24
+    scratch games with colony ships left out of the cap, the over-cap turns of turns 26–50
+    came in such steps (attack ships made two thirds of the deciding resource's
+    maintenance), and our maintenance ran higher against revenue at every level of revenue
+    (90th percentile 0.61–0.79 against the original's 0.36–0.58). With the queues'
+    commitments subtracted as well, our computers were over the soft cap in 1.1 % of turns
+    26–50 instead of 4.1 % and in 9.1 % of turns 51–100 instead of 14.1 % (the original 0
+    and 14–16 % in two games), with 3.8 ships per empire at turn 25 instead of 4.1 (the
+    original 3.4) and 7.9 at turn 50 instead of 8.6 (8.3).
 72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
     OpenSE4's choices since 2026-10-02 (inferred):
     - unit groups (fighters, satellites, mines and the like in space) are never scrap
