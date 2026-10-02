@@ -539,6 +539,12 @@ What our computer players do (seeds 1–12, five computers), for the analyst que
   get nothing at all while the empire has no intelligence facility (spec 05 Q55).
 - **Population** 2,491M at turn 50, 3,214M at turn 100 (the homeworld 2,000M).
 - **Research lost** (the excess of finished projects, spec 05 §1.4): 1–6 % of the pool.
+- **Sensitivity** (scratch experiments against the spec, not kept; turn 100, five computers):
+  counting a hostile colony in the enemy-in-territory list only when it is seen (spec 05 Q54)
+  gives 17.4 colonies and 14.0k research; letting a colony whose type has nothing to build use
+  the Homeworld rows (Q55) gives 14.6k research; never entering Defend (Short Term) gives 17.2
+  colonies, 0.5 bases and 13.4k research; placing Defense Bases whatever the queue backlog
+  changes nothing. None of these closes the gap alone.
 
 ### Side by side: our client against the original (Quick Start, first turn)
 
