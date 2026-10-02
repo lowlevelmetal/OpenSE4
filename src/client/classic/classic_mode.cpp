@@ -17,6 +17,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -176,9 +177,14 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
             error = session.error();
             return nullptr;
         }
+        newGameStarted(setup.options.simultaneous);  // a quick start's
         mode->startGame(std::move(*session));
         // Automation: the computer plays every empire for a while.
         mode->session_->simulateTurns(options.autoTurns);
+        if (auto problem = mode->selectForAutomation(options.select)) {
+            error = *problem;
+            return nullptr;
+        }
         if (auto problem = mode->openAutomationWindow(options.openWindow)) {
             error = *problem;
             return nullptr;
@@ -187,6 +193,38 @@ std::unique_ptr<ClassicMode> ClassicMode::create(const Platform& platform, const
         mode->front_ = makeFrontScreen(FrontId::Intro);
     }
     return mode;
+}
+
+std::optional<std::string> ClassicMode::selectForAutomation(const std::string& what) {
+    if (what.empty()) return std::nullopt;
+    const game::GameState& s = session_->state();
+    const game::EmpireId me = session_->player();
+    auto moves = [](const std::vector<game::Order>& list) {
+        return std::any_of(list.begin(), list.end(), [](const game::Order& o) {
+            return o.kind == game::OrderKind::MoveTo || o.kind == game::OrderKind::MoveToWaypoint;
+        });
+    };
+    std::optional<game::VehicleId> pick;
+    if (what == "moving") {
+        for (const game::Vehicle& v : s.vehicles)
+            if (v.owner == me && !v.fleet.valid() && moves(v.orders)) {
+                pick = v.id;
+                break;
+            }
+    } else if (what == "fleet") {
+        for (const game::Fleet& f : s.fleets)
+            if (f.owner == me && !game::fleetOrders(s, f).empty() && !game::fleetMembersAt(s, f).empty()) {
+                pick = game::fleetMembersAt(s, f).front();
+                break;
+            }
+    } else {
+        uint32_t id = 0;
+        const auto [end, ec] = std::from_chars(what.data(), what.data() + what.size(), id);
+        if (ec == std::errc{} && end == what.data() + what.size() && s.vehicle(game::VehicleId{id})) pick = game::VehicleId{id};
+    }
+    if (!pick) return std::format("Nothing to select for --select={}", what);
+    ui_->requests.selectVehicle = *pick;
+    return std::nullopt;
 }
 
 std::optional<std::string> ClassicMode::openAutomationWindow(const std::string& name) {

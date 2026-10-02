@@ -59,6 +59,7 @@ struct AppOptions {
     std::string screenshotPath;
     int screenshotFrames = 10;
     int autoTurns = 0;
+    std::string select;   // --select: what the main window selects afterwards
 };
 
 // The application shell: window, render device (Vulkan with OpenGL fallback),

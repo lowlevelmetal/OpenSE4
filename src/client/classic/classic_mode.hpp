@@ -29,6 +29,7 @@ struct ClassicOptions {
     bool skipIntro = false;  // start a quick game at once (automation, screenshots)
     std::string race;        // quick start race preset (folder name); empty = first
     int autoTurns = 0;       // let the computer play every empire for N turns first
+    std::string select;      // then select a vehicle: "moving", "fleet" or a vehicle id (automation)
     std::string openWindow;  // open this window at start (automation, screenshots)
     bool turnBased = true;   // quick game in the turn-based style (the default, spec 01 §14 Q39)
     // Play by e-mail (--pbem): open this game file for `pbemEmpire` (1-based;
@@ -73,6 +74,8 @@ private:
     // Automation (--open): a window, or a sample battle for the battle
     // windows, over the game just started; "none" keeps the Log closed.
     std::optional<std::string> openAutomationWindow(const std::string& name);
+    // --select: a vehicle for the main window to select (automation).
+    std::optional<std::string> selectForAutomation(const std::string& what);
     // The lesson panel and its requests, Ctrl+H and Shift+F1.
     void updateLesson(classic::UiContext& ui);
     void contextHelp();

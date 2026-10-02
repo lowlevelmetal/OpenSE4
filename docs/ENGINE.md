@@ -367,6 +367,7 @@ which the original draws in the system's Small Fonts.
 | `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
 | `ship_glides.*` | Ships gliding to their new square and the headings of minis |
+| `movement_line.*` | The movement line of the system panel (spec 06 §2.4): which object has one, and the rings, lines and turn numbers drawn for its route, worked out by `game::movement::planRoute` with the engine's own step rule and a display-only random source (headless) |
 | `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
 | `sector_view.*` | What a sector of the system panel shows: the stellar object, one vehicle or the owners' flags, and the counts (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |

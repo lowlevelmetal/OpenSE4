@@ -6,6 +6,7 @@
 
 #include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
+#include "client/classic/movement_line.hpp"
 #include "client/classic/reports.hpp"
 #include "client/classic/sector_view.hpp"
 #include "client/classic/ship_glides.hpp"
@@ -142,6 +143,15 @@ private:
     std::string note_;
     double noteUntil_ = 0.0;
     int orderPage_ = 0;   // the order strip's page at 800x600 (§2.3)
+
+    // The movement line's route, worked out again when the game or the report changes.
+    struct MovementLineCache {
+        LineSubject subject;
+        uint64_t revision = 0;
+        uint32_t turn = 0;
+        game::movement::PlannedRoute route;
+    };
+    std::optional<MovementLineCache> line_;
 
     ShipGlides glides_;
     MovementReplay replay_;

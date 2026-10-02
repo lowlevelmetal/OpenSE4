@@ -30,6 +30,7 @@ add_executable(opense4
     client/classic/lesson_runner.cpp
     client/classic/main_window.cpp
     client/classic/map_style.cpp
+    client/classic/movement_line.cpp
     client/classic/movement_replay.cpp
     client/classic/net_transport.cpp
     client/classic/order_rules.cpp

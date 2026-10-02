@@ -33,6 +33,7 @@ add_executable(opense4_tests
     test_main_window.cpp
     test_maps.cpp
     test_movement.cpp
+    test_movement_line.cpp
     test_net.cpp
     test_pbem_client.cpp
     test_redact.cpp
@@ -60,6 +61,7 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/movement_line.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/order_rules.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/pbem_play.cpp

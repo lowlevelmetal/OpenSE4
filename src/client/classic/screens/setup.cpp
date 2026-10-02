@@ -6,6 +6,7 @@
 #include "client/classic/screens/setup_empire.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/screens/setup_widgets.hpp"
+#include "client/classic/settings.hpp"
 #include "client/classic/widgets.hpp"
 #include "datafile/datafile.hpp"
 
@@ -181,6 +182,7 @@ private:
             return false;
         }
         lastSettings() = s_;
+        newGameStarted(setup->options.simultaneous);
         ctx.startGame(std::move(*session));
         return true;
     }

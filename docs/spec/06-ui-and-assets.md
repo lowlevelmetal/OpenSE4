@@ -534,8 +534,8 @@ defaults of §1.10.3. The same defaults are used for every per-computer value wh
 missing or any value in it cannot be read. Starting a new simultaneous game (the setup's start,
 not loading or joining a game) switches Display Ship Movement Lines on and stores it at once,
 so after a player's first simultaneous game it stays on until they turn it off (confirmed:
-binary). Our client keeps it off by default (`showMovementLines` in
-`src/client/classic/settings.hpp`) but never switches it on for a new simultaneous game.
+binary). Our client does the same (`showMovementLines` in `src/client/classic/settings.hpp`,
+`newGameStarted`).
 
 **Empire Options (Empire Status → Empire Options), per empire.** Stored with the empire
 and saved with the game, so each hotseat player has their own. Defaults for a new empire
@@ -1246,27 +1246,24 @@ nor cleared. When Ctrl+L switches it back on, the panel shows the last route sto
 was on, which may belong to another vehicle or be out of date, until the open report is next
 refreshed. OpenSE4 should work the route out again when the option is switched on.
 
-Our client differs (`src/client/classic/main_window.cpp`, the "Movement line for the selected
-own vehicle" block and the Ctrl+L handler):
-1. Style: a dashed light-green line (1.5 px, 6/4 dashes) instead of a solid 1 px pure blue one.
-2. Shape: straight segments from the vehicle to each order's target, instead of the route
-   square by square. A display-only form of the engine's greedy step (now inside
-   `src/game/movement.cpp`, drawing from the game's generator) is needed; `game::findPath` is a
-   shortest-path search, not that step, and can show a different route.
-3. No rings, no turn numbers, no "0" on the start square.
-4. Every order with a location counts, Warp and Colonize targets included; the original counts
-   only Move To, Move To Waypoint and the location Seek orders, with waypoints looked up when
-   the line is worked out.
-5. A segment is drawn only when both ends are in the shown system; the original draws every
-   route point in it, so a line can end at a warp point and start again at an entry point.
-6. It follows the selected vehicle, satellites and mines included, with its fleet's orders; the
-   original follows the open report (the viewer's ship or base, fighter or drone group, or a
-   fleet, with A and B from the members). Ours also hides the line during the movement-log
-   replay (the original's behaviour there was not examined).
-7. It is drawn before the selection corners and waypoint frames; the original draws it last.
-8. Ctrl+L flips the switch and saves the settings at once; the original only flips it (§3.2).
-   Keeping ours is harmless. Ours never shows a stale line, since it draws from live state.
-9. Starting a new simultaneous game does not switch the option on (§1.9).
+Our client (since 2026-10-01: `game::movement::planRoute` in `src/game/movement_route.cpp`
+works the route out with the engine's own step rule, `inSystemStep`, and the route search;
+`src/client/classic/movement_line.cpp` chooses the object and the marks, which
+`main_window.cpp` draws last in the panel overlay) follows these rules, with these
+differences:
+1. The random replacement squares of blocked steps come from a display-only generator seeded
+   from the object and the date, so the line is the same on every machine and every frame and
+   never takes a number from the game's sequence.
+2. A route that leaves the shown system and comes back is broken there (no joining segment,
+   no second number), as allowed above.
+3. The ring's exact pixels are inferred (§7 Q83).
+4. With ships tagged the report panel shows the tag list, so no line is drawn (inferred).
+5. The line is hidden during the movement-log replay (§7 Q84).
+6. Ctrl+L saves the settings at once and shows a short note ("Movement lines on" or "off"), as
+   our Ctrl+S does; the original only flips the switch (§3.2). Ours never shows a stale line,
+   since it works the route out from the live state.
+7. A new simultaneous game started from Game Setup or Quick Start, or hosted on the network,
+   switches the option on and stores it (§1.9); loading or joining a game does not.
 
 Clicks (left and right behave the same): one object → its report in the right panel;
 several objects → a list; empty space → a report about the whole system. Only visible
@@ -1509,7 +1506,7 @@ has no Esc or Enter binding (confirmed: binary).
 | Ctrl+O | Movement log replay, reload (rewind) |
 | Ctrl+I | Movement log replay, single step (one day) |
 | Ctrl+U | Movement log replay, the button the executable names "for all ships" (the manual says follow ship) |
-| Ctrl+L | Toggle ship movement lines: flips the per-computer Display Ship Movement Lines switch (§1.9) and redraws the system panel. It is not stored at once but with the other per-computer settings the next time they are saved (a game save or autosave, closing an Options, Combat Options or Combat Replay Options window, starting a new simultaneous game); loading or starting a game before then reads the stored value back and undoes the toggle (confirmed: binary). Ours saves at once. |
+| Ctrl+L | Toggle ship movement lines: flips the per-computer Display Ship Movement Lines switch (§1.9) and redraws the system panel. It is not stored at once but with the other per-computer settings the next time they are saved (a game save or autosave, closing an Options, Combat Options or Combat Replay Options window, starting a new simultaneous game); loading or starting a game before then reads the stored value back and undoes the toggle (confirmed: binary). Ours saves at once and shows a short note (§2.4). |
 | Ctrl+S | Toggle sound effects (the Sound On switch of §1.9; music is not touched) |
 | Ctrl+H | Show tutorial / scenario window |
 | Shift+A / Shift+C | Tag all / clear tagged ships in the ship list |
@@ -3293,3 +3290,11 @@ the live battle flow):
 82. **Side colours.** Ours uses the plain colours of those names (red 255,0,0; blue
     0,0,255; green 0,128,0; yellow 255,255,0; purple 128,0,128; white; aqua 0,255,255;
     lime 0,255,0; maroon 128,0,0; olive 128,128,0). Are these the original's values?
+
+Implementing the movement lines (§2.4) on 2026-10-01 left these choices (inferred):
+
+83. **The ring's pixels.** A Windows ellipse with a 1 px pen on an 8 x 8 box: ours sets the
+    usual pixels of an 8 px circle (rows from the top: columns 2-5; 1 and 6; 0 and 7 four
+    times; 1 and 6; 2-5). Which pixels does the original set?
+84. **Movement lines during the movement-log replay.** Ours draws none while the replay
+    runs. Does the original keep the line of the open report during the replay?

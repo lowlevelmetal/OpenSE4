@@ -262,8 +262,12 @@ private:
     void begin(MenuContext& ctx, size_t preset) {
         auto setup = quickStartSetup(*ctx.rules, ctx.rules->racePresets()[preset].folder, ctx.seed);
         auto session = startLocalGame(ctx.rules, setup);
-        if (session) ctx.startGame(std::move(*session));
-        else error_ = session.error();
+        if (!session) {
+            error_ = session.error();
+            return;
+        }
+        newGameStarted(setup.options.simultaneous);
+        ctx.startGame(std::move(*session));
     }
 
     int chosen_ = -1;

@@ -125,6 +125,12 @@ bool saveSettings() {
     return true;
 }
 
+void newGameStarted(bool simultaneous) {
+    if (!simultaneous || settings().showMovementLines) return;
+    settings().showMovementLines = true;
+    saveSettings();
+}
+
 void rememberSavedGame(const std::string& file) {
     if (settings().lastSavedGame == file) return;
     settings().lastSavedGame = file;

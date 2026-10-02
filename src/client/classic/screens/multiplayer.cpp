@@ -6,6 +6,7 @@
 
 #include "client/classic/frontend.hpp"
 #include "client/classic/net_transport.hpp"
+#include "client/classic/settings.hpp"
 #include "game/redact.hpp"
 #include "game/serialize.hpp"
 #include "net/auth.hpp"
@@ -309,6 +310,10 @@ private:
 
     void startPlaying(MenuContext& ctx) {
         if (host_ && host_->state()) {
+            // The host set the game up: a new network game (always simultaneous
+            // between machines) switches the movement lines on, as a new
+            // simultaneous game does (spec 06 §1.9); joining one does not.
+            newGameStarted(host_->state()->options.simultaneous);
             const game::EmpireId me = host_->localEmpire();
             game::GameState state = game::redactForEmpire(*host_->state(), me);
             auto session = std::make_unique<ClassicSession>(rules_, std::move(state), me, SessionKind::NetworkClient);

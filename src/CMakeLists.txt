@@ -72,6 +72,7 @@ add_library(opense4_game STATIC
     game/map_file.cpp
     game/movement.cpp
     game/movement_path.cpp
+    game/movement_route.cpp
     game/movement_stellar.cpp
     game/movement_upkeep.cpp
     game/movement_util.cpp

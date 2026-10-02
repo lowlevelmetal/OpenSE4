@@ -82,6 +82,7 @@ int App::run(const AppOptions& options) {
     co.skipIntro = options.quickStart || !options.screenshotPath.empty();
     co.race = options.race;
     co.autoTurns = options.autoTurns;
+    co.select = options.select;
     co.openWindow = options.openWindow;
     co.turnBased = options.turnBased;
     co.pbemFile = options.pbemFile;
