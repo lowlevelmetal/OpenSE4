@@ -898,9 +898,9 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
     e2.designs.push_back(addWarship(s2, r, cpu, "Picket"));
     e2.economy = {};
     e2.economy.colonies = Resources{100000, 100000, 100000};
-    e2.economy.maintenance = Resources{95000, 0, 0};  // above 80 % and 90 %, not above 100 % of revenue
     ai::detail::Planner q(r, s2, cpu, ai::detail::Mode::Computer, 9);
     q.state = ai::AiState::Infrastructure;
+    q.capUpkeep = Resources{95000, 0, 0};  // the maintenance the caps compare: above 80 % and 90 %, not above 100 % of revenue
     CHECK(q.overCap(0));
     CHECK(q.overCap(10));
     CHECK_FALSE(q.overCap(20));
@@ -5540,4 +5540,70 @@ TEST_CASE("ai: the best facility for an ability: the highest Value 1 for amount-
     CHECK(best("Point Generation - Research") == "Test Twin Lab");
     // Supply Storage is ranked by its Value 1.
     CHECK(best("Supply Storage") == "Test Big Store");
+}
+
+// ---- Caps, scrapping, fleet leaders and the defend list (spec 05 §7.2, §7.5; found 2026-10-02) ----------
+
+namespace {
+
+template <class T>
+const T* firstOf(const std::vector<Command>& cmds) {
+    for (const Command& c : cmds)
+        if (const T* x = as<T>(c)) return x;
+    return nullptr;
+}
+
+DesignId typedDesign(GameState& s, const Rules& r, EmpireId owner, std::string_view name, std::string_view hull,
+                     std::initializer_list<std::string_view> parts, std::string_view type, uint32_t created) {
+    const DesignId d = addTestDesign(s, r, owner, name, hull, parts);
+    s.design(d).designType = std::string(type);
+    s.design(d).createdTurn = created;
+    s.empire(owner).designs.push_back(d);
+    return d;
+}
+
+} // namespace
+
+TEST_CASE("ai: the maintenance caps count the empire's ships and bases of the moment, colony ships left out") {
+    // Spec 05 §7.5 "Budget and maintenance caps" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    const DesignId settler = typedDesign(s, r, me, "Settler", "Test Colony Hull",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Rock Pod"},
+                                         "Colony (Rock)", 0);
+    const VehicleId picket = addTestVehicle(s, r, warship, home).id;
+    for (int i = 0; i < 3; ++i) addTestVehicle(s, r, settler, home);
+    const Resources one = economy::vehicleMaintenance(r, s, *s.vehicle(picket));
+    const Resources settlers = economy::maintenanceCost(r, s, me) - one;
+    REQUIRE(one != Resources{});
+    REQUIRE(settlers != Resources{});
+    // The colony ships' hull takes colony modules: they are left out.
+    CHECK(ai::detail::capMaintenance(r, s, me) == one);
+    // The test is the hull's: a colony pod on another hull counts.
+    const VehicleId podded = addColonyShip(s, r, me);
+    const Resources frigatePod = economy::vehicleMaintenance(r, s, *s.vehicle(podded));
+    REQUIRE(frigatePod != Resources{});
+    CHECK(ai::detail::capMaintenance(r, s, me) == one + frigatePod);
+    s.vehicle(podded)->count = 0;
+    s.removeDeadVehicles();
+
+    // Revenue that puts the warship's maintenance just under the soft cap:
+    // the colony ships, which the maintenance paid includes, do not push it over.
+    Empire& e = s.empire(me);
+    const int64_t m = ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).prof.settings.maxMaintenancePercent;
+    REQUIRE(m > 0);
+    e.economy = {};
+    for (size_t k = 0; k < 3; ++k) e.economy.colonies.v[k] = (one.v[k] * 100 + m - 1) / m;
+    e.economy.maintenance = one + settlers;
+    for (size_t k = 0; k < 3; ++k)
+        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(e.economy.colonies.v[k]) * xmath::percent(m));
+    CHECK_FALSE(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+    // A second warship counts at once, though no maintenance was paid for it yet.
+    addTestVehicle(s, r, warship, home);
+    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
 }

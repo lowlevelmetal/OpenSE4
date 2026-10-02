@@ -1651,12 +1651,13 @@ binary).
     The vehicles' maintenance actually paid (spec 02 §7) includes the colony ships. Observed
     under a debugger (2026-10-02): at turn 30 an empire with three attack ships and a colony
     ship compared the maintenance of the three attack ships alone; in two 100-turn games the
-    empires were over the soft cap in 9 and 11 % of turns 26–100, all after turn 50. The
-    engine differs: `Planner::overCap` (`ai.cpp`) compares the maintenance last paid
-    (`Empire::economy.maintenance`), colony ships included; our computers are over the soft
-    cap in 20 % of turns 26–100 (11 % with colony ships left out, scratch run), where they
-    build no warships and scrap a ship a turn (spec 07 "Battles, bases and the first turns
-    under a debugger").
+    empires were over the soft cap in 9 and 11 % of turns 26–100, all after turn 50.
+    OpenSE4 follows this since 2026-10-02 (`capMaintenance`, `Planner::overCap`, `ai.cpp`;
+    worked out when the planner is made and again when its start-of-turn and economy-step
+    ministers start). It used to compare the maintenance last paid
+    (`Empire::economy.maintenance`), colony ships included, and its computers were over the
+    soft cap in 20 % of turns 26–100, where they build no warships and scrap a ship a turn;
+    with the rule, 12 % (spec 07 "Pace after the scrap, cap and fleet rules").
 - **What spends the stockpile** (confirmed: binary): the computer player spends its
   resources only through construction queues and retrofits. It never uses Emergency
   Build or Repeat Build (only the Construction Queue window sets them) and never converts

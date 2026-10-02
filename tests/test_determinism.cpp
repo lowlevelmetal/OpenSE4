@@ -161,10 +161,10 @@ TEST_CASE("determinism: a simultaneous game gives the golden checksums") {
         {5, 0x978d757d4ed87078ull},
         {10, 0xf45becc14c781b8dull},
         {20, 0x86d9182404932398ull},
-        {40, 0xf5b0cb3d0ad992a5ull},
-        {60, 0xef8fb1b3b7a0a8c5ull},
-        {80, 0xeaf73efefa1ec851ull},
-        {100, 0x14335cd1bf64f799ull},
+        {40, 0xab1c272b2cb1667eull},
+        {60, 0x2068851cb266a035ull},
+        {80, 0xc58be775887e1156ull},
+        {100, 0x7a85a4b96674ace2ull},
     }};
     checkCoverage(playGolden("simultaneous", 19, true, kGolden));
 }
@@ -178,9 +178,9 @@ TEST_CASE("determinism: a turn-based game gives the golden checksums") {
         {10, 0x3b8881ba3b7574f5ull},
         {20, 0x9bed707ed9dd3f0cull},
         {40, 0x095f9eb4953a2984ull},
-        {60, 0x0d18f1b1d58e50c1ull},
-        {80, 0xb48e733419642484ull},
-        {100, 0x331c71dcb9b26c6cull},
+        {60, 0xc62d1edbbaf3c47cull},
+        {80, 0xb0999a3ef303e0efull},
+        {100, 0x5955c345e0cbdecdull},
     }};
     checkCoverage(playGolden("turn-based", 19, false, kGolden));
 }
