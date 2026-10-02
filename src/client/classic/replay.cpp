@@ -231,13 +231,23 @@ constexpr float kTorpedoWait = 0.001f;
 constexpr float kHitFrameWait = 0.1f;
 constexpr float kAfterHitWait = 0.3f;
 constexpr int kHitFrames = 8;
-// Our own drawings' frame counts (inferred): a slide over one square, a
-// torpedo per square of its flight, a flash.
-constexpr int kSlideFrames = 6;
-constexpr int kFlashFrames = 4;
+// Frames (spec 06 §1.10.3, §7 Q77, confirmed: binary): 1 px a frame over a
+// 36 px square; 5° a turn frame; beam stamps 6 px apart; a torpedo 4 px a
+// frame (6 with Fast Tactical Combat).
+constexpr int kSlideFramesPerSquare = 36;
+constexpr int kTurnFramesPer45 = 9;
+constexpr int kBeamStampsPerSquare = 6;
+constexpr int kTorpedoFramesPerSquare = 9;
+constexpr int kFastTorpedoFramesPerSquare = 6;
 
-// 45-degree steps between two headings, the shorter way round.
-int turnSteps(float from, float to) {
+// A wait lasts whole steps of the tick counter (observed): any wait at least one.
+float ticks(float wait) {
+    if (wait <= 0.0f) return 0.0f;
+    return std::ceil(wait / kCombatTick - 1e-4f) * kCombatTick;
+}
+
+// Eighths of a turn between two headings, the shorter way round.
+int turnEighths(float from, float to) {
     constexpr float kPi = 3.14159265358979f;
     float d = std::fmod(to - from, 2.0f * kPi);
     if (d > kPi) d -= 2.0f * kPi;
@@ -254,60 +264,85 @@ std::vector<AnimationFrame> CombatPlayback::framesOf(size_t i) const {
     const game::CombatEvent& e = event(i);
     const bool known = validPiece(e.piece);
     auto add = [&](Part part, int steps, float wait) {
-        for (int k = 0; k < steps; ++k) out.push_back(AnimationFrame{part, k, steps, pace_.fast ? 0.0f : wait});
+        for (int k = 0; k < steps; ++k) out.push_back(AnimationFrame{part, k, steps, pace_.fast ? 0.0f : ticks(wait)});
+    };
+    auto inView = [&](int x, int y) { return !pace_.inView || pace_.inView(x, y); };
+    auto pieceKind = [&](uint32_t p) {
+        return record_ && p < record_->pieces.size() ? record_->pieces[p].kind : game::CombatPiece::Kind::Vehicle;
     };
     switch (e.kind) {
-        case Kind::Move: {
+        case Kind::Move:
+        case Kind::Seeker: {
             if (!known) break;
             const Piece& p = pieces_[e.piece];
             if (e.x == p.x && e.y == p.y) break;
-            // A piece turns to its new facing first, then moves one square.
-            add(Part::Turn, turnSteps(p.heading, headingOf(e.x - p.x, e.y - p.y)), kTurnWait);
-            if (pace_.animateMoves) add(Part::Slide, kSlideFrames, kSlideWait);
-            else add(Part::Jump, 1, kJumpWait);
-            break;
-        }
-        case Kind::Seeker: {
-            // A seeker's step is its flight: drawn as a torpedo's.
-            if (!known) break;
-            add(Part::Slide, kSlideFrames, kTorpedoWait);
+            // Movement not animated: the piece jumps, then 0.1 s (also off-screen).
+            if (!pace_.animateMoves) {
+                add(Part::Jump, 1, kJumpWait);
+                break;
+            }
+            // Either square out of the shown part of the map: it just appears.
+            if (!inView(p.x, p.y) || !inView(e.x, e.y)) break;
+            // A piece turns to its new facing first (seekers never turn), then slides.
+            if (e.kind == Kind::Move) add(Part::Turn, kTurnFramesPer45 * turnEighths(p.heading, headingOf(e.x - p.x, e.y - p.y)), kTurnWait);
+            const int squares = std::max(std::abs(e.x - p.x), std::abs(e.y - p.y));
+            add(Part::Slide, kSlideFramesPerSquare * squares, kSlideWait);
             break;
         }
         case Kind::Fire: {
             if (!known || !validPiece(e.target)) break;
+            // A seeker's launch is not animated: the launcher is only redrawn.
+            if (e.component < pace_.seekers.size() && pace_.seekers[e.component] != 0) break;
+            const Piece& a = pieces_[e.piece];
+            const Piece& b = pieces_[e.target];
+            const int squares = std::max(1, std::max(std::abs(b.x - a.x), std::abs(b.y - a.y)));
             const bool beam = e.component < pace_.beams.size() && pace_.beams[e.component] != 0;
             if (beam) {
-                // Our beam is one stamp stretched from shooter to target (inferred).
-                add(Part::Beam, 1, kBeamWait);
-                add(Part::BeamErase, 1, kBeamEraseWait);
+                add(Part::Beam, kBeamStampsPerSquare * squares, kBeamWait);
+                add(Part::BeamErase, kBeamStampsPerSquare * squares, kBeamEraseWait);
             } else {
-                const Piece& a = pieces_[e.piece];
-                const Piece& b = pieces_[e.target];
-                const int squares = std::max(std::abs(b.x - a.x), std::abs(b.y - a.y));
-                add(Part::Torpedo, std::max(1, squares), kTorpedoWait);
+                add(Part::Torpedo, (pace_.fast ? kFastTorpedoFramesPerSquare : kTorpedoFramesPerSquare) * squares, kTorpedoWait);
             }
             break;
         }
-        case Kind::Hit:
+        case Kind::Hit: {
             if (!validPiece(e.target)) break;
+            if ((e.flags & game::CombatEvent::kStructure) == 0) {
+                // The shields took it all: one shield picture, no wait (none with Fast).
+                if (!pace_.fast) out.push_back(AnimationFrame{Part::Shield, 0, 1, 0.0f});
+                break;
+            }
             add(Part::Explosion, kHitFrames, kHitFrameWait);
             add(Part::Wipe, 1, kHitFrameWait);
-            add(Part::AfterHit, 1, kAfterHitWait);
+            // Tactical Combat pauses after a seeker's impact on a piece that survives it.
+            if (pace_.tactical && known && pieceKind(e.piece) == game::CombatPiece::Kind::Seeker && (e.flags & game::CombatEvent::kDestroyed) == 0)
+                add(Part::AfterHit, 1, kAfterHitWait);
             break;
+        }
         case Kind::Destroyed:
-            // A loss plays an explosion like a hit's (inferred).
-            if (!known) break;
-            add(Part::Explosion, kHitFrames, kHitFrameWait);
-            add(Part::Wipe, 1, kHitFrameWait);
-            break;
         case Kind::Captured:
         case Kind::Launch:
-            if (known) add(Part::Flash, kFlashFrames, 0.0f);
+        case Kind::Miss:        // the shot was drawn by its Fire, ending off the target
+        case Kind::UnitsLost:   // shown by the Hit before it
+            // A loss plays no second explosion: the destroying hit played it.
+            // A seeker that struck vanishes; launches, landings and captures
+            // are only redrawn (spec 06 §1.10.3).
             break;
-        case Kind::Miss:        // the shot was drawn by its Fire
-        case Kind::UnitsLost: break;   // shown by the Hit before it
     }
     return out;
+}
+
+const game::CombatEvent* CombatPlayback::shotOutcome(size_t i) const {
+    if (i >= order_.size()) return nullptr;
+    const game::CombatEvent& f = event(i);
+    if (f.kind != Kind::Fire) return nullptr;
+    for (size_t j = i + 1; j < order_.size(); ++j) {
+        const game::CombatEvent& e = event(j);
+        if (e.round != f.round) break;
+        if (e.kind == Kind::Fire) break;
+        if ((e.kind == Kind::Hit || e.kind == Kind::Miss) && e.piece == f.piece && e.target == f.target) return &e;
+    }
+    return nullptr;
 }
 
 void CombatPlayback::setPace(CombatPace pace) {

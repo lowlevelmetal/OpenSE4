@@ -697,6 +697,13 @@ struct CombatEvent {
     int16_t x = 0, y = 0;
     int32_t amount = 0;
     uint32_t component = 0;
+    // A Hit's outcome, for the battle windows' drawing (spec 06 §1.10.3, §7
+    // Q77): kStructure when it damaged the target's structure or destroyed it
+    // (an explosion is drawn; without it the shields took it all), kDestroyed
+    // when the target did not survive it.
+    uint8_t flags = 0;
+    static constexpr uint8_t kStructure = 1;
+    static constexpr uint8_t kDestroyed = 2;
 };
 
 struct CombatPiece {

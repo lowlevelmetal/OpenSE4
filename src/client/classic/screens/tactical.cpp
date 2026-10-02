@@ -346,7 +346,7 @@ private:
         if (&rec != record_ || rec.events.size() != events_ || rec.pieces.size() != pieces_) {
             const size_t cursor = record_ ? playback_.cursor() : std::min(ui.session.tactical()->seen, rec.events.size());
             playback_ = CombatPlayback(rec);
-            playback_.setPace(animationPace(ui.rules()));
+            playback_.setPace(windowPace(ui));
             playback_.seekEvent(std::min(cursor, playback_.eventCount()));
             // Before Begin the map stays as the battle starts.
             if (state().begun && !playback_.atEnd()) playback_.play();
@@ -357,11 +357,24 @@ private:
         if (!state().begun) return;
         // The Combat Options may change the pace.
         if (playback_.pace().fast != settings().fastTacticalCombat || playback_.pace().animateMoves != settings().animateCombatMovement)
-            playback_.setPace(animationPace(ui.rules()));
+            playback_.setPace(windowPace(ui));
         if (!playback_.playing() && !playback_.atEnd()) playback_.play();
         const size_t before = playback_.cursor();
         playback_.advance(ui.dt);
         CombatMapPainter(ui, b.state(), rec, playback_).sounds(before, playback_.cursor());
+    }
+
+    // The Tactical Combat window's pace: the 0.3 s pause after a seeker's
+    // impact, and no move animated across the edge of the shown map (§1.10.3).
+    CombatPace windowPace(UiContext& ui) {
+        CombatPace pace = animationPace(ui.rules());
+        pace.tactical = true;
+        pace.inView = [this](int x, int y) {
+            if (viewSize_.x <= 0.0f || viewSize_.y <= 0.0f) return true;
+            const ImVec2 half{viewSize_.x * 0.5f, viewSize_.y * 0.5f};
+            return squareInView(view_, {view_.center.x - half.x, view_.center.y - half.y}, {view_.center.x + half.x, view_.center.y + half.y}, x, y);
+        };
+        return pace;
     }
 
     bool animating() const { return playback_.playing() && !playback_.atEnd(); }

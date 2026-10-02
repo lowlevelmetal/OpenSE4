@@ -78,6 +78,14 @@ sound and music, *Fast Tactical Combat*, and display switches: group identifiers
 rectangle on the map, centring the map on the current ship, the chance to hit of each weapon when
 you point at an enemy, and the grid. In the simulator it also has `Stop Combat`.
 
+The battle is drawn at the original's pace: a ship turns before it moves and then slides across
+its square in about half a second; beams are drawn and wiped out stamp by stamp and torpedoes fly
+toward their targets; a hit that gets through the shields explodes for about a second, while one
+the shields take whole only flashes the target's shield ring. A miss ends half a square off the
+target. *Fast Tactical Combat* keeps every picture but removes the waits. In the Strategic Combat
+window there is no animation at all: the battle runs as fast as your computer allows, several
+combat turns between two pictures.
+
 > Look at the chance to hit before you click: a 5 % shot wastes supplies and a reload.
 
 When the battle is over, **Combat Complete** appears; after `OK` the window closes by itself.

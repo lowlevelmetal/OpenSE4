@@ -1859,8 +1859,24 @@ void Battle::shoot(int i, size_t wi, size_t k, int t) {
         return;
     }
     const int64_t damage = xmath::pctRound(int64_t{table} * hits, 100 + damageBonus(pieces_[i].owner));
-    event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
-    applyHit(i, t, w.type, damage);
+    recordHit(i, t, w.type, damage, w.de.component);
+}
+
+void Battle::recordHit(int att, int t, DamageType type, int64_t damage, uint32_t component) {
+    event(Ev::Hit, att, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), component);
+    const size_t at = rec_.events.size() - 1;
+    const int64_t before = hitPoints(t);
+    applyHit(att, t, type, damage);
+    markHit(at, t, before);
+}
+
+void Battle::markHit(size_t at, int t, int64_t before) {
+    if (at >= rec_.events.size()) return;
+    const bool gone = !pieces_[static_cast<size_t>(t)].alive;
+    uint8_t flags = 0;
+    if (gone || hitPoints(t) < before) flags |= CombatEvent::kStructure;
+    if (gone) flags |= CombatEvent::kDestroyed;
+    rec_.events[at].flags = flags;
 }
 
 void Battle::launchSeeker(int i, const Weapon& w, int t, int count) {
@@ -2482,9 +2498,12 @@ void Battle::moveSeekers(EmpireId e) {
                 const Weapon w = pieces_[k].seekWeapon;
                 const int64_t damage = xmath::pctRound(int64_t{table} * pieces_[k].members, 100 + damageBonus(e));
                 event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, damage)), w.de.component);
+                const size_t hitAt = rec_.events.size() - 1;
+                const int64_t before = hitPoints(t);
                 pieces_[k].alive = false;
                 event(Ev::Destroyed, i, i);
                 applyHit(i, t, w.type, damage);
+                markHit(hitAt, t, before);
                 break;
             }
         }
@@ -3316,19 +3335,11 @@ void Battle::ram(int i, int t) {
         // A drone strikes with each warhead as its own hit, then with its bulk (confirmed: binary).
         for (const auto& [type, value] : droneWarheads) {
             if (!combatant(t)) break;
-            const int64_t hit = blow(value);
-            event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-            applyHit(i, t, type, hit);
+            recordHit(i, t, type, blow(value));
         }
-        if (combatant(t)) {
-            const int64_t hit = blow(dealt);
-            event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-            applyHit(i, t, DamageType::Normal, hit);
-        }
+        if (combatant(t)) recordHit(i, t, DamageType::Normal, blow(dealt));
     } else {
-        const int64_t hit = blow(dealt + warheads);
-        event(Ev::Hit, i, t, static_cast<int>(std::min<int64_t>(INT_MAX, hit)));
-        applyHit(i, t, DamageType::Normal, hit);
+        recordHit(i, t, DamageType::Normal, blow(dealt + warheads));
     }
     const bool targetDestroyed = !combatant(t) || (pieces_[t].kind == Kind::Obstacle && pieces_[t].colonyLost);
     if (!combatant(i)) return;

@@ -448,7 +448,7 @@ void io(Ar& ar, DiplomaticMessage& m) {
 
 template <class Ar>
 void io(Ar& ar, CombatEvent& e) {
-    fields(ar, e.kind, e.round, e.piece, e.target, e.x, e.y, e.amount, e.component);
+    fields(ar, e.kind, e.round, e.piece, e.target, e.x, e.y, e.amount, e.component, e.flags);
 }
 
 template <class Ar>

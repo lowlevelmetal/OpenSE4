@@ -2000,7 +2000,15 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
                 r.line(corner, corner - Vec2{0, sy * l}, 1.0f, col);
             }
     };
-    if (selectedSectorMarked(ui)) brackets(*sector_, kSelectYellow);
+    // The selected location: `Dialogs/Selection.bmp` (36x36, eight small yellow
+    // marks) over the sector's sprite square with black transparent (spec 06
+    // §2.4, observed), while the sector holds something we see (§7 Q64);
+    // the four corner lines without the picture.
+    if (selectedSectorMarked(ui)) {
+        if (const Sprite mark = ui.art.image("Pictures/Game/Dialogs/Selection.bmp"))
+            r.sprite(mark.tex, Rect::fromPosSize(spriteSquare(*sector_), {kSpriteSize, kSpriteSize}), mark.uv);
+        else brackets(*sector_, kSelectYellow);
+    }
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
     // Waypoints and tagged minefields: a cyan 1 px rectangle on the cell's edges
     // (the number or "M" is drawn by overlayText).

@@ -346,11 +346,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   in every tab; the original's Colonies columns, directions and keyless columns; clickable
   pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
   Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
-- **Strategic Combat** (§7 Q73): fight on step by step until the next refresh is due
-  (`screens/strategic_combat.cpp`).
-- **Tactical animation** (§1.10.3, §7 Q77): 36-frame slides, 9 frames per 45°, torpedo
-  and beam steps, explosions only for structure damage, no flash, the 0.3 s only after a
-  surviving seeker impact, misses off-centre (`replay.cpp`, `screens/combat_map.cpp`).
 - **Combat Piece Report** (§1.10.1, §7 Q78): the 310×420 window with Close under the
   tabs; the Ability tab's sets (`screens/tactical.cpp`).
 

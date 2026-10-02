@@ -359,6 +359,11 @@ private:
     void shoot(int i, size_t wi, size_t k, int t);
     void launchSeeker(int i, const Weapon& w, int t, int count);
     void applyHit(int att, int t, DamageType type, int64_t damage);
+    // Records a Hit of `att` on `t`, applies it, and marks the event with
+    // what it did (CombatEvent::flags, spec 06 §7 Q77).
+    void recordHit(int att, int t, DamageType type, int64_t damage, uint32_t component = 0);
+    // Marks the Hit event `at` with what applying it did to `t`, whose hit points were `before`.
+    void markHit(size_t at, int t, int64_t before);
     void shipHit(int att, int t, DamageType type, int64_t damage);
     void groupHit(int att, int t, DamageType type, int64_t damage);
     void seekerHit(int att, int t, DamageType type, int64_t damage);

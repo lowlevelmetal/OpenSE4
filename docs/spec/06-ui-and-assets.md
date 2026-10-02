@@ -1183,7 +1183,9 @@ Contents [T][S]:
   none); there is no circle when flags are shown (confirmed: binary).
 - Colonisation hint: a small green star on a planet means colonisable and breathable; red
   means colonisable but would be domed; no star means not colonisable by this empire.
-- The selected location is framed by four small yellow corner arrows.
+- The selected location is marked by `Dialogs/Selection.bmp` (eight small yellow marks),
+  drawn over the sector's 36x36 square with black transparent (observed); our client draws
+  it (without the picture, four corner lines).
 - Waypoints 1–10: a cyan rectangle around the sector with the number in cyan. A cyan "M"
   marks the sectors of a second list of locations, probably the tagged minefields of
   Ctrl+T / Ctrl+R (confirmed: binary; the meaning of "M" is inferred).
@@ -3603,10 +3605,11 @@ a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
     appeared as drawn; on a current machine many steps, often whole combat turns, fall
     between two display refreshes, and only the state at each refresh is seen.
 
-    Our client differs: `screens/strategic_combat.cpp` (the window's `update`) fights one
-    empire's phase per displayed frame, so a battle lasts at least as many refreshes as it
-    has phases, slower than the original on a current machine. To match, it would fight
-    on, step by step, until the next refresh is due, then show that state.
+    Since 2026-10-01 our client does the same: `screens/strategic_combat.cpp` (the
+    window's `update`) fights on, phase after phase, for up to 10 ms of each displayed
+    frame (until the battle ends, or a landing opens Ground Combat), then shows the state
+    it reached, so several combat turns pass between two refreshes as on a current
+    machine.
 
     Open: needs observation of what a viewer sees. Record the original's Strategic Combat
     window with a frame-accurate capture (60 fps or more) during a simulator battle of
@@ -3693,29 +3696,26 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
       and what follows in it can differ. Whether Combat Replay draws from the game's
       sequence too was not traced.
 
-    Our client differs (`CombatPlayback::framesOf` in `client/classic/replay.cpp`, the
-    drawing in `screens/combat_map.cpp`):
-    - `kSlideFrames` 6 must become 36 (1 px a frame), and a seeker's step must be this
-      slide, not a torpedo's flight.
-    - `turnSteps` must give 9 frames per 45° (5° each, clockwise on a tie), and no turn
-      frames when `animateMoves` is off or the square is out of view.
-    - Torpedo: 9 frames per square, 6 with Fast Tactical Combat.
-    - Beam: 6 stamps per square drawn one by one and then erased one by one, instead of
-      one stamp stretched by `drawSpriteAlong`.
-    - `Kind::Hit`: an explosion only when structure is damaged or the target destroyed;
-      a shield-only hit gets one shield stamp and no wait; the 0.3 s `AfterHit` frame only
-      after a seeker's impact that the target survives, and only in Tactical Combat. The
-      battle record must tell structure damage from shield damage.
-    - `Kind::Destroyed` must not play a second explosion.
-    - `Kind::Captured` and `Kind::Launch` must drop the 4-frame flash (`kFlashFrames`).
-    - Misses must end at the diagonal half-square offset, shield-only hits 17 px short,
-      and shielded one-square targets shimmer.
-    - The engine's battle does not draw the display's random numbers, so a battle shown
-      tactically follows another random course in the original than in ours; matching it
-      would need the tactical window to draw those numbers from `GameState::rng` at the
-      same points (spec 04 §19.1).
-    - Keeping each frame on screen for at least one display refresh stays an OpenSE4
-      choice; it is close to what Windows gives (about 15.6 ms a frame).
+    Since 2026-10-01 our client follows the frame counts (`CombatPlayback::framesOf` in
+    `client/classic/replay.cpp`, the drawing in `screens/combat_map.cpp`): 36-frame
+    slides, a seeker's step the same slide; 9 turn frames per 45°, clockwise on a tie,
+    none with the movement animation off or a square out of view (`CombatPace::inView`);
+    torpedoes 9 frames a square (6 with Fast Tactical Combat); beams 6 stamps a square
+    drawn and then erased one by one; an explosion only for a hit that damages structure
+    or destroys its target (the battle record says which, `CombatEvent::flags`), a
+    shield-only hit one shield picture without a wait, the 0.3 s pause only after a
+    seeker's impact on a survivor in Tactical Combat; no second explosion for a loss, no
+    flash for launches and captures; misses end 18 px off diagonally, shield-only hits 17
+    px short, and the target's shield ring shimmers. Each wait lasts whole 16 ms ticks
+    (`kCombatTick`, the step measured under Wine), and each frame stays at least one
+    display refresh (an OpenSE4 choice). What remains:
+    - The engine's battle does not draw the display's random numbers (a miss's signs and a
+      planet's point); ours derive them from the event's place, so a battle shown
+      tactically does not change its random course (spec 04 §19.1, kept as recorded).
+    - The shield shimmer shows only for hits the shields took whole, the one case where
+      the record knows the shields are up (inferred).
+    - Losses of ships and bases use the 72x72 explosion, other losses the 36x36 pictures
+      (inferred beyond the ships and bases observed).
 
     Open: needs observation, to confirm under Wine with a high-rate capture of the
     Tactical Combat window (Fast Tactical Combat off): the duration of a one-square slide

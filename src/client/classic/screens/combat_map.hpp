@@ -98,5 +98,8 @@ bool ownerMark(UiContext& ui, const game::GameState& s, game::EmpireId e, Vec2 s
 // The pace of the combat windows' animations (spec 06 §1.10.3): Fast Tactical
 // Combat and "animate ship movement", and which weapons are drawn as beams.
 CombatPace combatPace(const game::Rules& r, bool fast, bool animateMoves);
+// Whether square (x, y) lies wholly in the shown part of a map drawn with `v`
+// over [mapMin, mapMax] (a move with a square outside it is not animated).
+bool squareInView(const CombatView& v, ImVec2 mapMin, ImVec2 mapMax, int x, int y);
 
 } // namespace opense4::client::classic

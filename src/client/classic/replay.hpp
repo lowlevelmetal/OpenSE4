@@ -24,23 +24,32 @@
 // map. Planets and obstacles cover 4x4 squares from their top-left square.
 // Events are played in round order (stable for equal rounds).
 //
-// Timed playback (spec 06 §1.10.3, confirmed: binary): every event is an
-// animation of frames, and every frame is drawn. Without Fast Tactical Combat
-// each frame is followed by the original's wait: a one-square slide 1 ms per
-// frame (a jump and 0.1 s with "animate ship movement" off), a turn to a new
-// facing 0.01 s per frame, a beam 0.00001 s per stamp drawn and 0.00005 s per
-// stamp erased, a torpedo 1 ms per frame of its flight, a hit's 8-frame
-// animation 0.1 s per frame and after it is wiped (0.9 s), then 0.3 s after
-// the hit. With Fast Tactical Combat nothing waits and there is no speed
-// factor. A frame is shown for at least one display refresh, whatever its
-// wait, so that it is seen (an OpenSE4 choice, inferred: the original draws
-// it and moves on at once). How many frames our own drawings take (a slide,
-// a turn, a torpedo's flight) is ours too (inferred).
+// Timed playback (spec 06 §1.10.3, §7 Q77, confirmed: binary, timings
+// observed): every event is an animation of frames, and every frame is drawn.
+// A one-square move first turns the piece the shorter way (clockwise for a
+// half-turn) 5° a frame, 9 frames per 45°, then slides it 1 px a frame along
+// the longer axis, 36 frames a square; with "animate ship movement" off it
+// jumps and waits 0.1 s; when either square is out of the shown part of the
+// map it just appears (no frame, no wait). Seekers slide the same way and
+// never turn; their launch is not animated. A beam is drawn as stamps 6 px
+// apart (6 a square), one by one outward, then erased one by one; a torpedo
+// flies 4 px a frame (9 frames a square, 6 px and 6 frames with Fast Tactical
+// Combat). A hit that damages structure or destroys its target plays the
+// 8-frame explosion (0.1 s a frame and after the wipe), once; a hit the
+// shields took entirely stamps one shield picture (not with Fast) without a
+// wait; a miss adds nothing. Tactical Combat pauses 0.3 s after a seeker's
+// impact on a piece that survives it. Launches, landings and captures are not
+// animated. Each wait lasts whole steps of the system tick counter, 16 ms
+// (observed under Wine; about 15.6 ms on Windows), so a 1 ms or 10 ms wait
+// lasts 16 ms; Fast Tactical Combat removes every wait. A frame is shown for
+// at least one display refresh, whatever its wait (an OpenSE4 choice, close
+// to the original's pace).
 
 #include "game/state.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -50,22 +59,29 @@ namespace opense4::client::classic {
 struct CombatPace {
     bool fast = false;             // Fast Tactical Combat: no waits
     bool animateMoves = true;      // "animate ship movement in combat": slides, else jumps
+    bool tactical = false;         // the Tactical Combat window: the 0.3 s pause after a seeker's impact
     std::vector<uint8_t> beams;    // per Components.txt index: 1 when the weapon is drawn as a beam
+    std::vector<uint8_t> seekers;  // per Components.txt index: 1 for a seeking weapon (its launch is not animated)
+    // Whether a square is in the shown part of the map (null: all of it).
+    std::function<bool(int x, int y)> inView;
 };
+
+// The system tick counter's step: every wait lasts whole steps of it (§1.10.3, observed).
+inline constexpr float kCombatTick = 0.016f;
 
 // One frame of an event's animation and the wait after it.
 struct AnimationFrame {
     enum class Part : uint8_t {
-        Turn,       // the piece turns 45 degrees toward its move (0.01 s)
-        Slide,      // the piece slides toward the next square (1 ms)
+        Turn,       // the piece turns 5 degrees toward its move (0.01 s)
+        Slide,      // the piece slides 1 px toward the next square (1 ms)
         Jump,       // the piece stands on the next square (0.1 s; movement not animated)
-        Beam,       // a beam drawn from shooter to target (0.00001 s per stamp)
-        BeamErase,  // the beam erased (0.00005 s per stamp)
+        Beam,       // stamp `step` of a beam drawn outward from the shooter (0.00001 s)
+        BeamErase,  // stamp `step` of the beam erased, in the same order (0.00005 s)
         Torpedo,    // a torpedo in flight, `step` of `steps` of the way (1 ms)
-        Explosion,  // frame `step` of a hit's or a loss's 8-frame animation (0.1 s)
-        Wipe,       // the animation wiped (0.1 s)
-        AfterHit,   // the pause after a hit (0.3 s)
-        Flash,      // a launch, a landing or a capture marked (no wait)
+        Explosion,  // frame `step` of a damaging hit's 8-frame explosion (0.1 s)
+        Wipe,       // the explosion wiped (0.1 s)
+        AfterHit,   // Tactical Combat: the pause after a seeker's impact on a survivor (0.3 s)
+        Shield,     // a hit the shields took: one shield picture, no wait
     };
     Part part = Part::Slide;
     int step = 0, steps = 1;       // this frame's place in its part
@@ -146,6 +162,9 @@ public:
     const Bounds& bounds() const { return bounds_; }
     // Whether event i is a Hit or Miss that follows a Fire of the same shot.
     bool followsFire(size_t i) const;
+    // The outcome of the shot Fire event i starts: the Hit or Miss of the same
+    // shooter and target that follows it in its round (null: none).
+    const game::CombatEvent* shotOutcome(size_t i) const;
 
 private:
     void reset();
