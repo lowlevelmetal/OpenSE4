@@ -53,7 +53,16 @@ struct Rename {              // vehicle, fleet, design or planet
 // scrapActionProblem must pass when the command is given. Computer players'
 // Scrap and Retrofit go the same way (inferred). Scrap with `facilityPlanet`
 // instead is Scrap Facilities, at once in both turn styles (spec 02 §6.6).
-struct Scrap { VehicleId vehicle; ObjectId facilityPlanet; int32_t facilitySlot = -1; };
+// Scrap with `moveFirst` is the Scrap minister's order to a vehicle that can
+// move and stands away from a yard (spec 05 §7.5 *Scrap*): in either turn
+// style its orders become a Move To that sector, which must hold an own
+// space yard, then Scrap, whose test is made when it is carried out.
+struct Scrap {
+    VehicleId vehicle;
+    ObjectId facilityPlanet;
+    int32_t facilitySlot = -1;
+    Location moveFirst;
+};
 struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or Unmothball
 struct Analyze { VehicleId vehicle; };
 struct SelfDestruct { VehicleId vehicle; };

@@ -1043,9 +1043,10 @@ High always notice.
   noticed vehicles in that sector; a noticed populated colony adds the ratings (without the
   + 1) of every object in its sector that is not ours, its own planet included at rating 0,
   so a colony with nothing else in its sector adds 0 (confirmed: binary; observed
-  2026-10-02: 94 % of the colony entries of two games had the value 0). The engine differs:
-  `assess` (`ai.cpp`) adds 1 for the colony itself (without it, 17 of our 24 games played
-  out identically, scratch run). The entries are ordered by:
+  2026-10-02: 94 % of the colony entries of two games had the value 0). OpenSE4 follows
+  this since 2026-10-02 (`assess`, `ai.cpp`); it used to add 1 for the colony itself
+  (without it, 17 of our 24 games played out identically, scratch run). The entries are
+  ordered by:
   1. fewest jumps from home;
   2. our colonies' maximum population in that sector (spec 02 §2, domed capacity and the
      storage trait included), highest first;
@@ -1651,12 +1652,13 @@ binary).
     The vehicles' maintenance actually paid (spec 02 §7) includes the colony ships. Observed
     under a debugger (2026-10-02): at turn 30 an empire with three attack ships and a colony
     ship compared the maintenance of the three attack ships alone; in two 100-turn games the
-    empires were over the soft cap in 9 and 11 % of turns 26–100, all after turn 50. The
-    engine differs: `Planner::overCap` (`ai.cpp`) compares the maintenance last paid
-    (`Empire::economy.maintenance`), colony ships included; our computers are over the soft
-    cap in 20 % of turns 26–100 (11 % with colony ships left out, scratch run), where they
-    build no warships and scrap a ship a turn (spec 07 "Battles, bases and the first turns
-    under a debugger").
+    empires were over the soft cap in 9 and 11 % of turns 26–100, all after turn 50.
+    OpenSE4 follows this since 2026-10-02 (`capMaintenance`, `Planner::overCap`, `ai.cpp`;
+    worked out when the planner is made and again when its start-of-turn and economy-step
+    ministers start). It used to compare the maintenance last paid
+    (`Empire::economy.maintenance`), colony ships included, and its computers were over the
+    soft cap in 20 % of turns 26–100, where they build no warships and scrap a ship a turn;
+    with the rule, 12 % (spec 07 "Pace after the scrap, cap and fleet rules").
 - **What spends the stockpile** (confirmed: binary): the computer player spends its
   resources only through construction queues and retrofits. It never uses Emergency
   Build or Repeat Build (only the Construction Queue window sets them) and never converts
@@ -1969,13 +1971,14 @@ binary).
     atmosphere changers no longer needed). Observed under a debugger (2026-10-02): every
     ship that vanished outside a battle (16 in a 100-turn game: attack ships, mine sweepers,
     a carrier, layers) did so on a turn its empire was over the soft cap, and no base was
-    scrapped: an old attack ship far from a yard is chosen before a base at a yard. The
-    engine differs: `planScrap` (`ai_military.cpp`) takes only ships already at a yard and
-    scraps the oldest of them at once, so bases, which always sit at yards, go first; our
-    computers scrapped 0.7 bases per empire in 100 turns (of the 1.0 they built). A scratch
-    run with the original's candidates kept 0.42 bases per empire at turn 100 instead of
-    0.24 (the original: 0.4–0.6 in five games, then 1.2, and 0.0 in a game with no turn in
-    Infrastructure).
+    scrapped: an old attack ship far from a yard is chosen before a base at a yard.
+    OpenSE4 follows this since 2026-10-02 (`planScrap`, `ai_military.cpp`): a candidate at
+    a yard is scrapped where it stands (`cmd::Scrap`), and one elsewhere gets the Move To
+    and the Scrap in one command (`cmd::Scrap` with `moveFirst`, which only the ministers
+    give); the nearest yard is found as the Repair minister finds it. Its own choices are
+    question 72. The engine used to take only ships already at a yard, so bases, which
+    always sit at yards, went first: its computers scrapped 0.7 bases per empire in 100
+    turns of the 1.0 they built (spec 07 "Pace after the scrap, cap and fleet rules").
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -2195,12 +2198,13 @@ binary).
     Formation` and `Fleets Default Strategy`. Only a ship that can move and that an attack
     fleet or a defence fleet could take may lead it, and never a troop transport or a
     boarding ship: an attack ship, a carrier or drone carrier with its units aboard, a
-    kamikaze ship, or a defence ship (confirmed: binary). The engine differs: `planFleets`
-    (`ai_military.cpp`) forms a fleet around any fit ship, troop transports and empty
-    carriers included; 7 % of our fleets were troop transports alone and 6 % carriers alone
-    (fleet-turns of turns 51–100), against none and 1 % in one game of the original, and
-    such fleets go to fight and draw (spec 07 "Battles, bases and the first turns under a
-    debugger").
+    kamikaze ship, or a defence ship (confirmed: binary). OpenSE4 follows this since
+    2026-10-02 (`canLeadFleet`, `ai_military.cpp`), taking the newest of the ships that may
+    lead (inferred, question 72). It used to form a fleet around any fit ship, troop
+    transports and empty carriers included: 7 % of its fleets were troop transports alone and
+    6 % carriers alone (fleet-turns of turns 51–100), against none and 1 % in one game of the
+    original, and such fleets went to fight and draw (spec 07 "Battles, bases and the first
+    turns under a debugger").
   - *Disbanding*: fleets beyond n are disbanded, and so is a fleet whose leader is gone
     or unfit.
   - *Roles*: fleet i of n (counting from 1) is an attack fleet when i is odd and (i + 1) /
@@ -3985,18 +3989,20 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
       ours lose 6.1 attack ships per empire and 25 turns in battle against 4.2 and 4.9.
     - Fleets: a new fleet's leader must be a ship an attack or defence fleet could take,
       never a troop transport or boarding ship (§7.5 `AI_Fleets`, confirmed: binary). Ours
-      form fleets of troop transports alone (7 % of fleet-turns) and of carriers alone (6
+      formed fleets of troop transports alone (7 % of fleet-turns) and of carriers alone (6
       %); the original none and 1 % (one game). In a scratch run with the original's rule,
       our battles fell from 11.3 to 9.7 per empire and 25 turns (standard error 0.9), those
       between armed and unarmed ships from 3.0 to 1.9, and attack ships lost in turns 26–100
       from 17.9 to 16.5.
-    - The step toward a square in combat (spec 04 §5, confirmed: binary): ours stop behind a
-      large piece where the original slides along it; with the original's rule our drawn
+    - The step toward a square in combat (spec 04 §5, confirmed: binary): ours stopped behind
+      a large piece where the original slides along it; with the original's rule our drawn
       share fell from 42 to 39 %.
-    - Scrapping: ours scrap 1.1 attack ships per empire and 25 turns of turns 51–100, as the
-      soft cap and the scrap candidates differ (§7.5, the budget and *Scrap*).
+    - Scrapping: ours scrapped 1.1 attack ships per empire and 25 turns of turns 51–100, as
+      the soft cap and the scrap candidates differed (§7.5, the budget and *Scrap*).
+
     Who engages whom in the decided battles, and whether ships without orders start
-    battles, is question 68.
+    battles, is question 68. OpenSE4 follows the three rules above and the soft cap's since
+    2026-10-02 (spec 07 "Pace after the scrap, cap and fleet rules").
 67. **Battles at an enemy colony** (spec 07 "Resources, ships and colony losses under a
     debugger", question 63). The original's computer players win most battles they fight at
     an enemy colony (2.1–3.2 won, 0.8–0.9 lost, 0.2–0.6 drawn per empire and 25 turns in
@@ -4018,9 +4024,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     colonies on both sides: in the second new game 43 such battles, the colonies' median
     15,490 hit points with two unit groups; ours 224 in 24 games (median 2,675), 56 of them
     on one colony and 24 % without a shot. The colony threat of the defend list (§7.2)
-    differs (the original adds nothing for the colony itself, ours 1) but changes little:
-    without the + 1, 17 of our 24 games played out identically (scratch run). Which colonies
-    the ministers send ships against is question 69.
+    differed (the original adds nothing for the colony itself, ours added 1, until
+    2026-10-02) but changes little: without the + 1, 17 of our 24 games played out
+    identically (scratch run). Which colonies the ministers send ships against is question
+    69.
 68. **Decided battles away from colonies** (question 66; spec 07 "Battles, bases and the
     first turns under a debugger"). Our computer players win 4.9 battles away from colonies
     per empire and 25 turns of turns 51–100 and lose 5.1 (wins 3.0–10.3 per game), the
@@ -4049,5 +4056,29 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 71. **The soft cap in turns 26–50.** With colony ships left out of the maintenance (§7.5),
     our computer players are over the soft cap in 4 % of turns 26–50 and 14 % of turns
     51–100 (scratch run); the original in none of turns 26–50 and 14–16 % of turns 51–100
-    (two games). To verify: the maintenance and revenue compared at the test in turns 26–50
-    in the original and in ours, and which vehicles make the difference.
+    (two games). Since 2026-10-02 the engine follows the rule, with the original's scrap
+    candidates, which keep more bases: over 120 games, 3.5 % of turns 26–50 and 16 % of turns
+    51–100 (spec 07 "Pace after the scrap, cap and fleet rules"). To verify: the maintenance
+    and revenue compared at the test in turns 26–50 in the original and in ours, and which
+    vehicles make the difference.
+72. **Details the scrap and fleet-leader rules leave open** (§7.5 *Scrap*, `AI_Fleets`).
+    OpenSE4's choices since 2026-10-02 (inferred):
+    - unit groups (fighters, satellites, mines and the like in space) are never scrap
+      candidates, as before; "the empire's vehicles" is read as its ships and bases;
+    - a candidate in a fleet leaves it first (`cmd::LeaveFleet`), since the Scrap order is
+      refused to a fleet member (spec 03 §15); a cloaked candidate, which it refuses too, is
+      not scrapped, and no other candidate is tried that turn;
+    - "the nearest sector where it can be scrapped" is found as the Repair minister finds a
+      yard: our uncloaked colonies with a Space Yard facility and uncloaked ships with a
+      working yard, by travel, the earlier in the visiting order on a tie; a candidate that
+      no route takes to a yard is not scrapped, and no other candidate is tried that turn;
+    - the Move To and Scrap are given together, so the vehicle is scrapped when it reaches
+      the yard in the same movement, and its orders are not touched by the ministers after
+      the Scrap minister that turn;
+    - a new fleet's leader is the newest idle, fit ship outside fleets among those that may
+      lead one, not the newest such ship whatever it is.
+
+    To verify in the executable: whether unit groups are in the candidates' list, what
+    happens to a candidate in a fleet or cloaked, how the scrap place is chosen and what a
+    candidate with no reachable yard gets, and whether the leader test filters the
+    candidates or tests only the newest ship.

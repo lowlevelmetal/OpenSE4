@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "game/ai_planner.hpp"
+#include "game/economy.hpp"
 #include "game/generate.hpp"
 #include "game/query.hpp"
 #include "game/score.hpp"
@@ -350,10 +351,11 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             sit.defendEntries.push_back(d);
             it = sit.defendEntries.end() - 1;
         }
-        // Each noticed object adds its rating + 1; a populated colony (rating 0)
-        // also adds the ratings of every object in its sector that is not ours.
-        it->threat += (v ? vehicleRating(r, s, *v) : 0) + kStrengthScale;
-        if (!v) it->threat += foreignRatingsAt(r, s, id, where);
+        // Each noticed vehicle adds its rating + 1; a populated colony adds the
+        // ratings (without the + 1) of every object in its sector that is not
+        // ours, its own planet at rating 0, and nothing for itself.
+        if (v) it->threat += vehicleRating(r, s, *v) + kStrengthScale;
+        else it->threat += foreignRatingsAt(r, s, id, where);
         it->latest = t;
     }
     sortDefendEntries(sit.defendEntries, false);
@@ -459,6 +461,7 @@ Planner::Planner(const Rules& rules, const GameState& s, EmpireId e, Mode m, uin
         }
 
     scores = politicalScores(r, st);
+    capUpkeep = capMaintenance(r, st, id);
     if (territory) st.empire(id).claimedSystems = *territory;
     sit = assess(r, st, id, prof);
     for (const auto& c : st.colonies)
@@ -609,13 +612,27 @@ Resources Planner::revenue() const {
 
 Resources Planner::netIncome() const { return revenue() - emp().economy.maintenance; }
 
+// Over the soft cap (extraPercent 0) or the hard cap (20) when, for any one
+// resource, the maintenance of the empire's vehicles other than colony ships
+// exceeds that resource's revenue × (Maximum Maintenance Percent of Revenue +
+// extraPercent) / 100 (spec 05 §7.5, confirmed: binary).
 bool Planner::overCap(int extraPercent) const {
     const Resources rev = revenue();
-    const Resources& upkeep = emp().economy.maintenance;
     const int64_t m = prof.settings.maxMaintenancePercent + extraPercent;
     for (Resource k : kResources)
-        if (xmath::Ext(upkeep[k]) > xmath::Ext(rev[k]) * xmath::percent(m)) return true;
+        if (xmath::Ext(capUpkeep[k]) > xmath::Ext(rev[k]) * xmath::percent(m)) return true;
     return false;
+}
+
+Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e) {
+    Resources sum;
+    for (const Vehicle& v : s.vehicles) {
+        if (v.owner != e || v.count <= 0 || !v.design.valid() || v.design.index() >= s.designs.size()) continue;
+        const Design& d = s.design(v.design);
+        if (d.hull < r.data().vehicleSizes.size() && r.hull(d.hull).maxPercentColonyModules > 0) continue;
+        sum += economy::vehicleMaintenance(r, s, v);
+    }
+    return sum;
 }
 
 bool Planner::setOrders(VehicleId vid, std::vector<Order> orders, bool repeat) {
@@ -637,6 +654,7 @@ bool Planner::setFleetOrders(FleetId fid, std::vector<Order> orders) {
 
 void Planner::runOrders(bool politics, bool others) {
     if (!emp().alive) return;
+    capUpkeep = capMaintenance(r, st, id);   // the vehicles as the start-of-turn ministers find them
     if (politics && on(Minister::Politics)) planPolitics(*this);
     if (!others) return;
     planTroops(*this);
@@ -659,6 +677,7 @@ void Planner::runOrders(bool politics, bool others) {
 
 void Planner::runEconomy() {
     if (!emp().alive) return;
+    capUpkeep = capMaintenance(r, st, id);   // and as the economy-step ministers find them
     // New colonies already have their type: colonization calls
     // colonyTypeAtColonization for every empire (spec 05 §7.5).
     if (mode == Mode::Computer) planStrategies(*this);

@@ -7,13 +7,16 @@
 #include "game/movement.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
+#include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/xmath.hpp"
 
 #include <algorithm>
 #include <deque>
 #include <map>
+#include <optional>
 #include <tuple>
+#include <vector>
 
 namespace opense4::game::ai::detail {
 
@@ -96,6 +99,22 @@ bool attackMaterial(Planner& p, const Vehicle& v) {
         case Role::Carrier:
         case Role::DroneCarrier:
         case Role::TroopTransport: return loaded(v);
+        default: return false;
+    }
+}
+
+// A new fleet's leader (spec 05 §7.5 AI_Fleets, confirmed: binary): a ship
+// that can move and that an attack or a defence fleet could take, never a
+// troop transport or a boarding ship: an attack ship, a carrier or drone
+// carrier with its units aboard, a kamikaze ship, or a defence ship.
+bool canLeadFleet(Planner& p, const Vehicle& v) {
+    if (v.status == VehicleStatus::Mothballed || vehicleMaxMovement(p.r, p.st, v) <= 0) return false;
+    switch (p.info(v.design).role) {
+        case Role::Attack:
+        case Role::Kamikaze:
+        case Role::Defense: return true;
+        case Role::Carrier:
+        case Role::DroneCarrier: return loaded(v);
         default: return false;
     }
 }
@@ -248,12 +267,13 @@ void planFleets(Planner& p) {
         }
         keep.push_back(fid);
     }
-    // At most one new fleet per turn, around the newest idle, fit ship outside fleets.
+    // At most one new fleet per turn, around the newest idle, fit ship outside
+    // fleets among those that may lead one (canLeadFleet; inferred, spec 05 Q72).
     if (static_cast<int>(keep.size()) < wanted) {
         std::optional<VehicleId> leader;
         for (VehicleId id : p.ownVehicles(Minister::Fleets)) {
             const Vehicle* v = p.st.vehicle(id);
-            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v)) continue;
+            if (!v || v->fleet.valid() || !p.idle(*v) || unfit(p, *v) || !canLeadFleet(p, *v)) continue;
             if (!leader || id > *leader) leader = id;
         }
         if (leader && p.emit(cmd::CreateFleet{{}, {*leader}})) {
@@ -1313,6 +1333,29 @@ void planMinesSatellitesDrones(Planner& p) {
 
 namespace {
 
+// The empire's space yards in visiting order (spec 05 §7.5 Repair,
+// confirmed: binary): an uncloaked colony with a Space Yard facility or an
+// uncloaked ship with a working yard, by system number, then in the game's
+// object order, colonies and ships mixed (objectOrderKey, spec 03 §19 Q62).
+struct Yard {
+    Location at;
+    VehicleId ship;   // invalid: a colony
+    uint64_t order = 0;
+};
+std::vector<Yard> ownYards(const Planner& p) {
+    std::vector<Yard> yards;
+    for (const auto& c : p.st.colonies)
+        if (c && c->owner == p.id && colonyHasWorkingYard(p.r, *c))  // a cloaked colony's yard is passed over (spec 01 §6.9)
+            yards.push_back({locationOf(p.st.galaxy, c->planet), {}, objectOrderKey(p.st, c->planet)});
+    for (const Vehicle& o : p.st.vehicles)
+        if (o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
+            yards.push_back({o.location, o.id, objectOrderKey(o)});
+    std::stable_sort(yards.begin(), yards.end(), [](const Yard& a, const Yard& b) {
+        return std::tuple{a.at.system.value, a.order} < std::tuple{b.at.system.value, b.order};
+    });
+    return yards;
+}
+
 // Spec 05 §7.5 "Repair" (confirmed: binary): only a vehicle with a destroyed
 // part, and then by design type.
 bool needsRepair(Planner& p, const Vehicle& v) {
@@ -1351,23 +1394,7 @@ bool needsRepair(Planner& p, const Vehicle& v) {
 // never chosen; the vehicle itself is a yard when it has a working one, and
 // then stays where it is.
 void planRepair(Planner& p) {
-    // The yards in visiting order: by system number, then in the game's
-    // object order, colonies and ships mixed (objectOrderKey, spec 03 §19 Q62).
-    struct Yard {
-        Location at;
-        VehicleId ship;   // invalid: a colony
-        uint64_t order = 0;
-    };
-    std::vector<Yard> yards;
-    for (const auto& c : p.st.colonies)
-        if (c && c->owner == p.id && colonyHasWorkingYard(p.r, *c))  // a cloaked colony's yard is passed over (spec 01 §6.9)
-            yards.push_back({locationOf(p.st.galaxy, c->planet), {}, objectOrderKey(p.st, c->planet)});
-    for (const Vehicle& o : p.st.vehicles)
-        if (o.owner == p.id && o.count > 0 && o.status != VehicleStatus::Cloaked && vehicleHasSpaceYard(p.r, p.st, o))
-            yards.push_back({o.location, o.id, objectOrderKey(o)});
-    std::stable_sort(yards.begin(), yards.end(), [](const Yard& a, const Yard& b) {
-        return std::tuple{a.at.system.value, a.order} < std::tuple{b.at.system.value, b.order};
-    });
+    const std::vector<Yard> yards = ownYards(p);
     for (VehicleId id : p.ownVehicles(Minister::Repair)) {
         const Vehicle* v = p.st.vehicle(id);
         if (!v || isUnitType(p.info(v->design).stats.vehicleType) || !needsRepair(p, *v)) continue;
@@ -1464,19 +1491,57 @@ void planRepairAndResupply(Planner& p, bool repair) {
     else planResupply(p);
 }
 
-void planScrap(Planner& p) {
-    // While over the soft cap: one non-colony ship per turn, of the oldest design.
-    if (p.overCap(0)) {
-        std::vector<std::tuple<uint32_t, VehicleId>> ships;
-        for (VehicleId id : p.ownVehicles(Minister::Scrap)) {
-            const Vehicle* v = p.st.vehicle(id);
-            if (!v || isUnitType(p.info(v->design).stats.vehicleType) || p.info(v->design).role == Role::Colonizer) continue;
-            ships.emplace_back(p.st.design(v->design).createdTurn, id);
+namespace {
+
+// Spec 05 §7.5 *Scrap* (confirmed: binary): one vehicle a turn while over the
+// soft cap. The candidates are the empire's vehicles not of a colony-ship
+// design type: every one that can move (maximum movement above 0, not
+// mothballed), wherever it is, and every one that cannot (bases, mothballed
+// ships) only where the empire has a space yard in its sector. The one whose
+// design is oldest (creation date; the first in the vehicle list on a tie)
+// is scrapped where it stands when a yard is there, else ordered to Move To
+// the nearest sector with a yard of ours, by travel, and then to Scrap. It
+// gets no other orders that turn. OpenSE4 choices (inferred, spec 05 Q72):
+// unit groups are never candidates; a candidate in a fleet leaves it first,
+// as the Scrap order needs; one that is cloaked, or that no route takes to a
+// yard, is not scrapped, and no other candidate is tried that turn.
+void scrapOldest(Planner& p) {
+    std::optional<VehicleId> oldest;
+    uint32_t oldestDate = 0;
+    for (VehicleId id : p.ownVehicles(Minister::Scrap)) {   // the vehicle list's order
+        const Vehicle* v = p.st.vehicle(id);
+        if (!v) continue;
+        const DesignInfo& di = p.info(v->design);
+        if (isUnitType(di.stats.vehicleType) || di.role == Role::Colonizer) continue;
+        const bool mobile = v->status != VehicleStatus::Mothballed && vehicleMaxMovement(p.r, p.st, *v) > 0;
+        if (!mobile && !scrapYardAt(p.r, p.st, p.id, v->location)) continue;
+        const uint32_t created = p.st.design(v->design).createdTurn;
+        if (!oldest || created < oldestDate) {
+            oldest = id;
+            oldestDate = created;
         }
-        std::sort(ships.begin(), ships.end());
-        for (const auto& [turn, id] : ships)
-            if (spaceYardAt(p.r, p.st, p.id, p.st.vehicle(id)->location) && p.emit(cmd::Scrap{id, {}, -1})) break;
     }
+    if (!oldest) return;
+    const VehicleId id = *oldest;
+    const Vehicle& v = *p.st.vehicle(id);
+    if (v.status == VehicleStatus::Cloaked) return;   // the Scrap order's test would fail (spec 03 §15)
+    cmd::Scrap order{id, {}, -1, {}};
+    if (!scrapYardAt(p.r, p.st, p.id, v.location)) {
+        std::vector<Location> goals;
+        for (const Yard& y : ownYards(p))
+            if (y.ship != id) goals.push_back(y.at);
+        const auto near = nearestByTravel(p, v.location, goals);
+        if (!near) return;
+        order.moveFirst = goals[near->goal];
+    }
+    if (v.fleet.valid()) p.emit(cmd::LeaveFleet{id});
+    if (p.emit(order)) p.busy.insert(id);
+}
+
+} // namespace
+
+void planScrap(Planner& p) {
+    if (p.overCap(0)) scrapOldest(p);
     // Every 10 turns: useless facilities.
     if (p.date % 10 != 0) return;  // the date the ministers see
     for (const auto& c : p.st.colonies) {

@@ -20,6 +20,7 @@
 #include "game/movement.hpp"
 #include "game/query.hpp"
 #include "game/research.hpp"
+#include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
 
@@ -27,8 +28,10 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <initializer_list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 
 using namespace opense4;
@@ -898,9 +901,9 @@ TEST_CASE("ai: ship construction spends one turn of net income on queues under 5
     e2.designs.push_back(addWarship(s2, r, cpu, "Picket"));
     e2.economy = {};
     e2.economy.colonies = Resources{100000, 100000, 100000};
-    e2.economy.maintenance = Resources{95000, 0, 0};  // above 80 % and 90 %, not above 100 % of revenue
     ai::detail::Planner q(r, s2, cpu, ai::detail::Mode::Computer, 9);
     q.state = ai::AiState::Infrastructure;
+    q.capUpkeep = Resources{95000, 0, 0};  // the maintenance the caps compare: above 80 % and 90 %, not above 100 % of revenue
     CHECK(q.overCap(0));
     CHECK(q.overCap(10));
     CHECK_FALSE(q.overCap(20));
@@ -5540,4 +5543,223 @@ TEST_CASE("ai: the best facility for an ability: the highest Value 1 for amount-
     CHECK(best("Point Generation - Research") == "Test Twin Lab");
     // Supply Storage is ranked by its Value 1.
     CHECK(best("Supply Storage") == "Test Big Store");
+}
+
+// ---- Caps, scrapping, fleet leaders and the defend list (spec 05 §7.2, §7.5; found 2026-10-02) ----------
+
+namespace {
+
+template <class T>
+const T* firstOf(const std::vector<Command>& cmds) {
+    for (const Command& c : cmds)
+        if (const T* x = as<T>(c)) return x;
+    return nullptr;
+}
+
+DesignId typedDesign(GameState& s, const Rules& r, EmpireId owner, std::string_view name, std::string_view hull,
+                     std::initializer_list<std::string_view> parts, std::string_view type, uint32_t created) {
+    const DesignId d = addTestDesign(s, r, owner, name, hull, parts);
+    s.design(d).designType = std::string(type);
+    s.design(d).createdTurn = created;
+    s.empire(owner).designs.push_back(d);
+    return d;
+}
+
+} // namespace
+
+TEST_CASE("ai: the maintenance caps count the empire's ships and bases of the moment, colony ships left out") {
+    // Spec 05 §7.5 "Budget and maintenance caps" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    const DesignId settler = typedDesign(s, r, me, "Settler", "Test Colony Hull",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Rock Pod"},
+                                         "Colony (Rock)", 0);
+    const VehicleId picket = addTestVehicle(s, r, warship, home).id;
+    for (int i = 0; i < 3; ++i) addTestVehicle(s, r, settler, home);
+    const Resources one = economy::vehicleMaintenance(r, s, *s.vehicle(picket));
+    const Resources settlers = economy::maintenanceCost(r, s, me) - one;
+    REQUIRE(one != Resources{});
+    REQUIRE(settlers != Resources{});
+    // The colony ships' hull takes colony modules: they are left out.
+    CHECK(ai::detail::capMaintenance(r, s, me) == one);
+    // The test is the hull's: a colony pod on another hull counts.
+    const VehicleId podded = addColonyShip(s, r, me);
+    const Resources frigatePod = economy::vehicleMaintenance(r, s, *s.vehicle(podded));
+    REQUIRE(frigatePod != Resources{});
+    CHECK(ai::detail::capMaintenance(r, s, me) == one + frigatePod);
+    s.vehicle(podded)->count = 0;
+    s.removeDeadVehicles();
+
+    // Revenue that puts the warship's maintenance just under the soft cap:
+    // the colony ships, which the maintenance paid includes, do not push it over.
+    Empire& e = s.empire(me);
+    const int64_t m = ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).prof.settings.maxMaintenancePercent;
+    REQUIRE(m > 0);
+    e.economy = {};
+    for (size_t k = 0; k < 3; ++k) e.economy.colonies.v[k] = (one.v[k] * 100 + m - 1) / m;
+    e.economy.maintenance = one + settlers;
+    for (size_t k = 0; k < 3; ++k)
+        if (one.v[k] > 0) REQUIRE(xmath::Ext(one.v[k] + settlers.v[k]) > xmath::Ext(e.economy.colonies.v[k]) * xmath::percent(m));
+    CHECK_FALSE(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+    // A second warship counts at once, though no maintenance was paid for it yet.
+    addTestVehicle(s, r, warship, home);
+    CHECK(ai::detail::Planner(r, s, me, ai::detail::Mode::Computer, 9).overCap(0));
+}
+
+TEST_CASE("ai: over the soft cap the oldest design goes: a ship wherever it is, sent to the nearest yard first; a base only at a yard") {
+    // Spec 05 §7.5 *Scrap* (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;   // not a tenth turn: no facility is looked at
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x < 6 ? 11 : 1, home.sector.y}};
+    REQUIRE(scrapYardAt(r, s, me, home));
+    REQUIRE_FALSE(scrapYardAt(r, s, me, away));
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId oldShip = typedDesign(s, r, me, "Old Hammer", "Test Frigate", crew, "Attack Ship", 2);
+    const DesignId newShip = typedDesign(s, r, me, "New Hammer", "Test Frigate", crew, "Attack Ship", 9);
+    const DesignId fortress = typedDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                          "Defense Base", 5);
+    const DesignId settler = typedDesign(s, r, me, "Settler", "Test Colony Hull",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Rock Pod"},
+                                         "Colony (Rock)", 1);
+    addTestVehicle(s, r, settler, away);   // the oldest design, but colony ships are never scrapped
+    const VehicleId fort = addTestVehicle(s, r, fortress, home).id;
+    addTestVehicle(s, r, newShip, home);
+    const VehicleId veteran = addTestVehicle(s, r, oldShip, away).id;
+    auto plan = [&](bool over) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = over ? Resources{1'000'000, 1'000'000, 1'000'000} : Resources{};
+        REQUIRE(p.overCap(0) == over);
+        ai::detail::planScrap(p);
+        return p.report().commands;
+    };
+    CHECK(countOf<cmd::Scrap>(plan(false)) == 0);
+    // The oldest design among the ships that can move, wherever it stands:
+    // a Move To the nearest sector with our yard, then Scrap.
+    std::vector<Command> cmds = plan(true);
+    REQUIRE(countOf<cmd::Scrap>(cmds) == 1);
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    CHECK(firstOf<cmd::Scrap>(cmds)->moveFirst == home);
+    {
+        GameState copy = s;
+        REQUIRE(applyAll(r, copy, me, cmds).empty());
+        CHECK(copy.vehicle(veteran)->orders == std::vector<Order>{Order{OrderKind::MoveTo, home}, Order{OrderKind::Scrap, home}});
+    }
+    // A base at a yard whose design is older goes first, where it stands.
+    s.design(fortress).createdTurn = 1;
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == fort);
+    CHECK_FALSE(firstOf<cmd::Scrap>(cmds)->moveFirst.system.valid());
+    // A base away from a yard is no candidate.
+    s.vehicle(fort)->location = away;
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::Scrap>(cmds));
+    CHECK(firstOf<cmd::Scrap>(cmds)->vehicle == veteran);
+    // A candidate in a fleet leaves it first, as the Scrap order needs (inferred, Q72).
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {veteran}}).ok);
+    cmds = plan(true);
+    REQUIRE(firstOf<cmd::LeaveFleet>(cmds));
+    CHECK(firstOf<cmd::LeaveFleet>(cmds)->vehicle == veteran);
+    CHECK(countOf<cmd::Scrap>(cmds) == 1);
+    CHECK(applyAll(r, s, me, cmds).empty());
+}
+
+TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet could take, never a troop transport or boarding ship") {
+    // Spec 05 §7.5 AI_Fleets (confirmed: binary).
+    TempTree t("leaders");
+    t.write("Ai/Default_AI_Fleets.txt",
+            "Fleets Num Divisions := 1\nFleets Div 1 Max Amount of Ships := 1000\nFleets Div 1 Max Amount of Planets := 0\n"
+            "Fleets Div 1 Num Fleets := 1\nFleets Percentage of Ships For Fleets := 100\nFleets Dont Use For Num Turns := 0\n"
+            "Percentage of Fleets to use for defense := 0\n");
+    const Rules r{buildEngineRuleset(), t.root};
+    GameState s = computerGame(13, 2, 0, 12, r);
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const DesignId grunt = addTestDesign(s, r, me, "Grunt", "Test Troop Hull", {"Test Troop Rifle"});
+    const DesignId wasp = addTestDesign(s, r, me, "Wasp", "Test Fighter Hull", {"Test Fighter Engine", "Test Fighter Gun"});
+    const DesignId trooper = typedDesign(s, r, me, "Trooper", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Cargo Bay"},
+                                         "Troop Transport", 1);
+    const DesignId boarder = typedDesign(s, r, me, "Boarder", "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Boarding Party"},
+                                         "Boarding Ship", 1);
+    const DesignId carrier = typedDesign(s, r, me, "Carrier", "Test Frigate",
+                                         {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Fighter Bay"}, "Carrier", 1);
+    const DesignId hulk = typedDesign(s, r, me, "Hulk", "Test Frigate", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                      "Attack Ship", 1);
+    auto leader = [&]() -> VehicleId {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        ai::detail::planFleets(p);
+        const auto cmds = p.report().commands;
+        const cmd::CreateFleet* c = firstOf<cmd::CreateFleet>(cmds);
+        return c ? c->members.front() : VehicleId{};
+    };
+    // A loaded troop transport (an attack fleet would take it), a boarding
+    // ship, an empty carrier and an attack ship without engines: none leads.
+    const VehicleId attackShipWithoutEngines = addTestVehicle(s, r, hulk, home).id;
+    REQUIRE(vehicleMaxMovement(r, s, *s.vehicle(attackShipWithoutEngines)) == 0);
+    const VehicleId troops = addTestVehicle(s, r, trooper, home).id;
+    s.vehicle(troops)->cargo.units = {{grunt, 2}};
+    addTestVehicle(s, r, boarder, home);
+    const VehicleId flattop = addTestVehicle(s, r, carrier, home).id;
+    CHECK_FALSE(leader().valid());
+    // A carrier with its fighters aboard may lead.
+    s.vehicle(flattop)->cargo.units = {{wasp, 2}};
+    CHECK(leader() == flattop);
+    s.vehicle(flattop)->cargo.units.clear();
+    // So may an attack ship that can move, though older than the others.
+    s.vehicle(attackShipWithoutEngines)->count = 0;
+    s.removeDeadVehicles();
+    const VehicleId hammer = addTestVehicle(s, r, addWarship(s, r, me, "Hammer"), home).id;
+    addTestVehicle(s, r, trooper, home);
+    CHECK(leader() == hammer);
+}
+
+TEST_CASE("ai: an enemy colony in the defend list adds the foreign ratings in its sector and nothing for itself") {
+    // Spec 05 §7.2 "Defend list" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, them{1u};
+    meet(s, me, them);
+    s.empire(me).relation(them).treaty = s.empire(them).relation(me).treaty = Treaty::War;
+    const SystemId homeSys = s.galaxy.object(homeworld(s, me).planet).system;
+    const auto spot = freePlanetIn(s, homeSys);
+    REQUIRE(spot);
+    addColony(s, *spot, them, {{them, 20}});
+    const Location at = locationOf(s.galaxy, *spot);
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.location == at; });
+    s.empire(me).claimedSystems = {homeSys};
+    bool guardListed = false;
+    auto threat = [&]() -> std::optional<int64_t> {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 3);
+        guardListed = std::any_of(p.sit.enemyInTerritory.begin(), p.sit.enemyInTerritory.end(),
+                                  [](const ai::detail::Threat& t) { return t.vehicle.valid(); });
+        for (const ai::detail::DefendEntry& d : p.sit.defendEntries)
+            if (d.where == at && d.owner == them) return d.threat;
+        return std::nullopt;
+    };
+    // Alone in its sector: 0, not 1.
+    REQUIRE(threat());
+    CHECK(*threat() == 0);
+    // A guard of the colony's owner in its sector: the colony adds the
+    // guard's rating, without the + 1; the guard, when we see it, adds its
+    // rating + 1 to the same entry.
+    const VehicleId guard = addTestVehicle(s, r, addWarship(s, r, them, "Guard"), at).id;
+    const int64_t rating = ai::detail::vehicleRating(r, s, *s.vehicle(guard));
+    REQUIRE(rating > 0);
+    const std::optional<int64_t> guarded = threat();
+    REQUIRE(guarded);
+    CHECK(*guarded == rating + (guardListed ? rating + ai::detail::kStrengthScale : 0));
 }

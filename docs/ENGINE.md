@@ -174,7 +174,9 @@ empires are skipped.
 
 Mood events raised after an empire's happiness update (construction, ground combat, the
 other empires' processing, events) wait in `GameState::pendingMood` for that empire's next
-update. The game's stockpile and research pool start at Starting Resources plus one turn
+update. As in the original, no game file keeps them (spec 02 §4): they are not saved, sent
+or hashed, so a loaded game starts with none, and a local simultaneous game drops them where
+it stands for the original's reading of its game file before processing. The game's stockpile and research pool start at Starting Resources plus one turn
 of production (colony output with the minimum-generation rule, nothing else), and the
 intelligence pool at 0 (`research::openingPools`, called by `createGame`).
 

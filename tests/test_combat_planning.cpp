@@ -21,6 +21,8 @@
 #include <format>
 #include <optional>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 using namespace opense4;
 using namespace opense4::game;
@@ -301,6 +303,89 @@ TEST_CASE("planning: Maximum Weapons Range counts point-defense as a ready weapo
     CHECK(cheb(mv.dest.first, mv.dest.second, 20, 20) != ring);
 }
 
+// ---- The step toward a square (spec 04 §5) ----------------------------------------------------------------
+
+TEST_CASE("movement: each step goes one square toward the destination on each axis where they differ") {
+    Bench k(makeArena());
+    GameState& s = k.ar.s;
+    const DesignId liner = frigate(s, k.ar.a, "Liner", 6, {"CT Gun"});   // 3 movement points
+    const VehicleId mover = spawn(s, liner, k.ar.loc);
+    const VehicleId target = spawn(s, frigate(s, k.ar.b, "Target", 1, {}), k.ar.loc);
+    warpIn(s, target);
+    Battle& b = k.start({k.ar.a});
+    b.advance();
+    REQUIRE(b.phaseEmpire() == k.ar.a);
+    const int m = k.at(mover);
+    k.arrange({{m, 10, 10}, {k.at(target), 60, 50}});
+    REQUIRE(b.pieces()[static_cast<size_t>(m)].mp == 3);
+    const Rng before = k.rng;
+    // The preview of the tactical window is the move itself when nothing is in the way.
+    const auto preview = b.pathToSquare(m, 15, 11);
+    TacticalOrder mv{OK::Move, k.ar.a, m};
+    mv.x = 15;
+    mv.y = 11;
+    REQUIRE(b.submit(mv).empty());
+    CHECK(preview == std::vector<std::pair<int, int>>{{11, 11}, {12, 11}, {13, 11}});
+    CHECK(std::pair{b.pieces()[static_cast<size_t>(m)].x, b.pieces()[static_cast<size_t>(m)].y} == std::pair{13, 11});
+    CHECK(b.pieces()[static_cast<size_t>(m)].mp == 0);
+    // No square was taken: no random number was drawn.
+    Rng a = before, c = k.rng;
+    CHECK(a.next() == c.next());
+}
+
+TEST_CASE("movement: a blocked step tries the two squares beside it at random, with the battle's numbers, four times at most") {
+    // Spec 04 §5 (confirmed: binary). Each try draws 0 or 1 from the battle's
+    // sequence: 0 the first side square (a diagonal's step along x, a straight
+    // step's side toward lower y or x), 1 the second (inferred, §19.5 Q90).
+    int alongX = 0, alongY = 0, stayed = 0;
+    for (uint64_t seed = 1; seed <= 12; ++seed) {
+        CAPTURE(seed);
+        Bench k(makeArena(seed));
+        GameState& s = k.ar.s;
+        const DesignId liner = frigate(s, k.ar.a, "Liner", 6, {"CT Gun"});   // 3 movement points
+        std::vector<VehicleId> ships;
+        for (int n = 0; n < 6; ++n) ships.push_back(spawn(s, liner, k.ar.loc));
+        const VehicleId target = spawn(s, frigate(s, k.ar.b, "Target", 1, {}), k.ar.loc);
+        warpIn(s, target);
+        Battle& b = k.start({k.ar.a});
+        b.advance();
+        REQUIRE(b.phaseEmpire() == k.ar.a);
+        std::vector<int> p;
+        for (VehicleId v : ships) p.push_back(k.at(v));
+        auto square = [&](int i) { return std::pair{b.pieces()[static_cast<size_t>(i)].x, b.pieces()[static_cast<size_t>(i)].y}; };
+        auto move = [&](int i, int x, int y) {
+            TacticalOrder mv{OK::Move, k.ar.a, i};
+            mv.x = x;
+            mv.y = y;
+            return b.submit(mv);
+        };
+        // A diagonal step blocked: one draw chooses the straight step along x or
+        // along y; the piece then goes on diagonally, past the blocker.
+        k.arrange({{p[0], 10, 10}, {p[1], 11, 11}, {p[2], 30, 20}, {p[3], 31, 19}, {p[4], 31, 20}, {p[5], 31, 21},
+                   {k.at(target), 60, 50}});
+        Rng probe = k.rng;
+        const bool firstSide = probe.below(2) == 0;
+        REQUIRE(move(p[0], 15, 15).empty());
+        CHECK(square(p[0]) == (firstSide ? std::pair{13, 12} : std::pair{12, 13}));
+        (firstSide ? alongX : alongY) += 1;
+        Rng a = probe, c = k.rng;
+        CHECK(a.next() == c.next());   // that one draw, from the battle's own sequence
+        // A straight step whose two diagonals are taken too: four tries, then
+        // the move ends there with the points left.
+        REQUIRE(move(p[2], 40, 20).empty());
+        CHECK(square(p[2]) == std::pair{30, 20});
+        CHECK(b.pieces()[static_cast<size_t>(p[2])].mp == 3);
+        Rng four = probe;
+        for (int i = 0; i < 4; ++i) four.below(2);
+        Rng d = k.rng;
+        CHECK(four.next() == d.next());
+        stayed += square(p[2]) == std::pair{30, 20};
+    }
+    CHECK(alongX > 0);
+    CHECK(alongY > 0);
+    CHECK(stayed == 12);
+}
+
 // ---- Surrounded pieces (spec 04 §16.1, spec 03 §10) -------------------------------------------------------
 
 TEST_CASE("planning: a surrounded leader's group dissolves before it plans; it does not move but fires") {
@@ -446,7 +531,8 @@ TEST_CASE("groups: member numbers are given out again, and places follow the cur
     REQUIRE(b.phaseEmpire() == k.ar.a);
     std::vector<int> p;
     for (VehicleId v : ships) p.push_back(k.at(v));
-    k.arrange({{p[0], 20, 20}, {p[1], 25, 25}, {p[2], 26, 25}, {p[3], 27, 25}, {p[4], 28, 25}});
+    // Each member's way to its place below is clear (the step rule, spec 04 §5).
+    k.arrange({{p[0], 20, 20}, {p[1], 25, 25}, {p[2], 26, 25}, {p[3], 28, 31}, {p[4], 28, 25}});
     auto order = [&](OK kind, int piece, int group, int formation = -1) {
         TacticalOrder o{kind, k.ar.a, piece};
         o.group = group;

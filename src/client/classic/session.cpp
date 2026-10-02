@@ -421,14 +421,14 @@ void ClassicSession::endTurn() {
             if (e.alive && e.kind == game::PlayerKind::Human && !ended_[e.id.index()]) {
                 setPlayer(e.id);
                 orders_.clear();
-                reloadColonies();
+                reloadGame();
                 ++revision_;
                 return;
             }
     }
     // The original reloads the game file between hotseat players and before
     // processing the turn (spec 01 §6.9, §14 Q44).
-    reloadColonies();
+    reloadGame();
     // Every human's orders are already applied to this state; an empty list
     // marks them as submitted so the computer does not play for them. The
     // turn stops at each battle the Settings show (game::TurnOptions::battles).
@@ -512,7 +512,10 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
     return true;
 }
 
-void ClassicSession::reloadColonies() { game::diplomacy::recalculateColonies(*rules_, state_); }
+void ClassicSession::reloadGame() {
+    game::diplomacy::recalculateColonies(*rules_, state_);
+    state_.pendingMood.clear();
+}
 
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;

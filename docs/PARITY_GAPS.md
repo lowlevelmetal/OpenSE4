@@ -223,12 +223,20 @@ Spec 04 §19.4 Q87–Q89 and spec 06 §7 Q76–Q78 were settled from the executa
 piece's side, the refusals in their order with a silent one, planet pieces dropping their
 colony's troops (Q87, Q88); piece numbers reused, so a drone can take a new piece without a
 choice (§10.7); every simultaneous battle shown when the Settings ask, computer-only ones
-included (Q76). This row remains:
+included (Q76).
+
+The step toward a square (spec 04 §5, found 2026-10-02) was implemented the same day
+(`Battle::walkToward`): one step toward the destination on each axis, and when that square
+is taken up to four random tries of the two squares beside it, each drawing from the
+battle's own sequence; a strategy's move is recorded as a move toward its square, so the
+strategic, tactical and replayed battles stay identical. Which square each draw names is
+spec 04 question 90 (inferred). Over 120 games of the pace set-up the drawn battles of
+turns 51–100 fell from 44 to 37 % (spec 07 "Pace after the scrap, cap and fleet rules").
+This row remains:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
 | Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
-| The step toward a square (spec 04 §5, found 2026-10-02; `Battle::pathToSquare`) | Each step takes the neighbour strictly nearer the destination, else the piece stops; no random number is drawn. An armed piece stopped behind a large piece in at least 5 combat turns of 11 % of our battles of turns 51–100 | One step toward the destination on each axis; when that square is taken, up to four random tries (1 in 2) of the two squares beside it (a diagonal's straight parts, a straight step's diagonals), then the move ends. With it, 3 % of our battles had such a piece and drawn battles fell from 42 to 39 % (scratch run, 12 games) | L |
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
 
@@ -497,11 +505,11 @@ follows the colony count. What differs:
 
 | Where | Engine now | Original (observed) | Impact |
 |---|---|---|---|
-| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 51 % of all turns, 72 % of turns 51–100 (seeds 1–24, at most 91 % per game); Infrastructure 8 % and 8 %; Exploration 75 % of turns 1–25; 15 % of listed war colonies gone within 10 turns | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
-| Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure. Ours build about as many but scrap them: the scrap candidates and the soft cap below | 0.1–0.2 bases per empire from turn 50 (0.24 at turn 100; built 0.98, lost 0.74 per empire in 100 turns; 0.50 at turn 100 with the rules below, scratch run) | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | M |
-| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 21.4k / 26.4k / 29.6k at turns 50 / 75 / 100; colonies 10.4 / 13.9 / 15.6 | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
-| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more: in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original), and to scrapping while over the soft cap (rows below) | Ships 11.8 / 14.0 per empire at turns 75 / 100 (attack ships 7.6 / 8.5); over turns 26–100 24.2 attack ships built and 17.9 lost per empire; 4.2 % lost per attack ship and turn in turns 51–100 | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
-| Battles at enemy colonies (spec 05 questions 63, 67, 69): hostile colonies go by bombardment in both, and a battle against a weak colony goes the same way in both; the original fights more of them, while both make failed attacks on strong colonies | Per empire and 25 turns of turns 51–100: battles ending with the enemy colony gone 0.9; colonies lost 1.1 | 1.9–2.2 (two games); 1.8–3.6 (four games) | M |
+| Time in Defend (Short Term) and Infrastructure (spec 05 question 53). With five original games the later shares are close; the difference left is the first 25 turns, where ours leave Exploration sooner (spec 05 question 65) | Defend (Short Term) 50 % of all turns, 71 % of turns 51–100 (seeds 1–24, after the rules of 2026-10-02 below); Infrastructure 8 % and 7 %; Exploration 75 % of turns 1–25; 15 % of listed war colonies gone within 10 turns (before those rules) | 48 % and 70 % (49–94 % per game); Infrastructure 9 % and 11 % (0–30 %); Exploration 85 %; 18 % (33 % in the first three games) | L |
+| Bases. The placement rule is the original's (all 174 placements observed in five games went to the K-th queue, 25 reached a yard; ours 21 % of 742) and every placement is made in Infrastructure; since 2026-10-02 the soft cap and the scrap candidates are the original's too (below). Two thirds of the bases ours still scrap are of designs made on the first turn, mostly tied on the creation date with a ship design of that turn, the base first in the vehicle list (spec 07 "Pace after the scrap, cap and fleet rules") | 0.43 / 0.36 / 0.35 per empire at turns 50 / 75 / 100 (seeds 1–24; 0.36 at turn 100 over 120 seeds, 0.14 before); built 0.73, lost 0.37 per empire in 100 turns | 0.4–0.6 in five games, 1.2 and 0.0 in two more (game 6: built 1.4, lost 0.2) | L |
+| Resources from turn 50 (spec 05 question 61). The production rule matches (13,100 colony outputs observed); part of the gap is the original's lucky race draws, the rest its extra colonies, built from more colony ships in the first 50 turns (question 65) | Resources produced 21.2k / 26.3k / 29.5k at turns 50 / 75 / 100; colonies 10.4 / 13.4 / 15.0 (seeds 1–24; 10.7 / 13.9 / 15.4 over 120 seeds) | 25.6k / 34.5k / 36.9k (16–22 % above ours with the same race line-ups); 12.2 / 16.6 / 17.0 | M |
+| Ships from turn 75 (spec 05 question 62). Both sides build as many attack ships; ours lose more, in decided battles away from colonies, which ours fight more often (questions 66, 68; drawn battles vary as much in the original). Fewer are scrapped since the soft cap leaves colony ships out | Ships 11.6 / 13.5 per empire at turns 75 / 100 (attack ships 7.5 / 8.3; 120 seeds: 12.6 / 14.7); over turns 26–100 22.8 attack ships built and 16.8 lost per empire; 4.0 % lost per attack ship and turn in turns 51–100 | 14.1 / 17.4 (8.6 / 10.5); 21.4 built and 12.5 lost; 1.9 % | M |
+| Battles at enemy colonies (spec 05 questions 63, 67, 69): hostile colonies go by bombardment in both, and a battle against a weak colony goes the same way in both; the original fights more of them, while both make failed attacks on strong colonies | Per empire and 25 turns of turns 51–100: battles ending with the enemy colony gone 1.0; colonies lost 1.1 | 1.9–2.2 (two games); 1.8–3.6 (four games) | M |
 
 The rows found on 2026-10-02 (spec 05 §7.2, §7.5, question 60; confirmed: binary) were
 implemented that day; spec 07 "Pace after the movement rules" measures them:
@@ -562,37 +570,51 @@ ministers after Politics read the territory only through the lists, and a queued
 counts its count, as in the original; a system's queues follow the game's object order, a
 ship's yard works while its component is intact and not mothballed, and units "of that kind"
 share the vehicle type, which differ (the queue list details above, implemented on
-2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, and to
-seed 19 on 2026-10-02, whose games still cover battles, events, intelligence and politics.
+2026-10-02). The golden games of `tests/test_determinism.cpp` moved to seed 39 then, to
+seed 19 on 2026-10-02, and to seed 42 later that day (the varied battles to seed 19, whose
+invasion still lands), whose games still cover battles, events, intelligence and politics.
 
 Found under a debugger on 2026-10-02 (spec 05 §7.2, §7.5, questions 65–71; spec 07
-"Battles, bases and the first turns under a debugger"; confirmed: binary), not yet
-implemented:
+"Battles, bases and the first turns under a debugger"; confirmed: binary) and implemented
+the same day; spec 07 "Pace after the scrap, cap and fleet rules" measures them (120 seeds,
+paired):
 
-- **Soft and hard caps without colony ships** (`Planner::overCap`, `ai.cpp`). The test sums
-  the maintenance of the empire's ships and bases at the moment, leaving out every vehicle
-  whose hull has `Requirement Pct Colony Mods` above 0; ours compare the maintenance last
-  paid, colony ships included. Ours are over the soft cap in 20 % of turns 26–100, 11 % with
-  the rule (the original 9–11 %), and build no warships and scrap a ship a turn meanwhile.
+- **Soft and hard caps without colony ships** (`capMaintenance`, `Planner::overCap`,
+  `ai.cpp`). The test sums the maintenance of the empire's ships and bases of the moment,
+  leaving out every vehicle whose hull has `Requirement Pct Colony Mods` above 0; ours used
+  to compare the maintenance last paid, colony ships included. Turns 26–100 over the soft
+  cap: 21 % before, 12 % with all the rules (the original 9–11 %); 4 % of turns 26–50
+  against the original's none is question 71.
 - **Scrap candidates** (`planScrap`, `ai_military.cpp`). The oldest design among all the
   empire's non-colony-ship vehicles that can move, wherever they are, and its bases at a
-  yard; a mobile one elsewhere is sent to the nearest scrap place first. Ours take only
-  ships already at a yard, so bases go first (0.7 of 1.0 built per empire scrapped).
-- **Fleet leaders** (`planFleets`, `ai_military.cpp`). A new fleet forms only around a ship
-  that can move and that an attack or defence fleet could take, never a troop transport or
-  a boarding ship (carriers and drone carriers only with their units aboard). Ours form
-  troop-transport and empty-carrier fleets (13 % of fleet-turns) that go on to fight and
-  draw; with the rule our battles fell from 11.3 to 9.7 per empire and 25 turns (scratch).
+  yard; a mobile one elsewhere gets the Move To the nearest yard and the Scrap in one
+  command (`cmd::Scrap::moveFirst`). Ours used to take only ships already at a yard, so
+  bases went first. Bases at turn 100: 0.14 before, 0.36 after. The engine's own choices
+  are spec 05 question 72.
+- **Fleet leaders** (`canLeadFleet`, `ai_military.cpp`). A new fleet forms only around a
+  ship that can move and that an attack or defence fleet could take, never a troop
+  transport or a boarding ship (carriers and drone carriers only with their units aboard).
+  Fleets of troop transports alone fell from 6 % of the fleet-turns of turns 51–100 to
+  none; fleets of carriers alone stay at 5 % (a carrier with fighters aboard may lead).
 - **Defend list colony threat** (`assess`, `ai.cpp`). A colony adds the ratings of the
-  other objects in its sector but nothing for itself; ours add 1. Low impact: 17 of 24 games
-  played out identically without it.
+  other objects in its sector but nothing for itself; ours added 1. 95 of 120 games played
+  out identically.
 
-Found later on 2026-10-02 (spec 02 §4, confirmed: binary), not yet implemented: the
+With these and the combat step (Combat above), battles of turns 51–100 fell from 12.1 to
+10.2 per empire and 25 turns and their drawn share from 47 to 37 %; decided battles away
+from colonies stay at 4.8 against the original's 2.1–3.4, and attack ships lost in battle at
+6.0 against 4.2–4.9 (spec 05 question 68).
+
+Found later on 2026-10-02 (spec 02 §4, confirmed: binary) and implemented the same day: the
 original saves no happiness event that waits for the next update, and a loaded game starts
-with none. So a game hosted turn by turn (on different machines, or by email) never counts
-the `Ship Constructed` and `Facility Constructed` events of the construction step, nor any
-other event logged after the empire's update; the engine keeps them in the saved state
-(`GameState::pendingMood`) and always applies them.
+with none, so a game hosted turn by turn never counts the `Ship Constructed` and `Facility
+Constructed` events of the construction step, nor any other event logged after the
+empire's update. `GameState::pendingMood` is now kept in memory only, outside the save
+format, network messages and checksums. A play-by-e-mail host loads the game every turn and
+a local or hotseat simultaneous game drops them where it stands for the original's reading
+of the game file before processing (`ClassicSession::reloadGame`); the network host keeps
+the game in memory between turns, as the original's TCP/IP host does (spec 05 §9.4), so its
+games count them, as a turn-based game on one machine does.
 
 Settled with the engine already matching: what enters the enemy-in-territory list (question
 54), a colony whose row builds nothing and the colony-type tests (question 55), the state

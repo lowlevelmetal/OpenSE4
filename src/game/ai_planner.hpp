@@ -221,6 +221,10 @@ public:
     Resources netIncome() const;
     Resources revenue() const;
     bool overCap(int extraPercent) const;   // soft cap: 0, hard cap: 20
+    // The maintenance the caps compare, worked out from the vehicles of the
+    // moment (capMaintenance) when the planner is made and again when its
+    // start-of-turn and economy-step ministers start.
+    Resources capUpkeep;
 
     // ---- Orders (emitted only when they differ from the current ones).
     bool setOrders(VehicleId v, std::vector<Order> orders, bool repeat = false);
@@ -258,6 +262,12 @@ void planRetrofit(Planner& p);
 void planStellarManipulation(Planner& p);
 
 // ---- Shared helpers ------------------------------------------------------------------------------
+// The maintenance the soft and hard caps compare (spec 05 §7.5 "Budget and
+// maintenance caps", confirmed: binary): the sum over the empire's ships and
+// bases now of each one's maintenance by spec 02 §7, leaving out every
+// vehicle whose hull takes colony modules (`Requirement Pct Colony Mods`
+// above 0), so colony ships never count. The maintenance paid includes them.
+Resources capMaintenance(const Rules& r, const GameState& s, EmpireId e);
 // The AI design type of a design (spec 05 §7.5 "Design types of other
 // designs", confirmed: binary): its type label when that is exactly one of the
 // 39, else the first of the fixed tests on what it carries. Never empty.
