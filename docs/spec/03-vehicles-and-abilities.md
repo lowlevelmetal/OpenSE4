@@ -1499,14 +1499,137 @@ in this section are (confirmed: binary).
 | Action | Requires | Effect |
 |---|---|---|
 | Scrap | a space yard, not cloaked | Destroys the vehicles. A ship or base returns, per resource, round(design cost × P %), where P is the larger of `Scrap Ship Percent Returned` and the best `Resource Reclamation` among the owner's objects in the sector. A fighter or satellite group returns round(design cost × `Scrap Unit Percent Returned` %) per unit, times the number of units. Drone groups and minefields cannot be scrapped. Damage does not lower the value. Cargo on board is lost without refund. |
-| Analyze | a space yard, not cloaked | Destroys the vehicles, returns no resources, and grants research from technology the empire lacks (see the research spec). The UI gives a qualitative "research potential". |
+| Analyze | a ship or base (never a unit group), a space yard, not cloaked | Destroys the vehicle, returns no resources, and raises the owner's technology from the vehicle's parts. Rules under **Analyze** below. |
 | Mothball | a space yard, not cloaked, status Normal, no cargo | Status becomes Mothballed: no abilities, 0 movement, 0 supply, no maintenance. |
 | Unmothball | status Mothballed | Costs round(design cost × `UnMothball Ship Percent Cost` %) per resource, and every resource must be in stock. The vehicle returns to Normal. Bases and vehicles with a working `Quantum Reactor` come back with full (unlimited) supply; others are refilled only if they are at a resupply depot and otherwise stay at 0. |
 | Retrofit | a space yard | §14. |
 | Self-destruct | a ship or base: `Self-Destruct` in its ability list (the hull counts; a mothballed vehicle has none); satellite groups, minefields and drone groups: nothing; fighter groups: never allowed | The whole object is destroyed. No yard is needed and nothing is refunded. |
-| Fire On | another own object in the sector with at least one weapon | The selected vehicles are destroyed. The last armed object cannot be destroyed this way. |
+| Fire On | another own armed vehicle in the sector | The vehicle is removed outright, with no battle. Rules under **Fire On** below. |
 
 "round" is to nearest with halves to even, computed in floating point (see Conventions).
+
+**Carrying out the actions** (confirmed: binary). Scrap, Analyze, Mothball, Unmothball, Retrofit,
+Self-Destruct and Fire On are given to every selected vehicle, one after another in list order.
+A button is lit only when every selected vehicle passes its test (the window is spec 06 §1.3).
+- **Turn-based game.** Each vehicle's action is carried out at once, in that order. The test is
+  made again for each vehicle just before its action, so the action on one vehicle can change
+  the outcome for the next (see Fire On). The vehicle's order list is not touched. Analyze and
+  Fire On neither need nor spend movement, and a vehicle that fails their test is left alone,
+  with no message.
+- **Simultaneous game.** Nothing happens while the player gives orders. Each selected vehicle's
+  order list is cleared (Repeat goes off) and the action becomes its only order, shown in the
+  order list as "Scrap / Analyze / Mothball" (Scrap), "Deconstruct & Analyze", "Mothball",
+  "Unmothball", "Retrofit", "Self-Destruct" or "Fire On And Destroy". Orders given afterwards are
+  added behind it. The order is carried out when the vehicle first acts during the turn's
+  movement (§6.3): a vehicle with a maximum of 0 movement (a mothballed one, for instance) acts on
+  day 1, any other on its first action, and a vehicle that never acts (speed 1) never carries
+  it out. The test is made again then: if it passes, the action happens and the order is done;
+  if it fails, the order fails and the whole list is cleared (§8), with no message from Analyze
+  or Fire On. Analyze and Fire On act on the acting vehicle only, even when it heads an
+  ad-hoc group (§8), so each vehicle carries out its own order.
+- No computer player and no minister ever gives an Analyze or Fire On order; only the player's
+  Scrap window does.
+
+**Analyze** (confirmed: binary).
+- **Which vehicles.** Ships and bases only: the Analyze button stays dim while a fighter,
+  satellite, drone group or minefield is selected. The vehicle needs an own working space yard in
+  its sector (an uncloaked own ship with `Space Yard`, the vehicle itself included, or an own
+  uncloaked colony with a `Space Yard` facility; spec 01 §6.9) and must not be cloaked. Its design,
+  its origin (built, captured, received as a gift), its damage, its cargo and a mothballed status
+  do not matter. Fleet members are not listed, so they cannot be analyzed.
+- **What the vehicle can teach.** For the vehicle V of empire E, build a list P of pairs
+  (area A, level L), once, before anything changes:
+  1. for each component of V's design, in design order, skipping destroyed ones, take each of the
+     component's tech requirements (`Tech Area Req N`, `Tech Level Req N`) in order;
+  2. then each tech requirement of V's hull (vehicle size);
+  3. a pair is appended when E's current level in A is below L and the same pair (same A and
+     same L) is not yet in P.
+
+  Mounts, the units or population in cargo, and the design's other data are not read. Two
+  components that need the same area at the same level give one pair; at different levels they
+  give two.
+- **Research potential.** The Scrap window shows a word for the number of pairs in P: 0 "None",
+  1 "Minor", 2 "Moderate", 3 "Sizable", 4 or more "Major". The value is per vehicle and is not
+  summed: the window shows that of the last selected vehicle in list order, and "None" when any
+  selected vehicle cannot be analyzed or nothing is selected.
+- **What Analyze grants.** For each pair (A, L) of P in order, E gains exactly one level in A,
+  whatever L is, provided A is allowed in this game and passes its racial and unique checks for
+  E (the same test as every other level gain, spec 05 §1.2). L itself is not used. So the levels
+  gained in A are the number of distinct required levels of A above E's level, and A never rises
+  above the highest level of A that V's parts require. Examples: E has level 2 in an area; the
+  parts need it at 3, 5 and again 5, and the hull at 4: P holds three pairs and E ends at level 5.
+  If a single part needs level 6, each analysis gives one level: 3, then 4 with a second vehicle
+  of that design, and so on until 6.
+- **No research points.** No points are added to the pool or to any project, and no cost is
+  checked. The area's `Maximum Level` and its own area requirements are not checked: an area can
+  gain levels before it becomes researchable, and appears with them once its requirements are
+  met. A queued project for A keeps its progress, which now counts toward A's new next level; a
+  project whose area has reached its maximum leaves the queue at the next research step (spec 05
+  §1.4).
+- **Messages.** Each level gained writes the same Research entries as a level completed by
+  research (spec 05 §1.4), in this order: "New Tech Level" with the area's new level, then one
+  entry per component, facility and vehicle size that became available ("... discovered") and
+  per intelligence project ("... developed"), then "New Tech Area Discovered" for each area whose
+  requirements are now met. "All Projects Completed" is never written. There is no entry about
+  the vehicle itself, so a vehicle with no potential disappears without any log entry.
+- **The vehicle** is removed like a scrapped one: no refund, cargo lost, sight recalculated. Its
+  design's "Number Scrapped" statistic rises by 1. A captured ship keeps its original design
+  (spec 04 §12), so this counts on the design record of the empire that built it.
+- **Designs.** Analyze adds no design to any empire and changes no design list or "seen designs"
+  record; what is learned is technology levels only.
+
+**Fire On** (confirmed: binary).
+- **Test.** In the target's sector there must be at least one other vehicle (ship, base or unit
+  group) of the same owner that counts as **armed**:
+  - a ship or base that is not mothballed and whose design has at least one component of Weapon
+    Type `Direct Fire` or `Seeking`. Destroyed components count; `Point-Defense` and `Warhead`
+    components do not;
+  - a fighter group whose fighters' designs have at least one component of any Weapon Type other
+    than `None` (`Point-Defense` and `Warhead` count here);
+  - satellite groups, minefields, drone groups and planets never count, whatever they carry.
+
+  The armed vehicle may be cloaked, in a fleet, out of supply or out of movement, and may itself
+  be selected. Nothing else is tested: no treaty, range, sight, supply or yard, and the target
+  may be any listed vehicle, unit groups and minefields included.
+- **The last armed vehicle.** Because the test needs another armed vehicle, the last armed
+  vehicle in a sector can never be fired on. When several armed vehicles are selected the
+  button is lit (each sees the others), but the one carried out last finds no armed companion
+  left: in a turn-based game it stays, and in a simultaneous game its order fails.
+- **Effect.** The target is removed at once, as by scrapping. Nobody fires: there is no battle, no
+  shot, no damage roll, no movement or supply spent, no experience and no kill statistic. Cargo
+  aboard is lost. The system's sight is recalculated.
+- **Statistics.** A ship or base adds 1 to its design's "Number Lost". A fighter group, satellite
+  group or minefield adds each unit stack's living units to that unit design's "Number Lost".
+  A drone group records nothing.
+- **Log.** The owner gets one Construction entry, with Goto to the sector, from the demolition
+  minister: titled "Vehicle Destroyed" for a ship, base or drone group (with the design's
+  picture for a ship or base), or "Group Destroyed" for a fighter group, satellite group or
+  minefield (with that unit kind's picture). The text names the vehicle, its system and its
+  sector and says that our own ships fired on it and destroyed it.
+
+**The engine and client differ** (2026-10-01):
+- The engine has neither action: no command or order exists for Analyze or Fire On, and the
+  client's two buttons are always dim. Implementing them needs two order kinds (carried out at
+  once in a turn-based game, and as the vehicle's only order in a simultaneous game, as above)
+  and a "Number Scrapped" / "Number Lost" update of the design statistics.
+- The client's research potential (`researchPotential` and `researchPotentialLabel` in
+  `src/client/classic/screens/ships_logic.cpp`) counts the designs' components the empire cannot
+  build, over all selected vehicles, as a percentage with the words None, Low, Moderate and
+  High. It must count the pairs of P for one vehicle (the last selected), with the five words
+  above, and show "None" when any selected vehicle cannot be analyzed.
+- The client's "Can Be Fired On" test (`canBeFiredOn` and `vehicleArmed`, same file) leaves the
+  other selected vehicles out, counts only intact components, counts every Weapon Type, and
+  ignores fighter groups. It must follow the test above.
+- The client lights Mothball, Unmothball and Self-Destruct when any selected vehicle qualifies,
+  and Retrofit when all selected vehicles share a hull (`vehicleButtons` in
+  `src/client/classic/screens/scrap.cpp`). The original lights each only when every selected
+  vehicle qualifies, and Retrofit only when they all have the same design (and so the same
+  hull) as well as a yard and no cloak (confirmed: binary).
+- The engine's Scrap, Mothball, Unmothball and Retrofit are commands applied at once in both
+  turn styles (in a simultaneous game the host applies them at the start of turn processing).
+  The client gives Self-Destruct as an order inserted in the vehicle's list, keeping the other
+  orders. The original carries out all of them at once in a turn-based game, and as the
+  vehicle's only order, during movement, in a simultaneous game (above).
 
 ---
 
