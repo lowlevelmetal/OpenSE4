@@ -149,9 +149,9 @@ TEST_CASE("computer control: the local session switches empires and ends with th
         GameState s = newGame(simultaneous, true);  // two humans: hotseat
         client::classic::ClassicSession session(sharedRules(), std::move(s), kMe, client::classic::SessionKind::Hotseat);
         CHECK_FALSE(session.hasMasterPassword());
-        // One human left: a local game.
+        // One human left; still a hotseat game, so the humans left are asked in turn.
         session.setComputerControl({{kOther, true}});
-        CHECK(session.kind() == client::classic::SessionKind::Local);
+        CHECK(session.kind() == client::classic::SessionKind::Hotseat);
         CHECK(session.state().empire(kOther).kind == PlayerKind::Computer);
         CHECK_FALSE(session.humansGone());
         // A row clicked twice (back to its start) still applies: the ministers go off.
@@ -168,6 +168,11 @@ TEST_CASE("computer control: the local session switches empires and ends with th
         session.setComputerControl({{kMe, false}});
         CHECK_FALSE(session.humansGone());
     }
+    // A local game that gets a second human becomes hotseat.
+    GameState s = newGame(true, false);
+    client::classic::ClassicSession local(sharedRules(), std::move(s), kMe, client::classic::SessionKind::Local);
+    local.setComputerControl({{kOther, false}});
+    CHECK(local.kind() == client::classic::SessionKind::Hotseat);
 }
 
 TEST_CASE("computer control: on a player's copy only the copy changes, and the orders carry its own ministers") {

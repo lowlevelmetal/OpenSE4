@@ -239,13 +239,15 @@ void ClassicSession::setComputerControl(const std::vector<std::pair<game::Empire
             issue(game::cmd::SetMinister{{}, {}, true, computer});
         }
     }
-    // One human or several: a local game turns hotseat and back.
-    if (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) {
+    // A second human makes a local game hotseat: End Turn then passes to the
+    // other humans before the turn is processed. A hotseat game stays one, so
+    // the humans left are still asked in turn.
+    if (kind_ == SessionKind::Local) {
         const auto humans = std::count_if(state_.empires.begin(), state_.empires.end(),
                                           [](const game::Empire& e) { return e.alive && e.kind == game::PlayerKind::Human; });
-        kind_ = humans > 1 ? SessionKind::Hotseat : SessionKind::Local;
-        ended_.resize(state_.empires.size(), 0);
+        if (humans > 1) kind_ = SessionKind::Hotseat;
     }
+    ended_.resize(state_.empires.size(), 0);
     ++revision_;
 }
 
