@@ -433,12 +433,14 @@ The kebab-case of the client's `ScreenId` names (`client/classic/screen_id.hpp`)
 `comparisons`, `history`, `race-report`, `victory-conditions`, `combat-replay`,
 `tactical-combat`, `tactical-orders`, `tactical-options` (Combat Options),
 `tactical-launch` (Launch Units), `combat-piece-report`, `combat-replay-options`,
-`combat-simulator`, `strategic-combat`, `ground-combat`, `save-game`, `load-game`,
+`combat-simulator`, `strategic-combat`, `ground-combat`, `finale` (the ending window),
+`save-game`, `load-game`,
 `options` (Game Menu → Options), `settings`, `learn`, `manual`.
 
 A `window:` link cannot open the battle windows (`combat-replay`, `tactical-combat`,
 `tactical-orders`, `tactical-options`, `tactical-launch`, `combat-piece-report`,
 `combat-replay-options`, `strategic-combat`, `ground-combat`): they need a battle; nor
+`finale`, which only the end of a game opens; nor
 `abandon-planet`, `jettison-cargo` and `convert-resources`, which need a planet or a ship. Front matter may also
 name `main`, the main window.
 

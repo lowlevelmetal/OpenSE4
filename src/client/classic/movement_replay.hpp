@@ -101,6 +101,9 @@ public:
         game::SystemId shown;
         bool animate = false;            // "animate ship movement in the system window"
         float cellPixels = 50.0f;        // the system panel's sector size, frame pixels
+        // Settings.txt `System Ship Movement Delay Milliseconds` in seconds:
+        // the wait after each animated one-square step (spec 06 §1.9).
+        double stepPause = 0.0;
         std::function<bool(game::VehicleId)> seen;   // the viewer sees it (else never animated)
         std::function<bool(game::VehicleId)> turns;  // its mini turns to its heading
     };
@@ -133,6 +136,7 @@ private:
         game::Location from, to;
         double angle0 = 0.0, angle1 = 0.0;  // degrees, the shorter way round
         double turnTime = 0.0, slideTime = 0.0;
+        double pauseTime = 0.0;             // at the new square, after the slide
     };
     void reset();
     void applyDay(const Frame& f);

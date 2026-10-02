@@ -24,6 +24,8 @@ enum class ScreenId {
     // Combat (§1.6).
     CombatReplay, TacticalCombat, TacticalOrders, TacticalOptions, TacticalLaunch, CombatPieceReport, CombatReplayOptions, CombatSimulator,
     StrategicCombat, GroundCombat,
+    // The ending window (§1.7).
+    Finale,
     // Files.
     SaveGame, LoadGame,
     // Game Menu → Options (per computer), and OpenSE4's graphics, controls and sound.

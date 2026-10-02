@@ -73,6 +73,13 @@ public:
         if (!d.open()) return d.keepOpen();
         ClassicSettings& s = settings();
         bool changed = false;
+        // Opening the window with music off, or with Settings.txt `Allow CD
+        // Music` FALSE, lights Music Off and stores music off at once; music
+        // is stored on again only when a volume lamp is picked (spec 06 §1.9).
+        if (!opened_) {
+            opened_ = true;
+            changed |= openMusicRows(s, musicAllowed(ui.rules().data().settings));
+        }
         d.beginContent();
         ImGui::TextColored(kLabelBlue, "Options In Use");
         ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_Borders);
@@ -112,6 +119,9 @@ public:
         d.close();
         return d.keepOpen();
     }
+
+private:
+    bool opened_ = false;
 };
 
 } // namespace

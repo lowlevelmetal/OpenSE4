@@ -1262,7 +1262,12 @@ public:
         ImGui::Spacing();
         heading(ui, "Sound");
         changed |= lampToggle(ui, "Sound On", &prefs.soundOn);
-        changed |= lampToggle(ui, "Music On", &prefs.musicOn);
+        // Lit only when music is on and Settings.txt `Allow CD Music` allows it (spec 06 §1.10.3).
+        bool music = musicLampLit(prefs, musicAllowed(ui.rules().data().settings));
+        if (lampToggle(ui, "Music On", &music)) {
+            prefs.musicOn = music;
+            changed = true;
+        }
         ImGui::Spacing();
         heading(ui, "Tactical Combat");
         changed |= lampToggle(ui, "Fast Tactical Combat", &prefs.fastTacticalCombat);

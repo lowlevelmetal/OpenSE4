@@ -23,6 +23,8 @@ add_executable(opense4
     client/audio_playlist.cpp
     client/classic/art.cpp
     client/classic/classic_mode.cpp
+    client/classic/data_export.cpp
+    client/classic/finale.cpp
     client/classic/frontend.cpp
     client/classic/facility_markers.cpp
     client/classic/layout.cpp
@@ -57,6 +59,7 @@ add_executable(opense4
     client/classic/screens/empire_logic.cpp
     client/classic/screens/empire_widgets.cpp
     client/classic/screens/empires.cpp
+    client/classic/screens/finale_screen.cpp
     client/classic/screens/fleet_transfer.cpp
     client/classic/screens/galaxy_map.cpp
     client/classic/screens/game_menu.cpp
