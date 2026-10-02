@@ -608,8 +608,6 @@ struct Vehicle {
     VehicleStatus status = VehicleStatus::Normal;
     bool minister = false;
     ConstructionQueue queue;        // used when the design has a Space Yard
-    VehicleId targetVehicle;        // drones
-    ObjectId targetObject;
     uint32_t builtTurn = 0;
     uint32_t immobileUntil = 0;     // no movement while turn < this (sabotage/events, spec 05 §2.3)
     // The sector the vehicle last left when it moved during turn `cameFromTurn`

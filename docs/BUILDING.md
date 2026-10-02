@@ -1,8 +1,8 @@
 # Building OpenSE4
 
-OpenSE4 is plain CMake. It builds with GCC, Clang and MSVC on Linux, Windows and macOS.
-Linux is the primary development platform. Windows builds are routine. macOS builds
-are best effort and receive less testing.
+OpenSE4 is plain CMake. It builds with GCC, Clang, Apple Clang and MSVC on Linux, Windows
+and macOS. Linux is the primary development platform. Windows builds are routine. CI
+builds and tests macOS as well, but the game itself is played there less.
 
 What gets built:
 
@@ -16,7 +16,8 @@ What gets built:
 
 ## Requirements
 
-- A C++23 compiler: GCC 14+, Clang 18+ or Visual Studio 2022 17.10+.
+- A C++23 compiler: GCC 14+, Clang 18+, Visual Studio 2022 17.10+ or 2026, or on macOS
+  Apple Clang 21 (Xcode 26.6).
 - CMake 3.25+ and Ninja. Visual Studio's own generator also works on Windows.
 - SDL3 3.2+. A system copy is used if found; otherwise CMake fetches and builds it.
 - `glslc` to compile the shaders at build time. It comes with the Vulkan SDK or the
@@ -62,12 +63,12 @@ ctest --preset debug          # or run ./build/debug/tests/opense4_tests directl
 
 ## Windows
 
-1. Install Visual Studio 2022 with **Desktop development with C++**. It includes CMake
-   and Ninja.
+1. Install Visual Studio 2022 or 2026 with **Desktop development with C++**. It
+   includes CMake and Ninja.
 2. Install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows), which
    provides `glslc` and the headers. The installer sets `VULKAN_SDK`, and the build
    looks for `glslc` there.
-3. Open **x64 Native Tools Command Prompt for VS 2022** and run:
+3. Open **x64 Native Tools Command Prompt** for your Visual Studio and run:
 
 ```bat
 cmake --preset release
@@ -89,15 +90,26 @@ conversion, so a clone with `core.autocrlf` builds the same program as on Linux.
 
 ## macOS
 
+Apple Clang and libc++ come with Xcode or its Command Line Tools
+(`xcode-select --install`); the rest comes from [Homebrew](https://brew.sh):
+
 ```sh
-brew install cmake ninja sdl3 shaderc vulkan-headers molten-vk
-cmake --preset release
-cmake --build --preset release
-./build/release/opense4 --renderer=opengl
+brew install cmake ninja sdl3 shaderc vulkan-headers
+cmake --preset debug          # or: release
+cmake --build --preset debug
+./build/debug/tests/opense4_tests
+./build/debug/opense4 --renderer=opengl
 ```
 
-Vulkan runs on macOS through MoltenVK. If the Vulkan renderer fails to initialize,
-use `--renderer=opengl`.
+CI does the same for every push on Apple silicon (the `macos-latest` runner: macOS 26,
+Xcode 26.6, Apple Clang 21): the `debug` preset with warnings as errors, the unit tests
+with the determinism goldens among them, and `--help` of the programs. It never opens
+the game's window: the game itself is not tested on macOS.
+
+Use the OpenGL renderer: macOS provides OpenGL up to 4.1, more than the 3.3 core
+profile the game needs. Vulkan would run through MoltenVK (`brew install molten-vk`),
+which is optional and untested; when Vulkan does not start, the default
+`--renderer=auto` falls back to OpenGL.
 
 ## Presets and options
 
@@ -243,6 +255,10 @@ directory, also runs checks against your installed game data. Those checks never
 copy anything into the repository. Each test run uses a scratch user data folder
 (`OPENSE4_USER_DIR`), so tests never touch your own settings, saves or history.
 
+`test_xmath.cpp` checks the emulated x87 arithmetic of the rules against exact
+arithmetic in multi-word integers on every compiler, and against the x87 itself on x86
+with GCC or Clang.
+
 `test_determinism.cpp` compares fixed games and battles with golden checksums, so every
 compiler must compute exactly the same game (docs/ENGINE.md, "Same on every
 platform"). If a deliberate rules change moves them, print the new values with
@@ -268,11 +284,12 @@ installed copy stay off, and the installed programs are only started with `--hel
 |---|---|
 | Linux / GCC debug, Clang debug | The `debug` preset on Ubuntu 26.04 with the distribution's SDL3, warnings as errors; the unit tests, the golden determinism checksums among them (every job checks them) |
 | Linux / GCC ASan+UBSan | The unit tests built with the `asan` preset, warnings as errors; they stop at the first memory error, leak or undefined behaviour |
-| Windows / MSVC release | The `release` preset with Visual Studio 2022 and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
+| macOS / Apple Clang debug | The `debug` preset on Apple silicon (`macos-latest`) with Apple Clang, libc++ and Homebrew's SDL3, warnings as errors; the unit tests |
+| Windows / MSVC release (VS 2022), (VS 2026) | The `release` preset with Visual Studio 2022 (on `windows-2022`) and Visual Studio 2026 (on `windows-2025`) and the Vulkan SDK's `glslc`, warnings as errors (`/W4 /WX`); the unit tests |
 | Windows / MinGW-w64 package | `tools/package_release.sh windows` in MSYS2 (`dist-mingw`, warnings as errors): the release build, the unit tests, the zip file and the installer, kept as the run's `opense4-windows` artifact |
 | Windows / installer | Installs that installer silently (`/S`), checks the files, shortcuts and Apps & features entry, starts the installed programs, and uninstalls silently, checking that nothing is left |
 
-The Linux jobs run the tests in four processes at once
+The Linux and macOS jobs run the tests in one process per core
 (`.github/scripts/run_tests_parallel.sh`). The jobs keep the compiler's output
 (ccache) and the sources FetchContent downloads
 (`.github/scripts/fetchcontent_cache.cmake`) in the Actions cache. A change to

@@ -73,7 +73,10 @@ std::vector<Event> ClientSession::poll(int timeoutMs) {
         const auto now = Clock::now();
 
         if (phase_ == ClientPhase::Connecting) {
-            if (item.writable || item.failed) {
+            // The attempt has ended when the socket turns writable or fails,
+            // or hangs up: macOS reports a refused connection with POLLHUP
+            // alone, which only sets `readable` (not asked for while connecting).
+            if (item.writable || item.failed || item.readable) {
                 if (std::string err = c.socket().connectError(); !err.empty()) {
                     closeConnection(std::format("Could not connect to {}:{}: {}", config_.host, config_.port, err));
                 } else {

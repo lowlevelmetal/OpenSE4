@@ -84,8 +84,6 @@ GameState redactForEmpire(const Rules& r, const GameState& s, EmpireId viewer) {
         x.supply = 0;
         x.movement = 0;
         x.fleet = {};
-        x.targetVehicle = {};
-        x.targetObject = {};
         x.minister = false;
     }
     std::erase_if(v.fleets, [&](const Fleet& f) { return f.owner != viewer; });

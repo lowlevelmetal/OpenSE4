@@ -485,8 +485,6 @@ void transferVehicle(GameState& s, VehicleId id, EmpireId to) {
     v->orders.clear();
     v->repeatOrders = false;
     v->minister = false;
-    v->targetVehicle = {};
-    v->targetObject = {};
     explore(s, to, v->location.system);
 }
 

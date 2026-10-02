@@ -5,6 +5,12 @@ project(OpenSE4
     DESCRIPTION "Open-source engine reimplementation for Space Empires IV Deluxe"
     LANGUAGES C CXX)
 
+# Apple's linker warns about a static library listed twice, as CMake lists our
+# libraries for one another: let CMake drop the repeats there.
+if(APPLE AND POLICY CMP0156)
+    cmake_policy(SET CMP0156 NEW)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

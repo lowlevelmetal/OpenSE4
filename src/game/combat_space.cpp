@@ -3681,8 +3681,6 @@ void Battle::finish() {
             v->owner = p.owner;
             v->orders.clear();
             v->repeatOrders = false;
-            v->targetVehicle = {};
-            v->targetObject = {};
         }
         // Every surviving piece that was cloaked when the battle began cloaks
         // again if it still can: a ship or base only while it meets the Cloak

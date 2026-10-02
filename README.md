@@ -43,7 +43,7 @@ without your copy. [docs/ENGINE.md](docs/ENGINE.md) is the map of the engine's c
 Full instructions for Linux, Windows and macOS are in
 [docs/BUILDING.md](docs/BUILDING.md). In short, you need:
 
-- a C++23 compiler (GCC 14+, Clang 18+, MSVC 17.10+), CMake 3.25+ and Ninja;
+- a C++23 compiler (GCC 14+, Clang 18+, MSVC 17.10+ or Apple Clang 21), CMake 3.25+ and Ninja;
 - SDL3, which CMake fetches if the system has none;
 - `glslc`, from the Vulkan SDK or `shaderc`.
 

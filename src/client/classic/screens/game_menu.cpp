@@ -50,9 +50,22 @@ std::vector<SaveFile> listSaves() {
     return out;
 }
 
+// A file time as system_clock time: what std::chrono::clock_cast gives, which
+// libc++ lacks. Like clock_cast, it uses the file clock's to_sys (libstdc++,
+// libc++) or else its to_utc (MSVC) and the UTC clock's to_sys.
+template <class Clock, class Duration>
+std::chrono::system_clock::time_point toSystemClock(std::chrono::time_point<Clock, Duration> t) {
+    using Sys = std::chrono::system_clock::duration;
+    if constexpr (requires { Clock::to_sys(t); }) {
+        return std::chrono::time_point_cast<Sys>(Clock::to_sys(t));
+    } else {
+        const auto utc = Clock::to_utc(t);
+        return std::chrono::time_point_cast<Sys>(decltype(utc)::clock::to_sys(utc));
+    }
+}
+
 std::string formatTime(std::filesystem::file_time_type t) {
-    const auto sys = std::chrono::clock_cast<std::chrono::system_clock>(t);
-    const std::time_t tt = std::chrono::system_clock::to_time_t(sys);
+    const std::time_t tt = std::chrono::system_clock::to_time_t(toSystemClock(t));
     std::tm tm{};
 #ifdef _WIN32
     localtime_s(&tm, &tt);

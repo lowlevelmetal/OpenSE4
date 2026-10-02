@@ -115,8 +115,9 @@ private:
     std::string error_;
 };
 
-// bool, enums and the fixed-width integers (core/hash.hpp): the Windows builds
-// reject a `long` or `wchar_t` field, whose size differs between platforms.
+// bool, enums, size_t and the fixed-width integers (core/hash.hpp): the Windows
+// and macOS builds reject a `long` or `wchar_t` field, whose size differs
+// between platforms.
 template <class T>
 concept Scalar = FixedWidthScalar<T>;
 
@@ -423,7 +424,7 @@ template <class Ar> void io(Ar& ar, Order& o) { fields(ar, o.kind, o.location, o
 template <class Ar>
 void io(Ar& ar, Vehicle& v) {
     fields(ar, v.id, v.slot, v.owner, v.design, v.name, v.location, v.count, v.mixed, v.damage, v.supply, v.movement, v.orders, v.repeatOrders, v.fleet,
-           v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.targetVehicle, v.targetObject, v.builtTurn,
+           v.cargo, v.experience, v.experienceTenths, v.status, v.minister, v.queue, v.builtTurn,
            v.immobileUntil, v.cameFrom, v.cameFromTurn, v.heading);
 }
 
