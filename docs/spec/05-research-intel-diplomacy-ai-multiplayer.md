@@ -936,10 +936,26 @@ for humans whose ministers are active.
 **Hostile.** The military AI treats an empire as hostile when the treaty with it is below
 Non-Aggression: War, Non-Intercourse, None, or not yet met.
 
-**Territory.** The AI claims its home system, every system with one of its colonies, and
-every system one warp jump from a colony system. It does not claim another computer
-player's home system, or the systems it has agreed to avoid (§7.4). A neutral empire claims
-only its colony systems and ignores every system except its home.
+**Territory** (confirmed: binary). The territory is the empire's set of claimed systems,
+the same set the Borders display shows (spec 01 §6.8). At the start of the game an empire
+claims its home system only. A computer empire's Politics minister rewrites the set each
+turn, first thing in its run:
+1. every claim is cleared;
+2. every system holding one of the empire's colonies is claimed;
+3. unless the empire is neutral, every other system one warp jump from such a system (over
+   every link of the map) is claimed too, except the home system of a computer-controlled
+   empire and the systems the empire has agreed to avoid (§7.4). These two exclusions apply
+   only to the systems added in this step: a system holding one of our colonies is always
+   claimed.
+
+A neutral empire therefore claims only its colony systems, and it ignores every system
+except its home. The Politics minister runs after the state update and after the lists
+below are built (§7.1), so each turn's lists and transitions use the territory claimed
+during the previous turn: a new colony's system and its neighbours count only from the
+second start-of-turn update after the colony is founded. A human empire keeps the claims its player makes unless its Politics minister acts. The engine
+differs: it works the territory out afresh in its own start-of-turn assessment (`ai.cpp`
+`computeTerritory`), so it has no one-turn delay, and it also leaves out another computer
+player's home system and an avoided system when one of our colonies is there.
 
 **Jumps** (confirmed: binary): every AI jump count uses every warp link of the map, known
 or not, and an unreachable system counts as 999 jumps. That covers the territory's "one
@@ -964,10 +980,19 @@ A system's hostile strength is the total over the hostile empires we have met.
 **Lists built each turn.** Each hostile object or planet enters a list only if the AI
 notices it. A Low-difficulty AI notices each one with a 90 % chance per turn; Medium and
 High always notice.
-- **Enemy in territory**: visible hostile ships and unit groups in our territory, armed or
-  not, except mine fields; and populated hostile colonies in our territory.
-- **Enemy nearby**: visible hostile mine fields in our territory. That is all it
-  contains.
+- **Enemy in territory** (confirmed: binary, question 54):
+  - every ship and unit group, armed or not, other than a mine field, that an empire below
+    Non-Aggression with us owns (an empire we have not met included), that is in a
+    territory system, and that we detect at the moment of the update by the rule of spec 01
+    §6.3 (we have explored the system and our sensors there reach the object's
+    obscuration). An object seen on an earlier turn but not now does not count;
+  - every colony with population of such an empire on a planet (not an asteroid field) of
+    a territory system we have explored, whether or not we see it now and whether or not
+    we have met its owner.
+- **Enemy nearby**: hostile mine fields in our territory that we detect, by the same rule.
+  That is all it contains. Stock mines can never be detected (spec 01 §6.3), so with the
+  stock data this list stays empty, and only the frontier test below lets a computer
+  player move from Exploration or Defend (Short Term) to Infrastructure.
 - **Attack candidates**: planets of other empires in systems we have explored. They are
   ordered by fewest jumps from our home, then highest anger toward the owner, then highest
   value. The value (confirmed: binary) is the ratings (without the + 1) of every owned
@@ -975,8 +1000,18 @@ High always notice.
   defence: its colony's `Planet - Shield Generation` total / 5, plus its population in
   millions div 100, plus, for every unit stack in its cargo, count × that unit design's
   summed best weapon damage.
-- **Exploration frontier**: warp points in explored systems that lead to unexplored ones.
-  A point is free when none of our ships is already headed for it.
+- **Exploration frontier** (confirmed: binary): the warp points of explored systems whose
+  far system we have not explored. Whether we know where the link leads plays no part: a
+  warp point into a system we have explored by another route is never on the frontier,
+  even when none of our ships has crossed it. A point is free when none of our ships is
+  already headed for it. "Unexplored space borders our territory" means that some frontier
+  point lies in a territory system. The engine differs (`ai.cpp` `assess`): it also puts on
+  the frontier every warp point whose link we do not know, even when its far system is
+  explored. Its territory then keeps bordering "unexplored" space until explorers have
+  crossed every link of every territory system, which holds its computer players in
+  Exploration and sends them from Defend (Short Term) back to Exploration rather than to
+  Infrastructure (question 53). The same list feeds the explorers, the Not Connected test
+  and the Open Warp Point gate (§7.5), so they differ too.
 - **Defend list** (confirmed: binary): the enemy-in-territory entries are kept one per
   (system, sector, owner). An entry's threat is the sum of rating + 1 over the owner's
   noticed objects in that sector; a noticed populated colony adds the ratings (without the
@@ -1048,7 +1083,11 @@ High always notice.
      any system one jump away → Infrastructure, and the after-attack timer starts.
 - **Defend (Short Term)**: stay while any enemy is in territory. Then go to
   Infrastructure if an enemy is nearby or no unexplored space borders our territory,
-  otherwise to Exploration.
+  otherwise to Exploration. The state has no timer of its own (question 53): the turns
+  spent in it play no part, and the first update whose enemy-in-territory list is empty
+  ends it. Since the update runs once per turn, before the empire's ships move, a spell
+  lasts as many turns as there are consecutive start-of-turn updates that find a detected
+  hostile ship or unit group, or a populated hostile colony, in the territory.
 - **Not Connected**: back to Infrastructure as soon as the Not Connected test fails.
 
 ### 7.3 Anger (`AI_Anger`)
@@ -1599,11 +1638,37 @@ binary).
        (in the order below) that the empire can settle and that no queued colony ship of
        that type already covers. When every target is covered, the race's native surface
        type is built. Nothing is built while the empire knows no target it can settle.
-    5. **Placement**:
-       - Defense bases spread over the yard planets: first planets without one, then
-         planets with one, and so on. Higher-value planets come first within a round.
+    5. **Placement** (confirmed: binary). One queue is chosen, and the item is placed
+       there or nowhere.
+       - **Defense Base** items (that design type only). The routine was meant to spread
+         them over the yard colonies, fewest bases first, but it mixes up two lists, and
+         the queue it returns does not depend on the counts. The empire's queue list holds
+         every queue the empire owns, system by system in system order and in the game's
+         object order within a system. Let K be the number of those queues that have a
+         working space yard. When some yard colony (not a yard ship) counts at most two
+         bases, the base goes to the K-th queue of the whole list, whatever that queue is.
+         The count is the empire's bases in that colony's sector plus every base queued
+         anywhere in the empire. When every yard colony counts three or more, the
+         base goes to a queue of the whole list drawn at random. The backlog test below is
+         made on that queue alone. A queue without a working space yard loses the base at
+         the empire's next construction step (spec 02 §6.1), so the base is built only
+         when that queue happens to have a yard. With only the homeworld's yard, K is 1,
+         and the base goes to the first queue of the list, a colony in the empire's
+         lowest-numbered colony system, which is the homeworld only when no other colony
+         lies in a lower-numbered system. The engine
+         differs (`ai_economy.cpp` `ShipBuilder::place`): it places a Defense Base at the
+         yard planet with the fewest bases, then the highest planet value, among those
+         whose backlog is under 5 turns.
+       - Mines, satellites, weapon platforms and fighters go to the first queue in this
+         order: the smallest backlog in turns; then the most free cargo space; then the
+         fewest units of that kind already in its cargo; then the larger planet; then the
+         higher resource production (minerals, organics and radioactives); then the
+         highest rate. Any colony's queue can take them. When that first queue lacks the
+         cargo space for the batch, nothing is placed.
        - Any other item goes to the queue with the smallest backlog in turns, then the
-         highest rate. Ships need a space yard; units can use any colony's queue.
+         highest rate. Ships need a space yard; the other units can use any colony's
+         queue. The engine sorts every item this way, the four unit types above included,
+         and it tries the next queue when the first refuses an item.
        - A queue's **backlog** is the sum, over its items, of each item's turns: the
          largest, over the resources the queue has a positive rate for, of (what the item
          still costs ÷ that rate) rounded up. The first item counts only what is still
@@ -1654,19 +1719,31 @@ binary).
   - *Timing*: it runs before Ship Construction and again after it, except on every fifth
     turn, when only the second pass runs (§7.1).
   - *Which colonies*: those whose queue is completely empty and that have a free facility
-    slot. Each gets at most one facility per pass.
+    slot, visited system by system in system order and in the game's object order within
+    a system. Each gets at most one facility per pass.
   - *Colony type*: a colony without one is given a type first (§7.5 colony types below).
     An unknown type uses the Homeworld rows.
+  - The facility for an ability is the researched facility that provides it best: the
+    highest `Value 1` for the amount-type abilities (those the Design minister scores by
+    Amount 1, §7.5 `AI_DesignCreation`), otherwise the highest sum of its tech-requirement
+    levels; a tie goes to the later facility in the file. The engine takes the highest
+    Roman numeral instead (`ai.cpp` `bestFacilityFor`); with the stock facility families
+    both choose the newest version (inferred).
   - The facility queued is for the first entry of the matching row that a researched
     facility provides and that no rule below blocks:
     - `Amount` is 0, or the colony already has `Amount` facilities with that ability;
     - Spaceport: the system has one already, or the race needs none;
     - Supply Generation: the system has one already;
     - Space Yard: the planet has one already;
-    - research abilities: all research is done, or research points have reached
+    - research abilities (`Point Generation - Research` and the planet and system research
+      modifiers): all research is done, or the empire's research production has reached
       `Maximum Research Point Generation`;
-    - intelligence abilities: intelligence projects are off, or intelligence points have
-      reached `Maximum Intelligence Point Generation`;
+    - intelligence abilities (`Point Generation - Intelligence`, the planet and system
+      intelligence modifiers and `Change Bad Intelligence Chance - System`): intelligence
+      projects are off, or the empire's intelligence production has reached `Maximum
+      Intelligence Point Generation`. The engine's two lists also hold the `Generate
+      Points` abilities, and its intelligence list lacks `Change Bad Intelligence Chance -
+      System` (`ai_economy.cpp`);
     - Change Atmosphere: the planet is unpopulated, or its atmosphere already suits its
       majority race;
     - a one-per-system ability that the empire's colonies in the system already have,
@@ -1681,14 +1758,23 @@ binary).
       `Reduced Maintenance Cost - System` and the five `Stop …` abilities (Star Destroyer,
       Nebulae Creator, Black Hole Creator, Open Warp Point, Close Warp Point) (confirmed:
       binary);
-    - with finite resources: resource generation or planet-value modifiers for a resource
-      whose value on this planet is 0.
+    - with finite resources: `Resource Generation` or `Resource Gen Modifier Planet` for a
+      resource whose value on this planet is 0. The engine also blocks the system modifiers
+      and the planet-value abilities of that resource there.
+  - *Nothing to build* (confirmed: binary, question 55): when no entry of the row passes,
+    the colony gets nothing in that pass. It keeps its type, no other row or table is
+    tried, and no other type is given, so such a colony stays as it is until a rule stops
+    blocking one of its entries (for an Intelligence Compound, the first researched
+    intelligence facility). The engine matches.
   - *Upgrades*: every fifth turn, obsolete facilities are upgraded to the newest
     researched version, planet by planet in queue-owner order, while what was queued so far
     is at most half of one turn's net income (division toward zero) in all three
     resources, checked before each planet; so a zero budget still upgrades the first
     planet. A planet's queue need not be empty. Every queued facility of an older version
-    switches to the newest one.
+    switches to the newest one. This runs at the start of the pass, before any colony gets
+    its facility (confirmed: binary), so a planet that receives an upgrade no longer has an
+    empty queue and gets no new facility that turn. The engine queues the upgrades after
+    the colonies' facilities (`ai_economy.cpp` `planFacilities`).
 - **Colony types** (confirmed: binary). The list is fixed: Homeworld (also "Imperial
   Center"), Mining Colony, Farming Colony, Refining Colony, Resupply Base, Research
   Compound, Intelligence Compound, Construction Yard, Military Installation.
@@ -1702,9 +1788,12 @@ binary).
        Colony for minerals likewise; Refining Colony for radioactives likewise.
   - Otherwise the type is the `Planet Type` of the first `AI_Planet_Types` row (file
     order, state matched as above) that passes all its tests:
-    - Research Compound rows fail when all research is done or research points have
-      reached the AI_Settings cap. Intelligence Compound rows fail when intelligence
-      points have reached their cap or intelligence projects are off;
+    - Research Compound rows fail when all research is done or the empire's research
+      production has reached the AI_Settings cap. Intelligence Compound rows fail when
+      its intelligence production has reached its cap or intelligence projects are off.
+      Neither test looks at whether the empire has a facility of that kind (confirmed:
+      binary, question 55), so an Intelligence Compound is chosen before any
+      intelligence facility is researched;
     - `Maximum Total in Empire` > 0 and the empire already has that many of the type;
     - `Max Per System` > 0 and the system already has that many;
     - `Percent Of Colonies` > 0 and colonies of the type > colonies × percent / 100,
@@ -1732,9 +1821,12 @@ binary).
     - at Low difficulty, each target with a 10 % chance per turn.
   - *Order*:
     1. danger, lowest first: 5 per non-friendly empire present in the target system, plus
-       1 per warp point of the target system that leads to a system where such an empire
-       is present. Non-friendly means below Non-Aggression, not yet met included; present
-       means owning any object there, seen or not (confirmed: binary);
+       1 for each non-friendly empire present in each system a warp point of the target
+       system leads to. So one such empire beyond two warp points adds 2, and two such
+       empires beyond one warp point add 2. Non-friendly means below Non-Aggression, not
+       yet met included; present means owning any object there, seen or not (confirmed:
+       binary). The engine differs: it adds 1 per warp point whatever the number of
+       empires beyond it (`ai.cpp` `assess`);
     2. warp jumps from home, fewest first;
     3. planets with ancient ruins first;
     4. breathable atmosphere first;
@@ -3277,60 +3369,97 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     only the messages the player writes go through the picker's test. The order in which
     step 2 tries its candidate systems is question 58. The recipient's side matches
     (`CarryOutDemand`, `speechLine`).
-53. **Time in each AI state** (§7.2; spec 07 session 3 "Pace after the starting assets").
-    Our computer players spend 56 % of their turns in Defend (Short Term), 34 % in
-    Exploration and 5 % in Infrastructure (12 games of the pace set-up, turns 1–100); from
-    turn 50 three in four are in Defend (Short Term) at any moment. The stock vehicle table
-    builds Defense Bases, Base Space Yards and population transports only in Infrastructure,
-    and the original's computers keep 0.6–0.9 bases each from turn 50 against our 0.2–0.3,
-    which points to more Infrastructure turns in the original. Check, in the pace set-up
-    (Small quadrant of the first type, five empires, simultaneous, default settings): each
-    computer empire's AI state after its start-of-turn update, turns 1–100; the share of
-    turns in each state; how long a Defend (Short Term) spell lasts; and which transition
-    most often ends one.
-54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"). What keeps
-    ours in Defend (Short Term) is mostly other empires' attack ships one jump from a colony
-    system (explorers and fleets) and other empires' colonies one jump away (per empire 1.7
-    ships and 0.8 colonies at turn 50). Check, for the list the state machine reads:
-    - ships: only those the evaluating empire detects this turn, every hostile ship in a
-      territory system, or those it has ever seen; and whether ships of an empire it has
-      not met count, as "hostile" includes "not yet met";
-    - colonies: whether a populated hostile colony counts when the evaluating empire cannot
-      see it this turn (the system explored earlier, no ship or sensor there now), and
-      before the two empires have met;
-    - the systems: the claimed territory (colony systems and every system one jump away,
-      over all links), or a smaller set such as the colony systems only.
+53. **Time in each AI state** (§7.2; spec 07 session 3 "Pace after the starting assets"):
+    **Answer** (confirmed: binary). The transitions of §7.2 are complete: nothing else
+    changes the state, and the only clocks are the turns-in-state counter (used by Prepare
+    for Attack and Attack) and the after-attack timer. Defend (Short Term) is entered from
+    every state except Not Connected and Defend (Long Term) as soon as the
+    enemy-in-territory list (question 54) is not empty. It has no minimum or maximum
+    length: the first start-of-turn update that finds the list empty ends it. It then goes
+    to Infrastructure when no frontier point lies in the territory, otherwise to
+    Exploration (with the stock data mine fields are never detected, so "an enemy is
+    nearby" never applies). Which of the two follows depends on the frontier test alone.
+    The share of turns in each state and the length of the spells cannot be read from the
+    code, and the captures do not record states. The shipped program cannot show them
+    either: it contains a debug display of every empire's AI state and an AI log (the
+    setting keys `Show AI State` and `Output AI Information To Log` of a `DebugSettings.txt`
+    file in the game folder), but the program skips the code that reads that file, so an
+    observation session would need a debugger to read each computer empire's state.
+    The code does show where the engine differs: its exploration frontier (§7.2
+    "Exploration frontier") also holds the warp points whose link is unknown, even when the
+    far system is explored. Its territory then borders "unexplored space" much longer than
+    the original's, which keeps our computers in Exploration and sends them from Defend
+    (Short Term) back to Exploration. Under the original's rule an empire that has met
+    another and has explored every system that a warp point of its territory leads to
+    goes to Infrastructure instead, the only state whose stock vehicle table builds
+    Defense Bases, Base Space Yards and population transports. The engine must use the
+    original's frontier (and the territory rules of §7.2). Whether the original also
+    spends about half of its turns in Defend (Short Term) stays open. Its
+    enemy-in-territory list is built as ours is (question 54), so a difference there would
+    have to come from the situations themselves, such as treaties between computer
+    players (question 59).
+54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"): **Answer**
+    (confirmed: binary), now in §7.2:
+    - ships and unit groups other than mine fields: only those the evaluating empire
+      detects at the moment of its start-of-turn update (spec 01 §6.3), wherever they came
+      from, and whether or not their owner has been met ("hostile" is below
+      Non-Aggression, no contact included). Nothing remembers ships seen before;
+    - colonies: every populated colony of such an empire in a territory system the
+      evaluating empire has explored, seen or not, met or not;
+    - the systems: the claimed territory (every colony system and every system one jump
+      away over all links), with the exclusions and the one-turn delay of §7.2 "Territory".
 
-    Ours: ships detected this turn (`Knowledge::visibleVehicles`), met or not; every
-    populated hostile colony in an explored territory system, seen or not, met or not; the
-    claimed territory (`ai.cpp` `assess`).
+    The engine matches, except for the territory's delay and exclusions (§7.2). So the
+    list is not where the engine's extra Defend (Short Term) time comes from, and the
+    scratch test of spec 07 that counted a hostile colony only when seen departs from the
+    original.
 55. **A colony type whose row builds nothing** (§7.5 `AI_Construction_Facilities`, colony
-    types). The stock Intelligence Compound row names only a spaceport, supply generation,
-    the two intelligence point modifiers and intelligence facilities. While the empire has
-    no intelligence facility and the system already has a spaceport and a depot, no entry
-    can be built, and ours queues nothing there for the whole game (0.8 such colonies per
-    computer empire at turn 50, 1.4 at turn 100, about a sixth of them breathable with all
-    their slots empty). Check whether the original also leaves such a colony empty, or
-    falls back (to the Homeworld rows, as for an unknown type; to the next matching table;
-    by giving the colony another type). And does the `AI_Planet_Types` test of an
-    Intelligence Compound or Research Compound row look at whether the empire has a
-    facility of that kind?
-56. **The computer players' research inputs** (spec 07 session 3). The original's computer
-    players produce 1.4 times our research at turn 50 with about as many colonies (11.2
-    against 10.8), and 1.75 times at turn 100 (19.6 colonies against 15.8). Our Research,
-    Facility Construction and Ship Construction ministers, colony types and colonization
-    targets follow §7.5 as written, so the difference lies in what those rules produce or in
-    a rule this spec does not state. Check, for two or three computer empires of the pace
-    set-up at turns 50 and 100: colonies of each colony type and how many are domed;
-    facilities with `Point Generation - Research` and their versions (I, II, III), and the
-    research modifier facilities; facilities against slots; total population; the colonies'
-    moods; the homeworld's own research. Ours (spec 07): at turn 50, 10.8 colonies (Research
-    Compound 2.7, Mining 2.6), 16.6 Research Center I, 51 facilities of 64 slots, 2,491M; at
-    turn 100, 15.8 colonies, 83 % of those beyond the homeworld domed, 22.6 Research
-    Center I, the homeworld's research flat at 3.5k from turn 25, 3,214M. The session's
-    statistics files also hold the population and resources columns of the four computer
-    empires: their means at turns 10, 25, 50, 75 and 100 would show whether the original's
-    lead is in research alone or in the whole economy.
+    types): **Answer** (confirmed: binary). The original also leaves such a colony empty:
+    when no entry of its row passes, it gets nothing, keeps its type, and no other row,
+    table or type is tried (§7.5 "Nothing to build"). An Intelligence Compound therefore
+    builds only a spaceport and a supply depot where its system lacks them until the
+    empire researches its first intelligence facility. The `AI_Planet_Types` tests of a
+    Research Compound or Intelligence Compound row look only at the research or
+    intelligence production cap, whether everything is researched and whether
+    intelligence projects are allowed, never at whether the empire has a facility of that
+    kind (§7.5 colony types). The engine matches. Three of the original's twelve computer
+    empires produced intelligence points (up to 1,600–5,800 a turn) from turns 60, 84 and
+    94, so they reached their first intelligence facility and these colonies started to
+    build within 100 turns; ours rarely do (question 59).
+56. **The computer players' research inputs** (spec 07 session 3): **Answer** (from the
+    captures; the parts the captures cannot show are question 59). The statistics files
+    hold, per empire and turn, score, resources produced (minerals + organics +
+    radioactives), research, intelligence, tech levels, systems, planets, population,
+    units, ships and bases. Colony types, domed share, facilities and moods are not in
+    them, and the screenshots show only the human player's own colonies. Means per
+    computer empire, original (12 empires) against ours (spec 07 "Pace after the starting
+    assets", 60 empires; resources from the earlier set of spec 07 "Pace of the computer
+    players", the only one that recorded them):
+
+    | Turn | Population | Resources produced | Research per colony | Research spent per tech level gained |
+    |---|---|---|---|---|
+    | 25 | 2,177 / 2,166 | 12.8k / 14.1k | 1,194 / 1,173 | 38k / 42k |
+    | 50 | 2,419 / 2,436 | 22.0k / 21.0k | 1,423 / 969 | 42k / 47k |
+    | 75 | 2,523 / 2,710 | 26.2k / 25.6k | 1,261 / 949 | 51k / 50k |
+    | 100 | 3,096 / 3,095 | 37.8k / 29.1k | 1,310 / 929 | 56k / 52k |
+
+    (Research per colony is the mean over empires of research ÷ planets; research spent per
+    level counts the opening 20,000 points.) So the lead is in research alone: the two
+    sides have the same population and, to turn 75, the same resource output, and they
+    spend research equally well, but from turn 25 the original's colonies yield about 40 %
+    more research each. The original's research is also very uneven: at turn 50 four of
+    its twelve computer empires had 22,000–25,000 research points with 9–20 colonies and
+    the others 4,000–14,000, against a 90th percentile of 13,800 and a maximum of 23,400
+    for our 61. Its fast empires gained about 1,000 points a turn on average (up to 1,800
+    in a turn) for 10–20 turns with 5–9 colonies (one went from 4,300 at turn 19 to
+    16,200 at turn 30 with 5–6 colonies). At about 600 points per new Research Center I
+    that is about two new centres a turn, and a colony gets at most one a turn (§7.5
+    "Which colonies"), so two or more of their first colonies were Research Compounds with
+    ten or more free slots: breathable planets, since a domed one has at most five. Ours,
+    at turn 50: 1.9 breathable colonies per empire (0.75 Mining Colony, 0.40 Research
+    Compound) holding 4.1 research centres, and 7.9 domed ones holding 7.5. The colony-type rules, the facility rows and their blocks, the
+    colonization order and the Research minister all match the binary (§7.5), so which
+    rule gives the original its larger Research Compounds is not found yet (question 59).
 57. **The first-contact check of a timed event** (§3.1): the check runs in an event's
     system "once the event is logged". A timed event logs twice: its start message when it
     begins and its message when it strikes. OpenSE4 runs the check after each, whenever
@@ -3343,3 +3472,29 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     whose roll succeeds; a ship counts when the AI sees it (inferred). To verify: in what
     order does the original try the candidates, which ships of X count (seen ones, every
     one, unit groups too), and does it stop at the first successful roll?
+59. **Research per colony after turn 25** (question 56, §7.2, §7.5). With the same
+    population and resource output, the original's computer empires get about 40 % more
+    research per colony than ours from turn 25 on, and their fastest empires build about
+    two Research Centers a turn on two or more breathable Research Compounds. The rules
+    for colony types, facility rows, colonization order and research choices match the
+    binary, so the cause lies in what those rules are fed. Candidates, to check once the
+    engine follows §7.2 (frontier, territory) and §7.5 (Defense Base placement):
+    - more Infrastructure turns, through the frontier rule (question 53): the homeworld's
+      Infrastructure row asks for two research facilities instead of one, population
+      transports move people to breathable colonies, and Defend (Short Term) builds the
+      fewest colony ships of all states (`Colonizer` with `Planet Per Item` 100);
+    - which planets are settled first and the type they get: in ours the breathable planets
+      of the home system are settled first and most become Mining Colonies through the
+      first `AI_Planet_Types` row (at most two in the empire), leaving the Research
+      Compounds on domed planets of one to five slots;
+    - moods: research is scaled by the colony's mood (Happy +10 %, Jubilant +20 %);
+    - treaties between computer players: a Non-Aggression treaty or better takes the
+      other empire's ships and colonies out of the enemy-in-territory list and out of the
+      colonization danger.
+
+    To observe (inferred method): repeat the pace game with the player's empire marked
+    computer-controlled in the Player Computer Control window (spec 06 §1.2.1), so that it
+    plays as a computer player, and record its colonies every ten turns from its own
+    Colonies and Planets windows: type, size, atmosphere (domed or not), facilities, mood
+    and research output, and its treaty with each other empire. A debugger session could
+    also read each computer empire's AI state every turn (question 53).
