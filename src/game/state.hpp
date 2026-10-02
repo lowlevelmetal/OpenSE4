@@ -596,6 +596,13 @@ struct Vehicle {
     // it counts only while cameFromTurn == GameState::turn.
     Location cameFrom;
     uint32_t cameFromTurn = 0;
+    // Its heading, 0..7 in 45° steps clockwise from up (spec 06 §2.4, §7 Q62,
+    // confirmed: binary): a new vehicle faces up, each step within a system
+    // sets it to that step's bearing (movement::headingFor), a warp keeps it.
+    // Saved with the game, so a mini faces the same way after loading and at
+    // the start of a movement log replay. Whether the mini is drawn turned is
+    // the client's (engineless hulls, satellites and mines never are).
+    uint8_t heading = 0;
 };
 
 // A fleet (spec 03 §9, confirmed: binary). It has no order list of its own:

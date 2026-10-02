@@ -62,7 +62,7 @@ Symbol facilitySymbol(bool explored, bool colony, bool facility);
 
 // The heading of a mini that moved from one sector to another in a system:
 // 0..7, 45° steps clockwise from up, the bearing rounded to the nearest step
-// (23–67° is 45°, 338–22° is up).
+// (23–67° is 45°, 338–22° is up); the engine's movement::headingFor.
 int headingStep(game::Sector from, game::Sector to);
 
 // Where a hovered system's name goes: the first corner, of above-right,

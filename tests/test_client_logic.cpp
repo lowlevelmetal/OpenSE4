@@ -288,54 +288,67 @@ TEST_CASE("client logic: reordering a list") {
 
 // ---- Ship movement animation (client/classic/ship_glides.hpp) ----
 
-TEST_CASE("client logic: a ship that moves in the shown system glides there") {
+TEST_CASE("client logic: a ship that moves in the shown system turns, then glides there frame by frame (spec 06 §2.4)") {
     const SystemId sys{0u}, other{1u};
     const VehicleId ship{3u};
     ShipGlides g;
-    auto frame = [&](double now, Location at, SystemId shown = SystemId{0u}, bool enabled = true) {
-        const ShipGlides::Seen seen[] = {{ship, at}};
-        g.track(now, shown, enabled, seen);
+    // One call per displayed frame; `heading` is the engine's.
+    auto frame = [&](double now, Location at, int heading = 0, SystemId shown = SystemId{0u}, bool enabled = true, double pause = 0.0) {
+        const ShipGlides::Seen seen[] = {{ship, at, heading, true}};
+        g.track(now, shown, enabled, seen, 50.0f, pause);
     };
     frame(0.0, {sys, Sector{2, 2}});
-    CHECK(g.find(ship, 0.0) == nullptr);   // first sight: nothing to animate
+    CHECK(g.find(ship) == nullptr);   // first sight: nothing to animate
 
-    frame(1.0, {sys, Sector{6, 2}});        // four squares east
-    const ShipGlides::Glide* glide = g.find(ship, 1.0);
+    frame(1.0, {sys, Sector{6, 2}}, 2);   // four squares east, now facing east
+    const ShipGlides::Glide* glide = g.find(ship);
     REQUIRE(glide != nullptr);
     CHECK(glide->from == Vec2{2.5f, 2.5f});
     CHECK(glide->to == Vec2{6.5f, 2.5f});
-    CHECK(glide->duration == doctest::Approx(4 * ShipGlides::kSecondsPerSquare));
-    // Eased: it starts at the old square, passes the middle halfway and ends on the new one.
-    CHECK(ShipGlides::position(*glide, 1.0) == Vec2{2.5f, 2.5f});
-    CHECK(ShipGlides::position(*glide, 1.0 + glide->duration / 2).x == doctest::Approx(4.5f));
-    CHECK(ShipGlides::position(*glide, 5.0) == Vec2{6.5f, 2.5f});
-    CHECK(g.find(ship, 1.0 + glide->duration) == nullptr);
+    // A quarter turn: 18 frames of 5°; then 1 px a frame, 50 a square at 1024x768.
+    CHECK(glide->turnFrames == 18);
+    CHECK(glide->slideFrames == 200);
+    CHECK(ShipGlides::angle(*glide) == doctest::Approx(5.0));
+    CHECK(ShipGlides::position(*glide) == Vec2{2.5f, 2.5f});
+    // One frame a display frame once its wait is over (10 ms after a turn frame).
+    double t = 1.0;
+    for (int i = 0; i < 17; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    REQUIRE(g.find(ship));
+    CHECK(ShipGlides::angle(*g.find(ship)) == doctest::Approx(90.0));
+    CHECK(ShipGlides::position(*g.find(ship)) == Vec2{2.5f, 2.5f});
+    frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(2.5f + 1.0f / 50.0f));
+    for (int i = 0; i < 99; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    CHECK(ShipGlides::position(*g.find(ship)).x == doctest::Approx(4.5f));   // halfway after 100 slide frames
+    for (int i = 0; i < 101; ++i) frame(t += 0.0167, {sys, Sector{6, 2}}, 2);
+    CHECK(g.find(ship) == nullptr);   // done, no pause
 
-    SUBCASE("durations are clamped") {
-        frame(2.0, {sys, Sector{7, 2}});
-        REQUIRE(g.find(ship, 2.0));
-        CHECK(g.find(ship, 2.0)->duration == doctest::Approx(ShipGlides::kMinSeconds));
-        frame(3.0, {sys, Sector{7, 12}});
-        REQUIRE(g.find(ship, 3.0));
-        CHECK(g.find(ship, 3.0)->duration == doctest::Approx(ShipGlides::kMaxSeconds));
+    SUBCASE("a half-turn goes clockwise; the pause after each step is held on the new square") {
+        frame(t += 0.0167, {sys, Sector{4, 2}}, 6, sys, true, 0.5);   // two squares west: a half-turn
+        REQUIRE(g.find(ship));
+        CHECK(g.find(ship)->angle1 == doctest::Approx(270.0));
+        CHECK(g.find(ship)->turnFrames == 36);
+        CHECK(g.find(ship)->pause == doctest::Approx(1.0));   // 0.5 s for each of the two steps
     }
     SUBCASE("a second move mid-glide carries on from where the ship is drawn") {
-        const double mid = 1.0 + glide->duration / 2;
-        frame(mid, {sys, Sector{6, 8}});
-        const ShipGlides::Glide* next = g.find(ship, mid);
+        frame(t += 0.0167, {sys, Sector{4, 2}}, 6);
+        for (int i = 0; i < 40; ++i) frame(t += 0.0167, {sys, Sector{4, 2}}, 6);
+        const Vec2 drawn = ShipGlides::position(*g.find(ship));
+        frame(t += 0.0167, {sys, Sector{4, 8}}, 4);
+        const ShipGlides::Glide* next = g.find(ship);
         REQUIRE(next != nullptr);
-        CHECK(next->from.x == doctest::Approx(4.5f));
-        CHECK(next->to == Vec2{6.5f, 8.5f});
+        CHECK(next->from.x == doctest::Approx(drawn.x));
+        CHECK(next->to == Vec2{4.5f, 8.5f});
     }
     SUBCASE("warps, view changes and the setting do not glide") {
-        frame(2.0, {other, Sector{6, 2}});                  // warped out
-        CHECK(g.find(ship, 2.0) == nullptr);
-        frame(3.0, {sys, Sector{0, 0}});                    // warped back in
-        CHECK(g.find(ship, 3.0) == nullptr);
-        frame(4.0, {sys, Sector{3, 0}}, other);             // the player looks at another system
-        CHECK(g.find(ship, 4.0) == nullptr);
-        frame(5.0, {sys, Sector{3, 0}});                    // back to this one: no move since
-        frame(6.0, {sys, Sector{5, 0}}, sys, false);        // animation switched off
-        CHECK(g.find(ship, 6.0) == nullptr);
+        frame(2.0e3, {other, Sector{6, 2}});                   // warped out
+        CHECK(g.find(ship) == nullptr);
+        frame(2.1e3, {sys, Sector{0, 0}});                     // warped back in
+        CHECK(g.find(ship) == nullptr);
+        frame(2.2e3, {sys, Sector{3, 0}}, 2, other);           // the player looks at another system
+        CHECK(g.find(ship) == nullptr);
+        frame(2.3e3, {sys, Sector{3, 0}});                     // back to this one: no move since
+        frame(2.4e3, {sys, Sector{5, 0}}, 2, sys, false);      // animation switched off
+        CHECK(g.find(ship) == nullptr);
     }
 }

@@ -101,8 +101,10 @@ empires are skipped.
    §6.3, spec 04 §2). A Colonize order founds its colony like any order, on an
    acting day with movement left, so a colony can appear in any phase.
    `TurnOptions::movementDay` lets a caller watch the state after each day without
-   changing it (the client's movement log replay plays a turn again from its start
-   with it, docs/spec/06 §7 Q51). Sight is then updated.
+   changing it, and `TurnOptions::movementStep` each vehicle's every step as it is made
+   (the client's movement log replay plays a turn again from its start with them,
+   docs/spec/06 §7 Q51, Q62). Each step within a system turns the vehicle to its bearing
+   (`Vehicle::heading`, `movement::headingFor`, saved with the game); a warp keeps it. Sight is then updated.
    **First contact** is checked in one system at a time, only at the moments spec 05
    §3.1 names (`diplomacy::firstContactIn`): a group's arrival through a warp point, any
    decloak (orders, ministers, battles, supply), a logged event, a package's planet or
@@ -372,8 +374,8 @@ which the original draws in the system's Small Fonts.
 | `main_window.*` | Status bar, command buttons, order strip with the hover hint, system, report and galaxy panels, tagging, the movement log replay's controls, and hotkeys |
 | `order_rules.*`, `status_icons.*`, `map_style.*` | Headless rules the main window draws from (tested without a window): when each order button is lit, which status icons an object shows, and the colours and symbols of the maps |
 | `quadrant_map.*` | The quadrant map inside windows (Galaxy Map, Systems To Avoid, Waypoints) |
-| `ship_glides.*` | Ships gliding to their new square and the headings of minis |
-| `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-day observer, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U) |
+| `ship_glides.*` | Ships turning and sliding to their new square, frame by frame (spec 06 §2.4) |
+| `movement_replay.*` | The movement log of a simultaneous turn (recorded by playing the turn again from its start with the engine's movement-step and movement-day observers, one entry per vehicle and step, or rebuilt from the client's view) and its replay (Ctrl+P/I/O/U), each entry animated on its own |
 | `sector_view.*` | What a sector of the system panel shows: the stellar object, one vehicle or the owners' flags, and the counts (headless) |
 | `reports.*` | Ship, planet, fleet and system reports |
 | `screens/*` | One file per group of windows (designs, planets, queues, research, empires, log, ...). `cargo_transfer.cpp` also holds Jettison Cargo, `convert_resources.cpp` Convert Resources; the Select Component and Select Facility pickers are the main window's. `combat_map.*` draws the combat map for the Combat Replay, Tactical Combat and Strategic Combat windows; `combat_logic.*` holds their headless logic (forces list, piece report lines, the Drop Troops order, simulator rows and the sandbox its transfer windows work on); `tactical.cpp` holds Tactical Combat with its Orders, Launch Units, Combat Options and Combat Piece Report windows; `combat_replay.cpp` Combat Replay and its options; `strategic_combat.cpp` Strategic Combat (also the Tactical/Strategic question; it fights a battle one phase per frame as it shows it) and Ground Combat (round by round); `simulator.cpp` the Combat Simulator; `settings_screen.cpp` the per-computer Options window and OpenSE4's Settings; `scrap.cpp` also the Abandon Planet questions |

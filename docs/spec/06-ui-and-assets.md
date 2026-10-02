@@ -1158,9 +1158,12 @@ cells sit inside it after a margin:
   frame, then slides the whole group as one sprite 1 px a frame with 1 ms after each
   (the waits of §1.10.3). After each animated step the game pauses for `System Ship
   Movement Delay Milliseconds`, but reads the value as seconds (a defect of the original;
-  the stock value 0 hides it). Our client differs: its glides (`ShipGlides`,
-  `client/classic/ship_glides.cpp`) take 0.12 s per square (0.35 to 1.0 s in all), have
-  no turn animation, and start every heading facing up after loading.
+  the stock value 0 hides it). Since 2026-10-01 our client does the same (`ShipGlides`,
+  `client/classic/ship_glides.cpp`): the turn, 5° a frame, then the slide, 1 px a frame
+  (36 or 50 frames a square), each frame at least one display refresh, then the pause,
+  read as seconds; headings come from the engine and survive loading. It sees the
+  engine's steps only as they are made, so several steps made at once glide as one
+  straight move, pausing for each (inferred).
 
 Contents [T][S]:
 
@@ -3429,20 +3432,17 @@ the executable and Q63 has no counterpart; Q60 needs observation:
       faced when the turn began, not up. Satellite and mine groups have no heading; a
       vehicle whose hull uses no engines (a base) is always drawn facing up.
 
-    Our client differs (`client/classic/movement_replay.cpp`):
-    - `MovementRecorder::day` builds each day's moves from the states before and after the
-      day, in `GameState::vehicles` order, so several steps of one day become one move and
-      the order is not that of movement. The observer `ClassicSession::replayLastTurn` uses
-      must report each step of each vehicle as it is made, and the log keep that order.
-    - `MovementReplay::applyDay` merges a fleet's identical moves into one animation. Each
-      entry must be animated on its own, in sequence.
-    - `MovementReplay::heading` starts every mini facing up. It must start from each
-      vehicle's heading at the start of the turn, so the engine must keep a vehicle's
-      heading as state (saved with the game); bases always face up.
-    - `MovementReplay::update` finishes the day at once on a step key pressed during its
-      animations, then applies the next. Such a press must be ignored.
-    - One day per displayed frame without the animation stays an OpenSE4 choice (the
-      original plays its 30 days without any pause).
+    Since 2026-10-01 our client and engine follow this (`client/classic/movement_replay.cpp`):
+    the engine reports each step of each vehicle as movement makes it
+    (`TurnOptions::movementStep`) and the log keeps one entry per vehicle and step in that
+    order (`MovementRecorder::step`); each entry is animated on its own, frame by frame (5° a
+    turn frame, 1 px a slide frame, 36 or 50 frames a sector, each frame at least one display
+    refresh); the engine keeps each vehicle's heading, saved with the game
+    (`Vehicle::heading`), and the replay starts from the headings of the start of the turn,
+    engineless minis facing up; a key pressed during a day's animations is ignored. One day
+    per displayed frame without the animation stays an OpenSE4 choice (the original plays
+    its 30 days without any pause), and so does starting a network client's rebuilt log from
+    the headings it saw before the turn (inferred).
 63. **Pointer size on a scaled screen.** Ours shows the 32x32 pointers at the whole
     multiple nearest the frame's scale (twice as large on a frame drawn twice its size).
     The original draws the frame 1:1, so this has no counterpart; is a fixed 32x32

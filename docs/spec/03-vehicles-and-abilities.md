@@ -220,7 +220,7 @@ effect, except that formation slots and AI logic can refer to them.
 | `Bases Can Join Fleets` | False | §9 |
 | `Population Mass` | 5 | cargo kT per 1M population (confirmed: binary) |
 | `Maximum Population For Abandon Planet Order` | 50 | planet order gate |
-| `System Ship Movement Delay Milliseconds` | 0 | presentation only: the pause after each animated step of a move in the system window, which the original reads as seconds, not milliseconds (confirmed: binary; spec 06 §2.4) |
+| `System Ship Movement Delay Milliseconds` | 0 | presentation only: the pause after each animated step of a move in the system window, which the original reads as seconds, not milliseconds (confirmed: binary; spec 06 §2.4); our client reads it the same way |
 
 ---
 

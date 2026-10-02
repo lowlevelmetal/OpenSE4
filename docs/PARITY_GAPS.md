@@ -348,10 +348,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
 - **Coordinate line** (§2.4, §7 Q64): the range and the selection marker only while the
   selected sector holds an object the viewer sees (`main_window.cpp`).
-- **Movement log replay** (§7 Q62): one entry per vehicle and step in movement order, each
-  animated alone, headings kept from the start of the turn (the engine must keep a
-  heading), step keys ignored during a day (`movement_replay.cpp`). Moves as they are made
-  turn and slide as in §2.4 (`ship_glides.cpp`).
 - **Strategic Combat** (§7 Q73): fight on step by step until the next refresh is due
   (`screens/strategic_combat.cpp`).
 - **Tactical animation** (§1.10.3, §7 Q77): 36-frame slides, 9 frames per 45°, torpedo

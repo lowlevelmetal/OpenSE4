@@ -1682,6 +1682,7 @@ void MainWindow::trackMovement(UiContext& ui) {
     if (s.turn != seenTurn_) {
         if (seenTurn_ != UINT32_MAX && !ui.session.turnBased()) {
             beforeTurn_ = glides_.lastSeen();
+            beforeTurnHeadings_ = glides_.lastHeadings();
             beforeTurnFor_ = s.turn;
         }
         replay_.stop();
@@ -1716,12 +1717,17 @@ void MainWindow::trackMovement(UiContext& ui) {
     }
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : s.vehicles)
-        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
-    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible);
+        if (knownVehicle(ui, v)) visible.push_back({v.id, v.location, v.heading, turnsToHeading(ui.rules(), s, v)});
+    // The pause after each step: `System Ship Movement Delay Milliseconds`,
+    // read as seconds as the original does (spec 03 §2.9, spec 06 §2.4).
+    const double pause = double(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
+    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, geo.cell, pause);
 }
 
 void MainWindow::startReplay(UiContext& ui, OrderId id) {
-    // The four keys start the replay whatever their buttons show (§2.8, §7 Q51).
+    // The four keys start the replay whatever their buttons show (§2.8, §7
+    // Q51); while a day's entries are animated they are ignored (§7 Q62).
+    if (replay_.active() && replay_.animating()) return;
     const game::GameState& s = ui.state();
     const game::EmpireId me = ui.session.player();
     if (!replay_.available(s.turn)) {
@@ -1731,7 +1737,8 @@ void MainWindow::startReplay(UiContext& ui, OrderId id) {
             // Play the turn again from its start and record its 30 days.
             const BusyPointer busy;
             MovementRecorder recorder(*start);
-            ui.session.replayLastTurn([&recorder](int day, const game::GameState& at) { recorder.day(day, at); });
+            ui.session.replayLastTurn([&recorder](int day, const game::GameState& at) { recorder.day(day, at); },
+                                      [&recorder](const game::MovementStep& st) { recorder.step(st); });
             auto log = std::make_shared<MovementLog>(recorder.take(s.turn));
             // What the viewer sees: its own objects, those it saw at the start and those it sees now.
             for (const auto& [vid, v] : log->vehicles)
@@ -1745,7 +1752,7 @@ void MainWindow::startReplay(UiContext& ui, OrderId id) {
             std::set<game::VehicleId> seenNow;
             for (const game::Vehicle& v : s.vehicles)
                 if (knownVehicle(ui, v)) seenNow.insert(v.id);
-            auto log = std::make_shared<MovementLog>(approximateLog(beforeTurn_, s, seenNow, s.turn));
+            auto log = std::make_shared<MovementLog>(approximateLog(beforeTurn_, s, seenNow, s.turn, beforeTurnHeadings_));
             for (const auto& [vid, v] : log->vehicles) replaySeen_.insert(vid);
             replay_.setLog(std::move(log));
         }
@@ -1790,11 +1797,11 @@ void MainWindow::prepareSectors(UiContext& ui) {
         for (game::ObjectId id : sys.objects) bySector[s.galaxy.object(id).sector].first.push_back(id);
     if (replay_.active()) {
         for (const game::Vehicle& v : replay_.vehicles())
-            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id, ui.time))
+            if (v.location.system == shown_ && replaySeen_.contains(v.id) && !replay_.motion(v.id))
                 bySector[v.location.sector].second.push_back(&v);
     } else {
         for (const game::Vehicle& v : s.vehicles)
-            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id, ui.time)) bySector[v.location.sector].second.push_back(&v);
+            if (v.location.system == shown_ && knownVehicle(ui, v) && !glides_.find(v.id)) bySector[v.location.sector].second.push_back(&v);
     }
     for (auto& [sector, contents] : bySector) {
         ShownSector out;
@@ -1841,7 +1848,9 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
     };
     auto headingOf = [&](const game::Vehicle& v) {
         if (!turnsToHeading(rules, s, v)) return 0;
-        return replay_.active() ? replay_.heading(v.id) : glides_.heading(v.id);
+        // The engine keeps each vehicle's heading (saved with the game); the
+        // replay its own from the start of the turn (§2.4, §7 Q62).
+        return replay_.active() ? replay_.heading(v.id) : int(v.heading % 8);
     };
     auto miniOf = [&](const game::Vehicle& v, int heading) {
         const std::string& style = v.owner.valid() ? s.empire(v.owner).race.style : std::string{};
@@ -1923,33 +1932,34 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
             return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
         });
     };
+    // A mini at any angle (while turning): the quad turned about its centre, sampled like the art.
+    auto turnedMini = [&](const game::Vehicle& v, Vec2 c, double angle) {
+        const Sprite sp = miniOf(v, 0);
+        if (!sp) {
+            placeholder(c, v.owner);
+            return;
+        }
+        const float a = float(angle) * std::numbers::pi_v<float> / 180.0f, ca = std::cos(a), sa = std::sin(a);
+        auto at = [&](float x, float y) { return c + Vec2{x * ca - y * sa, x * sa + y * ca}; };
+        const float h = kSpriteSize * 0.5f;
+        r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
+    };
     if (replay_.active()) {
+        // Each entry on its own, the others of the day waiting where they start (§7 Q62).
         for (const game::Vehicle& v : replay_.vehicles()) {
             if (v.location.system != shown_ || !replaySeen_.contains(v.id)) continue;
-            const auto m = replay_.motion(v.id, now);
-            if (!m) continue;
-            const Vec2 c = gridPoint(m->at);
-            const Sprite sp = miniOf(v, 0);
-            if (!sp) {
-                placeholder(c, v.owner);
-                continue;
-            }
-            // Any angle while turning: the quad turned about its centre, sampled like the art.
-            const float a = float(m->angle) * std::numbers::pi_v<float> / 180.0f, ca = std::cos(a), sa = std::sin(a);
-            auto at = [&](float x, float y) { return c + Vec2{x * ca - y * sa, x * sa + y * ca}; };
-            const float h = kSpriteSize * 0.5f;
-            r.spriteQuad(sp.tex, {at(-h, -h), at(h, -h), at(h, h), at(-h, h)}, sp.uv);
+            if (const auto m = replay_.motion(v.id)) turnedMini(v, gridPoint(m->at), turnsToHeading(rules, s, v) ? m->angle : 0.0);
         }
     } else {
         std::map<std::tuple<float, float, float, float, double>, std::vector<const game::Vehicle*>> gliding;
         for (const game::Vehicle& v : s.vehicles) {
             if (v.location.system != shown_ || !knownVehicle(ui, v)) continue;
-            if (const ShipGlides::Glide* g = glides_.find(v.id, now)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
+            if (const ShipGlides::Glide* g = glides_.find(v.id)) gliding[{g->from.x, g->from.y, g->to.x, g->to.y, g->start}].push_back(&v);  // a fleet glides as one
         }
         for (auto& [key, list] : gliding) {
             largestFirst(list);
-            const Vec2 at = gridPoint(ShipGlides::position(*glides_.find(list.front()->id, now), now));
-            if (!spriteAt(miniOf(*list.front(), headingOf(*list.front())), at - Vec2{kSpriteSize * 0.5f, kSpriteSize * 0.5f})) placeholder(at, list.front()->owner);
+            const ShipGlides::Glide& g = *glides_.find(list.front()->id);
+            turnedMini(*list.front(), gridPoint(ShipGlides::position(g)), turnsToHeading(rules, s, *list.front()) ? ShipGlides::angle(g) : 0.0);
         }
     }
 

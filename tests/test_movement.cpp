@@ -4110,3 +4110,53 @@ TEST_CASE("first contact: a ship's Decloak order and a cloak lost at the supply 
         CHECK(c.met());
     }
 }
+
+// ---- Headings and the movement steps (spec 06 §2.4, §7 Q62) ---------------------------------------
+
+TEST_CASE("movement: headings turn to each step's bearing within a system and survive a warp") {
+    using movement::headingFor;
+    const Sector c{5, 5};
+    CHECK(headingFor(c, c) == 0);
+    CHECK(headingFor(c, {5, 4}) == 0);
+    CHECK(headingFor(c, {6, 4}) == 1);
+    CHECK(headingFor(c, {6, 5}) == 2);
+    CHECK(headingFor(c, {6, 6}) == 3);
+    CHECK(headingFor(c, {5, 6}) == 4);
+    CHECK(headingFor(c, {4, 6}) == 5);
+    CHECK(headingFor(c, {4, 5}) == 6);
+    CHECK(headingFor(c, {4, 4}) == 7);
+    CHECK(headingFor({0, 0}, {3, 1}) == 2);   // 108° rounds to 90°
+    CHECK(headingFor({0, 0}, {2, 1}) == 3);   // 117° rounds to 135°
+    CHECK(headingFor({0, 3}, {1, 0}) == 0);   // 18° rounds to up
+
+    World w;
+    const SystemId a = w.system("A"), b = w.system("B", 10, 0);
+    const auto [ab, ba] = w.link(a, {12, 6}, b, {0, 6});
+    (void)ba;
+    w.exploreAll(kA);
+    const VehicleId ship = w.spawn(w.ship(kA, "Pilgrim", 6), at(a, 9, 9));
+    fuel(w, ship);
+    CHECK(w.v(ship).heading == 0);   // a new ship faces up
+    w.order(ship, moveTo(a, 12, 6));
+    w.order(ship, mk(OrderKind::Warp, {}, ab));
+    std::vector<MovementStep> steps;
+    TurnContext ctx{w.rules(), w.s, {}, {}, {}};
+    ctx.movementStep = [&](const MovementStep& st) { steps.push_back(st); };
+    movement::startTurn(ctx);
+    movement::runMovementAndCombat(ctx, {});
+    REQUIRE(w.v(ship).location.system == b);
+    // Three steps up and to the right (heading 1), then the jump, which keeps it.
+    CHECK(w.v(ship).heading == 1);
+    // Every step is reported once, in order, with its day.
+    REQUIRE(steps.size() == 4);
+    CHECK(steps[0].from == at(a, 9, 9));
+    CHECK(steps[0].to == at(a, 10, 8));
+    CHECK(steps[3].from == at(a, 12, 6));
+    CHECK(steps[3].to.system == b);
+    for (size_t i = 1; i < steps.size(); ++i) CHECK(steps[i].day >= steps[i - 1].day);
+    // The heading is saved with the game.
+    const auto bytes = serializeState(w.s);
+    const auto back = deserializeState(bytes);
+    REQUIRE(back.has_value());
+    CHECK(back->vehicle(ship)->heading == 1);
+}

@@ -148,6 +148,7 @@ private:
     std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
     std::optional<game::SystemId> replayShownBefore_;
     std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn
+    std::map<game::VehicleId, int> beforeTurnHeadings_;     // and the headings then
     uint32_t beforeTurnFor_ = UINT32_MAX;
     uint32_t seenTurn_ = UINT32_MAX;
     double trackedAt_ = -1.0;

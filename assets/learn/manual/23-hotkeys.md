@@ -67,7 +67,10 @@ The `Ctrl` and `Alt` number keys cannot be changed.
 
 ## Movement log
 
-In simultaneous games the main window can replay the last turn's movement.
+In simultaneous games the main window can replay the last turn's movement. With *animate ship
+movement in the system window* on, each ship's every step in the shown system is played on its
+own, one after another, the ships starting the way they faced when the turn began. While a day's
+moves are being played, these keys are ignored.
 
 | Action | Key |
 |---|---|

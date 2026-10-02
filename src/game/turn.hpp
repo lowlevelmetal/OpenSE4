@@ -110,6 +110,14 @@ bool simultaneousBattlesShown(const Rules& r);
 // go into GameState; mood events that no happiness update used this turn
 // move to GameState::pendingMood at the end of the turn and come back at the
 // start of the next.
+// One step of one vehicle in the simultaneous movement phase: within a
+// system, or through a warp point to another (TurnContext::movementStep).
+struct MovementStep {
+    int day = 0;
+    VehicleId vehicle;
+    Location from, to;
+};
+
 struct TurnContext {
     const Rules& rules;
     GameState& state;
@@ -135,6 +143,11 @@ struct TurnContext {
     // state as that day left it (TurnOptions::movementDay; the client's
     // movement log replay, docs/spec/06 §7 Q51). Observes only.
     std::function<void(int day, const GameState&)> movementDay;
+    // Simultaneous games: called for each vehicle's every step (within a
+    // system, or through a warp point) as movement makes it, members in their
+    // group's order (TurnOptions::movementStep; the replay's one entry per
+    // vehicle and step, docs/spec/06 §7 Q62). Observes only.
+    std::function<void(const MovementStep&)> movementStep;
 
     void mood(EmpireId e, std::string trigger, SystemId sys = {}, ObjectId planet = {}, int count = 1) {
         moodEvents.push_back({e, std::move(trigger), sys, planet, count});
@@ -154,6 +167,8 @@ struct TurnOptions {
     const std::vector<BattleAnswer>* battles = nullptr;
     // Simultaneous games: an observer of each movement day (TurnContext::movementDay).
     std::function<void(int day, const GameState&)> movementDay;
+    // Simultaneous games: an observer of each step (TurnContext::movementStep).
+    std::function<void(const MovementStep&)> movementStep;
 };
 
 struct TurnResult {

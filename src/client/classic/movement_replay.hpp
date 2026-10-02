@@ -7,15 +7,18 @@
 // moving objects in turn, the view following it).
 //
 // The log: in a local or hotseat game the client keeps the state the turn
-// started from and plays the turn again from it, recording each day as the
-// engine leaves it (ClassicSession::replayLastTurn, MovementRecorder): the
-// same moves, warp jumps, colonies founded and objects removed as the turn
-// had. A network or PBEM client has only its own view, so it rebuilds a log
-// from where it saw every vehicle before and after the turn (approximateLog;
-// inferred). Headless, tested in tests/test_main_window.cpp.
+// started from and plays the turn again from it, recording every step of
+// every vehicle as movement makes it, in that order (one entry per vehicle
+// and step, §7 Q62), and each day as the engine leaves it
+// (ClassicSession::replayLastTurn, MovementRecorder): the same moves, warp
+// jumps, colonies founded and objects removed as the turn had. A network or
+// PBEM client has only its own view, so it rebuilds a log from where it saw
+// every vehicle before and after the turn (approximateLog; inferred).
+// Headless, tested in tests/test_main_window.cpp.
 
 #include "core/math.hpp"
 #include "game/state.hpp"
+#include "game/turn.hpp"
 
 #include <functional>
 #include <map>
@@ -28,6 +31,7 @@ namespace opense4::client::classic {
 
 struct MovementLog {
     static constexpr int kDays = 30;
+    // One entry per vehicle and step, in the order movement made them.
     struct Move {
         game::VehicleId id;
         game::Location from, to;   // another system: a warp jump
@@ -42,7 +46,7 @@ struct MovementLog {
 
     uint32_t turn = UINT32_MAX;   // the game turn the log leads to
     bool exact = false;           // played again from the turn's start (else rebuilt from the client's view)
-    std::map<game::VehicleId, game::Vehicle> vehicles;   // every vehicle it mentions, as first seen
+    std::map<game::VehicleId, game::Vehicle> vehicles;   // every vehicle it mentions, as first seen (its heading at day 0 included)
     std::map<game::VehicleId, game::Location> start;     // their places at day 0
     std::map<game::ObjectId, game::EmpireId> startColonies;
     std::vector<Day> days;        // days 1..30
@@ -51,10 +55,16 @@ struct MovementLog {
     std::vector<game::VehicleId> movers(game::EmpireId owner) const;
 };
 
-// Records a log from the start state and the state after each day.
+// Records a log from the start state, each step as movement makes it and the
+// state after each day.
 class MovementRecorder {
 public:
     explicit MovementRecorder(const game::GameState& start);
+    // A step of one vehicle (TurnContext::movementStep): the day's next entry.
+    void step(const game::MovementStep& st);
+    // The state after a day: vehicles that appeared or were removed, colonies
+    // founded, taken or lost; a vehicle found elsewhere without a step gets a
+    // move (inferred).
     void day(int day, const game::GameState& s);
     MovementLog take(uint32_t turn);
 
@@ -69,16 +79,24 @@ private:
 // along a straight line, the steps spread evenly over the 30 days; a vehicle
 // now in another system jumps there on day 15; one no longer seen is removed
 // after day 30 (inferred).
+// `headingsBefore`: the headings seen before the turn (otherwise the current one).
 MovementLog approximateLog(const std::map<game::VehicleId, game::Location>& before, const game::GameState& now,
-                           const std::set<game::VehicleId>& seenNow, uint32_t turn);
+                           const std::set<game::VehicleId>& seenNow, uint32_t turn,
+                           const std::map<game::VehicleId, int>& headingsBefore = {});
 
 class MovementReplay {
 public:
     static constexpr int kDays = MovementLog::kDays;
-    // The animation of a move in the shown system: the sprite turns 5° per
-    // 10 ms, then slides 1 px per millisecond (§7 Q51).
-    static constexpr double kSecondsPerTurnStep = 0.010;
-    static constexpr double kSecondsPerPixel = 0.001;
+    // The animation of an entry in the shown system (§7 Q62, confirmed:
+    // binary), counted in frames: the mini first turns the shorter way
+    // (clockwise for a half-turn) 5° a frame, 9 frames per 45°, with 10 ms
+    // after each, then slides 1 px a frame along the longer axis, 36 frames a
+    // sector at 800x600 and 50 at 1024x768, with 1 ms after each. Every frame
+    // stays at least one display refresh (an OpenSE4 choice, close to the
+    // original's pace on current Windows).
+    static constexpr int kDegreesPerTurnFrame = 5;
+    static constexpr double kSecondsAfterTurnFrame = 0.010;
+    static constexpr double kSecondsAfterSlideFrame = 0.001;
 
     void setLog(std::shared_ptr<const MovementLog> log);
     const MovementLog* log() const { return log_.get(); }
@@ -88,7 +106,8 @@ public:
     // Ctrl+P: from the start, the 30 days in one go.
     void play();
     // Ctrl+I: the first press shows Day 0; each later press applies one more
-    // day; the press after day 30 ends the replay.
+    // day; the press after day 30 ends the replay. A press while a day's
+    // entries are animated is ignored (§7 Q62).
     void step();
     // Ctrl+O: back to Day 0, waiting for steps.
     void rewind();
@@ -108,36 +127,40 @@ public:
     void update(const Frame& f);
 
     bool active() const { return mode_ != Mode::Off; }
+    // A day's entries are being animated: the replay's keys are ignored (§7 Q62).
+    bool animating() const { return animIndex_ < anims_.size(); }
     int day() const { return day_; }
     // Ctrl+U: the object the view follows now.
     std::optional<game::VehicleId> following() const;
 
     // The vehicles at this point of the replay, at their places.
     const std::vector<game::Vehicle>& vehicles() const { return view_; }
-    // A vehicle being animated: where it is drawn (in sector units: a
-    // square's centre is (x + 0.5, y + 0.5)) and its angle (degrees clockwise from up).
+    // A vehicle whose entry is animated now or later this day: where it is
+    // drawn (in sector units: a square's centre is (x + 0.5, y + 0.5)) and its
+    // angle (degrees clockwise from up).
     struct Motion {
         Vec2 at;
         double angle = 0.0;
     };
-    std::optional<Motion> motion(game::VehicleId v, double now) const;
-    // The heading (0..7) of a turning mini at this point of the replay.
+    std::optional<Motion> motion(game::VehicleId v) const;
+    // The heading (0..7) of a turning mini at this point of the replay: at Day
+    // 0 the one the vehicle had when the turn began (§7 Q62).
     int heading(game::VehicleId v) const;
     // The owner of a planet's colony at this point (none: not a colony then).
     std::optional<game::EmpireId> colonyOwner(game::ObjectId planet) const;
 
 private:
     enum class Mode { Off, Stepping, Playing, Following };
+    // One entry, animated on its own (a fleet's members one after another).
     struct Animation {
-        std::vector<game::VehicleId> ids;   // a fleet moves as one
+        game::VehicleId id;
         game::Location from, to;
-        double angle0 = 0.0, angle1 = 0.0;  // degrees, the shorter way round
-        double turnTime = 0.0, slideTime = 0.0;
+        double angle0 = 0.0, angle1 = 0.0;  // degrees, the shorter way round (clockwise for a half-turn)
+        int turnFrames = 0, slideFrames = 0;
     };
     void reset();
     void applyDay(const Frame& f);
     void rebuildView();
-    bool animating() const { return animIndex_ < anims_.size(); }
 
     std::shared_ptr<const MovementLog> log_;
     Mode mode_ = Mode::Off;
@@ -149,8 +172,9 @@ private:
     std::map<game::ObjectId, game::EmpireId> colonies_;
     std::vector<Animation> anims_;
     size_t animIndex_ = 0;
-    double animStart_ = 0.0;
-    bool started_ = false;   // the animation clock is set
+    int frame_ = 0;               // frames of the current entry shown so far
+    double lastFrameAt_ = 0.0;    // when its last frame was shown
+    bool started_ = false;        // the current entry's first frame is shown
     int pending_ = 0;        // step presses not yet carried out
     std::vector<game::Vehicle> view_;
 };

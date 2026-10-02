@@ -168,6 +168,7 @@ public:
 
     void run() {
         for (int day = 1; day <= kDaysPerTurn; ++day) {
+            day_ = day;
             newDay();
             const std::vector<ObjectRef> order = refreshObjectOrder();
             for (const ObjectRef& ref : order) {
@@ -920,6 +921,11 @@ private:
             // The sector it leaves, for combat's attackers and start boxes (spec 04 §3).
             v->cameFrom = v->location;
             v->cameFromTurn = s_.turn;
+            // A step within a system turns the vehicle to its bearing; a warp
+            // keeps its heading (spec 06 §2.4, §7 Q62).
+            if (!via.valid() && v->location.system == next.system)
+                v->heading = static_cast<uint8_t>(headingFor(v->location.sector, next.sector));
+            if (ctx_.movementStep && !live_) ctx_.movementStep(MovementStep{day_, id, v->location, next});
             v->location = next;
             fleetMemberMoved(s_, *v);  // the fleet's location goes with it (spec 03 §9)
             v->movement = std::max(0, v->movement - 1);
@@ -1813,6 +1819,7 @@ private:
     std::vector<Entry> entered_;                        // steps made today
     std::map<Location, BattleMemo> lastBattle_;         // the latest battle per location this phase
     bool checkHere_ = false;                            // turn-based: the last action's Attack or Seek runs a battle check
+    int day_ = 0;                                       // simultaneous games: the movement day being played
     // Turn-based: a Move To whose lists the Ship Orders options emptied after
     // a warp transit; it goes on stepping in this run only (spec 03 §6.4, §19 Q77).
     std::optional<Order> carried_;
@@ -1832,6 +1839,22 @@ Sector stepToward(Sector at, Sector target, int64_t steps) {
 
 std::vector<int> actionDays(int speed, DayCounterMode mode) {
     return mode == DayCounterMode::Exact ? daysActed<DayCounterMode::Exact>(speed) : daysActed<DayCounterMode::Double>(speed);
+}
+
+int headingFor(Sector from, Sector to) {
+    const int dx = to.x - from.x, dy = to.y - from.y;
+    if (dx == 0 && dy == 0) return 0;
+    const int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    const int major = std::max(ax, ay), minor = std::min(ax, ay);
+    // Along the major axis when minor / major < tan 22.5° = √2 − 1, that is
+    // (minor + major)² < 2 · major²; never a tie with whole squares.
+    const bool straight = (minor + major) * (minor + major) < 2 * major * major;
+    if (straight) {
+        if (ay >= ax) return dy < 0 ? 0 : 4;
+        return dx > 0 ? 2 : 6;
+    }
+    if (dx > 0) return dy < 0 ? 1 : 3;
+    return dy > 0 ? 5 : 7;
 }
 
 int movesPerTurn(const GameState& s, int speed) {
