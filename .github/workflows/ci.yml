@@ -1,5 +1,5 @@
-# Builds and tests OpenSE4 on Linux and Windows (docs/BUILDING.md, "Continuous
-# integration"). Nothing here needs the original game: the tests that read an
+# Builds and tests OpenSE4 on Linux, macOS and Windows (docs/BUILDING.md,
+# "Continuous integration"). Nothing here needs the original game: the tests that read an
 # installed copy are opt-in (OPENSE4_CLASSIC_DATA) and stay off.
 #
 # Third-party actions are pinned to a full commit SHA; the comment names the tag.
@@ -100,10 +100,80 @@ jobs:
           build/${{ matrix.preset }}/opense4 --help > /dev/null
           build/${{ matrix.preset }}/opense4-server --help > /dev/null
 
+  macos:
+    name: macOS / Apple Clang debug
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Apple Clang and libc++ come with Xcode, CMake with the image; SDL3, glslc
+      # and the Vulkan headers from Homebrew (docs/BUILDING.md, "macOS").
+      - name: Install the build dependencies
+        run: |
+          brew install ninja sdl3 shaderc vulkan-headers
+          sw_vers
+          cmake --version | head -1
+          c++ --version | head -1
+
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        with:
+          key: macos-debug
+          max-size: 1G
+          evict-old-files: job
+
+      - name: Restore the FetchContent sources
+        id: deps
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .deps
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -DDIR=.deps -P .github/scripts/fetchcontent_cache.cmake
+          cmake --preset debug -C .deps/sources.cmake \
+            -DOPENSE4_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Keep the FetchContent sources for the next run
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: cmake -DDIR=.deps -DBUILD=build/debug -P .github/scripts/fetchcontent_cache.cmake
+
+      - name: Build
+        run: cmake --build --preset debug -- -k 0
+
+      - name: Unit tests
+        run: .github/scripts/run_tests_parallel.sh build/debug/tests/opense4_tests "$(sysctl -n hw.ncpu)"
+
+      - name: Start the programs
+        run: |
+          build/debug/opense4 --help > /dev/null
+          build/debug/opense4-server --help > /dev/null
+
   windows-msvc:
-    name: Windows / MSVC release
-    runs-on: windows-2022 # Visual Studio 2022
-    timeout-minutes: 45
+    name: Windows / MSVC release (${{ matrix.name }})
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: VS 2022
+            image: windows-2022
+            vs: '[17.0,18.0)'
+            ccache: windows-msvc-release
+          - name: VS 2026
+            image: windows-2025
+            vs: '[18.0,19.0)'
+            ccache: windows-msvc2026-release
     defaults:
       run:
         shell: pwsh
@@ -130,8 +200,9 @@ jobs:
       - name: Set up the MSVC x64 environment
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vs) { throw 'No Visual Studio with the C++ tools found' }
+          $vs = & $vswhere -latest -products * -version '${{ matrix.vs }}' `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'No ${{ matrix.name }} with the C++ tools found' }
           $before = @{}
           Get-ChildItem env: | ForEach-Object { $before[$_.Name] = $_.Value }
           cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" > nul && set" | ForEach-Object {
@@ -144,7 +215,7 @@ jobs:
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
-          key: windows-msvc-release
+          key: ${{ matrix.ccache }}
           max-size: 1G
           evict-old-files: job
 
