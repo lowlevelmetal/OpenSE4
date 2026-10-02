@@ -103,7 +103,8 @@ struct RowStyle {
 RowClick row(UiContext& ui, int id, const Sprite& picture, std::string_view title, std::string_view detail, const RowStyle& style = {});
 
 // The right-hand button column's step buttons; returns true when changed.
-bool stepButtons(Dialog& d, Step& step);
+// `hundred`: with Move Hundred (the Transfer Cargo window).
+bool stepButtons(Dialog& d, Step& step, bool hundred = false);
 
 // ---- Mini galaxy map ------------------------------------------------------------------------
 

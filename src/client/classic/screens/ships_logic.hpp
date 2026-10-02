@@ -46,9 +46,10 @@ game::cmd::SetOrders withImmediate(const game::GameState& s, OrderOwner o, const
 // Moves an order up (delta < 0) or down; returns its new index.
 size_t moveOrder(std::vector<game::Order>& orders, size_t index, int delta);
 
-// ---- Transfer steps (Move One / Five / Ten / All) -------------------------------------------
+// ---- Transfer steps (Move One / Five / Ten / Hundred / All) ---------------------------------
 
-enum class Step { One, Five, Ten, All };
+// Move Hundred is the Transfer Cargo window's (spec 06 §1.3, §7 Q80).
+enum class Step { One, Five, Ten, Hundred, All };
 int64_t stepAmount(Step step, int64_t available);
 const char* stepLabel(Step step);
 

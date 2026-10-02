@@ -93,7 +93,7 @@ not in a fleet (**Vehicles in sector**) and the fleets there (**Fleets in sector
 marked). `Create Fleet` asks for a name and makes a new fleet with your ship; then **click** ships
 to add them, and click members to take them out. `Formation` and `Strategy` choose the fleet's
 combat settings. `Add All`, `Remove All`, `Disband Fleet` and `Rename Fleet` do what they say, and
-`Existing Fleets` lists all your fleets in the Ships and Units window.
+`Existing Fleets` opens the Ships and Units window, with the tab and the Show switches you left it with, to look at your fleets; clicking a row there does nothing.
 
 A ship can also leave its fleet without you: when it is captured or given away, or when an event
 or an enemy agent sends it somewhere else.

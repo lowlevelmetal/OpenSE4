@@ -72,13 +72,19 @@ std::string ordersCell(const UiContext& ui, OrderOwner owner, game::DesignId des
 
 class ShipsScreen final : public Screen {
 public:
-    explicit ShipsScreen(const ScreenArgs& args) {
-        if (args.text == "fleets") ships_ = units_ = false;
-    }
+    // Opened with kViewOnly (Fleet Transfer's Existing Fleets, spec 06 §7
+    // Q79) the window is for viewing only: a left-click on a row does nothing.
+    explicit ShipsScreen(const ScreenArgs& args) : viewOnly_(args.text == kViewOnly) {}
 
     bool draw(UiContext& ui) override {
         Dialog d(ui, screenTitle(ScreenId::Ships), DialogSize::Tall);
         if (!d.open()) return d.keepOpen();
+        // The tab and the three switches are kept with the empire (spec 06 §7 Q79).
+        const game::InterfaceOptions kept = ui.options();
+        tab_ = static_cast<ShipsTab>(std::min<int>(kept.shipsTab, int(ShipsTab::Maintenance)));
+        ships_ = (kept.shipsShown & 1) != 0;
+        units_ = (kept.shipsShown & 2) != 0;
+        fleets_ = (kept.shipsShown & 4) != 0;
         refresh(ui);
 
         d.beginContent();
@@ -100,6 +106,10 @@ public:
         if (d.check("Show Ships", ships_)) ships_ = !ships_;
         if (d.check("Show Units", units_)) units_ = !units_;
         if (d.check("Show Fleets", fleets_)) fleets_ = !fleets_;
+        game::InterfaceOptions now = kept;
+        now.shipsTab = static_cast<uint8_t>(tab_);
+        now.shipsShown = static_cast<uint8_t>((ships_ ? 1 : 0) | (units_ ? 2 : 0) | (fleets_ ? 4 : 0));
+        if (!(now == kept)) ui.setOptions(now);
         if (d.close()) return false;
         report_.draw(ui);
         if (selected_) {
@@ -366,7 +376,7 @@ private:
                 };
                 cell(1, row.name);
                 for (size_t c = 0; c < row.cells.size(); ++c) cell(static_cast<int>(c) + 2, row.cells[c].text);
-                if (left) {
+                if (left && !viewOnly_) {
                     if (row.vehicle.valid()) selected_ = row.vehicle;
                     else if (const game::Fleet* f = ui.state().fleet(row.fleet); f && !f->members.empty())
                         selected_ = f->leader.valid() ? f->leader : f->members.front();
@@ -393,6 +403,7 @@ private:
         std::vector<game::SystemId> present;
     };
 
+    bool viewOnly_ = false;
     ShipsTab tab_ = ShipsTab::General;
     bool ships_ = true, units_ = true, fleets_ = true;
     uint64_t cacheKey_ = 0;

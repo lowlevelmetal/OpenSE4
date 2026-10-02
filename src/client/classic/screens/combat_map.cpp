@@ -425,14 +425,18 @@ ImU32 sideNumberColor(int side) {
     return dark ? IM_COL32_WHITE : IM_COL32_BLACK;
 }
 
+// A plain filled box with no outline, the number centred both ways in the
+// text font the window is drawing with (spec 06 §7 Q82, confirmed: binary).
+// OpenSE4 keeps the number within the box's height (inferred).
 void drawSideBox(UiContext& ui, ImDrawList* dl, ImVec2 min, ImVec2 max, int side) {
+    (void)ui;
     dl->AddRectFilled(min, max, sideBoxColor(side));
-    dl->AddRect(min, max, IM_COL32(0, 0, 0, 255));
     const std::string number = std::to_string(side);
-    ImFont* font = ui.fonts.bold ? ui.fonts.bold : ImGui::GetFont();
-    const float size = std::min(max.y - min.y - 2.0f, std::max(ui.px(11), 8.0f));
+    ImFont* font = ImGui::GetFont();
+    const float size = std::min(ImGui::GetFontSize(), max.y - min.y);
     const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, number.c_str());
-    dl->AddText(font, size, {(min.x + max.x - ts.x) * 0.5f, (min.y + max.y - ts.y) * 0.5f}, sideNumberColor(side), number.c_str());
+    dl->AddText(font, size, {std::floor((min.x + max.x - ts.x) * 0.5f), std::floor((min.y + max.y - ts.y) * 0.5f)}, sideNumberColor(side),
+                number.c_str());
 }
 
 void sideBox(UiContext& ui, int side, Vec2 size) {

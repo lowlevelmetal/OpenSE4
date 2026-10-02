@@ -120,6 +120,7 @@ int64_t stepAmount(Step step, int64_t available) {
         case Step::One: return 1;
         case Step::Five: return std::min<int64_t>(5, available);
         case Step::Ten: return std::min<int64_t>(10, available);
+        case Step::Hundred: return std::min<int64_t>(100, available);
         case Step::All: return available;
     }
     return 0;
@@ -130,6 +131,7 @@ const char* stepLabel(Step step) {
         case Step::One: return "Move One";
         case Step::Five: return "Move Five";
         case Step::Ten: return "Move Ten";
+        case Step::Hundred: return "Move Hundred";
         case Step::All: return "Move All";
     }
     return "";

@@ -320,7 +320,7 @@ Besides `all = [...]`, `any = [...]` and `not = {...}`:
 | `order` | an order kind | since: the player gave a ship, fleet or planet an order of that kind |
 | `design_components` | N | the Create Design window is open and its design has N components |
 | `design_hull_chosen` | true or false | the Create Design window is open and the player picked a hull in its Size list (`false`: has not yet) |
-| `simulator_owners` | N | the Combat Simulator is open and N races ("Owner For Item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
+| `simulator_owners` | N | the Combat Simulator is open and N races ("Owner for item") have items in the battle (an unowned object is a neutral obstacle and counts for none) |
 | `simulator_items` | N | the Combat Simulator is open and the battle has N items |
 | `option` | an option (below) | that setting of the empire is on; write `not = { option = "..." }` for off |
 | `treaty` | a treaty kind (below) | the empire holds that treaty with another empire it has met that is still alive (`war`: is at war with one; `subjugation` and `protectorate` hold for either side) |
@@ -468,7 +468,7 @@ the Weapons Report.
 | `create-design:on-design`, `create-design:components` | the components on the design, those that can be added |
 | `create-design:warnings`, `create-design:save` | the problems box, Create Design (Save Design when editing) |
 | `fleet-transfer:ships`, `fleet-transfer:fleets`, `fleet-transfer:create-fleet` | Fleet Transfer: the ships outside fleets, the fleets, Create Fleet |
-| `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list, the Items list (a click adds the item for the chosen race), the Owner For Item list (Race 1 to Race 10) |
+| `combat-simulator:vehicles`, `combat-simulator:items`, `combat-simulator:owners` | Combat Simulator: the Combat Vehicles list, the Items to choose list (a click adds the item for the chosen race), the Owner for item list (Race 1 to Race 10) |
 | `combat-simulator:strategies`, `combat-simulator:begin` | its Strategies and Begin buttons (its Tactical and Strategic tabs: `combat-simulator:tactical`, `combat-simulator:strategic`) |
 | `tactical-combat:map`, `tactical-combat:piece`, `tactical-combat:target` | Tactical Combat: the battle map, the selected piece's panel, the target's panel |
 | `tactical-combat:weapons` | the selected piece's weapon list (a click switches a weapon on or off) |

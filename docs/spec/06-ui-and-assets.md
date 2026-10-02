@@ -2921,13 +2921,14 @@ filled what those answers left open; on 2026-10-01 each was settled from the exe
     Fleet Transfer and Cargo Transfer; a counter per side and design; Designs stays open.
     Since 2026-10-01 our client follows each point. The numbered boxes stand for the
     sides in the Owner for item and Computer Control lists, in the Tactical and
-    Strategic Combat windows of a simulation and in the reports opened from them. It
-    still differs in the simulator window itself (`screens/simulator.cpp`): `vehicles()`
-    draws the copied empire's flag (`sideStyle()`) and one line "name xN (Race k)" or
-    "(neutral)" where the original draws the side's box and the name with its Cargo or
-    Units and Fleet lines; `owners()` and `computerPopup()` draw an 18×14 box at x 22
-    instead of the 26×18 box; the Computer Control popup is titled "Player Computer
-    Control"; the Items heading reads "Items"; and the two hints are missing. Each ship item takes its side's next numbers when it is added
+    Strategic Combat windows of a simulation and in the reports opened from them, and
+    since the third pass of 2026-10-01 in the simulator window itself
+    (`screens/simulator.cpp`): the Combat Vehicles list draws the side's 26×18 box and the
+    name with its Cargo or Units and Fleet lines (`SimulatorRow::cargo`, `fleet`), the
+    Owner for item and Computer Control lists the 26×18 boxes, the popup is titled
+    "Empires Under Computer Control", the headings read "Items to choose" and "Owner for
+    item", and the two hints are right-aligned under the lists. A colonized planet's
+    picture there has no population bars (our client draws them nowhere yet). Each ship item takes its side's next numbers when it is added
     (game::combat::simulatorNumberShips). Fleets For Plr and Change Cargo open the real
     Fleet Transfer and Cargo Transfer windows over a sandbox of the setup, and the setup
     takes back the fleets or the cargo when the window closes; the real game never
@@ -3766,10 +3767,11 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     simulator, Fleet Transfer itself lists the chosen side's ships and bases from the
     setup (not its unit groups or planets) and that side's copied fleets.
 
-    Our client differs (`screens/fleet_transfer.cpp`): it hides the button over the
-    sandbox (`!sandbox_`), and in the real game it opens Ships\Units with only Show
-    Fleets on. The button must appear in both cases and open the real game's Ships\Units
-    with its saved switches, in a mode where a left-click does nothing.
+    Since 2026-10-01 our client follows this (`screens/fleet_transfer.cpp`,
+    `screens/ships.cpp`): the button is there in both cases and opens the real game's
+    Ships\Units window (`kViewOnly`) with the tab and the three switches kept with the
+    empire (`InterfaceOptions::shipsTab`, `shipsShown`, saved with the game), where a
+    left-click does nothing.
 80. **Change Cargo.** Ours lists every vehicle and colony of the setup in one Cargo
     Transfer window by giving them all to the chosen side in the sandbox; the deferred
     Load and Drop Cargo orders are hidden; population moved onto a ship is not kept; and
@@ -3797,14 +3799,13 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     - **What stays:** everything moved stays with the setup's objects; population moved
       onto a ship stays aboard and fights in the battle.
 
-    Our client differs: `simulatorSandbox()` (`combat_logic.cpp`) gives every holder to
-    the chosen side in one shared list and takes units only from sample colonies' stores;
-    `simulatorTakeBack()` keeps units only, so population moved onto a ship is dropped;
-    and `cargo_transfer.cpp` shows "Load Cargo Order" and "Drop Cargo Order" in the real
-    game, which the original's window never has (it hides them over the sandbox). The
-    holders must be listed as above against a Storehouse built as above, population on
-    ships kept, and the two order buttons removed in every mode. Its Move steps must add
-    Move Hundred.
+    Since 2026-10-01 our client follows this (`combat_logic.cpp` `simulatorSandbox()`,
+    `simulatorTakeBack()`; `screens/cargo_transfer.cpp`): the window is titled "Transfer
+    Cargo" with Move One, Five, Ten, Hundred and All and no order buttons in every mode;
+    over the simulator's sandbox the left list holds the Combat Vehicles list's rows and
+    the right list the Storehouse built as above; people moved onto a ship are kept
+    (`SimulatorItem::people`) and fight. In the sandbox side 1 plays every holder, which
+    stands for "no owner is checked".
 81. **Ship numbers of items without one.** An item put in the setup without a number
     (a sample setup made by the program) takes the next numbers of its side, in item
     order, after the side's counter and every number already given.
@@ -3820,6 +3821,6 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     The box is a plain filled rectangle with no outline, 26×18 where a large flag would
     stand and 14×10 where a small one would, the number centred both ways in whatever
     text font the window is drawing with.
-    Our client differs only in `drawSideBox()` (`screens/combat_map.cpp`): it adds a 1 px
-    black outline and always uses the bold font; both must go. (An out-of-range side is
-    black in the original and grey in ours; that case never arises.)
+    Since 2026-10-01 `drawSideBox()` (`screens/combat_map.cpp`) draws no outline and uses
+    the window's text font, kept within the box's height (inferred). (An out-of-range side
+    is black in the original and grey in ours; that case never arises.)

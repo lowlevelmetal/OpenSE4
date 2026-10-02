@@ -65,6 +65,9 @@ TEST_CASE("ship windows: moving orders and transfer steps") {
     CHECK(shipui::stepAmount(Step::Five, 3) == 3);
     CHECK(shipui::stepAmount(Step::Ten, 40) == 10);
     CHECK(shipui::stepAmount(Step::All, 40) == 40);
+    CHECK(shipui::stepAmount(Step::Hundred, 400) == 100);   // the Transfer Cargo window's Move Hundred
+    CHECK(shipui::stepAmount(Step::Hundred, 40) == 40);
+    CHECK(std::string(shipui::stepLabel(Step::Hundred)) == "Move Hundred");
     CHECK(shipui::stepAmount(Step::All, 0) == 0);
 }
 

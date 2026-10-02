@@ -247,6 +247,11 @@ struct InterfaceOptions {
     uint8_t queuesTab = 0;               // the Construction Queues window's tab (0 Rate)
     uint8_t queuesShown = 0x0f;          // its toggles: bit 0 Ships, 1 Planets, 2 Ship SY, 3 Planet SY
     bool simulatorNoObsolete = false;    // the Combat Simulator's No Obsolete
+    // The Ships\Units window's tab (0 General) and its Show Ships (bit 0), Show
+    // Units (bit 1) and Show Fleets (bit 2) switches, kept with the empire: Fleet
+    // Transfer's Existing Fleets opens the window with them (spec 06 §7 Q79).
+    uint8_t shipsTab = 0;
+    uint8_t shipsShown = 0x07;
     // The sort keys of the four list windows (spec 06 §7 Q24): five slots of
     // column numbers each, newest click first; a slot holds column + 1, 0 is
     // empty. All empty: the window's Name column alone (the default).

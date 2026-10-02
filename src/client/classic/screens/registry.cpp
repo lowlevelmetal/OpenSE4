@@ -53,7 +53,7 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::Strategies: return "Strategies";
         case ScreenId::RepairPriorities: return "Repair Priorities";
         case ScreenId::FleetTransfer: return "Fleet Transfer";
-        case ScreenId::CargoTransfer: return "Cargo Transfer";
+        case ScreenId::CargoTransfer: return "Transfer Cargo";
         case ScreenId::LaunchRecover: return "Launch \\ Recover Units";
         case ScreenId::Scrap: return "Scrap";
         case ScreenId::ViewOrders: return "View Orders";

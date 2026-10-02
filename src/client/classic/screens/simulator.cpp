@@ -10,7 +10,7 @@
 // a left-click adds one to the side picked below it (one ship, or one unit to
 // the side's group of that kind), a right-click opens its report. Bottom
 // right: the owner for new items. Sides show as numbered colour boxes, never
-// flags. With Tactical the simulator and Designs close while the battle is
+// flags (spec 06 §7 Q38). With Tactical the simulator and Designs close while the battle is
 // fought and open again afterwards with the same setup; with Strategic the
 // Strategic Combat window opens over it. Fleets For Plr and Change Cargo open
 // the Fleet Transfer and Cargo Transfer windows over a sandbox of the setup
@@ -160,7 +160,7 @@ public:
         owners(ui);
         reportSides(ui);
         if (!message_.empty()) {
-            ImGui::SetCursorScreenPos(ui.at(largeOrigin() + Vec2{17, 450}));
+            ImGui::SetCursorScreenPos(ui.at(largeOrigin() + Vec2{17, 461}));
             ImGui::TextColored(ImVec4(1, 0.72f, 0.45f, 1), "%s", message_.c_str());
         }
 
@@ -177,7 +177,7 @@ public:
         }
         if (d.button("Strategies")) ui.open(ScreenId::Strategies);
         ui.tagItem("combat-simulator:strategies");
-        if (d.button("Computer Control")) ImGui::OpenPopup("Player Computer Control##sim");
+        if (d.button("Computer Control")) ImGui::OpenPopup("Empires Under Computer Control##sim");
         if (d.button("Fleets For Plr")) openSandbox(ui, false);
         if (d.button("Change Cargo")) openSandbox(ui, true);
         const bool beginClicked = d.button("Begin");
@@ -211,24 +211,12 @@ private:
         return ui.art.shipMini(style, ui.rules().hull(d.hull));
     }
 
-    // The flag a side shows: that of the empire its first item belongs to (the
-    // empire it copies), else the player's (inferred).
-    std::string sideStyle(UiContext& ui, int side) const {
-        const game::GameState& s = ui.state();
-        for (const SimulatorItem& i : setup_.items) {
-            if (i.side != side) continue;
-            game::EmpireId owner;
-            if (i.kind == SimulatorItem::Kind::Design && i.design.valid() && i.design.index() < s.designs.size()) owner = s.design(i.design).owner;
-            else if (const game::Colony* c = i.kind == SimulatorItem::Kind::Planet ? s.colony(i.planet) : nullptr) owner = c->owner;
-            else continue;
-            if (owner.valid() && owner.index() < s.empires.size()) return s.empire(owner).race.style;
-        }
-        return ui.me().race.style;
-    }
-
-    // "Combat vehicles" at (17,75), 295x370: 36 px rows with flag, picture and
-    // name. What the original's Flag column draws was not traced (spec 04 §17,
-    // open): ours shows the flag of the empire the side copies.
+    // "Combat Vehicles" at (17,75), 295x370, 36 px rows (spec 06 §1.10.4, §7
+    // Q38): the Flag column with the side's 26x18 numbered box 5 px from its
+    // left and 9 px from the row's top (nothing for a neutral object), the
+    // item's picture, and the name with, in the small font, "Cargo:" or
+    // "Units:" at y 14 and "Fleet:" at y 24 (labels at x 8, values at x 44, a
+    // missing value "None" in grey). The hint goes right-aligned under it.
     void vehicles(UiContext& ui) {
         const game::GameState& s = ui.state();
         const Vec2 o = largeOrigin();
@@ -238,34 +226,49 @@ private:
         ImGui::BeginChild("##vehicles", ui.size({295, 370}), ImGuiChildFlags_Borders);
         const std::vector<SimulatorRow> rows = simulatorRows(ui.rules(), s, setup_);
         std::optional<size_t> remove;
+        ImFont* small = ui.fonts.small ? ui.fonts.small : ImGui::GetFont();
+        const float smallSize = ui.px(kSmallSize);
         for (size_t k = 0; k < rows.size(); ++k) {
             const SimulatorRow& r = rows[k];
             ImGui::PushID(int(k));
             const ImVec2 p = ImGui::GetCursorScreenPos();
             if (ImGui::Selectable("##row", false, 0, ImVec2(0, ui.px(36)))) remove = k;
             ImDrawList* dl = ImGui::GetWindowDrawList();
-            float x = p.x + ui.px(2);
-            if (r.side >= 0)
-                if (Sprite flag = ui.art.flag(sideStyle(ui, r.side), false)) {
-                    drawSprite(dl, flag, {x, p.y + ui.px(11)}, {x + ui.px(20), p.y + ui.px(25)});
-                }
-            x += ui.px(24);
+            float x = p.x;
+            if (r.side >= 0) drawSideBox(ui, dl, {x + ui.px(5), p.y + ui.px(9)}, {x + ui.px(31), p.y + ui.px(27)}, r.side + 1);
+            x += ui.px(36);
             Sprite pic = r.object.valid() && r.object.index() < s.galaxy.objects.size() ? objectSprite(ui, s.galaxy.object(r.object)) : designSprite(ui, r.design);
             if (pic) drawSprite(dl, pic, {x, p.y}, {x + ui.px(36), p.y + ui.px(36)});
             x += ui.px(40);
-            const std::string label = r.side < 0   ? std::format("{} (neutral)", r.name)
-                                      : r.units > 0 ? std::format("{} x{}  (Race {})", r.name, r.units, r.side + 1)
-                                                    : std::format("{}  (Race {})", r.name, r.side + 1);
-            dl->AddText({x, p.y + (ui.px(36) - ImGui::GetTextLineHeight()) * 0.5f}, IM_COL32_WHITE, label.c_str());
+            const std::string label = r.units > 0 ? std::format("{} x{}", r.name, r.units) : r.name;
+            dl->AddText({x, p.y + ui.px(1)}, IM_COL32_WHITE, label.c_str());
+            if (r.lines) {
+                auto line = [&](float y, const char* caption, const std::string& value) {
+                    dl->AddText(small, smallSize, {x + ui.px(8), p.y + ui.px(y)}, ImGui::GetColorU32(kLabelBlue), caption);
+                    const bool none = value.empty();
+                    dl->AddText(small, smallSize, {x + ui.px(44), p.y + ui.px(y)}, none ? IM_COL32(96, 96, 96, 255) : IM_COL32_WHITE,
+                                none ? "None" : value.c_str());
+                };
+                line(14, r.unitsLine ? "Units:" : "Cargo:", r.cargo);
+                line(24, "Fleet:", r.fleet);
+            }
             ImGui::PopID();
         }
-        if (rows.empty()) dimText("Click items on the right to add them to the chosen race; click a vehicle here to remove it.");
         ImGui::EndChild();
         ui.tagItem("combat-simulator:vehicles");
+        hint(ui, o + Vec2{17, 447}, 295, "(click combat vehicle to remove it)");
         if (remove) {
             simulatorRemove(setup_, rows[*remove]);
             message_.clear();
         }
+    }
+
+    // A hint right-aligned under a list.
+    static void hint(UiContext& ui, Vec2 at, float width, const char* text) {
+        const float w = ImGui::CalcTextSize(text).x;
+        const ImVec2 right = ui.at(at + Vec2{width, 0});
+        ImGui::SetCursorScreenPos(ImVec2(right.x - w, right.y));
+        dimText(text);
     }
 
     // "Items" at (322,75), 250x230: designs and home-system objects.
@@ -274,7 +277,7 @@ private:
         const game::EmpireId me = ui.session.player();
         const Vec2 o = largeOrigin();
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 58}));
-        ImGui::TextColored(kLabelBlue, "Items");
+        ImGui::TextColored(kLabelBlue, "Items to choose");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 75}));
         ImGui::BeginChild("##items", ui.size({250, 230}), ImGuiChildFlags_Borders);
         const bool noObsolete = ui.options().simulatorNoObsolete;
@@ -308,22 +311,25 @@ private:
         }
         ImGui::EndChild();
         ui.tagItem("combat-simulator:items");
+        hint(ui, o + Vec2{322, 307}, 250, "(click item to add to vehicles)");
     }
 
-    // "Owner for item" at (322,325), 250x120: Race 1 to Race 10, each with its
-    // numbered colour box, never a flag (spec 04 §17, spec 06 §1.10.4).
+    // "Owner for item" at (322,325), 250x120: Race 1 to Race 10 in 20 px rows,
+    // each with its numbered 26x18 colour box at x 80, y 1, never a flag
+    // (spec 04 §17, spec 06 §1.10.4, §7 Q38).
     void owners(UiContext& ui) {
         const Vec2 o = largeOrigin();
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 308}));
-        ImGui::TextColored(kLabelBlue, "Owner For Item");
+        ImGui::TextColored(kLabelBlue, "Owner for item");
         ImGui::SetCursorScreenPos(ui.at(o + Vec2{322, 325}));
         ImGui::BeginChild("##owners", ui.size({250, 120}), ImGuiChildFlags_Borders);
         for (int k = 0; k < int(setup_.sides.size()); ++k) {
             ImGui::PushID(k);
             bool on = current_ == k;
             const ImVec2 p = ImGui::GetCursorScreenPos();
-            if (lampToggle(ui, std::format("      {}", setup_.sides[size_t(k)].name).c_str(), &on) && on) current_ = k;
-            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(22), p.y + ui.px(1)}, {p.x + ui.px(40), p.y + ui.px(15)}, k + 1);
+            if (lampToggle(ui, setup_.sides[size_t(k)].name.c_str(), &on) && on) current_ = k;
+            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(80), p.y + ui.px(1)}, {p.x + ui.px(106), p.y + ui.px(19)}, k + 1);
+            ImGui::SetCursorScreenPos({p.x, p.y + ui.px(20)});
             ImGui::PopID();
         }
         ImGui::EndChild();
@@ -348,17 +354,24 @@ private:
         if (!simulatorAdd(ui.rules(), ui.state(), setup_, std::move(item))) message_ = "That is in the battle already.";
     }
 
-    // The Player Computer Control list for the ten sides.
+    // "Empires Under Computer Control" for the ten sides (spec 06 §1.10.4, §7
+    // Q38): a Pic column with the side's 26x18 box and a Name column "Race N";
+    // a lit lamp: the computer plays that race.
     void computerPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({300, 0}));
-        if (!ImGui::BeginPopupModal("Player Computer Control##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
-        ImGui::TextColored(kLabelBlue, "A lit lamp: the computer plays that race.");
+        if (!ImGui::BeginPopupModal("Empires Under Computer Control##sim", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
+            return;
+        ImGui::TextColored(kLabelBlue, "Pic");
+        ImGui::SameLine(ui.px(60));
+        ImGui::TextColored(kLabelBlue, "Name");
         for (size_t k = 0; k < setup_.sides.size(); ++k) {
             ImGui::PushID(int(k));
             bool on = setup_.sides[k].computer;
             const ImVec2 p = ImGui::GetCursorScreenPos();
-            if (lampToggle(ui, std::format("      {}", setup_.sides[k].name).c_str(), &on)) setup_.sides[k].computer = on;
-            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(22), p.y + ui.px(1)}, {p.x + ui.px(40), p.y + ui.px(15)}, int(k) + 1);
+            drawSideBox(ui, ImGui::GetWindowDrawList(), {p.x + ui.px(2), p.y + ui.px(1)}, {p.x + ui.px(28), p.y + ui.px(19)}, int(k) + 1);
+            ImGui::SetCursorScreenPos({p.x + ui.px(36), p.y});
+            if (lampToggle(ui, setup_.sides[k].name.c_str(), &on)) setup_.sides[k].computer = on;
+            ImGui::SetCursorScreenPos({p.x, p.y + ui.px(20)});
             ImGui::PopID();
         }
         if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) ImGui::CloseCurrentPopup();
@@ -453,8 +466,12 @@ bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>
     sub.learn = ui.learn;
     sub.lessonRunning = ui.lessonRunning;
     sub.drawing = ui.drawing;
-    // The window opens nothing of the real game from the sandbox.
-    sub.opener = [](ScreenId, ScreenArgs) {};
+    // The window opens nothing of the real game from the sandbox but Fleet
+    // Transfer's Existing Fleets: the real empire's Ships\Units window, for
+    // viewing only (spec 06 §7 Q79).
+    sub.opener = [&ui](ScreenId id, ScreenArgs args) {
+        if (id == ScreenId::Ships && args.text == kViewOnly) ui.open(id, std::move(args));
+    };
     const bool keep = draw(sub);
     for (UiTag& t : sub.tags) ui.tags.push_back(std::move(t));
     ui.windowTagged = ui.windowTagged || sub.windowTagged;
@@ -463,6 +480,11 @@ bool drawInSimulatorSandbox(UiContext& ui, const std::function<bool(UiContext&)>
 
 void simulatorSandboxClosed() {
     if (sandbox()) sandbox()->open = false;
+}
+
+const SimulatorSandbox* simulatorCargoSandbox() {
+    const std::optional<Sandbox>& box = sandbox();
+    return box && box->open && box->made.cargo ? &box->made : nullptr;
 }
 
 bool& designsClosedForSimulation() {

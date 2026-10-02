@@ -82,10 +82,12 @@ private:
             strategyPicker_.open("Strategy", std::move(items), static_cast<int>(fleet->strategy));
         }
         d.spacer();
-        // The real game's fleets list; not for the simulator's sandbox.
-        if (!sandbox_ && d.button("Existing Fleets")) {
+        // Existing Fleets, in the simulator as in the real game: the real
+        // empire's Ships\Units window with its saved switches and tab, for
+        // viewing only (spec 06 §1.10.4, §7 Q79).
+        if (d.button("Existing Fleets")) {
             ScreenArgs a;
-            a.text = "fleets";
+            a.text = kViewOnly;
             ui.open(ScreenId::Ships, a);
         }
         d.spacer();

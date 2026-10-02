@@ -270,10 +270,10 @@ RowClick row(UiContext& ui, int id, const Sprite& picture, std::string_view titl
     return out;
 }
 
-bool stepButtons(Dialog& d, Step& step) {
+bool stepButtons(Dialog& d, Step& step, bool hundred) {
     bool changed = false;
-    for (Step s : {Step::One, Step::Five, Step::Ten, Step::All})
-        if (d.tab(stepLabel(s), step == s)) {
+    for (Step s : {Step::One, Step::Five, Step::Ten, Step::Hundred, Step::All})
+        if ((hundred || s != Step::Hundred) && d.tab(stepLabel(s), step == s)) {
             changed = step != s;
             step = s;
         }

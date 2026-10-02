@@ -353,11 +353,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   surviving seeker impact, misses off-centre (`replay.cpp`, `screens/combat_map.cpp`).
 - **Combat Piece Report** (§1.10.1, §7 Q78): the 310×420 window with Close under the
   tabs; the Ability tab's sets (`screens/tactical.cpp`).
-- **Combat Simulator** (§1.10.4, §7 Q38, Q79, Q80, Q82): the side's box in the Combat
-  Vehicles list with its Cargo/Units and Fleet lines, 26×18 boxes, the window titles and
-  hints; Existing Fleets shown; Change Cargo against a Storehouse with population kept and
-  no order buttons; side boxes without outline (`screens/simulator.cpp`,
-  `fleet_transfer.cpp`, `cargo_transfer.cpp`, `combat_logic.cpp`, `combat_map.cpp`).
 
 ## Computer player (spec 05 §7)
 

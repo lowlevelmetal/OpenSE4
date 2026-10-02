@@ -114,10 +114,10 @@ game: no losses, no experience. Open it with `Simulator` in the [Designs](window
 The battle is fought between ten imaginary races, **Race 1** to **Race 10**. You command Race 1;
 the computer plays the others (change this with `Computer Control`).
 
-1. In **Owner For Item** at the bottom right, choose the race that new items join.
-2. Click an entry in the **Items** list at the top right to add it: your designs, the enemy designs you have seen (with their empire's name), and the planets of your home system. Each click adds one ship, or one unit to that race's group of its kind. Right-click an item for its report.
-3. The **Combat Vehicles** list on the left shows everything in the battle, one row per ship, unit group or planet, with its race. Click a row to remove it.
-4. `Fleets For Plr` puts a race's ships into one fleet, with a formation and a strategy. `Change Cargo` loads fighters, troops or platforms into a ship or planet. `No Obsolete` hides your obsolete designs; `Strategies` opens the strategy editor.
+1. In **Owner for item** at the bottom right, choose the race that new items join. Each race is shown as a box in its own colour with its number.
+2. Click an entry in the **Items to choose** list at the top right to add it: your designs, the enemy designs you have seen (with their empire's name), and the planets of your home system. Each click adds one ship, or one unit to that race's group of its kind. Right-click an item for its report.
+3. The **Combat Vehicles** list on the left shows everything in the battle, one row per ship, unit group or planet, with its race's numbered box, what it carries (or a group's units) and its fleet. Click a row to remove it.
+4. `Fleets For Plr` opens Fleet Transfer for the chosen race's ships, to form fleets with a formation and a strategy (`Existing Fleets` there shows your real fleets, for viewing only). `Change Cargo` opens Transfer Cargo with everything in the battle on the left and a **Storehouse** on the right: a copy of your first colony stocked with 1,000 of every unit design you own or have seen and 10,000M people. Click cargo to move it between a vehicle or planet and the Storehouse; people you load onto a ship stay aboard in the battle. `No Obsolete` hides your obsolete designs; `Strategies` opens the strategy editor.
 5. Choose **Tactical** or **Strategic** and press `Begin`.
 
 With **Tactical**, the simulator closes while you fight in the Tactical Combat window and comes
