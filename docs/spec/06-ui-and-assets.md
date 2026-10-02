@@ -3519,23 +3519,17 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
       enforced when a message is composed was not traced).
     - Accepting a treaty proposal makes no treaty entry, only the "Message" entry.
 
-    The engine differs (`diplomacy.cpp`):
-    - `acceptPackage` writes one "<Trade|Gift|Tribute> Completed" entry per party with a
-      single target (`packageGoto`). It must write the entries per item above, in that
-      order, with those titles and targets, and none for the package.
-    - `executePackage` writes "Items Unavailable" entries; invalid items must be skipped
-      silently.
-    - Treaty items go through `setTreaty`, which logs "New Treaty" for both parties (and
-      does so for accepted treaty proposals too, which the original never logs). A
-      package treaty must log "Treaty Enacted" instead, plus the history's contact line;
-      an accepted proposal logs nothing beyond its "Message".
-    - Channel items go through `makeContact`, which makes "First Contact" entries and
-      history lines and requires the giver's contact and a living C. They must set both
-      sides to None with the two entries above, without those checks.
-    - Technology is refused when `!allowTechTrades`; the package code must not test it.
-    - A System item only drops the giver's claim; the receiver must claim the system.
-    - Star charts require the giver to have explored the system and also copy the giver's
-      known warp links; neither is in the original's package code.
+    Since 2026-10-01 the engine follows this (`diplomacy.cpp`): `executePackage` writes
+    the entries per item above, in that order, with those titles and targets (a star
+    chart's Goto is the system with no sector, which the Log turns into showing the
+    system), and none for the package; invalid items are skipped silently; a package
+    treaty logs "Treaty Enacted" (`TreatyEntry::Enacted`), which the history file reads as
+    a contact line, and an accepted proposal logs nothing beyond its "Message"
+    (`TreatyEntry::None`); channel items set both sides to None without checks or a
+    first-contact entry; no game option is tested; the receiver claims a System item's
+    system; star charts need no exploration and copy no warp links. The acceptance's
+    "Message" entry follows the items' entries. Our resources item holds the three
+    resources at once, so its entries name every resource it moves (inferred).
 71. **Refused commands.** A network or play-by-e-mail host can refuse a command that the
     player's client accepted; the original has no such case. Ours lists each one after
     the turn's entries as a Misc row "Order not carried out" without a Goto, not stored in

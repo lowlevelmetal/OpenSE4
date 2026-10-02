@@ -89,6 +89,13 @@ PackageItem tech(ruleset::TechAreaId a) {
     return p;
 }
 
+PackageItem treatyItem(Treaty t) {
+    PackageItem p;
+    p.kind = PackageItem::Kind::Treaty;
+    p.treaty = t;
+    return p;
+}
+
 // Proposes, delivers, answers and delivers again: the full two-turn round trip.
 void agree(GameState& s, EmpireId from, EmpireId to, Treaty t) {
     TurnContext ctx = context(s);
@@ -127,7 +134,9 @@ TEST_CASE("diplomacy: messages arrive next turn; a treaty takes effect on accept
     CHECK(message(s, id)->answered);
     CHECK(hasMood(ctx, kA, "New Treaty Trade"));
     CHECK(hasMood(ctx, kB, "New Treaty Trade"));
-    CHECK(hasLog(s, kA, "New Treaty"));
+    // An accepted proposal makes no treaty entry: its "Message" is all (spec 06 §7 Q70).
+    CHECK_FALSE(hasLog(s, kA, "New Treaty"));
+    CHECK_FALSE(hasLog(s, kB, "New Treaty"));
     CHECK(hasLog(s, kA, "Message"));
 
     // Trade starts at 1 % after the signing turn and grows to the maximum.
@@ -179,12 +188,17 @@ TEST_CASE("diplomacy: Goto targets of treaties, trades and contact") {
     const Rules& r = politicsRules();
     GameState s = newPoliticsGame();
     setContact(s, kA, kB);
-    agree(s, kA, kB, Treaty::TradeAlliance);
-    const LogEntry* treaty = findLog(s, kA, "New Treaty");
+    TurnContext ctx = context(s);
+    const MessageId pact = send(s, kA, kB, MessageType::Gift, Treaty::None, {treatyItem(Treaty::TradeAlliance)});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, pact, true);
+    diplomacy::deliverMessages(ctx);
+    const LogEntry* treaty = findLog(s, kA, "Treaty Enacted");
     REQUIRE(treaty);
     CHECK(treaty->target == LogGoto::Empires);
+    nextTurn(s);
 
-    TurnContext ctx = context(s);
     const auto beams = techArea(r, "Test Beams");
     s.empire(kA).techLevels[beams.index()] = 4;
     s.empire(kA).stockpile = {5000, 5000, 5000};
@@ -193,9 +207,11 @@ TEST_CASE("diplomacy: Goto targets of treaties, trades and contact") {
     nextTurn(s);
     answer(s, kB, gift, true);
     diplomacy::deliverMessages(ctx);
-    const LogEntry* techGift = findLog(s, kB, "Gift Completed");
+    const LogEntry* techGift = findLog(s, kB, "Technology Received");
     REQUIRE(techGift);
     CHECK(techGift->target == LogGoto::Research);
+    REQUIRE(findLog(s, kA, "Technology Transfered"));
+    CHECK(findLog(s, kA, "Technology Transfered")->target == LogGoto::Research);
     nextTurn(s);
     const MessageId cash = send(s, kA, kB, MessageType::Gift, Treaty::None, {resources(10, 0, 0)});
     diplomacy::deliverMessages(ctx);
@@ -204,7 +220,7 @@ TEST_CASE("diplomacy: Goto targets of treaties, trades and contact") {
     diplomacy::deliverMessages(ctx);
     const LogEntry* last = nullptr;
     for (const LogEntry& l : s.empire(kB).log)
-        if (l.title == "Gift Completed") last = &l;
+        if (l.title == "Resources Received") last = &l;
     REQUIRE(last);
     CHECK(last->target == LogGoto::Empires);
 
@@ -513,8 +529,12 @@ TEST_CASE("diplomacy: trades move resources, technology, ships, charts and conta
     CHECK(s.vehicle(scout)->owner == kB);
     CHECK(s.empire(kB).hasExplored(homeA));
     CHECK(diplomacy::inContact(s, kB, kC));
-    CHECK(hasLog(s, kA, "Trade Completed"));
-    CHECK(hasLog(s, kB, "First Contact"));
+    // Comm channels set both sides to None without a first-contact entry (spec 06 §7 Q70).
+    CHECK(s.empire(kB).relation(kC).treaty == Treaty::None);
+    CHECK_FALSE(hasLog(s, kB, "First Contact"));
+    CHECK(hasLog(s, kB, "Comm Channels Received"));
+    CHECK(hasLog(s, kC, "Comm Channels Opened"));
+    CHECK_FALSE(hasLog(s, kA, "Trade Completed"));
 }
 
 TEST_CASE("diplomacy: placeholders, missing items, limits") {
@@ -544,10 +564,13 @@ TEST_CASE("diplomacy: placeholders, missing items, limits") {
     answer(s, kB, id, true);
     diplomacy::deliverMessages(ctx);
     CHECK(s.empire(kA).stockpile == Resources{0, 0, 0});
-    CHECK(hasLog(s, kB, "Items Unavailable"));
-    CHECK(hasLog(s, kB, "Gift Completed"));
+    // The vehicle that is gone is skipped without any entry (spec 06 §7 Q70).
+    CHECK_FALSE(hasLog(s, kB, "Items Unavailable"));
+    CHECK_FALSE(hasLog(s, kB, "Vehicle Received"));
+    CHECK(hasLog(s, kB, "Resources Received"));
 
-    // Technology trades can be switched off.
+    // The package code tests no game option: technology passes even with
+    // Allow Technology Gifts off (that only limits what a player composes).
     nextTurn(s);
     s.options.allowTechTrades = false;
     const auto armor = techArea(r, "Test Armor");
@@ -557,7 +580,7 @@ TEST_CASE("diplomacy: placeholders, missing items, limits") {
     nextTurn(s);
     answer(s, kB, id, true);
     diplomacy::deliverMessages(ctx);
-    CHECK(s.empire(kB).techLevel(armor) == 1);
+    CHECK(s.empire(kB).techLevel(armor) == 5);
     CHECK(diplomacy::isPlaceholder(tech({})));
     CHECK_FALSE(diplomacy::isPlaceholder(resources(1, 2, 3)));
 }
@@ -947,4 +970,131 @@ TEST_CASE("diplomacy: a vehicle handed over in a package and a surrender run the
         CHECK(hasLog(s, kC, "First Contact"));
         CHECK_FALSE(diplomacy::inContact(s, kA, kC));
     }
+}
+
+TEST_CASE("diplomacy: a completed package logs one entry per item, receiver first, then the acceptance (spec 06 §7 Q70)") {
+    const Rules& r = politicsRules();
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    const auto beams = techArea(r, "Test Beams");
+    s.empire(kA).techLevels[beams.index()] = 3;
+    s.empire(kA).stockpile = {5000, 5000, 5000};
+    s.empire(kB).stockpile = {5000, 5000, 5000};
+    const SystemId homeC = s.galaxy.object(homeworld(s, kC).planet).system;
+    REQUIRE_FALSE(s.empire(kA).hasExplored(homeC));   // charts need no exploration by the giver
+    const SystemId homeB = s.galaxy.object(homeworld(s, kB).planet).system;
+    s.empire(kB).claimedSystems = {homeB};
+    PackageItem chart;
+    chart.kind = PackageItem::Kind::StarChart;
+    chart.system = homeC;
+    PackageItem claim;
+    claim.kind = PackageItem::Kind::System;
+    claim.system = homeB;
+    PackageItem gone;
+    gone.kind = PackageItem::Kind::Vehicle;
+    gone.vehicle = VehicleId{9999u};
+    const auto linksBefore = s.empire(kB).knowledge.knownWarpLink;
+    // A proposes: it gives resources, a vanished ship and charts; it asks
+    // for B's technology... B has none ahead, so the data is of no use, and
+    // B's claim on its home system.
+    const MessageId id = send(s, kA, kB, MessageType::ProposeTrade, Treaty::None, {resources(1000, 0, 0), gone, chart},
+                              {tech(beams), claim});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, id, true);
+    diplomacy::deliverMessages(ctx);
+    // A's entries (the proposer): its offered items first, then the requested
+    // ones; the acceptance's "Message" comes last.
+    std::vector<std::string> titlesA;
+    for (const LogEntry& l : s.empire(kA).log)
+        if (l.turn == s.turn) titlesA.push_back(l.title);
+    CHECK(titlesA == std::vector<std::string>{"Resources Transfered", "Technology Received", "Message"});
+    std::vector<std::string> titlesB;
+    for (const LogEntry& l : s.empire(kB).log)
+        if (l.turn == s.turn) titlesB.push_back(l.title);
+    CHECK(titlesB == std::vector<std::string>{"Resources Received", "Starcharts Received", "Technology Transfered"});
+    // Technology of no use says so; the claim passed without an entry.
+    const LogEntry* useless = findLog(s, kA, "Technology Received");
+    REQUIRE(useless);
+    CHECK(useless->target == LogGoto::Research);
+    CHECK(useless->text.find("nothing") != std::string::npos);
+    CHECK(std::binary_search(s.empire(kA).claimedSystems.begin(), s.empire(kA).claimedSystems.end(), homeB));
+    CHECK(s.empire(kB).claimedSystems.empty());
+    // The charts: explored, no warp links copied; Goto the system, no sector.
+    CHECK(s.empire(kB).hasExplored(homeC));
+    CHECK(s.empire(kB).knowledge.knownWarpLink == linksBefore);
+    const LogEntry* charts = findLog(s, kB, "Starcharts Received");
+    REQUIRE(charts);
+    REQUIRE(charts->location);
+    CHECK(charts->location->system == homeC);
+    CHECK_FALSE(charts->location->sector.valid());
+    CHECK_FALSE(hasLog(s, kA, "Starcharts Transfered"));
+    CHECK(findLog(s, kB, "Resources Received")->target == LogGoto::Empires);
+    CHECK(s.empire(kB).stockpile[Resource::Minerals] == 6000);
+}
+
+TEST_CASE("diplomacy: a package's planet, vehicle and treaty entries; the treaty writes a contact line in the history") {
+    GameState s = newPoliticsGame();
+    setContact(s, kA, kB);
+    TurnContext ctx = context(s);
+    // A second colony of A to give, and a ship.
+    ObjectId spare;
+    const SystemId homeA = s.galaxy.object(homeworld(s, kA).planet).system;
+    for (ObjectId o : s.galaxy.system(homeA).objects)
+        if (s.galaxy.object(o).kind == ObjectKind::Planet && !s.colony(o)) {
+            Colony c;
+            c.planet = o;
+            c.owner = kA;
+            c.population.push_back({kA, 5});
+            s.colonies[o.index()] = c;
+            spare = o;
+            break;
+        }
+    REQUIRE(spare.valid());
+    VehicleId ship;
+    for (const Vehicle& v : s.vehicles)
+        if (v.owner == kA) ship = v.id;
+    PackageItem planet;
+    planet.kind = PackageItem::Kind::Planet;
+    planet.planet = spare;
+    PackageItem vehicle;
+    vehicle.kind = PackageItem::Kind::Vehicle;
+    vehicle.vehicle = ship;
+    const MessageId id = send(s, kA, kB, MessageType::Gift, Treaty::None, {planet, vehicle, treatyItem(Treaty::NonAggression)});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, id, true);
+    diplomacy::deliverMessages(ctx);
+    CHECK(s.colony(spare)->owner == kB);
+    CHECK(s.vehicle(ship)->owner == kB);
+    CHECK(s.empire(kA).relation(kB).treaty == Treaty::NonAggression);
+    const LogEntry* got = findLog(s, kB, "Planet Received");
+    REQUIRE(got);
+    CHECK(got->target == LogGoto::Location);
+    CHECK(got->location == locationOf(s.galaxy, spare));
+    REQUIRE(findLog(s, kA, "Planet Transfered"));
+    REQUIRE(findLog(s, kB, "Vehicle Received"));
+    CHECK(findLog(s, kB, "Vehicle Received")->location == s.vehicle(ship)->location);
+    REQUIRE(findLog(s, kA, "Vehicle Transfered"));
+    for (EmpireId e : {kA, kB}) {
+        const LogEntry* enacted = findLog(s, e, "Treaty Enacted");
+        REQUIRE(enacted);
+        CHECK(enacted->target == LogGoto::Empires);
+        CHECK_FALSE(hasLog(s, e, "New Treaty"));
+        CHECK_FALSE(hasLog(s, e, "Gift Completed"));
+    }
+    // The history file's contact line, the turn after.
+    nextTurn(s);
+    const score::PlayerRecords rec = score::playerRecords(politicsRules(), s, kA);
+    CHECK(std::any_of(rec.history.begin(), rec.history.end(),
+                      [&](const std::string& l) { return l.find("First contact with the " + effects::empireFullName(s.empire(kB))) != std::string::npos; }));
+    // A planet no longer the giver's is skipped without any entry.
+    const MessageId again = send(s, kA, kB, MessageType::Gift, Treaty::None, {planet});
+    diplomacy::deliverMessages(ctx);
+    nextTurn(s);
+    answer(s, kB, again, true);
+    diplomacy::deliverMessages(ctx);
+    for (const LogEntry& l : s.empire(kB).log)
+        if (l.turn == s.turn) CHECK(l.title != "Planet Received");
 }

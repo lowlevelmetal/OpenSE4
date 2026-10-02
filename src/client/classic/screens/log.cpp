@@ -157,10 +157,13 @@ public:
         if (d.button("Goto", target != game::LogGoto::None)) {
             remember(ui);
             if (target == game::LogGoto::Location) {
-                // A location closes the Log and shows the sector in the main window;
-                // an entry that names no system does nothing, and the Log stays open.
+                // A location closes the Log and shows the sector in the main window
+                // (a system without a sector, as received star charts give, shows
+                // the system only, spec 06 §7 Q70); an entry that names no system
+                // does nothing, and the Log stays open.
                 if (const auto at = goTo(ui, sel)) {
-                    ui.requests.focus = *at;
+                    if (at->sector.valid()) ui.requests.focus = *at;
+                    else ui.requests.showSystem = at->system;
                     close = true;
                 }
             } else if (const auto window = logWindowTarget(target)) {

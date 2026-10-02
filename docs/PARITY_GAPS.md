@@ -285,10 +285,11 @@ rolls for ships, then for colonies, with the 1-in-3 roll per candidate; step 3 n
 lowest-numbered empire by both treaties; step 5 names the system and the highest-numbered other
 side of the newest battle lost while defending. A Politics minister's messages are not checked
 (`cmd::SendMessage::minister`). The engine's choice is question 54 (step 2's candidate order).
-
-| Where | Engine now | Original (spec) | Impact |
-|---|---|---|---|
-| Log of a completed package (`diplomacy.cpp` `acceptPackage`, `executePackage`, `setTreaty`, `makeContact`) | One "… Completed" entry per party; "Items Unavailable" entries; treaty items log "New Treaty" (accepted proposals too) and channel items "First Contact"; channels need the giver's contact and a living empire; technology refused without `allowTechTrades`; a System item only drops the giver's claim; star charts need the giver's exploration and copy its warp links | Spec 06 §7 Q70, spec 05 §3.4: one entry per item, receiver then giver, with the titles and targets listed; invalid items skipped silently; "Treaty Enacted" plus a history contact line; channels set both sides to None without checks; no option tested; the receiver claims the system; no exploration test, no warp links; an accepted proposal logs only its message | M |
+A completed package logs one entry per item, the receiver's first, with the titles and Goto
+targets of spec 06 §7 Q70, and nothing for the package; invalid items are skipped silently; a
+package treaty logs "Treaty Enacted", which writes a contact line in the history file, and an
+accepted proposal only its "Message"; channels, technology, systems and star charts follow the
+same answer (`diplomacy::executePackage`). No row remains.
 
 ## Galaxy, setup and sight (spec 01, spec 02 §9)
 

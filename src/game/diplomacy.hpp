@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace opense4::game {
@@ -68,11 +69,21 @@ void treatyStep(TurnContext& ctx, EmpireId e);
 
 // ---- Treaties and contact ----------------------------------------------------------------------
 
+// The log entries a treaty change makes for both parties: "New Treaty"
+// (breaking a treaty, war, a subject's other treaties), none (an accepted
+// proposal, whose "Message" entry is all, spec 06 §7 Q70), or "Treaty
+// Enacted" (a package's treaty item, spec 06 §7 Q70).
+enum class TreatyEntry : uint8_t { NewTreaty, None, Enacted };
 // Sets a treaty on both sides: dominance for Subjugation/Protectorate
 // (`aDominant`: a is the master), treaty turn, last war turn, trade reset
-// below trade level, "New Treaty ..." mood events and logs. A subject's
-// other treaties are broken.
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false);
+// below trade level, "New Treaty ..." mood events and the log entries
+// `entry` names. A subject's other treaties are broken.
+void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant = false, TreatyEntry entry = TreatyEntry::NewTreaty);
+// The text of a "Treaty Enacted" entry about `other` (the history file finds
+// the empire by it: the entry also writes a contact line, spec 05 §3.4).
+std::string treatyEnactedText(const GameState& s, EmpireId other, Treaty t, std::string_view role = {});
+// Whether a log entry is a "Treaty Enacted" entry about `other`.
+bool treatyEnactedWith(const GameState& s, const LogEntry& l, EmpireId other);
 // Happiness.txt trigger for a new treaty, from `forEmpire`'s side.
 std::string_view treatyTrigger(Treaty t, bool dominant);
 bool inContact(const GameState& s, EmpireId a, EmpireId b);
@@ -99,8 +110,10 @@ bool treatyVisible(const GameState& s, EmpireId viewer, EmpireId a, EmpireId b);
 
 void transferColony(GameState& s, ObjectId planet, EmpireId to);
 void transferVehicle(GameState& s, VehicleId vehicle, EmpireId to);
-// Moves package items from `giver` to `receiver`. Items that no longer exist
-// are skipped and reported in the logs of both sides.
+// Moves package items from `giver` to `receiver` (spec 05 §3.4, spec 06 §7
+// Q70, confirmed: binary), in package order, each item making its own log
+// entries, the receiver's first, then the giver's; an item no longer valid
+// is skipped without any entry. No game option is tested.
 void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::span<const PackageItem> items);
 // True if an item is an unfilled "Any" placeholder (no specific tech, planet, ...).
 bool isPlaceholder(const PackageItem& item);

@@ -117,15 +117,6 @@ std::string describe(const GameState& s, const Rules& r, const PackageItem& item
     return "?";
 }
 
-std::string joinLines(const std::vector<std::string>& lines) {
-    std::string out;
-    for (const auto& l : lines) {
-        if (!out.empty()) out += '\n';
-        out += l;
-    }
-    return out;
-}
-
 // The message a reply answers, if it is really one of `kinds` sent by the
 // reply's recipient to its sender. Marks it answered.
 DiplomaticMessage* repliedTo(GameState& s, const DiplomaticMessage& reply, std::initializer_list<MessageType> kinds) {
@@ -141,41 +132,19 @@ void acceptTreaty(TurnContext& ctx, const DiplomaticMessage& proposal) {
     // proposal names the dominant side in `thirdEmpire` (inferred).
     EmpireId master = proposal.from;
     if (proposal.thirdEmpire == proposal.from || proposal.thirdEmpire == proposal.to) master = proposal.thirdEmpire;
-    setTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from);
+    // An accepted proposal makes no treaty entry: its "Message" entry is all
+    // (spec 06 §7 Q70, confirmed: binary).
+    setTreaty(ctx, proposal.from, proposal.to, proposal.treaty, master == proposal.from, TreatyEntry::None);
 }
 
-// Goto of a completed trade, gift or tribute (spec 06 §7 Q41): the
-// original makes one entry per item (technology: Research; resources,
-// treaties, communication channels: Empires; planets, vehicles, star charts:
-// their location). Ours makes one entry per package, so the first of these
-// that the package holds decides, and a planet or vehicle gives the entry its
-// location (inferred).
-void packageGoto(const GameState& s, LogEntry* entry, const DiplomaticMessage& offer) {
-    if (!entry) return;
-    using K = PackageItem::Kind;
-    auto any = [&](std::initializer_list<K> kinds) {
-        for (const auto* list : {&offer.offer, &offer.request})
-            for (const PackageItem& i : *list)
-                if (std::find(kinds.begin(), kinds.end(), i.kind) != kinds.end()) return true;
-        return false;
-    };
-    if (any({K::Technology})) {
-        entry->target = LogGoto::Research;
-    } else if (any({K::Resources, K::Treaty, K::CommChannel})) {
-        entry->target = LogGoto::Empires;
-    } else {
-        entry->target = LogGoto::Location;
-        for (const auto* list : {&offer.offer, &offer.request})
-            for (const PackageItem& i : *list) {
-                if (entry->location) break;
-                if (i.kind == K::Planet && i.planet.valid() && i.planet.index() < s.galaxy.objects.size()) entry->location = locationOf(s.galaxy, i.planet);
-                if (const Vehicle* v = i.kind == K::Vehicle ? s.vehicle(i.vehicle) : nullptr) entry->location = v->location;
-            }
-    }
-}
-
+// Carries out an accepted trade, gift or tribute (spec 06 §7 Q70, spec 05
+// §3.4, confirmed: binary): a gift's or tribute's items from giver to
+// receiver; for a trade, the proposer's offered items first (proposer to
+// accepter), then the requested ones (accepter to proposer). Each item makes
+// its own entries; nothing is logged for the package as a whole. A package
+// that still holds "Any" items cannot be carried out (OpenSE4's guard: the
+// original never lets one be accepted).
 void acceptPackage(TurnContext& ctx, const DiplomaticMessage& offer) {
-    GameState& s = ctx.state;
     // The game option for gifts and tributes only limits the message types a
     // human can pick; an accepted gift's items move whatever it says (spec 05
     // §7.4, confirmed: binary).
@@ -189,19 +158,8 @@ void acceptPackage(TurnContext& ctx, const DiplomaticMessage& offer) {
                     LogGoto::Empires);
         return;
     }
-    std::vector<std::string> lines;
-    const std::string fromName = nameOf(s, offer.from), toName = nameOf(s, offer.to);
-    if (!offer.offer.empty()) {
-        lines.push_back(std::format("From the {} to the {}:", fromName, toName));
-        executePackage(ctx, offer.from, offer.to, offer.offer);
-        for (const auto& item : offer.offer) lines.push_back("  " + describe(s, ctx.rules, item));
-    }
-    if (!offer.request.empty()) {
-        lines.push_back(std::format("From the {} to the {}:", toName, fromName));
-        executePackage(ctx, offer.to, offer.from, offer.request);
-        for (const auto& item : offer.request) lines.push_back("  " + describe(s, ctx.rules, item));
-    }
-    for (EmpireId e : {offer.from, offer.to}) packageGoto(s, ctx.log(e, LogCategory::Politics, what + " Completed", joinLines(lines)), offer);
+    executePackage(ctx, offer.from, offer.to, offer.offer);
+    executePackage(ctx, offer.to, offer.from, offer.request);
 }
 
 void grantIndependence(TurnContext& ctx, const DiplomaticMessage& m) {
@@ -233,8 +191,16 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
     if (!m.text.empty()) text += std::format("\n\"{}\"", m.text);
     // Every delivered message is an ordinary Politics entry titled "Message"
     // whose Goto opens Empires (spec 06 §4.1, §7 Q42, confirmed: binary); it
-    // names the message for the Log's details and Send Reply.
-    if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text), LogGoto::Empires)) entry->message = m.id;
+    // names the message for the Log's details and Send Reply. The acceptance
+    // of a trade, gift or tribute becomes it after the package's items have
+    // made their entries (spec 06 §7 Q70).
+    auto messageEntry = [&] {
+        if (LogEntry* entry = logGoto(ctx.log(m.to, LogCategory::Politics, "Message", text), LogGoto::Empires)) entry->message = m.id;
+    };
+    const DiplomaticMessage* answered = findMessage(s, m.inReplyTo);
+    const bool package = m.type == MessageType::AcceptTrade || m.type == MessageType::AcceptGift ||
+                         (m.type == MessageType::AcceptDemand && answered && answered->type == MessageType::CounterTrade);
+    if (!package) messageEntry();
 
     // A counter-proposal answers the message it counters.
     if (m.type == MessageType::CounterTreaty) repliedTo(s, m, {MessageType::ProposeTreaty, MessageType::CounterTreaty});
@@ -287,6 +253,7 @@ void receive(TurnContext& ctx, DiplomaticMessage& stored) {
         case MessageType::GrantIndependence: grantIndependence(ctx, m); break;
         default: break;
     }
+    if (package) messageEntry();
 }
 
 } // namespace
@@ -310,7 +277,15 @@ std::string_view treatyTrigger(Treaty t, bool dominant) {
     return {};
 }
 
-void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant) {
+std::string treatyEnactedText(const GameState& s, EmpireId other, Treaty t, std::string_view role) {
+    return std::format("Our treaty with the {} is now {}.{}", nameOf(s, other), displayName(t), role);
+}
+
+bool treatyEnactedWith(const GameState& s, const LogEntry& l, EmpireId other) {
+    return l.title == "Treaty Enacted" && l.text.starts_with(std::format("Our treaty with the {} is now ", nameOf(s, other)));
+}
+
+void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominant, TreatyEntry entry) {
     GameState& s = ctx.state;
     if (!validEmpire(s, a) || !validEmpire(s, b) || a == b || t >= Treaty::Count) return;
     const bool dominance = t == Treaty::Subjugation || t == Treaty::Protectorate;
@@ -344,10 +319,13 @@ void setTreaty(TurnContext& ctx, EmpireId a, EmpireId b, Treaty t, bool aDominan
     ctx.mood(b, std::string(treatyTrigger(t, bDom)));
     auto role = [&](bool dom) { return !dominance ? std::string{} : dom ? std::string(" We are the dominant partner.") : std::string(" We are the subordinate partner."); };
     // Treaties enacted, lost or subjugations: Goto opens Empires (spec 06 §7 Q41).
-    logGoto(ctx.log(a, LogCategory::Politics, "New Treaty", std::format("Our treaty with the {} is now {}.{}", nameOf(s, b), displayName(t), role(aDom))),
-            LogGoto::Empires);
-    logGoto(ctx.log(b, LogCategory::Politics, "New Treaty", std::format("Our treaty with the {} is now {}.{}", nameOf(s, a), displayName(t), role(bDom))),
-            LogGoto::Empires);
+    // A package's treaty is "Treaty Enacted" (spec 06 §7 Q70); an accepted
+    // proposal logs nothing here.
+    if (entry != TreatyEntry::None) {
+        const std::string title = entry == TreatyEntry::Enacted ? "Treaty Enacted" : "New Treaty";
+        logGoto(ctx.log(a, LogCategory::Politics, title, treatyEnactedText(s, b, t, role(aDom))), LogGoto::Empires);
+        logGoto(ctx.log(b, LogCategory::Politics, title, treatyEnactedText(s, a, t, role(bDom))), LogGoto::Empires);
+    }
     // The History window lists every treaty change under the other empire.
     auto history = [&](EmpireId other, bool dom) {
         const std::string them = nameOf(s, other);
@@ -520,95 +498,128 @@ void executePackage(TurnContext& ctx, EmpireId giver, EmpireId receiver, std::sp
     const Rules& r = ctx.rules;
     GameState& s = ctx.state;
     if (!living(s, giver) || !living(s, receiver) || giver == receiver) return;
-    std::vector<std::string> unavailable;
+    const std::string giverName = nameOf(s, giver), receiverName = nameOf(s, receiver);
+    // Every entry is category Politics; the receiver's comes first (spec 06 §7 Q70).
+    auto entry = [&](EmpireId e, std::string title, std::string text, LogGoto target, std::optional<Location> where = std::nullopt) {
+        if (LogEntry* l = ctx.log(e, LogCategory::Politics, std::move(title), std::move(text), where)) l->target = target;
+    };
     for (const PackageItem& item : items) {
-        Empire& g = s.empire(giver);
-        Empire& rcv = s.empire(receiver);
         switch (item.kind) {
             case PackageItem::Kind::Resources: {
-                // Only what the giver actually holds moves.
+                // The package's amount, at most what the giver holds; both
+                // entries are made even when nothing moves.
+                Empire& g = s.empire(giver);
                 const Resources moved = min(max(item.resources, Resources{}), max(g.stockpile, Resources{}));
                 g.stockpile -= moved;
-                rcv.stockpile += moved;
+                s.empire(receiver).stockpile += moved;
+                std::string amounts;
+                for (Resource k : kResources) {
+                    if (item.resources[k] <= 0) continue;
+                    if (!amounts.empty()) amounts += ", ";
+                    amounts += std::format("{} {}", moved[k], displayName(k));
+                }
+                if (amounts.empty()) amounts = "no resources";
+                entry(receiver, "Resources Received", std::format("The {} has sent us {}.", giverName, amounts), LogGoto::Empires);
+                entry(giver, "Resources Transfered", std::format("We have sent the {} {}.", receiverName, amounts), LogGoto::Empires);
                 break;
             }
             case PackageItem::Kind::Technology: {
-                if (!s.options.allowTechTrades) {
-                    unavailable.push_back(describe(s, r, item) + " (technology transfers are not allowed in this game)");
-                    break;
-                }
-                if (!item.tech.valid() || item.tech.index() >= r.data().techAreas.size()) {
-                    unavailable.push_back(describe(s, r, item));
-                    break;
-                }
-                // The giver's level; useful only if it is higher than ours.
-                research::grantLevel(ctx, receiver, item.tech, g.techLevel(item.tech), "trade");
+                if (!item.tech.valid() || item.tech.index() >= r.data().techAreas.size()) break;
+                // No game option is tested here (Allow Technology Gifts
+                // included). The data is of no use when the receiver cannot
+                // gain a level in the area (its racial and unique checks) or
+                // the giver is not ahead of it.
+                const std::string& area = r.tech(item.tech).name;
+                const int level = std::min(s.empire(giver).techLevel(item.tech), r.tech(item.tech).maxLevel);
+                const bool useful = research::canGainLevel(r, s, s.empire(receiver), item.tech) && level > s.empire(receiver).techLevel(item.tech);
+                entry(receiver, "Technology Received",
+                      std::format("The {} has sent us its data on {}.{}", giverName, area, useful ? "" : " It teaches us nothing we can use."),
+                      LogGoto::Research);
+                entry(giver, "Technology Transfered", std::format("We have sent the {} our data on {}.", receiverName, area), LogGoto::Research);
+                // A level gained then makes its usual Research entries.
+                research::grantLevel(ctx, receiver, item.tech, level, "trade");
                 break;
             }
             case PackageItem::Kind::Planet: {
+                // Only a colony the giver still holds; otherwise nothing at all.
                 const Colony* c = s.colony(item.planet);
-                if (!c || c->owner != giver) {
-                    unavailable.push_back(describe(s, r, item));
-                    break;
-                }
+                if (!c || c->owner != giver) break;
                 // The receiver learns the designs of the units in the planet's
                 // cargo (spec 05 §8 "Design knowledge", confirmed: binary).
                 for (const UnitStack& u : c->cargo.units) learnForeign(s, receiver, u.design);
                 transferColony(s, item.planet, receiver);
+                const Location where = locationOf(s.galaxy, item.planet);
+                const std::string& planet = s.galaxy.object(item.planet).name;
+                entry(receiver, "Planet Received", std::format("The {} has handed {} over to us.", giverName, planet), LogGoto::Location, where);
+                entry(giver, "Planet Transfered", std::format("We have handed {} over to the {}.", planet, receiverName), LogGoto::Location, where);
                 // The system is now explored for the receiver: the first-contact check runs there (spec 05 §3.1).
-                firstContactIn(ctx, s.galaxy.object(item.planet).system);
+                firstContactIn(ctx, where.system);
                 break;
             }
             case PackageItem::Kind::Vehicle: {
                 const Vehicle* v = s.vehicle(item.vehicle);
-                if (!v || v->owner != giver) {
-                    unavailable.push_back(describe(s, r, item));
-                    break;
-                }
+                if (!v || v->count <= 0 || v->owner != giver) break;
                 // The ship's design (every design of a unit group) and the
                 // designs of the units in its cargo.
                 for (const UnitStack& st : groupStacks(*v)) learnForeign(s, receiver, st.design);
                 for (const UnitStack& u : v->cargo.units) learnForeign(s, receiver, u.design);
                 transferVehicle(s, item.vehicle, receiver);
-                firstContactIn(ctx, s.vehicle(item.vehicle)->location.system);  // as for a planet (spec 05 §3.1)
+                const Vehicle& moved = *s.vehicle(item.vehicle);
+                entry(receiver, "Vehicle Received", std::format("The {} has handed the {} over to us.", giverName, moved.name), LogGoto::Location,
+                      moved.location);
+                entry(giver, "Vehicle Transfered", std::format("We have handed the {} over to the {}.", moved.name, receiverName), LogGoto::Location,
+                      moved.location);
+                firstContactIn(ctx, moved.location.system);  // as for a planet (spec 05 §3.1)
                 break;
             }
             case PackageItem::Kind::StarChart: {
-                if (!item.system.valid() || !g.hasExplored(item.system)) {
-                    unavailable.push_back(describe(s, r, item));
-                    break;
-                }
+                // The system becomes explored for the receiver; nothing tests the
+                // giver's own exploration and no warp link passes. Only the
+                // receiver is told; Goto shows the system, no sector.
+                if (!item.system.valid() || item.system.index() >= s.galaxy.systems.size()) break;
                 explore(s, receiver, item.system);
-                for (ObjectId wp : s.galaxy.warpPoints(item.system))
-                    if (wp.index() < g.knowledge.knownWarpLink.size() && g.knowledge.knownWarpLink[wp.index()] &&
-                        wp.index() < rcv.knowledge.knownWarpLink.size())
-                        rcv.knowledge.knownWarpLink[wp.index()] = 1;
+                entry(receiver, "Starcharts Received",
+                      std::format("The {} has sent us its star charts of the {} system.", giverName, s.galaxy.system(item.system).name),
+                      LogGoto::Location, Location{item.system, Sector{-1, -1}});
                 break;
             }
             case PackageItem::Kind::Treaty: {
                 // The package names the dominant side of a Subjugation or
                 // Protectorate in `empire`; by default the receiver (inferred).
+                // Both parties log "Treaty Enacted" (spec 06 §7 Q70).
                 const EmpireId master = item.empire == giver ? giver : receiver;
-                setTreaty(ctx, giver, receiver, item.treaty, master == giver);
+                setTreaty(ctx, receiver, giver, item.treaty, master == receiver, TreatyEntry::Enacted);
                 break;
             }
             case PackageItem::Kind::CommChannel: {
-                if (!living(s, item.empire) || item.empire == receiver || !inContact(s, giver, item.empire)) {
-                    unavailable.push_back(describe(s, r, item));
-                    break;
+                // Only when the receiver has no contact with C: both are set to
+                // treaty None, without a first-contact check or entry. Nothing
+                // tests the giver's contact with C or that C is alive.
+                const EmpireId c = item.empire;
+                if (!validEmpire(s, c) || c == receiver || inContact(s, receiver, c)) break;
+                for (auto [x, y] : {std::pair{receiver, c}, std::pair{c, receiver}}) {
+                    Relation& rel = s.empire(x).relation(y);
+                    rel.contact = true;
+                    rel.treaty = Treaty::None;
+                    rel.dominant = false;
                 }
-                makeContact(ctx, receiver, item.empire);
+                entry(receiver, "Comm Channels Received",
+                      std::format("The {} has opened communication channels between us and the {}.", giverName, nameOf(s, c)), LogGoto::Empires);
+                entry(c, "Comm Channels Opened",
+                      std::format("The {} has opened communication channels between us and the {}.", giverName, receiverName), LogGoto::Empires);
                 break;
             }
-            case PackageItem::Kind::System:
-                std::erase(g.claimedSystems, item.system);
+            case PackageItem::Kind::System: {
+                // A border claim: the giver's claim goes and the receiver claims
+                // the system; no entry.
+                if (!item.system.valid() || item.system.index() >= s.galaxy.systems.size()) break;
+                std::erase(s.empire(giver).claimedSystems, item.system);
+                std::vector<SystemId>& claims = s.empire(receiver).claimedSystems;
+                if (!std::binary_search(claims.begin(), claims.end(), item.system))
+                    claims.insert(std::upper_bound(claims.begin(), claims.end(), item.system), item.system);
                 break;
+            }
         }
-    }
-    if (!unavailable.empty()) {
-        const std::string text = std::format("These items were no longer available:\n{}", joinLines(unavailable));
-        logGoto(ctx.log(giver, LogCategory::Politics, "Items Unavailable", text), LogGoto::Empires);
-        logGoto(ctx.log(receiver, LogCategory::Politics, "Items Unavailable", text), LogGoto::Empires);
     }
 }
 
