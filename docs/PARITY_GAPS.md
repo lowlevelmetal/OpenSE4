@@ -400,6 +400,26 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   mark, replace the empire's designs and must pass the validity rules (`setup.cpp`,
   `setup_model.cpp`).
 
+Seen side by side with the running original on 2026-10-01 ([spec 07](spec/07-observations.md),
+session 3, which lists each difference in full). Impact is visual only unless noted:
+
+| Where | Client now | Original (observed) | Impact |
+|---|---|---|---|
+| Selection on the system panel (`main_window.cpp`) | Four corner lines | `Dialogs/Selection.bmp` (eight yellow marks) over the sector's 36x36 sprite square, black transparent (spec 06 §2.4 "Selection") | M |
+| Strategic Combat pace (`screens/strategic_combat.cpp`) | One empire's phase per displayed frame: a 3-sided 30-turn battle takes 90 frames (1.5 s at 60 Hz) | 7–15 frames (0.10–0.23 s) for the same battles, 2–5 combat turns per frame (spec 06 §7 Q73) | M |
+| Lists in every window | A thin scroll bar, no "Pic" heading | Up/down arrow buttons and a "Pic" heading over picture columns | L |
+| On/off settings in button columns (Construction Queues filters, Ships\Units Show buttons, Designs Hide Obsolete and Stats\Strategy, Planets No Sys To Avoid) | Lamp buttons, or no box | A check box holding the lamp (07 "UI": on/off settings) | L |
+| Colonies (`screens/planets.cpp`) | "Statistics" and "Output" blocks (the second cut off by the minimap); General columns Name, Type, Colony Type, Population, Mood, Facil.; Constr. Queue and Goto buttons; Close in slot 15 | Summary lines (systems, colonies, blockaded colonies, population, research and intelligence produced, resources produced, storage); General columns Pic, Name with planet type, Atmosphere, Conditions, Pop, Mood; no Constr. Queue or Goto; Close in slot 14 | M |
+| Planets (`screens/planets.cpp`) | Short labels, "Min./Org./Rad." headings, atmosphere centred in the row, own homeworld in yellow | The longer labels of 07 session 3, three "Value" headings with resource icons, atmosphere on the name's line, all names white | L |
+| Research (`screens/research.cpp`) | Completed areas left out; Tech Tree button; Reorder Projects in slot 9 | Completed areas listed, dimmed, cost "Complete"; a small box under each project box; Reorder Projects in slot 13 | M |
+| Designs (`screens/designs.cpp`) | Plain rows; detail with Class, Space, Structure, Weapons; components as a text list | Rows under design-type headings with lamp, picture, name, hull and "Prototype"; detail Cost, Movement, Shields, Cargo Space, Supply Capacity; components as an icon grid; the note on obsolete designs | M |
+| Create Design (`screens/designs.cpp`) | Opens on Escort with a suggested name; vertical component list by group; warnings in red at the bottom; Cancel low | Asks the vehicle type first and titles the window after it; starts without a size; component strip and a paged 3-column tile grid; Warnings and Component Details boxes; To Hit Modifiers, Condensed View and Only Latest as check boxes; Create Design and Cancel in slots 13 and 14 | M |
+| Empire Status (`screens/empire_status.cpp`) | Budget table with Other, Not delivered, Lost to full storage, points, password and an option line; no Change Email | Three blocks: production per turn, expenses per turn and net, treasury; Change Email (slot 12) and Change Password (slot 13) | L |
+| Empires (`screens/empires.cpp`) | Victory Conditions before Scores, Our Race in slot 12, Borders with a check box, a "Treaties" heading and explanation | Scores, Victory Conditions, Comparisons, a gap, Our Race (slot 13); Intelligence dim with no contact | L |
+| Ships\Units, Log (`screens/ships.cpp`, `screens/log.cpp`) | A hint paragraph; "Ships \ Units"; Show buttons in slots 7–9; "Nothing to report this turn." in an empty log | No hint; "Ships\Units"; Show check boxes in slots 11–13; an empty log stays empty | L |
+| Combat Simulator (`screens/simulator.cpp`) | Empire flag pictures, design order, buttons from slot 3 | Numbered colour boxes, alphabetical items, Name with Cargo and Fleet lines, buttons from slot 7 with Begin in slot 13, hints under the lists | L |
+| Tactical Combat (`screens/tactical.cpp`, `screens/combat_map.cpp`) | Titled after the simulator; heading line and side list above the map; boxes around pieces; hint texts; one column of buttons beside a small overview | Title strip with Location, Turn, Empires and navigation arrows; map fills the left; piece and target reports with weapon grid; Options, Orders, Auto and End Turn as a 2x2 group; overview at the bottom right | M |
+
 ## Computer player (spec 05 §7)
 
 The four AI_Settings movement flags become the computer empire's own Ship Movement and
@@ -467,5 +487,21 @@ lists the first design of a group that mixes designs. The "(inferred)" markers o
 37 in `ai*.cpp` are gone (the operating part, mothballed repairs, the yard ship's own yard,
 the unlimited-supply test, the warp-point draws and the top-left sector, Close Warp Point's
 sight, the layers' weights, cap and flag, the empty transport, the answer window, the
-waiting test, the units reserve). No row remains.
+waiting test, the units reserve). No row remains from the executable.
+
+**Observed pace** (2026-10-01, [spec 07](spec/07-observations.md) session 3): three
+original games against twelve of ours, Small quadrant, five empires, simultaneous, 100
+turns. Early on our computers are one colony ahead (2.9 against 1.7 at turn 10, 6.8
+against 5.3 at turn 25), a result of the starting assets row above, as are an earlier loss
+of the homeworld's Happy bonus in the original (turn 4 against our 6–8) and our 4M of
+colonists on turns 1 and 3. Two differences remain once that is set aside:
+
+| Where | Engine now | Original (observed) | Impact |
+|---|---|---|---|
+| Research after turn 25 (likely, 1–2 standard errors; cause not traced; `ai_research.cpp`, `ai_economy.cpp`, facility choices) | Mean research points per empire 11.2k at turn 50, 13.6k at 75, 14.5k at 100; 34.6 tech levels at 100 | 13.9k, 17.9k, 23.5k; 39.4 tech levels at 100; score 125k against our 96k | M |
+| Bases (about two standard errors; `ai_economy.cpp`, the vehicle queue) | 0.1–0.2 bases per empire from turn 50 | 0.6–0.9 | M |
+
+Ships, systems, colonies after turn 50 and units agree within the noise. Recheck both rows
+with more original games once the starting assets follow the spec, since an earlier start
+changes the whole game.
 

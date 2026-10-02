@@ -741,8 +741,9 @@ the shield picture of a hit absorbed by shields is not stamped. **Each wait** fi
 the program handle its pending window messages once, then busy-waits on the system's
 millisecond tick counter until it has advanced by the wait; there is no sleep and no
 finer timer. So a wait shorter than the counter's step (about 15.6 ms on current Windows,
-1 ms under Wine) lasts until the counter's next step, and in a run of frames each frame
-lasts about one step: on Windows a 36-frame slide takes about 0.56 s, not 36 ms. Fast
+16 ms under Wine 11.18, observed in spec 07 session 3) lasts until the counter's next step,
+and in a run of frames each frame lasts about one step: a 36-frame slide takes about
+0.56 s on Windows and 0.58 s under Wine (observed), not 36 ms. Fast
 Tactical Combat skips the wait call itself, message handling included. Without the
 switch the Tactical Combat window draws and waits (confirmed: binary; §7 Q77):
 
@@ -753,7 +754,7 @@ switch the Tactical Combat window draws and waits (confirmed: binary; §7 Q77):
 | a piece turning to a new facing (switch on, square in view) | before the step, on its old square, the shorter way (clockwise for a half-turn): 5° a frame, 9 frames per 45°, 36 for a half-turn, 0.01 s after each. Otherwise the piece simply faces the new way. Seekers never turn |
 | a beam | stamps of the 10x10 centre of the 20x20 beam cell, rotated to the bearing, one every 6 px along the longer axis (6 per square), drawn one by one outward with 0.00001 s after each, then erased one by one in the same order with 0.00005 s after each |
 | a torpedo | a 40x40 picture (the 20x20 cell rotated to the bearing) moving 4 px a frame (9 frames per square), 1 ms after each |
-| a hit that damages structure or destroys the target | the 8-frame explosion drawn in place (36x36, or 72x72 for some losses), 0.1 s after each frame and after the last is wiped, 0.9 s in all, with a boom sound (boom3 for a loss); a destroying shot plays it once, with no second loss animation |
+| a hit that damages structure or destroys the target | the 8-frame explosion drawn in place (36x36, or 72x72 for some losses: every ship and base loss observed, §7 Q77), 0.1 s after each frame and after the last is wiped, 0.9 s in all, with a boom sound (boom3 for a loss); a destroying shot plays it once, with no second loss animation |
 | a hit absorbed entirely by shields | no explosion and no wait; a single shield picture is stamped (not with Fast Tactical Combat) and the next redraw removes it |
 | after a seeker's impact on a piece that survives it | 0.3 s (Tactical Combat only; a direct-fire hit has no pause, nor has a seeker that destroys its target) |
 
@@ -1251,6 +1252,13 @@ Then, in this order:
   7; at 1024x768, 6 owners give 8.
 - **Counts** are in Tiny (Windows' Small Fonts, 6 pt), in the owner's empire colour, on
   an opaque black box the size of the text.
+
+**Selection** (observed, spec 07 session 3). The selected object's sector shows
+`Dialogs/Selection.bmp` (36x36: eight small yellow marks at the corners and the middles of
+the sides) drawn over the sector's sprite square with black transparent; a capture matched
+the picture pixel for pixel at the sprite square's top-left (266,371) for sector (5,5) at
+1024x768. Our client differs: `main_window.cpp` draws four corner lines in its place; it
+must draw the picture.
 
 **Text in the system panel** (confirmed: binary). Panel coordinates; fonts from §5.4; all
 text has a transparent background.
@@ -2074,7 +2082,9 @@ ways; all are regular weight, not italic, not underlined:
 - **Small Fonts** is Windows' own small raster face, not part of the install. It is used
   only for the smallest numbers and letters on the maps (table below). An implementer
   needs a substitute: a small raster face about 8 px tall with digits and the facility
-  marker letters (inferred).
+  marker letters (inferred). Under Wine the face is Wine's own `smalle.fon`, which holds
+  only an 11 px size (7 pt; ascent 9, capitals and digits 7 px tall), so there the
+  lettering is drawn larger (observed, §7 Q60).
 - "SE4 Block 1 Medium" appears only as the design-time font of the report windows, and
   "MS Sans Serif" only in a few leftover standard controls (the data-error list window and
   an unused system finder); every visible text has its font set by code, so neither face
@@ -2356,9 +2366,9 @@ with an **Answer** marked (confirmed: binary) and the differences of our client 
 Q24–Q29 and Q40–Q55 and the last part of Q18, then Q30–Q39 (the combat windows). The
 questions our implementation of those answers raised (Q56, Q61–Q64, Q70–Q82 and the open
 part of Q38) were settled from the executable the same day; Q63, Q71, Q74, Q75 and Q81
-are OpenSE4 choices with no counterpart. Still open, for an observer of the running game:
-Q60 (the size of the original's small map lettering), what a viewer sees of a strategic
-battle (Q73) and the measured timings of Q77. Fonts and pointers are in §5.4 and §5.8,
+are OpenSE4 choices with no counterpart. Q60 (under Wine), Q73 and Q77 were answered by
+observing the running game on 2026-10-01 (spec 07 session 3); only the size of Windows' own
+Small Fonts (Q60) is still open. Fonts and pointers are in §5.4 and §5.8,
 the 800x600 layout in §2.1.1.
 
 1. **1024x768 layout.** *Answered in spec 07 §UI (panel rectangles and frame strips).*
@@ -3390,17 +3400,30 @@ Raised while implementing the answers above (inferred, open):
 
 Questions 60–64 are choices of ours made while implementing the fonts, pointers, the
 800x600 layout and the movement log replay (inferred). Q61, Q62 and Q64 are settled from
-the executable and Q63 has no counterpart; Q60 needs observation:
+the executable and Q63 has no counterpart; Q60 was observed under Wine:
 
 60. **The Small Fonts stand-in.** The map numbers and letters use OpenSE4's own raster
     face: an 8 px cell with ascent 6, capitals and digits 5 px tall and 3 px wide (M, N,
     W and a few others wider), lower case 4 px tall, one blank column between
     characters. How tall and wide are the original's digits and letters on the system
     panel at 96 DPI, so the stand-in can match their size and spacing?
-    Open: needs observation. Capture the system panel at 1:1 with the facility markers
-    on and the numbers drawn on the map in view (§2.4), and measure the cap height, digit width and spacing of the
-    letters. The face is the system's Small Fonts, not a file of the game, so note
-    whether the capture comes from Windows or from Wine, whose stand-in may differ.
+    **Answer** (observed under Wine 11.18 only; spec 07 session 3): Wine supplies
+    "Small Fonts" from its own `smalle.fon`, which holds a single 7 pt face at 96 DPI: an
+    11 px cell, ascent 9, internal leading 2. The 6 pt request gets that face, so on the
+    system panel:
+    - capitals and digits are 7 px tall (cell rows 2–8), lower case 5 px with 2 px
+      descenders;
+    - every glyph has one blank column at its left: digits 4 px of ink in an advance of 5
+      ("1" 2 in 3); Y and S 5 in 6; R, C and N 6 in 7; W 7 in 8; M 8 in 9;
+    - facility letters end at the right edge of the 36x36 square with the cell's bottom on
+      the square's bottom (glyph bottoms 2 px above it), so "YSR" reads with one blank
+      column between letters; a count starts 1 px right of the square's left edge.
+
+    Windows' own Small Fonts at 6 pt was not measured (no Windows machine), so it is still
+    open whether Windows draws the 8 px cell our stand-in assumes. Our client keeps its
+    8 px stand-in as the Windows look (inferred); a player under Wine sees the original's
+    lettering about 1.4 times taller. If a Windows capture shows the 11 px size too, the
+    stand-in must take the measurements above.
 61. **Supply icons of unit groups.** §4.4 gives the supply icons for ships, bases and
     fighter groups. Satellite, mine, drone and weapon platform groups carry no supplies in
     our engine, so ours show neither icon. Does the original show the out-of-supplies icon
@@ -3618,7 +3641,7 @@ Our own choices made while implementing Q41–Q55 for the Log, the engine and Sa
 
 Bringing the battle flow in line with Q30–Q33 (2026-10-01) left these choices of ours,
 each marked "(inferred)" in the client. Q73 and Q76 are settled from the executable (what
-a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
+a viewer sees of Q73 was observed); Q74 and Q75 have no counterpart:
 
 73. **What a displayed frame shows of a strategic battle.** The original redraws the small
     map after every step and repaints when it handles its messages, after each empire's
@@ -3642,11 +3665,16 @@ a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
     has phases, slower than the original on a current machine. To match, it would fight
     on, step by step, until the next refresh is due, then show that state.
 
-    Open: needs observation of what a viewer sees. Record the original's Strategic Combat
-    window with a frame-accurate capture (60 fps or more) during a simulator battle of
-    several combat turns between two or three sides; count the distinct map states and
-    the "Combat Turn" values seen between Begin and the moment Close lights up, and time
-    that span.
+    **Answer** (observed under Wine 11.18 at 60 fps; spec 07 session 3): Combat Simulator
+    battles of three sides of identical escorts, 30 combat turns. With 3 escorts a side the
+    window showed 8 and 7 distinct map states between Begin and Close, with "Combat Turn"
+    2, 7, 11, 15, 19, 24, 28, 30 and 2, 6, 10, 13, 20, 26, 30, over 0.12 s and 0.10 s; with 6 a
+    side 15 states (2, 4, 6, 8, 9, 11, 12, 14, 16, 18, 20, 23, 25, 28, 30) over 0.23 s. Every
+    frame showed a new map and a new number: two to five combat turns pass between two
+    60 Hz frames, no single step of a phase is ever seen, "Combat Turn 1" never shows, and
+    Close lights in the frame that first shows 30. Our client, at one phase per frame,
+    takes 90 frames (1.5 s) for the same 3-sided battle; it must fight on until the next
+    refresh is due, as above.
 74. **Battles of games on different machines.** The original shows the Strategic Combat
     window, before the battle, to the human whose turn it is (§1.10.5). Our network and
     PBEM hosts fight every battle without stopping, so our client shows a network game's
@@ -3683,7 +3711,8 @@ a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
 
 Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
 choices of ours (inferred) (Q73–Q76 are those of the live battle flow). All are settled
-from the executable; Q77's timings still need measuring and Q81 has no counterpart:
+from the executable; Q77's timings were measured in the running game and Q81 has no
+counterpart:
 
 77. **Animation frames.** How many frames does the original's slide over one square
     take, and how many its turn to a new facing (one per 45 degrees?), its torpedo's
@@ -3752,12 +3781,29 @@ from the executable; Q77's timings still need measuring and Q81 has no counterpa
     - Keeping each frame on screen for at least one display refresh stays an OpenSE4
       choice; it is close to what Windows gives (about 15.6 ms a frame).
 
-    Open: needs observation, to confirm under Wine with a high-rate capture of the
-    Tactical Combat window (Fast Tactical Combat off): the duration of a one-square slide
-    (about 36 ms or more), of a 45° and a 90° turn (about 90 and 180 ms), of a beam and a
-    torpedo over a known distance; that shield-only hits show no explosion; that misses
-    land half a square off diagonally; that only seeker impacts are followed by the 0.3 s
-    pause; and which losses use the 72x72 explosion.
+    **Answer** (observed under Wine 11.18 at 60 fps, Fast Tactical Combat off; spec 07
+    session 3). Wine's tick counter steps every 16 ms, so every 1 ms or 10 ms wait lasts
+    16 ms, as on Windows:
+    - one-square slide, straight or diagonal: 36 steps of 1 px, about 0.58 s (high
+      confidence);
+    - turns: 5° a step, 45° in about 0.15 s, 90° in 0.28 s, 180° in 0.57 s (medium-high);
+    - beam: stamps 6 px apart drawn and then erased about one per step, about 0.19 s per
+      square in all (1.0 s over 5.9 squares, 1.3 s over 7.2) (medium);
+    - torpedo: 4 px a step, about 0.14 s per square (0.70 s over 5.4 squares) (medium);
+    - a hit on structure: 8 explosion pictures about 0.11 s apart and the wipe, about 1.0 s;
+    - shield-only hits (beams): no explosion, no wait, the shot ends about 17 px short and
+      the target's cyan ring shimmers while the shot is drawn; no separate shield picture
+      was seen (confirmed);
+    - misses end 18 px off the centre in both x and y, with nothing more drawn (confirmed);
+    - only a seeker impact on a survivor pauses: 0.42 s (0.1 s + 0.3 s) after its last
+      explosion picture, against 0.12 s after beam hits and 0.1 s after a seeker that
+      destroyed its target (one sample of the pause: medium);
+    - every loss seen used the 72x72 explosion: two Space Station bases (a seeker, beams), a
+      cruiser and two escorts; none used the 36x36 pictures, and none played a second
+      explosion. So "some losses" is at least every ship and base of 150–500 kT.
+
+    The differences of our client listed above stand; with Wine's 16 ms step our "at least
+    one display refresh" per frame is close to the original's pace.
 78. **Combat Piece Report details.** Ours writes "K" thousands truncated (150999 →
     "150K"); a drone whose drone target has died shows None until it picks another; the
     Facil and Ability tabs show the colony or ship as the battle began; the report has a

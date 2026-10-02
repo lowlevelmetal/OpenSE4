@@ -734,7 +734,10 @@ window, where the ranking shows the result.
   only if the "% of second place" test also passes. The tech and peace tests still apply.
 - **Last empire standing** (confirmed: binary): the original has no automatic victory for
   it. In a turn-based game, when every other empire has been destroyed, the player is told
-  and may keep playing.
+  and may keep playing. A game created with a single empire (no computer players) does this at
+  once, before its first turn: the Victory picture with a line naming the empire and its
+  leader, then the "All Players Eliminated" box asking whether to continue (observed, spec
+  07 session 3).
 - **Destruction** (confirmed: binary): an empire is destroyed when it has no populated
   planet and no ship or base (units do not count). The check runs once per turn for each
   empire: in simultaneous games right after its end-of-turn processing, in turn-based games
@@ -757,6 +760,10 @@ window, where the ranking shows the result.
   ministers and every individual minister flag on (to computer) or off (to human); the TCP/IP
   host's toggle changes only the mark. A computer player is an empire with the mark and all 25
   ministers on; its ministers act on every object, whatever the individual flags.
+  A human empire with all 25 ministers and every individual flag on (Ministers, Complete AI
+  On) but without the mark played far worse than the computer players in three observed
+  games: it stayed in its home system, its research stayed flat and it was destroyed or
+  nearly so by turn 100 (observed, spec 07 session 3; why was not traced).
 - **Missing orders** (confirmed: binary): in a game played on different machines (not
   Hotseat), a player whose orders are missing when the host processes the turn is played by
   the computer for that turn (§9.2). The host switches all of that empire's ministers on

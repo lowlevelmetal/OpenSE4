@@ -72,6 +72,13 @@ Conventions used throughout:
   gets at most one design for each template of its race's `AI_DesignCreation` file that
   yields one. It gets no ships, and the computer opponents get nothing at creation
   (confirmed: binary; §3.6 "Starting assets").
+  **Observed** (spec 07, session 3): a Terran Quick Start opens on 2400.0 with no ship,
+  unit or fleet and eleven designs, one per design type: Attack Ship, Kamikaze Attack Ship
+  and Satellite Layer on escorts, Cargo, Population and Troop Transports on small
+  transports, Colony (Rock) on a colony ship, Base Space Yard and Defense Base on space
+  stations, and the Satellite and Weapon Platform units. Nothing else (no scout, other
+  colony types, minesweeper, mine layer or carrier) is made, as those templates need
+  technology the race does not have yet (inferred).
 - **Scenario and Tutorial.** These load a prepared savegame plus a text script (§12).
 
 ### 2.2 New Game: eight tabs
@@ -477,6 +484,13 @@ computer player's from its Design minister, which runs in that empire's first tu
 processing because it has no designs (spec 05 §7.5). Quick Start alone gives the human
 player one Design minister run at creation (§2.1). Once the empires are placed, the
 first-contact check runs once in every system (spec 05 §3.1).
+
+**Answer** (observed, spec 07 session 3): confirmed on screen. Quick Start: no ship, unit
+or fleet on the first turn and the eleven designs of §2.1. New Game with the default
+settings and the stock Terran empire file: no ship, unit or fleet and both design lists
+empty. In three five-empire games the statistics file showed 0 ships for every empire
+after the first turn, the first ship after the second or third turn and 1–3 ships per
+empire by turn 10.
 
 The engine differs: `setup.cpp` ("Starting designs and ships") gives every empire, human
 or computer, four designs of its own (`autoDesign`: Scout, Colonizer, Escort, Defense
@@ -1339,7 +1353,10 @@ in spec 05 §6; in short (confirmed: binary):
    itself. Initial value 5 years.
 
 The setup stores every "years" value as a number of turns (years × 10). The values above
-are the original's initial values; the setup window may show its own.
+are the original's initial values; the setup window may show its own. On a fresh start the
+Victory Conditions page shows every condition unchecked with a score of 5,000,000, 10.0
+years, 300 % of the second place, 50 % of the tech areas, 1.0 year of peace and 5.0 years
+before the conditions apply (observed, spec 07 session 3).
 
 Meeting any condition ends the game after that turn; the original does not pick a winner,
 and the Scores window's ranking shows the result. With nothing enabled, nothing ends the

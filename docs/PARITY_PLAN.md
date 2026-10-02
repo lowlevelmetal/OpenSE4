@@ -155,9 +155,13 @@ questions are what the observation sessions still have to settle.
    only at set moments (spec 05 §3.1). The differences these leave are the rows dated
    2026-10-01 in [PARITY_GAPS.md](PARITY_GAPS.md) and its "Client windows" list. Implement
    from the spec text, not from any listing.
-2. **Observation.** Three points need the running original (spec 06 §7): Q60 (the size of
-   the small map lettering), Q73 (what a viewer sees of a strategic battle) and Q77 (the
-   measured animation timings under Wine).
-3. **Side-by-side checks** with the original through `tools/observe`: screenshots of each
-   window, and an all-computer game to compare the computer players' pace.
+2. **Observation.** Done on 2026-10-01 (spec 07 session 3): the starting assets were
+   confirmed, Q60 was measured under Wine, Q73 and Q77 were measured, and the computer
+   players' pace and the main windows were compared with ours. Their differences are the
+   rows "Seen side by side" and "Observed pace" in [PARITY_GAPS.md](PARITY_GAPS.md). Still
+   open: Windows' own Small Fonts size (Q60, needs a Windows machine) and more original
+   games for the pace rows.
+3. **Side-by-side checks** of the windows not yet compared (Ground Combat, Combat Replay,
+   Intelligence, the setup pages), and a recheck of the pace once the starting assets
+   follow the spec.
 4. Encrypted connections, and per-player views for PBEM.
