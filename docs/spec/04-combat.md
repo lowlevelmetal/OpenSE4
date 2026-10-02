@@ -297,6 +297,21 @@ moment, including during other empires' phases (§10.2).
   When the next square is blocked, the piece tries up to four other squares around it,
   then stops. Unused points are lost at turn end. A computer-controlled piece makes one
   move per phase and then has no points left.
+- **The step toward a square** (confirmed: binary). Each step goes one square toward the
+  destination on each axis where the two differ: a diagonal step when both differ, a
+  straight one otherwise. When that square is taken, up to four tries follow, each
+  choosing at random (1 in 2) between two squares: for a diagonal step, the straight step
+  along either of its two axes; for a straight step, the diagonal square on either side of
+  it. The first free square tried is taken. When all four tries hit taken squares (a try
+  may repeat an earlier one), the move ends there with the points left unused. So a piece
+  whose diagonal is blocked by a large piece slides along it, one axis at a time, even
+  when that step brings it no nearer. The engine differs: `Battle::pathToSquare`
+  (`combat_space.cpp`) takes, among the 8 neighbours, only one strictly nearer the
+  destination and draws no random number, so a piece behind a large obstacle stops where
+  the original slides past it. In 12 of our games an armed piece of turns 51–100 stopped
+  this way in at least 5 combat turns of 11 % of battles (3 % with the original's rule in
+  a scratch run), but the share of drawn battles moved only from 42 to 39 % (spec 07
+  "Battles, bases and the first turns under a debugger").
 - **Occupancy.** A square holds one piece; big pieces fill their 4×4 footprint. Seekers
   may share squares.
 - **Launched units** (fighters, drones) get their full movement in the turn they launch
