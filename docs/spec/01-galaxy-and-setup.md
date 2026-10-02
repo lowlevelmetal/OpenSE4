@@ -1092,38 +1092,42 @@ own choices, marked (inferred) in the code (§14 Q44):
   same state.
 - An upgrade that converts facilities counts as completing them: it recalculates too.
 
-**The client and engine differ from "What other players see"** (2026-10-01):
-- **System panel** (`MainWindow::objectsAt` and `prepareSectors` in
-  `src/client/classic/main_window.cpp`). Every stellar object of an explored system is drawn,
-  counted, named and clickable with no sight test, so a hidden colony's planet (and a planet
-  hidden by a storm or nebula, §6.4) is drawn and selectable. Drawing, the stellar count, the
-  planet names, the sector click and the sector list must use the "seeing the planet" test.
-  `sight::canSeePlanet` (`src/game/sight.cpp`) is that test except in one narrow case: a
-  cloaked colony with EM Active cloak level 1 and higher levels in other types, watched by a
-  viewer with no sensors there; ours hides that planet, the original shows it.
-- **Seen colony.** `sight::colonyShown` (`src/game/sight.cpp`) is true for every uncloaked
-  colony, with no sensor source needed. The original uses the detection rule (our
-  `canSeeColony`) wherever it asks whether a colony is seen: the map's population bars
-  (`main_window.cpp`), the Planets window's colony status and tabs (`surveyPlanets` in
-  `src/client/classic/screens/colony_logic.cpp`) and the intelligence target picker
-  (`knownPlanets` in `src/client/classic/screens/intelligence.cpp`). Ours also draws the
-  colonize star from the real colony (`colonizeProblem`), so it never marks an unseen colony's
-  planet as colonizable; the original does.
-- **Planet report** (`planetReport` in `src/client/classic/reports.cpp`). For any foreign
-  colony ours shows the owner's flag and Owner, Colony Type and Population lines. The original
-  shows the flag and Population only when the colony is seen, and never Owner or Colony Type
-  for a foreign colony.
-- **Planets statistics** (`planetStatistics` in `colony_logic.cpp`) count only the listed
-  planets; the original counts every non-asteroid planet of the explored systems with its real
-  owner.
-- **Galaxy-map presence** (`systemPresence` in `src/client/classic/quadrant_map.cpp`) marks every
-  colony of an explored system; the original marks only objects the viewer sees by the
-  detection rule.
-- **Network.** `src/game/redact.cpp` keeps the foreign colonies of explored systems (owner,
-  population, cloak mark and levels) and drops the vehicles the viewer cannot see; the e-mail
-  game file (`src/net/pbem.cpp`) is the full state, as in the original. With the points above
-  fixed in the client there is no visible difference; leaving hidden colonies out of the
-  redacted view would be optional hardening, not parity.
+**The client and engine follow "What other players see" since 2026-10-01:**
+- **Seeing the planet** is `sight::canSeePlanet` (`src/game/sight.cpp`): the viewer's sensor
+  levels in the system with EM Active counted as at least 1, against the planet's obscuration,
+  in some sight type. It keeps an explored test, which changes nothing in the windows (they show
+  explored systems only). The system panel draws, counts, names, lists and lets the player click
+  only the stellar objects that pass it (`shownStellarObjects` in
+  `src/client/classic/sector_view.cpp`, used by `MainWindow::objectsAt` and `prepareSectors`);
+  so do the planet names and the colony marks.
+- **Seeing the colony** is the detection rule, `sight::canSeeColony`, wherever a window asks
+  whether a colony is seen: the map's colony mark and facility markers, the planet report
+  (`seenColony` in `src/client/classic/screens/colony_logic.cpp`: the owner's flag and a
+  Population line only when the colony is seen, never Owner or Colony Type for a foreign
+  colony), the Planets window's tabs (`surveyPlanets`: a hidden planet is in no tab, an unseen
+  colony's planet is listed as uncolonized), the colonize star and Send Colony Ship
+  (`colonizeProblem` treats an unseen colony's planet as empty), the galaxy map's presence
+  marks (`map_style::presence`) and the intelligence target picker (`knownPlanets` in
+  `src/client/classic/screens/intelligence.cpp`). `sight::colonyShown` is gone.
+- **Planets statistics** (`planetStatistics`) count every non-asteroid planet of the explored
+  systems with its real owner, with no sight test.
+- **Network** (an OpenSE4 choice; spec 05 §9.5). The original sends every player the whole
+  game; OpenSE4's TCP/IP host sends each player a redacted view (`redactForEmpire` in
+  `src/game/redact.cpp`), which since 2026-10-01 leaves a hidden colony out altogether: for a
+  viewer whose "seeing the planet" test fails on the host's state, the colony record is dropped
+  and its planet taken out of its system's object list, as an object removed by stellar
+  manipulation is. The viewer's windows therefore show what the original's show (nothing), and
+  a modified client cannot read the colony's owner, population or cloak. The view is a function
+  of the host's state, so the client's checksum still matches. A colony that is merely unseen
+  (no sensor source of the viewer in the system) stays in the view, as the original's file holds
+  it; the client shows it as an uncolonized planet. Because the hidden planet is not in the
+  view, a network client's Planets statistics and its live score figures for the owner leave it
+  out (inferred: the price of not sending it). The e-mail game file (`src/net/pbem.cpp`) is the
+  full state, as in the original.
+- Still differing: `sectorName` (`src/client/classic/reports.cpp`), which names a sector after
+  its first stellar object for location lines, does not test sight, so in a local or e-mail
+  game a vehicle's location line can name a hidden planet (inferred: the original's location
+  text was not examined).
 
 ---
 
