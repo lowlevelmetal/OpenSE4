@@ -949,7 +949,13 @@ turn, first thing in its run:
    claimed.
 
 A neutral empire therefore claims only its colony systems, and it ignores every system
-except its home. The Politics minister runs after the state update and after the lists
+except its home. A System item of an accepted trade (§7.4) moves the claim on that system
+from the giver to the receiver at once; it lasts until the receiver's next rewrite
+(confirmed: binary). Observed under a debugger (2026-10-02, spec 07 "Pace observed under a
+debugger"): in 1,463 of 1,485 start-of-turn updates of three 100-turn games the claimed
+systems were exactly those the rule above gives from the colonies and warp links of the
+turn before; each of the other 22 held one system more for that turn only, as a traded
+system would. The Politics minister runs after the state update and after the lists
 below are built (§7.1), so each turn's lists and transitions use the territory claimed
 during the previous turn: a new colony's system and its neighbours count only from the
 second start-of-turn update after the colony is founded. A human empire keeps the claims its
@@ -997,13 +1003,25 @@ High always notice.
   That is all it contains. Stock mines can never be detected (spec 01 §6.3), so with the
   stock data this list stays empty, and only the frontier test below lets a computer
   player move from Exploration or Defend (Short Term) to Infrastructure.
-- **Attack candidates**: planets of other empires in systems we have explored. They are
-  ordered by fewest jumps from our home, then highest anger toward the owner, then highest
-  value. The value (confirmed: binary) is the ratings (without the + 1) of every owned
-  object in the planet's sector that is not ours, whoever owns it, plus the planet's
-  defence: its colony's `Planet - Shield Generation` total / 5, plus its population in
-  millions div 100, plus, for every unit stack in its cargo, count × that unit design's
-  summed best weapon damage.
+- **Attack candidates**: planets of other empires in systems we have explored, each one
+  noticed as above and kept only when we could settle a planet of its kind (the
+  colonization test of the colonization targets below: we have the colonization technology
+  for its surface type, and the game options "only breathable" and "only home planet type"
+  allow it) or when its owner is below None with us: at War, at Non-Intercourse or not yet
+  met (confirmed: binary). So a colony of an empire at None or better whose surface we
+  cannot settle yet (for most races at the start, every planet but their own surface type)
+  is no candidate: it is never a target, never makes a Prepare for Attack, and adds
+  nothing to the anger's attack locations. Only a kept candidate also adds its owner's
+  rating + 1 a second time to the strength of that system. They are ordered by fewest jumps
+  from our home, then highest anger toward the owner, then highest value. The value
+  (confirmed: binary) is the ratings (without the + 1) of every owned object in the
+  planet's sector that is not ours, whoever owns it, plus the planet's defence: its
+  colony's `Planet - Shield Generation` total / 5, plus its population in millions div 100,
+  plus, for every unit stack in its cargo, count × that unit design's summed best weapon
+  damage. The engine differs: `assess` (`ai.cpp`) keeps every noticed planet of another
+  empire, so its computers find attack candidates, and leave Infrastructure for Prepare for
+  Attack, more often; with the original's test a scratch run moved Infrastructure from 5 %
+  to 6 % of the turns 51–100 (spec 07 "Pace observed under a debugger").
 - **Exploration frontier** (confirmed: binary): the warp points of explored systems whose
   far system we have not explored. Whether we know where the link leads plays no part: a
   warp point into a system we have explored by another route is never on the frontier,
@@ -1028,6 +1046,19 @@ High always notice.
 
   The defend list is the distinct systems of these entries in this order, at most `Maximum
   Systems to Defend at a Time`.
+
+**Whose lists the economy step reads** (confirmed: binary; observed 2026-10-02). There is
+one set of these lists for the whole game. An empire's start-of-turn step (§7.1 group 1)
+always builds its own, replacing the set it finds, and leaves it in place. Its
+economy-step ministers (§7.1 group 2) build a set only when none is left, and remove the
+set when they finish. So the first empire, in player order, whose economy-step ministers
+run uses the set left by the last start-of-turn step of the turn, which belongs to the last
+empire in player order whose start-of-turn ministers ran; every later empire builds its
+own. Of these lists the economy step reads only the colonization targets: the colony-ship
+type that `Colonizer` entries build (§7.5) and the neutral empire's colony-ship test. Under
+a debugger, in a game of five computer players the economy step of player 1 found the set
+of player 5 on every turn, and players 2–5 built their own. The engine differs: every
+empire's economy step plans with its own situation (`planEconomyStep`).
 
 **Tests used by the transitions**
 
@@ -1644,32 +1675,48 @@ binary).
        - **Defense Base** items (that design type only). The routine was meant to spread
          them over the yard colonies, fewest bases first, but it mixes up two lists, and
          the queue it returns does not depend on the counts. The empire's queue list holds
-         every queue the empire owns, system by system in system order and in the game's
-         object order within a system. Let K be the number of those queues that have a
-         working space yard. When some yard colony (not a yard ship) counts at most two
+         every queue the empire owns, system by system in system order and, within a
+         system, in the order of the system's own object list (the order the objects were
+         placed in or entered the system, so the planets come before the ships that
+         arrived or were built later) (confirmed: binary; observed 2026-10-02: one
+         empire's list ran through eight planets of its home system in planet order, then a
+         Base Space Yard built there, then a planet of its second system). Let K be the
+         number of those queues that have a working space yard: a colony that is not
+         cloaked and has a Space Yard facility, or a ship that is not cloaked and has a
+         working Space Yard part (none while mothballed or with that part destroyed)
+         (confirmed: binary). When some yard colony (not a yard ship) counts at most two
          bases, the base goes to the K-th queue of the whole list, whatever that queue is.
          The count is the empire's bases in that colony's sector plus every base queued
-         anywhere in the empire. When every yard colony counts three or more, the
-         base goes to a queue of the whole list drawn at random. The backlog test below is
-         made on that queue alone. A queue without a working space yard loses the base at
-         the empire's next construction step (spec 02 §6.1), so the base is built only
-         when that queue happens to have a yard. With only the homeworld's yard, K is 1,
-         and the base goes to the first queue of the list, a colony in the empire's
-         lowest-numbered colony system, which is the homeworld only when no other colony
-         lies in a lower-numbered system. OpenSE4 orders a system's queues by the game's
-         object order, colonies and ships mixed (spec 03 §19 Q62); a ship's yard counts as
-         working when its yard component is neither destroyed nor mothballed, and a
-         queued base item counts as many bases as it builds (inferred, question 60). As the
-         commands refuse a base at a colony without a yard, the engine counts such a base
-         as queued and spends its share of the budget without queueing it, which is what
-         the original's construction step leaves (`ai_economy.cpp` `placeDefenseBase`).
+         anywhere in the empire; a "base" is any vehicle or queued item whose design uses
+         a base hull (Defense Bases, Base Space Yards and any other base), and a queued item
+         counts as many as its count builds (confirmed: binary). When every yard colony
+         counts three or more, the base goes to a queue of the whole list drawn at random.
+         The backlog test below is made on that queue alone. A queue without a working
+         space yard loses the base at the empire's next construction step (spec 02 §6.1),
+         so the base is built only when that queue happens to have a yard. With only the
+         homeworld's yard, K is 1, and the base goes to the first queue of the list, a
+         colony in the empire's lowest-numbered colony system, which is the homeworld only
+         when no other colony lies in a lower-numbered system or before it in the
+         homeworld's system. Observed under a debugger (spec 07 "Pace observed under a
+         debugger"): all 119 Defense Base placements of three 100-turn games followed this
+         rule, every one made in Infrastructure, and 9 of them reached a queue with a yard
+         (an empire whose list held only its homeworld, or whose K-th queue happened to be a
+         yard colony). As the commands refuse a base at a colony without a yard, the engine
+         counts such a base as queued and spends its share of the budget without queueing
+         it, which is what the original's construction step leaves (`ai_economy.cpp`
+         `placeDefenseBase`). The
+         engine differs: `workingYard` counts a cloaked yard ship's yard as working, and
+         `queueList` orders a system's queues by the object slot order, which can put two
+         ships in another order than the system list (question 60).
        - Mines, satellites, weapon platforms and fighters go to the first queue in this
          order: the smallest backlog in turns; then the most free cargo space; then the
          fewest units of that kind already in its cargo; then the larger planet; then the
          higher resource production (minerals, organics and radioactives); then the
          highest rate. Any colony's queue can take them. When that first queue lacks the
-         cargo space for the batch, nothing is placed. OpenSE4 counts as "of that kind"
-         the units of the same vehicle type (inferred, question 60).
+         cargo space for the batch, nothing is placed. The "units of that kind" are in
+         fact every unit stack in the colony's cargo, whatever its kind: the key is the
+         total number of units it holds (confirmed: binary, question 60). The engine
+         differs: it counts only the units of the item's vehicle type.
        - Any other item goes to the queue with the smallest backlog in turns, then the
          highest rate. Ships need a space yard; the other units can use any colony's
          queue.
@@ -2105,7 +2152,20 @@ binary).
   - *Size*: a fleet recruits up to trunc(vehicle count × `Fleets Percentage of Ships For
     Fleets` / 100 / n) members.
     - Recruits are idle ships not in a fleet, within 3 jumps. They join at once if at the
-      fleet's spot, otherwise they are ordered to join.
+      fleet's spot; otherwise their orders are cleared and they get a Join Fleet order
+      (confirmed: binary). That order chases the fleet: on each of the ship's actions it
+      steps toward the fleet's position at that moment (wherever the fleet has gone since),
+      and it joins as soon as it stands where the fleet stands; it waits when out of
+      movement points and fails (clearing the list) only when no route is left or the
+      fleet is gone. The ship counts toward the fleet's size from the moment it is ordered.
+      The engine differs: `planFleets` (`ai_military.cpp`) gives a Move To the spot where
+      the leader stood and lets the ship join only when a later turn finds it there, which
+      rarely happens once the fleet moves on.
+    - Observed under a debugger (spec 07 "Pace observed under a debugger"): from turn 41
+      on, 74–78 % of the original's attack ships were in fleets, against 44–51 % in ours;
+      an empire with 46 ships kept six fleets of 7, 7, 6, 6, 2 and 1 attack ships, while our
+      fleets, capped by trunc(vehicle count × 80 / 100 / n) with fewer ships, mostly hold
+      one or two.
     - Attack fleets take attack ships, loaded carriers and drone carriers, loaded troop
       transports, kamikaze ships and boarding ships.
     - A fleet led by a defence ship takes only defence ships.
@@ -2126,6 +2186,31 @@ binary).
     - Leftover fleets defend, then patrol (fleets led by a defence ship) or explore.
   - Ships outside fleets get individual attack and defence orders only while the empire
     has no active fleet.
+- **How long the ministers' movement orders last** (confirmed: binary). Wherever this
+  section says that a minister sends a ship or fleet somewhere, chases an object or makes
+  it "move" toward a target, the order it gives is a Seek: toward a sector (the Defense
+  minister in turn-based games, the Attack minister, the fleets' goals, exploration,
+  patrol, repair, Space Yard Ships) or after an object (the Defense minister and the
+  defence fleets in simultaneous games). These are not the player's Move To and Attack
+  orders:
+  - in a turn-based game a Seek moves the ship as far as it can and is then done;
+  - in a simultaneous game it is kept for the whole movement phase, also once the ship has
+    arrived, and is removed after the phase. An order queued behind it (an explorer's
+    Warp) therefore waits for the next turn's phase;
+  - an Attack given when the ship already stands on its target's sector is carried out at
+    once and done.
+
+  So at every start of turn the ministers find the computer player's warships idle (or
+  with only a Warp left) and plan them again: they are free to be recruited by a fleet,
+  to defend against this turn's threats, to explore or to patrol. Only the colonization,
+  transport, resupply, Join Fleet and stellar-manipulation orders last until done. The
+  engine differs: it gives Move To and Attack orders, which last until done, so a ship
+  sent to patrol, explore or defend stays busy over several turns and the Fleets minister,
+  which recruits only idle ships, rarely finds any (the one-turn Seek of Destroy Black Hole
+  and Destroy Nebulae ships is the only one it imitates). A scratch run in which our
+  computers' warships dropped such orders at the end of each turn, and recruits chased
+  their fleet, moved Defend (Short Term) from 76 % to 70 % of the turns 51–100 (spec 07
+  "Pace observed under a debugger").
 - **Attack and defence** (Attack and Defense ministers; confirmed: binary).
   - *Defence* (confirmed: binary): only in Defend (Short Term). Each defender in turn goes
     to the first entry, in the defend-list systems and the Defense minister's order
@@ -2141,13 +2226,35 @@ binary).
       candidate that passes a 75 % roll is taken.
     - The order is Attack when the ship is already in that sector, otherwise a move there.
 - **Exploration** (confirmed: binary). There is no scout design type.
-  - Explorers are idle attack ships and loaded carriers or drone carriers that are not in
-    a fleet and have fewer than 4 damaged components.
-  - Each goes to the nearest free frontier warp point and jumps through if it can reach
-    it this turn.
-  - When explorers outnumber the free targets several times over (thresholds 3×, 5× and
-    8×), points already taken are handed out again, so several ships may head for the
-    same point.
+  - *Explorers*, taken in the game's object order: the empire's ships of design type
+    Attack Ship or Attack Base (a base cannot move, so its orders do nothing), Carriers
+    that carry fighters and whose cargo is more than half full, and Drone Carriers that
+    carry drones and whose cargo is more than half full. Each must be in normal status,
+    have fewer than 4 destroyed parts and supply above 0, be outside fleets, and have no
+    orders or a first order that is a Seek (spec 03 §8). Nothing is done while no free
+    frontier point is left (§7.2).
+  - *The point list* starts as the free frontier points in list order (system by system,
+    then the system's warp points in order). With A = the number of the empire's Attack
+    Ships (all of them, not only the explorers): when no point is free and A exceeds 3 ×
+    the number of all frontier points, every frontier point is put in the list. Then,
+    when A exceeds 5 × the list's length, each point of the list (as it was) is entered
+    once more if A still exceeds 5 × the current length, and once more again if A exceeds
+    8 × the current length; the length grows as entries are added.
+  - Each explorer takes the point of the list with the smallest travel distance from it
+    (movement points over the route; the earlier point on a tie). If that distance is 0,
+    the ship is on the warp point and gets no order this turn. Otherwise it gets a Seek
+    toward the point's sector, followed by a Warp through the point when its movement
+    points at that moment (§7.5 *Space Yard Ships* says which value that is) reach the
+    distance. The point then leaves the list.
+  - A Seek lasts one movement phase, so an explorer that cannot reach its point this turn
+    is planned again on the next one, and it jumps only on a turn it starts within reach
+    of its point.
+  - The engine differs: `planExploration` (`ai_explore.cpp`) plans only idle ships, has no
+    supply or half-full cargo test, counts the explorers instead of the empire's Attack
+    Ships for the 3×, 5× and 8× tests, picks by jumps and then sector distance, and gives
+    a Move To followed by a Warp that persist until done, whatever the distance. A scratch
+    run with the rules above changed our computers' pace by less than the noise (spec 07
+    "Pace observed under a debugger").
 - **Patrol** (confirmed: binary): idle warships not in fleets move to our colony with the
   fewest of our ships present, the smallest population breaking ties.
 - **Mines, satellites and drones** (confirmed: binary).
@@ -3410,6 +3517,36 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     ships (the only explorers besides loaded carriers) sit in fleets. Whether the original
     explores faster is not known; its statistics files hold the systems with colonies, not
     the systems explored, so this needs the observation of question 59.
+
+    **Observed in the original** (2026-10-02, under a debugger; spec 07 "Pace observed under
+    a debugger": three 100-turn games of five computer players against 24 of ours). The
+    original also spends most of its later turns in Defend (Short Term): 63 % of turns
+    51–100 (49–73 % per game) against our 76 % (56–99 %), and 46 % of all turns against 53 %.
+    It is in Infrastructure 16 % of turns 51–100 (2–30 % per game) against our 5 % (0–18 %),
+    and 10 of its 15 empires reach Infrastructure against 63 of our 120. The frontier is not
+    what differs: our computers explore at least as many systems (9.8–14.6 against 7.9–11.0
+    in turns 51–100), and a spell of Defend (Short Term) ends in Infrastructure about as
+    often (ours 32 %, the original's 25 %). The difference is how long the enemy-in-territory list stays
+    filled: it is not empty in 76 % of our updates of turns 51–100 against 63 %, ours hold
+    about 1.7 times as many hostile colonies and ships, and 63 % of our turns in Defend
+    (Short Term) fall in spells of 20 turns or more (35 % in the original), mostly with a
+    colony of an enemy at war in the territory. The original removes such colonies about
+    twice as fast (33 % gone within ten turns against 13 %), with most of its attack ships
+    in fleets (74–78 % from turn 41 against 44–51 %) and more of them (13.2 against 8.1 per
+    empire at turn 100). The rules found that the engine does not follow yet, in order of
+    their effect in scratch runs (spec 07):
+    1. the ministers' movement orders last one movement phase (§7.5 "How long the
+       ministers' movement orders last"), and recruits chase their fleet (§7.5
+       `AI_Fleets`): together Defend (Short Term) 76 % → 70 % of turns 51–100;
+    2. attack candidates are kept only when we could settle them or their owner is below
+       None (§7.2 "Attack candidates"): Infrastructure 7 % → 9 % of all turns;
+    3. the explorers and their point list (§7.5 "Exploration"): within the noise;
+    4. the economy step's borrowed lists (§7.2 "Whose lists the economy step reads"), the
+       cloaked yard ship and the unit count (question 60): not measured, small.
+
+    With 1 and 2 our computers are in Defend (Short Term) 48 % of all turns and 70 % of
+    turns 51–100, and in Infrastructure 11 % and 8 %: about half of the gap in Defend (Short
+    Term) and a quarter of the gap in Infrastructure. The rest is questions 61–63.
 54. **What enters the enemy-in-territory list** (§7.2 "Lists built each turn"): **Answer**
     (confirmed: binary), now in §7.2:
     - ships and unit groups other than mine fields: only those the evaluating empire
@@ -3536,6 +3673,25 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     free slots by turn 20–30 (question 56). Ours have half a breathable Research Compound by
     turn 50, so the open questions are how many breathable planets the original's computers
     settle early, and which type those colonies get.
+
+    **Answer** (observed under a debugger, 2026-10-02; spec 07 "Pace observed under a
+    debugger"). In games where all five empires are computer players, the set-up of our
+    own measurements, the original's research equals ours within the spread between games:
+    per empire 11.0k at turn 50 and 13.8k at turn 100 against our 10.3k and 14.1k; research
+    per colony 1,041 and 1,038 against 1,074 and 954 (per game 924–1,233 and 849–1,230; ours
+    568–1,483 and 473–1,505); 34.6 tech levels at turn 100 against 34.0. Research per colony
+    falls as small domed colonies are added, so it follows the map size and the colony count.
+    The colonies agree as well: 15.5 per empire at turn 100 against 15.7, with the same mix
+    of types (Research Compounds 3.9 against 4.0, Mining Colonies 4.4 against 4.0), 22.7
+    Research Centers against 24.2, and one empire of fifteen far ahead at turn 50 (24.9k
+    research with 17 colonies; 3 of our 120 above 20k). So no rule is missing here: the lead
+    of question 56 came from its set-up (a human empire on every minister beside four
+    computers) and its spread (three games, ±2,200 at turn 50 and ±5,200 at turn 100). Of
+    the candidates above, the Infrastructure time does differ (question 53), but bringing
+    ours closer changed our research by less than the noise in scratch runs; the colony
+    choices match; the moods differ (question 61). What the statistics still show apart are
+    the resources produced (question 61), the ships (question 62) and the bases (question
+    53 and §7.5 "Placement": the same rule, less time in Infrastructure).
 60. **Details the territory and queue rules leave open** (§7.2 "Territory", §7.5
     "Placement"). OpenSE4's choices (inferred):
     - the start-of-turn ministers after Politics read the territory only through the lists
@@ -3552,3 +3708,50 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
 
     To verify in the executable: which of these the routines test, and whether any start-of-
     turn minister other than Politics reads the claimed systems directly.
+
+    **Answer** (confirmed: binary, 2026-10-02; now in §7.2 and §7.5):
+    - Only the start-of-turn analysis that builds the lists, the state update's choice of a
+      staging system, the Politics minister itself (claims, anger, trade values and its own
+      demands) and the display read the claimed systems. No minister after Politics reads
+      them, so the engine's choice holds.
+    - A system's queues follow the system's own object list: the order in which objects
+      were placed in or entered the system, planets before the ships that came later. The
+      engine's object slot order agrees for planets and can differ only between two ships.
+    - A colony's yard works while the colony is not cloaked; a ship's while the ship is not
+      cloaked and its Space Yard part works. The engine differs for a cloaked yard ship.
+    - A queued item counts its count, and every design on a base hull counts, Base Space
+      Yards included. The engine matches.
+    - The unit queue choice counts every unit in the colony's cargo, whatever its kind. The
+      engine differs.
+61. **Resources produced by the computer players** (spec 07 "Pace observed under a
+    debugger"). With the same population (2,887M and 3,198M at turns 75 and 100 against our
+    2,789M and 3,106M), the same colony types and about as many facilities, the original's
+    computer empires produce 27 % and 19 % more resources than ours (32.9k and 36.3k against
+    25.9k and 30.4k), as the statistics of question 56 showed too (37.8k against 29.1k at
+    turn 100). Their colonies are happier (3.2–3.3 Jubilant colonies per empire at turns
+    75–100 against 0.8–1.5), but the mood modifiers make only a few per cent of that.
+    OpenSE4 computes output by spec 02 §5 and moods by spec 02 §4, and no missing rule is
+    known. To verify: what the statistics' "resources produced" counts in the original
+    (trade treaty income, gifts and tributes, scrapping); which happiness inputs make the
+    original's colonies Jubilant (our ships in the system or sector, treaties); and the
+    output of a few computer colonies read under a debugger beside the same colonies in ours.
+62. **The computer players' ships** (spec 07 "Pace observed under a debugger"). From turn
+    75 the original's computer empires have more ships: 14.4 and 19.7 at turns 75 and 100
+    against our 10.8 and 13.1, attack ships alone 9.1 and 13.2 against 6.9 and 8.1, although
+    they spend fewer turns in Defend (Short Term). The Ship Construction minister follows the
+    binary (§7.5), so the cause lies in the budget (question 61) or in losses. To verify: how
+    many ships each side builds and loses per turn (a debugger log of ships created and
+    destroyed in the original, the same from our engine), and how the budget is split among
+    the rows of the vehicle table in each state.
+63. **How fast hostile colonies in the territory go** (spec 07 "Pace observed under a
+    debugger"). Of the colonies of an enemy at war listed in a territory, 33 % (21–46 % per
+    game) are gone ten turns later in the original against 13 % in ours, and the original
+    loses 3.5 colonies per empire in turns 51–100 against our 1.9. It is in Attack 4 % of
+    turns 51–100 against our 2 %, with Attack spells of 4.4 turns that end in Infrastructure
+    85 % of the time (ours 2.9 turns, 42 %). Larger fleets explain part of it (question 53),
+    but with one-turn orders and the fleet pursuit our rate rose only to 16 % in a scratch
+    run. To verify: how the original's colonies go (destroyed, depopulated by bombardment,
+    captured by troops, or traded away), from the colony records and combat results of a
+    debugger session; which minister sends the ships that do it (the Attack minister in
+    Attack, the Defense minister and the defence fleets in Defend (Short Term), the attack
+    fleets in other states); and whether our ships reach those colonies and fight them.
