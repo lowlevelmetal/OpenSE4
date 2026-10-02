@@ -346,8 +346,6 @@ differs"). Those settled on 2026-10-01 in the last round, still to implement:
   in every tab; the original's Colonies columns, directions and keyless columns; clickable
   pictures; fleet rows last and unsorted; a queued design's right-click opens its Design
   Report (`screens/planets.cpp`, `screens/ships.cpp`, `screens/queues.cpp`).
-- **Coordinate line** (§2.4, §7 Q64): the range and the selection marker only while the
-  selected sector holds an object the viewer sees (`main_window.cpp`).
 - **Strategic Combat** (§7 Q73): fight on step by step until the next refresh is due
   (`screens/strategic_combat.cpp`).
 - **Tactical animation** (§1.10.3, §7 Q77): 36-frame slides, 9 frames per 45°, torpedo

@@ -67,6 +67,10 @@ private:
     const game::Vehicle* selectedVehicle(const UiContext& ui) const;
     const game::Colony* selectedColony(const UiContext& ui) const;
     std::vector<game::ObjectId> objectsAt(const UiContext& ui, game::Sector s) const;
+    // The selected sector is marked (the yellow corners, and the coordinate
+    // line's range) only while it holds an object the viewer sees, tested at
+    // every redraw; the selection itself stays as clicked (spec 06 §2.4, §7 Q64).
+    bool selectedSectorMarked(const UiContext& ui) const;
     std::vector<const game::Vehicle*> vehiclesAt(const UiContext& ui, game::Location where) const;
     void cycleVehicle(UiContext& ui, int dir, bool idleOnly);
     void cycleFleet(UiContext& ui, int dir);

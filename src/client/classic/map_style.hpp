@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 
 namespace opense4::client::classic::map_style {
 
@@ -73,5 +74,11 @@ struct Point {
     float x = 0, y = 0;
 };
 Point nameCorner(float x, float y, float cellW, float cellH, float textW, float textH, float boxW, float boxH);
+
+// The coordinate line of the system panel (spec 06 §2.4, §7 Q64, confirmed:
+// binary): "Coordinates (x, y)", then, while a selected sector of the shown
+// system is marked (it holds an object the viewer sees), three spaces,
+// "Range:", a space and the distance from it, 0 on that sector itself.
+std::string coordinateLine(game::Sector hover, std::optional<game::Sector> marked);
 
 } // namespace opense4::client::classic::map_style

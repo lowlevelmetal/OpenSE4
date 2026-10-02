@@ -487,6 +487,15 @@ TEST_CASE("main window: every order key belongs to one order, and the keys of sp
     CHECK(b.chords(Action::ContextHelp)[0] == KeyChord{ImGuiKey_F1, false, true});
 }
 
+// ---- The coordinate line (docs/spec/06 §2.4, §7 Q64) ----
+
+TEST_CASE("main window: the coordinate line shows the range only from a marked selected sector") {
+    using map_style::coordinateLine;
+    CHECK(coordinateLine({3, 4}, std::nullopt) == "Coordinates (3, 4)");
+    CHECK(coordinateLine({3, 4}, game::Sector{5, 6}) == "Coordinates (3, 4)   Range: 2");
+    CHECK(coordinateLine({5, 6}, game::Sector{5, 6}) == "Coordinates (5, 6)   Range: 0");   // the pointer on it
+}
+
 // ---- Minis turned to their heading (docs/spec/06 §2.4) ----
 
 TEST_CASE("main window: minis turn nearest-neighbour, and the client follows headings") {

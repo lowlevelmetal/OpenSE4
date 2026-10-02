@@ -3463,10 +3463,10 @@ the executable and Q63 has no counterpart; Q60 needs observation:
     selected. Nothing excludes the selected sector itself, so with the pointer on it the
     line ends in "Range: 0". With no marked selection only the coordinates show.
 
-    Our client differs: `selectSector()` (`client/classic/main_window.cpp`) selects an
-    empty sector too, and the coordinate line then adds the range and the selection
-    brackets are drawn. Both must appear only while the selected sector holds an object
-    the viewer sees, tested at every frame; the selection itself stays as clicked.
+    Since 2026-10-01 our client follows this: the range (`map_style::coordinateLine`) and
+    the selection brackets appear only while the selected sector holds an object the
+    viewer sees (`MainWindow::selectedSectorMarked`, tested at every frame); the selection
+    itself stays as clicked.
 
 Our own choices made while implementing Q41–Q55 for the Log, the engine and Save Empire
 (inferred). Q70 and Q72 are settled from the executable; Q71 has no counterpart:

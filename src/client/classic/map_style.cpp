@@ -3,6 +3,8 @@
 #include "game/movement.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <format>
 #include <cmath>
 #include <numbers>
 
@@ -47,6 +49,12 @@ Point nameCorner(float x, float y, float cellW, float cellH, float textW, float 
     for (const Point& p : candidates)
         if (p.x >= 0 && p.y >= 0 && p.x + textW <= boxW && p.y + textH <= boxH) return p;
     return candidates[3];
+}
+
+std::string coordinateLine(game::Sector hover, std::optional<game::Sector> marked) {
+    std::string line = std::format("Coordinates ({}, {})", hover.x, hover.y);
+    if (marked) line += std::format("   Range: {}", std::max(std::abs(hover.x - marked->x), std::abs(hover.y - marked->y)));
+    return line;
 }
 
 } // namespace opense4::client::classic::map_style

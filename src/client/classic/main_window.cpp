@@ -277,6 +277,17 @@ std::vector<game::ObjectId> MainWindow::objectsAt(const UiContext& ui, game::Sec
     return out;
 }
 
+bool MainWindow::selectedSectorMarked(const UiContext& ui) const {
+    if (!sector_ || !shown_.valid()) return false;
+    if (!objectsAt(ui, *sector_).empty()) return true;
+    if (replay_.active()) {
+        for (const game::Vehicle& v : replay_.vehicles())
+            if (v.location == game::Location{shown_, *sector_} && replaySeen_.contains(v.id)) return true;
+        return false;
+    }
+    return !vehiclesAt(ui, {shown_, *sector_}).empty();
+}
+
 std::vector<const game::Vehicle*> MainWindow::vehiclesAt(const UiContext& ui, game::Location where) const {
     std::vector<const game::Vehicle*> out;
     for (const game::Vehicle& v : ui.state().vehicles)
@@ -1362,10 +1373,10 @@ void MainWindow::overlayText(UiContext& ui) {
                     put(tiny, tinySize, square + Vec2{float(places[i].x), kSpriteSize - kTinyCell * float(places[i].line + 1)}, color, groups[i]);
             }
         // Coordinate location (on by default): the sector under the pointer, and
-        // the range from the selected sector of this system.
+        // the range from the selected sector of this system while it is marked
+        // (it holds an object we see, §7 Q64); "Range: 0" on that sector itself.
         if (opts.coordinateLocation && hover_) {
-            std::string line = std::format("Coordinates ({}, {})", hover_->x, hover_->y);
-            if (sector_) line += std::format("   Range: {}", std::max(std::abs(hover_->x - sector_->x), std::abs(hover_->y - sector_->y)));
+            const std::string line = map_style::coordinateLine(*hover_, selectedSectorMarked(ui) ? sector_ : std::nullopt);
             put(small, kSmallSize, geo.layout->coordinateLine + Vec2{geo.left, kSmallLead}, IM_COL32_WHITE, line);
         }
     }
@@ -1926,7 +1937,6 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
 
     // Ships on their way: gliding to their new square, or moved by the replay
     // (turning in 5° steps, then sliding).
-    const double now = ui.time;
     auto largestFirst = [&](std::vector<const game::Vehicle*>& list) {
         std::stable_sort(list.begin(), list.end(), [&](const game::Vehicle* a, const game::Vehicle* b) {
             return rules.hull(s.design(a->design).hull).tonnage > rules.hull(s.design(b->design).hull).tonnage;
@@ -1990,7 +2000,7 @@ void MainWindow::drawSystem(gfx::Renderer2D& r, UiContext& ui) {
                 r.line(corner, corner - Vec2{0, sy * l}, 1.0f, col);
             }
     };
-    if (sector_) brackets(*sector_, kSelectYellow);
+    if (selectedSectorMarked(ui)) brackets(*sector_, kSelectYellow);
     if (pick_ != Pick::None && hover_) brackets(*hover_, Color::hex(0x60ff80));
     // Waypoints and tagged minefields: a cyan 1 px rectangle on the cell's edges
     // (the number or "M" is drawn by overlayText).
