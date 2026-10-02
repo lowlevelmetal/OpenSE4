@@ -2257,12 +2257,16 @@ binary).
   - A Seek lasts one movement phase, so an explorer that cannot reach its point this turn
     is planned again on the next one, and it jumps only on a turn it starts within reach
     of its point.
-  - The engine differs: `planExploration` (`ai_explore.cpp`) plans only idle ships, has no
-    supply or half-full cargo test, counts the explorers instead of the empire's Attack
-    Ships for the 3×, 5× and 8× tests, picks by jumps and then sector distance, and gives
-    a Move To followed by a Warp that persist until done, whatever the distance. A scratch
-    run with the rules above changed our computers' pace by less than the noise (spec 07
-    "Pace observed under a debugger").
+  - OpenSE4 follows this since 2026-10-02 (`planExploration`, `ai_explore.cpp`; the
+    travel distance is the route's length in movement points, `findPathToNearest`, and a
+    point no route reaches is never taken). Its choices where the text leaves room are in
+    question 64: the minister stops at once while no point is free, so the 3× rule never
+    applies; an explorer on its point keeps the point in the list; a turn-based explorer
+    compares the movement of this turn's run; the fleets that explore (§7.5 `AI_Fleets`,
+    leftover fleets) keep the Seek toward the first free point and the Warp.
+    The engine used to plan only idle ships, without the supply and half-full cargo tests,
+    to count the explorers for the 3×, 5× and 8× tests, to pick by jumps and then sector
+    distance, and to give a Move To and a Warp that lasted until done.
 - **Patrol** (confirmed: binary): idle warships not in fleets move to our colony with the
   fewest of our ships present, the smallest population breaking ties.
 - **Mines, satellites and drones** (confirmed: binary).
@@ -3768,7 +3772,26 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     reads"). OpenSE4's choices since 2026-10-02 (inferred):
     - a turn-based Seek that arrives is done and the next order (an explorer's Warp) runs
       with the movement left; what is left of one when its group's run ends, because the
-      movement is spent or a hazard or a battle stopped it, is removed then.
+      movement is spent or a hazard or a battle stopped it, is removed then;
+    - "nothing is done while no free frontier point is left" is taken literally: the
+      Exploration minister stops before it builds its point list, so the rule that puts
+      every frontier point in an empty list (more than 3 × as many Attack Ships) never
+      applies;
+    - an explorer that stands on the point it takes gets no order and leaves the point in
+      the list for the next explorer ("the point then leaves the list" read as part of the
+      orders); an explorer that no route takes to any point gets nothing;
+    - the leftover fleets that explore (§7.5 `AI_Fleets`) get a Seek toward the first free
+      frontier point and the Warp through it, which lasts until done. In scratch runs the
+      explorers' rule for them (the Warp only when the fleet's movement reaches the
+      distance) kept our computers in Exploration 22 % of turns 51–100 instead of 13 %
+      (spec 07 "Pace after the movement rules");
+    - in a turn-based game the explorer's movement points "at that moment" are those of
+      this turn's run: the points come back only after the ministers (§8 step 3), so what
+      the last movement left is usually 0, and no explorer that moved the turn before
+      would ever get its Warp.
 
     To verify in the executable: when a turn-based Seek leaves the list, and whether the
-    order behind it runs in the same turn.
+    order behind it runs in the same turn; which empty list stops the Exploration minister
+    (no free point, or no frontier point at all); whether an explorer on its point takes
+    the point out of the list; how a fleet explores; and which movement points a
+    turn-based explorer compares with its distance.

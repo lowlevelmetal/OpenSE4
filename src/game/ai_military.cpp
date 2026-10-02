@@ -365,6 +365,8 @@ void planFleets(Planner& p) {
             }
             if (best && leader->location != locationOf(p.st.galaxy, *best)) p.setFleetOrders(keep[k], {seekOrder(locationOf(p.st.galaxy, *best))});
         } else if (!p.sit.freeFrontier.empty() && !p.neutral) {
+            // Explore: a Seek toward the first free frontier point, then the
+            // Warp through it, which lasts until done (inferred, spec 05 Q64).
             const ObjectId wp = p.sit.freeFrontier.front();
             Order warp;
             warp.kind = OrderKind::Warp;

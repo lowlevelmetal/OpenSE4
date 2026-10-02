@@ -303,6 +303,14 @@ bool lostWhileDefending(const CombatRecord& rec, EmpireId e);
 std::vector<std::pair<Location, int>> layerCandidates(Planner& p, bool mines);
 // The mine layers' star-destroyer flag of this turn (spec 05 §7.5 "Layer fallback").
 bool starDestroyerFlag(const Planner& p);
+// The movement points the Exploration minister compares with an explorer's
+// distance, "at that moment" (spec 05 §7.5): what the vehicle's last movement
+// left, as the Space Yard Ships minister reads it. In a simultaneous game
+// that is its whole movement, since each action gives its points back. A
+// turn-based game gives the points back only after the ministers (§8 step 3),
+// which would keep a ship that moved last turn from ever warping, so there
+// the movement of this turn's run counts (inferred, spec 05 Q64).
+int movementNow(const Planner& p, const Vehicle& v);
 // Order helpers.
 Order moveOrder(Location where);
 Order simpleOrder(OrderKind k);

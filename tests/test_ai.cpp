@@ -632,28 +632,138 @@ TEST_CASE("ai: an all-computer game runs 60 turns deterministically") {
 
 // ---- Exploration and colonization -----------------------------------------------------------------
 
-TEST_CASE("ai: idle attack ships explore the frontier") {
+TEST_CASE("ai: attack ships explore the frontier with a Seek, and warp only when they reach the point this turn") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = newEngineGame(7, 2, 12, true);
+    const EmpireId me{0u};
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    // Every system explored but those beyond home's neighbours' links, every link known.
+    exploreEverything(s);
+    for (SystemId nb : s.galaxy.neighbors(home.system))
+        for (SystemId far : s.galaxy.neighbors(nb))
+            if (far != home.system) s.empire(me).knowledge.explored[far.index()] = 0;
+    for (SystemId nb : s.galaxy.neighbors(home.system)) s.empire(me).knowledge.explored[nb.index()] = 1;
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    const VehicleId a = addTestVehicle(s, r, warship, home).id;
+    const VehicleId b = addTestVehicle(s, r, warship, home).id;
+    for (VehicleId id : {a, b}) s.vehicle(id)->supply = 1000;
+    auto plan = [&]() {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planExploration(p);
+        return std::pair{p.st.vehicle(a)->orders, p.st.vehicle(b)->orders};
+    };
+    size_t points = 0;
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        points = p.sit.freeFrontier.size();
+    }
+    REQUIRE(points >= 2);
+    // No movement left from the last move: a Seek alone toward a frontier point.
+    auto [oa, ob] = plan();
+    REQUIRE(oa.size() == 1);
+    REQUIRE(ob.size() == 1);
+    CHECK(oa.front().kind == OrderKind::Seek);
+    auto pointAt = [&](Location where) -> std::optional<ObjectId> {
+        for (ObjectId wp : s.galaxy.warpPoints(where.system))
+            if (s.galaxy.object(wp).sector == where.sector && !s.empire(me).hasExplored(s.galaxy.object(s.galaxy.object(wp).destination).system))
+                return wp;
+        return std::nullopt;
+    };
+    REQUIRE(pointAt(oa.front().location));
+    REQUIRE(pointAt(ob.front().location));
+    CHECK(s.empire(me).hasExplored(oa.front().location.system));
+    // With fewer Attack Ships than 5 × the free points, no two take the same one.
+    CHECK(oa.front().location != ob.front().location);
+    // Movement points that reach the point now: the Warp through it follows the Seek.
+    s.vehicle(a)->movement = 999;
+    std::tie(oa, ob) = plan();
+    REQUIRE(oa.size() == 2);
+    CHECK(oa.back().kind == OrderKind::Warp);
+    CHECK(oa.back().object == *pointAt(oa.front().location));
+    CHECK(ob.size() == 1);
+    // On the point itself: no order this turn.
+    s.vehicle(a)->location = oa.front().location;
+    CHECK(plan().first.empty());
+}
+
+TEST_CASE("ai: the explorers: attack ships and well-loaded carriers, fit, supplied, outside fleets, idle or seeking") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary).
     const Rules& r = engineRules();
     GameState s = newEngineGame(7, 2, 12, true);
     const EmpireId me{0u};
     const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
     const DesignId warship = addWarship(s, r, me, "Picket");
-    const VehicleId explorer = addTestVehicle(s, r, warship, home).id;
-    const auto cmds = ai::planTurn(r, s, me);
-    bool explored = false;
-    std::vector<ObjectId> targets;
-    for (const Command& c : cmds) {
-        const auto* o = as<cmd::SetOrders>(c);
-        if (!o || o->orders.empty() || o->orders.back().kind != OrderKind::Warp) continue;
-        const SpaceObject& wp = s.galaxy.object(o->orders.back().object);
-        CHECK(s.empire(me).hasExplored(wp.system));
-        targets.push_back(o->orders.back().object);
-        explored = explored || o->vehicle == explorer;
+    auto ship = [&]() {
+        const VehicleId id = addTestVehicle(s, r, warship, home).id;
+        s.vehicle(id)->supply = 1000;
+        return id;
+    };
+    auto explores = [&](VehicleId id) {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        ai::detail::planExploration(p);
+        const std::vector<Order>& o = p.st.vehicle(id)->orders;
+        return !o.empty() && o.front().kind == OrderKind::Seek;
+    };
+    const VehicleId plain = ship();
+    CHECK(explores(plain));
+    s.vehicle(plain)->supply = 0;
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->supply = 1000;
+    s.vehicle(plain)->status = VehicleStatus::Cloaked;  // not in normal status
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->status = VehicleStatus::Normal;
+    s.vehicle(plain)->orders = {ai::detail::moveOrder(home)};
+    CHECK_FALSE(explores(plain));
+    s.vehicle(plain)->orders = {ai::detail::seekOrder(home)};  // a Seek first: planned again
+    CHECK(explores(plain));
+    s.vehicle(plain)->orders.clear();
+    REQUIRE(apply(r, s, me, cmd::CreateFleet{{}, {plain}}).ok);
+    CHECK_FALSE(explores(plain));
+    // A design typed otherwise does not explore.
+    const VehicleId other = ship();
+    s.design(warship).designType = "Defense Ship";
+    CHECK_FALSE(explores(other));
+}
+
+TEST_CASE("ai: many attack ships send more than one explorer to a point") {
+    // Spec 05 §7.5 "Exploration" (confirmed: binary): with A the empire's
+    // Attack Ships, a list of L points gets each point once more while A > 5 ×
+    // its length, and once more again while A > 8 × it.
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    const EmpireId me{0u};
+    exploreEverything(s);
+    const SystemId home = ai::detail::homeSystem(s, me);
+    const SystemId beyond = s.galaxy.neighbors(home).front();
+    s.empire(me).knowledge.explored[beyond.index()] = 0;
+    const DesignId warship = addWarship(s, r, me, "Picket");
+    size_t points = 0;
+    {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+        points = p.sit.freeFrontier.size();
     }
-    CHECK(explored);
-    // With fewer explorers than free points, no two take the same one.
-    std::sort(targets.begin(), targets.end());
-    CHECK(std::adjacent_find(targets.begin(), targets.end()) == targets.end());
+    REQUIRE(points >= 1);
+    std::vector<VehicleId> ships;
+    const Location at = locationOf(s.galaxy, homeworld(s, me).planet);
+    for (size_t i = 0; i < 9 * points; ++i) {
+        ships.push_back(addTestVehicle(s, r, warship, at).id);
+        s.vehicle(ships.back())->supply = 1000;
+    }
+    // A = 9 L: each point is entered once more (9 L > 5 L, then 5 × 2 L... ) while
+    // the length allows; count the expected list length the same way.
+    const int64_t a = static_cast<int64_t>(ships.size());
+    int64_t length = static_cast<int64_t>(points);
+    for (size_t i = 0; i < points; ++i) {
+        if (a > 5 * length) ++length;
+        if (a > 8 * length) ++length;
+    }
+    REQUIRE(length > static_cast<int64_t>(points));
+    ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
+    ai::detail::planExploration(p);
+    int64_t sent = 0;
+    for (VehicleId id : ships) sent += !p.st.vehicle(id)->orders.empty();
+    CHECK(sent == length);
 }
 
 TEST_CASE("ai: a colony ship moves to the best target and colonizes it") {
@@ -2108,6 +2218,7 @@ TEST_CASE("ai: ministers act only on what they were given") {
     // A ship under the Exploration minister explores.
     const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, home.planet)).id;
     s.vehicle(scout)->minister = true;
+    s.vehicle(scout)->supply = 1000;  // an explorer needs supply
     cmds = ai::ministerCommands(r, s, me);
     bool ordered = false;
     for (const Command& c : cmds)
@@ -2623,7 +2734,7 @@ TEST_CASE("ai: a missed human turn is played with every minister on, the politic
     CHECK(ai::ministerOn(s.empire(me), Minister::Politics));
     ai::politicalStep(ctx);
     CHECK(s.empire(me).relation(other).anger == 50 + ai::builtinProfile().anger.regularDecrease);
-    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet));
+    addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).supply = 1000;
     CHECK_FALSE(ai::planOrders(r, s, me).empty());  // every minister acts on everything
 
     ai::restoreMinisters(s.empire(me), saved);
@@ -4871,6 +4982,8 @@ TEST_CASE("ai: the exploration frontier holds the warp points into unexplored sy
 
     // An explorer heads for one of those points only.
     const VehicleId scout = addTestVehicle(s, r, addWarship(s, r, me, "Picket"), locationOf(s.galaxy, homeworld(s, me).planet)).id;
+    s.vehicle(scout)->supply = 1000;
+    s.vehicle(scout)->movement = 999;  // it reaches the point this turn: the Warp follows the Seek
     ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 1);
     ai::detail::planExploration(p);
     const std::vector<Order> orders = ordersOf(p, scout);
