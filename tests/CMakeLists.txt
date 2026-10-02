@@ -39,6 +39,7 @@ add_executable(opense4_tests
     test_ruleset.cpp
     test_score.cpp
     test_serialize.cpp
+    test_settings_keys.cpp
     test_setup_model.cpp
     test_ships_ui.cpp
     test_sight.cpp
@@ -56,7 +57,9 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/movement_replay.cpp

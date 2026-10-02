@@ -898,6 +898,9 @@ void MainWindow::runOrder(UiContext& ui, OrderId id) {
 void MainWindow::update(UiContext& ui, bool blocked) {
     layOut(ui.map.left, ui.map.right);
     trackMovement(ui);
+    // The ending window, once when the game ends for this player (finale.hpp).
+    if (const auto ending = finale_.update(ui.state(), ui.session.player(), ui.session.kind()))
+        ui.open(ScreenId::Finale, ScreenArgs{.index = static_cast<int>(*ending)});
     prepareSectors(ui);
     if (!shown_.valid() && !ui.state().galaxy.systems.empty()) reset(ui);
     // Selections can vanish when a turn is processed.
@@ -1693,6 +1696,9 @@ void MainWindow::trackMovement(UiContext& ui) {
     f.shown = shown_;
     f.animate = settings().animateSystemMovement;
     f.cellPixels = geo.cell;
+    // Settings.txt `System Ship Movement Delay Milliseconds`: a wait after each animated step (spec 06 §1.9).
+    const double stepPause = ShipGlides::stepPause(ui.rules().setting("System Ship Movement Delay Milliseconds", 0));
+    f.stepPause = stepPause;
     f.seen = [this](game::VehicleId id) { return replaySeen_.contains(id); };
     f.turns = [&](game::VehicleId id) {
         const MovementLog* log = replay_.log();
@@ -1717,7 +1723,7 @@ void MainWindow::trackMovement(UiContext& ui) {
     std::vector<ShipGlides::Seen> visible;
     for (const game::Vehicle& v : s.vehicles)
         if (knownVehicle(ui, v)) visible.push_back({v.id, v.location});
-    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible);
+    glides_.track(ui.time, shown_, settings().animateSystemMovement && !replay_.active(), visible, stepPause);
 }
 
 void MainWindow::startReplay(UiContext& ui, OrderId id) {
