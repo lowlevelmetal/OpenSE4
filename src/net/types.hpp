@@ -14,7 +14,7 @@
 namespace opense4::net {
 
 inline constexpr uint16_t kDefaultPort = 6720;       // TCP, as in the classic game
-inline constexpr uint32_t kProtocolVersion = 3;
+inline constexpr uint32_t kProtocolVersion = 4;
 inline constexpr uint32_t kNoSlot = 0xffffffffu;
 inline constexpr size_t kMaxPlayerNameLength = 32;
 inline constexpr size_t kMaxChatLength = 500;

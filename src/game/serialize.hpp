@@ -61,8 +61,12 @@ class Rules;
 // vehicle headings, combat event flags, the Ships\Units window's tab and
 // switches, the minister flag on messages, empire-file strategies; the unused
 // vehicle target fields are gone (spec 03 §15, spec 06 §7 Q56, Q62, spec 05 Q52).
-inline constexpr uint32_t kSaveVersion = 5;
-inline constexpr uint32_t kMinSaveVersion = 5;
+// Version 6: ship arrival stamps per system (Vehicle::arrival,
+// GameState::arrivals), the computer players' Seek and Join Fleet orders;
+// happiness events waiting for the next update are no longer saved (spec 05
+// §7.5, spec 02 §4).
+inline constexpr uint32_t kSaveVersion = 6;
+inline constexpr uint32_t kMinSaveVersion = 6;
 
 inline constexpr size_t kEnvelopeSize = 32;
 
