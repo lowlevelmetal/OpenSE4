@@ -1,5 +1,6 @@
 #include "client/classic/session.hpp"
 
+#include "client/app_settings.hpp"
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "core/log.hpp"
@@ -8,9 +9,6 @@
 #include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
-
-#include <SDL3/SDL_filesystem.h>
-#include <SDL3/SDL_stdinc.h>
 
 #include <algorithm>
 #include <format>
@@ -525,18 +523,7 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     return session;
 }
 
-std::filesystem::path userDataDir() {
-    std::filesystem::path dir;
-    if (char* pref = SDL_GetPrefPath("", "OpenSE4")) {
-        dir = pref;
-        SDL_free(pref);
-    } else {
-        dir = std::filesystem::current_path() / "userdata";
-    }
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    return dir;
-}
+std::filesystem::path userDataDir() { return userDataDirectory(); }
 
 std::filesystem::path historyDir() { return userDataDir() / "History"; }
 
