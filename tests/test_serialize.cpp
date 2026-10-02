@@ -389,6 +389,9 @@ TEST_CASE("serialize: orders round trip for every command type") {
     c.push_back(cmd::UseDemandEntry{cmd::DemandList::Peace, EmpireId{2u}});
     c.push_back(cmd::JettisonCargo{VehicleId{36u}, ObjectId{}, {{EmpireId{1u}, 12}}, {{DesignId{37u}, 3}}});
     c.push_back(cmd::CloakColony{ObjectId{38u}, false});
+    c.push_back(cmd::Analyze{VehicleId{39u}});
+    c.push_back(cmd::SelfDestruct{VehicleId{40u}});
+    c.push_back(cmd::FireOn{VehicleId{41u}});
 
     std::set<size_t> kinds;
     for (const Command& cmd : c) kinds.insert(cmd.index());
@@ -608,8 +611,8 @@ TEST_CASE("serialize: checksums are stable") {
     // a field is added to a serialized struct these change: bump kSaveVersion
     // in serialize.hpp if older files can no longer be read, then paste the
     // new values printed below.
-    constexpr uint64_t kGoldenChecksum = 0x4f6d6950cf177bfbull;
-    constexpr size_t kGoldenSize = 1801;
+    constexpr uint64_t kGoldenChecksum = 0xc3779869fcce0bcbull;
+    constexpr size_t kGoldenSize = 1805;
     CHECK_MESSAGE(stateChecksum(g) == kGoldenChecksum,
                   "save format changed: kGoldenChecksum = " << std::format("{:#x}", stateChecksum(g)) << "ull");
     CHECK_MESSAGE(serializeState(g).size() == kGoldenSize, "save format changed: kGoldenSize = " << serializeState(g).size());

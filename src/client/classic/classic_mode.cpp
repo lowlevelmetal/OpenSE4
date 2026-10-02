@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <format>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -742,6 +743,10 @@ void ClassicMode::drawNetwork(UiContext& ui) {
                                              ImGuiWindowFlags_NoBringToFrontOnFocus);
     if (ImGui::SmallButton(chatOpen_ ? "Hide Chat" : "Chat")) chatOpen_ = !chatOpen_;
     ImGui::SameLine();
+    if (net->hosting()) {
+        if (ImGui::SmallButton("Empires")) hostEmpiresOpen_ = !hostEmpiresOpen_;
+        ImGui::SameLine();
+    }
     const std::string status = net->status();
     const std::string first = status.empty() ? (session_->waitingForOthers() ? "Orders sent." : "Your turn.") : status;
     ImGui::TextColored(ImVec4(1, 0.85f, 0.45f, 1), "%s", first.c_str());
@@ -774,7 +779,57 @@ void ClassicMode::drawNetwork(UiContext& ui) {
         }
         ImGui::End();
     }
+    if (hostEmpiresOpen_) drawHostEmpires(ui);
     ImGui::PopFont();
+}
+
+// The host's list of empires: "Toggle Empire AI On/Off" for every empire a
+// player joined, which asks "Change Empire Control" and flips only the
+// empire's computer-controlled mark (spec 05 §9.4, confirmed: binary). The
+// player column shows "[Computer]", or "[Host]" for an empire handed back that
+// no player is connected to.
+void ClassicMode::drawHostEmpires(UiContext& ui) {
+    auto* transport = dynamic_cast<HostTransport*>(session_->transport());
+    if (!transport || !transport->host().state()) return;
+    net::HostSession& host = transport->host();
+    const game::GameState& s = *host.state();
+    ImGui::SetNextWindowPos(ui.at({500, 300}), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ui.size({420, 0}), ImGuiCond_Appearing);
+    if (ImGui::Begin("Empires###hostempires", &hostEmpiresOpen_, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+        for (const net::EmpireTurnStatus& st : host.turnStatus().empires) {
+            if (st.empire.index() >= s.empires.size()) continue;
+            const game::Empire& e = s.empire(st.empire);
+            const net::LobbySlot* slot = st.empire.index() < host.lobby().slots.size() ? &host.lobby().slots[st.empire.index()] : nullptr;
+            if (!slot || slot->kind != net::SlotKind::Human || slot->local) continue;
+            ImGui::PushID(int(st.empire.index()));
+            const bool computer = e.kind == game::PlayerKind::Computer;
+            ImGui::TextUnformatted(e.name.c_str());
+            ImGui::SameLine(ui.px(170));
+            ImGui::TextDisabled("%s", computer ? "[Computer]" : st.connected ? slot->player.c_str() : "[Host]");
+            ImGui::SameLine(ui.px(280));
+            if (ImGui::SmallButton(computer ? "AI Off" : "AI On")) {
+                toggleAsked_ = st.empire;
+                ImGui::OpenPopup("Change Empire Control");
+            }
+            ImGui::PopID();
+        }
+        if (ImGui::BeginPopupModal("Change Empire Control", nullptr, ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+            const bool valid = toggleAsked_.valid() && toggleAsked_.index() < s.empires.size();
+            const bool toComputer = valid && s.empire(toggleAsked_).kind != game::PlayerKind::Computer;
+            if (valid)
+                ImGui::TextWrapped("%s", std::format("Hand the {} to {} control?", s.empire(toggleAsked_).name, toComputer ? "AI" : "human").c_str());
+            const std::optional<bool> key = yesNoKey();
+            const bool yes = ImGui::Button("Yes", ui.size({120, 26})) || key == true;
+            ImGui::SameLine();
+            const bool no = ImGui::Button("No", ui.size({120, 26})) || key == false;
+            if (yes && valid) {
+                if (auto r = host.setAiControl(toggleAsked_, toComputer); !r) transport->log().add(r.error());
+            }
+            if (yes || no) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
+    ImGui::End();
 }
 
 void ClassicMode::drawPbem(UiContext& ui) {

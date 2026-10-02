@@ -357,4 +357,12 @@ void ClientSession::requestTurnTimeout(int seconds) {
         impl_->conn->send(MsgType::Admin, adminMessage(proto::AdminAction::SetTurnTimeout, kNoSlot, seconds));
 }
 
+void ClientSession::requestPasswordReset(const std::vector<game::EmpireId>& empires) {
+    uint32_t mask = 0;
+    for (game::EmpireId e : empires)
+        if (e.valid() && e.index() < 31) mask |= 1u << e.index();
+    if (impl_->conn && phase_ >= ClientPhase::Lobby)
+        impl_->conn->send(MsgType::Admin, adminMessage(proto::AdminAction::ResetPasswords, kNoSlot, static_cast<int32_t>(mask)));
+}
+
 } // namespace opense4::net

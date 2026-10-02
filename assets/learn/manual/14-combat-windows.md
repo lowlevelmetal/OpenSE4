@@ -76,7 +76,8 @@ fire by themselves.
 The **Combat Options** window, headed *Options In Use*, holds the animation of ship movement,
 sound and music, *Fast Tactical Combat*, and display switches: group identifiers, the viewing
 rectangle on the map, centring the map on the current ship, the chance to hit of each weapon when
-you point at an enemy, and the grid. In the simulator it also has `Stop Combat`.
+you point at an enemy, and the grid. In the simulator it also has `Stop Combat`. *Music On* is
+lit only while music is on and your copy's settings allow it ([Settings](settings)).
 
 > Look at the chance to hit before you click: a 5 % shot wastes supplies and a reload.
 

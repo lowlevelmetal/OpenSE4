@@ -15,6 +15,10 @@
 #include <string_view>
 #include <vector>
 
+namespace opense4::ruleset {
+class Settings;
+}
+
 namespace opense4::client::classic {
 
 struct ClassicSettings {
@@ -53,6 +57,18 @@ struct ClassicSettings {
 
 // The Options window's music steps (spec 06 §1.9).
 inline constexpr std::array<int, 5> kMusicVolumes{20, 40, 60, 80, 100};
+
+// Music and Settings.txt (spec 06 §1.9, confirmed: binary). `Allow CD Music`
+// (TRUE when the key is missing): with FALSE no track ever plays.
+bool musicAllowed(const ruleset::Settings& data);
+// The Options window opens: with music off, or not allowed, its rows light
+// "Music Off" and the computer's music is stored off at once. Music is
+// stored on again only when the player picks a volume lamp (musicOn is that
+// lamp state, saved as it changes). True when the setting changed.
+bool openMusicRows(ClassicSettings& s, bool allowed);
+// The Combat Options "Music On" lamp (spec 06 §1.10.3): lit only when music
+// is on and allowed.
+bool musicLampLit(const ClassicSettings& s, bool allowed);
 
 // The settings of this machine, loaded on first use.
 ClassicSettings& settings();

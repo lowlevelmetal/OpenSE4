@@ -226,6 +226,11 @@ struct LiveOptions {
     // for the turn, or only bookkeeping when the player asked for minimal
     // changes (Empire::aiMinimalChanges) (inferred for turn-based games).
     std::vector<EmpireId> computerPlays;
+    // Local and hotseat games end when no living empire is human-controlled
+    // (spec 06 §1.2.1 "No human left", confirmed: binary): after an End Turn
+    // nothing further is played. Hosts and automated runs leave it off and
+    // play on.
+    bool endWithoutHumans = false;
 
     bool computerPlaysFor(EmpireId e) const;
 };

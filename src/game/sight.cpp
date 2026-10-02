@@ -304,10 +304,18 @@ bool canSeePlanet(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     if (const Colony* c = s.colony(planet); c && c->owner == viewer) return true;
     const SpaceObject& obj = s.galaxy.object(planet);
     if (!explored(r, s, viewer, obj.system)) return false;
+    // The viewer's sensor levels in the system (its own and its partners'),
+    // with EM Active counted as at least 1 even without a sensor source there,
+    // against the planet's obscuration, in some sight type (spec 01 §6.9 "What
+    // other players see", confirmed: binary). An EM Active obscuration of 1
+    // always passes, so a planet outside storms and nebulae without a cloaked
+    // colony is always seen; no presence is needed.
     const SightVector obsc = planetObscuration(r, s, planet);
-    if (std::all_of(obsc.begin(), obsc.end(), [](int x) { return x <= 1; })) return true;  // remembered since exploration
-    // Hidden by a storm or nebula: only current sensors that pierce it reveal it.
-    return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), obsc);
+    if (obsc[static_cast<size_t>(SightType::EMActive)] <= 1) return true;
+    SightVector sensors = sensorsFor(r, s, reachOf(s, viewer), obj.system);
+    int& em = sensors[static_cast<size_t>(SightType::EMActive)];
+    em = std::max(em, 1);
+    return detects(sensors, obsc);
 }
 
 bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
@@ -322,7 +330,7 @@ bool canSeeColony(const Rules& r, const GameState& s, EmpireId viewer, ObjectId 
     return detects(sensorsFor(r, s, reachOf(s, viewer), obj.system), planetObscuration(r, s, planet));
 }
 
-void recalculateColony(const Rules& r, Colony& c) {
+bool recalculateColony(const Rules& r, Colony& c) {
     SightVector cloak, sensors = baseline();
     cloak.fill(1);
     for (uint32_t f : c.facilities) {
@@ -332,22 +340,20 @@ void recalculateColony(const Rules& r, Colony& c) {
     }
     c.cloakLevels = cloak;
     c.sensorLevels = sensors;
-    if (c.cloaked && !colonyCanCloak(c)) c.cloaked = false;
+    if (!c.cloaked || colonyCanCloak(c)) return false;
+    c.cloaked = false;
+    return true;
 }
 
-void recalculateColonies(const Rules& r, GameState& s) {
+bool recalculateColonies(const Rules& r, GameState& s) {
+    bool decloaked = false;
     for (auto& c : s.colonies)
-        if (c) recalculateColony(r, *c);
+        if (c && recalculateColony(r, *c)) decloaked = true;
+    return decloaked;
 }
 
 bool colonyCanCloak(const Colony& c) {
     return std::any_of(c.cloakLevels.begin(), c.cloakLevels.end(), [](int level) { return level >= 2; });
-}
-
-bool colonyShown(const Rules& r, const GameState& s, EmpireId viewer, ObjectId planet) {
-    const Colony* c = s.colony(planet);
-    if (!c || c->owner == viewer || !c->cloaked) return true;
-    return canSeeColony(r, s, viewer, planet);
 }
 
 size_t forgetOldDesigns(GameState& s, EmpireId e) {

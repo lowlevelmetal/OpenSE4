@@ -81,6 +81,7 @@ const char* screenTitle(ScreenId id) {
         case ScreenId::CombatSimulator: return "Combat Simulator";
         case ScreenId::StrategicCombat: return "Strategic Combat";
         case ScreenId::GroundCombat: return "Ground Combat";
+        case ScreenId::Finale: return "Finale";
         case ScreenId::SaveGame: return "Save Game";
         case ScreenId::LoadGame: return "Load Game";
         case ScreenId::Options: return "Options";
@@ -174,6 +175,7 @@ std::unique_ptr<Screen> makeScreen(ScreenId id, const ScreenArgs& args) {
         case ScreenId::CombatSimulator: return makeCombatSimulator(args);
         case ScreenId::StrategicCombat: return makeStrategicCombat(args);
         case ScreenId::GroundCombat: return makeGroundCombat(args);
+        case ScreenId::Finale: return makeFinale(args);
         case ScreenId::SaveGame: return makeSaveGame(args);
         case ScreenId::LoadGame: return makeLoadGame(args);
         case ScreenId::Options: return makeOptions(args);

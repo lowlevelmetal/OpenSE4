@@ -1081,49 +1081,62 @@ nothing is filtered per player, and the hiding above happens only in the windows
 its cloak and sensor levels (`Colony::cloaked`, `cloakLevels`, `sensorLevels`), recalculated
 only at the moments above (`sight::recalculateColony`); the immediate command
 `cmd::CloakColony` cloaks and decloaks; sight, contact, the battle checks, yards, construction,
-the orders that need sight, the computer players and the client follow the effects above. Its
-own choices, marked (inferred) in the code (§14 Q44):
+the orders that need sight, the computer players and the client follow the effects above.
+Since the answer to §14 Q44 (also 2026-10-01):
 - A simultaneous game's host carries out a colony Cloak or Decloak given during the turn when
   it applies that player's orders at the start of turn processing, in player and command
-  order, like every other command; a Decloak's contact check runs then.
-- The "game is loaded" recalculation happens when a saved game is loaded (Load Game, a
-  network host started from a save). A play-by-e-mail game file, which the players and the
-  host pass between them, is not recalculated when it is opened, so that both sides keep the
-  same state.
-- An upgrade that converts facilities counts as completing them: it recalculates too.
+  order, so the colony ends as the player left it. A Decloak in a simultaneous game makes only
+  the acting empire's side of a first contact (`diplomacy::updateContacts` with its
+  `onlySide`), on the player's copy and on the host alike; the next full check completes the
+  other side. In a turn-based game both sides meet at once.
+- After applying a player's orders the host recalculates each own colony those commands name
+  (`coloniesNamed`; which commands count is our choice (inferred)), then recalculates sight
+  in every system without a contact check.
+- Every reading of a game file recalculates every colony (`diplomacy::recalculateColonies`):
+  Load Game, a network host started from a save, a play-by-e-mail game file opened by a player
+  (`loadPbemGame`) or by the host (`processGameFile`), and a local or hotseat simultaneous game
+  passing to the next player or to processing (`ClassicSession::endTurn`). A turn-based hotseat
+  game keeps one state from player to player and is not recalculated between them (inferred).
+- A completed upgrade does not recalculate the colony.
+- An automatic decloak is a full Decloak: sight and the first-contact check
+  (`diplomacy::recalculateColony`).
 
-**The client and engine differ from "What other players see"** (2026-10-01):
-- **System panel** (`MainWindow::objectsAt` and `prepareSectors` in
-  `src/client/classic/main_window.cpp`). Every stellar object of an explored system is drawn,
-  counted, named and clickable with no sight test, so a hidden colony's planet (and a planet
-  hidden by a storm or nebula, §6.4) is drawn and selectable. Drawing, the stellar count, the
-  planet names, the sector click and the sector list must use the "seeing the planet" test.
-  `sight::canSeePlanet` (`src/game/sight.cpp`) is that test except in one narrow case: a
-  cloaked colony with EM Active cloak level 1 and higher levels in other types, watched by a
-  viewer with no sensors there; ours hides that planet, the original shows it.
-- **Seen colony.** `sight::colonyShown` (`src/game/sight.cpp`) is true for every uncloaked
-  colony, with no sensor source needed. The original uses the detection rule (our
-  `canSeeColony`) wherever it asks whether a colony is seen: the map's population bars
-  (`main_window.cpp`), the Planets window's colony status and tabs (`surveyPlanets` in
-  `src/client/classic/screens/colony_logic.cpp`) and the intelligence target picker
-  (`knownPlanets` in `src/client/classic/screens/intelligence.cpp`). Ours also draws the
-  colonize star from the real colony (`colonizeProblem`), so it never marks an unseen colony's
-  planet as colonizable; the original does.
-- **Planet report** (`planetReport` in `src/client/classic/reports.cpp`). For any foreign
-  colony ours shows the owner's flag and Owner, Colony Type and Population lines. The original
-  shows the flag and Population only when the colony is seen, and never Owner or Colony Type
-  for a foreign colony.
-- **Planets statistics** (`planetStatistics` in `colony_logic.cpp`) count only the listed
-  planets; the original counts every non-asteroid planet of the explored systems with its real
-  owner.
-- **Galaxy-map presence** (`systemPresence` in `src/client/classic/quadrant_map.cpp`) marks every
-  colony of an explored system; the original marks only objects the viewer sees by the
-  detection rule.
-- **Network.** `src/game/redact.cpp` keeps the foreign colonies of explored systems (owner,
-  population, cloak mark and levels) and drops the vehicles the viewer cannot see; the e-mail
-  game file (`src/net/pbem.cpp`) is the full state, as in the original. With the points above
-  fixed in the client there is no visible difference; leaving hidden colonies out of the
-  redacted view would be optional hardening, not parity.
+**The client and engine follow "What other players see" since 2026-10-01:**
+- **Seeing the planet** is `sight::canSeePlanet` (`src/game/sight.cpp`): the viewer's sensor
+  levels in the system with EM Active counted as at least 1, against the planet's obscuration,
+  in some sight type. It keeps an explored test, which changes nothing in the windows (they show
+  explored systems only). The system panel draws, counts, names, lists and lets the player click
+  only the stellar objects that pass it (`shownStellarObjects` in
+  `src/client/classic/sector_view.cpp`, used by `MainWindow::objectsAt` and `prepareSectors`);
+  so do the planet names and the colony marks.
+- **Seeing the colony** is the detection rule, `sight::canSeeColony`, wherever a window asks
+  whether a colony is seen: the map's colony mark and facility markers, the planet report
+  (`seenColony` in `src/client/classic/screens/colony_logic.cpp`: the owner's flag and a
+  Population line only when the colony is seen, never Owner or Colony Type for a foreign
+  colony), the Planets window's tabs (`surveyPlanets`: a hidden planet is in no tab, an unseen
+  colony's planet is listed as uncolonized), the colonize star and Send Colony Ship
+  (`colonizeProblem` treats an unseen colony's planet as empty), the galaxy map's presence
+  marks (`map_style::presence`) and the intelligence target picker (`knownPlanets` in
+  `src/client/classic/screens/intelligence.cpp`). `sight::colonyShown` is gone.
+- **Planets statistics** (`planetStatistics`) count every non-asteroid planet of the explored
+  systems with its real owner, with no sight test.
+- **Network** (an OpenSE4 choice; spec 05 §9.5). The original sends every player the whole
+  game; OpenSE4's TCP/IP host sends each player a redacted view (`redactForEmpire` in
+  `src/game/redact.cpp`), which since 2026-10-01 leaves a hidden colony out altogether: for a
+  viewer whose "seeing the planet" test fails on the host's state, the colony record is dropped
+  and its planet taken out of its system's object list, as an object removed by stellar
+  manipulation is. The viewer's windows therefore show what the original's show (nothing), and
+  a modified client cannot read the colony's owner, population or cloak. The view is a function
+  of the host's state, so the client's checksum still matches. A colony that is merely unseen
+  (no sensor source of the viewer in the system) stays in the view, as the original's file holds
+  it; the client shows it as an uncolonized planet. Because the hidden planet is not in the
+  view, a network client's Planets statistics and its live score figures for the owner leave it
+  out (inferred: the price of not sending it). The e-mail game file (`src/net/pbem.cpp`) is the
+  full state, as in the original.
+- Still differing: `sectorName` (`src/client/classic/reports.cpp`), which names a sector after
+  its first stellar object for location lines, does not test sight, so in a local or e-mail
+  game a vehicle's location line can name a hidden planet (inferred: the original's location
+  text was not examined).
 
 ---
 
@@ -1636,3 +1649,7 @@ highlighted, and an X marks each empire that has met one.
     4. `sight::recalculateColony` clears the cloaked mark silently. Its automatic decloak
        must recalculate the system's sight and run the first-contact check, as a Decloak
        does.
+
+    The engine follows all four since 2026-10-01 (§6.9 "The engine follows this
+    subsection"), and the host also recalculates the colonies a player's orders name when it
+    reads them (spec 05 §9.2).

@@ -1,6 +1,7 @@
 #include "client/classic/sector_view.hpp"
 
 #include "game/query.hpp"
+#include "game/sight.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,6 +17,18 @@ int stellarSizeRank(const game::Rules& r, const game::SpaceObject& o) {
             for (size_t i = 0; i < kSizes.size(); ++i)
                 if (p.stellarSize == kSizes[i]) return int(i) + 1;
     return 0;
+}
+
+std::vector<game::ObjectId> shownStellarObjects(const game::Rules& r, const game::GameState& s, game::EmpireId viewer, game::SystemId sys,
+                                                std::optional<game::Sector> sector) {
+    std::vector<game::ObjectId> out;
+    if (!sys.valid() || sys.index() >= s.galaxy.systems.size() || !viewer.valid() || viewer.index() >= s.empires.size()) return out;
+    if (!s.empire(viewer).hasExplored(sys)) return out;
+    for (game::ObjectId id : s.galaxy.system(sys).objects) {
+        if (sector && s.galaxy.object(id).sector != *sector) continue;
+        if (game::sight::canSeePlanet(r, s, viewer, id)) out.push_back(id);
+    }
+    return out;
 }
 
 int flagStep(int owners, int cellHeight) {

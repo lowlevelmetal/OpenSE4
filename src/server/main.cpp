@@ -1,10 +1,10 @@
 // opense4-server: the dedicated host for network games, the host side of
 // play-by-e-mail games, and a small test client. See docs/MULTIPLAYER.md.
 
+#include "game/diplomacy.hpp"
 #include "game/rules.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
-#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 #include "net/client.hpp"
@@ -39,6 +39,7 @@ Usage:
   opense4-server [options]                      host a network game (lobby, turns, autosave)
   opense4-server pbem new --setup=FILE.toml --out=GAME.gam
   opense4-server pbem process --game=GAME.gam --orders=DIR [--password=PW] [--keep-orders]
+                              [--reset-passwords=N,M]  (new passwords, shown here only)
   opense4-server pbem orders --game=GAME.gam --empire=N --out=DIR [--password=PW]
   opense4-server pbem info --game=GAME.gam
   opense4-server bot --name=NAME [--connect=HOST[:PORT]] [--turns=N]
@@ -61,7 +62,8 @@ Network game options:
                          commands are carried out at once (default: simultaneous)
   --name=NAME            Game name (default "OpenSE4 game")
   --password=PW          Master password: players who give it may administer the game
-                         (start, kick, add computer empires, force a turn)
+                         (start, kick, add computer empires, force a turn, hand
+                         empires to the computer, reset passwords)
   --join-password=PW     Password every player needs to join
   --turn-timeout=SEC     Process the turn after SEC seconds even if orders are missing
                          (turn-based: end a player's turn after SEC seconds)
@@ -321,8 +323,10 @@ int runServer(std::span<char*> args) {
     if (o.has("load")) {
         auto game = game::loadGame(o.get("load"));
         if (!game) return fail(game.error(), 2);
-        // Loading a game recalculates every colony's cloak and sensor levels (spec 01 §6.9).
-        game::sight::recalculateColonies(**rules, game->first);
+        // Reading a game file recalculates every colony's cloak and sensor
+        // levels, a colony that can no longer cloak decloaking as by Decloak
+        // (spec 01 §6.9, §14 Q44).
+        game::diplomacy::recalculateColonies(**rules, game->first);
         if (!o.has("save-dir")) saveFile = o.get("load");
         else if (!game->second.gameName.empty()) saveFile = std::filesystem::path(o.get("save-dir")) / (fileSafe(game->second.gameName) + ".gam");
         if (auto r = host.resume(std::move(game->first), game->second); !r) return fail(r.error(), 2);
@@ -441,7 +445,7 @@ int pbemNew(std::span<char*> args) {
 }
 
 int pbemProcess(std::span<char*> args) {
-    auto o = parseArgs(args, {"game", "orders", "password", "data"}, {"keep-orders", "allow-data-mismatch", "help"});
+    auto o = parseArgs(args, {"game", "orders", "password", "data", "reset-passwords"}, {"keep-orders", "allow-data-mismatch", "help"});
     if (!o) return fail(o.error(), 2);
     if (o->has("help")) return usage();
     if (!o->has("game") || !o->has("orders")) return fail("pbem process needs --game=GAME.gam and --orders=DIR", 2);
@@ -451,6 +455,17 @@ int pbemProcess(std::span<char*> args) {
     options.masterPasswordHash = net::hashPassword(o->get("password"));
     options.deleteProcessed = !o->has("keep-orders");
     options.allowDataSetMismatch = o->has("allow-data-mismatch");
+    // --reset-passwords=2,5: Reset Passwords for those empires (numbers from 1).
+    const std::string resets = o->get("reset-passwords");
+    for (std::string_view rest = resets; !rest.empty();) {
+        const size_t comma = rest.find(',');
+        const std::string item(rest.substr(0, comma));
+        rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
+        uint32_t n = 0;
+        const auto [end, ec] = std::from_chars(item.data(), item.data() + item.size(), n);
+        if (ec != std::errc{} || end != item.data() + item.size() || n == 0) return fail(std::format("--reset-passwords: '{}' is not an empire number", item), 2);
+        options.resetPasswords.push_back(game::EmpireId{n - 1});
+    }
     auto rep = net::pbem::processGameFile(**rules, o->get("game"), o->get("orders"), options);
     if (!rep) return fail(rep.error(), 1);
     const std::string played = !rep->submitted.empty() ? rep->submitted.front() : !rep->playedByComputer.empty() ? rep->playedByComputer.front() : "";
@@ -466,6 +481,9 @@ int pbemProcess(std::span<char*> args) {
     for (const auto& s : rep->rejectedCommands) std::printf("  refused: %s\n", s.c_str());
     if (options.deleteProcessed && !rep->used.empty()) std::printf("  deleted %zu processed .plr files\n", rep->used.size());
     if (!rep->next.empty()) std::printf("Next: empire %u (%s); send the game there.\n", rep->nextEmpire.value + 1, rep->next.c_str());
+    // Shown to the host only: nothing tells the players (spec 06 §1.9).
+    for (const auto& [empire, password] : rep->passwordResets)
+        std::printf("Password Reset: empire %u gets the password %s.\n", empire.value + 1, password.c_str());
     return 0;
 }
 

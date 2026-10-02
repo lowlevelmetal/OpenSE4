@@ -51,22 +51,7 @@ map_style::Overlay styleOf(MapOverlay o) {
 
 } // namespace
 
-std::vector<std::vector<game::EmpireId>> systemPresence(const UiContext& ui) {
-    const game::GameState& s = ui.state();
-    const game::Galaxy& g = s.galaxy;
-    const game::Empire& me = ui.me();
-    std::vector<std::vector<game::EmpireId>> presence(g.systems.size());
-    auto mark = [&](game::SystemId sys, game::EmpireId e) {
-        if (!sys.valid() || sys.index() >= presence.size()) return;
-        auto& list = presence[sys.index()];
-        if (std::find(list.begin(), list.end(), e) == list.end()) list.push_back(e);
-    };
-    for (const game::Vehicle& v : s.vehicles)
-        if (v.owner.valid() && knownVehicle(ui, v)) mark(v.location.system, v.owner);
-    for (const auto& c : s.colonies)
-        if (c && (c->owner == me.id || me.hasExplored(g.object(c->planet).system))) mark(g.object(c->planet).system, c->owner);
-    return presence;
-}
+std::vector<std::vector<game::EmpireId>> systemPresence(const UiContext& ui) { return map_style::presence(ui.rules(), ui.state(), ui.session.player()); }
 
 int lightYears(const game::Galaxy& g, game::SystemId a, game::SystemId b) {
     const game::GalaxyPos pa = g.system(a).position, pb = g.system(b).position;

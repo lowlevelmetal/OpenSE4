@@ -1619,29 +1619,36 @@ A button is lit only when every selected vehicle passes its test (the window is 
   minefield (with that unit kind's picture). The text names the vehicle, its system and its
   sector and says that our own ships fired on it and destroyed it.
 
-**The engine and client differ** (2026-10-01):
-- The engine has neither action: no command or order exists for Analyze or Fire On, and the
-  client's two buttons are always dim. Implementing them needs two order kinds (carried out at
-  once in a turn-based game, and as the vehicle's only order in a simultaneous game, as above)
-  and a "Number Scrapped" / "Number Lost" update of the design statistics.
-- The client's research potential (`researchPotential` and `researchPotentialLabel` in
-  `src/client/classic/screens/ships_logic.cpp`) counts the designs' components the empire cannot
-  build, over all selected vehicles, as a percentage with the words None, Low, Moderate and
-  High. It must count the pairs of P for one vehicle (the last selected), with the five words
-  above, and show "None" when any selected vehicle cannot be analyzed.
-- The client's "Can Be Fired On" test (`canBeFiredOn` and `vehicleArmed`, same file) leaves the
-  other selected vehicles out, counts only intact components, counts every Weapon Type, and
-  ignores fighter groups. It must follow the test above.
-- The client lights Mothball, Unmothball and Self-Destruct when any selected vehicle qualifies,
-  and Retrofit when all selected vehicles share a hull (`vehicleButtons` in
-  `src/client/classic/screens/scrap.cpp`). The original lights each only when every selected
-  vehicle qualifies, and Retrofit only when they all have the same design (and so the same
-  hull) as well as a yard and no cloak (confirmed: binary).
-- The engine's Scrap, Mothball, Unmothball and Retrofit are commands applied at once in both
-  turn styles (in a simultaneous game the host applies them at the start of turn processing).
-  The client gives Self-Destruct as an order inserted in the vehicle's list, keeping the other
-  orders. The original carries out all of them at once in a turn-based game, and as the
-  vehicle's only order, during movement, in a simultaneous game (above).
+**The engine and client follow this section since 2026-10-01** (`src/game/scrap.*`):
+- Each action is a command on one vehicle (`cmd::Scrap`, `cmd::Analyze`, `cmd::Mothball` for
+  Mothball and Unmothball, `cmd::Retrofit`, `cmd::SelfDestruct`, `cmd::FireOn`), tested by
+  `scrapActionProblem` when it is given. A turn-based game carries it out at once and leaves
+  the order list alone; a simultaneous game clears the list, switches Repeat off and leaves
+  the action as the only order (order kinds `Scrap`, `Analyze`, `Mothball`, `Unmothball`,
+  `Retrofit`, `SelfDestruct`, `FireOn`), which movement carries out at the vehicle's first
+  action, testing it again (a failure clears the list, silently for Analyze and Fire On).
+  The window's orders cannot be given through `cmd::SetOrders`; a list keeps those it holds.
+- Analyze grants one level per pair of `analyzePairs` (`research::analyzeLevel`, which
+  checks only `canGainLevel`), and the level entries of research (`research::grantLevel`
+  now writes "... Developed" for intelligence projects and "New Tech Area Discovered" too).
+  Designs keep "Number Scrapped" (`Design::scrapped`), raised by Scrap, Analyze and
+  Self-Destruct (spec 04 §15); Fire On raises "Number Lost" and writes one Construction
+  entry.
+- The client's Scrap window shows the research potential word of the last selected vehicle
+  in list order, Can Self-Destruct and Can Be Fired On only when every selected vehicle can,
+  and lights each button only when every selected vehicle qualifies (Retrofit: one design,
+  a yard, no cloak), giving the actions in list order (`scrapWindowState` in
+  `src/client/classic/screens/ships_logic.cpp`).
+
+OpenSE4's own choices, (inferred):
+- Computer players' and ministers' Scrap and Retrofit go through the same commands, so in a
+  simultaneous game they too become the vehicle's only order. How the original's ministers
+  carry them out is open.
+- Scrap and Self-Destruct count each living unit of a unit group in "Number Scrapped".
+- A self-destructed vehicle still gets its "destroyed" Misc entry, but raises no "ship lost"
+  mood (it is not lost).
+- The Fire On entry has no picture (our log keeps pictures only for events), and Unmothball's
+  button needs the cost in stock as well as the Mothballed status.
 
 ---
 
@@ -2328,3 +2335,15 @@ marked (inferred) in the code.
     empty the list of every member of the group (`g.members`, companions included) with
     Repeat off, and in a turn-based game let the Move To finish its steps in the current run
     without writing it back.
+78. **The Scrap window's actions: the engine's choices (§15, 2026-10-01).**
+    - The computer players' and ministers' Scrap and Retrofit go through the window's
+      commands, so in a simultaneous game they become the vehicle's only order and are
+      carried out at its first action. Does the original's Scrap or Retrofit minister give
+      them as orders, or carry them out at once?
+    - "Number Scrapped" counts each living unit of a scrapped or self-destructed unit group.
+      Does the original count units, or one per group?
+    - A self-destructing vehicle writes "<name> destroyed" in the Misc log and raises no
+      "ship lost" mood. What does the original write, and does it count the ship as lost for
+      happiness?
+    - Unmothball is lit only when the cost is in stock (the order's test). Is the button lit
+      for a mothballed vehicle the empire cannot afford?

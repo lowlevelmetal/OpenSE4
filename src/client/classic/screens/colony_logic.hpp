@@ -30,12 +30,19 @@ struct ColonizeTech {
 };
 ColonizeTech colonizeTech(const game::Rules& r, const game::Empire& e);
 
+// The planet's colony as the empire sees it: its own always; another
+// empire's only while the detection rule shows it (sight::canSeeColony, spec
+// 01 §6.9), so a colony in a system without our sensors looks uncolonized.
+const game::Colony* seenColony(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet);
+
 // Whether the empire's race breathes the planet's atmosphere (a colony would not be domed).
 bool breathableBy(const game::GameState& s, game::EmpireId e, const game::SpaceObject& planet);
 
 // Why the empire cannot colonize the planet now; empty when it can. Checks
-// that the planet is a free planet, the colony tech, and the game options
-// "only breathable" and "only home planet type" (spec 02 §2).
+// that the planet is a free planet as the empire sees it (a colony it does
+// not see is not checked: seenColony), the colony tech, and the game options
+// "only breathable" and "only home planet type" (spec 02 §2). The map's
+// colonize star and the Planets window use it (spec 01 §6.9).
 std::string colonizeProblem(const game::Rules& r, const game::GameState& s, game::EmpireId e, game::ObjectId planet,
                             const ColonizeTech& tech);
 
@@ -97,12 +104,18 @@ struct PlanetInfo {
     std::string problem;          // why we cannot colonize it now (empty: we can)
 };
 
-// Every planet and asteroid field in the systems the empire has explored,
-// except a planet whose colony is cloaked and unseen (spec 01 §6.9).
+// Every planet and asteroid field in the systems the empire has explored
+// that it sees (sight::canSeePlanet: a colony's cloak, a storm or a nebula
+// can hide one). A colony counts only while the empire sees it
+// (seenColony); otherwise the planet is listed as uncolonized (spec 06
+// §1.8.1, spec 01 §6.9).
 std::vector<PlanetInfo> surveyPlanets(const game::Rules& r, const game::GameState& s, game::EmpireId e);
 bool matches(PlanetFilter f, const PlanetInfo& p);
 
-// The statistics box: counts over every listed planet, by the real owner.
+// The statistics box: counts over every planet (no asteroid fields) of the
+// explored systems with its real owner and no sight test, so they include
+// planets the tabs leave out or list as uncolonized (spec 06 §1.8.1,
+// confirmed: binary).
 struct PlanetStatistics {
     int systems = 0;            // known (explored) systems
     int planets = 0;            // planets, no asteroid fields
@@ -115,8 +128,7 @@ struct PlanetStatistics {
     int colonyShips = 0;
     int available = 0;          // colony ships that are available
 };
-PlanetStatistics planetStatistics(const game::GameState& s, game::EmpireId e, const std::vector<PlanetInfo>& planets,
-                                  const std::vector<ColonyShip>& ships);
+PlanetStatistics planetStatistics(const game::Rules& r, const game::GameState& s, game::EmpireId e, const std::vector<ColonyShip>& ships);
 
 // Sorting by the latest header clicks (spec 06 §7 Q24, confirmed: binary).
 // Each list window keeps five slots of column numbers with the empire

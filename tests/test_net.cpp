@@ -381,8 +381,8 @@ TEST_CASE("net: lobby, game start and a turn with two clients") {
     CHECK(loop.hostSaw(EventType::NewTurn));
     CHECK_FALSE(g.alice.ordersAccepted());
     // Each client holds its own fog-of-war view of the host's state.
-    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.alice.empire())));
-    CHECK(game::stateChecksum(*g.bob.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), g.bob.empire())));
+    CHECK(game::stateChecksum(*g.alice.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), g.alice.empire())));
+    CHECK(game::stateChecksum(*g.bob.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), g.bob.empire())));
     CHECK(noteOf(*g.bob.state(), game::EmpireId{0u}).empty());  // Alice's notes are hers
     CHECK(g.bob.state()->empire(game::EmpireId{0u}).stockpile.isZero());
 
@@ -450,12 +450,100 @@ TEST_CASE("net: reconnecting, forced turns, turn timeout and computer control") 
                       [](const net::Event& e) { return e.type == EventType::Info && e.text.find("Turn time is up") != std::string::npos; }));
     host.setTurnTimeout(0);
 
-    // Hand Bob's empire to the computer: Alice alone ends the turn.
+    // Hand Bob's empire to the computer: Alice alone ends the turn. The
+    // toggle flips only the computer-controlled mark (spec 05 §9.4): the
+    // ministers and individual flags stay as they were.
+    const uint32_t ministers = host.state()->empire(game::EmpireId{1u}).ministers;
+    const bool all = host.state()->empire(game::EmpireId{1u}).ministerAll;
     REQUIRE(host.setAiControl(game::EmpireId{1u}, true).has_value());
+    CHECK(host.state()->empire(game::EmpireId{1u}).kind == game::PlayerKind::Computer);
+    CHECK(host.state()->empire(game::EmpireId{1u}).ministers == ministers);
+    CHECK(host.state()->empire(game::EmpireId{1u}).ministerAll == all);
+    CHECK_FALSE(host.turnStatus().empires[1].human);
     REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "solo")).has_value());
     REQUIRE(timed.until([&] { return g.alice.state()->turn == 3; }));
     CHECK(host.turnStatus().empires[1].aiControl);
+    CHECK(g.alice.state()->empire(game::EmpireId{1u}).kind == game::PlayerKind::Computer);  // everyone sees the mark
+    CHECK(host.state()->empire(game::EmpireId{1u}).ministers == ministers);
     CHECK_FALSE(host.setAiControl(game::EmpireId{2u}, false).has_value());  // a computer empire
+    // Handed back, the host waits for Bob's orders again.
+    REQUIRE(host.setAiControl(game::EmpireId{1u}, false).has_value());
+    CHECK(host.state()->empire(game::EmpireId{1u}).kind == game::PlayerKind::Human);
+    REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "back")).has_value());
+    for (int i = 0; i < 20; ++i) timed.step();
+    CHECK(host.state()->turn == 3);
+}
+
+TEST_CASE("net: Reset Passwords on the host of a simultaneous game (spec 06 §1.9)") {
+    TwoPlayerGame g;
+    net::HostSession& host = g.host;
+    Loop& loop = *g.loop;
+    // Six digits: three numbers from 11 to 99.
+    for (int i = 0; i < 50; ++i) {
+        const std::string pw = net::resetPassword();
+        REQUIRE(pw.size() == 6);
+        for (size_t k = 0; k < 6; k += 2) {
+            const int n = std::stoi(pw.substr(k, 2));
+            CHECK(n >= 11);
+            CHECK(n <= 99);
+        }
+    }
+    const uint64_t rngBefore = game::stateChecksum(*host.state());
+    auto first = host.resetPasswords({game::EmpireId{1u}});
+    REQUIRE(first.has_value());
+    // A new click discards the earlier choice.
+    auto reset = host.resetPasswords({game::EmpireId{0u}});
+    REQUIRE(reset.has_value());
+    REQUIRE(reset->size() == 1);
+    CHECK(host.pendingPasswordResets().size() == 1);
+    CHECK(game::stateChecksum(*host.state()) == rngBefore);  // nothing changes before the turn, the game's random numbers included
+    // Alice changes her own password in this turn's orders: the reset, applied
+    // after the orders are read, wins.
+    game::EmpireOrders mine = noteOrders(g.alice, "x");
+    mine.commands.push_back(game::cmd::SetEmpireOptions{.passwordHash = net::passwordVerifier(net::hashPassword("mine"))});
+    REQUIRE(g.alice.submitOrders(mine).has_value());
+    REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "y")).has_value());
+    REQUIRE(loop.until([&] { return host.state()->turn == 1; }));
+    const std::string& verifier = host.state()->empire(game::EmpireId{0u}).passwordHash;
+    CHECK(net::checkPassword(verifier, net::hashPassword(reset->front().password)));
+    CHECK_FALSE(net::checkPassword(verifier, net::hashPassword("mine")));
+    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, net::hashPassword("b-secret")));  // discarded
+    CHECK(host.pendingPasswordResets().empty());
+    // Cleared before the turn: nothing happens.
+    REQUIRE(host.resetPasswords({game::EmpireId{1u}}).has_value());
+    host.clearPasswordResets();
+    REQUIRE(g.alice.submitOrders(noteOrders(g.alice, "z")).has_value());
+    REQUIRE(g.bob.submitOrders(noteOrders(g.bob, "z")).has_value());
+    REQUIRE(loop.until([&] { return host.state()->turn == 2; }));
+    CHECK(net::checkPassword(host.state()->empire(game::EmpireId{1u}).passwordHash, net::hashPassword("b-secret")));
+    // Only simultaneous games.
+    TwoPlayerGame tb(true);
+    CHECK_FALSE(tb.host.resetPasswords({game::EmpireId{0u}}).has_value());
+}
+
+TEST_CASE("net: a player with the master password asks a headless host to reset passwords") {
+    net::HostConfig cfg = hostConfig(1);
+    cfg.masterPasswordHash = net::hashPassword("master");
+    net::HostSession host(engineRules(), cfg);
+    REQUIRE(host.start().has_value());
+    net::ClientConfig adminCfg = clientConfig(host, "admin");
+    adminCfg.masterPasswordHash = net::hashPassword("master");
+    net::ClientSession admin(adminCfg);
+    Loop loop(host, {&admin});
+    REQUIRE(admin.connect().has_value());
+    REQUIRE(loop.until([&] { return admin.phase() == net::ClientPhase::Lobby; }));
+    admin.requestStart(true);
+    REQUIRE(loop.until([&] { return admin.state() != nullptr; }));
+    loop.clear();
+    admin.requestPasswordReset({game::EmpireId{0u}});
+    REQUIRE(loop.until([&] {
+        return std::any_of(loop.clientEvents[0].begin(), loop.clientEvents[0].end(),
+                           [](const net::Event& e) { return e.type == EventType::Info && e.text.starts_with("Password Reset"); });
+    }));
+    REQUIRE(host.pendingPasswordResets().size() == 1);
+    const std::string pw = host.pendingPasswordResets().front().password;
+    CHECK(std::any_of(loop.clientEvents[0].begin(), loop.clientEvents[0].end(),
+                      [&](const net::Event& e) { return e.text.find(pw) != std::string::npos; }));
 }
 
 TEST_CASE("net: joining is checked (data set, passwords, names, capacity)") {
@@ -813,7 +901,7 @@ struct Sent {
 };
 
 bool viewMatches(const net::ClientSession& c, const net::HostSession& host) {
-    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(*host.state(), c.empire()));
+    return c.state() && game::stateChecksum(*c.state()) == game::stateChecksum(game::redactForEmpire(engineRules(), *host.state(), c.empire()));
 }
 
 // Sends one command and waits for the host's answer.

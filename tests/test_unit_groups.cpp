@@ -193,7 +193,7 @@ TEST_CASE("unit groups: every design of a foreign group is seen") {
     const VehicleId id = w.spawn(one, here);
     addGroupUnits(w.s, w.v(id), two, 3);
     w.s.empire(kA).knowledge.visibleVehicles = {id};
-    const GameState view = redactForEmpire(w.s, kA);
+    const GameState view = redactForEmpire(r, w.s, kA);
     CHECK(view.design(one).name == "Their Wasp");
     CHECK(view.design(two).name == "Their Hornet");   // not "Unknown design"
     CHECK(view.vehicle(id)->mixed.size() == 2);

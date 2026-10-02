@@ -180,11 +180,12 @@ private:
     std::vector<game::ObjectId> knownPlanets(const UiContext& ui, game::EmpireId owner) const {
         std::vector<game::ObjectId> out;
         const game::GameState& s = ui.state();
-        // Only planets the player sees now: a cloaked colony needs sensors
-        // that pierce its cloak. "Any" can still hit it (spec 01 §6.9).
+        // Only colonies the player sees now, by the detection rule: a sensor
+        // source in the system, and sensors that pierce a cloak. "Any" can
+        // still hit the others (spec 01 §6.9).
         for (const auto& c : s.colonies)
             if (c && c->owner == owner && ui.me().hasExplored(s.galaxy.object(c->planet).system) &&
-                game::sight::colonyShown(ui.rules(), s, ui.session.player(), c->planet))
+                game::sight::canSeeColony(ui.rules(), s, ui.session.player(), c->planet))
                 out.push_back(c->planet);
         return out;
     }

@@ -1,5 +1,5 @@
 ---
-windows: scores, comparisons, victory-conditions
+windows: scores, comparisons, victory-conditions, finale
 ---
 # Score and victory
 
@@ -59,6 +59,17 @@ the Scores window is the result. Orders are refused after that.
 
 An empire is **destroyed** when it has no populated planet and no ship or base left. Every empire
 in contact with it is told. When you are the last empire left, you are told, and you may play on.
+
+## The ending window
+
+When the game ends, an ending window shows one of the pictures your copy lists for that ending:
+
+- the game is over because a victory condition was met;
+- in a game on one computer (alone or hotseat), no empire is played by a human any more: every
+  human empire was destroyed or handed to the computer. No further turn is played;
+- in a network or e-mail game, your own empire was destroyed.
+
+`Scores` opens the final ranking, and `Close` takes you back to the map.
 
 ## The Scores window
 

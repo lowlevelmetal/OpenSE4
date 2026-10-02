@@ -148,7 +148,7 @@ public:
 private:
     void refresh(UiContext& ui) {
         all_ = surveyPlanets(ui.rules(), ui.state(), ui.session.player());
-        stats_ = planetStatistics(ui.state(), ui.session.player(), all_, colonyShips(ui.rules(), ui.state(), ui.session.player()));
+        stats_ = planetStatistics(ui.rules(), ui.state(), ui.session.player(), colonyShips(ui.rules(), ui.state(), ui.session.player()));
         revision_ = ui.session.revision();
     }
 

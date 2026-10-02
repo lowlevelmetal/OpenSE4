@@ -27,7 +27,7 @@ constexpr WindowInfo kWindows[] = {
     {"victory-conditions"},
     {"combat-replay", false}, {"tactical-combat", false}, {"tactical-orders", false}, {"tactical-options", false},
     {"tactical-launch", false}, {"combat-piece-report", false}, {"combat-replay-options", false},
-    {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false},
+    {"combat-simulator"}, {"strategic-combat", false}, {"ground-combat", false}, {"finale", false},
     {"save-game"}, {"load-game"}, {"options"}, {"settings"},
     {"learn"}, {"manual"},
 };
@@ -61,6 +61,12 @@ constexpr std::array<std::pair<game::OrderKind, std::string_view>, static_cast<s
     {game::OrderKind::SelfDestruct, "self-destruct"},
     {game::OrderKind::UseFacility, "use-facility"},
     {game::OrderKind::ConvertResources, "convert-resources"},
+    {game::OrderKind::Scrap, "scrap"},
+    {game::OrderKind::Analyze, "analyze"},
+    {game::OrderKind::Mothball, "mothball"},
+    {game::OrderKind::Unmothball, "unmothball"},
+    {game::OrderKind::Retrofit, "retrofit"},
+    {game::OrderKind::FireOn, "fire-on"},
 }};
 
 // The order strip's slots (main_window.cpp kOrderStrip keys) and their tag ids.

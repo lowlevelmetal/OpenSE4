@@ -11,6 +11,7 @@ add_executable(opense4_tests
     test_client_logic.cpp
     test_colony_orders.cpp
     test_combat.cpp
+    test_computer_control.cpp
     test_combat_rules.cpp
     test_combat_planning.cpp
     test_combat_replay.cpp
@@ -24,6 +25,7 @@ add_executable(opense4_tests
     test_engine_install.cpp
     test_events.cpp
     test_generate.cpp
+    test_hidden_colonies.cpp
     test_history.cpp
     test_integration.cpp
     test_intel.cpp
@@ -40,7 +42,9 @@ add_executable(opense4_tests
     test_ruleset.cpp
     test_score.cpp
     test_serialize.cpp
+    test_settings_keys.cpp
     test_setup_model.cpp
+    test_scrap_window.cpp
     test_ships_ui.cpp
     test_sight.cpp
     test_stellar.cpp
@@ -57,7 +61,9 @@ target_sources(opense4_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/client/audio_playlist.cpp
     ${CMAKE_SOURCE_DIR}/src/client/input.cpp
     ${CMAKE_SOURCE_DIR}/src/server/setup_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/data_export.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/facility_markers.cpp
+    ${CMAKE_SOURCE_DIR}/src/client/classic/finale.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/layout.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/lesson_lock.cpp
     ${CMAKE_SOURCE_DIR}/src/client/classic/map_style.cpp

@@ -4,6 +4,7 @@
 // command buttons, the order strip and selection cycles, the system panel,
 // the report/list panel and the galaxy panel, all in the 1024×768 frame.
 
+#include "client/classic/finale.hpp"
 #include "client/classic/movement_replay.hpp"
 #include "client/classic/order_rules.hpp"
 #include "client/classic/reports.hpp"
@@ -145,6 +146,7 @@ private:
 
     ShipGlides glides_;
     MovementReplay replay_;
+    FinaleWatch finale_;   // the ending window opens once when the game ends
     std::set<game::VehicleId> replaySeen_;          // the vehicles of the log the player sees
     std::optional<game::SystemId> replayShownBefore_;
     std::map<game::VehicleId, game::Location> beforeTurn_;  // where we saw everything before this turn

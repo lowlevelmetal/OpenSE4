@@ -10,6 +10,7 @@
 // "weapons" for the Weapons Report with `index` as the initial weapon mount.
 
 #include "client/app_settings.hpp"
+#include "client/classic/data_export.hpp"
 #include "client/classic/screens/design_tools.hpp"
 #include "client/classic/screens/item_reports.hpp"
 #include "client/classic/screens/screens.hpp"
@@ -19,7 +20,9 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <deque>
 #include <format>
+#include <utility>
 
 namespace opense4::client::classic {
 
@@ -93,6 +96,7 @@ public:
     bool draw(UiContext& ui) override {
         const bool keep = drawDialog(ui);
         popup_.draw(ui);
+        exportNotes(ui);
         return keep;
     }
 
@@ -379,7 +383,40 @@ private:
         if (lampButton(ui, d, "Dmg 1-10", page_ == 0)) page_ = 0;
         if (lampButton(ui, d, "Dmg 11-20", page_ == 1)) page_ = 1;
         d.spacer();
+        // With Settings.txt `Allow Export of Weapon And Component Data` TRUE:
+        // four tables written to the saves folder, each followed by its
+        // "Export Successful" message (spec 06 §1.9, confirmed: binary).
+        if (exportAllowed(r.data().settings) && d.button("Export")) exportTables(ui);
         if (d.button("Help Topics")) weapons_ = false;
+    }
+
+    void exportTables(UiContext& ui) {
+        exportQueue_.clear();
+        const auto written = writeExportTables(savesDir(), "OpenSE4_", weaponAndComponentTables(ui.rules()));
+        if (!written) {
+            exportQueue_.emplace_back("Export Failed", written.error());
+            return;
+        }
+        for (const std::filesystem::path& file : *written)
+            exportQueue_.emplace_back("Export Successful", std::format("The table was written to {}.", file.string()));
+    }
+
+    // The export's messages, one after another.
+    void exportNotes(UiContext& ui) {
+        if (exportQueue_.empty()) return;
+        const auto& [title, text] = exportQueue_.front();
+        const std::string id = title + "###export";
+        if (!ImGui::IsPopupOpen(id.c_str())) ImGui::OpenPopup(id.c_str());
+        ImGui::SetNextWindowSize(ui.size({420, 0}));
+        if (ImGui::BeginPopupModal(id.c_str(), nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | kPromptFlags)) {
+            ImGui::TextWrapped("%s", text.c_str());
+            ImGui::Spacing();
+            if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26))) || okKey()) {
+                ImGui::CloseCurrentPopup();
+                exportQueue_.pop_front();
+            }
+            ImGui::EndPopup();
+        }
     }
 
     HelpTab tab_ = HelpTab::Components;
@@ -394,6 +431,7 @@ private:
     int32_t mount_ = -1;
     bool onlyLatest_ = false;
     int page_ = 0;
+    std::deque<std::pair<std::string, std::string>> exportQueue_;   // title, text
 };
 
 } // namespace

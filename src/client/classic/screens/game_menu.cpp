@@ -13,6 +13,9 @@
 #include <chrono>
 #include <ctime>
 #include <format>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -145,7 +148,15 @@ public:
             }
             // Save Empire asks first whether the designs go with it (spec 06 §7 Q48).
             if (button("Save Empire")) ImGui::OpenPopup("Save Designs");
-            if (button("Players")) ImGui::OpenPopup("Player Computer Control");
+            // Always enabled; a game with a master password asks for it first (spec 06 §1.2.1).
+            if (button("Players")) {
+                if (ui.session.hasMasterPassword()) {
+                    masterInput_.clear();
+                    ImGui::OpenPopup("Enter Game Master Password");
+                } else {
+                    openPlayers(ui);
+                }
+            }
             // The per-computer Options window (spec 06 §1.9); Empire Options opens
             // from Empire Status. OpenSE4's graphics and controls open from Options.
             if (button("Options")) {
@@ -173,6 +184,8 @@ public:
             if (confirmPopup(ui, "New Game", "Leave this game and return to the title screen? Anything not saved is lost."))
                 ui.requests.quitToIntro = true;
             if (confirmPopup(ui, "Quit Game", "Quit OpenSE4? Anything not saved is lost.")) ui.requests.quitGame = true;
+            masterPasswordPopup(ui);
+            notePopup(ui, "Invalid Password", "The Game Master password is not correct.");
             playersPopup(ui);
             saveMapPopup(ui);
             draftPopup(ui);
@@ -267,33 +280,95 @@ private:
         ImGui::EndPopup();
     }
 
+    // ---- Player Computer Control (spec 06 §1.2.1, confirmed: binary) ----
+
+    void masterPasswordPopup(UiContext& ui) {
+        ImGui::SetNextWindowSize(ui.size({340, 0}));
+        if (!ImGui::BeginPopupModal("Enter Game Master Password", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = inputString("##master", masterInput_, 64, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::Spacing();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        bool ok = ImGui::Button("OK", ImVec2(w, ui.px(26))) || enter;
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel", ImVec2(w, ui.px(26))) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        bool open = false, invalid = false;
+        if (ok) {
+            // An exact comparison: letter case and spaces count.
+            if (ui.session.masterPasswordMatches(masterInput_)) open = true;
+            else invalid = true;
+        }
+        if (ok || cancel) {
+            masterInput_.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+        if (open) openPlayers(ui);
+        if (invalid) ImGui::OpenPopup("Invalid Password");
+    }
+
+    void openPlayers(UiContext& ui) {
+        const game::GameState& s = ui.state();
+        lamps_.clear();
+        clicked_.assign(s.empires.size(), 0);
+        for (const game::Empire& e : s.empires) lamps_.push_back(e.kind != game::PlayerKind::Human);
+        ImGui::OpenPopup("Empires Under Computer Control");
+    }
+
+    // One row per empire in empire-number order, neutral and destroyed ones
+    // included; a lit lamp means computer-controlled. A click flips the lamp;
+    // OK applies every row clicked at least once, with its final state, even
+    // one clicked back; Cancel applies nothing. A neutral empire keeps its
+    // lamp: OpenSE4 keeps neutrality in the same field as the mark (inferred).
     void playersPopup(UiContext& ui) {
         ImGui::SetNextWindowSize(ui.size({420, 0}));
-        if (!ImGui::BeginPopupModal("Player Computer Control", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+        if (!ImGui::BeginPopupModal("Empires Under Computer Control", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
+            return;
         const game::GameState& s = ui.state();
-        ImGui::TextColored(kLabelBlue, "A lit lamp means the computer plays that empire.");
-        ImGui::Spacing();
+        if (lamps_.size() != s.empires.size()) openPlayers(ui);
+        ImGui::BeginChild("##empires", ImVec2(0, ui.px(std::min(380.0f, 26.0f * float(s.empires.size()) + 8.0f))));
         for (const game::Empire& e : s.empires) {
-            if (e.kind == game::PlayerKind::Neutral) continue;
-            ImGui::PushID(int(e.id.index()));
-            lamp(ui, e.kind == game::PlayerKind::Computer);
+            const size_t i = e.id.index();
+            ImGui::PushID(int(i));
+            bool on = lamps_[i] != 0;
+            const bool neutral = e.kind == game::PlayerKind::Neutral;
+            if (lampToggle(ui, "##lamp", &on, !neutral)) {
+                lamps_[i] = on;
+                clicked_[i] = 1;
+            }
             ImGui::SameLine();
             if (Sprite flag = ui.art.flag(e.race.style, false)) {
                 image(ui, flag, {14, 10});
                 ImGui::SameLine();
             }
             ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(empireColor(s, e.id)), "%s", e.name.c_str());
-            ImGui::SameLine(ui.px(260));
-            dimText(!e.alive ? "Eliminated" : e.id == ui.session.player() ? "You" : e.kind == game::PlayerKind::Computer ? "Computer" : "Human");
+            ImGui::SameLine(ui.px(280));
+            dimText(neutral ? "Neutral" : !e.alive ? "Eliminated" : e.id == ui.session.player() ? "You" : "");
             ImGui::PopID();
         }
+        ImGui::EndChild();
         ImGui::Spacing();
-        wrappedDim("Handing an empire to the computer or taking it back is not possible yet in this version.");
+        if (ui.session.kind() == SessionKind::NetworkClient || ui.session.kind() == SessionKind::Pbem)
+            wrappedDim("This changes only your copy of the game. Your own empire's minister switches go to the host with your orders.");
         ImGui::Spacing();
         // A check list: no keys at all (spec 06 §3.4).
-        if (ImGui::Button("OK", ImVec2(-FLT_MIN, ui.px(26)))) ImGui::CloseCurrentPopup();
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("OK", ImVec2(w, ui.px(26)))) {
+            std::vector<std::pair<game::EmpireId, bool>> rows;
+            for (size_t i = 0; i < clicked_.size(); ++i)
+                if (clicked_[i]) rows.emplace_back(game::EmpireId{static_cast<uint32_t>(i)}, lamps_[i] != 0);
+            ui.session.setComputerControl(rows);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(w, ui.px(26)))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
+
+    std::vector<uint8_t> lamps_;
+    std::vector<uint8_t> clicked_;
+    std::string masterInput_;
 };
 
 // ---- Save Game -------------------------------------------------------------------------------

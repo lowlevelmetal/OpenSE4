@@ -26,6 +26,7 @@
 #include "game/movement_internal.hpp"
 #include "game/orders.hpp"
 #include "game/query.hpp"
+#include "game/scrap.hpp"
 #include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "game/xmath.hpp"
@@ -1007,6 +1008,12 @@ private:
             case OrderKind::UseComponent: return useComponentOrder(g, o);
             case OrderKind::StellarManipulation: return stellar(g, o);
             case OrderKind::SelfDestruct: return selfDestruct(g, o);
+            case OrderKind::Scrap:
+            case OrderKind::Analyze:
+            case OrderKind::Mothball:
+            case OrderKind::Unmothball:
+            case OrderKind::Retrofit:
+            case OrderKind::FireOn: return scrapWindowAction(g, o);
             case OrderKind::UseFacility:
             case OrderKind::ConvertResources: return fail(g, o, "Only colonies carry out that order.");
             case OrderKind::Count: break;
@@ -1384,16 +1391,34 @@ private:
         return Exec::Done;
     }
 
-    // Self-Destruct (spec 03 §8, §15): every member that can is destroyed.
+    // Self-Destruct (spec 03 §8, §15): every member that can is destroyed,
+    // counting as scrapped, not lost (spec 04 §15).
     Exec selfDestruct(Group& g, Order& o) {
         bool any = false;
         for (VehicleId id : std::vector<VehicleId>(g.members)) {
             Vehicle* v = s_.vehicle(id);
             if (!v || !alive(*v) || !canSelfDestruct(r_, s_, *v)) continue;
-            vehicleLost(ctx_, *v, "It self-destructed.");
+            carryOutScrapAction(ctx_, *v, ScrapAction::SelfDestruct);
             any = true;
         }
         if (!any) return fail(g, o, "It cannot self-destruct.");
+        prune(g);
+        return g.stopped ? Exec::Gone : Exec::Acted;
+    }
+
+    // The Scrap window's actions given in a simultaneous game (spec 03 §15,
+    // confirmed: binary): carried out at the vehicle's first action, by the
+    // acting vehicle alone even when it heads an ad-hoc group, with no
+    // movement needed or spent. The test is made again now: a failed one
+    // fails the order and clears the list, with no message for Analyze and
+    // Fire On.
+    Exec scrapWindowAction(Group& g, Order& o) {
+        const ScrapAction a = *scrapActionOf(o.kind);
+        Vehicle* v = s_.vehicle(g.actor);
+        if (!v || !alive(*v)) return Exec::Gone;
+        if (const std::string why = scrapActionProblem(r_, s_, g.owner, *v, a, o.design); !why.empty())
+            return a == ScrapAction::Analyze || a == ScrapAction::FireOn ? Exec::Fail : fail(g, o, why + ".");
+        carryOutScrapAction(ctx_, *v, a, o.design);
         prune(g);
         return g.stopped ? Exec::Gone : Exec::Acted;
     }

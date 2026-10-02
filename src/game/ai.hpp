@@ -213,6 +213,31 @@ struct MinisterSettings {
 MinisterSettings standIn(Empire& e);
 void restoreMinisters(Empire& e, const MinisterSettings& saved);
 
+// ---- Player Computer Control (spec 06 §1.2.1, spec 05 §7.1, confirmed: binary) ------------------
+//
+// Not player commands: the window changes the game on the machine it is used
+// on (a local or hotseat game, or a player's own copy), and a network host
+// changes its game.
+
+// The window's switch. To computer: the empire is marked computer-controlled,
+// all 25 ministers and the minister flag of every one of its vehicles,
+// fleets and colonies are switched on. To human: the mark is cleared and they
+// are all switched off (the player's earlier settings are not restored). The
+// AI state and memory, the stored difficulty, the minister style, the
+// password and the options "use individual ministers for newly built
+// vehicles" and "AI should not make changes" stay. A human empire that never
+// had a stored difficulty gets Medium, the level a human's ministers play at
+// (inferred: ours stores none until needed). A neutral empire keeps its kind:
+// OpenSE4 keeps neutrality in the same field as the mark (inferred). False
+// when nothing was switched (no such empire, or a neutral one).
+bool setComputerControl(GameState& s, EmpireId e, bool computer);
+// The TCP/IP host's toggle (spec 05 §9.4): only the mark changes; ministers
+// and individual flags are untouched. Same conditions as above.
+bool setComputerMark(GameState& s, EmpireId e, bool computer);
+// Whether any living empire is human-controlled. Local and hotseat games
+// end without one (spec 06 §1.2.1 "No human left").
+bool anyHumanLeft(const GameState& s);
+
 // Difficulty (spec 05 §7.1): the empire's level, kDifficultyLow..High.
 // Until the AI step assigns it (Empire::aiDifficulty < 0): the chosen level
 // for random AI players (GameOptions::randomAiPlayers), Medium otherwise.

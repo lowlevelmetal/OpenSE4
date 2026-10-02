@@ -11,6 +11,7 @@
 
 #include "game/state.hpp"
 
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -45,8 +46,18 @@ struct Rename {              // vehicle, fleet, design or planet
     ObjectId planet;
     std::string name;
 };
+// The Scrap window's actions on one vehicle (spec 03 §15, scrap.hpp), given
+// to each selected vehicle in turn: carried out at once in a turn-based game,
+// and in a simultaneous game left as the vehicle's only order (its list
+// cleared, Repeat off), carried out at its first action. The test of
+// scrapActionProblem must pass when the command is given. Computer players'
+// Scrap and Retrofit go the same way (inferred). Scrap with `facilityPlanet`
+// instead is Scrap Facilities, at once in both turn styles (spec 02 §6.6).
 struct Scrap { VehicleId vehicle; ObjectId facilityPlanet; int32_t facilitySlot = -1; };
-struct Mothball { VehicleId vehicle; bool mothball = true; };
+struct Mothball { VehicleId vehicle; bool mothball = true; };   // Mothball, or Unmothball
+struct Analyze { VehicleId vehicle; };
+struct SelfDestruct { VehicleId vehicle; };
+struct FireOn { VehicleId vehicle; };
 struct SetMinister { VehicleId vehicle; ObjectId planet; bool empireWide = false; bool on = true; };
 // Turn-based games: the answer to the Attack Sector question (spec 03 §6.2).
 // A move of the vehicle (or fleet) stopped before a sector with enemies;
@@ -69,7 +80,7 @@ struct QueueFlags { QueueTarget target; bool onHold = false; bool repeat = false
 // Upgrade Facilities button moves queued facility items to the newest level
 // (spec 02 §6.6), and so do the computer player's upgrades (spec 05 §7.5).
 struct QueueReplaceFacility { QueueTarget target; uint32_t index = 0; uint32_t facility = 0; };
-struct Retrofit { VehicleId vehicle; DesignId design; };  // at an own space yard in the vehicle's sector (spec 03 §14)
+struct Retrofit { VehicleId vehicle; DesignId design; };  // a Scrap window action (above), at an own space yard (spec 03 §14)
 
 // ---- Planets -------------------------------------------------------------------------------
 struct SetColonyType { ObjectId planet; std::string colonyType; };
@@ -80,8 +91,10 @@ struct AbandonPlanet { ObjectId planet; };
 // some sight type from the colony's facilities; Decloak a cloaked colony.
 // Sight is recalculated, and a Decloak runs the first-contact check at once.
 // A simultaneous game's host carries it out when it applies the player's
-// orders at the start of turn processing, in player and command order
-// (inferred, spec 01 §6.9 open point).
+// orders at the start of turn processing, in player and command order, so
+// the colony ends in the state the player left it in; there a Decloak's
+// contact check makes only the player's side of a first contact (spec 01
+// §6.9, §14 Q44, spec 05 §9.2, confirmed: binary).
 struct CloakColony { ObjectId planet; bool cloak = true; };
 struct TransferCargo {       // immediate transfer between own holders in the same sector
     VehicleId fromVehicle;
@@ -205,7 +218,7 @@ using Command = std::variant<
     cmd::SetRepairPriorities, cmd::SetDesignTypes, cmd::SetColonyTypes, cmd::SetEmpireOptions,
     cmd::SetMinisters, cmd::SetEncounterOptions, cmd::EnterSector, cmd::EditDesign, cmd::OpenVehicleReport,
     cmd::QueueReplaceFacility, cmd::DecideWar, cmd::SetInterfaceOptions, cmd::CarryOutDemand, cmd::UseDemandEntry, cmd::JettisonCargo,
-    cmd::CloakColony>;
+    cmd::CloakColony, cmd::Analyze, cmd::SelfDestruct, cmd::FireOn>;
 
 // One empire's turn (the `.plr` equivalent).
 struct EmpireOrders {
@@ -224,6 +237,12 @@ struct CommandResult {
 CommandResult apply(const Rules& r, GameState& s, EmpireId empire, const Command& c);
 // Short label for logs and debugging ("QueueAdd", ...).
 std::string_view commandName(const Command& c);
+// The planets whose colonies the commands name (a colony's orders, queue,
+// cargo, name, type, minister flag, facilities or cloak), in first-named
+// order without repeats: the colonies a player's orders carry to the host
+// (spec 05 §9.2: the objects that got a command or a queue change; which
+// commands count is inferred).
+std::vector<ObjectId> coloniesNamed(std::span<const Command> commands);
 
 // Scrap-window values shared with the UI (spec 03 §15): round(design cost × P %)
 // per resource; a fighter or satellite group returns that per unit.

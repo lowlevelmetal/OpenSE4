@@ -92,3 +92,23 @@ Open [Ministers](window:ministers) from [Empire Status](window:empire-status) (`
 In a multiplayer game, when your orders for a turn do not arrive in time, the computer plays that
 turn for you with all ministers on. If you would rather it changed nothing, switch on the option about missed turns in
 [Empire Status](window:empire-status): the computer then only keeps the books for you.
+
+## Handing an empire to the computer
+
+The Game Menu's `Players` button opens the list of every empire. A lit lamp means the computer
+plays that empire. Click lamps to change them, then press `OK`; `Cancel` changes nothing. If the
+game has a master password, it is asked for first, exactly as it was set.
+
+- Handing an empire **to the computer** switches all of its ministers on, and the minister mark
+  of every one of its ships, fleets and colonies. From then on the computer plays its turns.
+- Taking it **back** switches all of them off again; your earlier minister settings do not come
+  back. A row you clicked twice counts too, so its ministers go off.
+- Neither changes the empire's password or minister style.
+- In a turn-based game the empire whose turn it is goes on being played by hand until `End
+  Turn`. In a local or hotseat game, once no empire is left for a human to play, the game ends:
+  the ending window shows and no further turn is played.
+- In a network or e-mail game the window changes only your own copy of the game. For your own
+  empire, the minister switches also go to the host with your orders, so all your ministers act
+  there, but the host still waits for your orders each turn. The host of a network game hands
+  empires over with the `Empires` list of its status strip instead.
+

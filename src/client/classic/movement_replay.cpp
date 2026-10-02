@@ -202,7 +202,7 @@ void MovementReplay::update(const Frame& f) {
             }
             while (animating()) {
                 const Animation& a = anims_[animIndex_];
-                const double total = a.turnTime + a.slideTime;
+                const double total = a.turnTime + a.slideTime + a.pauseTime;
                 if (f.now - animStart_ < total) break;
                 animStart_ += total;
                 ++animIndex_;
@@ -269,6 +269,10 @@ void MovementReplay::applyDay(const Frame& f) {
         a.turnTime = std::abs(delta) / 5.0 * kSecondsPerTurnStep;
         const float pixels = float(std::max(std::abs(m.to.sector.x - m.from.sector.x), std::abs(m.to.sector.y - m.from.sector.y))) * f.cellPixels;
         a.slideTime = double(pixels) * kSecondsPerPixel;
+        // A day's move is usually one square; a faster vehicle's spans more,
+        // and waits after each of them.
+        const int squares = std::max({1, std::abs(m.to.sector.x - m.from.sector.x), std::abs(m.to.sector.y - m.from.sector.y)});
+        a.pauseTime = std::max(0.0, f.stepPause) * squares;
         anims_.push_back(std::move(a));
     }
     for (const auto& [id, at] : d.appeared) where_[id] = at;

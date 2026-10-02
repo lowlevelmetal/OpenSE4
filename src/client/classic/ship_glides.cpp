@@ -13,7 +13,7 @@ Vec2 cellCenter(game::Sector s) { return {float(s.x) + 0.5f, float(s.y) + 0.5f};
 
 } // namespace
 
-void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span<const Seen> visible) {
+void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span<const Seen> visible, double pauseSeconds) {
     std::erase_if(glides_, [&](const auto& g) { return now >= g.second.start + g.second.duration; });
     if (!enabled) glides_.clear();
     const bool animate = enabled && shown == lastShown_;
@@ -35,7 +35,13 @@ void ShipGlides::track(double now, game::SystemId shown, bool enabled, std::span
         const Vec2 from = current ? position(*current, now) : cellCenter(was->second.sector);
         const Vec2 to = cellCenter(v.location.sector);
         const double squares = std::max(std::abs(to.x - from.x), std::abs(to.y - from.y));
-        glides_[v.id] = Glide{from, to, now, std::clamp(kSecondsPerSquare * squares, kMinSeconds, kMaxSeconds)};
+        const double move = std::clamp(kSecondsPerSquare * squares, kMinSeconds, kMaxSeconds);
+        // The pause after each one-square step (Settings.txt `System Ship
+        // Movement Delay Milliseconds`, spec 06 §1.9): a glide resumed half way
+        // counts its part of a square as a step.
+        const int steps = std::max(1, static_cast<int>(std::ceil(squares - 1e-6)));
+        const double pause = std::max(0.0, pauseSeconds);
+        glides_[v.id] = Glide{from, to, now, move + pause * steps, steps, pause};
     }
     lastSeen_ = std::move(seen);
     headings_ = std::move(headings);
@@ -49,8 +55,19 @@ const ShipGlides::Glide* ShipGlides::find(game::VehicleId v, double now) const {
 }
 
 Vec2 ShipGlides::position(const Glide& g, double now) {
-    const float t = std::clamp(static_cast<float>((now - g.start) / g.duration), 0.0f, 1.0f);
-    return lerp(g.from, g.to, t * t * (3.0f - 2.0f * t));
+    auto ease = [](float t) { return t * t * (3.0f - 2.0f * t); };
+    if (g.pause <= 0.0 || g.squares <= 0) {
+        const float t = std::clamp(static_cast<float>((now - g.start) / g.duration), 0.0f, 1.0f);
+        return lerp(g.from, g.to, ease(t));
+    }
+    // Square by square: each step's share of the move, then the pause.
+    const double step = (g.duration - g.pause * g.squares) / g.squares;
+    const double elapsed = std::max(0.0, now - g.start);
+    const double segment = step + g.pause;
+    const int done = segment > 0.0 ? std::min(g.squares - 1, static_cast<int>(elapsed / segment)) : g.squares - 1;
+    const double within = elapsed - segment * done;
+    const float t = step > 0.0 ? std::clamp(static_cast<float>(within / step), 0.0f, 1.0f) : 1.0f;
+    return lerp(g.from, g.to, (static_cast<float>(done) + ease(t)) / static_cast<float>(g.squares));
 }
 
 int ShipGlides::heading(game::VehicleId v) const {

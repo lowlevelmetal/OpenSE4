@@ -109,6 +109,9 @@ public:
     void requestProcessTurn();
     void requestAiControl(game::EmpireId empire, bool ai);
     void requestTurnTimeout(int seconds);
+    // Reset Passwords (spec 06 §1.9) for these empires; the host answers with
+    // one "Password Reset" notice per empire, to us only.
+    void requestPasswordReset(const std::vector<game::EmpireId>& empires);
 
     struct Impl;
 

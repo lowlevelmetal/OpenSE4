@@ -276,3 +276,29 @@ TEST_CASE("pbem client: Load Game opens a PBEM game file as a local game whose p
     REQUIRE(reloaded.has_value());
     CHECK((*reloaded)->passwordMatches((*reloaded)->state().empire(game::EmpireId{1u}), "pw1"));
 }
+
+TEST_CASE("pbem client: opening a game file and the host's reading of it recalculate every colony") {
+    // Spec 01 §6.9, §14 Q44 (confirmed: binary): both sides read the same file
+    // the same way, a colony that can no longer cloak decloaking as by Decloak.
+    const game::Rules& r = test::engineRules();
+    const test::TempDir tmp("pbem_client_recalc");
+    const fs::path gam = writeGameFile(tmp.path(), true, false, 9);
+    auto loaded = game::loadGame(gam);
+    REQUIRE(loaded.has_value());
+    game::ObjectId planet;
+    for (auto& c : loaded->first.colonies)
+        if (c && c->owner == game::EmpireId{0u}) {
+            c->cloaked = true;  // marked cloaked (after a battle, say) with no cloaking facility
+            planet = c->planet;
+            break;
+        }
+    REQUIRE(planet.valid());
+    REQUIRE(game::saveGame(gam, loaded->first, loaded->second).has_value());
+    auto game = loadPbemGame(r, gam);
+    REQUIRE(game.has_value());
+    CHECK_FALSE(game->state.colony(planet)->cloaked);
+    REQUIRE(net::pbem::processGameFile(r, gam, tmp.path(), {}).has_value());
+    auto after = game::loadGame(gam);
+    REQUIRE(after.has_value());
+    CHECK_FALSE(after->first.colony(planet)->cloaked);
+}

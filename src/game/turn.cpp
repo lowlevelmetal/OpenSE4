@@ -186,6 +186,11 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
         if (byEmpire[i]) {
             control[i] = Control::Player;
             applyOrders(r, s, *byEmpire[i], ctx.rejected);
+            // Reading a player's orders recalculates each of its colonies they
+            // carry; one that can no longer cloak decloaks as by Decloak (spec
+            // 05 §9.2, spec 01 §6.9, §14 Q44, confirmed: binary).
+            for (ObjectId planet : coloniesNamed(byEmpire[i]->commands))
+                if (Colony* c = s.colony(planet); c && c->owner == e.id) diplomacy::recalculateColony(ctx, *c);
         } else if (!options.aiForMissing) {
             control[i] = Control::Player;
         } else if (e.aiMinimalChanges) {
@@ -198,6 +203,9 @@ TurnResult simultaneousTurn(const Rules& r, GameState& s, std::span<const Empire
         }
     }
     auto controlOf = [&](size_t i) { return i < control.size() ? control[i] : Control::Computer; };
+    // Once the orders are read, sight is recalculated in every system; no
+    // first-contact check runs (spec 05 §9.2, confirmed: binary).
+    sight::updateKnowledge(r, s);
 
     // ---- 2. Each player's messages, player by player.
     diplomacy::deliverMessages(ctx);

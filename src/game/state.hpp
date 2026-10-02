@@ -392,6 +392,16 @@ enum class OrderKind : uint8_t {
     SelfDestruct,   // the whole object is destroyed (spec 03 §8, §15; movement::canSelfDestruct)
     UseFacility,    // a colony's: amount = facility position; completes with no effect (spec 03 §8)
     ConvertResources,  // a colony's: `amount` (at most 65,000) of resource `from` into `to` (spec 02 §5.6)
+    // The Scrap window's actions given in a simultaneous game, each as the
+    // vehicle's only order (spec 03 §15; scrap.hpp). They come only from the
+    // window's commands (cmd::Scrap, cmd::Analyze, cmd::Mothball,
+    // cmd::Retrofit, cmd::FireOn), never from cmd::SetOrders.
+    Scrap,          // "Scrap / Analyze / Mothball"
+    Analyze,        // "Deconstruct & Analyze"
+    Mothball,
+    Unmothball,
+    Retrofit,       // design = the design to retrofit to
+    FireOn,         // "Fire On And Destroy"
     Count
 };
 std::string_view displayName(OrderKind k);
@@ -551,6 +561,9 @@ struct Design {
     int built = 0;
     int lost = 0;
     int64_t enemyTonnageDestroyed = 0;  // hull tonnage of the enemy vehicles its vehicles destroyed
+    // "Number Scrapped": scrapped, analyzed or self-destructed (spec 04 §15,
+    // spec 03 §15). In service is constructed - lost - scrapped.
+    int scrapped = 0;
 };
 
 enum class VehicleStatus : uint8_t { Normal, Mothballed, Cloaked };

@@ -5,6 +5,7 @@
 #include "client/classic/session.hpp"
 #include "core/hash.hpp"
 #include "core/log.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <toml++/toml.hpp>
 
@@ -47,6 +48,17 @@ std::unique_ptr<ClassicSettings>& instance() {
 } // namespace
 
 std::span<const BoolOption> boolOptions() { return kBoolOptions; }
+
+bool musicAllowed(const ruleset::Settings& data) { return data.boolean("Allow CD Music", true); }
+
+bool openMusicRows(ClassicSettings& s, bool allowed) {
+    if (allowed && s.musicOn) return false;
+    const bool changed = s.musicOn;
+    s.musicOn = false;
+    return changed;
+}
+
+bool musicLampLit(const ClassicSettings& s, bool allowed) { return s.musicOn && allowed; }
 
 std::string settingsToToml(const ClassicSettings& s) {
     toml::table options;

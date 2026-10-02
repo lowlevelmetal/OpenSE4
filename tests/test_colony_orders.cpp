@@ -226,8 +226,9 @@ TEST_CASE("colony cloaking: cloak and sensor levels come from facilities only an
     CHECK(sight::colonyCanCloak(c));
     CHECK(c.sensorLevels[kPsychic] == 4);
     // Loading a game recalculates: the colony can no longer cloak, so it decloaks, without a message.
-    sight::recalculateColonies(r, cw.w.s);
+    CHECK(sight::recalculateColonies(r, cw.w.s));
     CHECK_FALSE(c.cloaked);
+    CHECK_FALSE(sight::recalculateColonies(r, cw.w.s));
     CHECK(c.sensorLevels[kPsychic] == 0);
     CHECK(cw.w.s.empire(kB).log.empty());
 }
@@ -267,16 +268,16 @@ TEST_CASE("colony cloaking: a cloaked colony hides behind its cloak levels; part
     // The planet's obscuration is the cloak level; A's colony (EM Active 1) does not see it.
     CHECK(sight::planetObscuration(r, cw.w.s, cw.hidden) == sight::SightVector{3, 3, 3, 3, 3});
     CHECK_FALSE(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
-    CHECK_FALSE(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));  // nor does the map remember it
-    CHECK_FALSE(sight::colonyShown(r, cw.w.s, kA, cw.hidden));
-    CHECK(sight::colonyShown(r, cw.w.s, kB, cw.hidden));         // its owner always does
+    CHECK_FALSE(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));  // nor is the planet drawn
+    CHECK(sight::canSeeColony(r, cw.w.s, kB, cw.hidden));        // its owner always sees it
+    CHECK(sight::canSeePlanet(r, cw.w.s, kB, cw.hidden));
     cw.w.s.options.omnipresent = true;
     CHECK_FALSE(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
     cw.w.s.options.omnipresent = false;
     // Sensors of level 3 in any type reveal it.
     const VehicleId eye = cw.w.spawn(cw.w.ship(kA, "Eye", 1, {"Mv Sensor 3"}), at(cw.a, 2, 2));
     CHECK(sight::canSeeColony(r, cw.w.s, kA, cw.hidden));
-    CHECK(sight::colonyShown(r, cw.w.s, kA, cw.hidden));
+    CHECK(sight::canSeePlanet(r, cw.w.s, kA, cw.hidden));
     cw.w.v(eye).count = 0;
     cw.w.s.removeDeadVehicles();
     // Uncloaked, it is seen as before.
@@ -287,8 +288,12 @@ TEST_CASE("colony cloaking: a cloaked colony hides behind its cloak levels; part
     CHECK(sight::hasPresence(r, cw.w.s, kB, cw.a));
 }
 
-TEST_CASE("colony cloaking: first contact needs the cloak-aware test; Decloak runs the contact check at once") {
-    CloakWorld cw;
+TEST_CASE("colony cloaking: first contact needs the cloak-aware test; a simultaneous Decloak makes only the player's side") {
+    // Spec 01 §6.9, §14 Q44 (confirmed: binary): the Decloak's contact check
+    // runs on the player's machine, and the host takes over only the player's
+    // side (its contact and its "First Contact" entry); the other side waits
+    // for the host's next first-contact check.
+    CloakWorld cw;  // simultaneous
     const Rules& r = cw.w.rules();
     REQUIRE(cw.cloak().ok);
     TurnContext ctx{r, cw.w.s, {}, {}, {}};
@@ -297,8 +302,83 @@ TEST_CASE("colony cloaking: first contact needs the cloak-aware test; Decloak ru
     // B sees A's colony, A does not see B's: no mutual detection.
     CHECK_FALSE(cw.w.s.empire(kA).relation(kB).contact);
     REQUIRE(cw.cloak(false).ok);
+    CHECK(cw.w.s.empire(kB).relation(kA).contact);
+    CHECK_FALSE(cw.w.s.empire(kA).relation(kB).contact);
+    CHECK(logged(cw.w, kB, "First Contact") == 1);
+    CHECK(logged(cw.w, kA, "First Contact") == 0);
+    // The next full check completes the other side, and B meets A only once.
+    diplomacy::updateContacts(ctx);
+    CHECK(cw.w.s.empire(kA).relation(kB).contact);
+    CHECK(logged(cw.w, kA, "First Contact") == 1);
+    CHECK(logged(cw.w, kB, "First Contact") == 1);
+}
+
+TEST_CASE("colony cloaking: in a turn-based game a Decloak meets both sides at once") {
+    CloakWorld cw;
+    cw.w.s.options.simultaneous = false;
+    REQUIRE(cw.cloak().ok);
+    sight::updateKnowledge(cw.w.rules(), cw.w.s);
+    REQUIRE(cw.cloak(false).ok);
     CHECK(cw.w.s.empire(kA).relation(kB).contact);
     CHECK(cw.w.s.empire(kB).relation(kA).contact);
+    CHECK(logged(cw.w, kA, "First Contact") == 1);
+    CHECK(logged(cw.w, kB, "First Contact") == 1);
+}
+
+TEST_CASE("colony cloaking: an automatic decloak at a recalculation is a full Decloak: sight and the contact check") {
+    // Spec 01 §6.9, §14 Q44 (confirmed: binary).
+    CloakWorld cw;
+    const Rules& r = cw.w.rules();
+    Colony& c = cw.colony();
+    REQUIRE(cw.cloak().ok);
+    sight::updateKnowledge(r, cw.w.s);
+    c.facilities.clear();  // lost without a recalculation (Planet - Facility Damage)
+    // A facility completed there recalculates: the colony decloaks, and both
+    // empires meet at once (the end-of-turn processing is the host's own).
+    QueueItem mine;
+    mine.kind = QueueItem::Kind::Facility;
+    mine.facility = test::facilityIndex(r, "Test Mine");
+    c.queue.items = {mine};
+    cw.w.s.empire(kB).stockpile = {100000, 100000, 100000};
+    TurnContext ctx{r, cw.w.s, {}, {}, {}};
+    economy::runConstruction(ctx, kB);
+    REQUIRE(c.facilities.size() == 1);
+    CHECK_FALSE(c.cloaked);
+    CHECK(cw.w.s.empire(kA).relation(kB).contact);
+    CHECK(cw.w.s.empire(kB).relation(kA).contact);
+    // diplomacy::recalculateColony reports it; a colony that still cloaks stays cloaked.
+    CloakWorld other;
+    REQUIRE(other.cloak().ok);
+    TurnContext octx{r, other.w.s, {}, {}, {}};
+    CHECK_FALSE(diplomacy::recalculateColony(octx, other.colony()));
+    CHECK(other.colony().cloaked);
+    other.colony().facilities.clear();
+    CHECK(diplomacy::recalculateColony(octx, other.colony()));
+    CHECK_FALSE(other.colony().cloaked);
+}
+
+TEST_CASE("colony cloaking: the host's reading of a player's orders recalculates each colony they name") {
+    // Spec 05 §9.2, spec 01 §6.9, §14 Q44 (confirmed: binary); which commands
+    // count as touching a colony is our choice (coloniesNamed).
+    for (const bool named : {true, false}) {
+        CAPTURE(named);
+        CloakWorld cw;
+        const Rules& r = cw.w.rules();
+        REQUIRE(cw.cloak().ok);
+        cw.colony().facilities.clear();  // marked cloaked, but it can no longer cloak
+        std::vector<Command> commands;
+        if (named) commands.push_back(cmd::SetColonyType{cw.hidden, "Research"});
+        commands.push_back(cmd::SetWaypoint{0, std::nullopt});
+        const std::vector<EmpireOrders> orders{{kA, cw.w.s.turn, {}}, {kB, cw.w.s.turn, commands}};
+        TurnOptions o;
+        o.aiForMissing = false;
+        processTurn(r, cw.w.s, orders, o);
+        REQUIRE(cw.w.s.colony(cw.hidden));
+        CHECK(cw.w.s.colony(cw.hidden)->cloaked == !named);
+    }
+    CHECK(coloniesNamed(std::vector<Command>{cmd::CloakColony{ObjectId{3u}, false}, cmd::QueueRemove{{ObjectId{5u}, {}}, 0},
+                                             cmd::TransferCargo{{}, ObjectId{7u}, {}, ObjectId{3u}, {}, {}, 1}, cmd::Rename{{}, {}, {}, {}, "x"}}) ==
+          std::vector<ObjectId>{ObjectId{3u}, ObjectId{5u}, ObjectId{7u}});
 }
 
 TEST_CASE("colony cloaking: a colonizer that cannot see the colony finds no planet to colonize") {

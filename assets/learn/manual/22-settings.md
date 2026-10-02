@@ -53,12 +53,24 @@ Use*. Its choices are kept on this computer, except the autosave choice, which b
 | Animation | Animate ship movement in combat | on |
 | Sound | Sound On | on |
 | Sound | Classic Sound Effects | off |
-| Music | Music Off, or a volume from 20 % to 100 % | 100 % |
+| Music | Music Off, or a volume from 20 % to 100 %. With music off, or not allowed by your copy's settings (below), the window opens on Music Off and keeps music off until you pick a volume. | 100 % |
 | Tactical Combat | Fast Tactical Combat | off |
 | System Display | Display Ship Movement Lines: the route of the selected ship, as a dashed line. `Ctrl+L` switches it too. | off |
 | Autosave For This Game | None, or every 1, 2, 3, 5 or 10 turns (local and hotseat games only) | None, unless chosen at setup |
 
 `Settings` opens the Settings window, and `Close` closes this one.
+
+### Switches in your copy's Settings.txt
+
+A few lines of the game's own `Data/Settings.txt` change how these windows behave:
+
+- `Allow CD Music`: with `FALSE` no music plays at all. The Options window then opens on Music
+  Off, and the Combat Options window's *Music On* stays dark.
+- `Allow Export of Weapon And Component Data`: with `TRUE` the Weapons Report (Help) gets an
+  `Export` button. It writes four text tables, weapons, components, weapon families and
+  component families, into your saves folder and tells you where each one went.
+- `System Ship Movement Delay Milliseconds`: above 0, a ship moving in the system window, and
+  in the movement log replay, waits this many milliseconds after every square.
 
 ## Empire options
 

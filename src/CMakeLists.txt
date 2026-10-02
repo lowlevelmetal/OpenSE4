@@ -80,6 +80,7 @@ add_library(opense4_game STATIC
     game/redact.cpp
     game/research.cpp
     game/rules.cpp
+    game/scrap.cpp
     game/score.cpp
     game/serialize.cpp
     game/setup.cpp

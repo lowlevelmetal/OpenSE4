@@ -10,6 +10,7 @@
 
 #include "game/design.hpp"
 #include "game/query.hpp"
+#include "game/scrap.hpp"
 
 #include <algorithm>
 #include <format>
@@ -20,11 +21,7 @@ namespace {
 
 using namespace shipui;
 
-void tooltip(const char* text) {
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", text);
-}
-
-std::string yesNo(int yes, int total) { return yes == 0 ? "No" : yes == total ? "Yes" : std::format("{} of {}", yes, total); }
+std::string plural(int n, std::string_view one, std::string_view many) { return std::format("{} {}", n, n == 1 ? one : many); }
 
 class ScrapScreen final : public Screen {
 public:
@@ -92,10 +89,13 @@ private:
     // and not cloaked (spec 03 §15, §19 Q74, confirmed: binary).
     static bool listed(const game::Vehicle& v) { return !v.fleet.valid() && v.status != game::VehicleStatus::Cloaked; }
 
+    // The selected vehicles in the window's list order: the actions go to
+    // them one after another in that order (spec 03 §15).
     std::vector<const game::Vehicle*> selection(const UiContext& ui) const {
         std::vector<const game::Vehicle*> out;
-        for (game::VehicleId id : selected_)
-            if (const game::Vehicle* v = ownVehicle(ui, id); v && listed(*v)) out.push_back(v);
+        if (!where_) return out;
+        for (const game::Vehicle* v : ownVehiclesAt(ui, *where_))
+            if (listed(*v) && isSelected(v->id)) out.push_back(v);
         return out;
     }
 
@@ -128,8 +128,9 @@ private:
         ImGui::SameLine(0, ui.px(20));
 
         const auto sel = selection(ui);
+        const ScrapWindowState state = scrapWindowState(r, s, ui.session.player(), sel);
         game::Resources value, unmothball;
-        int mothballed = 0, normal = 0, cloaked = 0, destructible = 0, fireable = 0;
+        int mothballed = 0, normal = 0, cloaked = 0;
         for (const game::Vehicle* v : sel) {
             value += scrapValue(r, s, *v);
             if (v->status == game::VehicleStatus::Mothballed) {
@@ -140,8 +141,6 @@ private:
             } else {
                 ++normal;
             }
-            if (canSelfDestruct(r, s, *v)) ++destructible;
-            if (canBeFiredOn(r, s, *v, selected_)) ++fireable;
         }
         const int n = static_cast<int>(sel.size());
         const char* status = n == 0 ? "-" : mothballed == n ? "Mothballed" : cloaked == n ? "Cloaked" : normal == n ? "Normal" : "Mixed";
@@ -152,68 +151,52 @@ private:
         ImGui::TextColored(kLabelBlue, "Scrap Value");
         ImGui::SameLine(ui.px(col));
         resources(ui, value, true);
-        labelValue(ui, "Research Potential", n == 0 ? "-" : researchPotentialLabel(researchPotential(r, s, ui.me(), sel)), col);
+        // The last selected vehicle's word (spec 03 §15).
+        labelValue(ui, "Research Potential", std::string(state.researchPotential), col);
         labelValue(ui, "Status", status, col);
         ImGui::TextColored(kLabelBlue, "Cost to Unmothball");
         ImGui::SameLine(ui.px(col));
         resources(ui, unmothball, true);
-        labelValue(ui, "Can Self-Destruct", n == 0 ? "-" : yesNo(destructible, n), col);
-        labelValue(ui, "Can Be Fired On", n == 0 ? "-" : yesNo(fireable, n), col);
-        labelValue(ui, "Space Yard In Sector", game::spaceYardAt(r, s, ui.session.player(), *where_) ? "Yes" : "No", col);
+        labelValue(ui, "Can Self-Destruct", n == 0 ? "-" : state.canSelfDestruct ? "Yes" : "No", col);
+        labelValue(ui, "Can Be Fired On", n == 0 ? "-" : state.canBeFiredOn ? "Yes" : "No", col);
+        labelValue(ui, "Space Yard In Sector", game::scrapYardAt(r, s, ui.session.player(), *where_) ? "Yes" : "No", col);
         ImGui::Dummy(ImVec2(0, ui.px(16)));
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui.px(330));
-        ImGui::TextColored(kDim, "Scrapping, retrofitting and mothballing need a space yard in the sector. Self-destruct orders are "
-                                 "carried out when the turn is processed.");
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+        ImGui::TextColored(kDim, "%s",
+                           s.options.simultaneous
+                               ? "Scrapping, analyzing, retrofitting and mothballing need a space yard in the sector. Each action becomes "
+                                 "the vehicle's only order and is carried out when the vehicle first acts in the turn."
+                               : "Scrapping, analyzing, retrofitting and mothballing need a space yard in the sector. Each action is "
+                                 "carried out at once.");
         ImGui::Dummy(ImVec2(0, ui.px(8)));
         status_.draw(ui);
         ImGui::PopTextWrapPos();
         ImGui::EndGroup();
     }
 
+    // Each button is lit only when every selected vehicle qualifies (spec 06
+    // §1.3, spec 03 §15, confirmed: binary).
     void vehicleButtons(UiContext& ui, Dialog& d) {
         const game::GameState& s = ui.state();
         const game::Rules& r = ui.rules();
         const auto sel = selection(ui);
-        const bool yard = where_ && game::spaceYardAt(r, s, ui.session.player(), *where_);
-        const bool any = !sel.empty();
-        const bool sameHull = any && std::all_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) {
-            return s.design(v->design).hull == s.design(sel.front()->design).hull;
-        });
-        const bool anyNormal = std::any_of(sel.begin(), sel.end(), [](const game::Vehicle* v) { return v->status != game::VehicleStatus::Mothballed; });
-        const bool anyMothballed = std::any_of(sel.begin(), sel.end(), [](const game::Vehicle* v) { return v->status == game::VehicleStatus::Mothballed; });
-        const bool anyDestruct = std::any_of(sel.begin(), sel.end(), [&](const game::Vehicle* v) { return canSelfDestruct(r, s, *v); });
-
-        if (d.button("Scrap", yard && any)) {
+        const ScrapWindowState state = scrapWindowState(r, s, ui.session.player(), sel);
+        if (d.button("Scrap", state.scrap)) {
             game::Resources value;
             for (const game::Vehicle* v : sel) value += scrapValue(r, s, *v);
             ask(ui, Action::Scrap,
-                std::format("Scrap {} vehicle{} for their raw materials? The empire gets back {} minerals, {} organics and {} radioactives.", sel.size(),
-                            sel.size() == 1 ? "" : "s", formatNumber(value.v[0]), formatNumber(value.v[1]), formatNumber(value.v[2])));
+                std::format("Scrap {} for their raw materials? The empire gets back {} minerals, {} organics and {} radioactives.",
+                            plural(static_cast<int>(sel.size()), "vehicle", "vehicles"), formatNumber(value.v[0]), formatNumber(value.v[1]),
+                            formatNumber(value.v[2])));
         }
-        d.button("Analyze", false);
-        tooltip("Analyzing captured technology is not supported by the engine yet.");
-        if (d.button("Retrofit", yard && sameHull)) openRetrofit(ui, sel);
-        if (d.button("Mothball", yard && anyNormal)) {
-            int done = 0;
-            for (const game::Vehicle* v : sel)
-                if (v->status != game::VehicleStatus::Mothballed && status_.issue(ui, game::cmd::Mothball{v->id, true})) ++done;
-            if (done > 0) status_.ok(std::format("{} vehicle{} mothballed.", done, done == 1 ? "" : "s"));
-        }
-        if (d.button("Unmothball", yard && anyMothballed)) {
-            // Copy the ids: each command changes the state.
-            std::vector<game::VehicleId> ids;
-            for (const game::Vehicle* v : sel)
-                if (v->status == game::VehicleStatus::Mothballed) ids.push_back(v->id);
-            int done = 0;
-            for (game::VehicleId id : ids)
-                if (status_.issue(ui, game::cmd::Mothball{id, false})) ++done;
-            if (done > 0) status_.ok(std::format("{} vehicle{} back in service.", done, done == 1 ? "" : "s"));
-        }
-        if (d.button("Self-Destruct", anyDestruct)) {
-            ask(ui, Action::SelfDestruct, "Order the selected vehicles to destroy themselves? They are lost when the order is carried out.");
-        }
-        d.button("Fire On", false);
-        tooltip("Destroying your own vehicles by gunfire is not supported by the engine yet.");
+        if (d.button("Analyze", state.analyze))
+            ask(ui, Action::Analyze, "Take the selected vehicles apart to study their technology? They are lost, and nothing is refunded.");
+        if (d.button("Retrofit", state.retrofit)) openRetrofit(ui, sel);
+        if (d.button("Mothball", state.mothball)) perform(ui, Action::Mothball);
+        if (d.button("Unmothball", state.unmothball)) perform(ui, Action::Unmothball);
+        if (d.button("Self-Destruct", state.selfDestruct)) ask(ui, Action::SelfDestruct, "Order the selected vehicles to destroy themselves?");
+        if (d.button("Fire On", state.fireOn))
+            ask(ui, Action::FireOn, "Order our own armed ships here to fire on the selected vehicles and destroy them?");
     }
 
     void openRetrofit(UiContext& ui, const std::vector<const game::Vehicle*>& sel) {
@@ -225,12 +208,13 @@ private:
         for (game::DesignId id : ui.me().designs) {
             const game::Design& d = s.design(id);
             if (d.hull != hull || id == first.design) continue;
-            const DryRun dr = dryRun(ui.rules(), s, ui.session.player(), game::cmd::Retrofit{first.id, id});
-            std::string detail = dr.result.ok ? std::format("Cost {} / {} / {} each", formatNumber(dr.cost.v[0]), formatNumber(dr.cost.v[1]),
-                                                            formatNumber(dr.cost.v[2]))
-                                              : dr.result.error;
+            game::Resources cost;
+            const std::string why = game::retrofitProblem(ui.rules(), s, ui.session.player(), first, id, &cost);
+            std::string detail = why.empty() ? std::format("Cost {} / {} / {} each", formatNumber(cost.v[0]), formatNumber(cost.v[1]),
+                                                           formatNumber(cost.v[2]))
+                                             : why;
             if (d.obsolete) detail += " (obsolete)";
-            items.push_back({d.name, detail, dr.result.ok, designMini(ui, id)});
+            items.push_back({d.name, detail, why.empty(), designMini(ui, id)});
             retrofitDesigns_.push_back(id);
         }
         retrofit_.open("Retrofit To", std::move(items));
@@ -294,13 +278,12 @@ private:
 
     // ---- Popups ----
 
-    enum class Action { Scrap, SelfDestruct, ScrapFacilities };
+    enum class Action { Scrap, Analyze, Mothball, Unmothball, SelfDestruct, FireOn, ScrapFacilities };
 
-    // Scrap and Self-Destruct (with Analyze and Fire On, which our engine does
-    // not have yet) ask a "Confirm Action" Yes/No first while the Empire
-    // Options' "confirm scrapping" is on; otherwise they act at once.
-    // Retrofit, Mothball, Unmothball and the facility check lists never ask
-    // (spec 06 §7 Q46).
+    // Scrap, Analyze, Self-Destruct and Fire On ask a "Confirm Action" Yes/No
+    // first while the Empire Options' "confirm scrapping" is on; otherwise
+    // they act at once. Retrofit, Mothball, Unmothball and the facility check
+    // lists never ask (spec 06 §7 Q46).
     void ask(UiContext& ui, Action a, std::string text) {
         if (ui.options().confirmScrap) {
             confirmAction_ = a;
@@ -310,57 +293,74 @@ private:
         }
     }
 
-    void perform(UiContext& ui, Action a) {
-        const game::GameState& s = ui.state();
-    switch (a) {
-        case Action::Scrap: {
-            std::vector<game::VehicleId> ids = selected_;
-            int done = 0;
-            for (game::VehicleId id : ids)
-                if (status_.issue(ui, game::cmd::Scrap{id, {}, -1})) ++done;
-            if (done > 0) status_.ok(std::format("{} vehicle{} scrapped.", done, done == 1 ? "" : "s"));
-            break;
+    // Gives the action to every selected vehicle, one after another in list
+    // order. A turn-based game carries each out at once, testing it again
+    // (so one can change the next: the last armed vehicle cannot be fired
+    // on); a simultaneous game leaves it as each vehicle's only order (spec 03
+    // §15). Vehicles that fail are left alone.
+    void act(UiContext& ui, game::ScrapAction a, game::DesignId design = {}) {
+        std::vector<game::VehicleId> ids;
+        for (const game::Vehicle* v : selection(ui)) ids.push_back(v->id);
+        int done = 0;
+        std::string why;
+        for (game::VehicleId id : ids) {
+            const game::CommandResult res = ui.session.issue(scrapCommand(a, id, design));
+            if (res.ok) ++done;
+            else if (why.empty()) why = res.error;
         }
-        case Action::SelfDestruct: {
-            int done = 0;
-            for (game::VehicleId id : std::vector<game::VehicleId>(selected_)) {
-                const game::Vehicle* v = ownVehicle(ui, id);
-                if (!v) continue;
-                if (!canSelfDestruct(ui.rules(), s, *v)) continue;
-                // A per-vehicle action: the order goes to the vehicle even inside a fleet.
-                game::Order o{game::OrderKind::SelfDestruct, v->location};
-                OrderOwner owner;
-                owner.vehicle = id;
-                if (status_.issue(ui, withImmediate(s, owner, o))) ++done;
-            }
-            if (done > 0) status_.ok(std::format("{} vehicle{} will self-destruct when the turn is processed.", done, done == 1 ? "" : "s"));
-            break;
+        if (done == 0) {
+            if (!why.empty()) status_.error(why);
+            return;
         }
-        case Action::ScrapFacilities: {
-            const game::Colony* c = ownColony(ui, planet_);
-            if (!c) break;
-            std::vector<size_t> slots = slots_;
-            std::sort(slots.rbegin(), slots.rend());  // highest slot first keeps the others valid
-            int done = 0;
-            for (size_t i : slots)
-                if (status_.issue(ui, game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)})) ++done;
-            slots_.clear();
-            if (done > 0) status_.ok(std::format("{} facilit{} scrapped.", done, done == 1 ? "y" : "ies"));
-            break;
-        }
+        static constexpr std::string_view kDone[] = {"scrapped", "analyzed", "mothballed", "back in service", "retrofitted", "destroyed", "destroyed"};
+        static constexpr std::string_view kLater[] = {"be scrapped", "be analyzed", "be mothballed", "be unmothballed", "be retrofitted",
+                                                      "self-destruct", "be fired on"};
+        const size_t i = static_cast<size_t>(a);
+        const std::string vehicles = plural(done, "vehicle", "vehicles");
+        status_.ok(ui.state().options.simultaneous ? std::format("{} will {} when {} first {} this turn.", vehicles, kLater[i], done == 1 ? "it" : "they",
+                                                                  done == 1 ? "acts" : "act")
+                                                   : std::format("{} {}.", vehicles, kDone[i]));
     }
+
+    static game::Command scrapCommand(game::ScrapAction a, game::VehicleId id, game::DesignId design) {
+        switch (a) {
+            case game::ScrapAction::Scrap: return game::cmd::Scrap{id, {}, -1};
+            case game::ScrapAction::Analyze: return game::cmd::Analyze{id};
+            case game::ScrapAction::Mothball: return game::cmd::Mothball{id, true};
+            case game::ScrapAction::Unmothball: return game::cmd::Mothball{id, false};
+            case game::ScrapAction::Retrofit: return game::cmd::Retrofit{id, design};
+            case game::ScrapAction::SelfDestruct: return game::cmd::SelfDestruct{id};
+            case game::ScrapAction::FireOn: return game::cmd::FireOn{id};
+        }
+        return game::cmd::Scrap{id, {}, -1};
+    }
+
+    void perform(UiContext& ui, Action a) {
+        switch (a) {
+            case Action::Scrap: act(ui, game::ScrapAction::Scrap); break;
+            case Action::Analyze: act(ui, game::ScrapAction::Analyze); break;
+            case Action::Mothball: act(ui, game::ScrapAction::Mothball); break;
+            case Action::Unmothball: act(ui, game::ScrapAction::Unmothball); break;
+            case Action::SelfDestruct: act(ui, game::ScrapAction::SelfDestruct); break;
+            case Action::FireOn: act(ui, game::ScrapAction::FireOn); break;
+            case Action::ScrapFacilities: {
+                const game::Colony* c = ownColony(ui, planet_);
+                if (!c) break;
+                std::vector<size_t> slots = slots_;
+                std::sort(slots.rbegin(), slots.rend());  // highest slot first keeps the others valid
+                int done = 0;
+                for (size_t i : slots)
+                    if (status_.issue(ui, game::cmd::Scrap{{}, planet_, static_cast<int32_t>(i)})) ++done;
+                slots_.clear();
+                if (done > 0) status_.ok(std::format("{} facilit{} scrapped.", done, done == 1 ? "y" : "ies"));
+                break;
+            }
+        }
     }
 
     void popups(UiContext& ui) {
-        const game::GameState& s = ui.state();
         if (confirm_.draw(ui)) perform(ui, confirmAction_);
-        if (auto i = retrofit_.draw(ui); i && *i < retrofitDesigns_.size()) {
-            const game::DesignId target = retrofitDesigns_[*i];
-            int done = 0;
-            for (game::VehicleId id : std::vector<game::VehicleId>(selected_))
-                if (status_.issue(ui, game::cmd::Retrofit{id, target})) ++done;
-            if (done > 0) status_.ok(std::format("{} vehicle{} retrofitted to {}.", done, done == 1 ? "" : "s", s.design(target).name));
-        }
+        if (auto i = retrofit_.draw(ui); i && *i < retrofitDesigns_.size()) act(ui, game::ScrapAction::Retrofit, retrofitDesigns_[*i]);
         report_.draw(ui);
     }
 

@@ -3,9 +3,10 @@
 #include "client/classic/screens/setup_model.hpp"
 #include "client/classic/settings.hpp"
 #include "core/log.hpp"
+#include "game/ai.hpp"
+#include "game/diplomacy.hpp"
 #include "game/serialize.hpp"
 #include "game/setup.hpp"
-#include "game/sight.hpp"
 #include "game/turn.hpp"
 #include "net/auth.hpp"
 
@@ -15,6 +16,9 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace opense4::client::classic {
 
@@ -73,6 +77,7 @@ std::unique_ptr<ClassicSession> ClassicSession::pbem(std::shared_ptr<const game:
     auto session = std::make_unique<ClassicSession>(std::move(rules), std::move(game.state), player, SessionKind::Pbem);
     session->pbem_ = std::move(turn);
     session->pbemDrafts_ = std::move(draftsDir);
+    session->masterVerifier_ = game.info.masterPasswordVerifier;
     session->waiting_ = session->turnBased() && !session->myTurn();
     // A turn saved earlier: its commands again, in order (the game is the same, so they play the same).
     if (!session->waiting_ && !session->pbemDrafts_.empty())
@@ -204,6 +209,48 @@ void ClassicSession::resumeTurnBased() { beginCall(Call::Resume); }
 // (docs/MULTIPLAYER.md).
 bool ClassicSession::showsBattles() const { return kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat; }
 
+game::LiveOptions ClassicSession::liveOptions() const {
+    game::LiveOptions o;
+    // Local and hotseat games stop when no human is left (spec 06 §1.2.1).
+    o.endWithoutHumans = kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat;
+    return o;
+}
+
+bool ClassicSession::humansGone() const {
+    return (kind_ == SessionKind::Local || kind_ == SessionKind::Hotseat) && !game::ai::anyHumanLeft(state_);
+}
+
+bool ClassicSession::masterPasswordMatches(std::string_view password) const {
+    return !masterVerifier_.empty() && net::checkPassword(masterVerifier_, net::hashPassword(password));
+}
+
+void ClassicSession::setComputerControl(const std::vector<std::pair<game::EmpireId, bool>>& rows) {
+    for (const auto& [empire, computer] : rows) {
+        if (!game::ai::setComputerControl(state_, empire, computer)) continue;
+        // A player's copy of a game on different machines: the orders carry the
+        // player's own empire's minister switches and its vehicles', fleets'
+        // and colonies' flags (fleets and colonies inferred), never the mark
+        // and nothing about other empires (spec 06 §1.2.1).
+        if ((kind_ == SessionKind::NetworkClient || kind_ == SessionKind::Pbem) && empire == player_) {
+            game::cmd::SetMinisters m;
+            m.areas = computer ? game::kAllMinisters : 0u;
+            m.individual = computer;
+            issue(m);
+            issue(game::cmd::SetMinister{{}, {}, true, computer});
+        }
+    }
+    // A second human makes a local game hotseat: End Turn then passes to the
+    // other humans before the turn is processed. A hotseat game stays one, so
+    // the humans left are still asked in turn.
+    if (kind_ == SessionKind::Local) {
+        const auto humans = std::count_if(state_.empires.begin(), state_.empires.end(),
+                                          [](const game::Empire& e) { return e.alive && e.kind == game::PlayerKind::Human; });
+        if (humans > 1) kind_ = SessionKind::Hotseat;
+    }
+    ended_.resize(state_.empires.size(), 0);
+    ++revision_;
+}
+
 void ClassicSession::beginCall(Call call, std::optional<game::Command> command) {
     call_ = call;
     callCommand_ = std::move(command);
@@ -220,8 +267,8 @@ void ClassicSession::runCall() {
     game::TurnResult res;
     switch (call_) {
         case Call::Issue: res = game::applyLive(*rules_, state_, player_, *callCommand_, answers); break;
-        case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, {}, answers); break;
-        case Call::Resume: res = game::resumeTurnBased(*rules_, state_, {}, answers); break;
+        case Call::EndTurn: res = game::endPlayerTurn(*rules_, state_, player_, liveOptions(), answers); break;
+        case Call::Resume: res = game::resumeTurnBased(*rules_, state_, liveOptions(), answers); break;
         case Call::Process: {
             game::TurnOptions options;
             options.battles = answers;
@@ -367,16 +414,22 @@ void ClassicSession::endTurn() {
         waiting_ = true;
         return;
     }
+    // The game has ended for lack of humans: no further turn (spec 06 §1.2.1).
+    if (humansGone()) return;
     if (kind_ == SessionKind::Hotseat) {
         ended_[player_.index()] = 1;
         for (const game::Empire& e : state_.empires)
             if (e.alive && e.kind == game::PlayerKind::Human && !ended_[e.id.index()]) {
                 setPlayer(e.id);
                 orders_.clear();
+                reloadColonies();
                 ++revision_;
                 return;
             }
     }
+    // The original reloads the game file between hotseat players and before
+    // processing the turn (spec 01 §6.9, §14 Q44).
+    reloadColonies();
     // Every human's orders are already applied to this state; an empty list
     // marks them as submitted so the computer does not play for them. The
     // turn stops at each battle the Settings show (game::TurnOptions::battles).
@@ -458,6 +511,8 @@ bool ClassicSession::replayLastTurn(const std::function<void(int day, const game
     return true;
 }
 
+void ClassicSession::reloadColonies() { game::diplomacy::recalculateColonies(*rules_, state_); }
+
 void ClassicSession::setPlayer(game::EmpireId e) {
     player_ = e;
     ++revision_;
@@ -491,6 +546,7 @@ std::expected<void, std::string> ClassicSession::save(const std::filesystem::pat
     game::SaveInfo info;
     info.gameName = gameName;
     info.gameId = multiplayerGameId_;  // a network or PBEM game stays one: its passwords are verifiers
+    info.masterPasswordVerifier = masterVerifier_;
     info.dataSet = rules_->data().dataDir.parent_path().filename().string();
     info.turn = state_.turn;
     for (const game::Empire& e : state_.empires) info.empires.push_back(e.name);
@@ -506,9 +562,10 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     auto loaded = game::loadGame(file);
     if (!loaded) return std::unexpected(loaded.error());
     game::GameState& s = loaded->first;
-    // Loading a game recalculates every colony's cloak and sensor levels
-    // (spec 01 §6.9, confirmed: binary).
-    game::sight::recalculateColonies(*rules, s);
+    // Reading a game file recalculates every colony's cloak and sensor levels,
+    // a colony that can no longer cloak decloaking as by Decloak (spec 01
+    // §6.9, §14 Q44, confirmed: binary).
+    game::diplomacy::recalculateColonies(*rules, s);
     game::EmpireId player;
     int humans = 0;
     for (const game::Empire& e : s.empires)
@@ -522,6 +579,7 @@ std::expected<std::unique_ptr<ClassicSession>, std::string> ClassicSession::load
     // A network host's save or a PBEM game file (they carry a game id) is played
     // on here as a local game; its passwords are the verifiers the host checks.
     session->multiplayerGameId_ = loaded->second.gameId;
+    session->masterVerifier_ = loaded->second.masterPasswordVerifier;
     return session;
 }
 

@@ -345,8 +345,7 @@ Simulation buildSimulation(const Rules& r, const GameState& real, const Simulato
         c.owner = sim.sides[side];
         c.strategy = strategyFor(side, real.design(d).owner, real.design(d).strategy);
         c.obsolete = false;
-        c.built = c.lost = 0;
-        c.enemyTonnageDestroyed = 0;
+        resetDesignStatistics(c);
         const DesignId id = addDesign(sb, std::move(c));
         copies.emplace(key, id);
         sim.designCopies.emplace_back(id, d);

@@ -224,8 +224,14 @@ whenever you give an order that runs them at once.
 - **Cloak** (`Z`) hides a colony that has a cloaking facility of level 2 or more. A cloaked
   colony costs nothing and keeps building facilities and units, but its space yard stops
   working, so ships and bases leave its queue. Empires whose sensors do not reach its cloak
-  level do not see it: it does not show in their Planets window and their ships cannot
-  colonize it. **Decloak** (`X`) shows it again. A battle decloaks it for as long as it lasts.
+  level do not see the planet at all: their system window does not draw it, they cannot click
+  it, it is in no tab of their Planets window, and a colony ship sent there finds no planet to
+  colonize. **Decloak** (`X`) shows it again. A battle decloaks it for as long as it lasts.
+
+Seeing a foreign colony also needs a **sensor source** in its system: one of your ships or
+colonies there, or a partner's. Without one you still see the planet, but it looks empty: no
+colony mark, no owner in its report, listed as uncolonized, and it may even get the colonize
+star. A colony ship sent there finds the colony when it arrives.
 
 ## The Planets window
 
@@ -235,7 +241,9 @@ it, its **Atmosphere**, its value for minerals, organics and radioactives (**Min
 **Rad.**; in a game with finite resources, the amount left), and the colony ship on its way to it
 (**Ship Enroute**). Click a column heading to sort; earlier choices break ties. The statistics at
 the top count your known systems, the planets you can colonize, those owned by others, the
-uncolonized ones, and your colony ships; a small map marks where the listed planets are.
+uncolonized ones, and your colony ships; a small map marks where the listed planets are. The
+statistics count every planet of your explored systems with its true owner, so they can include
+planets the tabs leave out (hidden by a cloak, a storm or a nebula) or list as uncolonized.
 
 The tabs on the right choose what to list:
 
@@ -243,7 +251,7 @@ The tabs on the right choose what to list:
 |---|---|
 | `All` | Every planet you have seen (asteroid fields only on their own tab). |
 | `Colonizable` | Planets of a type you can colonize, settled or not. |
-| `All Colonies`, `Enemy Colonies`, `Ally Colonies` | Colonies: all of them, those of empires without a Non-Aggression treaty with you, and those of empires with one. |
+| `All Colonies`, `Enemy Colonies`, `Ally Colonies` | Colonies you can see: all of them, those of empires without a Non-Aggression treaty with you, and those of empires with one. |
 | `Coloniz\Empty` | Colonizable planets that nobody has settled. |
 | `Coloniz\Breathe` | Colonizable, unsettled planets your race can breathe on. |
 | `Ship Enroute` | Planets one of your colony ships is heading for. |
