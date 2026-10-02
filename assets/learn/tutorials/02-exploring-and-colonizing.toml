@@ -16,7 +16,7 @@ Your empire starts with one planet, two **scouts** and a **colony ship**. In thi
 the scouts to explore the quadrant and use the colony ship to found a second colony.
 
 This game is **turn-based**: the orders you give are carried out at once, as far as your ships'
-movement allows.
+movement allows. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "galaxy#exploring"
@@ -42,6 +42,7 @@ Explore picks the nearest warp point that leads to a system you have not visited
 and jumps through. The scout leaves at once.
 """
 highlight = ["order:explore"]
+allow = ["cycle:ship", "panel:report"]
 done = { order = "explore" }
 manual = "ships-and-fleets#orders"
 
@@ -88,8 +89,8 @@ and radioactives. The tabs on the right choose which planets are listed:
 - **Coloniz\\Breathe** shows those your people can also breathe on. They make the best colonies:
   a domed colony holds far fewer people and facilities.
 
-Choose **Coloniz\\Breathe** now. Click a column heading to sort the list; clicking a planet
-closes the window and shows the planet in the main window.
+Choose **Coloniz\\Breathe** now. (Later, a click on a column heading sorts the list, and a click
+on a planet closes the window and shows the planet in the main window.)
 """
 highlight = ["planets:colonizable", "planets:colonizable-breathable"]
 done = { tab = "planets:colonizable-breathable" }
@@ -102,8 +103,8 @@ Press **Send Colony Ship**. A list of the planets on the current tab opens: pick
 **Colonize**. Your colony ship gets its orders, the window closes and the main window shows the
 ship.
 
-(Another way: select the colony ship, press `C` and click the planet in the system view. In the
-system view a small **green star** marks a planet you can settle and breathe on.)
+Another time you can also select the colony ship, press `C` and click the planet in the system
+view, where a small **green star** marks a planet you can settle and breathe on.
 """
 highlight = ["planets:send-colony-ship"]
 done = { order = "colonize" }
@@ -150,9 +151,11 @@ manual = "economy#spaceports"
 title = "Keep exploring"
 text = """
 Close the window and end turns until your scouts have explored at least three systems, your home
-system included. Remember to give each scout that has arrived a new Explore order.
+system included. Remember to give each scout that has arrived a new Explore order: select it with
+the ship arrows, then press **Explore** or `E`.
 """
 highlight = ["button:end-turn", "order:explore"]
+allow = ["cycle:ship", "panel:report"]
 done = { systems_explored = 3 }
 manual = "galaxy#warp-points"
 
@@ -163,7 +166,8 @@ You have explored new systems and founded a colony. From here on, the game is ab
 again and again: build more colony ships, settle the best planets you find, and keep your scouts
 moving.
 
-The next lesson shows you how to choose research and use your construction queues.
+The next lesson shows you how to choose research and use your construction queues. Press
+**Finish** to end this one.
 """
 highlight = ["command:planets"]
 manual = "planets-and-colonies"

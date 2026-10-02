@@ -16,7 +16,7 @@ This quadrant is small and crowded: three other empires live close by. In this l
 them, talk to them and start an intelligence project.
 
 First you have to find them. You make **contact** with an empire when your ships and theirs are
-in the same system and each side can see the other.
+in the same system and each side can see the other. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "diplomacy#meeting-other-empires"
@@ -25,19 +25,22 @@ manual = "diplomacy#meeting-other-empires"
 title = "Send out a scout"
 text = """
 Select one of your scouts with the ship arrows (or `Space`) and give it the **Explore** order
-(`E`). Send the second scout exploring too.
+(`E`).
 """
 highlight = ["cycle:ship", "order:explore"]
+allow = ["panel:report"]
 done = { order = "explore" }
 manual = "galaxy#exploring"
 
 [[step]]
 title = "First contact"
 text = """
-Now end turns until you meet another empire: the Log then reports a **first contact**. Give each
-scout a new Explore order when it arrives. Your neighbours' scouts may also find you first.
+Send your second scout exploring too: select it with the ship arrows and press **Explore**. Then
+end turns until you meet another empire: the Log reports a **first contact**. Give each scout a
+new Explore order when it arrives. Your neighbours' scouts may also find you first.
 """
-highlight = ["button:end-turn", "order:explore"]
+highlight = ["button:end-turn", "order:explore", "cycle:ship"]
+allow = ["panel:report"]
 done = { empires_met = 1 }
 manual = "diplomacy#meeting-other-empires"
 
@@ -62,6 +65,7 @@ You start with no treaty, and ships of empires without a treaty of **Non-Aggress
 fight on sight. The tabs on the right show other columns: **Trade** and **Tariff**. Press **Next**.
 """
 highlight = ["empires:list", "empires:treaty", "empires:trade", "empires:tariff"]
+allow = ["empires:treaty", "empires:trade", "empires:tariff"]
 manual = "diplomacy#treaties"
 
 [[step]]
@@ -84,6 +88,7 @@ You can send each empire one message per turn. In a turn-based game a message ta
 moment it is sent; an answer comes in the other empire's turn.
 """
 highlight = ["communicate:message-type", "communicate:treaty", "communicate:send"]
+allow = ["window:communicate"]
 done = { command = "SendMessage" }
 manual = "diplomacy#messages"
 
@@ -114,6 +119,7 @@ nobody wrote to you this turn.) Select a message to read it; **Send Reply** answ
 Press **Next** when you have read the answer.
 """
 highlight = ["log:politics", "log:send-reply"]
+allow = ["log:politics", "log:messages"]
 manual = "diplomacy#messages"
 
 [[step]]
@@ -134,9 +140,10 @@ title = "More about other empires"
 text = """
 The Empires window has more on its right side: the **Treaty Grid** of who is at peace with whom,
 the **Scores**, the **Victory Conditions** of this game, and your own race report under **Our
-Race**. Press **Next**.
+Race**. Open it with its command button to look, then press **Next**.
 """
 highlight = ["command:empires"]
+allow = ["command:empires"]
 manual = "diplomacy#the-empires-window"
 
 [[step]]
@@ -168,7 +175,8 @@ text = """
 You have met a neighbour, proposed a treaty and started an intelligence project.
 
 A few tips: sign Non-Aggression with neighbours you are not ready to fight, sign trade treaties
-for free income, and keep a small defense project running once a neighbour turns hostile.
+for free income, and keep a small defense project running once a neighbour turns hostile. Press
+**Finish** to end the lesson.
 """
 highlight = ["lesson:panel"]
 manual = "diplomacy#diplomacy-advice"

@@ -13,7 +13,7 @@ events = "none"
 title = "Research and building"
 text = """
 Two things decide how fast your empire grows: what you **research** and what you **build**. This
-lesson shows you both.
+lesson shows you both. Press **Next**.
 """
 highlight = ["lesson:panel"]
 manual = "research"
@@ -88,6 +88,7 @@ text = """
 Close the Tech Tree and the Research window (**Close** or `Esc`).
 """
 highlight = ["window:tech-tree", "window:research"]
+keys = ["Escape"]
 done = { all = [{ not = { window = "tech-tree" } }, { not = { window = "research" } }] }
 manual = "research#the-tech-tree-window"
 
@@ -105,7 +106,6 @@ manual = "construction#who-can-build"
 title = "Open a queue"
 text = """
 Click your homeworld in the list, then press **Constr. Queue** to open its construction queue.
-(Another way: select the homeworld in the main window and press `Q`.)
 """
 highlight = ["colonies:list", "colonies:queue"]
 done = { window = "set-queue" }
@@ -121,6 +121,7 @@ Click an item to add it to the queue. A second **colony ship** is a good choice:
 mean more of everything.
 """
 highlight = ["set-queue:available"]
+allow = ["set-queue:ships", "set-queue:facilities", "set-queue:units", "set-queue:upgrades"]
 done = { command = "QueueAdd" }
 manual = "construction#the-set-construction-queue-window"
 

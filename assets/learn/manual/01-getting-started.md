@@ -141,6 +141,12 @@ this manual; during a game, the Game Menu's `Learn` button opens it.
 - **Tutorials** are guided lessons. Each starts a small prepared game, and a panel at the bottom
   left of the system view tells you what to do, outlines the button it is about and moves on when
   you have done it. `Read More` opens the manual page about the step.
+- While a tutorial step waits for you, the rest of the screen is dimmed and only what the step is
+  about responds: the outlined buttons, the windows they open, and the game's own questions.
+  Steps that only explain wait for `Next`. `Back` shows earlier steps again without losing your
+  place. If a step can no longer be done (a ship was lost, a battle ended early), `Next` turns
+  into `Skip`. The `Free Play` box in the panel unlocks the whole game for the tutorials, and
+  `Leave` ends the lesson at any time.
 - **Training games** are practice games with objectives and deadlines. The panel shows the
   objectives, which light up as you meet them, the briefing pages and the hints.
 - The **manual** has a contents tree, a search box and links that open the game's windows.
