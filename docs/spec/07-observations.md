@@ -635,6 +635,9 @@ corner of our screens is the owner's `show_fps` setting.
   a box around each piece, shows hint texts instead of the reports, and stacks its buttons
   in one column beside a smaller overview.
 
+Since 2026-10-01 our client follows these observations (spec 06 §1.11); what they leave open
+is asked in spec 06 §7 Q89–Q98.
+
 ## Harness notes
 
 - Launch: `steam steam://rungameid/1610`. The first launch created the Proton prefix.

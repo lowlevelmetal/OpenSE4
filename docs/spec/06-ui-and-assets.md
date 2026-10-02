@@ -952,6 +952,89 @@ Rectangle on Map [on]; Show Grid [off]; and a Stop Replay button that closes the
   "Defender" at (40,264) over its units at (40,279), 504×72; "Attacker" at (40,378) over
   its units at (40,393), 504×72.
 
+### 1.11 The windows as observed (spec 07 session 3)
+
+Seen side by side with the running original on 2026-10-01 (spec 07 session 3, "Side by side"),
+our windows differed in the ways that session lists. Since 2026-10-01 our client follows what
+was observed; details the observation does not give are OpenSE4's choices, marked (inferred)
+in the code and asked in §7 Q89–Q98.
+
+- **Lists** (observed). Every list scrolls with an up arrow and a down arrow in a narrow column
+  at its right, not a scroll bar, and a picture column is headed "Pic". Ours: a 16 px column
+  inside the list's box, the up arrow at its top and the down arrow at its bottom (16×16, drawn
+  as an outlined box with a triangle in the button colours of §5.4, dim when the list cannot
+  scroll that way); a click scrolls one row (36 px in the list windows, a text line elsewhere),
+  holding the button repeats, and the mouse wheel still scrolls (`beginList`,
+  `beginListTable` in `screens/list_widgets.*`) (inferred, Q89).
+- **On/off settings in button columns** (observed): a check box that holds the lamp when on:
+  Construction Queues' Ships, Planets, Ship SY and Planet SY, Ships\Units' Show Ships, Show
+  Units and Show Fleets, Designs' Hide Obsolete and Stats\Strategy, Planets' No Sys To Avoid.
+  Ours also draws Set Construction Queue's Only Latest, Emergency Build, Repeat Build and Queue
+  On Hold, the designer's To Hit Modifiers, Condensed View and Only Latest, and the Weapons
+  Report's Only Latest that way.
+- **Planets** (observed): the statistics read Known Systems, Number of Planets, Number of
+  Colonizable Planets, "... which are owned by Enemies", "... by Allies", "... by
+  Non-Aligned", "... which are not Colonized", "... which are Breathable", then Colonizing
+  Ships and "... which are available"; the value columns are three "Value" headings, each with
+  its resource's icon in its resource colour; a row's atmosphere is on the name's line; every
+  name is white, our own colonies' too.
+- **Colonies** (observed): a summary of Systems with Colonies, Number of Colonies, Number of
+  Blockaded Colonies, Total Population, the research and intelligence points produced, Total
+  Resources Produced and Maximum Resource Storage (with icons, the storage as "50kT"), beside
+  the mini-map with nothing cut off; no Constr. Queue or Goto button; Close in the 14th slot.
+  Ours lays the summary out as Planets' statistics, places the map where Planets has it, puts
+  Scrap Facil Types and Set Colony Type in slots 12 and 13, and keeps a double click on a row
+  for showing the colony in the main window (inferred, Q90).
+- **Construction Queues** (observed): the Rate values carry resource icons; ours gives the Usage
+  values icons as well.
+- **Research** (observed): completed areas stay in the list, dimmed (#606060), with "Complete"
+  as the cost, and a click on one does nothing; a small box under each project box (ours holds
+  the project's progress); Reorder Projects in the 13th slot. The original shows Tech Tree only
+  when the game lets players see the complete tech tree (§1.2, spec 01 §2.2), a setting OpenSE4's
+  games do not have yet: ours always shows it, in the 12th slot (inferred, Q92).
+- **Designs** (observed, and spec 07 §UI): rows under design-type headings, each with a lamp
+  (green for the selected design, blue for the others), the picture, the name, the hull and
+  "Prototype"; the detail shows Size, Design Type and Date Created by the picture, then Cost,
+  Movement, Shields, Cargo Space and Supply Capacity, and the components as a grid of icons, 8
+  to a row; a note says obsolete designs are deleted automatically (spec 03 §4.1). Ours puts
+  enemy designs under their empire's name and the note under the list (inferred, Q93).
+- **Create Design** (observed): Create asks for the vehicle type first, among the types the
+  empire has a hull of, and the designer is titled after it ("Ship Design"); it starts with no
+  size, and the warnings ask for one. The picture; Size, Design Type and Design Name, each with
+  a down-arrow button that opens its list (Design Name can also be typed); the figures box
+  (Space Used, Total Cost on three lines, Movement, Shields, Cargo Space, Supply Capacity);
+  "Components on Design" as a strip of icons with arrows; "Components Available" as a 3-column
+  grid of tiles (icon, name, kT); the Warnings and Component Details boxes; buttons Comp Type,
+  Weap Mount, To Hit Modifiers, Condensed View and Only Latest (check boxes), Weapons Report,
+  Create Design and Cancel in the 13th and 14th slots. Copy starts with an empty name (spec 03
+  §4.1). Places, sizes and the meaning of To Hit Modifiers are ours (inferred, Q94).
+- **Empire Status** (observed): the blocks Resource Production Per Turn (From Our Colonies, From
+  Trade, From Tariffs, From Remote Mining, Total), Resource Expenses Per Turn (Tariffs,
+  Maintenance Cost, Construction Queue Usage, Total), Net Resources Per Turn and Resources in
+  Treasury (Current Total, Maximum Resource Storage), with icons on the first row; Change Email
+  in the 12th slot and Change Password in the 13th. Our engine keeps no e-mail address for an
+  empire, so Change Email is dim; the missed-turn switch ("AI should not make changes during a
+  simultaneous game", §1.2.1) is in the Ministers window (inferred, Q95).
+- **Empires** (observed): Treaty, Trade, Tariff, a gap, History, Treaty Grid, Intelligence (dim
+  without contact), Borders, Scores, Victory Conditions, Comparisons, a gap, Our Race; Borders
+  without a check box; no heading or explanation over the empty strip. Ours keeps Borders as a
+  view of the Empires window that the button shows and hides (inferred, Q96).
+- **Ships\Units and Log** (observed): no hint paragraph; the title "Ships\Units"; the Show check
+  boxes in slots 11–13; an empty Log list stays empty, with Goto lit (Q91).
+- **Combat Simulator** (observed): the items in alphabetical order (ours ignores letter case and
+  mixes designs and objects); Tactical, Strategic, four gaps, No Obsolete, Strategies, Computer
+  Control, Fleets For Plr, Change Cargo, a gap, Begin in the 13th slot, Cancel.
+- **Tactical Combat** (observed): the title strip holds the title, Location, Turn and Empires,
+  and navigation arrows with a stop button at its right; the map fills the left part directly
+  (§1.10.1: from (10,38), (W−256)×(H−44)), with no box around each piece; the right column
+  holds the current piece's report (picture, Size, Move, a damage bar, a 6×6 weapon grid), the
+  target's report below it, Options and Orders, an Auto check box and End Turn as a 2×2 group,
+  and the overview map at the bottom (§1.10.1). Ours titles a simulation's battle "Tactical
+  Combat" too; the places and sizes the observation and §1.10.1 do not give are ours
+  (inferred, Q97).
+- **The report panel** (observed): no "List" text button; the up-arrow button of §2.5 returns
+  to the list (inferred place and states, Q98).
+
 ---
 
 ## 2. Main window layout
@@ -3941,3 +4024,90 @@ Settling Q56 and Q78 on 2026-10-01 left these choices (inferred):
     orders (the current one in brackets) whenever there are any, in the Ships\Units and
     Colonies Orders columns alike (inferred). When does the original write it, and does
     the Colonies Orders column write its list the same way?
+
+Following the side-by-side observation of spec 07 session 3 on 2026-10-01 (§1.11) left these
+choices (inferred):
+
+89. **The lists' arrow column.** `Buttons/Arrows.bmp` holds 24x24 list scroll arrows (§5.3). Ours
+    draws its own: a 16 px column inside the list's box, a 16x16 up arrow at its top and a down
+    arrow at its bottom (an outlined box with a triangle in the button colours, dim when the list
+    cannot scroll that way), nothing between them; a click scrolls one row (36 px in the four
+    list windows, a 16 px line in lists of text), holding repeats, and the mouse wheel scrolls too. "Pic"
+    heads every picture column, in the colours of the other headings. Which cells and state
+    rows of the sheet do the lists use; how wide is the column, and is it inside the list's
+    box; is there anything between the arrows (a position marker, a page click); how far does
+    one click scroll, and does holding the button repeat?
+90. **The Colonies summary and buttons.** Ours lays the summary out as Planets' statistics
+    (labels from x 18 one every 16 px, values right-aligned at x 289), with the lines Systems with
+    Colonies, Number of Colonies, Number of Blockaded Colonies, Total Population (with the
+    population icon), Research Points Produced and Intelligence Points Produced (each with its
+    icon), Total Resources Produced and Maximum Resource Storage, the last two with their three
+    amounts on the next line, the storage in whole thousands ("52500" gives "52kT"). The map is
+    where Planets has it. Scrap Facil Types and Set Colony Type take slots 12 and 13. A click on
+    a row selects it (Ctrl or Shift: several), a double click shows the colony in the main
+    window. What are the exact labels and places (one line for research and intelligence, or
+    two; "System" or "Systems")? How are storage amounts that are not whole thousands written?
+    Which slots hold the two buttons? What does a click on a row do in the original, and how
+    does the player reach a colony's construction queue from this window, if at all?
+91. **The Log's Goto with nothing selected.** The original's Goto is lit in an empty Log. Ours
+    lights it whenever no entry is selected, and a click then does nothing. Is it lit for any
+    other reason, and does a click do anything?
+92. **Research.** Ours keeps Repeat Projects and Divide Pts Evenly in slots 5 and 6, shows the
+    project's progress (points paid of the cost) in the small box under each project box, and,
+    having no "Players can see the complete tech tree" setting, always shows Tech Tree, in slot
+    12. Which slots hold the two check boxes and, when the game allows it, Tech Tree? What does
+    the small box show? With the setting off, can the Tech Tree window be reached at all, and
+    what does "complete" add to it?
+93. **The Designs list and detail.** Ours: 36 px rows with the lamp at (2,11), the 32 px
+    picture at (19,2), the name at (55,2), the hull under it in grey small type and "Prototype"
+    right-aligned on that line for a design never built; an obsolete design's name in grey; the
+    headings in the order of the empire's design-type list, then any other type, and on the enemy
+    tabs the owners' names; the note under the list in small label-blue type, in our words;
+    "(Obsolete)" in yellow under Date Created; the component grid of 36 px cells, one per
+    component, the mount's code in yellow on the icon. What are the rows' places, the headings'
+    order and the enemy tabs' grouping, the note's place, and the grid's cell size; do identical
+    components share a cell?
+94. **Create Design.** Ours: the vehicle-type picker is a list window titled "Select Vehicle
+    Type", the same from every tab; the designer is a 780x475 window. Places in its content
+    area: the picture at (3,3); Size, Design Type and Design Name at x 140 with their boxes
+    190 px wide and 20 px arrow buttons; the figures box (358,3)-(553,131); "Components on
+    Design" at y 137 over a strip of 36 px cells between 16 px arrows; "Components Available" at
+    y 197 over the tile grid (366 px wide, 36 px rows, the list arrows moving a row at a time);
+    Warnings at (375,197) and Component Details at (375,309). A new design starts with no name
+    and our usual design type. The warnings are yellow (§5.4). Comp Type and Weap Mount are plain
+    buttons opening their lists; Weapons Report is in slot 7; with To Hit Modifiers on, a
+    weapon's tile shows its to-hit modifier with the chosen mount in place of its size;
+    Condensed View shows each component once in the strip with its count. Our Clear Design
+    button is gone. What are the original's places and sizes, the picker's title and its list
+    from the Unit Designs tab, the starting design type and name, the warnings' colour, the slots
+    of Weapons Report, and what do To Hit Modifiers and Condensed View change?
+95. **Empire Status.** Ours draws one table per block under its silver heading, the amounts in
+    the resource colours, each block's first row with the resource icons, Net Resources Per Turn
+    as a block of one unlabelled row. Our engine's other income (resources generated by
+    abilities, the income floor and the computer players' bonus) is added to From Our Colonies.
+    Our engine keeps no e-mail address for an empire (the original keeps one and carries it in
+    the orders file, spec 05 §9.2), so Change Email is dim; the missed-turn switch is in
+    Ministers. Where does the original count those incomes? What colours do the amounts and
+    the net take, and which rows carry icons? What does Change Email ask for, and where is the
+    address used?
+96. **Borders.** §1.5 lists Borders as a window reached from Empires. Ours keeps it as a view of
+    the Empires window that the plain Borders button shows and hides (a tab returns to the
+    portraits too). Is it a window of its own in the original, and what are its layout and
+    buttons?
+97. **Tactical Combat.** Ours: the weapon grid's 36 px cells at (W−232,104), 6x6; the target
+    panel, 216x64, at (W−232,324); each panel shows the 64 px picture with the owner's mark and
+    the group badge, the name at x 67, "Size" and "Move" (the target: "Dist") in small type at
+    y 17 and 28 with the values at x 101, and the shield and damage bars at y 42 and 52 (the
+    target's numbers at x 162); the four buttons right-aligned with the overview map, from
+    x W−238; the navigation buttons 20x20 at (W−84,7), (W−62,7) and (W−40,7), the previous and
+    next of the side's pieces that can still move or fire, the stop button between them
+    clearing the selection; a simulation's battle titled "Tactical Combat"; before Begin the
+    panel shows the player's first piece; a refused order's reason in yellow at the map's top
+    left. What are the original's places and contents of the panels and the grid, the buttons'
+    x, what do the navigation and stop buttons do, how is a simulation's battle titled, and
+    what does the panel show before Begin?
+98. **The report's up-arrow button.** Ours draws `DetailUp.bmp` (state rows normal, under the
+    pointer, held; the fourth unused) at the report panel's top right, 35 px from its right edge
+    and 2 px below its top, whenever the shown object's sector holds more than one object.
+    Where exactly is it, which row is which state, and does it show only when the report was
+    reached from the list?

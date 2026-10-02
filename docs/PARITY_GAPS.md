@@ -391,22 +391,20 @@ differs"). Every one settled on 2026-10-01 is implemented; the client's own choi
 noted beside each answer, and the open ones are spec 06 §7 Q83–Q88.
 
 Seen side by side with the running original on 2026-10-01 ([spec 07](spec/07-observations.md),
-session 3, which lists each difference in full). Impact is visual only unless noted:
+session 3, which lists each difference in full). Since 2026-10-01 the client follows what was
+observed (spec 06 §1.11): every list scrolls with an arrow column and heads picture columns
+"Pic"; on/off settings in button columns are check boxes; Planets, Colonies, Construction
+Queues, Research, Designs, Create Design, Empire Status, Empires, Ships\Units, the Log, the
+Combat Simulator, Tactical Combat and the report panel have the original's labels, blocks,
+button order and slots. The details the observation does not give are our choices, spec 06 §7
+Q89–Q98. What remains different (impact visual only unless noted):
 
-| Where | Client now | Original (observed) | Impact |
+| Where | Client now | Original | Impact |
 |---|---|---|---|
-| Lists in every window | A thin scroll bar, no "Pic" heading | Up/down arrow buttons and a "Pic" heading over picture columns | L |
-| On/off settings in button columns (Construction Queues filters, Ships\Units Show buttons, Designs Hide Obsolete and Stats\Strategy, Planets No Sys To Avoid) | Lamp buttons, or no box | A check box holding the lamp (07 "UI": on/off settings) | L |
-| Colonies (`screens/planets.cpp`) | "Statistics" and "Output" blocks (the second cut off by the minimap); Constr. Queue and Goto buttons; Close in slot 15 | Summary lines (systems, colonies, blockaded colonies, population, research and intelligence produced, resources produced, storage); no Constr. Queue or Goto; Close in slot 14 (the tabs' columns follow spec 06 §7 Q56 since 2026-10-01) | M |
-| Planets (`screens/planets.cpp`) | Short labels, "Min./Org./Rad." headings, atmosphere centred in the row, own homeworld in yellow | The longer labels of 07 session 3, three "Value" headings with resource icons, atmosphere on the name's line, all names white | L |
-| Research (`screens/research.cpp`) | Completed areas left out; Tech Tree button; Reorder Projects in slot 9 | Completed areas listed, dimmed, cost "Complete"; a small box under each project box; Reorder Projects in slot 13 | M |
-| Designs (`screens/designs.cpp`) | Plain rows; detail with Class, Space, Structure, Weapons; components as a text list | Rows under design-type headings with lamp, picture, name, hull and "Prototype"; detail Cost, Movement, Shields, Cargo Space, Supply Capacity; components as an icon grid; the note on obsolete designs | M |
-| Create Design (`screens/designs.cpp`) | Opens on Escort with a suggested name; vertical component list by group; warnings in red at the bottom; Cancel low | Asks the vehicle type first and titles the window after it; starts without a size; component strip and a paged 3-column tile grid; Warnings and Component Details boxes; To Hit Modifiers, Condensed View and Only Latest as check boxes; Create Design and Cancel in slots 13 and 14 | M |
-| Empire Status (`screens/empire_status.cpp`) | Budget table with Other, Not delivered, Lost to full storage, points, password and an option line; no Change Email | Three blocks: production per turn, expenses per turn and net, treasury; Change Email (slot 12) and Change Password (slot 13) | L |
-| Empires (`screens/empires.cpp`) | Victory Conditions before Scores, Our Race in slot 12, Borders with a check box, a "Treaties" heading and explanation | Scores, Victory Conditions, Comparisons, a gap, Our Race (slot 13); Intelligence dim with no contact | L |
-| Ships\Units, Log (`screens/ships.cpp`, `screens/log.cpp`) | A hint paragraph; "Ships \ Units"; Show buttons in slots 7–9; "Nothing to report this turn." in an empty log | No hint; "Ships\Units"; Show check boxes in slots 11–13; an empty log stays empty | L |
-| Combat Simulator (`screens/simulator.cpp`) | Design order, buttons from slot 3 | Alphabetical items, buttons from slot 7 with Begin in slot 13 (the numbered side boxes, the Name lines with Cargo and Fleet and the hints under the lists follow spec 06 §7 Q38 since 2026-10-01) | L |
-| Tactical Combat (`screens/tactical.cpp`, `screens/combat_map.cpp`) | Titled after the simulator; heading line and side list above the map; boxes around pieces; hint texts; one column of buttons beside a small overview | Title strip with Location, Turn, Empires and navigation arrows; map fills the left; piece and target reports with weapon grid; Options, Orders, Auto and End Turn as a 2x2 group; overview at the bottom right | M |
+| Research (`screens/research.cpp`) | Tech Tree always in slot 12 | Tech Tree only when the game lets players see the complete tech tree, a Game Settings check box our setup and `GameOptions` lack (spec 01 §2.2) | L |
+| Empire Status (`screens/empire_status.cpp`) | Change Email dim: the engine keeps no e-mail address for an empire | The address is the empire's, saved with the game and carried in the orders file (spec 05 §9.2); needs an `Empire` field | L |
+| Every list | Our own arrow buttons (16 px) | The 24x24 arrows of `Buttons/Arrows.bmp` (Q89) | L |
+| Empires (`screens/empires.cpp`) | Borders a view of the Empires window | Borders a window of its own (spec 06 §1.5, Q96) | L |
 
 ## Computer player (spec 05 §7)
 
