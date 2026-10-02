@@ -57,12 +57,15 @@ const Art::Texture* Art::load(std::string_view relative, bool colorKey) {
     const std::string key = lower(relative) + (colorKey ? "#k" : "#o");
     if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? &it->second : nullptr;
     Texture t;
-    if (auto path = files_.find(relative))
+    if (auto path = files_.find(relative)) {
         if (auto img = assets::loadImage(*path, colorKey); img && !img->empty()) {
             t.id = device_.createTexture(gfx::TextureDesc{img->width, img->height, filter_, key.c_str()}, img->rgba.data());
             t.width = img->width;
             t.height = img->height;
         }
+    } else {
+        files_.noteMissing(relative);
+    }
     auto [it, inserted] = textures_.emplace(key, t);
     return it->second.id ? &it->second : nullptr;
 }
@@ -74,7 +77,9 @@ Sprite Art::image(std::string_view relative, bool colorKey) {
 
 Sprite Art::imageAny(std::initializer_list<std::string_view> candidates, bool colorKey) {
     for (std::string_view c : candidates)
-        if (Sprite s = image(c, colorKey)) return s;
+        if (files_.find(c))
+            if (Sprite s = image(c, colorKey)) return s;
+    if (candidates.size() > 0) files_.noteMissing(*candidates.begin());
     return {};
 }
 
@@ -118,7 +123,9 @@ Sprite Art::rotated(std::string_view relative, int heading, bool colorKey) {
     const std::string key = lower(relative) + std::format("#r{}", heading) + (colorKey ? "#k" : "#o");
     if (auto it = textures_.find(key); it != textures_.end()) return it->second.id ? whole(it->second.id, it->second.width, it->second.height) : Sprite{};
     Texture t;
-    if (auto path = files_.find(relative))
+    const auto path = files_.find(relative);
+    if (!path) files_.noteMissing(relative);
+    if (path)
         if (auto img = assets::loadImage(*path, colorKey); img && !img->empty()) {
             const assets::Image turned = assets::rotateNearest(*img, 45.0 * heading, colorKey);
             t.id = device_.createTexture(gfx::TextureDesc{turned.width, turned.height, filter_, key.c_str()}, turned.rgba.data());
@@ -135,6 +142,7 @@ Sprite Art::shipMini(std::string_view style, const ruleset::VehicleSize& hull, b
         if (files_.find(file))
             if (Sprite s = rotated(file, heading, colorKey)) return s;
     }
+    files_.noteMissing(raceFile(style, std::format("Mini_{}.bmp", hull.primaryBitmap)));
     return {};
 }
 
@@ -199,7 +207,9 @@ std::optional<uint32_t> Art::swatchColor(std::string_view style) {
     const std::string key(style);
     if (auto it = swatches_.find(key); it != swatches_.end()) return it->second;
     std::optional<uint32_t> color;
-    if (auto path = files_.find(raceFile(style, "Main.bmp")))
+    const std::string main = raceFile(style, "Main.bmp");
+    if (!files_.find(main)) files_.noteMissing(main);
+    if (auto path = files_.find(main))
         if (auto img = assets::loadImage(*path, false); img && img->width > 28 && img->height > 13) {
             const uint8_t* p = &img->rgba[(static_cast<size_t>(13) * static_cast<size_t>(img->width) + 28) * 4];
             color = (uint32_t{p[0]} << 16) | (uint32_t{p[1]} << 8) | uint32_t{p[2]};
@@ -236,6 +246,8 @@ Sprite Art::combatBackground(std::string_view name, uint64_t seed) {
             }
     } else if (auto path = files_.find("Pictures/Systems/1024X768/Starmap.bmp")) {
         if (auto img = assets::loadImage(*path, false)) picture = assets::crop(*img, 0, 0, kSize, kSize);
+    } else {
+        files_.noteMissing("Pictures/Systems/1024X768/Starmap.bmp");
     }
     Texture t;
     if (!picture.empty()) {

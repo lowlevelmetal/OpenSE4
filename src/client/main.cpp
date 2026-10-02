@@ -222,5 +222,8 @@ int main(int argc, char** argv) {
     }
 
     if (options.seed == 0) options.seed = static_cast<uint64_t>(std::time(nullptr));
+    // The log also goes to opense4.log in the user data folder: on Windows the
+    // game has no console, so that file is where a player finds it.
+    log::setFile(client::userDataDirectory() / "opense4.log");
     return client::App().run(options);
 }

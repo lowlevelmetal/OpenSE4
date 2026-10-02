@@ -103,7 +103,7 @@ private:
 
     template <class Fn>
     bool loadRequired(const char* name, Fn&& fn) {
-        auto file = datafile::load(dir_ / name);
+        auto file = datafile::load(childIgnoringCase(dir_, name));
         if (!file) {
             diag_.errors.push_back(std::format("{}: {}", name, file.error()));
             return false;
@@ -122,7 +122,7 @@ private:
     }
 
     void loadList(const char* name, std::vector<std::string>& out) {
-        auto file = datafile::load(dir_ / name);
+        auto file = datafile::load(childIgnoringCase(dir_, name));
         if (!file) {
             diag_.warnings.push_back(std::format("{}: {}", name, file.error()));
             return;

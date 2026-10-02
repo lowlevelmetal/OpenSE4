@@ -58,6 +58,10 @@ struct Audio::Impl {
                         break;
                     }
                 }
+        if (!loaded && files) {
+            const auto tried = soundCandidates(name, options.remastered);
+            files->noteMissing(tried.empty() ? std::string(name) : tried.front());
+        }
         auto [it, inserted] = clips.emplace(key, std::move(loaded));
         return it->second ? &*it->second : nullptr;
     }
@@ -76,7 +80,10 @@ struct Audio::Impl {
         closeTrack();
         if (!files || trackFile.empty()) return false;
         auto path = files->find("Music/" + trackFile);
-        if (!path) return false;
+        if (!path) {
+            files->noteMissing("Music/" + trackFile);
+            return false;
+        }
 #if defined(_WIN32)
         // The wide name: fopen of a narrow one takes the ANSI code page (unless the manifest's UTF-8 applies).
         if (!drmp3_init_file_w(&mp3, path->wstring().c_str(), nullptr)) return false;

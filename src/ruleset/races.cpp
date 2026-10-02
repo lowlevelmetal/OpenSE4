@@ -2,6 +2,7 @@
 
 #include "datafile/datafile.hpp"
 #include "datafile/reader.hpp"
+#include "ruleset/ruleset.hpp"
 
 #include <algorithm>
 #include <format>
@@ -92,7 +93,7 @@ std::vector<RacePreset> loadRacePresets(const std::filesystem::path& gameRoot) {
     // in: the list's order must be the same on every platform.
     std::error_code ec;
     std::filesystem::path races, neutral;
-    for (const auto& e : std::filesystem::directory_iterator(gameRoot / "Pictures", ec)) {
+    for (const auto& e : std::filesystem::directory_iterator(childIgnoringCase(gameRoot, "Pictures"), ec)) {
         const std::string n = lower(e.path().filename().string());
         if (n == "races" && (races.empty() || e.path() < races)) races = e.path();
         if (n == "raceneutral" && (neutral.empty() || e.path() < neutral)) neutral = e.path();

@@ -51,7 +51,10 @@ void PointerSet::load(const assets::InstallFiles& files) {
         const Pointer p = static_cast<Pointer>(i);
         images_[i].reset();
         const auto path = files.findModFirst("Pictures/Game/" + std::string(pointerFile(p)));
-        if (!path) continue;
+        if (!path) {
+            files.noteMissing("Pictures/Game/" + std::string(pointerFile(p)));
+            continue;
+        }
         std::string error;
         if (auto image = assets::loadCursor(*path, &error)) {
             images_[i] = std::move(*image);

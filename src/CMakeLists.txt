@@ -43,6 +43,9 @@ add_library(opense4_ruleset STATIC
     ruleset/races.cpp
     ruleset/ruleset.cpp)
 target_link_libraries(opense4_ruleset PUBLIC opense4_core opense4_datafile PRIVATE opense4_warnings)
+if(WIN32)
+    target_link_libraries(opense4_ruleset PRIVATE advapi32)  # the Steam folder from the registry
+endif()
 
 # --- game: the classic rules engine ------------------------------------------------
 add_library(opense4_game STATIC

@@ -157,6 +157,10 @@ std::optional<std::filesystem::path> InstallFiles::findModFirst(std::string_view
     return find(relative);
 }
 
+void InstallFiles::noteMissing(std::string_view relative) const {
+    if (missing_.insert(lowerSlashed(relative)).second) log::info("Not in the installed game: {}", relative);
+}
+
 std::optional<std::filesystem::path> InstallFiles::findAny(std::initializer_list<std::string_view> candidates) const {
     for (std::string_view c : candidates)
         if (auto p = find(c)) return p;

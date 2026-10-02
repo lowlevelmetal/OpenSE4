@@ -7,6 +7,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 
@@ -230,4 +231,31 @@ TEST_CASE("ruleset: race presets list normal races, then neutral ones, in a fixe
     CHECK(presets[3].name == "Last Neutral");
     CHECK_FALSE(presets[1].neutral);
     CHECK(presets[2].neutral);
+}
+
+TEST_CASE("ruleset: file and folder names are found in any case, as on Windows") {
+    // An install copied from a CD or another system may spell "Data" or
+    // "Components.txt" in another case; Windows finds them, so Linux must too.
+    namespace fs = std::filesystem;
+    test::TempDir tmp("names_any_case");
+    const fs::path data = tmp.path() / "SE4" / "DATA";
+    fs::create_directories(data);
+    for (const auto& e : fs::directory_iterator(kFixture)) {
+        std::string name = e.path().filename().string();
+        for (char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        fs::copy_file(e.path(), data / name);
+    }
+    const auto loaded = ruleset::loadRuleset(data);
+    REQUIRE(loaded.ruleset.has_value());
+    CHECK(loaded.diagnostics.errors.empty());
+    const auto fromFixture = ruleset::loadRuleset(kFixture);
+    REQUIRE(fromFixture.ruleset.has_value());
+    CHECK(loaded.ruleset->components.size() == fromFixture.ruleset->components.size());
+    CHECK(loaded.ruleset->techAreas.size() == fromFixture.ruleset->techAreas.size());
+    // Found from the game folder, whatever the case of "se4" and "Data".
+    const auto found = ruleset::findInstalledDataDir(tmp.path());
+    REQUIRE(found.has_value());
+    CHECK(fs::equivalent(*found, data));
+    CHECK(ruleset::childIgnoringCase(tmp.path(), "se4") == tmp.path() / "SE4");
+    CHECK(ruleset::childIgnoringCase(data, "nothing.txt") == data / "nothing.txt");
 }
