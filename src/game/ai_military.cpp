@@ -1498,17 +1498,25 @@ namespace {
 // design type: every one that can move (maximum movement above 0, not
 // mothballed), wherever it is, and every one that cannot (bases, mothballed
 // ships) only where the empire has a space yard in its sector. The one whose
-// design is oldest (creation date; the first in the vehicle list on a tie)
-// is scrapped where it stands when a yard is there, else ordered to Move To
-// the nearest sector with a yard of ours, by travel, and then to Scrap. It
-// gets no other orders that turn. OpenSE4 choices (inferred, spec 05 Q72):
-// unit groups are never candidates; a candidate in a fleet leaves it first,
-// as the Scrap order needs; one that is cloaked, or that no route takes to a
-// yard, is not scrapped, and no other candidate is tried that turn.
+// design has the earliest creation date is scrapped where it stands when a
+// yard is there, else ordered to Move To the nearest sector with a yard of
+// ours, by travel, and then to Scrap; when no yard is found, nothing is
+// scrapped that turn. It gets no other orders that turn.
+// Ties (confirmed: binary): the dates are whole turns, compared strictly, so
+// the first candidate met wins, and the candidates are met in the empire's
+// vehicle list, which follows the game's one object list by slot
+// (objectOrderKey, spec 03 §19 Q62), not GameState::vehicles. Nothing else
+// breaks a tie. OpenSE4 choices (inferred, spec 05 Q72): unit groups are
+// never candidates; a candidate in a fleet leaves it first, as the Scrap
+// order needs; a cloaked one is not scrapped, and no other is tried.
 void scrapOldest(Planner& p) {
+    std::vector<VehicleId> list = p.ownVehicles(Minister::Scrap);
+    std::sort(list.begin(), list.end(), [&](VehicleId a, VehicleId b) {
+        return objectOrderKey(*p.st.vehicle(a)) < objectOrderKey(*p.st.vehicle(b));
+    });
     std::optional<VehicleId> oldest;
     uint32_t oldestDate = 0;
-    for (VehicleId id : p.ownVehicles(Minister::Scrap)) {   // the vehicle list's order
+    for (VehicleId id : list) {   // slot order
         const Vehicle* v = p.st.vehicle(id);
         if (!v) continue;
         const DesignInfo& di = p.info(v->design);

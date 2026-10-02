@@ -5763,3 +5763,50 @@ TEST_CASE("ai: an enemy colony in the defend list adds the foreign ratings in it
     REQUIRE(guarded);
     CHECK(*guarded == rating + (guardListed ? rating + ai::detail::kStrengthScale : 0));
 }
+
+TEST_CASE("ai: scrap ties go to the first candidate in slot order; dates are compared strictly") {
+    // Spec 05 §7.5 *Scrap* "Ties" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(5, 2, 0, 10);
+    s.turn = 12;   // not a tenth turn
+    const EmpireId me{0u};
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.owner == me; });
+    std::erase_if(s.fleets, [&](const Fleet& f) { return f.owner == me; });
+    const Location home = locationOf(s.galaxy, homeworld(s, me).planet);
+    const Location away{home.system, Sector{home.sector.x < 6 ? 11 : 1, home.sector.y}};
+    const std::initializer_list<std::string_view> crew{"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Engine", "Test Laser"};
+    const DesignId hammer = typedDesign(s, r, me, "Hammer", "Test Frigate", crew, "Attack Ship", 3);
+    const DesignId anvil = typedDesign(s, r, me, "Anvil", "Test Frigate", crew, "Attack Ship", 3);   // made the same turn
+    const DesignId fortress = typedDesign(s, r, me, "Fort", "Test Station", {"Test Bridge", "Test Life Support", "Test Crew Quarters", "Test Laser"},
+                                          "Defense Base", 3);
+    const VehicleId first = addTestVehicle(s, r, hammer, away).id;
+    const VehicleId second = addTestVehicle(s, r, anvil, away).id;
+    const VehicleId fort = addTestVehicle(s, r, fortress, home).id;
+    auto scrapped = [&]() -> VehicleId {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 9);
+        p.capUpkeep = Resources{1'000'000, 1'000'000, 1'000'000};
+        ai::detail::planScrap(p);
+        const auto cmds = p.report().commands;
+        const cmd::Scrap* c = firstOf<cmd::Scrap>(cmds);
+        return c ? c->vehicle : VehicleId{};
+    };
+    auto setSlots = [&](VehicleId a, VehicleId b, VehicleId c) {
+        // Three slots the vehicles already hold, given out again in this order.
+        std::vector<uint32_t> slots{s.vehicle(first)->slot, s.vehicle(second)->slot, s.vehicle(fort)->slot};
+        std::sort(slots.begin(), slots.end());
+        s.vehicle(a)->slot = slots[0];
+        s.vehicle(b)->slot = slots[1];
+        s.vehicle(c)->slot = slots[2];
+    };
+    // Equally old: the first in slot order wins, whatever the vehicle ids,
+    // the designs' order or the kind (a base at a yard beside ships elsewhere).
+    setSlots(first, second, fort);
+    CHECK(scrapped() == first);
+    setSlots(second, first, fort);
+    CHECK(scrapped() == second);
+    setSlots(fort, second, first);
+    CHECK(scrapped() == fort);
+    // A strictly older design comes first, wherever its slot.
+    s.design(anvil).createdTurn = 2;
+    CHECK(scrapped() == second);
+}

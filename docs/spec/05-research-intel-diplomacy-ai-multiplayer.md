@@ -2011,11 +2011,13 @@ binary).
       design's place in the empire's design list, not its design type, not ships before
       bases. So a base at a yard is a candidate even when a ship of an equally old design
       stands elsewhere, and it is chosen when its slot comes first; a ship that can move and
-      has a strictly older design, wherever it is, always comes before it. The engine
-      differs: the rule as implemented breaks ties by the order of `GameState::vehicles`
-      (vehicle id, creation order), which `Planner::ownVehicles` follows, not by the slot
-      (`Vehicle::slot`, `objectOrderKey`); with reused slots the two orders disagree in
-      either direction.
+      has a strictly older design, wherever it is, always comes before it. OpenSE4 follows
+      this since 2026-10-02: `scrapOldest` (`ai_military.cpp`) meets the candidates by slot
+      (`Vehicle::slot`, `objectOrderKey`); it used to break ties by the order of
+      `GameState::vehicles` (vehicle id, creation order), which disagrees with the slots
+      once they are reused. Over 120 games of the pace set-up 116 played out differently,
+      with no measurable change in the bases, ships or turns over the soft cap (spec 07
+      "Pace after the tie-break and budget rules").
   - *Repair* (confirmed: binary). A vehicle needs repair only when at least one of its
     parts is destroyed, and then:
     - an Attack or Defense Ship: when its strength rating (§7.2) is 0, or its destroyed
@@ -4125,7 +4127,9 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     - "the nearest sector where it can be scrapped" is found as the Repair minister finds a
       yard: our uncloaked colonies with a Space Yard facility and uncloaked ships with a
       working yard, by travel, the earlier in the visiting order on a tie; a candidate that
-      no route takes to a yard is not scrapped, and no other candidate is tried that turn;
+      no route takes to a yard is not scrapped, and no other candidate is tried that turn
+      (the last part confirmed since: when no place to scrap it is found, nothing is
+      scrapped that turn, §7.5 *Scrap*);
     - the Move To and Scrap are given together, so the vehicle is scrapped when it reaches
       the yard in the same movement, and its orders are not touched by the ministers after
       the Scrap minister that turn;
