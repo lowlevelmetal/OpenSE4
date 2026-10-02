@@ -1025,6 +1025,33 @@ TEST_CASE("turn-based tactical: answers are taken in the order the battles come 
     CHECK(asked);
 }
 
+TEST_CASE("simultaneous: with the battles shown, a computer-only battle stops too; a turn-based one does not (spec 06 §7 Q76)") {
+    for (const bool simultaneous : {true, false}) {
+        CAPTURE(simultaneous);
+        Arena ar = makeArena(17);
+        GameState& s = ar.s;
+        s.options.simultaneous = simultaneous;
+        for (Empire& e : s.empires) e.kind = PlayerKind::Computer;
+        spawn(s, frigate(s, ar.a, "Raider", 2, {"Test Laser"}), ar.loc);
+        spawn(s, frigate(s, ar.b, "Picket", 2, {"Test Laser"}), ar.loc);
+        const std::vector<BattleAnswer> none;
+        TurnContext::Battles battles{&none, 0};
+        TurnContext ctx = context(s);
+        ctx.battles = &battles;
+        bool asked = false;
+        try {
+            combat::resolveSpaceCombat(ctx, ar.loc);
+        } catch (const game::detail::BattleQuestionRaised& q) {
+            asked = true;
+            CHECK(q.question.kind == BattleQuestion::Kind::Show);   // the Begin and Close form, no notice
+            CHECK(q.question.humans.empty());
+            CHECK(q.question.participants.size() == 2);
+            REQUIRE(q.question.state);
+        }
+        CHECK(asked == simultaneous);
+    }
+}
+
 // ---- The combat simulator -----------------------------------------------------------------------------
 
 namespace {

@@ -3645,11 +3645,10 @@ a viewer sees of Q73 needs observation); Q74 and Q75 have no counterpart:
     at once in its Begin and Close form for every battle, computer-only battles included:
     the setting takes the place of the test for a human side.
     Our client matches for the notice (`ClassicMode::drawBattleQuestion`,
-    `classic_mode.cpp`, shows it only in turn-based games). The engine differs: `resolve()`
-    (`combat_space.cpp`) stops a simultaneous turn to show a battle only when it has a
-    human side (it requires `humans` to be non-empty; the comment in `turn.cpp` says the
-    same). With the setting on in a simultaneous game, every battle on that machine must
-    stop to be shown.
+    `classic_mode.cpp`, shows it only in turn-based games). Since 2026-10-01 the engine
+    matches too: with the setting on, `resolve()` (`combat_space.cpp`) stops a simultaneous
+    turn at every battle on that machine, computer-only ones included (a Show question
+    with no human side).
 
 Bringing the combat windows in line with Q34–Q36 and Q38 on 2026-10-01 left these
 choices of ours (inferred) (Q73–Q76 are those of the live battle flow). All are settled

@@ -264,8 +264,9 @@ up. A stop whose answer is missing stops the call: the state is left as it was, 
 
 - **Choose** (turn-based, a battle with a human side): Tactical or Strategic; the answer
   names the tactical sides and their script;
-- **Show** (turn-based with "No Tactical Combat", or a simultaneous game whose Settings
-  show battles): the Strategic Combat window with Begin and Close; the strategies fight it;
+- **Show** (turn-based with "No Tactical Combat", a battle with a human side; or a
+  simultaneous game whose Settings show battles, every battle, computer-only ones
+  included): the Strategic Combat window with Begin and Close; the strategies fight it;
 - **Ground** (turn-based, the colony owner's end-of-turn ground combat with a human
   side): the engine fights it and hands over its record (`BattleQuestion::ground`).
 

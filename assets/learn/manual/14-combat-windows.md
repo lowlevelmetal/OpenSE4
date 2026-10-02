@@ -19,7 +19,7 @@ happens until the battle is over and its window closed: the battle reports, the 
 the rest of the turn come after.
 
 - In a game set up with **Strategic combat only**, the Strategic Combat window opens the same way, with `Begin` and `Close` instead of the question.
-- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`; when the game's settings ask for it, each battle with a human side is shown in the Strategic Combat window as it breaks out.
+- In simultaneous games you read about battles in the Log, and watch them with `Combat Replay`; when the game's settings ask for it, every battle on this computer is shown in the Strategic Combat window as it breaks out, battles between computer players included, without a notice first.
 - In network and play-by-e-mail games the host fights every battle at once; you watch the battles you were in (by e-mail, those your own orders started) afterwards.
 
 ## Tactical combat

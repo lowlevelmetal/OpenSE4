@@ -3920,12 +3920,16 @@ bool humanPresent(const GameState& s, Location where) {
 // detail::enteringGroups); empty: nobody entered, so no mine strikes.
 // `check`: who runs the battle check after the mines (spec 04 §2).
 void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>* entering, const BattleCheck& check) {
-    // On one machine a battle with a human side stops the call once it is set
-    // up, to be shown (turn.hpp, "Battles shown as they happen"): keep the
-    // game as the battle begins, in case the answer is missing.
+    // On one machine a battle stops the call once it is set up, to be shown
+    // (turn.hpp, "Battles shown as they happen"): in a turn-based game one
+    // with a human side, in a simultaneous game whose Settings show battles
+    // every one, computer-only battles included (spec 06 §1.10.5, §7 Q76,
+    // confirmed: binary). Keep the game as the battle begins, in case the
+    // answer is missing.
     TurnContext::Battles* ask = ctx.battles && ctx.battles->answers ? ctx.battles : nullptr;
+    const bool showsAll = ctx.state.options.simultaneous;
     std::shared_ptr<GameState> before;
-    if (ask && ask->next >= ask->answers->size() && humanPresent(ctx.state, where)) before = std::make_shared<GameState>(ctx.state);
+    if (ask && ask->next >= ask->answers->size() && (showsAll || humanPresent(ctx.state, where))) before = std::make_shared<GameState>(ctx.state);
     Rng rng = ctx.state.rng.fork();
     // Mines strike first, then the battle check runs (confirmed: binary).
     if (!entering) detail::resolveMines(ctx, where, {}, rng);
@@ -3938,7 +3942,7 @@ void resolve(TurnContext& ctx, Location where, const std::span<const VehicleId>*
         std::vector<EmpireId> humans;
         for (EmpireId e : battle.empires())
             if (ctx.state.empire(e).alive && ctx.state.empire(e).kind == PlayerKind::Human) humans.push_back(e);
-        if (!humans.empty()) {
+        if (!humans.empty() || showsAll) {
             // A turn-based game asks Tactical or Strategic, unless the "No
             // Tactical Combat" option is on; then, as in a simultaneous game, the
             // Strategic Combat window shows it (spec 06 §1.10.5, confirmed: binary).

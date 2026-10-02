@@ -219,11 +219,14 @@ host fights every battle without stopping, and the client shows the battles afte
 (spec 06 §7 Q74, the turn-based row under Cross-cutting, an OpenSE4 extension).
 
 Spec 04 §19.4 Q87–Q89 and spec 06 §7 Q76–Q78 were settled from the executable later on
-2026-10-01 (Q89 matches). These rows remain:
+2026-10-01 (Q89 matches). The engine followed the same day: landings judged by the planet
+piece's side, the refusals in their order with a silent one, planet pieces dropping their
+colony's troops (Q87, Q88); piece numbers reused, so a drone can take a new piece without a
+choice (§10.7); every simultaneous battle shown when the Settings ask, computer-only ones
+included (Q76). This row remains:
 
 | Where | Engine now | Original (spec) | Impact |
 |---|---|---|---|
-| Simultaneous battles shown (`combat_space.cpp` `resolve()`, `turn.cpp`) | With `Simultaneous Games Show Strategic Combat` on, only battles with a human side stop the turn | Spec 06 §1.10.5, §7 Q76: every battle on that machine is shown, computer-only battles included | L |
 | Random numbers of a battle shown tactically (client drawing) | The display draws no random numbers | Spec 04 §19.1, spec 06 §7 Q77: a miss's direction and a planet's point are drawn from the battle's sequence, so a shown battle continues differently | M |
 
 ## Research, intelligence, diplomacy, events, score, turn order (spec 05 §1–§6, §8–§9)
