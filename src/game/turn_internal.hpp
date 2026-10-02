@@ -6,6 +6,7 @@
 #include "game/turn.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -33,6 +34,10 @@ void resetCameFrom(const Rules& r, GameState& s, EmpireId e);
 
 // Applies the commands as the empire's orders, collecting rejections.
 void applyCommands(TurnContext& ctx, EmpireId e, std::vector<Command> commands);
+
+// Keeps the net income an empire's start-of-turn step worked out for the
+// facility upgrades of its economy step (TurnContext::aiStartNet).
+void keepStartNet(TurnContext& ctx, EmpireId e, const std::optional<Resources>& net);
 
 // Thrown by space combat when a battle's answer is missing (turn.hpp,
 // "Tactical combat in turn-based games"); the turn-based calls catch it and

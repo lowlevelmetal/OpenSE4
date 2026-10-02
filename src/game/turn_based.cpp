@@ -21,6 +21,7 @@ namespace opense4::game {
 
 using detail::Control;
 using detail::living;
+using detail::keepStartNet;
 using detail::ministersPlan;
 
 namespace {
@@ -263,8 +264,10 @@ bool startPlayerTurn(LiveContext& lc, EmpireId e, Control control) {
     if (ministersPlan(s, e, control)) {
         giveOrders(lc, e, ai::planPoliticsOrders(r, s, e));
         std::vector<ObjectId> targets;
-        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets));
+        std::optional<Resources> net;
+        giveOrders(lc, e, ai::planOrdersAfterPolitics(r, s, e, &territory, &targets, &net));
         ctx.aiColonyTargets = std::move(targets);  // the step's lists stay in place for its economy step
+        keepStartNet(ctx, e, net);
     }
     ai::recordAiDecisions(ctx, e);
     // 3. Movement is refilled, and every group carries out its orders.

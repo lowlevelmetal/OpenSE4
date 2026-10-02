@@ -245,7 +245,8 @@ Resources queueItemCost(const Planner& p, const cmd::QueueTarget& t, const Queue
 // newest one in place, keeping its count and what was paid into it
 // (cmd::QueueReplaceFacility, spec 02 §6.6).
 void planUpgrades(Planner& p, const std::vector<ObjectId>& planets) {
-    const Resources net = p.netIncome();
+    // The net income the start-of-turn step worked out (spec 05 §7.5 *Net income*).
+    const Resources net = p.startOfTurnNet ? *p.startOfTurnNet : p.netIncome();
     const Resources half{net.v[0] / 2, net.v[1] / 2, net.v[2] / 2};  // division toward zero
     Resources queued;
     for (ObjectId planet : planets) {
