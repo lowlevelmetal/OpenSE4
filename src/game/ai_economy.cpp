@@ -565,7 +565,10 @@ private:
                 if (const Vehicle* v = p_.st.vehicle(id)) consider({{}, id}, v->queue);
         if (options.empty()) return false;
         std::sort(options.begin(), options.end(), [&](const Option& a, const Option& b) {
-            if (base) return std::tuple(a.bases, -a.value, a.target.planet) < std::tuple(b.bases, -b.value, b.target.planet);
+            // Total orders: yard ships tie on everything but their id.
+            if (base)
+                return std::tuple(a.bases, -a.value, a.target.planet, a.target.vehicle) <
+                       std::tuple(b.bases, -b.value, b.target.planet, b.target.vehicle);
             return std::tuple(a.backlog, -a.rate.total(), a.target.planet, a.target.vehicle) <
                    std::tuple(b.backlog, -b.rate.total(), b.target.planet, b.target.vehicle);
         });

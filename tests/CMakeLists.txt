@@ -17,6 +17,7 @@ add_executable(opense4_tests
     test_combat_windows.cpp
     test_tactical.cpp
     test_design_tools.cpp
+    test_determinism.cpp
     test_diplomacy.cpp
     test_discovery.cpp
     test_economy.cpp

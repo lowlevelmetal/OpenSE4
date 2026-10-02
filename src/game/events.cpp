@@ -857,7 +857,9 @@ Outcome apply(TurnContext& ctx, Effect e, const Target& t, int amount, Rng& rng)
             Order o;
             o.kind = OrderKind::MoveTo;
             const SystemId dest{static_cast<uint32_t>(rng.below(s.galaxy.systems.size()))};
-            o.location = {dest, Sector{static_cast<int>(rng.below(kSystemSize)), static_cast<int>(rng.below(kSystemSize))}};
+            const int x = static_cast<int>(rng.below(kSystemSize));  // x drawn first, then y
+            const int y = static_cast<int>(rng.below(kSystemSize));
+            o.location = {dest, Sector{x, y}};
             v->orders = {o};
             v->repeatOrders = false;
             out.actual = 1;
