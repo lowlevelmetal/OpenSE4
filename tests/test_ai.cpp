@@ -5723,3 +5723,41 @@ TEST_CASE("ai: a new fleet forms around a ship that can move and that a fleet co
     addTestVehicle(s, r, trooper, home);
     CHECK(leader() == hammer);
 }
+
+TEST_CASE("ai: an enemy colony in the defend list adds the foreign ratings in its sector and nothing for itself") {
+    // Spec 05 §7.2 "Defend list" (confirmed: binary).
+    const Rules& r = engineRules();
+    GameState s = computerGame(13, 2, 0, 12);
+    exploreEverything(s);
+    const EmpireId me{0u}, them{1u};
+    meet(s, me, them);
+    s.empire(me).relation(them).treaty = s.empire(them).relation(me).treaty = Treaty::War;
+    const SystemId homeSys = s.galaxy.object(homeworld(s, me).planet).system;
+    const auto spot = freePlanetIn(s, homeSys);
+    REQUIRE(spot);
+    addColony(s, *spot, them, {{them, 20}});
+    const Location at = locationOf(s.galaxy, *spot);
+    std::erase_if(s.vehicles, [&](const Vehicle& v) { return v.location == at; });
+    s.empire(me).claimedSystems = {homeSys};
+    bool guardListed = false;
+    auto threat = [&]() -> std::optional<int64_t> {
+        ai::detail::Planner p(r, s, me, ai::detail::Mode::Computer, 3);
+        guardListed = std::any_of(p.sit.enemyInTerritory.begin(), p.sit.enemyInTerritory.end(),
+                                  [](const ai::detail::Threat& t) { return t.vehicle.valid(); });
+        for (const ai::detail::DefendEntry& d : p.sit.defendEntries)
+            if (d.where == at && d.owner == them) return d.threat;
+        return std::nullopt;
+    };
+    // Alone in its sector: 0, not 1.
+    REQUIRE(threat());
+    CHECK(*threat() == 0);
+    // A guard of the colony's owner in its sector: the colony adds the
+    // guard's rating, without the + 1; the guard, when we see it, adds its
+    // rating + 1 to the same entry.
+    const VehicleId guard = addTestVehicle(s, r, addWarship(s, r, them, "Guard"), at).id;
+    const int64_t rating = ai::detail::vehicleRating(r, s, *s.vehicle(guard));
+    REQUIRE(rating > 0);
+    const std::optional<int64_t> guarded = threat();
+    REQUIRE(guarded);
+    CHECK(*guarded == rating + (guardListed ? rating + ai::detail::kStrengthScale : 0));
+}

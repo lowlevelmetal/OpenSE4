@@ -1043,9 +1043,10 @@ High always notice.
   noticed vehicles in that sector; a noticed populated colony adds the ratings (without the
   + 1) of every object in its sector that is not ours, its own planet included at rating 0,
   so a colony with nothing else in its sector adds 0 (confirmed: binary; observed
-  2026-10-02: 94 % of the colony entries of two games had the value 0). The engine differs:
-  `assess` (`ai.cpp`) adds 1 for the colony itself (without it, 17 of our 24 games played
-  out identically, scratch run). The entries are ordered by:
+  2026-10-02: 94 % of the colony entries of two games had the value 0). OpenSE4 follows
+  this since 2026-10-02 (`assess`, `ai.cpp`); it used to add 1 for the colony itself
+  (without it, 17 of our 24 games played out identically, scratch run). The entries are
+  ordered by:
   1. fewest jumps from home;
   2. our colonies' maximum population in that sector (spec 02 §2, domed capacity and the
      storage trait included), highest first;
@@ -4021,9 +4022,10 @@ TCP/IP runs the same file flow over the network, with the host as the hub.
     colonies on both sides: in the second new game 43 such battles, the colonies' median
     15,490 hit points with two unit groups; ours 224 in 24 games (median 2,675), 56 of them
     on one colony and 24 % without a shot. The colony threat of the defend list (§7.2)
-    differs (the original adds nothing for the colony itself, ours 1) but changes little:
-    without the + 1, 17 of our 24 games played out identically (scratch run). Which colonies
-    the ministers send ships against is question 69.
+    differed (the original adds nothing for the colony itself, ours added 1, until
+    2026-10-02) but changes little: without the + 1, 17 of our 24 games played out
+    identically (scratch run). Which colonies the ministers send ships against is question
+    69.
 68. **Decided battles away from colonies** (question 66; spec 07 "Battles, bases and the
     first turns under a debugger"). Our computer players win 4.9 battles away from colonies
     per empire and 25 turns of turns 51–100 and lose 5.1 (wins 3.0–10.3 per game), the

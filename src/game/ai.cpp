@@ -351,10 +351,11 @@ Situation assess(const Rules& r, const GameState& s, EmpireId id, const AiProfil
             sit.defendEntries.push_back(d);
             it = sit.defendEntries.end() - 1;
         }
-        // Each noticed object adds its rating + 1; a populated colony (rating 0)
-        // also adds the ratings of every object in its sector that is not ours.
-        it->threat += (v ? vehicleRating(r, s, *v) : 0) + kStrengthScale;
-        if (!v) it->threat += foreignRatingsAt(r, s, id, where);
+        // Each noticed vehicle adds its rating + 1; a populated colony adds the
+        // ratings (without the + 1) of every object in its sector that is not
+        // ours, its own planet at rating 0, and nothing for itself.
+        if (v) it->threat += vehicleRating(r, s, *v) + kStrengthScale;
+        else it->threat += foreignRatingsAt(r, s, id, where);
         it->latest = t;
     }
     sortDefendEntries(sit.defendEntries, false);
