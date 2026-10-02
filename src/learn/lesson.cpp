@@ -9,7 +9,10 @@
 #include <format>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <span>
+#include <string>
+#include <vector>
 
 namespace opense4::learn {
 
@@ -200,6 +203,7 @@ private:
                 case Fact::Tab: what = isWindowTab(c.text) ? nullptr : "window tab"; break;
                 case Fact::Option: what = isOptionName(c.text) ? nullptr : "option"; break;
                 case Fact::Treaty: what = treatyFromId(c.text) ? nullptr : "treaty kind"; break;
+                case Fact::BattleOrder: what = isBattleOrderKind(c.text) ? nullptr : "battle order kind"; break;
                 default: break;
             }
             if (what) {
@@ -337,22 +341,35 @@ std::optional<Lesson> parseLesson(std::string_view text, std::string_view file, 
 
     if (kind == LessonKind::Tutorial) {
         for (const toml::table* t : rd.tables(root, "step")) {
-            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "done", "manual"});
+            rd.allowOnly(*t, "a [[step]]", {"title", "text", "highlight", "allow", "keys", "done", "manual"});
             Step s;
             s.line = static_cast<int>(t->source().begin.line);
             s.title = rd.string(*t, "title", "a [[step]]", true).value_or(std::string{});
             s.text = rd.markdown(*t, "text", "a [[step]]", true);
-            if (const toml::node* h = t->get("highlight")) {
+            // A string or a list of strings, each checked.
+            auto strings = [&](std::string_view key, auto&& check, std::vector<std::string>& out) {
+                const toml::node* n = t->get(key);
+                if (!n) return;
                 auto add = [&](const toml::node& item) {
-                    const auto* tag = item.as_string();
-                    if (!tag) rd.error(item, "'highlight' takes UI tags (strings)");
-                    else if (!isUiTag(tag->get())) rd.error(item, std::format("unknown UI tag '{}'", tag->get()));
-                    else s.highlight.push_back(tag->get());
+                    const auto* v = item.as_string();
+                    if (!v) rd.error(item, std::format("'{}' takes strings", key));
+                    else if (auto problem = check(v->get())) rd.error(item, *problem);
+                    else out.push_back(v->get());
                 };
-                if (const auto* arr = h->as_array())
+                if (const auto* arr = n->as_array())
                     for (const toml::node& item : *arr) add(item);
-                else add(*h);
-            }
+                else add(*n);
+            };
+            auto uiTag = [](const std::string& tag) -> std::optional<std::string> {
+                if (isUiTag(tag)) return std::nullopt;
+                return std::format("unknown UI tag '{}'", tag);
+            };
+            strings("highlight", uiTag, s.highlight);
+            strings("allow", uiTag, s.allow);
+            strings("keys", [](const std::string& chord) -> std::optional<std::string> {
+                if (isKeyChord(chord)) return std::nullopt;
+                return std::format("unknown key '{}' (keys are written as \"F12\", \"Ctrl+L\", \"Alt+1\", \"Escape\")", chord);
+            }, s.keys);
             s.done = rd.conditionKey(*t, "done", "a [[step]]", false);
             s.manual = rd.string(*t, "manual", "a [[step]]", false).value_or(std::string{});
             l.steps.push_back(std::move(s));

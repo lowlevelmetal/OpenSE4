@@ -7,6 +7,7 @@
 // uses the same strings when it tags its windows and widgets.
 
 #include "game/state.hpp"
+#include "game/tactical.hpp"
 
 #include <optional>
 #include <span>
@@ -53,6 +54,12 @@ std::vector<std::string_view> optionNames();
 bool isOptionName(std::string_view id);
 std::optional<bool> optionValue(const game::Empire& e, std::string_view id);
 
+// Orders in a tactical battle for `battle_order = "<kind>"`: "move", "fire",
+// "end-turn", "auto", ... and the kind of a tactical order.
+std::span<const std::string_view> battleOrderKinds();
+bool isBattleOrderKind(std::string_view kind);
+std::string_view battleOrderId(game::combat::TacticalOrder::Kind kind);
+
 // Treaties for `treaty = "<kind>"`: "war", "non-aggression", "trade-alliance", ...
 std::vector<std::string_view> treatyKinds();
 std::optional<game::Treaty> treatyFromId(std::string_view id);
@@ -63,7 +70,15 @@ std::optional<game::Treaty> treatyFromId(std::string_view id);
 std::span<const std::string_view> fixedUiTags();
 // The id of an order-strip slot ("Move" -> "move-to"); empty for an empty slot.
 std::string_view orderStripId(std::string_view slotKey);
-// True for a tag the client registers: a fixed tag or `window:<id>`.
+// True for a tag the client registers: a fixed tag, `window:<id>`, or
+// `<id>:close` (the Close button at the bottom of most windows).
 bool isUiTag(std::string_view tag);
+
+// Key chords for a tutorial step's `keys`: optional "Ctrl+", "Shift+" and
+// "Alt+" (in that order), then a key named as Dear ImGui names it: "A".."Z",
+// "0".."9", "F1".."F12", "Enter", "Escape", "Space", "Tab", "Backspace",
+// "Delete", "Insert", "Home", "End", "PageUp", "PageDown", the arrows
+// ("LeftArrow", ...), "Comma", "Period", "Minus", "Equal" and "Slash".
+bool isKeyChord(std::string_view chord);
 
 } // namespace opense4::learn

@@ -55,6 +55,11 @@ struct Step {
     std::string title;
     std::vector<Block> text;
     std::vector<std::string> highlight;     // UI tags to outline
+    // While the step is active the tutorial lets the player use only the
+    // highlighted tags, these tags too, and these keys (docs/LEARNING.md
+    // "The input lock").
+    std::vector<std::string> allow;         // more UI tags (`window:<id>`: the whole window)
+    std::vector<std::string> keys;          // key chords: "F12", "Ctrl+L", "Alt+1"
     std::optional<Condition> done;          // none: the player presses Next
     std::string manual;                     // "slug#anchor" for Read more
 };
